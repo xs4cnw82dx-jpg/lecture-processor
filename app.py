@@ -173,6 +173,15 @@ def markdown_to_docx(markdown_text, title="Document"):
     lines = markdown_text.split('\n')
     i = 0
     
+    # Check if this looks like an interview transcript (has timestamp patterns)
+    is_transcript = any(
+        len(line.strip()) > 3 and 
+        line.strip()[0].isdigit() and 
+        ':' in line.strip()[:6] and
+        ' - ' in line
+        for line in lines[:20]  # Check first 20 lines
+    )
+    
     while i < len(lines):
         line = lines[i].strip()
         
@@ -182,49 +191,67 @@ def markdown_to_docx(markdown_text, title="Document"):
         
         # Handle headers
         if line.startswith('### '):
-            heading = doc.add_heading(line[4:], level=3)
+            doc.add_heading(line[4:], level=3)
         elif line.startswith('## '):
-            heading = doc.add_heading(line[3:], level=2)
+            doc.add_heading(line[3:], level=2)
         elif line.startswith('# '):
-            heading = doc.add_heading(line[2:], level=1)
+            doc.add_heading(line[2:], level=1)
         # Handle bullet points
         elif line.startswith('- ') or line.startswith('* '):
             doc.add_paragraph(line[2:], style='List Bullet')
-        # Handle numbered lists
+        # Handle numbered lists (but not timestamps like "0:00")
         elif len(line) > 2 and line[0].isdigit() and line[1] == '.' and line[2] == ' ':
             doc.add_paragraph(line[3:], style='List Number')
+        # Handle transcript lines (timestamp format: "00:00 - Speaker - text")
+        elif is_transcript and len(line) > 3 and line[0].isdigit() and ':' in line[:6]:
+            doc.add_paragraph(line)
         # Regular paragraph
         else:
-            # Collect consecutive non-empty, non-special lines into one paragraph
-            paragraph_lines = [line]
-            while i + 1 < len(lines):
-                next_line = lines[i + 1].strip()
-                if (next_line and 
-                    not next_line.startswith('#') and 
-                    not next_line.startswith('- ') and 
-                    not next_line.startswith('* ') and
-                    not (len(next_line) > 2 and next_line[0].isdigit() and next_line[1] == '.')):
-                    paragraph_lines.append(next_line)
-                    i += 1
-                else:
-                    break
-            
-            paragraph_text = ' '.join(paragraph_lines)
-            p = doc.add_paragraph()
-            
-            # Handle bold and italic within the paragraph
-            parts = paragraph_text.split('**')
-            for j, part in enumerate(parts):
-                if j % 2 == 1:  # Bold text
-                    run = p.add_run(part)
-                    run.bold = True
-                else:
-                    # Handle italic within non-bold parts
-                    italic_parts = part.split('*')
-                    for k, italic_part in enumerate(italic_parts):
-                        run = p.add_run(italic_part)
-                        if k % 2 == 1:
-                            run.italic = True
+            # For transcripts, don't merge lines
+            if is_transcript:
+                p = doc.add_paragraph()
+                # Handle bold and italic
+                parts = line.split('**')
+                for j, part in enumerate(parts):
+                    if j % 2 == 1:
+                        run = p.add_run(part)
+                        run.bold = True
+                    else:
+                        italic_parts = part.split('*')
+                        for k, italic_part in enumerate(italic_parts):
+                            run = p.add_run(italic_part)
+                            if k % 2 == 1:
+                                run.italic = True
+            else:
+                # Collect consecutive non-empty, non-special lines into one paragraph
+                paragraph_lines = [line]
+                while i + 1 < len(lines):
+                    next_line = lines[i + 1].strip()
+                    if (next_line and 
+                        not next_line.startswith('#') and 
+                        not next_line.startswith('- ') and 
+                        not next_line.startswith('* ') and
+                        not (len(next_line) > 2 and next_line[0].isdigit() and next_line[1] == '.')):
+                        paragraph_lines.append(next_line)
+                        i += 1
+                    else:
+                        break
+                
+                paragraph_text = ' '.join(paragraph_lines)
+                p = doc.add_paragraph()
+                
+                # Handle bold and italic within the paragraph
+                parts = paragraph_text.split('**')
+                for j, part in enumerate(parts):
+                    if j % 2 == 1:
+                        run = p.add_run(part)
+                        run.bold = True
+                    else:
+                        italic_parts = part.split('*')
+                        for k, italic_part in enumerate(italic_parts):
+                            run = p.add_run(italic_part)
+                            if k % 2 == 1:
+                                run.italic = True
         
         i += 1
     
