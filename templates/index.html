@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lecture Processor</title>
+    <style>
+        /* ============== RESET & BASE STYLES ============== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: #f5f5f7;
+            color: #1d1d1f;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        /* ============== LAYOUT ============== */
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        /* ============== HEADER ============== */
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            font-weight: 600;
+            color: #1d1d1f;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 1.1rem;
+            color: #6e6e73;
+        }
+
+        /* ============== UPLOAD SECTION ============== */
+        .upload-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 600px) {
+            .upload-section {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .upload-zone {
+            background: white;
+            border: 2px dashed #d2d2d7;
+            border-radius: 16px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .upload-zone:hover {
+            border-color: #0071e3;
+            background: #f5f5f7;
+        }
+
+        .upload-zone.drag-over {
+            border-color: #0071e3;
+            background: #e8f4fd;
+        }
+
+        .upload-zone.has-file {
+            border-color: #34c759;
+            border-style: solid;
+            background: #f0fff4;
+        }
+
+        .upload-zone-icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+        }
+
+        .upload-zone-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #1d1d1f;
+        }
+
+        .upload-zone-subtitle {
+            font-size: 0.9rem;
+            color: #6e6e73;
+        }
+
+        .upload-zone input[type="file"] {
+            display: none;
+        }
+
+        .file-info {
+            margin-top: 15px;
+            padding: 10px 15px;
+            background: #e8f4fd;
+            border-radius: 8px;
+            font-size: 0.85rem;
+        }
+
+        .file-info.success {
+            background: #d4edda;
+        }
+
+        .file-name {
+            font-weight: 600;
+            color: #1d1d1f;
+            word-break: break-all;
+        }
+
+        .file-size {
+            color: #6e6e73;
+        }
+
+        /* ============== PROCESS BUTTON ============== */
+        .button-section {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .process-button {
+            background: #0071e3;
+            color: white;
+            border: none;
+            padding: 16px 40px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .process-button:hover:not(:disabled) {
+            background: #0077ed;
+            transform: scale(1.02);
+        }
+
+        .process-button:disabled {
+            background: #d2d2d7;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* ============== PROGRESS SECTION ============== */
+        .progress-section {
+            display: none;
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .progress-section.visible {
+            display: block;
+        }
+
+        .progress-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 25px;
+            text-align: center;
+        }
+
+        .progress-steps {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 25px;
+        }
+
+        .progress-step {
+            flex: 1;
+            text-align: center;
+            padding: 0 10px;
+        }
+
+        .step-indicator {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: #f5f5f7;
+            border: 3px solid #d2d2d7;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 10px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #6e6e73;
+            transition: all 0.3s ease;
+        }
+
+        .progress-step.active .step-indicator {
+            border-color: #0071e3;
+            background: #e8f4fd;
+            color: #0071e3;
+        }
+
+        .progress-step.complete .step-indicator {
+            border-color: #34c759;
+            background: #34c759;
+            color: white;
+        }
+
+        .step-label {
+            font-size: 0.9rem;
+            color: #6e6e73;
+        }
+
+        .progress-step.active .step-label {
+            color: #0071e3;
+            font-weight: 600;
+        }
+
+        .progress-step.complete .step-label {
+            color: #34c759;
+        }
+
+        .progress-status {
+            text-align: center;
+            padding: 15px;
+            background: #f5f5f7;
+            border-radius: 8px;
+            color: #6e6e73;
+        }
+
+        .progress-status.error {
+            background: #ffe5e5;
+            color: #d00;
+        }
+
+        /* ============== SPINNER ============== */
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #d2d2d7;
+            border-top-color: #0071e3;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* ============== RESULTS SECTION ============== */
+        .results-section {
+            display: none;
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .results-section.visible {
+            display: block;
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .results-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+        }
+
+        .results-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .action-button {
+            background: #f5f5f7;
+            color: #1d1d1f;
+            border: 1px solid #d2d2d7;
+            padding: 10px 20px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .action-button:hover {
+            background: #e8e8ed;
+        }
+
+        .action-button.primary {
+            background: #0071e3;
+            color: white;
+            border-color: #0071e3;
+        }
+
+        .action-button.primary:hover {
+            background: #0077ed;
+        }
+
+        .results-content {
+            background: #f9f9f9;
+            border: 1px solid #e8e8ed;
+            border-radius: 12px;
+            padding: 25px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        /* ============== MARKDOWN RENDERING ============== */
+        .results-content h1 {
+            font-size: 1.6rem;
+            font-weight: 600;
+            margin: 25px 0 15px 0;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e8e8ed;
+        }
+
+        .results-content h1:first-child {
+            margin-top: 0;
+        }
+
+        .results-content h2 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin: 20px 0 12px 0;
+            color: #1d1d1f;
+        }
+
+        .results-content h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin: 18px 0 10px 0;
+            color: #333;
+        }
+
+        .results-content p {
+            margin: 12px 0;
+            color: #1d1d1f;
+        }
+
+        .results-content ul, .results-content ol {
+            margin: 12px 0;
+            padding-left: 25px;
+        }
+
+        .results-content li {
+            margin: 6px 0;
+        }
+
+        .results-content strong {
+            font-weight: 600;
+        }
+
+        .results-content em {
+            font-style: italic;
+        }
+
+        .results-content code {
+            background: #e8e8ed;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 0.9em;
+        }
+
+        .results-content blockquote {
+            border-left: 4px solid #0071e3;
+            padding-left: 15px;
+            margin: 15px 0;
+            color: #6e6e73;
+        }
+
+        /* ============== NEW LECTURE BUTTON ============== */
+        .new-lecture-section {
+            text-align: center;
+            margin-top: 25px;
+        }
+
+        /* ============== TOAST NOTIFICATION ============== */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: #1d1d1f;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            opacity: 0;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .toast.visible {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>📚 Lecture Processor</h1>
+            <p>Upload your slides and audio to generate complete lecture notes</p>
+        </header>
+
+        <!-- Upload Section -->
+        <div class="upload-section">
+            <!-- PDF Upload Zone -->
+            <div class="upload-zone" id="pdf-zone">
+                <div class="upload-zone-icon">📄</div>
+                <div class="upload-zone-title">Lecture Slides (PDF)</div>
+                <div class="upload-zone-subtitle">Drag & drop or click to browse</div>
+                <input type="file" id="pdf-input" accept=".pdf">
+                <div class="file-info" id="pdf-info" style="display: none;">
+                    <div class="file-name" id="pdf-name"></div>
+                    <div class="file-size" id="pdf-size"></div>
+                </div>
+            </div>
+
+            <!-- Audio Upload Zone -->
+            <div class="upload-zone" id="audio-zone">
+                <div class="upload-zone-icon">🎙️</div>
+                <div class="upload-zone-title">Lecture Recording</div>
+                <div class="upload-zone-subtitle">MP3, M4A, WAV, AAC, OGG, FLAC</div>
+                <input type="file" id="audio-input" accept=".mp3,.m4a,.wav,.aac,.ogg,.flac">
+                <div class="file-info" id="audio-info" style="display: none;">
+                    <div class="file-name" id="audio-name"></div>
+                    <div class="file-size" id="audio-size"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Process Button -->
+        <div class="button-section">
+            <button class="process-button" id="process-button" disabled>
+                Process Lecture
+            </button>
+        </div>
+
+        <!-- Progress Section -->
+        <div class="progress-section" id="progress-section">
+            <div class="progress-title">Processing your lecture...</div>
+            <div class="progress-steps">
+                <div class="progress-step" id="step-1">
+                    <div class="step-indicator">1</div>
+                    <div class="step-label">Extract Slides</div>
+                </div>
+                <div class="progress-step" id="step-2">
+                    <div class="step-indicator">2</div>
+                    <div class="step-label">Transcribe Audio</div>
+                </div>
+                <div class="progress-step" id="step-3">
+                    <div class="step-indicator">3</div>
+                    <div class="step-label">Merge Notes</div>
+                </div>
+            </div>
+            <div class="progress-status" id="progress-status">
+                <span class="spinner"></span>
+                <span id="status-text">Starting...</span>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="results-section" id="results-section">
+            <div class="results-header">
+                <div class="results-title">✅ Your Lecture Notes</div>
+                <div class="results-actions">
+                    <button class="action-button" id="copy-button">📋 Copy to Clipboard</button>
+                    <button class="action-button primary" id="download-button">⬇️ Download (.md)</button>
+                </div>
+            </div>
+            <div class="results-content" id="results-content"></div>
+            <div class="new-lecture-section">
+                <button class="action-button" id="new-lecture-button">🔄 Process Another Lecture</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // ============== STATE ==============
+        let pdfFile = null;
+        let audioFile = null;
+        let currentJobId = null;
+        let pollInterval = null;
+        let resultMarkdown = '';
+
+        // ============== DOM ELEMENTS ==============
+        const pdfZone = document.getElementById('pdf-zone');
+        const audioZone = document.getElementById('audio-zone');
+        const pdfInput = document.getElementById('pdf-input');
+        const audioInput = document.getElementById('audio-input');
+        const pdfInfo = document.getElementById('pdf-info');
+        const audioInfo = document.getElementById('audio-info');
+        const pdfName = document.getElementById('pdf-name');
+        const pdfSize = document.getElementById('pdf-size');
+        const audioName = document.getElementById('audio-name');
+        const audioSize = document.getElementById('audio-size');
+        const processButton = document.getElementById('process-button');
+        const progressSection = document.getElementById('progress-section');
+        const progressStatus = document.getElementById('progress-status');
+        const statusText = document.getElementById('status-text');
+        const resultsSection = document.getElementById('results-section');
+        const resultsContent = document.getElementById('results-content');
+        const copyButton = document.getElementById('copy-button');
+        const downloadButton = document.getElementById('download-button');
+        const newLectureButton = document.getElementById('new-lecture-button');
+        const toast = document.getElementById('toast');
+
+        // ============== UTILITY FUNCTIONS ==============
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function showToast(message, duration = 3000) {
+            toast.textContent = message;
+            toast.classList.add('visible');
+            setTimeout(() => {
+                toast.classList.remove('visible');
+            }, duration);
+        }
+
+        function updateProcessButton() {
+            processButton.disabled = !(pdfFile && audioFile);
+        }
+
+        // ============== FILE HANDLING ==============
+        function handlePdfFile(file) {
+            if (file && file.type === 'application/pdf') {
+                pdfFile = file;
+                pdfName.textContent = file.name;
+                pdfSize.textContent = formatFileSize(file.size);
+                pdfInfo.style.display = 'block';
+                pdfInfo.classList.add('success');
+                pdfZone.classList.add('has-file');
+                updateProcessButton();
+            } else {
+                showToast('Please select a valid PDF file');
+            }
+        }
+
+        function handleAudioFile(file) {
+            const validTypes = ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/aac', 'audio/ogg', 'audio/flac'];
+            const validExtensions = ['.mp3', '.m4a', '.wav', '.aac', '.ogg', '.flac'];
+            const hasValidExtension = validExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+            
+            if (file && (validTypes.includes(file.type) || hasValidExtension)) {
+                audioFile = file;
+                audioName.textContent = file.name;
+                audioSize.textContent = formatFileSize(file.size);
+                audioInfo.style.display = 'block';
+                audioInfo.classList.add('success');
+                audioZone.classList.add('has-file');
+                updateProcessButton();
+            } else {
+                showToast('Please select a valid audio file (MP3, M4A, WAV, AAC, OGG, FLAC)');
+            }
+        }
+
+        // ============== DRAG AND DROP ==============
+        function setupDropZone(zone, input, handler) {
+            // Click to open file browser
+            zone.addEventListener('click', () => input.click());
+            
+            // File selected via browser
+            input.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handler(e.target.files[0]);
+                }
+            });
+
+            // Drag events
+            zone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                zone.classList.add('drag-over');
+            });
+
+            zone.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                zone.classList.remove('drag-over');
+            });
+
+            zone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                zone.classList.remove('drag-over');
+                if (e.dataTransfer.files.length > 0) {
+                    handler(e.dataTransfer.files[0]);
+                }
+            });
+        }
+
+        setupDropZone(pdfZone, pdfInput, handlePdfFile);
+        setupDropZone(audioZone, audioInput, handleAudioFile);
+
+        // ============== PROGRESS TRACKING ==============
+        function updateProgressUI(step, description) {
+            // Reset all steps
+            for (let i = 1; i <= 3; i++) {
+                const stepEl = document.getElementById(`step-${i}`);
+                stepEl.classList.remove('active', 'complete');
+            }
+
+            // Mark completed steps
+            for (let i = 1; i < step; i++) {
+                document.getElementById(`step-${i}`).classList.add('complete');
+            }
+
+            // Mark current step as active
+            if (step >= 1 && step <= 3) {
+                document.getElementById(`step-${step}`).classList.add('active');
+            }
+
+            // Update status text
+            statusText.textContent = description;
+        }
+
+        function pollStatus() {
+            if (!currentJobId) return;
+
+            fetch(`/status/${currentJobId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error && data.status !== 'error') {
+                        // Job not found
+                        showToast('Error: Job not found');
+                        stopPolling();
+                        return;
+                    }
+
+                    updateProgressUI(data.step, data.step_description);
+
+                    if (data.status === 'complete') {
+                        stopPolling();
+                        showResults(data.result);
+                    } else if (data.status === 'error') {
+                        stopPolling();
+                        showError(data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Polling error:', error);
+                    // Don't stop polling on network errors, just retry
+                });
+        }
+
+        function startPolling() {
+            pollInterval = setInterval(pollStatus, 2000);
+            // Also poll immediately
+            pollStatus();
+        }
+
+        function stopPolling() {
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+        }
+
+        // ============== PROCESSING ==============
+        async function processLecture() {
+            // Prepare form data
+            const formData = new FormData();
+            formData.append('pdf', pdfFile);
+            formData.append('audio', audioFile);
+
+            // Update UI
+            processButton.disabled = true;
+            progressSection.classList.add('visible');
+            resultsSection.classList.remove('visible');
+            progressStatus.classList.remove('error');
+            updateProgressUI(0, 'Uploading files...');
+
+            try {
+                // Upload files and start processing
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+
+                currentJobId = data.job_id;
+                startPolling();
+
+            } catch (error) {
+                showError('Failed to upload files. Please try again.');
+            }
+        }
+
+        processButton.addEventListener('click', processLecture);
+
+        // ============== RESULTS ==============
+        function simpleMarkdownToHtml(markdown) {
+            let html = markdown
+                // Escape HTML
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                // Headers
+                .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+                .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+                .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+                // Bold and italic
+                .replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                // Bullet points
+                .replace(/^\s*[-*]\s+(.*$)/gm, '<li>$1</li>')
+                // Line breaks and paragraphs
+                .replace(/\n\n/g, '</p><p>')
+                .replace(/\n/g, '<br>');
+
+            // Wrap in paragraph tags
+            html = '<p>' + html + '</p>';
+
+            // Wrap consecutive <li> elements in <ul>
+            html = html.replace(/(<li>.*?<\/li>)(?=\s*<li>|<br><li>)/g, '$1');
+            html = html.replace(/(<li>.*?<\/li>)+/g, '<ul>$&</ul>');
+            html = html.replace(/<br><li>/g, '<li>');
+
+            // Clean up empty paragraphs and fix structure
+            html = html.replace(/<p><\/p>/g, '');
+            html = html.replace(/<p>(<h[1-3]>)/g, '$1');
+            html = html.replace(/(<\/h[1-3]>)<\/p>/g, '$1');
+            html = html.replace(/<p>(<ul>)/g, '$1');
+            html = html.replace(/(<\/ul>)<\/p>/g, '$1');
+
+            return html;
+        }
+
+        function showResults(markdown) {
+            resultMarkdown = markdown;
+            progressSection.classList.remove('visible');
+            resultsSection.classList.add('visible');
+            resultsContent.innerHTML = simpleMarkdownToHtml(markdown);
+            showToast('✅ Lecture notes generated successfully!');
+        }
+
+        function showError(errorMessage) {
+            progressStatus.classList.add('error');
+            statusText.textContent = '❌ Error: ' + errorMessage;
+            document.querySelector('.spinner').style.display = 'none';
+            processButton.disabled = false;
+        }
+
+        // ============== ACTIONS ==============
+        copyButton.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(resultMarkdown);
+                showToast('📋 Copied to clipboard!');
+            } catch (error) {
+                showToast('Failed to copy. Please select and copy manually.');
+            }
+        });
+
+        downloadButton.addEventListener('click', () => {
+            const blob = new Blob([resultMarkdown], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'lecture-notes.md';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('⬇️ Download started!');
+        });
+
+        newLectureButton.addEventListener('click', () => {
+            // Reset state
+            pdfFile = null;
+            audioFile = null;
+            currentJobId = null;
+            resultMarkdown = '';
+
+            // Reset UI
+            pdfInfo.style.display = 'none';
+            audioInfo.style.display = 'none';
+            pdfZone.classList.remove('has-file');
+            audioZone.classList.remove('has-file');
+            pdfInput.value = '';
+            audioInput.value = '';
+            processButton.disabled = true;
+            progressSection.classList.remove('visible');
+            resultsSection.classList.remove('visible');
+            progressStatus.classList.remove('error');
+            document.querySelector('.spinner').style.display = 'inline-block';
+
+            // Reset progress steps
+            for (let i = 1; i <= 3; i++) {
+                const stepEl = document.getElementById(`step-${i}`);
+                stepEl.classList.remove('active', 'complete');
+            }
+
+            // Scroll to top
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+    </script>
+</body>
+</html>
+

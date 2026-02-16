@@ -1,0 +1,19 @@
+# Secret files
+.env
+
+# Virtual environment
+venv/
+
+# Uploaded files
+uploads/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Mac files
+.DS_Store
+
+# Test files
+test-slides.pdf
+test-audio.m4a
