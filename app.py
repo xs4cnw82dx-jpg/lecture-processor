@@ -29,6 +29,19 @@ client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
 # Store job status and results in memory
 jobs = {}
 
+# ============== MODEL CONFIGURATION ==============
+# Change these model names when Google releases new versions
+# Current models (February 2026):
+#   - gemini-2.5-flash-lite (cheapest, good for simple extraction)
+#   - gemini-2.5-flash (balanced, good for transcription)
+#   - gemini-2.5-pro (best quality, needed for complex integration)
+# 
+# Find current model names at: https://ai.google.dev/gemini-api/docs/models
+
+MODEL_SLIDES = 'gemini-2.5-flash-lite'  # For extracting text from PDF slides
+MODEL_AUDIO = 'gemini-2.5-flash'         # For transcribing audio
+MODEL_INTEGRATION = 'gemini-2.5-pro'     # For merging into complete notes
+
 # ============== THE THREE PROMPTS (DO NOT MODIFY) ==============
 
 PROMPT_SLIDE_EXTRACTION = """Extraheer alle tekst van de slides uit het bijgevoegde PDF-bestand en identificeer de functie van visuele elementen.
@@ -164,9 +177,9 @@ def process_lecture(job_id, pdf_path, audio_path):
         # Wait for processing (usually fast for PDFs)
         wait_for_file_processing(pdf_file)
         
-        # Send to Gemini for text extraction
+        # Send to Gemini for text extraction (using FLASH-LITE - cheapest model)
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model=MODEL_SLIDES,
             contents=[
                 types.Content(
                     role='user',
@@ -205,9 +218,9 @@ def process_lecture(job_id, pdf_path, audio_path):
         
         jobs[job_id]['step_description'] = 'Generating transcript...'
         
-        # Send to Gemini for transcription
+        # Send to Gemini for transcription (using FLASH - balanced model)
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model=MODEL_AUDIO,
             contents=[
                 types.Content(
                     role='user',
@@ -238,9 +251,9 @@ def process_lecture(job_id, pdf_path, audio_path):
             transcript=transcript
         )
         
-        # Send to Gemini for merging
+        # Send to Gemini for merging (using PRO - best quality model)
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model=MODEL_INTEGRATION,
             contents=[
                 types.Content(
                     role='user',
@@ -358,6 +371,12 @@ def get_status(job_id):
 if __name__ == '__main__':
     print("\n" + "="*50)
     print("Lecture Processor is running!")
+    print("="*50)
+    print(f"Models configured:")
+    print(f"  - Slides:      {MODEL_SLIDES}")
+    print(f"  - Audio:       {MODEL_AUDIO}")
+    print(f"  - Integration: {MODEL_INTEGRATION}")
+    print("="*50)
     print("Open your browser and go to: http://127.0.0.1:5000")
     print("Press Ctrl+C to stop the server")
     print("="*50 + "\n")
