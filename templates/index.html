@@ -66,20 +66,21 @@
 
         /* ============== HEADER ============== */
         .header {
-            padding: 20px 0;
+            padding: 16px 0;
             background: var(--white);
             border-bottom: 1px solid var(--gray-200);
             position: sticky;
             top: 0;
             z-index: 100;
             backdrop-filter: blur(10px);
-            background: rgba(255, 255, 255, 0.9);
+            background: rgba(255, 255, 255, 0.95);
         }
 
         .header-content {
             display: flex;
             align-items: center;
             justify-content: space-between;
+            gap: 16px;
         }
 
         .logo {
@@ -112,13 +113,540 @@
             letter-spacing: -0.025em;
         }
 
-        .header-badge {
-            padding: 6px 12px;
+        @media (max-width: 600px) {
+            .logo-text {
+                display: none;
+            }
+        }
+
+        /* ============== HEADER AUTH SECTION ============== */
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .credits-display {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
             background: var(--gray-100);
-            border-radius: 20px;
-            font-size: 0.75rem;
+            border-radius: var(--radius);
+            font-size: 0.875rem;
+            color: var(--gray-700);
+        }
+
+        .credits-display svg {
+            width: 18px;
+            height: 18px;
+            color: var(--primary);
+        }
+
+        .credits-count {
+            font-weight: 600;
+            color: var(--gray-900);
+        }
+
+        .user-menu {
+            position: relative;
+        }
+
+        .user-button {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 12px 6px 6px;
+            background: var(--white);
+            border: 1px solid var(--gray-200);
+            border-radius: var(--radius-lg);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .user-button:hover {
+            border-color: var(--gray-300);
+            background: var(--gray-50);
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--white);
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        .user-avatar img {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+
+        .user-name {
+            font-size: 0.875rem;
             font-weight: 500;
+            color: var(--gray-700);
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        @media (max-width: 600px) {
+            .user-name {
+                display: none;
+            }
+        }
+
+        .user-dropdown {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            background: var(--white);
+            border: 1px solid var(--gray-200);
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-lg);
+            min-width: 220px;
+            display: none;
+            z-index: 50;
+            overflow: hidden;
+        }
+
+        .user-dropdown.visible {
+            display: block;
+            animation: dropdownOpen 0.2s ease-out;
+        }
+
+        .user-dropdown-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--gray-100);
+        }
+
+        .user-dropdown-email {
+            font-size: 0.8125rem;
+            color: var(--gray-500);
+            word-break: break-all;
+        }
+
+        .user-dropdown-credits {
+            margin-top: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .credit-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8125rem;
+        }
+
+        .credit-label {
             color: var(--gray-600);
+        }
+
+        .credit-value {
+            font-weight: 600;
+            color: var(--gray-900);
+        }
+
+        .user-dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            padding: 12px 16px;
+            border: none;
+            background: none;
+            font-size: 0.875rem;
+            color: var(--gray-700);
+            cursor: pointer;
+            transition: background 0.15s;
+            text-align: left;
+        }
+
+        .user-dropdown-item:hover {
+            background: var(--gray-50);
+        }
+
+        .user-dropdown-item svg {
+            width: 18px;
+            height: 18px;
+            color: var(--gray-500);
+        }
+
+        .user-dropdown-item.danger {
+            color: var(--error);
+        }
+
+        .user-dropdown-item.danger svg {
+            color: var(--error);
+        }
+
+        /* ============== SIGN IN BUTTON ============== */
+        .sign-in-button {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            background: var(--white);
+            border: 1px solid var(--gray-300);
+            border-radius: var(--radius);
+            font-size: 0.9375rem;
+            font-weight: 500;
+            color: var(--gray-700);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .sign-in-button:hover {
+            background: var(--gray-50);
+            border-color: var(--gray-400);
+        }
+
+        .sign-in-button svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        /* ============== AUTH OVERLAY ============== */
+        .auth-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 200;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .auth-overlay.visible {
+            display: flex;
+        }
+
+        .auth-modal {
+            background: var(--white);
+            border-radius: var(--radius-xl);
+            padding: 40px;
+            max-width: 420px;
+            width: 100%;
+            text-align: center;
+            box-shadow: var(--shadow-xl);
+            animation: modalOpen 0.3s ease-out;
+            position: relative;
+        }
+
+        .auth-modal-close {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: none;
+            border: none;
+            color: var(--gray-400);
+            cursor: pointer;
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+
+        .auth-modal-close:hover {
+            background: var(--gray-100);
+            color: var(--gray-600);
+        }
+
+        .auth-modal-close svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .auth-modal-icon {
+            width: 64px;
+            height: 64px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            border-radius: var(--radius-lg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+            color: var(--white);
+        }
+
+        .auth-modal-icon svg {
+            width: 32px;
+            height: 32px;
+        }
+
+        .auth-modal h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--gray-900);
+            margin-bottom: 8px;
+        }
+
+        .auth-modal-subtitle {
+            font-size: 0.9375rem;
+            color: var(--gray-600);
+            margin-bottom: 24px;
+        }
+
+        /* ============== AUTH FORM ============== */
+        .auth-form {
+            text-align: left;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--gray-700);
+            margin-bottom: 6px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 1rem;
+            border: 1px solid var(--gray-300);
+            border-radius: var(--radius);
+            transition: all 0.2s;
+            background: var(--white);
+            color: var(--gray-900);
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        .form-input::placeholder {
+            color: var(--gray-400);
+        }
+
+        .form-input.error {
+            border-color: var(--error);
+        }
+
+        .password-input-wrapper {
+            position: relative;
+        }
+
+        .password-toggle {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: var(--gray-400);
+            cursor: pointer;
+            padding: 4px;
+        }
+
+        .password-toggle:hover {
+            color: var(--gray-600);
+        }
+
+        .password-toggle svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .form-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            font-size: 0.875rem;
+        }
+
+        .form-footer a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .form-footer a:hover {
+            text-decoration: underline;
+        }
+
+        .auth-submit-btn {
+            width: 100%;
+            padding: 14px 24px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: var(--white);
+            border: none;
+            border-radius: var(--radius);
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .auth-submit-btn:hover:not(:disabled) {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        .auth-submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .auth-divider {
+            display: flex;
+            align-items: center;
+            margin: 24px 0;
+            color: var(--gray-400);
+            font-size: 0.875rem;
+        }
+
+        .auth-divider::before,
+        .auth-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--gray-200);
+        }
+
+        .auth-divider span {
+            padding: 0 16px;
+        }
+
+        .google-sign-in-button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            width: 100%;
+            padding: 14px 24px;
+            background: var(--white);
+            border: 1px solid var(--gray-300);
+            border-radius: var(--radius);
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--gray-700);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .google-sign-in-button:hover {
+            background: var(--gray-50);
+            border-color: var(--gray-400);
+        }
+
+        .google-sign-in-button img {
+            width: 20px;
+            height: 20px;
+        }
+
+        .auth-switch {
+            margin-top: 24px;
+            font-size: 0.875rem;
+            color: var(--gray-600);
+        }
+
+        .auth-switch a {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .auth-switch a:hover {
+            text-decoration: underline;
+        }
+
+        .auth-error {
+            margin-top: 16px;
+            padding: 12px 16px;
+            background: rgba(239, 68, 68, 0.1);
+            border-radius: var(--radius);
+            font-size: 0.875rem;
+            color: var(--error);
+            text-align: center;
+            display: none;
+        }
+
+        .auth-error.visible {
+            display: block;
+        }
+
+        .auth-success {
+            margin-top: 16px;
+            padding: 12px 16px;
+            background: rgba(16, 185, 129, 0.1);
+            border-radius: var(--radius);
+            font-size: 0.875rem;
+            color: var(--success);
+            text-align: center;
+            display: none;
+        }
+
+        .auth-success.visible {
+            display: block;
+        }
+
+        /* ============== RESET PASSWORD VIEW ============== */
+        .auth-view {
+            display: none;
+        }
+
+        .auth-view.active {
+            display: block;
+        }
+
+        .back-to-login {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--gray-600);
+            font-size: 0.875rem;
+            text-decoration: none;
+            margin-bottom: 20px;
+        }
+
+        .back-to-login:hover {
+            color: var(--gray-900);
+        }
+
+        .back-to-login svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* ============== SIGN IN REQUIRED MESSAGE ============== */
+        .sign-in-required {
+            display: none;
+            text-align: center;
+            padding: 48px 24px;
+            background: var(--gray-50);
+            border-radius: var(--radius-lg);
+            margin-top: 32px;
+        }
+
+        .sign-in-required.visible {
+            display: block;
+        }
+
+        .sign-in-required p {
+            font-size: 1rem;
+            color: var(--gray-600);
+            margin-bottom: 20px;
         }
 
         /* ============== HERO SECTION ============== */
@@ -139,7 +667,6 @@
             font-weight: 500;
             color: var(--primary);
             margin-bottom: 24px;
-            animation: fadeInUp 0.6s ease-out;
         }
 
         .hero-badge svg {
@@ -154,7 +681,6 @@
             line-height: 1.2;
             letter-spacing: -0.025em;
             margin-bottom: 16px;
-            animation: fadeInUp 0.6s ease-out 0.1s both;
         }
 
         .hero-title span {
@@ -169,7 +695,6 @@
             color: var(--gray-600);
             max-width: 600px;
             margin: 0 auto 40px;
-            animation: fadeInUp 0.6s ease-out 0.2s both;
         }
 
         /* ============== FEATURES ============== */
@@ -178,7 +703,6 @@
             grid-template-columns: repeat(3, 1fr);
             gap: 20px;
             margin-bottom: 50px;
-            animation: fadeInUp 0.6s ease-out 0.3s both;
         }
 
         @media (max-width: 768px) {
@@ -245,7 +769,6 @@
             padding: 32px;
             box-shadow: var(--shadow-lg);
             margin-bottom: 40px;
-            animation: fadeInUp 0.6s ease-out 0.4s both;
         }
 
         /* ============== MODE SELECTOR ============== */
@@ -269,6 +792,12 @@
             background: var(--gray-100);
             border-radius: var(--radius-md);
             padding: 4px;
+        }
+
+        @media (max-width: 500px) {
+            .mode-tabs {
+                flex-direction: column;
+            }
         }
 
         .mode-tab {
@@ -314,6 +843,16 @@
             margin-top: 1px;
         }
 
+        .mode-credit-cost {
+            margin-top: 8px;
+            font-size: 0.8125rem;
+            color: var(--gray-500);
+        }
+
+        .mode-credit-cost strong {
+            color: var(--primary);
+        }
+
         /* ============== UPLOAD SECTION ============== */
         .upload-section {
             display: grid;
@@ -344,25 +883,11 @@
             text-align: center;
             cursor: pointer;
             transition: all 0.3s ease;
-            overflow: hidden;
-        }
-
-        .upload-zone::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(135deg, rgba(79, 70, 229, 0.05) 0%, rgba(14, 165, 233, 0.05) 100%);
-            opacity: 0;
-            transition: opacity 0.3s ease;
         }
 
         .upload-zone:hover {
             border-color: var(--primary);
             background: var(--white);
-        }
-
-        .upload-zone:hover::before {
-            opacity: 1;
         }
 
         .upload-zone.drag-over {
@@ -371,18 +896,10 @@
             transform: scale(1.01);
         }
 
-        .upload-zone.drag-over::before {
-            opacity: 1;
-        }
-
         .upload-zone.has-file {
             border-color: var(--success);
             border-style: solid;
             background: rgba(16, 185, 129, 0.05);
-        }
-
-        .upload-zone.has-file::before {
-            display: none;
         }
 
         .upload-zone.hidden {
@@ -391,11 +908,6 @@
 
         .upload-zone input[type="file"] {
             display: none;
-        }
-
-        .upload-zone-content {
-            position: relative;
-            z-index: 1;
         }
 
         .upload-icon {
@@ -408,7 +920,6 @@
 
         .upload-zone:hover .upload-icon {
             color: var(--primary);
-            transform: translateY(-2px);
         }
 
         .upload-zone.has-file .upload-icon {
@@ -440,6 +951,15 @@
             border: 1px solid var(--gray-200);
             border-radius: var(--radius);
             text-align: left;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .file-details {
+            flex: 1;
+            min-width: 0;
         }
 
         .file-name {
@@ -462,8 +982,33 @@
         .file-size {
             font-size: 0.75rem;
             color: var(--gray-500);
-            margin-top: 4px;
+            margin-top: 2px;
             margin-left: 24px;
+        }
+
+        .file-remove {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--gray-100);
+            border: none;
+            border-radius: 50%;
+            color: var(--gray-500);
+            cursor: pointer;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .file-remove:hover {
+            background: var(--error);
+            color: var(--white);
+        }
+
+        .file-remove svg {
+            width: 16px;
+            height: 16px;
         }
 
         /* ============== PROCESS BUTTON ============== */
@@ -494,10 +1039,6 @@
             box-shadow: 0 6px 20px 0 rgba(79, 70, 229, 0.5);
         }
 
-        .process-button:active:not(:disabled) {
-            transform: translateY(0);
-        }
-
         .process-button:disabled {
             background: var(--gray-300);
             cursor: not-allowed;
@@ -509,13 +1050,28 @@
             height: 20px;
         }
 
+        .no-credits-warning {
+            margin-top: 12px;
+            font-size: 0.875rem;
+            color: var(--error);
+            display: none;
+        }
+
+        .no-credits-warning.visible {
+            display: block;
+        }
+
+        .no-credits-warning a {
+            color: var(--primary);
+            text-decoration: underline;
+        }
+
         /* ============== PROGRESS SECTION ============== */
         .progress-section {
             display: none;
             margin-top: 32px;
             padding-top: 32px;
             border-top: 1px solid var(--gray-200);
-            animation: fadeIn 0.4s ease-out;
         }
 
         .progress-section.visible {
@@ -572,26 +1128,12 @@
             font-weight: 700;
             color: var(--gray-400);
             transition: all 0.4s ease;
-            position: relative;
-        }
-
-        .step-indicator::after {
-            content: '';
-            position: absolute;
-            inset: -6px;
-            border-radius: 50%;
-            border: 2px solid transparent;
-            transition: all 0.4s ease;
         }
 
         .progress-step.active .step-indicator {
             background: rgba(79, 70, 229, 0.1);
             border-color: var(--primary);
             color: var(--primary);
-        }
-
-        .progress-step.active .step-indicator::after {
-            border-color: rgba(79, 70, 229, 0.3);
             animation: pulse 2s ease-in-out infinite;
         }
 
@@ -651,7 +1193,6 @@
             margin-top: 32px;
             padding-top: 32px;
             border-top: 1px solid var(--gray-200);
-            animation: fadeIn 0.4s ease-out;
         }
 
         .results-section.visible {
@@ -750,11 +1291,11 @@
             min-width: 240px;
             z-index: 50;
             overflow: hidden;
-            animation: dropdownOpen 0.2s ease-out;
         }
 
         .dropdown-content.visible {
             display: block;
+            animation: dropdownOpen 0.2s ease-out;
         }
 
         .dropdown-item {
@@ -799,25 +1340,6 @@
             line-height: 1.75;
         }
 
-        .results-content::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        .results-content::-webkit-scrollbar-track {
-            background: var(--gray-100);
-            border-radius: 4px;
-        }
-
-        .results-content::-webkit-scrollbar-thumb {
-            background: var(--gray-300);
-            border-radius: 4px;
-        }
-
-        .results-content::-webkit-scrollbar-thumb:hover {
-            background: var(--gray-400);
-        }
-
-        /* ============== MARKDOWN STYLES ============== */
         .results-content h1 {
             font-size: 1.5rem;
             font-weight: 700;
@@ -865,26 +1387,6 @@
             color: var(--gray-800);
         }
 
-        .results-content em {
-            font-style: italic;
-        }
-
-        .results-content code {
-            background: var(--gray-200);
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-family: 'SF Mono', Monaco, monospace;
-            font-size: 0.875em;
-        }
-
-        .results-content blockquote {
-            border-left: 4px solid var(--primary);
-            padding-left: 16px;
-            margin: 20px 0;
-            color: var(--gray-600);
-            font-style: italic;
-        }
-
         /* ============== NEW PROCESSING BUTTON ============== */
         .new-process-section {
             margin-top: 24px;
@@ -909,7 +1411,6 @@
         .new-process-button:hover {
             color: var(--gray-900);
             border-color: var(--gray-400);
-            background: var(--gray-50);
         }
 
         .new-process-button svg {
@@ -926,15 +1427,6 @@
         .footer-text {
             font-size: 0.8125rem;
             color: var(--gray-500);
-        }
-
-        .footer-text a {
-            color: var(--primary);
-            text-decoration: none;
-        }
-
-        .footer-text a:hover {
-            text-decoration: underline;
         }
 
         /* ============== TOAST ============== */
@@ -963,36 +1455,27 @@
             opacity: 1;
         }
 
+        .toast.success {
+            background: var(--success);
+        }
+
+        .toast.error {
+            background: var(--error);
+        }
+
         .toast svg {
             width: 20px;
             height: 20px;
-            color: var(--success);
         }
 
         /* ============== ANIMATIONS ============== */
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-
-        @keyframes fadeInUp {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
 
         @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+            0%, 100% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.4); }
+            50% { box-shadow: 0 0 0 8px rgba(79, 70, 229, 0); }
         }
 
         @keyframes dropdownOpen {
@@ -1003,6 +1486,17 @@
             to {
                 opacity: 1;
                 transform: translateY(0);
+            }
+        }
+
+        @keyframes modalOpen {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
             }
         }
     </style>
@@ -1024,10 +1518,240 @@
                     </div>
                     <span class="logo-text">Lecture Processor</span>
                 </a>
-                <span class="header-badge">Powered by Gemini AI</span>
+                
+                <div class="header-right">
+                    <!-- Signed out state -->
+                    <button class="sign-in-button" id="header-sign-in-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+                            <polyline points="10 17 15 12 10 7"></polyline>
+                            <line x1="15" y1="12" x2="3" y2="12"></line>
+                        </svg>
+                        Sign in
+                    </button>
+                    
+                    <!-- Signed in state (hidden by default) -->
+                    <div class="credits-display" id="credits-display" style="display: none;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
+                        </svg>
+                        <span><span class="credits-count" id="credits-count">0</span> credits</span>
+                    </div>
+                    
+                    <div class="user-menu" id="user-menu" style="display: none;">
+                        <button class="user-button" id="user-button">
+                            <div class="user-avatar" id="user-avatar">
+                                <span id="user-initial">?</span>
+                            </div>
+                            <span class="user-name" id="user-name">User</span>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; color: var(--gray-400);">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                        
+                        <div class="user-dropdown" id="user-dropdown">
+                            <div class="user-dropdown-header">
+                                <div class="user-dropdown-email" id="user-email">email@example.com</div>
+                                <div class="user-dropdown-credits">
+                                    <div class="credit-row">
+                                        <span class="credit-label">Lecture credits</span>
+                                        <span class="credit-value" id="dropdown-lecture-credits">0</span>
+                                    </div>
+                                    <div class="credit-row">
+                                        <span class="credit-label">Slides credits</span>
+                                        <span class="credit-value" id="dropdown-slides-credits">0</span>
+                                    </div>
+                                    <div class="credit-row">
+                                        <span class="credit-label">Interview credits</span>
+                                        <span class="credit-value" id="dropdown-interview-credits">0</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <button class="user-dropdown-item" id="buy-credits-btn">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="16"></line>
+                                    <line x1="8" y1="12" x2="16" y2="12"></line>
+                                </svg>
+                                Buy credits
+                            </button>
+                            <button class="user-dropdown-item danger" id="sign-out-btn">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                                    <polyline points="16 17 21 12 16 7"></polyline>
+                                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                                </svg>
+                                Sign out
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </header>
+
+    <!-- Auth Modal -->
+    <div class="auth-overlay" id="auth-overlay">
+        <div class="auth-modal">
+            <button class="auth-modal-close" id="auth-modal-close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+            
+            <!-- Sign In View -->
+            <div class="auth-view active" id="signin-view">
+                <div class="auth-modal-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                    </svg>
+                </div>
+                <h2>Welcome back</h2>
+                <p class="auth-modal-subtitle">Sign in to your account to continue</p>
+                
+                <form class="auth-form" id="signin-form">
+                    <div class="form-group">
+                        <label class="form-label" for="signin-email">Email address</label>
+                        <input type="email" class="form-input" id="signin-email" placeholder="you@example.com" required autocomplete="email">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="signin-password">Password</label>
+                        <div class="password-input-wrapper">
+                            <input type="password" class="form-input" id="signin-password" placeholder="Enter your password" required autocomplete="current-password">
+                            <button type="button" class="password-toggle" data-target="signin-password">
+                                <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                </svg>
+                                <svg class="eye-closed" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-footer">
+                        <div></div>
+                        <a href="#" id="forgot-password-link">Forgot password?</a>
+                    </div>
+                    <button type="submit" class="auth-submit-btn" id="signin-submit">Sign in</button>
+                </form>
+                
+                <div class="auth-divider"><span>or</span></div>
+                
+                <button class="google-sign-in-button" id="google-sign-in-btn">
+                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
+                    Continue with Google
+                </button>
+                
+                <p class="auth-switch">
+                    Don't have an account? <a href="#" id="switch-to-signup">Create one</a>
+                </p>
+                
+                <div class="auth-error" id="signin-error"></div>
+            </div>
+            
+            <!-- Sign Up View -->
+            <div class="auth-view" id="signup-view">
+                <div class="auth-modal-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="8.5" cy="7" r="4"></circle>
+                        <line x1="20" y1="8" x2="20" y2="14"></line>
+                        <line x1="23" y1="11" x2="17" y2="11"></line>
+                    </svg>
+                </div>
+                <h2>Create your account</h2>
+                <p class="auth-modal-subtitle">Get started with 1 free lecture credit</p>
+                
+                <form class="auth-form" id="signup-form">
+                    <div class="form-group">
+                        <label class="form-label" for="signup-email">Email address</label>
+                        <input type="email" class="form-input" id="signup-email" placeholder="you@example.com" required autocomplete="email">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="signup-password">Password</label>
+                        <div class="password-input-wrapper">
+                            <input type="password" class="form-input" id="signup-password" placeholder="Create a password (min 6 characters)" required minlength="6" autocomplete="new-password">
+                            <button type="button" class="password-toggle" data-target="signup-password">
+                                <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                </svg>
+                                <svg class="eye-closed" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="signup-password-confirm">Confirm password</label>
+                        <div class="password-input-wrapper">
+                            <input type="password" class="form-input" id="signup-password-confirm" placeholder="Confirm your password" required minlength="6" autocomplete="new-password">
+                            <button type="button" class="password-toggle" data-target="signup-password-confirm">
+                                <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                </svg>
+                                <svg class="eye-closed" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <button type="submit" class="auth-submit-btn" id="signup-submit" style="margin-top: 8px;">Create account</button>
+                </form>
+                
+                <div class="auth-divider"><span>or</span></div>
+                
+                <button class="google-sign-in-button" id="google-sign-up-btn">
+                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
+                    Continue with Google
+                </button>
+                
+                <p class="auth-switch">
+                    Already have an account? <a href="#" id="switch-to-signin">Sign in</a>
+                </p>
+                
+                <div class="auth-error" id="signup-error"></div>
+            </div>
+            
+            <!-- Reset Password View -->
+            <div class="auth-view" id="reset-view">
+                <a href="#" class="back-to-login" id="back-to-signin">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                    Back to sign in
+                </a>
+                <div class="auth-modal-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                </div>
+                <h2>Reset your password</h2>
+                <p class="auth-modal-subtitle">Enter your email and we'll send you a link to reset your password</p>
+                
+                <form class="auth-form" id="reset-form">
+                    <div class="form-group">
+                        <label class="form-label" for="reset-email">Email address</label>
+                        <input type="email" class="form-input" id="reset-email" placeholder="you@example.com" required autocomplete="email">
+                    </div>
+                    <button type="submit" class="auth-submit-btn" id="reset-submit" style="margin-top: 8px;">Send reset link</button>
+                </form>
+                
+                <div class="auth-error" id="reset-error"></div>
+                <div class="auth-success" id="reset-success"></div>
+            </div>
+        </div>
+    </div>
 
     <main>
         <!-- Hero Section -->
@@ -1103,26 +1827,42 @@
                             <line x1="12" y1="16" x2="12" y2="12"></line>
                             <line x1="12" y1="8" x2="12.01" y2="8"></line>
                         </svg>
-                        <span>Upload lecture slides (PDF) and audio recording to generate complete, integrated study notes.</span>
+                        <div>
+                            <span id="mode-description-text">Upload lecture slides (PDF) and audio recording to generate complete, integrated study notes.</span>
+                            <div class="mode-credit-cost" id="mode-credit-cost">Uses <strong>1 lecture credit</strong></div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Upload Section -->
-                <div class="upload-section" id="upload-section">
+                <!-- Sign in required message -->
+                <div class="sign-in-required" id="sign-in-required">
+                    <p>Please sign in to start processing your lectures</p>
+                    <button class="process-button" id="sign-in-to-process-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+                            <polyline points="10 17 15 12 10 7"></polyline>
+                            <line x1="15" y1="12" x2="3" y2="12"></line>
+                        </svg>
+                        <span>Sign in to continue</span>
+                    </button>
+                </div>
+
+                <!-- Upload Section (hidden until signed in) -->
+                <div class="upload-section" id="upload-section" style="display: none;">
                     <!-- PDF Upload Zone -->
                     <div class="upload-zone" id="pdf-zone">
-                        <div class="upload-zone-content">
-                            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                <polyline points="14 2 14 8 20 8"></polyline>
-                                <line x1="12" y1="18" x2="12" y2="12"></line>
-                                <line x1="9" y1="15" x2="15" y2="15"></line>
-                            </svg>
-                            <div class="upload-title">Lecture Slides</div>
-                            <div class="upload-subtitle">Drag & drop or click to browse</div>
-                            <div class="upload-formats">PDF format</div>
-                            <input type="file" id="pdf-input" accept=".pdf">
-                            <div class="file-info" id="pdf-info" style="display: none;">
+                        <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="12" y1="18" x2="12" y2="12"></line>
+                            <line x1="9" y1="15" x2="15" y2="15"></line>
+                        </svg>
+                        <div class="upload-title">Lecture Slides</div>
+                        <div class="upload-subtitle">Drag & drop or click to browse</div>
+                        <div class="upload-formats">PDF format · Max 50 MB</div>
+                        <input type="file" id="pdf-input" accept=".pdf">
+                        <div class="file-info" id="pdf-info" style="display: none;">
+                            <div class="file-details">
                                 <div class="file-name">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <polyline points="20 6 9 17 4 12"></polyline>
@@ -1131,23 +1871,29 @@
                                 </div>
                                 <div class="file-size" id="pdf-size"></div>
                             </div>
+                            <button class="file-remove" id="pdf-remove" type="button">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                            </button>
                         </div>
                     </div>
 
                     <!-- Audio Upload Zone -->
                     <div class="upload-zone" id="audio-zone">
-                        <div class="upload-zone-content">
-                            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                                <line x1="12" y1="19" x2="12" y2="23"></line>
-                                <line x1="8" y1="23" x2="16" y2="23"></line>
-                            </svg>
-                            <div class="upload-title" id="audio-zone-title">Lecture Recording</div>
-                            <div class="upload-subtitle">Drag & drop or click to browse</div>
-                            <div class="upload-formats">MP3, M4A, WAV, AAC, OGG, FLAC</div>
-                            <input type="file" id="audio-input" accept=".mp3,.m4a,.wav,.aac,.ogg,.flac">
-                            <div class="file-info" id="audio-info" style="display: none;">
+                        <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                            <line x1="12" y1="19" x2="12" y2="23"></line>
+                            <line x1="8" y1="23" x2="16" y2="23"></line>
+                        </svg>
+                        <div class="upload-title" id="audio-zone-title">Lecture Recording</div>
+                        <div class="upload-subtitle">Drag & drop or click to browse</div>
+                        <div class="upload-formats">MP3, M4A, WAV · Max 500 MB</div>
+                        <input type="file" id="audio-input" accept=".mp3,.m4a,.wav,.aac,.ogg,.flac">
+                        <div class="file-info" id="audio-info" style="display: none;">
+                            <div class="file-details">
                                 <div class="file-name">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <polyline points="20 6 9 17 4 12"></polyline>
@@ -1156,18 +1902,27 @@
                                 </div>
                                 <div class="file-size" id="audio-size"></div>
                             </div>
+                            <button class="file-remove" id="audio-remove" type="button">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                            </button>
                         </div>
                     </div>
                 </div>
 
-                <!-- Process Button -->
-                <div class="button-section">
+                <!-- Process Button (hidden until signed in) -->
+                <div class="button-section" id="button-section" style="display: none;">
                     <button class="process-button" id="process-button" disabled>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
                         </svg>
                         <span>Process Lecture</span>
                     </button>
+                    <div class="no-credits-warning" id="no-credits-warning">
+                        You don't have enough credits. <a href="#" id="buy-credits-link">Buy more credits</a>
+                    </div>
                 </div>
 
                 <!-- Progress Section -->
@@ -1176,9 +1931,7 @@
                         <h3 class="progress-title">Processing Your Files</h3>
                         <p class="progress-subtitle">This may take a few minutes depending on file size</p>
                     </div>
-                    <div class="progress-steps" id="progress-steps">
-                        <!-- Steps will be dynamically inserted -->
-                    </div>
+                    <div class="progress-steps" id="progress-steps"></div>
                     <div class="progress-status" id="progress-status">
                         <div class="spinner"></div>
                         <span id="status-text">Starting...</span>
@@ -1202,7 +1955,7 @@
                                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                                 </svg>
-                                Copy
+                                <span id="copy-button-text">Copy</span>
                             </button>
                             <div class="dropdown" id="download-dropdown">
                                 <button class="action-button primary" id="download-button">
@@ -1216,9 +1969,7 @@
                                         <polyline points="6 9 12 15 18 9"></polyline>
                                     </svg>
                                 </button>
-                                <div class="dropdown-content" id="download-dropdown-content">
-                                    <!-- Download options will be dynamically inserted -->
-                                </div>
+                                <div class="dropdown-content" id="download-dropdown-content"></div>
                             </div>
                         </div>
                     </div>
@@ -1240,22 +1991,40 @@
     <!-- Footer -->
     <footer class="footer">
         <div class="container">
-            <p class="footer-text">
-                Built with Gemini AI · Made for students
-            </p>
+            <p class="footer-text">Built with Gemini AI · Made for students</p>
         </div>
     </footer>
 
-    <!-- Toast Notification -->
+    <!-- Toast -->
     <div class="toast" id="toast">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg id="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="20 6 9 17 4 12"></polyline>
         </svg>
         <span id="toast-text"></span>
     </div>
 
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    
     <script>
+        // ============== FIREBASE CONFIG ==============
+        const firebaseConfig = {
+            apiKey: "AIzaSyBAAeEUCPNvP5qnqpP3M6HnFZ6vaaijUvM",
+            authDomain: "lecture-processor-cdff6.firebaseapp.com",
+            projectId: "lecture-processor-cdff6",
+            storageBucket: "lecture-processor-cdff6.firebasestorage.app",
+            messagingSenderId: "374793454161",
+            appId: "1:374793454161:web:c68b21590e9a1fafa32e70"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+
         // ============== STATE ==============
+        let currentUser = null;
+        let userCredits = null;
+        let idToken = null;
         let pdfFile = null;
         let audioFile = null;
         let currentJobId = null;
@@ -1269,6 +2038,8 @@
         const modeConfig = {
             'lecture-notes': {
                 description: 'Upload lecture slides (PDF) and audio recording to generate complete, integrated study notes.',
+                creditCost: 'Uses <strong>1 lecture credit</strong>',
+                creditType: 'lecture',
                 needsPdf: true,
                 needsAudio: true,
                 audioTitle: 'Lecture Recording',
@@ -1282,6 +2053,8 @@
             },
             'slides-only': {
                 description: 'Upload lecture slides (PDF) to extract all text content, ready to copy into Word or other documents.',
+                creditCost: 'Uses <strong>1 slides credit</strong>',
+                creditType: 'slides',
                 needsPdf: true,
                 needsAudio: false,
                 audioTitle: 'Lecture Recording',
@@ -1293,6 +2066,8 @@
             },
             'interview': {
                 description: 'Upload an interview recording to generate a timestamped transcript with speaker identification.',
+                creditCost: 'Uses <strong>1 interview credit</strong>',
+                creditType: 'interview',
                 needsPdf: false,
                 needsAudio: true,
                 audioTitle: 'Interview Recording',
@@ -1305,9 +2080,62 @@
         };
 
         // ============== DOM ELEMENTS ==============
+        const headerSignInBtn = document.getElementById('header-sign-in-btn');
+        const creditsDisplay = document.getElementById('credits-display');
+        const creditsCount = document.getElementById('credits-count');
+        const userMenu = document.getElementById('user-menu');
+        const userButton = document.getElementById('user-button');
+        const userDropdown = document.getElementById('user-dropdown');
+        const userAvatar = document.getElementById('user-avatar');
+        const userName = document.getElementById('user-name');
+        const userEmail = document.getElementById('user-email');
+        const dropdownLectureCredits = document.getElementById('dropdown-lecture-credits');
+        const dropdownSlidesCredits = document.getElementById('dropdown-slides-credits');
+        const dropdownInterviewCredits = document.getElementById('dropdown-interview-credits');
+        const buyCreditsBtn = document.getElementById('buy-credits-btn');
+        const signOutBtn = document.getElementById('sign-out-btn');
+        const authOverlay = document.getElementById('auth-overlay');
+        const authModalClose = document.getElementById('auth-modal-close');
+        
+        // Auth views
+        const signinView = document.getElementById('signin-view');
+        const signupView = document.getElementById('signup-view');
+        const resetView = document.getElementById('reset-view');
+        
+        // Auth forms
+        const signinForm = document.getElementById('signin-form');
+        const signupForm = document.getElementById('signup-form');
+        const resetForm = document.getElementById('reset-form');
+        
+        // Auth inputs
+        const signinEmail = document.getElementById('signin-email');
+        const signinPassword = document.getElementById('signin-password');
+        const signupEmail = document.getElementById('signup-email');
+        const signupPassword = document.getElementById('signup-password');
+        const signupPasswordConfirm = document.getElementById('signup-password-confirm');
+        const resetEmail = document.getElementById('reset-email');
+        
+        // Auth errors/success
+        const signinError = document.getElementById('signin-error');
+        const signupError = document.getElementById('signup-error');
+        const resetError = document.getElementById('reset-error');
+        const resetSuccess = document.getElementById('reset-success');
+        
+        // Auth buttons/links
+        const googleSignInBtn = document.getElementById('google-sign-in-btn');
+        const googleSignUpBtn = document.getElementById('google-sign-up-btn');
+        const switchToSignup = document.getElementById('switch-to-signup');
+        const switchToSignin = document.getElementById('switch-to-signin');
+        const forgotPasswordLink = document.getElementById('forgot-password-link');
+        const backToSignin = document.getElementById('back-to-signin');
+        
+        const signInRequired = document.getElementById('sign-in-required');
+        const signInToProcessBtn = document.getElementById('sign-in-to-process-btn');
         const modeTabs = document.querySelectorAll('.mode-tab');
-        const modeDescription = document.getElementById('mode-description');
+        const modeDescriptionText = document.getElementById('mode-description-text');
+        const modeCreditCost = document.getElementById('mode-credit-cost');
         const uploadSection = document.getElementById('upload-section');
+        const buttonSection = document.getElementById('button-section');
         const pdfZone = document.getElementById('pdf-zone');
         const audioZone = document.getElementById('audio-zone');
         const audioZoneTitle = document.getElementById('audio-zone-title');
@@ -1319,7 +2147,11 @@
         const pdfSize = document.getElementById('pdf-size');
         const audioName = document.getElementById('audio-name');
         const audioSize = document.getElementById('audio-size');
+        const pdfRemove = document.getElementById('pdf-remove');
+        const audioRemove = document.getElementById('audio-remove');
         const processButton = document.getElementById('process-button');
+        const noCreditsWarning = document.getElementById('no-credits-warning');
+        const buyCreditsLink = document.getElementById('buy-credits-link');
         const progressSection = document.getElementById('progress-section');
         const progressSteps = document.getElementById('progress-steps');
         const progressStatus = document.getElementById('progress-status');
@@ -1328,12 +2160,263 @@
         const resultsTitleText = document.getElementById('results-title-text');
         const resultsContent = document.getElementById('results-content');
         const copyButton = document.getElementById('copy-button');
+        const copyButtonText = document.getElementById('copy-button-text');
         const downloadButton = document.getElementById('download-button');
         const downloadDropdown = document.getElementById('download-dropdown');
         const downloadDropdownContent = document.getElementById('download-dropdown-content');
         const newLectureButton = document.getElementById('new-lecture-button');
         const toast = document.getElementById('toast');
+        const toastIcon = document.getElementById('toast-icon');
         const toastText = document.getElementById('toast-text');
+
+        // ============== AUTH FUNCTIONS ==============
+        function showAuthModal(view = 'signin') {
+            authOverlay.classList.add('visible');
+            showAuthView(view);
+            clearAuthErrors();
+        }
+
+        function hideAuthModal() {
+            authOverlay.classList.remove('visible');
+            clearAuthErrors();
+            clearAuthForms();
+        }
+
+        function showAuthView(view) {
+            signinView.classList.remove('active');
+            signupView.classList.remove('active');
+            resetView.classList.remove('active');
+            clearAuthErrors();
+            
+            if (view === 'signin') {
+                signinView.classList.add('active');
+            } else if (view === 'signup') {
+                signupView.classList.add('active');
+            } else if (view === 'reset') {
+                resetView.classList.add('active');
+            }
+        }
+
+        function clearAuthErrors() {
+            signinError.classList.remove('visible');
+            signupError.classList.remove('visible');
+            resetError.classList.remove('visible');
+            resetSuccess.classList.remove('visible');
+            signinError.textContent = '';
+            signupError.textContent = '';
+            resetError.textContent = '';
+            resetSuccess.textContent = '';
+        }
+
+        function clearAuthForms() {
+            signinForm.reset();
+            signupForm.reset();
+            resetForm.reset();
+        }
+
+        function showAuthError(element, message) {
+            element.textContent = message;
+            element.classList.add('visible');
+        }
+
+        function getFirebaseErrorMessage(error) {
+            const errorMessages = {
+                'auth/email-already-in-use': 'This email is already registered. Please sign in instead.',
+                'auth/invalid-email': 'Please enter a valid email address.',
+                'auth/operation-not-allowed': 'This sign-in method is not enabled.',
+                'auth/weak-password': 'Password should be at least 6 characters.',
+                'auth/user-disabled': 'This account has been disabled.',
+                'auth/user-not-found': 'No account found with this email.',
+                'auth/wrong-password': 'Incorrect password. Please try again.',
+                'auth/invalid-credential': 'Invalid email or password. Please try again.',
+                'auth/too-many-requests': 'Too many failed attempts. Please try again later.',
+                'auth/network-request-failed': 'Network error. Please check your connection.',
+                'auth/popup-closed-by-user': 'Sign-in popup was closed. Please try again.',
+                'auth/unauthorized-domain': 'This domain is not authorized. Please contact support.'
+            };
+            return errorMessages[error.code] || error.message || 'An error occurred. Please try again.';
+        }
+
+        async function checkEmailAllowed(email) {
+            try {
+                const response = await fetch('/api/verify-email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                return { allowed: false, message: 'Could not verify email. Please try again.' };
+            }
+        }
+
+        // Email/Password Sign In
+        async function signInWithEmail(email, password) {
+            try {
+                // Check email whitelist first
+                const emailCheck = await checkEmailAllowed(email);
+                if (!emailCheck.allowed) {
+                    showAuthError(signinError, emailCheck.message);
+                    return;
+                }
+                
+                await auth.signInWithEmailAndPassword(email, password);
+                hideAuthModal();
+                showToast('Signed in successfully!', 'success');
+            } catch (error) {
+                showAuthError(signinError, getFirebaseErrorMessage(error));
+            }
+        }
+
+        // Email/Password Sign Up
+        async function signUpWithEmail(email, password) {
+            try {
+                // Check email whitelist first
+                const emailCheck = await checkEmailAllowed(email);
+                if (!emailCheck.allowed) {
+                    showAuthError(signupError, emailCheck.message);
+                    return;
+                }
+                
+                await auth.createUserWithEmailAndPassword(email, password);
+                hideAuthModal();
+                showToast('Account created successfully!', 'success');
+            } catch (error) {
+                showAuthError(signupError, getFirebaseErrorMessage(error));
+            }
+        }
+
+        // Google Sign In
+        async function signInWithGoogle() {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            try {
+                const result = await auth.signInWithPopup(provider);
+                const email = result.user.email;
+                
+                // Check email whitelist
+                const emailCheck = await checkEmailAllowed(email);
+                if (!emailCheck.allowed) {
+                    await auth.signOut();
+                    showAuthError(signinView.classList.contains('active') ? signinError : signupError, emailCheck.message);
+                    return;
+                }
+                
+                hideAuthModal();
+                showToast('Signed in successfully!', 'success');
+            } catch (error) {
+                showAuthError(signinView.classList.contains('active') ? signinError : signupError, getFirebaseErrorMessage(error));
+            }
+        }
+
+        // Password Reset
+        async function sendPasswordReset(email) {
+            try {
+                await auth.sendPasswordResetEmail(email);
+                resetSuccess.textContent = 'Password reset email sent! Check your inbox.';
+                resetSuccess.classList.add('visible');
+                resetError.classList.remove('visible');
+            } catch (error) {
+                showAuthError(resetError, getFirebaseErrorMessage(error));
+            }
+        }
+
+        async function signOut() {
+            try {
+                await auth.signOut();
+                showToast('Signed out', 'success');
+            } catch (error) {
+                console.error('Sign out error:', error);
+            }
+        }
+
+        async function fetchUserData() {
+            if (!idToken) return;
+            
+            try {
+                const response = await fetch('/api/auth/user', {
+                    headers: { 'Authorization': `Bearer ${idToken}` }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    userCredits = data.credits;
+                    updateCreditsDisplay();
+                }
+            } catch (error) {
+                console.error('Error fetching user data:', error);
+            }
+        }
+
+        function updateCreditsDisplay() {
+            if (!userCredits) return;
+            
+            const totalLecture = userCredits.lecture_standard + userCredits.lecture_extended;
+            const totalInterview = userCredits.interview_short + userCredits.interview_medium + userCredits.interview_long;
+            
+            creditsCount.textContent = totalLecture + userCredits.slides + totalInterview;
+            dropdownLectureCredits.textContent = totalLecture;
+            dropdownSlidesCredits.textContent = userCredits.slides;
+            dropdownInterviewCredits.textContent = totalInterview;
+            
+            updateProcessButton();
+        }
+
+        function updateUIForAuthState(user) {
+            if (user) {
+                headerSignInBtn.style.display = 'none';
+                creditsDisplay.style.display = 'flex';
+                userMenu.style.display = 'block';
+                signInRequired.classList.remove('visible');
+                uploadSection.style.display = 'grid';
+                buttonSection.style.display = 'block';
+                
+                const displayName = user.displayName || user.email.split('@')[0];
+                const initial = displayName.charAt(0).toUpperCase();
+                
+                if (user.photoURL) {
+                    userAvatar.innerHTML = `<img src="${user.photoURL}" alt="${displayName}">`;
+                } else {
+                    userAvatar.innerHTML = `<span>${initial}</span>`;
+                }
+                
+                userName.textContent = displayName;
+                userEmail.textContent = user.email;
+                
+                switchMode(currentMode);
+            } else {
+                headerSignInBtn.style.display = 'flex';
+                creditsDisplay.style.display = 'none';
+                userMenu.style.display = 'none';
+                signInRequired.classList.add('visible');
+                uploadSection.style.display = 'none';
+                buttonSection.style.display = 'none';
+                
+                currentUser = null;
+                userCredits = null;
+                idToken = null;
+            }
+        }
+
+        // Auth state listener
+        auth.onAuthStateChanged(async (user) => {
+            currentUser = user;
+            
+            if (user) {
+                idToken = await user.getIdToken();
+                updateUIForAuthState(user);
+                await fetchUserData();
+            } else {
+                updateUIForAuthState(null);
+            }
+        });
+
+        // Refresh token periodically
+        setInterval(async () => {
+            if (currentUser) {
+                idToken = await currentUser.getIdToken(true);
+            }
+        }, 10 * 60 * 1000);
 
         // ============== UTILITY FUNCTIONS ==============
         function formatFileSize(bytes) {
@@ -1344,20 +2427,51 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
 
-        function showToast(message, duration = 3000) {
+        function showToast(message, type = 'success', duration = 3000) {
             toastText.textContent = message;
-            toast.classList.add('visible');
+            toast.className = 'toast visible ' + type;
+            
+            if (type === 'success') {
+                toastIcon.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
+            } else if (type === 'error') {
+                toastIcon.innerHTML = '<circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line>';
+            } else {
+                toastIcon.innerHTML = '<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line>';
+            }
+            
             setTimeout(() => {
                 toast.classList.remove('visible');
             }, duration);
+        }
+
+        function hasEnoughCredits() {
+            if (!userCredits) return false;
+            
+            const config = modeConfig[currentMode];
+            if (config.creditType === 'lecture') {
+                return (userCredits.lecture_standard + userCredits.lecture_extended) > 0;
+            } else if (config.creditType === 'slides') {
+                return userCredits.slides > 0;
+            } else if (config.creditType === 'interview') {
+                return (userCredits.interview_short + userCredits.interview_medium + userCredits.interview_long) > 0;
+            }
+            return false;
         }
 
         function updateProcessButton() {
             const config = modeConfig[currentMode];
             const pdfReady = !config.needsPdf || pdfFile;
             const audioReady = !config.needsAudio || audioFile;
-            processButton.disabled = !(pdfReady && audioReady);
+            const hasCredits = hasEnoughCredits();
+            
+            processButton.disabled = !(pdfReady && audioReady && hasCredits);
             processButton.querySelector('span').textContent = config.buttonText;
+            
+            if (!hasCredits && currentUser) {
+                noCreditsWarning.classList.add('visible');
+            } else {
+                noCreditsWarning.classList.remove('visible');
+            }
         }
 
         // ============== MODE SWITCHING ==============
@@ -1369,7 +2483,8 @@
                 tab.classList.toggle('active', tab.dataset.mode === mode);
             });
 
-            modeDescription.querySelector('span').textContent = config.description;
+            modeDescriptionText.textContent = config.description;
+            modeCreditCost.innerHTML = config.creditCost;
             audioZoneTitle.textContent = config.audioTitle;
 
             if (config.needsPdf && config.needsAudio) {
@@ -1408,38 +2523,78 @@
 
         // ============== FILE HANDLING ==============
         function handlePdfFile(file) {
-            if (file && file.type === 'application/pdf') {
-                pdfFile = file;
-                pdfName.textContent = file.name;
-                pdfSize.textContent = formatFileSize(file.size);
-                pdfInfo.style.display = 'block';
-                pdfZone.classList.add('has-file');
-                updateProcessButton();
-            } else {
-                showToast('Please select a valid PDF file');
+            if (!file) return;
+            
+            if (file.type !== 'application/pdf') {
+                showToast('Please select a valid PDF file', 'error');
+                return;
             }
+            
+            if (file.size > 50 * 1024 * 1024) {
+                showToast('PDF file must be under 50 MB', 'error');
+                return;
+            }
+            
+            pdfFile = file;
+            pdfName.textContent = file.name;
+            pdfSize.textContent = formatFileSize(file.size);
+            pdfInfo.style.display = 'flex';
+            pdfZone.classList.add('has-file');
+            updateProcessButton();
         }
 
         function handleAudioFile(file) {
-            const validTypes = ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/aac', 'audio/ogg', 'audio/flac'];
+            if (!file) return;
+            
             const validExtensions = ['.mp3', '.m4a', '.wav', '.aac', '.ogg', '.flac'];
             const hasValidExtension = validExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
             
-            if (file && (validTypes.includes(file.type) || hasValidExtension)) {
-                audioFile = file;
-                audioName.textContent = file.name;
-                audioSize.textContent = formatFileSize(file.size);
-                audioInfo.style.display = 'block';
-                audioZone.classList.add('has-file');
-                updateProcessButton();
-            } else {
-                showToast('Please select a valid audio file');
+            if (!hasValidExtension) {
+                showToast('Please select a valid audio file (MP3, M4A, WAV)', 'error');
+                return;
             }
+            
+            if (file.size > 500 * 1024 * 1024) {
+                showToast('Audio file must be under 500 MB', 'error');
+                return;
+            }
+            
+            audioFile = file;
+            audioName.textContent = file.name;
+            audioSize.textContent = formatFileSize(file.size);
+            audioInfo.style.display = 'flex';
+            audioZone.classList.add('has-file');
+            updateProcessButton();
         }
+
+        function removePdfFile(e) {
+            e.stopPropagation();
+            pdfFile = null;
+            pdfInfo.style.display = 'none';
+            pdfZone.classList.remove('has-file');
+            pdfInput.value = '';
+            updateProcessButton();
+        }
+
+        function removeAudioFile(e) {
+            e.stopPropagation();
+            audioFile = null;
+            audioInfo.style.display = 'none';
+            audioZone.classList.remove('has-file');
+            audioInput.value = '';
+            updateProcessButton();
+        }
+
+        pdfRemove.addEventListener('click', removePdfFile);
+        audioRemove.addEventListener('click', removeAudioFile);
 
         // ============== DRAG AND DROP ==============
         function setupDropZone(zone, input, handler) {
-            zone.addEventListener('click', () => input.click());
+            zone.addEventListener('click', (e) => {
+                if (!e.target.closest('.file-remove')) {
+                    input.click();
+                }
+            });
             
             input.addEventListener('change', (e) => {
                 if (e.target.files.length > 0) {
@@ -1512,7 +2667,7 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.error && data.status !== 'error') {
-                        showToast('Error: Job not found');
+                        showToast('Error: Job not found', 'error');
                         stopPolling();
                         return;
                     }
@@ -1522,6 +2677,7 @@
                     if (data.status === 'complete') {
                         stopPolling();
                         showResults(data.result, data.slide_text, data.transcript);
+                        fetchUserData();
                     } else if (data.status === 'error') {
                         stopPolling();
                         showError(data.error);
@@ -1546,6 +2702,11 @@
 
         // ============== PROCESSING ==============
         async function processFiles() {
+            if (!idToken) {
+                showAuthModal();
+                return;
+            }
+            
             const config = modeConfig[currentMode];
             const formData = new FormData();
             formData.append('mode', currentMode);
@@ -1569,13 +2730,21 @@
             try {
                 const response = await fetch('/upload', {
                     method: 'POST',
+                    headers: { 'Authorization': `Bearer ${idToken}` },
                     body: formData
                 });
 
                 const data = await response.json();
 
                 if (data.error) {
-                    showError(data.error);
+                    if (response.status === 401) {
+                        showAuthModal();
+                    } else if (response.status === 402) {
+                        showError('No credits remaining. Please purchase more credits.');
+                        noCreditsWarning.classList.add('visible');
+                    } else {
+                        showError(data.error);
+                    }
                     return;
                 }
 
@@ -1623,54 +2792,24 @@
             
             if (currentMode === 'lecture-notes') {
                 downloadDropdownContent.innerHTML = `
-                    <button class="dropdown-item" data-type="result" data-format="md">
-                        Complete Lecture Notes
-                        <span>Markdown (.md)</span>
-                    </button>
-                    <button class="dropdown-item" data-type="result" data-format="docx">
-                        Complete Lecture Notes
-                        <span>Word Document (.docx)</span>
-                    </button>
+                    <button class="dropdown-item" data-type="result" data-format="md">Complete Lecture Notes<span>Markdown (.md)</span></button>
+                    <button class="dropdown-item" data-type="result" data-format="docx">Complete Lecture Notes<span>Word Document (.docx)</span></button>
                     <div class="dropdown-divider"></div>
-                    <button class="dropdown-item" data-type="slides" data-format="md">
-                        Extracted Slides Only
-                        <span>Markdown (.md)</span>
-                    </button>
-                    <button class="dropdown-item" data-type="slides" data-format="docx">
-                        Extracted Slides Only
-                        <span>Word Document (.docx)</span>
-                    </button>
+                    <button class="dropdown-item" data-type="slides" data-format="md">Extracted Slides Only<span>Markdown (.md)</span></button>
+                    <button class="dropdown-item" data-type="slides" data-format="docx">Extracted Slides Only<span>Word Document (.docx)</span></button>
                     <div class="dropdown-divider"></div>
-                    <button class="dropdown-item" data-type="transcript" data-format="md">
-                        Transcript Only
-                        <span>Markdown (.md)</span>
-                    </button>
-                    <button class="dropdown-item" data-type="transcript" data-format="docx">
-                        Transcript Only
-                        <span>Word Document (.docx)</span>
-                    </button>
+                    <button class="dropdown-item" data-type="transcript" data-format="md">Transcript Only<span>Markdown (.md)</span></button>
+                    <button class="dropdown-item" data-type="transcript" data-format="docx">Transcript Only<span>Word Document (.docx)</span></button>
                 `;
             } else if (currentMode === 'slides-only') {
                 downloadDropdownContent.innerHTML = `
-                    <button class="dropdown-item" data-type="result" data-format="md">
-                        Extracted Slides
-                        <span>Markdown (.md)</span>
-                    </button>
-                    <button class="dropdown-item" data-type="result" data-format="docx">
-                        Extracted Slides
-                        <span>Word Document (.docx)</span>
-                    </button>
+                    <button class="dropdown-item" data-type="result" data-format="md">Extracted Slides<span>Markdown (.md)</span></button>
+                    <button class="dropdown-item" data-type="result" data-format="docx">Extracted Slides<span>Word Document (.docx)</span></button>
                 `;
             } else if (currentMode === 'interview') {
                 downloadDropdownContent.innerHTML = `
-                    <button class="dropdown-item" data-type="result" data-format="md">
-                        Interview Transcript
-                        <span>Markdown (.md)</span>
-                    </button>
-                    <button class="dropdown-item" data-type="result" data-format="docx">
-                        Interview Transcript
-                        <span>Word Document (.docx)</span>
-                    </button>
+                    <button class="dropdown-item" data-type="result" data-format="md">Interview Transcript<span>Markdown (.md)</span></button>
+                    <button class="dropdown-item" data-type="result" data-format="docx">Interview Transcript<span>Word Document (.docx)</span></button>
                 `;
             }
 
@@ -1712,10 +2851,10 @@
                 a.click();
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
-                showToast('Download started');
+                showToast('Download started', 'success');
             } else if (format === 'docx') {
                 window.location.href = `/download-docx/${currentJobId}?type=${type}`;
-                showToast('Download started');
+                showToast('Download started', 'success');
             }
         }
 
@@ -1729,7 +2868,7 @@
             resultsSection.classList.add('visible');
             resultsContent.innerHTML = simpleMarkdownToHtml(markdown);
             buildDownloadDropdown();
-            showToast('Processing complete!');
+            showToast('Processing complete!', 'success');
         }
 
         function showError(errorMessage) {
@@ -1737,9 +2876,116 @@
             statusText.textContent = 'Error: ' + errorMessage;
             document.querySelector('.spinner').style.display = 'none';
             processButton.disabled = false;
+            updateProcessButton();
         }
 
-        // ============== DROPDOWN TOGGLE ==============
+        // ============== EVENT LISTENERS ==============
+        
+        // Auth modal controls
+        headerSignInBtn.addEventListener('click', () => showAuthModal('signin'));
+        signInToProcessBtn.addEventListener('click', () => showAuthModal('signin'));
+        authModalClose.addEventListener('click', hideAuthModal);
+        authOverlay.addEventListener('click', (e) => {
+            if (e.target === authOverlay) hideAuthModal();
+        });
+
+        // Auth view switching
+        switchToSignup.addEventListener('click', (e) => {
+            e.preventDefault();
+            showAuthView('signup');
+        });
+        switchToSignin.addEventListener('click', (e) => {
+            e.preventDefault();
+            showAuthView('signin');
+        });
+        forgotPasswordLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            showAuthView('reset');
+        });
+        backToSignin.addEventListener('click', (e) => {
+            e.preventDefault();
+            showAuthView('signin');
+        });
+
+        // Auth form submissions
+        signinForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = signinEmail.value.trim();
+            const password = signinPassword.value;
+            await signInWithEmail(email, password);
+        });
+
+        signupForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = signupEmail.value.trim();
+            const password = signupPassword.value;
+            const confirmPassword = signupPasswordConfirm.value;
+            
+            if (password !== confirmPassword) {
+                showAuthError(signupError, 'Passwords do not match.');
+                return;
+            }
+            
+            await signUpWithEmail(email, password);
+        });
+
+        resetForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = resetEmail.value.trim();
+            await sendPasswordReset(email);
+        });
+
+        // Google sign in buttons
+        googleSignInBtn.addEventListener('click', signInWithGoogle);
+        googleSignUpBtn.addEventListener('click', signInWithGoogle);
+
+        // Password toggle buttons
+        document.querySelectorAll('.password-toggle').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetId = btn.dataset.target;
+                const input = document.getElementById(targetId);
+                const eyeOpen = btn.querySelector('.eye-open');
+                const eyeClosed = btn.querySelector('.eye-closed');
+                
+                if (input.type === 'password') {
+                    input.type = 'text';
+                    eyeOpen.style.display = 'none';
+                    eyeClosed.style.display = 'block';
+                } else {
+                    input.type = 'password';
+                    eyeOpen.style.display = 'block';
+                    eyeClosed.style.display = 'none';
+                }
+            });
+        });
+
+        // Sign out
+        signOutBtn.addEventListener('click', signOut);
+
+        // User dropdown
+        userButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            userDropdown.classList.toggle('visible');
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!userMenu.contains(e.target)) {
+                userDropdown.classList.remove('visible');
+            }
+        });
+
+        // Buy credits buttons
+        buyCreditsBtn.addEventListener('click', () => {
+            showToast('Payment system coming soon!', 'info');
+            userDropdown.classList.remove('visible');
+        });
+
+        buyCreditsLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            showToast('Payment system coming soon!', 'info');
+        });
+
+        // Download dropdown
         downloadButton.addEventListener('click', (e) => {
             e.stopPropagation();
             downloadDropdownContent.classList.toggle('visible');
@@ -1751,16 +2997,21 @@
             }
         });
 
-        // ============== ACTIONS ==============
+        // Copy button
         copyButton.addEventListener('click', async () => {
             try {
                 await navigator.clipboard.writeText(resultMarkdown);
-                showToast('Copied to clipboard');
+                copyButtonText.textContent = 'Copied!';
+                showToast('Copied to clipboard', 'success');
+                setTimeout(() => {
+                    copyButtonText.textContent = 'Copy';
+                }, 2000);
             } catch (error) {
-                showToast('Failed to copy');
+                showToast('Failed to copy', 'error');
             }
         });
 
+        // New lecture button
         newLectureButton.addEventListener('click', () => {
             pdfFile = null;
             audioFile = null;
@@ -1782,6 +3033,14 @@
 
             switchMode(currentMode);
             window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+
+        // Prevent accidental navigation during processing
+        window.addEventListener('beforeunload', (e) => {
+            if (currentJobId && pollInterval) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
         });
 
         // Initialize
