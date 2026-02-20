@@ -35,17 +35,19 @@ jobs = {}
 
 # ============== MODEL CONFIGURATION ==============
 # Change these model names when Google releases new versions
+# 
 # Current models (February 2026):
-#   - gemini-2.5-flash-lite (cheapest, good for simple extraction)
-#   - gemini-2.5-flash (balanced, good for transcription)
-#   - gemini-2.5-pro (best quality, needed for complex integration)
+#   - gemini-2.5-flash-lite: Cheapest, good for simple extraction
+#   - gemini-3-flash-preview: Better transcription, removes filler words well
+#   - gemini-2.5-pro: Best quality for complex integration and Dutch language
 # 
 # Find current model names at: https://ai.google.dev/gemini-api/docs/models
+# Find pricing at: https://ai.google.dev/gemini-api/docs/pricing
 
-MODEL_SLIDES = 'gemini-2.5-flash-lite'  # For extracting text from PDF slides
-MODEL_AUDIO = 'gemini-2.5-flash'         # For transcribing audio
-MODEL_INTEGRATION = 'gemini-2.5-pro'     # For merging into complete notes
-MODEL_INTERVIEW = 'gemini-2.5-pro'       # For interview transcription (needs Pro for Dutch)
+MODEL_SLIDES = 'gemini-2.5-flash-lite'      # For extracting text from PDF slides
+MODEL_AUDIO = 'gemini-3-flash-preview'    # For transcribing lecture audio (better at removing filler)
+MODEL_INTEGRATION = 'gemini-2.5-pro'        # For merging into complete notes
+MODEL_INTERVIEW = 'gemini-2.5-pro'          # For interview transcription (better Dutch, captures nuances)
 
 # ============== PROMPTS ==============
 
@@ -55,9 +57,9 @@ Instructies:
 1. Geef per slide duidelijk aan welk slide-nummer het betreft (bv. "Slide 1:").
 2. Neem de titel van de slide over.
 3. Neem alle tekstuele inhoud (bullet points, paragrafen) van de slide over.
-4. Identificeer waar afbeeldingen of tabellen staan. Maak een inschatting van de functie:
-   - Informatief: Als het een grafiek, diagram, model of relevante foto is die inhoudelijke informatie toevoegt, gebruik de placeholder: [Informatieve Afbeelding/Tabel: Geef een neutrale beschrijving van wat zichtbaar is of het onderwerp]
-   - Decoratief: Als het een sfeerbeeld, stockfoto of logo is zonder directe informatieve waarde, gebruik de placeholder: [Decoratieve Afbeelding]
+4. Identificeer waar afbeeldingen of tabellen staan. Gebruik strikte criteria:
+   - Informatief: Gebruik de placeholder ALLEEN als de afbeelding tekst, data, grafieken, diagrammen, flowcharts, of een specifiek wetenschappelijk/technisch diagram bevat dat cruciaal is voor begrip van de slide. Formaat: [Informatieve Afbeelding/Tabel: Geef een neutrale beschrijving van wat zichtbaar is of het onderwerp]
+   - Decoratief: Gebruik de placeholder voor ALLE foto's van mensen, landschappen, bedrijfslogo's, universiteitslogo's, achtergrondillustraties, stockfoto's, of sfeerbeelden. Bij twijfel, classificeer het als decoratief! Formaat: [Decoratieve Afbeelding]
 5. Laat de zin "Share Your talent move the world" weg, indien aanwezig.
 6. Lever de output als platte tekst, zonder specifieke Word-opmaak anders dan de slide-indicatie en de placeholders."""
 
@@ -277,6 +279,7 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
         gemini_files.append(pdf_file)
         wait_for_file_processing(pdf_file)
         
+        # Using Flash Lite for slides (cheapest, sufficient for extraction)
         response = client.models.generate_content(
             model=MODEL_SLIDES,
             contents=[
@@ -297,7 +300,7 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
         )
         
         slide_text = response.text
-        jobs[job_id]['slide_text'] = slide_text  # Store for later access
+        jobs[job_id]['slide_text'] = slide_text
         
         # ========== STEP 2: Transcribe Audio ==========
         jobs[job_id]['step'] = 2
@@ -315,6 +318,7 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
         
         jobs[job_id]['step_description'] = 'Generating transcript...'
         
+        # Using 3.0 Flash Preview for audio (better at removing filler words)
         response = client.models.generate_content(
             model=MODEL_AUDIO,
             contents=[
@@ -335,7 +339,7 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
         )
         
         transcript = response.text
-        jobs[job_id]['transcript'] = transcript  # Store for later access
+        jobs[job_id]['transcript'] = transcript
         
         # ========== STEP 3: Merge Into Complete Notes ==========
         jobs[job_id]['step'] = 3
@@ -346,6 +350,7 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
             transcript=transcript
         )
         
+        # Using 2.5 Pro for integration (best quality for complex merging)
         response = client.models.generate_content(
             model=MODEL_INTEGRATION,
             contents=[
@@ -455,6 +460,7 @@ def process_interview_transcription(job_id, audio_path):
         
         jobs[job_id]['step_description'] = 'Generating transcript with timestamps...'
         
+        # Using 2.5 Pro for interviews (better Dutch language support, captures nuances)
         response = client.models.generate_content(
             model=MODEL_INTERVIEW,
             contents=[
@@ -704,21 +710,20 @@ def download_docx(job_id):
 # ============== RUN THE APP ==============
 
 if __name__ == '__main__':
-    print("\n" + "="*50)
-    print("Lecture Processor is running!")
-    print("="*50)
-    print(f"Models configured:")
-    print(f"  - Slides:      {MODEL_SLIDES}")
-    print(f"  - Audio:       {MODEL_AUDIO}")
-    print(f"  - Integration: {MODEL_INTEGRATION}")
-    print(f"  - Interview:   {MODEL_INTERVIEW}")
-    print("="*50)
-    print("Processing modes available:")
-    print("  - Lecture Notes (PDF + Audio)")
-    print("  - Slides Only (PDF)")
-    print("  - Interview Transcription (Audio)")
-    print("="*50)
-    print("Open your browser and go to: http://127.0.0.1:5000")
-    print("Press Ctrl+C to stop the server")
-    print("="*50 + "\n")
+    print("\n" + "="*60)
+    print("  LECTURE PROCESSOR")
+    print("="*60)
+    print("\nModels configured:")
+    print(f"  • Slides:      {MODEL_SLIDES}")
+    print(f"  • Audio:       {MODEL_AUDIO}")
+    print(f"  • Integration: {MODEL_INTEGRATION}")
+    print(f"  • Interview:   {MODEL_INTERVIEW}")
+    print("\nProcessing modes:")
+    print("  • Lecture Notes (PDF + Audio → Complete Notes)")
+    print("  • Slides Only (PDF → Extracted Text)")
+    print("  • Interview Transcription (Audio → Timestamped Transcript)")
+    print("\n" + "="*60)
+    print("Open your browser: http://127.0.0.1:5000")
+    print("Press Ctrl+C to stop")
+    print("="*60 + "\n")
     app.run(debug=True, port=5000)
