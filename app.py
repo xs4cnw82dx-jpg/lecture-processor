@@ -14,7 +14,7 @@ from docx import Document
 from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 import firebase_admin
-from firebase_admin import credentials, auth
+from firebase_admin import credentials, auth, firestore
 
 load_dotenv()
 app = Flask(__name__)
@@ -35,15 +35,15 @@ else:
     cred = credentials.Certificate(firebase_creds)
 
 firebase_admin.initialize_app(cred)
+db = firestore.client()
 
 # --- Stripe Setup ---
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY', '')
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
 
-# --- In-Memory Storage ---
+# --- In-Memory Storage (jobs only — credits are in Firestore now) ---
 jobs = {}
-users = {}
 
 # --- Credit Bundles (what users can buy) ---
 CREDIT_BUNDLES = {
@@ -172,7 +172,132 @@ Input:
 2. Audio-transcript:
 {transcript}"""
 
-# --- Helper Functions ---
+# =============================================
+# FIRESTORE USER FUNCTIONS
+# =============================================
+
+def get_or_create_user(uid, email):
+    """Get a user from Firestore, or create them with free credits if they don't exist."""
+    user_ref = db.collection('users').document(uid)
+    user_doc = user_ref.get()
+
+    if user_doc.exists:
+        user_data = user_doc.to_dict()
+        # Update email if it changed
+        if user_data.get('email') != email and email:
+            user_ref.update({'email': email})
+            user_data['email'] = email
+        return user_data
+    else:
+        # New user — create with free credits
+        user_data = {
+            'uid': uid,
+            'email': email,
+            'lecture_credits_standard': FREE_LECTURE_CREDITS,
+            'lecture_credits_extended': 0,
+            'slides_credits': FREE_SLIDES_CREDITS,
+            'interview_credits_short': FREE_INTERVIEW_CREDITS,
+            'interview_credits_medium': 0,
+            'interview_credits_long': 0,
+            'total_processed': 0,
+            'created_at': time.time(),
+        }
+        user_ref.set(user_data)
+        print(f"New user created: {uid} ({email})")
+        return user_data
+
+def grant_credits_to_user(uid, bundle_id):
+    """Grant credits from a purchased bundle to a user in Firestore."""
+    bundle = CREDIT_BUNDLES.get(bundle_id)
+    if not bundle:
+        print(f"Warning: Unknown bundle_id '{bundle_id}' in grant_credits_to_user")
+        return False
+
+    user_ref = db.collection('users').document(uid)
+    user_doc = user_ref.get()
+
+    if not user_doc.exists:
+        # User not in Firestore yet — create with defaults first
+        user_data = {
+            'uid': uid,
+            'email': '',
+            'lecture_credits_standard': FREE_LECTURE_CREDITS,
+            'lecture_credits_extended': 0,
+            'slides_credits': FREE_SLIDES_CREDITS,
+            'interview_credits_short': FREE_INTERVIEW_CREDITS,
+            'interview_credits_medium': 0,
+            'interview_credits_long': 0,
+            'total_processed': 0,
+            'created_at': time.time(),
+        }
+        user_ref.set(user_data)
+
+    # Add the purchased credits
+    for credit_key, credit_amount in bundle['credits'].items():
+        user_ref.update({credit_key: firestore.Increment(credit_amount)})
+        print(f"Granted {credit_amount} '{credit_key}' credits to user {uid}.")
+
+    return True
+
+def deduct_credit(uid, credit_type_primary, credit_type_fallback=None):
+    """Deduct one credit from the user. Returns True if successful, False if no credits."""
+    user_ref = db.collection('users').document(uid)
+    user_doc = user_ref.get()
+
+    if not user_doc.exists:
+        return False
+
+    user_data = user_doc.to_dict()
+
+    if user_data.get(credit_type_primary, 0) > 0:
+        user_ref.update({
+            credit_type_primary: firestore.Increment(-1),
+            'total_processed': firestore.Increment(1),
+        })
+        return True
+    elif credit_type_fallback and user_data.get(credit_type_fallback, 0) > 0:
+        user_ref.update({
+            credit_type_fallback: firestore.Increment(-1),
+            'total_processed': firestore.Increment(1),
+        })
+        return True
+    else:
+        return False
+
+def deduct_interview_credit(uid):
+    """Deduct one interview credit, checking short -> medium -> long."""
+    user_ref = db.collection('users').document(uid)
+    user_doc = user_ref.get()
+
+    if not user_doc.exists:
+        return False
+
+    user_data = user_doc.to_dict()
+
+    if user_data.get('interview_credits_short', 0) > 0:
+        user_ref.update({
+            'interview_credits_short': firestore.Increment(-1),
+            'total_processed': firestore.Increment(1),
+        })
+        return True
+    elif user_data.get('interview_credits_medium', 0) > 0:
+        user_ref.update({
+            'interview_credits_medium': firestore.Increment(-1),
+            'total_processed': firestore.Increment(1),
+        })
+        return True
+    elif user_data.get('interview_credits_long', 0) > 0:
+        user_ref.update({
+            'interview_credits_long': firestore.Increment(-1),
+            'total_processed': firestore.Increment(1),
+        })
+        return True
+    else:
+        return False
+
+# =============================================
+# HELPER FUNCTIONS
+# =============================================
 
 def verify_firebase_token(request):
     auth_header = request.headers.get('Authorization', '')
@@ -183,44 +308,6 @@ def verify_firebase_token(request):
     except Exception as e:
         print(f"Token verification failed: {e}")
         return None
-
-def get_or_create_user(uid, email):
-    if uid not in users:
-        users[uid] = {
-            'uid': uid, 'email': email,
-            'lecture_credits_standard': FREE_LECTURE_CREDITS, 'lecture_credits_extended': 0,
-            'slides_credits': FREE_SLIDES_CREDITS,
-            'interview_credits_short': FREE_INTERVIEW_CREDITS, 'interview_credits_medium': 0, 'interview_credits_long': 0,
-            'total_processed': 0, 'created_at': time.time()
-        }
-    return users[uid]
-
-def grant_credits_to_user(uid, bundle_id):
-    """Grant credits from a purchased bundle to a user."""
-    bundle = CREDIT_BUNDLES.get(bundle_id)
-    if not bundle:
-        print(f"Warning: Unknown bundle_id '{bundle_id}' in grant_credits_to_user")
-        return False
-
-    if uid not in users:
-        # User might not be in memory yet (server restart). Create them with defaults.
-        users[uid] = {
-            'uid': uid, 'email': '',
-            'lecture_credits_standard': FREE_LECTURE_CREDITS, 'lecture_credits_extended': 0,
-            'slides_credits': FREE_SLIDES_CREDITS,
-            'interview_credits_short': FREE_INTERVIEW_CREDITS, 'interview_credits_medium': 0, 'interview_credits_long': 0,
-            'total_processed': 0, 'created_at': time.time()
-        }
-
-    user = users[uid]
-    for credit_key, credit_amount in bundle['credits'].items():
-        if credit_key in user:
-            user[credit_key] += credit_amount
-            print(f"Granted {credit_amount} '{credit_key}' credits to user {uid}. New total: {user[credit_key]}")
-        else:
-            print(f"Warning: Unknown credit key '{credit_key}' in bundle '{bundle_id}'")
-
-    return True
 
 def allowed_file(filename, allowed_extensions):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
@@ -308,7 +395,9 @@ def markdown_to_docx(markdown_text, title="Document"):
         i += 1
     return doc
 
-# --- AI Processing Functions ---
+# =============================================
+# AI PROCESSING FUNCTIONS
+# =============================================
 
 def process_lecture_notes(job_id, pdf_path, audio_path):
     gemini_files = []
@@ -423,18 +512,20 @@ def get_user():
     return jsonify({
         'uid': user['uid'], 'email': user['email'],
         'credits': {
-            'lecture_standard': user['lecture_credits_standard'], 'lecture_extended': user['lecture_credits_extended'],
-            'slides': user['slides_credits'], 'interview_short': user['interview_credits_short'],
-            'interview_medium': user['interview_credits_medium'], 'interview_long': user['interview_credits_long']
+            'lecture_standard': user.get('lecture_credits_standard', 0),
+            'lecture_extended': user.get('lecture_credits_extended', 0),
+            'slides': user.get('slides_credits', 0),
+            'interview_short': user.get('interview_credits_short', 0),
+            'interview_medium': user.get('interview_credits_medium', 0),
+            'interview_long': user.get('interview_credits_long', 0),
         },
-        'total_processed': user['total_processed']
+        'total_processed': user.get('total_processed', 0)
     })
 
 # --- Stripe Routes ---
 
 @app.route('/api/config', methods=['GET'])
 def get_config():
-    """Send the Stripe publishable key to the frontend (safe to expose)."""
     return jsonify({
         'stripe_publishable_key': STRIPE_PUBLISHABLE_KEY,
         'bundles': {
@@ -451,8 +542,6 @@ def get_config():
 
 @app.route('/api/create-checkout-session', methods=['POST'])
 def create_checkout_session():
-    """Create a Stripe Checkout session for a credit bundle purchase."""
-    # 1. Verify user is logged in
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Please sign in to continue'}), 401
@@ -460,7 +549,6 @@ def create_checkout_session():
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
 
-    # 2. Get the bundle they want to buy
     data = request.get_json()
     bundle_id = data.get('bundle_id', '')
 
@@ -469,7 +557,6 @@ def create_checkout_session():
 
     bundle = CREDIT_BUNDLES[bundle_id]
 
-    # 3. Create Stripe Checkout Session
     try:
         checkout_session = stripe.checkout.Session.create(
             payment_method_types=['card', 'ideal'],
@@ -500,11 +587,9 @@ def create_checkout_session():
 
 @app.route('/api/stripe-webhook', methods=['POST'])
 def stripe_webhook():
-    """Handle Stripe webhook events (called by Stripe, NOT by our frontend)."""
     payload = request.data
     sig_header = request.headers.get('Stripe-Signature', '')
 
-    # If we have a webhook secret, verify the signature
     if STRIPE_WEBHOOK_SECRET:
         try:
             event = stripe.Webhook.construct_event(
@@ -517,13 +602,11 @@ def stripe_webhook():
             print(f"Stripe webhook signature verification failed: {e}")
             return 'Invalid signature', 400
     else:
-        # No webhook secret configured — parse the event directly (OK for testing)
         try:
             event = json.loads(payload)
         except json.JSONDecodeError:
             return 'Invalid payload', 400
 
-    # Handle the event
     if event.get('type') == 'checkout.session.completed':
         session = event['data']['object']
         metadata = session.get('metadata', {})
@@ -554,7 +637,8 @@ def upload_files():
     mode = request.form.get('mode', 'lecture-notes')
     
     if mode == 'lecture-notes':
-        if user['lecture_credits_standard'] <= 0 and user['lecture_credits_extended'] <= 0:
+        total_lecture = user.get('lecture_credits_standard', 0) + user.get('lecture_credits_extended', 0)
+        if total_lecture <= 0:
             return jsonify({'error': 'No lecture credits remaining. Please purchase more credits.'}), 402
         if 'pdf' not in request.files or 'audio' not in request.files: return jsonify({'error': 'Both PDF and audio files are required'}), 400
         pdf_file = request.files['pdf']
@@ -567,15 +651,16 @@ def upload_files():
         audio_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{secure_filename(audio_file.filename)}")
         pdf_file.save(pdf_path)
         audio_file.save(audio_path)
-        if user['lecture_credits_standard'] > 0: user['lecture_credits_standard'] -= 1
-        else: user['lecture_credits_extended'] -= 1
-        user['total_processed'] += 1
+        deducted = deduct_credit(uid, 'lecture_credits_standard', 'lecture_credits_extended')
+        if not deducted:
+            return jsonify({'error': 'No lecture credits remaining.'}), 402
         jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 3, 'mode': 'lecture-notes', 'user_id': uid, 'result': None, 'slide_text': None, 'transcript': None, 'error': None}
         thread = threading.Thread(target=process_lecture_notes, args=(job_id, pdf_path, audio_path))
         thread.start()
         
     elif mode == 'slides-only':
-        if user['slides_credits'] <= 0: return jsonify({'error': 'No slides credits remaining. Please purchase more credits.'}), 402
+        if user.get('slides_credits', 0) <= 0:
+            return jsonify({'error': 'No slides credits remaining. Please purchase more credits.'}), 402
         if 'pdf' not in request.files: return jsonify({'error': 'PDF file is required'}), 400
         pdf_file = request.files['pdf']
         if pdf_file.filename == '': return jsonify({'error': 'PDF file must be selected'}), 400
@@ -583,14 +668,16 @@ def upload_files():
         job_id = str(uuid.uuid4())
         pdf_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{secure_filename(pdf_file.filename)}")
         pdf_file.save(pdf_path)
-        user['slides_credits'] -= 1
-        user['total_processed'] += 1
+        deducted = deduct_credit(uid, 'slides_credits')
+        if not deducted:
+            return jsonify({'error': 'No slides credits remaining.'}), 402
         jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 1, 'mode': 'slides-only', 'user_id': uid, 'result': None, 'error': None}
         thread = threading.Thread(target=process_slides_only, args=(job_id, pdf_path))
         thread.start()
         
     elif mode == 'interview':
-        if (user['interview_credits_short'] + user['interview_credits_medium'] + user['interview_credits_long']) <= 0:
+        total_interview = user.get('interview_credits_short', 0) + user.get('interview_credits_medium', 0) + user.get('interview_credits_long', 0)
+        if total_interview <= 0:
             return jsonify({'error': 'No interview credits remaining. Please purchase more credits.'}), 402
         if 'audio' not in request.files: return jsonify({'error': 'Audio file is required'}), 400
         audio_file = request.files['audio']
@@ -599,10 +686,9 @@ def upload_files():
         job_id = str(uuid.uuid4())
         audio_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{secure_filename(audio_file.filename)}")
         audio_file.save(audio_path)
-        if user['interview_credits_short'] > 0: user['interview_credits_short'] -= 1
-        elif user['interview_credits_medium'] > 0: user['interview_credits_medium'] -= 1
-        else: user['interview_credits_long'] -= 1
-        user['total_processed'] += 1
+        deducted = deduct_interview_credit(uid)
+        if not deducted:
+            return jsonify({'error': 'No interview credits remaining.'}), 402
         jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 1, 'mode': 'interview', 'user_id': uid, 'result': None, 'error': None}
         thread = threading.Thread(target=process_interview_transcription, args=(job_id, audio_path))
         thread.start()
