@@ -240,12 +240,12 @@ def grant_credits_to_user(uid, bundle_id):
     return True
 
 def deduct_credit(uid, credit_type_primary, credit_type_fallback=None):
-    """Deduct one credit from the user. Returns True if successful, False if no credits."""
+    """Deduct one credit from the user. Returns the credit type that was deducted, or None if no credits."""
     user_ref = db.collection('users').document(uid)
     user_doc = user_ref.get()
 
     if not user_doc.exists:
-        return False
+        return None
 
     user_data = user_doc.to_dict()
 
@@ -254,23 +254,23 @@ def deduct_credit(uid, credit_type_primary, credit_type_fallback=None):
             credit_type_primary: firestore.Increment(-1),
             'total_processed': firestore.Increment(1),
         })
-        return True
+        return credit_type_primary
     elif credit_type_fallback and user_data.get(credit_type_fallback, 0) > 0:
         user_ref.update({
             credit_type_fallback: firestore.Increment(-1),
             'total_processed': firestore.Increment(1),
         })
-        return True
+        return credit_type_fallback
     else:
-        return False
+        return None
 
 def deduct_interview_credit(uid):
-    """Deduct one interview credit, checking short -> medium -> long."""
+    """Deduct one interview credit, checking short -> medium -> long. Returns the credit type deducted, or None."""
     user_ref = db.collection('users').document(uid)
     user_doc = user_ref.get()
 
     if not user_doc.exists:
-        return False
+        return None
 
     user_data = user_doc.to_dict()
 
@@ -279,21 +279,35 @@ def deduct_interview_credit(uid):
             'interview_credits_short': firestore.Increment(-1),
             'total_processed': firestore.Increment(1),
         })
-        return True
+        return 'interview_credits_short'
     elif user_data.get('interview_credits_medium', 0) > 0:
         user_ref.update({
             'interview_credits_medium': firestore.Increment(-1),
             'total_processed': firestore.Increment(1),
         })
-        return True
+        return 'interview_credits_medium'
     elif user_data.get('interview_credits_long', 0) > 0:
         user_ref.update({
             'interview_credits_long': firestore.Increment(-1),
             'total_processed': firestore.Increment(1),
         })
-        return True
+        return 'interview_credits_long'
     else:
-        return False
+        return None
+
+def refund_credit(uid, credit_type):
+    """Refund one credit back to the user after a failed processing job."""
+    if not uid or not credit_type:
+        return
+    try:
+        user_ref = db.collection('users').document(uid)
+        user_ref.update({
+            credit_type: firestore.Increment(1),
+            'total_processed': firestore.Increment(-1),
+        })
+        print(f"✅ Refunded 1 '{credit_type}' credit to user {uid} due to processing failure.")
+    except Exception as e:
+        print(f"❌ Failed to refund credit '{credit_type}' to user {uid}: {e}")
 
 # =============================================
 # HELPER FUNCTIONS
@@ -438,6 +452,11 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
     except Exception as e:
         jobs[job_id]['status'] = 'error'
         jobs[job_id]['error'] = str(e)
+        # Refund the credit since processing failed
+        uid = jobs[job_id].get('user_id')
+        credit_type = jobs[job_id].get('credit_deducted')
+        refund_credit(uid, credit_type)
+        jobs[job_id]['credit_refunded'] = True
     finally:
         cleanup_files(local_paths, gemini_files)
 
@@ -459,6 +478,11 @@ def process_slides_only(job_id, pdf_path):
     except Exception as e:
         jobs[job_id]['status'] = 'error'
         jobs[job_id]['error'] = str(e)
+        # Refund the credit since processing failed
+        uid = jobs[job_id].get('user_id')
+        credit_type = jobs[job_id].get('credit_deducted')
+        refund_credit(uid, credit_type)
+        jobs[job_id]['credit_refunded'] = True
     finally:
         cleanup_files(local_paths, gemini_files)
 
@@ -483,6 +507,11 @@ def process_interview_transcription(job_id, audio_path):
     except Exception as e:
         jobs[job_id]['status'] = 'error'
         jobs[job_id]['error'] = str(e)
+        # Refund the credit since processing failed
+        uid = jobs[job_id].get('user_id')
+        credit_type = jobs[job_id].get('credit_deducted')
+        refund_credit(uid, credit_type)
+        jobs[job_id]['credit_refunded'] = True
     finally:
         cleanup_files(local_paths, gemini_files)
 
@@ -654,7 +683,7 @@ def upload_files():
         deducted = deduct_credit(uid, 'lecture_credits_standard', 'lecture_credits_extended')
         if not deducted:
             return jsonify({'error': 'No lecture credits remaining.'}), 402
-        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 3, 'mode': 'lecture-notes', 'user_id': uid, 'result': None, 'slide_text': None, 'transcript': None, 'error': None}
+        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 3, 'mode': 'lecture-notes', 'user_id': uid, 'credit_deducted': deducted, 'credit_refunded': False, 'result': None, 'slide_text': None, 'transcript': None, 'error': None}
         thread = threading.Thread(target=process_lecture_notes, args=(job_id, pdf_path, audio_path))
         thread.start()
         
@@ -671,7 +700,7 @@ def upload_files():
         deducted = deduct_credit(uid, 'slides_credits')
         if not deducted:
             return jsonify({'error': 'No slides credits remaining.'}), 402
-        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 1, 'mode': 'slides-only', 'user_id': uid, 'result': None, 'error': None}
+        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 1, 'mode': 'slides-only', 'user_id': uid, 'credit_deducted': deducted, 'credit_refunded': False, 'result': None, 'error': None}
         thread = threading.Thread(target=process_slides_only, args=(job_id, pdf_path))
         thread.start()
         
@@ -689,7 +718,7 @@ def upload_files():
         deducted = deduct_interview_credit(uid)
         if not deducted:
             return jsonify({'error': 'No interview credits remaining.'}), 402
-        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 1, 'mode': 'interview', 'user_id': uid, 'result': None, 'error': None}
+        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 1, 'mode': 'interview', 'user_id': uid, 'credit_deducted': deducted, 'credit_refunded': False, 'result': None, 'error': None}
         thread = threading.Thread(target=process_interview_transcription, args=(job_id, audio_path))
         thread.start()
         
@@ -707,6 +736,7 @@ def get_status(job_id):
             response['transcript'] = job.get('transcript')
     elif job['status'] == 'error':
         response['error'] = job['error']
+        response['credit_refunded'] = job.get('credit_refunded', False)
     return jsonify(response)
 
 @app.route('/download-docx/<job_id>')
