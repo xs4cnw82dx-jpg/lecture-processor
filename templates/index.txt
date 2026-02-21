@@ -1,0 +1,27 @@
+
+Lecture Processor
+
+Sign in
+
+AI-Powered Processing
+Transform Lectures into Study-Ready Notes
+Upload your lecture slides and audio recordings. Get complete, structured notes ready for exam preparation in minutes.
+
+Smart Slide Extraction
+Extracts all text and identifies important visuals automatically
+
+Audio Transcription
+Converts spoken explanations into clean, readable text
+
+Intelligent Merging
+Combines slides and audio into comprehensive study notes
+PROCESSING MODE
+Lecture Notes
+Slides Only
+Interview Transcript
+
+Upload lecture slides (PDF) and audio recording to generate complete, integrated study notes.
+Uses 1 lecture credit
+Built with Gemini AI · Made for students
+
+
