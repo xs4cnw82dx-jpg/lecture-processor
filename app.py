@@ -329,6 +329,28 @@ def save_purchase_record(uid, bundle_id, stripe_session_id):
     except Exception as e:
         print(f"❌ Failed to save purchase record for user {uid}: {e}")
 
+def save_job_log(job_id, job_data, finished_at):
+    """Save a processing job log to Firestore for analytics."""
+    try:
+        started_at = job_data.get('started_at', 0)
+        duration = round(finished_at - started_at, 1) if started_at else 0
+        db.collection('job_logs').document(job_id).set({
+            'job_id': job_id,
+            'uid': job_data.get('user_id', ''),
+            'email': job_data.get('user_email', ''),
+            'mode': job_data.get('mode', ''),
+            'status': job_data.get('status', ''),
+            'credit_deducted': job_data.get('credit_deducted', ''),
+            'credit_refunded': job_data.get('credit_refunded', False),
+            'error_message': job_data.get('error', ''),
+            'started_at': started_at,
+            'finished_at': finished_at,
+            'duration_seconds': duration,
+        })
+        print(f"📊 Logged job {job_id}: mode={job_data.get('mode')}, status={job_data.get('status')}, duration={duration}s")
+    except Exception as e:
+        print(f"❌ Failed to log job {job_id}: {e}")
+
 # =============================================
 # HELPER FUNCTIONS
 # =============================================
@@ -479,6 +501,8 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
         jobs[job_id]['credit_refunded'] = True
     finally:
         cleanup_files(local_paths, gemini_files)
+        # Log the job to Firestore
+        save_job_log(job_id, jobs[job_id], time.time())
 
 def process_slides_only(job_id, pdf_path):
     gemini_files = []
@@ -505,6 +529,8 @@ def process_slides_only(job_id, pdf_path):
         jobs[job_id]['credit_refunded'] = True
     finally:
         cleanup_files(local_paths, gemini_files)
+        # Log the job to Firestore
+        save_job_log(job_id, jobs[job_id], time.time())
 
 def process_interview_transcription(job_id, audio_path):
     gemini_files = []
@@ -534,6 +560,8 @@ def process_interview_transcription(job_id, audio_path):
         jobs[job_id]['credit_refunded'] = True
     finally:
         cleanup_files(local_paths, gemini_files)
+        # Log the job to Firestore
+        save_job_log(job_id, jobs[job_id], time.time())
 
 # =============================================
 # ROUTES
@@ -734,7 +762,7 @@ def upload_files():
         deducted = deduct_credit(uid, 'lecture_credits_standard', 'lecture_credits_extended')
         if not deducted:
             return jsonify({'error': 'No lecture credits remaining.'}), 402
-        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 3, 'mode': 'lecture-notes', 'user_id': uid, 'credit_deducted': deducted, 'credit_refunded': False, 'result': None, 'slide_text': None, 'transcript': None, 'error': None}
+        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 3, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'error': None}
         thread = threading.Thread(target=process_lecture_notes, args=(job_id, pdf_path, audio_path))
         thread.start()
         
@@ -751,7 +779,7 @@ def upload_files():
         deducted = deduct_credit(uid, 'slides_credits')
         if not deducted:
             return jsonify({'error': 'No slides credits remaining.'}), 402
-        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 1, 'mode': 'slides-only', 'user_id': uid, 'credit_deducted': deducted, 'credit_refunded': False, 'result': None, 'error': None}
+        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 1, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'error': None}
         thread = threading.Thread(target=process_slides_only, args=(job_id, pdf_path))
         thread.start()
         
@@ -769,7 +797,7 @@ def upload_files():
         deducted = deduct_interview_credit(uid)
         if not deducted:
             return jsonify({'error': 'No interview credits remaining.'}), 402
-        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 1, 'mode': 'interview', 'user_id': uid, 'credit_deducted': deducted, 'credit_refunded': False, 'result': None, 'error': None}
+        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 1, 'mode': 'interview', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'error': None}
         thread = threading.Thread(target=process_interview_transcription, args=(job_id, audio_path))
         thread.start()
         
