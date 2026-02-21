@@ -309,6 +309,26 @@ def refund_credit(uid, credit_type):
     except Exception as e:
         print(f"❌ Failed to refund credit '{credit_type}' to user {uid}: {e}")
 
+def save_purchase_record(uid, bundle_id, stripe_session_id):
+    """Save a purchase record to Firestore for purchase history."""
+    bundle = CREDIT_BUNDLES.get(bundle_id)
+    if not bundle:
+        return
+    try:
+        db.collection('purchases').add({
+            'uid': uid,
+            'bundle_id': bundle_id,
+            'bundle_name': bundle['name'],
+            'price_cents': bundle['price_cents'],
+            'currency': bundle['currency'],
+            'credits': bundle['credits'],
+            'stripe_session_id': stripe_session_id,
+            'created_at': time.time(),
+        })
+        print(f"📝 Saved purchase record for user {uid}: {bundle['name']}")
+    except Exception as e:
+        print(f"❌ Failed to save purchase record for user {uid}: {e}")
+
 # =============================================
 # HELPER FUNCTIONS
 # =============================================
@@ -641,17 +661,48 @@ def stripe_webhook():
         metadata = session.get('metadata', {})
         uid = metadata.get('uid', '')
         bundle_id = metadata.get('bundle_id', '')
+        stripe_session_id = session.get('id', '')
 
         if uid and bundle_id:
             success = grant_credits_to_user(uid, bundle_id)
             if success:
                 print(f"✅ Payment successful! Granted bundle '{bundle_id}' to user '{uid}'")
+                # Save purchase record for history
+                save_purchase_record(uid, bundle_id, stripe_session_id)
             else:
                 print(f"❌ Failed to grant bundle '{bundle_id}' to user '{uid}'")
         else:
             print(f"⚠️ Webhook received but missing metadata. uid='{uid}', bundle_id='{bundle_id}'")
 
     return '', 200
+
+# --- Purchase History Route ---
+
+@app.route('/api/purchase-history', methods=['GET'])
+def get_purchase_history():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    uid = decoded_token['uid']
+
+    try:
+        purchases_ref = db.collection('purchases').where('uid', '==', uid).order_by('created_at', direction=firestore.Query.DESCENDING).limit(50)
+        purchases = []
+        for doc in purchases_ref.stream():
+            p = doc.to_dict()
+            purchases.append({
+                'id': doc.id,
+                'bundle_name': p.get('bundle_name', 'Unknown'),
+                'price_cents': p.get('price_cents', 0),
+                'currency': p.get('currency', 'eur'),
+                'credits': p.get('credits', {}),
+                'created_at': p.get('created_at', 0),
+            })
+        return jsonify({'purchases': purchases})
+    except Exception as e:
+        print(f"Error fetching purchase history: {e}")
+        return jsonify({'purchases': []})
 
 # --- Upload & Processing Routes ---
 
