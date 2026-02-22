@@ -4,6 +4,8 @@ import threading
 import time
 import io
 import json
+import csv
+from datetime import datetime, timedelta
 import stripe
 from flask import Flask, request, jsonify, render_template, send_file
 from google import genai
@@ -41,6 +43,8 @@ db = firestore.client()
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY', '')
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
+ADMIN_EMAILS = {email.strip().lower() for email in os.getenv('ADMIN_EMAILS', '').split(',') if email.strip()}
+ADMIN_UIDS = {uid.strip() for uid in os.getenv('ADMIN_UIDS', '').split(',') if uid.strip()}
 
 # --- In-Memory Storage (jobs only — credits are in Firestore now) ---
 jobs = {}
@@ -365,6 +369,53 @@ def verify_firebase_token(request):
         print(f"Token verification failed: {e}")
         return None
 
+def is_admin_user(decoded_token):
+    if not decoded_token:
+        return False
+    uid = decoded_token.get('uid', '')
+    email = decoded_token.get('email', '').lower()
+    return uid in ADMIN_UIDS or email in ADMIN_EMAILS
+
+def get_admin_window(window_key):
+    windows = {
+        '24h': 24 * 60 * 60,
+        '7d': 7 * 24 * 60 * 60,
+        '30d': 30 * 24 * 60 * 60,
+    }
+    safe_key = window_key if window_key in windows else '7d'
+    return safe_key, windows[safe_key]
+
+def get_timestamp(value):
+    return value if isinstance(value, (int, float)) else 0
+
+def build_time_buckets(window_key, now_ts):
+    labels = []
+    keys = []
+    if window_key == '24h':
+        now_dt = datetime.utcfromtimestamp(now_ts).replace(minute=0, second=0, microsecond=0)
+        start_dt = now_dt - timedelta(hours=23)
+        for i in range(24):
+            current = start_dt + timedelta(hours=i)
+            labels.append(current.strftime('%H:%M'))
+            keys.append(current.strftime('%Y-%m-%d %H:00'))
+        granularity = 'hour'
+    else:
+        days = 7 if window_key == '7d' else 30
+        now_dt = datetime.utcfromtimestamp(now_ts).replace(hour=0, minute=0, second=0, microsecond=0)
+        start_dt = now_dt - timedelta(days=days - 1)
+        for i in range(days):
+            current = start_dt + timedelta(days=i)
+            labels.append(current.strftime('%d %b'))
+            keys.append(current.strftime('%Y-%m-%d'))
+        granularity = 'day'
+    return labels, keys, granularity
+
+def get_bucket_key(timestamp, window_key):
+    dt = datetime.utcfromtimestamp(timestamp)
+    if window_key == '24h':
+        return dt.replace(minute=0, second=0, microsecond=0).strftime('%Y-%m-%d %H:00')
+    return dt.replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%d')
+
 def allowed_file(filename, allowed_extensions):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
 
@@ -571,6 +622,10 @@ def process_interview_transcription(job_id, audio_path):
 def index():
     return render_template('index.html')
 
+@app.route('/admin')
+def admin_dashboard():
+    return render_template('admin.html')
+
 @app.route('/api/verify-email', methods=['POST'])
 def verify_email():
     email = request.get_json().get('email', '')
@@ -731,6 +786,253 @@ def get_purchase_history():
     except Exception as e:
         print(f"Error fetching purchase history: {e}")
         return jsonify({'purchases': []})
+
+@app.route('/api/admin/overview', methods=['GET'])
+def get_admin_overview():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    if not is_admin_user(decoded_token):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    try:
+        window_key, window_seconds = get_admin_window(request.args.get('window', '7d'))
+        now_ts = time.time()
+        window_start = now_ts - window_seconds
+
+        users_docs = list(db.collection('users').stream())
+        purchases_docs = list(db.collection('purchases').stream())
+        jobs_docs = list(db.collection('job_logs').stream())
+
+        total_users = len(users_docs)
+        new_users = 0
+        for doc in users_docs:
+            created_at = get_timestamp(doc.to_dict().get('created_at'))
+            if created_at >= window_start:
+                new_users += 1
+        total_processed = sum((doc.to_dict().get('total_processed', 0) or 0) for doc in users_docs)
+
+        total_revenue_cents = 0
+        purchase_count = 0
+        filtered_purchases = []
+        for doc in purchases_docs:
+            purchase = doc.to_dict()
+            created_at = get_timestamp(purchase.get('created_at'))
+            if created_at < window_start:
+                continue
+            filtered_purchases.append(purchase)
+            purchase_count += 1
+            total_revenue_cents += purchase.get('price_cents', 0) or 0
+
+        job_count = 0
+        success_jobs = 0
+        failed_jobs = 0
+        refunded_jobs = 0
+        durations = []
+        filtered_jobs = []
+        for doc in jobs_docs:
+            job = doc.to_dict()
+            finished_at = get_timestamp(job.get('finished_at'))
+            if finished_at < window_start:
+                continue
+            filtered_jobs.append(job)
+            job_count += 1
+            status = job.get('status', '')
+            if status == 'complete':
+                success_jobs += 1
+            elif status == 'error':
+                failed_jobs += 1
+            if job.get('credit_refunded'):
+                refunded_jobs += 1
+            duration = job.get('duration_seconds')
+            if isinstance(duration, (int, float)):
+                durations.append(duration)
+
+        avg_duration_seconds = round(sum(durations) / len(durations), 1) if durations else 0
+
+        mode_breakdown = {
+            'lecture-notes': {'label': 'Lecture Notes', 'total': 0, 'complete': 0, 'error': 0},
+            'slides-only': {'label': 'Slides Only', 'total': 0, 'complete': 0, 'error': 0},
+            'interview': {'label': 'Interview Transcript', 'total': 0, 'complete': 0, 'error': 0},
+            'other': {'label': 'Other', 'total': 0, 'complete': 0, 'error': 0},
+        }
+        for job in filtered_jobs:
+            mode = job.get('mode', '')
+            key = mode if mode in mode_breakdown else 'other'
+            status = job.get('status', '')
+            mode_breakdown[key]['total'] += 1
+            if status == 'complete':
+                mode_breakdown[key]['complete'] += 1
+            elif status == 'error':
+                mode_breakdown[key]['error'] += 1
+
+        recent_jobs_sorted = sorted(
+            filtered_jobs,
+            key=lambda j: get_timestamp(j.get('finished_at')),
+            reverse=True
+        )[:20]
+        recent_jobs = []
+        for job in recent_jobs_sorted:
+            recent_jobs.append({
+                'job_id': job.get('job_id', ''),
+                'email': job.get('email', ''),
+                'mode': job.get('mode', ''),
+                'status': job.get('status', ''),
+                'duration_seconds': job.get('duration_seconds', 0),
+                'credit_refunded': job.get('credit_refunded', False),
+                'finished_at': job.get('finished_at', 0),
+            })
+
+        recent_purchases_sorted = sorted(
+            filtered_purchases,
+            key=lambda p: get_timestamp(p.get('created_at')),
+            reverse=True
+        )[:20]
+        recent_purchases = []
+        for purchase in recent_purchases_sorted:
+            recent_purchases.append({
+                'uid': purchase.get('uid', ''),
+                'bundle_name': purchase.get('bundle_name', 'Unknown'),
+                'price_cents': purchase.get('price_cents', 0),
+                'currency': purchase.get('currency', 'eur'),
+                'created_at': purchase.get('created_at', 0),
+            })
+
+        trend_labels, trend_keys, trend_granularity = build_time_buckets(window_key, now_ts)
+        success_by_bucket = {key: {'complete': 0, 'error': 0} for key in trend_keys}
+        revenue_by_bucket = {key: 0 for key in trend_keys}
+
+        for job in filtered_jobs:
+            timestamp = get_timestamp(job.get('finished_at'))
+            bucket_key = get_bucket_key(timestamp, window_key)
+            if bucket_key not in success_by_bucket:
+                continue
+            status = job.get('status', '')
+            if status == 'complete':
+                success_by_bucket[bucket_key]['complete'] += 1
+            elif status == 'error':
+                success_by_bucket[bucket_key]['error'] += 1
+
+        for purchase in filtered_purchases:
+            timestamp = get_timestamp(purchase.get('created_at'))
+            bucket_key = get_bucket_key(timestamp, window_key)
+            if bucket_key not in revenue_by_bucket:
+                continue
+            revenue_by_bucket[bucket_key] += purchase.get('price_cents', 0) or 0
+
+        success_trend = []
+        revenue_trend = []
+        for key in trend_keys:
+            complete_count = success_by_bucket[key]['complete']
+            error_count = success_by_bucket[key]['error']
+            total_count = complete_count + error_count
+            success_rate = round((complete_count / total_count) * 100, 1) if total_count > 0 else 0
+            success_trend.append(success_rate)
+            revenue_trend.append(revenue_by_bucket[key])
+
+        return jsonify({
+            'window': {
+                'key': window_key,
+                'start': window_start,
+                'end': now_ts,
+            },
+            'metrics': {
+                'total_users': total_users,
+                'new_users': new_users,
+                'total_processed': total_processed,
+                'total_revenue_cents': total_revenue_cents,
+                'purchase_count': purchase_count,
+                'job_count': job_count,
+                'success_jobs': success_jobs,
+                'failed_jobs': failed_jobs,
+                'refunded_jobs': refunded_jobs,
+                'avg_duration_seconds': avg_duration_seconds,
+            },
+            'trends': {
+                'labels': trend_labels,
+                'success_rate': success_trend,
+                'revenue_cents': revenue_trend,
+                'granularity': trend_granularity,
+            },
+            'mode_breakdown': mode_breakdown,
+            'recent_jobs': recent_jobs,
+            'recent_purchases': recent_purchases,
+        })
+    except Exception as e:
+        print(f"Error fetching admin overview: {e}")
+        return jsonify({'error': 'Could not fetch admin dashboard data'}), 500
+
+@app.route('/api/admin/export', methods=['GET'])
+def export_admin_csv():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    if not is_admin_user(decoded_token):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    export_type = request.args.get('type', 'jobs')
+    if export_type not in {'jobs', 'purchases'}:
+        return jsonify({'error': 'Invalid export type'}), 400
+
+    window_key, window_seconds = get_admin_window(request.args.get('window', '7d'))
+    now_ts = time.time()
+    window_start = now_ts - window_seconds
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    try:
+        if export_type == 'jobs':
+            writer.writerow([
+                'job_id', 'uid', 'email', 'mode', 'status', 'credit_deducted',
+                'credit_refunded', 'error_message', 'started_at', 'finished_at', 'duration_seconds'
+            ])
+            for doc in db.collection('job_logs').stream():
+                job = doc.to_dict()
+                finished_at = get_timestamp(job.get('finished_at'))
+                if finished_at < window_start:
+                    continue
+                writer.writerow([
+                    job.get('job_id', doc.id),
+                    job.get('uid', ''),
+                    job.get('email', ''),
+                    job.get('mode', ''),
+                    job.get('status', ''),
+                    job.get('credit_deducted', ''),
+                    job.get('credit_refunded', False),
+                    job.get('error_message', ''),
+                    job.get('started_at', 0),
+                    job.get('finished_at', 0),
+                    job.get('duration_seconds', 0),
+                ])
+        else:
+            writer.writerow([
+                'uid', 'bundle_id', 'bundle_name', 'price_cents', 'currency',
+                'credits', 'stripe_session_id', 'created_at'
+            ])
+            for doc in db.collection('purchases').stream():
+                purchase = doc.to_dict()
+                created_at = get_timestamp(purchase.get('created_at'))
+                if created_at < window_start:
+                    continue
+                writer.writerow([
+                    purchase.get('uid', ''),
+                    purchase.get('bundle_id', ''),
+                    purchase.get('bundle_name', ''),
+                    purchase.get('price_cents', 0),
+                    purchase.get('currency', 'eur'),
+                    json.dumps(purchase.get('credits', {}), ensure_ascii=True),
+                    purchase.get('stripe_session_id', ''),
+                    purchase.get('created_at', 0),
+                ])
+
+        filename = f"admin-{export_type}-{window_key}.csv"
+        response = app.response_class(output.getvalue(), mimetype='text/csv')
+        response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+        return response
+    except Exception as e:
+        print(f"Error exporting admin CSV ({export_type}): {e}")
+        return jsonify({'error': 'Could not export CSV'}), 500
 
 # --- Upload & Processing Routes ---
 

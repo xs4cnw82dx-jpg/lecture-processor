@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lecture Processor Admin</title>
+    <style>
+        :root {
+            --primary: #4F46E5;
+            --secondary: #0EA5E9;
+            --success: #10B981;
+            --danger: #EF4444;
+            --bg: #F8FAFC;
+            --card: #FFFFFF;
+            --text: #0F172A;
+            --muted: #64748B;
+            --border: #E2E8F0;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #EFF6FF 0%, var(--bg) 45%, #F8FAFC 100%);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        .container { max-width: 1250px; margin: 0 auto; padding: 24px; }
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 16px;
+            background: rgba(255, 255, 255, 0.85);
+            border: 1px solid var(--border);
+            padding: 14px 16px;
+            border-radius: 14px;
+            backdrop-filter: blur(8px);
+        }
+        .topbar h1 { font-size: 1.25rem; font-weight: 700; }
+        .topbar .meta { color: var(--muted); font-size: 0.9rem; margin-top: 2px; }
+        .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .filters {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            background: rgba(255, 255, 255, 0.85);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 10px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            border: 1px solid var(--border);
+            background: #fff;
+            color: var(--text);
+            padding: 9px 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .btn:hover { background: #F8FAFC; }
+        .btn.primary {
+            border: none;
+            color: #fff;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+        }
+        .btn.filter.active {
+            border: 1px solid transparent;
+            color: #fff;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+        }
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .metric {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 14px;
+        }
+        .metric .label { color: var(--muted); font-size: 0.84rem; margin-bottom: 6px; }
+        .metric .value { font-size: 1.3rem; font-weight: 800; }
+        .metric .sub { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+        .charts {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .chart-panel {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 14px;
+        }
+        .chart-panel h2 { font-size: 1rem; margin-bottom: 10px; }
+        .chart-wrap {
+            display: flex;
+            align-items: flex-end;
+            gap: 4px;
+            height: 180px;
+            border: 1px solid #F1F5F9;
+            border-radius: 10px;
+            padding: 8px;
+            background: #F8FAFC;
+            overflow: hidden;
+        }
+        .bar-col {
+            flex: 1;
+            min-width: 8px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 4px;
+            height: 100%;
+        }
+        .bar {
+            width: 100%;
+            max-width: 20px;
+            border-radius: 6px 6px 0 0;
+            min-height: 2px;
+        }
+        .bar.success { background: linear-gradient(180deg, #34D399, #10B981); }
+        .bar.revenue { background: linear-gradient(180deg, #60A5FA, #0EA5E9); }
+        .bar-label {
+            font-size: 0.64rem;
+            color: var(--muted);
+            transform: rotate(-40deg);
+            transform-origin: top left;
+            width: 32px;
+            white-space: nowrap;
+        }
+        .chart-meta {
+            margin-top: 8px;
+            display: flex;
+            justify-content: space-between;
+            color: var(--muted);
+            font-size: 0.78rem;
+        }
+        .mode-panel {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 14px;
+            margin-bottom: 12px;
+        }
+        .mode-panel-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+        .mode-menu { display: flex; gap: 8px; flex-wrap: wrap; }
+        .btn.mode-view.active {
+            border: 1px solid transparent;
+            color: #fff;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+        }
+        .mode-bars { display: grid; gap: 10px; }
+        .mode-row {
+            display: grid;
+            grid-template-columns: 160px 1fr 64px;
+            align-items: center;
+            gap: 10px;
+        }
+        .mode-label { font-size: 0.86rem; color: var(--text); font-weight: 600; }
+        .mode-track {
+            height: 14px;
+            border-radius: 999px;
+            background: #E2E8F0;
+            overflow: hidden;
+        }
+        .mode-fill {
+            height: 100%;
+            border-radius: 999px;
+            background: linear-gradient(135deg, #60A5FA, #2563EB);
+            min-width: 2px;
+        }
+        .mode-value { font-size: 0.82rem; color: var(--muted); text-align: right; }
+        .grid {
+            display: grid;
+            grid-template-columns: 2fr 1.4fr;
+            gap: 12px;
+        }
+        .panel {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 14px;
+        }
+        .panel h2 { font-size: 1rem; margin-bottom: 10px; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+        th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #F1F5F9; }
+        th { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+        .status { font-weight: 700; font-size: 0.78rem; padding: 3px 8px; border-radius: 999px; display: inline-block; }
+        .status.complete { color: #065F46; background: #D1FAE5; }
+        .status.error { color: #991B1B; background: #FEE2E2; }
+        .status.other { color: #1E40AF; background: #DBEAFE; }
+        .empty { color: var(--muted); font-size: 0.9rem; padding: 6px 0; }
+        .loading, .error, .blocked {
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 20px;
+            text-align: center;
+        }
+        .error { color: #991B1B; border-color: #FECACA; background: #FEF2F2; }
+        .blocked { color: #7C2D12; border-color: #FED7AA; background: #FFF7ED; }
+        @media (max-width: 1100px) {
+            .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            .charts { grid-template-columns: 1fr; }
+            .grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 720px) {
+            .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .mode-row { grid-template-columns: 1fr; }
+            .mode-value { text-align: left; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="topbar">
+            <div>
+                <h1>Lecture Processor Admin</h1>
+                <div class="meta" id="signed-in-meta">Checking sign-in...</div>
+            </div>
+            <div class="actions">
+                <button class="btn" id="back-btn" type="button">Back to app</button>
+                <button class="btn" id="refresh-btn" type="button">Refresh</button>
+                <button class="btn" id="export-jobs-btn" type="button">Export jobs CSV</button>
+                <button class="btn" id="export-purchases-btn" type="button">Export purchases CSV</button>
+                <button class="btn primary" id="auth-btn" type="button">Sign in</button>
+            </div>
+        </div>
+
+        <div class="filters">
+            <button class="btn filter" data-window="24h" type="button">Last 24h</button>
+            <button class="btn filter active" data-window="7d" type="button">Last 7d</button>
+            <button class="btn filter" data-window="30d" type="button">Last 30d</button>
+        </div>
+
+        <div id="state-area" class="loading">Loading admin dashboard...</div>
+
+        <div id="dashboard" style="display:none;">
+            <section class="metrics">
+                <article class="metric"><div class="label">Total users</div><div class="value" id="m-users">0</div><div class="sub" id="m-users-sub">0 new in window</div></article>
+                <article class="metric"><div class="label">Jobs in window</div><div class="value" id="m-jobs">0</div></article>
+                <article class="metric"><div class="label">Success rate</div><div class="value" id="m-success-rate">0%</div></article>
+                <article class="metric"><div class="label">Revenue in window</div><div class="value" id="m-revenue">€0.00</div></article>
+                <article class="metric"><div class="label">Purchases in window</div><div class="value" id="m-purchases">0</div></article>
+                <article class="metric"><div class="label">Credits processed</div><div class="value" id="m-processed">0</div><div class="sub">All-time</div></article>
+                <article class="metric"><div class="label">Refunded jobs</div><div class="value" id="m-refunds">0</div></article>
+                <article class="metric"><div class="label">Avg duration</div><div class="value" id="m-duration">0s</div></article>
+                <article class="metric"><div class="label">Successful jobs</div><div class="value" id="m-success-jobs">0</div></article>
+                <article class="metric"><div class="label">Failed jobs</div><div class="value" id="m-failed-jobs">0</div></article>
+            </section>
+
+            <section class="charts">
+                <div class="chart-panel">
+                    <h2>Success Rate Trend</h2>
+                    <div class="chart-wrap" id="success-chart"></div>
+                    <div class="chart-meta"><span id="success-granularity">Granularity: day</span><span id="success-latest">Latest: 0%</span></div>
+                </div>
+                <div class="chart-panel">
+                    <h2>Revenue Trend (EUR)</h2>
+                    <div class="chart-wrap" id="revenue-chart"></div>
+                    <div class="chart-meta"><span id="revenue-granularity">Granularity: day</span><span id="revenue-total">Window total: €0.00</span></div>
+                </div>
+            </section>
+
+            <section class="mode-panel">
+                <div class="mode-panel-head">
+                    <h2>Mode Breakdown</h2>
+                    <div class="mode-menu">
+                        <button class="btn mode-view active" data-mode-view="total" type="button">Total</button>
+                        <button class="btn mode-view" data-mode-view="complete" type="button">Success</button>
+                        <button class="btn mode-view" data-mode-view="error" type="button">Failed</button>
+                    </div>
+                </div>
+                <div class="mode-bars" id="mode-breakdown-bars"></div>
+            </section>
+
+            <section class="grid">
+                <div class="panel">
+                    <h2>Recent Jobs</h2>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>User</th>
+                                    <th>Mode</th>
+                                    <th>Status</th>
+                                    <th>Duration</th>
+                                    <th>Refund</th>
+                                </tr>
+                            </thead>
+                            <tbody id="jobs-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="panel">
+                    <h2>Recent Purchases</h2>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Bundle</th>
+                                    <th>Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody id="purchases-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBAAeEUCPNvP5qnqpP3M6HnFZ6vaaijUvM",
+            authDomain: "lecture-processor-cdff6.firebaseapp.com",
+            projectId: "lecture-processor-cdff6",
+            storageBucket: "lecture-processor-cdff6.firebasestorage.app",
+            messagingSenderId: "374793454161",
+            appId: "1:374793454161:web:c68b21590e9a1fafa32e70"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+
+        const signedInMeta = document.getElementById('signed-in-meta');
+        const stateArea = document.getElementById('state-area');
+        const dashboard = document.getElementById('dashboard');
+        const authBtn = document.getElementById('auth-btn');
+        const refreshBtn = document.getElementById('refresh-btn');
+        const backBtn = document.getElementById('back-btn');
+        const exportJobsBtn = document.getElementById('export-jobs-btn');
+        const exportPurchasesBtn = document.getElementById('export-purchases-btn');
+
+        let currentWindow = '7d';
+        let currentModeView = 'total';
+        let latestModeBreakdown = {};
+
+        function formatMoney(cents) {
+            return `€${((cents || 0) / 100).toFixed(2)}`;
+        }
+
+        function formatDate(timestampSeconds) {
+            if (!timestampSeconds) return '-';
+            const dt = new Date(timestampSeconds * 1000);
+            return dt.toLocaleString('en-GB', {
+                day: '2-digit', month: 'short', year: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            });
+        }
+
+        function setState(message, type = 'loading') {
+            stateArea.textContent = message;
+            stateArea.className = type;
+            stateArea.style.display = 'block';
+            dashboard.style.display = 'none';
+        }
+
+        function renderRows(tbodyId, rowsHtml, emptyText, colspan = 8) {
+            const tbody = document.getElementById(tbodyId);
+            if (!rowsHtml.length) {
+                tbody.innerHTML = `<tr><td colspan="${colspan}" class="empty">${emptyText}</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = rowsHtml.join('');
+        }
+
+        function renderBars(containerId, labels, values, type) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            if (!labels.length) {
+                container.innerHTML = '<div class="empty">No data for selected window.</div>';
+                return;
+            }
+            const maxValue = Math.max(...values, 1);
+            labels.forEach((label, idx) => {
+                const value = values[idx] || 0;
+                const heightPercent = (value / maxValue) * 100;
+                const col = document.createElement('div');
+                col.className = 'bar-col';
+                col.title = `${label}: ${type === 'success' ? value + '%' : formatMoney(value)}`;
+                const bar = document.createElement('div');
+                bar.className = `bar ${type}`;
+                bar.style.height = `${Math.max(heightPercent, 1)}%`;
+                const labelEl = document.createElement('div');
+                labelEl.className = 'bar-label';
+                labelEl.textContent = label;
+                col.appendChild(bar);
+                if (labels.length <= 12 || idx % Math.ceil(labels.length / 10) === 0 || idx === labels.length - 1) {
+                    col.appendChild(labelEl);
+                }
+                container.appendChild(col);
+            });
+        }
+
+        function renderModeBreakdown() {
+            const container = document.getElementById('mode-breakdown-bars');
+            const entries = Object.values(latestModeBreakdown || {}).filter((item) => item && item.label);
+            if (!entries.length) {
+                container.innerHTML = '<div class=\"empty\">No mode data for selected window.</div>';
+                return;
+            }
+            const maxValue = Math.max(...entries.map((entry) => entry[currentModeView] || 0), 1);
+            const rows = entries.map((entry) => {
+                const value = entry[currentModeView] || 0;
+                const width = Math.max((value / maxValue) * 100, value > 0 ? 2 : 0);
+                return `
+                    <div class=\"mode-row\">
+                        <div class=\"mode-label\">${entry.label}</div>
+                        <div class=\"mode-track\"><div class=\"mode-fill\" style=\"width:${width}%;\"></div></div>
+                        <div class=\"mode-value\">${value}</div>
+                    </div>
+                `;
+            });
+            container.innerHTML = rows.join('');
+        }
+
+        function renderDashboard(data) {
+            const m = data.metrics || {};
+            const t = data.trends || {};
+            const successRate = m.job_count > 0 ? Math.round((m.success_jobs / m.job_count) * 100) : 0;
+
+            document.getElementById('m-users').textContent = m.total_users || 0;
+            document.getElementById('m-users-sub').textContent = `${m.new_users || 0} new in window`;
+            document.getElementById('m-jobs').textContent = m.job_count || 0;
+            document.getElementById('m-success-rate').textContent = `${successRate}%`;
+            document.getElementById('m-revenue').textContent = formatMoney(m.total_revenue_cents || 0);
+            document.getElementById('m-purchases').textContent = m.purchase_count || 0;
+            document.getElementById('m-processed').textContent = m.total_processed || 0;
+            document.getElementById('m-refunds').textContent = m.refunded_jobs || 0;
+            document.getElementById('m-duration').textContent = `${m.avg_duration_seconds || 0}s`;
+            document.getElementById('m-success-jobs').textContent = m.success_jobs || 0;
+            document.getElementById('m-failed-jobs').textContent = m.failed_jobs || 0;
+
+            const labels = t.labels || [];
+            const successTrend = t.success_rate || [];
+            const revenueTrend = t.revenue_cents || [];
+            latestModeBreakdown = data.mode_breakdown || {};
+
+            renderBars('success-chart', labels, successTrend, 'success');
+            renderBars('revenue-chart', labels, revenueTrend, 'revenue');
+            renderModeBreakdown();
+
+            document.getElementById('success-granularity').textContent = `Granularity: ${t.granularity || 'day'}`;
+            document.getElementById('revenue-granularity').textContent = `Granularity: ${t.granularity || 'day'}`;
+            document.getElementById('success-latest').textContent = `Latest: ${successTrend.length ? successTrend[successTrend.length - 1] : 0}%`;
+            const revenueTotal = revenueTrend.reduce((acc, value) => acc + (value || 0), 0);
+            document.getElementById('revenue-total').textContent = `Window total: ${formatMoney(revenueTotal)}`;
+
+            const jobRows = (data.recent_jobs || []).map((job) => {
+                const status = job.status || 'unknown';
+                const statusClass = status === 'complete' ? 'complete' : (status === 'error' ? 'error' : 'other');
+                return `
+                    <tr>
+                        <td>${formatDate(job.finished_at)}</td>
+                        <td>${(job.email || '').slice(0, 32) || '-'}</td>
+                        <td>${job.mode || '-'}</td>
+                        <td><span class="status ${statusClass}">${status}</span></td>
+                        <td>${job.duration_seconds || 0}s</td>
+                        <td>${job.credit_refunded ? 'Yes' : 'No'}</td>
+                    </tr>
+                `;
+            });
+            renderRows('jobs-body', jobRows, 'No jobs found in selected window.', 6);
+
+            const purchaseRows = (data.recent_purchases || []).map((purchase) => `
+                <tr>
+                    <td>${formatDate(purchase.created_at)}</td>
+                    <td>${purchase.bundle_name || '-'}</td>
+                    <td>${formatMoney(purchase.price_cents || 0)}</td>
+                </tr>
+            `);
+            renderRows('purchases-body', purchaseRows, 'No purchases found in selected window.', 3);
+
+            stateArea.style.display = 'none';
+            dashboard.style.display = 'block';
+        }
+
+        async function loadAdminOverview(user) {
+            if (!user) {
+                setState('Please sign in to continue.', 'blocked');
+                return;
+            }
+            setState('Loading admin dashboard...', 'loading');
+            try {
+                const token = await user.getIdToken();
+                const res = await fetch(`/api/admin/overview?window=${encodeURIComponent(currentWindow)}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (res.status === 403) {
+                    setState('Your account is signed in but not configured as admin. Set ADMIN_EMAILS or ADMIN_UIDS on the server.', 'blocked');
+                    return;
+                }
+                if (!res.ok) {
+                    setState('Could not load dashboard data. Please refresh.', 'error');
+                    return;
+                }
+
+                const data = await res.json();
+                renderDashboard(data);
+            } catch (error) {
+                console.error(error);
+                setState('Network error while loading dashboard.', 'error');
+            }
+        }
+
+        async function exportCsv(type) {
+            if (!auth.currentUser) {
+                setState('Please sign in to export CSV.', 'blocked');
+                return;
+            }
+            try {
+                const token = await auth.currentUser.getIdToken();
+                const res = await fetch(`/api/admin/export?type=${encodeURIComponent(type)}&window=${encodeURIComponent(currentWindow)}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!res.ok) {
+                    setState('Could not export CSV right now.', 'error');
+                    return;
+                }
+                const blob = await res.blob();
+                const disposition = res.headers.get('Content-Disposition') || '';
+                const match = disposition.match(/filename=([^;]+)/i);
+                const filename = match ? match[1].trim() : `admin-${type}-${currentWindow}.csv`;
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                console.error(error);
+                setState('Network error while exporting CSV.', 'error');
+            }
+        }
+
+        function setActiveFilterButton() {
+            document.querySelectorAll('.filter').forEach((btn) => {
+                btn.classList.toggle('active', btn.dataset.window === currentWindow);
+            });
+        }
+
+        function setActiveModeViewButton() {
+            document.querySelectorAll('.mode-view').forEach((btn) => {
+                btn.classList.toggle('active', btn.dataset.modeView === currentModeView);
+            });
+        }
+
+        auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                signedInMeta.textContent = `Signed in as ${user.email}`;
+                authBtn.textContent = 'Sign out';
+                await loadAdminOverview(user);
+            } else {
+                signedInMeta.textContent = 'Not signed in';
+                authBtn.textContent = 'Sign in';
+                setState('Please sign in with your admin account.', 'blocked');
+            }
+        });
+
+        authBtn.addEventListener('click', async () => {
+            if (auth.currentUser) {
+                await auth.signOut();
+                return;
+            }
+            window.location.href = '/';
+        });
+
+        refreshBtn.addEventListener('click', async () => {
+            if (!auth.currentUser) {
+                setState('Please sign in to refresh.', 'blocked');
+                return;
+            }
+            await loadAdminOverview(auth.currentUser);
+        });
+
+        backBtn.addEventListener('click', () => {
+            window.location.href = '/';
+        });
+
+        exportJobsBtn.addEventListener('click', async () => {
+            await exportCsv('jobs');
+        });
+
+        exportPurchasesBtn.addEventListener('click', async () => {
+            await exportCsv('purchases');
+        });
+
+        document.querySelectorAll('.filter').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                currentWindow = btn.dataset.window;
+                setActiveFilterButton();
+                if (auth.currentUser) {
+                    await loadAdminOverview(auth.currentUser);
+                }
+            });
+        });
+
+        document.querySelectorAll('.mode-view').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                currentModeView = btn.dataset.modeView;
+                setActiveModeViewButton();
+                renderModeBreakdown();
+            });
+        });
+
+        setActiveFilterButton();
+        setActiveModeViewButton();
+    </script>
+</body>
+</html>
