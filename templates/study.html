@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Study Library</title>
+  <style>
+    :root {
+      --primary: #4F46E5;
+      --primary-dark: #4338CA;
+      --secondary: #0EA5E9;
+      --success: #10B981;
+      --error: #EF4444;
+      --gray-50: #F9FAFB;
+      --gray-100: #F3F4F6;
+      --gray-200: #E5E7EB;
+      --gray-300: #D1D5DB;
+      --gray-400: #9CA3AF;
+      --gray-500: #6B7280;
+      --gray-700: #374151;
+      --gray-900: #111827;
+      --white: #FFFFFF;
+      --radius: 10px;
+      --radius-lg: 16px;
+      --shadow: 0 8px 24px rgba(15, 23, 42, 0.09);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(135deg, #EEF2FF 0%, #F8FAFC 75%); color: var(--gray-900); }
+    input, textarea, select, button { font-family: inherit; }
+    .container { max-width: 1360px; margin: 0 auto; padding: 20px; }
+
+    .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px; background: rgba(255,255,255,0.92); border: 1px solid var(--gray-200); border-radius: var(--radius-lg); box-shadow: var(--shadow); margin-bottom: 12px; }
+    .topbar h1 { font-size: 1.2rem; }
+    .topbar-sub { font-size: 0.85rem; color: var(--gray-500); margin-top: 2px; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    .btn { border: 1px solid var(--gray-300); background: var(--white); color: var(--gray-700); border-radius: var(--radius); padding: 9px 12px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
+    .btn:hover { border-color: var(--gray-400); color: var(--gray-900); }
+    .btn.primary { background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%); border: none; color: var(--white); }
+    .btn.primary:hover { opacity: 0.92; }
+    .btn.danger { border-color: rgba(239,68,68,0.35); color: #991B1B; background: rgba(239,68,68,0.08); }
+
+    .grid { display: grid; grid-template-columns: 320px 1fr; gap: 12px; }
+    @media (max-width: 1020px) { .grid { grid-template-columns: 1fr; } }
+
+    .panel { background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius-lg); box-shadow: var(--shadow); min-height: 70vh; }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px; border-bottom: 1px solid var(--gray-200); }
+    .panel-title { font-size: 0.95rem; font-weight: 700; }
+    .panel-body { padding: 12px; }
+
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field label { font-size: 0.75rem; color: var(--gray-500); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .field input, .field textarea, .field select { border: 1px solid var(--gray-300); border-radius: var(--radius); padding: 9px 10px; font-size: 0.9rem; color: var(--gray-900); background: var(--white); }
+    .field input:focus, .field textarea:focus, .field select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.08); }
+    .field textarea { min-height: 78px; resize: vertical; }
+
+    .search-box { margin-bottom: 10px; }
+    .list { display: flex; flex-direction: column; gap: 8px; max-height: 68vh; overflow-y: auto; padding-right: 2px; }
+
+    .item { border: 1px solid var(--gray-200); border-radius: var(--radius); padding: 10px; background: var(--gray-50); cursor: pointer; transition: all 0.15s ease; }
+    .item:hover { border-color: var(--gray-300); }
+    .item.active { border-color: var(--primary); background: rgba(79,70,229,0.08); }
+    .item.dragging { opacity: 0.5; }
+    .item.drop-target { border-color: var(--success); background: rgba(16,185,129,0.12); }
+    .item-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+    .item-title { font-size: 0.9rem; font-weight: 700; }
+    .item-sub { margin-top: 4px; font-size: 0.78rem; color: var(--gray-500); }
+
+    .split { display: grid; grid-template-columns: 360px 1fr; gap: 12px; }
+    @media (max-width: 1200px) { .split { grid-template-columns: 1fr; } }
+
+    .meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+    @media (max-width: 700px) { .meta-grid { grid-template-columns: 1fr; } }
+
+    .editor-wrap { display: none; }
+    .editor-wrap.visible { display: block; }
+    .empty { color: var(--gray-500); font-size: 0.9rem; padding: 16px; border: 1px dashed var(--gray-300); border-radius: var(--radius); background: var(--gray-50); }
+
+    .editor-tabs { display: flex; gap: 8px; margin-bottom: 10px; }
+    .editor-tab { border: 1px solid var(--gray-300); background: var(--white); border-radius: var(--radius); padding: 8px 10px; font-size: 0.82rem; font-weight: 700; color: var(--gray-700); cursor: pointer; }
+    .editor-tab.active { border-color: var(--primary); background: rgba(79,70,229,0.1); color: var(--primary-dark); }
+
+    .editor-pane { display: none; }
+    .editor-pane.active { display: block; }
+
+    .notes-view { border: 1px solid var(--gray-200); border-radius: var(--radius); background: var(--gray-50); padding: 16px; max-height: 60vh; overflow-y: auto; font-size: 0.92rem; line-height: 1.65; }
+    .notes-view h1, .notes-view h2, .notes-view h3 { margin-top: 16px; margin-bottom: 8px; }
+
+    .editor-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    .editor-count { font-size: 0.82rem; color: var(--gray-500); font-weight: 600; }
+
+    .editor-list { display: flex; flex-direction: column; gap: 10px; max-height: 58vh; overflow-y: auto; padding-right: 2px; }
+    .editor-card { border: 1px solid var(--gray-200); border-radius: var(--radius); background: var(--gray-50); padding: 10px; }
+    .editor-card.newly-added { border-color: var(--success); box-shadow: 0 0 0 2px rgba(16,185,129,0.18); }
+    .editor-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .editor-card-title { font-size: 0.8rem; color: var(--gray-500); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+
+    .q-options-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    @media (max-width: 700px) { .q-options-grid { grid-template-columns: 1fr; } }
+
+    .learn-stage { position: fixed; inset: 0; z-index: 300; background: radial-gradient(circle at 20% 20%, rgba(79,70,229,0.25), transparent 45%), radial-gradient(circle at 80% 20%, rgba(14,165,233,0.2), transparent 45%), linear-gradient(135deg, #EEF2FF 0%, #F8FAFC 100%); display: none; }
+    .learn-stage.visible { display: block; }
+    .learn-shell { height: 100%; display: flex; flex-direction: column; padding: 20px; }
+    .learn-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: rgba(255,255,255,0.9); border: 1px solid var(--gray-200); border-radius: var(--radius-lg); box-shadow: var(--shadow); padding: 12px; }
+    .learn-title { font-size: 1rem; font-weight: 700; }
+    .learn-sub { font-size: 0.82rem; color: var(--gray-500); }
+    .learn-body { flex: 1; min-height: 0; display: grid; place-items: center; padding: 12px 0; }
+    .learn-card { width: min(980px, 100%); max-height: 100%; background: rgba(255,255,255,0.94); border: 1px solid var(--gray-200); border-radius: 22px; box-shadow: var(--shadow); padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+    .learn-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+    .learn-tab { border: 1px solid var(--gray-300); background: var(--white); border-radius: var(--radius); padding: 8px 10px; font-size: 0.82rem; font-weight: 700; color: var(--gray-700); cursor: pointer; }
+    .learn-tab.active { border-color: var(--primary); background: rgba(79,70,229,0.1); color: var(--primary-dark); }
+    .learn-pane { display: none; min-height: 0; }
+    .learn-pane.active { display: block; }
+
+    .learn-notes { border: 1px solid var(--gray-200); border-radius: var(--radius); background: var(--gray-50); padding: 16px; max-height: 60vh; overflow-y: auto; font-size: 0.95rem; line-height: 1.75; }
+
+    .flashcard-stage { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .flashcard-box { width: min(860px, 100%); min-height: 330px; border: 1px solid var(--gray-200); border-radius: 20px; background: linear-gradient(135deg, rgba(79,70,229,0.08) 0%, rgba(14,165,233,0.1) 100%); display: grid; place-items: center; text-align: center; padding: 24px; font-size: 1.2rem; line-height: 1.6; cursor: pointer; }
+    .learn-controls { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .learn-progress { font-size: 0.85rem; color: var(--gray-500); min-width: 120px; text-align: center; }
+
+    .quiz-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 0.9rem; }
+    .quiz-question { font-size: 1.05rem; font-weight: 700; margin-bottom: 10px; }
+    .quiz-options { display: grid; gap: 8px; }
+    .quiz-option { width: 100%; text-align: left; border: 1px solid var(--gray-300); background: var(--white); border-radius: var(--radius); padding: 10px 12px; cursor: pointer; }
+    .quiz-option.correct { border-color: var(--success); background: rgba(16,185,129,0.12); }
+    .quiz-option.wrong { border-color: var(--error); background: rgba(239,68,68,0.12); }
+    .quiz-expl { margin-top: 8px; border: 1px solid var(--gray-200); border-radius: var(--radius); background: rgba(14,165,233,0.08); padding: 10px 12px; display: none; }
+    .quiz-expl.visible { display: block; }
+
+    .modal-overlay { position: fixed; inset: 0; z-index: 260; background: rgba(2, 6, 23, 0.45); display: none; align-items: center; justify-content: center; padding: 18px; }
+    .modal-overlay.visible { display: flex; }
+    .modal { width: min(560px, 100%); background: var(--white); border: 1px solid var(--gray-200); border-radius: 18px; box-shadow: var(--shadow); padding: 16px; }
+    .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .modal-title { font-size: 1rem; font-weight: 700; }
+    .modal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    @media (max-width: 620px) { .modal-grid { grid-template-columns: 1fr; } }
+
+    .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--gray-900); color: var(--white); border-radius: var(--radius); padding: 10px 12px; font-size: 0.9rem; opacity: 0; transition: opacity 0.2s ease; z-index: 500; }
+    .toast.visible { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div>
+        <h1>Study Library</h1>
+        <div class="topbar-sub" id="user-meta">Checking sign-in...</div>
+      </div>
+      <div class="actions">
+        <button class="btn" id="back-app-btn">Back to App</button>
+        <button class="btn" id="fullscreen-btn">Fullscreen Learn</button>
+        <button class="btn primary" id="auth-btn">Sign in</button>
+      </div>
+    </div>
+
+    <div class="grid" id="library-grid">
+      <aside class="panel">
+        <div class="panel-head">
+          <span class="panel-title">Folders</span>
+          <div class="actions">
+            <button class="btn" id="new-folder-btn">+ Folder</button>
+            <button class="btn danger" id="delete-folder-btn">Delete</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="field search-box">
+            <label>Search</label>
+            <input id="search-input" placeholder="Filter packs by title, course or subject">
+          </div>
+          <div class="list" id="folder-list"></div>
+        </div>
+      </aside>
+
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">Study Packs</span>
+          <div class="actions">
+            <button class="btn" id="save-pack-btn">Save Changes</button>
+            <button class="btn danger" id="delete-pack-btn">Delete Pack</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="split">
+            <div>
+              <div class="list" id="pack-list"></div>
+            </div>
+            <div>
+              <div class="empty" id="pack-empty">Select a study pack to edit and study.</div>
+              <div class="editor-wrap" id="pack-editor-wrap">
+                <div class="meta-grid">
+                  <div class="field"><label>Title</label><input id="pack-title"></div>
+                  <div class="field"><label>Folder</label><select id="pack-folder-select"></select></div>
+                  <div class="field"><label>Course</label><input id="pack-course"></div>
+                  <div class="field"><label>Subject</label><input id="pack-subject"></div>
+                  <div class="field"><label>Semester</label><input id="pack-semester"></div>
+                  <div class="field"><label>Block</label><input id="pack-block"></div>
+                </div>
+                <div class="actions" style="margin-bottom:10px;">
+                  <button class="btn" id="export-pack-csv-btn">Export Flashcards CSV</button>
+                  <button class="btn primary" id="open-learn-btn">Learn Mode</button>
+                </div>
+
+                <div class="editor-tabs">
+                  <button class="editor-tab active" data-editor-pane="notes">Notes</button>
+                  <button class="editor-tab" data-editor-pane="flashcards">Flashcards</button>
+                  <button class="editor-tab" data-editor-pane="test">Practice Test</button>
+                </div>
+
+                <div class="editor-pane active" id="editor-pane-notes">
+                  <div class="notes-view" id="notes-view"></div>
+                </div>
+
+                <div class="editor-pane" id="editor-pane-flashcards">
+                  <div class="editor-toolbar">
+                    <span class="editor-count" id="flashcard-count">0 flashcards</span>
+                    <button class="btn" id="add-flashcard-btn">+ Add flashcard</button>
+                  </div>
+                  <div class="editor-list" id="flashcard-editor-list"></div>
+                </div>
+
+                <div class="editor-pane" id="editor-pane-test">
+                  <div class="editor-toolbar">
+                    <span class="editor-count" id="question-count">0 practice questions</span>
+                    <button class="btn" id="add-question-btn">+ Add question</button>
+                  </div>
+                  <div class="editor-list" id="question-editor-list"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="learn-stage" id="learn-stage">
+    <div class="learn-shell">
+      <div class="learn-top">
+        <div>
+          <div class="learn-title" id="learn-title">Learn Mode</div>
+          <div class="learn-sub" id="learn-sub">Focused study session</div>
+        </div>
+        <div class="actions">
+          <button class="btn" id="learn-back-app-btn">Back to App</button>
+          <button class="btn" id="learn-back-library-btn">Back to Study Library</button>
+          <button class="btn" id="learn-fullscreen-btn">Toggle Fullscreen</button>
+        </div>
+      </div>
+      <div class="learn-body">
+        <div class="learn-card">
+          <div class="learn-tabs">
+            <button class="learn-tab active" data-learn-pane="notes">Notes</button>
+            <button class="learn-tab" data-learn-pane="flashcards">Flashcards</button>
+            <button class="learn-tab" data-learn-pane="test">Practice Test</button>
+          </div>
+
+          <div class="learn-pane active" id="learn-pane-notes">
+            <div class="learn-notes" id="learn-notes-content"></div>
+          </div>
+
+          <div class="learn-pane" id="learn-pane-flashcards">
+            <div class="flashcard-stage">
+              <div class="flashcard-box" id="learn-flashcard-box"></div>
+              <div class="learn-controls">
+                <button class="btn" id="learn-f-prev">Previous</button>
+                <button class="btn" id="learn-f-flip">Flip</button>
+                <button class="btn" id="learn-f-next">Next</button>
+                <span class="learn-progress" id="learn-f-progress">Card 0 of 0</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="learn-pane" id="learn-pane-test">
+            <div class="quiz-head">
+              <span id="learn-q-progress">Question 0 of 0</span>
+              <span id="learn-q-score">Score: 0/0</span>
+            </div>
+            <div class="quiz-question" id="learn-q-text"></div>
+            <div class="quiz-options" id="learn-q-options"></div>
+            <div class="quiz-expl" id="learn-q-expl"></div>
+            <div class="actions" style="margin-top:10px;">
+              <button class="btn" id="learn-q-next">Next question</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="folder-modal-overlay">
+    <div class="modal">
+      <div class="modal-head">
+        <span class="modal-title" id="folder-modal-title">New Folder</span>
+        <button class="btn" id="folder-modal-close">Close</button>
+      </div>
+      <div class="modal-grid" style="margin-bottom:10px;">
+        <div class="field"><label>Folder Name *</label><input id="folder-name-input"></div>
+        <div class="field"><label>Course</label><input id="folder-course-input"></div>
+        <div class="field"><label>Subject</label><input id="folder-subject-input"></div>
+        <div class="field"><label>Semester</label><input id="folder-semester-input"></div>
+        <div class="field"><label>Block</label><input id="folder-block-input"></div>
+      </div>
+      <div class="actions" style="justify-content:flex-end;">
+        <button class="btn" id="folder-modal-cancel">Cancel</button>
+        <button class="btn primary" id="folder-modal-save">Save Folder</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyBAAeEUCPNvP5qnqpP3M6HnFZ6vaaijUvM",
+      authDomain: "lecture-processor-cdff6.firebaseapp.com",
+      projectId: "lecture-processor-cdff6",
+      storageBucket: "lecture-processor-cdff6.firebasestorage.app",
+      messagingSenderId: "374793454161",
+      appId: "1:374793454161:web:c68b21590e9a1fafa32e70"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+
+    let token = null;
+    let folders = [];
+    let packs = [];
+    let selectedFolderId = '';
+    let selectedPackId = '';
+    let selectedPack = null;
+    let activeEditorPane = 'notes';
+    let exportType = 'flashcards';
+    let draggedPackId = '';
+    let folderModalMode = 'create';
+    let editingFolderId = '';
+    let pendingOpenPackId = '';
+
+    let learnFlashcardIndex = 0;
+    let learnFlashcardFlipped = false;
+    let learnQuestionIndex = 0;
+    let learnScore = 0;
+    let learnAnswered = false;
+    let activeLearnPane = 'notes';
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const learnPackFromUrl = urlParams.get('pack_id') || '';
+    const openLearnFromUrl = urlParams.get('mode') === 'learn';
+    const fullscreenFromUrl = urlParams.get('fullscreen') === '1';
+    let autoLearnConsumed = false;
+
+    const userMeta = document.getElementById('user-meta');
+    const authBtn = document.getElementById('auth-btn');
+    const backAppBtn = document.getElementById('back-app-btn');
+    const fullscreenBtn = document.getElementById('fullscreen-btn');
+
+    const searchInput = document.getElementById('search-input');
+    const folderList = document.getElementById('folder-list');
+    const packList = document.getElementById('pack-list');
+    const newFolderBtn = document.getElementById('new-folder-btn');
+    const deleteFolderBtn = document.getElementById('delete-folder-btn');
+
+    const packEmpty = document.getElementById('pack-empty');
+    const packEditorWrap = document.getElementById('pack-editor-wrap');
+    const packTitle = document.getElementById('pack-title');
+    const packFolderSelect = document.getElementById('pack-folder-select');
+    const packCourse = document.getElementById('pack-course');
+    const packSubject = document.getElementById('pack-subject');
+    const packSemester = document.getElementById('pack-semester');
+    const packBlock = document.getElementById('pack-block');
+    const notesView = document.getElementById('notes-view');
+
+    const savePackBtn = document.getElementById('save-pack-btn');
+    const deletePackBtn = document.getElementById('delete-pack-btn');
+    const exportPackCsvBtn = document.getElementById('export-pack-csv-btn');
+    const openLearnBtn = document.getElementById('open-learn-btn');
+
+    const editorTabs = document.querySelectorAll('.editor-tab');
+    const flashcardCount = document.getElementById('flashcard-count');
+    const questionCount = document.getElementById('question-count');
+    const addFlashcardBtn = document.getElementById('add-flashcard-btn');
+    const addQuestionBtn = document.getElementById('add-question-btn');
+    const flashcardEditorList = document.getElementById('flashcard-editor-list');
+    const questionEditorList = document.getElementById('question-editor-list');
+
+    const learnStage = document.getElementById('learn-stage');
+    const learnTitle = document.getElementById('learn-title');
+    const learnSub = document.getElementById('learn-sub');
+    const learnBackAppBtn = document.getElementById('learn-back-app-btn');
+    const learnBackLibraryBtn = document.getElementById('learn-back-library-btn');
+    const learnFullscreenBtn = document.getElementById('learn-fullscreen-btn');
+    const learnTabs = document.querySelectorAll('.learn-tab');
+    const learnNotesContent = document.getElementById('learn-notes-content');
+    const learnFlashcardBox = document.getElementById('learn-flashcard-box');
+    const learnFPrev = document.getElementById('learn-f-prev');
+    const learnFFlip = document.getElementById('learn-f-flip');
+    const learnFNext = document.getElementById('learn-f-next');
+    const learnFProgress = document.getElementById('learn-f-progress');
+    const learnQProgress = document.getElementById('learn-q-progress');
+    const learnQScore = document.getElementById('learn-q-score');
+    const learnQText = document.getElementById('learn-q-text');
+    const learnQOptions = document.getElementById('learn-q-options');
+    const learnQExpl = document.getElementById('learn-q-expl');
+    const learnQNext = document.getElementById('learn-q-next');
+
+    const folderModalOverlay = document.getElementById('folder-modal-overlay');
+    const folderModalTitle = document.getElementById('folder-modal-title');
+    const folderModalClose = document.getElementById('folder-modal-close');
+    const folderModalCancel = document.getElementById('folder-modal-cancel');
+    const folderModalSave = document.getElementById('folder-modal-save');
+    const folderNameInput = document.getElementById('folder-name-input');
+    const folderCourseInput = document.getElementById('folder-course-input');
+    const folderSubjectInput = document.getElementById('folder-subject-input');
+    const folderSemesterInput = document.getElementById('folder-semester-input');
+    const folderBlockInput = document.getElementById('folder-block-input');
+
+    const toast = document.getElementById('toast');
+
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add('visible');
+      setTimeout(() => toast.classList.remove('visible'), 2600);
+    }
+
+    function mdToHtml(md) {
+      if (!md) return '';
+      return md
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+        .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+        .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n\n/g, '<br><br>');
+    }
+
+    async function api(path, options = {}) {
+      const headers = options.headers || {};
+      headers['Authorization'] = `Bearer ${token}`;
+      if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+      const res = await fetch(path, { ...options, headers });
+      const isJson = (res.headers.get('content-type') || '').includes('application/json');
+      const data = isJson ? await res.json() : null;
+      if (!res.ok) throw new Error((data && data.error) || 'Request failed');
+      return data;
+    }
+
+    function setEditorPane(pane) {
+      activeEditorPane = pane;
+      editorTabs.forEach(btn => btn.classList.toggle('active', btn.dataset.editorPane === pane));
+      document.getElementById('editor-pane-notes').classList.toggle('active', pane === 'notes');
+      document.getElementById('editor-pane-flashcards').classList.toggle('active', pane === 'flashcards');
+      document.getElementById('editor-pane-test').classList.toggle('active', pane === 'test');
+      if (pane === 'test') {
+        exportType = 'test';
+        exportPackCsvBtn.textContent = 'Export Practice Test CSV';
+      } else {
+        exportType = 'flashcards';
+        exportPackCsvBtn.textContent = 'Export Flashcards CSV';
+      }
+    }
+
+    function filteredPacks() {
+      const query = searchInput.value.trim().toLowerCase();
+      return packs.filter(pack => {
+        if (selectedFolderId && pack.folder_id !== selectedFolderId) return false;
+        if (!query) return true;
+        const text = `${pack.title || ''} ${pack.course || ''} ${pack.subject || ''} ${pack.semester || ''} ${pack.block || ''}`.toLowerCase();
+        return text.includes(query);
+      });
+    }
+
+    async function movePackToFolder(packId, folderId) {
+      try {
+        await api(`/api/study-packs/${encodeURIComponent(packId)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ folder_id: folderId })
+        });
+        showToast('Study pack moved.');
+        await loadData(packId);
+      } catch (e) {
+        showToast(e.message || 'Could not move pack.');
+      }
+    }
+
+    function renderFolders() {
+      const allFolders = [{ folder_id: '', name: 'All Study Packs', course: '', subject: '', semester: '', block: '' }, ...folders];
+      folderList.innerHTML = '';
+
+      allFolders.forEach(folder => {
+        const div = document.createElement('div');
+        div.className = `item ${selectedFolderId === folder.folder_id ? 'active' : ''}`;
+        div.dataset.folderId = folder.folder_id;
+        div.innerHTML = `
+          <div class="item-head">
+            <span class="item-title">${folder.name}</span>
+            ${folder.folder_id ? '<button class="btn" data-edit-folder="1" style="padding:6px 8px;font-size:0.75rem;">Edit</button>' : ''}
+          </div>
+          <div class="item-sub">${[folder.course, folder.subject, folder.semester, folder.block].filter(Boolean).join(' • ') || 'Unfiltered'}</div>
+        `;
+
+        div.addEventListener('click', (e) => {
+          if (e.target.closest('[data-edit-folder]')) return;
+          selectedFolderId = folder.folder_id;
+          renderFolders();
+          renderPacks();
+        });
+
+        if (folder.folder_id) {
+          const editBtn = div.querySelector('[data-edit-folder]');
+          editBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openFolderModal('edit', folder);
+          });
+        }
+
+        div.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          if (!draggedPackId) return;
+          div.classList.add('drop-target');
+        });
+        div.addEventListener('dragleave', () => {
+          div.classList.remove('drop-target');
+        });
+        div.addEventListener('drop', async (e) => {
+          e.preventDefault();
+          div.classList.remove('drop-target');
+          if (!draggedPackId) return;
+          await movePackToFolder(draggedPackId, folder.folder_id);
+          draggedPackId = '';
+        });
+
+        folderList.appendChild(div);
+      });
+    }
+
+    function renderFolderSelect() {
+      packFolderSelect.innerHTML = '<option value="">No folder</option>';
+      folders.forEach(folder => {
+        const option = document.createElement('option');
+        option.value = folder.folder_id;
+        option.textContent = folder.name;
+        packFolderSelect.appendChild(option);
+      });
+    }
+
+    function renderPacks() {
+      const items = filteredPacks();
+      packList.innerHTML = '';
+      if (!items.length) {
+        packList.innerHTML = '<div class="empty">No study packs match this filter.</div>';
+        return;
+      }
+
+      items.forEach(pack => {
+        const div = document.createElement('div');
+        div.className = `item ${selectedPackId === pack.study_pack_id ? 'active' : ''}`;
+        div.draggable = true;
+        div.dataset.packId = pack.study_pack_id;
+        div.innerHTML = `
+          <div class="item-head"><span class="item-title">${pack.title || 'Untitled pack'}</span></div>
+          <div class="item-sub">${pack.mode} • ${pack.flashcards_count} cards • ${pack.test_questions_count} questions</div>
+          <div class="item-sub">${[pack.course, pack.subject, pack.semester, pack.block].filter(Boolean).join(' • ') || (pack.folder_name ? `Folder: ${pack.folder_name}` : 'No metadata')}</div>
+        `;
+
+        div.addEventListener('click', async () => {
+          selectedPackId = pack.study_pack_id;
+          renderPacks();
+          await openPack(pack.study_pack_id);
+        });
+
+        div.addEventListener('dragstart', (e) => {
+          draggedPackId = pack.study_pack_id;
+          div.classList.add('dragging');
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', pack.study_pack_id);
+        });
+        div.addEventListener('dragend', () => {
+          div.classList.remove('dragging');
+          draggedPackId = '';
+        });
+
+        packList.appendChild(div);
+      });
+    }
+
+    function showPackEditor(visible) {
+      packEmpty.style.display = visible ? 'none' : 'block';
+      packEditorWrap.classList.toggle('visible', visible);
+    }
+
+    function renderFlashcardEditor(highlightIndex = -1) {
+      const cards = selectedPack && Array.isArray(selectedPack.flashcards) ? selectedPack.flashcards : [];
+      flashcardCount.textContent = `${cards.length} flashcards`;
+      flashcardEditorList.innerHTML = '';
+
+      if (!cards.length) {
+        flashcardEditorList.innerHTML = '<div class="empty">No flashcards yet. Add one to start editing.</div>';
+        return;
+      }
+
+      cards.forEach((card, idx) => {
+        const row = document.createElement('div');
+        row.className = `editor-card ${idx === highlightIndex ? 'newly-added' : ''}`;
+        row.dataset.rowIndex = String(idx);
+        row.innerHTML = `
+          <div class="editor-card-head">
+            <span class="editor-card-title">Flashcard ${idx + 1}</span>
+            <button class="btn danger" data-delete-card="${idx}" style="padding:6px 8px;font-size:0.75rem;">Delete</button>
+          </div>
+          <div class="field"><label>Front (Question / Concept)</label><input data-card-field="front" data-card-index="${idx}" value="${(card.front || '').replace(/"/g, '&quot;')}"></div>
+          <div class="field" style="margin-top:8px;"><label>Back (Answer / Explanation)</label><textarea data-card-field="back" data-card-index="${idx}">${card.back || ''}</textarea></div>
+        `;
+        flashcardEditorList.appendChild(row);
+      });
+
+      flashcardEditorList.querySelectorAll('[data-card-field]').forEach(el => {
+        el.addEventListener('input', () => {
+          const index = parseInt(el.dataset.cardIndex, 10);
+          const key = el.dataset.cardField;
+          if (!selectedPack.flashcards[index]) return;
+          selectedPack.flashcards[index][key] = el.value;
+          renderLearnFlashcard();
+        });
+      });
+
+      flashcardEditorList.querySelectorAll('[data-delete-card]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const index = parseInt(btn.dataset.deleteCard, 10);
+          selectedPack.flashcards.splice(index, 1);
+          if (learnFlashcardIndex >= selectedPack.flashcards.length) {
+            learnFlashcardIndex = Math.max(0, selectedPack.flashcards.length - 1);
+          }
+          renderFlashcardEditor();
+          renderLearnFlashcard();
+          showToast('Flashcard deleted.');
+        });
+      });
+
+      if (highlightIndex >= 0) {
+        const row = flashcardEditorList.querySelector(`[data-row-index="${highlightIndex}"]`);
+        if (row) {
+          row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          const input = row.querySelector('input[data-card-field="front"]');
+          if (input) input.focus();
+        }
+      }
+    }
+
+    function normalizeQuestion(question) {
+      const base = {
+        question: question.question || '',
+        options: Array.isArray(question.options) ? question.options.slice(0, 4) : [],
+        answer: question.answer || '',
+        explanation: question.explanation || ''
+      };
+      while (base.options.length < 4) base.options.push('');
+      if (!base.options.includes(base.answer)) base.answer = base.options[0] || '';
+      return base;
+    }
+
+    function renderQuestionEditor(highlightIndex = -1) {
+      selectedPack.test_questions = (selectedPack.test_questions || []).map(normalizeQuestion);
+      const questions = selectedPack.test_questions;
+      questionCount.textContent = `${questions.length} practice questions`;
+      questionEditorList.innerHTML = '';
+
+      if (!questions.length) {
+        questionEditorList.innerHTML = '<div class="empty">No practice questions yet. Add one to start editing.</div>';
+        return;
+      }
+
+      questions.forEach((question, idx) => {
+        const row = document.createElement('div');
+        row.className = `editor-card ${idx === highlightIndex ? 'newly-added' : ''}`;
+        row.dataset.rowIndex = String(idx);
+        row.innerHTML = `
+          <div class="editor-card-head">
+            <span class="editor-card-title">Question ${idx + 1}</span>
+            <button class="btn danger" data-delete-question="${idx}" style="padding:6px 8px;font-size:0.75rem;">Delete</button>
+          </div>
+          <div class="field"><label>Question</label><textarea data-question-field="question" data-question-index="${idx}">${question.question}</textarea></div>
+          <div class="q-options-grid" style="margin-top:8px;">
+            <div class="field"><label>Option A</label><input data-option-index="0" data-question-index="${idx}" value="${(question.options[0] || '').replace(/"/g, '&quot;')}"></div>
+            <div class="field"><label>Option B</label><input data-option-index="1" data-question-index="${idx}" value="${(question.options[1] || '').replace(/"/g, '&quot;')}"></div>
+            <div class="field"><label>Option C</label><input data-option-index="2" data-question-index="${idx}" value="${(question.options[2] || '').replace(/"/g, '&quot;')}"></div>
+            <div class="field"><label>Option D</label><input data-option-index="3" data-question-index="${idx}" value="${(question.options[3] || '').replace(/"/g, '&quot;')}"></div>
+          </div>
+          <div class="field" style="margin-top:8px;"><label>Correct Answer</label>
+            <select data-question-field="answer" data-question-index="${idx}">
+              ${question.options.map((option, optionIndex) => `<option value="${option.replace(/"/g, '&quot;')}" ${question.answer === option ? 'selected' : ''}>${['A', 'B', 'C', 'D'][optionIndex]}: ${option || '(empty)'}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field" style="margin-top:8px;"><label>Explanation</label><textarea data-question-field="explanation" data-question-index="${idx}">${question.explanation}</textarea></div>
+        `;
+        questionEditorList.appendChild(row);
+      });
+
+      questionEditorList.querySelectorAll('[data-question-field="question"], [data-question-field="explanation"]').forEach(el => {
+        el.addEventListener('input', () => {
+          const index = parseInt(el.dataset.questionIndex, 10);
+          const key = el.dataset.questionField;
+          selectedPack.test_questions[index][key] = el.value;
+          renderLearnQuestion();
+        });
+      });
+
+      questionEditorList.querySelectorAll('[data-option-index]').forEach(el => {
+        el.addEventListener('input', () => {
+          const qIndex = parseInt(el.dataset.questionIndex, 10);
+          const optIndex = parseInt(el.dataset.optionIndex, 10);
+          const currentQuestion = selectedPack.test_questions[qIndex];
+          currentQuestion.options[optIndex] = el.value;
+          if (!currentQuestion.options.includes(currentQuestion.answer)) {
+            currentQuestion.answer = currentQuestion.options[0] || '';
+          }
+          renderQuestionEditor(qIndex);
+          renderLearnQuestion();
+        });
+      });
+
+      questionEditorList.querySelectorAll('select[data-question-field="answer"]').forEach(el => {
+        el.addEventListener('change', () => {
+          const index = parseInt(el.dataset.questionIndex, 10);
+          selectedPack.test_questions[index].answer = el.value;
+          renderLearnQuestion();
+        });
+      });
+
+      questionEditorList.querySelectorAll('[data-delete-question]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const index = parseInt(btn.dataset.deleteQuestion, 10);
+          selectedPack.test_questions.splice(index, 1);
+          if (learnQuestionIndex >= selectedPack.test_questions.length) {
+            learnQuestionIndex = Math.max(0, selectedPack.test_questions.length - 1);
+          }
+          renderQuestionEditor();
+          renderLearnQuestion();
+          showToast('Practice question deleted.');
+        });
+      });
+
+      if (highlightIndex >= 0) {
+        const row = questionEditorList.querySelector(`[data-row-index="${highlightIndex}"]`);
+        if (row) {
+          row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          const textarea = row.querySelector('textarea[data-question-field="question"]');
+          if (textarea) textarea.focus();
+        }
+      }
+    }
+
+    function renderLearnFlashcard() {
+      const cards = selectedPack && Array.isArray(selectedPack.flashcards) ? selectedPack.flashcards : [];
+      if (!cards.length) {
+        learnFlashcardBox.textContent = 'No flashcards available for this pack.';
+        learnFProgress.textContent = 'Card 0 of 0';
+        return;
+      }
+      const card = cards[learnFlashcardIndex];
+      learnFlashcardBox.textContent = learnFlashcardFlipped ? (card.back || '') : (card.front || '');
+      learnFProgress.textContent = `Card ${learnFlashcardIndex + 1} of ${cards.length}`;
+    }
+
+    function renderLearnQuestion() {
+      const questions = selectedPack && Array.isArray(selectedPack.test_questions) ? selectedPack.test_questions : [];
+      if (!questions.length) {
+        learnQProgress.textContent = 'Question 0 of 0';
+        learnQScore.textContent = 'Score: 0/0';
+        learnQText.textContent = 'No practice questions available for this pack.';
+        learnQOptions.innerHTML = '';
+        learnQExpl.classList.remove('visible');
+        learnQExpl.textContent = '';
+        return;
+      }
+
+      const question = questions[learnQuestionIndex];
+      learnAnswered = false;
+      learnQProgress.textContent = `Question ${learnQuestionIndex + 1} of ${questions.length}`;
+      learnQScore.textContent = `Score: ${learnScore}/${questions.length}`;
+      learnQText.textContent = question.question || '';
+      learnQOptions.innerHTML = '';
+      learnQExpl.classList.remove('visible');
+      learnQExpl.textContent = '';
+
+      (question.options || []).forEach(option => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'quiz-option';
+        button.textContent = option;
+        button.addEventListener('click', () => {
+          if (learnAnswered) return;
+          learnAnswered = true;
+          const allButtons = [...learnQOptions.querySelectorAll('.quiz-option')];
+          allButtons.forEach(btn => {
+            btn.disabled = true;
+            if (btn.textContent === question.answer) btn.classList.add('correct');
+          });
+          if (option === question.answer) {
+            button.classList.add('correct');
+            learnScore += 1;
+          } else {
+            button.classList.add('wrong');
+          }
+          learnQScore.textContent = `Score: ${learnScore}/${questions.length}`;
+          learnQExpl.textContent = question.explanation || '';
+          learnQExpl.classList.add('visible');
+        });
+        learnQOptions.appendChild(button);
+      });
+    }
+
+    function setLearnPane(pane) {
+      activeLearnPane = pane;
+      learnTabs.forEach(btn => btn.classList.toggle('active', btn.dataset.learnPane === pane));
+      document.getElementById('learn-pane-notes').classList.toggle('active', pane === 'notes');
+      document.getElementById('learn-pane-flashcards').classList.toggle('active', pane === 'flashcards');
+      document.getElementById('learn-pane-test').classList.toggle('active', pane === 'test');
+    }
+
+    function openLearnStage(requestFullscreen) {
+      if (!selectedPack) {
+        showToast('Select a study pack first.');
+        return;
+      }
+      learnTitle.textContent = selectedPack.title || 'Learn Mode';
+      learnSub.textContent = `${selectedPack.mode || 'study-pack'} • Focused session`;
+      learnNotesContent.innerHTML = mdToHtml(selectedPack.notes_markdown || '');
+
+      learnFlashcardIndex = 0;
+      learnFlashcardFlipped = false;
+      learnQuestionIndex = 0;
+      learnScore = 0;
+
+      if (selectedPack.flashcards && selectedPack.flashcards.length) {
+        setLearnPane('flashcards');
+      } else if (selectedPack.test_questions && selectedPack.test_questions.length) {
+        setLearnPane('test');
+      } else {
+        setLearnPane('notes');
+      }
+
+      renderLearnFlashcard();
+      renderLearnQuestion();
+      learnStage.classList.add('visible');
+
+      if (requestFullscreen) {
+        document.documentElement.requestFullscreen?.().catch(() => {});
+      }
+    }
+
+    function closeLearnStage() {
+      learnStage.classList.remove('visible');
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+
+    function openFolderModal(mode, folder) {
+      folderModalMode = mode;
+      editingFolderId = folder && folder.folder_id ? folder.folder_id : '';
+      folderModalTitle.textContent = mode === 'edit' ? 'Edit Folder' : 'Create Folder';
+      folderNameInput.value = folder && folder.name ? folder.name : '';
+      folderCourseInput.value = folder && folder.course ? folder.course : '';
+      folderSubjectInput.value = folder && folder.subject ? folder.subject : '';
+      folderSemesterInput.value = folder && folder.semester ? folder.semester : '';
+      folderBlockInput.value = folder && folder.block ? folder.block : '';
+      folderModalOverlay.classList.add('visible');
+      setTimeout(() => folderNameInput.focus(), 50);
+    }
+
+    function closeFolderModal() {
+      folderModalOverlay.classList.remove('visible');
+      folderModalMode = 'create';
+      editingFolderId = '';
+      folderNameInput.value = '';
+      folderCourseInput.value = '';
+      folderSubjectInput.value = '';
+      folderSemesterInput.value = '';
+      folderBlockInput.value = '';
+    }
+
+    async function saveFolderFromModal() {
+      const payload = {
+        name: folderNameInput.value.trim(),
+        course: folderCourseInput.value.trim(),
+        subject: folderSubjectInput.value.trim(),
+        semester: folderSemesterInput.value.trim(),
+        block: folderBlockInput.value.trim()
+      };
+      if (!payload.name) {
+        showToast('Folder name is required.');
+        folderNameInput.focus();
+        return;
+      }
+      try {
+        if (folderModalMode === 'edit' && editingFolderId) {
+          await api(`/api/study-folders/${encodeURIComponent(editingFolderId)}`, {
+            method: 'PATCH',
+            body: JSON.stringify(payload)
+          });
+          showToast('Folder updated.');
+        } else {
+          await api('/api/study-folders', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+          });
+          showToast('Folder created.');
+        }
+        closeFolderModal();
+        await loadData(selectedPackId || pendingOpenPackId);
+      } catch (e) {
+        showToast(e.message || 'Could not save folder.');
+      }
+    }
+
+    async function openPack(packId) {
+      selectedPack = await api(`/api/study-packs/${encodeURIComponent(packId)}`);
+      selectedPack.flashcards = Array.isArray(selectedPack.flashcards) ? selectedPack.flashcards : [];
+      selectedPack.test_questions = Array.isArray(selectedPack.test_questions) ? selectedPack.test_questions.map(normalizeQuestion) : [];
+      showPackEditor(true);
+
+      packTitle.value = selectedPack.title || '';
+      packFolderSelect.value = selectedPack.folder_id || '';
+      packCourse.value = selectedPack.course || '';
+      packSubject.value = selectedPack.subject || '';
+      packSemester.value = selectedPack.semester || '';
+      packBlock.value = selectedPack.block || '';
+      notesView.innerHTML = mdToHtml(selectedPack.notes_markdown || '');
+
+      renderFlashcardEditor();
+      renderQuestionEditor();
+      renderLearnFlashcard();
+      renderLearnQuestion();
+      setEditorPane(activeEditorPane);
+
+      if (openLearnFromUrl && !autoLearnConsumed && selectedPack.study_pack_id === learnPackFromUrl) {
+        autoLearnConsumed = true;
+        openLearnStage(fullscreenFromUrl);
+      }
+    }
+
+    async function loadData(preferredPackId = '') {
+      const [folderData, packData] = await Promise.all([
+        api('/api/study-folders'),
+        api('/api/study-packs')
+      ]);
+      folders = folderData.folders || [];
+      packs = packData.study_packs || [];
+      renderFolderSelect();
+      renderFolders();
+      renderPacks();
+
+      const packToOpen = preferredPackId || selectedPackId || '';
+      if (packToOpen && packs.find(item => item.study_pack_id === packToOpen)) {
+        selectedPackId = packToOpen;
+        renderPacks();
+        await openPack(packToOpen);
+      } else if (learnPackFromUrl && packs.find(item => item.study_pack_id === learnPackFromUrl)) {
+        selectedPackId = learnPackFromUrl;
+        renderPacks();
+        await openPack(learnPackFromUrl);
+      } else {
+        selectedPack = null;
+        showPackEditor(false);
+      }
+    }
+
+    auth.onAuthStateChanged(async (user) => {
+      if (!user) {
+        token = null;
+        userMeta.textContent = 'Not signed in';
+        authBtn.textContent = 'Sign in';
+        return;
+      }
+      token = await user.getIdToken();
+      userMeta.textContent = `Signed in as ${user.email}`;
+      authBtn.textContent = 'Sign out';
+      try {
+        await loadData();
+      } catch (e) {
+        showToast(e.message || 'Could not load study library.');
+      }
+    });
+
+    authBtn.addEventListener('click', async () => {
+      if (!auth.currentUser) {
+        window.location.href = '/';
+        return;
+      }
+      await auth.signOut();
+    });
+
+    backAppBtn.addEventListener('click', () => {
+      window.location.href = '/';
+    });
+
+    fullscreenBtn.addEventListener('click', () => {
+      if (!selectedPack) {
+        showToast('Select a study pack first.');
+        return;
+      }
+      openLearnStage(true);
+    });
+
+    searchInput.addEventListener('input', renderPacks);
+
+    newFolderBtn.addEventListener('click', () => openFolderModal('create'));
+
+    deleteFolderBtn.addEventListener('click', async () => {
+      if (!selectedFolderId) {
+        showToast('Select a folder first.');
+        return;
+      }
+      if (!confirm('Delete this folder? Packs inside will be moved to no folder.')) return;
+      try {
+        await api(`/api/study-folders/${encodeURIComponent(selectedFolderId)}`, { method: 'DELETE' });
+        selectedFolderId = '';
+        await loadData(selectedPackId);
+        showToast('Folder deleted.');
+      } catch (e) {
+        showToast(e.message || 'Could not delete folder.');
+      }
+    });
+
+    savePackBtn.addEventListener('click', async () => {
+      if (!selectedPackId || !selectedPack) {
+        showToast('Select a study pack first.');
+        return;
+      }
+      try {
+        await api(`/api/study-packs/${encodeURIComponent(selectedPackId)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            title: packTitle.value.trim(),
+            folder_id: packFolderSelect.value,
+            course: packCourse.value.trim(),
+            subject: packSubject.value.trim(),
+            semester: packSemester.value.trim(),
+            block: packBlock.value.trim(),
+            flashcards: selectedPack.flashcards || [],
+            test_questions: selectedPack.test_questions || []
+          })
+        });
+        pendingOpenPackId = selectedPackId;
+        await loadData(selectedPackId);
+        pendingOpenPackId = '';
+        showToast('Study pack saved.');
+      } catch (e) {
+        showToast(e.message || 'Could not save study pack.');
+      }
+    });
+
+    deletePackBtn.addEventListener('click', async () => {
+      if (!selectedPackId) {
+        showToast('Select a study pack first.');
+        return;
+      }
+      if (!confirm('Delete this study pack?')) return;
+      try {
+        await api(`/api/study-packs/${encodeURIComponent(selectedPackId)}`, { method: 'DELETE' });
+        selectedPackId = '';
+        selectedPack = null;
+        showPackEditor(false);
+        await loadData();
+        showToast('Study pack deleted.');
+      } catch (e) {
+        showToast(e.message || 'Could not delete study pack.');
+      }
+    });
+
+    exportPackCsvBtn.addEventListener('click', () => {
+      if (!selectedPackId) {
+        showToast('Select a study pack first.');
+        return;
+      }
+      window.location.href = `/api/study-packs/${encodeURIComponent(selectedPackId)}/export-flashcards-csv?type=${exportType}`;
+    });
+
+    openLearnBtn.addEventListener('click', () => openLearnStage(false));
+
+    editorTabs.forEach(btn => {
+      btn.addEventListener('click', () => {
+        setEditorPane(btn.dataset.editorPane);
+      });
+    });
+
+    addFlashcardBtn.addEventListener('click', () => {
+      if (!selectedPack) return;
+      selectedPack.flashcards = selectedPack.flashcards || [];
+      selectedPack.flashcards.push({ front: 'New concept', back: 'New explanation' });
+      const newIndex = selectedPack.flashcards.length - 1;
+      learnFlashcardIndex = newIndex;
+      learnFlashcardFlipped = false;
+      renderFlashcardEditor(newIndex);
+      renderLearnFlashcard();
+      setEditorPane('flashcards');
+      showToast('New flashcard added. Now editing it.');
+    });
+
+    addQuestionBtn.addEventListener('click', () => {
+      if (!selectedPack) return;
+      selectedPack.test_questions = selectedPack.test_questions || [];
+      selectedPack.test_questions.push(normalizeQuestion({ question: 'New question', options: ['Option A', 'Option B', 'Option C', 'Option D'], answer: 'Option A', explanation: 'Add explanation here.' }));
+      const newIndex = selectedPack.test_questions.length - 1;
+      learnQuestionIndex = newIndex;
+      renderQuestionEditor(newIndex);
+      renderLearnQuestion();
+      setEditorPane('test');
+      showToast('New practice question added. Now editing it.');
+    });
+
+    learnBackAppBtn.addEventListener('click', () => {
+      window.location.href = '/';
+    });
+    learnBackLibraryBtn.addEventListener('click', () => {
+      closeLearnStage();
+    });
+    learnFullscreenBtn.addEventListener('click', async () => {
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else await document.documentElement.requestFullscreen();
+      } catch (e) {
+        showToast('Fullscreen not available.');
+      }
+    });
+
+    learnTabs.forEach(btn => {
+      btn.addEventListener('click', () => setLearnPane(btn.dataset.learnPane));
+    });
+
+    learnFlashcardBox.addEventListener('click', () => {
+      learnFlashcardFlipped = !learnFlashcardFlipped;
+      renderLearnFlashcard();
+    });
+    learnFPrev.addEventListener('click', () => {
+      const cards = selectedPack && selectedPack.flashcards ? selectedPack.flashcards : [];
+      if (!cards.length) return;
+      learnFlashcardIndex = Math.max(0, learnFlashcardIndex - 1);
+      learnFlashcardFlipped = false;
+      renderLearnFlashcard();
+    });
+    learnFNext.addEventListener('click', () => {
+      const cards = selectedPack && selectedPack.flashcards ? selectedPack.flashcards : [];
+      if (!cards.length) return;
+      learnFlashcardIndex = Math.min(cards.length - 1, learnFlashcardIndex + 1);
+      learnFlashcardFlipped = false;
+      renderLearnFlashcard();
+    });
+    learnFFlip.addEventListener('click', () => {
+      learnFlashcardFlipped = !learnFlashcardFlipped;
+      renderLearnFlashcard();
+    });
+
+    learnQNext.addEventListener('click', () => {
+      const questions = selectedPack && selectedPack.test_questions ? selectedPack.test_questions : [];
+      if (!questions.length) return;
+      learnQuestionIndex = Math.min(questions.length - 1, learnQuestionIndex + 1);
+      renderLearnQuestion();
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (!learnStage.classList.contains('visible')) return;
+      if (activeLearnPane !== 'flashcards') return;
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        learnFPrev.click();
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        learnFNext.click();
+      }
+      if (e.code === 'Space') {
+        e.preventDefault();
+        learnFFlip.click();
+      }
+    });
+
+    folderModalClose.addEventListener('click', closeFolderModal);
+    folderModalCancel.addEventListener('click', closeFolderModal);
+    folderModalSave.addEventListener('click', saveFolderFromModal);
+    folderModalOverlay.addEventListener('click', (e) => {
+      if (e.target === folderModalOverlay) closeFolderModal();
+    });
+  </script>
+</body>
+</html>

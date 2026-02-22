@@ -69,6 +69,9 @@
         .sign-in-button { display: flex; align-items: center; gap: 10px; padding: 10px 20px; background: var(--white); border: 1px solid var(--gray-300); border-radius: var(--radius); font-size: 0.9375rem; font-weight: 500; color: var(--gray-700); cursor: pointer; transition: all 0.2s; }
         .sign-in-button:hover { background: var(--gray-50); border-color: var(--gray-400); }
         .sign-in-button svg { width: 20px; height: 20px; }
+        .header-link-button { display: none; align-items: center; gap: 8px; padding: 10px 16px; background: var(--white); border: 1px solid var(--gray-300); border-radius: var(--radius); font-size: 0.875rem; font-weight: 600; color: var(--gray-700); cursor: pointer; transition: all 0.2s ease; }
+        .header-link-button:hover { background: var(--gray-50); border-color: var(--gray-400); color: var(--gray-900); }
+        .header-link-button svg { width: 18px; height: 18px; }
         .auth-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; align-items: center; justify-content: center; padding: 24px; }
         .auth-overlay.visible { display: flex; }
         .auth-modal { background: var(--white); border-radius: var(--radius-xl); padding: 40px; max-width: 420px; width: 100%; text-align: center; box-shadow: var(--shadow-xl); animation: modalOpen 0.3s ease-out; position: relative; }
@@ -226,10 +229,27 @@
         .generation-controls { margin: 4px 0 20px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
         @media (max-width: 640px) { .generation-controls { grid-template-columns: 1fr; } }
         .generation-controls.hidden { display: none; }
-        .generation-control { display: flex; flex-direction: column; gap: 6px; background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: var(--radius-md); padding: 12px; }
-        .generation-control label { font-size: 0.8125rem; color: var(--gray-600); font-weight: 600; }
-        .generation-control select { width: 100%; border: 1px solid var(--gray-300); border-radius: var(--radius); padding: 10px 12px; font-size: 0.9375rem; color: var(--gray-800); background: var(--white); }
-        .generation-control select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
+        .generation-control { display: flex; flex-direction: column; gap: 8px; background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: var(--radius-md); padding: 12px; }
+        .generation-control.wide { grid-column: 1 / -1; }
+        .control-label { font-size: 0.8125rem; color: var(--gray-600); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+        .control-note { font-size: 0.8125rem; color: var(--gray-500); }
+        .study-tools-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .study-tools-toggle { width: 100%; border: 1px solid var(--gray-300); border-radius: var(--radius); padding: 10px 12px; font-size: 0.9rem; background: var(--white); color: var(--gray-800); cursor: pointer; text-align: left; display: flex; align-items: center; justify-content: space-between; gap: 10px; transition: all 0.2s ease; }
+        .study-tools-toggle:hover { border-color: var(--primary-light); }
+        .study-tools-toggle svg { width: 16px; height: 16px; color: var(--gray-500); transition: transform 0.2s ease; }
+        .study-tools-toggle.open svg { transform: rotate(180deg); }
+        .study-tools-panel { display: none; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+        .study-tools-panel.visible { display: grid; animation: dropdownOpen 0.2s ease-out; }
+        .tool-chip { border: 1px solid var(--gray-300); border-radius: var(--radius); padding: 10px 12px; background: var(--white); color: var(--gray-700); font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
+        .tool-chip:hover { border-color: var(--success); color: var(--gray-900); }
+        .tool-chip.active { border-color: var(--success); background: rgba(16,185,129,0.12); color: #065F46; }
+        .amount-chips { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+        .amount-chip { border: 1px solid var(--gray-300); border-radius: var(--radius); padding: 8px 10px; background: var(--white); color: var(--gray-700); font-size: 0.8125rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease; text-align: center; }
+        .amount-chip.active { border-color: var(--primary); background: rgba(79,70,229,0.1); color: var(--primary-dark); }
+        .amount-chip:disabled { opacity: 0.45; cursor: not-allowed; }
+        .interview-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+        .interview-option { border: 1px solid var(--gray-300); border-radius: var(--radius); padding: 10px 12px; background: var(--white); color: var(--gray-700); font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease; text-align: left; }
+        .interview-option.active { border-color: var(--success); background: rgba(16,185,129,0.12); color: #065F46; }
         .focus-dashboard { display: grid; grid-template-columns: 260px 1fr; gap: 20px; }
         @media (max-width: 900px) { .focus-dashboard { grid-template-columns: 1fr; } }
         .focus-sidebar { background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: var(--radius-md); padding: 14px; }
@@ -343,6 +363,7 @@
         <div class="header-right">
             <button class="sign-in-button" id="header-sign-in-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>Sign in</button>
             <div class="credits-display" id="credits-display" style="display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg><span><span class="credits-count" id="credits-count">0</span> credits</span></div>
+            <button class="header-link-button" id="header-study-library-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18v16H3z"></path><line x1="3" y1="10" x2="21" y2="10"></line><line x1="9" y1="4" x2="9" y2="20"></line></svg>Study Library</button>
             <div class="user-menu" id="user-menu" style="display:none;">
                 <button class="user-button" id="user-button"><div class="user-avatar" id="user-avatar"><span id="user-initial">?</span></div><span class="user-name" id="user-name">User</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:var(--gray-400);"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
                 <div class="user-dropdown" id="user-dropdown">
@@ -418,23 +439,47 @@
                 <div class="upload-zone" id="audio-zone"><svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg><div class="upload-title" id="audio-zone-title">Lecture Recording</div><div class="upload-subtitle">Drag &amp; drop or click to browse</div><div class="upload-formats">MP3, M4A, WAV · Max 500 MB</div><input type="file" id="audio-input" accept=".mp3,.m4a,.wav,.aac,.ogg,.flac"><div class="file-info" id="audio-info" style="display:none;"><div class="file-details"><div class="file-name"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span id="audio-name"></span></div><div class="file-size" id="audio-size"></div></div><button class="file-remove" id="audio-remove" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div></div>
             </div>
             <div class="generation-controls" id="generation-controls">
-                <div class="generation-control">
-                    <label for="flashcard-amount">Flashcard Amount</label>
-                    <select id="flashcard-amount">
-                        <option value="10">10</option>
-                        <option value="20" selected>20</option>
-                        <option value="30">30</option>
-                        <option value="auto">Auto</option>
-                    </select>
+                <div class="generation-control wide">
+                    <span class="control-label">Study Tools</span>
+                    <button type="button" class="study-tools-toggle" id="study-tools-toggle">
+                        <span id="study-tools-toggle-text">No study tools</span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                    <div class="study-tools-panel" id="study-tools-panel">
+                        <button type="button" class="tool-chip active" data-study-features="none">No study tools</button>
+                        <button type="button" class="tool-chip" data-study-features="flashcards">Flashcards only</button>
+                        <button type="button" class="tool-chip" data-study-features="test">Practice test only</button>
+                        <button type="button" class="tool-chip" data-study-features="both">Flashcards + test</button>
+                    </div>
+                    <div class="control-note" id="study-tools-note">Disabled by default to avoid unnecessary processing.</div>
                 </div>
                 <div class="generation-control">
-                    <label for="question-amount">Practice Questions</label>
-                    <select id="question-amount">
-                        <option value="5">5</option>
-                        <option value="10" selected>10</option>
-                        <option value="15">15</option>
-                        <option value="auto">Auto</option>
-                    </select>
+                    <span class="control-label">Flashcard Amount</span>
+                    <div class="amount-chips" id="flashcard-amount-chips">
+                        <button type="button" class="amount-chip" data-value="10">10</button>
+                        <button type="button" class="amount-chip active" data-value="20">20</button>
+                        <button type="button" class="amount-chip" data-value="30">30</button>
+                        <button type="button" class="amount-chip" data-value="auto">Auto</button>
+                    </div>
+                </div>
+                <div class="generation-control">
+                    <span class="control-label">Practice Questions</span>
+                    <div class="amount-chips" id="question-amount-chips">
+                        <button type="button" class="amount-chip" data-value="5">5</button>
+                        <button type="button" class="amount-chip active" data-value="10">10</button>
+                        <button type="button" class="amount-chip" data-value="15">15</button>
+                        <button type="button" class="amount-chip" data-value="auto">Auto</button>
+                    </div>
+                </div>
+            </div>
+            <div class="generation-controls hidden" id="interview-controls">
+                <div class="generation-control wide">
+                    <span class="control-label">Interview Extras</span>
+                    <div class="interview-options">
+                        <button type="button" class="interview-option" data-feature="summary">Summary (max 1 page)</button>
+                        <button type="button" class="interview-option" data-feature="sections">Structured transcript with headings</button>
+                    </div>
+                    <div class="control-note" id="interview-extra-note">No extras selected. Select one or both options (1 slides credit per option).</div>
                 </div>
             </div>
             <div class="button-section" id="button-section" style="display:none;"><button class="process-button" id="process-button" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg><span>Process Lecture</span></button><div class="no-credits-warning" id="no-credits-warning">You don't have enough credits. <a href="#" id="buy-credits-link">Buy more credits</a></div></div>
@@ -451,7 +496,10 @@
                         <div class="sidebar-actions">
                             <button class="action-button" id="copy-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg><span id="copy-button-text">Copy Notes</span></button>
                             <div class="dropdown" id="download-dropdown"><button class="action-button primary" id="download-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>Download<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;margin-left:2px;"><polyline points="6 9 12 15 18 9"></polyline></svg></button><div class="dropdown-content" id="download-dropdown-content"></div></div>
-                            <button class="action-button" id="download-flashcards-csv-btn" style="display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>Export Flashcards CSV</button>
+                            <button class="action-button" id="export-study-csv-btn" style="display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg><span id="export-study-csv-text">Export Flashcards CSV</span></button>
+                            <button class="action-button" id="fullscreen-study-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>Fullscreen Study</button>
+                            <button class="action-button" id="study-now-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Study Immediately</button>
+                            <button class="action-button" id="study-library-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18v16H3z"></path><line x1="3" y1="10" x2="21" y2="10"></line><line x1="9" y1="4" x2="9" y2="20"></line></svg>Open Study Library</button>
                             <button class="new-process-button" id="new-lecture-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>Process Another File</button>
                         </div>
                     </aside>
@@ -528,6 +576,16 @@
         let quizScore = 0;
         let quizAnswered = false;
         let studyGenerationError = null;
+        let currentStudyPackId = null;
+        let resultsLocked = false;
+        let selectedStudyFeatures = 'none';
+        let selectedFlashcardAmount = '20';
+        let selectedQuestionAmount = '10';
+        let selectedInterviewFeatures = [];
+        let interviewSummaryText = '';
+        let interviewSectionsText = '';
+        let interviewCombinedText = '';
+        let exportCsvType = 'flashcards';
 
         const modeConfig = {
             'lecture-notes': {
@@ -542,7 +600,7 @@
                 steps: [{ num: 1, label: 'Extract Slides' }, { num: 2, label: 'Transcribe Audio' }, { num: 3, label: 'Merge Notes' }, { num: 4, label: 'Build Study Tools' }]
             },
             'slides-only': {
-                description: 'Upload lecture slides (PDF) to extract text and build flashcards and test questions.',
+                description: 'Upload lecture slides (PDF) to extract text for clean notes output.',
                 creditCost: 'Uses <strong>1 slides credit</strong>',
                 creditType: 'slides',
                 needsPdf: true,
@@ -554,7 +612,7 @@
             },
             'interview': {
                 description: 'Upload an interview recording to generate a timestamped transcript with speaker identification.',
-                creditCost: 'Uses <strong>1 interview credit</strong>',
+                creditCost: 'Uses <strong>1 interview credit</strong> (+ <strong>1 slides credit</strong> for each selected extra)',
                 creditType: 'interview',
                 needsPdf: false,
                 needsAudio: true,
@@ -566,6 +624,7 @@
         };
 
         const headerSignInBtn = document.getElementById('header-sign-in-btn');
+        const headerStudyLibraryBtn = document.getElementById('header-study-library-btn');
         const creditsDisplay = document.getElementById('credits-display');
         const creditsCount = document.getElementById('credits-count');
         const userMenu = document.getElementById('user-menu');
@@ -615,8 +674,16 @@
         const uploadSection = document.getElementById('upload-section');
         const buttonSection = document.getElementById('button-section');
         const generationControls = document.getElementById('generation-controls');
-        const flashcardAmountSelect = document.getElementById('flashcard-amount');
-        const questionAmountSelect = document.getElementById('question-amount');
+        const interviewControls = document.getElementById('interview-controls');
+        const studyToolsToggle = document.getElementById('study-tools-toggle');
+        const studyToolsToggleText = document.getElementById('study-tools-toggle-text');
+        const studyToolsPanel = document.getElementById('study-tools-panel');
+        const studyToolsNote = document.getElementById('study-tools-note');
+        const studyToolChips = document.querySelectorAll('.tool-chip[data-study-features]');
+        const flashcardAmountChips = document.querySelectorAll('#flashcard-amount-chips .amount-chip');
+        const questionAmountChips = document.querySelectorAll('#question-amount-chips .amount-chip');
+        const interviewOptionButtons = document.querySelectorAll('.interview-option[data-feature]');
+        const interviewExtraNote = document.getElementById('interview-extra-note');
 
         const pdfZone = document.getElementById('pdf-zone');
         const audioZone = document.getElementById('audio-zone');
@@ -648,7 +715,11 @@
         const downloadButton = document.getElementById('download-button');
         const downloadDropdown = document.getElementById('download-dropdown');
         const downloadDropdownContent = document.getElementById('download-dropdown-content');
-        const downloadFlashcardsCsvBtn = document.getElementById('download-flashcards-csv-btn');
+        const exportStudyCsvBtn = document.getElementById('export-study-csv-btn');
+        const exportStudyCsvText = document.getElementById('export-study-csv-text');
+        const fullscreenStudyBtn = document.getElementById('fullscreen-study-btn');
+        const studyNowBtn = document.getElementById('study-now-btn');
+        const studyLibraryBtn = document.getElementById('study-library-btn');
         const newLectureButton = document.getElementById('new-lecture-button');
 
         const tabButtons = document.querySelectorAll('.focus-tab');
@@ -819,10 +890,85 @@
             dropdownInterviewCredits.textContent = interview;
             updateProcessButton();
         }
+        function getTotalInterviewCredits() {
+            if (!userCredits) return 0;
+            return userCredits.interview_short + userCredits.interview_medium + userCredits.interview_long;
+        }
+        function getInterviewExtraCost() {
+            return currentMode === 'interview' ? selectedInterviewFeatures.length : 0;
+        }
+        function getInterviewFeaturesValue() {
+            if (!selectedInterviewFeatures.length) return 'none';
+            if (selectedInterviewFeatures.length === 2) return 'both';
+            return selectedInterviewFeatures[0];
+        }
+        function updateModeCreditDisplay() {
+            if (currentMode !== 'interview') {
+                modeCreditCost.innerHTML = modeConfig[currentMode].creditCost;
+                return;
+            }
+            const extraCost = getInterviewExtraCost();
+            if (!extraCost) {
+                modeCreditCost.innerHTML = 'Uses <strong>1 interview credit</strong>. Optional extras cost <strong>1 slides credit</strong> each.';
+            } else {
+                modeCreditCost.innerHTML = `Uses <strong>1 interview credit</strong> + <strong>${extraCost} slides credits</strong> for selected extras.`;
+            }
+        }
+        function setStudyFeature(value) {
+            selectedStudyFeatures = ['none', 'flashcards', 'test', 'both'].includes(value) ? value : 'none';
+            const labels = {
+                none: 'No study tools',
+                flashcards: 'Flashcards only',
+                test: 'Practice test only',
+                both: 'Flashcards + test',
+            };
+            studyToolsToggleText.textContent = labels[selectedStudyFeatures];
+            studyToolChips.forEach(chip => {
+                chip.classList.toggle('active', chip.dataset.studyFeatures === selectedStudyFeatures);
+            });
+            if (selectedStudyFeatures === 'none') {
+                studyToolsNote.textContent = 'Disabled by default to avoid unnecessary processing.';
+            } else if (selectedStudyFeatures === 'flashcards') {
+                studyToolsNote.textContent = 'Only flashcards will be generated.';
+            } else if (selectedStudyFeatures === 'test') {
+                studyToolsNote.textContent = 'Only practice test questions will be generated.';
+            } else {
+                studyToolsNote.textContent = 'Both flashcards and practice test questions will be generated.';
+            }
+            const disableFlashcards = currentMode === 'interview' || selectedStudyFeatures === 'none' || selectedStudyFeatures === 'test';
+            const disableQuestions = currentMode === 'interview' || selectedStudyFeatures === 'none' || selectedStudyFeatures === 'flashcards';
+            flashcardAmountChips.forEach(chip => { chip.disabled = disableFlashcards; });
+            questionAmountChips.forEach(chip => { chip.disabled = disableQuestions; });
+            updateProcessButton();
+        }
+        function setAmountSelection(kind, value) {
+            if (kind === 'flashcards') {
+                selectedFlashcardAmount = value;
+                flashcardAmountChips.forEach(chip => chip.classList.toggle('active', chip.dataset.value === value));
+            } else {
+                selectedQuestionAmount = value;
+                questionAmountChips.forEach(chip => chip.classList.toggle('active', chip.dataset.value === value));
+            }
+        }
+        function updateInterviewOptionsUI() {
+            interviewOptionButtons.forEach(btn => {
+                btn.classList.toggle('active', selectedInterviewFeatures.includes(btn.dataset.feature));
+            });
+            if (!selectedInterviewFeatures.length) {
+                interviewExtraNote.textContent = 'No extras selected. Select one or both options (1 slides credit per option).';
+            } else if (selectedInterviewFeatures.length === 1) {
+                interviewExtraNote.textContent = 'Selected 1 extra option. This adds 1 slides credit.';
+            } else {
+                interviewExtraNote.textContent = 'Selected both extra options. This adds 2 slides credits.';
+            }
+            updateModeCreditDisplay();
+            updateProcessButton();
+        }
         function updateUIForAuthState(user) {
             if (user) {
                 headerSignInBtn.style.display = 'none';
                 creditsDisplay.style.display = 'flex';
+                headerStudyLibraryBtn.style.display = 'inline-flex';
                 userMenu.style.display = 'block';
                 signInRequired.classList.remove('visible');
                 uploadSection.style.display = 'grid';
@@ -837,17 +983,18 @@
             } else {
                 headerSignInBtn.style.display = 'flex';
                 creditsDisplay.style.display = 'none';
+                headerStudyLibraryBtn.style.display = 'none';
                 userMenu.style.display = 'none';
                 signInRequired.classList.add('visible');
                 uploadSection.style.display = 'none';
                 buttonSection.style.display = 'none';
                 generationControls.style.display = 'none';
+                interviewControls.classList.add('hidden');
                 currentUser = null;
                 userCredits = null;
                 idToken = null;
             }
         }
-
         auth.onAuthStateChanged(async (user) => {
             currentUser = user;
             if (user) {
@@ -880,7 +1027,10 @@
             const config = modeConfig[currentMode];
             if (config.creditType === 'lecture') return (userCredits.lecture_standard + userCredits.lecture_extended) > 0;
             if (config.creditType === 'slides') return userCredits.slides > 0;
-            if (config.creditType === 'interview') return (userCredits.interview_short + userCredits.interview_medium + userCredits.interview_long) > 0;
+            if (config.creditType === 'interview') {
+                const extraCost = getInterviewExtraCost();
+                return getTotalInterviewCredits() > 0 && userCredits.slides >= extraCost;
+            }
             return false;
         }
         function updateProcessButton() {
@@ -888,18 +1038,35 @@
             const pdfReady = !config.needsPdf || pdfFile;
             const audioReady = !config.needsAudio || audioFile;
             const hasCredits = hasEnoughCredits();
-            processButton.disabled = !(pdfReady && audioReady && hasCredits);
+            processButton.disabled = !(pdfReady && audioReady && hasCredits) || resultsLocked;
             processButton.querySelector('span').textContent = config.buttonText;
-            noCreditsWarning.classList.toggle('visible', currentUser && !hasCredits);
+            if (currentUser && !hasCredits && !resultsLocked) {
+                if (currentMode === 'interview' && getTotalInterviewCredits() > 0 && userCredits.slides < getInterviewExtraCost()) {
+                    noCreditsWarning.innerHTML = "You don't have enough slides credits for the selected interview extras. <a href=\"#\" id=\"buy-credits-link-inline\">Buy more credits</a>";
+                } else {
+                    noCreditsWarning.innerHTML = "You don't have enough credits. <a href=\"#\" id=\"buy-credits-link-inline\">Buy more credits</a>";
+                }
+                noCreditsWarning.classList.add('visible');
+                const inlineLink = document.getElementById('buy-credits-link-inline');
+                if (inlineLink) {
+                    inlineLink.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        showPricingModal();
+                    });
+                }
+            } else {
+                noCreditsWarning.classList.remove('visible');
+            }
         }
         function switchMode(mode) {
             currentMode = mode;
             const config = modeConfig[mode];
             modeTabs.forEach(tab => tab.classList.toggle('active', tab.dataset.mode === mode));
             modeDescriptionText.textContent = config.description;
-            modeCreditCost.innerHTML = config.creditCost;
             audioZoneTitle.textContent = config.audioTitle;
             generationControls.classList.toggle('hidden', mode === 'interview');
+            interviewControls.classList.toggle('hidden', mode !== 'interview');
+            updateModeCreditDisplay();
             if (config.needsPdf && config.needsAudio) {
                 uploadSection.classList.remove('single-upload');
                 pdfZone.classList.remove('hidden');
@@ -925,6 +1092,8 @@
                 audioInfo.style.display = 'none';
                 audioZone.classList.remove('has-file');
             }
+            setStudyFeature(selectedStudyFeatures);
+            updateInterviewOptionsUI();
             updateProcessButton();
         }
         modeTabs.forEach(tab => tab.addEventListener('click', () => switchMode(tab.dataset.mode)));
@@ -985,6 +1154,20 @@
             }
             statusText.textContent = desc || 'Processing...';
         }
+        function getCurrentModeSteps() {
+            if (currentMode === 'lecture-notes') {
+                if (selectedStudyFeatures === 'none') return modeConfig['lecture-notes'].steps.slice(0, 3);
+                return modeConfig['lecture-notes'].steps;
+            }
+            if (currentMode === 'slides-only') {
+                if (selectedStudyFeatures === 'none') return modeConfig['slides-only'].steps.slice(0, 1);
+                return modeConfig['slides-only'].steps;
+            }
+            if (selectedInterviewFeatures.length > 0) {
+                return [{ num: 1, label: 'Transcribe' }, { num: 2, label: 'Create Extras' }];
+            }
+            return modeConfig['interview'].steps;
+        }
         function startPolling() {
             pollInterval = setInterval(pollStatus, 2000);
             pollStatus();
@@ -1004,7 +1187,20 @@
                 updateProgressUI(d.step, d.step_description, d.total_steps);
                 if (d.status === 'complete') {
                     stopPolling();
-                    showResults(d.result, d.slide_text, d.transcript, d.flashcards || [], d.test_questions || [], d.study_generation_error || null);
+                    showResults(
+                        d.result,
+                        d.slide_text,
+                        d.transcript,
+                        d.flashcards || [],
+                        d.test_questions || [],
+                        d.study_generation_error || null,
+                        d.study_pack_id || null,
+                        d.study_features || 'none',
+                        d.interview_summary || '',
+                        d.interview_sections || '',
+                        d.interview_combined || '',
+                        d.interview_features_successful || []
+                    );
                     fetchUserData();
                 } else if (d.status === 'error') {
                     stopPolling();
@@ -1014,22 +1210,30 @@
         }
         async function processFiles() {
             if (!idToken) { showAuthModal('signin'); return; }
+            if (resultsLocked) {
+                showToast('Click "Process Another File" to start a new generation.', 'info');
+                return;
+            }
             const config = modeConfig[currentMode];
             const fd = new FormData();
             fd.append('mode', currentMode);
             if (config.needsPdf && pdfFile) fd.append('pdf', pdfFile);
             if (config.needsAudio && audioFile) fd.append('audio', audioFile);
             if (currentMode !== 'interview') {
-                fd.append('flashcard_amount', flashcardAmountSelect.value);
-                fd.append('question_amount', questionAmountSelect.value);
+                fd.append('flashcard_amount', selectedFlashcardAmount);
+                fd.append('question_amount', selectedQuestionAmount);
+                fd.append('study_features', selectedStudyFeatures);
+            } else {
+                fd.append('interview_features', getInterviewFeaturesValue());
             }
-            buildProgressSteps(config.steps);
+            const steps = getCurrentModeSteps();
+            buildProgressSteps(steps);
             processButton.disabled = true;
             progressSection.classList.add('visible');
             resultsSection.classList.remove('visible');
             progressStatus.classList.remove('error');
             progressStatus.querySelector('.spinner').style.display = 'block';
-            updateProgressUI(0, 'Uploading files...', config.steps.length);
+            updateProgressUI(0, 'Uploading files...', steps.length);
             try {
                 const r = await fetch('/upload', { method: 'POST', headers: { 'Authorization': `Bearer ${idToken}` }, body: fd });
                 const d = await r.json();
@@ -1063,7 +1267,31 @@
             } else if (currentMode === 'slides-only') {
                 downloadDropdownContent.innerHTML = '<button class="dropdown-item" data-type="result" data-format="md">Extracted Slides<span>Markdown (.md)</span></button><button class="dropdown-item" data-type="result" data-format="docx">Extracted Slides<span>Word Document (.docx)</span></button>';
             } else {
-                downloadDropdownContent.innerHTML = '<button class="dropdown-item" data-type="result" data-format="md">Interview Transcript<span>Markdown (.md)</span></button><button class="dropdown-item" data-type="result" data-format="docx">Interview Transcript<span>Word Document (.docx)</span></button>';
+                const parts = [];
+                parts.push('<button class="dropdown-item" data-type="result" data-format="md">Current Interview Output<span>Markdown (.md)</span></button>');
+                parts.push('<button class="dropdown-item" data-type="result" data-format="docx">Current Interview Output<span>Word Document (.docx)</span></button>');
+                if (interviewSummaryText && interviewSectionsText && interviewCombinedText) {
+                    parts.push('<div class="dropdown-divider"></div>');
+                    parts.push('<button class="dropdown-item" data-type="combined" data-format="md">Summary + Structured Transcript<span>Markdown (.md)</span></button>');
+                    parts.push('<button class="dropdown-item" data-type="combined" data-format="docx">Summary + Structured Transcript<span>Word Document (.docx)</span></button>');
+                } else {
+                    if (interviewSummaryText) {
+                        parts.push('<div class="dropdown-divider"></div>');
+                        parts.push('<button class="dropdown-item" data-type="summary" data-format="md">Interview Summary<span>Markdown (.md)</span></button>');
+                        parts.push('<button class="dropdown-item" data-type="summary" data-format="docx">Interview Summary<span>Word Document (.docx)</span></button>');
+                    }
+                    if (interviewSectionsText) {
+                        parts.push('<div class="dropdown-divider"></div>');
+                        parts.push('<button class="dropdown-item" data-type="sections" data-format="md">Structured Transcript<span>Markdown (.md)</span></button>');
+                        parts.push('<button class="dropdown-item" data-type="sections" data-format="docx">Structured Transcript<span>Word Document (.docx)</span></button>');
+                    }
+                }
+                if (transcript) {
+                    parts.push('<div class="dropdown-divider"></div>');
+                    parts.push('<button class="dropdown-item" data-type="transcript" data-format="md">Raw Transcript<span>Markdown (.md)</span></button>');
+                    parts.push('<button class="dropdown-item" data-type="transcript" data-format="docx">Raw Transcript<span>Word Document (.docx)</span></button>');
+                }
+                downloadDropdownContent.innerHTML = parts.join('');
             }
             downloadDropdownContent.querySelectorAll('.dropdown-item').forEach(item => {
                 item.addEventListener('click', () => {
@@ -1077,6 +1305,9 @@
             let filename = 'output.md';
             if (type === 'slides') { content = slideText; filename = format === 'md' ? 'extracted-slides.md' : 'extracted-slides.docx'; }
             else if (type === 'transcript') { content = transcript; filename = format === 'md' ? 'transcript.md' : 'transcript.docx'; }
+            else if (type === 'summary') { content = interviewSummaryText || resultMarkdown; filename = format === 'md' ? 'interview-summary.md' : 'interview-summary.docx'; }
+            else if (type === 'sections') { content = interviewSectionsText || resultMarkdown; filename = format === 'md' ? 'interview-structured.md' : 'interview-structured.docx'; }
+            else if (type === 'combined') { content = interviewCombinedText || resultMarkdown; filename = format === 'md' ? 'interview-summary-structured.md' : 'interview-summary-structured.docx'; }
             else if (currentMode === 'lecture-notes') filename = format === 'md' ? 'lecture-notes.md' : 'lecture-notes.docx';
             else if (currentMode === 'slides-only') filename = format === 'md' ? 'extracted-slides.md' : 'extracted-slides.docx';
             else filename = format === 'md' ? 'interview-transcript.md' : 'interview-transcript.docx';
@@ -1096,12 +1327,38 @@
             showToast('Download started', 'success');
         }
 
+        function updateExportCsvButton() {
+            if (currentMode === 'interview') {
+                exportStudyCsvBtn.style.display = 'none';
+                return;
+            }
+            if (activeResultsTab === 'test' && testQuestions.length) {
+                exportCsvType = 'test';
+                exportStudyCsvText.textContent = 'Export Practice Test CSV';
+                exportStudyCsvBtn.style.display = 'inline-flex';
+                return;
+            }
+            if (flashcards.length) {
+                exportCsvType = 'flashcards';
+                exportStudyCsvText.textContent = 'Export Flashcards CSV';
+                exportStudyCsvBtn.style.display = 'inline-flex';
+                return;
+            }
+            if (testQuestions.length) {
+                exportCsvType = 'test';
+                exportStudyCsvText.textContent = 'Export Practice Test CSV';
+                exportStudyCsvBtn.style.display = 'inline-flex';
+                return;
+            }
+            exportStudyCsvBtn.style.display = 'none';
+        }
         function setActiveResultsTab(tab) {
             activeResultsTab = tab;
             tabButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
             paneNotes.classList.toggle('active', tab === 'notes');
             paneFlashcards.classList.toggle('active', tab === 'flashcards');
             paneTest.classList.toggle('active', tab === 'test');
+            updateExportCsvButton();
         }
         tabButtons.forEach(btn => btn.addEventListener('click', () => setActiveResultsTab(btn.dataset.tab)));
 
@@ -1199,21 +1456,49 @@
             }
         });
 
-        function showResults(md, slides, trans, generatedFlashcards, generatedQuestions, generationError) {
+        function showResults(md, slides, trans, generatedFlashcards, generatedQuestions, generationError, studyPackId, studyFeatures, summaryText, sectionsText, combinedText, successfulInterviewFeatures) {
             const config = modeConfig[currentMode];
             resultMarkdown = md || '';
             slideText = slides || '';
             transcript = trans || '';
             flashcards = Array.isArray(generatedFlashcards) ? generatedFlashcards : [];
             testQuestions = Array.isArray(generatedQuestions) ? generatedQuestions : [];
+            interviewSummaryText = summaryText || '';
+            interviewSectionsText = sectionsText || '';
+            interviewCombinedText = combinedText || '';
             studyGenerationError = generationError;
+            currentStudyPackId = studyPackId;
+            resultsLocked = true;
             resultsTitleText.textContent = config.resultTitle;
             resultsContent.innerHTML = simpleMarkdownToHtml(resultMarkdown);
             flashcardCountBadge.textContent = String(flashcards.length);
             testCountBadge.textContent = String(testQuestions.length);
-            studyWarning.style.display = studyGenerationError ? 'block' : 'none';
-            studyWarning.textContent = studyGenerationError || '';
-            downloadFlashcardsCsvBtn.style.display = flashcards.length ? 'inline-flex' : 'none';
+            const successfulSet = new Set(Array.isArray(successfulInterviewFeatures) ? successfulInterviewFeatures : []);
+            if (currentMode === 'interview') {
+                if (studyGenerationError) {
+                    studyWarning.style.display = 'block';
+                    studyWarning.textContent = studyGenerationError;
+                } else if (!selectedInterviewFeatures.length) {
+                    studyWarning.style.display = 'block';
+                    studyWarning.textContent = 'No interview extras selected. Showing the transcript only.';
+                } else if (successfulSet.size < selectedInterviewFeatures.length) {
+                    const failed = selectedInterviewFeatures.length - successfulSet.size;
+                    studyWarning.style.display = 'block';
+                    studyWarning.textContent = `Some interview extras could not be generated (${failed} failed). Failed extras were refunded as slides credits.`;
+                } else {
+                    studyWarning.style.display = 'none';
+                    studyWarning.textContent = '';
+                }
+            } else if (studyGenerationError) {
+                studyWarning.style.display = 'block';
+                studyWarning.textContent = studyGenerationError;
+            } else if (studyFeatures === 'none') {
+                studyWarning.style.display = 'block';
+                studyWarning.textContent = 'Study tools were disabled for this generation (Notes-only mode).';
+            } else {
+                studyWarning.style.display = 'none';
+                studyWarning.textContent = '';
+            }
 
             flashcardIndex = 0;
             flashcardFlipped = false;
@@ -1221,18 +1506,17 @@
             quizScore = 0;
             renderFlashcard();
             renderQuizQuestion();
+            document.getElementById('tab-flashcards').style.display = currentMode === 'interview' ? 'none' : 'flex';
+            document.getElementById('tab-test').style.display = currentMode === 'interview' ? 'none' : 'flex';
             setActiveResultsTab('notes');
-            if (!flashcards.length && !testQuestions.length && currentMode !== 'interview') {
-                document.getElementById('tab-flashcards').disabled = true;
-                document.getElementById('tab-test').disabled = true;
-            } else {
-                document.getElementById('tab-flashcards').disabled = false;
-                document.getElementById('tab-test').disabled = false;
-            }
+            document.getElementById('tab-flashcards').disabled = currentMode === 'interview' || !flashcards.length;
+            document.getElementById('tab-test').disabled = currentMode === 'interview' || !testQuestions.length;
 
             progressSection.classList.remove('visible');
             resultsSection.classList.add('visible');
             buildDownloadDropdown();
+            updateExportCsvButton();
+            updateProcessButton();
             showToast('Processing complete!', 'success');
         }
         function showError(msg, creditRefunded) {
@@ -1253,10 +1537,17 @@
             transcript = '';
             flashcards = [];
             testQuestions = [];
+            interviewSummaryText = '';
+            interviewSectionsText = '';
+            interviewCombinedText = '';
+            currentStudyPackId = null;
+            resultsLocked = false;
             flashcardCountBadge.textContent = '0';
             testCountBadge.textContent = '0';
             studyWarning.style.display = 'none';
-            downloadFlashcardsCsvBtn.style.display = 'none';
+            exportStudyCsvBtn.style.display = 'none';
+            document.getElementById('tab-flashcards').style.display = 'flex';
+            document.getElementById('tab-test').style.display = 'flex';
             document.getElementById('tab-flashcards').disabled = false;
             document.getElementById('tab-test').disabled = false;
             setActiveResultsTab('notes');
@@ -1353,6 +1644,7 @@
         document.addEventListener('click', (e) => { if (!userMenu.contains(e.target)) userDropdown.classList.remove('visible'); });
         buyCreditsBtn.addEventListener('click', () => { userDropdown.classList.remove('visible'); showPricingModal(); });
         purchaseHistoryBtn.addEventListener('click', () => { userDropdown.classList.remove('visible'); showHistoryModal(); });
+        headerStudyLibraryBtn.addEventListener('click', () => { window.location.href = '/study'; });
         adminDashboardBtn.addEventListener('click', () => { userDropdown.classList.remove('visible'); window.location.href = '/admin'; });
         buyCreditsLink.addEventListener('click', (e) => { e.preventDefault(); showPricingModal(); });
         pricingModalClose.addEventListener('click', hidePricingModal);
@@ -1372,9 +1664,26 @@
                 showToast('Failed to copy notes', 'error');
             }
         });
-        downloadFlashcardsCsvBtn.addEventListener('click', () => {
+        exportStudyCsvBtn.addEventListener('click', () => {
             if (!currentJobId) return;
-            window.location.href = `/download-flashcards-csv/${currentJobId}`;
+            window.location.href = `/download-flashcards-csv/${currentJobId}?type=${exportCsvType}`;
+        });
+        fullscreenStudyBtn.addEventListener('click', () => {
+            if (!currentStudyPackId) {
+                showToast('No saved study pack available yet for this result.', 'info');
+                return;
+            }
+            window.open(`/study?pack_id=${encodeURIComponent(currentStudyPackId)}&mode=learn&fullscreen=1`, '_blank');
+        });
+        studyLibraryBtn.addEventListener('click', () => {
+            window.location.href = '/study';
+        });
+        studyNowBtn.addEventListener('click', () => {
+            if (!currentStudyPackId) {
+                showToast('No saved study pack available yet for this result.', 'info');
+                return;
+            }
+            window.open(`/study?pack_id=${encodeURIComponent(currentStudyPackId)}&mode=learn`, '_blank');
         });
         newLectureButton.addEventListener('click', () => {
             pdfFile = null;
@@ -1392,7 +1701,49 @@
             progressStatus.querySelector('.spinner').style.display = 'block';
             resetResultsState();
             switchMode(currentMode);
+            updateProcessButton();
             window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+        studyToolsToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            studyToolsPanel.classList.toggle('visible');
+            studyToolsToggle.classList.toggle('open', studyToolsPanel.classList.contains('visible'));
+        });
+        studyToolChips.forEach(chip => {
+            chip.addEventListener('click', () => {
+                setStudyFeature(chip.dataset.studyFeatures || 'none');
+            });
+        });
+        flashcardAmountChips.forEach(chip => {
+            chip.addEventListener('click', () => {
+                if (chip.disabled) return;
+                setAmountSelection('flashcards', chip.dataset.value);
+            });
+        });
+        questionAmountChips.forEach(chip => {
+            chip.addEventListener('click', () => {
+                if (chip.disabled) return;
+                setAmountSelection('questions', chip.dataset.value);
+            });
+        });
+        interviewOptionButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const feature = btn.dataset.feature;
+                if (!feature) return;
+                if (selectedInterviewFeatures.includes(feature)) {
+                    selectedInterviewFeatures = selectedInterviewFeatures.filter(item => item !== feature);
+                } else {
+                    selectedInterviewFeatures.push(feature);
+                }
+                selectedInterviewFeatures = selectedInterviewFeatures.slice(0, 2);
+                updateInterviewOptionsUI();
+            });
+        });
+        document.addEventListener('click', (e) => {
+            if (!studyToolsPanel.contains(e.target) && !studyToolsToggle.contains(e.target)) {
+                studyToolsPanel.classList.remove('visible');
+                studyToolsToggle.classList.remove('open');
+            }
         });
         window.addEventListener('keydown', (e) => {
             if (!resultsSection.classList.contains('visible')) return;
@@ -1403,6 +1754,10 @@
         });
         window.addEventListener('beforeunload', (e) => { if (currentJobId && pollInterval) { e.preventDefault(); e.returnValue = ''; } });
 
+        setAmountSelection('flashcards', selectedFlashcardAmount);
+        setAmountSelection('questions', selectedQuestionAmount);
+        setStudyFeature('none');
+        updateInterviewOptionsUI();
         switchMode('lecture-notes');
         resetResultsState();
         checkPaymentResult();

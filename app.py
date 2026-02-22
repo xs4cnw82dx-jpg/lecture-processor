@@ -5,6 +5,8 @@ import time
 import io
 import json
 import csv
+import shutil
+import subprocess
 from datetime import datetime, timedelta
 import stripe
 from flask import Flask, request, jsonify, render_template, send_file
@@ -149,6 +151,28 @@ Instructies:
 4. Gebruik alinea's om langere spreekbeurten op te delen."""
 
 PROMPT_INTERVIEW_TRANSCRIPTION = """Transcribe this interview, in the format of timecode (mm:ss), speaker, caption. Put a '-' between the time, the speaker name and the transcript. Use speaker A, speaker B, etc. to identify speakers."""
+
+PROMPT_INTERVIEW_SUMMARY = """You are an expert interviewer analyst.
+Create a concise summary of this interview in clear English.
+Rules:
+- Maximum one page equivalent (about 400-600 words).
+- Focus only on the most important points, commitments, and conclusions.
+- Use short headings and bullet points where useful.
+- Do not invent information outside the transcript.
+Transcript:
+{transcript}
+"""
+
+PROMPT_INTERVIEW_SECTIONED = """You are an expert transcript editor.
+Rewrite this interview transcript into a structured version with clear headings.
+Rules:
+- Keep timestamps and speaker labels from the source where possible.
+- Split content into relevant sections (for example: Introduction, Background, Key Discussion, Decisions, Next Steps).
+- Use meaningful heading titles based on actual content.
+- Do not invent information outside the transcript.
+Transcript:
+{transcript}
+"""
 
 PROMPT_MERGE_TEMPLATE = """Creëer een volledige, integrale en goed leesbare uitwerking van een college door de slide-tekst en het audio-transcript naadloos te combineren. Het eindresultaat moet een compleet naslagwerk zijn.
 Kernprincipe:
@@ -446,6 +470,113 @@ def parse_requested_amount(raw_value, allowed, default):
     value = str(raw_value or default).strip().lower()
     return value if value in allowed else default
 
+def parse_study_features(raw_value):
+    value = str(raw_value or 'none').strip().lower()
+    return value if value in {'none', 'flashcards', 'test', 'both'} else 'none'
+
+def parse_interview_features(raw_value):
+    value = str(raw_value or 'none').strip().lower()
+    if value in {'none', ''}:
+        return []
+    if value == 'both':
+        return ['summary', 'sections']
+    parts = [part.strip() for part in value.split(',') if part.strip()]
+    features = []
+    for part in parts:
+        if part in {'summary', 'sections'} and part not in features:
+            features.append(part)
+    return features
+
+def deduct_slides_credits(uid, amount):
+    if amount <= 0:
+        return True
+    user_ref = db.collection('users').document(uid)
+    user_doc = user_ref.get()
+    if not user_doc.exists:
+        return False
+    user_data = user_doc.to_dict()
+    current = user_data.get('slides_credits', 0)
+    if current < amount:
+        return False
+    user_ref.update({'slides_credits': firestore.Increment(-amount)})
+    return True
+
+def refund_slides_credits(uid, amount):
+    if not uid or amount <= 0:
+        return
+    try:
+        db.collection('users').document(uid).update({'slides_credits': firestore.Increment(amount)})
+        print(f"✅ Refunded {amount} slides credits to user {uid}.")
+    except Exception as e:
+        print(f"❌ Failed to refund {amount} slides credits to user {uid}: {e}")
+
+def generate_with_optional_thinking(model, prompt_text, max_output_tokens=65536, thinking_budget=256):
+    base_config = {'max_output_tokens': max_output_tokens}
+    try:
+        if hasattr(types, 'ThinkingConfig'):
+            base_config['thinking_config'] = types.ThinkingConfig(thinking_budget=thinking_budget)
+    except Exception:
+        pass
+    try:
+        config = types.GenerateContentConfig(**base_config)
+    except Exception:
+        config = types.GenerateContentConfig(max_output_tokens=max_output_tokens)
+    return client.models.generate_content(
+        model=model,
+        contents=[types.Content(role='user', parts=[types.Part.from_text(text=prompt_text)])],
+        config=config
+    )
+
+def convert_audio_to_mp3_with_ytdlp(local_audio_path):
+    if not local_audio_path or local_audio_path.lower().endswith('.mp3'):
+        return local_audio_path, False
+    ytdlp_bin = shutil.which('yt-dlp')
+    base_no_ext = os.path.splitext(local_audio_path)[0]
+    output_path = f"{base_no_ext}_converted.mp3"
+
+    if ytdlp_bin:
+        try:
+            source = f"file://{os.path.abspath(local_audio_path)}"
+            command = [
+                ytdlp_bin,
+                '--no-playlist',
+                '--extract-audio',
+                '--audio-format', 'mp3',
+                '--audio-quality', '5',
+                '--output', f"{base_no_ext}_converted.%(ext)s",
+                source
+            ]
+            result = subprocess.run(command, check=False, capture_output=True, text=True)
+            if result.returncode == 0 and os.path.exists(output_path):
+                return output_path, True
+            print(f"⚠️ yt-dlp conversion failed: {(result.stderr or '').strip()[:300]}")
+        except Exception as e:
+            print(f"⚠️ yt-dlp conversion exception: {e}")
+    else:
+        print("⚠️ yt-dlp not found, skipping yt-dlp conversion.")
+
+    # Fallback conversion for local files when yt-dlp is unavailable or fails.
+    ffmpeg_bin = shutil.which('ffmpeg')
+    if not ffmpeg_bin:
+        return local_audio_path, False
+    try:
+        command = [
+            ffmpeg_bin,
+            '-y',
+            '-i', local_audio_path,
+            '-vn',
+            '-codec:a', 'libmp3lame',
+            '-q:a', '5',
+            output_path
+        ]
+        result = subprocess.run(command, check=False, capture_output=True, text=True)
+        if result.returncode == 0 and os.path.exists(output_path):
+            return output_path, True
+        print(f"⚠️ ffmpeg conversion failed: {(result.stderr or '').strip()[:300]}")
+    except Exception as e:
+        print(f"⚠️ ffmpeg conversion exception: {e}")
+    return local_audio_path, False
+
 def resolve_auto_amount(kind, source_text):
     word_count = len((source_text or '').split())
     if kind == 'flashcards':
@@ -545,8 +676,14 @@ def sanitize_questions(items, max_items):
             break
     return cleaned
 
-def generate_study_materials(source_text, flashcard_selection, question_selection):
+def generate_study_materials(source_text, flashcard_selection, question_selection, study_features='both'):
+    if study_features == 'none':
+        return [], [], None
     flashcard_amount, question_amount = resolve_study_amounts(flashcard_selection, question_selection, source_text)
+    if study_features == 'flashcards':
+        question_amount = 0
+    elif study_features == 'test':
+        flashcard_amount = 0
     prompt = PROMPT_STUDY_TEMPLATE.format(
         flashcard_amount=flashcard_amount,
         question_amount=question_amount,
@@ -563,11 +700,52 @@ def generate_study_materials(source_text, flashcard_selection, question_selectio
             return [], [], 'Study materials JSON parsing failed.'
         flashcards = sanitize_flashcards(parsed.get('flashcards', []), flashcard_amount)
         test_questions = sanitize_questions(parsed.get('test_questions', []), question_amount)
-        if not flashcards and not test_questions:
+        if not flashcards and not test_questions and study_features != 'none':
             return [], [], 'Study materials were empty after validation.'
         return flashcards, test_questions, None
     except Exception as e:
         return [], [], f'Study materials generation failed: {e}'
+
+def generate_interview_enhancements(transcript_text, selected_features):
+    summary_text = None
+    sectioned_text = None
+    errors = []
+    for feature in selected_features:
+        try:
+            if feature == 'summary':
+                prompt = PROMPT_INTERVIEW_SUMMARY.format(transcript=transcript_text[:120000])
+                response = generate_with_optional_thinking(MODEL_STUDY, prompt, max_output_tokens=8192, thinking_budget=384)
+                summary_text = (response.text or '').strip()
+                if not summary_text:
+                    errors.append('Summary generation returned empty output.')
+            elif feature == 'sections':
+                prompt = PROMPT_INTERVIEW_SECTIONED.format(transcript=transcript_text[:120000])
+                response = generate_with_optional_thinking(MODEL_STUDY, prompt, max_output_tokens=32768, thinking_budget=384)
+                sectioned_text = (response.text or '').strip()
+                if not sectioned_text:
+                    errors.append('Sectioned transcript generation returned empty output.')
+        except Exception as e:
+            errors.append(f"{feature} generation failed: {e}")
+
+    successful = []
+    if summary_text:
+        successful.append('summary')
+    if sectioned_text:
+        successful.append('sections')
+
+    combined_text = None
+    if summary_text and sectioned_text:
+        combined_text = f"# Interview Summary\n\n{summary_text}\n\n# Structured Interview Transcript\n\n{sectioned_text}"
+
+    failed_count = max(0, len(selected_features) - len(successful))
+    return {
+        'summary': summary_text,
+        'sections': sectioned_text,
+        'combined': combined_text,
+        'successful_features': successful,
+        'failed_count': failed_count,
+        'error': '; '.join(errors) if errors else None,
+    }
 
 def allowed_file(filename, allowed_extensions):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
@@ -664,20 +842,34 @@ def save_study_pack(job_id, job_data):
             notes_markdown = notes_markdown[:max_notes_chars]
 
         doc_ref = db.collection('study_packs').document()
+        now_ts = time.time()
         doc_ref.set({
             'study_pack_id': doc_ref.id,
             'source_job_id': job_id,
             'uid': job_data.get('user_id', ''),
             'email': job_data.get('user_email', ''),
             'mode': job_data.get('mode', ''),
+            'title': f"{job_data.get('mode', 'study-pack')} {datetime.utcfromtimestamp(now_ts).strftime('%Y-%m-%d %H:%M')}",
             'notes_markdown': notes_markdown,
             'notes_truncated': notes_truncated,
             'flashcards': job_data.get('flashcards', []),
             'test_questions': job_data.get('test_questions', []),
             'flashcard_selection': job_data.get('flashcard_selection', '20'),
             'question_selection': job_data.get('question_selection', '10'),
+            'study_features': job_data.get('study_features', 'none'),
+            'interview_features': job_data.get('interview_features', []),
+            'interview_summary': job_data.get('interview_summary'),
+            'interview_sections': job_data.get('interview_sections'),
+            'interview_combined': job_data.get('interview_combined'),
             'study_generation_error': job_data.get('study_generation_error'),
-            'created_at': time.time(),
+            'course': '',
+            'subject': '',
+            'semester': '',
+            'block': '',
+            'folder_id': '',
+            'folder_name': '',
+            'created_at': now_ts,
+            'updated_at': now_ts,
         })
         job_data['study_pack_id'] = doc_ref.id
     except Exception as e:
@@ -703,8 +895,12 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
         
         jobs[job_id]['step'] = 2
         jobs[job_id]['step_description'] = 'Transcribing audio...'
-        audio_mime_type = get_mime_type(audio_path)
-        audio_file = client.files.upload(file=audio_path, config={'mime_type': audio_mime_type})
+        converted_audio_path, converted = convert_audio_to_mp3_with_ytdlp(audio_path)
+        if converted and converted_audio_path not in local_paths:
+            local_paths.append(converted_audio_path)
+        jobs[job_id]['step_description'] = 'Optimizing audio for faster processing...'
+        audio_mime_type = get_mime_type(converted_audio_path)
+        audio_file = client.files.upload(file=converted_audio_path, config={'mime_type': audio_mime_type})
         gemini_files.append(audio_file)
         jobs[job_id]['step_description'] = 'Processing audio file (this may take a few minutes)...'
         wait_for_file_processing(audio_file)
@@ -718,22 +914,28 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
         merge_prompt = PROMPT_MERGE_TEMPLATE.format(slide_text=slide_text, transcript=transcript)
         response = client.models.generate_content(model=MODEL_INTEGRATION, contents=[types.Content(role='user', parts=[types.Part.from_text(text=merge_prompt)])], config=types.GenerateContentConfig(max_output_tokens=65536))
         merged_notes = response.text
-
-        jobs[job_id]['step'] = 4
-        jobs[job_id]['step_description'] = 'Generating flashcards and practice test...'
         jobs[job_id]['result'] = merged_notes
-        flashcards, test_questions, study_error = generate_study_materials(
-            merged_notes,
-            jobs[job_id].get('flashcard_selection', '20'),
-            jobs[job_id].get('question_selection', '10')
-        )
-        jobs[job_id]['flashcards'] = flashcards
-        jobs[job_id]['test_questions'] = test_questions
-        jobs[job_id]['study_generation_error'] = study_error
+
+        if jobs[job_id].get('study_features', 'none') != 'none':
+            jobs[job_id]['step'] = 4
+            jobs[job_id]['step_description'] = 'Generating flashcards and practice test...'
+            flashcards, test_questions, study_error = generate_study_materials(
+                merged_notes,
+                jobs[job_id].get('flashcard_selection', '20'),
+                jobs[job_id].get('question_selection', '10'),
+                jobs[job_id].get('study_features', 'none')
+            )
+            jobs[job_id]['flashcards'] = flashcards
+            jobs[job_id]['test_questions'] = test_questions
+            jobs[job_id]['study_generation_error'] = study_error
+        else:
+            jobs[job_id]['flashcards'] = []
+            jobs[job_id]['test_questions'] = []
+            jobs[job_id]['study_generation_error'] = None
         save_study_pack(job_id, jobs[job_id])
 
         jobs[job_id]['status'] = 'complete'
-        jobs[job_id]['step'] = 4
+        jobs[job_id]['step'] = jobs[job_id].get('total_steps', 3)
         jobs[job_id]['step_description'] = 'Complete!'
     except Exception as e:
         jobs[job_id]['status'] = 'error'
@@ -760,20 +962,26 @@ def process_slides_only(job_id, pdf_path):
         wait_for_file_processing(pdf_file)
         response = client.models.generate_content(model=MODEL_SLIDES, contents=[types.Content(role='user', parts=[types.Part.from_uri(file_uri=pdf_file.uri, mime_type='application/pdf'), types.Part.from_text(text=PROMPT_SLIDE_EXTRACTION)])], config=types.GenerateContentConfig(max_output_tokens=65536))
         extracted_text = response.text
-        jobs[job_id]['step'] = 2
-        jobs[job_id]['step_description'] = 'Generating flashcards and practice test...'
         jobs[job_id]['result'] = extracted_text
-        flashcards, test_questions, study_error = generate_study_materials(
-            extracted_text,
-            jobs[job_id].get('flashcard_selection', '20'),
-            jobs[job_id].get('question_selection', '10')
-        )
-        jobs[job_id]['flashcards'] = flashcards
-        jobs[job_id]['test_questions'] = test_questions
-        jobs[job_id]['study_generation_error'] = study_error
+        if jobs[job_id].get('study_features', 'none') != 'none':
+            jobs[job_id]['step'] = 2
+            jobs[job_id]['step_description'] = 'Generating flashcards and practice test...'
+            flashcards, test_questions, study_error = generate_study_materials(
+                extracted_text,
+                jobs[job_id].get('flashcard_selection', '20'),
+                jobs[job_id].get('question_selection', '10'),
+                jobs[job_id].get('study_features', 'none')
+            )
+            jobs[job_id]['flashcards'] = flashcards
+            jobs[job_id]['test_questions'] = test_questions
+            jobs[job_id]['study_generation_error'] = study_error
+        else:
+            jobs[job_id]['flashcards'] = []
+            jobs[job_id]['test_questions'] = []
+            jobs[job_id]['study_generation_error'] = None
         save_study_pack(job_id, jobs[job_id])
         jobs[job_id]['status'] = 'complete'
-        jobs[job_id]['step'] = 2
+        jobs[job_id]['step'] = jobs[job_id].get('total_steps', 1)
         jobs[job_id]['step_description'] = 'Complete!'
     except Exception as e:
         jobs[job_id]['status'] = 'error'
@@ -794,18 +1002,48 @@ def process_interview_transcription(job_id, audio_path):
     try:
         jobs[job_id]['status'] = 'processing'
         jobs[job_id]['step'] = 1
-        jobs[job_id]['step_description'] = 'Processing audio file...'
-        audio_mime_type = get_mime_type(audio_path)
-        audio_file = client.files.upload(file=audio_path, config={'mime_type': audio_mime_type})
+        jobs[job_id]['step_description'] = 'Optimizing audio for faster processing...'
+        converted_audio_path, converted = convert_audio_to_mp3_with_ytdlp(audio_path)
+        if converted and converted_audio_path not in local_paths:
+            local_paths.append(converted_audio_path)
+        audio_mime_type = get_mime_type(converted_audio_path)
+        audio_file = client.files.upload(file=converted_audio_path, config={'mime_type': audio_mime_type})
         gemini_files.append(audio_file)
         jobs[job_id]['step_description'] = 'Processing audio file (this may take a few minutes)...'
         wait_for_file_processing(audio_file)
         jobs[job_id]['step_description'] = 'Generating transcript with timestamps...'
         response = client.models.generate_content(model=MODEL_INTERVIEW, contents=[types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=PROMPT_INTERVIEW_TRANSCRIPTION)])], config=types.GenerateContentConfig(max_output_tokens=65536))
+        transcript_text = response.text or ''
+        jobs[job_id]['transcript'] = transcript_text
+        jobs[job_id]['result'] = transcript_text
+
+        selected_features = jobs[job_id].get('interview_features', [])
+        if selected_features:
+            jobs[job_id]['step'] = 2
+            jobs[job_id]['step_description'] = 'Creating interview summary and sections...'
+            enhancement = generate_interview_enhancements(transcript_text, selected_features)
+            jobs[job_id]['interview_summary'] = enhancement.get('summary')
+            jobs[job_id]['interview_sections'] = enhancement.get('sections')
+            jobs[job_id]['interview_combined'] = enhancement.get('combined')
+            jobs[job_id]['interview_features_successful'] = enhancement.get('successful_features', [])
+            jobs[job_id]['study_generation_error'] = enhancement.get('error')
+
+            failed_count = enhancement.get('failed_count', 0)
+            if failed_count > 0:
+                uid = jobs[job_id].get('user_id')
+                refund_slides_credits(uid, failed_count)
+                jobs[job_id]['extra_slides_refunded'] = jobs[job_id].get('extra_slides_refunded', 0) + failed_count
+
+            if enhancement.get('summary') and enhancement.get('sections'):
+                jobs[job_id]['result'] = enhancement.get('combined', transcript_text)
+            elif enhancement.get('summary'):
+                jobs[job_id]['result'] = enhancement.get('summary')
+            elif enhancement.get('sections'):
+                jobs[job_id]['result'] = enhancement.get('sections')
+
         jobs[job_id]['status'] = 'complete'
-        jobs[job_id]['step'] = 1
+        jobs[job_id]['step'] = jobs[job_id].get('total_steps', 1)
         jobs[job_id]['step_description'] = 'Complete!'
-        jobs[job_id]['result'] = response.text
     except Exception as e:
         jobs[job_id]['status'] = 'error'
         jobs[job_id]['error'] = str(e)
@@ -813,6 +1051,12 @@ def process_interview_transcription(job_id, audio_path):
         uid = jobs[job_id].get('user_id')
         credit_type = jobs[job_id].get('credit_deducted')
         refund_credit(uid, credit_type)
+        extra_spent = jobs[job_id].get('interview_features_cost', 0)
+        already_refunded = jobs[job_id].get('extra_slides_refunded', 0)
+        to_refund = max(0, extra_spent - already_refunded)
+        if to_refund > 0:
+            refund_slides_credits(uid, to_refund)
+            jobs[job_id]['extra_slides_refunded'] = already_refunded + to_refund
         jobs[job_id]['credit_refunded'] = True
     finally:
         cleanup_files(local_paths, gemini_files)
@@ -830,6 +1074,10 @@ def index():
 @app.route('/admin')
 def admin_dashboard():
     return render_template('admin.html')
+
+@app.route('/study')
+def study_dashboard():
+    return render_template('study.html')
 
 @app.route('/api/verify-email', methods=['POST'])
 def verify_email():
@@ -1000,15 +1248,22 @@ def get_study_packs():
 
     uid = decoded_token['uid']
     try:
-        study_docs = list(db.collection('study_packs').where('uid', '==', uid).limit(100).stream())
+        study_docs = list(db.collection('study_packs').where('uid', '==', uid).limit(200).stream())
         packs = []
         for doc in study_docs:
             pack = doc.to_dict()
             packs.append({
                 'study_pack_id': doc.id,
+                'title': pack.get('title', ''),
                 'mode': pack.get('mode', ''),
                 'flashcards_count': len(pack.get('flashcards', [])),
                 'test_questions_count': len(pack.get('test_questions', [])),
+                'course': pack.get('course', ''),
+                'subject': pack.get('subject', ''),
+                'semester': pack.get('semester', ''),
+                'block': pack.get('block', ''),
+                'folder_id': pack.get('folder_id', ''),
+                'folder_name': pack.get('folder_name', ''),
                 'created_at': pack.get('created_at', 0),
             })
         packs.sort(key=lambda p: p.get('created_at', 0), reverse=True)
@@ -1033,15 +1288,212 @@ def get_study_pack(pack_id):
             return jsonify({'error': 'Forbidden'}), 403
         return jsonify({
             'study_pack_id': pack_id,
+            'title': pack.get('title', ''),
             'mode': pack.get('mode', ''),
             'notes_markdown': pack.get('notes_markdown', ''),
             'flashcards': pack.get('flashcards', []),
             'test_questions': pack.get('test_questions', []),
+            'interview_summary': pack.get('interview_summary'),
+            'interview_sections': pack.get('interview_sections'),
+            'interview_combined': pack.get('interview_combined'),
+            'study_features': pack.get('study_features', 'none'),
+            'interview_features': pack.get('interview_features', []),
+            'course': pack.get('course', ''),
+            'subject': pack.get('subject', ''),
+            'semester': pack.get('semester', ''),
+            'block': pack.get('block', ''),
+            'folder_id': pack.get('folder_id', ''),
+            'folder_name': pack.get('folder_name', ''),
             'created_at': pack.get('created_at', 0),
         })
     except Exception as e:
         print(f"Error fetching study pack {pack_id}: {e}")
         return jsonify({'error': 'Could not fetch study pack'}), 500
+
+@app.route('/api/study-packs/<pack_id>', methods=['PATCH'])
+def update_study_pack(pack_id):
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+    payload = request.get_json() or {}
+
+    try:
+        pack_ref = db.collection('study_packs').document(pack_id)
+        doc = pack_ref.get()
+        if not doc.exists:
+            return jsonify({'error': 'Study pack not found'}), 404
+        pack = doc.to_dict()
+        if pack.get('uid', '') != uid:
+            return jsonify({'error': 'Forbidden'}), 403
+
+        updates = {'updated_at': time.time()}
+        if 'title' in payload:
+            updates['title'] = str(payload.get('title', '')).strip()[:120]
+        if 'course' in payload:
+            updates['course'] = str(payload.get('course', '')).strip()[:120]
+        if 'subject' in payload:
+            updates['subject'] = str(payload.get('subject', '')).strip()[:120]
+        if 'semester' in payload:
+            updates['semester'] = str(payload.get('semester', '')).strip()[:120]
+        if 'block' in payload:
+            updates['block'] = str(payload.get('block', '')).strip()[:120]
+        if 'folder_id' in payload:
+            folder_id = str(payload.get('folder_id', '')).strip()
+            updates['folder_id'] = ''
+            updates['folder_name'] = ''
+            if folder_id:
+                folder_doc = db.collection('study_folders').document(folder_id).get()
+                if not folder_doc.exists:
+                    return jsonify({'error': 'Folder not found'}), 404
+                folder_data = folder_doc.to_dict()
+                if folder_data.get('uid', '') != uid:
+                    return jsonify({'error': 'Forbidden'}), 403
+                updates['folder_id'] = folder_id
+                updates['folder_name'] = folder_data.get('name', '')
+
+        if 'flashcards' in payload:
+            updates['flashcards'] = sanitize_flashcards(payload.get('flashcards', []), 500)
+        if 'test_questions' in payload:
+            updates['test_questions'] = sanitize_questions(payload.get('test_questions', []), 500)
+
+        pack_ref.update(updates)
+        return jsonify({'ok': True})
+    except Exception as e:
+        print(f"Error updating study pack {pack_id}: {e}")
+        return jsonify({'error': 'Could not update study pack'}), 500
+
+@app.route('/api/study-packs/<pack_id>', methods=['DELETE'])
+def delete_study_pack(pack_id):
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+    try:
+        pack_ref = db.collection('study_packs').document(pack_id)
+        doc = pack_ref.get()
+        if not doc.exists:
+            return jsonify({'error': 'Study pack not found'}), 404
+        pack = doc.to_dict()
+        if pack.get('uid', '') != uid:
+            return jsonify({'error': 'Forbidden'}), 403
+        pack_ref.delete()
+        return jsonify({'ok': True})
+    except Exception as e:
+        print(f"Error deleting study pack {pack_id}: {e}")
+        return jsonify({'error': 'Could not delete study pack'}), 500
+
+@app.route('/api/study-folders', methods=['GET'])
+def get_study_folders():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+    try:
+        docs = list(db.collection('study_folders').where('uid', '==', uid).stream())
+        folders = []
+        for doc in docs:
+            folder = doc.to_dict()
+            folders.append({
+                'folder_id': doc.id,
+                'name': folder.get('name', ''),
+                'course': folder.get('course', ''),
+                'subject': folder.get('subject', ''),
+                'semester': folder.get('semester', ''),
+                'block': folder.get('block', ''),
+                'created_at': folder.get('created_at', 0),
+            })
+        folders.sort(key=lambda f: f.get('created_at', 0), reverse=True)
+        return jsonify({'folders': folders})
+    except Exception as e:
+        print(f"Error fetching study folders: {e}")
+        return jsonify({'folders': []})
+
+@app.route('/api/study-folders', methods=['POST'])
+def create_study_folder():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+    payload = request.get_json() or {}
+    name = str(payload.get('name', '')).strip()[:120]
+    if not name:
+        return jsonify({'error': 'Folder name is required'}), 400
+    try:
+        now_ts = time.time()
+        doc_ref = db.collection('study_folders').document()
+        doc_ref.set({
+            'folder_id': doc_ref.id,
+            'uid': uid,
+            'name': name,
+            'course': str(payload.get('course', '')).strip()[:120],
+            'subject': str(payload.get('subject', '')).strip()[:120],
+            'semester': str(payload.get('semester', '')).strip()[:120],
+            'block': str(payload.get('block', '')).strip()[:120],
+            'created_at': now_ts,
+            'updated_at': now_ts,
+        })
+        return jsonify({'ok': True, 'folder_id': doc_ref.id})
+    except Exception as e:
+        print(f"Error creating study folder: {e}")
+        return jsonify({'error': 'Could not create folder'}), 500
+
+@app.route('/api/study-folders/<folder_id>', methods=['PATCH'])
+def update_study_folder(folder_id):
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+    payload = request.get_json() or {}
+    try:
+        folder_ref = db.collection('study_folders').document(folder_id)
+        doc = folder_ref.get()
+        if not doc.exists:
+            return jsonify({'error': 'Folder not found'}), 404
+        folder = doc.to_dict()
+        if folder.get('uid', '') != uid:
+            return jsonify({'error': 'Forbidden'}), 403
+        updates = {'updated_at': time.time()}
+        if 'name' in payload:
+            name = str(payload.get('name', '')).strip()[:120]
+            if not name:
+                return jsonify({'error': 'Folder name is required'}), 400
+            updates['name'] = name
+        for field in ['course', 'subject', 'semester', 'block']:
+            if field in payload:
+                updates[field] = str(payload.get(field, '')).strip()[:120]
+        folder_ref.update(updates)
+        if 'name' in updates:
+            packs = list(db.collection('study_packs').where('uid', '==', uid).where('folder_id', '==', folder_id).stream())
+            for pack_doc in packs:
+                pack_doc.reference.update({'folder_name': updates['name'], 'updated_at': time.time()})
+        return jsonify({'ok': True})
+    except Exception as e:
+        print(f"Error updating folder {folder_id}: {e}")
+        return jsonify({'error': 'Could not update folder'}), 500
+
+@app.route('/api/study-folders/<folder_id>', methods=['DELETE'])
+def delete_study_folder(folder_id):
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+    try:
+        folder_ref = db.collection('study_folders').document(folder_id)
+        doc = folder_ref.get()
+        if not doc.exists:
+            return jsonify({'error': 'Folder not found'}), 404
+        folder = doc.to_dict()
+        if folder.get('uid', '') != uid:
+            return jsonify({'error': 'Forbidden'}), 403
+        folder_ref.delete()
+        packs = list(db.collection('study_packs').where('uid', '==', uid).where('folder_id', '==', folder_id).stream())
+        for pack_doc in packs:
+            pack_doc.reference.update({'folder_id': '', 'folder_name': '', 'updated_at': time.time()})
+        return jsonify({'ok': True})
+    except Exception as e:
+        print(f"Error deleting folder {folder_id}: {e}")
+        return jsonify({'error': 'Could not delete folder'}), 500
 
 @app.route('/api/admin/overview', methods=['GET'])
 def get_admin_overview():
@@ -1303,6 +1755,8 @@ def upload_files():
     mode = request.form.get('mode', 'lecture-notes')
     flashcard_selection = parse_requested_amount(request.form.get('flashcard_amount', '20'), {'10', '20', '30', 'auto'}, '20')
     question_selection = parse_requested_amount(request.form.get('question_amount', '10'), {'5', '10', '15', 'auto'}, '10')
+    study_features = parse_study_features(request.form.get('study_features', 'none'))
+    interview_features = parse_interview_features(request.form.get('interview_features', 'none'))
     
     if mode == 'lecture-notes':
         total_lecture = user.get('lecture_credits_standard', 0) + user.get('lecture_credits_extended', 0)
@@ -1322,7 +1776,8 @@ def upload_files():
         deducted = deduct_credit(uid, 'lecture_credits_standard', 'lecture_credits_extended')
         if not deducted:
             return jsonify({'error': 'No lecture credits remaining.'}), 402
-        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 4, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None}
+        total_steps = 4 if study_features != 'none' else 3
+        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None}
         thread = threading.Thread(target=process_lecture_notes, args=(job_id, pdf_path, audio_path))
         thread.start()
         
@@ -1339,7 +1794,8 @@ def upload_files():
         deducted = deduct_credit(uid, 'slides_credits')
         if not deducted:
             return jsonify({'error': 'No slides credits remaining.'}), 402
-        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 2, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None}
+        total_steps = 2 if study_features != 'none' else 1
+        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None}
         thread = threading.Thread(target=process_slides_only, args=(job_id, pdf_path))
         thread.start()
         
@@ -1357,7 +1813,41 @@ def upload_files():
         deducted = deduct_interview_credit(uid)
         if not deducted:
             return jsonify({'error': 'No interview credits remaining.'}), 402
-        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 1, 'mode': 'interview', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'error': None}
+        interview_features_cost = len(interview_features)
+        if interview_features_cost > 0:
+            if user.get('slides_credits', 0) < interview_features_cost:
+                refund_credit(uid, deducted)
+                return jsonify({'error': f'Not enough slides credits for interview extras. You selected {interview_features_cost} option(s) and need {interview_features_cost} slides credits.'}), 402
+            if not deduct_slides_credits(uid, interview_features_cost):
+                refund_credit(uid, deducted)
+                return jsonify({'error': 'Could not reserve slides credits for interview extras. Please try again.'}), 402
+        total_steps = 2 if interview_features_cost > 0 else 1
+        jobs[job_id] = {
+            'status': 'starting',
+            'step': 0,
+            'step_description': 'Starting...',
+            'total_steps': total_steps,
+            'mode': 'interview',
+            'user_id': uid,
+            'user_email': email,
+            'credit_deducted': deducted,
+            'credit_refunded': False,
+            'started_at': time.time(),
+            'result': None,
+            'transcript': None,
+            'flashcards': [],
+            'test_questions': [],
+            'study_features': 'none',
+            'interview_features': interview_features,
+            'interview_features_cost': interview_features_cost,
+            'interview_features_successful': [],
+            'interview_summary': None,
+            'interview_sections': None,
+            'interview_combined': None,
+            'extra_slides_refunded': 0,
+            'study_generation_error': None,
+            'error': None
+        }
         thread = threading.Thread(target=process_interview_transcription, args=(job_id, audio_path))
         thread.start()
         
@@ -1374,8 +1864,16 @@ def get_status(job_id):
         response['test_questions'] = job.get('test_questions', [])
         response['study_generation_error'] = job.get('study_generation_error')
         response['study_pack_id'] = job.get('study_pack_id')
+        response['study_features'] = job.get('study_features', 'none')
+        response['interview_features'] = job.get('interview_features', [])
+        response['interview_features_successful'] = job.get('interview_features_successful', [])
+        response['interview_summary'] = job.get('interview_summary')
+        response['interview_sections'] = job.get('interview_sections')
+        response['interview_combined'] = job.get('interview_combined')
         if job.get('mode') == 'lecture-notes':
             response['slide_text'] = job.get('slide_text')
+            response['transcript'] = job.get('transcript')
+        if job.get('mode') == 'interview':
             response['transcript'] = job.get('transcript')
     elif job['status'] == 'error':
         response['error'] = job['error']
@@ -1393,6 +1891,12 @@ def download_docx(job_id):
         content, filename, title = job['slide_text'], 'extracted-slides.docx', 'Extracted Slides'
     elif content_type == 'transcript' and job.get('transcript'):
         content, filename, title = job['transcript'], 'transcript.docx', 'Lecture Transcript'
+    elif content_type == 'summary' and job.get('interview_summary'):
+        content, filename, title = job['interview_summary'], 'interview-summary.docx', 'Interview Summary'
+    elif content_type == 'sections' and job.get('interview_sections'):
+        content, filename, title = job['interview_sections'], 'interview-structured.docx', 'Structured Interview Transcript'
+    elif content_type == 'combined' and job.get('interview_combined'):
+        content, filename, title = job['interview_combined'], 'interview-summary-structured.docx', 'Interview Summary + Structured Transcript'
     else:
         content = job['result']
         mode = job.get('mode', 'lecture-notes')
@@ -1413,20 +1917,89 @@ def download_flashcards_csv(job_id):
     job = jobs[job_id]
     if job.get('status') != 'complete':
         return jsonify({'error': 'Job not complete'}), 400
-    flashcards = job.get('flashcards', [])
-    if not flashcards:
-        return jsonify({'error': 'No flashcards available for this job'}), 400
+    export_type = request.args.get('type', 'flashcards').strip().lower()
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['question', 'answer'])
-    for card in flashcards:
-        writer.writerow([card.get('front', ''), card.get('back', '')])
+    if export_type == 'test':
+        test_questions = job.get('test_questions', [])
+        if not test_questions:
+            return jsonify({'error': 'No practice questions available for this job'}), 400
+        writer.writerow(['question', 'option_a', 'option_b', 'option_c', 'option_d', 'answer', 'explanation'])
+        for q in test_questions:
+            options = q.get('options', [])
+            padded = (options + ['', '', '', ''])[:4]
+            writer.writerow([
+                q.get('question', ''),
+                padded[0],
+                padded[1],
+                padded[2],
+                padded[3],
+                q.get('answer', ''),
+                q.get('explanation', ''),
+            ])
+        filename = f'practice-test-{job_id}.csv'
+    else:
+        flashcards = job.get('flashcards', [])
+        if not flashcards:
+            return jsonify({'error': 'No flashcards available for this job'}), 400
+        writer.writerow(['question', 'answer'])
+        for card in flashcards:
+            writer.writerow([card.get('front', ''), card.get('back', '')])
+        filename = f'flashcards-{job_id}.csv'
 
     csv_bytes = io.BytesIO(output.getvalue().encode('utf-8'))
     csv_bytes.seek(0)
-    filename = f'flashcards-{job_id}.csv'
     return send_file(csv_bytes, mimetype='text/csv', as_attachment=True, download_name=filename)
+
+@app.route('/api/study-packs/<pack_id>/export-flashcards-csv', methods=['GET'])
+def export_study_pack_flashcards_csv(pack_id):
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+    try:
+        doc = db.collection('study_packs').document(pack_id).get()
+        if not doc.exists:
+            return jsonify({'error': 'Study pack not found'}), 404
+        pack = doc.to_dict()
+        if pack.get('uid', '') != uid:
+            return jsonify({'error': 'Forbidden'}), 403
+        export_type = request.args.get('type', 'flashcards').strip().lower()
+        output = io.StringIO()
+        writer = csv.writer(output)
+        if export_type == 'test':
+            test_questions = pack.get('test_questions', [])
+            if not test_questions:
+                return jsonify({'error': 'No practice questions available'}), 400
+            writer.writerow(['question', 'option_a', 'option_b', 'option_c', 'option_d', 'answer', 'explanation'])
+            for q in test_questions:
+                options = q.get('options', [])
+                padded = (options + ['', '', '', ''])[:4]
+                writer.writerow([
+                    q.get('question', ''),
+                    padded[0],
+                    padded[1],
+                    padded[2],
+                    padded[3],
+                    q.get('answer', ''),
+                    q.get('explanation', ''),
+                ])
+            filename = f'study-pack-{pack_id}-practice-test.csv'
+        else:
+            flashcards = pack.get('flashcards', [])
+            if not flashcards:
+                return jsonify({'error': 'No flashcards available'}), 400
+            writer.writerow(['question', 'answer'])
+            for card in flashcards:
+                writer.writerow([card.get('front', ''), card.get('back', '')])
+            filename = f'study-pack-{pack_id}-flashcards.csv'
+        csv_bytes = io.BytesIO(output.getvalue().encode('utf-8'))
+        csv_bytes.seek(0)
+        return send_file(csv_bytes, mimetype='text/csv', as_attachment=True, download_name=filename)
+    except Exception as e:
+        print(f"Error exporting study pack flashcards CSV {pack_id}: {e}")
+        return jsonify({'error': 'Could not export CSV'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
