@@ -223,6 +223,50 @@
         .new-process-button { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; font-size: 0.875rem; font-weight: 500; color: var(--gray-600); background: var(--white); border: 1px solid var(--gray-300); border-radius: var(--radius); cursor: pointer; transition: all 0.2s ease; }
         .new-process-button:hover { color: var(--gray-900); border-color: var(--gray-400); }
         .new-process-button svg { width: 18px; height: 18px; }
+        .generation-controls { margin: 4px 0 20px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+        @media (max-width: 640px) { .generation-controls { grid-template-columns: 1fr; } }
+        .generation-controls.hidden { display: none; }
+        .generation-control { display: flex; flex-direction: column; gap: 6px; background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: var(--radius-md); padding: 12px; }
+        .generation-control label { font-size: 0.8125rem; color: var(--gray-600); font-weight: 600; }
+        .generation-control select { width: 100%; border: 1px solid var(--gray-300); border-radius: var(--radius); padding: 10px 12px; font-size: 0.9375rem; color: var(--gray-800); background: var(--white); }
+        .generation-control select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
+        .focus-dashboard { display: grid; grid-template-columns: 260px 1fr; gap: 20px; }
+        @media (max-width: 900px) { .focus-dashboard { grid-template-columns: 1fr; } }
+        .focus-sidebar { background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: var(--radius-md); padding: 14px; }
+        .focus-tabs { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+        .focus-tab { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--gray-200); background: var(--white); border-radius: var(--radius); padding: 10px 12px; font-size: 0.875rem; color: var(--gray-700); cursor: pointer; }
+        .focus-tab.active { border-color: var(--primary-light); color: var(--gray-900); box-shadow: var(--shadow-sm); }
+        .focus-tab .badge { background: var(--gray-100); color: var(--gray-700); border-radius: 999px; font-size: 0.75rem; padding: 2px 8px; font-weight: 600; }
+        .focus-tab.active .badge { background: rgba(79,70,229,0.12); color: var(--primary-dark); }
+        .sidebar-actions { display: flex; flex-direction: column; gap: 10px; }
+        .sidebar-actions .action-button, .sidebar-actions .new-process-button { width: 100%; justify-content: center; }
+        .focus-main { min-width: 0; }
+        .focus-pane { display: none; }
+        .focus-pane.active { display: block; }
+        .study-warning { background: rgba(245,158,11,0.12); color: #92400E; border: 1px solid rgba(245,158,11,0.35); border-radius: var(--radius); padding: 10px 12px; font-size: 0.875rem; margin-bottom: 12px; }
+        .flashcard-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+        .flashcard-3d { width: min(100%, 720px); height: 360px; perspective: 1200px; cursor: pointer; }
+        .flashcard-inner { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform 0.55s ease; }
+        .flashcard-inner.flipped { transform: rotateY(180deg); }
+        .flashcard-face { position: absolute; inset: 0; backface-visibility: hidden; border-radius: var(--radius-lg); border: 1px solid var(--gray-200); background: linear-gradient(135deg, rgba(79,70,229,0.06) 0%, rgba(14,165,233,0.08) 100%); box-shadow: var(--shadow-md); display: flex; align-items: center; justify-content: center; padding: 30px; text-align: center; }
+        .flashcard-face.back { transform: rotateY(180deg); background: linear-gradient(135deg, rgba(14,165,233,0.08) 0%, rgba(79,70,229,0.06) 100%); }
+        .flashcard-label { position: absolute; top: 16px; left: 16px; font-size: 0.75rem; color: var(--gray-500); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+        .flashcard-text { font-size: 1.15rem; color: var(--gray-900); line-height: 1.6; white-space: pre-wrap; }
+        .flashcard-controls { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
+        .flashcard-progress { font-size: 0.875rem; color: var(--gray-600); min-width: 120px; text-align: center; }
+        .quiz-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
+        .quiz-score { font-size: 0.875rem; color: var(--gray-700); font-weight: 600; }
+        .quiz-question { font-size: 1.1rem; color: var(--gray-900); margin-bottom: 16px; }
+        .quiz-options { display: grid; grid-template-columns: 1fr; gap: 10px; }
+        .quiz-option { border: 1px solid var(--gray-300); background: var(--white); border-radius: var(--radius); padding: 12px 14px; text-align: left; font-size: 0.9375rem; color: var(--gray-800); cursor: pointer; transition: all 0.2s ease; }
+        .quiz-option:hover:not(:disabled) { border-color: var(--primary-light); background: var(--gray-50); }
+        .quiz-option.correct { border-color: var(--success); background: rgba(16,185,129,0.12); color: #065F46; }
+        .quiz-option.wrong { border-color: var(--error); background: rgba(239,68,68,0.12); color: #991B1B; }
+        .quiz-option:disabled { cursor: default; }
+        .quiz-explanation { margin-top: 12px; background: rgba(14,165,233,0.08); border: 1px solid rgba(14,165,233,0.2); border-radius: var(--radius); padding: 12px 14px; font-size: 0.9rem; color: var(--gray-700); display: none; }
+        .quiz-explanation.visible { display: block; animation: dropdownOpen 0.2s ease-out; }
+        .quiz-next { margin-top: 12px; }
+        .pane-empty { font-size: 0.9rem; color: var(--gray-500); padding: 16px; border: 1px dashed var(--gray-300); border-radius: var(--radius); background: var(--gray-50); }
         .pricing-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; }
         .pricing-overlay.visible { display: flex; }
         .pricing-modal { background: var(--white); border-radius: var(--radius-xl); padding: 40px; max-width: 780px; width: 100%; box-shadow: var(--shadow-xl); animation: modalOpen 0.3s ease-out; position: relative; margin: auto; }
@@ -373,9 +417,78 @@
                 <div class="upload-zone" id="pdf-zone"><svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg><div class="upload-title">Lecture Slides</div><div class="upload-subtitle">Drag &amp; drop or click to browse</div><div class="upload-formats">PDF format · Max 50 MB</div><input type="file" id="pdf-input" accept=".pdf"><div class="file-info" id="pdf-info" style="display:none;"><div class="file-details"><div class="file-name"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span id="pdf-name"></span></div><div class="file-size" id="pdf-size"></div></div><button class="file-remove" id="pdf-remove" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div></div>
                 <div class="upload-zone" id="audio-zone"><svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg><div class="upload-title" id="audio-zone-title">Lecture Recording</div><div class="upload-subtitle">Drag &amp; drop or click to browse</div><div class="upload-formats">MP3, M4A, WAV · Max 500 MB</div><input type="file" id="audio-input" accept=".mp3,.m4a,.wav,.aac,.ogg,.flac"><div class="file-info" id="audio-info" style="display:none;"><div class="file-details"><div class="file-name"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span id="audio-name"></span></div><div class="file-size" id="audio-size"></div></div><button class="file-remove" id="audio-remove" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div></div>
             </div>
+            <div class="generation-controls" id="generation-controls">
+                <div class="generation-control">
+                    <label for="flashcard-amount">Flashcard Amount</label>
+                    <select id="flashcard-amount">
+                        <option value="10">10</option>
+                        <option value="20" selected>20</option>
+                        <option value="30">30</option>
+                        <option value="auto">Auto</option>
+                    </select>
+                </div>
+                <div class="generation-control">
+                    <label for="question-amount">Practice Questions</label>
+                    <select id="question-amount">
+                        <option value="5">5</option>
+                        <option value="10" selected>10</option>
+                        <option value="15">15</option>
+                        <option value="auto">Auto</option>
+                    </select>
+                </div>
+            </div>
             <div class="button-section" id="button-section" style="display:none;"><button class="process-button" id="process-button" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg><span>Process Lecture</span></button><div class="no-credits-warning" id="no-credits-warning">You don't have enough credits. <a href="#" id="buy-credits-link">Buy more credits</a></div></div>
             <div class="progress-section" id="progress-section"><div class="progress-header"><h3 class="progress-title">Processing Your Files</h3><p class="progress-subtitle">This may take a few minutes depending on file size</p></div><div class="progress-steps" id="progress-steps"></div><div class="progress-status" id="progress-status"><div class="spinner"></div><span id="status-text">Starting...</span></div></div>
-            <div class="results-section" id="results-section"><div class="results-header"><div class="results-title"><div class="results-title-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div><span id="results-title-text">Your Lecture Notes</span></div><div class="results-actions"><button class="action-button" id="copy-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg><span id="copy-button-text">Copy</span></button><div class="dropdown" id="download-dropdown"><button class="action-button primary" id="download-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>Download<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;margin-left:2px;"><polyline points="6 9 12 15 18 9"></polyline></svg></button><div class="dropdown-content" id="download-dropdown-content"></div></div></div></div><div class="results-content" id="results-content"></div><div class="new-process-section"><button class="new-process-button" id="new-lecture-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>Process Another File</button></div></div>
+            <div class="results-section" id="results-section">
+                <div class="focus-dashboard">
+                    <aside class="focus-sidebar">
+                        <div class="results-title" style="margin-bottom:14px;"><div class="results-title-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div><span id="results-title-text">Study Dashboard</span></div>
+                        <div class="focus-tabs">
+                            <button class="focus-tab active" id="tab-notes" data-tab="notes"><span>📄 Notes</span></button>
+                            <button class="focus-tab" id="tab-flashcards" data-tab="flashcards"><span>🗂️ Flashcards</span><span class="badge" id="flashcard-count-badge">0</span></button>
+                            <button class="focus-tab" id="tab-test" data-tab="test"><span>📝 Practice Test</span><span class="badge" id="test-count-badge">0</span></button>
+                        </div>
+                        <div class="sidebar-actions">
+                            <button class="action-button" id="copy-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg><span id="copy-button-text">Copy Notes</span></button>
+                            <div class="dropdown" id="download-dropdown"><button class="action-button primary" id="download-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>Download<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;margin-left:2px;"><polyline points="6 9 12 15 18 9"></polyline></svg></button><div class="dropdown-content" id="download-dropdown-content"></div></div>
+                            <button class="action-button" id="download-flashcards-csv-btn" style="display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>Export Flashcards CSV</button>
+                            <button class="new-process-button" id="new-lecture-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>Process Another File</button>
+                        </div>
+                    </aside>
+                    <main class="focus-main">
+                        <div class="study-warning" id="study-warning" style="display:none;"></div>
+                        <div class="focus-pane active" id="pane-notes"><div class="results-content" id="results-content"></div></div>
+                        <div class="focus-pane" id="pane-flashcards">
+                            <div class="flashcard-wrap">
+                                <div class="flashcard-3d" id="flashcard-card">
+                                    <div class="flashcard-inner" id="flashcard-inner">
+                                        <div class="flashcard-face front"><span class="flashcard-label">Front</span><div class="flashcard-text" id="flashcard-front-text"></div></div>
+                                        <div class="flashcard-face back"><span class="flashcard-label">Back</span><div class="flashcard-text" id="flashcard-back-text"></div></div>
+                                    </div>
+                                </div>
+                                <div class="flashcard-controls">
+                                    <button class="action-button" id="flashcard-prev-btn">Previous</button>
+                                    <button class="action-button" id="flashcard-flip-btn">Flip</button>
+                                    <button class="action-button" id="flashcard-next-btn">Next</button>
+                                    <span class="flashcard-progress" id="flashcard-progress">Card 0 of 0</span>
+                                </div>
+                                <div class="pane-empty" id="flashcard-empty" style="display:none;">No flashcards available for this result.</div>
+                            </div>
+                        </div>
+                        <div class="focus-pane" id="pane-test">
+                            <div class="quiz-head">
+                                <div class="quiz-progress" id="quiz-progress">Question 0 of 0</div>
+                                <div class="quiz-score" id="quiz-score">Score: 0/0</div>
+                            </div>
+                            <div class="quiz-question" id="quiz-question-text"></div>
+                            <div class="quiz-options" id="quiz-options"></div>
+                            <div class="quiz-explanation" id="quiz-explanation"></div>
+                            <div class="quiz-next"><button class="action-button primary" id="quiz-next-btn">Next Question</button></div>
+                            <div class="pane-empty" id="quiz-empty" style="display:none;">No practice questions available for this result.</div>
+                        </div>
+                    </main>
+                </div>
+            </div>
         </div></section>
     </main>
     <footer class="footer"><div class="container"><p class="footer-text">Built with Gemini AI · Made for students</p></div></footer>
@@ -384,97 +497,915 @@
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script>
-        const firebaseConfig={apiKey:"AIzaSyBAAeEUCPNvP5qnqpP3M6HnFZ6vaaijUvM",authDomain:"lecture-processor-cdff6.firebaseapp.com",projectId:"lecture-processor-cdff6",storageBucket:"lecture-processor-cdff6.firebasestorage.app",messagingSenderId:"374793454161",appId:"1:374793454161:web:c68b21590e9a1fafa32e70"};
+        const firebaseConfig = {
+            apiKey: "AIzaSyBAAeEUCPNvP5qnqpP3M6HnFZ6vaaijUvM",
+            authDomain: "lecture-processor-cdff6.firebaseapp.com",
+            projectId: "lecture-processor-cdff6",
+            storageBucket: "lecture-processor-cdff6.firebasestorage.app",
+            messagingSenderId: "374793454161",
+            appId: "1:374793454161:web:c68b21590e9a1fafa32e70"
+        };
         firebase.initializeApp(firebaseConfig);
-        const auth=firebase.auth();
-        let currentUser=null,userCredits=null,idToken=null,pdfFile=null,audioFile=null,currentJobId=null,pollInterval=null,resultMarkdown='',slideText='',transcript='',currentMode='lecture-notes';
-        const modeConfig={'lecture-notes':{description:'Upload lecture slides (PDF) and audio recording to generate complete, integrated study notes.',creditCost:'Uses <strong>1 lecture credit</strong>',creditType:'lecture',needsPdf:true,needsAudio:true,audioTitle:'Lecture Recording',buttonText:'Process Lecture',resultTitle:'Your Lecture Notes',steps:[{num:1,label:'Extract Slides'},{num:2,label:'Transcribe Audio'},{num:3,label:'Merge Notes'}]},'slides-only':{description:'Upload lecture slides (PDF) to extract all text content, ready to copy into Word or other documents.',creditCost:'Uses <strong>1 slides credit</strong>',creditType:'slides',needsPdf:true,needsAudio:false,audioTitle:'Lecture Recording',buttonText:'Extract Slides',resultTitle:'Extracted Slide Text',steps:[{num:1,label:'Extract Text'}]},'interview':{description:'Upload an interview recording to generate a timestamped transcript with speaker identification.',creditCost:'Uses <strong>1 interview credit</strong>',creditType:'interview',needsPdf:false,needsAudio:true,audioTitle:'Interview Recording',buttonText:'Transcribe Interview',resultTitle:'Interview Transcript',steps:[{num:1,label:'Transcribe'}]}};
-        const headerSignInBtn=document.getElementById('header-sign-in-btn'),creditsDisplay=document.getElementById('credits-display'),creditsCount=document.getElementById('credits-count'),userMenu=document.getElementById('user-menu'),userButton=document.getElementById('user-button'),userDropdown=document.getElementById('user-dropdown'),userAvatar=document.getElementById('user-avatar'),userName=document.getElementById('user-name'),userEmail=document.getElementById('user-email'),dropdownLectureCredits=document.getElementById('dropdown-lecture-credits'),dropdownSlidesCredits=document.getElementById('dropdown-slides-credits'),dropdownInterviewCredits=document.getElementById('dropdown-interview-credits'),buyCreditsBtn=document.getElementById('buy-credits-btn'),purchaseHistoryBtn=document.getElementById('purchase-history-btn'),adminDashboardBtn=document.getElementById('admin-dashboard-btn'),signOutBtn=document.getElementById('sign-out-btn'),authOverlay=document.getElementById('auth-overlay'),authModalClose=document.getElementById('auth-modal-close');
-        const signinView=document.getElementById('signin-view'),signupView=document.getElementById('signup-view'),resetView=document.getElementById('reset-view'),signinForm=document.getElementById('signin-form'),signupForm=document.getElementById('signup-form'),resetForm=document.getElementById('reset-form');
-        const signinEmail=document.getElementById('signin-email'),signinPassword=document.getElementById('signin-password'),signupEmail=document.getElementById('signup-email'),signupPassword=document.getElementById('signup-password'),signupPasswordConfirm=document.getElementById('signup-password-confirm'),resetEmail=document.getElementById('reset-email');
-        const signinError=document.getElementById('signin-error'),signupError=document.getElementById('signup-error'),resetError=document.getElementById('reset-error'),resetSuccess=document.getElementById('reset-success');
-        const googleSignInBtn=document.getElementById('google-sign-in-btn'),googleSignUpBtn=document.getElementById('google-sign-up-btn'),switchToSignup=document.getElementById('switch-to-signup'),switchToSignin=document.getElementById('switch-to-signin'),forgotPasswordLink=document.getElementById('forgot-password-link'),backToSignin=document.getElementById('back-to-signin');
-        const signInRequired=document.getElementById('sign-in-required'),signInToProcessBtn=document.getElementById('sign-in-to-process-btn'),modeTabs=document.querySelectorAll('.mode-tab'),modeDescriptionText=document.getElementById('mode-description-text'),modeCreditCost=document.getElementById('mode-credit-cost'),uploadSection=document.getElementById('upload-section'),buttonSection=document.getElementById('button-section'),pdfZone=document.getElementById('pdf-zone'),audioZone=document.getElementById('audio-zone'),audioZoneTitle=document.getElementById('audio-zone-title'),pdfInput=document.getElementById('pdf-input'),audioInput=document.getElementById('audio-input'),pdfInfo=document.getElementById('pdf-info'),audioInfo=document.getElementById('audio-info'),pdfName=document.getElementById('pdf-name'),pdfSize=document.getElementById('pdf-size'),audioName=document.getElementById('audio-name'),audioSize=document.getElementById('audio-size'),pdfRemove=document.getElementById('pdf-remove'),audioRemove=document.getElementById('audio-remove');
-        const processButton=document.getElementById('process-button'),noCreditsWarning=document.getElementById('no-credits-warning'),buyCreditsLink=document.getElementById('buy-credits-link'),progressSection=document.getElementById('progress-section'),progressSteps=document.getElementById('progress-steps'),progressStatus=document.getElementById('progress-status'),statusText=document.getElementById('status-text'),resultsSection=document.getElementById('results-section'),resultsTitleText=document.getElementById('results-title-text'),resultsContent=document.getElementById('results-content'),copyButton=document.getElementById('copy-button'),copyButtonText=document.getElementById('copy-button-text'),downloadButton=document.getElementById('download-button'),downloadDropdown=document.getElementById('download-dropdown'),downloadDropdownContent=document.getElementById('download-dropdown-content'),newLectureButton=document.getElementById('new-lecture-button'),toast=document.getElementById('toast'),toastIcon=document.getElementById('toast-icon'),toastText=document.getElementById('toast-text');
-        const pricingOverlay=document.getElementById('pricing-overlay'),pricingModalClose=document.getElementById('pricing-modal-close');
-        const historyOverlay=document.getElementById('history-overlay'),historyModalClose=document.getElementById('history-modal-close'),historyList=document.getElementById('history-list'),historyLoading=document.getElementById('history-loading');
-        function showAuthModal(v='signin'){authOverlay.classList.add('visible');showAuthView(v);clearAuthErrors();}
-        function hideAuthModal(){authOverlay.classList.remove('visible');clearAuthErrors();clearAuthForms();}
-        function showAuthView(v){signinView.classList.remove('active');signupView.classList.remove('active');resetView.classList.remove('active');clearAuthErrors();if(v==='signin')signinView.classList.add('active');else if(v==='signup')signupView.classList.add('active');else if(v==='reset')resetView.classList.add('active');}
-        function clearAuthErrors(){signinError.classList.remove('visible');signupError.classList.remove('visible');resetError.classList.remove('visible');resetSuccess.classList.remove('visible');signinError.textContent='';signupError.textContent='';resetError.textContent='';resetSuccess.textContent='';}
-        function clearAuthForms(){signinForm.reset();signupForm.reset();resetForm.reset();}
-        function showAuthError(el,msg){el.textContent=msg;el.classList.add('visible');}
-        function getFirebaseErrorMessage(e){const m={'auth/email-already-in-use':'This email is already registered. Please sign in instead.','auth/invalid-email':'Please enter a valid email address.','auth/operation-not-allowed':'This sign-in method is not enabled.','auth/weak-password':'Password should be at least 6 characters.','auth/user-disabled':'This account has been disabled.','auth/user-not-found':'No account found with this email.','auth/wrong-password':'Incorrect password. Please try again.','auth/invalid-credential':'Invalid email or password. Please try again.','auth/too-many-requests':'Too many failed attempts. Please try again later.','auth/network-request-failed':'Network error. Please check your connection.','auth/popup-closed-by-user':'Sign-in popup was closed. Please try again.','auth/unauthorized-domain':'This domain is not authorized. Please contact support.'};return m[e.code]||e.message||'An error occurred. Please try again.';}
-        async function checkEmailAllowed(email){try{const r=await fetch('/api/verify-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});return await r.json();}catch(e){return{allowed:false,message:'Could not verify email. Please try again.'};}}
-        async function signInWithEmail(email,password){try{const c=await checkEmailAllowed(email);if(!c.allowed){showAuthError(signinError,c.message);return;}await auth.signInWithEmailAndPassword(email,password);hideAuthModal();showToast('Signed in successfully!','success');}catch(e){showAuthError(signinError,getFirebaseErrorMessage(e));}}
-        async function signUpWithEmail(email,password){try{const c=await checkEmailAllowed(email);if(!c.allowed){showAuthError(signupError,c.message);return;}await auth.createUserWithEmailAndPassword(email,password);hideAuthModal();showToast('Account created successfully!','success');}catch(e){showAuthError(signupError,getFirebaseErrorMessage(e));}}
-        async function signInWithGoogle(){const provider=new firebase.auth.GoogleAuthProvider();try{const result=await auth.signInWithPopup(provider);const email=result.user.email;const c=await checkEmailAllowed(email);if(!c.allowed){await auth.signOut();showAuthError(signinView.classList.contains('active')?signinError:signupError,c.message);return;}hideAuthModal();showToast('Signed in successfully!','success');}catch(e){showAuthError(signinView.classList.contains('active')?signinError:signupError,getFirebaseErrorMessage(e));}}
-        async function sendPasswordReset(email){try{await auth.sendPasswordResetEmail(email);resetSuccess.textContent='Password reset email sent! Check your inbox.';resetSuccess.classList.add('visible');resetError.classList.remove('visible');}catch(e){showAuthError(resetError,getFirebaseErrorMessage(e));}}
-        async function signOut(){try{await auth.signOut();showToast('Signed out','success');}catch(e){console.error('Sign out error:',e);}}
-        async function fetchUserData(){if(!idToken)return;try{const r=await fetch('/api/auth/user',{headers:{'Authorization':`Bearer ${idToken}`}});if(r.ok){const d=await r.json();userCredits=d.credits;updateCreditsDisplay();}}catch(e){console.error('Error fetching user data:',e);}}
-        function updateCreditsDisplay(){if(!userCredits)return;const tL=userCredits.lecture_standard+userCredits.lecture_extended;const tI=userCredits.interview_short+userCredits.interview_medium+userCredits.interview_long;creditsCount.textContent=tL+userCredits.slides+tI;dropdownLectureCredits.textContent=tL;dropdownSlidesCredits.textContent=userCredits.slides;dropdownInterviewCredits.textContent=tI;updateProcessButton();}
-        function updateUIForAuthState(user){if(user){headerSignInBtn.style.display='none';creditsDisplay.style.display='flex';userMenu.style.display='block';signInRequired.classList.remove('visible');uploadSection.style.display='grid';buttonSection.style.display='block';const dn=user.displayName||user.email.split('@')[0];const ini=dn.charAt(0).toUpperCase();if(user.photoURL){userAvatar.innerHTML=`<img src="${user.photoURL}" alt="${dn}">`;}else{userAvatar.innerHTML=`<span>${ini}</span>`;}userName.textContent=dn;userEmail.textContent=user.email;switchMode(currentMode);}else{headerSignInBtn.style.display='flex';creditsDisplay.style.display='none';userMenu.style.display='none';signInRequired.classList.add('visible');uploadSection.style.display='none';buttonSection.style.display='none';currentUser=null;userCredits=null;idToken=null;}}
-        auth.onAuthStateChanged(async(user)=>{currentUser=user;if(user){idToken=await user.getIdToken();updateUIForAuthState(user);await fetchUserData();}else{updateUIForAuthState(null);}});
-        setInterval(async()=>{if(currentUser){idToken=await currentUser.getIdToken(true);}},10*60*1000);
-        function formatFileSize(b){if(b===0)return'0 Bytes';const k=1024;const s=['Bytes','KB','MB','GB'];const i=Math.floor(Math.log(b)/Math.log(k));return parseFloat((b/Math.pow(k,i)).toFixed(2))+' '+s[i];}
-        function showToast(message,type='success',duration=3000){toastText.textContent=message;toast.className='toast visible '+type;if(type==='success'){toastIcon.innerHTML='<polyline points="20 6 9 17 4 12"></polyline>';}else if(type==='error'){toastIcon.innerHTML='<circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line>';}else{toastIcon.innerHTML='<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line>';}setTimeout(()=>{toast.classList.remove('visible');},duration);}
-        function hasEnoughCredits(){if(!userCredits)return false;const c=modeConfig[currentMode];if(c.creditType==='lecture')return(userCredits.lecture_standard+userCredits.lecture_extended)>0;else if(c.creditType==='slides')return userCredits.slides>0;else if(c.creditType==='interview')return(userCredits.interview_short+userCredits.interview_medium+userCredits.interview_long)>0;return false;}
-        function updateProcessButton(){const c=modeConfig[currentMode];const pr=!c.needsPdf||pdfFile;const ar=!c.needsAudio||audioFile;const hc=hasEnoughCredits();processButton.disabled=!(pr&&ar&&hc);processButton.querySelector('span').textContent=c.buttonText;if(!hc&&currentUser){noCreditsWarning.classList.add('visible');}else{noCreditsWarning.classList.remove('visible');}}
-        function switchMode(mode){currentMode=mode;const c=modeConfig[mode];modeTabs.forEach(t=>{t.classList.toggle('active',t.dataset.mode===mode);});modeDescriptionText.textContent=c.description;modeCreditCost.innerHTML=c.creditCost;audioZoneTitle.textContent=c.audioTitle;if(c.needsPdf&&c.needsAudio){uploadSection.classList.remove('single-upload');pdfZone.classList.remove('hidden');audioZone.classList.remove('hidden');}else if(c.needsPdf){uploadSection.classList.add('single-upload');pdfZone.classList.remove('hidden');audioZone.classList.add('hidden');}else if(c.needsAudio){uploadSection.classList.add('single-upload');pdfZone.classList.add('hidden');audioZone.classList.remove('hidden');}if(!c.needsPdf){pdfFile=null;pdfInfo.style.display='none';pdfZone.classList.remove('has-file');pdfInput.value='';}if(!c.needsAudio){audioFile=null;audioInfo.style.display='none';audioZone.classList.remove('has-file');audioInput.value='';}updateProcessButton();}
-        modeTabs.forEach(t=>{t.addEventListener('click',()=>switchMode(t.dataset.mode));});
-        function handlePdfFile(f){if(!f)return;if(f.type!=='application/pdf'){showToast('Please select a valid PDF file','error');return;}if(f.size>50*1024*1024){showToast('PDF file must be under 50 MB','error');return;}pdfFile=f;pdfName.textContent=f.name;pdfSize.textContent=formatFileSize(f.size);pdfInfo.style.display='flex';pdfZone.classList.add('has-file');updateProcessButton();}
-        function handleAudioFile(f){if(!f)return;const ve=['.mp3','.m4a','.wav','.aac','.ogg','.flac'];if(!ve.some(ext=>f.name.toLowerCase().endsWith(ext))){showToast('Please select a valid audio file (MP3, M4A, WAV)','error');return;}if(f.size>500*1024*1024){showToast('Audio file must be under 500 MB','error');return;}audioFile=f;audioName.textContent=f.name;audioSize.textContent=formatFileSize(f.size);audioInfo.style.display='flex';audioZone.classList.add('has-file');updateProcessButton();}
-        function removePdfFile(e){e.stopPropagation();pdfFile=null;pdfInfo.style.display='none';pdfZone.classList.remove('has-file');pdfInput.value='';updateProcessButton();}
-        function removeAudioFile(e){e.stopPropagation();audioFile=null;audioInfo.style.display='none';audioZone.classList.remove('has-file');audioInput.value='';updateProcessButton();}
-        pdfRemove.addEventListener('click',removePdfFile);audioRemove.addEventListener('click',removeAudioFile);
-        function setupDropZone(zone,input,handler){zone.addEventListener('click',(e)=>{if(!e.target.closest('.file-remove'))input.click();});input.addEventListener('change',(e)=>{if(e.target.files.length>0)handler(e.target.files[0]);});zone.addEventListener('dragover',(e)=>{e.preventDefault();zone.classList.add('drag-over');});zone.addEventListener('dragleave',(e)=>{e.preventDefault();zone.classList.remove('drag-over');});zone.addEventListener('drop',(e)=>{e.preventDefault();zone.classList.remove('drag-over');if(e.dataTransfer.files.length>0)handler(e.dataTransfer.files[0]);});}
-        setupDropZone(pdfZone,pdfInput,handlePdfFile);setupDropZone(audioZone,audioInput,handleAudioFile);
-        function buildProgressSteps(steps){progressSteps.innerHTML='';progressSteps.classList.toggle('single-step',steps.length===1);steps.forEach(s=>{const el=document.createElement('div');el.className='progress-step';el.id=`step-${s.num}`;el.innerHTML=`<div class="step-indicator">${s.num}</div><div class="step-label">${s.label}</div>`;progressSteps.appendChild(el);});}
-        function updateProgressUI(step,desc,total){for(let i=1;i<=total;i++){const el=document.getElementById(`step-${i}`);if(el)el.classList.remove('active','complete');}for(let i=1;i<step;i++){const el=document.getElementById(`step-${i}`);if(el)el.classList.add('complete');}const cur=document.getElementById(`step-${step}`);if(cur)cur.classList.add('active');statusText.textContent=desc;}
-        function pollStatus(){if(!currentJobId)return;fetch(`/status/${currentJobId}`).then(r=>r.json()).then(d=>{if(d.error&&d.status!=='error'){showToast('Error: Job not found','error');stopPolling();return;}updateProgressUI(d.step,d.step_description,d.total_steps);if(d.status==='complete'){stopPolling();showResults(d.result,d.slide_text,d.transcript);fetchUserData();}else if(d.status==='error'){stopPolling();showError(d.error,d.credit_refunded);}}).catch(e=>{console.error('Polling error:',e);});}
-        function startPolling(){pollInterval=setInterval(pollStatus,2000);pollStatus();}
-        function stopPolling(){if(pollInterval){clearInterval(pollInterval);pollInterval=null;}}
-        async function processFiles(){if(!idToken){showAuthModal();return;}const c=modeConfig[currentMode];const fd=new FormData();fd.append('mode',currentMode);if(c.needsPdf&&pdfFile)fd.append('pdf',pdfFile);if(c.needsAudio&&audioFile)fd.append('audio',audioFile);buildProgressSteps(c.steps);processButton.disabled=true;progressSection.classList.add('visible');resultsSection.classList.remove('visible');progressStatus.classList.remove('error');document.querySelector('.spinner').style.display='block';updateProgressUI(0,'Uploading files...',c.steps.length);try{const r=await fetch('/upload',{method:'POST',headers:{'Authorization':`Bearer ${idToken}`},body:fd});const d=await r.json();if(d.error){if(r.status===401)showAuthModal();else if(r.status===402){showError('No credits remaining. Please purchase more credits.');noCreditsWarning.classList.add('visible');}else showError(d.error);return;}currentJobId=d.job_id;startPolling();}catch(e){showError('Failed to upload files. Please try again.');}}
-        processButton.addEventListener('click',processFiles);
-        function simpleMarkdownToHtml(md){let h=md.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/^### (.*$)/gm,'<h3>$1</h3>').replace(/^## (.*$)/gm,'<h2>$1</h2>').replace(/^# (.*$)/gm,'<h1>$1</h1>').replace(/\*\*\*(.*?)\*\*\*/g,'<strong><em>$1</em></strong>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\*(.*?)\*/g,'<em>$1</em>').replace(/^\s*[-*]\s+(.*$)/gm,'<li>$1</li>').replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>');h='<p>'+h+'</p>';h=h.replace(/(<li>.*?<\/li>)(?=\s*<li>|<br><li>)/g,'$1');h=h.replace(/(<li>.*?<\/li>)+/g,'<ul>$&</ul>');h=h.replace(/<br><li>/g,'<li>');h=h.replace(/<p><\/p>/g,'');h=h.replace(/<p>(<h[1-3]>)/g,'$1');h=h.replace(/(<\/h[1-3]>)<\/p>/g,'$1');h=h.replace(/<p>(<ul>)/g,'$1');h=h.replace(/(<\/ul>)<\/p>/g,'$1');return h;}
-        function buildDownloadDropdown(){downloadDropdownContent.innerHTML='';if(currentMode==='lecture-notes'){downloadDropdownContent.innerHTML='<button class="dropdown-item" data-type="result" data-format="md">Complete Lecture Notes<span>Markdown (.md)</span></button><button class="dropdown-item" data-type="result" data-format="docx">Complete Lecture Notes<span>Word Document (.docx)</span></button><div class="dropdown-divider"></div><button class="dropdown-item" data-type="slides" data-format="md">Extracted Slides Only<span>Markdown (.md)</span></button><button class="dropdown-item" data-type="slides" data-format="docx">Extracted Slides Only<span>Word Document (.docx)</span></button><div class="dropdown-divider"></div><button class="dropdown-item" data-type="transcript" data-format="md">Transcript Only<span>Markdown (.md)</span></button><button class="dropdown-item" data-type="transcript" data-format="docx">Transcript Only<span>Word Document (.docx)</span></button>';}else if(currentMode==='slides-only'){downloadDropdownContent.innerHTML='<button class="dropdown-item" data-type="result" data-format="md">Extracted Slides<span>Markdown (.md)</span></button><button class="dropdown-item" data-type="result" data-format="docx">Extracted Slides<span>Word Document (.docx)</span></button>';}else if(currentMode==='interview'){downloadDropdownContent.innerHTML='<button class="dropdown-item" data-type="result" data-format="md">Interview Transcript<span>Markdown (.md)</span></button><button class="dropdown-item" data-type="result" data-format="docx">Interview Transcript<span>Word Document (.docx)</span></button>';}downloadDropdownContent.querySelectorAll('.dropdown-item').forEach(item=>{item.addEventListener('click',()=>{downloadFile(item.dataset.type,item.dataset.format);downloadDropdownContent.classList.remove('visible');});});}
-        function downloadFile(type,format){let content,filename;if(type==='slides'){content=slideText;filename=format==='md'?'extracted-slides.md':'extracted-slides.docx';}else if(type==='transcript'){content=transcript;filename=format==='md'?'transcript.md':'transcript.docx';}else{content=resultMarkdown;if(currentMode==='lecture-notes')filename=format==='md'?'lecture-notes.md':'lecture-notes.docx';else if(currentMode==='slides-only')filename=format==='md'?'extracted-slides.md':'extracted-slides.docx';else filename=format==='md'?'interview-transcript.md':'interview-transcript.docx';}if(format==='md'){const blob=new Blob([content],{type:'text/markdown'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);showToast('Download started','success');}else if(format==='docx'){window.location.href=`/download-docx/${currentJobId}?type=${type}`;showToast('Download started','success');}}
-        function showResults(md,slides,trans){const c=modeConfig[currentMode];resultMarkdown=md;slideText=slides||'';transcript=trans||'';resultsTitleText.textContent=c.resultTitle;progressSection.classList.remove('visible');resultsSection.classList.add('visible');resultsContent.innerHTML=simpleMarkdownToHtml(md);buildDownloadDropdown();showToast('Processing complete!','success');}
-        function showError(msg,creditRefunded){progressStatus.classList.add('error');if(creditRefunded){statusText.textContent='Error: '+msg+' — Your credit has been refunded.';showToast('Processing failed. Your credit has been refunded.','info',5000);}else{statusText.textContent='Error: '+msg;}document.querySelector('.spinner').style.display='none';processButton.disabled=false;updateProcessButton();if(creditRefunded){fetchUserData();}}
-        function showPricingModal(){pricingOverlay.classList.add('visible');}
-        function hidePricingModal(){pricingOverlay.classList.remove('visible');}
-        function showHistoryModal(){historyOverlay.classList.add('visible');loadPurchaseHistory();}
-        function hideHistoryModal(){historyOverlay.classList.remove('visible');}
-        function formatPrice(cents,currency){const amount=(cents/100).toFixed(2);if(currency==='eur')return'\u20AC'+amount;return amount+' '+currency.toUpperCase();}
-        function formatCreditsText(credits){const parts=[];for(const[key,val]of Object.entries(credits)){let label=key.replace(/_/g,' ').replace('credits ','').replace('credits','');label=label.trim();parts.push(val+' '+label);}return parts.join(', ');}
-        async function loadPurchaseHistory(){historyList.innerHTML='<div class="history-loading"><div class="spinner"></div><span>Loading purchases...</span></div>';if(!idToken){historyList.innerHTML='<div class="history-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg><p>Please sign in to view purchase history.</p></div>';return;}try{const r=await fetch('/api/purchase-history',{headers:{'Authorization':`Bearer ${idToken}`}});const d=await r.json();if(!d.purchases||d.purchases.length===0){historyList.innerHTML='<div class="history-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg><p>No purchases yet</p></div>';return;}historyList.innerHTML='';d.purchases.forEach(p=>{const date=new Date(p.created_at*1000);const dateStr=date.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});const timeStr=date.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});const item=document.createElement('div');item.className='history-item';item.innerHTML=`<div class="history-item-left"><div class="history-item-name">${p.bundle_name}</div><div class="history-item-date">${dateStr} at ${timeStr}</div><div class="history-item-credits">${formatCreditsText(p.credits)}</div></div><div class="history-item-price">${formatPrice(p.price_cents,p.currency)}</div>`;historyList.appendChild(item);});}catch(e){console.error('Error loading purchase history:',e);historyList.innerHTML='<div class="history-empty"><p>Could not load purchase history. Please try again.</p></div>';}}
-        async function purchaseBundle(bundleId){if(!idToken){hidePricingModal();showAuthModal();return;}const allBtns=document.querySelectorAll('.bundle-buy-btn');allBtns.forEach(b=>{b.disabled=true;if(b.dataset.bundleId===bundleId)b.textContent='Redirecting...';});try{const r=await fetch('/api/create-checkout-session',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${idToken}`},body:JSON.stringify({bundle_id:bundleId})});const d=await r.json();if(d.error){showToast(d.error,'error');allBtns.forEach(b=>{b.disabled=false;b.textContent='Buy now';});return;}if(d.checkout_url)window.location.href=d.checkout_url;}catch(e){showToast('Something went wrong. Please try again.','error');allBtns.forEach(b=>{b.disabled=false;b.textContent='Buy now';});}}
-        function checkPaymentResult(){const p=new URLSearchParams(window.location.search);const s=p.get('payment');if(s==='success'){showToast('Payment successful! Your credits have been added.','success',5000);window.history.replaceState({},'','/');setTimeout(()=>{if(idToken)fetchUserData();},2000);setTimeout(()=>{if(idToken)fetchUserData();},5000);}else if(s==='cancelled'){showToast('Payment cancelled. No charges were made.','info',4000);window.history.replaceState({},'','/');}}
-        headerSignInBtn.addEventListener('click',()=>showAuthModal('signin'));signInToProcessBtn.addEventListener('click',()=>showAuthModal('signin'));authModalClose.addEventListener('click',hideAuthModal);authOverlay.addEventListener('click',(e)=>{if(e.target===authOverlay)hideAuthModal();});
-        switchToSignup.addEventListener('click',(e)=>{e.preventDefault();showAuthView('signup');});switchToSignin.addEventListener('click',(e)=>{e.preventDefault();showAuthView('signin');});forgotPasswordLink.addEventListener('click',(e)=>{e.preventDefault();showAuthView('reset');});backToSignin.addEventListener('click',(e)=>{e.preventDefault();showAuthView('signin');});
-        signinForm.addEventListener('submit',async(e)=>{e.preventDefault();await signInWithEmail(signinEmail.value.trim(),signinPassword.value);});
-        signupForm.addEventListener('submit',async(e)=>{e.preventDefault();const em=signupEmail.value.trim();const pw=signupPassword.value;const cp=signupPasswordConfirm.value;if(pw!==cp){showAuthError(signupError,'Passwords do not match.');return;}await signUpWithEmail(em,pw);});
-        resetForm.addEventListener('submit',async(e)=>{e.preventDefault();await sendPasswordReset(resetEmail.value.trim());});
-        googleSignInBtn.addEventListener('click',signInWithGoogle);googleSignUpBtn.addEventListener('click',signInWithGoogle);
-        document.querySelectorAll('.password-toggle').forEach(btn=>{btn.addEventListener('click',()=>{const input=document.getElementById(btn.dataset.target);const eo=btn.querySelector('.eye-open');const ec=btn.querySelector('.eye-closed');if(input.type==='password'){input.type='text';eo.style.display='none';ec.style.display='block';}else{input.type='password';eo.style.display='block';ec.style.display='none';}});});
-        signOutBtn.addEventListener('click',signOut);
-        userButton.addEventListener('click',(e)=>{e.stopPropagation();userDropdown.classList.toggle('visible');});
-        document.addEventListener('click',(e)=>{if(!userMenu.contains(e.target))userDropdown.classList.remove('visible');});
-        buyCreditsBtn.addEventListener('click',()=>{userDropdown.classList.remove('visible');showPricingModal();});
-        purchaseHistoryBtn.addEventListener('click',()=>{userDropdown.classList.remove('visible');showHistoryModal();});
-        adminDashboardBtn.addEventListener('click',()=>{userDropdown.classList.remove('visible');window.location.href='/admin';});
-        buyCreditsLink.addEventListener('click',(e)=>{e.preventDefault();showPricingModal();});
-        pricingModalClose.addEventListener('click',hidePricingModal);
-        pricingOverlay.addEventListener('click',(e)=>{if(e.target===pricingOverlay)hidePricingModal();});
-        historyModalClose.addEventListener('click',hideHistoryModal);
-        historyOverlay.addEventListener('click',(e)=>{if(e.target===historyOverlay)hideHistoryModal();});
-        document.querySelectorAll('.bundle-buy-btn').forEach(btn=>{btn.addEventListener('click',()=>{purchaseBundle(btn.dataset.bundleId);});});
-        downloadButton.addEventListener('click',(e)=>{e.stopPropagation();downloadDropdownContent.classList.toggle('visible');});
-        document.addEventListener('click',(e)=>{if(!downloadDropdown.contains(e.target))downloadDropdownContent.classList.remove('visible');});
-        copyButton.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(resultMarkdown);copyButtonText.textContent='Copied!';showToast('Copied to clipboard','success');setTimeout(()=>{copyButtonText.textContent='Copy';},2000);}catch(e){showToast('Failed to copy','error');}});
-        newLectureButton.addEventListener('click',()=>{pdfFile=null;audioFile=null;currentJobId=null;resultMarkdown='';slideText='';transcript='';pdfInfo.style.display='none';audioInfo.style.display='none';pdfZone.classList.remove('has-file');audioZone.classList.remove('has-file');pdfInput.value='';audioInput.value='';progressSection.classList.remove('visible');resultsSection.classList.remove('visible');progressStatus.classList.remove('error');document.querySelector('.spinner').style.display='block';switchMode(currentMode);window.scrollTo({top:0,behavior:'smooth'});});
-        window.addEventListener('beforeunload',(e)=>{if(currentJobId&&pollInterval){e.preventDefault();e.returnValue='';}});
-        switchMode('lecture-notes');checkPaymentResult();
+        const auth = firebase.auth();
+
+        let currentUser = null;
+        let userCredits = null;
+        let idToken = null;
+        let pdfFile = null;
+        let audioFile = null;
+        let currentJobId = null;
+        let pollInterval = null;
+        let currentMode = 'lecture-notes';
+        let resultMarkdown = '';
+        let slideText = '';
+        let transcript = '';
+        let flashcards = [];
+        let testQuestions = [];
+        let activeResultsTab = 'notes';
+        let flashcardIndex = 0;
+        let flashcardFlipped = false;
+        let quizIndex = 0;
+        let quizScore = 0;
+        let quizAnswered = false;
+        let studyGenerationError = null;
+
+        const modeConfig = {
+            'lecture-notes': {
+                description: 'Upload lecture slides (PDF) and audio recording to generate complete, integrated study notes.',
+                creditCost: 'Uses <strong>1 lecture credit</strong>',
+                creditType: 'lecture',
+                needsPdf: true,
+                needsAudio: true,
+                audioTitle: 'Lecture Recording',
+                buttonText: 'Process Lecture',
+                resultTitle: 'Study Dashboard',
+                steps: [{ num: 1, label: 'Extract Slides' }, { num: 2, label: 'Transcribe Audio' }, { num: 3, label: 'Merge Notes' }, { num: 4, label: 'Build Study Tools' }]
+            },
+            'slides-only': {
+                description: 'Upload lecture slides (PDF) to extract text and build flashcards and test questions.',
+                creditCost: 'Uses <strong>1 slides credit</strong>',
+                creditType: 'slides',
+                needsPdf: true,
+                needsAudio: false,
+                audioTitle: 'Lecture Recording',
+                buttonText: 'Extract Slides',
+                resultTitle: 'Study Dashboard',
+                steps: [{ num: 1, label: 'Extract Text' }, { num: 2, label: 'Build Study Tools' }]
+            },
+            'interview': {
+                description: 'Upload an interview recording to generate a timestamped transcript with speaker identification.',
+                creditCost: 'Uses <strong>1 interview credit</strong>',
+                creditType: 'interview',
+                needsPdf: false,
+                needsAudio: true,
+                audioTitle: 'Interview Recording',
+                buttonText: 'Transcribe Interview',
+                resultTitle: 'Interview Transcript',
+                steps: [{ num: 1, label: 'Transcribe' }]
+            }
+        };
+
+        const headerSignInBtn = document.getElementById('header-sign-in-btn');
+        const creditsDisplay = document.getElementById('credits-display');
+        const creditsCount = document.getElementById('credits-count');
+        const userMenu = document.getElementById('user-menu');
+        const userButton = document.getElementById('user-button');
+        const userDropdown = document.getElementById('user-dropdown');
+        const userAvatar = document.getElementById('user-avatar');
+        const userName = document.getElementById('user-name');
+        const userEmail = document.getElementById('user-email');
+        const dropdownLectureCredits = document.getElementById('dropdown-lecture-credits');
+        const dropdownSlidesCredits = document.getElementById('dropdown-slides-credits');
+        const dropdownInterviewCredits = document.getElementById('dropdown-interview-credits');
+        const buyCreditsBtn = document.getElementById('buy-credits-btn');
+        const purchaseHistoryBtn = document.getElementById('purchase-history-btn');
+        const adminDashboardBtn = document.getElementById('admin-dashboard-btn');
+        const signOutBtn = document.getElementById('sign-out-btn');
+
+        const authOverlay = document.getElementById('auth-overlay');
+        const authModalClose = document.getElementById('auth-modal-close');
+        const signinView = document.getElementById('signin-view');
+        const signupView = document.getElementById('signup-view');
+        const resetView = document.getElementById('reset-view');
+        const signinForm = document.getElementById('signin-form');
+        const signupForm = document.getElementById('signup-form');
+        const resetForm = document.getElementById('reset-form');
+        const signinEmail = document.getElementById('signin-email');
+        const signinPassword = document.getElementById('signin-password');
+        const signupEmail = document.getElementById('signup-email');
+        const signupPassword = document.getElementById('signup-password');
+        const signupPasswordConfirm = document.getElementById('signup-password-confirm');
+        const resetEmail = document.getElementById('reset-email');
+        const signinError = document.getElementById('signin-error');
+        const signupError = document.getElementById('signup-error');
+        const resetError = document.getElementById('reset-error');
+        const resetSuccess = document.getElementById('reset-success');
+        const googleSignInBtn = document.getElementById('google-sign-in-btn');
+        const googleSignUpBtn = document.getElementById('google-sign-up-btn');
+        const switchToSignup = document.getElementById('switch-to-signup');
+        const switchToSignin = document.getElementById('switch-to-signin');
+        const forgotPasswordLink = document.getElementById('forgot-password-link');
+        const backToSignin = document.getElementById('back-to-signin');
+
+        const signInRequired = document.getElementById('sign-in-required');
+        const signInToProcessBtn = document.getElementById('sign-in-to-process-btn');
+        const modeTabs = document.querySelectorAll('.mode-tab');
+        const modeDescriptionText = document.getElementById('mode-description-text');
+        const modeCreditCost = document.getElementById('mode-credit-cost');
+        const uploadSection = document.getElementById('upload-section');
+        const buttonSection = document.getElementById('button-section');
+        const generationControls = document.getElementById('generation-controls');
+        const flashcardAmountSelect = document.getElementById('flashcard-amount');
+        const questionAmountSelect = document.getElementById('question-amount');
+
+        const pdfZone = document.getElementById('pdf-zone');
+        const audioZone = document.getElementById('audio-zone');
+        const audioZoneTitle = document.getElementById('audio-zone-title');
+        const pdfInput = document.getElementById('pdf-input');
+        const audioInput = document.getElementById('audio-input');
+        const pdfInfo = document.getElementById('pdf-info');
+        const audioInfo = document.getElementById('audio-info');
+        const pdfName = document.getElementById('pdf-name');
+        const pdfSize = document.getElementById('pdf-size');
+        const audioName = document.getElementById('audio-name');
+        const audioSize = document.getElementById('audio-size');
+        const pdfRemove = document.getElementById('pdf-remove');
+        const audioRemove = document.getElementById('audio-remove');
+
+        const processButton = document.getElementById('process-button');
+        const noCreditsWarning = document.getElementById('no-credits-warning');
+        const buyCreditsLink = document.getElementById('buy-credits-link');
+        const progressSection = document.getElementById('progress-section');
+        const progressSteps = document.getElementById('progress-steps');
+        const progressStatus = document.getElementById('progress-status');
+        const statusText = document.getElementById('status-text');
+        const resultsSection = document.getElementById('results-section');
+        const resultsTitleText = document.getElementById('results-title-text');
+        const resultsContent = document.getElementById('results-content');
+        const studyWarning = document.getElementById('study-warning');
+        const copyButton = document.getElementById('copy-button');
+        const copyButtonText = document.getElementById('copy-button-text');
+        const downloadButton = document.getElementById('download-button');
+        const downloadDropdown = document.getElementById('download-dropdown');
+        const downloadDropdownContent = document.getElementById('download-dropdown-content');
+        const downloadFlashcardsCsvBtn = document.getElementById('download-flashcards-csv-btn');
+        const newLectureButton = document.getElementById('new-lecture-button');
+
+        const tabButtons = document.querySelectorAll('.focus-tab');
+        const paneNotes = document.getElementById('pane-notes');
+        const paneFlashcards = document.getElementById('pane-flashcards');
+        const paneTest = document.getElementById('pane-test');
+        const flashcardCountBadge = document.getElementById('flashcard-count-badge');
+        const testCountBadge = document.getElementById('test-count-badge');
+        const flashcardCard = document.getElementById('flashcard-card');
+        const flashcardInner = document.getElementById('flashcard-inner');
+        const flashcardFrontText = document.getElementById('flashcard-front-text');
+        const flashcardBackText = document.getElementById('flashcard-back-text');
+        const flashcardPrevBtn = document.getElementById('flashcard-prev-btn');
+        const flashcardFlipBtn = document.getElementById('flashcard-flip-btn');
+        const flashcardNextBtn = document.getElementById('flashcard-next-btn');
+        const flashcardProgress = document.getElementById('flashcard-progress');
+        const flashcardEmpty = document.getElementById('flashcard-empty');
+        const quizProgress = document.getElementById('quiz-progress');
+        const quizScoreEl = document.getElementById('quiz-score');
+        const quizQuestionText = document.getElementById('quiz-question-text');
+        const quizOptions = document.getElementById('quiz-options');
+        const quizExplanation = document.getElementById('quiz-explanation');
+        const quizNextBtn = document.getElementById('quiz-next-btn');
+        const quizEmpty = document.getElementById('quiz-empty');
+
+        const pricingOverlay = document.getElementById('pricing-overlay');
+        const pricingModalClose = document.getElementById('pricing-modal-close');
+        const historyOverlay = document.getElementById('history-overlay');
+        const historyModalClose = document.getElementById('history-modal-close');
+        const historyList = document.getElementById('history-list');
+        const toast = document.getElementById('toast');
+        const toastIcon = document.getElementById('toast-icon');
+        const toastText = document.getElementById('toast-text');
+
+        function showAuthModal(view = 'signin') {
+            authOverlay.classList.add('visible');
+            showAuthView(view);
+            clearAuthErrors();
+        }
+        function hideAuthModal() {
+            authOverlay.classList.remove('visible');
+            clearAuthErrors();
+            signinForm.reset();
+            signupForm.reset();
+            resetForm.reset();
+        }
+        function showAuthView(view) {
+            signinView.classList.remove('active');
+            signupView.classList.remove('active');
+            resetView.classList.remove('active');
+            clearAuthErrors();
+            if (view === 'signin') signinView.classList.add('active');
+            if (view === 'signup') signupView.classList.add('active');
+            if (view === 'reset') resetView.classList.add('active');
+        }
+        function clearAuthErrors() {
+            [signinError, signupError, resetError, resetSuccess].forEach(el => {
+                el.classList.remove('visible');
+                el.textContent = '';
+            });
+        }
+        function showAuthError(el, msg) {
+            el.textContent = msg;
+            el.classList.add('visible');
+        }
+        function getFirebaseErrorMessage(e) {
+            const m = {
+                'auth/email-already-in-use': 'This email is already registered. Please sign in instead.',
+                'auth/invalid-email': 'Please enter a valid email address.',
+                'auth/weak-password': 'Password should be at least 6 characters.',
+                'auth/user-not-found': 'No account found with this email.',
+                'auth/wrong-password': 'Incorrect password. Please try again.',
+                'auth/invalid-credential': 'Invalid email or password. Please try again.',
+                'auth/too-many-requests': 'Too many failed attempts. Please try again later.',
+                'auth/network-request-failed': 'Network error. Please check your connection.'
+            };
+            return m[e.code] || e.message || 'An error occurred. Please try again.';
+        }
+        async function checkEmailAllowed(email) {
+            try {
+                const r = await fetch('/api/verify-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+                return await r.json();
+            } catch (e) {
+                return { allowed: false, message: 'Could not verify email. Please try again.' };
+            }
+        }
+        async function signInWithEmail(email, password) {
+            try {
+                const check = await checkEmailAllowed(email);
+                if (!check.allowed) {
+                    showAuthError(signinError, check.message);
+                    return;
+                }
+                await auth.signInWithEmailAndPassword(email, password);
+                hideAuthModal();
+                showToast('Signed in successfully!', 'success');
+            } catch (e) {
+                showAuthError(signinError, getFirebaseErrorMessage(e));
+            }
+        }
+        async function signUpWithEmail(email, password) {
+            try {
+                const check = await checkEmailAllowed(email);
+                if (!check.allowed) {
+                    showAuthError(signupError, check.message);
+                    return;
+                }
+                await auth.createUserWithEmailAndPassword(email, password);
+                hideAuthModal();
+                showToast('Account created successfully!', 'success');
+            } catch (e) {
+                showAuthError(signupError, getFirebaseErrorMessage(e));
+            }
+        }
+        async function signInWithGoogle() {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            try {
+                const result = await auth.signInWithPopup(provider);
+                const email = result.user.email || '';
+                const check = await checkEmailAllowed(email);
+                if (!check.allowed) {
+                    await auth.signOut();
+                    showAuthError(signinView.classList.contains('active') ? signinError : signupError, check.message);
+                    return;
+                }
+                hideAuthModal();
+                showToast('Signed in successfully!', 'success');
+            } catch (e) {
+                showAuthError(signinView.classList.contains('active') ? signinError : signupError, getFirebaseErrorMessage(e));
+            }
+        }
+        async function sendPasswordReset(email) {
+            try {
+                await auth.sendPasswordResetEmail(email);
+                resetSuccess.textContent = 'Password reset email sent! Check your inbox.';
+                resetSuccess.classList.add('visible');
+            } catch (e) {
+                showAuthError(resetError, getFirebaseErrorMessage(e));
+            }
+        }
+        async function signOut() {
+            try {
+                await auth.signOut();
+                showToast('Signed out', 'success');
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        async function fetchUserData() {
+            if (!idToken) return;
+            try {
+                const r = await fetch('/api/auth/user', { headers: { 'Authorization': `Bearer ${idToken}` } });
+                if (!r.ok) return;
+                const d = await r.json();
+                userCredits = d.credits;
+                updateCreditsDisplay();
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        function updateCreditsDisplay() {
+            if (!userCredits) return;
+            const lecture = userCredits.lecture_standard + userCredits.lecture_extended;
+            const interview = userCredits.interview_short + userCredits.interview_medium + userCredits.interview_long;
+            creditsCount.textContent = lecture + userCredits.slides + interview;
+            dropdownLectureCredits.textContent = lecture;
+            dropdownSlidesCredits.textContent = userCredits.slides;
+            dropdownInterviewCredits.textContent = interview;
+            updateProcessButton();
+        }
+        function updateUIForAuthState(user) {
+            if (user) {
+                headerSignInBtn.style.display = 'none';
+                creditsDisplay.style.display = 'flex';
+                userMenu.style.display = 'block';
+                signInRequired.classList.remove('visible');
+                uploadSection.style.display = 'grid';
+                buttonSection.style.display = 'block';
+                generationControls.style.display = 'grid';
+                const displayName = user.displayName || user.email.split('@')[0];
+                const initial = displayName.charAt(0).toUpperCase();
+                userAvatar.innerHTML = user.photoURL ? `<img src="${user.photoURL}" alt="${displayName}">` : `<span>${initial}</span>`;
+                userName.textContent = displayName;
+                userEmail.textContent = user.email;
+                switchMode(currentMode);
+            } else {
+                headerSignInBtn.style.display = 'flex';
+                creditsDisplay.style.display = 'none';
+                userMenu.style.display = 'none';
+                signInRequired.classList.add('visible');
+                uploadSection.style.display = 'none';
+                buttonSection.style.display = 'none';
+                generationControls.style.display = 'none';
+                currentUser = null;
+                userCredits = null;
+                idToken = null;
+            }
+        }
+
+        auth.onAuthStateChanged(async (user) => {
+            currentUser = user;
+            if (user) {
+                idToken = await user.getIdToken();
+                updateUIForAuthState(user);
+                await fetchUserData();
+            } else {
+                updateUIForAuthState(null);
+            }
+        });
+        setInterval(async () => { if (currentUser) idToken = await currentUser.getIdToken(true); }, 10 * 60 * 1000);
+
+        function formatFileSize(bytes) {
+            if (!bytes) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+        }
+        function showToast(message, type = 'success', duration = 3000) {
+            toastText.textContent = message;
+            toast.className = `toast visible ${type}`;
+            if (type === 'success') toastIcon.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
+            else if (type === 'error') toastIcon.innerHTML = '<circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line>';
+            else toastIcon.innerHTML = '<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line>';
+            setTimeout(() => toast.classList.remove('visible'), duration);
+        }
+        function hasEnoughCredits() {
+            if (!userCredits) return false;
+            const config = modeConfig[currentMode];
+            if (config.creditType === 'lecture') return (userCredits.lecture_standard + userCredits.lecture_extended) > 0;
+            if (config.creditType === 'slides') return userCredits.slides > 0;
+            if (config.creditType === 'interview') return (userCredits.interview_short + userCredits.interview_medium + userCredits.interview_long) > 0;
+            return false;
+        }
+        function updateProcessButton() {
+            const config = modeConfig[currentMode];
+            const pdfReady = !config.needsPdf || pdfFile;
+            const audioReady = !config.needsAudio || audioFile;
+            const hasCredits = hasEnoughCredits();
+            processButton.disabled = !(pdfReady && audioReady && hasCredits);
+            processButton.querySelector('span').textContent = config.buttonText;
+            noCreditsWarning.classList.toggle('visible', currentUser && !hasCredits);
+        }
+        function switchMode(mode) {
+            currentMode = mode;
+            const config = modeConfig[mode];
+            modeTabs.forEach(tab => tab.classList.toggle('active', tab.dataset.mode === mode));
+            modeDescriptionText.textContent = config.description;
+            modeCreditCost.innerHTML = config.creditCost;
+            audioZoneTitle.textContent = config.audioTitle;
+            generationControls.classList.toggle('hidden', mode === 'interview');
+            if (config.needsPdf && config.needsAudio) {
+                uploadSection.classList.remove('single-upload');
+                pdfZone.classList.remove('hidden');
+                audioZone.classList.remove('hidden');
+            } else if (config.needsPdf) {
+                uploadSection.classList.add('single-upload');
+                pdfZone.classList.remove('hidden');
+                audioZone.classList.add('hidden');
+            } else {
+                uploadSection.classList.add('single-upload');
+                pdfZone.classList.add('hidden');
+                audioZone.classList.remove('hidden');
+            }
+            if (!config.needsPdf) {
+                pdfFile = null;
+                pdfInput.value = '';
+                pdfInfo.style.display = 'none';
+                pdfZone.classList.remove('has-file');
+            }
+            if (!config.needsAudio) {
+                audioFile = null;
+                audioInput.value = '';
+                audioInfo.style.display = 'none';
+                audioZone.classList.remove('has-file');
+            }
+            updateProcessButton();
+        }
+        modeTabs.forEach(tab => tab.addEventListener('click', () => switchMode(tab.dataset.mode)));
+
+        function handlePdfFile(file) {
+            if (!file) return;
+            if (file.type !== 'application/pdf') { showToast('Please select a valid PDF file', 'error'); return; }
+            if (file.size > 50 * 1024 * 1024) { showToast('PDF file must be under 50 MB', 'error'); return; }
+            pdfFile = file;
+            pdfName.textContent = file.name;
+            pdfSize.textContent = formatFileSize(file.size);
+            pdfInfo.style.display = 'flex';
+            pdfZone.classList.add('has-file');
+            updateProcessButton();
+        }
+        function handleAudioFile(file) {
+            if (!file) return;
+            const valid = ['.mp3', '.m4a', '.wav', '.aac', '.ogg', '.flac'];
+            if (!valid.some(ext => file.name.toLowerCase().endsWith(ext))) { showToast('Please select a valid audio file', 'error'); return; }
+            if (file.size > 500 * 1024 * 1024) { showToast('Audio file must be under 500 MB', 'error'); return; }
+            audioFile = file;
+            audioName.textContent = file.name;
+            audioSize.textContent = formatFileSize(file.size);
+            audioInfo.style.display = 'flex';
+            audioZone.classList.add('has-file');
+            updateProcessButton();
+        }
+        function setupDropZone(zone, input, handler) {
+            zone.addEventListener('click', (e) => { if (!e.target.closest('.file-remove')) input.click(); });
+            input.addEventListener('change', (e) => { if (e.target.files.length) handler(e.target.files[0]); });
+            zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('drag-over'); });
+            zone.addEventListener('dragleave', (e) => { e.preventDefault(); zone.classList.remove('drag-over'); });
+            zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('drag-over'); if (e.dataTransfer.files.length) handler(e.dataTransfer.files[0]); });
+        }
+        setupDropZone(pdfZone, pdfInput, handlePdfFile);
+        setupDropZone(audioZone, audioInput, handleAudioFile);
+        pdfRemove.addEventListener('click', (e) => { e.stopPropagation(); pdfFile = null; pdfInput.value = ''; pdfInfo.style.display = 'none'; pdfZone.classList.remove('has-file'); updateProcessButton(); });
+        audioRemove.addEventListener('click', (e) => { e.stopPropagation(); audioFile = null; audioInput.value = ''; audioInfo.style.display = 'none'; audioZone.classList.remove('has-file'); updateProcessButton(); });
+
+        function buildProgressSteps(steps) {
+            progressSteps.innerHTML = '';
+            progressSteps.classList.toggle('single-step', steps.length === 1);
+            steps.forEach(s => {
+                const el = document.createElement('div');
+                el.className = 'progress-step';
+                el.id = `step-${s.num}`;
+                el.innerHTML = `<div class="step-indicator">${s.num}</div><div class="step-label">${s.label}</div>`;
+                progressSteps.appendChild(el);
+            });
+        }
+        function updateProgressUI(step, desc, total) {
+            for (let i = 1; i <= total; i++) {
+                const el = document.getElementById(`step-${i}`);
+                if (!el) continue;
+                el.classList.remove('active', 'complete');
+                if (i < step) el.classList.add('complete');
+                else if (i === step) el.classList.add('active');
+            }
+            statusText.textContent = desc || 'Processing...';
+        }
+        function startPolling() {
+            pollInterval = setInterval(pollStatus, 2000);
+            pollStatus();
+        }
+        function stopPolling() {
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = null;
+        }
+        function pollStatus() {
+            if (!currentJobId) return;
+            fetch(`/status/${currentJobId}`).then(r => r.json()).then(d => {
+                if (d.error && d.status !== 'error') {
+                    stopPolling();
+                    showToast('Error: Job not found', 'error');
+                    return;
+                }
+                updateProgressUI(d.step, d.step_description, d.total_steps);
+                if (d.status === 'complete') {
+                    stopPolling();
+                    showResults(d.result, d.slide_text, d.transcript, d.flashcards || [], d.test_questions || [], d.study_generation_error || null);
+                    fetchUserData();
+                } else if (d.status === 'error') {
+                    stopPolling();
+                    showError(d.error, d.credit_refunded);
+                }
+            }).catch((e) => console.error(e));
+        }
+        async function processFiles() {
+            if (!idToken) { showAuthModal('signin'); return; }
+            const config = modeConfig[currentMode];
+            const fd = new FormData();
+            fd.append('mode', currentMode);
+            if (config.needsPdf && pdfFile) fd.append('pdf', pdfFile);
+            if (config.needsAudio && audioFile) fd.append('audio', audioFile);
+            if (currentMode !== 'interview') {
+                fd.append('flashcard_amount', flashcardAmountSelect.value);
+                fd.append('question_amount', questionAmountSelect.value);
+            }
+            buildProgressSteps(config.steps);
+            processButton.disabled = true;
+            progressSection.classList.add('visible');
+            resultsSection.classList.remove('visible');
+            progressStatus.classList.remove('error');
+            progressStatus.querySelector('.spinner').style.display = 'block';
+            updateProgressUI(0, 'Uploading files...', config.steps.length);
+            try {
+                const r = await fetch('/upload', { method: 'POST', headers: { 'Authorization': `Bearer ${idToken}` }, body: fd });
+                const d = await r.json();
+                if (d.error) {
+                    if (r.status === 401) showAuthModal();
+                    else if (r.status === 402) { showError('No credits remaining. Please purchase more credits.'); noCreditsWarning.classList.add('visible'); }
+                    else showError(d.error);
+                    return;
+                }
+                currentJobId = d.job_id;
+                startPolling();
+            } catch (e) {
+                showError('Failed to upload files. Please try again.');
+            }
+        }
+        processButton.addEventListener('click', processFiles);
+
+        function simpleMarkdownToHtml(md) {
+            let h = md.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/^### (.*$)/gm, '<h3>$1</h3>').replace(/^## (.*$)/gm, '<h2>$1</h2>').replace(/^# (.*$)/gm, '<h1>$1</h1>')
+                .replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/^\s*[-*]\s+(.*$)/gm, '<li>$1</li>').replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>');
+            h = `<p>${h}</p>`;
+            h = h.replace(/(<li>.*?<\/li>)(?=\s*<li>|<br><li>)/g, '$1').replace(/(<li>.*?<\/li>)+/g, '<ul>$&</ul>').replace(/<br><li>/g, '<li>');
+            h = h.replace(/<p><\/p>/g, '').replace(/<p>(<h[1-3]>)/g, '$1').replace(/(<\/h[1-3]>)<\/p>/g, '$1').replace(/<p>(<ul>)/g, '$1').replace(/(<\/ul>)<\/p>/g, '$1');
+            return h;
+        }
+        function buildDownloadDropdown() {
+            if (currentMode === 'lecture-notes') {
+                downloadDropdownContent.innerHTML = '<button class="dropdown-item" data-type="result" data-format="md">Complete Lecture Notes<span>Markdown (.md)</span></button><button class="dropdown-item" data-type="result" data-format="docx">Complete Lecture Notes<span>Word Document (.docx)</span></button><div class="dropdown-divider"></div><button class="dropdown-item" data-type="slides" data-format="md">Extracted Slides Only<span>Markdown (.md)</span></button><button class="dropdown-item" data-type="slides" data-format="docx">Extracted Slides Only<span>Word Document (.docx)</span></button><div class="dropdown-divider"></div><button class="dropdown-item" data-type="transcript" data-format="md">Transcript Only<span>Markdown (.md)</span></button><button class="dropdown-item" data-type="transcript" data-format="docx">Transcript Only<span>Word Document (.docx)</span></button>';
+            } else if (currentMode === 'slides-only') {
+                downloadDropdownContent.innerHTML = '<button class="dropdown-item" data-type="result" data-format="md">Extracted Slides<span>Markdown (.md)</span></button><button class="dropdown-item" data-type="result" data-format="docx">Extracted Slides<span>Word Document (.docx)</span></button>';
+            } else {
+                downloadDropdownContent.innerHTML = '<button class="dropdown-item" data-type="result" data-format="md">Interview Transcript<span>Markdown (.md)</span></button><button class="dropdown-item" data-type="result" data-format="docx">Interview Transcript<span>Word Document (.docx)</span></button>';
+            }
+            downloadDropdownContent.querySelectorAll('.dropdown-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    downloadFile(item.dataset.type, item.dataset.format);
+                    downloadDropdownContent.classList.remove('visible');
+                });
+            });
+        }
+        function downloadFile(type, format) {
+            let content = resultMarkdown;
+            let filename = 'output.md';
+            if (type === 'slides') { content = slideText; filename = format === 'md' ? 'extracted-slides.md' : 'extracted-slides.docx'; }
+            else if (type === 'transcript') { content = transcript; filename = format === 'md' ? 'transcript.md' : 'transcript.docx'; }
+            else if (currentMode === 'lecture-notes') filename = format === 'md' ? 'lecture-notes.md' : 'lecture-notes.docx';
+            else if (currentMode === 'slides-only') filename = format === 'md' ? 'extracted-slides.md' : 'extracted-slides.docx';
+            else filename = format === 'md' ? 'interview-transcript.md' : 'interview-transcript.docx';
+            if (format === 'md') {
+                const blob = new Blob([content], { type: 'text/markdown' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } else {
+                window.location.href = `/download-docx/${currentJobId}?type=${type}`;
+            }
+            showToast('Download started', 'success');
+        }
+
+        function setActiveResultsTab(tab) {
+            activeResultsTab = tab;
+            tabButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
+            paneNotes.classList.toggle('active', tab === 'notes');
+            paneFlashcards.classList.toggle('active', tab === 'flashcards');
+            paneTest.classList.toggle('active', tab === 'test');
+        }
+        tabButtons.forEach(btn => btn.addEventListener('click', () => setActiveResultsTab(btn.dataset.tab)));
+
+        function renderFlashcard() {
+            if (!flashcards.length) {
+                flashcardEmpty.style.display = 'block';
+                flashcardCard.style.display = 'none';
+                flashcardProgress.textContent = 'Card 0 of 0';
+                flashcardPrevBtn.disabled = true;
+                flashcardNextBtn.disabled = true;
+                flashcardFlipBtn.disabled = true;
+                return;
+            }
+            flashcardEmpty.style.display = 'none';
+            flashcardCard.style.display = 'block';
+            const card = flashcards[flashcardIndex];
+            flashcardFrontText.textContent = card.front;
+            flashcardBackText.textContent = card.back;
+            flashcardInner.classList.toggle('flipped', flashcardFlipped);
+            flashcardProgress.textContent = `Card ${flashcardIndex + 1} of ${flashcards.length}`;
+            flashcardPrevBtn.disabled = flashcardIndex === 0;
+            flashcardNextBtn.disabled = flashcardIndex === flashcards.length - 1;
+            flashcardFlipBtn.disabled = false;
+        }
+        function goFlashcard(offset) {
+            if (!flashcards.length) return;
+            flashcardIndex = Math.max(0, Math.min(flashcards.length - 1, flashcardIndex + offset));
+            flashcardFlipped = false;
+            renderFlashcard();
+        }
+        function flipFlashcard() {
+            if (!flashcards.length) return;
+            flashcardFlipped = !flashcardFlipped;
+            renderFlashcard();
+        }
+        flashcardCard.addEventListener('click', flipFlashcard);
+        flashcardPrevBtn.addEventListener('click', () => goFlashcard(-1));
+        flashcardNextBtn.addEventListener('click', () => goFlashcard(1));
+        flashcardFlipBtn.addEventListener('click', flipFlashcard);
+
+        function renderQuizQuestion() {
+            if (!testQuestions.length) {
+                quizEmpty.style.display = 'block';
+                quizQuestionText.textContent = '';
+                quizOptions.innerHTML = '';
+                quizExplanation.classList.remove('visible');
+                quizNextBtn.style.display = 'none';
+                quizProgress.textContent = 'Question 0 of 0';
+                quizScoreEl.textContent = 'Score: 0/0';
+                return;
+            }
+            quizEmpty.style.display = 'none';
+            const q = testQuestions[quizIndex];
+            quizAnswered = false;
+            quizProgress.textContent = `Question ${quizIndex + 1} of ${testQuestions.length}`;
+            quizScoreEl.textContent = `Score: ${quizScore}/${testQuestions.length}`;
+            quizQuestionText.textContent = q.question;
+            quizOptions.innerHTML = '';
+            quizExplanation.classList.remove('visible');
+            quizExplanation.textContent = '';
+            q.options.forEach(option => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'quiz-option';
+                btn.textContent = option;
+                btn.addEventListener('click', () => answerQuizOption(btn, option));
+                quizOptions.appendChild(btn);
+            });
+            quizNextBtn.style.display = 'none';
+        }
+        function answerQuizOption(clickedBtn, selectedOption) {
+            if (quizAnswered) return;
+            quizAnswered = true;
+            const q = testQuestions[quizIndex];
+            const optionButtons = [...quizOptions.querySelectorAll('.quiz-option')];
+            optionButtons.forEach(btn => {
+                btn.disabled = true;
+                if (btn.textContent === q.answer) btn.classList.add('correct');
+            });
+            if (selectedOption === q.answer) {
+                clickedBtn.classList.add('correct');
+                quizScore += 1;
+            } else {
+                clickedBtn.classList.add('wrong');
+            }
+            quizScoreEl.textContent = `Score: ${quizScore}/${testQuestions.length}`;
+            quizExplanation.textContent = q.explanation;
+            quizExplanation.classList.add('visible');
+            quizNextBtn.style.display = (quizIndex < testQuestions.length - 1) ? 'inline-flex' : 'none';
+        }
+        quizNextBtn.addEventListener('click', () => {
+            if (quizIndex < testQuestions.length - 1) {
+                quizIndex += 1;
+                renderQuizQuestion();
+            }
+        });
+
+        function showResults(md, slides, trans, generatedFlashcards, generatedQuestions, generationError) {
+            const config = modeConfig[currentMode];
+            resultMarkdown = md || '';
+            slideText = slides || '';
+            transcript = trans || '';
+            flashcards = Array.isArray(generatedFlashcards) ? generatedFlashcards : [];
+            testQuestions = Array.isArray(generatedQuestions) ? generatedQuestions : [];
+            studyGenerationError = generationError;
+            resultsTitleText.textContent = config.resultTitle;
+            resultsContent.innerHTML = simpleMarkdownToHtml(resultMarkdown);
+            flashcardCountBadge.textContent = String(flashcards.length);
+            testCountBadge.textContent = String(testQuestions.length);
+            studyWarning.style.display = studyGenerationError ? 'block' : 'none';
+            studyWarning.textContent = studyGenerationError || '';
+            downloadFlashcardsCsvBtn.style.display = flashcards.length ? 'inline-flex' : 'none';
+
+            flashcardIndex = 0;
+            flashcardFlipped = false;
+            quizIndex = 0;
+            quizScore = 0;
+            renderFlashcard();
+            renderQuizQuestion();
+            setActiveResultsTab('notes');
+            if (!flashcards.length && !testQuestions.length && currentMode !== 'interview') {
+                document.getElementById('tab-flashcards').disabled = true;
+                document.getElementById('tab-test').disabled = true;
+            } else {
+                document.getElementById('tab-flashcards').disabled = false;
+                document.getElementById('tab-test').disabled = false;
+            }
+
+            progressSection.classList.remove('visible');
+            resultsSection.classList.add('visible');
+            buildDownloadDropdown();
+            showToast('Processing complete!', 'success');
+        }
+        function showError(msg, creditRefunded) {
+            progressStatus.classList.add('error');
+            progressStatus.querySelector('.spinner').style.display = 'none';
+            if (creditRefunded) {
+                statusText.textContent = `Error: ${msg} — Your credit has been refunded.`;
+                showToast('Processing failed. Your credit has been refunded.', 'info', 5000);
+                fetchUserData();
+            } else {
+                statusText.textContent = `Error: ${msg}`;
+            }
+            updateProcessButton();
+        }
+        function resetResultsState() {
+            resultMarkdown = '';
+            slideText = '';
+            transcript = '';
+            flashcards = [];
+            testQuestions = [];
+            flashcardCountBadge.textContent = '0';
+            testCountBadge.textContent = '0';
+            studyWarning.style.display = 'none';
+            downloadFlashcardsCsvBtn.style.display = 'none';
+            document.getElementById('tab-flashcards').disabled = false;
+            document.getElementById('tab-test').disabled = false;
+            setActiveResultsTab('notes');
+        }
+
+        function showPricingModal() { pricingOverlay.classList.add('visible'); }
+        function hidePricingModal() { pricingOverlay.classList.remove('visible'); }
+        function showHistoryModal() { historyOverlay.classList.add('visible'); loadPurchaseHistory(); }
+        function hideHistoryModal() { historyOverlay.classList.remove('visible'); }
+        function formatPrice(cents, currency) { const amount = (cents / 100).toFixed(2); return currency === 'eur' ? `€${amount}` : `${amount} ${currency.toUpperCase()}`; }
+        function formatCreditsText(credits) { return Object.entries(credits).map(([k, v]) => `${v} ${k.replace(/_/g, ' ').replace('credits ', '').replace('credits', '').trim()}`).join(', '); }
+        async function loadPurchaseHistory() {
+            historyList.innerHTML = '<div class="history-loading"><div class="spinner"></div><span>Loading purchases...</span></div>';
+            if (!idToken) return;
+            try {
+                const r = await fetch('/api/purchase-history', { headers: { 'Authorization': `Bearer ${idToken}` } });
+                const d = await r.json();
+                if (!d.purchases || !d.purchases.length) {
+                    historyList.innerHTML = '<div class="history-empty"><p>No purchases yet</p></div>';
+                    return;
+                }
+                historyList.innerHTML = '';
+                d.purchases.forEach(p => {
+                    const date = new Date(p.created_at * 1000);
+                    const row = document.createElement('div');
+                    row.className = 'history-item';
+                    row.innerHTML = `<div class="history-item-left"><div class="history-item-name">${p.bundle_name}</div><div class="history-item-date">${date.toLocaleDateString('en-GB')} at ${date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div><div class="history-item-credits">${formatCreditsText(p.credits)}</div></div><div class="history-item-price">${formatPrice(p.price_cents, p.currency)}</div>`;
+                    historyList.appendChild(row);
+                });
+            } catch (e) {
+                historyList.innerHTML = '<div class="history-empty"><p>Could not load purchase history. Please try again.</p></div>';
+            }
+        }
+        async function purchaseBundle(bundleId) {
+            if (!idToken) { hidePricingModal(); showAuthModal(); return; }
+            const allBtns = document.querySelectorAll('.bundle-buy-btn');
+            allBtns.forEach(btn => { btn.disabled = true; if (btn.dataset.bundleId === bundleId) btn.textContent = 'Redirecting...'; });
+            try {
+                const r = await fetch('/api/create-checkout-session', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` }, body: JSON.stringify({ bundle_id: bundleId }) });
+                const d = await r.json();
+                if (d.error) {
+                    showToast(d.error, 'error');
+                    allBtns.forEach(btn => { btn.disabled = false; btn.textContent = 'Buy now'; });
+                    return;
+                }
+                if (d.checkout_url) window.location.href = d.checkout_url;
+            } catch (e) {
+                showToast('Something went wrong. Please try again.', 'error');
+                allBtns.forEach(btn => { btn.disabled = false; btn.textContent = 'Buy now'; });
+            }
+        }
+        function checkPaymentResult() {
+            const params = new URLSearchParams(window.location.search);
+            const status = params.get('payment');
+            if (status === 'success') {
+                showToast('Payment successful! Your credits have been added.', 'success', 5000);
+                window.history.replaceState({}, '', '/');
+                setTimeout(() => { if (idToken) fetchUserData(); }, 2000);
+                setTimeout(() => { if (idToken) fetchUserData(); }, 5000);
+            } else if (status === 'cancelled') {
+                showToast('Payment cancelled. No charges were made.', 'info', 4000);
+                window.history.replaceState({}, '', '/');
+            }
+        }
+
+        headerSignInBtn.addEventListener('click', () => showAuthModal('signin'));
+        signInToProcessBtn.addEventListener('click', () => showAuthModal('signin'));
+        authModalClose.addEventListener('click', hideAuthModal);
+        authOverlay.addEventListener('click', (e) => { if (e.target === authOverlay) hideAuthModal(); });
+        switchToSignup.addEventListener('click', (e) => { e.preventDefault(); showAuthView('signup'); });
+        switchToSignin.addEventListener('click', (e) => { e.preventDefault(); showAuthView('signin'); });
+        forgotPasswordLink.addEventListener('click', (e) => { e.preventDefault(); showAuthView('reset'); });
+        backToSignin.addEventListener('click', (e) => { e.preventDefault(); showAuthView('signin'); });
+        signinForm.addEventListener('submit', async (e) => { e.preventDefault(); await signInWithEmail(signinEmail.value.trim(), signinPassword.value); });
+        signupForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (signupPassword.value !== signupPasswordConfirm.value) { showAuthError(signupError, 'Passwords do not match.'); return; }
+            await signUpWithEmail(signupEmail.value.trim(), signupPassword.value);
+        });
+        resetForm.addEventListener('submit', async (e) => { e.preventDefault(); await sendPasswordReset(resetEmail.value.trim()); });
+        googleSignInBtn.addEventListener('click', signInWithGoogle);
+        googleSignUpBtn.addEventListener('click', signInWithGoogle);
+        document.querySelectorAll('.password-toggle').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const input = document.getElementById(btn.dataset.target);
+                const open = btn.querySelector('.eye-open');
+                const closed = btn.querySelector('.eye-closed');
+                if (input.type === 'password') { input.type = 'text'; open.style.display = 'none'; closed.style.display = 'block'; }
+                else { input.type = 'password'; open.style.display = 'block'; closed.style.display = 'none'; }
+            });
+        });
+        signOutBtn.addEventListener('click', signOut);
+        userButton.addEventListener('click', (e) => { e.stopPropagation(); userDropdown.classList.toggle('visible'); });
+        document.addEventListener('click', (e) => { if (!userMenu.contains(e.target)) userDropdown.classList.remove('visible'); });
+        buyCreditsBtn.addEventListener('click', () => { userDropdown.classList.remove('visible'); showPricingModal(); });
+        purchaseHistoryBtn.addEventListener('click', () => { userDropdown.classList.remove('visible'); showHistoryModal(); });
+        adminDashboardBtn.addEventListener('click', () => { userDropdown.classList.remove('visible'); window.location.href = '/admin'; });
+        buyCreditsLink.addEventListener('click', (e) => { e.preventDefault(); showPricingModal(); });
+        pricingModalClose.addEventListener('click', hidePricingModal);
+        pricingOverlay.addEventListener('click', (e) => { if (e.target === pricingOverlay) hidePricingModal(); });
+        historyModalClose.addEventListener('click', hideHistoryModal);
+        historyOverlay.addEventListener('click', (e) => { if (e.target === historyOverlay) hideHistoryModal(); });
+        document.querySelectorAll('.bundle-buy-btn').forEach(btn => btn.addEventListener('click', () => purchaseBundle(btn.dataset.bundleId)));
+        downloadButton.addEventListener('click', (e) => { e.stopPropagation(); downloadDropdownContent.classList.toggle('visible'); });
+        document.addEventListener('click', (e) => { if (!downloadDropdown.contains(e.target)) downloadDropdownContent.classList.remove('visible'); });
+        copyButton.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(resultMarkdown);
+                copyButtonText.textContent = 'Copied!';
+                showToast('Notes copied to clipboard', 'success');
+                setTimeout(() => { copyButtonText.textContent = 'Copy Notes'; }, 1800);
+            } catch (e) {
+                showToast('Failed to copy notes', 'error');
+            }
+        });
+        downloadFlashcardsCsvBtn.addEventListener('click', () => {
+            if (!currentJobId) return;
+            window.location.href = `/download-flashcards-csv/${currentJobId}`;
+        });
+        newLectureButton.addEventListener('click', () => {
+            pdfFile = null;
+            audioFile = null;
+            currentJobId = null;
+            pdfInput.value = '';
+            audioInput.value = '';
+            pdfInfo.style.display = 'none';
+            audioInfo.style.display = 'none';
+            pdfZone.classList.remove('has-file');
+            audioZone.classList.remove('has-file');
+            progressSection.classList.remove('visible');
+            resultsSection.classList.remove('visible');
+            progressStatus.classList.remove('error');
+            progressStatus.querySelector('.spinner').style.display = 'block';
+            resetResultsState();
+            switchMode(currentMode);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+        window.addEventListener('keydown', (e) => {
+            if (!resultsSection.classList.contains('visible')) return;
+            if (activeResultsTab !== 'flashcards') return;
+            if (e.key === 'ArrowLeft') { e.preventDefault(); goFlashcard(-1); }
+            if (e.key === 'ArrowRight') { e.preventDefault(); goFlashcard(1); }
+            if (e.code === 'Space') { e.preventDefault(); flipFlashcard(); }
+        });
+        window.addEventListener('beforeunload', (e) => { if (currentJobId && pollInterval) { e.preventDefault(); e.returnValue = ''; } });
+
+        switchMode('lecture-notes');
+        resetResultsState();
+        checkPaymentResult();
     </script>
 </body>
 </html>

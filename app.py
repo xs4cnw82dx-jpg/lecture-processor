@@ -123,6 +123,7 @@ MODEL_SLIDES = 'gemini-2.5-flash-lite'
 MODEL_AUDIO = 'gemini-3-flash-preview'
 MODEL_INTEGRATION = 'gemini-2.5-pro'
 MODEL_INTERVIEW = 'gemini-2.5-pro'
+MODEL_STUDY = 'gemini-2.5-flash-lite'
 
 FREE_LECTURE_CREDITS = 1
 FREE_SLIDES_CREDITS = 2
@@ -175,6 +176,31 @@ Input:
 {slide_text}
 2. Audio-transcript:
 {transcript}"""
+
+PROMPT_STUDY_TEMPLATE = """You are an expert university professor creating study materials. I will provide you with the complete text of a lecture or slide deck.
+
+Your task is to generate {flashcard_amount} flashcards and {question_amount} multiple-choice test questions based strictly on the provided text. Do not invent outside information.
+
+RULES FOR FLASHCARDS:
+- The 'front' should be a clear term or concept.
+- The 'back' should be a concise, accurate definition/explanation.
+
+RULES FOR TEST QUESTIONS:
+- Create challenging, university-level multiple-choice questions.
+- Provide exactly 4 options (A, B, C, D) as an array of strings.
+- Provide the correct answer (must match one option exactly).
+- Provide a brief 'explanation' of WHY the answer is correct.
+
+REQUIRED OUTPUT FORMAT:
+You must respond with strictly valid JSON matching this structure:
+{{
+  "flashcards": [{{"front": "string", "back": "string"}}],
+  "test_questions": [{{"question": "string", "options": ["string", "string", "string", "string"], "answer": "string", "explanation": "string"}}]
+}}
+
+LECTURE TEXT:
+{source_text}
+"""
 
 # =============================================
 # FIRESTORE USER FUNCTIONS
@@ -416,6 +442,133 @@ def get_bucket_key(timestamp, window_key):
         return dt.replace(minute=0, second=0, microsecond=0).strftime('%Y-%m-%d %H:00')
     return dt.replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%d')
 
+def parse_requested_amount(raw_value, allowed, default):
+    value = str(raw_value or default).strip().lower()
+    return value if value in allowed else default
+
+def resolve_auto_amount(kind, source_text):
+    word_count = len((source_text or '').split())
+    if kind == 'flashcards':
+        if word_count < 1200:
+            return 10
+        if word_count < 2600:
+            return 20
+        return 30
+    if word_count < 1200:
+        return 5
+    if word_count < 2600:
+        return 10
+    return 15
+
+def resolve_study_amounts(flashcard_selection, question_selection, source_text):
+    flashcard_amount = resolve_auto_amount('flashcards', source_text) if flashcard_selection == 'auto' else int(flashcard_selection)
+    question_amount = resolve_auto_amount('questions', source_text) if question_selection == 'auto' else int(question_selection)
+    return flashcard_amount, question_amount
+
+def extract_json_payload(raw_text):
+    if not raw_text:
+        return None
+    text = raw_text.strip()
+    if text.startswith('```'):
+        lines = text.splitlines()
+        if len(lines) >= 3 and lines[0].startswith('```') and lines[-1].strip() == '```':
+            text = '\n'.join(lines[1:-1]).strip()
+    start = text.find('{')
+    if start == -1:
+        return None
+    decoder = json.JSONDecoder()
+    try:
+        parsed, _ = decoder.raw_decode(text[start:])
+        return parsed
+    except json.JSONDecodeError:
+        end = text.rfind('}')
+        if end == -1 or end <= start:
+            return None
+        try:
+            return json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            return None
+
+def sanitize_flashcards(items, max_items):
+    if not isinstance(items, list):
+        return []
+    cleaned = []
+    seen = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        front = str(item.get('front', '')).strip()
+        back = str(item.get('back', '')).strip()
+        if not front or not back:
+            continue
+        key = (front.lower(), back.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append({'front': front, 'back': back})
+        if len(cleaned) >= max_items:
+            break
+    return cleaned
+
+def sanitize_questions(items, max_items):
+    if not isinstance(items, list):
+        return []
+    cleaned = []
+    seen = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        question = str(item.get('question', '')).strip()
+        options = item.get('options', [])
+        answer = str(item.get('answer', '')).strip()
+        explanation = str(item.get('explanation', '')).strip()
+        if not question or not isinstance(options, list) or len(options) != 4 or not answer or not explanation:
+            continue
+        option_strings = [str(option).strip() for option in options]
+        if any(not option for option in option_strings):
+            continue
+        if len(set(option_strings)) != 4:
+            continue
+        if answer not in option_strings:
+            continue
+        dedupe_key = question.lower()
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        cleaned.append({
+            'question': question,
+            'options': option_strings,
+            'answer': answer,
+            'explanation': explanation,
+        })
+        if len(cleaned) >= max_items:
+            break
+    return cleaned
+
+def generate_study_materials(source_text, flashcard_selection, question_selection):
+    flashcard_amount, question_amount = resolve_study_amounts(flashcard_selection, question_selection, source_text)
+    prompt = PROMPT_STUDY_TEMPLATE.format(
+        flashcard_amount=flashcard_amount,
+        question_amount=question_amount,
+        source_text=source_text[:120000],
+    )
+    try:
+        response = client.models.generate_content(
+            model=MODEL_STUDY,
+            contents=[types.Content(role='user', parts=[types.Part.from_text(text=prompt)])],
+            config=types.GenerateContentConfig(max_output_tokens=32768)
+        )
+        parsed = extract_json_payload(response.text)
+        if not isinstance(parsed, dict):
+            return [], [], 'Study materials JSON parsing failed.'
+        flashcards = sanitize_flashcards(parsed.get('flashcards', []), flashcard_amount)
+        test_questions = sanitize_questions(parsed.get('test_questions', []), question_amount)
+        if not flashcards and not test_questions:
+            return [], [], 'Study materials were empty after validation.'
+        return flashcards, test_questions, None
+    except Exception as e:
+        return [], [], f'Study materials generation failed: {e}'
+
 def allowed_file(filename, allowed_extensions):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
 
@@ -502,6 +655,34 @@ def markdown_to_docx(markdown_text, title="Document"):
         i += 1
     return doc
 
+def save_study_pack(job_id, job_data):
+    try:
+        notes_markdown = str(job_data.get('result', '') or '')
+        max_notes_chars = 180000
+        notes_truncated = len(notes_markdown) > max_notes_chars
+        if notes_truncated:
+            notes_markdown = notes_markdown[:max_notes_chars]
+
+        doc_ref = db.collection('study_packs').document()
+        doc_ref.set({
+            'study_pack_id': doc_ref.id,
+            'source_job_id': job_id,
+            'uid': job_data.get('user_id', ''),
+            'email': job_data.get('user_email', ''),
+            'mode': job_data.get('mode', ''),
+            'notes_markdown': notes_markdown,
+            'notes_truncated': notes_truncated,
+            'flashcards': job_data.get('flashcards', []),
+            'test_questions': job_data.get('test_questions', []),
+            'flashcard_selection': job_data.get('flashcard_selection', '20'),
+            'question_selection': job_data.get('question_selection', '10'),
+            'study_generation_error': job_data.get('study_generation_error'),
+            'created_at': time.time(),
+        })
+        job_data['study_pack_id'] = doc_ref.id
+    except Exception as e:
+        print(f"❌ Failed to save study pack for job {job_id}: {e}")
+
 # =============================================
 # AI PROCESSING FUNCTIONS
 # =============================================
@@ -537,11 +718,23 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
         merge_prompt = PROMPT_MERGE_TEMPLATE.format(slide_text=slide_text, transcript=transcript)
         response = client.models.generate_content(model=MODEL_INTEGRATION, contents=[types.Content(role='user', parts=[types.Part.from_text(text=merge_prompt)])], config=types.GenerateContentConfig(max_output_tokens=65536))
         merged_notes = response.text
-        
-        jobs[job_id]['status'] = 'complete'
-        jobs[job_id]['step'] = 3
-        jobs[job_id]['step_description'] = 'Complete!'
+
+        jobs[job_id]['step'] = 4
+        jobs[job_id]['step_description'] = 'Generating flashcards and practice test...'
         jobs[job_id]['result'] = merged_notes
+        flashcards, test_questions, study_error = generate_study_materials(
+            merged_notes,
+            jobs[job_id].get('flashcard_selection', '20'),
+            jobs[job_id].get('question_selection', '10')
+        )
+        jobs[job_id]['flashcards'] = flashcards
+        jobs[job_id]['test_questions'] = test_questions
+        jobs[job_id]['study_generation_error'] = study_error
+        save_study_pack(job_id, jobs[job_id])
+
+        jobs[job_id]['status'] = 'complete'
+        jobs[job_id]['step'] = 4
+        jobs[job_id]['step_description'] = 'Complete!'
     except Exception as e:
         jobs[job_id]['status'] = 'error'
         jobs[job_id]['error'] = str(e)
@@ -566,10 +759,22 @@ def process_slides_only(job_id, pdf_path):
         gemini_files.append(pdf_file)
         wait_for_file_processing(pdf_file)
         response = client.models.generate_content(model=MODEL_SLIDES, contents=[types.Content(role='user', parts=[types.Part.from_uri(file_uri=pdf_file.uri, mime_type='application/pdf'), types.Part.from_text(text=PROMPT_SLIDE_EXTRACTION)])], config=types.GenerateContentConfig(max_output_tokens=65536))
+        extracted_text = response.text
+        jobs[job_id]['step'] = 2
+        jobs[job_id]['step_description'] = 'Generating flashcards and practice test...'
+        jobs[job_id]['result'] = extracted_text
+        flashcards, test_questions, study_error = generate_study_materials(
+            extracted_text,
+            jobs[job_id].get('flashcard_selection', '20'),
+            jobs[job_id].get('question_selection', '10')
+        )
+        jobs[job_id]['flashcards'] = flashcards
+        jobs[job_id]['test_questions'] = test_questions
+        jobs[job_id]['study_generation_error'] = study_error
+        save_study_pack(job_id, jobs[job_id])
         jobs[job_id]['status'] = 'complete'
-        jobs[job_id]['step'] = 1
+        jobs[job_id]['step'] = 2
         jobs[job_id]['step_description'] = 'Complete!'
-        jobs[job_id]['result'] = response.text
     except Exception as e:
         jobs[job_id]['status'] = 'error'
         jobs[job_id]['error'] = str(e)
@@ -786,6 +991,57 @@ def get_purchase_history():
     except Exception as e:
         print(f"Error fetching purchase history: {e}")
         return jsonify({'purchases': []})
+
+@app.route('/api/study-packs', methods=['GET'])
+def get_study_packs():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    uid = decoded_token['uid']
+    try:
+        study_docs = list(db.collection('study_packs').where('uid', '==', uid).limit(100).stream())
+        packs = []
+        for doc in study_docs:
+            pack = doc.to_dict()
+            packs.append({
+                'study_pack_id': doc.id,
+                'mode': pack.get('mode', ''),
+                'flashcards_count': len(pack.get('flashcards', [])),
+                'test_questions_count': len(pack.get('test_questions', [])),
+                'created_at': pack.get('created_at', 0),
+            })
+        packs.sort(key=lambda p: p.get('created_at', 0), reverse=True)
+        return jsonify({'study_packs': packs[:50]})
+    except Exception as e:
+        print(f"Error fetching study packs: {e}")
+        return jsonify({'study_packs': []})
+
+@app.route('/api/study-packs/<pack_id>', methods=['GET'])
+def get_study_pack(pack_id):
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    uid = decoded_token['uid']
+    try:
+        doc = db.collection('study_packs').document(pack_id).get()
+        if not doc.exists:
+            return jsonify({'error': 'Study pack not found'}), 404
+        pack = doc.to_dict()
+        if pack.get('uid', '') != uid:
+            return jsonify({'error': 'Forbidden'}), 403
+        return jsonify({
+            'study_pack_id': pack_id,
+            'mode': pack.get('mode', ''),
+            'notes_markdown': pack.get('notes_markdown', ''),
+            'flashcards': pack.get('flashcards', []),
+            'test_questions': pack.get('test_questions', []),
+            'created_at': pack.get('created_at', 0),
+        })
+    except Exception as e:
+        print(f"Error fetching study pack {pack_id}: {e}")
+        return jsonify({'error': 'Could not fetch study pack'}), 500
 
 @app.route('/api/admin/overview', methods=['GET'])
 def get_admin_overview():
@@ -1045,6 +1301,8 @@ def upload_files():
     if not is_email_allowed(email): return jsonify({'error': 'Email not allowed'}), 403
     user = get_or_create_user(uid, email)
     mode = request.form.get('mode', 'lecture-notes')
+    flashcard_selection = parse_requested_amount(request.form.get('flashcard_amount', '20'), {'10', '20', '30', 'auto'}, '20')
+    question_selection = parse_requested_amount(request.form.get('question_amount', '10'), {'5', '10', '15', 'auto'}, '10')
     
     if mode == 'lecture-notes':
         total_lecture = user.get('lecture_credits_standard', 0) + user.get('lecture_credits_extended', 0)
@@ -1064,7 +1322,7 @@ def upload_files():
         deducted = deduct_credit(uid, 'lecture_credits_standard', 'lecture_credits_extended')
         if not deducted:
             return jsonify({'error': 'No lecture credits remaining.'}), 402
-        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 3, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'error': None}
+        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 4, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None}
         thread = threading.Thread(target=process_lecture_notes, args=(job_id, pdf_path, audio_path))
         thread.start()
         
@@ -1081,7 +1339,7 @@ def upload_files():
         deducted = deduct_credit(uid, 'slides_credits')
         if not deducted:
             return jsonify({'error': 'No slides credits remaining.'}), 402
-        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 1, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'error': None}
+        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': 2, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None}
         thread = threading.Thread(target=process_slides_only, args=(job_id, pdf_path))
         thread.start()
         
@@ -1112,6 +1370,10 @@ def get_status(job_id):
     response = {'status': job['status'], 'step': job['step'], 'step_description': job['step_description'], 'total_steps': job.get('total_steps', 3), 'mode': job.get('mode', 'lecture-notes')}
     if job['status'] == 'complete':
         response['result'] = job['result']
+        response['flashcards'] = job.get('flashcards', [])
+        response['test_questions'] = job.get('test_questions', [])
+        response['study_generation_error'] = job.get('study_generation_error')
+        response['study_pack_id'] = job.get('study_pack_id')
         if job.get('mode') == 'lecture-notes':
             response['slide_text'] = job.get('slide_text')
             response['transcript'] = job.get('transcript')
@@ -1143,6 +1405,28 @@ def download_docx(job_id):
     doc.save(docx_io)
     docx_io.seek(0)
     return send_file(docx_io, mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document', as_attachment=True, download_name=filename)
+
+@app.route('/download-flashcards-csv/<job_id>')
+def download_flashcards_csv(job_id):
+    if job_id not in jobs:
+        return jsonify({'error': 'Job not found'}), 404
+    job = jobs[job_id]
+    if job.get('status') != 'complete':
+        return jsonify({'error': 'Job not complete'}), 400
+    flashcards = job.get('flashcards', [])
+    if not flashcards:
+        return jsonify({'error': 'No flashcards available for this job'}), 400
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['question', 'answer'])
+    for card in flashcards:
+        writer.writerow([card.get('front', ''), card.get('back', '')])
+
+    csv_bytes = io.BytesIO(output.getvalue().encode('utf-8'))
+    csv_bytes.seek(0)
+    filename = f'flashcards-{job_id}.csv'
+    return send_file(csv_bytes, mimetype='text/csv', as_attachment=True, download_name=filename)
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
