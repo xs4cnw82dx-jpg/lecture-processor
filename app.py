@@ -131,6 +131,15 @@ FREE_LECTURE_CREDITS = 1
 FREE_SLIDES_CREDITS = 2
 FREE_INTERVIEW_CREDITS = 0
 
+OUTPUT_LANGUAGE_MAP = {
+    'dutch': 'Dutch',
+    'english': 'English',
+    'spanish': 'Spanish',
+    'french': 'French',
+    'german': 'German',
+    'chinese': 'Chinese',
+}
+
 # --- Prompts ---
 PROMPT_SLIDE_EXTRACTION = """Extraheer alle tekst van de slides uit het bijgevoegde PDF-bestand en identificeer de functie van visuele elementen.
 Instructies:
@@ -148,17 +157,23 @@ Instructies:
 1. Transcribeer de gesproken tekst zo letterlijk mogelijk.
 2. Verwijder stopwoorden en aarzelingen (zoals "eh," "uhm," "nou ja," "weet je wel") om de leesbaarheid te verhogen, maar behoud de volledige inhoudelijke boodschap. Verander geen zinsconstructies.
 3. Gebruik geen tijdcodes.
-4. Gebruik alinea's om langere spreekbeurten op te delen."""
+4. Gebruik alinea's om langere spreekbeurten op te delen.
+5. Schrijf de uiteindelijke output volledig in deze taal: {output_language}."""
 
-PROMPT_INTERVIEW_TRANSCRIPTION = """Transcribe this interview, in the format of timecode (mm:ss), speaker, caption. Put a '-' between the time, the speaker name and the transcript. Use speaker A, speaker B, etc. to identify speakers."""
+PROMPT_INTERVIEW_TRANSCRIPTION = """Transcribe this interview in the format: timecode (mm:ss) - speaker - caption.
+Rules:
+- Use speaker A, speaker B, etc. to identify speakers.
+- Keep timestamps in each line.
+- Write the output fully in this language: {output_language}."""
 
 PROMPT_INTERVIEW_SUMMARY = """You are an expert interviewer analyst.
-Create a concise summary of this interview in clear English.
+Create a concise summary of this interview.
 Rules:
 - Maximum one page equivalent (about 400-600 words).
 - Focus only on the most important points, commitments, and conclusions.
 - Use short headings and bullet points where useful.
 - Do not invent information outside the transcript.
+- Write the output fully in this language: {output_language}.
 Transcript:
 {transcript}
 """
@@ -170,6 +185,7 @@ Rules:
 - Split content into relevant sections (for example: Introduction, Background, Key Discussion, Decisions, Next Steps).
 - Use meaningful heading titles based on actual content.
 - Do not invent information outside the transcript.
+- Write the output fully in this language: {output_language}.
 Transcript:
 {transcript}
 """
@@ -192,6 +208,7 @@ Instructies voor Verwerking:
    - Gebruik alinea's en bullet points om de tekst overzichtelijk en leesbaar te maken.
    - Gebruik absoluut geen labels zoals "Audio:", "Spreker:" of "Slide:".
    - Zorg voor een professionele, informatieve en neutrale toon.
+   - Schrijf de uiteindelijke output volledig in deze taal: {output_language}.
 4. Omgaan met Visuele Elementen:
    - Neem de placeholders voor [Informatieve Afbeelding/Tabel: ...] op de juiste plek in de tekst op.
    - Laat placeholders voor [Decoratieve Afbeelding] volledig weg uit de uiteindelijke output.
@@ -204,6 +221,7 @@ Input:
 PROMPT_STUDY_TEMPLATE = """You are an expert university professor creating study materials. I will provide you with the complete text of a lecture or slide deck.
 
 Your task is to generate {flashcard_amount} flashcards and {question_amount} multiple-choice test questions based strictly on the provided text. Do not invent outside information.
+Write all generated output fully in this language: {output_language}.
 
 RULES FOR FLASHCARDS:
 - The 'front' should be a clear term or concept.
@@ -474,6 +492,16 @@ def parse_study_features(raw_value):
     value = str(raw_value or 'none').strip().lower()
     return value if value in {'none', 'flashcards', 'test', 'both'} else 'none'
 
+def parse_output_language(raw_value, custom_value=''):
+    key = str(raw_value or 'english').strip().lower()
+    if key in OUTPUT_LANGUAGE_MAP:
+        return OUTPUT_LANGUAGE_MAP[key]
+    if key == 'other':
+        custom = str(custom_value or '').strip()
+        if custom:
+            return custom[:40]
+    return 'English'
+
 def parse_interview_features(raw_value):
     value = str(raw_value or 'none').strip().lower()
     if value in {'none', ''}:
@@ -676,7 +704,7 @@ def sanitize_questions(items, max_items):
             break
     return cleaned
 
-def generate_study_materials(source_text, flashcard_selection, question_selection, study_features='both'):
+def generate_study_materials(source_text, flashcard_selection, question_selection, study_features='both', output_language='English'):
     if study_features == 'none':
         return [], [], None
     flashcard_amount, question_amount = resolve_study_amounts(flashcard_selection, question_selection, source_text)
@@ -687,6 +715,7 @@ def generate_study_materials(source_text, flashcard_selection, question_selectio
     prompt = PROMPT_STUDY_TEMPLATE.format(
         flashcard_amount=flashcard_amount,
         question_amount=question_amount,
+        output_language=output_language,
         source_text=source_text[:120000],
     )
     try:
@@ -706,20 +735,20 @@ def generate_study_materials(source_text, flashcard_selection, question_selectio
     except Exception as e:
         return [], [], f'Study materials generation failed: {e}'
 
-def generate_interview_enhancements(transcript_text, selected_features):
+def generate_interview_enhancements(transcript_text, selected_features, output_language='English'):
     summary_text = None
     sectioned_text = None
     errors = []
     for feature in selected_features:
         try:
             if feature == 'summary':
-                prompt = PROMPT_INTERVIEW_SUMMARY.format(transcript=transcript_text[:120000])
+                prompt = PROMPT_INTERVIEW_SUMMARY.format(transcript=transcript_text[:120000], output_language=output_language)
                 response = generate_with_optional_thinking(MODEL_STUDY, prompt, max_output_tokens=8192, thinking_budget=384)
                 summary_text = (response.text or '').strip()
                 if not summary_text:
                     errors.append('Summary generation returned empty output.')
             elif feature == 'sections':
-                prompt = PROMPT_INTERVIEW_SECTIONED.format(transcript=transcript_text[:120000])
+                prompt = PROMPT_INTERVIEW_SECTIONED.format(transcript=transcript_text[:120000], output_language=output_language)
                 response = generate_with_optional_thinking(MODEL_STUDY, prompt, max_output_tokens=32768, thinking_budget=384)
                 sectioned_text = (response.text or '').strip()
                 if not sectioned_text:
@@ -850,6 +879,7 @@ def save_study_pack(job_id, job_data):
             'email': job_data.get('user_email', ''),
             'mode': job_data.get('mode', ''),
             'title': f"{job_data.get('mode', 'study-pack')} {datetime.utcfromtimestamp(now_ts).strftime('%Y-%m-%d %H:%M')}",
+            'output_language': job_data.get('output_language', 'English'),
             'notes_markdown': notes_markdown,
             'notes_truncated': notes_truncated,
             'flashcards': job_data.get('flashcards', []),
@@ -895,6 +925,7 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
         
         jobs[job_id]['step'] = 2
         jobs[job_id]['step_description'] = 'Transcribing audio...'
+        output_language = jobs[job_id].get('output_language', 'English')
         converted_audio_path, converted = convert_audio_to_mp3_with_ytdlp(audio_path)
         if converted and converted_audio_path not in local_paths:
             local_paths.append(converted_audio_path)
@@ -905,13 +936,14 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
         jobs[job_id]['step_description'] = 'Processing audio file (this may take a few minutes)...'
         wait_for_file_processing(audio_file)
         jobs[job_id]['step_description'] = 'Generating transcript...'
-        response = client.models.generate_content(model=MODEL_AUDIO, contents=[types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=PROMPT_AUDIO_TRANSCRIPTION)])], config=types.GenerateContentConfig(max_output_tokens=65536))
+        audio_prompt = PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
+        response = client.models.generate_content(model=MODEL_AUDIO, contents=[types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=audio_prompt)])], config=types.GenerateContentConfig(max_output_tokens=65536))
         transcript = response.text
         jobs[job_id]['transcript'] = transcript
         
         jobs[job_id]['step'] = 3
         jobs[job_id]['step_description'] = 'Creating complete lecture notes...'
-        merge_prompt = PROMPT_MERGE_TEMPLATE.format(slide_text=slide_text, transcript=transcript)
+        merge_prompt = PROMPT_MERGE_TEMPLATE.format(slide_text=slide_text, transcript=transcript, output_language=output_language)
         response = client.models.generate_content(model=MODEL_INTEGRATION, contents=[types.Content(role='user', parts=[types.Part.from_text(text=merge_prompt)])], config=types.GenerateContentConfig(max_output_tokens=65536))
         merged_notes = response.text
         jobs[job_id]['result'] = merged_notes
@@ -923,7 +955,8 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
                 merged_notes,
                 jobs[job_id].get('flashcard_selection', '20'),
                 jobs[job_id].get('question_selection', '10'),
-                jobs[job_id].get('study_features', 'none')
+                jobs[job_id].get('study_features', 'none'),
+                output_language
             )
             jobs[job_id]['flashcards'] = flashcards
             jobs[job_id]['test_questions'] = test_questions
@@ -970,7 +1003,8 @@ def process_slides_only(job_id, pdf_path):
                 extracted_text,
                 jobs[job_id].get('flashcard_selection', '20'),
                 jobs[job_id].get('question_selection', '10'),
-                jobs[job_id].get('study_features', 'none')
+                jobs[job_id].get('study_features', 'none'),
+                jobs[job_id].get('output_language', 'English')
             )
             jobs[job_id]['flashcards'] = flashcards
             jobs[job_id]['test_questions'] = test_questions
@@ -1003,6 +1037,7 @@ def process_interview_transcription(job_id, audio_path):
         jobs[job_id]['status'] = 'processing'
         jobs[job_id]['step'] = 1
         jobs[job_id]['step_description'] = 'Optimizing audio for faster processing...'
+        output_language = jobs[job_id].get('output_language', 'English')
         converted_audio_path, converted = convert_audio_to_mp3_with_ytdlp(audio_path)
         if converted and converted_audio_path not in local_paths:
             local_paths.append(converted_audio_path)
@@ -1012,7 +1047,8 @@ def process_interview_transcription(job_id, audio_path):
         jobs[job_id]['step_description'] = 'Processing audio file (this may take a few minutes)...'
         wait_for_file_processing(audio_file)
         jobs[job_id]['step_description'] = 'Generating transcript with timestamps...'
-        response = client.models.generate_content(model=MODEL_INTERVIEW, contents=[types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=PROMPT_INTERVIEW_TRANSCRIPTION)])], config=types.GenerateContentConfig(max_output_tokens=65536))
+        interview_prompt = PROMPT_INTERVIEW_TRANSCRIPTION.format(output_language=output_language)
+        response = client.models.generate_content(model=MODEL_INTERVIEW, contents=[types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=interview_prompt)])], config=types.GenerateContentConfig(max_output_tokens=65536))
         transcript_text = response.text or ''
         jobs[job_id]['transcript'] = transcript_text
         jobs[job_id]['result'] = transcript_text
@@ -1021,7 +1057,7 @@ def process_interview_transcription(job_id, audio_path):
         if selected_features:
             jobs[job_id]['step'] = 2
             jobs[job_id]['step_description'] = 'Creating interview summary and sections...'
-            enhancement = generate_interview_enhancements(transcript_text, selected_features)
+            enhancement = generate_interview_enhancements(transcript_text, selected_features, output_language)
             jobs[job_id]['interview_summary'] = enhancement.get('summary')
             jobs[job_id]['interview_sections'] = enhancement.get('sections')
             jobs[job_id]['interview_combined'] = enhancement.get('combined')
@@ -1290,6 +1326,7 @@ def get_study_pack(pack_id):
             'study_pack_id': pack_id,
             'title': pack.get('title', ''),
             'mode': pack.get('mode', ''),
+            'output_language': pack.get('output_language', 'English'),
             'notes_markdown': pack.get('notes_markdown', ''),
             'flashcards': pack.get('flashcards', []),
             'test_questions': pack.get('test_questions', []),
@@ -1755,6 +1792,7 @@ def upload_files():
     mode = request.form.get('mode', 'lecture-notes')
     flashcard_selection = parse_requested_amount(request.form.get('flashcard_amount', '20'), {'10', '20', '30', 'auto'}, '20')
     question_selection = parse_requested_amount(request.form.get('question_amount', '10'), {'5', '10', '15', 'auto'}, '10')
+    output_language = parse_output_language(request.form.get('output_language', 'english'), request.form.get('output_language_custom', ''))
     study_features = parse_study_features(request.form.get('study_features', 'none'))
     interview_features = parse_interview_features(request.form.get('interview_features', 'none'))
     
@@ -1777,7 +1815,7 @@ def upload_files():
         if not deducted:
             return jsonify({'error': 'No lecture credits remaining.'}), 402
         total_steps = 4 if study_features != 'none' else 3
-        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None}
+        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None}
         thread = threading.Thread(target=process_lecture_notes, args=(job_id, pdf_path, audio_path))
         thread.start()
         
@@ -1795,7 +1833,7 @@ def upload_files():
         if not deducted:
             return jsonify({'error': 'No slides credits remaining.'}), 402
         total_steps = 2 if study_features != 'none' else 1
-        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None}
+        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None}
         thread = threading.Thread(target=process_slides_only, args=(job_id, pdf_path))
         thread.start()
         
@@ -1838,6 +1876,7 @@ def upload_files():
             'flashcards': [],
             'test_questions': [],
             'study_features': 'none',
+            'output_language': output_language,
             'interview_features': interview_features,
             'interview_features_cost': interview_features_cost,
             'interview_features_successful': [],
@@ -1865,6 +1904,7 @@ def get_status(job_id):
         response['study_generation_error'] = job.get('study_generation_error')
         response['study_pack_id'] = job.get('study_pack_id')
         response['study_features'] = job.get('study_features', 'none')
+        response['output_language'] = job.get('output_language', 'English')
         response['interview_features'] = job.get('interview_features', [])
         response['interview_features_successful'] = job.get('interview_features_successful', [])
         response['interview_summary'] = job.get('interview_summary')

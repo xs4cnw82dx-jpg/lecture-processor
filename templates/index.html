@@ -151,7 +151,7 @@
         @media (max-width: 640px) { .upload-section { grid-template-columns: 1fr; } }
         .upload-zone { position: relative; background: var(--gray-50); border: 2px dashed var(--gray-300); border-radius: var(--radius-lg); padding: 32px 24px; text-align: center; cursor: pointer; transition: all 0.3s ease; }
         .upload-zone:hover { border-color: var(--primary); background: var(--white); }
-        .upload-zone.drag-over { border-color: var(--primary); background: var(--white); transform: scale(1.01); }
+        .upload-zone.drag-over { border-color: var(--primary); background: linear-gradient(135deg, rgba(79,70,229,0.08) 0%, rgba(14,165,233,0.08) 100%); transform: translateY(-2px) scale(1.01); box-shadow: 0 0 0 4px rgba(79,70,229,0.12); }
         .upload-zone.has-file { border-color: var(--success); border-style: solid; background: rgba(16,185,129,0.05); }
         .upload-zone.hidden { display: none; }
         .upload-zone input[type="file"] { display: none; }
@@ -174,9 +174,10 @@
         .process-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 20px 0 rgba(79,70,229,0.5); }
         .process-button:disabled { background: var(--gray-300); cursor: not-allowed; box-shadow: none; }
         .process-button svg { width: 20px; height: 20px; }
-        .no-credits-warning { margin-top: 12px; font-size: 0.875rem; color: var(--error); display: none; }
-        .no-credits-warning.visible { display: block; }
-        .no-credits-warning a { color: var(--primary); text-decoration: underline; cursor: pointer; }
+        .no-credits-warning { margin-top: 14px; font-size: 0.875rem; color: #991B1B; display: none; background: linear-gradient(135deg, rgba(239,68,68,0.10) 0%, rgba(245,158,11,0.10) 100%); border: 1px solid rgba(239,68,68,0.30); border-radius: var(--radius); padding: 10px 12px; text-align: center; }
+        .no-credits-warning.visible { display: block; animation: dropdownOpen 0.2s ease-out; }
+        .no-credits-warning a { display: inline-flex; align-items: center; justify-content: center; margin-left: 8px; padding: 6px 10px; border-radius: var(--radius-sm); background: var(--white); border: 1px solid rgba(239,68,68,0.35); color: #991B1B; text-decoration: none; font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
+        .no-credits-warning a:hover { background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.5); }
         .progress-section { display: none; margin-top: 32px; padding-top: 32px; border-top: 1px solid var(--gray-200); }
         .progress-section.visible { display: block; }
         .progress-header { text-align: center; margin-bottom: 32px; }
@@ -228,7 +229,7 @@
         .new-process-button svg { width: 18px; height: 18px; }
         .generation-controls { margin: 4px 0 20px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
         @media (max-width: 640px) { .generation-controls { grid-template-columns: 1fr; } }
-        .generation-controls.hidden { display: none; }
+        .generation-controls.hidden { display: none !important; }
         .generation-control { display: flex; flex-direction: column; gap: 8px; background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: var(--radius-md); padding: 12px; }
         .generation-control.wide { grid-column: 1 / -1; }
         .control-label { font-size: 0.8125rem; color: var(--gray-600); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
@@ -250,6 +251,19 @@
         .interview-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
         .interview-option { border: 1px solid var(--gray-300); border-radius: var(--radius); padding: 10px 12px; background: var(--white); color: var(--gray-700); font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease; text-align: left; }
         .interview-option.active { border-color: var(--success); background: rgba(16,185,129,0.12); color: #065F46; }
+        .app-select { position: relative; }
+        .app-select-button { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--gray-300); border-radius: var(--radius); padding: 10px 12px; font-size: 0.9375rem; color: var(--gray-800); background: var(--white); cursor: pointer; transition: all 0.2s ease; }
+        .app-select-button:hover { border-color: var(--primary-light); }
+        .app-select-button.open { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
+        .app-select-button svg { width: 16px; height: 16px; color: var(--gray-500); transition: transform 0.2s ease; }
+        .app-select-button.open svg { transform: rotate(180deg); }
+        .app-select-menu { display: none; position: absolute; left: 0; right: 0; top: calc(100% + 8px); background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); z-index: 60; overflow: hidden; max-height: 320px; overflow-y: auto; }
+        .app-select-menu.visible { display: block; animation: dropdownOpen 0.2s ease-out; }
+        .app-select-item { width: 100%; border: none; background: var(--white); text-align: left; padding: 10px 12px; font-size: 0.9rem; color: var(--gray-700); cursor: pointer; transition: background 0.15s ease; }
+        .app-select-item:hover { background: var(--gray-50); }
+        .app-select-item.active { background: rgba(79,70,229,0.1); color: var(--primary-dark); font-weight: 600; }
+        .language-custom-input { width: 100%; border: 1px solid var(--gray-300); border-radius: var(--radius); padding: 10px 12px; font-size: 0.9375rem; color: var(--gray-800); background: var(--white); margin-top: 8px; }
+        .language-custom-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
         .focus-dashboard { display: grid; grid-template-columns: 260px 1fr; gap: 20px; }
         @media (max-width: 900px) { .focus-dashboard { grid-template-columns: 1fr; } }
         .focus-sidebar { background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: var(--radius-md); padding: 14px; }
@@ -482,6 +496,28 @@
                     <div class="control-note" id="interview-extra-note">No extras selected. Select one or both options (1 slides credit per option).</div>
                 </div>
             </div>
+            <div class="generation-controls" id="language-controls">
+                <div class="generation-control wide">
+                    <span class="control-label">Output Language</span>
+                    <input type="hidden" id="output-language-select" value="english">
+                    <div class="app-select" id="output-language-picker">
+                        <button type="button" class="app-select-button" id="output-language-button">
+                            <span id="output-language-label">🇬🇧 English</span>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                        </button>
+                        <div class="app-select-menu" id="output-language-menu">
+                            <button type="button" class="app-select-item" data-value="dutch">🇳🇱 Dutch</button>
+                            <button type="button" class="app-select-item active" data-value="english">🇬🇧 English</button>
+                            <button type="button" class="app-select-item" data-value="spanish">🇪🇸 Spanish</button>
+                            <button type="button" class="app-select-item" data-value="french">🇫🇷 French</button>
+                            <button type="button" class="app-select-item" data-value="german">🇩🇪 German</button>
+                            <button type="button" class="app-select-item" data-value="chinese">🇨🇳 Chinese</button>
+                            <button type="button" class="app-select-item" data-value="other">🌐 Other</button>
+                        </div>
+                    </div>
+                    <input class="language-custom-input" id="output-language-custom" placeholder="Type your preferred language (for example: Italian)" style="display:none;">
+                </div>
+            </div>
             <div class="button-section" id="button-section" style="display:none;"><button class="process-button" id="process-button" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg><span>Process Lecture</span></button><div class="no-credits-warning" id="no-credits-warning">You don't have enough credits. <a href="#" id="buy-credits-link">Buy more credits</a></div></div>
             <div class="progress-section" id="progress-section"><div class="progress-header"><h3 class="progress-title">Processing Your Files</h3><p class="progress-subtitle">This may take a few minutes depending on file size</p></div><div class="progress-steps" id="progress-steps"></div><div class="progress-status" id="progress-status"><div class="spinner"></div><span id="status-text">Starting...</span></div></div>
             <div class="results-section" id="results-section">
@@ -675,6 +711,7 @@
         const buttonSection = document.getElementById('button-section');
         const generationControls = document.getElementById('generation-controls');
         const interviewControls = document.getElementById('interview-controls');
+        const languageControls = document.getElementById('language-controls');
         const studyToolsToggle = document.getElementById('study-tools-toggle');
         const studyToolsToggleText = document.getElementById('study-tools-toggle-text');
         const studyToolsPanel = document.getElementById('study-tools-panel');
@@ -684,6 +721,13 @@
         const questionAmountChips = document.querySelectorAll('#question-amount-chips .amount-chip');
         const interviewOptionButtons = document.querySelectorAll('.interview-option[data-feature]');
         const interviewExtraNote = document.getElementById('interview-extra-note');
+        const outputLanguageSelect = document.getElementById('output-language-select');
+        const outputLanguagePicker = document.getElementById('output-language-picker');
+        const outputLanguageButton = document.getElementById('output-language-button');
+        const outputLanguageLabel = document.getElementById('output-language-label');
+        const outputLanguageMenu = document.getElementById('output-language-menu');
+        const outputLanguageItems = document.querySelectorAll('#output-language-menu .app-select-item');
+        const outputLanguageCustom = document.getElementById('output-language-custom');
 
         const pdfZone = document.getElementById('pdf-zone');
         const audioZone = document.getElementById('audio-zone');
@@ -964,6 +1008,17 @@
             updateModeCreditDisplay();
             updateProcessButton();
         }
+        function updateOutputLanguageInput() {
+            const isOther = outputLanguageSelect.value === 'other';
+            outputLanguageCustom.style.display = isOther ? 'block' : 'none';
+            if (!isOther) outputLanguageCustom.value = '';
+        }
+        function setOutputLanguage(value, label) {
+            outputLanguageSelect.value = value;
+            outputLanguageLabel.textContent = label;
+            outputLanguageItems.forEach(item => item.classList.toggle('active', item.dataset.value === value));
+            updateOutputLanguageInput();
+        }
         function updateUIForAuthState(user) {
             if (user) {
                 headerSignInBtn.style.display = 'none';
@@ -973,7 +1028,7 @@
                 signInRequired.classList.remove('visible');
                 uploadSection.style.display = 'grid';
                 buttonSection.style.display = 'block';
-                generationControls.style.display = 'grid';
+                languageControls.style.display = 'grid';
                 const displayName = user.displayName || user.email.split('@')[0];
                 const initial = displayName.charAt(0).toUpperCase();
                 userAvatar.innerHTML = user.photoURL ? `<img src="${user.photoURL}" alt="${displayName}">` : `<span>${initial}</span>`;
@@ -988,8 +1043,10 @@
                 signInRequired.classList.add('visible');
                 uploadSection.style.display = 'none';
                 buttonSection.style.display = 'none';
+                generationControls.classList.add('hidden');
                 generationControls.style.display = 'none';
                 interviewControls.classList.add('hidden');
+                languageControls.style.display = 'none';
                 currentUser = null;
                 userCredits = null;
                 idToken = null;
@@ -1065,7 +1122,12 @@
             modeDescriptionText.textContent = config.description;
             audioZoneTitle.textContent = config.audioTitle;
             generationControls.classList.toggle('hidden', mode === 'interview');
+            generationControls.style.display = mode === 'interview' ? 'none' : 'grid';
             interviewControls.classList.toggle('hidden', mode !== 'interview');
+            if (mode === 'interview') {
+                studyToolsPanel.classList.remove('visible');
+                studyToolsToggle.classList.remove('open');
+            }
             updateModeCreditDisplay();
             if (config.needsPdf && config.needsAudio) {
                 uploadSection.classList.remove('single-upload');
@@ -1219,6 +1281,16 @@
             fd.append('mode', currentMode);
             if (config.needsPdf && pdfFile) fd.append('pdf', pdfFile);
             if (config.needsAudio && audioFile) fd.append('audio', audioFile);
+            const selectedLanguage = outputLanguageSelect.value || 'english';
+            fd.append('output_language', selectedLanguage);
+            if (selectedLanguage === 'other') {
+                const customLanguage = outputLanguageCustom.value.trim();
+                if (!customLanguage) {
+                    showToast('Please enter a custom output language.', 'error');
+                    return;
+                }
+                fd.append('output_language_custom', customLanguage);
+            }
             if (currentMode !== 'interview') {
                 fd.append('flashcard_amount', selectedFlashcardAmount);
                 fd.append('question_amount', selectedQuestionAmount);
@@ -1739,10 +1811,26 @@
                 updateInterviewOptionsUI();
             });
         });
+        outputLanguageButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            outputLanguageMenu.classList.toggle('visible');
+            outputLanguageButton.classList.toggle('open', outputLanguageMenu.classList.contains('visible'));
+        });
+        outputLanguageItems.forEach(item => {
+            item.addEventListener('click', () => {
+                setOutputLanguage(item.dataset.value || 'english', item.textContent.trim());
+                outputLanguageMenu.classList.remove('visible');
+                outputLanguageButton.classList.remove('open');
+            });
+        });
         document.addEventListener('click', (e) => {
             if (!studyToolsPanel.contains(e.target) && !studyToolsToggle.contains(e.target)) {
                 studyToolsPanel.classList.remove('visible');
                 studyToolsToggle.classList.remove('open');
+            }
+            if (!outputLanguagePicker.contains(e.target)) {
+                outputLanguageMenu.classList.remove('visible');
+                outputLanguageButton.classList.remove('open');
             }
         });
         window.addEventListener('keydown', (e) => {
@@ -1758,6 +1846,7 @@
         setAmountSelection('questions', selectedQuestionAmount);
         setStudyFeature('none');
         updateInterviewOptionsUI();
+        setOutputLanguage('english', '🇬🇧 English');
         switchMode('lecture-notes');
         resetResultsState();
         checkPaymentResult();

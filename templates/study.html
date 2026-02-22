@@ -53,15 +53,38 @@
     .field input, .field textarea, .field select { border: 1px solid var(--gray-300); border-radius: var(--radius); padding: 9px 10px; font-size: 0.9rem; color: var(--gray-900); background: var(--white); }
     .field input:focus, .field textarea:focus, .field select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.08); }
     .field textarea { min-height: 78px; resize: vertical; }
+    .field select {
+      padding-right: 38px;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 11px center;
+      background-size: 15px 15px;
+    }
+    .app-select { position: relative; }
+    .app-select-button { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--gray-300); border-radius: var(--radius); padding: 9px 10px; font-size: 0.9rem; color: var(--gray-900); background: var(--white); cursor: pointer; transition: all 0.2s ease; }
+    .app-select-button:hover { border-color: var(--gray-400); }
+    .app-select-button.open { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.08); }
+    .app-select-button svg { width: 15px; height: 15px; color: var(--gray-500); transition: transform 0.2s ease; }
+    .app-select-button.open svg { transform: rotate(180deg); }
+    .app-select-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .app-select-menu { display: none; position: absolute; left: 0; right: 0; top: calc(100% + 8px); background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius); box-shadow: var(--shadow); z-index: 80; overflow: hidden; max-height: 260px; overflow-y: auto; }
+    .app-select-menu.visible { display: block; }
+    .app-select-item { width: 100%; border: none; background: var(--white); text-align: left; padding: 9px 10px; font-size: 0.9rem; color: var(--gray-700); cursor: pointer; transition: background 0.15s ease; }
+    .app-select-item:hover { background: var(--gray-50); }
+    .app-select-item.active { background: rgba(79,70,229,0.1); color: var(--primary-dark); font-weight: 600; }
+    .q-answer-picker { margin-top: 4px; }
 
     .search-box { margin-bottom: 10px; }
     .list { display: flex; flex-direction: column; gap: 8px; max-height: 68vh; overflow-y: auto; padding-right: 2px; }
 
-    .item { border: 1px solid var(--gray-200); border-radius: var(--radius); padding: 10px; background: var(--gray-50); cursor: pointer; transition: all 0.15s ease; }
+    .item { border: 1px solid var(--gray-200); border-radius: var(--radius); padding: 10px; background: var(--gray-50); cursor: pointer; transition: all 0.2s ease; }
     .item:hover { border-color: var(--gray-300); }
     .item.active { border-color: var(--primary); background: rgba(79,70,229,0.08); }
-    .item.dragging { opacity: 0.5; }
-    .item.drop-target { border-color: var(--success); background: rgba(16,185,129,0.12); }
+    .item.dragging { opacity: 0.35; transform: scale(0.985); border-style: dashed; border-color: var(--primary); background: rgba(79,70,229,0.12); box-shadow: none; }
+    .item.drop-target { border-color: var(--success); background: linear-gradient(135deg, rgba(16,185,129,0.20) 0%, rgba(14,165,233,0.12) 100%); box-shadow: 0 0 0 3px rgba(16,185,129,0.20); transform: translateY(-1px); }
     .item-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
     .item-title { font-size: 0.9rem; font-weight: 700; }
     .item-sub { margin-top: 4px; font-size: 0.78rem; color: var(--gray-500); }
@@ -135,6 +158,7 @@
     .modal-title { font-size: 1rem; font-weight: 700; }
     .modal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
     @media (max-width: 620px) { .modal-grid { grid-template-columns: 1fr; } }
+    .modal-message { font-size: 0.92rem; color: var(--gray-700); margin-bottom: 14px; line-height: 1.5; }
 
     .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--gray-900); color: var(--white); border-radius: var(--radius); padding: 10px 12px; font-size: 0.9rem; opacity: 0; transition: opacity 0.2s ease; z-index: 500; }
     .toast.visible { opacity: 1; }
@@ -190,7 +214,17 @@
               <div class="editor-wrap" id="pack-editor-wrap">
                 <div class="meta-grid">
                   <div class="field"><label>Title</label><input id="pack-title"></div>
-                  <div class="field"><label>Folder</label><select id="pack-folder-select"></select></div>
+                  <div class="field">
+                    <label>Folder</label>
+                    <input type="hidden" id="pack-folder-select" value="">
+                    <div class="app-select" id="pack-folder-picker">
+                      <button type="button" class="app-select-button" id="pack-folder-button">
+                        <span class="app-select-label" id="pack-folder-label">No folder</span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                      </button>
+                      <div class="app-select-menu" id="pack-folder-menu"></div>
+                    </div>
+                  </div>
                   <div class="field"><label>Course</label><input id="pack-course"></div>
                   <div class="field"><label>Subject</label><input id="pack-subject"></div>
                   <div class="field"><label>Semester</label><input id="pack-semester"></div>
@@ -308,6 +342,20 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="confirm-modal-overlay">
+    <div class="modal">
+      <div class="modal-head">
+        <span class="modal-title" id="confirm-modal-title">Confirm Action</span>
+        <button class="btn" id="confirm-modal-close">Close</button>
+      </div>
+      <p class="modal-message" id="confirm-modal-message"></p>
+      <div class="actions" style="justify-content:flex-end;">
+        <button class="btn" id="confirm-modal-cancel">Cancel</button>
+        <button class="btn danger" id="confirm-modal-confirm">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
@@ -336,6 +384,7 @@
     let folderModalMode = 'create';
     let editingFolderId = '';
     let pendingOpenPackId = '';
+    let confirmModalResolver = null;
 
     let learnFlashcardIndex = 0;
     let learnFlashcardFlipped = false;
@@ -365,6 +414,10 @@
     const packEditorWrap = document.getElementById('pack-editor-wrap');
     const packTitle = document.getElementById('pack-title');
     const packFolderSelect = document.getElementById('pack-folder-select');
+    const packFolderPicker = document.getElementById('pack-folder-picker');
+    const packFolderButton = document.getElementById('pack-folder-button');
+    const packFolderLabel = document.getElementById('pack-folder-label');
+    const packFolderMenu = document.getElementById('pack-folder-menu');
     const packCourse = document.getElementById('pack-course');
     const packSubject = document.getElementById('pack-subject');
     const packSemester = document.getElementById('pack-semester');
@@ -414,6 +467,12 @@
     const folderSubjectInput = document.getElementById('folder-subject-input');
     const folderSemesterInput = document.getElementById('folder-semester-input');
     const folderBlockInput = document.getElementById('folder-block-input');
+    const confirmModalOverlay = document.getElementById('confirm-modal-overlay');
+    const confirmModalTitle = document.getElementById('confirm-modal-title');
+    const confirmModalMessage = document.getElementById('confirm-modal-message');
+    const confirmModalClose = document.getElementById('confirm-modal-close');
+    const confirmModalCancel = document.getElementById('confirm-modal-cancel');
+    const confirmModalConfirm = document.getElementById('confirm-modal-confirm');
 
     const toast = document.getElementById('toast');
 
@@ -445,6 +504,71 @@
       const data = isJson ? await res.json() : null;
       if (!res.ok) throw new Error((data && data.error) || 'Request failed');
       return data;
+    }
+
+    async function authenticatedFetch(path, options = {}, allowRefresh = true) {
+      if (!auth.currentUser) throw new Error('Please sign in to continue');
+      if (!token) token = await auth.currentUser.getIdToken();
+      const headers = { ...(options.headers || {}), Authorization: `Bearer ${token}` };
+      const response = await fetch(path, { ...options, headers });
+      if (response.status === 401 && allowRefresh) {
+        token = await auth.currentUser.getIdToken(true);
+        const retryHeaders = { ...(options.headers || {}), Authorization: `Bearer ${token}` };
+        return fetch(path, { ...options, headers: retryHeaders });
+      }
+      return response;
+    }
+
+    function parseFilenameFromDisposition(disposition, fallbackName) {
+      if (!disposition) return fallbackName;
+      const utfMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+      if (utfMatch && utfMatch[1]) return decodeURIComponent(utfMatch[1].trim());
+      const asciiMatch = disposition.match(/filename="?([^";]+)"?/i);
+      if (asciiMatch && asciiMatch[1]) return asciiMatch[1].trim();
+      return fallbackName;
+    }
+
+    async function downloadStudyPackCsv(packId, type) {
+      const fallbackName = type === 'test' ? `study-pack-${packId}-practice-test.csv` : `study-pack-${packId}-flashcards.csv`;
+      const response = await authenticatedFetch(`/api/study-packs/${encodeURIComponent(packId)}/export-flashcards-csv?type=${encodeURIComponent(type)}`, { method: 'GET' });
+      if (!response.ok) {
+        let message = 'Could not export CSV';
+        try {
+          const data = await response.json();
+          message = data.error || message;
+        } catch (e) {
+          message = 'Could not export CSV';
+        }
+        throw new Error(message);
+      }
+      const blob = await response.blob();
+      const filename = parseFilenameFromDisposition(response.headers.get('content-disposition') || '', fallbackName);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    }
+
+    function openConfirmModal(title, message, confirmLabel = 'Delete') {
+      confirmModalTitle.textContent = title;
+      confirmModalMessage.textContent = message;
+      confirmModalConfirm.textContent = confirmLabel;
+      confirmModalOverlay.classList.add('visible');
+      return new Promise(resolve => {
+        confirmModalResolver = resolve;
+      });
+    }
+
+    function closeConfirmModal(confirmed) {
+      confirmModalOverlay.classList.remove('visible');
+      if (confirmModalResolver) {
+        confirmModalResolver(Boolean(confirmed));
+        confirmModalResolver = null;
+      }
     }
 
     function setEditorPane(pane) {
@@ -518,7 +642,7 @@
 
         div.addEventListener('dragover', (e) => {
           e.preventDefault();
-          if (!draggedPackId) return;
+          if (!draggedPackId || !folder.folder_id) return;
           div.classList.add('drop-target');
         });
         div.addEventListener('dragleave', () => {
@@ -527,7 +651,7 @@
         div.addEventListener('drop', async (e) => {
           e.preventDefault();
           div.classList.remove('drop-target');
-          if (!draggedPackId) return;
+          if (!draggedPackId || !folder.folder_id) return;
           await movePackToFolder(draggedPackId, folder.folder_id);
           draggedPackId = '';
         });
@@ -536,14 +660,38 @@
       });
     }
 
-    function renderFolderSelect() {
-      packFolderSelect.innerHTML = '<option value="">No folder</option>';
-      folders.forEach(folder => {
-        const option = document.createElement('option');
-        option.value = folder.folder_id;
-        option.textContent = folder.name;
-        packFolderSelect.appendChild(option);
+    function getFolderNameById(folderId) {
+      if (!folderId) return 'No folder';
+      const folder = folders.find(item => item.folder_id === folderId);
+      return folder ? folder.name : 'No folder';
+    }
+
+    function setPackFolderSelection(folderId) {
+      const normalized = folderId || '';
+      packFolderSelect.value = normalized;
+      packFolderLabel.textContent = getFolderNameById(normalized);
+      packFolderMenu.querySelectorAll('.app-select-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.value === normalized);
       });
+    }
+
+    function renderFolderSelect() {
+      const items = [{ folder_id: '', name: 'No folder' }, ...folders.map(folder => ({ folder_id: folder.folder_id, name: folder.name }))];
+      packFolderMenu.innerHTML = '';
+      items.forEach(item => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'app-select-item';
+        button.dataset.value = item.folder_id;
+        button.textContent = item.name;
+        button.addEventListener('click', () => {
+          setPackFolderSelection(item.folder_id);
+          packFolderMenu.classList.remove('visible');
+          packFolderButton.classList.remove('open');
+        });
+        packFolderMenu.appendChild(button);
+      });
+      setPackFolderSelection(packFolderSelect.value || '');
     }
 
     function renderPacks() {
@@ -661,6 +809,15 @@
       return base;
     }
 
+    function getAnswerDisplay(question) {
+      const options = Array.isArray(question.options) ? question.options : [];
+      const foundIndex = options.findIndex(option => option === question.answer);
+      const index = foundIndex >= 0 ? foundIndex : 0;
+      const labels = ['A', 'B', 'C', 'D'];
+      const optionText = options[index] || '(empty)';
+      return `${labels[index] || 'A'}: ${optionText}`;
+    }
+
     function renderQuestionEditor(highlightIndex = -1) {
       selectedPack.test_questions = (selectedPack.test_questions || []).map(normalizeQuestion);
       const questions = selectedPack.test_questions;
@@ -689,9 +846,15 @@
             <div class="field"><label>Option D</label><input data-option-index="3" data-question-index="${idx}" value="${(question.options[3] || '').replace(/"/g, '&quot;')}"></div>
           </div>
           <div class="field" style="margin-top:8px;"><label>Correct Answer</label>
-            <select data-question-field="answer" data-question-index="${idx}">
-              ${question.options.map((option, optionIndex) => `<option value="${option.replace(/"/g, '&quot;')}" ${question.answer === option ? 'selected' : ''}>${['A', 'B', 'C', 'D'][optionIndex]}: ${option || '(empty)'}</option>`).join('')}
-            </select>
+            <div class="app-select q-answer-picker" data-question-index="${idx}">
+              <button type="button" class="app-select-button" data-answer-button data-question-index="${idx}">
+                <span class="app-select-label" data-answer-label data-question-index="${idx}">${getAnswerDisplay(question).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </button>
+              <div class="app-select-menu" data-answer-menu data-question-index="${idx}">
+                ${question.options.map((option, optionIndex) => `<button type="button" class="app-select-item ${question.answer === option ? 'active' : ''}" data-answer-item data-question-index="${idx}" data-option-index="${optionIndex}">${['A', 'B', 'C', 'D'][optionIndex]}: ${(option || '(empty)').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</button>`).join('')}
+              </div>
+            </div>
           </div>
           <div class="field" style="margin-top:8px;"><label>Explanation</label><textarea data-question-field="explanation" data-question-index="${idx}">${question.explanation}</textarea></div>
         `;
@@ -721,10 +884,27 @@
         });
       });
 
-      questionEditorList.querySelectorAll('select[data-question-field="answer"]').forEach(el => {
-        el.addEventListener('change', () => {
-          const index = parseInt(el.dataset.questionIndex, 10);
-          selectedPack.test_questions[index].answer = el.value;
+      questionEditorList.querySelectorAll('[data-answer-button]').forEach(button => {
+        button.addEventListener('click', (event) => {
+          event.stopPropagation();
+          const menu = button.parentElement.querySelector('[data-answer-menu]');
+          const willOpen = !menu.classList.contains('visible');
+          questionEditorList.querySelectorAll('[data-answer-menu]').forEach(m => m.classList.remove('visible'));
+          questionEditorList.querySelectorAll('[data-answer-button]').forEach(b => b.classList.remove('open'));
+          if (willOpen) {
+            menu.classList.add('visible');
+            button.classList.add('open');
+          }
+        });
+      });
+
+      questionEditorList.querySelectorAll('[data-answer-item]').forEach(item => {
+        item.addEventListener('click', () => {
+          const qIndex = parseInt(item.dataset.questionIndex, 10);
+          const optIndex = parseInt(item.dataset.optionIndex, 10);
+          const question = selectedPack.test_questions[qIndex];
+          question.answer = question.options[optIndex] || '';
+          renderQuestionEditor(qIndex);
           renderLearnQuestion();
         });
       });
@@ -834,9 +1014,17 @@
       learnQuestionIndex = 0;
       learnScore = 0;
 
-      if (selectedPack.flashcards && selectedPack.flashcards.length) {
+      const hasFlashcards = selectedPack.flashcards && selectedPack.flashcards.length;
+      const hasQuestions = selectedPack.test_questions && selectedPack.test_questions.length;
+      if (activeEditorPane === 'test' && hasQuestions) {
+        setLearnPane('test');
+      } else if (activeEditorPane === 'flashcards' && hasFlashcards) {
         setLearnPane('flashcards');
-      } else if (selectedPack.test_questions && selectedPack.test_questions.length) {
+      } else if (activeEditorPane === 'notes') {
+        setLearnPane('notes');
+      } else if (hasFlashcards) {
+        setLearnPane('flashcards');
+      } else if (hasQuestions) {
         setLearnPane('test');
       } else {
         setLearnPane('notes');
@@ -923,7 +1111,7 @@
       showPackEditor(true);
 
       packTitle.value = selectedPack.title || '';
-      packFolderSelect.value = selectedPack.folder_id || '';
+      setPackFolderSelection(selectedPack.folder_id || '');
       packCourse.value = selectedPack.course || '';
       packSubject.value = selectedPack.subject || '';
       packSemester.value = selectedPack.semester || '';
@@ -1006,6 +1194,11 @@
     });
 
     searchInput.addEventListener('input', renderPacks);
+    packFolderButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      packFolderMenu.classList.toggle('visible');
+      packFolderButton.classList.toggle('open', packFolderMenu.classList.contains('visible'));
+    });
 
     newFolderBtn.addEventListener('click', () => openFolderModal('create'));
 
@@ -1014,7 +1207,12 @@
         showToast('Select a folder first.');
         return;
       }
-      if (!confirm('Delete this folder? Packs inside will be moved to no folder.')) return;
+      const confirmed = await openConfirmModal(
+        'Delete Folder',
+        'Delete this folder? Study packs inside this folder will be moved to no folder.',
+        'Delete Folder'
+      );
+      if (!confirmed) return;
       try {
         await api(`/api/study-folders/${encodeURIComponent(selectedFolderId)}`, { method: 'DELETE' });
         selectedFolderId = '';
@@ -1058,7 +1256,12 @@
         showToast('Select a study pack first.');
         return;
       }
-      if (!confirm('Delete this study pack?')) return;
+      const confirmed = await openConfirmModal(
+        'Delete Study Pack',
+        'Delete this study pack permanently? This cannot be undone.',
+        'Delete Pack'
+      );
+      if (!confirmed) return;
       try {
         await api(`/api/study-packs/${encodeURIComponent(selectedPackId)}`, { method: 'DELETE' });
         selectedPackId = '';
@@ -1071,12 +1274,17 @@
       }
     });
 
-    exportPackCsvBtn.addEventListener('click', () => {
+    exportPackCsvBtn.addEventListener('click', async () => {
       if (!selectedPackId) {
         showToast('Select a study pack first.');
         return;
       }
-      window.location.href = `/api/study-packs/${encodeURIComponent(selectedPackId)}/export-flashcards-csv?type=${exportType}`;
+      try {
+        await downloadStudyPackCsv(selectedPackId, exportType);
+        showToast('CSV export started.');
+      } catch (e) {
+        showToast(e.message || 'Could not export CSV.');
+      }
     });
 
     openLearnBtn.addEventListener('click', () => openLearnStage(false));
@@ -1183,6 +1391,22 @@
     folderModalSave.addEventListener('click', saveFolderFromModal);
     folderModalOverlay.addEventListener('click', (e) => {
       if (e.target === folderModalOverlay) closeFolderModal();
+    });
+    document.addEventListener('click', (e) => {
+      if (!packFolderPicker.contains(e.target)) {
+        packFolderMenu.classList.remove('visible');
+        packFolderButton.classList.remove('open');
+      }
+      if (!e.target.closest('.q-answer-picker')) {
+        questionEditorList.querySelectorAll('[data-answer-menu]').forEach(menu => menu.classList.remove('visible'));
+        questionEditorList.querySelectorAll('[data-answer-button]').forEach(button => button.classList.remove('open'));
+      }
+    });
+    confirmModalClose.addEventListener('click', () => closeConfirmModal(false));
+    confirmModalCancel.addEventListener('click', () => closeConfirmModal(false));
+    confirmModalConfirm.addEventListener('click', () => closeConfirmModal(true));
+    confirmModalOverlay.addEventListener('click', (e) => {
+      if (e.target === confirmModalOverlay) closeConfirmModal(false);
     });
   </script>
 </body>
