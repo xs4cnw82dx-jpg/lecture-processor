@@ -4,12 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Study Library</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
       --primary: #4F46E5;
       --primary-dark: #4338CA;
+      --primary-light: #818CF8;
       --secondary: #0EA5E9;
       --success: #10B981;
+      --warning: #F59E0B;
       --error: #EF4444;
       --gray-50: #F9FAFB;
       --gray-100: #F3F4F6;
@@ -17,163 +22,440 @@
       --gray-300: #D1D5DB;
       --gray-400: #9CA3AF;
       --gray-500: #6B7280;
+      --gray-600: #4B5563;
       --gray-700: #374151;
+      --gray-800: #1F2937;
       --gray-900: #111827;
       --white: #FFFFFF;
-      --radius: 10px;
+      --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+      --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+      --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+      --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+      --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+      --radius-sm: 6px;
+      --radius: 8px;
+      --radius-md: 12px;
       --radius-lg: 16px;
-      --shadow: 0 8px 24px rgba(15, 23, 42, 0.09);
+      --radius-xl: 24px;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(135deg, #EEF2FF 0%, #F8FAFC 75%); color: var(--gray-900); }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, var(--gray-50) 0%, var(--gray-100) 100%);
+      color: var(--gray-800);
+      line-height: 1.6;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
     input, textarea, select, button { font-family: inherit; }
+
+    /* ── Container ── */
     .container { max-width: 1360px; margin: 0 auto; padding: 20px; }
 
-    .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px; background: rgba(255,255,255,0.92); border: 1px solid var(--gray-200); border-radius: var(--radius-lg); box-shadow: var(--shadow); margin-bottom: 12px; }
-    .topbar h1 { font-size: 1.2rem; }
-    .topbar-sub { font-size: 0.85rem; color: var(--gray-500); margin-top: 2px; }
-    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    /* ── Topbar (frosted, matching index header) ── */
+    .topbar {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      padding: 14px 20px;
+      background: rgba(255,255,255,0.95);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      margin-bottom: 16px;
+      position: sticky; top: 12px; z-index: 100;
+    }
+    .topbar-logo { display: flex; align-items: center; gap: 12px; }
+    .topbar-logo-icon {
+      width: 38px; height: 38px;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+      border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; color: var(--white); flex-shrink: 0;
+    }
+    .topbar-logo-icon svg { width: 22px; height: 22px; }
+    .topbar h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.025em; color: var(--gray-900); }
+    .topbar-sub { font-size: 0.8125rem; color: var(--gray-500); margin-top: 1px; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
-    .btn { border: 1px solid var(--gray-300); background: var(--white); color: var(--gray-700); border-radius: var(--radius); padding: 9px 12px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
-    .btn:hover { border-color: var(--gray-400); color: var(--gray-900); }
-    .btn.primary { background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%); border: none; color: var(--white); }
-    .btn.primary:hover { opacity: 0.92; }
-    .btn.danger { border-color: rgba(239,68,68,0.35); color: #991B1B; background: rgba(239,68,68,0.08); }
+    /* ── Buttons (matching index) ── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      border: 1px solid var(--gray-300); background: var(--white); color: var(--gray-700);
+      border-radius: var(--radius); padding: 9px 16px;
+      font-size: 0.85rem; font-weight: 600; cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .btn:hover { border-color: var(--gray-400); color: var(--gray-900); background: var(--gray-50); }
+    .btn.primary {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+      border: none; color: var(--white);
+      box-shadow: 0 4px 14px 0 rgba(79,70,229,0.3);
+    }
+    .btn.primary:hover { opacity: 0.92; transform: translateY(-1px); box-shadow: 0 6px 20px 0 rgba(79,70,229,0.4); }
+    .btn.danger { border-color: rgba(239,68,68,0.35); color: #991B1B; background: rgba(239,68,68,0.06); }
+    .btn.danger:hover { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.5); }
+    .btn svg { width: 16px; height: 16px; }
 
-    .grid { display: grid; grid-template-columns: 320px 1fr; gap: 12px; }
+    /* ── Grid layout ── */
+    .grid { display: grid; grid-template-columns: 320px 1fr; gap: 16px; }
     @media (max-width: 1020px) { .grid { grid-template-columns: 1fr; } }
 
-    .panel { background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius-lg); box-shadow: var(--shadow); min-height: 70vh; }
-    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px; border-bottom: 1px solid var(--gray-200); }
-    .panel-title { font-size: 0.95rem; font-weight: 700; }
-    .panel-body { padding: 12px; }
+    /* ── Panels ── */
+    .panel {
+      background: var(--white); border: 1px solid var(--gray-200);
+      border-radius: var(--radius-xl); box-shadow: var(--shadow-lg);
+      min-height: 70vh; overflow: hidden;
+    }
+    .panel-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 16px 20px; border-bottom: 1px solid var(--gray-200);
+    }
+    .panel-title { font-size: 0.95rem; font-weight: 700; color: var(--gray-900); }
+    .panel-body { padding: 16px 20px; }
 
-    .field { display: flex; flex-direction: column; gap: 4px; }
-    .field label { font-size: 0.75rem; color: var(--gray-500); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
-    .field input, .field textarea, .field select { border: 1px solid var(--gray-300); border-radius: var(--radius); padding: 9px 10px; font-size: 0.9rem; color: var(--gray-900); background: var(--white); }
-    .field input:focus, .field textarea:focus, .field select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.08); }
+    /* ── Form fields ── */
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label {
+      font-size: 0.75rem; color: var(--gray-500); font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .field input, .field textarea, .field select {
+      border: 1px solid var(--gray-300); border-radius: var(--radius);
+      padding: 10px 12px; font-size: 0.9rem; color: var(--gray-900); background: var(--white);
+      transition: all 0.2s ease;
+    }
+    .field input:focus, .field textarea:focus, .field select:focus {
+      outline: none; border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(79,70,229,0.1);
+    }
     .field textarea { min-height: 78px; resize: vertical; }
     .field select {
-      padding-right: 38px;
-      appearance: none;
-      -webkit-appearance: none;
-      -moz-appearance: none;
+      padding-right: 38px; appearance: none; -webkit-appearance: none; -moz-appearance: none;
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 11px center;
-      background-size: 15px 15px;
+      background-repeat: no-repeat; background-position: right 11px center; background-size: 15px 15px;
     }
+
+    /* ── Custom select ── */
     .app-select { position: relative; }
-    .app-select-button { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--gray-300); border-radius: var(--radius); padding: 9px 10px; font-size: 0.9rem; color: var(--gray-900); background: var(--white); cursor: pointer; transition: all 0.2s ease; }
-    .app-select-button:hover { border-color: var(--gray-400); }
-    .app-select-button.open { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.08); }
+    .app-select-button {
+      width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      border: 1px solid var(--gray-300); border-radius: var(--radius);
+      padding: 10px 12px; font-size: 0.9rem; color: var(--gray-900);
+      background: var(--white); cursor: pointer; transition: all 0.2s ease;
+    }
+    .app-select-button:hover { border-color: var(--primary-light); }
+    .app-select-button.open { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
     .app-select-button svg { width: 15px; height: 15px; color: var(--gray-500); transition: transform 0.2s ease; }
     .app-select-button.open svg { transform: rotate(180deg); }
     .app-select-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .app-select-menu { display: none; position: absolute; left: 0; right: 0; top: calc(100% + 8px); background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius); box-shadow: var(--shadow); z-index: 80; overflow: hidden; max-height: 260px; overflow-y: auto; }
-    .app-select-menu.visible { display: block; }
-    .app-select-item { width: 100%; border: none; background: var(--white); text-align: left; padding: 9px 10px; font-size: 0.9rem; color: var(--gray-700); cursor: pointer; transition: background 0.15s ease; }
+    .app-select-menu {
+      display: none; position: absolute; left: 0; right: 0; top: calc(100% + 6px);
+      background: var(--white); border: 1px solid var(--gray-200);
+      border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+      z-index: 80; overflow: hidden; max-height: 260px; overflow-y: auto;
+    }
+    .app-select-menu.visible { display: block; animation: dropdownOpen 0.2s ease-out; }
+    .app-select-item {
+      width: 100%; border: none; background: var(--white); text-align: left;
+      padding: 10px 12px; font-size: 0.9rem; color: var(--gray-700);
+      cursor: pointer; transition: background 0.15s ease;
+    }
     .app-select-item:hover { background: var(--gray-50); }
     .app-select-item.active { background: rgba(79,70,229,0.1); color: var(--primary-dark); font-weight: 600; }
     .q-answer-picker { margin-top: 4px; }
 
-    .search-box { margin-bottom: 10px; }
+    /* ── Search ── */
+    .search-box { margin-bottom: 12px; }
+
+    /* ── Lists ── */
     .list { display: flex; flex-direction: column; gap: 8px; max-height: 68vh; overflow-y: auto; padding-right: 2px; }
 
-    .item { border: 1px solid var(--gray-200); border-radius: var(--radius); padding: 10px; background: var(--gray-50); cursor: pointer; transition: all 0.2s ease; }
-    .item:hover { border-color: var(--gray-300); }
-    .item.active { border-color: var(--primary); background: rgba(79,70,229,0.08); }
-    .item.dragging { opacity: 0.35; transform: scale(0.985); border-style: dashed; border-color: var(--primary); background: rgba(79,70,229,0.12); box-shadow: none; }
-    .item.drop-target { border-color: var(--success); background: linear-gradient(135deg, rgba(16,185,129,0.20) 0%, rgba(14,165,233,0.12) 100%); box-shadow: 0 0 0 3px rgba(16,185,129,0.20); transform: translateY(-1px); }
+    /* ── Items (folder / pack) ── */
+    .item {
+      border: 1px solid var(--gray-200); border-radius: var(--radius-md);
+      padding: 12px 14px; background: var(--white);
+      cursor: pointer; transition: all 0.25s ease;
+    }
+    .item:hover { border-color: var(--gray-300); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+    .item.active { border-color: var(--primary); background: rgba(79,70,229,0.04); box-shadow: 0 0 0 3px rgba(79,70,229,0.08); }
+    .item.dragging { opacity: 0.35; transform: scale(0.985); border-style: dashed; border-color: var(--primary); background: rgba(79,70,229,0.08); box-shadow: none; }
+    .item.drop-target {
+      border-color: var(--success);
+      background: linear-gradient(135deg, rgba(16,185,129,0.12) 0%, rgba(14,165,233,0.08) 100%);
+      box-shadow: 0 0 0 3px rgba(16,185,129,0.15);
+      transform: translateY(-2px);
+    }
     .item-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
-    .item-title { font-size: 0.9rem; font-weight: 700; }
+    .item-title { font-size: 0.9rem; font-weight: 700; color: var(--gray-900); }
     .item-sub { margin-top: 4px; font-size: 0.78rem; color: var(--gray-500); }
 
-    .split { display: grid; grid-template-columns: 360px 1fr; gap: 12px; }
+    /* ── Split layout (pack editor) ── */
+    .split { display: grid; grid-template-columns: 340px 1fr; gap: 16px; }
     @media (max-width: 1200px) { .split { grid-template-columns: 1fr; } }
 
-    .meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+    /* ── Meta grid ── */
+    .meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
     @media (max-width: 700px) { .meta-grid { grid-template-columns: 1fr; } }
 
+    /* ── Editor ── */
     .editor-wrap { display: none; }
-    .editor-wrap.visible { display: block; }
-    .empty { color: var(--gray-500); font-size: 0.9rem; padding: 16px; border: 1px dashed var(--gray-300); border-radius: var(--radius); background: var(--gray-50); }
+    .editor-wrap.visible { display: block; animation: fadeSlideIn 0.3s ease-out; }
+    .empty {
+      color: var(--gray-500); font-size: 0.9rem; padding: 20px;
+      border: 1px dashed var(--gray-300); border-radius: var(--radius-md);
+      background: var(--gray-50); text-align: center;
+    }
 
-    .editor-tabs { display: flex; gap: 8px; margin-bottom: 10px; }
-    .editor-tab { border: 1px solid var(--gray-300); background: var(--white); border-radius: var(--radius); padding: 8px 10px; font-size: 0.82rem; font-weight: 700; color: var(--gray-700); cursor: pointer; }
-    .editor-tab.active { border-color: var(--primary); background: rgba(79,70,229,0.1); color: var(--primary-dark); }
+    /* ── Editor tabs ── */
+    .editor-tabs {
+      display: flex; gap: 4px; margin-bottom: 14px;
+      background: var(--gray-100); border-radius: var(--radius-md); padding: 4px;
+    }
+    .editor-tab {
+      flex: 1; border: none; background: transparent; border-radius: var(--radius);
+      padding: 10px 12px; font-size: 0.82rem; font-weight: 600;
+      color: var(--gray-600); cursor: pointer; transition: all 0.2s ease; text-align: center;
+    }
+    .editor-tab:hover { color: var(--gray-900); }
+    .editor-tab.active { background: var(--white); color: var(--gray-900); box-shadow: var(--shadow-sm); }
 
     .editor-pane { display: none; }
-    .editor-pane.active { display: block; }
+    .editor-pane.active { display: block; animation: fadeIn 0.25s ease-out; }
 
-    .notes-view { border: 1px solid var(--gray-200); border-radius: var(--radius); background: var(--gray-50); padding: 16px; max-height: 60vh; overflow-y: auto; font-size: 0.92rem; line-height: 1.65; }
-    .notes-view h1, .notes-view h2, .notes-view h3 { margin-top: 16px; margin-bottom: 8px; }
+    /* ── Notes view ── */
+    .notes-view {
+      border: 1px solid var(--gray-200); border-radius: var(--radius-md);
+      background: var(--gray-50); padding: 20px; max-height: 60vh; overflow-y: auto;
+      font-size: 0.92rem; line-height: 1.7;
+    }
+    .notes-view h1, .notes-view h2, .notes-view h3 { margin-top: 20px; margin-bottom: 10px; color: var(--gray-900); }
+    .notes-view h1 { font-size: 1.4rem; border-bottom: 2px solid var(--gray-200); padding-bottom: 8px; }
+    .notes-view h2 { font-size: 1.15rem; }
+    .notes-view h3 { font-size: 1rem; }
 
-    .editor-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    /* ── Editor toolbar & cards ── */
+    .editor-toolbar {
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+      flex-wrap: wrap; margin-bottom: 10px;
+    }
     .editor-count { font-size: 0.82rem; color: var(--gray-500); font-weight: 600; }
-
     .editor-list { display: flex; flex-direction: column; gap: 10px; max-height: 58vh; overflow-y: auto; padding-right: 2px; }
-    .editor-card { border: 1px solid var(--gray-200); border-radius: var(--radius); background: var(--gray-50); padding: 10px; }
-    .editor-card.newly-added { border-color: var(--success); box-shadow: 0 0 0 2px rgba(16,185,129,0.18); }
-    .editor-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .editor-card-title { font-size: 0.8rem; color: var(--gray-500); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .editor-card {
+      border: 1px solid var(--gray-200); border-radius: var(--radius-md);
+      background: var(--white); padding: 14px;
+      transition: all 0.25s ease;
+    }
+    .editor-card:hover { border-color: var(--gray-300); box-shadow: var(--shadow-sm); }
+    .editor-card.newly-added {
+      border-color: var(--success); box-shadow: 0 0 0 3px rgba(16,185,129,0.12);
+      animation: highlightPulse 0.6s ease-out;
+    }
+    .editor-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .editor-card-title { font-size: 0.8rem; color: var(--gray-500); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
 
     .q-options-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
     @media (max-width: 700px) { .q-options-grid { grid-template-columns: 1fr; } }
 
-    .learn-stage { position: fixed; inset: 0; z-index: 300; background: radial-gradient(circle at 20% 20%, rgba(79,70,229,0.25), transparent 45%), radial-gradient(circle at 80% 20%, rgba(14,165,233,0.2), transparent 45%), linear-gradient(135deg, #EEF2FF 0%, #F8FAFC 100%); display: none; }
-    .learn-stage.visible { display: block; }
-    .learn-shell { height: 100%; display: flex; flex-direction: column; padding: 20px; }
-    .learn-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: rgba(255,255,255,0.9); border: 1px solid var(--gray-200); border-radius: var(--radius-lg); box-shadow: var(--shadow); padding: 12px; }
-    .learn-title { font-size: 1rem; font-weight: 700; }
+    /* ── Learn stage (fullscreen overlay) ── */
+    .learn-stage {
+      position: fixed; inset: 0; z-index: 300;
+      background: linear-gradient(135deg, var(--gray-50) 0%, var(--gray-100) 100%);
+      display: none; opacity: 0;
+      transition: opacity 0.35s ease;
+    }
+    .learn-stage::before {
+      content: ''; position: absolute; inset: 0; pointer-events: none;
+      background:
+        radial-gradient(circle at 15% 15%, rgba(79,70,229,0.12), transparent 50%),
+        radial-gradient(circle at 85% 25%, rgba(14,165,233,0.10), transparent 50%),
+        radial-gradient(circle at 50% 85%, rgba(79,70,229,0.06), transparent 50%);
+    }
+    .learn-stage.visible { display: block; opacity: 1; }
+    .learn-stage.entering { display: block; opacity: 0; }
+
+    .learn-shell { height: 100%; display: flex; flex-direction: column; padding: 20px; position: relative; z-index: 1; }
+    .learn-top {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      background: rgba(255,255,255,0.95); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: 14px 20px;
+    }
+    .learn-title { font-size: 1.05rem; font-weight: 700; color: var(--gray-900); }
     .learn-sub { font-size: 0.82rem; color: var(--gray-500); }
-    .learn-body { flex: 1; min-height: 0; display: grid; place-items: center; padding: 12px 0; }
-    .learn-card { width: min(980px, 100%); max-height: 100%; background: rgba(255,255,255,0.94); border: 1px solid var(--gray-200); border-radius: 22px; box-shadow: var(--shadow); padding: 18px; display: flex; flex-direction: column; gap: 12px; }
-    .learn-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
-    .learn-tab { border: 1px solid var(--gray-300); background: var(--white); border-radius: var(--radius); padding: 8px 10px; font-size: 0.82rem; font-weight: 700; color: var(--gray-700); cursor: pointer; }
-    .learn-tab.active { border-color: var(--primary); background: rgba(79,70,229,0.1); color: var(--primary-dark); }
+    .learn-body { flex: 1; min-height: 0; display: grid; place-items: center; padding: 16px 0; }
+    .learn-card {
+      width: min(1000px, 100%); max-height: 100%;
+      background: rgba(255,255,255,0.96);
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius-xl); box-shadow: var(--shadow-xl);
+      padding: 24px; display: flex; flex-direction: column; gap: 16px;
+      overflow-y: auto;
+    }
+
+    /* ── Learn tabs (pill style matching index) ── */
+    .learn-tabs {
+      display: flex; gap: 4px;
+      background: var(--gray-100); border-radius: var(--radius-md); padding: 4px;
+    }
+    .learn-tab {
+      flex: 1; border: none; background: transparent; border-radius: var(--radius);
+      padding: 10px 12px; font-size: 0.82rem; font-weight: 600;
+      color: var(--gray-600); cursor: pointer; transition: all 0.2s ease; text-align: center;
+    }
+    .learn-tab:hover { color: var(--gray-900); }
+    .learn-tab.active { background: var(--white); color: var(--gray-900); box-shadow: var(--shadow-sm); }
+
     .learn-pane { display: none; min-height: 0; }
-    .learn-pane.active { display: block; }
+    .learn-pane.active { display: block; animation: fadeIn 0.25s ease-out; }
 
-    .learn-notes { border: 1px solid var(--gray-200); border-radius: var(--radius); background: var(--gray-50); padding: 16px; max-height: 60vh; overflow-y: auto; font-size: 0.95rem; line-height: 1.75; }
+    /* ── Learn notes ── */
+    .learn-notes {
+      border: 1px solid var(--gray-200); border-radius: var(--radius-md);
+      background: var(--gray-50); padding: 20px; max-height: 60vh; overflow-y: auto;
+      font-size: 0.95rem; line-height: 1.75;
+    }
+    .learn-notes h1, .learn-notes h2, .learn-notes h3 { margin-top: 20px; margin-bottom: 10px; color: var(--gray-900); }
 
-    .flashcard-stage { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-    .flashcard-box { width: min(860px, 100%); min-height: 330px; border: 1px solid var(--gray-200); border-radius: 20px; background: linear-gradient(135deg, rgba(79,70,229,0.08) 0%, rgba(14,165,233,0.1) 100%); display: grid; place-items: center; text-align: center; padding: 24px; font-size: 1.2rem; line-height: 1.6; cursor: pointer; }
-    .learn-controls { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 8px; }
-    .learn-progress { font-size: 0.85rem; color: var(--gray-500); min-width: 120px; text-align: center; }
+    /* ── 3D Flashcard (matching index.html) ── */
+    .flashcard-stage { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+    .flashcard-3d { width: min(100%, 860px); height: 340px; perspective: 1200px; cursor: pointer; }
+    .flashcard-inner {
+      position: relative; width: 100%; height: 100%;
+      transform-style: preserve-3d;
+      transition: transform 0.55s ease;
+    }
+    .flashcard-inner.flipped { transform: rotateY(180deg); }
+    .flashcard-face {
+      position: absolute; inset: 0; backface-visibility: hidden;
+      border-radius: var(--radius-lg); border: 1px solid var(--gray-200);
+      background: linear-gradient(135deg, rgba(79,70,229,0.06) 0%, rgba(14,165,233,0.08) 100%);
+      box-shadow: var(--shadow-md);
+      display: flex; align-items: center; justify-content: center;
+      padding: 30px; text-align: center;
+    }
+    .flashcard-face.back {
+      transform: rotateY(180deg);
+      background: linear-gradient(135deg, rgba(14,165,233,0.08) 0%, rgba(79,70,229,0.06) 100%);
+    }
+    .flashcard-label {
+      position: absolute; top: 16px; left: 16px;
+      font-size: 0.7rem; color: var(--gray-400); font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .flashcard-text { font-size: 1.15rem; color: var(--gray-900); line-height: 1.65; white-space: pre-wrap; max-height: 260px; overflow-y: auto; }
+    .learn-controls { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 10px; }
+    .learn-progress { font-size: 0.85rem; color: var(--gray-500); min-width: 120px; text-align: center; font-weight: 500; }
 
-    .quiz-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 0.9rem; }
-    .quiz-question { font-size: 1.05rem; font-weight: 700; margin-bottom: 10px; }
-    .quiz-options { display: grid; gap: 8px; }
-    .quiz-option { width: 100%; text-align: left; border: 1px solid var(--gray-300); background: var(--white); border-radius: var(--radius); padding: 10px 12px; cursor: pointer; }
-    .quiz-option.correct { border-color: var(--success); background: rgba(16,185,129,0.12); }
-    .quiz-option.wrong { border-color: var(--error); background: rgba(239,68,68,0.12); }
-    .quiz-expl { margin-top: 8px; border: 1px solid var(--gray-200); border-radius: var(--radius); background: rgba(14,165,233,0.08); padding: 10px 12px; display: none; }
-    .quiz-expl.visible { display: block; }
+    /* ── Quiz (learn mode) ── */
+    .quiz-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 0.9rem; font-weight: 600; color: var(--gray-700); }
+    .quiz-question { font-size: 1.1rem; font-weight: 700; margin-bottom: 14px; color: var(--gray-900); line-height: 1.5; }
+    .quiz-options { display: grid; gap: 10px; }
+    .quiz-option {
+      width: 100%; text-align: left;
+      border: 1px solid var(--gray-300); background: var(--white);
+      border-radius: var(--radius); padding: 12px 16px;
+      font-size: 0.9375rem; color: var(--gray-800);
+      cursor: pointer; transition: all 0.2s ease;
+    }
+    .quiz-option:hover:not(:disabled) { border-color: var(--primary-light); background: var(--gray-50); }
+    .quiz-option.correct { border-color: var(--success); background: rgba(16,185,129,0.12); color: #065F46; }
+    .quiz-option.wrong { border-color: var(--error); background: rgba(239,68,68,0.12); color: #991B1B; }
+    .quiz-option:disabled { cursor: default; }
+    .quiz-expl {
+      margin-top: 10px; border: 1px solid rgba(14,165,233,0.2);
+      border-radius: var(--radius); background: rgba(14,165,233,0.06);
+      padding: 12px 16px; font-size: 0.9rem; color: var(--gray-700); line-height: 1.5;
+      display: none;
+    }
+    .quiz-expl.visible { display: block; animation: fadeSlideIn 0.25s ease-out; }
 
-    .modal-overlay { position: fixed; inset: 0; z-index: 260; background: rgba(2, 6, 23, 0.45); display: none; align-items: center; justify-content: center; padding: 18px; }
-    .modal-overlay.visible { display: flex; }
-    .modal { width: min(560px, 100%); background: var(--white); border: 1px solid var(--gray-200); border-radius: 18px; box-shadow: var(--shadow); padding: 16px; }
-    .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-    .modal-title { font-size: 1rem; font-weight: 700; }
-    .modal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    /* ── Modals ── */
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 260;
+      background: rgba(0, 0, 0, 0.5);
+      display: none; align-items: center; justify-content: center; padding: 18px;
+      opacity: 0; transition: opacity 0.25s ease;
+    }
+    .modal-overlay.visible { display: flex; opacity: 1; }
+    .modal-overlay.entering { display: flex; opacity: 0; }
+    .modal {
+      width: min(560px, 100%);
+      background: var(--white); border: 1px solid var(--gray-200);
+      border-radius: var(--radius-xl); box-shadow: var(--shadow-xl);
+      padding: 24px;
+      transform: scale(0.95); opacity: 0;
+      transition: all 0.25s ease;
+    }
+    .modal-overlay.visible .modal { transform: scale(1); opacity: 1; }
+    .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .modal-title { font-size: 1.1rem; font-weight: 700; color: var(--gray-900); }
+    .modal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
     @media (max-width: 620px) { .modal-grid { grid-template-columns: 1fr; } }
-    .modal-message { font-size: 0.92rem; color: var(--gray-700); margin-bottom: 14px; line-height: 1.5; }
+    .modal-message { font-size: 0.92rem; color: var(--gray-700); margin-bottom: 16px; line-height: 1.5; }
 
-    .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--gray-900); color: var(--white); border-radius: var(--radius); padding: 10px 12px; font-size: 0.9rem; opacity: 0; transition: opacity 0.2s ease; z-index: 500; }
-    .toast.visible { opacity: 1; }
+    /* ── Toast (matching index) ── */
+    .toast {
+      position: fixed; bottom: 24px; left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: var(--gray-900); color: var(--white);
+      border-radius: var(--radius-md); padding: 14px 24px;
+      font-size: 0.9375rem; font-weight: 500;
+      box-shadow: var(--shadow-xl);
+      opacity: 0; transition: all 0.3s ease; z-index: 500;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .toast.visible { transform: translateX(-50%) translateY(0); opacity: 1; }
+    .toast.success { background: var(--success); }
+    .toast.error { background: var(--error); }
+
+    /* ── Animations ── */
+    @keyframes dropdownOpen {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes highlightPulse {
+      0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.35); }
+      100% { box-shadow: 0 0 0 3px rgba(16,185,129,0.12); }
+    }
+    @keyframes modalOpen {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    /* ── Mobile tweaks ── */
+    @media (max-width: 600px) {
+      .container { padding: 12px; }
+      .topbar { padding: 12px 14px; flex-direction: column; align-items: stretch; gap: 10px; position: static; }
+      .topbar .actions { justify-content: flex-end; }
+      .learn-top { flex-direction: column; align-items: stretch; gap: 10px; }
+      .learn-top .actions { justify-content: flex-end; }
+      .learn-card { padding: 16px; }
+      .flashcard-3d { height: 280px; }
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="topbar">
-      <div>
-        <h1>Study Library</h1>
-        <div class="topbar-sub" id="user-meta">Checking sign-in...</div>
+      <div class="topbar-logo">
+        <div class="topbar-logo-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+        </div>
+        <div>
+          <h1>Study Library</h1>
+          <div class="topbar-sub" id="user-meta">Checking sign-in...</div>
+        </div>
       </div>
       <div class="actions">
-        <button class="btn" id="back-app-btn">Back to App</button>
-        <button class="btn" id="fullscreen-btn">Fullscreen Learn</button>
+        <button class="btn" id="back-app-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>Back to App</button>
+        <button class="btn" id="fullscreen-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>Fullscreen Learn</button>
         <button class="btn primary" id="auth-btn">Sign in</button>
       </div>
     </div>
@@ -230,15 +512,15 @@
                   <div class="field"><label>Semester</label><input id="pack-semester"></div>
                   <div class="field"><label>Block</label><input id="pack-block"></div>
                 </div>
-                <div class="actions" style="margin-bottom:10px;">
-                  <button class="btn" id="export-pack-csv-btn">Export Flashcards CSV</button>
-                  <button class="btn primary" id="open-learn-btn">Learn Mode</button>
+                <div class="actions" style="margin-bottom:14px;">
+                  <button class="btn" id="export-pack-csv-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>Export Flashcards CSV</button>
+                  <button class="btn primary" id="open-learn-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Learn Mode</button>
                 </div>
 
                 <div class="editor-tabs">
-                  <button class="editor-tab active" data-editor-pane="notes">Notes</button>
-                  <button class="editor-tab" data-editor-pane="flashcards">Flashcards</button>
-                  <button class="editor-tab" data-editor-pane="test">Practice Test</button>
+                  <button class="editor-tab active" data-editor-pane="notes">📄 Notes</button>
+                  <button class="editor-tab" data-editor-pane="flashcards">🗂️ Flashcards</button>
+                  <button class="editor-tab" data-editor-pane="test">📝 Practice Test</button>
                 </div>
 
                 <div class="editor-pane active" id="editor-pane-notes">
@@ -268,6 +550,7 @@
     </div>
   </div>
 
+  <!-- Learn Stage -->
   <div class="learn-stage" id="learn-stage">
     <div class="learn-shell">
       <div class="learn-top">
@@ -276,17 +559,17 @@
           <div class="learn-sub" id="learn-sub">Focused study session</div>
         </div>
         <div class="actions">
-          <button class="btn" id="learn-back-app-btn">Back to App</button>
-          <button class="btn" id="learn-back-library-btn">Back to Study Library</button>
-          <button class="btn" id="learn-fullscreen-btn">Toggle Fullscreen</button>
+          <button class="btn" id="learn-back-app-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>Back to App</button>
+          <button class="btn" id="learn-back-library-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18v16H3z"></path><line x1="3" y1="10" x2="21" y2="10"></line><line x1="9" y1="4" x2="9" y2="20"></line></svg>Study Library</button>
+          <button class="btn" id="learn-fullscreen-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>Fullscreen</button>
         </div>
       </div>
       <div class="learn-body">
         <div class="learn-card">
           <div class="learn-tabs">
-            <button class="learn-tab active" data-learn-pane="notes">Notes</button>
-            <button class="learn-tab" data-learn-pane="flashcards">Flashcards</button>
-            <button class="learn-tab" data-learn-pane="test">Practice Test</button>
+            <button class="learn-tab active" data-learn-pane="notes">📄 Notes</button>
+            <button class="learn-tab" data-learn-pane="flashcards">🗂️ Flashcards</button>
+            <button class="learn-tab" data-learn-pane="test">📝 Practice Test</button>
           </div>
 
           <div class="learn-pane active" id="learn-pane-notes">
@@ -295,7 +578,18 @@
 
           <div class="learn-pane" id="learn-pane-flashcards">
             <div class="flashcard-stage">
-              <div class="flashcard-box" id="learn-flashcard-box"></div>
+              <div class="flashcard-3d" id="learn-flashcard-3d">
+                <div class="flashcard-inner" id="learn-flashcard-inner">
+                  <div class="flashcard-face front">
+                    <span class="flashcard-label">Front</span>
+                    <div class="flashcard-text" id="learn-flashcard-front"></div>
+                  </div>
+                  <div class="flashcard-face back">
+                    <span class="flashcard-label">Back</span>
+                    <div class="flashcard-text" id="learn-flashcard-back"></div>
+                  </div>
+                </div>
+              </div>
               <div class="learn-controls">
                 <button class="btn" id="learn-f-prev">Previous</button>
                 <button class="btn" id="learn-f-flip">Flip</button>
@@ -313,7 +607,7 @@
             <div class="quiz-question" id="learn-q-text"></div>
             <div class="quiz-options" id="learn-q-options"></div>
             <div class="quiz-expl" id="learn-q-expl"></div>
-            <div class="actions" style="margin-top:10px;">
+            <div class="actions" style="margin-top:12px;">
               <button class="btn" id="learn-q-next">Next question</button>
             </div>
           </div>
@@ -322,13 +616,14 @@
     </div>
   </div>
 
+  <!-- Folder Modal -->
   <div class="modal-overlay" id="folder-modal-overlay">
     <div class="modal">
       <div class="modal-head">
         <span class="modal-title" id="folder-modal-title">New Folder</span>
-        <button class="btn" id="folder-modal-close">Close</button>
+        <button class="btn" id="folder-modal-close">✕</button>
       </div>
-      <div class="modal-grid" style="margin-bottom:10px;">
+      <div class="modal-grid" style="margin-bottom:14px;">
         <div class="field"><label>Folder Name *</label><input id="folder-name-input"></div>
         <div class="field"><label>Course</label><input id="folder-course-input"></div>
         <div class="field"><label>Subject</label><input id="folder-subject-input"></div>
@@ -342,11 +637,12 @@
     </div>
   </div>
 
+  <!-- Confirm Modal -->
   <div class="modal-overlay" id="confirm-modal-overlay">
     <div class="modal">
       <div class="modal-head">
         <span class="modal-title" id="confirm-modal-title">Confirm Action</span>
-        <button class="btn" id="confirm-modal-close">Close</button>
+        <button class="btn" id="confirm-modal-close">✕</button>
       </div>
       <p class="modal-message" id="confirm-modal-message"></p>
       <div class="actions" style="justify-content:flex-end;">
@@ -357,8 +653,7 @@
   </div>
 
   <div class="toast" id="toast"></div>
-
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <script>
     const firebaseConfig = {
@@ -399,17 +694,16 @@
     const fullscreenFromUrl = urlParams.get('fullscreen') === '1';
     let autoLearnConsumed = false;
 
+    /* ── DOM refs ── */
     const userMeta = document.getElementById('user-meta');
     const authBtn = document.getElementById('auth-btn');
     const backAppBtn = document.getElementById('back-app-btn');
     const fullscreenBtn = document.getElementById('fullscreen-btn');
-
     const searchInput = document.getElementById('search-input');
     const folderList = document.getElementById('folder-list');
     const packList = document.getElementById('pack-list');
     const newFolderBtn = document.getElementById('new-folder-btn');
     const deleteFolderBtn = document.getElementById('delete-folder-btn');
-
     const packEmpty = document.getElementById('pack-empty');
     const packEditorWrap = document.getElementById('pack-editor-wrap');
     const packTitle = document.getElementById('pack-title');
@@ -423,12 +717,10 @@
     const packSemester = document.getElementById('pack-semester');
     const packBlock = document.getElementById('pack-block');
     const notesView = document.getElementById('notes-view');
-
     const savePackBtn = document.getElementById('save-pack-btn');
     const deletePackBtn = document.getElementById('delete-pack-btn');
     const exportPackCsvBtn = document.getElementById('export-pack-csv-btn');
     const openLearnBtn = document.getElementById('open-learn-btn');
-
     const editorTabs = document.querySelectorAll('.editor-tab');
     const flashcardCount = document.getElementById('flashcard-count');
     const questionCount = document.getElementById('question-count');
@@ -436,7 +728,6 @@
     const addQuestionBtn = document.getElementById('add-question-btn');
     const flashcardEditorList = document.getElementById('flashcard-editor-list');
     const questionEditorList = document.getElementById('question-editor-list');
-
     const learnStage = document.getElementById('learn-stage');
     const learnTitle = document.getElementById('learn-title');
     const learnSub = document.getElementById('learn-sub');
@@ -445,7 +736,10 @@
     const learnFullscreenBtn = document.getElementById('learn-fullscreen-btn');
     const learnTabs = document.querySelectorAll('.learn-tab');
     const learnNotesContent = document.getElementById('learn-notes-content');
-    const learnFlashcardBox = document.getElementById('learn-flashcard-box');
+    const learnFlashcard3d = document.getElementById('learn-flashcard-3d');
+    const learnFlashcardInner = document.getElementById('learn-flashcard-inner');
+    const learnFlashcardFront = document.getElementById('learn-flashcard-front');
+    const learnFlashcardBack = document.getElementById('learn-flashcard-back');
     const learnFPrev = document.getElementById('learn-f-prev');
     const learnFFlip = document.getElementById('learn-f-flip');
     const learnFNext = document.getElementById('learn-f-next');
@@ -456,7 +750,6 @@
     const learnQOptions = document.getElementById('learn-q-options');
     const learnQExpl = document.getElementById('learn-q-expl');
     const learnQNext = document.getElementById('learn-q-next');
-
     const folderModalOverlay = document.getElementById('folder-modal-overlay');
     const folderModalTitle = document.getElementById('folder-modal-title');
     const folderModalClose = document.getElementById('folder-modal-close');
@@ -473,28 +766,38 @@
     const confirmModalClose = document.getElementById('confirm-modal-close');
     const confirmModalCancel = document.getElementById('confirm-modal-cancel');
     const confirmModalConfirm = document.getElementById('confirm-modal-confirm');
+    const toastEl = document.getElementById('toast');
 
-    const toast = document.getElementById('toast');
-
-    function showToast(message) {
-      toast.textContent = message;
-      toast.classList.add('visible');
-      setTimeout(() => toast.classList.remove('visible'), 2600);
+    /* ── Toast ── */
+    function showToast(message, type = 'success') {
+      toastEl.textContent = message;
+      toastEl.className = `toast visible ${type}`;
+      setTimeout(() => toastEl.classList.remove('visible'), 2800);
     }
 
+    /* ── Markdown ── */
     function mdToHtml(md) {
       if (!md) return '';
-      return md
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
+      let h = md.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/^### (.*$)/gm, '<h3>$1</h3>')
         .replace(/^## (.*$)/gm, '<h2>$1</h2>')
         .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+        .replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>')
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\n\n/g, '<br><br>');
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/^\s*[-*]\s+(.*$)/gm, '<li>$1</li>')
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/\n/g, '<br>');
+      h = `<p>${h}</p>`;
+      h = h.replace(/(<li>.*?<\/li>)(?=\s*<li>|<br><li>)/g, '$1')
+        .replace(/(<li>.*?<\/li>)+/g, '<ul>$&</ul>')
+        .replace(/<br><li>/g, '<li>');
+      h = h.replace(/<p><\/p>/g, '').replace(/<p>(<h[1-3]>)/g, '$1').replace(/(<\/h[1-3]>)<\/p>/g, '$1')
+        .replace(/<p>(<ul>)/g, '$1').replace(/(<\/ul>)<\/p>/g, '$1');
+      return h;
     }
 
+    /* ── API helpers ── */
     async function api(path, options = {}) {
       const headers = options.headers || {};
       headers['Authorization'] = `Bearer ${token}`;
@@ -533,59 +836,53 @@
       const response = await authenticatedFetch(`/api/study-packs/${encodeURIComponent(packId)}/export-flashcards-csv?type=${encodeURIComponent(type)}`, { method: 'GET' });
       if (!response.ok) {
         let message = 'Could not export CSV';
-        try {
-          const data = await response.json();
-          message = data.error || message;
-        } catch (e) {
-          message = 'Could not export CSV';
-        }
+        try { const data = await response.json(); message = data.error || message; } catch (e) {}
         throw new Error(message);
       }
       const blob = await response.blob();
       const filename = parseFilenameFromDisposition(response.headers.get('content-disposition') || '', fallbackName);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(url);
+      anchor.href = url; anchor.download = filename;
+      document.body.appendChild(anchor); anchor.click();
+      document.body.removeChild(anchor); URL.revokeObjectURL(url);
+    }
+
+    /* ── Modal helpers ── */
+    function openModal(overlay) {
+      overlay.classList.add('entering');
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => overlay.classList.replace('entering', 'visible'));
+      });
+    }
+    function closeModal(overlay) {
+      overlay.classList.remove('visible');
     }
 
     function openConfirmModal(title, message, confirmLabel = 'Delete') {
       confirmModalTitle.textContent = title;
       confirmModalMessage.textContent = message;
       confirmModalConfirm.textContent = confirmLabel;
-      confirmModalOverlay.classList.add('visible');
-      return new Promise(resolve => {
-        confirmModalResolver = resolve;
-      });
+      openModal(confirmModalOverlay);
+      return new Promise(resolve => { confirmModalResolver = resolve; });
     }
-
     function closeConfirmModal(confirmed) {
-      confirmModalOverlay.classList.remove('visible');
-      if (confirmModalResolver) {
-        confirmModalResolver(Boolean(confirmed));
-        confirmModalResolver = null;
-      }
+      closeModal(confirmModalOverlay);
+      if (confirmModalResolver) { confirmModalResolver(Boolean(confirmed)); confirmModalResolver = null; }
     }
 
+    /* ── Editor pane switching ── */
     function setEditorPane(pane) {
       activeEditorPane = pane;
       editorTabs.forEach(btn => btn.classList.toggle('active', btn.dataset.editorPane === pane));
       document.getElementById('editor-pane-notes').classList.toggle('active', pane === 'notes');
       document.getElementById('editor-pane-flashcards').classList.toggle('active', pane === 'flashcards');
       document.getElementById('editor-pane-test').classList.toggle('active', pane === 'test');
-      if (pane === 'test') {
-        exportType = 'test';
-        exportPackCsvBtn.textContent = 'Export Practice Test CSV';
-      } else {
-        exportType = 'flashcards';
-        exportPackCsvBtn.textContent = 'Export Flashcards CSV';
-      }
+      if (pane === 'test') { exportType = 'test'; exportPackCsvBtn.querySelector('svg + *') || (exportPackCsvBtn.childNodes[exportPackCsvBtn.childNodes.length - 1].textContent = 'Export Practice Test CSV'); }
+      else { exportType = 'flashcards'; exportPackCsvBtn.childNodes[exportPackCsvBtn.childNodes.length - 1].textContent = 'Export Flashcards CSV'; }
     }
 
+    /* ── Data helpers ── */
     function filteredPacks() {
       const query = searchInput.value.trim().toLowerCase();
       return packs.filter(pack => {
@@ -598,21 +895,16 @@
 
     async function movePackToFolder(packId, folderId) {
       try {
-        await api(`/api/study-packs/${encodeURIComponent(packId)}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ folder_id: folderId })
-        });
+        await api(`/api/study-packs/${encodeURIComponent(packId)}`, { method: 'PATCH', body: JSON.stringify({ folder_id: folderId }) });
         showToast('Study pack moved.');
         await loadData(packId);
-      } catch (e) {
-        showToast(e.message || 'Could not move pack.');
-      }
+      } catch (e) { showToast(e.message || 'Could not move pack.', 'error'); }
     }
 
+    /* ── Render folders ── */
     function renderFolders() {
       const allFolders = [{ folder_id: '', name: 'All Study Packs', course: '', subject: '', semester: '', block: '' }, ...folders];
       folderList.innerHTML = '';
-
       allFolders.forEach(folder => {
         const div = document.createElement('div');
         div.className = `item ${selectedFolderId === folder.folder_id ? 'active' : ''}`;
@@ -620,42 +912,25 @@
         div.innerHTML = `
           <div class="item-head">
             <span class="item-title">${folder.name}</span>
-            ${folder.folder_id ? '<button class="btn" data-edit-folder="1" style="padding:6px 8px;font-size:0.75rem;">Edit</button>' : ''}
+            ${folder.folder_id ? '<button class="btn" data-edit-folder="1" style="padding:5px 8px;font-size:0.75rem;">Edit</button>' : ''}
           </div>
-          <div class="item-sub">${[folder.course, folder.subject, folder.semester, folder.block].filter(Boolean).join(' • ') || 'Unfiltered'}</div>
+          <div class="item-sub">${[folder.course, folder.subject, folder.semester, folder.block].filter(Boolean).join(' · ') || (folder.folder_id ? 'No metadata' : 'All packs')}</div>
         `;
-
         div.addEventListener('click', (e) => {
           if (e.target.closest('[data-edit-folder]')) return;
           selectedFolderId = folder.folder_id;
-          renderFolders();
-          renderPacks();
+          renderFolders(); renderPacks();
         });
-
         if (folder.folder_id) {
-          const editBtn = div.querySelector('[data-edit-folder]');
-          editBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openFolderModal('edit', folder);
-          });
+          div.querySelector('[data-edit-folder]').addEventListener('click', (e) => { e.stopPropagation(); openFolderModal('edit', folder); });
         }
-
-        div.addEventListener('dragover', (e) => {
-          e.preventDefault();
-          if (!draggedPackId || !folder.folder_id) return;
-          div.classList.add('drop-target');
-        });
-        div.addEventListener('dragleave', () => {
-          div.classList.remove('drop-target');
-        });
+        div.addEventListener('dragover', (e) => { e.preventDefault(); if (draggedPackId && folder.folder_id) div.classList.add('drop-target'); });
+        div.addEventListener('dragleave', () => div.classList.remove('drop-target'));
         div.addEventListener('drop', async (e) => {
-          e.preventDefault();
-          div.classList.remove('drop-target');
+          e.preventDefault(); div.classList.remove('drop-target');
           if (!draggedPackId || !folder.folder_id) return;
-          await movePackToFolder(draggedPackId, folder.folder_id);
-          draggedPackId = '';
+          await movePackToFolder(draggedPackId, folder.folder_id); draggedPackId = '';
         });
-
         folderList.appendChild(div);
       });
     }
@@ -670,66 +945,41 @@
       const normalized = folderId || '';
       packFolderSelect.value = normalized;
       packFolderLabel.textContent = getFolderNameById(normalized);
-      packFolderMenu.querySelectorAll('.app-select-item').forEach(item => {
-        item.classList.toggle('active', item.dataset.value === normalized);
-      });
+      packFolderMenu.querySelectorAll('.app-select-item').forEach(item => item.classList.toggle('active', item.dataset.value === normalized));
     }
 
     function renderFolderSelect() {
-      const items = [{ folder_id: '', name: 'No folder' }, ...folders.map(folder => ({ folder_id: folder.folder_id, name: folder.name }))];
+      const items = [{ folder_id: '', name: 'No folder' }, ...folders.map(f => ({ folder_id: f.folder_id, name: f.name }))];
       packFolderMenu.innerHTML = '';
       items.forEach(item => {
         const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'app-select-item';
-        button.dataset.value = item.folder_id;
-        button.textContent = item.name;
+        button.type = 'button'; button.className = 'app-select-item'; button.dataset.value = item.folder_id; button.textContent = item.name;
         button.addEventListener('click', () => {
           setPackFolderSelection(item.folder_id);
-          packFolderMenu.classList.remove('visible');
-          packFolderButton.classList.remove('open');
+          packFolderMenu.classList.remove('visible'); packFolderButton.classList.remove('open');
         });
         packFolderMenu.appendChild(button);
       });
       setPackFolderSelection(packFolderSelect.value || '');
     }
 
+    /* ── Render packs ── */
     function renderPacks() {
       const items = filteredPacks();
       packList.innerHTML = '';
-      if (!items.length) {
-        packList.innerHTML = '<div class="empty">No study packs match this filter.</div>';
-        return;
-      }
-
+      if (!items.length) { packList.innerHTML = '<div class="empty">No study packs match this filter.</div>'; return; }
       items.forEach(pack => {
         const div = document.createElement('div');
         div.className = `item ${selectedPackId === pack.study_pack_id ? 'active' : ''}`;
-        div.draggable = true;
-        div.dataset.packId = pack.study_pack_id;
+        div.draggable = true; div.dataset.packId = pack.study_pack_id;
         div.innerHTML = `
           <div class="item-head"><span class="item-title">${pack.title || 'Untitled pack'}</span></div>
-          <div class="item-sub">${pack.mode} • ${pack.flashcards_count} cards • ${pack.test_questions_count} questions</div>
-          <div class="item-sub">${[pack.course, pack.subject, pack.semester, pack.block].filter(Boolean).join(' • ') || (pack.folder_name ? `Folder: ${pack.folder_name}` : 'No metadata')}</div>
+          <div class="item-sub">${pack.mode} · ${pack.flashcards_count} cards · ${pack.test_questions_count} questions</div>
+          <div class="item-sub">${[pack.course, pack.subject, pack.semester, pack.block].filter(Boolean).join(' · ') || (pack.folder_name ? `Folder: ${pack.folder_name}` : 'No metadata')}</div>
         `;
-
-        div.addEventListener('click', async () => {
-          selectedPackId = pack.study_pack_id;
-          renderPacks();
-          await openPack(pack.study_pack_id);
-        });
-
-        div.addEventListener('dragstart', (e) => {
-          draggedPackId = pack.study_pack_id;
-          div.classList.add('dragging');
-          e.dataTransfer.effectAllowed = 'move';
-          e.dataTransfer.setData('text/plain', pack.study_pack_id);
-        });
-        div.addEventListener('dragend', () => {
-          div.classList.remove('dragging');
-          draggedPackId = '';
-        });
-
+        div.addEventListener('click', async () => { selectedPackId = pack.study_pack_id; renderPacks(); await openPack(pack.study_pack_id); });
+        div.addEventListener('dragstart', (e) => { draggedPackId = pack.study_pack_id; div.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', pack.study_pack_id); });
+        div.addEventListener('dragend', () => { div.classList.remove('dragging'); draggedPackId = ''; });
         packList.appendChild(div);
       });
     }
@@ -739,16 +989,12 @@
       packEditorWrap.classList.toggle('visible', visible);
     }
 
+    /* ── Flashcard editor ── */
     function renderFlashcardEditor(highlightIndex = -1) {
       const cards = selectedPack && Array.isArray(selectedPack.flashcards) ? selectedPack.flashcards : [];
       flashcardCount.textContent = `${cards.length} flashcards`;
       flashcardEditorList.innerHTML = '';
-
-      if (!cards.length) {
-        flashcardEditorList.innerHTML = '<div class="empty">No flashcards yet. Add one to start editing.</div>';
-        return;
-      }
-
+      if (!cards.length) { flashcardEditorList.innerHTML = '<div class="empty">No flashcards yet. Add one to start editing.</div>'; return; }
       cards.forEach((card, idx) => {
         const row = document.createElement('div');
         row.className = `editor-card ${idx === highlightIndex ? 'newly-added' : ''}`;
@@ -756,54 +1002,36 @@
         row.innerHTML = `
           <div class="editor-card-head">
             <span class="editor-card-title">Flashcard ${idx + 1}</span>
-            <button class="btn danger" data-delete-card="${idx}" style="padding:6px 8px;font-size:0.75rem;">Delete</button>
+            <button class="btn danger" data-delete-card="${idx}" style="padding:5px 8px;font-size:0.75rem;">Delete</button>
           </div>
           <div class="field"><label>Front (Question / Concept)</label><input data-card-field="front" data-card-index="${idx}" value="${(card.front || '').replace(/"/g, '&quot;')}"></div>
           <div class="field" style="margin-top:8px;"><label>Back (Answer / Explanation)</label><textarea data-card-field="back" data-card-index="${idx}">${card.back || ''}</textarea></div>
         `;
         flashcardEditorList.appendChild(row);
       });
-
       flashcardEditorList.querySelectorAll('[data-card-field]').forEach(el => {
         el.addEventListener('input', () => {
           const index = parseInt(el.dataset.cardIndex, 10);
-          const key = el.dataset.cardField;
-          if (!selectedPack.flashcards[index]) return;
-          selectedPack.flashcards[index][key] = el.value;
+          selectedPack.flashcards[index][el.dataset.cardField] = el.value;
           renderLearnFlashcard();
         });
       });
-
       flashcardEditorList.querySelectorAll('[data-delete-card]').forEach(btn => {
         btn.addEventListener('click', () => {
-          const index = parseInt(btn.dataset.deleteCard, 10);
-          selectedPack.flashcards.splice(index, 1);
-          if (learnFlashcardIndex >= selectedPack.flashcards.length) {
-            learnFlashcardIndex = Math.max(0, selectedPack.flashcards.length - 1);
-          }
-          renderFlashcardEditor();
-          renderLearnFlashcard();
-          showToast('Flashcard deleted.');
+          selectedPack.flashcards.splice(parseInt(btn.dataset.deleteCard, 10), 1);
+          if (learnFlashcardIndex >= selectedPack.flashcards.length) learnFlashcardIndex = Math.max(0, selectedPack.flashcards.length - 1);
+          renderFlashcardEditor(); renderLearnFlashcard(); showToast('Flashcard deleted.');
         });
       });
-
       if (highlightIndex >= 0) {
         const row = flashcardEditorList.querySelector(`[data-row-index="${highlightIndex}"]`);
-        if (row) {
-          row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          const input = row.querySelector('input[data-card-field="front"]');
-          if (input) input.focus();
-        }
+        if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); const inp = row.querySelector('input[data-card-field="front"]'); if (inp) inp.focus(); }
       }
     }
 
+    /* ── Question editor ── */
     function normalizeQuestion(question) {
-      const base = {
-        question: question.question || '',
-        options: Array.isArray(question.options) ? question.options.slice(0, 4) : [],
-        answer: question.answer || '',
-        explanation: question.explanation || ''
-      };
+      const base = { question: question.question || '', options: Array.isArray(question.options) ? question.options.slice(0, 4) : [], answer: question.answer || '', explanation: question.explanation || '' };
       while (base.options.length < 4) base.options.push('');
       if (!base.options.includes(base.answer)) base.answer = base.options[0] || '';
       return base;
@@ -811,11 +1039,9 @@
 
     function getAnswerDisplay(question) {
       const options = Array.isArray(question.options) ? question.options : [];
-      const foundIndex = options.findIndex(option => option === question.answer);
+      const foundIndex = options.findIndex(o => o === question.answer);
       const index = foundIndex >= 0 ? foundIndex : 0;
-      const labels = ['A', 'B', 'C', 'D'];
-      const optionText = options[index] || '(empty)';
-      return `${labels[index] || 'A'}: ${optionText}`;
+      return `${['A','B','C','D'][index] || 'A'}: ${options[index] || '(empty)'}`;
     }
 
     function renderQuestionEditor(highlightIndex = -1) {
@@ -823,12 +1049,7 @@
       const questions = selectedPack.test_questions;
       questionCount.textContent = `${questions.length} practice questions`;
       questionEditorList.innerHTML = '';
-
-      if (!questions.length) {
-        questionEditorList.innerHTML = '<div class="empty">No practice questions yet. Add one to start editing.</div>';
-        return;
-      }
-
+      if (!questions.length) { questionEditorList.innerHTML = '<div class="empty">No practice questions yet. Add one to start editing.</div>'; return; }
       questions.forEach((question, idx) => {
         const row = document.createElement('div');
         row.className = `editor-card ${idx === highlightIndex ? 'newly-added' : ''}`;
@@ -836,7 +1057,7 @@
         row.innerHTML = `
           <div class="editor-card-head">
             <span class="editor-card-title">Question ${idx + 1}</span>
-            <button class="btn danger" data-delete-question="${idx}" style="padding:6px 8px;font-size:0.75rem;">Delete</button>
+            <button class="btn danger" data-delete-question="${idx}" style="padding:5px 8px;font-size:0.75rem;">Delete</button>
           </div>
           <div class="field"><label>Question</label><textarea data-question-field="question" data-question-index="${idx}">${question.question}</textarea></div>
           <div class="q-options-grid" style="margin-top:8px;">
@@ -852,7 +1073,7 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
               </button>
               <div class="app-select-menu" data-answer-menu data-question-index="${idx}">
-                ${question.options.map((option, optionIndex) => `<button type="button" class="app-select-item ${question.answer === option ? 'active' : ''}" data-answer-item data-question-index="${idx}" data-option-index="${optionIndex}">${['A', 'B', 'C', 'D'][optionIndex]}: ${(option || '(empty)').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</button>`).join('')}
+                ${question.options.map((option, oi) => `<button type="button" class="app-select-item ${question.answer === option ? 'active' : ''}" data-answer-item data-question-index="${idx}" data-option-index="${oi}">${['A','B','C','D'][oi]}: ${(option || '(empty)').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</button>`).join('')}
               </div>
             </div>
           </div>
@@ -860,138 +1081,103 @@
         `;
         questionEditorList.appendChild(row);
       });
-
       questionEditorList.querySelectorAll('[data-question-field="question"], [data-question-field="explanation"]').forEach(el => {
-        el.addEventListener('input', () => {
-          const index = parseInt(el.dataset.questionIndex, 10);
-          const key = el.dataset.questionField;
-          selectedPack.test_questions[index][key] = el.value;
-          renderLearnQuestion();
-        });
+        el.addEventListener('input', () => { selectedPack.test_questions[parseInt(el.dataset.questionIndex, 10)][el.dataset.questionField] = el.value; renderLearnQuestion(); });
       });
-
       questionEditorList.querySelectorAll('[data-option-index]').forEach(el => {
         el.addEventListener('input', () => {
-          const qIndex = parseInt(el.dataset.questionIndex, 10);
-          const optIndex = parseInt(el.dataset.optionIndex, 10);
-          const currentQuestion = selectedPack.test_questions[qIndex];
-          currentQuestion.options[optIndex] = el.value;
-          if (!currentQuestion.options.includes(currentQuestion.answer)) {
-            currentQuestion.answer = currentQuestion.options[0] || '';
-          }
-          renderQuestionEditor(qIndex);
-          renderLearnQuestion();
+          const qi = parseInt(el.dataset.questionIndex, 10);
+          const oi = parseInt(el.dataset.optionIndex, 10);
+          const q = selectedPack.test_questions[qi];
+          q.options[oi] = el.value;
+          if (!q.options.includes(q.answer)) q.answer = q.options[0] || '';
+          renderQuestionEditor(qi); renderLearnQuestion();
         });
       });
-
       questionEditorList.querySelectorAll('[data-answer-button]').forEach(button => {
-        button.addEventListener('click', (event) => {
-          event.stopPropagation();
+        button.addEventListener('click', (e) => {
+          e.stopPropagation();
           const menu = button.parentElement.querySelector('[data-answer-menu]');
           const willOpen = !menu.classList.contains('visible');
           questionEditorList.querySelectorAll('[data-answer-menu]').forEach(m => m.classList.remove('visible'));
           questionEditorList.querySelectorAll('[data-answer-button]').forEach(b => b.classList.remove('open'));
-          if (willOpen) {
-            menu.classList.add('visible');
-            button.classList.add('open');
-          }
+          if (willOpen) { menu.classList.add('visible'); button.classList.add('open'); }
         });
       });
-
       questionEditorList.querySelectorAll('[data-answer-item]').forEach(item => {
         item.addEventListener('click', () => {
-          const qIndex = parseInt(item.dataset.questionIndex, 10);
-          const optIndex = parseInt(item.dataset.optionIndex, 10);
-          const question = selectedPack.test_questions[qIndex];
-          question.answer = question.options[optIndex] || '';
-          renderQuestionEditor(qIndex);
-          renderLearnQuestion();
+          const qi = parseInt(item.dataset.questionIndex, 10);
+          const oi = parseInt(item.dataset.optionIndex, 10);
+          selectedPack.test_questions[qi].answer = selectedPack.test_questions[qi].options[oi] || '';
+          renderQuestionEditor(qi); renderLearnQuestion();
         });
       });
-
       questionEditorList.querySelectorAll('[data-delete-question]').forEach(btn => {
         btn.addEventListener('click', () => {
-          const index = parseInt(btn.dataset.deleteQuestion, 10);
-          selectedPack.test_questions.splice(index, 1);
-          if (learnQuestionIndex >= selectedPack.test_questions.length) {
-            learnQuestionIndex = Math.max(0, selectedPack.test_questions.length - 1);
-          }
-          renderQuestionEditor();
-          renderLearnQuestion();
-          showToast('Practice question deleted.');
+          selectedPack.test_questions.splice(parseInt(btn.dataset.deleteQuestion, 10), 1);
+          if (learnQuestionIndex >= selectedPack.test_questions.length) learnQuestionIndex = Math.max(0, selectedPack.test_questions.length - 1);
+          renderQuestionEditor(); renderLearnQuestion(); showToast('Practice question deleted.');
         });
       });
-
       if (highlightIndex >= 0) {
         const row = questionEditorList.querySelector(`[data-row-index="${highlightIndex}"]`);
-        if (row) {
-          row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          const textarea = row.querySelector('textarea[data-question-field="question"]');
-          if (textarea) textarea.focus();
-        }
+        if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); const ta = row.querySelector('textarea[data-question-field="question"]'); if (ta) ta.focus(); }
       }
     }
 
+    /* ── Learn flashcard (3D) ── */
     function renderLearnFlashcard() {
       const cards = selectedPack && Array.isArray(selectedPack.flashcards) ? selectedPack.flashcards : [];
       if (!cards.length) {
-        learnFlashcardBox.textContent = 'No flashcards available for this pack.';
+        learnFlashcardFront.textContent = 'No flashcards available for this pack.';
+        learnFlashcardBack.textContent = '';
+        learnFlashcardInner.classList.remove('flipped');
         learnFProgress.textContent = 'Card 0 of 0';
+        learnFPrev.disabled = true; learnFNext.disabled = true; learnFFlip.disabled = true;
         return;
       }
       const card = cards[learnFlashcardIndex];
-      learnFlashcardBox.textContent = learnFlashcardFlipped ? (card.back || '') : (card.front || '');
+      learnFlashcardFront.textContent = card.front || '';
+      learnFlashcardBack.textContent = card.back || '';
+      learnFlashcardInner.classList.toggle('flipped', learnFlashcardFlipped);
       learnFProgress.textContent = `Card ${learnFlashcardIndex + 1} of ${cards.length}`;
+      learnFPrev.disabled = learnFlashcardIndex === 0;
+      learnFNext.disabled = learnFlashcardIndex === cards.length - 1;
+      learnFFlip.disabled = false;
     }
 
+    /* ── Learn quiz ── */
     function renderLearnQuestion() {
       const questions = selectedPack && Array.isArray(selectedPack.test_questions) ? selectedPack.test_questions : [];
       if (!questions.length) {
-        learnQProgress.textContent = 'Question 0 of 0';
-        learnQScore.textContent = 'Score: 0/0';
+        learnQProgress.textContent = 'Question 0 of 0'; learnQScore.textContent = 'Score: 0/0';
         learnQText.textContent = 'No practice questions available for this pack.';
-        learnQOptions.innerHTML = '';
-        learnQExpl.classList.remove('visible');
-        learnQExpl.textContent = '';
+        learnQOptions.innerHTML = ''; learnQExpl.classList.remove('visible'); learnQExpl.textContent = '';
         return;
       }
-
       const question = questions[learnQuestionIndex];
       learnAnswered = false;
       learnQProgress.textContent = `Question ${learnQuestionIndex + 1} of ${questions.length}`;
       learnQScore.textContent = `Score: ${learnScore}/${questions.length}`;
       learnQText.textContent = question.question || '';
-      learnQOptions.innerHTML = '';
-      learnQExpl.classList.remove('visible');
-      learnQExpl.textContent = '';
-
+      learnQOptions.innerHTML = ''; learnQExpl.classList.remove('visible'); learnQExpl.textContent = '';
       (question.options || []).forEach(option => {
         const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'quiz-option';
-        button.textContent = option;
+        button.type = 'button'; button.className = 'quiz-option'; button.textContent = option;
         button.addEventListener('click', () => {
           if (learnAnswered) return;
           learnAnswered = true;
-          const allButtons = [...learnQOptions.querySelectorAll('.quiz-option')];
-          allButtons.forEach(btn => {
-            btn.disabled = true;
-            if (btn.textContent === question.answer) btn.classList.add('correct');
-          });
-          if (option === question.answer) {
-            button.classList.add('correct');
-            learnScore += 1;
-          } else {
-            button.classList.add('wrong');
-          }
+          [...learnQOptions.querySelectorAll('.quiz-option')].forEach(btn => { btn.disabled = true; if (btn.textContent === question.answer) btn.classList.add('correct'); });
+          if (option === question.answer) { button.classList.add('correct'); learnScore += 1; }
+          else { button.classList.add('wrong'); }
           learnQScore.textContent = `Score: ${learnScore}/${questions.length}`;
-          learnQExpl.textContent = question.explanation || '';
-          learnQExpl.classList.add('visible');
+          learnQExpl.textContent = question.explanation || ''; learnQExpl.classList.add('visible');
         });
         learnQOptions.appendChild(button);
       });
     }
 
+    /* ── Learn pane switching ── */
     function setLearnPane(pane) {
       activeLearnPane = pane;
       learnTabs.forEach(btn => btn.classList.toggle('active', btn.dataset.learnPane === pane));
@@ -1000,200 +1186,113 @@
       document.getElementById('learn-pane-test').classList.toggle('active', pane === 'test');
     }
 
+    /* ── Learn stage open/close ── */
     function openLearnStage(requestFullscreen) {
-      if (!selectedPack) {
-        showToast('Select a study pack first.');
-        return;
-      }
+      if (!selectedPack) { showToast('Select a study pack first.', 'error'); return; }
       learnTitle.textContent = selectedPack.title || 'Learn Mode';
-      learnSub.textContent = `${selectedPack.mode || 'study-pack'} • Focused session`;
+      learnSub.textContent = `${selectedPack.mode || 'study-pack'} · Focused session`;
       learnNotesContent.innerHTML = mdToHtml(selectedPack.notes_markdown || '');
-
-      learnFlashcardIndex = 0;
-      learnFlashcardFlipped = false;
-      learnQuestionIndex = 0;
-      learnScore = 0;
-
+      learnFlashcardIndex = 0; learnFlashcardFlipped = false; learnQuestionIndex = 0; learnScore = 0;
       const hasFlashcards = selectedPack.flashcards && selectedPack.flashcards.length;
       const hasQuestions = selectedPack.test_questions && selectedPack.test_questions.length;
-      if (activeEditorPane === 'test' && hasQuestions) {
-        setLearnPane('test');
-      } else if (activeEditorPane === 'flashcards' && hasFlashcards) {
-        setLearnPane('flashcards');
-      } else if (activeEditorPane === 'notes') {
-        setLearnPane('notes');
-      } else if (hasFlashcards) {
-        setLearnPane('flashcards');
-      } else if (hasQuestions) {
-        setLearnPane('test');
-      } else {
-        setLearnPane('notes');
-      }
-
-      renderLearnFlashcard();
-      renderLearnQuestion();
-      learnStage.classList.add('visible');
-
-      if (requestFullscreen) {
-        document.documentElement.requestFullscreen?.().catch(() => {});
-      }
+      if (activeEditorPane === 'test' && hasQuestions) setLearnPane('test');
+      else if (activeEditorPane === 'flashcards' && hasFlashcards) setLearnPane('flashcards');
+      else if (activeEditorPane === 'notes') setLearnPane('notes');
+      else if (hasFlashcards) setLearnPane('flashcards');
+      else if (hasQuestions) setLearnPane('test');
+      else setLearnPane('notes');
+      renderLearnFlashcard(); renderLearnQuestion();
+      learnStage.classList.add('entering');
+      requestAnimationFrame(() => { requestAnimationFrame(() => learnStage.classList.replace('entering', 'visible')); });
+      if (requestFullscreen) document.documentElement.requestFullscreen?.().catch(() => {});
     }
 
     function closeLearnStage() {
       learnStage.classList.remove('visible');
-      if (document.fullscreenElement) {
-        document.exitFullscreen().catch(() => {});
-      }
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     }
 
+    /* ── Folder modal ── */
     function openFolderModal(mode, folder) {
       folderModalMode = mode;
       editingFolderId = folder && folder.folder_id ? folder.folder_id : '';
       folderModalTitle.textContent = mode === 'edit' ? 'Edit Folder' : 'Create Folder';
-      folderNameInput.value = folder && folder.name ? folder.name : '';
-      folderCourseInput.value = folder && folder.course ? folder.course : '';
-      folderSubjectInput.value = folder && folder.subject ? folder.subject : '';
-      folderSemesterInput.value = folder && folder.semester ? folder.semester : '';
-      folderBlockInput.value = folder && folder.block ? folder.block : '';
-      folderModalOverlay.classList.add('visible');
-      setTimeout(() => folderNameInput.focus(), 50);
+      folderNameInput.value = folder ? folder.name || '' : '';
+      folderCourseInput.value = folder ? folder.course || '' : '';
+      folderSubjectInput.value = folder ? folder.subject || '' : '';
+      folderSemesterInput.value = folder ? folder.semester || '' : '';
+      folderBlockInput.value = folder ? folder.block || '' : '';
+      openModal(folderModalOverlay);
+      setTimeout(() => folderNameInput.focus(), 100);
     }
 
     function closeFolderModal() {
-      folderModalOverlay.classList.remove('visible');
-      folderModalMode = 'create';
-      editingFolderId = '';
-      folderNameInput.value = '';
-      folderCourseInput.value = '';
-      folderSubjectInput.value = '';
-      folderSemesterInput.value = '';
-      folderBlockInput.value = '';
+      closeModal(folderModalOverlay);
+      folderModalMode = 'create'; editingFolderId = '';
+      folderNameInput.value = ''; folderCourseInput.value = ''; folderSubjectInput.value = ''; folderSemesterInput.value = ''; folderBlockInput.value = '';
     }
 
     async function saveFolderFromModal() {
-      const payload = {
-        name: folderNameInput.value.trim(),
-        course: folderCourseInput.value.trim(),
-        subject: folderSubjectInput.value.trim(),
-        semester: folderSemesterInput.value.trim(),
-        block: folderBlockInput.value.trim()
-      };
-      if (!payload.name) {
-        showToast('Folder name is required.');
-        folderNameInput.focus();
-        return;
-      }
+      const payload = { name: folderNameInput.value.trim(), course: folderCourseInput.value.trim(), subject: folderSubjectInput.value.trim(), semester: folderSemesterInput.value.trim(), block: folderBlockInput.value.trim() };
+      if (!payload.name) { showToast('Folder name is required.', 'error'); folderNameInput.focus(); return; }
       try {
         if (folderModalMode === 'edit' && editingFolderId) {
-          await api(`/api/study-folders/${encodeURIComponent(editingFolderId)}`, {
-            method: 'PATCH',
-            body: JSON.stringify(payload)
-          });
+          await api(`/api/study-folders/${encodeURIComponent(editingFolderId)}`, { method: 'PATCH', body: JSON.stringify(payload) });
           showToast('Folder updated.');
         } else {
-          await api('/api/study-folders', {
-            method: 'POST',
-            body: JSON.stringify(payload)
-          });
+          await api('/api/study-folders', { method: 'POST', body: JSON.stringify(payload) });
           showToast('Folder created.');
         }
-        closeFolderModal();
-        await loadData(selectedPackId || pendingOpenPackId);
-      } catch (e) {
-        showToast(e.message || 'Could not save folder.');
-      }
+        closeFolderModal(); await loadData(selectedPackId || pendingOpenPackId);
+      } catch (e) { showToast(e.message || 'Could not save folder.', 'error'); }
     }
 
+    /* ── Open pack ── */
     async function openPack(packId) {
       selectedPack = await api(`/api/study-packs/${encodeURIComponent(packId)}`);
       selectedPack.flashcards = Array.isArray(selectedPack.flashcards) ? selectedPack.flashcards : [];
       selectedPack.test_questions = Array.isArray(selectedPack.test_questions) ? selectedPack.test_questions.map(normalizeQuestion) : [];
       showPackEditor(true);
-
       packTitle.value = selectedPack.title || '';
       setPackFolderSelection(selectedPack.folder_id || '');
-      packCourse.value = selectedPack.course || '';
-      packSubject.value = selectedPack.subject || '';
-      packSemester.value = selectedPack.semester || '';
-      packBlock.value = selectedPack.block || '';
+      packCourse.value = selectedPack.course || ''; packSubject.value = selectedPack.subject || '';
+      packSemester.value = selectedPack.semester || ''; packBlock.value = selectedPack.block || '';
       notesView.innerHTML = mdToHtml(selectedPack.notes_markdown || '');
-
-      renderFlashcardEditor();
-      renderQuestionEditor();
-      renderLearnFlashcard();
-      renderLearnQuestion();
+      renderFlashcardEditor(); renderQuestionEditor(); renderLearnFlashcard(); renderLearnQuestion();
       setEditorPane(activeEditorPane);
-
       if (openLearnFromUrl && !autoLearnConsumed && selectedPack.study_pack_id === learnPackFromUrl) {
-        autoLearnConsumed = true;
-        openLearnStage(fullscreenFromUrl);
+        autoLearnConsumed = true; openLearnStage(fullscreenFromUrl);
       }
     }
 
+    /* ── Load data ── */
     async function loadData(preferredPackId = '') {
-      const [folderData, packData] = await Promise.all([
-        api('/api/study-folders'),
-        api('/api/study-packs')
-      ]);
-      folders = folderData.folders || [];
-      packs = packData.study_packs || [];
-      renderFolderSelect();
-      renderFolders();
-      renderPacks();
-
+      const [folderData, packData] = await Promise.all([api('/api/study-folders'), api('/api/study-packs')]);
+      folders = folderData.folders || []; packs = packData.study_packs || [];
+      renderFolderSelect(); renderFolders(); renderPacks();
       const packToOpen = preferredPackId || selectedPackId || '';
       if (packToOpen && packs.find(item => item.study_pack_id === packToOpen)) {
-        selectedPackId = packToOpen;
-        renderPacks();
-        await openPack(packToOpen);
+        selectedPackId = packToOpen; renderPacks(); await openPack(packToOpen);
       } else if (learnPackFromUrl && packs.find(item => item.study_pack_id === learnPackFromUrl)) {
-        selectedPackId = learnPackFromUrl;
-        renderPacks();
-        await openPack(learnPackFromUrl);
-      } else {
-        selectedPack = null;
-        showPackEditor(false);
-      }
+        selectedPackId = learnPackFromUrl; renderPacks(); await openPack(learnPackFromUrl);
+      } else { selectedPack = null; showPackEditor(false); }
     }
 
+    /* ── Auth state ── */
     auth.onAuthStateChanged(async (user) => {
-      if (!user) {
-        token = null;
-        userMeta.textContent = 'Not signed in';
-        authBtn.textContent = 'Sign in';
-        return;
-      }
+      if (!user) { token = null; userMeta.textContent = 'Not signed in'; authBtn.textContent = 'Sign in'; return; }
       token = await user.getIdToken();
       userMeta.textContent = `Signed in as ${user.email}`;
       authBtn.textContent = 'Sign out';
-      try {
-        await loadData();
-      } catch (e) {
-        showToast(e.message || 'Could not load study library.');
-      }
+      try { await loadData(); } catch (e) { showToast(e.message || 'Could not load study library.', 'error'); }
     });
 
-    authBtn.addEventListener('click', async () => {
-      if (!auth.currentUser) {
-        window.location.href = '/';
-        return;
-      }
-      await auth.signOut();
-    });
-
-    backAppBtn.addEventListener('click', () => {
-      window.location.href = '/';
-    });
-
-    fullscreenBtn.addEventListener('click', () => {
-      if (!selectedPack) {
-        showToast('Select a study pack first.');
-        return;
-      }
-      openLearnStage(true);
-    });
-
+    /* ── Event listeners ── */
+    authBtn.addEventListener('click', async () => { if (!auth.currentUser) { window.location.href = '/'; return; } await auth.signOut(); });
+    backAppBtn.addEventListener('click', () => { window.location.href = '/'; });
+    fullscreenBtn.addEventListener('click', () => { if (!selectedPack) { showToast('Select a study pack first.', 'error'); return; } openLearnStage(true); });
     searchInput.addEventListener('input', renderPacks);
+
     packFolderButton.addEventListener('click', (e) => {
       e.stopPropagation();
       packFolderMenu.classList.toggle('visible');
@@ -1201,111 +1300,50 @@
     });
 
     newFolderBtn.addEventListener('click', () => openFolderModal('create'));
-
     deleteFolderBtn.addEventListener('click', async () => {
-      if (!selectedFolderId) {
-        showToast('Select a folder first.');
-        return;
-      }
-      const confirmed = await openConfirmModal(
-        'Delete Folder',
-        'Delete this folder? Study packs inside this folder will be moved to no folder.',
-        'Delete Folder'
-      );
+      if (!selectedFolderId) { showToast('Select a folder first.', 'error'); return; }
+      const confirmed = await openConfirmModal('Delete Folder', 'Delete this folder? Study packs inside this folder will be moved to no folder.', 'Delete Folder');
       if (!confirmed) return;
-      try {
-        await api(`/api/study-folders/${encodeURIComponent(selectedFolderId)}`, { method: 'DELETE' });
-        selectedFolderId = '';
-        await loadData(selectedPackId);
-        showToast('Folder deleted.');
-      } catch (e) {
-        showToast(e.message || 'Could not delete folder.');
-      }
+      try { await api(`/api/study-folders/${encodeURIComponent(selectedFolderId)}`, { method: 'DELETE' }); selectedFolderId = ''; await loadData(selectedPackId); showToast('Folder deleted.'); }
+      catch (e) { showToast(e.message || 'Could not delete folder.', 'error'); }
     });
 
     savePackBtn.addEventListener('click', async () => {
-      if (!selectedPackId || !selectedPack) {
-        showToast('Select a study pack first.');
-        return;
-      }
+      if (!selectedPackId || !selectedPack) { showToast('Select a study pack first.', 'error'); return; }
       try {
         await api(`/api/study-packs/${encodeURIComponent(selectedPackId)}`, {
           method: 'PATCH',
-          body: JSON.stringify({
-            title: packTitle.value.trim(),
-            folder_id: packFolderSelect.value,
-            course: packCourse.value.trim(),
-            subject: packSubject.value.trim(),
-            semester: packSemester.value.trim(),
-            block: packBlock.value.trim(),
-            flashcards: selectedPack.flashcards || [],
-            test_questions: selectedPack.test_questions || []
-          })
+          body: JSON.stringify({ title: packTitle.value.trim(), folder_id: packFolderSelect.value, course: packCourse.value.trim(), subject: packSubject.value.trim(), semester: packSemester.value.trim(), block: packBlock.value.trim(), flashcards: selectedPack.flashcards || [], test_questions: selectedPack.test_questions || [] })
         });
-        pendingOpenPackId = selectedPackId;
-        await loadData(selectedPackId);
-        pendingOpenPackId = '';
-        showToast('Study pack saved.');
-      } catch (e) {
-        showToast(e.message || 'Could not save study pack.');
-      }
+        pendingOpenPackId = selectedPackId; await loadData(selectedPackId); pendingOpenPackId = ''; showToast('Study pack saved.');
+      } catch (e) { showToast(e.message || 'Could not save study pack.', 'error'); }
     });
 
     deletePackBtn.addEventListener('click', async () => {
-      if (!selectedPackId) {
-        showToast('Select a study pack first.');
-        return;
-      }
-      const confirmed = await openConfirmModal(
-        'Delete Study Pack',
-        'Delete this study pack permanently? This cannot be undone.',
-        'Delete Pack'
-      );
+      if (!selectedPackId) { showToast('Select a study pack first.', 'error'); return; }
+      const confirmed = await openConfirmModal('Delete Study Pack', 'Delete this study pack permanently? This cannot be undone.', 'Delete Pack');
       if (!confirmed) return;
-      try {
-        await api(`/api/study-packs/${encodeURIComponent(selectedPackId)}`, { method: 'DELETE' });
-        selectedPackId = '';
-        selectedPack = null;
-        showPackEditor(false);
-        await loadData();
-        showToast('Study pack deleted.');
-      } catch (e) {
-        showToast(e.message || 'Could not delete study pack.');
-      }
+      try { await api(`/api/study-packs/${encodeURIComponent(selectedPackId)}`, { method: 'DELETE' }); selectedPackId = ''; selectedPack = null; showPackEditor(false); await loadData(); showToast('Study pack deleted.'); }
+      catch (e) { showToast(e.message || 'Could not delete study pack.', 'error'); }
     });
 
     exportPackCsvBtn.addEventListener('click', async () => {
-      if (!selectedPackId) {
-        showToast('Select a study pack first.');
-        return;
-      }
-      try {
-        await downloadStudyPackCsv(selectedPackId, exportType);
-        showToast('CSV export started.');
-      } catch (e) {
-        showToast(e.message || 'Could not export CSV.');
-      }
+      if (!selectedPackId) { showToast('Select a study pack first.', 'error'); return; }
+      try { await downloadStudyPackCsv(selectedPackId, exportType); showToast('CSV export started.'); }
+      catch (e) { showToast(e.message || 'Could not export CSV.', 'error'); }
     });
 
     openLearnBtn.addEventListener('click', () => openLearnStage(false));
-
-    editorTabs.forEach(btn => {
-      btn.addEventListener('click', () => {
-        setEditorPane(btn.dataset.editorPane);
-      });
-    });
+    editorTabs.forEach(btn => btn.addEventListener('click', () => setEditorPane(btn.dataset.editorPane)));
 
     addFlashcardBtn.addEventListener('click', () => {
       if (!selectedPack) return;
       selectedPack.flashcards = selectedPack.flashcards || [];
       selectedPack.flashcards.push({ front: 'New concept', back: 'New explanation' });
       const newIndex = selectedPack.flashcards.length - 1;
-      learnFlashcardIndex = newIndex;
-      learnFlashcardFlipped = false;
-      renderFlashcardEditor(newIndex);
-      renderLearnFlashcard();
-      setEditorPane('flashcards');
-      showToast('New flashcard added. Now editing it.');
+      learnFlashcardIndex = newIndex; learnFlashcardFlipped = false;
+      renderFlashcardEditor(newIndex); renderLearnFlashcard(); setEditorPane('flashcards');
+      showToast('New flashcard added.');
     });
 
     addQuestionBtn.addEventListener('click', () => {
@@ -1314,100 +1352,62 @@
       selectedPack.test_questions.push(normalizeQuestion({ question: 'New question', options: ['Option A', 'Option B', 'Option C', 'Option D'], answer: 'Option A', explanation: 'Add explanation here.' }));
       const newIndex = selectedPack.test_questions.length - 1;
       learnQuestionIndex = newIndex;
-      renderQuestionEditor(newIndex);
-      renderLearnQuestion();
-      setEditorPane('test');
-      showToast('New practice question added. Now editing it.');
+      renderQuestionEditor(newIndex); renderLearnQuestion(); setEditorPane('test');
+      showToast('New practice question added.');
     });
 
-    learnBackAppBtn.addEventListener('click', () => {
-      window.location.href = '/';
-    });
-    learnBackLibraryBtn.addEventListener('click', () => {
-      closeLearnStage();
-    });
+    learnBackAppBtn.addEventListener('click', () => { window.location.href = '/'; });
+    learnBackLibraryBtn.addEventListener('click', closeLearnStage);
     learnFullscreenBtn.addEventListener('click', async () => {
-      try {
-        if (document.fullscreenElement) await document.exitFullscreen();
-        else await document.documentElement.requestFullscreen();
-      } catch (e) {
-        showToast('Fullscreen not available.');
-      }
+      try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }
+      catch (e) { showToast('Fullscreen not available.', 'error'); }
     });
 
-    learnTabs.forEach(btn => {
-      btn.addEventListener('click', () => setLearnPane(btn.dataset.learnPane));
-    });
+    learnTabs.forEach(btn => btn.addEventListener('click', () => setLearnPane(btn.dataset.learnPane)));
 
-    learnFlashcardBox.addEventListener('click', () => {
-      learnFlashcardFlipped = !learnFlashcardFlipped;
-      renderLearnFlashcard();
-    });
+    learnFlashcard3d.addEventListener('click', () => { learnFlashcardFlipped = !learnFlashcardFlipped; renderLearnFlashcard(); });
     learnFPrev.addEventListener('click', () => {
       const cards = selectedPack && selectedPack.flashcards ? selectedPack.flashcards : [];
       if (!cards.length) return;
-      learnFlashcardIndex = Math.max(0, learnFlashcardIndex - 1);
-      learnFlashcardFlipped = false;
-      renderLearnFlashcard();
+      learnFlashcardIndex = Math.max(0, learnFlashcardIndex - 1); learnFlashcardFlipped = false; renderLearnFlashcard();
     });
     learnFNext.addEventListener('click', () => {
       const cards = selectedPack && selectedPack.flashcards ? selectedPack.flashcards : [];
       if (!cards.length) return;
-      learnFlashcardIndex = Math.min(cards.length - 1, learnFlashcardIndex + 1);
-      learnFlashcardFlipped = false;
-      renderLearnFlashcard();
+      learnFlashcardIndex = Math.min(cards.length - 1, learnFlashcardIndex + 1); learnFlashcardFlipped = false; renderLearnFlashcard();
     });
-    learnFFlip.addEventListener('click', () => {
-      learnFlashcardFlipped = !learnFlashcardFlipped;
-      renderLearnFlashcard();
-    });
-
+    learnFFlip.addEventListener('click', () => { learnFlashcardFlipped = !learnFlashcardFlipped; renderLearnFlashcard(); });
     learnQNext.addEventListener('click', () => {
       const questions = selectedPack && selectedPack.test_questions ? selectedPack.test_questions : [];
       if (!questions.length) return;
-      learnQuestionIndex = Math.min(questions.length - 1, learnQuestionIndex + 1);
-      renderLearnQuestion();
+      learnQuestionIndex = Math.min(questions.length - 1, learnQuestionIndex + 1); renderLearnQuestion();
     });
 
     window.addEventListener('keydown', (e) => {
       if (!learnStage.classList.contains('visible')) return;
       if (activeLearnPane !== 'flashcards') return;
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        learnFPrev.click();
-      }
-      if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        learnFNext.click();
-      }
-      if (e.code === 'Space') {
-        e.preventDefault();
-        learnFFlip.click();
-      }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); learnFPrev.click(); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); learnFNext.click(); }
+      if (e.code === 'Space') { e.preventDefault(); learnFFlip.click(); }
     });
 
     folderModalClose.addEventListener('click', closeFolderModal);
     folderModalCancel.addEventListener('click', closeFolderModal);
     folderModalSave.addEventListener('click', saveFolderFromModal);
-    folderModalOverlay.addEventListener('click', (e) => {
-      if (e.target === folderModalOverlay) closeFolderModal();
-    });
+    folderModalOverlay.addEventListener('click', (e) => { if (e.target === folderModalOverlay) closeFolderModal(); });
+
     document.addEventListener('click', (e) => {
-      if (!packFolderPicker.contains(e.target)) {
-        packFolderMenu.classList.remove('visible');
-        packFolderButton.classList.remove('open');
-      }
+      if (!packFolderPicker.contains(e.target)) { packFolderMenu.classList.remove('visible'); packFolderButton.classList.remove('open'); }
       if (!e.target.closest('.q-answer-picker')) {
-        questionEditorList.querySelectorAll('[data-answer-menu]').forEach(menu => menu.classList.remove('visible'));
-        questionEditorList.querySelectorAll('[data-answer-button]').forEach(button => button.classList.remove('open'));
+        questionEditorList.querySelectorAll('[data-answer-menu]').forEach(m => m.classList.remove('visible'));
+        questionEditorList.querySelectorAll('[data-answer-button]').forEach(b => b.classList.remove('open'));
       }
     });
+
     confirmModalClose.addEventListener('click', () => closeConfirmModal(false));
     confirmModalCancel.addEventListener('click', () => closeConfirmModal(false));
     confirmModalConfirm.addEventListener('click', () => closeConfirmModal(true));
-    confirmModalOverlay.addEventListener('click', (e) => {
-      if (e.target === confirmModalOverlay) closeConfirmModal(false);
-    });
+    confirmModalOverlay.addEventListener('click', (e) => { if (e.target === confirmModalOverlay) closeConfirmModal(false); });
   </script>
 </body>
 </html>
