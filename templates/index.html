@@ -42,16 +42,137 @@
         .logo-icon svg { width: 24px; height: 24px; }
         .logo-text { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.025em; }
         @media (max-width: 600px) { .logo-text { display: none; } }
-        .header-right { display: flex; align-items: center; gap: 16px; }
-        .credits-display { display: flex; align-items: center; gap: 8px; padding: 8px 14px; background: var(--gray-100); border-radius: var(--radius); font-size: 0.875rem; color: var(--gray-700); }
-        .credits-display svg { width: 18px; height: 18px; color: var(--primary); }
-        .credits-count { font-weight: 600; color: var(--gray-900); }
-        .user-menu { position: relative; }
-        .user-button { display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 6px; background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius-lg); cursor: pointer; transition: all 0.2s; }
+        .header-right { display: flex; align-items: center; gap: 10px; margin-left: auto; min-width: 0; }
+        .header-nav-link { display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 14px; background: var(--white); border: 1px solid var(--gray-300); border-radius: var(--radius); font-size: 0.875rem; font-weight: 600; color: var(--gray-700); text-decoration: none; transition: all 0.2s ease; }
+        .header-nav-link:hover { background: var(--gray-50); border-color: var(--gray-400); color: var(--gray-900); }
+        .header-nav-link.active { background: rgba(79,70,229,0.08); border-color: rgba(79,70,229,0.35); color: var(--primary-dark); }
+        .header-nav-link svg { width: 16px; height: 16px; }
+        @media (max-width: 600px) { .header-nav-link span { display: none; } .header-nav-link { padding: 10px; } }
+        .progress-menu { position: relative; order: 30; }
+        .progress-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            height: 46px;
+            padding: 0 14px;
+            border-radius: var(--radius);
+            border: 1px solid var(--gray-300);
+            background: var(--white);
+            color: var(--gray-700);
+            font-size: 0.875rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .progress-button:hover { border-color: var(--gray-400); background: var(--gray-50); color: var(--gray-900); }
+        .progress-button svg { width: 16px; height: 16px; }
+        .progress-button .chevron { width: 14px; height: 14px; color: var(--gray-500); transition: transform 0.2s ease; }
+        .progress-button.open .chevron { transform: rotate(180deg); }
+        .progress-dropdown {
+            display: none;
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            min-width: 250px;
+            padding: 10px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--gray-200);
+            background: var(--white);
+            box-shadow: var(--shadow-lg);
+            z-index: 60;
+        }
+        .progress-dropdown.visible { display: block; animation: dropdownOpen 0.2s ease-out; }
+        .progress-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 8px 8px;
+            border-radius: var(--radius-sm);
+            font-size: 0.82rem;
+            color: var(--gray-600);
+        }
+        .progress-row strong { color: var(--gray-900); font-size: 0.84rem; }
+        .progress-actions {
+            margin-top: 8px;
+            padding-top: 10px;
+            border-top: 1px solid var(--gray-100);
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+        }
+        .progress-action-btn {
+            height: 36px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--gray-300);
+            background: var(--white);
+            color: var(--gray-700);
+            font-size: 0.8125rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .progress-action-btn:hover { background: var(--gray-50); border-color: var(--gray-400); color: var(--gray-900); }
+        .progress-action-btn.primary {
+            border-color: rgba(79, 70, 229, 0.35);
+            background: rgba(79, 70, 229, 0.08);
+            color: var(--primary-dark);
+        }
+        .progress-action-btn.primary:hover {
+            border-color: rgba(79, 70, 229, 0.48);
+            background: rgba(79, 70, 229, 0.14);
+        }
+        .credits-display { display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 16px; background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); border: 1px solid rgba(255,255,255,0.28); border-radius: 999px; font-size: 0.875rem; color: rgba(255,255,255,0.95); font-weight: 600; box-shadow: 0 8px 18px rgba(79,70,229,0.28); margin-left: auto; order: 60; cursor: pointer; user-select: none; position: relative; transition: transform 0.15s ease, box-shadow 0.2s ease; }
+        .credits-display svg { width: 18px; height: 18px; color: rgba(255,255,255,0.95); }
+        .credits-count { font-weight: 800; color: var(--white); }
+        .credits-display:hover { transform: translateY(-1px); box-shadow: 0 10px 22px rgba(79,70,229,0.34); }
+        .credits-tooltip {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            min-width: 190px;
+            border-radius: var(--radius-sm);
+            padding: 10px 12px;
+            border: 1px solid rgba(99,102,241,0.42);
+            background: var(--white);
+            color: var(--gray-800);
+            box-shadow: 0 12px 26px rgba(15,23,42,0.16);
+            font-size: 0.75rem;
+            font-weight: 600;
+            line-height: 1.5;
+            text-align: left;
+            white-space: pre-line;
+            z-index: 80;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(-5px);
+            transition: opacity 0.18s ease, transform 0.18s ease;
+        }
+        .credits-tooltip::before {
+            content: '';
+            position: absolute;
+            top: -5px;
+            right: 18px;
+            width: 10px;
+            height: 10px;
+            background: var(--white);
+            border-top: 1px solid rgba(99,102,241,0.42);
+            border-left: 1px solid rgba(99,102,241,0.42);
+            transform: rotate(45deg);
+        }
+        .credits-display:hover .credits-tooltip,
+        .credits-display.tooltip-open .credits-tooltip {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        @media (max-width: 900px) { .credits-display { padding: 0 12px; font-size: 0.8125rem; } }
+        @media (max-width: 600px) { .credits-display { height: 42px; padding: 0 10px; font-size: 0.78rem; } .credits-tooltip { display: none; } }
+        .user-menu { position: relative; order: 50; }
+        .user-button { display: flex; align-items: center; gap: 10px; height: 46px; min-width: 248px; padding: 0 12px 0 6px; background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius-lg); cursor: pointer; transition: all 0.2s; }
         .user-button:hover { border-color: var(--gray-300); background: var(--gray-50); }
         .user-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%); display: flex; align-items: center; justify-content: center; color: var(--white); font-size: 0.875rem; font-weight: 600; }
         .user-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
-        .user-name { font-size: 0.875rem; font-weight: 500; color: var(--gray-700); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .user-name { font-size: 0.82rem; font-weight: 500; color: var(--gray-700); max-width: 154px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         @media (max-width: 600px) { .user-name { display: none; } }
         .user-dropdown { position: absolute; top: calc(100% + 8px); right: 0; background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); min-width: 220px; display: none; z-index: 50; overflow: hidden; }
         .user-dropdown.visible { display: block; animation: dropdownOpen 0.2s ease-out; }
@@ -66,10 +187,10 @@
         .user-dropdown-item svg { width: 18px; height: 18px; color: var(--gray-500); }
         .user-dropdown-item.danger { color: var(--error); }
         .user-dropdown-item.danger svg { color: var(--error); }
-        .sign-in-button { display: flex; align-items: center; gap: 10px; padding: 10px 20px; background: var(--white); border: 1px solid var(--gray-300); border-radius: var(--radius); font-size: 0.9375rem; font-weight: 500; color: var(--gray-700); cursor: pointer; transition: all 0.2s; }
+        .sign-in-button { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 20px; background: var(--white); border: 1px solid var(--gray-300); border-radius: var(--radius); font-size: 0.9375rem; font-weight: 500; color: var(--gray-700); cursor: pointer; transition: all 0.2s; order: 50; }
         .sign-in-button:hover { background: var(--gray-50); border-color: var(--gray-400); }
         .sign-in-button svg { width: 20px; height: 20px; }
-        .header-link-button { display: none; align-items: center; gap: 8px; padding: 10px 16px; background: var(--white); border: 1px solid var(--gray-300); border-radius: var(--radius); font-size: 0.875rem; font-weight: 600; color: var(--gray-700); cursor: pointer; transition: all 0.2s ease; }
+        .header-link-button { display: none; align-items: center; gap: 8px; height: 46px; padding: 0 16px; background: var(--white); border: 1px solid var(--gray-300); border-radius: var(--radius); font-size: 0.875rem; font-weight: 600; color: var(--gray-700); cursor: pointer; transition: all 0.2s ease; order: 45; }
         .header-link-button:hover { background: var(--gray-50); border-color: var(--gray-400); color: var(--gray-900); }
         .header-link-button svg { width: 18px; height: 18px; }
         .auth-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; align-items: center; justify-content: center; padding: 24px; }
@@ -113,6 +234,41 @@
         .auth-success.visible { display: block; }
         .auth-view { display: none; }
         .auth-view.active { display: block; }
+        .goal-modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(17,24,39,0.45);
+            z-index: 210;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .goal-modal-overlay.visible { display: flex; }
+        .goal-modal {
+            width: min(420px, 100%);
+            background: var(--white);
+            border: 1px solid var(--gray-200);
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-xl);
+            padding: 22px;
+            animation: modalOpen 0.2s ease-out;
+        }
+        .goal-modal-title { font-size: 1.08rem; font-weight: 700; color: var(--gray-900); margin-bottom: 6px; }
+        .goal-modal-subtitle { font-size: 0.875rem; color: var(--gray-500); margin-bottom: 14px; }
+        .goal-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+        #goal-modal-cancel-btn,#goal-modal-save-btn{height:42px;min-width:122px;padding:0 16px;font-size:0.95rem;line-height:1.2}
+        .goal-modal-error {
+            display: none;
+            margin-top: 10px;
+            padding: 8px 10px;
+            border-radius: var(--radius);
+            border: 1px solid rgba(239,68,68,0.3);
+            background: rgba(239,68,68,0.08);
+            color: #991B1B;
+            font-size: 0.8125rem;
+        }
+        .goal-modal-error.visible { display: block; }
         .back-to-login { display: inline-flex; align-items: center; gap: 6px; color: var(--gray-600); font-size: 0.875rem; text-decoration: none; margin-bottom: 20px; }
         .back-to-login:hover { color: var(--gray-900); }
         .back-to-login svg { width: 16px; height: 16px; }
@@ -174,10 +330,10 @@
         .process-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 20px 0 rgba(79,70,229,0.5); }
         .process-button:disabled { background: var(--gray-300); cursor: not-allowed; box-shadow: none; }
         .process-button svg { width: 20px; height: 20px; }
-        .no-credits-warning { margin-top: 14px; font-size: 0.875rem; color: #991B1B; display: none; background: linear-gradient(135deg, rgba(239,68,68,0.10) 0%, rgba(245,158,11,0.10) 100%); border: 1px solid rgba(239,68,68,0.30); border-radius: var(--radius); padding: 10px 12px; text-align: center; }
+        .no-credits-warning { margin-top: 14px; font-size: 0.875rem; color: var(--primary-dark); display: none; background: linear-gradient(135deg, rgba(238,242,255,0.95) 0%, rgba(224,231,255,0.95) 52%, rgba(219,234,254,0.95) 100%); border: 1px solid rgba(99,102,241,0.35); border-radius: var(--radius); padding: 12px 12px; text-align: center; box-shadow: 0 10px 20px rgba(79,70,229,0.12); }
         .no-credits-warning.visible { display: block; animation: dropdownOpen 0.2s ease-out; }
-        .no-credits-warning a { display: inline-flex; align-items: center; justify-content: center; margin-left: 8px; padding: 6px 10px; border-radius: var(--radius-sm); background: var(--white); border: 1px solid rgba(239,68,68,0.35); color: #991B1B; text-decoration: none; font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
-        .no-credits-warning a:hover { background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.5); }
+        .no-credits-warning a { display: inline-flex; align-items: center; justify-content: center; margin-left: 8px; padding: 6px 12px; border-radius: var(--radius-sm); background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%); border: none; color: var(--white); text-decoration: none; font-weight: 700; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 4px 12px rgba(79,70,229,0.24); }
+        .no-credits-warning a:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(79,70,229,0.32); }
         .progress-section { display: none; margin-top: 32px; padding-top: 32px; border-top: 1px solid var(--gray-200); }
         .progress-section.visible { display: block; }
         .progress-header { text-align: center; margin-bottom: 32px; }
@@ -373,15 +529,39 @@
 </head>
 <body>
     <header class="header"><div class="container"><div class="header-content">
-        <a href="/" class="logo"><div class="logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div><span class="logo-text">Lecture Processor</span></a>
+        <a href="/dashboard" class="logo"><div class="logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div><span class="logo-text">Lecture Processor</span></a>
         <div class="header-right">
+            <div class="progress-menu" id="progress-menu" style="display:none;">
+                <button type="button" class="progress-button" id="progress-button">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 12a9 9 0 1 0 9-9"></path>
+                        <path d="M12 3v9l6 3"></path>
+                    </svg>
+                    <span>Progress</span>
+                    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div class="progress-dropdown" id="progress-dropdown">
+                    <div class="progress-row"><span>Streak</span><strong><span id="progress-streak-count">0</span> day streak</strong></div>
+                    <div class="progress-row"><span>Due today</span><strong><span id="progress-due-count">0</span> cards</strong></div>
+                    <div class="progress-row"><span>Daily goal</span><strong id="progress-goal-text">0 / 20</strong></div>
+                    <div class="progress-actions">
+                        <button type="button" class="progress-action-btn" id="progress-set-goal-btn">Set daily goal</button>
+                        <button type="button" class="progress-action-btn primary" id="progress-open-plan-btn">Open Planner</button>
+                    </div>
+                </div>
+            </div>
             <button class="sign-in-button" id="header-sign-in-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>Sign in</button>
-            <div class="credits-display" id="credits-display" style="display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg><span><span class="credits-count" id="credits-count">0</span> credits</span></div>
+            <button type="button" class="credits-display" id="credits-display" style="display:none;" aria-label="Buy credits"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg><span><span class="credits-count" id="credits-count">0</span> credits</span><div class="credits-tooltip" id="credits-tooltip">Lecture: 0
+Slides: 0
+Interview: 0
+Total: 0</div></button>
             <button class="header-link-button" id="header-study-library-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18v16H3z"></path><line x1="3" y1="10" x2="21" y2="10"></line><line x1="9" y1="4" x2="9" y2="20"></line></svg>Study Library</button>
             <div class="user-menu" id="user-menu" style="display:none;">
                 <button class="user-button" id="user-button"><div class="user-avatar" id="user-avatar"><span id="user-initial">?</span></div><span class="user-name" id="user-name">User</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:var(--gray-400);"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
                 <div class="user-dropdown" id="user-dropdown">
                     <div class="user-dropdown-header"><div class="user-dropdown-email" id="user-email">email@example.com</div><div class="user-dropdown-credits"><div class="credit-row"><span class="credit-label">Lecture credits</span><span class="credit-value" id="dropdown-lecture-credits">0</span></div><div class="credit-row"><span class="credit-label">Slides credits</span><span class="credit-value" id="dropdown-slides-credits">0</span></div><div class="credit-row"><span class="credit-label">Interview credits</span><span class="credit-value" id="dropdown-interview-credits">0</span></div></div></div>
+                    <button class="user-dropdown-item" id="features-page-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>Features</button>
+                    <button class="user-dropdown-item" id="planner-page-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"></path><path d="M16 2v4"></path><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M3 10h18"></path><path d="M8 14h3"></path></svg>Planner</button>
                     <button class="user-dropdown-item" id="buy-credits-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>Buy credits</button>
                     <button class="user-dropdown-item" id="purchase-history-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>Purchase history</button>
                     <button class="user-dropdown-item" id="admin-dashboard-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>Admin dashboard</button>
@@ -575,7 +755,20 @@
             </div>
         </div></section>
     </main>
-    <footer class="footer"><div class="container"><p class="footer-text">Built with Gemini AI · Made for students</p></div></footer>
+    <footer class="footer"><div class="container"><p class="footer-text">Powered by Gemini AI · Made for students</p></div></footer>
+    <div class="goal-modal-overlay" id="goal-modal-overlay">
+        <div class="goal-modal">
+            <div class="goal-modal-title">Set Daily Card Goal</div>
+            <div class="goal-modal-subtitle">Choose how many cards you want to review each day (1–500).</div>
+            <label class="form-label" for="goal-modal-input">Daily goal</label>
+            <input id="goal-modal-input" class="form-input" type="number" min="1" max="500" inputmode="numeric">
+            <div class="goal-modal-error" id="goal-modal-error"></div>
+            <div class="goal-modal-actions">
+                <button type="button" class="progress-action-btn" id="goal-modal-cancel-btn">Cancel</button>
+                <button type="button" class="progress-action-btn primary" id="goal-modal-save-btn">Save goal</button>
+            </div>
+        </div>
+    </div>
     <div class="toast" id="toast"><svg id="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span id="toast-text"></span></div>
 
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
@@ -661,8 +854,22 @@
 
         const headerSignInBtn = document.getElementById('header-sign-in-btn');
         const headerStudyLibraryBtn = document.getElementById('header-study-library-btn');
+        const progressMenu = document.getElementById('progress-menu');
+        const progressButton = document.getElementById('progress-button');
+        const progressDropdown = document.getElementById('progress-dropdown');
+        const progressStreakCount = document.getElementById('progress-streak-count');
+        const progressDueCount = document.getElementById('progress-due-count');
+        const progressGoalText = document.getElementById('progress-goal-text');
+        const progressSetGoalBtn = document.getElementById('progress-set-goal-btn');
+        const progressOpenPlanBtn = document.getElementById('progress-open-plan-btn');
+        const goalModalOverlay = document.getElementById('goal-modal-overlay');
+        const goalModalInput = document.getElementById('goal-modal-input');
+        const goalModalError = document.getElementById('goal-modal-error');
+        const goalModalCancelBtn = document.getElementById('goal-modal-cancel-btn');
+        const goalModalSaveBtn = document.getElementById('goal-modal-save-btn');
         const creditsDisplay = document.getElementById('credits-display');
         const creditsCount = document.getElementById('credits-count');
+        const creditsTooltip = document.getElementById('credits-tooltip');
         const userMenu = document.getElementById('user-menu');
         const userButton = document.getElementById('user-button');
         const userDropdown = document.getElementById('user-dropdown');
@@ -673,6 +880,8 @@
         const dropdownSlidesCredits = document.getElementById('dropdown-slides-credits');
         const dropdownInterviewCredits = document.getElementById('dropdown-interview-credits');
         const buyCreditsBtn = document.getElementById('buy-credits-btn');
+        const featuresPageBtn = document.getElementById('features-page-btn');
+        const plannerPageBtn = document.getElementById('planner-page-btn');
         const purchaseHistoryBtn = document.getElementById('purchase-history-btn');
         const adminDashboardBtn = document.getElementById('admin-dashboard-btn');
         const signOutBtn = document.getElementById('sign-out-btn');
@@ -798,6 +1007,77 @@
         const toastIcon = document.getElementById('toast-icon');
         const toastText = document.getElementById('toast-text');
 
+        function localDateString(ts) {
+            const d = ts ? new Date(ts) : new Date();
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        }
+        function addDaysLocal(dateString, days) {
+            const [y, m, d] = String(dateString || localDateString()).split('-').map(v => parseInt(v, 10));
+            const base = new Date(y, (m || 1) - 1, d || 1);
+            base.setDate(base.getDate() + (parseInt(days, 10) || 0));
+            return localDateString(base.getTime());
+        }
+        function safeReadJson(raw, fallback) {
+            try { return JSON.parse(raw); } catch (_) { return fallback; }
+        }
+        function getStreakStorage(uid) {
+            return safeReadJson(localStorage.getItem(`study_streak_${uid}`) || '{}', {});
+        }
+        function getDailyGoalStorage(uid) {
+            const parsed = parseInt(localStorage.getItem(`daily_goal_${uid}`) || '20', 10);
+            return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 500) : 20;
+        }
+        function getDueCardsCount(uid) {
+            const today = localDateString();
+            const prefix = `card_state_${uid}_`;
+            let due = 0;
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (!key || !key.startsWith(prefix)) continue;
+                const state = safeReadJson(localStorage.getItem(key) || '{}', {});
+                Object.keys(state || {}).forEach((cardId) => {
+                    if (!cardId.startsWith('fc_')) return;
+                    const entry = state[cardId] || {};
+                    if (!(parseInt(entry.seen, 10) > 0)) return;
+                    const nextDate = String(entry.next_review_date || '').trim();
+                    if (!nextDate || nextDate <= today) due += 1;
+                });
+            }
+            return due;
+        }
+        function getCurrentStreak(uid) {
+            const data = getStreakStorage(uid);
+            const today = localDateString();
+            const yesterday = addDaysLocal(today, -1);
+            if (data.last_study_date === today) return Math.max(0, parseInt(data.current_streak, 10) || 0);
+            if (data.last_study_date === yesterday) return Math.max(0, parseInt(data.current_streak, 10) || 0);
+            return 0;
+        }
+        function getTodayProgress(uid) {
+            const data = getStreakStorage(uid);
+            if (data.daily_progress_date !== localDateString()) return 0;
+            return Math.max(0, parseInt(data.daily_progress_count, 10) || 0);
+        }
+        function refreshStudyHeaderMetrics() {
+            if (!currentUser) {
+                progressMenu.style.display = 'none';
+                return;
+            }
+            const uid = currentUser.uid;
+            const streak = getCurrentStreak(uid);
+            const due = getDueCardsCount(uid);
+            const goal = getDailyGoalStorage(uid);
+            const todayProgress = getTodayProgress(uid);
+            progressStreakCount.textContent = String(streak);
+            progressDueCount.textContent = String(due);
+            progressGoalText.textContent = `${Math.min(todayProgress, goal)} / ${goal}`;
+            progressButton.title = `Streak ${streak} days · ${due} due today · Goal ${Math.min(todayProgress, goal)}/${goal}`;
+            progressMenu.style.display = 'block';
+        }
+
         function showAuthModal(view = 'signin') {
             authOverlay.classList.add('visible');
             showAuthView(view);
@@ -920,6 +1200,7 @@
                 const d = await r.json();
                 userCredits = d.credits;
                 updateCreditsDisplay();
+                refreshStudyHeaderMetrics();
             } catch (e) {
                 console.error(e);
             }
@@ -928,11 +1209,16 @@
             if (!userCredits) return;
             const lecture = userCredits.lecture_standard + userCredits.lecture_extended;
             const interview = userCredits.interview_short + userCredits.interview_medium + userCredits.interview_long;
-            creditsCount.textContent = lecture + userCredits.slides + interview;
+            const total = lecture + userCredits.slides + interview;
+            const tooltipText = `Lecture: ${lecture}\nSlides: ${userCredits.slides}\nInterview: ${interview}\nTotal: ${total}`;
+            creditsCount.textContent = total;
+            creditsDisplay.setAttribute('data-tooltip', tooltipText);
+            if (creditsTooltip) creditsTooltip.textContent = tooltipText;
             dropdownLectureCredits.textContent = lecture;
             dropdownSlidesCredits.textContent = userCredits.slides;
             dropdownInterviewCredits.textContent = interview;
             updateProcessButton();
+            refreshStudyHeaderMetrics();
         }
         function getTotalInterviewCredits() {
             if (!userCredits) return 0;
@@ -1024,6 +1310,7 @@
                 headerSignInBtn.style.display = 'none';
                 creditsDisplay.style.display = 'flex';
                 headerStudyLibraryBtn.style.display = 'inline-flex';
+                progressMenu.style.display = 'block';
                 userMenu.style.display = 'block';
                 signInRequired.classList.remove('visible');
                 uploadSection.style.display = 'grid';
@@ -1035,10 +1322,14 @@
                 userName.textContent = displayName;
                 userEmail.textContent = user.email;
                 switchMode(currentMode);
+                refreshStudyHeaderMetrics();
             } else {
                 headerSignInBtn.style.display = 'flex';
                 creditsDisplay.style.display = 'none';
                 headerStudyLibraryBtn.style.display = 'none';
+                progressMenu.style.display = 'none';
+                progressDropdown.classList.remove('visible');
+                progressButton.classList.remove('open');
                 userMenu.style.display = 'none';
                 signInRequired.classList.add('visible');
                 uploadSection.style.display = 'none';
@@ -1715,8 +2006,102 @@
         userButton.addEventListener('click', (e) => { e.stopPropagation(); userDropdown.classList.toggle('visible'); });
         document.addEventListener('click', (e) => { if (!userMenu.contains(e.target)) userDropdown.classList.remove('visible'); });
         buyCreditsBtn.addEventListener('click', () => { userDropdown.classList.remove('visible'); showPricingModal(); });
+        featuresPageBtn.addEventListener('click', () => { userDropdown.classList.remove('visible'); window.location.href = '/features'; });
+        plannerPageBtn.addEventListener('click', () => { userDropdown.classList.remove('visible'); window.location.href = '/plan'; });
         purchaseHistoryBtn.addEventListener('click', () => { userDropdown.classList.remove('visible'); showHistoryModal(); });
         headerStudyLibraryBtn.addEventListener('click', () => { window.location.href = '/study'; });
+        function openGoalModal() {
+            if (!currentUser) return;
+            goalModalError.classList.remove('visible');
+            goalModalError.textContent = '';
+            goalModalInput.value = String(getDailyGoalStorage(currentUser.uid));
+            goalModalOverlay.classList.add('visible');
+            setTimeout(() => goalModalInput.focus(), 30);
+            setTimeout(() => goalModalInput.select(), 30);
+        }
+        function closeGoalModal() {
+            goalModalOverlay.classList.remove('visible');
+        }
+        function saveGoalFromModal() {
+            if (!currentUser) return;
+            const parsed = parseInt(String(goalModalInput.value || '').trim(), 10);
+            if (!Number.isFinite(parsed) || parsed < 1 || parsed > 500) {
+                goalModalError.textContent = 'Use a number between 1 and 500.';
+                goalModalError.classList.add('visible');
+                return;
+            }
+            localStorage.setItem(`daily_goal_${currentUser.uid}`, String(parsed));
+            refreshStudyHeaderMetrics();
+            closeGoalModal();
+            showToast('Daily goal updated.', 'success', 1800);
+        }
+        progressButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const visible = !progressDropdown.classList.contains('visible');
+            progressDropdown.classList.toggle('visible', visible);
+            progressButton.classList.toggle('open', visible);
+            if (visible) refreshStudyHeaderMetrics();
+        });
+        progressSetGoalBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            progressDropdown.classList.remove('visible');
+            progressButton.classList.remove('open');
+            openGoalModal();
+        });
+        progressOpenPlanBtn.addEventListener('click', () => {
+            window.location.href = '/plan';
+        });
+        let mobileCreditsTooltipTimer = null;
+        creditsDisplay.addEventListener('click', (e) => {
+            const touchLike = window.matchMedia('(hover: none), (pointer: coarse)').matches;
+            if (!touchLike) {
+                showPricingModal();
+                return;
+            }
+
+            if (!creditsDisplay.classList.contains('tooltip-open')) {
+                e.preventDefault();
+                creditsDisplay.classList.add('tooltip-open');
+                if (mobileCreditsTooltipTimer) clearTimeout(mobileCreditsTooltipTimer);
+                mobileCreditsTooltipTimer = setTimeout(() => {
+                    creditsDisplay.classList.remove('tooltip-open');
+                }, 2600);
+                return;
+            }
+
+            creditsDisplay.classList.remove('tooltip-open');
+            if (mobileCreditsTooltipTimer) clearTimeout(mobileCreditsTooltipTimer);
+            showPricingModal();
+        });
+        document.addEventListener('click', (e) => {
+            if (!creditsDisplay.contains(e.target)) {
+                creditsDisplay.classList.remove('tooltip-open');
+                if (mobileCreditsTooltipTimer) clearTimeout(mobileCreditsTooltipTimer);
+            }
+            if (!progressMenu.contains(e.target)) {
+                progressDropdown.classList.remove('visible');
+                progressButton.classList.remove('open');
+            }
+        });
+        goalModalCancelBtn.addEventListener('click', closeGoalModal);
+        goalModalSaveBtn.addEventListener('click', saveGoalFromModal);
+        goalModalInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                saveGoalFromModal();
+            }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                closeGoalModal();
+            }
+        });
+        goalModalOverlay.addEventListener('click', (e) => {
+            if (e.target === goalModalOverlay) closeGoalModal();
+        });
+        window.addEventListener('focus', () => { refreshStudyHeaderMetrics(); });
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) refreshStudyHeaderMetrics();
+        });
         adminDashboardBtn.addEventListener('click', () => { userDropdown.classList.remove('visible'); window.location.href = '/admin'; });
         buyCreditsLink.addEventListener('click', (e) => { e.preventDefault(); showPricingModal(); });
         pricingModalClose.addEventListener('click', hidePricingModal);
@@ -1842,6 +2227,15 @@
         });
         window.addEventListener('beforeunload', (e) => { if (currentJobId && pollInterval) { e.preventDefault(); e.returnValue = ''; } });
 
+        function updateHeaderNavActiveState() {
+            const currentPath = window.location.pathname.replace(/\/+$/, '') || '/';
+            document.querySelectorAll('.header-nav-link').forEach((link) => {
+                const href = (link.getAttribute('href') || '').replace(/\/+$/, '') || '/';
+                const isDashboardHome = currentPath === '/dashboard' && href === '/';
+                link.classList.toggle('active', href === currentPath || isDashboardHome);
+            });
+        }
+
         setAmountSelection('flashcards', selectedFlashcardAmount);
         setAmountSelection('questions', selectedQuestionAmount);
         setStudyFeature('none');
@@ -1849,6 +2243,7 @@
         setOutputLanguage('english', '🇬🇧 English');
         switchMode('lecture-notes');
         resetResultsState();
+        updateHeaderNavActiveState();
         checkPaymentResult();
     </script>
 </body>

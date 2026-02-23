@@ -5,9 +5,29 @@ import time
 import io
 import json
 import csv
+import re
 import shutil
 import subprocess
+import html
+import warnings
 from datetime import datetime, timedelta
+
+# Keep startup clean in local dev environments.
+warnings.filterwarnings(
+    "ignore",
+    message=r"urllib3 v2 only supports OpenSSL 1\.1\.1\+.*"
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r"You are using a Python version 3\.9 past its end of life.*",
+    category=FutureWarning
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r"You are using a non-supported Python version \(3\.9.*\).*",
+    category=FutureWarning
+)
+
 import stripe
 from flask import Flask, request, jsonify, render_template, send_file
 from google import genai
@@ -17,6 +37,16 @@ from werkzeug.utils import secure_filename
 from docx import Document
 from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+REPORTLAB_AVAILABLE = True
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, ListFlowable, ListItem, PageBreak
+except Exception:
+    REPORTLAB_AVAILABLE = False
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 
@@ -50,6 +80,9 @@ ADMIN_UIDS = {uid.strip() for uid in os.getenv('ADMIN_UIDS', '').split(',') if u
 
 # --- In-Memory Storage (jobs only — credits are in Firestore now) ---
 jobs = {}
+AUDIO_STREAM_TOKEN_TTL_SECONDS = 3600
+AUDIO_STREAM_TOKENS = {}
+FEATURE_AUDIO_SECTION_SYNC = os.getenv('FEATURE_AUDIO_SECTION_SYNC', '0').strip().lower() in {'1', 'true', 'yes', 'on'}
 
 # --- Credit Bundles (what users can buy) ---
 CREDIT_BUNDLES = {
@@ -160,6 +193,27 @@ Instructies:
 4. Gebruik alinea's om langere spreekbeurten op te delen.
 5. Schrijf de uiteindelijke output volledig in deze taal: {output_language}."""
 
+PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED = """Maak een nauwkeurig transcript met tijdsegmenten van het bijgevoegde audiobestand.
+
+Geef ALLEEN geldige JSON terug, zonder markdown of extra tekst, in exact dit formaat:
+{{
+  "transcript_segments": [
+    {{
+      "start_ms": 0,
+      "end_ms": 10000,
+      "text": "..."
+    }}
+  ],
+  "full_transcript": "..."
+}}
+
+Regels:
+- Gebruik natuurlijke segmenten van ongeveer 5-25 seconden.
+- start_ms en end_ms zijn milliseconden vanaf het begin.
+- Verwijder stopwoorden en aarzelingen om de leesbaarheid te verbeteren zonder inhoud te verliezen.
+- full_transcript bevat de volledige transcriptie als doorlopende tekst.
+- Schrijf tekstinhoud volledig in deze taal: {output_language}."""
+
 PROMPT_INTERVIEW_TRANSCRIPTION = """Transcribe this interview in the format: timecode (mm:ss) - speaker - caption.
 Rules:
 - Use speaker A, speaker B, etc. to identify speakers.
@@ -190,32 +244,89 @@ Transcript:
 {transcript}
 """
 
-PROMPT_MERGE_TEMPLATE = """Creëer een volledige, integrale en goed leesbare uitwerking van een college door de slide-tekst en het audio-transcript naadloos te combineren. Het eindresultaat moet een compleet naslagwerk zijn.
-Kernprincipe:
-Jouw taak is niet om samen te vatten, maar om te completeren. Het doel is volledigheid, niet beknoptheid. Combineer alle relevante informatie van de slides en de audio tot één compleet, doorlopend en goed gestructureerd document. Wees niet terughoudend met de lengte; de output moet zo lang zijn als nodig is om alle inhoud te dekken. Beschouw het als het uitschrijven van een college voor iemand die er niet bij kon zijn en geen detail mag missen.
-Instructies voor Verwerking:
-1. Integreer in plaats van te synthetiseren:
-   - Gebruik de slide-tekst als de ruggengraat en de structuur van het document.
-   - Verweef de gesproken tekst uit het audio-transcript op de juiste logische plek in de slide-tekst.
-   - Voeg alle aanvullende uitleg, context, voorbeelden, nuanceringen en zijsporen uit de audio toe. Als de spreker een concept van de slide verder uitlegt, moet die volledige uitleg in de tekst komen.
-   - Behoud details: Verwijder geen informatie omdat het een 'detail' lijkt. Alle inhoudelijke informatie uit de audio is relevant.
-2. Redigeer voor Leesbaarheid (niet voor beknoptheid):
-   - Verwijder alleen letterlijke herhalingen waarbij de audio exact hetzelfde zegt als de slide-tekst. Als de audio het anders verwoordt, behoud dan de audio-versie omdat deze vaak natuurlijker is.
-   - Zorg ervoor dat alle overbodige conversationele zinnen (bv. "Oké, dan gaan we nu naar de volgende slide," "Hebben jullie hier vragen over?") en directe instructies aan studenten ("Noteer dit goed," "Dit komt op het tentamen") worden verwijderd, tenzij ze cruciaal zijn voor de context.
-   - Herschrijf zinnen waar nodig om een vloeiende overgang te creëren tussen de slide-informatie en de toegevoegde audio-uitleg. De tekst moet lezen als één coherent geheel.
-3. Structuur en Opmaak:
-   - Gebruik de slide-titels als koppen. Creëer waar nodig subkoppen voor subonderwerpen die in de audio worden besproken.
-   - Gebruik alinea's en bullet points om de tekst overzichtelijk en leesbaar te maken.
-   - Gebruik absoluut geen labels zoals "Audio:", "Spreker:" of "Slide:".
-   - Zorg voor een professionele, informatieve en neutrale toon.
-   - Schrijf de uiteindelijke output volledig in deze taal: {output_language}.
-4. Omgaan met Visuele Elementen:
-   - Neem de placeholders voor [Informatieve Afbeelding/Tabel: ...] op de juiste plek in de tekst op.
-   - Laat placeholders voor [Decoratieve Afbeelding] volledig weg uit de uiteindelijke output.
-Input:
-1. Slide-tekst:
+PROMPT_MERGE_TEMPLATE = """Maak één complete, consistente en studieklare uitwerking van het college op basis van slide-tekst en audio-transcript.
+
+DOEL:
+- Lever een volledig naslagdocument op (geen samenvatting).
+- Maak de tekst direct bruikbaar voor studenten bij voorbereiding op toets/tentamen.
+- Integreer alle relevante inhoud uit beide bronnen in één samenhangende tekst.
+
+OUTPUTVORM (VERPLICHT):
+1. Start direct met inhoud in Markdown (geen inleidende assistent-zin).
+2. Eerste regel is een titel met `#`.
+3. Gebruik daarna `##` en `###` met duidelijke, logische opbouw.
+4. Gebruik geen transcriptvorm met sprekers, dialooglabels of vraag-antwoord stijl.
+5. Lever alleen de uiteindelijke tekst; geen toelichting op je werkwijze.
+
+VERBODEN OPENINGEN:
+- "Hier is de uitwerking"
+- "Absoluut"
+- "Onderstaand"
+- "In dit document"
+- "Hieronder volgt"
+
+INHOUDELIJKE REGELS:
+1. Integratie:
+   - Gebruik de slide-volgorde als ruggengraat.
+   - Verwerk audio-uitleg op de logisch juiste plaats.
+   - Behoud inhoudelijke details die didactische waarde hebben.
+2. Redactie:
+   - Verwijder conversatie-ruis (opstartzinnen, klasinteractie, herhalingen zonder inhoud).
+   - Zet spreektaal en klasdialoog om naar vloeiende, doorlopende leertekst.
+3. Structuur:
+   - Per onderwerp: korte definitie/afbakening -> uitleg/mechanisme -> klinische of praktische relevantie.
+   - Gebruik bullets alleen waar dat de scanbaarheid verbetert.
+   - Behoud casussen/opdrachten als aparte secties als ze in de input staan.
+4. Visual placeholders:
+   - Behoud alleen `[Informatieve Afbeelding/Tabel: ...]` op de juiste plek.
+   - Laat decoratieve placeholders weg.
+5. Taal:
+   - Schrijf volledig in: {output_language}.
+   - Houd toon professioneel, neutraal en didactisch.
+
+SOFT FIDELITY (BALANS TUSSEN BETROUWBAARHEID EN LEESBAARHEID):
+- Baseren op slide-tekst + transcript als primaire waarheid.
+- Toegestaan:
+  - Korte verbindingszinnen voor leesbaarheid.
+  - Voorzichtige herformulering/duiding van impliciete verbanden die direct uit de input volgen.
+- Niet toegestaan:
+  - Nieuwe cijfers, richtlijnen, bronnen, diagnoses of behandelclaims die niet uit de input komen.
+  - Nieuwe medische feiten die niet in slide of transcript te herleiden zijn.
+- Bij twijfel: laat weg of formuleer neutraal zonder extra claim.
+
+AFSLUITING (VERPLICHT):
+- Voeg een laatste sectie toe: `## Kernpunten voor tentamen`.
+- Geef 8-15 concrete bullets met de belangrijkste leerpunten.
+
+EINDCONTROLE VOOR UITVOER:
+- Staat er nog een meta-inleiding? Verwijderen.
+- Staat er nog letterlijke klasdialoog? Herschrijven.
+- Zijn de hoofdonderwerpen uit zowel slides als transcript afgedekt? Zo niet: aanvullen.
+
+INPUT SLIDE-TEKST:
 {slide_text}
-2. Audio-transcript:
+
+INPUT AUDIO-TRANSCRIPT:
+{transcript}"""
+
+PROMPT_MERGE_WITH_AUDIO_MARKERS = """Creëer een volledige, integrale en goed leesbare uitwerking van een college door slide-tekst en audio-transcript te combineren.
+
+BELANGRIJK - AUDIO MARKERS:
+Voor elke hoofdsectie gebruik je direct onder de kop exact dit marker-formaat:
+<!-- audio:START_MS-END_MS -->
+waar START_MS en END_MS de relevante tijdrange uit het transcript met tijdsegmenten aangeven.
+
+Regels:
+1. Niet samenvatten, maar compleet uitschrijven.
+2. Gebruik koppen en subkoppen voor structuur.
+3. Verwijder alleen irrelevante spreektaal; behoud alle inhoudelijke uitleg.
+4. Gebruik geen labels zoals "Audio:" of "Slide:".
+5. Schrijf volledig in deze taal: {output_language}.
+
+Input slide-tekst:
+{slide_text}
+
+Input audio-transcript met tijdsegmenten:
 {transcript}"""
 
 PROMPT_STUDY_TEMPLATE = """You are an expert university professor creating study materials. I will provide you with the complete text of a lecture or slide deck.
@@ -806,6 +917,122 @@ def cleanup_files(local_paths, gemini_files):
             client.files.delete(name=gemini_file.name)
         except Exception as e: print(f"Warning: Could not delete Gemini file {gemini_file.name}: {e}")
 
+def parse_audio_markers_from_notes(notes_markdown):
+    if not notes_markdown:
+        return []
+    pattern = re.compile(r'#{1,3}\s+(.+?)\s*\n\s*<!--\s*audio:(\d+)-(\d+)\s*-->', re.MULTILINE)
+    notes_audio_map = []
+    section_index = 0
+    for match in pattern.finditer(notes_markdown):
+        try:
+            start_ms = int(match.group(2))
+            end_ms = int(match.group(3))
+        except Exception:
+            continue
+        notes_audio_map.append({
+            'section_index': section_index,
+            'section_title': match.group(1).strip(),
+            'start_ms': max(0, start_ms),
+            'end_ms': max(start_ms, end_ms),
+        })
+        section_index += 1
+    return notes_audio_map
+
+def format_transcript_with_timestamps(segments):
+    if not isinstance(segments, list):
+        return ''
+    lines = []
+    for seg in segments:
+        if not isinstance(seg, dict):
+            continue
+        text = str(seg.get('text', '') or '').strip()
+        if not text:
+            continue
+        start_ms = int(seg.get('start_ms', 0) or 0)
+        end_ms = int(seg.get('end_ms', start_ms) or start_ms)
+        lines.append(f"[{start_ms}-{end_ms}] {text}")
+    return '\n'.join(lines)
+
+def transcribe_audio_plain(audio_file, audio_mime_type, output_language='English'):
+    output_language = OUTPUT_LANGUAGE_MAP.get(str(output_language).lower(), str(output_language))
+    prompt = PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
+    response = client.models.generate_content(
+        model=MODEL_AUDIO,
+        contents=[types.Content(role='user', parts=[
+            types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type),
+            types.Part.from_text(text=prompt)
+        ])],
+        config=types.GenerateContentConfig(max_output_tokens=65536)
+    )
+    return (getattr(response, 'text', '') or '').strip()
+
+def transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_language='English'):
+    output_language = OUTPUT_LANGUAGE_MAP.get(str(output_language).lower(), str(output_language))
+    prompt = PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED.format(output_language=output_language)
+    try:
+        response = client.models.generate_content(
+            model=MODEL_AUDIO,
+            contents=[types.Content(role='user', parts=[
+                types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type),
+                types.Part.from_text(text=prompt)
+            ])],
+            config=types.GenerateContentConfig(max_output_tokens=65536)
+        )
+        parsed = extract_json_payload(getattr(response, 'text', '') or '')
+        if not isinstance(parsed, dict):
+            raise ValueError('Timestamped transcription JSON not found')
+        raw_segments = parsed.get('transcript_segments', [])
+        full_transcript = str(parsed.get('full_transcript', '') or '').strip()
+        clean_segments = []
+        if isinstance(raw_segments, list):
+            for seg in raw_segments:
+                if not isinstance(seg, dict):
+                    continue
+                text = str(seg.get('text', '') or '').strip()
+                if not text:
+                    continue
+                try:
+                    start_ms = int(seg.get('start_ms', 0) or 0)
+                    end_ms = int(seg.get('end_ms', start_ms) or start_ms)
+                except Exception:
+                    continue
+                clean_segments.append({
+                    'start_ms': max(0, start_ms),
+                    'end_ms': max(start_ms, end_ms),
+                    'text': text,
+                })
+        if not full_transcript and clean_segments:
+            full_transcript = '\n'.join([s['text'] for s in clean_segments]).strip()
+        if not full_transcript:
+            raise ValueError('Empty transcript')
+        return full_transcript, clean_segments
+    except Exception as e:
+        print(f"⚠️ Timestamp transcription failed, falling back to plain transcript: {e}")
+        fallback_prompt = PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
+        fallback_response = client.models.generate_content(
+            model=MODEL_AUDIO,
+            contents=[types.Content(role='user', parts=[
+                types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type),
+                types.Part.from_text(text=fallback_prompt)
+            ])],
+            config=types.GenerateContentConfig(max_output_tokens=65536)
+        )
+        return (getattr(fallback_response, 'text', '') or '').strip(), []
+
+def persist_audio_for_study_pack(job_id, audio_source_path):
+    if not audio_source_path or not os.path.exists(audio_source_path):
+        return ''
+    ext = os.path.splitext(audio_source_path)[1].lower() or '.mp3'
+    audio_dir = os.path.join(UPLOAD_FOLDER, 'study_audio')
+    os.makedirs(audio_dir, exist_ok=True)
+    target_path = os.path.join(audio_dir, f"{job_id}{ext}")
+    try:
+        shutil.copy2(audio_source_path, target_path)
+        return target_path
+    except Exception as e:
+        print(f"⚠️ Could not persist audio for study pack {job_id}: {e}")
+        return ''
+
 def markdown_to_docx(markdown_text, title="Document"):
     doc = Document()
     style = doc.styles['Normal']
@@ -814,53 +1041,348 @@ def markdown_to_docx(markdown_text, title="Document"):
     lines = markdown_text.split('\n')
     i = 0
     is_transcript = any(len(line.strip()) > 3 and line.strip()[0].isdigit() and ':' in line.strip()[:6] and ' - ' in line for line in lines[:20])
+
+    def add_inline_markdown_runs(paragraph, text):
+        raw = str(text or '')
+        # Supports inline emphasis markers used in generated output.
+        parts = re.split(r'(\*\*.+?\*\*|__.+?__|\*.+?\*|_.+?_)', raw)
+        for part in parts:
+            if not part:
+                continue
+            if (part.startswith('**') and part.endswith('**') and len(part) >= 4) or (part.startswith('__') and part.endswith('__') and len(part) >= 4):
+                run = paragraph.add_run(part[2:-2])
+                run.bold = True
+                continue
+            if (part.startswith('*') and part.endswith('*') and len(part) >= 3) or (part.startswith('_') and part.endswith('_') and len(part) >= 3):
+                run = paragraph.add_run(part[1:-1])
+                run.italic = True
+                continue
+            paragraph.add_run(part.replace('**', '').replace('__', ''))
     
     while i < len(lines):
         line = lines[i].strip()
+        numbered_match = re.match(r'^\d+\.\s+(.*)$', line)
         if not line:
             i += 1
             continue
         if line.startswith('### '): doc.add_heading(line[4:], level=3)
         elif line.startswith('## '): doc.add_heading(line[3:], level=2)
         elif line.startswith('# '): doc.add_heading(line[2:], level=1)
-        elif line.startswith('- ') or line.startswith('* '): doc.add_paragraph(line[2:], style='List Bullet')
-        elif len(line) > 2 and line[0].isdigit() and line[1] == '.' and line[2] == ' ': doc.add_paragraph(line[3:], style='List Number')
-        elif is_transcript and len(line) > 3 and line[0].isdigit() and ':' in line[:6]: doc.add_paragraph(line)
+        elif line.startswith('- ') or line.startswith('* '):
+            p = doc.add_paragraph(style='List Bullet')
+            add_inline_markdown_runs(p, line[2:])
+        elif numbered_match:
+            p = doc.add_paragraph(style='List Number')
+            add_inline_markdown_runs(p, numbered_match.group(1))
+        elif is_transcript and len(line) > 3 and line[0].isdigit() and ':' in line[:6]:
+            p = doc.add_paragraph()
+            add_inline_markdown_runs(p, line)
         else:
-            if is_transcript:
-                p = doc.add_paragraph()
-                parts = line.split('**')
-                for j, part in enumerate(parts):
-                    if j % 2 == 1:
-                        run = p.add_run(part)
-                        run.bold = True
-                    else:
-                        italic_parts = part.split('*')
-                        for k, italic_part in enumerate(italic_parts):
-                            run = p.add_run(italic_part)
-                            if k % 2 == 1: run.italic = True
-            else:
-                paragraph_lines = [line]
-                while i + 1 < len(lines):
-                    next_line = lines[i + 1].strip()
-                    if (next_line and not next_line.startswith('#') and not next_line.startswith('- ') and not next_line.startswith('* ') and not (len(next_line) > 2 and next_line[0].isdigit() and next_line[1] == '.')):
-                        paragraph_lines.append(next_line)
-                        i += 1
-                    else: break
-                paragraph_text = ' '.join(paragraph_lines)
-                p = doc.add_paragraph()
-                parts = paragraph_text.split('**')
-                for j, part in enumerate(parts):
-                    if j % 2 == 1:
-                        run = p.add_run(part)
-                        run.bold = True
-                    else:
-                        italic_parts = part.split('*')
-                        for k, italic_part in enumerate(italic_parts):
-                            run = p.add_run(italic_part)
-                            if k % 2 == 1: run.italic = True
+            paragraph_lines = [line]
+            while i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                if (
+                    next_line
+                    and not next_line.startswith('#')
+                    and not next_line.startswith('- ')
+                    and not next_line.startswith('* ')
+                    and not re.match(r'^\d+\.\s+', next_line)
+                ):
+                    paragraph_lines.append(next_line)
+                    i += 1
+                else:
+                    break
+            paragraph_text = ' '.join(paragraph_lines)
+            p = doc.add_paragraph()
+            add_inline_markdown_runs(p, paragraph_text)
         i += 1
     return doc
+
+def normalize_exam_date(raw_value):
+    exam_date = str(raw_value or '').strip()
+    if not exam_date:
+        return ''
+    try:
+        return datetime.strptime(exam_date, '%Y-%m-%d').strftime('%Y-%m-%d')
+    except ValueError:
+        raise ValueError('Exam date must use YYYY-MM-DD format')
+
+def markdown_inline_to_pdf_html(text):
+    safe_text = html.escape(str(text or ''))
+    safe_text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', safe_text)
+    safe_text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', safe_text)
+    return safe_text
+
+def append_notes_markdown_to_story(story, notes_markdown, styles):
+    lines = str(notes_markdown or '').splitlines()
+    bullet_items = []
+
+    def flush_bullets():
+        nonlocal bullet_items
+        if not bullet_items:
+            return
+        list_flow = ListFlowable(
+            [ListItem(Paragraph(item, styles['pdfBody']), leftIndent=6) for item in bullet_items],
+            bulletType='bullet',
+            leftIndent=14,
+            bulletFontSize=8,
+            bulletOffsetY=1
+        )
+        story.append(list_flow)
+        story.append(Spacer(1, 4))
+        bullet_items = []
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            flush_bullets()
+            story.append(Spacer(1, 4))
+            continue
+
+        heading_level = 0
+        if line.startswith('### '):
+            heading_level = 3
+        elif line.startswith('## '):
+            heading_level = 2
+        elif line.startswith('# '):
+            heading_level = 1
+
+        if heading_level:
+            flush_bullets()
+            heading_text = markdown_inline_to_pdf_html(line[heading_level + 1:])
+            heading_style = styles['pdfH1'] if heading_level == 1 else styles['pdfH2'] if heading_level == 2 else styles['pdfH3']
+            story.append(Paragraph(heading_text, heading_style))
+            story.append(Spacer(1, 3))
+            continue
+
+        if line.startswith('- ') or line.startswith('* '):
+            bullet_items.append(markdown_inline_to_pdf_html(line[2:].strip()))
+            continue
+
+        numbered_match = re.match(r'^(\d+)\.\s+(.*)$', line)
+        if numbered_match:
+            flush_bullets()
+            text_html = markdown_inline_to_pdf_html(numbered_match.group(2))
+            story.append(Paragraph(f"{numbered_match.group(1)}. {text_html}", styles['pdfBody']))
+            story.append(Spacer(1, 2))
+            continue
+
+        flush_bullets()
+        story.append(Paragraph(markdown_inline_to_pdf_html(line), styles['pdfBody']))
+        story.append(Spacer(1, 2))
+
+    flush_bullets()
+
+def build_study_pack_pdf(pack, include_answers=True):
+    if not REPORTLAB_AVAILABLE:
+        raise RuntimeError(
+            "PDF export requires the optional 'reportlab' dependency. "
+            "Install it with: pip install reportlab==4.2.5"
+        )
+
+    pdf_buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        pdf_buffer,
+        pagesize=A4,
+        leftMargin=16 * mm,
+        rightMargin=16 * mm,
+        topMargin=14 * mm,
+        bottomMargin=14 * mm,
+        title=str(pack.get('title', 'Study Pack')).strip() or 'Study Pack'
+    )
+
+    base_styles = getSampleStyleSheet()
+    styles = {
+        'pdfTitle': ParagraphStyle(
+            'PdfTitle',
+            parent=base_styles['Heading1'],
+            fontName='Helvetica-Bold',
+            fontSize=17,
+            leading=21,
+            spaceAfter=6,
+            textColor=colors.HexColor('#111827')
+        ),
+        'pdfMeta': ParagraphStyle(
+            'PdfMeta',
+            parent=base_styles['BodyText'],
+            fontName='Helvetica',
+            fontSize=9.5,
+            leading=12.5,
+            textColor=colors.HexColor('#4B5563')
+        ),
+        'pdfSection': ParagraphStyle(
+            'PdfSection',
+            parent=base_styles['Heading2'],
+            fontName='Helvetica-Bold',
+            fontSize=12.5,
+            leading=16,
+            spaceBefore=6,
+            spaceAfter=6,
+            textColor=colors.HexColor('#111827')
+        ),
+        'pdfH1': ParagraphStyle(
+            'PdfH1',
+            parent=base_styles['Heading2'],
+            fontName='Helvetica-Bold',
+            fontSize=12,
+            leading=15,
+            textColor=colors.HexColor('#1F2937')
+        ),
+        'pdfH2': ParagraphStyle(
+            'PdfH2',
+            parent=base_styles['Heading3'],
+            fontName='Helvetica-Bold',
+            fontSize=11,
+            leading=14,
+            textColor=colors.HexColor('#1F2937')
+        ),
+        'pdfH3': ParagraphStyle(
+            'PdfH3',
+            parent=base_styles['Heading4'],
+            fontName='Helvetica-Bold',
+            fontSize=10,
+            leading=13,
+            textColor=colors.HexColor('#374151')
+        ),
+        'pdfBody': ParagraphStyle(
+            'PdfBody',
+            parent=base_styles['BodyText'],
+            fontName='Helvetica',
+            fontSize=9.5,
+            leading=13,
+            textColor=colors.HexColor('#111827')
+        ),
+        'pdfQuestion': ParagraphStyle(
+            'PdfQuestion',
+            parent=base_styles['BodyText'],
+            fontName='Helvetica-Bold',
+            fontSize=10,
+            leading=13.5,
+            textColor=colors.HexColor('#111827')
+        ),
+        'pdfOption': ParagraphStyle(
+            'PdfOption',
+            parent=base_styles['BodyText'],
+            fontName='Helvetica',
+            fontSize=9.5,
+            leading=12.5,
+            leftIndent=10,
+            textColor=colors.HexColor('#1F2937')
+        ),
+        'pdfOptionCorrect': ParagraphStyle(
+            'PdfOptionCorrect',
+            parent=base_styles['BodyText'],
+            fontName='Helvetica-Bold',
+            fontSize=9.5,
+            leading=12.5,
+            leftIndent=10,
+            textColor=colors.HexColor('#065F46')
+        ),
+    }
+
+    pack_title = str(pack.get('title', 'Study Pack')).strip() or 'Study Pack'
+    story = [Paragraph(markdown_inline_to_pdf_html(pack_title), styles['pdfTitle'])]
+
+    mode = str(pack.get('mode', '') or '').strip() or 'Unknown'
+    output_language = str(pack.get('output_language', '') or '').strip() or 'Unknown'
+    course = str(pack.get('course', '') or '').strip() or '-'
+    subject = str(pack.get('subject', '') or '').strip() or '-'
+    semester = str(pack.get('semester', '') or '').strip() or '-'
+    block = str(pack.get('block', '') or '').strip() or '-'
+    created_at = pack.get('created_at', 0)
+    created_text = '-'
+    try:
+        if created_at:
+            created_text = datetime.fromtimestamp(float(created_at)).strftime('%Y-%m-%d %H:%M')
+    except Exception:
+        created_text = '-'
+
+    metadata_rows = [
+        [Paragraph('<b>Mode</b>', styles['pdfMeta']), Paragraph(markdown_inline_to_pdf_html(mode), styles['pdfMeta'])],
+        [Paragraph('<b>Language</b>', styles['pdfMeta']), Paragraph(markdown_inline_to_pdf_html(output_language), styles['pdfMeta'])],
+        [Paragraph('<b>Course</b>', styles['pdfMeta']), Paragraph(markdown_inline_to_pdf_html(course), styles['pdfMeta'])],
+        [Paragraph('<b>Subject</b>', styles['pdfMeta']), Paragraph(markdown_inline_to_pdf_html(subject), styles['pdfMeta'])],
+        [Paragraph('<b>Semester / Block</b>', styles['pdfMeta']), Paragraph(markdown_inline_to_pdf_html(f"{semester} / {block}"), styles['pdfMeta'])],
+        [Paragraph('<b>Created</b>', styles['pdfMeta']), Paragraph(markdown_inline_to_pdf_html(created_text), styles['pdfMeta'])],
+    ]
+    metadata_table = Table(metadata_rows, colWidths=[36 * mm, 145 * mm], hAlign='LEFT')
+    metadata_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ('GRID', (0, 0), (-1, -1), 0.35, colors.HexColor('#E5E7EB')),
+        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#F9FAFB')),
+    ]))
+    story.append(metadata_table)
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph('Integrated Notes', styles['pdfSection']))
+    notes_markdown = str(pack.get('notes_markdown', '') or '').strip()
+    if notes_markdown:
+        append_notes_markdown_to_story(story, notes_markdown, styles)
+    else:
+        story.append(Paragraph('No integrated notes available.', styles['pdfBody']))
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph('Flashcards', styles['pdfSection']))
+    flashcards = pack.get('flashcards', []) if isinstance(pack.get('flashcards', []), list) else []
+    if flashcards:
+        card_rows = [[Paragraph('<b>Front</b>', styles['pdfMeta']), Paragraph('<b>Back</b>', styles['pdfMeta'])]]
+        for card in flashcards:
+            card_rows.append([
+                Paragraph(markdown_inline_to_pdf_html(str(card.get('front', '') or '')), styles['pdfBody']),
+                Paragraph(markdown_inline_to_pdf_html(str(card.get('back', '') or '')), styles['pdfBody']),
+            ])
+        flashcard_table = Table(card_rows, colWidths=[84 * mm, 97 * mm], repeatRows=1, hAlign='LEFT')
+        flashcard_table.setStyle(TableStyle([
+            ('GRID', (0, 0), (-1, -1), 0.35, colors.HexColor('#D1D5DB')),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F3F4F6')),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 5),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        story.append(flashcard_table)
+    else:
+        story.append(Paragraph('No flashcards available.', styles['pdfBody']))
+
+    story.append(PageBreak())
+    practice_title = 'Practice Questions'
+    if not include_answers:
+        practice_title += ' (Without Answers)'
+    story.append(Paragraph(practice_title, styles['pdfSection']))
+    questions = pack.get('test_questions', []) if isinstance(pack.get('test_questions', []), list) else []
+    if questions:
+        for idx, question in enumerate(questions, 1):
+            question_text = str(question.get('question', '') or '').strip() or f'Question {idx}'
+            story.append(Paragraph(f"{idx}. {markdown_inline_to_pdf_html(question_text)}", styles['pdfQuestion']))
+
+            options = question.get('options', [])
+            if not isinstance(options, list):
+                options = []
+            answer = str(question.get('answer', '') or '').strip()
+            letters = ['A', 'B', 'C', 'D']
+            for option_idx, option in enumerate(options[:4]):
+                option_text = str(option or '').strip()
+                is_correct = include_answers and option_text == answer and option_text != ''
+                marker = '✓' if is_correct else '•'
+                letter = letters[option_idx] if option_idx < len(letters) else str(option_idx + 1)
+                option_style = styles['pdfOptionCorrect'] if is_correct else styles['pdfOption']
+                story.append(Paragraph(f"{marker} {letter}. {markdown_inline_to_pdf_html(option_text)}", option_style))
+
+            explanation = str(question.get('explanation', '') or '').strip()
+            if include_answers and explanation:
+                story.append(Paragraph(f"<b>Explanation:</b> {markdown_inline_to_pdf_html(explanation)}", styles['pdfBody']))
+            story.append(Spacer(1, 7))
+    else:
+        story.append(Paragraph('No practice questions available.', styles['pdfBody']))
+
+    doc.build(story)
+    pdf_buffer.seek(0)
+    return pdf_buffer
 
 def save_study_pack(job_id, job_data):
     try:
@@ -882,6 +1404,11 @@ def save_study_pack(job_id, job_data):
             'output_language': job_data.get('output_language', 'English'),
             'notes_markdown': notes_markdown,
             'notes_truncated': notes_truncated,
+            'transcript_segments': job_data.get('transcript_segments', []),
+            'notes_audio_map': job_data.get('notes_audio_map', []),
+            'audio_storage_path': job_data.get('audio_storage_path', ''),
+            'has_audio_sync': FEATURE_AUDIO_SECTION_SYNC and bool(job_data.get('audio_storage_path')) and bool(job_data.get('notes_audio_map', [])),
+            'has_audio_playback': bool(job_data.get('audio_storage_path')),
             'flashcards': job_data.get('flashcards', []),
             'test_questions': job_data.get('test_questions', []),
             'flashcard_selection': job_data.get('flashcard_selection', '20'),
@@ -936,17 +1463,26 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
         jobs[job_id]['step_description'] = 'Processing audio file (this may take a few minutes)...'
         wait_for_file_processing(audio_file)
         jobs[job_id]['step_description'] = 'Generating transcript...'
-        audio_prompt = PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
-        response = client.models.generate_content(model=MODEL_AUDIO, contents=[types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=audio_prompt)])], config=types.GenerateContentConfig(max_output_tokens=65536))
-        transcript = response.text
+        if FEATURE_AUDIO_SECTION_SYNC:
+            transcript, transcript_segments = transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_language)
+        else:
+            transcript = transcribe_audio_plain(audio_file, audio_mime_type, output_language)
+            transcript_segments = []
         jobs[job_id]['transcript'] = transcript
+        jobs[job_id]['transcript_segments'] = transcript_segments
+        jobs[job_id]['audio_storage_path'] = persist_audio_for_study_pack(job_id, converted_audio_path)
         
         jobs[job_id]['step'] = 3
         jobs[job_id]['step_description'] = 'Creating complete lecture notes...'
-        merge_prompt = PROMPT_MERGE_TEMPLATE.format(slide_text=slide_text, transcript=transcript, output_language=output_language)
+        merge_transcript = format_transcript_with_timestamps(transcript_segments) if transcript_segments else transcript
+        if FEATURE_AUDIO_SECTION_SYNC and transcript_segments:
+            merge_prompt = PROMPT_MERGE_WITH_AUDIO_MARKERS.format(slide_text=slide_text, transcript=merge_transcript, output_language=output_language)
+        else:
+            merge_prompt = PROMPT_MERGE_TEMPLATE.format(slide_text=slide_text, transcript=transcript, output_language=output_language)
         response = client.models.generate_content(model=MODEL_INTEGRATION, contents=[types.Content(role='user', parts=[types.Part.from_text(text=merge_prompt)])], config=types.GenerateContentConfig(max_output_tokens=65536))
         merged_notes = response.text
         jobs[job_id]['result'] = merged_notes
+        jobs[job_id]['notes_audio_map'] = parse_audio_markers_from_notes(merged_notes) if FEATURE_AUDIO_SECTION_SYNC else []
 
         if jobs[job_id].get('study_features', 'none') != 'none':
             jobs[job_id]['step'] = 4
@@ -1105,7 +1641,24 @@ def process_interview_transcription(job_id, audio_path):
 
 @app.route('/')
 def index():
+    return render_template('landing.html')
+
+@app.route('/dashboard')
+def dashboard():
     return render_template('index.html')
+
+@app.route('/plan')
+@app.route('/stats')
+def plan_dashboard():
+    return render_template('plan.html')
+
+@app.route('/calendar')
+def calendar_dashboard():
+    return render_template('calendar.html')
+
+@app.route('/features')
+def features_page():
+    return render_template('features.html')
 
 @app.route('/admin')
 def admin_dashboard():
@@ -1338,6 +1891,8 @@ def create_study_pack():
 
         flashcards = sanitize_flashcards(payload.get('flashcards', []), 500)
         test_questions = sanitize_questions(payload.get('test_questions', []), 500)
+        notes_markdown = str(payload.get('notes_markdown', '')).strip()
+        notes_audio_map = parse_audio_markers_from_notes(notes_markdown) if FEATURE_AUDIO_SECTION_SYNC else []
 
         doc_ref = db.collection('study_packs').document()
         doc_ref.set({
@@ -1348,8 +1903,13 @@ def create_study_pack():
             'mode': 'manual',
             'title': title,
             'output_language': str(payload.get('output_language', 'English')).strip()[:64] or 'English',
-            'notes_markdown': str(payload.get('notes_markdown', '')).strip(),
+            'notes_markdown': notes_markdown,
             'notes_truncated': False,
+            'transcript_segments': [],
+            'notes_audio_map': notes_audio_map,
+            'audio_storage_path': '',
+            'has_audio_sync': False,
+            'has_audio_playback': False,
             'flashcards': flashcards,
             'test_questions': test_questions,
             'flashcard_selection': 'manual',
@@ -1389,12 +1949,19 @@ def get_study_pack(pack_id):
         pack = doc.to_dict()
         if pack.get('uid', '') != uid:
             return jsonify({'error': 'Forbidden'}), 403
+        has_audio_playback = bool(pack.get('has_audio_playback', False) or pack.get('audio_storage_path', ''))
+        has_audio_sync = FEATURE_AUDIO_SECTION_SYNC and bool(pack.get('has_audio_sync', False))
+        notes_audio_map = pack.get('notes_audio_map', []) if has_audio_sync else []
         return jsonify({
             'study_pack_id': pack_id,
             'title': pack.get('title', ''),
             'mode': pack.get('mode', ''),
             'output_language': pack.get('output_language', 'English'),
             'notes_markdown': pack.get('notes_markdown', ''),
+            'transcript_segments': pack.get('transcript_segments', []),
+            'notes_audio_map': notes_audio_map,
+            'has_audio_sync': has_audio_sync,
+            'has_audio_playback': has_audio_playback,
             'flashcards': pack.get('flashcards', []),
             'test_questions': pack.get('test_questions', []),
             'interview_summary': pack.get('interview_summary'),
@@ -1460,6 +2027,12 @@ def update_study_pack(pack_id):
             updates['flashcards'] = sanitize_flashcards(payload.get('flashcards', []), 500)
         if 'test_questions' in payload:
             updates['test_questions'] = sanitize_questions(payload.get('test_questions', []), 500)
+        if 'notes_markdown' in payload:
+            updates['notes_markdown'] = str(payload.get('notes_markdown', ''))
+            notes_audio_map = parse_audio_markers_from_notes(updates['notes_markdown']) if FEATURE_AUDIO_SECTION_SYNC else []
+            updates['notes_audio_map'] = notes_audio_map
+            updates['has_audio_sync'] = FEATURE_AUDIO_SECTION_SYNC and bool(pack.get('audio_storage_path', '')) and bool(notes_audio_map)
+        updates['has_audio_playback'] = bool(pack.get('audio_storage_path', ''))
 
         pack_ref.update(updates)
         return jsonify({'ok': True})
@@ -1481,6 +2054,13 @@ def delete_study_pack(pack_id):
         pack = doc.to_dict()
         if pack.get('uid', '') != uid:
             return jsonify({'error': 'Forbidden'}), 403
+        audio_storage_path = pack.get('audio_storage_path', '')
+        if audio_storage_path and isinstance(audio_storage_path, str):
+            try:
+                if os.path.exists(audio_storage_path):
+                    os.remove(audio_storage_path)
+            except Exception as e:
+                print(f"Warning: could not delete study-pack audio file {audio_storage_path}: {e}")
         pack_ref.delete()
         return jsonify({'ok': True})
     except Exception as e:
@@ -1505,6 +2085,7 @@ def get_study_folders():
                 'subject': folder.get('subject', ''),
                 'semester': folder.get('semester', ''),
                 'block': folder.get('block', ''),
+                'exam_date': folder.get('exam_date', ''),
                 'created_at': folder.get('created_at', 0),
             })
         folders.sort(key=lambda f: f.get('created_at', 0), reverse=True)
@@ -1512,6 +2093,48 @@ def get_study_folders():
     except Exception as e:
         print(f"Error fetching study folders: {e}")
         return jsonify({'folders': []})
+
+@app.route('/api/study-packs/<pack_id>/audio-url', methods=['GET'])
+def get_study_pack_audio_url(pack_id):
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+    try:
+        doc = db.collection('study_packs').document(pack_id).get()
+        if not doc.exists:
+            return jsonify({'error': 'Study pack not found'}), 404
+        pack = doc.to_dict()
+        if pack.get('uid', '') != uid:
+            return jsonify({'error': 'Forbidden'}), 403
+        audio_storage_path = str(pack.get('audio_storage_path', '') or '').strip()
+        if not audio_storage_path:
+            return jsonify({'error': 'No audio file for this study pack'}), 404
+        if not os.path.exists(audio_storage_path):
+            return jsonify({'error': 'Audio file not found'}), 404
+        stream_token = str(uuid.uuid4())
+        AUDIO_STREAM_TOKENS[stream_token] = {
+            'path': audio_storage_path,
+            'expires_at': time.time() + AUDIO_STREAM_TOKEN_TTL_SECONDS
+        }
+        return jsonify({'audio_url': f"/api/audio-stream/{stream_token}"})
+    except Exception as e:
+        print(f"Error generating study-pack audio URL {pack_id}: {e}")
+        return jsonify({'error': 'Could not generate audio URL'}), 500
+
+@app.route('/api/audio-stream/<token>', methods=['GET'])
+def stream_audio_token(token):
+    token_data = AUDIO_STREAM_TOKENS.get(token)
+    if not token_data:
+        return jsonify({'error': 'Invalid token'}), 404
+    if time.time() > token_data.get('expires_at', 0):
+        AUDIO_STREAM_TOKENS.pop(token, None)
+        return jsonify({'error': 'Token expired'}), 410
+    file_path = token_data.get('path', '')
+    if not file_path or not os.path.exists(file_path):
+        return jsonify({'error': 'Audio file not found'}), 404
+    mime_type = get_mime_type(file_path)
+    return send_file(file_path, mimetype=mime_type, conditional=True)
 
 @app.route('/api/study-folders', methods=['POST'])
 def create_study_folder():
@@ -1525,6 +2148,10 @@ def create_study_folder():
         return jsonify({'error': 'Folder name is required'}), 400
     try:
         now_ts = time.time()
+        try:
+            exam_date = normalize_exam_date(payload.get('exam_date', ''))
+        except ValueError as ve:
+            return jsonify({'error': str(ve)}), 400
         doc_ref = db.collection('study_folders').document()
         doc_ref.set({
             'folder_id': doc_ref.id,
@@ -1534,6 +2161,7 @@ def create_study_folder():
             'subject': str(payload.get('subject', '')).strip()[:120],
             'semester': str(payload.get('semester', '')).strip()[:120],
             'block': str(payload.get('block', '')).strip()[:120],
+            'exam_date': exam_date,
             'created_at': now_ts,
             'updated_at': now_ts,
         })
@@ -1566,6 +2194,11 @@ def update_study_folder(folder_id):
         for field in ['course', 'subject', 'semester', 'block']:
             if field in payload:
                 updates[field] = str(payload.get(field, '')).strip()[:120]
+        if 'exam_date' in payload:
+            try:
+                updates['exam_date'] = normalize_exam_date(payload.get('exam_date', ''))
+            except ValueError as ve:
+                return jsonify({'error': str(ve)}), 400
         folder_ref.update(updates)
         if 'name' in updates:
             packs = list(db.collection('study_packs').where('uid', '==', uid).where('folder_id', '==', folder_id).stream())
@@ -2107,6 +2740,91 @@ def export_study_pack_flashcards_csv(pack_id):
     except Exception as e:
         print(f"Error exporting study pack flashcards CSV {pack_id}: {e}")
         return jsonify({'error': 'Could not export CSV'}), 500
+
+@app.route('/api/study-packs/<pack_id>/export-notes', methods=['GET'])
+def export_study_pack_notes(pack_id):
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    uid = decoded_token['uid']
+    try:
+        doc = db.collection('study_packs').document(pack_id).get()
+        if not doc.exists:
+            return jsonify({'error': 'Study pack not found'}), 404
+        pack = doc.to_dict()
+        if pack.get('uid', '') != uid:
+            return jsonify({'error': 'Forbidden'}), 403
+
+        notes_markdown = str(pack.get('notes_markdown', '') or '').strip()
+        if not notes_markdown:
+            return jsonify({'error': 'No integrated notes available'}), 400
+
+        export_format = request.args.get('format', 'docx').strip().lower()
+        base_name = f"study-pack-{pack_id}-notes"
+        pack_title = str(pack.get('title', 'Lecture Notes') or 'Lecture Notes').strip()
+
+        if export_format == 'md':
+            md_bytes = io.BytesIO(notes_markdown.encode('utf-8'))
+            md_bytes.seek(0)
+            return send_file(
+                md_bytes,
+                mimetype='text/markdown',
+                as_attachment=True,
+                download_name=f"{base_name}.md"
+            )
+
+        if export_format == 'docx':
+            docx = markdown_to_docx(notes_markdown, pack_title)
+            docx_bytes = io.BytesIO()
+            docx.save(docx_bytes)
+            docx_bytes.seek(0)
+            return send_file(
+                docx_bytes,
+                mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                as_attachment=True,
+                download_name=f"{base_name}.docx"
+            )
+
+        return jsonify({'error': 'Invalid format'}), 400
+    except Exception as e:
+        print(f"Error exporting study pack notes {pack_id}: {e}")
+        return jsonify({'error': 'Could not export notes'}), 500
+
+@app.route('/api/study-packs/<pack_id>/export-pdf', methods=['GET'])
+def export_study_pack_pdf(pack_id):
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    if not REPORTLAB_AVAILABLE:
+        return jsonify({
+            'error': "PDF export is currently unavailable on this server. Install dependency: pip install reportlab==4.2.5"
+        }), 503
+
+    uid = decoded_token['uid']
+    try:
+        doc = db.collection('study_packs').document(pack_id).get()
+        if not doc.exists:
+            return jsonify({'error': 'Study pack not found'}), 404
+
+        pack = doc.to_dict()
+        if pack.get('uid', '') != uid:
+            return jsonify({'error': 'Forbidden'}), 403
+
+        include_answers_raw = str(request.args.get('include_answers', '1')).strip().lower()
+        include_answers = include_answers_raw in {'1', 'true', 'yes', 'on'}
+        pdf_io = build_study_pack_pdf(pack, include_answers=include_answers)
+        filename_suffix = '' if include_answers else '-no-answers'
+        return send_file(
+            pdf_io,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f"study-pack-{pack_id}{filename_suffix}.pdf"
+        )
+    except Exception as e:
+        print(f"Error exporting study pack PDF {pack_id}: {e}")
+        return jsonify({'error': 'Could not export PDF'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

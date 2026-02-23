@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Study Calendar - Lecture Processor</title>
+  <style>
+    :root{
+      --primary:#4F46E5;
+      --primary-dark:#4338CA;
+      --primary-light:#818CF8;
+      --secondary:#0EA5E9;
+      --gray-50:#F9FAFB;
+      --gray-100:#F3F4F6;
+      --gray-200:#E5E7EB;
+      --gray-300:#D1D5DB;
+      --gray-400:#9CA3AF;
+      --gray-500:#6B7280;
+      --gray-600:#4B5563;
+      --gray-700:#374151;
+      --gray-800:#1F2937;
+      --gray-900:#111827;
+      --white:#fff;
+      --success:#10B981;
+      --warning:#F59E0B;
+      --danger:#EF4444;
+      --shadow-sm:0 1px 2px 0 rgb(0 0 0 / .05);
+      --shadow:0 1px 3px 0 rgb(0 0 0 / .1),0 1px 2px -1px rgb(0 0 0 / .1);
+      --shadow-md:0 4px 6px -1px rgb(0 0 0 / .1),0 2px 4px -2px rgb(0 0 0 / .1);
+      --shadow-lg:0 10px 15px -3px rgb(0 0 0 / .1),0 4px 6px -4px rgb(0 0 0 / .1);
+      --shadow-xl:0 20px 25px -5px rgb(0 0 0 / .1),0 8px 10px -6px rgb(0 0 0 / .1);
+      --radius-sm:6px;
+      --radius:8px;
+      --radius-md:12px;
+      --radius-lg:16px;
+      --radius-xl:24px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      background:linear-gradient(135deg,var(--gray-50),var(--gray-100));
+      color:var(--gray-800);
+      line-height:1.6;
+      min-height:100vh;
+      -webkit-font-smoothing:antialiased;
+    }
+    input,textarea,select,button{font-family:inherit}
+    .container{max-width:1320px;margin:0 auto;padding:0 24px}
+
+    .topbar{position:sticky;top:0;z-index:40;padding:12px 0;background:linear-gradient(135deg,var(--gray-50),var(--gray-100))}
+    .topbar-inner{
+      display:flex;align-items:center;gap:10px;padding:14px 18px;flex-wrap:wrap;
+      background:rgba(255,255,255,.95);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+      border:1px solid var(--gray-200);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);
+    }
+    .logo{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--gray-900);font-weight:800;font-size:1.2rem;margin-right:auto;letter-spacing:-.01em}
+    .logo-icon{width:38px;height:38px;border-radius:var(--radius-md);background:linear-gradient(135deg,var(--primary),var(--secondary));display:flex;align-items:center;justify-content:center;color:#fff}
+    .logo-icon svg{width:22px;height:22px}
+    .btn{
+      height:46px;padding:0 14px;border-radius:var(--radius);border:1px solid var(--gray-300);
+      background:var(--white);color:var(--gray-700);font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;
+      text-decoration:none;font-size:.875rem;transition:all .2s ease;
+    }
+    .btn:hover{border-color:var(--gray-400);background:var(--gray-50);color:var(--gray-900)}
+    .btn.primary{border:none;background:linear-gradient(135deg,var(--primary),var(--secondary));color:var(--white);box-shadow:0 6px 20px rgba(79,70,229,.28)}
+    .btn.ghost{border-color:rgba(79,70,229,.36);background:rgba(79,70,229,.08);color:var(--primary-dark)}
+    .btn.danger{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.07);color:#991B1B}
+    .user-email{font-size:.82rem;color:var(--gray-500);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
+
+    .page{padding:14px 0 34px}
+    .headline{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap;margin-bottom:16px}
+    .headline h1{margin:0 0 6px;font-size:2rem;letter-spacing:-.02em;line-height:1.12}
+    .headline p{margin:0;color:var(--gray-500);font-size:1rem}
+
+    .layout{display:grid;grid-template-columns:340px 1fr;gap:16px}
+    .panel{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius-lg);box-shadow:var(--shadow)}
+    .panel-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:16px 20px;border-bottom:1px solid var(--gray-200)}
+    .panel-title{font-size:1.02rem;font-weight:800;letter-spacing:-.01em;color:var(--gray-900)}
+    .panel-body{padding:16px 20px}
+
+    .field{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+    .field label{font-size:.76rem;font-weight:700;color:var(--gray-700);text-transform:uppercase;letter-spacing:.06em}
+    .input{height:46px;border:1px solid var(--gray-300);border-radius:var(--radius-md);padding:0 14px;font-size:1rem;line-height:1.25;background:var(--white);color:var(--gray-900);font-family:inherit;-webkit-appearance:none;appearance:none}
+    .textarea{min-height:96px;border:1px solid var(--gray-300);border-radius:var(--radius-md);padding:12px 14px;font-size:1rem;line-height:1.55;resize:vertical;background:var(--white);color:var(--gray-900);font-family:inherit}
+    .input::placeholder,.textarea::placeholder{font-family:inherit;color:var(--gray-400)}
+    .input:focus,.textarea:focus{outline:none;border-color:rgba(79,70,229,.6);box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+    .muted{font-size:.84rem;color:var(--gray-500);line-height:1.5}
+
+    .input-icon-wrap{position:relative}
+    .input-icon-wrap .input{padding-right:42px}
+    .input-icon{position:absolute;right:12px;top:50%;transform:translateY(-50%);width:20px;height:20px;color:var(--gray-500);pointer-events:none}
+
+    .app-select{position:relative}
+    .app-select-button{
+      width:100%;height:46px;display:flex;align-items:center;justify-content:space-between;gap:8px;
+      border:1px solid var(--gray-300);border-radius:var(--radius-md);padding:0 12px;font-size:1rem;
+      color:var(--gray-900);background:var(--white);cursor:pointer;transition:all .2s ease;
+    }
+    .app-select-button:hover{border-color:var(--gray-400)}
+    .app-select-button.open{border-color:rgba(79,70,229,.6);box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+    .app-select-button svg{width:16px;height:16px;color:var(--gray-500);transition:transform .2s ease}
+    .app-select-button.open svg{transform:rotate(180deg)}
+    .app-select-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .app-select-menu{
+      display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:120;
+      background:var(--white);border:1px solid rgba(79,70,229,.18);border-radius:var(--radius-md);box-shadow:0 18px 34px rgba(15,23,42,.16);
+      max-height:260px;overflow:auto;padding:6px;
+    }
+    .app-select-menu.visible{display:block;animation:dropdownOpen .2s ease-out}
+    .app-select-item{
+      width:100%;border:none;background:var(--white);text-align:left;padding:9px 10px;border-radius:var(--radius-sm);
+      font-size:.92rem;color:var(--gray-700);cursor:pointer;transition:all .15s ease;
+    }
+    .app-select-item:hover{background:var(--gray-50)}
+    .app-select-item.active{background:linear-gradient(135deg,rgba(79,70,229,.16),rgba(14,165,233,.14));color:var(--primary-dark);font-weight:700}
+
+    .disabled-row{opacity:.6}
+    .field.disabled-row{pointer-events:none}
+
+    .week-controls{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+    .week-title{font-size:1.08rem;font-weight:800;color:var(--gray-900);letter-spacing:-.01em}
+
+    .week-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}
+    .day-col{
+      border:1px solid var(--gray-200);border-radius:var(--radius-md);min-height:430px;
+      background:linear-gradient(180deg,#fff,#fbfdff);display:flex;flex-direction:column;overflow:hidden;
+      box-shadow:var(--shadow-sm);
+    }
+    .day-head{padding:12px;border-bottom:1px solid var(--gray-200);background:var(--gray-50)}
+    .day-name{font-size:.75rem;color:var(--gray-500);font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+    .day-date{font-size:1rem;font-weight:800;color:var(--gray-900);margin-top:1px}
+    .day-col.today .day-head{background:linear-gradient(135deg,rgba(79,70,229,.11),rgba(14,165,233,.11));border-bottom-color:rgba(79,70,229,.2)}
+    .day-events{padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0;overflow:auto}
+    .event-card{border:1px solid rgba(79,70,229,.2);background:linear-gradient(135deg,rgba(79,70,229,.08),rgba(14,165,233,.06));border-radius:var(--radius);padding:9px 10px}
+    .event-title{font-size:.84rem;font-weight:700;color:var(--gray-900);line-height:1.3}
+    .event-meta{font-size:.75rem;color:var(--gray-600);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap}
+    .event-actions{margin-top:7px;display:flex;gap:6px;flex-wrap:wrap}
+    .mini-btn{
+      border:1px solid var(--gray-300);background:#fff;border-radius:var(--radius-sm);padding:4px 8px;
+      font-size:.72rem;font-weight:700;color:var(--gray-700);cursor:pointer;transition:all .2s ease;
+    }
+    .mini-btn:hover{border-color:var(--gray-400);background:var(--gray-50)}
+    .mini-btn.primary{border-color:rgba(79,70,229,.35);background:rgba(79,70,229,.08);color:var(--primary-dark)}
+    .mini-btn.danger{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.08);color:#991B1B}
+    .empty-day{font-size:.76rem;color:var(--gray-400);padding:4px 2px}
+
+    .overlay{display:none;position:fixed;inset:0;z-index:120;background:rgba(17,24,39,.45);align-items:center;justify-content:center;padding:20px}
+    .overlay.visible{display:flex;animation:fadeIn .2s ease-out}
+    .modal{
+      width:min(860px,100%);max-height:92vh;overflow:auto;background:var(--white);border:1px solid var(--gray-200);
+      border-radius:var(--radius-xl);box-shadow:var(--shadow-xl);padding:22px;animation:modalIn .2s ease-out;
+    }
+    .modal-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}
+    .modal-title{font-size:1.08rem;font-weight:800;color:var(--gray-900);letter-spacing:-.01em}
+    .modal-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:14px;flex-wrap:wrap}
+
+    .toast{
+      position:fixed;left:50%;bottom:18px;transform:translateX(-50%) translateY(12px);padding:12px 16px;border-radius:var(--radius-md);
+      background:linear-gradient(135deg,rgba(79,70,229,.96),rgba(14,165,233,.96));color:var(--white);
+      font-size:.88rem;font-weight:600;opacity:0;pointer-events:none;transition:opacity .25s ease,transform .25s ease;
+      z-index:160;box-shadow:var(--shadow-lg);
+    }
+    .toast.visible{opacity:1;transform:translateX(-50%) translateY(0)}
+    .toast.error{background:linear-gradient(135deg,#DC2626,#EF4444)}
+
+    .flatpickr-calendar{
+      border:1px solid rgba(79,70,229,.2)!important;
+      border-radius:16px!important;
+      box-shadow:0 22px 40px rgba(15,23,42,.2)!important;
+      font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif!important;
+      overflow:hidden!important;
+    }
+    .flatpickr-months{background:linear-gradient(135deg,rgba(79,70,229,.1),rgba(14,165,233,.09));padding:6px 6px 2px}
+    .flatpickr-current-month{font-size:1rem!important;font-weight:700!important;padding-top:6px!important}
+    .flatpickr-monthDropdown-months,.numInput{font-family:inherit!important}
+    .flatpickr-weekdays{background:var(--gray-50)}
+    .flatpickr-weekday{font-weight:700!important;color:var(--gray-500)!important}
+    .flatpickr-day{border-radius:10px!important;font-weight:500!important}
+    .flatpickr-day.selected,.flatpickr-day.startRange,.flatpickr-day.endRange,.flatpickr-day.selected:hover,.flatpickr-day.startRange:hover,.flatpickr-day.endRange:hover{
+      background:linear-gradient(135deg,var(--primary),var(--secondary))!important;
+      border-color:transparent!important;
+    }
+    .flatpickr-day.today{border-color:var(--primary-light)!important;background:rgba(79,70,229,.06)!important}
+    .flatpickr-day:hover{background:rgba(79,70,229,.11)!important}
+    .flatpickr-time{border-top:1px solid var(--gray-200)!important}
+    .flatpickr-time input{
+      font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif!important;
+      font-size:1.08rem!important;
+      font-weight:600!important;
+      color:var(--gray-900)!important;
+    }
+    .flatpickr-input,.flatpickr-input[readonly]{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif!important;letter-spacing:0}
+
+    @keyframes modalIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+    @keyframes dropdownOpen{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+
+    @media(max-width:1160px){
+      .layout{grid-template-columns:1fr}
+      .week-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+    }
+    @media(max-width:760px){
+      .modal-grid{grid-template-columns:1fr}
+      .modal{padding:18px}
+    }
+    @media(max-width:640px){
+      .container{padding:0 12px}
+      .topbar-inner{flex-wrap:wrap}
+      .user-email{max-width:none;width:100%}
+      .week-grid{grid-template-columns:1fr}
+    }
+  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="container">
+      <div class="topbar-inner">
+        <a href="/dashboard" class="logo">
+          <span class="logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></span>
+          <span>Study Calendar</span>
+        </a>
+        <a class="btn" href="/dashboard">Dashboard</a>
+        <a class="btn" href="/plan">Planner</a>
+        <a class="btn" href="/study">Study Library</a>
+        <button class="btn danger" id="signout-btn" style="display:none;">Sign out</button>
+        <div class="user-email" id="user-email">Checking sign-in...</div>
+      </div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="container">
+      <div class="headline">
+        <div>
+          <h1>Calendar</h1>
+          <p>Week view planning with study sessions, reminders, and desktop notifications.</p>
+        </div>
+        <button class="btn primary" id="add-session-btn">+ Add Study Session</button>
+      </div>
+
+      <div class="layout" id="calendar-layout" style="display:none;">
+        <aside class="panel">
+          <div class="panel-head"><div class="panel-title">Reminder Settings</div></div>
+          <div class="panel-body">
+            <div class="field">
+              <label>Desktop Notifications</label>
+              <div class="app-select" id="notify-enabled-select">
+                <input type="hidden" id="notify-enabled" value="off">
+                <button type="button" class="app-select-button"><span class="app-select-label">Off</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+                <div class="app-select-menu">
+                  <button type="button" class="app-select-item" data-value="off">Off</button>
+                  <button type="button" class="app-select-item" data-value="on">On</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Remind Before Session</label>
+              <div class="app-select" id="notify-offset-select">
+                <input type="hidden" id="notify-offset" value="30">
+                <button type="button" class="app-select-button"><span class="app-select-label">30 minutes</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+                <div class="app-select-menu">
+                  <button type="button" class="app-select-item" data-value="5">5 minutes</button>
+                  <button type="button" class="app-select-item" data-value="10">10 minutes</button>
+                  <button type="button" class="app-select-item" data-value="15">15 minutes</button>
+                  <button type="button" class="app-select-item" data-value="30">30 minutes</button>
+                  <button type="button" class="app-select-item" data-value="60">60 minutes</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Daily Reminder</label>
+              <div class="app-select" id="daily-reminder-enabled-select">
+                <input type="hidden" id="daily-reminder-enabled" value="on">
+                <button type="button" class="app-select-button"><span class="app-select-label">Enabled</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+                <div class="app-select-menu">
+                  <button type="button" class="app-select-item" data-value="on">Enabled</button>
+                  <button type="button" class="app-select-item" data-value="off">Disabled</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="field" id="daily-reminder-time-row">
+              <label>Daily Reminder Time</label>
+              <div class="app-select" id="daily-reminder-time-select">
+                <input type="hidden" id="daily-reminder-time" value="19:00">
+                <button type="button" class="app-select-button"><span class="app-select-label">19:00</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+                <div class="app-select-menu" id="daily-reminder-time-menu"></div>
+              </div>
+            </div>
+            <button class="btn ghost" id="save-reminder-btn">Save reminders</button>
+            <div class="muted" style="margin-top:10px;">Notifications require browser permission and only fire while this page is open.</div>
+          </div>
+        </aside>
+
+        <section class="panel">
+          <div class="panel-body">
+            <div class="week-controls">
+              <div style="display:flex;gap:8px;align-items:center;">
+                <button class="btn" id="prev-week-btn">← Prev</button>
+                <button class="btn" id="today-week-btn">Today</button>
+                <button class="btn" id="next-week-btn">Next →</button>
+              </div>
+              <div class="week-title" id="week-title">Week</div>
+            </div>
+            <div class="week-grid" id="week-grid"></div>
+          </div>
+        </section>
+      </div>
+
+      <div class="panel" id="auth-required" style="display:none;">
+        <div class="panel-body">You need to sign in to use the calendar. <a href="/dashboard">Go to dashboard</a>.</div>
+      </div>
+    </div>
+  </main>
+
+  <div class="overlay" id="session-modal-overlay">
+    <div class="modal" id="session-modal-card">
+      <div class="modal-head">
+        <div class="modal-title" id="session-modal-title">Add Study Session</div>
+        <button class="btn" id="session-modal-close">Close</button>
+      </div>
+      <div class="modal-grid">
+        <div class="field"><label>Title</label><input id="session-title" class="input" placeholder="Review chapter 3"></div>
+
+        <div class="field">
+          <label>Study Pack (optional)</label>
+          <div class="app-select" id="session-pack-select">
+            <input type="hidden" id="session-pack-id" value="">
+            <button type="button" class="app-select-button"><span class="app-select-label">No linked study pack</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+            <div class="app-select-menu" id="session-pack-menu"></div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Date</label>
+          <div class="input-icon-wrap">
+            <input id="session-date" class="input" type="text" placeholder="dd-mm-yyyy">
+            <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Start Time</label>
+          <div class="input-icon-wrap">
+            <input id="session-time" class="input" type="text" placeholder="19:00">
+            <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          </div>
+        </div>
+
+        <div class="field"><label>Duration (minutes)</label><input id="session-duration" class="input" type="number" min="5" max="360" value="60"></div>
+      </div>
+      <div class="field" style="margin-top:8px;"><label>Notes</label><textarea id="session-notes" class="textarea" placeholder="What will you focus on?"></textarea></div>
+      <div class="modal-actions">
+        <button class="btn" id="session-cancel-btn">Cancel</button>
+        <button class="btn primary" id="session-save-btn">Save Session</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyBAAeEUCPNvP5qnqpP3M6HnFZ6vaaijUvM",
+      authDomain: "lecture-processor-cdff6.firebaseapp.com",
+      projectId: "lecture-processor-cdff6",
+      storageBucket: "lecture-processor-cdff6.firebasestorage.app",
+      messagingSenderId: "374793454161",
+      appId: "1:374793454161:web:c68b21590e9a1fafa32e70"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+
+    const weekGrid = document.getElementById('week-grid');
+    const weekTitle = document.getElementById('week-title');
+    const prevWeekBtn = document.getElementById('prev-week-btn');
+    const nextWeekBtn = document.getElementById('next-week-btn');
+    const todayWeekBtn = document.getElementById('today-week-btn');
+    const addSessionBtn = document.getElementById('add-session-btn');
+    const signoutBtn = document.getElementById('signout-btn');
+    const userEmailEl = document.getElementById('user-email');
+    const authRequiredEl = document.getElementById('auth-required');
+    const calendarLayoutEl = document.getElementById('calendar-layout');
+    const toastEl = document.getElementById('toast');
+
+    const modalOverlay = document.getElementById('session-modal-overlay');
+    const modalCard = document.getElementById('session-modal-card');
+    const modalTitleEl = document.getElementById('session-modal-title');
+    const modalCloseBtn = document.getElementById('session-modal-close');
+    const modalCancelBtn = document.getElementById('session-cancel-btn');
+    const modalSaveBtn = document.getElementById('session-save-btn');
+    const sessionTitleEl = document.getElementById('session-title');
+    const sessionDateEl = document.getElementById('session-date');
+    const sessionTimeEl = document.getElementById('session-time');
+    const sessionDurationEl = document.getElementById('session-duration');
+    const sessionNotesEl = document.getElementById('session-notes');
+    const sessionPackIdEl = document.getElementById('session-pack-id');
+    const sessionPackMenu = document.getElementById('session-pack-menu');
+
+    const notifyEnabledEl = document.getElementById('notify-enabled');
+    const notifyOffsetEl = document.getElementById('notify-offset');
+    const dailyReminderEnabledEl = document.getElementById('daily-reminder-enabled');
+    const dailyReminderTimeEl = document.getElementById('daily-reminder-time');
+    const dailyReminderTimeRow = document.getElementById('daily-reminder-time-row');
+    const saveReminderBtn = document.getElementById('save-reminder-btn');
+
+    let currentUser = null;
+    let idToken = '';
+    let weekStart = startOfWeek(new Date());
+    let sessions = [];
+    let studyPacks = [];
+    let editingSessionId = '';
+    let reminderTimer = null;
+    let sessionDatePicker = null;
+    let sessionTimePicker = null;
+
+    function showToast(msg, type) {
+      toastEl.textContent = msg;
+      toastEl.className = 'toast visible' + (type ? ' ' + type : '');
+      setTimeout(() => toastEl.className = 'toast', 2400);
+    }
+
+    function localDateString(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    function startOfWeek(date) {
+      const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      const day = d.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      d.setDate(d.getDate() + diff);
+      return d;
+    }
+
+    function addDays(date, n) {
+      const d = new Date(date.getTime());
+      d.setDate(d.getDate() + n);
+      return d;
+    }
+
+    function formatDayName(date) {
+      return new Intl.DateTimeFormat('en-GB', { weekday: 'short' }).format(date);
+    }
+
+    function formatLongDate(date) {
+      return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(date);
+    }
+
+    function formatTimeDisplay(value) {
+      if (!/^\d{2}:\d{2}$/.test(String(value || ''))) return '00:00';
+      return String(value);
+    }
+
+    function getSessionStorageKey() {
+      return `study_sessions_${currentUser ? currentUser.uid : 'anon'}`;
+    }
+
+    function getReminderStorageKey() {
+      return `study_reminders_${currentUser ? currentUser.uid : 'anon'}`;
+    }
+
+    function authFetch(path, options) {
+      if (!idToken) return Promise.reject(new Error('Not signed in'));
+      const opts = options || {};
+      const headers = Object.assign({}, opts.headers || {}, { Authorization: 'Bearer ' + idToken });
+      return fetch(path, Object.assign({}, opts, { headers }));
+    }
+
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function initAppSelect(selectRoot, onChange) {
+      if (!selectRoot) return;
+      const button = selectRoot.querySelector('.app-select-button');
+      const menu = selectRoot.querySelector('.app-select-menu');
+      const label = selectRoot.querySelector('.app-select-label');
+      const hidden = selectRoot.querySelector('input[type="hidden"]');
+
+      function setValue(value, silent) {
+        if (hidden) hidden.value = value;
+        let activeText = '';
+        menu.querySelectorAll('.app-select-item').forEach((item) => {
+          const isActive = item.getAttribute('data-value') === value;
+          item.classList.toggle('active', isActive);
+          if (isActive) activeText = item.textContent;
+        });
+        if (label) label.textContent = activeText || (menu.querySelector('.app-select-item') ? menu.querySelector('.app-select-item').textContent : '');
+        if (!silent && typeof onChange === 'function') onChange(value);
+      }
+
+      button.addEventListener('click', (e) => {
+        e.preventDefault();
+        const open = !menu.classList.contains('visible');
+        document.querySelectorAll('.app-select-menu.visible').forEach((m) => {
+          if (m !== menu) m.classList.remove('visible');
+        });
+        document.querySelectorAll('.app-select-button.open').forEach((b) => {
+          if (b !== button) b.classList.remove('open');
+        });
+        menu.classList.toggle('visible', open);
+        button.classList.toggle('open', open);
+      });
+
+      menu.addEventListener('click', (e) => {
+        const item = e.target.closest('.app-select-item[data-value]');
+        if (!item) return;
+        setValue(item.getAttribute('data-value'));
+        menu.classList.remove('visible');
+        button.classList.remove('open');
+      });
+
+      const initial = hidden ? hidden.value : ((menu.querySelector('.app-select-item.active') || menu.querySelector('.app-select-item')) && (menu.querySelector('.app-select-item.active') || menu.querySelector('.app-select-item')).getAttribute('data-value'));
+      if (initial) setValue(initial, true);
+
+      selectRoot._setValue = (value, silent) => setValue(String(value || ''), !!silent);
+      selectRoot._getValue = () => (hidden ? String(hidden.value || '') : '');
+    }
+
+    function buildDailyTimeOptions() {
+      const menu = document.getElementById('daily-reminder-time-menu');
+      if (!menu) return;
+      const options = [];
+      for (let h = 0; h < 24; h++) {
+        for (let m = 0; m < 60; m += 15) {
+          options.push(String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0'));
+        }
+      }
+      menu.innerHTML = options.map((v) => `<button type="button" class="app-select-item" data-value="${v}">${v}</button>`).join('');
+    }
+
+    function closeAllSelectMenus() {
+      document.querySelectorAll('.app-select-menu.visible').forEach((m) => m.classList.remove('visible'));
+      document.querySelectorAll('.app-select-button.open').forEach((b) => b.classList.remove('open'));
+    }
+
+    function loadSessions() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(getSessionStorageKey()) || '[]');
+        sessions = Array.isArray(parsed) ? parsed : [];
+      } catch (_) {
+        sessions = [];
+      }
+    }
+
+    function saveSessions() {
+      localStorage.setItem(getSessionStorageKey(), JSON.stringify(sessions));
+    }
+
+    function loadReminderSettings() {
+      const fallback = { enabled: 'off', offset: '30', daily_enabled: 'on', daily_time: '19:00', notified: {} };
+      try {
+        const parsed = JSON.parse(localStorage.getItem(getReminderStorageKey()) || '{}');
+        const settings = Object.assign({}, fallback, parsed || {});
+        settings.notified = settings.notified && typeof settings.notified === 'object' ? settings.notified : {};
+        settings.offset = String(settings.offset || '30');
+        settings.enabled = settings.enabled === 'on' ? 'on' : 'off';
+        settings.daily_enabled = settings.daily_enabled === 'off' ? 'off' : 'on';
+        settings.daily_time = /^\d{2}:\d{2}$/.test(String(settings.daily_time || '')) ? settings.daily_time : '19:00';
+        return settings;
+      } catch (_) {
+        return fallback;
+      }
+    }
+
+    function saveReminderSettings(settings) {
+      localStorage.setItem(getReminderStorageKey(), JSON.stringify(settings));
+    }
+
+    function toggleDailyReminderTimeInput() {
+      const enabled = dailyReminderEnabledEl.value === 'on';
+      const selectButton = dailyReminderTimeRow ? dailyReminderTimeRow.querySelector('.app-select-button') : null;
+      if (selectButton) {
+        selectButton.disabled = !enabled;
+        selectButton.style.pointerEvents = enabled ? '' : 'none';
+      }
+      dailyReminderTimeRow.classList.toggle('disabled-row', !enabled);
+    }
+
+    function initPickers() {
+      if (typeof flatpickr === 'undefined') return;
+      if (!sessionDatePicker) {
+        sessionDatePicker = flatpickr(sessionDateEl, {
+          dateFormat: 'Y-m-d',
+          altInput: true,
+          altFormat: 'd-m-Y',
+          altInputClass: 'input',
+          disableMobile: true,
+          locale: { firstDayOfWeek: 1 },
+          allowInput: true,
+          defaultDate: localDateString(new Date())
+        });
+      }
+      if (!sessionTimePicker) {
+        sessionTimePicker = flatpickr(sessionTimeEl, {
+          enableTime: true,
+          noCalendar: true,
+          dateFormat: 'H:i',
+          time_24hr: true,
+          disableMobile: true,
+          allowInput: true,
+          defaultDate: '19:00'
+        });
+      }
+    }
+
+    function renderPackSelectOptions(selectedPackId) {
+      if (!sessionPackMenu) return;
+      const safeSelected = String(selectedPackId || '');
+      const options = [{ value: '', label: 'No linked study pack' }].concat((studyPacks || []).map((p) => ({ value: String(p.study_pack_id || ''), label: p.title || 'Untitled pack' })));
+      sessionPackMenu.innerHTML = options.map((opt) => `<button type="button" class="app-select-item${opt.value === safeSelected ? ' active' : ''}" data-value="${escapeHtml(opt.value)}">${escapeHtml(opt.label)}</button>`).join('');
+      if (sessionPackSelect && typeof sessionPackSelect._setValue === 'function') {
+        sessionPackSelect._setValue(safeSelected, true);
+      }
+    }
+
+    function getPackById(packId) {
+      const id = String(packId || '');
+      return (studyPacks || []).find((p) => String(p.study_pack_id || '') === id) || null;
+    }
+
+    function getStudyUrlForSession(session) {
+      const packId = String(session && session.pack_id ? session.pack_id : '');
+      if (!packId) return '/study';
+      return '/study?pack_id=' + encodeURIComponent(packId) + '&mode=learn';
+    }
+
+    function openStudySession(session, openInNewTab) {
+      const url = getStudyUrlForSession(session);
+      if (openInNewTab) {
+        window.open(url, '_blank', 'noopener');
+      } else {
+        window.location.href = url;
+      }
+    }
+
+    async function loadStudyPacks() {
+      if (!idToken) {
+        studyPacks = [];
+        renderPackSelectOptions('');
+        return;
+      }
+      try {
+        const response = await authFetch('/api/study-packs');
+        if (!response.ok) throw new Error('Could not load study packs');
+        const data = await response.json();
+        studyPacks = Array.isArray(data.study_packs) ? data.study_packs : [];
+      } catch (_) {
+        studyPacks = [];
+      }
+      renderPackSelectOptions(sessionPackIdEl.value || '');
+    }
+
+    function openModal(editSession) {
+      editingSessionId = editSession ? editSession.id : '';
+      modalTitleEl.textContent = editingSessionId ? 'Edit Study Session' : 'Add Study Session';
+      sessionTitleEl.value = editSession ? (editSession.title || '') : '';
+      sessionDurationEl.value = editSession ? String(editSession.duration || 60) : '60';
+      sessionNotesEl.value = editSession ? (editSession.notes || '') : '';
+      sessionPackIdEl.value = editSession ? String(editSession.pack_id || '') : '';
+      renderPackSelectOptions(sessionPackIdEl.value);
+
+      const dateValue = editSession ? String(editSession.date || localDateString(new Date())) : localDateString(new Date());
+      const timeValue = editSession ? String(editSession.time || '19:00') : '19:00';
+      if (sessionDatePicker) sessionDatePicker.setDate(dateValue, true, 'Y-m-d');
+      else sessionDateEl.value = dateValue;
+      if (sessionTimePicker) sessionTimePicker.setDate(timeValue, true, 'H:i');
+      else sessionTimeEl.value = timeValue;
+
+      modalOverlay.classList.add('visible');
+      setTimeout(() => sessionTitleEl.focus(), 30);
+    }
+
+    function closeModal() {
+      modalOverlay.classList.remove('visible');
+      editingSessionId = '';
+      closeAllSelectMenus();
+    }
+
+    function sessionToTimestamp(session) {
+      return new Date(`${session.date}T${session.time}:00`).getTime();
+    }
+
+    function renderWeek() {
+      const end = addDays(weekStart, 6);
+      weekTitle.textContent = `${formatLongDate(weekStart)} - ${formatLongDate(end)}`;
+      weekGrid.innerHTML = '';
+      const today = localDateString(new Date());
+
+      for (let i = 0; i < 7; i++) {
+        const dayDate = addDays(weekStart, i);
+        const dayKey = localDateString(dayDate);
+        const col = document.createElement('div');
+        col.className = 'day-col' + (dayKey === today ? ' today' : '');
+        const daySessions = sessions
+          .filter((s) => s.date === dayKey)
+          .sort((a, b) => sessionToTimestamp(a) - sessionToTimestamp(b));
+
+        const eventsHtml = daySessions.length
+          ? daySessions.map((s) => {
+              const duration = parseInt(s.duration, 10) || 60;
+              const packMeta = s.pack_title ? `<div class="event-meta"><strong>Pack:</strong> ${escapeHtml(s.pack_title)}</div>` : '';
+              return `<div class="event-card" data-session-id="${s.id}">
+                <div class="event-title">${escapeHtml(s.title || 'Study session')}</div>
+                <div class="event-meta"><span>${escapeHtml(formatTimeDisplay(s.time || '19:00'))}</span><span>${duration} min</span></div>
+                ${packMeta}
+                ${s.notes ? `<div class="event-meta">${escapeHtml(s.notes)}</div>` : ''}
+                <div class="event-actions">
+                  <button class="mini-btn primary" data-open-session="${s.id}">Open</button>
+                  <button class="mini-btn" data-edit-session="${s.id}">Edit</button>
+                  <button class="mini-btn danger" data-delete-session="${s.id}">Delete</button>
+                </div>
+              </div>`;
+            }).join('')
+          : '<div class="empty-day">No sessions planned.</div>';
+
+        col.innerHTML = `<div class="day-head"><div class="day-name">${formatDayName(dayDate)}</div><div class="day-date">${dayDate.getDate()}</div></div><div class="day-events">${eventsHtml}</div>`;
+        weekGrid.appendChild(col);
+      }
+    }
+
+    function saveSessionFromModal() {
+      const title = String(sessionTitleEl.value || '').trim();
+      const date = String(sessionDateEl.value || '').trim();
+      const time = String(sessionTimeEl.value || '').trim();
+      const duration = parseInt(sessionDurationEl.value || '0', 10);
+      const notes = String(sessionNotesEl.value || '').trim();
+      const packId = String(sessionPackIdEl.value || '');
+      const pack = getPackById(packId);
+
+      if (!title) {
+        showToast('Session title is required.', 'error');
+        sessionTitleEl.focus();
+        return;
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        showToast('Choose a valid session date.', 'error');
+        sessionDateEl.focus();
+        return;
+      }
+      if (!/^\d{2}:\d{2}$/.test(time)) {
+        showToast('Choose a valid start time.', 'error');
+        sessionTimeEl.focus();
+        return;
+      }
+      if (!Number.isFinite(duration) || duration < 5 || duration > 360) {
+        showToast('Duration must be between 5 and 360 minutes.', 'error');
+        sessionDurationEl.focus();
+        return;
+      }
+
+      const payload = {
+        id: editingSessionId || (Date.now().toString(36) + Math.random().toString(36).slice(2, 7)),
+        title,
+        date,
+        time,
+        duration,
+        notes,
+        pack_id: packId,
+        pack_title: pack ? (pack.title || 'Untitled pack') : ''
+      };
+
+      if (editingSessionId) sessions = sessions.map((s) => (s.id === editingSessionId ? payload : s));
+      else sessions.push(payload);
+
+      saveSessions();
+      closeModal();
+      renderWeek();
+      showToast(editingSessionId ? 'Session updated.' : 'Session added.', 'success');
+    }
+
+    function deleteSession(sessionId) {
+      sessions = sessions.filter((s) => s.id !== sessionId);
+      saveSessions();
+      renderWeek();
+      showToast('Session removed.', 'success');
+    }
+
+    function applyReminderSettingsToUI() {
+      const settings = loadReminderSettings();
+      if (notifyEnabledSelect && notifyEnabledSelect._setValue) notifyEnabledSelect._setValue(settings.enabled, true);
+      if (notifyOffsetSelect && notifyOffsetSelect._setValue) notifyOffsetSelect._setValue(settings.offset, true);
+      if (dailyReminderEnabledSelect && dailyReminderEnabledSelect._setValue) dailyReminderEnabledSelect._setValue(settings.daily_enabled, true);
+
+      if (dailyReminderTimeSelect && dailyReminderTimeSelect._setValue) {
+        dailyReminderTimeSelect._setValue(settings.daily_time || '19:00', true);
+      } else {
+        dailyReminderTimeEl.value = settings.daily_time || '19:00';
+      }
+      toggleDailyReminderTimeInput();
+    }
+
+    async function saveReminderSettingsFromUI() {
+      const settings = loadReminderSettings();
+      settings.enabled = notifyEnabledEl.value === 'on' ? 'on' : 'off';
+      settings.offset = String(parseInt(notifyOffsetEl.value || '30', 10) || 30);
+      settings.daily_enabled = dailyReminderEnabledEl.value === 'off' ? 'off' : 'on';
+      settings.daily_time = settings.daily_enabled === 'on' ? String(dailyReminderTimeEl.value || '19:00') : '';
+
+      if (settings.enabled === 'on' && Notification && Notification.permission !== 'granted') {
+        try {
+          const permission = await Notification.requestPermission();
+          if (permission !== 'granted') {
+            settings.enabled = 'off';
+            if (notifyEnabledSelect && notifyEnabledSelect._setValue) notifyEnabledSelect._setValue('off', true);
+            showToast('Notifications were not allowed. Reminders remain off.', 'error');
+            saveReminderSettings(settings);
+            return;
+          }
+        } catch (_) {
+          settings.enabled = 'off';
+          if (notifyEnabledSelect && notifyEnabledSelect._setValue) notifyEnabledSelect._setValue('off', true);
+          showToast('Could not request notification permission.', 'error');
+          saveReminderSettings(settings);
+          return;
+        }
+      }
+
+      saveReminderSettings(settings);
+      showToast('Reminder settings saved.', 'success');
+      startReminderLoop();
+    }
+
+    function maybeNotify(title, body, session) {
+      if (Notification && Notification.permission === 'granted') {
+        const notification = new Notification(title, { body });
+        notification.onclick = function () {
+          window.focus();
+          if (session) openStudySession(session, false);
+        };
+      }
+      showToast(body, 'success');
+    }
+
+    function startReminderLoop() {
+      if (reminderTimer) clearInterval(reminderTimer);
+      reminderTimer = setInterval(checkReminders, 30000);
+      checkReminders();
+    }
+
+    function checkReminders() {
+      if (!currentUser) return;
+      const settings = loadReminderSettings();
+      if (settings.enabled !== 'on') return;
+      const now = new Date();
+      const nowTs = now.getTime();
+      const offsetMs = (parseInt(settings.offset, 10) || 30) * 60000;
+      let changed = false;
+
+      sessions.forEach((session) => {
+        const key = `${session.id}_${session.date}_${session.time}`;
+        const targetTs = sessionToTimestamp(session);
+        const delta = targetTs - nowTs;
+        if (delta <= offsetMs && delta > 0 && !settings.notified[key]) {
+          settings.notified[key] = true;
+          changed = true;
+          const packPart = session.pack_title ? ` (${session.pack_title})` : '';
+          maybeNotify('Study session reminder', `${session.title}${packPart} starts at ${session.time}. Click to open.`, session);
+        }
+      });
+
+      const todayKey = localDateString(now);
+      const dailyKey = `daily_${todayKey}`;
+      if (settings.daily_enabled === 'on' && settings.daily_time && !settings.notified[dailyKey]) {
+        const [hh, mm] = settings.daily_time.split(':').map((v) => parseInt(v, 10));
+        const dailyDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hh || 19, mm || 0, 0, 0);
+        if (nowTs >= dailyDate.getTime() && nowTs <= dailyDate.getTime() + 60000) {
+          settings.notified[dailyKey] = true;
+          changed = true;
+          maybeNotify('Daily study reminder', 'Open your planner and schedule your next review.', null);
+        }
+      }
+
+      if (changed) saveReminderSettings(settings);
+    }
+
+    function wireWeekActions() {
+      weekGrid.addEventListener('click', (e) => {
+        const openBtn = e.target.closest('[data-open-session]');
+        if (openBtn) {
+          const id = openBtn.getAttribute('data-open-session');
+          const session = sessions.find((s) => s.id === id);
+          if (session) openStudySession(session, false);
+          return;
+        }
+
+        const editBtn = e.target.closest('[data-edit-session]');
+        if (editBtn) {
+          const id = editBtn.getAttribute('data-edit-session');
+          const session = sessions.find((s) => s.id === id);
+          if (session) openModal(session);
+          return;
+        }
+
+        const delBtn = e.target.closest('[data-delete-session]');
+        if (delBtn) {
+          const id = delBtn.getAttribute('data-delete-session');
+          deleteSession(id);
+        }
+      });
+    }
+
+    prevWeekBtn.addEventListener('click', () => { weekStart = addDays(weekStart, -7); renderWeek(); });
+    nextWeekBtn.addEventListener('click', () => { weekStart = addDays(weekStart, 7); renderWeek(); });
+    todayWeekBtn.addEventListener('click', () => { weekStart = startOfWeek(new Date()); renderWeek(); });
+    addSessionBtn.addEventListener('click', () => openModal(null));
+    modalCloseBtn.addEventListener('click', closeModal);
+    modalCancelBtn.addEventListener('click', closeModal);
+    modalSaveBtn.addEventListener('click', saveSessionFromModal);
+    modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
+    saveReminderBtn.addEventListener('click', saveReminderSettingsFromUI);
+
+    modalCard.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      if (e.target === sessionNotesEl) return;
+      if (e.target && e.target.closest('.app-select-menu')) return;
+      e.preventDefault();
+      saveSessionFromModal();
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.app-select')) closeAllSelectMenus();
+    });
+
+    signoutBtn.addEventListener('click', async () => {
+      try {
+        await auth.signOut();
+      } finally {
+        window.location.href = '/dashboard';
+      }
+    });
+
+    const notifyEnabledSelect = document.getElementById('notify-enabled-select');
+    const notifyOffsetSelect = document.getElementById('notify-offset-select');
+    const dailyReminderEnabledSelect = document.getElementById('daily-reminder-enabled-select');
+    const dailyReminderTimeSelect = document.getElementById('daily-reminder-time-select');
+    const sessionPackSelect = document.getElementById('session-pack-select');
+
+    buildDailyTimeOptions();
+    initAppSelect(notifyEnabledSelect, () => {});
+    initAppSelect(notifyOffsetSelect, () => {});
+    initAppSelect(dailyReminderEnabledSelect, () => { toggleDailyReminderTimeInput(); });
+    initAppSelect(dailyReminderTimeSelect, () => {});
+    initAppSelect(sessionPackSelect, () => {});
+    initPickers();
+    wireWeekActions();
+
+    auth.onAuthStateChanged(async (user) => {
+      currentUser = user;
+      if (!user) {
+        idToken = '';
+        userEmailEl.textContent = 'Not signed in';
+        signoutBtn.style.display = 'none';
+        authRequiredEl.style.display = '';
+        calendarLayoutEl.style.display = 'none';
+        if (reminderTimer) clearInterval(reminderTimer);
+        studyPacks = [];
+        renderPackSelectOptions('');
+        return;
+      }
+
+      idToken = await user.getIdToken();
+      userEmailEl.textContent = user.email || 'Signed in';
+      signoutBtn.style.display = '';
+      authRequiredEl.style.display = 'none';
+      calendarLayoutEl.style.display = '';
+
+      loadSessions();
+      await loadStudyPacks();
+      applyReminderSettingsToUI();
+      renderWeek();
+      startReminderLoop();
+    });
+  </script>
+</body>
+</html>

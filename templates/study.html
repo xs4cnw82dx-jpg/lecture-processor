@@ -26,13 +26,19 @@
     input,textarea,select,button{font-family:inherit}
     .container{max-width:1360px;margin:0 auto;padding:20px}
 
-    .topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 20px;background:rgba(255,255,255,0.95);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--gray-200);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);margin-bottom:16px;position:sticky;top:12px;z-index:100}
+    .topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 20px;background:rgba(255,255,255,0.95);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--gray-200);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);margin-bottom:16px;position:static}
     .topbar-logo{display:flex;align-items:center;gap:12px;min-width:0}
     .topbar-logo-icon{width:38px;height:38px;flex-shrink:0;background:linear-gradient(135deg,var(--primary) 0%,var(--secondary) 100%);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;color:var(--white)}
     .topbar-logo-icon svg{width:22px;height:22px}
     .topbar h1{font-size:1.15rem;font-weight:700;letter-spacing:-0.025em;color:var(--gray-900);white-space:nowrap}
     .topbar-sub{font-size:.8125rem;color:var(--gray-500);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
     .actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .study-pill{
+      display:inline-flex;align-items:center;gap:6px;border:1px solid var(--gray-300);background:var(--white);
+      border-radius:999px;padding:7px 11px;font-size:.78rem;font-weight:700;color:var(--gray-700)
+    }
+    .study-pill svg{width:13px;height:13px}
+    .study-pill.due{border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.08);color:#92400E}
 
     .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid var(--gray-300);background:var(--white);color:var(--gray-700);border-radius:var(--radius);padding:9px 14px;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s ease;white-space:nowrap}
     .btn:hover{border-color:var(--gray-400);color:var(--gray-900);background:var(--gray-50)}
@@ -49,6 +55,7 @@
     @media(max-width:1020px){.grid{grid-template-columns:1fr}}
 
     .panel{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius-xl);box-shadow:var(--shadow-lg);overflow:hidden}
+    .grid > section.panel{overflow:visible}
     .panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:16px 20px;border-bottom:1px solid var(--gray-200)}
     .panel-title{font-size:.95rem;font-weight:700;color:var(--gray-900)}
     .panel-body{padding:16px 20px}
@@ -96,6 +103,9 @@
     .item-head{display:flex;justify-content:space-between;gap:8px;align-items:center}
     .item-title{font-size:.9rem;font-weight:700;color:var(--gray-900)}
     .item-sub{margin-top:4px;font-size:.78rem;color:var(--gray-500)}
+    .item-sub.exam-countdown{margin-top:6px;font-weight:600;color:#92400E}
+    .item-sub.exam-countdown.later{color:#0F766E}
+    .item-sub.exam-countdown.overdue{color:#B91C1C}
 
     .split{display:grid;grid-template-columns:320px 1fr;gap:16px}
     @media(max-width:1200px){.split{grid-template-columns:1fr}}
@@ -112,9 +122,58 @@
     .editor-tab svg{width:15px;height:15px}
     .editor-pane{display:none}
     .editor-pane.active{display:block;animation:fadeIn .25s ease-out}
+    .notes-pane-shell{position:relative}
     .notes-view{border:1px solid var(--gray-200);border-radius:var(--radius-md);background:var(--gray-50);padding:20px;max-height:60vh;overflow-y:auto;font-size:.92rem;line-height:1.7}
     .notes-view h1,.notes-view h2,.notes-view h3{margin-top:20px;margin-bottom:10px;color:var(--gray-900)}
     .notes-view h1{font-size:1.4rem;border-bottom:2px solid var(--gray-200);padding-bottom:8px}
+    .notes-pane-shell:fullscreen,
+    .notes-pane-shell:-webkit-full-screen{
+      display:flex;
+      flex-direction:column;
+      width:100vw;
+      height:100vh;
+      padding:22px;
+      background:linear-gradient(135deg,var(--gray-50) 0%,var(--gray-100) 100%);
+      overflow:auto;
+    }
+    .notes-pane-shell:fullscreen .notes-view,
+    .notes-pane-shell:-webkit-full-screen .notes-view{
+      flex:1;
+      max-height:none;
+      min-height:0;
+      height:auto;
+      overflow-y:auto;
+      background:var(--white);
+      border-radius:var(--radius-lg);
+      box-shadow:var(--shadow-lg);
+      max-width:1200px;
+      width:100%;
+      margin:0 auto;
+      padding:26px 28px;
+      overscroll-behavior:contain;
+    }
+    .notes-pane-shell:fullscreen .notes-fullscreen-btn,
+    .notes-pane-shell:-webkit-full-screen .notes-fullscreen-btn{top:16px;left:16px}
+    .notes-fullscreen-btn{
+      position:absolute;top:10px;left:10px;z-index:6;
+      width:34px;height:34px;border-radius:10px;
+      border:1px solid rgba(129,140,248,.45);
+      background:linear-gradient(135deg,#EEF2FF 0%,#E0E7FF 100%);
+      color:var(--primary);
+      box-shadow:0 6px 16px rgba(79,70,229,.16);
+      display:flex;align-items:center;justify-content:center;
+      cursor:pointer;opacity:.95;transition:opacity .8s ease,transform .2s ease,background .2s ease,border-color .2s ease,box-shadow .2s ease;
+    }
+    .notes-fullscreen-btn svg{width:16px;height:16px}
+    .notes-fullscreen-btn:hover{
+      transform:translateY(-1px);
+      background:linear-gradient(135deg,#E0E7FF 0%,#DBEAFE 100%);
+      border-color:rgba(79,70,229,.55);
+      box-shadow:0 8px 18px rgba(79,70,229,.2);
+    }
+    .notes-fullscreen-btn.idle{opacity:.18}
+    .notes-pane-shell:hover .notes-fullscreen-btn,
+    .notes-fullscreen-btn:focus-visible{opacity:1}
     .editor-toolbar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
     .editor-count{font-size:.82rem;color:var(--gray-500);font-weight:600}
     .editor-list{display:flex;flex-direction:column;gap:10px;max-height:58vh;overflow-y:auto;padding-right:2px}
@@ -182,6 +241,7 @@
     .algo-slot[data-type="familiar"]{background:linear-gradient(135deg,#34D399,#10B981)}
     .algo-slot[data-type="retry"]{background:linear-gradient(135deg,#FB7185,#EF4444)}
     .algo-slot[data-type="remaster"]{background:linear-gradient(135deg,#FBBF24,#F59E0B)}
+    .algo-slot[data-type="hard"]{background:linear-gradient(135deg,#F87171,#DC2626)}
     .algo-slot[data-type="random"]{background:linear-gradient(135deg,#A78BFA,#7C3AED)}
     .algo-chevron{color:var(--gray-400);flex-shrink:0}
     .algo-chevron svg{width:16px;height:16px}
@@ -212,6 +272,17 @@
     .mastery-ring-label{font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--gray-500)}
     .mastery-stat{display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 16px;background:var(--gray-50);border-radius:var(--radius);font-size:.85rem;color:var(--gray-600);margin-bottom:16px}
     .mastery-stat strong{color:var(--gray-900)}
+    .mastery-extra{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:14px}
+    .mastery-pill{display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 10px;border:1px solid var(--gray-200);background:var(--white);border-radius:var(--radius);font-size:.8rem;color:var(--gray-700)}
+    .mastery-pill strong{color:var(--gray-900)}
+    .mastery-pill.due{border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.08);color:#92400E}
+    .difficulty-distribution{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:2px}
+    .difficulty-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;font-size:.75rem;font-weight:700;border:1px solid}
+    .difficulty-chip.easy{background:rgba(16,185,129,.12);color:#065F46;border-color:rgba(16,185,129,.34)}
+    .difficulty-chip.medium{background:rgba(245,158,11,.12);color:#92400E;border-color:rgba(245,158,11,.36)}
+    .difficulty-chip.hard{background:rgba(239,68,68,.12);color:#991B1B;border-color:rgba(239,68,68,.35)}
+    .exam-recommendation{margin-top:12px;padding:10px 12px;border:1px solid rgba(79,70,229,.22);background:rgba(79,70,229,.06);border-radius:var(--radius);font-size:.82rem;color:var(--gray-700);text-align:center}
+    .exam-recommendation strong{color:var(--gray-900)}
 
     /* ── Learn stage ── */
     .learn-stage{position:fixed;inset:0;z-index:300;background:linear-gradient(135deg,var(--gray-50) 0%,var(--gray-100) 100%);display:none;opacity:0;transition:opacity .35s ease}
@@ -238,6 +309,79 @@
     .learn-pane.active{display:block;animation:fadeIn .25s ease-out}
     .learn-notes{border:1px solid var(--gray-200);border-radius:var(--radius-md);background:var(--gray-50);padding:20px;max-height:60vh;overflow-y:auto;font-size:.95rem;line-height:1.75}
     .learn-notes h1,.learn-notes h2,.learn-notes h3{margin-top:20px;margin-bottom:10px;color:var(--gray-900)}
+    .difficulty-toolbar{display:none;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:-4px;opacity:1;transition:opacity .8s ease}
+    .difficulty-toolbar.visible{display:flex}
+    .difficulty-toolbar.faded{opacity:.15}
+    .difficulty-toolbar:hover{opacity:1}
+    .difficulty-btn{border:1px solid var(--gray-300);background:var(--white);border-radius:999px;padding:7px 10px;font-size:.78rem;font-weight:700;cursor:pointer;transition:all .2s ease}
+    .difficulty-btn:hover{border-color:var(--gray-500)}
+    .difficulty-btn.easy.active{border-color:rgba(16,185,129,.45);background:rgba(16,185,129,.12);color:#065F46}
+    .difficulty-btn.medium.active{border-color:rgba(245,158,11,.45);background:rgba(245,158,11,.12);color:#92400E}
+    .difficulty-btn.hard.active{border-color:rgba(239,68,68,.45);background:rgba(239,68,68,.12);color:#991B1B}
+    .difficulty-hint{display:inline-flex;align-items:center;gap:6px;font-size:.75rem;color:var(--gray-500)}
+
+    /* ── Audio Sync Player ── */
+    .audio-player-bar{
+      position:fixed;left:0;right:0;bottom:0;z-index:360;
+      display:flex;align-items:center;gap:12px;
+      padding:10px 16px;background:rgba(17,24,39,.96);
+      border-top:1px solid rgba(255,255,255,.12);
+      transform:translateY(100%);transition:transform .25s ease;
+    }
+    .audio-player-bar.visible{transform:translateY(0)}
+    .audio-play-btn,.audio-close-btn{
+      width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;
+      border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:var(--white);
+    }
+    .audio-play-btn{background:linear-gradient(135deg,var(--primary),var(--secondary));border:none}
+    .audio-play-btn svg,.audio-close-btn svg{width:16px;height:16px}
+    .audio-time{font-size:.78rem;color:rgba(255,255,255,.82);font-variant-numeric:tabular-nums;min-width:84px}
+    .audio-progress-wrap{flex:1;height:5px;border-radius:99px;background:rgba(255,255,255,.22);cursor:pointer;overflow:hidden}
+    .audio-progress-fill{height:100%;width:0;background:linear-gradient(135deg,var(--primary),var(--secondary))}
+    .audio-speed-btn{
+      border:1px solid rgba(255,255,255,.2);border-radius:var(--radius-sm);background:rgba(255,255,255,.08);
+      color:var(--white);font-size:.74rem;font-weight:700;padding:4px 8px;cursor:pointer;
+    }
+    .audio-pack-title{
+      color:rgba(255,255,255,.7);font-size:.72rem;font-weight:600;
+      max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    }
+    .export-menu{position:relative;z-index:150}
+    .export-menu-list{
+      display:none;position:absolute;top:calc(100% + 6px);left:0;min-width:220px;background:var(--white);
+      border:1px solid var(--gray-200);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);z-index:120;overflow:visible
+    }
+    .export-menu-list.visible{display:block;animation:dropdownOpen .2s ease-out}
+    .export-menu-item{
+      width:100%;text-align:left;border:none;background:var(--white);padding:10px 12px;font-size:.84rem;color:var(--gray-700);
+      cursor:pointer;transition:background .15s ease
+    }
+    .export-menu-item:hover{background:var(--gray-50)}
+    .export-menu-item span{display:block;font-size:.72rem;color:var(--gray-500);margin-top:2px}
+    .export-menu-item.has-submenu{position:relative;padding-right:30px}
+    .export-menu-item .submenu-arrow{
+      position:absolute;right:10px;top:50%;transform:translateY(-50%);
+      font-size:.82rem;color:var(--gray-400)
+    }
+    .export-submenu{
+      display:none;position:absolute;right:calc(100% + 4px);left:auto;top:0;min-width:230px;background:var(--white);
+      border:1px solid var(--gray-200);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);overflow:hidden
+    }
+    .export-submenu.visible{display:block;animation:dropdownOpen .2s ease-out}
+    .notes-audio-section{
+      border-left:3px solid transparent;padding-left:12px;margin-left:-12px;
+      border-radius:0 var(--radius-sm) var(--radius-sm) 0;
+      transition:all .2s ease;position:relative;
+    }
+    .notes-audio-section.has-audio{cursor:pointer}
+    .notes-audio-section.has-audio:hover{border-left-color:var(--primary-light);background:rgba(79,70,229,.04)}
+    .notes-audio-section.audio-active{border-left-color:var(--primary);background:rgba(79,70,229,.08)}
+    .notes-audio-btn{
+      position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;
+      border:none;background:var(--primary);color:var(--white);display:none;align-items:center;justify-content:center;cursor:pointer;
+    }
+    .notes-audio-btn svg{width:12px;height:12px}
+    .notes-audio-section.has-audio:hover .notes-audio-btn,.notes-audio-section.audio-active .notes-audio-btn{display:flex}
 
     /* ── 3D Flashcard with slide transitions ── */
     .flashcard-stage{display:flex;flex-direction:column;align-items:center;gap:14px}
@@ -252,9 +396,11 @@
     .flashcard-text{font-size:1.15rem;color:var(--gray-900);line-height:1.65;white-space:pre-wrap;max-height:260px;overflow-y:auto}
     .learn-controls{display:flex;justify-content:center;align-items:center;flex-wrap:wrap;gap:10px}
     .learn-progress-fc{font-size:.85rem;color:var(--gray-500);min-width:120px;text-align:center;font-weight:500}
-    .keyboard-hints{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;font-size:.75rem;color:var(--gray-400)}
-    .keyboard-hints span{display:inline-flex;align-items:center;gap:4px}
-    .kbd{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 5px;background:var(--gray-100);border:1px solid var(--gray-300);border-radius:4px;font-size:.68rem;font-weight:700;color:var(--gray-600)}
+    .keyboard-hints{display:flex;gap:14px;justify-content:center;align-items:center;flex-wrap:wrap;font-size:.75rem;color:var(--gray-500);opacity:1;transition:opacity .8s ease}
+    .keyboard-hints.faded{opacity:.15}
+    .keyboard-hints:hover{opacity:1}
+    .keyboard-hints span{display:inline-flex;align-items:center;gap:6px}
+    .kbd{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:22px;padding:0 6px;background:var(--gray-100);border:1px solid var(--gray-300);border-radius:6px;font-size:.68rem;font-weight:700;color:var(--gray-600)}
 
     @keyframes slideLeft{0%{opacity:1;transform:translateX(0)}40%{opacity:0;transform:translateX(-40px)}41%{opacity:0;transform:translateX(40px)}100%{opacity:1;transform:translateX(0)}}
     @keyframes slideRight{0%{opacity:1;transform:translateX(0)}40%{opacity:0;transform:translateX(40px)}41%{opacity:0;transform:translateX(-40px)}100%{opacity:1;transform:translateX(0)}}
@@ -409,6 +555,7 @@
       .setup-tabs{flex-wrap:wrap}
       .setup-tab{padding:8px 4px;font-size:.72rem}
       .setup-tab svg{width:12px;height:12px}
+      .mastery-extra{grid-template-columns:1fr}
       .btn{padding:8px 10px;font-size:.8rem}
       .btn.cta{padding:12px 20px;font-size:.92rem}
       .keyboard-hints{display:none}
@@ -430,9 +577,9 @@
         <div><h1>Study Library</h1><div class="topbar-sub" id="user-meta">Checking sign-in...</div></div>
       </div>
       <div class="actions">
+        <div class="study-pill due" id="topbar-due-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg><span id="topbar-due-text">0 due today</span></div>
         <button class="btn" id="back-app-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>Back to App</button>
         <button class="btn" id="fullscreen-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>Fullscreen Learn</button>
-        <button class="btn primary" id="auth-btn">Sign in</button>
       </div>
     </div>
 
@@ -471,7 +618,19 @@
                 </div>
                 <div class="actions" style="margin-bottom:14px;">
                   <button class="btn" id="open-builder-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v7H3z"></path><path d="M14 3h7v7h-7z"></path><path d="M14 14h7v7h-7z"></path><path d="M3 14h7v7H3z"></path></svg>Open Full Editor</button>
-                  <button class="btn" id="export-pack-csv-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg><span id="export-csv-label">Export Flashcards CSV</span></button>
+                  <button class="btn" id="export-pack-notes-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M12 11v6"></path><polyline points="9 14 12 17 15 14"></polyline></svg>Export Notes</button>
+                  <div class="export-menu" id="export-menu">
+                    <button class="btn" id="export-menu-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>Export</button>
+                    <div class="export-menu-list" id="export-menu-list">
+                      <button class="export-menu-item" data-export-kind="flashcards"><strong>Flashcards CSV</strong><span>Question/answer cards</span></button>
+                      <button class="export-menu-item" data-export-kind="test"><strong>Practice Test CSV</strong><span>Questions with options/explanations</span></button>
+                      <button class="export-menu-item has-submenu" data-export-kind="pdf-menu"><strong>Study Pack PDF</strong><span>Notes, flashcards, and practice test</span><span class="submenu-arrow">▸</span></button>
+                      <div class="export-submenu" id="export-pdf-submenu">
+                        <button class="export-menu-item" data-export-kind="pdf-with-answers"><strong>PDF (with answers)</strong><span>Default export with marked correct answers</span></button>
+                        <button class="export-menu-item" data-export-kind="pdf-no-answers"><strong>PDF (without answers)</strong><span>Printable version for self-practice</span></button>
+                      </div>
+                    </div>
+                  </div>
                   <button class="btn primary" id="open-learn-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Learn Mode</button>
                 </div>
                 <div class="editor-tabs">
@@ -479,7 +638,14 @@
                   <button class="editor-tab" data-editor-pane="flashcards"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><line x1="2" y1="12" x2="22" y2="12"></line></svg>Flashcards</button>
                   <button class="editor-tab" data-editor-pane="test"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>Practice Test</button>
                 </div>
-                <div class="editor-pane active" id="editor-pane-notes"><div class="notes-view" id="notes-view"></div></div>
+                <div class="editor-pane active" id="editor-pane-notes">
+                  <div class="notes-pane-shell" id="notes-pane-shell">
+                    <button type="button" class="notes-fullscreen-btn" id="notes-fullscreen-btn" title="Open notes fullscreen" aria-label="Open notes fullscreen">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+                    </button>
+                    <div class="notes-view" id="notes-view"></div>
+                  </div>
+                </div>
                 <div class="editor-pane" id="editor-pane-flashcards"><div class="editor-toolbar"><span class="editor-count" id="flashcard-count">0 flashcards</span><button class="btn" id="add-flashcard-btn">+ Add flashcard</button></div><div class="editor-list" id="flashcard-editor-list"></div></div>
                 <div class="editor-pane" id="editor-pane-test"><div class="editor-toolbar"><span class="editor-count" id="question-count">0 practice questions</span><button class="btn" id="add-question-btn">+ Add question</button></div><div class="editor-list" id="question-editor-list"></div></div>
               </div>
@@ -502,7 +668,26 @@
         <button class="setup-tab" data-setup-pane="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.77 1.05 1.37 1.22H21a2 2 0 0 1 0 4h-.09c-.6.17-1.11.62-1.37 1.22z"></path></svg>Settings</button>
         <button class="setup-tab" data-setup-pane="algorithm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>Algorithm</button>
       </div>
-      <div class="setup-pane active" id="setup-pane-mastery"><div class="mastery-section"><div class="mastery-stat"><span>Cards seen:</span> <strong id="mastery-seen">0</strong> / <strong id="mastery-total">0</strong></div><div class="mastery-rings"><div class="mastery-ring"><div class="mastery-ring-circle new-ring" id="mastery-new-pct">100%</div><span class="mastery-ring-label">New</span></div><div class="mastery-ring"><div class="mastery-ring-circle familiar-ring" id="mastery-familiar-pct">0%</div><span class="mastery-ring-label">Familiar</span></div><div class="mastery-ring"><div class="mastery-ring-circle mastered-ring" id="mastery-mastered-pct">0%</div><span class="mastery-ring-label">Mastered</span></div></div></div></div>
+      <div class="setup-pane active" id="setup-pane-mastery">
+        <div class="mastery-section">
+          <div class="mastery-stat"><span>Cards seen:</span> <strong id="mastery-seen">0</strong> / <strong id="mastery-total">0</strong></div>
+          <div class="mastery-extra">
+            <div class="mastery-pill due"><span>Due today:</span> <strong id="mastery-due-today">0</strong></div>
+            <div class="mastery-pill"><span>Unmastered:</span> <strong id="mastery-unmastered">0</strong></div>
+          </div>
+          <div class="mastery-rings">
+            <div class="mastery-ring"><div class="mastery-ring-circle new-ring" id="mastery-new-pct">100%</div><span class="mastery-ring-label">New</span></div>
+            <div class="mastery-ring"><div class="mastery-ring-circle familiar-ring" id="mastery-familiar-pct">0%</div><span class="mastery-ring-label">Familiar</span></div>
+            <div class="mastery-ring"><div class="mastery-ring-circle mastered-ring" id="mastery-mastered-pct">0%</div><span class="mastery-ring-label">Mastered</span></div>
+          </div>
+          <div class="difficulty-distribution">
+            <span class="difficulty-chip easy">Easy <strong id="diff-easy-count">0</strong></span>
+            <span class="difficulty-chip medium">Medium <strong id="diff-medium-count">0</strong></span>
+            <span class="difficulty-chip hard">Hard <strong id="diff-hard-count">0</strong></span>
+          </div>
+          <div class="exam-recommendation" id="exam-recommendation">Set an exam date in Planning mode to get a daily target recommendation.</div>
+        </div>
+      </div>
       <div class="setup-pane" id="setup-pane-lessons"><p style="text-align:center;color:var(--gray-600);font-size:.9rem;margin-bottom:16px;">Choose which lesson types to include:</p><div class="lesson-grid" id="lesson-grid">
         <div class="lesson-card selected" data-lesson="flashcards" id="lesson-card-flashcards"><div class="lesson-card-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div><div class="lesson-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><line x1="2" y1="12" x2="22" y2="12"></line></svg></div><div class="lesson-card-title">Zen Cards</div><div class="lesson-card-desc">Distraction-free flashcards</div></div>
         <div class="lesson-card selected" data-lesson="test" id="lesson-card-test"><div class="lesson-card-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div><div class="lesson-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg></div><div class="lesson-card-title">Multiple Choice</div><div class="lesson-card-desc">Choose your answer from options</div></div>
@@ -519,7 +704,7 @@
         <div class="setting-row" data-setting="ignoreDeterminers"><span class="setting-label">Ignore determiners (; , /)</span><div class="setting-toggle"></div></div>
         <div class="setting-row" data-setting="ignoreBrackets"><span class="setting-label">Ignore () and []</span><div class="setting-toggle"></div></div>
       </div></div>
-      <div class="setup-pane" id="setup-pane-algorithm"><p style="text-align:center;color:var(--gray-600);font-size:.9rem;margin-bottom:16px;">Adjust how cards are selected for review:</p><div class="algo-lane" id="algo-lane"></div><div class="algo-presets" id="algo-presets"><button class="algo-preset active" data-preset="balanced">Balanced</button><button class="algo-preset" data-preset="random">All Random</button><button class="algo-preset" data-preset="lastminute">Last Minute Overview</button><button class="algo-preset" data-preset="fixmistakes">Fix Mistakes</button></div></div>
+      <div class="setup-pane" id="setup-pane-algorithm"><p style="text-align:center;color:var(--gray-600);font-size:.9rem;margin-bottom:16px;">Adjust how cards are selected for review:</p><div class="algo-lane" id="algo-lane"></div><div class="algo-presets" id="algo-presets"><button class="algo-preset active" data-preset="balanced">Balanced</button><button class="algo-preset" data-preset="random">All Random</button><button class="algo-preset" data-preset="lastminute">Last Minute Overview</button><button class="algo-preset" data-preset="fixmistakes">Fix Mistakes</button><button class="algo-preset" data-preset="hardfirst">Hard First</button></div></div>
       <button class="btn cta" id="setup-start-btn" style="margin-top:8px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Start Session</button>
     </div>
 
@@ -575,6 +760,12 @@
 
       <!-- Notes pane (fallback) -->
       <div class="learn-pane" id="learn-pane-notes"><div class="learn-notes" id="learn-notes-content"></div></div>
+      <div class="difficulty-toolbar" id="difficulty-toolbar">
+        <span class="difficulty-hint">Tag this card (<span class="kbd">1</span> Easy · <span class="kbd">2</span> Medium · <span class="kbd">3</span> Hard):</span>
+        <button class="difficulty-btn easy" type="button" data-difficulty="easy">Easy</button>
+        <button class="difficulty-btn medium" type="button" data-difficulty="medium">Medium</button>
+        <button class="difficulty-btn hard" type="button" data-difficulty="hard">Hard</button>
+      </div>
     </div></div>
   </div></div>
 
@@ -675,10 +866,24 @@
   </div>
 
   <!-- Folder Modal -->
-  <div class="modal-overlay" id="folder-modal-overlay"><div class="modal"><div class="modal-head"><span class="modal-title" id="folder-modal-title">New Folder</span><button class="btn" id="folder-modal-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div><div class="modal-grid" style="margin-bottom:14px;"><div class="field"><label>Folder Name *</label><input id="folder-name-input"></div><div class="field"><label>Course</label><input id="folder-course-input"></div><div class="field"><label>Subject</label><input id="folder-subject-input"></div><div class="field"><label>Semester</label><input id="folder-semester-input"></div><div class="field"><label>Block</label><input id="folder-block-input"></div></div><div class="actions" style="justify-content:flex-end;"><button class="btn" id="folder-modal-cancel">Cancel</button><button class="btn primary" id="folder-modal-save">Save Folder</button></div></div></div>
+  <div class="modal-overlay" id="folder-modal-overlay"><div class="modal"><div class="modal-head"><span class="modal-title" id="folder-modal-title">New Folder</span><button class="btn" id="folder-modal-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div><div class="modal-grid" style="margin-bottom:14px;"><div class="field"><label>Folder Name *</label><input id="folder-name-input"></div><div class="field"><label>Course</label><input id="folder-course-input"></div><div class="field"><label>Subject</label><input id="folder-subject-input"></div><div class="field"><label>Semester</label><input id="folder-semester-input"></div><div class="field"><label>Block</label><input id="folder-block-input"></div><div class="field"><label>Exam Date</label><input type="date" id="folder-exam-date-input"></div></div><div class="actions" style="justify-content:flex-end;"><button class="btn" id="folder-modal-cancel">Cancel</button><button class="btn primary" id="folder-modal-save">Save Folder</button></div></div></div>
 
   <!-- Confirm Modal -->
   <div class="modal-overlay" id="confirm-modal-overlay"><div class="modal"><div class="modal-head"><span class="modal-title" id="confirm-modal-title">Confirm Action</span><button class="btn" id="confirm-modal-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div><p class="modal-message" id="confirm-modal-message"></p><div class="actions" style="justify-content:flex-end;"><button class="btn" id="confirm-modal-cancel">Cancel</button><button class="btn danger" id="confirm-modal-confirm">Delete</button></div></div></div>
+
+  <!-- Audio Player -->
+  <div class="audio-player-bar" id="audio-player-bar">
+    <audio id="audio-player-el" preload="metadata"></audio>
+    <button class="audio-play-btn" id="audio-play-btn" aria-label="Play/Pause">
+      <svg id="audio-play-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
+      <svg id="audio-pause-icon" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M6 19h4V5H6zm8-14v14h4V5z"></path></svg>
+    </button>
+    <span class="audio-time" id="audio-time">0:00 / 0:00</span>
+    <div class="audio-progress-wrap" id="audio-progress-wrap"><div class="audio-progress-fill" id="audio-progress-fill"></div></div>
+    <button class="audio-speed-btn" id="audio-speed-btn">1x</button>
+    <span class="audio-pack-title" id="audio-pack-title"></span>
+    <button class="audio-close-btn" id="audio-close-btn" aria-label="Close audio player"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+  </div>
 
   <div class="toast" id="toast"></div>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
@@ -696,6 +901,12 @@
     let learnFlashcardIndex=0,learnFlashcardFlipped=false,learnQuestionIndex=0,learnScore=0,learnAnswered=false;
     let activeLearnMode=''; // 'flashcards','test','write','match','notes'
     let orderedFlashcards=[];
+    let learnSessionRecorded=false,flashcardReviewedThisCard=false;
+    let audioSections=[],audioMap=[],audioReady=false,audioSpeedIndex=1,audioHiddenForLearn=false;
+    const audioSpeeds=[0.75,1,1.25,1.5,2];
+    let difficultyFadeTimer=null,keyboardHintFadeTimer=null,notesFullscreenFadeTimer=null;
+    const HINT_FADE_DELAY_MS=10000;
+    const NOTES_ICON_IDLE_MS=5000;
     const urlParams=new URLSearchParams(window.location.search);
     const learnPackFromUrl=urlParams.get('pack_id')||'';
     const openLearnFromUrl=urlParams.get('mode')==='learn';
@@ -712,13 +923,14 @@
     const MATCH_MIN_CARDS=6;
 
     /* ── Session state ── */
-    const ALGO_PRESETS={balanced:['new','new','familiar','retry','remaster'],random:['random','random','random','random','random'],lastminute:['new','new','new','new','retry'],fixmistakes:['new','retry','new','retry','retry']};
-    const ALGO_TYPES=['new','familiar','retry','remaster','random'];
+    const ALGO_PRESETS={balanced:['new','new','familiar','retry','remaster'],random:['random','random','random','random','random'],lastminute:['new','new','new','new','retry'],fixmistakes:['new','retry','new','retry','retry'],hardfirst:['hard','hard','retry','new','familiar']};
+    const ALGO_TYPES=['new','familiar','retry','remaster','hard','random'];
     const ALGO_ICONS={
       new:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>',
       familiar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>',
       retry:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>',
       remaster:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5C5.7 4 7 4.8 8 6c1-1.2 2.3-2 3.5-2a2.5 2.5 0 0 1 0 5H10"></path><path d="M6 9l6 6 6-6"></path></svg>',
+      hard:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.7 5.5L21 8.4l-4.5 4.4 1 6.2L12 16.8 6.5 19l1-6.2L3 8.4l6.3-.9L12 2z"></path></svg>',
       random:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>'
     };
     const MODE_ICONS={
@@ -735,18 +947,179 @@
     let sessionLessons={flashcards:true,test:true,write:false,match:false};
     let activeSetupPane='mastery';
 
-    /* ── Card mastery (localStorage) ── */
+    /* ── Card mastery + spaced repetition (localStorage) ── */
+    const REVIEW_INTERVALS=[1,3,7,14,30];
+    function localDateStringFromTimestamp(ts){
+      var d=ts?new Date(ts):new Date();
+      var y=d.getFullYear();
+      var m=String(d.getMonth()+1).padStart(2,'0');
+      var day=String(d.getDate()).padStart(2,'0');
+      return y+'-'+m+'-'+day;
+    }
+    function todayLocalDateString(){return localDateStringFromTimestamp(Date.now());}
+    function addDaysToLocalDate(dateString,days){
+      var parts=String(dateString||todayLocalDateString()).split('-');
+      if(parts.length!==3)return todayLocalDateString();
+      var base=new Date(parseInt(parts[0],10),parseInt(parts[1],10)-1,parseInt(parts[2],10));
+      base.setDate(base.getDate()+Math.max(0,parseInt(days,10)||0));
+      return localDateStringFromTimestamp(base.getTime());
+    }
+    function isDueDate(dateString){
+      var target=String(dateString||'').trim();
+      if(!target)return true;
+      return target<=todayLocalDateString();
+    }
     function getCardStateKey(){return'card_state_'+(auth.currentUser?auth.currentUser.uid:'anon')+'_'+selectedPackId;}
     function loadCardState(){try{return JSON.parse(localStorage.getItem(getCardStateKey()))||{};}catch(e){return{};}}
     function saveCardState(s){try{localStorage.setItem(getCardStateKey(),JSON.stringify(s));}catch(e){}}
-    function markCardSeen(cardId,correct){
-      var s=loadCardState();
-      if(!s[cardId]){s[cardId]={seen:0,correct:0,wrong:0,level:'new'};}
-      s[cardId].seen++;
-      if(correct){s[cardId].correct++;}else{s[cardId].wrong++;}
-      if(s[cardId].correct>=3){s[cardId].level='mastered';}
-      else if(s[cardId].seen>=1){s[cardId].level='familiar';}
-      saveCardState(s);
+    function getStreakKey(){return'study_streak_'+(auth.currentUser?auth.currentUser.uid:'anon');}
+    function loadStreakData(){
+      try{
+        var raw=localStorage.getItem(getStreakKey());
+        if(!raw)return{last_study_date:'',current_streak:0,daily_progress_date:'',daily_progress_count:0};
+        var parsed=JSON.parse(raw)||{};
+        return {
+          last_study_date:parsed.last_study_date||'',
+          current_streak:parseInt(parsed.current_streak,10)||0,
+          daily_progress_date:parsed.daily_progress_date||'',
+          daily_progress_count:parseInt(parsed.daily_progress_count,10)||0
+        };
+      }catch(e){
+        return{last_study_date:'',current_streak:0,daily_progress_date:'',daily_progress_count:0};
+      }
+    }
+    function saveStreakData(data){try{localStorage.setItem(getStreakKey(),JSON.stringify(data||{}));}catch(e){}}
+    function getDailyGoalKey(){return'daily_goal_'+(auth.currentUser?auth.currentUser.uid:'anon');}
+    function loadDailyGoal(){
+      try{
+        var value=parseInt(localStorage.getItem(getDailyGoalKey())||'20',10);
+        return Number.isFinite(value)&&value>0?Math.min(value,500):20;
+      }catch(e){return 20;}
+    }
+    function saveDailyGoal(value){
+      var parsed=parseInt(value,10);
+      if(!Number.isFinite(parsed)||parsed<=0)return;
+      try{localStorage.setItem(getDailyGoalKey(),String(Math.min(parsed,500)));}catch(e){}
+    }
+    function getNextIntervalDays(currentDays,correct){
+      if(!correct)return 1;
+      var current=Math.max(0,parseInt(currentDays,10)||0);
+      if(!current)return REVIEW_INTERVALS[0];
+      for(var i=0;i<REVIEW_INTERVALS.length;i++){
+        if(current===REVIEW_INTERVALS[i]){
+          return REVIEW_INTERVALS[Math.min(i+1,REVIEW_INTERVALS.length-1)];
+        }
+      }
+      for(var j=0;j<REVIEW_INTERVALS.length;j++){
+        if(current<REVIEW_INTERVALS[j])return REVIEW_INTERVALS[j];
+      }
+      return REVIEW_INTERVALS[REVIEW_INTERVALS.length-1];
+    }
+    function ensureStudyActivityRecorded(){
+      var today=todayLocalDateString();
+      var yesterday=addDaysToLocalDate(today,-1);
+      var data=loadStreakData();
+      if(data.last_study_date!==today){
+        if(data.last_study_date===yesterday){data.current_streak=Math.max(1,(data.current_streak||0)+1);}
+        else{data.current_streak=1;}
+        data.last_study_date=today;
+      }
+      if(data.daily_progress_date!==today){
+        data.daily_progress_date=today;
+        data.daily_progress_count=0;
+      }
+      return data;
+    }
+    function recordStudyActivity(){
+      var data=ensureStudyActivityRecorded();
+      data.daily_progress_count=Math.max(0,parseInt(data.daily_progress_count,10)||0)+1;
+      saveStreakData(data);
+      updateDailyGoalDisplays();
+      return data;
+    }
+    function setCardDifficulty(cardId,difficulty){
+      if(!cardId)return;
+      var value=String(difficulty||'').toLowerCase();
+      if(['easy','medium','hard'].indexOf(value)<0)return;
+      var state=loadCardState();
+      if(!state[cardId]){state[cardId]={seen:0,correct:0,wrong:0,level:'new',interval_days:0,next_review_date:'',difficulty:'medium'};}
+      state[cardId].difficulty=value;
+      saveCardState(state);
+      updateDifficultyToolbar();
+      renderMasteryGauge();
+    }
+    function markCardReview(cardId,correct){
+      if(!cardId)return;
+      var state=loadCardState();
+      if(!state[cardId]){
+        state[cardId]={seen:0,correct:0,wrong:0,level:'new',interval_days:0,next_review_date:'',difficulty:'medium',last_review_date:''};
+      }
+      var entry=state[cardId];
+      entry.seen=(entry.seen||0)+1;
+      if(correct){entry.correct=(entry.correct||0)+1;}else{entry.wrong=(entry.wrong||0)+1;}
+      entry.interval_days=getNextIntervalDays(entry.interval_days,correct);
+      entry.last_review_date=todayLocalDateString();
+      entry.next_review_date=addDaysToLocalDate(entry.last_review_date,entry.interval_days);
+      if(entry.interval_days>=14){entry.level='mastered';}
+      else if(entry.seen>0){entry.level='familiar';}
+      else{entry.level='new';}
+      if(!entry.difficulty){entry.difficulty='medium';}
+      state[cardId]=entry;
+      saveCardState(state);
+      recordStudyActivity();
+      renderMasteryGauge();
+      updateTopbarDueCount();
+    }
+    function markCardSeen(cardId,correct){markCardReview(cardId,correct);}
+    function getCardStateKeyForPack(packId){
+      return 'card_state_'+(auth.currentUser?auth.currentUser.uid:'anon')+'_'+String(packId||'');
+    }
+    function loadCardStateForPack(packId){
+      try{
+        return JSON.parse(localStorage.getItem(getCardStateKeyForPack(packId))||'{}')||{};
+      }catch(e){return{};}
+    }
+    function updateDailyGoalDisplays(){
+      // Daily-goal UI is rendered on dashboard; keep this hook for shared state updates.
+    }
+    function recordLearnSessionCompletion(){
+      if(learnSessionRecorded)return;
+      var today=todayLocalDateString();
+      var yesterday=addDaysToLocalDate(today,-1);
+      var data=loadStreakData();
+      if(data.last_study_date!==today){
+        if(data.last_study_date===yesterday){data.current_streak=Math.max(1,(data.current_streak||0)+1);}
+        else{data.current_streak=1;}
+        data.last_study_date=today;
+      }
+      if(data.daily_progress_date!==today){
+        data.daily_progress_date=today;
+        data.daily_progress_count=Math.max(0,parseInt(data.daily_progress_count,10)||0);
+      }
+      saveStreakData(data);
+      learnSessionRecorded=true;
+    }
+    function countDueCardsInState(state){
+      var due=0;
+      Object.keys(state||{}).forEach(function(cardId){
+        if(cardId.indexOf('fc_')!==0)return;
+        var entry=state[cardId]||{};
+        if(!(parseInt(entry.seen,10)>0))return;
+        if(isDueDate(entry.next_review_date))due++;
+      });
+      return due;
+    }
+    function updateTopbarDueCount(){
+      if(!topbarDueText)return;
+      var totalDue=0;
+      if(Array.isArray(packs)&&packs.length){
+        packs.forEach(function(pack){
+          totalDue+=countDueCardsInState(loadCardStateForPack(pack.study_pack_id));
+        });
+      }else if(selectedPackId){
+        totalDue=countDueCardsInState(loadCardState());
+      }
+      topbarDueText.textContent=totalDue+' due today';
     }
 
     /* ── Match high scores (localStorage) ── */
@@ -785,15 +1158,23 @@
 
     /* ── Algorithm ordering ── */
     function orderCardsByAlgo(cards){
-      if(!cards||!cards.length)return cards;
+      if(!cards||!cards.length)return[];
       var state=loadCardState();
-      var buckets={new:[],familiar:[],retry:[],remaster:[],random:[]};
+      var buckets={new:[],familiar:[],retry:[],remaster:[],hard:[],random:[]};
+      var deferred=[];
       cards.forEach(function(c,i){
         var id='fc_'+i;var cs=state[id];
-        if(!cs||cs.level==='new'){buckets.new.push({card:c,idx:i});}
-        else if(cs.level==='familiar'){buckets.familiar.push({card:c,idx:i});}
-        else if(cs.level==='mastered'){buckets.remaster.push({card:c,idx:i});}
-        if(cs&&cs.wrong>0){buckets.retry.push({card:c,idx:i});}
+        var entry={card:c,idx:i};
+        var due=!cs||!cs.seen||isDueDate(cs.next_review_date);
+        if(due){
+          if(!cs||cs.level==='new'){buckets.new.push(entry);}
+          else if(cs.level==='familiar'){buckets.familiar.push(entry);}
+          else if(cs.level==='mastered'){buckets.remaster.push(entry);}
+          if(cs&&cs.wrong>0){buckets.retry.push(entry);}
+          if(cs&&cs.difficulty==='hard'){buckets.hard.push(entry);}
+        }else{
+          deferred.push(entry);
+        }
         buckets.random.push({card:c,idx:i});
       });
       Object.keys(buckets).forEach(function(k){buckets[k].sort(function(){return Math.random()-0.5;});});
@@ -804,8 +1185,54 @@
           if(!used[pool[j].idx]){result.push(pool[j]);used[pool[j].idx]=true;break;}
         }
       });
-      cards.forEach(function(c,i){if(!used[i])result.push({card:c,idx:i});});
-      return result.map(function(r){return r.card;});
+      cards.forEach(function(c,i){if(!used[i]&&!deferred.find(function(d){return d.idx===i;}))result.push({card:c,idx:i});});
+      deferred.forEach(function(entry){if(!used[entry.idx])result.push(entry);});
+      return result;
+    }
+    function getFlashcardQueue(){
+      if(orderedFlashcards.length)return orderedFlashcards;
+      var base=selectedPack&&Array.isArray(selectedPack.flashcards)?selectedPack.flashcards:[];
+      return base.map(function(card,idx){return{card:card,idx:idx};});
+    }
+    function getCurrentDifficultyCardId(){
+      if(!selectedPack)return'';
+      if(activeLearnMode==='flashcards'){
+        var queue=getFlashcardQueue();
+        if(queue[learnFlashcardIndex])return'fc_'+queue[learnFlashcardIndex].idx;
+      }
+      if(activeLearnMode==='write'){
+        var writeQueue=getWriteCards();
+        if(writeQueue[writeIndex])return'fc_'+writeQueue[writeIndex].idx;
+      }
+      if(activeLearnMode==='test'){return'q_'+learnQuestionIndex;}
+      return'';
+    }
+    function updateDifficultyToolbar(){
+      if(!difficultyToolbar)return;
+      if(!learnStage.classList.contains('visible')){
+        difficultyToolbar.classList.remove('visible');
+        difficultyToolbar.classList.remove('faded');
+        return;
+      }
+      if(['flashcards','write','test'].indexOf(activeLearnMode)<0){
+        difficultyToolbar.classList.remove('visible');
+        difficultyToolbar.classList.remove('faded');
+        return;
+      }
+      var cardId=getCurrentDifficultyCardId();
+      if(!cardId){
+        difficultyToolbar.classList.remove('visible');
+        difficultyToolbar.classList.remove('faded');
+        return;
+      }
+      var state=loadCardState();
+      var current=((state[cardId]&&state[cardId].difficulty)||'medium').toLowerCase();
+      difficultyButtons.forEach(function(btn){
+        var diff=btn.dataset.difficulty;
+        btn.classList.toggle('active',diff===current);
+      });
+      difficultyToolbar.classList.add('visible');
+      difficultyToolbar.classList.remove('faded');
     }
 
     /* ── Answer grading (for write mode) ── */
@@ -826,14 +1253,16 @@
     }
 
     /* ── DOM refs ── */
-    var userMeta=document.getElementById('user-meta'),authBtn=document.getElementById('auth-btn'),backAppBtn=document.getElementById('back-app-btn'),fullscreenBtn=document.getElementById('fullscreen-btn');
+    var userMeta=document.getElementById('user-meta'),backAppBtn=document.getElementById('back-app-btn'),fullscreenBtn=document.getElementById('fullscreen-btn'),topbarDueText=document.getElementById('topbar-due-text');
     var searchInput=document.getElementById('search-input'),folderList=document.getElementById('folder-list'),packList=document.getElementById('pack-list'),newFolderBtn=document.getElementById('new-folder-btn'),deleteFolderBtn=document.getElementById('delete-folder-btn');
     var packEmpty=document.getElementById('pack-empty'),packEditorWrap=document.getElementById('pack-editor-wrap'),packTitle=document.getElementById('pack-title'),packFolderSelect=document.getElementById('pack-folder-select'),packFolderPicker=document.getElementById('pack-folder-picker'),packFolderButton=document.getElementById('pack-folder-button'),packFolderLabel=document.getElementById('pack-folder-label'),packFolderMenu=document.getElementById('pack-folder-menu');
     var packCourse=document.getElementById('pack-course'),packSubject=document.getElementById('pack-subject'),packSemester=document.getElementById('pack-semester'),packBlock=document.getElementById('pack-block'),notesView=document.getElementById('notes-view');
     var packSummary=document.getElementById('pack-summary'),packSummaryTitle=document.getElementById('pack-summary-title'),packSummaryMeta=document.getElementById('pack-summary-meta'),packStatNotes=document.getElementById('pack-stat-notes'),packStatCards=document.getElementById('pack-stat-cards'),packStatTest=document.getElementById('pack-stat-test');
-    var createPackBtn=document.getElementById('create-pack-btn'),openBuilderBtn=document.getElementById('open-builder-btn'),savePackBtn=document.getElementById('save-pack-btn'),deletePackBtn=document.getElementById('delete-pack-btn'),exportPackCsvBtn=document.getElementById('export-pack-csv-btn'),exportCsvLabel=document.getElementById('export-csv-label'),openLearnBtn=document.getElementById('open-learn-btn');
+    var createPackBtn=document.getElementById('create-pack-btn'),openBuilderBtn=document.getElementById('open-builder-btn'),savePackBtn=document.getElementById('save-pack-btn'),deletePackBtn=document.getElementById('delete-pack-btn'),exportPackNotesBtn=document.getElementById('export-pack-notes-btn'),openLearnBtn=document.getElementById('open-learn-btn');
+    var exportMenu=document.getElementById('export-menu'),exportMenuBtn=document.getElementById('export-menu-btn'),exportMenuList=document.getElementById('export-menu-list'),exportPdfSubmenu=document.getElementById('export-pdf-submenu');
     var editorTabs=document.querySelectorAll('.editor-tab'),flashcardCount=document.getElementById('flashcard-count'),questionCount=document.getElementById('question-count'),addFlashcardBtn=document.getElementById('add-flashcard-btn'),addQuestionBtn=document.getElementById('add-question-btn'),flashcardEditorList=document.getElementById('flashcard-editor-list'),questionEditorList=document.getElementById('question-editor-list');
     var learnStage=document.getElementById('learn-stage'),learnTitle=document.getElementById('learn-title'),learnSub=document.getElementById('learn-sub'),learnBackAppBtn=document.getElementById('learn-back-app-btn'),learnBackLibraryBtn=document.getElementById('learn-back-library-btn'),learnFullscreenBtn=document.getElementById('learn-fullscreen-btn');
+    var notesPaneShell=document.getElementById('notes-pane-shell'),notesFullscreenBtn=document.getElementById('notes-fullscreen-btn');
     var learnModeLabel=document.getElementById('learn-mode-label');
     var learnFlashcard3d=document.getElementById('learn-flashcard-3d'),learnFlashcardInner=document.getElementById('learn-flashcard-inner'),learnFlashcardFront=document.getElementById('learn-flashcard-front'),learnFlashcardBack=document.getElementById('learn-flashcard-back');
     var learnFPrev=document.getElementById('learn-f-prev'),learnFFlip=document.getElementById('learn-f-flip'),learnFNext=document.getElementById('learn-f-next'),learnFProgress=document.getElementById('learn-f-progress');
@@ -842,6 +1271,7 @@
     var writePromptEl=document.getElementById('write-prompt'),writeInputEl=document.getElementById('write-input'),writeCheckBtn=document.getElementById('write-check-btn'),writeRevealBtn=document.getElementById('write-reveal-btn'),writeFeedbackEl=document.getElementById('write-feedback'),writeNextBtn=document.getElementById('write-next-btn'),writeProgressEl=document.getElementById('write-progress');
     var matchGridEl=document.getElementById('match-grid'),matchTimerEl=document.getElementById('match-timer'),matchResultsEl=document.getElementById('match-results'),matchResultsTime=document.getElementById('match-results-time'),matchResultsBadge=document.getElementById('match-results-badge'),matchResultsHistory=document.getElementById('match-results-history'),matchPlayAgainBtn=document.getElementById('match-play-again');
     var setupOverlay=document.getElementById('setup-overlay'),setupPackName=document.getElementById('setup-pack-name'),setupCloseBtn=document.getElementById('setup-close-btn'),setupStartBtn=document.getElementById('setup-start-btn'),setupMainContent=document.getElementById('setup-main-content'),setupTabs=document.querySelectorAll('.setup-tab'),algoLane=document.getElementById('algo-lane'),algoPresets=document.querySelectorAll('.algo-preset');
+    var masterySeenEl=document.getElementById('mastery-seen'),masteryTotalEl=document.getElementById('mastery-total'),masteryNewPctEl=document.getElementById('mastery-new-pct'),masteryFamiliarPctEl=document.getElementById('mastery-familiar-pct'),masteryMasteredPctEl=document.getElementById('mastery-mastered-pct'),masteryDueTodayEl=document.getElementById('mastery-due-today'),masteryUnmasteredEl=document.getElementById('mastery-unmastered'),diffEasyCountEl=document.getElementById('diff-easy-count'),diffMediumCountEl=document.getElementById('diff-medium-count'),diffHardCountEl=document.getElementById('diff-hard-count'),examRecommendationEl=document.getElementById('exam-recommendation');
     var modePicker=document.getElementById('mode-picker'),modePickerGrid=document.getElementById('mode-picker-grid'),modePickerBack=document.getElementById('mode-picker-back');
     var builderOverlay=document.getElementById('builder-overlay'),builderBrandSub=document.getElementById('builder-brand-sub'),builderSaveBtn=document.getElementById('builder-save-btn'),builderExitBtn=document.getElementById('builder-exit-btn'),builderShareBtn=document.getElementById('builder-share-btn'),builderTitleEl=document.getElementById('builder-title'),builderSubEl=document.getElementById('builder-sub'),builderSummary=document.getElementById('builder-summary'),builderOpenLearnShortcut=document.getElementById('builder-open-learn-shortcut');
     var builderPaneButtons=document.querySelectorAll('.builder-nav-btn[data-builder-pane]'),builderStatCards=document.getElementById('builder-stat-cards'),builderStatQuestions=document.getElementById('builder-stat-questions'),builderStatDirty=document.getElementById('builder-stat-dirty');
@@ -850,13 +1280,223 @@
     var builderImportType=document.getElementById('builder-import-type'),builderImportMode=document.getElementById('builder-import-mode'),builderCsvDrop=document.getElementById('builder-csv-drop'),builderCsvInput=document.getElementById('builder-csv-input'),builderTemplateBtn=document.getElementById('builder-template-btn'),builderApplyImportBtn=document.getElementById('builder-apply-import-btn'),builderImportSummary=document.getElementById('builder-import-summary'),builderPreview=document.getElementById('builder-preview'),builderPreviewTable=document.getElementById('builder-preview-table'),builderImportErrors=document.getElementById('builder-import-errors');
     var builderExitOverlay=document.getElementById('builder-exit-overlay'),builderExitSave=document.getElementById('builder-exit-save'),builderExitDiscard=document.getElementById('builder-exit-discard'),builderExitCancel=document.getElementById('builder-exit-cancel');
     var learnNotesContent=document.getElementById('learn-notes-content');
-    var folderModalOverlay=document.getElementById('folder-modal-overlay'),folderModalTitle=document.getElementById('folder-modal-title'),folderModalClose=document.getElementById('folder-modal-close'),folderModalCancel=document.getElementById('folder-modal-cancel'),folderModalSave=document.getElementById('folder-modal-save'),folderNameInput=document.getElementById('folder-name-input'),folderCourseInput=document.getElementById('folder-course-input'),folderSubjectInput=document.getElementById('folder-subject-input'),folderSemesterInput=document.getElementById('folder-semester-input'),folderBlockInput=document.getElementById('folder-block-input');
+    var folderModalOverlay=document.getElementById('folder-modal-overlay'),folderModalTitle=document.getElementById('folder-modal-title'),folderModalClose=document.getElementById('folder-modal-close'),folderModalCancel=document.getElementById('folder-modal-cancel'),folderModalSave=document.getElementById('folder-modal-save'),folderNameInput=document.getElementById('folder-name-input'),folderCourseInput=document.getElementById('folder-course-input'),folderSubjectInput=document.getElementById('folder-subject-input'),folderSemesterInput=document.getElementById('folder-semester-input'),folderBlockInput=document.getElementById('folder-block-input'),folderExamDateInput=document.getElementById('folder-exam-date-input');
     var confirmModalOverlay=document.getElementById('confirm-modal-overlay'),confirmModalTitle=document.getElementById('confirm-modal-title'),confirmModalMessage=document.getElementById('confirm-modal-message'),confirmModalClose=document.getElementById('confirm-modal-close'),confirmModalCancel=document.getElementById('confirm-modal-cancel'),confirmModalConfirm=document.getElementById('confirm-modal-confirm');
     var toastEl=document.getElementById('toast');
+    var audioPlayerBar=document.getElementById('audio-player-bar'),audioPlayerEl=document.getElementById('audio-player-el'),audioPlayBtn=document.getElementById('audio-play-btn'),audioPlayIcon=document.getElementById('audio-play-icon'),audioPauseIcon=document.getElementById('audio-pause-icon'),audioTime=document.getElementById('audio-time'),audioProgressWrap=document.getElementById('audio-progress-wrap'),audioProgressFill=document.getElementById('audio-progress-fill'),audioSpeedBtn=document.getElementById('audio-speed-btn'),audioPackTitle=document.getElementById('audio-pack-title'),audioCloseBtn=document.getElementById('audio-close-btn');
+    var difficultyToolbar=document.getElementById('difficulty-toolbar'),difficultyButtons=document.querySelectorAll('.difficulty-btn[data-difficulty]');
+    var keyboardHints=document.querySelector('.keyboard-hints');
 
     /* ── Helpers ── */
     function showToast(msg,type){toastEl.textContent=msg;toastEl.className='toast visible '+(type||'success');setTimeout(function(){toastEl.classList.remove('visible');},2800);}
-    function mdToHtml(md){if(!md)return'';var h=md.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/^### (.*$)/gm,'<h3>$1</h3>').replace(/^## (.*$)/gm,'<h2>$1</h2>').replace(/^# (.*$)/gm,'<h1>$1</h1>').replace(/\*\*\*(.*?)\*\*\*/g,'<strong><em>$1</em></strong>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\*(.*?)\*/g,'<em>$1</em>').replace(/^\s*[-*]\s+(.*$)/gm,'<li>$1</li>').replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>');h='<p>'+h+'</p>';h=h.replace(/(<li>.*?<\/li>)(?=\s*<li>|<br><li>)/g,'$1').replace(/(<li>.*?<\/li>)+/g,'<ul>$&</ul>').replace(/<br><li>/g,'<li>');h=h.replace(/<p><\/p>/g,'').replace(/<p>(<h[1-3]>)/g,'$1').replace(/(<\/h[1-3]>)<\/p>/g,'$1').replace(/<p>(<ul>)/g,'$1').replace(/(<\/ul>)<\/p>/g,'$1');return h;}
+    function mdToHtml(md){
+      if(!md)return'';
+      var source=String(md||'')
+        .replace(/\r\n/g,'\n')
+        .replace(/^\s*<!--\s*audio:\d+\s*-\s*\d+\s*-->\s*$/gim,'')
+        .replace(/^\s*[→>-]?\s*audio:\d+\s*-\s*\d+\s*[→-]?\s*$/gim,'')
+        .replace(/^\s*\[\s*audio:\d+\s*-\s*\d+\s*\]\s*$/gim,'')
+        .replace(/[→>\-]?\s*audio:\d+\s*-\s*\d+\s*[→>\-]?/gim,'');
+      function inline(text){
+        var t=String(text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        t=t.replace(/\*\*\*(.+?)\*\*\*/g,'<strong><em>$1</em></strong>');
+        t=t.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+        t=t.replace(/\*(.+?)\*/g,'<em>$1</em>');
+        t=t.replace(/`([^`]+)`/g,'<code>$1</code>');
+        return t;
+      }
+      var lines=source.split('\n');
+      var out=[],paragraph=[];
+      var inUl=false,inOl=false;
+      function flushParagraph(){
+        if(!paragraph.length)return;
+        out.push('<p>'+paragraph.join('<br>')+'</p>');
+        paragraph=[];
+      }
+      function closeLists(){
+        if(inUl){out.push('</ul>');inUl=false;}
+        if(inOl){out.push('</ol>');inOl=false;}
+      }
+      lines.forEach(function(raw){
+        var line=String(raw||'').trim();
+        var headingMatch=line.match(/^(#{1,3})\s+(.+)$/);
+        var bulletMatch=line.match(/^[-*]\s+(.+)$/);
+        var orderedMatch=line.match(/^\d+\.\s+(.+)$/);
+        if(!line){
+          flushParagraph();
+          closeLists();
+          return;
+        }
+        if(headingMatch){
+          flushParagraph();
+          closeLists();
+          var lvl=Math.min(3,headingMatch[1].length);
+          out.push('<h'+lvl+'>'+inline(headingMatch[2])+'</h'+lvl+'>');
+          return;
+        }
+        if(bulletMatch){
+          flushParagraph();
+          if(inOl){out.push('</ol>');inOl=false;}
+          if(!inUl){out.push('<ul>');inUl=true;}
+          out.push('<li>'+inline(bulletMatch[1])+'</li>');
+          return;
+        }
+        if(orderedMatch){
+          flushParagraph();
+          if(inUl){out.push('</ul>');inUl=false;}
+          if(!inOl){out.push('<ol>');inOl=true;}
+          out.push('<li>'+inline(orderedMatch[1])+'</li>');
+          return;
+        }
+        closeLists();
+        paragraph.push(inline(line));
+      });
+      flushParagraph();
+      closeLists();
+      return out.join('');
+    }
+    function fmtAudioTime(seconds){
+      if(!isFinite(seconds)||seconds<0)return'0:00';
+      var m=Math.floor(seconds/60),s=Math.floor(seconds%60);
+      return m+':'+String(s).padStart(2,'0');
+    }
+    function updateAudioBarVisibility(){
+      if(!audioPlayerBar)return;
+      var shouldShow=audioReady&&!audioHiddenForLearn;
+      audioPlayerBar.classList.toggle('visible',shouldShow);
+    }
+    function setAudioHiddenForLearn(hidden){
+      audioHiddenForLearn=!!hidden;
+      if(audioHiddenForLearn&&audioPlayerEl){
+        try{audioPlayerEl.pause();}catch(_){}
+      }
+      updateAudioBarVisibility();
+    }
+    function updateAudioControls(){
+      var paused=!audioPlayerEl||audioPlayerEl.paused;
+      if(audioPlayIcon)audioPlayIcon.style.display=paused?'':'none';
+      if(audioPauseIcon)audioPauseIcon.style.display=paused?'none':'';
+      var dur=audioPlayerEl&&isFinite(audioPlayerEl.duration)?audioPlayerEl.duration:0;
+      var cur=audioPlayerEl?audioPlayerEl.currentTime:0;
+      if(audioTime)audioTime.textContent=fmtAudioTime(cur)+' / '+fmtAudioTime(dur);
+      var pct=dur>0?(cur/dur)*100:0;
+      if(audioProgressFill)audioProgressFill.style.width=pct+'%';
+    }
+    function clearAudioActiveSections(){
+      audioSections.forEach(function(entry){entry.el.classList.remove('audio-active');});
+    }
+    function updateAudioActiveSection(){
+      if(!audioMap.length){clearAudioActiveSections();return;}
+      var currentMs=(audioPlayerEl.currentTime||0)*1000;
+      var activeSectionIndex=-1;
+      for(var i=0;i<audioMap.length;i++){
+        var seg=audioMap[i];
+        if(currentMs>=seg.start_ms&&currentMs<=seg.end_ms){activeSectionIndex=seg.section_index;break;}
+      }
+      audioSections.forEach(function(entry){entry.el.classList.toggle('audio-active',entry.sectionIndex===activeSectionIndex);});
+    }
+    function seekAudioTo(startMs){
+      if(!audioReady||!audioPlayerEl)return;
+      audioPlayerEl.currentTime=Math.max(0,startMs/1000);
+      audioPlayerEl.play().catch(function(){});
+      updateAudioControls();
+      updateAudioActiveSection();
+    }
+    function closeAudioPlayer(){
+      if(audioPlayerEl){audioPlayerEl.pause();audioPlayerEl.removeAttribute('src');audioPlayerEl.load();}
+      if(audioPlayerBar)audioPlayerBar.classList.remove('visible');
+      document.querySelectorAll('.notes-audio-section.audio-active').forEach(function(el){el.classList.remove('audio-active');});
+      audioReady=false;audioMap=[];audioSections=[];
+    }
+    function decorateNotesWithAudio(container){
+      if(!container||!audioMap.length)return;
+      var mapByIdx={};
+      audioMap.forEach(function(item){mapByIdx[item.section_index]=item;});
+      var headings=container.querySelectorAll('h1,h2,h3');
+      for(var i=0;i<headings.length;i++){
+        var heading=headings[i],entry=mapByIdx[i];
+        var wrapper=document.createElement('div');
+        wrapper.className='notes-audio-section'+(entry?' has-audio':'');
+        wrapper.dataset.sectionIndex=String(i);
+        heading.parentNode.insertBefore(wrapper,heading);
+        var node=heading;
+        while(node){
+          var next=node.nextElementSibling;
+          wrapper.appendChild(node);
+          if(!next||/^(H1|H2|H3)$/.test(next.tagName))break;
+          node=next;
+        }
+        if(entry){
+          (function(seg,sectionIndex,wrap){
+            audioSections.push({el:wrap,sectionIndex:sectionIndex});
+            var playBtn=document.createElement('button');
+            playBtn.type='button';
+            playBtn.className='notes-audio-btn';
+            playBtn.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>';
+            playBtn.addEventListener('click',function(e){e.stopPropagation();seekAudioTo(seg.start_ms);});
+            wrap.appendChild(playBtn);
+            wrap.addEventListener('click',function(e){if(e.target.tagName==='A')return;seekAudioTo(seg.start_ms);});
+          })(entry,i,wrapper);
+        }
+      }
+    }
+    function initAudioForSelectedPack(){
+      closeAudioPlayer();
+      if(!selectedPack||!selectedPack.has_audio_playback)return;
+      audioMap=(selectedPack.has_audio_sync&&Array.isArray(selectedPack.notes_audio_map))?selectedPack.notes_audio_map.slice():[];
+      if(audioPackTitle)audioPackTitle.textContent=selectedPack.title||'Lecture audio';
+      apiCall('/api/study-packs/'+encodeURIComponent(selectedPack.study_pack_id)+'/audio-url').then(function(data){
+        if(!data||!data.audio_url)return;
+        audioPlayerEl.src=data.audio_url;
+        audioPlayerEl.playbackRate=audioSpeeds[audioSpeedIndex];
+        audioSpeedBtn.textContent=audioSpeeds[audioSpeedIndex]+'x';
+        audioReady=true;
+        updateAudioBarVisibility();
+        updateAudioControls();
+      }).catch(function(e){
+        console.warn('Audio sync unavailable:',e&&e.message?e.message:e);
+      });
+    }
+
+    function clearHintFadeTimers(){
+      if(difficultyFadeTimer){clearTimeout(difficultyFadeTimer);difficultyFadeTimer=null;}
+      if(keyboardHintFadeTimer){clearTimeout(keyboardHintFadeTimer);keyboardHintFadeTimer=null;}
+    }
+    function scheduleHintFade(){
+      clearHintFadeTimers();
+      if(!learnStage.classList.contains('visible'))return;
+      difficultyFadeTimer=setTimeout(function(){
+        if(!learnStage.classList.contains('visible'))return;
+        if(difficultyToolbar&&difficultyToolbar.classList.contains('visible'))difficultyToolbar.classList.add('faded');
+      },HINT_FADE_DELAY_MS);
+      if(activeLearnMode==='flashcards'){
+        keyboardHintFadeTimer=setTimeout(function(){
+          if(learnStage.classList.contains('visible')&&keyboardHints)keyboardHints.classList.add('faded');
+        },HINT_FADE_DELAY_MS);
+      }
+    }
+    function resetLearnHintVisibility(){
+      if(difficultyToolbar)difficultyToolbar.classList.remove('faded');
+      if(keyboardHints)keyboardHints.classList.remove('faded');
+      scheduleHintFade();
+    }
+    function scheduleNotesFullscreenIdle(){
+      if(!notesFullscreenBtn)return;
+      if(notesFullscreenFadeTimer){clearTimeout(notesFullscreenFadeTimer);notesFullscreenFadeTimer=null;}
+      notesFullscreenBtn.classList.remove('idle');
+      if(activeEditorPane!=='notes')return;
+      notesFullscreenFadeTimer=setTimeout(function(){
+        if(activeEditorPane==='notes'&&notesFullscreenBtn){notesFullscreenBtn.classList.add('idle');}
+      },NOTES_ICON_IDLE_MS);
+    }
+    function openNotesFullscreen(){
+      var target=notesPaneShell||notesView;
+      if(!target)return;
+      try{
+        if(document.fullscreenElement===target){document.exitFullscreen();}
+        else{target.requestFullscreen();}
+      }catch(e){showToast('Fullscreen not available.','error');}
+    }
 
     function apiCall(path,options){
       var opts=options||{};
@@ -891,6 +1531,33 @@
         return r.blob().then(function(blob){
           var fn=parseFilenameFromDisposition(r.headers.get('content-disposition')||'',fallback);
           var url=URL.createObjectURL(blob);var anchor=document.createElement('a');anchor.href=url;anchor.download=fn;document.body.appendChild(anchor);anchor.click();document.body.removeChild(anchor);URL.revokeObjectURL(url);
+        });
+      });
+    }
+    function downloadStudyPackNotes(packId,format){
+      var fmt=(format||'docx').toLowerCase();
+      var fallback='study-pack-'+packId+'-notes.'+(fmt==='md'?'md':'docx');
+      return authenticatedFetch('/api/study-packs/'+encodeURIComponent(packId)+'/export-notes?format='+encodeURIComponent(fmt)).then(function(r){
+        if(!r.ok){return r.json().catch(function(){return{};}).then(function(d){throw new Error(d.error||'Could not export notes');});}
+        return r.blob().then(function(blob){
+          var fn=parseFilenameFromDisposition(r.headers.get('content-disposition')||'',fallback);
+          var url=URL.createObjectURL(blob);var anchor=document.createElement('a');anchor.href=url;anchor.download=fn;document.body.appendChild(anchor);anchor.click();document.body.removeChild(anchor);URL.revokeObjectURL(url);
+        });
+      });
+    }
+    function downloadStudyPackPdf(packId,includeAnswers){
+      var withAnswers=(includeAnswers!==false);
+      var fallback='study-pack-'+packId+(withAnswers?'':'-no-answers')+'.pdf';
+      var query='include_answers='+(withAnswers?'1':'0');
+      return authenticatedFetch('/api/study-packs/'+encodeURIComponent(packId)+'/export-pdf?'+query).then(function(r){
+        if(!r.ok){return r.json().catch(function(){return{};}).then(function(d){throw new Error(d.error||'Could not export PDF');});}
+        return r.blob().then(function(blob){
+          var fn=parseFilenameFromDisposition(r.headers.get('content-disposition')||'',fallback);
+          var url=URL.createObjectURL(blob);
+          var anchor=document.createElement('a');
+          anchor.href=url;anchor.download=fn;
+          document.body.appendChild(anchor);anchor.click();document.body.removeChild(anchor);
+          URL.revokeObjectURL(url);
         });
       });
     }
@@ -1347,14 +2014,52 @@
     function renderMasteryGauge(){
       var cards=selectedPack?(selectedPack.flashcards||[]):[];
       var total=cards.length;var state=loadCardState();
-      var seen=0,famCount=0,mastCount=0;
-      cards.forEach(function(c,i){var cs=state['fc_'+i];if(cs){seen++;if(cs.level==='mastered'){mastCount++;}else if(cs.level==='familiar'){famCount++;}}});
+      var seen=0,famCount=0,mastCount=0,dueToday=0,diffEasy=0,diffMedium=0,diffHard=0;
+      cards.forEach(function(c,i){
+        var cs=state['fc_'+i];
+        if(cs&&parseInt(cs.seen,10)>0){
+          seen++;
+          if(cs.level==='mastered'){mastCount++;}else if(cs.level==='familiar'){famCount++;}
+          if(isDueDate(cs.next_review_date)){dueToday++;}
+        }
+        var diff=((cs&&cs.difficulty)||'medium').toLowerCase();
+        if(diff==='easy')diffEasy++;
+        else if(diff==='hard')diffHard++;
+        else diffMedium++;
+      });
       var newCount=total-seen;
-      document.getElementById('mastery-total').textContent=String(total);
-      document.getElementById('mastery-seen').textContent=String(seen);
-      document.getElementById('mastery-new-pct').textContent=total?Math.round((newCount/total)*100)+'%':'0%';
-      document.getElementById('mastery-familiar-pct').textContent=total?Math.round((famCount/total)*100)+'%':'0%';
-      document.getElementById('mastery-mastered-pct').textContent=total?Math.round((mastCount/total)*100)+'%':'0%';
+      var unmastered=Math.max(0,total-mastCount);
+      masteryTotalEl.textContent=String(total);
+      masterySeenEl.textContent=String(seen);
+      masteryNewPctEl.textContent=total?Math.round((newCount/total)*100)+'%':'0%';
+      masteryFamiliarPctEl.textContent=total?Math.round((famCount/total)*100)+'%':'0%';
+      masteryMasteredPctEl.textContent=total?Math.round((mastCount/total)*100)+'%':'0%';
+      if(masteryDueTodayEl)masteryDueTodayEl.textContent=String(dueToday);
+      if(masteryUnmasteredEl)masteryUnmasteredEl.textContent=String(unmastered);
+      if(diffEasyCountEl)diffEasyCountEl.textContent=String(diffEasy);
+      if(diffMediumCountEl)diffMediumCountEl.textContent=String(diffMedium);
+      if(diffHardCountEl)diffHardCountEl.textContent=String(diffHard);
+
+      if(examRecommendationEl){
+        var folder=(selectedPack&&selectedPack.folder_id)?folders.find(function(f){return f.folder_id===selectedPack.folder_id;}):null;
+        var examDate=folder&&folder.exam_date?String(folder.exam_date):'';
+        if(!examDate){
+          examRecommendationEl.textContent='Set an exam date in Planning mode to get a daily target recommendation.';
+        }else{
+          var parts=examDate.split('-');
+          var examLocal=new Date(parseInt(parts[0],10),parseInt(parts[1],10)-1,parseInt(parts[2],10));
+          var todayParts=todayLocalDateString().split('-');
+          var todayLocal=new Date(parseInt(todayParts[0],10),parseInt(todayParts[1],10)-1,parseInt(todayParts[2],10));
+          var daysRemaining=Math.ceil((examLocal.getTime()-todayLocal.getTime())/86400000);
+          if(daysRemaining<0){
+            examRecommendationEl.textContent='Exam date has passed. Update the folder exam date to get a recommendation.';
+          }else{
+            var studyDays=Math.max(1,daysRemaining===0?1:daysRemaining);
+            var dailyTarget=Math.max(0,Math.ceil(unmastered/studyDays));
+            examRecommendationEl.innerHTML='Exam in <strong>'+Math.max(0,daysRemaining)+'</strong> day'+(daysRemaining===1?'':'s')+'. Recommended: <strong>'+dailyTarget+'</strong> unmastered cards/day.';
+          }
+        }
+      }
     }
 
     function setSetupPane(p){
@@ -1398,6 +2103,7 @@
 
     function openSessionSetup(){
       if(!selectedPack){showToast('Select a study pack first.','error');return;}
+      setAudioHiddenForLearn(true);
       loadSessionState();
       setupPackName.textContent=selectedPack.title||'Untitled pack';
       hideModePicker();
@@ -1405,7 +2111,7 @@
       setSetupPane('mastery');
       openModal(setupOverlay);
     }
-    function closeSessionSetup(){closeModal(setupOverlay);hideModePicker();}
+    function closeSessionSetup(){closeModal(setupOverlay);hideModePicker();if(!learnStage.classList.contains('visible')){setAudioHiddenForLearn(false);}}
 
     setupTabs.forEach(function(t){t.addEventListener('click',function(){setSetupPane(t.dataset.setupPane);});});
     setupCloseBtn.addEventListener('click',closeSessionSetup);
@@ -1454,12 +2160,13 @@
       renderWriteCard();
     }
     function getWriteCards(){
-      return orderedFlashcards.length?orderedFlashcards:(selectedPack&&selectedPack.flashcards?selectedPack.flashcards:[]);
+      return getFlashcardQueue();
     }
     function renderWriteCard(){
       var cards=getWriteCards();
       if(!cards.length){writePromptEl.textContent='No flashcards available.';writeInputEl.style.display='none';writeCheckBtn.style.display='none';writeRevealBtn.style.display='none';writeNextBtn.style.display='none';return;}
-      var c=cards[writeIndex];
+      var entry=cards[writeIndex];
+      var c=entry.card||{};
       writePromptSwapped=sessionSettings.swapAnswerQuestion||(sessionSettings.randomSwap&&Math.random()>0.5);
       writePromptEl.textContent=writePromptSwapped?(c.back||''):(c.front||'');
       writeInputEl.value='';writeInputEl.disabled=false;writeInputEl.className='write-input';
@@ -1470,16 +2177,18 @@
       writeNextBtn.style.display='';
       writeInputEl.focus();
       updateLearnProgressBar();
+      updateDifficultyToolbar();
     }
     function checkWriteAnswer(){
       if(writeChecked||writeRevealed)return;
       writeChecked=true;
       var cards=getWriteCards();
-      var c=cards[writeIndex];
+      var entry=cards[writeIndex]||{card:{},idx:writeIndex};
+      var c=entry.card||{};
       var correctAnswer=writePromptSwapped?(c.front||''):(c.back||'');
       var isCorrect=gradeAnswer(writeInputEl.value,correctAnswer);
       writeInputEl.disabled=true;
-      markCardSeen('fc_'+writeIndex,isCorrect);
+      markCardSeen('fc_'+entry.idx,isCorrect);
       if(isCorrect){
         writeInputEl.className='write-input correct-input';
         writeFeedbackEl.className='write-feedback visible correct-fb';
@@ -1494,18 +2203,19 @@
       if(writeRevealed)return;
       writeRevealed=true;writeChecked=true;
       var cards=getWriteCards();
-      var c=cards[writeIndex];
+      var entry=cards[writeIndex]||{card:{},idx:writeIndex};
+      var c=entry.card||{};
       var correctAnswer=writePromptSwapped?(c.front||''):(c.back||'');
       writeInputEl.disabled=true;writeInputEl.className='write-input wrong-input';
       writeFeedbackEl.className='write-feedback visible wrong-fb';
       writeFeedbackEl.textContent='Answer: '+correctAnswer;
-      markCardSeen('fc_'+writeIndex,false);
+      markCardSeen('fc_'+entry.idx,false);
     }
-    writeCheckBtn.addEventListener('click',checkWriteAnswer);
-    writeRevealBtn.addEventListener('click',revealWriteAnswer);
+    writeCheckBtn.addEventListener('click',function(){checkWriteAnswer();resetLearnHintVisibility();});
+    writeRevealBtn.addEventListener('click',function(){revealWriteAnswer();resetLearnHintVisibility();});
     writeNextBtn.addEventListener('click',function(){
       var cards=getWriteCards();
-      if(writeIndex<cards.length-1){writeIndex++;renderWriteCard();}
+      if(writeIndex<cards.length-1){writeIndex++;renderWriteCard();resetLearnHintVisibility();}
       else{showToast('All cards completed!');}
     });
     writeInputEl.addEventListener('keydown',function(e){
@@ -1521,14 +2231,15 @@
       var cards=selectedPack&&selectedPack.flashcards?selectedPack.flashcards:[];
       // Pick 6 random cards for 4x3 grid (6 pairs = 12 cells)
       var poolSize=Math.min(6,Math.floor(cards.length));
-      var shuffled=cards.slice().sort(function(){return Math.random()-0.5;});
+      var shuffled=cards.map(function(card,idx){return{card:card,idx:idx};}).sort(function(){return Math.random()-0.5;});
       var picked=shuffled.slice(0,poolSize);
       matchTotal=poolSize;
       // Build cells: each card produces a front cell and a back cell
       var cells=[];
-      picked.forEach(function(c,i){
-        cells.push({id:'m_'+i,side:'front',text:c.front||'',pairId:i});
-        cells.push({id:'m_'+i,side:'back',text:c.back||'',pairId:i});
+      picked.forEach(function(entry,i){
+        var c=entry.card||{};
+        cells.push({id:'m_'+i,side:'front',text:c.front||'',pairId:i,cardIdx:entry.idx});
+        cells.push({id:'m_'+i,side:'back',text:c.back||'',pairId:i,cardIdx:entry.idx});
       });
       // Shuffle cells
       cells.sort(function(){return Math.random()-0.5;});
@@ -1572,7 +2283,7 @@
           firstEl.classList.remove('selected');firstEl.classList.add('matched');
           cellEl.classList.add('matched');
           matchMatched++;
-          markCardSeen('fc_'+cell.pairId,true);
+          markCardSeen('fc_'+cell.cardIdx,true);
           if(matchMatched>=matchTotal){
             // All matched — stop timer and show results
             stopMatchTimer();
@@ -1643,8 +2354,8 @@
       document.getElementById('editor-pane-notes').classList.toggle('active',pane==='notes');
       document.getElementById('editor-pane-flashcards').classList.toggle('active',pane==='flashcards');
       document.getElementById('editor-pane-test').classList.toggle('active',pane==='test');
-      if(pane==='test'){exportType='test';exportCsvLabel.textContent='Export Practice Test CSV';}
-      else{exportType='flashcards';exportCsvLabel.textContent='Export Flashcards CSV';}
+      exportType=(pane==='test')?'test':'flashcards';
+      if(pane==='notes'){scheduleNotesFullscreenIdle();}
     }
 
     function filteredPacks(){
@@ -1670,7 +2381,23 @@
         var div=document.createElement('div');
         div.className='item'+(selectedFolderId===f.folder_id?' active':'');
         div.dataset.folderId=f.folder_id;
-        div.innerHTML='<div class="item-head"><span class="item-title">'+f.name+'</span>'+(f.folder_id?'<button class="btn" data-edit-folder="1" style="padding:5px 8px;font-size:0.75rem;">Edit</button>':'')+'</div><div class="item-sub">'+([f.course,f.subject,f.semester,f.block].filter(Boolean).join(' &middot; ')||(f.folder_id?'No metadata':'All packs'))+'</div>';
+        var metaLine=([f.course,f.subject,f.semester,f.block].filter(Boolean).join(' &middot; ')||(f.folder_id?'No metadata':'All packs'));
+        var examLine='';
+        if(f.folder_id&&f.exam_date){
+          var parts=String(f.exam_date).split('-');
+          if(parts.length===3){
+            var examDate=new Date(parseInt(parts[0],10),parseInt(parts[1],10)-1,parseInt(parts[2],10));
+            var todayParts=todayLocalDateString().split('-');
+            var todayDate=new Date(parseInt(todayParts[0],10),parseInt(todayParts[1],10)-1,parseInt(todayParts[2],10));
+            var diffDays=Math.ceil((examDate.getTime()-todayDate.getTime())/86400000);
+            var cls='later',label='';
+            if(diffDays>0){label=diffDays+' day'+(diffDays===1?'':'s')+' until exam';}
+            else if(diffDays===0){label='Exam today';cls='overdue';}
+            else{label='Exam passed '+Math.abs(diffDays)+' day'+(Math.abs(diffDays)===1?'':'s')+' ago';cls='overdue';}
+            examLine='<div class="item-sub exam-countdown '+cls+'">'+label+'</div>';
+          }
+        }
+        div.innerHTML='<div class="item-head"><span class="item-title">'+f.name+'</span>'+(f.folder_id?'<button class="btn" data-edit-folder="1" style="padding:5px 8px;font-size:0.75rem;">Edit</button>':'')+'</div><div class="item-sub">'+metaLine+'</div>'+examLine;
         div.addEventListener('click',function(e){if(e.target.closest('[data-edit-folder]'))return;selectedFolderId=f.folder_id;renderFolders();renderPacks();});
         if(f.folder_id){var eb=div.querySelector('[data-edit-folder]');if(eb){eb.addEventListener('click',function(e){e.stopPropagation();openFolderModal('edit',f);});}}
         div.addEventListener('dragover',function(e){e.preventDefault();if(draggedPackId&&f.folder_id)div.classList.add('drop-target');});
@@ -1810,7 +2537,7 @@
     function updateLearnProgressBar(){
       var c=0,t=0;
       if(activeLearnMode==='flashcards'){
-        var fcCards=orderedFlashcards.length?orderedFlashcards:(selectedPack?(selectedPack.flashcards||[]):[]);
+        var fcCards=getFlashcardQueue();
         c=learnFlashcardIndex+1;t=fcCards.length;
       }else if(activeLearnMode==='test'){
         var qs=selectedPack?(selectedPack.test_questions||[]):[];
@@ -1827,13 +2554,14 @@
     /* ── Learn flashcard with slide animation ── */
     var fcSliding=false;
     function updateFlashcardContent(){
-      var cards=orderedFlashcards.length?orderedFlashcards:(selectedPack&&Array.isArray(selectedPack.flashcards)?selectedPack.flashcards:[]);
+      var cards=getFlashcardQueue();
       if(!cards.length){
         learnFlashcardFront.textContent='No flashcards available.';learnFlashcardBack.textContent='';
         learnFProgress.textContent='Card 0 of 0';learnFPrev.disabled=true;learnFNext.disabled=true;learnFFlip.disabled=true;
         updateLearnProgressBar();return;
       }
-      var c=cards[learnFlashcardIndex];
+      var entry=cards[learnFlashcardIndex]||{card:{},idx:learnFlashcardIndex};
+      var c=entry.card||{};
       var swap=sessionSettings.swapAnswerQuestion||(sessionSettings.randomSwap&&Math.random()>0.5);
       learnFlashcardFront.textContent=swap?(c.back||''):(c.front||'');
       learnFlashcardBack.textContent=swap?(c.front||''):(c.back||'');
@@ -1841,6 +2569,8 @@
       learnFPrev.disabled=(learnFlashcardIndex===0);
       learnFNext.disabled=(learnFlashcardIndex===cards.length-1);
       learnFFlip.disabled=false;
+      flashcardReviewedThisCard=false;
+      updateDifficultyToolbar();
       updateLearnProgressBar();
     }
     function renderLearnFlashcard(){
@@ -1849,7 +2579,7 @@
     }
     function doFlashcardSlide(direction){
       if(fcSliding)return;
-      var cards=orderedFlashcards.length?orderedFlashcards:(selectedPack&&selectedPack.flashcards?selectedPack.flashcards:[]);
+      var cards=getFlashcardQueue();
       if(!cards.length)return;
       var newIdx;
       if(direction==='next'){
@@ -1902,16 +2632,20 @@
           learnQScore.textContent='Score: '+learnScore+'/'+questions.length;
           learnQExpl.textContent=q.explanation||'';learnQExpl.classList.add('visible');
           updateLearnProgressBar();
+          resetLearnHintVisibility();
         });
         learnQOptions.appendChild(b);
       });
+      updateDifficultyToolbar();
       updateLearnProgressBar();
     }
 
     /* ── Open learn stage in a specific focused mode ── */
     function openLearnStageWithMode(mode,requestFullscreen){
       if(!selectedPack){showToast('Select a study pack first.','error');return;}
+      learnSessionRecorded=false;
       activeLearnMode=mode;
+      setAudioHiddenForLearn(true);
       learnTitle.textContent=selectedPack.title||'Learn Mode';
       learnSub.textContent=(MODE_NAMES[mode]||mode)+' · Focused session';
       learnModeLabel.textContent=MODE_NAMES[mode]||mode;
@@ -1942,21 +2676,28 @@
         // Fallback: notes
         document.getElementById('learn-pane-notes').classList.add('active');
         learnNotesContent.innerHTML=mdToHtml(selectedPack.notes_markdown||'');
+        updateDifficultyToolbar();
       }
 
       updateLearnProgressBar();
       learnStage.classList.add('entering');
       requestAnimationFrame(function(){requestAnimationFrame(function(){learnStage.classList.replace('entering','visible');});});
+      resetLearnHintVisibility();
       if(requestFullscreen){
         try{document.documentElement.requestFullscreen();}catch(e){}
       }
     }
 
     function closeLearnStage(){
+      recordLearnSessionCompletion();
       learnStage.classList.remove('visible');
       orderedFlashcards=[];
       stopMatchTimer();
       activeLearnMode='';
+      clearHintFadeTimers();
+      if(keyboardHints)keyboardHints.classList.remove('faded');
+      setAudioHiddenForLearn(false);
+      updateDifficultyToolbar();
       if(document.fullscreenElement){try{document.exitFullscreen();}catch(e){}}
     }
 
@@ -1970,6 +2711,7 @@
       folderSubjectInput.value=folder?(folder.subject||''):'';
       folderSemesterInput.value=folder?(folder.semester||''):'';
       folderBlockInput.value=folder?(folder.block||''):'';
+      folderExamDateInput.value=folder?(folder.exam_date||''):'';
       openModal(folderModalOverlay);
       setTimeout(function(){folderNameInput.focus();},100);
     }
@@ -1979,9 +2721,10 @@
       folderNameInput.value='';folderCourseInput.value='';
       folderSubjectInput.value='';folderSemesterInput.value='';
       folderBlockInput.value='';
+      folderExamDateInput.value='';
     }
     function saveFolderFromModal(){
-      var payload={name:folderNameInput.value.trim(),course:folderCourseInput.value.trim(),subject:folderSubjectInput.value.trim(),semester:folderSemesterInput.value.trim(),block:folderBlockInput.value.trim()};
+      var payload={name:folderNameInput.value.trim(),course:folderCourseInput.value.trim(),subject:folderSubjectInput.value.trim(),semester:folderSemesterInput.value.trim(),block:folderBlockInput.value.trim(),exam_date:folderExamDateInput.value||''};
       if(!payload.name){showToast('Folder name is required.','error');folderNameInput.focus();return;}
       var promise;
       if(folderModalMode==='edit'&&editingFolderId){
@@ -1998,6 +2741,9 @@
         selectedPack=data;
         selectedPack.flashcards=Array.isArray(selectedPack.flashcards)?selectedPack.flashcards:[];
         selectedPack.test_questions=Array.isArray(selectedPack.test_questions)?selectedPack.test_questions.map(normalizeQuestion):[];
+        selectedPack.has_audio_playback=!!selectedPack.has_audio_playback;
+        selectedPack.has_audio_sync=!!selectedPack.has_audio_sync;
+        selectedPack.notes_audio_map=Array.isArray(selectedPack.notes_audio_map)?selectedPack.notes_audio_map:[];
         showPackEditor(true);updatePackSummary();
         packTitle.value=selectedPack.title||'';
         setPackFolderSelection(selectedPack.folder_id||'');
@@ -2006,6 +2752,10 @@
         packSemester.value=selectedPack.semester||'';
         packBlock.value=selectedPack.block||'';
         notesView.innerHTML=mdToHtml(selectedPack.notes_markdown||'');
+        audioMap=selectedPack.has_audio_sync?selectedPack.notes_audio_map.slice():[];
+        audioSections=[];
+        if(selectedPack.has_audio_sync&&audioMap.length){decorateNotesWithAudio(notesView);}
+        initAudioForSelectedPack();
         renderFlashcardEditor();renderQuestionEditor();
         setEditorPane(activeEditorPane);
         // Deep link: auto-open learn mode if URL says so
@@ -2026,6 +2776,7 @@
       var prefId=preferredPackId||'';
       return Promise.all([apiCall('/api/study-folders'),apiCall('/api/study-packs')]).then(function(results){
         folders=results[0].folders||[];packs=results[1].study_packs||[];
+        updateTopbarDueCount();
         renderFolderSelect();renderFolders();renderPacks();
         var packToOpen=prefId||selectedPackId||'';
         if(packToOpen&&packs.find(function(item){return item.study_pack_id===packToOpen;})){
@@ -2034,6 +2785,7 @@
           selectedPackId=learnPackFromUrl;renderPacks();return openPack(learnPackFromUrl);
         }else{
           selectedPack=null;showPackEditor(false);updatePackSummary();
+          closeAudioPlayer();
         }
       });
     }
@@ -2047,13 +2799,12 @@
           closeBuilderOverlay();
         }
         userMeta.textContent='Not signed in';
-        authBtn.textContent='Sign in';
+        if(topbarDueText)topbarDueText.textContent='0 due today';
         return;
       }
       user.getIdToken().then(function(t){
         token=t;
         userMeta.textContent='Signed in as '+user.email;
-        authBtn.textContent='Sign out';
         return loadData();
       }).catch(function(e){
         showToast(e.message||'Could not load study library.','error');
@@ -2061,10 +2812,6 @@
     });
 
     /* ── Event listeners ── */
-    authBtn.addEventListener('click',function(){
-      if(!auth.currentUser){window.location.href='/';return;}
-      auth.signOut();
-    });
     createPackBtn.addEventListener('click',function(){
       if(!auth.currentUser){
         showToast('Please sign in first.','error');
@@ -2247,7 +2994,7 @@
         event.returnValue='';
       }
     });
-    backAppBtn.addEventListener('click',function(){window.location.href='/';});
+    backAppBtn.addEventListener('click',function(){window.location.href='/dashboard';});
     fullscreenBtn.addEventListener('click',function(){
       if(!selectedPack){showToast('Select a study pack first.','error');return;}
       openSessionSetup();
@@ -2294,10 +3041,40 @@
       });
     });
 
-    exportPackCsvBtn.addEventListener('click',function(){
+    exportPackNotesBtn.addEventListener('click',function(){
       if(!selectedPackId){showToast('Select a study pack first.','error');return;}
-      downloadStudyPackCsv(selectedPackId,exportType).then(function(){showToast('CSV export started.');}).catch(function(e){showToast(e.message||'Could not export CSV.','error');});
+      downloadStudyPackNotes(selectedPackId,'docx').then(function(){showToast('Notes export started.');}).catch(function(e){showToast(e.message||'Could not export notes.','error');});
     });
+    if(exportMenuBtn&&exportMenuList){
+      exportMenuBtn.addEventListener('click',function(e){
+        e.stopPropagation();
+        exportMenuList.classList.toggle('visible');
+        if(!exportMenuList.classList.contains('visible')&&exportPdfSubmenu){exportPdfSubmenu.classList.remove('visible');}
+      });
+      exportMenuList.addEventListener('click',function(e){
+        var item=e.target.closest('.export-menu-item[data-export-kind]');
+        if(!item)return;
+        if(!selectedPackId){showToast('Select a study pack first.','error');return;}
+        var kind=item.dataset.exportKind;
+        if(kind==='pdf-menu'){
+          e.stopPropagation();
+          if(exportPdfSubmenu){exportPdfSubmenu.classList.toggle('visible');}
+          return;
+        }
+        exportMenuList.classList.remove('visible');
+        if(exportPdfSubmenu){exportPdfSubmenu.classList.remove('visible');}
+        if(kind==='pdf-with-answers'){
+          downloadStudyPackPdf(selectedPackId,true).then(function(){showToast('PDF export started.');}).catch(function(e2){showToast(e2.message||'Could not export PDF.','error');});
+          return;
+        }
+        if(kind==='pdf-no-answers'){
+          downloadStudyPackPdf(selectedPackId,false).then(function(){showToast('Practice PDF export started.');}).catch(function(e3){showToast(e3.message||'Could not export PDF.','error');});
+          return;
+        }
+        var csvType=(kind==='test')?'test':'flashcards';
+        downloadStudyPackCsv(selectedPackId,csvType).then(function(){showToast('CSV export started.');}).catch(function(e4){showToast(e4.message||'Could not export CSV.','error');});
+      });
+    }
 
     openLearnBtn.addEventListener('click',function(){openSessionSetup();});
     editorTabs.forEach(function(btn){btn.addEventListener('click',function(){setEditorPane(btn.dataset.editorPane);});});
@@ -2322,7 +3099,7 @@
       showToast('New practice question added.');
     });
 
-    learnBackAppBtn.addEventListener('click',function(){window.location.href='/';});
+    learnBackAppBtn.addEventListener('click',function(){window.location.href='/dashboard';});
     learnBackLibraryBtn.addEventListener('click',closeLearnStage);
     learnFullscreenBtn.addEventListener('click',function(){
       try{
@@ -2330,28 +3107,80 @@
         else{document.documentElement.requestFullscreen();}
       }catch(e){showToast('Fullscreen not available.','error');}
     });
+    if(notesFullscreenBtn){
+      notesFullscreenBtn.addEventListener('click',openNotesFullscreen);
+      notesFullscreenBtn.addEventListener('mouseenter',function(){notesFullscreenBtn.classList.remove('idle');});
+    }
+    if(notesPaneShell){
+      notesPaneShell.addEventListener('mouseenter',function(){
+        if(activeEditorPane==='notes'){scheduleNotesFullscreenIdle();}
+      });
+    }
+    audioPlayBtn.addEventListener('click',function(){
+      if(!audioReady)return;
+      if(audioPlayerEl.paused){audioPlayerEl.play().catch(function(){});}
+      else{audioPlayerEl.pause();}
+    });
+    audioCloseBtn.addEventListener('click',closeAudioPlayer);
+    audioSpeedBtn.addEventListener('click',function(){
+      if(!audioReady)return;
+      audioSpeedIndex=(audioSpeedIndex+1)%audioSpeeds.length;
+      audioPlayerEl.playbackRate=audioSpeeds[audioSpeedIndex];
+      audioSpeedBtn.textContent=audioSpeeds[audioSpeedIndex]+'x';
+    });
+    audioProgressWrap.addEventListener('click',function(e){
+      if(!audioReady||!audioPlayerEl.duration)return;
+      var rect=audioProgressWrap.getBoundingClientRect();
+      var pct=Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width));
+      audioPlayerEl.currentTime=pct*audioPlayerEl.duration;
+      updateAudioControls();
+      updateAudioActiveSection();
+    });
+    audioPlayerEl.addEventListener('loadedmetadata',updateAudioControls);
+    audioPlayerEl.addEventListener('play',updateAudioControls);
+    audioPlayerEl.addEventListener('pause',updateAudioControls);
+    audioPlayerEl.addEventListener('ended',function(){updateAudioControls();clearAudioActiveSections();});
+    audioPlayerEl.addEventListener('timeupdate',function(){updateAudioControls();updateAudioActiveSection();});
+    difficultyButtons.forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var cardId=getCurrentDifficultyCardId();
+        if(!cardId){return;}
+        setCardDifficulty(cardId,btn.dataset.difficulty);
+        resetLearnHintVisibility();
+      });
+    });
 
     /* Flashcard controls */
     learnFlashcard3d.addEventListener('click',function(){
       if(fcSliding)return;
       learnFlashcardFlipped=!learnFlashcardFlipped;
-      markCardSeen('fc_'+learnFlashcardIndex,true);
+      if(learnFlashcardFlipped&&!flashcardReviewedThisCard){
+        var queue=getFlashcardQueue();
+        var entry=queue[learnFlashcardIndex];
+        if(entry){markCardSeen('fc_'+entry.idx,true);flashcardReviewedThisCard=true;}
+      }
       renderLearnFlashcard();
+      resetLearnHintVisibility();
     });
-    learnFPrev.addEventListener('click',function(){doFlashcardSlide('prev');});
-    learnFNext.addEventListener('click',function(){doFlashcardSlide('next');});
+    learnFPrev.addEventListener('click',function(){doFlashcardSlide('prev');resetLearnHintVisibility();});
+    learnFNext.addEventListener('click',function(){doFlashcardSlide('next');resetLearnHintVisibility();});
     learnFFlip.addEventListener('click',function(){
       if(fcSliding)return;
       learnFlashcardFlipped=!learnFlashcardFlipped;
-      markCardSeen('fc_'+learnFlashcardIndex,true);
+      if(learnFlashcardFlipped&&!flashcardReviewedThisCard){
+        var queue=getFlashcardQueue();
+        var entry=queue[learnFlashcardIndex];
+        if(entry){markCardSeen('fc_'+entry.idx,true);flashcardReviewedThisCard=true;}
+      }
       renderLearnFlashcard();
+      resetLearnHintVisibility();
     });
 
     /* Quiz next */
     learnQNext.addEventListener('click',function(){
       var questions=selectedPack&&selectedPack.test_questions?selectedPack.test_questions:[];
       if(!questions.length)return;
-      if(learnQuestionIndex<questions.length-1){learnQuestionIndex++;renderLearnQuestion();}
+      if(learnQuestionIndex<questions.length-1){learnQuestionIndex++;renderLearnQuestion();resetLearnHintVisibility();}
       else{showToast('All questions completed!');}
     });
 
@@ -2363,10 +3192,29 @@
         return;
       }
       if(!learnStage.classList.contains('visible'))return;
+      var activeElement=document.activeElement;
+      var isTypingTarget=activeElement&&(
+        activeElement.tagName==='INPUT'||
+        activeElement.tagName==='TEXTAREA'||
+        activeElement.tagName==='SELECT'||
+        activeElement.isContentEditable
+      );
+      if(!isTypingTarget&&['flashcards','write','test'].indexOf(activeLearnMode)>=0){
+        if(e.key==='1'||e.key==='2'||e.key==='3'){
+          e.preventDefault();
+          var cardId=getCurrentDifficultyCardId();
+          if(cardId){
+            var mapped=e.key==='1'?'easy':(e.key==='2'?'medium':'hard');
+            setCardDifficulty(cardId,mapped);
+            resetLearnHintVisibility();
+          }
+          return;
+        }
+      }
       if(activeLearnMode==='flashcards'){
-        if(e.key==='ArrowLeft'){e.preventDefault();doFlashcardSlide('prev');}
-        if(e.key==='ArrowRight'){e.preventDefault();doFlashcardSlide('next');}
-        if(e.code==='Space'){e.preventDefault();learnFFlip.click();}
+        if(e.key==='ArrowLeft'){e.preventDefault();doFlashcardSlide('prev');resetLearnHintVisibility();}
+        if(e.key==='ArrowRight'){e.preventDefault();doFlashcardSlide('next');resetLearnHintVisibility();}
+        if(e.code==='Space'){e.preventDefault();learnFFlip.click();resetLearnHintVisibility();}
       }
     });
 
@@ -2379,6 +3227,10 @@
     /* Close dropdowns on outside click */
     document.addEventListener('click',function(e){
       if(!packFolderPicker.contains(e.target)){packFolderMenu.classList.remove('visible');packFolderButton.classList.remove('open');}
+      if(exportMenu&&!exportMenu.contains(e.target)&&exportMenuList){
+        exportMenuList.classList.remove('visible');
+        if(exportPdfSubmenu){exportPdfSubmenu.classList.remove('visible');}
+      }
       if(!e.target.closest('.q-answer-picker')){
         questionEditorList.querySelectorAll('[data-answer-menu]').forEach(function(m){m.classList.remove('visible');});
         questionEditorList.querySelectorAll('[data-answer-button]').forEach(function(b){b.classList.remove('open');});

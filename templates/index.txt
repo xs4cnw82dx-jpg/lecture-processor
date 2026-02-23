@@ -22,6 +22,5 @@ Interview Transcript
 
 Upload lecture slides (PDF) and audio recording to generate complete, integrated study notes.
 Uses 1 lecture credit
-Built with Gemini AI · Made for students
-
+Powered by Gemini AI · Made for students
 
