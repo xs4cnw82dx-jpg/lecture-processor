@@ -681,7 +681,7 @@ def sanitize_questions(items, max_items):
         options = item.get('options', [])
         answer = str(item.get('answer', '')).strip()
         explanation = str(item.get('explanation', '')).strip()
-        if not question or not isinstance(options, list) or len(options) != 4 or not answer or not explanation:
+        if not question or not isinstance(options, list) or len(options) != 4 or not answer:
             continue
         option_strings = [str(option).strip() for option in options]
         if any(not option for option in option_strings):
@@ -1307,6 +1307,73 @@ def get_study_packs():
     except Exception as e:
         print(f"Error fetching study packs: {e}")
         return jsonify({'study_packs': []})
+
+@app.route('/api/study-packs', methods=['POST'])
+def create_study_pack():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    uid = decoded_token['uid']
+    payload = request.get_json() or {}
+
+    title = str(payload.get('title', '')).strip()[:120]
+    if not title:
+        title = f"Untitled pack {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
+
+    try:
+        now_ts = time.time()
+        folder_id = str(payload.get('folder_id', '')).strip()
+        folder_name = ''
+        if folder_id:
+            folder_doc = db.collection('study_folders').document(folder_id).get()
+            if not folder_doc.exists:
+                return jsonify({'error': 'Folder not found'}), 404
+            folder_data = folder_doc.to_dict()
+            if folder_data.get('uid', '') != uid:
+                return jsonify({'error': 'Forbidden'}), 403
+            folder_name = folder_data.get('name', '')
+        else:
+            folder_id = ''
+
+        flashcards = sanitize_flashcards(payload.get('flashcards', []), 500)
+        test_questions = sanitize_questions(payload.get('test_questions', []), 500)
+
+        doc_ref = db.collection('study_packs').document()
+        doc_ref.set({
+            'study_pack_id': doc_ref.id,
+            'source_job_id': '',
+            'uid': uid,
+            'email': decoded_token.get('email', ''),
+            'mode': 'manual',
+            'title': title,
+            'output_language': str(payload.get('output_language', 'English')).strip()[:64] or 'English',
+            'notes_markdown': str(payload.get('notes_markdown', '')).strip(),
+            'notes_truncated': False,
+            'flashcards': flashcards,
+            'test_questions': test_questions,
+            'flashcard_selection': 'manual',
+            'question_selection': 'manual',
+            'study_features': 'both',
+            'interview_features': [],
+            'interview_summary': None,
+            'interview_sections': None,
+            'interview_combined': None,
+            'study_generation_error': None,
+            'course': str(payload.get('course', '')).strip()[:120],
+            'subject': str(payload.get('subject', '')).strip()[:120],
+            'semester': str(payload.get('semester', '')).strip()[:120],
+            'block': str(payload.get('block', '')).strip()[:120],
+            'folder_id': folder_id,
+            'folder_name': folder_name,
+            'created_at': now_ts,
+            'updated_at': now_ts,
+        })
+
+        return jsonify({'ok': True, 'study_pack_id': doc_ref.id})
+    except Exception as e:
+        print(f"Error creating study pack: {e}")
+        return jsonify({'error': 'Could not create study pack'}), 500
 
 @app.route('/api/study-packs/<pack_id>', methods=['GET'])
 def get_study_pack(pack_id):
