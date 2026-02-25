@@ -51,39 +51,42 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Start app server
+      - name: Run smoke tests with local app
         run: |
-          python app.py > app.log 2>&1 &
-          echo $! > app.pid
+          set -euo pipefail
+          APP_PID=""
+          cleanup() {
+            if [ -n "${APP_PID}" ]; then
+              kill "${APP_PID}" >/dev/null 2>&1 || true
+              wait "${APP_PID}" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup EXIT
 
-      - name: Wait for app readiness
-        run: |
+          python app.py > app.log 2>&1 &
+          APP_PID=$!
+
+          ready=0
           for i in {1..40}; do
             code="$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5000/ || true)"
             if [ "$code" = "200" ]; then
+              ready=1
               echo "App is ready."
-              exit 0
+              break
             fi
             sleep 1
           done
-          echo "App failed to become ready in time."
-          tail -n 120 app.log || true
-          exit 1
 
-      - name: Run smoke test script
-        run: |
-          chmod +x scripts/run_smoke.sh
-          ./scripts/run_smoke.sh
-
-      - name: Show server log on failure
-        if: failure()
-        run: |
-          echo "--- app.log (last 200 lines) ---"
-          tail -n 200 app.log || true
-
-      - name: Stop app server
-        if: always()
-        run: |
-          if [ -f app.pid ]; then
-            kill "$(cat app.pid)" || true
+          if [ "$ready" -ne 1 ]; then
+            echo "App failed to become ready in time."
+            echo "--- app.log (last 200 lines) ---"
+            tail -n 200 app.log || true
+            exit 1
           fi
+
+          chmod +x scripts/run_smoke.sh
+          ./scripts/run_smoke.sh || {
+            echo "--- app.log (last 200 lines) ---"
+            tail -n 200 app.log || true
+            exit 1
+          }
