@@ -34,9 +34,16 @@ from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
+from werkzeug.exceptions import RequestEntityTooLarge
 from docx import Document
 from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+try:
+    import sentry_sdk
+    from sentry_sdk.integrations.flask import FlaskIntegration
+except Exception:
+    sentry_sdk = None
+    FlaskIntegration = None
 
 REPORTLAB_AVAILABLE = True
 try:
@@ -56,20 +63,45 @@ app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_PDF_EXTENSIONS = {'pdf'}
 ALLOWED_AUDIO_EXTENSIONS = {'mp3', 'm4a', 'wav', 'aac', 'ogg', 'flac'}
-MAX_CONTENT_LENGTH = 500 * 1024 * 1024
+MAX_PDF_UPLOAD_BYTES = 50 * 1024 * 1024
+MAX_AUDIO_UPLOAD_BYTES = 500 * 1024 * 1024
+MAX_CONTENT_LENGTH = (MAX_PDF_UPLOAD_BYTES + MAX_AUDIO_UPLOAD_BYTES + (10 * 1024 * 1024))
+ALLOWED_PDF_MIME_TYPES = {'application/pdf', 'application/x-pdf', 'application/octet-stream'}
+ALLOWED_AUDIO_MIME_TYPES = {
+    'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/x-wav',
+    'audio/aac', 'audio/ogg', 'audio/flac', 'application/octet-stream'
+}
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
+GEMINI_API_KEY = (os.getenv('GEMINI_API_KEY', '') or '').strip()
+if GEMINI_API_KEY:
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+    except Exception as e:
+        client = None
+        print(f"⚠️ Gemini client disabled: {e}")
+else:
+    client = None
+    print("⚠️ GEMINI_API_KEY not set; AI processing features are disabled.")
+app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 
 # --- Firebase Setup ---
-if os.path.exists('firebase-credentials.json'):
-    cred = credentials.Certificate('firebase-credentials.json')
-else:
-    firebase_creds = json.loads(os.getenv('FIREBASE_CREDENTIALS', '{}'))
-    cred = credentials.Certificate(firebase_creds)
-
-firebase_admin.initialize_app(cred)
-db = firestore.client()
+db = None
+firebase_init_error = ''
+try:
+    if os.path.exists('firebase-credentials.json'):
+        cred = credentials.Certificate('firebase-credentials.json')
+    else:
+        firebase_creds_raw = (os.getenv('FIREBASE_CREDENTIALS', '') or '').strip()
+        if not firebase_creds_raw:
+            raise ValueError("FIREBASE_CREDENTIALS is not set and firebase-credentials.json was not found.")
+        cred = credentials.Certificate(json.loads(firebase_creds_raw))
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(cred)
+    db = firestore.client()
+except Exception as e:
+    firebase_init_error = str(e)
+    print(f"⚠️ Firebase initialization skipped: {firebase_init_error}")
 
 # --- Stripe Setup ---
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
@@ -83,6 +115,124 @@ jobs = {}
 AUDIO_STREAM_TOKEN_TTL_SECONDS = 3600
 AUDIO_STREAM_TOKENS = {}
 FEATURE_AUDIO_SECTION_SYNC = os.getenv('FEATURE_AUDIO_SECTION_SYNC', '0').strip().lower() in {'1', 'true', 'yes', 'on'}
+MAX_PROGRESS_PACKS_PER_SYNC = 300
+MAX_PROGRESS_CARDS_PER_PACK = 2500
+PROGRESS_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+ANALYTICS_NAME_RE = re.compile(r'^[a-z0-9_]{2,64}$')
+ANALYTICS_SESSION_ID_RE = re.compile(r'^[A-Za-z0-9_-]{6,80}$')
+ANALYTICS_ALLOWED_EVENTS = {
+    'auth_modal_opened',
+    'auth_success',
+    'auth_failed',
+    'checkout_started',
+    'payment_confirmed',
+    'payment_cancelled',
+    'process_clicked',
+    'processing_started',
+    'processing_completed',
+    'processing_failed',
+    'processing_timeout',
+    'processing_retry_requested',
+    'study_mode_opened',
+    'payment_confirmed_backend',
+    'processing_started_backend',
+    'processing_completed_backend',
+    'processing_failed_backend',
+    'processing_finished_backend',
+}
+ANALYTICS_FUNNEL_STAGES = [
+    {'event': 'auth_modal_opened', 'label': 'Opened sign-in'},
+    {'event': 'auth_success', 'label': 'Signed in'},
+    {'event': 'checkout_started', 'label': 'Started checkout'},
+    {'event': 'payment_confirmed', 'label': 'Payment confirmed'},
+    {'event': 'process_clicked', 'label': 'Clicked process'},
+    {'event': 'processing_started', 'label': 'Upload accepted'},
+    {'event': 'processing_completed', 'label': 'Processing complete'},
+    {'event': 'study_mode_opened', 'label': 'Opened study mode'},
+]
+ANALYTICS_FUNNEL_EVENT_NAMES = {stage['event'] for stage in ANALYTICS_FUNNEL_STAGES}
+
+def safe_int_env(name, default=0, minimum=1, maximum=100000):
+    raw = os.getenv(name, str(default)).strip()
+    try:
+        value = int(raw)
+    except Exception:
+        value = int(default)
+    return min(max(value, minimum), maximum)
+
+UPLOAD_RATE_LIMIT_WINDOW_SECONDS = safe_int_env('UPLOAD_RATE_LIMIT_WINDOW_SECONDS', 600, minimum=10, maximum=86400)
+UPLOAD_RATE_LIMIT_MAX_REQUESTS = safe_int_env('UPLOAD_RATE_LIMIT_MAX_REQUESTS', 10, minimum=1, maximum=1000)
+MAX_ACTIVE_JOBS_PER_USER = safe_int_env('MAX_ACTIVE_JOBS_PER_USER', 2, minimum=1, maximum=20)
+CHECKOUT_RATE_LIMIT_WINDOW_SECONDS = safe_int_env('CHECKOUT_RATE_LIMIT_WINDOW_SECONDS', 600, minimum=10, maximum=86400)
+CHECKOUT_RATE_LIMIT_MAX_REQUESTS = safe_int_env('CHECKOUT_RATE_LIMIT_MAX_REQUESTS', 6, minimum=1, maximum=100)
+ANALYTICS_RATE_LIMIT_WINDOW_SECONDS = safe_int_env('ANALYTICS_RATE_LIMIT_WINDOW_SECONDS', 60, minimum=10, maximum=3600)
+ANALYTICS_RATE_LIMIT_MAX_REQUESTS = safe_int_env('ANALYTICS_RATE_LIMIT_MAX_REQUESTS', 240, minimum=10, maximum=5000)
+ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION = safe_int_env('ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION', 10000, minimum=100, maximum=50000)
+ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION = safe_int_env('ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION', 10000, minimum=100, maximum=50000)
+RATE_LIMIT_EVENTS = {}
+RATE_LIMIT_LOCK = threading.Lock()
+
+SENTRY_BACKEND_DSN = os.getenv('SENTRY_DSN_BACKEND', '').strip()
+SENTRY_FRONTEND_DSN = os.getenv('SENTRY_DSN_FRONTEND', '').strip()
+SENTRY_ENVIRONMENT = (os.getenv('SENTRY_ENVIRONMENT', os.getenv('FLASK_ENV', 'production')) or 'production').strip()
+SENTRY_RELEASE = (os.getenv('SENTRY_RELEASE', 'lecture-processor') or 'lecture-processor').strip()
+LEGAL_CONTACT_EMAIL = (os.getenv('LEGAL_CONTACT_EMAIL', os.getenv('SUPPORT_EMAIL', '')) or '').strip()
+DEV_ENV_NAMES = {'development', 'dev', 'local', 'test'}
+
+def safe_float_env(name, default=0.0):
+    raw = os.getenv(name, str(default)).strip()
+    try:
+        value = float(raw)
+    except Exception:
+        return default
+    return min(max(value, 0.0), 1.0)
+
+SENTRY_TRACES_SAMPLE_RATE = safe_float_env('SENTRY_TRACES_SAMPLE_RATE', 0.0)
+
+if SENTRY_BACKEND_DSN and sentry_sdk and FlaskIntegration:
+    sentry_sdk.init(
+        dsn=SENTRY_BACKEND_DSN,
+        integrations=[FlaskIntegration()],
+        traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
+        send_default_pii=False,
+        environment=SENTRY_ENVIRONMENT,
+        release=SENTRY_RELEASE,
+    )
+
+def is_dev_environment():
+    env_value = str(SENTRY_ENVIRONMENT or '').strip().lower()
+    flask_debug = str(os.getenv('FLASK_DEBUG', '0')).strip().lower() in {'1', 'true', 'yes', 'on'}
+    return env_value in DEV_ENV_NAMES or flask_debug
+
+@app.before_request
+def attach_sentry_route_context():
+    if not sentry_sdk:
+        return
+    try:
+        with sentry_sdk.configure_scope() as scope:
+            scope.set_tag('route.path', request.path)
+            scope.set_tag('route.method', request.method)
+            scope.set_tag('route.endpoint', request.endpoint or '')
+            scope.set_tag('route.auth_header_present', 'true' if request.headers.get('Authorization') else 'false')
+            scope.set_tag('route.environment', SENTRY_ENVIRONMENT or 'production')
+            if request.content_type:
+                scope.set_tag('route.content_type', str(request.content_type).split(';')[0][:80])
+    except Exception:
+        pass
+
+@app.after_request
+def attach_sentry_response_context(response):
+    if sentry_sdk:
+        try:
+            with sentry_sdk.configure_scope() as scope:
+                scope.set_tag('route.status_code', str(response.status_code))
+        except Exception:
+            pass
+    return response
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_request_entity_too_large(_error):
+    return jsonify({'error': 'Upload too large. Maximum total upload size is 560MB (up to 50MB PDF and 500MB audio).'}), 413
 
 # --- Credit Bundles (what users can buy) ---
 CREDIT_BUNDLES = {
@@ -138,7 +288,7 @@ ALLOWED_EMAIL_DOMAINS = {
     'maastrichtuniversity.nl', 'student.maastrichtuniversity.nl', 'leidenuniv.nl', 'student.leidenuniv.nl', 'rug.nl',
     'student.rug.nl', 'tilburguniversity.edu', 'uvt.nl', 'han.nl', 'student.han.nl', 'hva.nl', 'student.hva.nl', 'hr.nl',
     'student.hr.nl', 'fontys.nl', 'student.fontys.nl', 'saxion.nl', 'student.saxion.nl', 'avans.nl', 'student.avans.nl',
-    'inholland.nl', 'student.inholland.nl', 'hanze.nl', 'student.hanze.nl', 'zuyd.nl', 'student.zuyd.nl', 'hu.nl',
+    'inholland.nl', 'student.inholland.nl', 'hanze.nl', 'student.hanze.nl', 'st.hanze.nl', 'zuyd.nl', 'student.zuyd.nl', 'hu.nl',
     'student.hu.nl', 'windesheim.nl', 'student.windesheim.nl', 'nhlstenden.com', 'student.nhlstenden.com',
 }
 
@@ -498,7 +648,7 @@ def save_purchase_record(uid, bundle_id, stripe_session_id):
     if not bundle:
         return
     try:
-        db.collection('purchases').add({
+        record = {
             'uid': uid,
             'bundle_id': bundle_id,
             'bundle_name': bundle['name'],
@@ -507,10 +657,135 @@ def save_purchase_record(uid, bundle_id, stripe_session_id):
             'credits': bundle['credits'],
             'stripe_session_id': stripe_session_id,
             'created_at': time.time(),
-        })
+        }
+        if stripe_session_id:
+            db.collection('purchases').document(stripe_session_id).set(record, merge=True)
+        else:
+            db.collection('purchases').add(record)
         print(f"📝 Saved purchase record for user {uid}: {bundle['name']}")
     except Exception as e:
         print(f"❌ Failed to save purchase record for user {uid}: {e}")
+
+def purchase_record_exists_for_session(stripe_session_id):
+    if not stripe_session_id:
+        return False
+    try:
+        doc = db.collection('purchases').document(stripe_session_id).get()
+        if doc.exists:
+            return True
+        query = db.collection('purchases').where('stripe_session_id', '==', stripe_session_id).limit(1)
+        for _ in query.stream():
+            return True
+        return False
+    except Exception as e:
+        print(f"⚠️ Could not check purchase record for session {stripe_session_id}: {e}")
+        return False
+
+def process_checkout_session_credits(stripe_session):
+    metadata = stripe_session.get('metadata', {}) or {}
+    uid = metadata.get('uid', '')
+    bundle_id = metadata.get('bundle_id', '')
+    stripe_session_id = stripe_session.get('id', '')
+    payment_status = (stripe_session.get('payment_status') or '').lower()
+    session_status = (stripe_session.get('status') or '').lower()
+
+    if not uid or not bundle_id:
+        return False, 'Missing checkout metadata.'
+    if bundle_id not in CREDIT_BUNDLES:
+        return False, 'Unknown credit bundle.'
+    if payment_status != 'paid' and session_status != 'complete':
+        return False, 'Checkout session is not paid yet.'
+    if purchase_record_exists_for_session(stripe_session_id):
+        return True, 'already_processed'
+
+    success = grant_credits_to_user(uid, bundle_id)
+    if not success:
+        return False, 'Could not grant credits.'
+    save_purchase_record(uid, bundle_id, stripe_session_id)
+    bundle = CREDIT_BUNDLES.get(bundle_id, {})
+    log_analytics_event(
+        'payment_confirmed_backend',
+        source='backend',
+        uid=uid,
+        session_id=stripe_session_id,
+        properties={
+            'bundle_id': bundle_id,
+            'price_cents': int(bundle.get('price_cents', 0) or 0),
+        }
+    )
+    return True, 'granted'
+
+def sanitize_analytics_event_name(raw_name):
+    name = str(raw_name or '').strip().lower()
+    if not ANALYTICS_NAME_RE.match(name):
+        return ''
+    return name if name in ANALYTICS_ALLOWED_EVENTS else ''
+
+def sanitize_analytics_session_id(raw_session_id):
+    session_id = str(raw_session_id or '').strip()
+    if not ANALYTICS_SESSION_ID_RE.match(session_id):
+        return ''
+    return session_id
+
+def sanitize_analytics_properties(raw_props):
+    if not isinstance(raw_props, dict):
+        return {}
+    cleaned = {}
+    for raw_key, raw_value in raw_props.items():
+        key = str(raw_key or '').strip().lower().replace('-', '_').replace(' ', '_')
+        if not key or not ANALYTICS_NAME_RE.match(key):
+            continue
+        if isinstance(raw_value, bool):
+            cleaned[key] = raw_value
+            continue
+        if isinstance(raw_value, (int, float)):
+            cleaned[key] = round(float(raw_value), 4)
+            continue
+        if isinstance(raw_value, str):
+            cleaned[key] = raw_value.strip()[:200]
+            continue
+    return cleaned
+
+def log_analytics_event(event_name, source='frontend', uid='', email='', session_id='', properties=None, created_at=None):
+    safe_name = sanitize_analytics_event_name(event_name)
+    if not safe_name:
+        return False
+    safe_source = str(source or 'frontend').strip().lower()[:16]
+    payload = {
+        'event': safe_name,
+        'source': safe_source if safe_source in {'frontend', 'backend'} else 'frontend',
+        'uid': str(uid or '')[:128],
+        'email': str(email or '').lower()[:160],
+        'session_id': sanitize_analytics_session_id(session_id),
+        'properties': sanitize_analytics_properties(properties or {}),
+        'created_at': created_at if isinstance(created_at, (int, float)) else time.time(),
+    }
+    try:
+        db.collection('analytics_events').add(payload)
+        return True
+    except Exception as e:
+        print(f"⚠️ Could not store analytics event {safe_name}: {e}")
+        return False
+
+def log_rate_limit_hit(limit_name, retry_after=0):
+    safe_name = str(limit_name or '').strip().lower()
+    if safe_name not in {'upload', 'checkout', 'analytics'}:
+        return False
+    try:
+        retry_after_seconds = int(float(retry_after))
+    except Exception:
+        retry_after_seconds = 1
+    retry_after_seconds = max(1, retry_after_seconds)
+    try:
+        db.collection('rate_limit_logs').add({
+            'limit_name': safe_name,
+            'retry_after_seconds': retry_after_seconds,
+            'created_at': time.time(),
+        })
+        return True
+    except Exception as e:
+        print(f"⚠️ Could not store rate limit log ({safe_name}): {e}")
+        return False
 
 def save_job_log(job_id, job_data, finished_at):
     """Save a processing job log to Firestore for analytics."""
@@ -530,6 +805,26 @@ def save_job_log(job_id, job_data, finished_at):
             'finished_at': finished_at,
             'duration_seconds': duration,
         })
+        status = str(job_data.get('status', '') or '').lower()
+        backend_event = 'processing_finished_backend'
+        if status == 'complete':
+            backend_event = 'processing_completed_backend'
+        elif status == 'error':
+            backend_event = 'processing_failed_backend'
+        log_analytics_event(
+            backend_event,
+            source='backend',
+            uid=job_data.get('user_id', ''),
+            email=job_data.get('user_email', ''),
+            session_id=job_id,
+            properties={
+                'job_id': job_id,
+                'mode': job_data.get('mode', ''),
+                'duration_seconds': duration,
+                'credit_refunded': bool(job_data.get('credit_refunded', False)),
+            },
+            created_at=finished_at,
+        )
         print(f"📊 Logged job {job_id}: mode={job_data.get('mode')}, status={job_data.get('status')}, duration={duration}s")
     except Exception as e:
         print(f"❌ Failed to log job {job_id}: {e}")
@@ -594,6 +889,272 @@ def get_bucket_key(timestamp, window_key):
     if window_key == '24h':
         return dt.replace(minute=0, second=0, microsecond=0).strftime('%Y-%m-%d %H:00')
     return dt.replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%d')
+
+def build_admin_funnel_steps(analytics_docs, window_start):
+    funnel_actor_sets = {stage['event']: set() for stage in ANALYTICS_FUNNEL_STAGES}
+    analytics_event_count = 0
+
+    for doc in analytics_docs:
+        event = doc.to_dict() or {}
+        created_at = get_timestamp(event.get('created_at'))
+        if created_at < window_start:
+            continue
+        event_name = sanitize_analytics_event_name(event.get('event', ''))
+        if not event_name:
+            continue
+        analytics_event_count += 1
+        if event_name not in funnel_actor_sets:
+            continue
+        uid = str(event.get('uid', '') or '').strip()
+        session_id = sanitize_analytics_session_id(event.get('session_id', ''))
+        actor_id = uid or session_id or f"doc:{doc.id}"
+        funnel_actor_sets[event_name].add(actor_id)
+
+    funnel_steps = []
+    previous_count = 0
+    for idx, stage in enumerate(ANALYTICS_FUNNEL_STAGES):
+        count = len(funnel_actor_sets.get(stage['event'], set()))
+        if idx == 0:
+            conversion = 100.0 if count > 0 else 0.0
+        elif previous_count > 0:
+            conversion = round(min((count / previous_count) * 100.0, 100.0), 1)
+        else:
+            conversion = 0.0
+        funnel_steps.append({
+            'event': stage['event'],
+            'label': stage['label'],
+            'count': count,
+            'conversion_from_prev': conversion,
+        })
+        previous_count = count
+
+    return funnel_steps, analytics_event_count
+
+def build_admin_funnel_daily_rows(analytics_docs, window_start, window_key, now_ts):
+    _labels, bucket_keys, granularity = build_time_buckets(window_key, now_ts)
+    counts_by_bucket = {}
+
+    for doc in analytics_docs:
+        event = doc.to_dict() or {}
+        created_at = get_timestamp(event.get('created_at'))
+        if created_at < window_start or created_at > now_ts:
+            continue
+        event_name = sanitize_analytics_event_name(event.get('event', ''))
+        if event_name not in ANALYTICS_FUNNEL_EVENT_NAMES:
+            continue
+
+        bucket_key = get_bucket_key(created_at, window_key)
+        if bucket_key not in counts_by_bucket:
+            counts_by_bucket[bucket_key] = {}
+        if event_name not in counts_by_bucket[bucket_key]:
+            counts_by_bucket[bucket_key][event_name] = {'event_count': 0, 'actors': set()}
+
+        uid = str(event.get('uid', '') or '').strip()
+        session_id = sanitize_analytics_session_id(event.get('session_id', ''))
+        actor_id = uid or session_id or f"doc:{doc.id}"
+
+        counts_by_bucket[bucket_key][event_name]['event_count'] += 1
+        counts_by_bucket[bucket_key][event_name]['actors'].add(actor_id)
+
+    rows = []
+    for bucket_key in bucket_keys:
+        stage_counts = counts_by_bucket.get(bucket_key, {})
+        prev_unique = 0
+        for idx, stage in enumerate(ANALYTICS_FUNNEL_STAGES):
+            stage_data = stage_counts.get(stage['event'], {'event_count': 0, 'actors': set()})
+            unique_actor_count = len(stage_data.get('actors', set()))
+            event_count = int(stage_data.get('event_count', 0) or 0)
+            if idx == 0:
+                conversion = 100.0 if unique_actor_count > 0 else 0.0
+            elif prev_unique > 0:
+                conversion = round(min((unique_actor_count / prev_unique) * 100.0, 100.0), 1)
+            else:
+                conversion = 0.0
+
+            rows.append({
+                'bucket_key': bucket_key,
+                'granularity': granularity,
+                'event': stage['event'],
+                'label': stage['label'],
+                'unique_actor_count': unique_actor_count,
+                'event_count': event_count,
+                'conversion_from_prev': conversion,
+            })
+            prev_unique = unique_actor_count
+
+    return rows, granularity
+
+def check_rate_limit(key, limit, window_seconds):
+    now_ts = time.time()
+    with RATE_LIMIT_LOCK:
+        timestamps = RATE_LIMIT_EVENTS.get(key, [])
+        cutoff = now_ts - window_seconds
+        kept = [ts for ts in timestamps if ts >= cutoff]
+        if len(kept) >= limit:
+            oldest = kept[0]
+            retry_after = max(1, int((oldest + window_seconds) - now_ts))
+            RATE_LIMIT_EVENTS[key] = kept
+            return False, retry_after
+        kept.append(now_ts)
+        RATE_LIMIT_EVENTS[key] = kept
+    return True, 0
+
+def build_rate_limited_response(message, retry_after):
+    response = jsonify({
+        'error': message,
+        'retry_after_seconds': int(max(1, retry_after)),
+    })
+    response.status_code = 429
+    response.headers['Retry-After'] = str(int(max(1, retry_after)))
+    return response
+
+def normalize_rate_limit_key_part(value, fallback='anon', max_len=120):
+    raw = str(value or '').strip().lower()
+    if not raw:
+        return fallback
+    safe = re.sub(r'[^a-z0-9_.:@-]+', '_', raw)
+    return safe[:max_len] if safe else fallback
+
+def count_active_jobs_for_user(uid):
+    if not uid:
+        return 0
+    active_states = {'starting', 'processing'}
+    count = 0
+    for job in jobs.values():
+        if job.get('user_id') == uid and job.get('status') in active_states:
+            count += 1
+    return count
+
+def list_docs_by_uid(collection_name, uid, max_docs):
+    docs = list(
+        db.collection(collection_name)
+        .where('uid', '==', uid)
+        .limit(max_docs + 1)
+        .stream()
+    )
+    truncated = len(docs) > max_docs
+    limited = docs[:max_docs]
+    records = []
+    for doc in limited:
+        data = doc.to_dict() or {}
+        data['_id'] = doc.id
+        records.append(data)
+    return records, truncated
+
+def delete_docs_by_uid(collection_name, uid, max_docs):
+    docs = list(
+        db.collection(collection_name)
+        .where('uid', '==', uid)
+        .limit(max_docs + 1)
+        .stream()
+    )
+    truncated = len(docs) > max_docs
+    limited = docs[:max_docs]
+    deleted = 0
+    for doc in limited:
+        try:
+            doc.reference.delete()
+            deleted += 1
+        except Exception as e:
+            print(f"Warning: could not delete doc in {collection_name}/{doc.id}: {e}")
+    return deleted, truncated
+
+def remove_upload_artifacts_for_job_ids(job_ids):
+    if not job_ids:
+        return 0
+    try:
+        names = os.listdir(UPLOAD_FOLDER)
+    except Exception:
+        return 0
+    prefixes = tuple(f"{str(job_id).strip()}_" for job_id in job_ids if str(job_id or '').strip())
+    if not prefixes:
+        return 0
+    removed = 0
+    for name in names:
+        if not name.startswith(prefixes):
+            continue
+        file_path = os.path.join(UPLOAD_FOLDER, name)
+        try:
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+                removed += 1
+        except Exception as e:
+            print(f"Warning: could not delete upload artifact {file_path}: {e}")
+    return removed
+
+def anonymize_purchase_docs_by_uid(uid, max_docs):
+    docs = list(
+        db.collection('purchases')
+        .where('uid', '==', uid)
+        .limit(max_docs + 1)
+        .stream()
+    )
+    truncated = len(docs) > max_docs
+    limited = docs[:max_docs]
+    anonymized = 0
+    for doc in limited:
+        try:
+            doc.reference.set({
+                'uid': '',
+                'user_erased': True,
+                'erased_at': time.time(),
+            }, merge=True)
+            anonymized += 1
+        except Exception as e:
+            print(f"Warning: could not anonymize purchase doc {doc.id}: {e}")
+    return anonymized, truncated
+
+def collect_user_export_payload(uid, email):
+    user_doc = db.collection('users').document(uid).get()
+    user_profile = user_doc.to_dict() if user_doc.exists else {}
+
+    study_progress_doc = get_study_progress_doc(uid).get()
+    study_progress = study_progress_doc.to_dict() if study_progress_doc.exists else {}
+
+    purchases, purchases_truncated = list_docs_by_uid('purchases', uid, ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION)
+    job_logs, job_logs_truncated = list_docs_by_uid('job_logs', uid, ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION)
+    analytics_events, analytics_truncated = list_docs_by_uid('analytics_events', uid, ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION)
+    study_folders, folders_truncated = list_docs_by_uid('study_folders', uid, ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION)
+    study_packs, packs_truncated = list_docs_by_uid('study_packs', uid, ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION)
+    card_states, card_states_truncated = list_docs_by_uid('study_card_states', uid, ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION)
+
+    for pack in study_packs:
+        audio_path = str(pack.get('audio_storage_path', '') or '').strip()
+        pack['audio_filename'] = os.path.basename(audio_path) if audio_path else ''
+        pack.pop('audio_storage_path', None)
+
+    return {
+        'meta': {
+            'exported_at': time.time(),
+            'version': 1,
+            'uid': uid,
+            'email': email,
+            'source': 'lecture-processor',
+            'limits': {
+                'max_docs_per_collection': ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION,
+            },
+            'truncated': {
+                'purchases': purchases_truncated,
+                'job_logs': job_logs_truncated,
+                'analytics_events': analytics_truncated,
+                'study_folders': folders_truncated,
+                'study_packs': packs_truncated,
+                'study_card_states': card_states_truncated,
+            },
+        },
+        'account': {
+            'profile': user_profile,
+            'study_progress': study_progress,
+        },
+        'collections': {
+            'purchases': purchases,
+            'job_logs': job_logs,
+            'analytics_events': analytics_events,
+            'study_folders': study_folders,
+            'study_packs': study_packs,
+            'study_card_states': card_states,
+        },
+    }
 
 def parse_requested_amount(raw_value, allowed, default):
     value = str(raw_value or default).strip().lower()
@@ -815,6 +1376,118 @@ def sanitize_questions(items, max_items):
             break
     return cleaned
 
+def default_streak_data():
+    return {
+        'last_study_date': '',
+        'current_streak': 0,
+        'daily_progress_date': '',
+        'daily_progress_count': 0,
+    }
+
+def sanitize_progress_date(value):
+    text = str(value or '').strip()
+    return text if PROGRESS_DATE_RE.match(text) else ''
+
+def sanitize_int(value, default=0, min_value=0, max_value=10_000_000):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed < min_value:
+        return min_value
+    if parsed > max_value:
+        return max_value
+    return parsed
+
+def sanitize_streak_data(payload):
+    base = default_streak_data()
+    if not isinstance(payload, dict):
+        return base
+    base['last_study_date'] = sanitize_progress_date(payload.get('last_study_date', ''))
+    base['current_streak'] = sanitize_int(payload.get('current_streak', 0), default=0, min_value=0, max_value=36500)
+    base['daily_progress_date'] = sanitize_progress_date(payload.get('daily_progress_date', ''))
+    base['daily_progress_count'] = sanitize_int(payload.get('daily_progress_count', 0), default=0, min_value=0, max_value=100000)
+    return base
+
+def sanitize_daily_goal_value(value):
+    parsed = sanitize_int(value, default=-1, min_value=-1, max_value=500)
+    if parsed < 1:
+        return None
+    return parsed
+
+def sanitize_pack_id(value):
+    pack_id = str(value or '').strip()
+    if not pack_id or len(pack_id) > 160:
+        return ''
+    return pack_id
+
+def sanitize_card_state_entry(payload):
+    if not isinstance(payload, dict):
+        return None
+    seen = sanitize_int(payload.get('seen', 0), default=0, min_value=0, max_value=100000)
+    correct = sanitize_int(payload.get('correct', 0), default=0, min_value=0, max_value=100000)
+    wrong = sanitize_int(payload.get('wrong', 0), default=0, min_value=0, max_value=100000)
+    interval_days = sanitize_int(payload.get('interval_days', 0), default=0, min_value=0, max_value=3650)
+    level = str(payload.get('level', '')).strip().lower()
+    if level not in {'new', 'familiar', 'mastered'}:
+        if interval_days >= 14:
+            level = 'mastered'
+        elif seen > 0:
+            level = 'familiar'
+        else:
+            level = 'new'
+    difficulty = str(payload.get('difficulty', 'medium')).strip().lower()
+    if difficulty not in {'easy', 'medium', 'hard'}:
+        difficulty = 'medium'
+    return {
+        'seen': seen,
+        'correct': correct,
+        'wrong': wrong,
+        'level': level,
+        'interval_days': interval_days,
+        'next_review_date': sanitize_progress_date(payload.get('next_review_date', '')),
+        'last_review_date': sanitize_progress_date(payload.get('last_review_date', '')),
+        'difficulty': difficulty,
+    }
+
+def sanitize_card_state_map(payload):
+    if not isinstance(payload, dict):
+        return {}
+    cleaned = {}
+    for raw_card_id, raw_entry in payload.items():
+        card_id = str(raw_card_id or '').strip()
+        if not card_id or len(card_id) > 64:
+            continue
+        if not re.match(r'^(fc|q)_\d{1,6}$', card_id):
+            continue
+        entry = sanitize_card_state_entry(raw_entry)
+        if entry is None:
+            continue
+        cleaned[card_id] = entry
+        if len(cleaned) >= MAX_PROGRESS_CARDS_PER_PACK:
+            break
+    return cleaned
+
+def count_due_cards_in_state(state, today_local):
+    due = 0
+    for card_id, entry in (state or {}).items():
+        if not str(card_id).startswith('fc_'):
+            continue
+        seen = sanitize_int((entry or {}).get('seen', 0), default=0, min_value=0, max_value=100000)
+        if seen <= 0:
+            continue
+        next_date = str((entry or {}).get('next_review_date', '') or '').strip()
+        if not next_date or next_date <= today_local:
+            due += 1
+    return due
+
+def get_study_progress_doc(uid):
+    return db.collection('study_progress').document(uid)
+
+def get_study_card_state_doc(uid, pack_id):
+    safe_pack_id = str(pack_id or '').replace('/', '_')
+    return db.collection('study_card_states').document(f"{uid}__{safe_pack_id}")
+
 def generate_study_materials(source_text, flashcard_selection, question_selection, study_features='both', output_language='English'):
     if study_features == 'none':
         return [], [], None
@@ -889,6 +1562,67 @@ def generate_interview_enhancements(transcript_text, selected_features, output_l
 
 def allowed_file(filename, allowed_extensions):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
+
+def file_has_pdf_signature(path):
+    try:
+        with open(path, 'rb') as handle:
+            return handle.read(5) == b'%PDF-'
+    except Exception:
+        return False
+
+def file_has_audio_signature(path):
+    try:
+        with open(path, 'rb') as handle:
+            header = handle.read(16)
+        if len(header) < 4:
+            return False
+        if header.startswith(b'ID3'):
+            return True
+        if header.startswith(b'RIFF') and header[8:12] == b'WAVE':
+            return True
+        if header.startswith(b'fLaC'):
+            return True
+        if header.startswith(b'OggS'):
+            return True
+        # MP4/M4A container: [box_size][ftyp]
+        if header[4:8] == b'ftyp':
+            return True
+        # AAC ADTS syncword
+        if header[0] == 0xFF and (header[1] & 0xF0) == 0xF0:
+            return True
+        return False
+    except Exception:
+        return False
+
+def file_looks_like_audio(path):
+    if not path or not os.path.exists(path):
+        return False
+    if file_has_audio_signature(path):
+        return True
+    ffprobe_bin = shutil.which('ffprobe')
+    if not ffprobe_bin:
+        return False
+    try:
+        cmd = [
+            ffprobe_bin,
+            '-v', 'error',
+            '-select_streams', 'a:0',
+            '-show_entries', 'stream=codec_type',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            path
+        ]
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=12)
+        if result.returncode != 0:
+            return False
+        return any(line.strip().lower() == 'audio' for line in (result.stdout or '').splitlines())
+    except Exception:
+        return False
+
+def get_saved_file_size(path):
+    try:
+        return os.path.getsize(path)
+    except Exception:
+        return -1
 
 def get_mime_type(filename):
     ext = filename.rsplit('.', 1)[1].lower()
@@ -1645,7 +2379,12 @@ def index():
 
 @app.route('/dashboard')
 def dashboard():
-    return render_template('index.html')
+    return render_template(
+        'index.html',
+        sentry_frontend_dsn=SENTRY_FRONTEND_DSN,
+        sentry_environment=SENTRY_ENVIRONMENT,
+        sentry_release=SENTRY_RELEASE,
+    )
 
 @app.route('/plan')
 @app.route('/stats')
@@ -1668,12 +2407,92 @@ def admin_dashboard():
 def study_dashboard():
     return render_template('study.html')
 
+@app.route('/privacy')
+def privacy_policy():
+    return render_template(
+        'privacy.html',
+        legal_contact_email=LEGAL_CONTACT_EMAIL,
+        last_updated='February 25, 2026',
+    )
+
+@app.route('/terms')
+def terms_of_service():
+    return render_template(
+        'terms.html',
+        legal_contact_email=LEGAL_CONTACT_EMAIL,
+        last_updated='February 25, 2026',
+    )
+
 @app.route('/api/verify-email', methods=['POST'])
 def verify_email():
     email = request.get_json().get('email', '')
     if is_email_allowed(email):
         return jsonify({'allowed': True})
     return jsonify({'allowed': False, 'message': 'Please use your university email or a major email provider (Gmail, Outlook, iCloud, Yahoo).'})
+
+@app.route('/api/dev/sentry-test', methods=['POST'])
+def dev_sentry_test():
+    if not is_dev_environment():
+        return jsonify({'error': 'Not found'}), 404
+    if not sentry_sdk or not SENTRY_BACKEND_DSN:
+        return jsonify({'error': 'Sentry backend DSN is not configured'}), 400
+
+    payload = request.get_json(silent=True) or {}
+    note = str(payload.get('message', 'Manual backend Sentry test')).strip()[:120]
+    try:
+        raise RuntimeError(f"Sentry dev test trigger: {note}")
+    except Exception as exc:
+        event_id = sentry_sdk.capture_exception(exc)
+        return jsonify({
+            'ok': True,
+            'event_id': event_id,
+            'message': 'Sentry test event captured from backend',
+        })
+
+@app.route('/api/analytics/event', methods=['POST'])
+@app.route('/api/lp-event', methods=['POST'])
+def ingest_analytics_event():
+    data = request.get_json(silent=True) or {}
+    decoded_token = verify_firebase_token(request)
+    uid = decoded_token.get('uid', '') if decoded_token else ''
+    email = decoded_token.get('email', '') if decoded_token else ''
+    session_id = sanitize_analytics_session_id(data.get('session_id', ''))
+    if not session_id and uid:
+        session_id = uid[:80]
+
+    actor_token = uid or session_id or request.headers.get('X-Forwarded-For', request.remote_addr or '')
+    actor_key = normalize_rate_limit_key_part(actor_token, fallback='anon')
+    allowed_analytics, retry_after = check_rate_limit(
+        key=f"analytics:{actor_key}",
+        limit=ANALYTICS_RATE_LIMIT_MAX_REQUESTS,
+        window_seconds=ANALYTICS_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    if not allowed_analytics:
+        log_rate_limit_hit('analytics', retry_after)
+        return build_rate_limited_response(
+            'Too many analytics events from this client. Please retry shortly.',
+            retry_after,
+        )
+
+    event_name = sanitize_analytics_event_name(data.get('event', ''))
+    if not event_name:
+        return jsonify({'error': 'Invalid event name'}), 400
+
+    properties = sanitize_analytics_properties(data.get('properties', {}))
+    properties['path'] = str(data.get('path', '') or '').strip()[:80]
+    properties['page'] = str(data.get('page', '') or '').strip()[:40]
+
+    ok = log_analytics_event(
+        event_name,
+        source='frontend',
+        uid=uid,
+        email=email,
+        session_id=session_id,
+        properties=properties,
+    )
+    if not ok:
+        return jsonify({'error': 'Could not store event'}), 500
+    return jsonify({'ok': True})
 
 @app.route('/api/auth/user', methods=['GET'])
 def get_user():
@@ -1693,8 +2512,321 @@ def get_user():
             'interview_medium': user.get('interview_credits_medium', 0),
             'interview_long': user.get('interview_credits_long', 0),
         },
-        'total_processed': user.get('total_processed', 0)
+        'total_processed': user.get('total_processed', 0),
+        'is_admin': is_admin_user(decoded_token),
     })
+
+@app.route('/api/account/export', methods=['GET'])
+def export_account_data():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    uid = decoded_token['uid']
+    email = decoded_token.get('email', '')
+    try:
+        payload = collect_user_export_payload(uid, email)
+        date_str = datetime.utcnow().strftime('%Y-%m-%d')
+        filename = f"lecture-processor-account-export-{date_str}.json"
+        data_bytes = json.dumps(payload, ensure_ascii=False, indent=2, default=str).encode('utf-8')
+        file_obj = io.BytesIO(data_bytes)
+        file_obj.seek(0)
+        return send_file(
+            file_obj,
+            mimetype='application/json',
+            as_attachment=True,
+            download_name=filename,
+        )
+    except Exception as e:
+        print(f"Error exporting account data for {uid}: {e}")
+        return jsonify({'error': 'Could not export account data'}), 500
+
+@app.route('/api/account/delete', methods=['POST'])
+def delete_account_data():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    uid = decoded_token['uid']
+    email = str(decoded_token.get('email', '') or '').strip().lower()
+    payload = request.get_json(silent=True) or {}
+
+    confirm_text = str(payload.get('confirm_text', '') or '').strip().upper()
+    if confirm_text != 'DELETE MY ACCOUNT':
+        return jsonify({'error': 'Invalid confirmation text. Type DELETE MY ACCOUNT exactly.'}), 400
+
+    confirm_email = str(payload.get('confirm_email', '') or '').strip().lower()
+    if email and confirm_email != email:
+        return jsonify({'error': 'Confirmation email does not match your account email.'}), 400
+
+    active_jobs = count_active_jobs_for_user(uid)
+    if active_jobs > 0:
+        return jsonify({'error': f'Cannot delete account while {active_jobs} processing job(s) are still active. Please wait until processing finishes.'}), 409
+
+    try:
+        deleted = {}
+        truncated = {}
+        warnings_list = []
+        job_ids = set()
+
+        job_log_docs, job_logs_truncated = list_docs_by_uid('job_logs', uid, ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION)
+        truncated['job_logs'] = job_logs_truncated
+        for item in job_log_docs:
+            jid = str(item.get('job_id', '') or item.get('_id', '')).strip()
+            if jid:
+                job_ids.add(jid)
+
+        deleted_job_logs, _ = delete_docs_by_uid('job_logs', uid, ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION)
+        deleted['job_logs'] = deleted_job_logs
+
+        anonymized_purchases, purchases_truncated = anonymize_purchase_docs_by_uid(uid, ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION)
+        deleted_analytics, analytics_truncated = delete_docs_by_uid('analytics_events', uid, ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION)
+        deleted_folders, folders_truncated = delete_docs_by_uid('study_folders', uid, ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION)
+        deleted_card_states, card_states_truncated = delete_docs_by_uid('study_card_states', uid, ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION)
+        truncated['purchases'] = purchases_truncated
+        truncated['analytics_events'] = analytics_truncated
+        truncated['study_folders'] = folders_truncated
+        truncated['study_card_states'] = card_states_truncated
+        deleted['purchases_anonymized'] = anonymized_purchases
+        deleted['analytics_events'] = deleted_analytics
+        deleted['study_folders'] = deleted_folders
+        deleted['study_card_states'] = deleted_card_states
+
+        study_pack_docs = list(
+            db.collection('study_packs')
+            .where('uid', '==', uid)
+            .limit(ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION + 1)
+            .stream()
+        )
+        truncated['study_packs'] = len(study_pack_docs) > ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION
+        study_pack_docs = study_pack_docs[:ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION]
+
+        deleted_study_packs = 0
+        deleted_pack_audio_files = 0
+        deleted_pack_progress_states = 0
+        for doc in study_pack_docs:
+            pack = doc.to_dict() or {}
+            pack_id = doc.id
+            job_id = str(pack.get('source_job_id', '') or '').strip()
+            if job_id:
+                job_ids.add(job_id)
+
+            audio_storage_path = str(pack.get('audio_storage_path', '') or '').strip()
+            if audio_storage_path:
+                try:
+                    if os.path.exists(audio_storage_path):
+                        os.remove(audio_storage_path)
+                        deleted_pack_audio_files += 1
+                except Exception as e:
+                    warnings_list.append(f"Could not remove audio file for pack {pack_id}: {e}")
+
+            try:
+                get_study_card_state_doc(uid, pack_id).delete()
+                deleted_pack_progress_states += 1
+            except Exception:
+                pass
+
+            try:
+                doc.reference.delete()
+                deleted_study_packs += 1
+            except Exception as e:
+                warnings_list.append(f"Could not delete study pack {pack_id}: {e}")
+
+        deleted['study_packs'] = deleted_study_packs
+        deleted['study_pack_audio_files'] = deleted_pack_audio_files
+        deleted['study_pack_progress_states'] = deleted_pack_progress_states
+
+        try:
+            get_study_progress_doc(uid).delete()
+            deleted['study_progress_doc'] = 1
+        except Exception:
+            deleted['study_progress_doc'] = 0
+
+        try:
+            db.collection('users').document(uid).delete()
+            deleted['user_profile_doc'] = 1
+        except Exception:
+            deleted['user_profile_doc'] = 0
+
+        removed_in_memory_jobs = 0
+        for jid, job_data in list(jobs.items()):
+            if str(job_data.get('user_id', '') or '') != uid:
+                continue
+            job_ids.add(jid)
+            try:
+                del jobs[jid]
+                removed_in_memory_jobs += 1
+            except Exception:
+                pass
+        deleted['in_memory_jobs'] = removed_in_memory_jobs
+
+        deleted['upload_artifacts'] = remove_upload_artifacts_for_job_ids(job_ids)
+
+        auth_user_deleted = False
+        try:
+            auth.delete_user(uid)
+            auth_user_deleted = True
+        except Exception as e:
+            warnings_list.append(f"Could not delete Firebase Auth user: {e}")
+
+        return jsonify({
+            'ok': True,
+            'auth_user_deleted': auth_user_deleted,
+            'deleted': deleted,
+            'truncated': truncated,
+            'warnings': warnings_list,
+        })
+    except Exception as e:
+        print(f"Error deleting account data for {uid}: {e}")
+        return jsonify({'error': 'Could not delete account data'}), 500
+
+@app.route('/api/study-progress', methods=['GET'])
+def get_study_progress():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+    try:
+        progress_doc = get_study_progress_doc(uid).get()
+        progress_data = progress_doc.to_dict() if progress_doc.exists else {}
+        daily_goal = sanitize_daily_goal_value(progress_data.get('daily_goal'))
+        if daily_goal is None:
+            daily_goal = 20
+        streak_data = sanitize_streak_data(progress_data.get('streak_data', {}))
+        timezone = str(progress_data.get('timezone', '') or '').strip()[:80]
+
+        card_states = {}
+        docs = db.collection('study_card_states').where('uid', '==', uid).limit(MAX_PROGRESS_PACKS_PER_SYNC).stream()
+        for doc in docs:
+            data = doc.to_dict() or {}
+            pack_id = sanitize_pack_id(data.get('pack_id', ''))
+            if not pack_id:
+                continue
+            card_states[pack_id] = sanitize_card_state_map(data.get('state', {}))
+
+        return jsonify({
+            'daily_goal': daily_goal,
+            'streak_data': streak_data,
+            'timezone': timezone,
+            'card_states': card_states,
+        })
+    except Exception as e:
+        print(f"Error fetching study progress for user {uid}: {e}")
+        return jsonify({'error': 'Could not load study progress'}), 500
+
+@app.route('/api/study-progress', methods=['PUT'])
+def update_study_progress():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({'error': 'Invalid payload'}), 400
+
+    try:
+        updates = {
+            'uid': uid,
+            'updated_at': time.time(),
+        }
+
+        if 'daily_goal' in payload:
+            daily_goal = sanitize_daily_goal_value(payload.get('daily_goal'))
+            if daily_goal is None:
+                return jsonify({'error': 'daily_goal must be between 1 and 500'}), 400
+            updates['daily_goal'] = daily_goal
+
+        if 'streak_data' in payload:
+            updates['streak_data'] = sanitize_streak_data(payload.get('streak_data'))
+
+        if 'timezone' in payload:
+            updates['timezone'] = str(payload.get('timezone', '') or '').strip()[:80]
+
+        get_study_progress_doc(uid).set(updates, merge=True)
+
+        card_states = payload.get('card_states')
+        if card_states is not None:
+            if not isinstance(card_states, dict):
+                return jsonify({'error': 'card_states must be an object'}), 400
+            processed = 0
+            for raw_pack_id, raw_state in card_states.items():
+                if processed >= MAX_PROGRESS_PACKS_PER_SYNC:
+                    break
+                pack_id = sanitize_pack_id(raw_pack_id)
+                if not pack_id:
+                    continue
+                cleaned_state = sanitize_card_state_map(raw_state)
+                doc_ref = get_study_card_state_doc(uid, pack_id)
+                if cleaned_state:
+                    doc_ref.set({
+                        'uid': uid,
+                        'pack_id': pack_id,
+                        'state': cleaned_state,
+                        'updated_at': time.time(),
+                    }, merge=True)
+                else:
+                    try:
+                        doc_ref.delete()
+                    except Exception:
+                        pass
+                processed += 1
+
+        remove_pack_ids = payload.get('remove_pack_ids')
+        if remove_pack_ids is not None:
+            if not isinstance(remove_pack_ids, list):
+                return jsonify({'error': 'remove_pack_ids must be a list'}), 400
+            for raw_pack_id in remove_pack_ids[:MAX_PROGRESS_PACKS_PER_SYNC]:
+                pack_id = sanitize_pack_id(raw_pack_id)
+                if not pack_id:
+                    continue
+                try:
+                    get_study_card_state_doc(uid, pack_id).delete()
+                except Exception as delete_error:
+                    print(f"Warning: failed deleting study progress state for {uid}/{pack_id}: {delete_error}")
+
+        return jsonify({'ok': True})
+    except Exception as e:
+        print(f"Error updating study progress for user {uid}: {e}")
+        return jsonify({'error': 'Could not save study progress'}), 500
+
+@app.route('/api/study-progress/summary', methods=['GET'])
+def get_study_progress_summary():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+    try:
+        progress_doc = get_study_progress_doc(uid).get()
+        progress_data = progress_doc.to_dict() if progress_doc.exists else {}
+        streak_data = sanitize_streak_data(progress_data.get('streak_data', {}))
+        daily_goal = sanitize_daily_goal_value(progress_data.get('daily_goal'))
+        if daily_goal is None:
+            daily_goal = 20
+
+        today_local = datetime.now().strftime('%Y-%m-%d')
+        yesterday_local = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        current_streak = 0
+        if streak_data.get('last_study_date') in {today_local, yesterday_local}:
+            current_streak = sanitize_int(streak_data.get('current_streak', 0), default=0, min_value=0, max_value=36500)
+        today_progress = 0
+        if streak_data.get('daily_progress_date') == today_local:
+            today_progress = sanitize_int(streak_data.get('daily_progress_count', 0), default=0, min_value=0, max_value=100000)
+
+        due_today = 0
+        docs = db.collection('study_card_states').where('uid', '==', uid).limit(MAX_PROGRESS_PACKS_PER_SYNC).stream()
+        for doc in docs:
+            data = doc.to_dict() or {}
+            due_today += count_due_cards_in_state(sanitize_card_state_map(data.get('state', {})), today_local)
+
+        return jsonify({
+            'daily_goal': daily_goal,
+            'current_streak': current_streak,
+            'today_progress': today_progress,
+            'due_today': due_today,
+        })
+    except Exception as e:
+        print(f"Error fetching study progress summary for user {uid}: {e}")
+        return jsonify({'error': 'Could not load study progress summary'}), 500
 
 # --- Stripe Routes ---
 
@@ -1722,8 +2854,19 @@ def create_checkout_session():
 
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
+    allowed_checkout, retry_after = check_rate_limit(
+        key=f"checkout:{normalize_rate_limit_key_part(uid, fallback='anon_uid')}",
+        limit=CHECKOUT_RATE_LIMIT_MAX_REQUESTS,
+        window_seconds=CHECKOUT_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    if not allowed_checkout:
+        log_rate_limit_hit('checkout', retry_after)
+        return build_rate_limited_response(
+            'Too many checkout attempts. Please wait before starting another checkout.',
+            retry_after,
+        )
 
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     bundle_id = data.get('bundle_id', '')
 
     if bundle_id not in CREDIT_BUNDLES:
@@ -1746,8 +2889,8 @@ def create_checkout_session():
                 'quantity': 1,
             }],
             mode='payment',
-            success_url=request.host_url.rstrip('/') + '?payment=success',
-            cancel_url=request.host_url.rstrip('/') + '?payment=cancelled',
+            success_url=request.host_url.rstrip('/') + '/dashboard?payment=success&session_id={CHECKOUT_SESSION_ID}',
+            cancel_url=request.host_url.rstrip('/') + '/dashboard?payment=cancelled',
             customer_email=email,
             metadata={
                 'uid': uid,
@@ -1758,6 +2901,34 @@ def create_checkout_session():
     except Exception as e:
         print(f"Stripe checkout error: {e}")
         return jsonify({'error': 'Could not create checkout session. Please try again.'}), 500
+
+@app.route('/api/confirm-checkout-session', methods=['GET'])
+def confirm_checkout_session():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    uid = decoded_token.get('uid', '')
+    session_id = str(request.args.get('session_id', '') or '').strip()
+    if not session_id:
+        return jsonify({'error': 'Missing session_id'}), 400
+
+    try:
+        session = stripe.checkout.Session.retrieve(session_id)
+        metadata = session.get('metadata', {}) or {}
+        if metadata.get('uid', '') != uid:
+            return jsonify({'error': 'Forbidden'}), 403
+
+        ok, status = process_checkout_session_credits(session)
+        if not ok:
+            return jsonify({'error': status}), 400
+        return jsonify({'ok': True, 'status': status})
+    except stripe.error.StripeError as e:
+        print(f"Stripe confirm session error: {e}")
+        return jsonify({'error': 'Could not verify checkout session.'}), 400
+    except Exception as e:
+        print(f"Confirm checkout session error: {e}")
+        return jsonify({'error': 'Could not confirm checkout session.'}), 500
 
 @app.route('/api/stripe-webhook', methods=['POST'])
 def stripe_webhook():
@@ -1783,21 +2954,14 @@ def stripe_webhook():
 
     if event.get('type') == 'checkout.session.completed':
         session = event['data']['object']
-        metadata = session.get('metadata', {})
-        uid = metadata.get('uid', '')
-        bundle_id = metadata.get('bundle_id', '')
-        stripe_session_id = session.get('id', '')
-
-        if uid and bundle_id:
-            success = grant_credits_to_user(uid, bundle_id)
-            if success:
-                print(f"✅ Payment successful! Granted bundle '{bundle_id}' to user '{uid}'")
-                # Save purchase record for history
-                save_purchase_record(uid, bundle_id, stripe_session_id)
-            else:
-                print(f"❌ Failed to grant bundle '{bundle_id}' to user '{uid}'")
+        ok, status = process_checkout_session_credits(session)
+        if ok and status == 'granted':
+            metadata = session.get('metadata', {}) or {}
+            print(f"✅ Payment successful! Granted bundle '{metadata.get('bundle_id', '')}' to user '{metadata.get('uid', '')}'")
+        elif ok and status == 'already_processed':
+            print(f"ℹ️ Checkout session {session.get('id', '')} already processed.")
         else:
-            print(f"⚠️ Webhook received but missing metadata. uid='{uid}', bundle_id='{bundle_id}'")
+            print(f"⚠️ Webhook checkout session {session.get('id', '')} not processed: {status}")
 
     return '', 200
 
@@ -2062,6 +3226,10 @@ def delete_study_pack(pack_id):
             except Exception as e:
                 print(f"Warning: could not delete study-pack audio file {audio_storage_path}: {e}")
         pack_ref.delete()
+        try:
+            get_study_card_state_doc(uid, pack_id).delete()
+        except Exception as e:
+            print(f"Warning: could not delete study progress state for pack {pack_id}: {e}")
         return jsonify({'ok': True})
     except Exception as e:
         print(f"Error deleting study pack {pack_id}: {e}")
@@ -2248,6 +3416,8 @@ def get_admin_overview():
         users_docs = list(db.collection('users').stream())
         purchases_docs = list(db.collection('purchases').stream())
         jobs_docs = list(db.collection('job_logs').stream())
+        analytics_docs = list(db.collection('analytics_events').stream())
+        rate_limit_docs = list(db.collection('rate_limit_logs').stream())
 
         total_users = len(users_docs)
         new_users = 0
@@ -2294,6 +3464,39 @@ def get_admin_overview():
                 durations.append(duration)
 
         avg_duration_seconds = round(sum(durations) / len(durations), 1) if durations else 0
+
+        funnel_steps, analytics_event_count = build_admin_funnel_steps(analytics_docs, window_start)
+        rate_limit_counts = {'upload': 0, 'checkout': 0, 'analytics': 0}
+        for doc in rate_limit_docs:
+            entry = doc.to_dict() or {}
+            created_at = get_timestamp(entry.get('created_at'))
+            if created_at < window_start:
+                continue
+            limit_name = str(entry.get('limit_name', '') or '').strip().lower()
+            if limit_name in rate_limit_counts:
+                rate_limit_counts[limit_name] += 1
+
+        rate_limit_entries = []
+        for doc in rate_limit_docs:
+            entry = doc.to_dict() or {}
+            if get_timestamp(entry.get('created_at')) < window_start:
+                continue
+            rate_limit_entries.append(entry)
+        recent_rate_limits_sorted = sorted(
+            rate_limit_entries,
+            key=lambda entry: get_timestamp(entry.get('created_at')),
+            reverse=True,
+        )[:20]
+        recent_rate_limits = []
+        for entry in recent_rate_limits_sorted:
+            limit_name = str(entry.get('limit_name', '') or '').strip().lower()
+            if limit_name not in {'upload', 'checkout', 'analytics'}:
+                continue
+            recent_rate_limits.append({
+                'created_at': entry.get('created_at', 0),
+                'limit_name': limit_name,
+                'retry_after_seconds': int(entry.get('retry_after_seconds', 0) or 0),
+            })
 
         mode_breakdown = {
             'lecture-notes': {'label': 'Lecture Notes', 'total': 0, 'complete': 0, 'error': 0},
@@ -2392,6 +3595,11 @@ def get_admin_overview():
                 'failed_jobs': failed_jobs,
                 'refunded_jobs': refunded_jobs,
                 'avg_duration_seconds': avg_duration_seconds,
+                'analytics_event_count': analytics_event_count,
+                'rate_limit_upload_429': rate_limit_counts['upload'],
+                'rate_limit_checkout_429': rate_limit_counts['checkout'],
+                'rate_limit_analytics_429': rate_limit_counts['analytics'],
+                'rate_limit_429_total': rate_limit_counts['upload'] + rate_limit_counts['checkout'] + rate_limit_counts['analytics'],
             },
             'trends': {
                 'labels': trend_labels,
@@ -2400,8 +3608,12 @@ def get_admin_overview():
                 'granularity': trend_granularity,
             },
             'mode_breakdown': mode_breakdown,
+            'funnel': {
+                'steps': funnel_steps,
+            },
             'recent_jobs': recent_jobs,
             'recent_purchases': recent_purchases,
+            'recent_rate_limits': recent_rate_limits,
         })
     except Exception as e:
         print(f"Error fetching admin overview: {e}")
@@ -2416,7 +3628,7 @@ def export_admin_csv():
         return jsonify({'error': 'Forbidden'}), 403
 
     export_type = request.args.get('type', 'jobs')
-    if export_type not in {'jobs', 'purchases'}:
+    if export_type not in {'jobs', 'purchases', 'funnel', 'funnel-daily'}:
         return jsonify({'error': 'Invalid export type'}), 400
 
     window_key, window_seconds = get_admin_window(request.args.get('window', '7d'))
@@ -2450,7 +3662,7 @@ def export_admin_csv():
                     job.get('finished_at', 0),
                     job.get('duration_seconds', 0),
                 ])
-        else:
+        elif export_type == 'purchases':
             writer.writerow([
                 'uid', 'bundle_id', 'bundle_name', 'price_cents', 'currency',
                 'credits', 'stripe_session_id', 'created_at'
@@ -2470,6 +3682,67 @@ def export_admin_csv():
                     purchase.get('stripe_session_id', ''),
                     purchase.get('created_at', 0),
                 ])
+        elif export_type == 'funnel':
+            writer.writerow([
+                'event',
+                'label',
+                'count',
+                'conversion_from_prev_percent',
+                'window_key',
+                'window_start',
+                'window_end',
+                'generated_at',
+            ])
+            analytics_docs = list(db.collection('analytics_events').stream())
+            funnel_steps, _ = build_admin_funnel_steps(analytics_docs, window_start)
+            generated_at = now_ts
+            for step in funnel_steps:
+                writer.writerow([
+                    step.get('event', ''),
+                    step.get('label', ''),
+                    int(step.get('count', 0) or 0),
+                    float(step.get('conversion_from_prev', 0.0) or 0.0),
+                    window_key,
+                    window_start,
+                    now_ts,
+                    generated_at,
+                ])
+        else:
+            writer.writerow([
+                'bucket_key',
+                'granularity',
+                'event',
+                'label',
+                'unique_actor_count',
+                'event_count',
+                'conversion_from_prev_percent',
+                'window_key',
+                'window_start',
+                'window_end',
+                'generated_at',
+            ])
+            analytics_docs = list(db.collection('analytics_events').stream())
+            daily_rows, granularity = build_admin_funnel_daily_rows(
+                analytics_docs=analytics_docs,
+                window_start=window_start,
+                window_key=window_key,
+                now_ts=now_ts,
+            )
+            generated_at = now_ts
+            for row in daily_rows:
+                writer.writerow([
+                    row.get('bucket_key', ''),
+                    granularity,
+                    row.get('event', ''),
+                    row.get('label', ''),
+                    int(row.get('unique_actor_count', 0) or 0),
+                    int(row.get('event_count', 0) or 0),
+                    float(row.get('conversion_from_prev', 0.0) or 0.0),
+                    window_key,
+                    window_start,
+                    now_ts,
+                    generated_at,
+                ])
 
         filename = f"admin-{export_type}-{window_key}.csv"
         response = app.response_class(output.getvalue(), mimetype='text/csv')
@@ -2488,6 +3761,23 @@ def upload_files():
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
     if not is_email_allowed(email): return jsonify({'error': 'Email not allowed'}), 403
+    active_jobs = count_active_jobs_for_user(uid)
+    if active_jobs >= MAX_ACTIVE_JOBS_PER_USER:
+        log_rate_limit_hit('upload', 10)
+        return jsonify({
+            'error': f'You already have {active_jobs} active processing job(s). Please wait for one to finish before starting another.'
+        }), 429
+    allowed_upload, retry_after = check_rate_limit(
+        key=f"upload:{uid}",
+        limit=UPLOAD_RATE_LIMIT_MAX_REQUESTS,
+        window_seconds=UPLOAD_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    if not allowed_upload:
+        log_rate_limit_hit('upload', retry_after)
+        return build_rate_limited_response(
+            'Too many upload attempts right now. Please wait and try again.',
+            retry_after,
+        )
     user = get_or_create_user(uid, email)
     mode = request.form.get('mode', 'lecture-notes')
     flashcard_selection = parse_requested_amount(request.form.get('flashcard_amount', '20'), {'10', '20', '30', 'auto'}, '20')
@@ -2495,6 +3785,8 @@ def upload_files():
     output_language = parse_output_language(request.form.get('output_language', 'english'), request.form.get('output_language_custom', ''))
     study_features = parse_study_features(request.form.get('study_features', 'none'))
     interview_features = parse_interview_features(request.form.get('interview_features', 'none'))
+    if request.content_length and request.content_length > MAX_CONTENT_LENGTH:
+        return jsonify({'error': 'Upload too large. Maximum total upload size is 560MB (up to 50MB PDF and 500MB audio).'}), 413
     
     if mode == 'lecture-notes':
         total_lecture = user.get('lecture_credits_standard', 0) + user.get('lecture_credits_extended', 0)
@@ -2506,13 +3798,32 @@ def upload_files():
         if pdf_file.filename == '' or audio_file.filename == '': return jsonify({'error': 'Both files must be selected'}), 400
         if not allowed_file(pdf_file.filename, ALLOWED_PDF_EXTENSIONS): return jsonify({'error': 'Invalid PDF file'}), 400
         if not allowed_file(audio_file.filename, ALLOWED_AUDIO_EXTENSIONS): return jsonify({'error': 'Invalid audio file'}), 400
+        if (pdf_file.mimetype or '').lower() not in ALLOWED_PDF_MIME_TYPES:
+            return jsonify({'error': 'Invalid PDF content type'}), 400
+        if (audio_file.mimetype or '').lower() not in ALLOWED_AUDIO_MIME_TYPES:
+            return jsonify({'error': 'Invalid audio content type'}), 400
         job_id = str(uuid.uuid4())
         pdf_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{secure_filename(pdf_file.filename)}")
         audio_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{secure_filename(audio_file.filename)}")
         pdf_file.save(pdf_path)
         audio_file.save(audio_path)
+        pdf_size = get_saved_file_size(pdf_path)
+        audio_size = get_saved_file_size(audio_path)
+        if pdf_size <= 0 or pdf_size > MAX_PDF_UPLOAD_BYTES:
+            cleanup_files([pdf_path, audio_path], [])
+            return jsonify({'error': 'PDF exceeds server limit (max 50MB) or is empty.'}), 400
+        if audio_size <= 0 or audio_size > MAX_AUDIO_UPLOAD_BYTES:
+            cleanup_files([pdf_path, audio_path], [])
+            return jsonify({'error': 'Audio exceeds server limit (max 500MB) or is empty.'}), 400
+        if not file_has_pdf_signature(pdf_path):
+            cleanup_files([pdf_path, audio_path], [])
+            return jsonify({'error': 'Uploaded PDF file is invalid.'}), 400
+        if not file_looks_like_audio(audio_path):
+            cleanup_files([pdf_path, audio_path], [])
+            return jsonify({'error': 'Uploaded audio file is invalid or unsupported.'}), 400
         deducted = deduct_credit(uid, 'lecture_credits_standard', 'lecture_credits_extended')
         if not deducted:
+            cleanup_files([pdf_path, audio_path], [])
             return jsonify({'error': 'No lecture credits remaining.'}), 402
         total_steps = 4 if study_features != 'none' else 3
         jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None}
@@ -2526,11 +3837,21 @@ def upload_files():
         pdf_file = request.files['pdf']
         if pdf_file.filename == '': return jsonify({'error': 'PDF file must be selected'}), 400
         if not allowed_file(pdf_file.filename, ALLOWED_PDF_EXTENSIONS): return jsonify({'error': 'Invalid PDF file'}), 400
+        if (pdf_file.mimetype or '').lower() not in ALLOWED_PDF_MIME_TYPES:
+            return jsonify({'error': 'Invalid PDF content type'}), 400
         job_id = str(uuid.uuid4())
         pdf_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{secure_filename(pdf_file.filename)}")
         pdf_file.save(pdf_path)
+        pdf_size = get_saved_file_size(pdf_path)
+        if pdf_size <= 0 or pdf_size > MAX_PDF_UPLOAD_BYTES:
+            cleanup_files([pdf_path], [])
+            return jsonify({'error': 'PDF exceeds server limit (max 50MB) or is empty.'}), 400
+        if not file_has_pdf_signature(pdf_path):
+            cleanup_files([pdf_path], [])
+            return jsonify({'error': 'Uploaded PDF file is invalid.'}), 400
         deducted = deduct_credit(uid, 'slides_credits')
         if not deducted:
+            cleanup_files([pdf_path], [])
             return jsonify({'error': 'No slides credits remaining.'}), 402
         total_steps = 2 if study_features != 'none' else 1
         jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None}
@@ -2545,19 +3866,31 @@ def upload_files():
         audio_file = request.files['audio']
         if audio_file.filename == '': return jsonify({'error': 'Audio file must be selected'}), 400
         if not allowed_file(audio_file.filename, ALLOWED_AUDIO_EXTENSIONS): return jsonify({'error': 'Invalid audio file'}), 400
+        if (audio_file.mimetype or '').lower() not in ALLOWED_AUDIO_MIME_TYPES:
+            return jsonify({'error': 'Invalid audio content type'}), 400
         job_id = str(uuid.uuid4())
         audio_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{secure_filename(audio_file.filename)}")
         audio_file.save(audio_path)
+        audio_size = get_saved_file_size(audio_path)
+        if audio_size <= 0 or audio_size > MAX_AUDIO_UPLOAD_BYTES:
+            cleanup_files([audio_path], [])
+            return jsonify({'error': 'Audio exceeds server limit (max 500MB) or is empty.'}), 400
+        if not file_looks_like_audio(audio_path):
+            cleanup_files([audio_path], [])
+            return jsonify({'error': 'Uploaded audio file is invalid or unsupported.'}), 400
         deducted = deduct_interview_credit(uid)
         if not deducted:
+            cleanup_files([audio_path], [])
             return jsonify({'error': 'No interview credits remaining.'}), 402
         interview_features_cost = len(interview_features)
         if interview_features_cost > 0:
             if user.get('slides_credits', 0) < interview_features_cost:
                 refund_credit(uid, deducted)
+                cleanup_files([audio_path], [])
                 return jsonify({'error': f'Not enough slides credits for interview extras. You selected {interview_features_cost} option(s) and need {interview_features_cost} slides credits.'}), 402
             if not deduct_slides_credits(uid, interview_features_cost):
                 refund_credit(uid, deducted)
+                cleanup_files([audio_path], [])
                 return jsonify({'error': 'Could not reserve slides credits for interview extras. Please try again.'}), 402
         total_steps = 2 if interview_features_cost > 0 else 1
         jobs[job_id] = {
@@ -2589,13 +3922,37 @@ def upload_files():
         }
         thread = threading.Thread(target=process_interview_transcription, args=(job_id, audio_path))
         thread.start()
-        
+    else:
+        return jsonify({'error': 'Invalid mode selected'}), 400
+
+    created_job = jobs.get(job_id, {})
+    log_analytics_event(
+        'processing_started_backend',
+        source='backend',
+        uid=uid,
+        email=email,
+        session_id=job_id,
+        properties={
+            'job_id': job_id,
+            'mode': created_job.get('mode', mode),
+            'study_features': created_job.get('study_features', 'none'),
+            'interview_features_count': len(created_job.get('interview_features', [])) if isinstance(created_job.get('interview_features'), list) else 0,
+        },
+        created_at=created_job.get('started_at', time.time()),
+    )
+
     return jsonify({'job_id': job_id})
 
 @app.route('/status/<job_id>')
 def get_status(job_id):
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
     if job_id not in jobs: return jsonify({'error': 'Job not found'}), 404
     job = jobs[job_id]
+    if job.get('user_id', '') != uid and not is_admin_user(decoded_token):
+        return jsonify({'error': 'Forbidden'}), 403
     response = {'status': job['status'], 'step': job['step'], 'step_description': job['step_description'], 'total_steps': job.get('total_steps', 3), 'mode': job.get('mode', 'lecture-notes')}
     if job['status'] == 'complete':
         response['result'] = job['result']
@@ -2622,8 +3979,14 @@ def get_status(job_id):
 
 @app.route('/download-docx/<job_id>')
 def download_docx(job_id):
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
     if job_id not in jobs: return jsonify({'error': 'Job not found'}), 404
     job = jobs[job_id]
+    if job.get('user_id', '') != uid and not is_admin_user(decoded_token):
+        return jsonify({'error': 'Forbidden'}), 403
     if job['status'] != 'complete': return jsonify({'error': 'Job not complete'}), 400
     content_type = request.args.get('type', 'result')
     
@@ -2652,9 +4015,15 @@ def download_docx(job_id):
 
 @app.route('/download-flashcards-csv/<job_id>')
 def download_flashcards_csv(job_id):
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
     if job_id not in jobs:
         return jsonify({'error': 'Job not found'}), 404
     job = jobs[job_id]
+    if job.get('user_id', '') != uid and not is_admin_user(decoded_token):
+        return jsonify({'error': 'Forbidden'}), 403
     if job.get('status') != 'complete':
         return jsonify({'error': 'Job not complete'}), 400
     export_type = request.args.get('type', 'flashcards').strip().lower()
