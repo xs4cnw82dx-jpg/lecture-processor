@@ -1062,6 +1062,7 @@ Total: 0</div></button>
         let currentJobId = null;
         let pollInterval = null;
         let pollFailures = 0;
+        let pollNotFoundCount = 0;
         let pollStartedAt = 0;
         let currentMode = 'lecture-notes';
         let resultMarkdown = '';
@@ -1102,6 +1103,7 @@ Total: 0</div></button>
         const POLL_BASE_MS = 2000;
         const POLL_MAX_MS = 30000;
         const POLL_MAX_RUNTIME_MS = 30 * 60 * 1000;
+        const POLL_NOT_FOUND_GRACE_COUNT = 90;
         const DOWNLOAD_LABELS = Object.freeze({
             lectureNotes: 'Lecture Notes',
             slideExtract: 'Slide Extract',
@@ -2820,6 +2822,7 @@ Total: 0</div></button>
         function startPolling() {
             stopPolling();
             pollFailures = 0;
+            pollNotFoundCount = 0;
             pollStartedAt = Date.now();
             setProgressRetryVisible(false);
             scheduleNextPoll(0);
@@ -2828,6 +2831,7 @@ Total: 0</div></button>
             if (pollInterval) clearTimeout(pollInterval);
             pollInterval = null;
             pollFailures = 0;
+            pollNotFoundCount = 0;
             pollStartedAt = 0;
         }
         async function authenticatedFetch(path, options = {}, allowRefresh = true) {
@@ -2982,11 +2986,23 @@ Total: 0</div></button>
                 }
                 const d = await r.json();
                 if (d.error && d.status !== 'error') {
+                    const rawError = String(d.error || '').toLowerCase();
+                    const looksLikeMissing = r.status === 404 || rawError.includes('job not found');
+                    if (looksLikeMissing) {
+                        pollNotFoundCount += 1;
+                        if (pollNotFoundCount <= POLL_NOT_FOUND_GRACE_COUNT) {
+                            statusText.textContent = 'Finalizing your study pack...';
+                            const backoff = Math.min(POLL_MAX_MS, POLL_BASE_MS * Math.pow(1.2, Math.min(pollNotFoundCount, 20)));
+                            scheduleNextPoll(backoff);
+                            return;
+                        }
+                    }
                     stopPolling();
                     setProgressRetryVisible(false);
-                    showToast('Error: Job not found', 'error');
+                    showToast(`Error: ${d.error}`, 'error');
                     return;
                 }
+                pollNotFoundCount = 0;
                 updateProgressUI(d.step, d.step_description, d.total_steps);
                 if (d.status === 'complete') {
                     stopPolling();
