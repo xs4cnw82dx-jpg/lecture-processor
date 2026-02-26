@@ -501,28 +501,41 @@
 
   <!-- Footer -->
   <footer class="footer">
-    <p>LectureProcessor &middot; AI-powered study material generation &middot; <a href="/features">Features</a> &middot; <a href="/dashboard">Dashboard</a></p>
+    <p>LectureProcessor &middot; AI-powered study material generation &middot; <a href="/features">Features</a> &middot; <a href="/dashboard">Dashboard</a> &middot; <a href="/privacy">Privacy Policy</a> &middot; <a href="/terms">Terms</a></p>
   </footer>
 
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
   <script>
     /* -- Firebase auth detection for nav -- */
     var firebaseConfig={apiKey:"AIzaSyBAAeEUCPNvP5qnqpP3M6HnFZ6vaaijUvM",authDomain:"lecture-processor-cdff6.firebaseapp.com",projectId:"lecture-processor-cdff6",storageBucket:"lecture-processor-cdff6.firebasestorage.app",messagingSenderId:"374793454161",appId:"1:374793454161:web:c68b21590e9a1fafa32e70"};
     firebase.initializeApp(firebaseConfig);
     var auth=firebase.auth();
+    var topbarUtils=window.LectureProcessorTopbar||{};
     var navAuthBtn=document.getElementById('nav-auth-btn');
     var navAuthLabel=document.getElementById('nav-auth-label');
 
-    auth.onAuthStateChanged(function(user){
-      if(user){
-        navAuthLabel.textContent='Dashboard';
-        navAuthBtn.href='/dashboard';
-      }else{
-        navAuthLabel.textContent='Sign In';
-        navAuthBtn.href='/dashboard';
-      }
-    });
+    if(topbarUtils.bindAuthCta){
+      topbarUtils.bindAuthCta(auth,{
+        labelEl:navAuthLabel,
+        linkEl:navAuthBtn,
+        signedInText:'Dashboard',
+        signedOutText:'Sign In',
+        signedInHref:'/dashboard',
+        signedOutHref:'/dashboard'
+      });
+    }else{
+      auth.onAuthStateChanged(function(user){
+        if(user){
+          navAuthLabel.textContent='Dashboard';
+          navAuthBtn.href='/dashboard';
+        }else{
+          navAuthLabel.textContent='Sign In';
+          navAuthBtn.href='/dashboard';
+        }
+      });
+    }
 
     /* -- Time savings calculator -- */
     var calcLectures=document.getElementById('calc-lectures');

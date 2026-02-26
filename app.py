@@ -6,12 +6,19 @@ import io
 import json
 import csv
 import re
-import zipfile
 import shutil
 import subprocess
 import html
 import warnings
-from datetime import datetime, timedelta
+import ipaddress
+import glob
+import zipfile
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
+try:
+    from zoneinfo import ZoneInfo
+except Exception:
+    ZoneInfo = None
 
 # Keep startup clean in local dev environments.
 warnings.filterwarnings(
@@ -45,6 +52,10 @@ try:
 except Exception:
     sentry_sdk = None
     FlaskIntegration = None
+try:
+    import imageio_ffmpeg
+except Exception:
+    imageio_ffmpeg = None
 
 REPORTLAB_AVAILABLE = True
 try:
@@ -123,6 +134,9 @@ ADMIN_UIDS = {uid.strip() for uid in os.getenv('ADMIN_UIDS', '').split(',') if u
 jobs = {}
 AUDIO_STREAM_TOKEN_TTL_SECONDS = 3600
 AUDIO_STREAM_TOKENS = {}
+AUDIO_IMPORT_TOKEN_TTL_SECONDS = 30 * 60
+AUDIO_IMPORT_TOKENS = {}
+AUDIO_IMPORT_LOCK = threading.Lock()
 FEATURE_AUDIO_SECTION_SYNC = os.getenv('FEATURE_AUDIO_SECTION_SYNC', '0').strip().lower() in {'1', 'true', 'yes', 'on'}
 MAX_PROGRESS_PACKS_PER_SYNC = 300
 MAX_PROGRESS_CARDS_PER_PACK = 2500
@@ -176,6 +190,8 @@ CHECKOUT_RATE_LIMIT_WINDOW_SECONDS = safe_int_env('CHECKOUT_RATE_LIMIT_WINDOW_SE
 CHECKOUT_RATE_LIMIT_MAX_REQUESTS = safe_int_env('CHECKOUT_RATE_LIMIT_MAX_REQUESTS', 6, minimum=1, maximum=100)
 ANALYTICS_RATE_LIMIT_WINDOW_SECONDS = safe_int_env('ANALYTICS_RATE_LIMIT_WINDOW_SECONDS', 60, minimum=10, maximum=3600)
 ANALYTICS_RATE_LIMIT_MAX_REQUESTS = safe_int_env('ANALYTICS_RATE_LIMIT_MAX_REQUESTS', 240, minimum=10, maximum=5000)
+VIDEO_IMPORT_RATE_LIMIT_WINDOW_SECONDS = safe_int_env('VIDEO_IMPORT_RATE_LIMIT_WINDOW_SECONDS', 600, minimum=30, maximum=86400)
+VIDEO_IMPORT_RATE_LIMIT_MAX_REQUESTS = safe_int_env('VIDEO_IMPORT_RATE_LIMIT_MAX_REQUESTS', 8, minimum=1, maximum=200)
 ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION = safe_int_env('ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION', 10000, minimum=100, maximum=50000)
 ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION = safe_int_env('ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION', 10000, minimum=100, maximum=50000)
 RATE_LIMIT_EVENTS = {}
@@ -331,6 +347,15 @@ OUTPUT_LANGUAGE_MAP = {
     'german': 'German',
     'chinese': 'Chinese',
 }
+DEFAULT_OUTPUT_LANGUAGE_KEY = 'english'
+OUTPUT_LANGUAGE_KEYS = set(OUTPUT_LANGUAGE_MAP.keys()) | {'other'}
+MAX_OUTPUT_LANGUAGE_CUSTOM_LENGTH = 40
+VIDEO_IMPORT_MAX_URL_LENGTH = 4096
+VIDEO_IMPORT_ALLOWED_HOST_SUFFIXES = tuple(
+    part.strip().lower()
+    for part in (os.getenv('VIDEO_IMPORT_ALLOWED_HOST_SUFFIXES', 'kaltura.com,ovp.kaltura.com,brightspace.com,d2l.com') or '').split(',')
+    if part.strip()
+)
 
 # --- Prompts ---
 PROMPT_SLIDE_EXTRACTION = """Extraheer alle tekst van de slides uit het bijgevoegde PDF-bestand en identificeer de functie van visuele elementen.
@@ -525,10 +550,23 @@ def get_or_create_user(uid, email):
 
     if user_doc.exists:
         user_data = user_doc.to_dict()
+        updates = {}
         # Update email if it changed
         if user_data.get('email') != email and email:
-            user_ref.update({'email': email})
-            user_data['email'] = email
+            updates['email'] = email
+        pref_key = sanitize_output_language_pref_key(user_data.get('preferred_output_language', DEFAULT_OUTPUT_LANGUAGE_KEY))
+        pref_custom = sanitize_output_language_pref_custom(user_data.get('preferred_output_language_custom', ''))
+        if pref_key != str(user_data.get('preferred_output_language', '') or '').strip().lower():
+            updates['preferred_output_language'] = pref_key
+        if pref_key != 'other':
+            pref_custom = ''
+        if pref_custom != str(user_data.get('preferred_output_language_custom', '') or '').strip():
+            updates['preferred_output_language_custom'] = pref_custom
+        if not isinstance(user_data.get('onboarding_completed'), bool):
+            updates['onboarding_completed'] = False
+        if updates:
+            user_ref.update(updates)
+            user_data.update(updates)
         return user_data
     else:
         # New user — create with free credits
@@ -543,6 +581,9 @@ def get_or_create_user(uid, email):
             'interview_credits_long': 0,
             'total_processed': 0,
             'created_at': time.time(),
+            'preferred_output_language': DEFAULT_OUTPUT_LANGUAGE_KEY,
+            'preferred_output_language_custom': '',
+            'onboarding_completed': False,
         }
         user_ref.set(user_data)
         print(f"New user created: {uid} ({email})")
@@ -571,6 +612,9 @@ def grant_credits_to_user(uid, bundle_id):
             'interview_credits_long': 0,
             'total_processed': 0,
             'created_at': time.time(),
+            'preferred_output_language': DEFAULT_OUTPUT_LANGUAGE_KEY,
+            'preferred_output_language_custom': '',
+            'onboarding_completed': False,
         }
         user_ref.set(user_data)
 
@@ -1173,15 +1217,39 @@ def parse_study_features(raw_value):
     value = str(raw_value or 'none').strip().lower()
     return value if value in {'none', 'flashcards', 'test', 'both'} else 'none'
 
-def parse_output_language(raw_value, custom_value=''):
-    key = str(raw_value or 'english').strip().lower()
+def normalize_output_language_choice(raw_value, custom_value=''):
+    key = str(raw_value or DEFAULT_OUTPUT_LANGUAGE_KEY).strip().lower()
+    custom = str(custom_value or '').strip()[:MAX_OUTPUT_LANGUAGE_CUSTOM_LENGTH]
     if key in OUTPUT_LANGUAGE_MAP:
-        return OUTPUT_LANGUAGE_MAP[key]
+        return key, '', OUTPUT_LANGUAGE_MAP[key]
     if key == 'other':
-        custom = str(custom_value or '').strip()
         if custom:
-            return custom[:40]
-    return 'English'
+            return 'other', custom, custom
+        return DEFAULT_OUTPUT_LANGUAGE_KEY, '', OUTPUT_LANGUAGE_MAP[DEFAULT_OUTPUT_LANGUAGE_KEY]
+    return DEFAULT_OUTPUT_LANGUAGE_KEY, '', OUTPUT_LANGUAGE_MAP[DEFAULT_OUTPUT_LANGUAGE_KEY]
+
+def parse_output_language(raw_value, custom_value=''):
+    _key, _custom, resolved = normalize_output_language_choice(raw_value, custom_value)
+    return resolved
+
+def sanitize_output_language_pref_key(raw_value):
+    key = str(raw_value or DEFAULT_OUTPUT_LANGUAGE_KEY).strip().lower()
+    return key if key in OUTPUT_LANGUAGE_KEYS else DEFAULT_OUTPUT_LANGUAGE_KEY
+
+def sanitize_output_language_pref_custom(raw_value):
+    return str(raw_value or '').strip()[:MAX_OUTPUT_LANGUAGE_CUSTOM_LENGTH]
+
+def build_user_preferences_payload(user_data):
+    key, custom, resolved = normalize_output_language_choice(
+        user_data.get('preferred_output_language', DEFAULT_OUTPUT_LANGUAGE_KEY),
+        user_data.get('preferred_output_language_custom', ''),
+    )
+    return {
+        'output_language': key,
+        'output_language_custom': custom,
+        'output_language_label': resolved,
+        'onboarding_completed': bool(user_data.get('onboarding_completed', False)),
+    }
 
 def parse_interview_features(raw_value):
     value = str(raw_value or 'none').strip().lower()
@@ -1195,6 +1263,198 @@ def parse_interview_features(raw_value):
         if part in {'summary', 'sections'} and part not in features:
             features.append(part)
     return features
+
+def host_matches_allowed_suffix(hostname):
+    if not hostname:
+        return False
+    host = hostname.strip().lower()
+    return any(host == suffix or host.endswith('.' + suffix) for suffix in VIDEO_IMPORT_ALLOWED_HOST_SUFFIXES)
+
+def is_blocked_hostname(hostname):
+    host = str(hostname or '').strip().lower()
+    if not host:
+        return True
+    if host in {'localhost', 'localhost.localdomain'}:
+        return True
+    if host.endswith('.local') or host.endswith('.internal'):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+            return True
+    except ValueError:
+        pass
+    return False
+
+def validate_video_import_url(raw_url):
+    url = str(raw_url or '').strip()
+    if not url:
+        return '', 'Please paste a video URL.'
+    if len(url) > VIDEO_IMPORT_MAX_URL_LENGTH:
+        return '', 'Video URL is too long.'
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return '', 'Video URL is invalid.'
+    if parsed.scheme.lower() != 'https':
+        return '', 'Only HTTPS video URLs are supported.'
+    if parsed.username or parsed.password:
+        return '', 'Video URL credentials are not allowed.'
+    host = (parsed.hostname or '').strip().lower()
+    if not host:
+        return '', 'Video URL host is missing.'
+    if is_blocked_hostname(host):
+        return '', 'This video host is not allowed.'
+    if VIDEO_IMPORT_ALLOWED_HOST_SUFFIXES and not host_matches_allowed_suffix(host):
+        return '', 'Only Brightspace/Kaltura video hosts are supported for automatic import.'
+    return url, ''
+
+def cleanup_expired_audio_import_tokens():
+    now_ts = time.time()
+    expired = []
+    with AUDIO_IMPORT_LOCK:
+        for token, data in list(AUDIO_IMPORT_TOKENS.items()):
+            if now_ts > float(data.get('expires_at', 0) or 0):
+                expired.append(data.get('path', ''))
+                AUDIO_IMPORT_TOKENS.pop(token, None)
+    for path in expired:
+        try:
+            if path and os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
+
+def register_audio_import_token(uid, file_path, source_url='', original_name=''):
+    token = str(uuid.uuid4())
+    with AUDIO_IMPORT_LOCK:
+        AUDIO_IMPORT_TOKENS[token] = {
+            'uid': str(uid or ''),
+            'path': str(file_path or ''),
+            'source_url': str(source_url or '')[:VIDEO_IMPORT_MAX_URL_LENGTH],
+            'original_name': str(original_name or '')[:240],
+            'created_at': time.time(),
+            'expires_at': time.time() + AUDIO_IMPORT_TOKEN_TTL_SECONDS,
+        }
+    return token
+
+def get_audio_import_token_path(uid, token, consume=False):
+    cleanup_expired_audio_import_tokens()
+    safe_uid = str(uid or '')
+    safe_token = str(token or '').strip()
+    if not safe_token:
+        return '', 'Missing imported audio token.'
+    with AUDIO_IMPORT_LOCK:
+        entry = AUDIO_IMPORT_TOKENS.get(safe_token)
+        if not entry:
+            return '', 'Imported audio token expired or invalid. Please import again.'
+        if entry.get('uid', '') != safe_uid:
+            return '', 'Imported audio token does not belong to this account.'
+        file_path = str(entry.get('path', '') or '').strip()
+        if consume:
+            AUDIO_IMPORT_TOKENS.pop(safe_token, None)
+    if not file_path or not os.path.exists(file_path):
+        return '', 'Imported audio file is no longer available. Please import again.'
+    return file_path, ''
+
+def release_audio_import_token(uid, token):
+    safe_uid = str(uid or '')
+    safe_token = str(token or '').strip()
+    if not safe_token:
+        return False
+    file_path = ''
+    with AUDIO_IMPORT_LOCK:
+        entry = AUDIO_IMPORT_TOKENS.get(safe_token)
+        if not entry or entry.get('uid', '') != safe_uid:
+            return False
+        file_path = str(entry.get('path', '') or '').strip()
+        AUDIO_IMPORT_TOKENS.pop(safe_token, None)
+    try:
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
+    except Exception:
+        pass
+    return True
+
+def get_ffmpeg_binary():
+    ffmpeg_bin = shutil.which('ffmpeg')
+    if ffmpeg_bin:
+        return ffmpeg_bin
+    if imageio_ffmpeg:
+        try:
+            ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
+            if ffmpeg_bin and os.path.exists(ffmpeg_bin):
+                return ffmpeg_bin
+        except Exception:
+            pass
+    return ''
+
+def get_ffprobe_binary():
+    ffprobe_bin = shutil.which('ffprobe')
+    if ffprobe_bin:
+        return ffprobe_bin
+    ffmpeg_bin = get_ffmpeg_binary()
+    if not ffmpeg_bin:
+        return ''
+    candidate = os.path.join(os.path.dirname(ffmpeg_bin), 'ffprobe')
+    if os.path.exists(candidate):
+        return candidate
+    return ''
+
+def download_audio_from_video_url(source_url, file_prefix):
+    ytdlp_bin = shutil.which('yt-dlp')
+    ffmpeg_bin = get_ffmpeg_binary()
+    if not ytdlp_bin:
+        raise RuntimeError('yt-dlp is not installed on the server.')
+    if not ffmpeg_bin:
+        raise RuntimeError('ffmpeg is not installed on the server.')
+
+    import_dir = os.path.join(UPLOAD_FOLDER, 'imported_audio')
+    os.makedirs(import_dir, exist_ok=True)
+    safe_prefix = re.sub(r'[^a-zA-Z0-9_-]+', '_', str(file_prefix or 'import')).strip('_') or 'import'
+    base = os.path.join(import_dir, safe_prefix)
+    output_template = f"{base}.%(ext)s"
+
+    cmd = [
+        ytdlp_bin,
+        '--no-playlist',
+        '--extract-audio',
+        '--audio-format', 'mp3',
+        '--audio-quality', '5',
+        '--no-progress',
+        '--restrict-filenames',
+        '--ffmpeg-location', ffmpeg_bin,
+        '--output', output_template,
+        '--',
+        source_url,
+    ]
+    result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=15 * 60)
+    if result.returncode != 0:
+        stderr = (result.stderr or result.stdout or '').strip().splitlines()
+        reason = stderr[-1] if stderr else 'unknown import error'
+        raise RuntimeError(f'Could not fetch audio from the provided URL ({reason[:220]}).')
+
+    candidates = sorted(glob.glob(f"{base}.*"))
+    if not candidates:
+        raise RuntimeError('Audio import finished but no output file was generated.')
+    preferred = [path for path in candidates if path.lower().endswith('.mp3')]
+    output_path = preferred[0] if preferred else candidates[0]
+
+    size_bytes = get_saved_file_size(output_path)
+    if size_bytes <= 0 or size_bytes > MAX_AUDIO_UPLOAD_BYTES:
+        try:
+            if os.path.exists(output_path):
+                os.remove(output_path)
+        except Exception:
+            pass
+        raise RuntimeError('Imported audio exceeds server limit (max 500MB) or is empty.')
+    if not file_looks_like_audio(output_path):
+        try:
+            if os.path.exists(output_path):
+                os.remove(output_path)
+        except Exception:
+            pass
+        raise RuntimeError('Imported audio is invalid or unsupported.')
+    return output_path, os.path.basename(output_path), size_bytes
 
 def deduct_slides_credits(uid, amount):
     if amount <= 0:
@@ -1219,6 +1479,73 @@ def refund_slides_credits(uid, amount):
     except Exception as e:
         print(f"❌ Failed to refund {amount} slides credits to user {uid}: {e}")
 
+def normalize_credit_ledger(credit_map):
+    normalized = {}
+    if not isinstance(credit_map, dict):
+        return normalized
+    for credit_type, raw_amount in credit_map.items():
+        key = str(credit_type or '').strip()
+        if not key:
+            continue
+        try:
+            amount = int(raw_amount)
+        except Exception:
+            continue
+        if amount > 0:
+            normalized[key] = amount
+    return normalized
+
+def initialize_billing_receipt(charged_map=None):
+    return {
+        'charged': normalize_credit_ledger(charged_map or {}),
+        'refunded': {},
+        'updated_at': time.time(),
+    }
+
+def ensure_job_billing_receipt(job_data, charged_map=None):
+    receipt = job_data.get('billing_receipt')
+    if not isinstance(receipt, dict):
+        receipt = initialize_billing_receipt(charged_map or {})
+        job_data['billing_receipt'] = receipt
+        return receipt
+    charged = receipt.get('charged', {})
+    if not isinstance(charged, dict):
+        charged = {}
+    for credit_type, amount in normalize_credit_ledger(charged_map or {}).items():
+        charged[credit_type] = max(int(charged.get(credit_type, 0) or 0), amount)
+    receipt['charged'] = charged
+    if not isinstance(receipt.get('refunded'), dict):
+        receipt['refunded'] = {}
+    receipt['updated_at'] = time.time()
+    return receipt
+
+def add_job_credit_refund(job_data, credit_type, amount=1):
+    if not credit_type:
+        return
+    try:
+        amount_int = int(amount)
+    except Exception:
+        return
+    if amount_int <= 0:
+        return
+    receipt = ensure_job_billing_receipt(job_data)
+    refunded = receipt.setdefault('refunded', {})
+    refunded[credit_type] = int(refunded.get(credit_type, 0) or 0) + amount_int
+    receipt['updated_at'] = time.time()
+
+def get_billing_receipt_snapshot(job_data):
+    receipt = job_data.get('billing_receipt')
+    if not isinstance(receipt, dict):
+        return {'charged': {}, 'refunded': {}}
+    snapshot = {
+        'charged': normalize_credit_ledger(receipt.get('charged', {})),
+        'refunded': normalize_credit_ledger(receipt.get('refunded', {})),
+    }
+    updated_at = receipt.get('updated_at')
+    if updated_at:
+        snapshot['updated_at'] = updated_at
+    return snapshot
+
 def generate_with_optional_thinking(model, prompt_text, max_output_tokens=65536, thinking_budget=256):
     base_config = {'max_output_tokens': max_output_tokens}
     try:
@@ -1240,6 +1567,7 @@ def convert_audio_to_mp3_with_ytdlp(local_audio_path):
     if not local_audio_path or local_audio_path.lower().endswith('.mp3'):
         return local_audio_path, False
     ytdlp_bin = shutil.which('yt-dlp')
+    ffmpeg_bin = get_ffmpeg_binary()
     base_no_ext = os.path.splitext(local_audio_path)[0]
     output_path = f"{base_no_ext}_converted.mp3"
 
@@ -1255,6 +1583,8 @@ def convert_audio_to_mp3_with_ytdlp(local_audio_path):
                 '--output', f"{base_no_ext}_converted.%(ext)s",
                 source
             ]
+            if ffmpeg_bin:
+                command.extend(['--ffmpeg-location', ffmpeg_bin])
             result = subprocess.run(command, check=False, capture_output=True, text=True)
             if result.returncode == 0 and os.path.exists(output_path):
                 return output_path, True
@@ -1265,7 +1595,6 @@ def convert_audio_to_mp3_with_ytdlp(local_audio_path):
         print("⚠️ yt-dlp not found, skipping yt-dlp conversion.")
 
     # Fallback conversion for local files when yt-dlp is unavailable or fails.
-    ffmpeg_bin = shutil.which('ffmpeg')
     if not ffmpeg_bin:
         return local_audio_path, False
     try:
@@ -1477,6 +1806,158 @@ def sanitize_card_state_map(payload):
             break
     return cleaned
 
+def derive_card_level_from_stats(seen, interval_days):
+    if interval_days >= 14:
+        return 'mastered'
+    if seen > 0:
+        return 'familiar'
+    return 'new'
+
+def merge_streak_data(server_payload, incoming_payload):
+    server = sanitize_streak_data(server_payload)
+    incoming = sanitize_streak_data(incoming_payload)
+
+    merged_last_study_date = max(server.get('last_study_date', ''), incoming.get('last_study_date', ''))
+    if merged_last_study_date == server.get('last_study_date', '') and merged_last_study_date != incoming.get('last_study_date', ''):
+        merged_current_streak = sanitize_int(server.get('current_streak', 0), default=0, min_value=0, max_value=36500)
+    elif merged_last_study_date == incoming.get('last_study_date', '') and merged_last_study_date != server.get('last_study_date', ''):
+        merged_current_streak = sanitize_int(incoming.get('current_streak', 0), default=0, min_value=0, max_value=36500)
+    else:
+        merged_current_streak = max(
+            sanitize_int(server.get('current_streak', 0), default=0, min_value=0, max_value=36500),
+            sanitize_int(incoming.get('current_streak', 0), default=0, min_value=0, max_value=36500),
+        )
+
+    merged_daily_progress_date = max(server.get('daily_progress_date', ''), incoming.get('daily_progress_date', ''))
+    if merged_daily_progress_date == server.get('daily_progress_date', '') and merged_daily_progress_date != incoming.get('daily_progress_date', ''):
+        merged_daily_progress_count = sanitize_int(server.get('daily_progress_count', 0), default=0, min_value=0, max_value=100000)
+    elif merged_daily_progress_date == incoming.get('daily_progress_date', '') and merged_daily_progress_date != server.get('daily_progress_date', ''):
+        merged_daily_progress_count = sanitize_int(incoming.get('daily_progress_count', 0), default=0, min_value=0, max_value=100000)
+    else:
+        merged_daily_progress_count = max(
+            sanitize_int(server.get('daily_progress_count', 0), default=0, min_value=0, max_value=100000),
+            sanitize_int(incoming.get('daily_progress_count', 0), default=0, min_value=0, max_value=100000),
+        )
+    if not merged_daily_progress_date:
+        merged_daily_progress_count = 0
+
+    return sanitize_streak_data({
+        'last_study_date': merged_last_study_date,
+        'current_streak': merged_current_streak,
+        'daily_progress_date': merged_daily_progress_date,
+        'daily_progress_count': merged_daily_progress_count,
+    })
+
+def merge_timezone_value(server_timezone, incoming_timezone):
+    server_value = sanitize_timezone_name(server_timezone)
+    incoming_value = sanitize_timezone_name(incoming_timezone)
+    return incoming_value or server_value
+
+def sanitize_timezone_name(value):
+    timezone_name = str(value or '').strip()[:80]
+    if not timezone_name:
+        return ''
+    if ZoneInfo:
+        try:
+            ZoneInfo(timezone_name)
+            return timezone_name
+        except Exception:
+            return ''
+    return timezone_name
+
+def resolve_progress_timezone(progress_data):
+    timezone_name = sanitize_timezone_name((progress_data or {}).get('timezone', ''))
+    if timezone_name and ZoneInfo:
+        try:
+            return ZoneInfo(timezone_name), timezone_name
+        except Exception:
+            pass
+    return timezone.utc, 'UTC'
+
+def to_timezone_now(base_now, tzinfo):
+    base = base_now
+    if base is None:
+        return datetime.now(tzinfo)
+    if base.tzinfo is None:
+        base = base.replace(tzinfo=timezone.utc)
+    return base.astimezone(tzinfo)
+
+def card_state_entry_rank(entry):
+    if not isinstance(entry, dict):
+        return ('', 0, 0, 0, 0, '')
+    return (
+        sanitize_progress_date(entry.get('last_review_date', '')),
+        sanitize_int(entry.get('seen', 0), default=0, min_value=0, max_value=100000),
+        sanitize_int(entry.get('correct', 0), default=0, min_value=0, max_value=100000),
+        sanitize_int(entry.get('wrong', 0), default=0, min_value=0, max_value=100000),
+        sanitize_int(entry.get('interval_days', 0), default=0, min_value=0, max_value=3650),
+        sanitize_progress_date(entry.get('next_review_date', '')),
+    )
+
+def merge_card_state_entries(server_entry, incoming_entry):
+    cleaned_server = sanitize_card_state_entry(server_entry)
+    cleaned_incoming = sanitize_card_state_entry(incoming_entry)
+
+    if cleaned_server is None:
+        return cleaned_incoming
+    if cleaned_incoming is None:
+        return cleaned_server
+
+    server_last = sanitize_progress_date(cleaned_server.get('last_review_date', ''))
+    incoming_last = sanitize_progress_date(cleaned_incoming.get('last_review_date', ''))
+    merged_last = max(server_last, incoming_last)
+
+    if merged_last == server_last and merged_last != incoming_last:
+        source_for_schedule = cleaned_server
+    elif merged_last == incoming_last and merged_last != server_last:
+        source_for_schedule = cleaned_incoming
+    else:
+        source_for_schedule = cleaned_server if card_state_entry_rank(cleaned_server) >= card_state_entry_rank(cleaned_incoming) else cleaned_incoming
+
+    merged_seen = max(cleaned_server.get('seen', 0), cleaned_incoming.get('seen', 0))
+    merged_correct = max(cleaned_server.get('correct', 0), cleaned_incoming.get('correct', 0))
+    merged_wrong = max(cleaned_server.get('wrong', 0), cleaned_incoming.get('wrong', 0))
+    minimum_seen = merged_correct + merged_wrong
+    if merged_seen < minimum_seen:
+        merged_seen = minimum_seen
+
+    merged_interval_days = sanitize_int(source_for_schedule.get('interval_days', 0), default=0, min_value=0, max_value=3650)
+    merged_next_review_date = sanitize_progress_date(source_for_schedule.get('next_review_date', ''))
+    if not merged_next_review_date:
+        merged_next_review_date = max(
+            sanitize_progress_date(cleaned_server.get('next_review_date', '')),
+            sanitize_progress_date(cleaned_incoming.get('next_review_date', '')),
+        )
+
+    merged_difficulty = str(source_for_schedule.get('difficulty', 'medium')).strip().lower()
+    if merged_difficulty not in {'easy', 'medium', 'hard'}:
+        merged_difficulty = 'medium'
+
+    merged_entry = {
+        'seen': merged_seen,
+        'correct': merged_correct,
+        'wrong': merged_wrong,
+        'interval_days': merged_interval_days,
+        'last_review_date': merged_last,
+        'next_review_date': merged_next_review_date,
+        'difficulty': merged_difficulty,
+        'level': derive_card_level_from_stats(merged_seen, merged_interval_days),
+    }
+    return sanitize_card_state_entry(merged_entry)
+
+def merge_card_state_maps(server_state, incoming_state):
+    cleaned_server = sanitize_card_state_map(server_state)
+    cleaned_incoming = sanitize_card_state_map(incoming_state)
+    merged = {}
+    for card_id in sorted(set(cleaned_server.keys()) | set(cleaned_incoming.keys())):
+        merged_entry = merge_card_state_entries(cleaned_server.get(card_id), cleaned_incoming.get(card_id))
+        if merged_entry is None:
+            continue
+        merged[card_id] = merged_entry
+        if len(merged) >= MAX_PROGRESS_CARDS_PER_PACK:
+            break
+    return merged
+
 def count_due_cards_in_state(state, today_local):
     due = 0
     for card_id, entry in (state or {}).items():
@@ -1489,6 +1970,37 @@ def count_due_cards_in_state(state, today_local):
         if not next_date or next_date <= today_local:
             due += 1
     return due
+
+def compute_study_progress_summary(progress_data, card_state_maps, base_now=None):
+    progress = progress_data or {}
+    streak_data = sanitize_streak_data(progress.get('streak_data', {}))
+    daily_goal = sanitize_daily_goal_value(progress.get('daily_goal'))
+    if daily_goal is None:
+        daily_goal = 20
+
+    tzinfo, _timezone_name = resolve_progress_timezone(progress)
+    now_local = to_timezone_now(base_now, tzinfo)
+    today_local = now_local.strftime('%Y-%m-%d')
+    yesterday_local = (now_local - timedelta(days=1)).strftime('%Y-%m-%d')
+
+    current_streak = 0
+    if streak_data.get('last_study_date') in {today_local, yesterday_local}:
+        current_streak = sanitize_int(streak_data.get('current_streak', 0), default=0, min_value=0, max_value=36500)
+
+    today_progress = 0
+    if streak_data.get('daily_progress_date') == today_local:
+        today_progress = sanitize_int(streak_data.get('daily_progress_count', 0), default=0, min_value=0, max_value=100000)
+
+    due_today = 0
+    for raw_state in (card_state_maps or []):
+        due_today += count_due_cards_in_state(sanitize_card_state_map(raw_state), today_local)
+
+    return {
+        'daily_goal': daily_goal,
+        'current_streak': current_streak,
+        'today_progress': today_progress,
+        'due_today': due_today,
+    }
 
 def get_study_progress_doc(uid):
     return db.collection('study_progress').document(uid)
@@ -1600,12 +2112,7 @@ def get_soffice_binary():
         candidate = shutil.which(name)
         if candidate:
             return candidate
-    for fallback in (
-        '/usr/bin/soffice',
-        '/usr/local/bin/soffice',
-        '/usr/lib/libreoffice/program/soffice',
-        '/usr/bin/libreoffice',
-    ):
+    for fallback in ('/usr/bin/soffice', '/usr/local/bin/soffice'):
         if os.path.exists(fallback):
             return fallback
     return ''
@@ -1652,6 +2159,7 @@ def resolve_uploaded_slides_to_pdf(uploaded_file, job_id):
     mime_type = str(uploaded_file.mimetype or '').lower()
     if mime_type not in ALLOWED_SLIDE_MIME_TYPES:
         return '', 'Invalid slide content type'
+
     safe_name = secure_filename(uploaded_file.filename)
     source_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{safe_name}")
     uploaded_file.save(source_path)
@@ -1659,15 +2167,18 @@ def resolve_uploaded_slides_to_pdf(uploaded_file, job_id):
     if source_size <= 0 or source_size > MAX_PDF_UPLOAD_BYTES:
         cleanup_files([source_path], [])
         return '', 'Slide file exceeds server limit (max 50MB) or is empty.'
+
     extension = safe_name.rsplit('.', 1)[1].lower() if '.' in safe_name else ''
     if extension == 'pdf':
         if not file_has_pdf_signature(source_path):
             cleanup_files([source_path], [])
             return '', 'Uploaded PDF file is invalid.'
         return source_path, ''
+
     if extension != 'pptx' or not file_has_pptx_signature(source_path):
         cleanup_files([source_path], [])
         return '', 'Uploaded PPTX file is invalid.'
+
     converted_target = os.path.join(UPLOAD_FOLDER, f"{job_id}_slides_converted.pdf")
     converted_pdf_path, conversion_error = convert_pptx_to_pdf(source_path, converted_target)
     try:
@@ -1716,7 +2227,7 @@ def file_looks_like_audio(path):
         return False
     if file_has_audio_signature(path):
         return True
-    ffprobe_bin = shutil.which('ffprobe')
+    ffprobe_bin = get_ffprobe_binary()
     if not ffprobe_bin:
         return False
     try:
@@ -1751,7 +2262,7 @@ def get_mime_type(filename):
         'wav': 'audio/wav',
         'aac': 'audio/aac',
         'ogg': 'audio/ogg',
-        'flac': 'audio/flac'
+        'flac': 'audio/flac',
     }
     return mime_types.get(ext, 'application/octet-stream')
 
@@ -2292,124 +2803,6 @@ def save_study_pack(job_id, job_data):
     except Exception as e:
         print(f"❌ Failed to save study pack for job {job_id}: {e}")
 
-def get_study_pack_for_job(job_id, uid='', allow_admin=False):
-    if not db or not job_id:
-        return None
-    try:
-        docs = db.collection('study_packs').where('source_job_id', '==', job_id).limit(5).stream()
-        for doc in docs:
-            pack = doc.to_dict() or {}
-            pack_uid = str(pack.get('uid', '') or '')
-            if allow_admin or (uid and pack_uid == uid):
-                pack['study_pack_id'] = pack.get('study_pack_id') or doc.id
-                return pack
-    except Exception as e:
-        print(f"⚠️ Could not resolve study pack by job id {job_id}: {e}")
-    return None
-
-def build_complete_job_snapshot_from_pack(pack):
-    mode = str(pack.get('mode', '') or 'lecture-notes')
-    result_text = str(pack.get('notes_markdown', '') or '')
-    snapshot = {
-        'status': 'complete',
-        'step': 1,
-        'step_description': 'Complete!',
-        'total_steps': 1,
-        'mode': mode,
-        'result': result_text,
-        'flashcards': pack.get('flashcards', []) if isinstance(pack.get('flashcards', []), list) else [],
-        'test_questions': pack.get('test_questions', []) if isinstance(pack.get('test_questions', []), list) else [],
-        'study_generation_error': pack.get('study_generation_error'),
-        'study_pack_id': pack.get('study_pack_id', ''),
-        'study_features': pack.get('study_features', 'none'),
-        'output_language': pack.get('output_language', 'English'),
-        'interview_features': pack.get('interview_features', []) if isinstance(pack.get('interview_features', []), list) else [],
-        'interview_features_successful': [],
-        'interview_summary': pack.get('interview_summary'),
-        'interview_sections': pack.get('interview_sections'),
-        'interview_combined': pack.get('interview_combined'),
-    }
-    if mode == 'interview':
-        snapshot['transcript'] = result_text
-    return snapshot
-
-def get_job_log_for_job(job_id, uid='', allow_admin=False):
-    if not db or not job_id:
-        return None
-    try:
-        doc = db.collection('job_logs').document(job_id).get()
-        if not doc.exists:
-            return None
-        log = doc.to_dict() or {}
-        if allow_admin:
-            return log
-        if uid and str(log.get('uid', '') or '') == uid:
-            return log
-    except Exception as e:
-        print(f"⚠️ Could not resolve job log by job id {job_id}: {e}")
-    return None
-
-def user_started_job(job_id, uid):
-    if not db or not job_id or not uid:
-        return False
-    try:
-        docs = (
-            db.collection('analytics_events')
-            .where('uid', '==', uid)
-            .where('session_id', '==', job_id)
-            .limit(1)
-            .stream()
-        )
-        for _ in docs:
-            return True
-    except Exception as e:
-        print(f"⚠️ Could not verify analytics event for job {job_id}: {e}")
-    return False
-
-def get_job_snapshot(job_id, uid, allow_admin=False):
-    if job_id in jobs:
-        job = jobs[job_id]
-        if allow_admin or job.get('user_id', '') == uid:
-            return job, 'memory'
-        return None, 'forbidden'
-
-    pack = get_study_pack_for_job(job_id, uid=uid, allow_admin=allow_admin)
-    if pack:
-        return build_complete_job_snapshot_from_pack(pack), 'pack'
-
-    log = get_job_log_for_job(job_id, uid=uid, allow_admin=allow_admin)
-    if log:
-        log_status = str(log.get('status', '') or '').strip().lower()
-        if log_status == 'error':
-            return {
-                'status': 'error',
-                'step': 0,
-                'step_description': 'Processing failed.',
-                'total_steps': 1,
-                'mode': str(log.get('mode', '') or 'lecture-notes'),
-                'error': str(log.get('error_message', '') or 'Processing failed.'),
-                'credit_refunded': bool(log.get('credit_refunded', False)),
-            }, 'log'
-        if log_status == 'complete':
-            return {
-                'status': 'processing',
-                'step': 0,
-                'step_description': 'Finalizing your study pack...',
-                'total_steps': 1,
-                'mode': str(log.get('mode', '') or 'lecture-notes'),
-            }, 'log'
-
-    if user_started_job(job_id, uid):
-        return {
-            'status': 'processing',
-            'step': 0,
-            'step_description': 'Processing is still running. Checking again...',
-            'total_steps': 1,
-            'mode': 'lecture-notes',
-        }, 'analytics'
-
-    return None, 'missing'
-
 # =============================================
 # AI PROCESSING FUNCTIONS
 # =============================================
@@ -2491,6 +2884,7 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
         uid = jobs[job_id].get('user_id')
         credit_type = jobs[job_id].get('credit_deducted')
         refund_credit(uid, credit_type)
+        add_job_credit_refund(jobs[job_id], credit_type, 1)
         jobs[job_id]['credit_refunded'] = True
     finally:
         cleanup_files(local_paths, gemini_files)
@@ -2538,6 +2932,7 @@ def process_slides_only(job_id, pdf_path):
         uid = jobs[job_id].get('user_id')
         credit_type = jobs[job_id].get('credit_deducted')
         refund_credit(uid, credit_type)
+        add_job_credit_refund(jobs[job_id], credit_type, 1)
         jobs[job_id]['credit_refunded'] = True
     finally:
         cleanup_files(local_paths, gemini_files)
@@ -2555,6 +2950,7 @@ def process_interview_transcription(job_id, audio_path):
         converted_audio_path, converted = convert_audio_to_mp3_with_ytdlp(audio_path)
         if converted and converted_audio_path not in local_paths:
             local_paths.append(converted_audio_path)
+        jobs[job_id]['audio_storage_path'] = persist_audio_for_study_pack(job_id, converted_audio_path)
         audio_mime_type = get_mime_type(converted_audio_path)
         audio_file = client.files.upload(file=converted_audio_path, config={'mime_type': audio_mime_type})
         gemini_files.append(audio_file)
@@ -2583,6 +2979,7 @@ def process_interview_transcription(job_id, audio_path):
                 uid = jobs[job_id].get('user_id')
                 refund_slides_credits(uid, failed_count)
                 jobs[job_id]['extra_slides_refunded'] = jobs[job_id].get('extra_slides_refunded', 0) + failed_count
+                add_job_credit_refund(jobs[job_id], 'slides_credits', failed_count)
 
             if enhancement.get('summary') and enhancement.get('sections'):
                 jobs[job_id]['result'] = enhancement.get('combined', transcript_text)
@@ -2591,6 +2988,7 @@ def process_interview_transcription(job_id, audio_path):
             elif enhancement.get('sections'):
                 jobs[job_id]['result'] = enhancement.get('sections')
 
+        save_study_pack(job_id, jobs[job_id])
         jobs[job_id]['status'] = 'complete'
         jobs[job_id]['step'] = jobs[job_id].get('total_steps', 1)
         jobs[job_id]['step_description'] = 'Complete!'
@@ -2601,12 +2999,14 @@ def process_interview_transcription(job_id, audio_path):
         uid = jobs[job_id].get('user_id')
         credit_type = jobs[job_id].get('credit_deducted')
         refund_credit(uid, credit_type)
+        add_job_credit_refund(jobs[job_id], credit_type, 1)
         extra_spent = jobs[job_id].get('interview_features_cost', 0)
         already_refunded = jobs[job_id].get('extra_slides_refunded', 0)
         to_refund = max(0, extra_spent - already_refunded)
         if to_refund > 0:
             refund_slides_credits(uid, to_refund)
             jobs[job_id]['extra_slides_refunded'] = already_refunded + to_refund
+            add_job_credit_refund(jobs[job_id], 'slides_credits', to_refund)
         jobs[job_id]['credit_refunded'] = True
     finally:
         cleanup_files(local_paths, gemini_files)
@@ -2656,7 +3056,7 @@ def privacy_policy():
     return render_template(
         'privacy.html',
         legal_contact_email=LEGAL_CONTACT_EMAIL,
-        last_updated='February 25, 2026',
+        last_updated='February 26, 2026',
     )
 
 @app.route('/terms')
@@ -2664,7 +3064,7 @@ def terms_of_service():
     return render_template(
         'terms.html',
         legal_contact_email=LEGAL_CONTACT_EMAIL,
-        last_updated='February 25, 2026',
+        last_updated='February 26, 2026',
     )
 
 @app.route('/api/verify-email', methods=['POST'])
@@ -2746,6 +3146,7 @@ def get_user():
     email = decoded_token.get('email', '')
     if not is_email_allowed(email): return jsonify({'error': 'Email not allowed', 'message': 'Please use your university email.'}), 403
     user = get_or_create_user(uid, email)
+    preferences = build_user_preferences_payload(user)
     return jsonify({
         'uid': user['uid'], 'email': user['email'],
         'credits': {
@@ -2758,7 +3159,59 @@ def get_user():
         },
         'total_processed': user.get('total_processed', 0),
         'is_admin': is_admin_user(decoded_token),
+        'preferences': preferences,
     })
+
+@app.route('/api/user-preferences', methods=['GET'])
+def get_user_preferences():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+    email = decoded_token.get('email', '')
+    if not is_email_allowed(email):
+        return jsonify({'error': 'Email not allowed'}), 403
+    user = get_or_create_user(uid, email)
+    return jsonify({'preferences': build_user_preferences_payload(user)})
+
+@app.route('/api/user-preferences', methods=['PUT'])
+def update_user_preferences():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+    email = decoded_token.get('email', '')
+    if not is_email_allowed(email):
+        return jsonify({'error': 'Email not allowed'}), 403
+
+    payload = request.get_json(silent=True) or {}
+    user = get_or_create_user(uid, email)
+
+    raw_key = payload.get('output_language', user.get('preferred_output_language', DEFAULT_OUTPUT_LANGUAGE_KEY))
+    raw_custom = payload.get('output_language_custom', user.get('preferred_output_language_custom', ''))
+    pref_key = sanitize_output_language_pref_key(raw_key)
+    pref_custom = sanitize_output_language_pref_custom(raw_custom)
+
+    if pref_key == 'other' and not pref_custom:
+        return jsonify({'error': 'Custom language is required when output language is Other.'}), 400
+    if pref_key != 'other':
+        pref_custom = ''
+
+    updates = {
+        'preferred_output_language': pref_key,
+        'preferred_output_language_custom': pref_custom,
+        'updated_at': time.time(),
+    }
+    if 'onboarding_completed' in payload:
+        updates['onboarding_completed'] = bool(payload.get('onboarding_completed'))
+
+    try:
+        db.collection('users').document(uid).set(updates, merge=True)
+        user.update(updates)
+        return jsonify({'ok': True, 'preferences': build_user_preferences_payload(user)})
+    except Exception as e:
+        print(f"Error updating preferences for user {uid}: {e}")
+        return jsonify({'error': 'Could not save preferences'}), 500
 
 @app.route('/api/account/export', methods=['GET'])
 def export_account_data():
@@ -2940,19 +3393,23 @@ def get_study_progress():
         timezone = str(progress_data.get('timezone', '') or '').strip()[:80]
 
         card_states = {}
+        card_state_maps = []
         docs = db.collection('study_card_states').where('uid', '==', uid).limit(MAX_PROGRESS_PACKS_PER_SYNC).stream()
         for doc in docs:
             data = doc.to_dict() or {}
             pack_id = sanitize_pack_id(data.get('pack_id', ''))
             if not pack_id:
                 continue
-            card_states[pack_id] = sanitize_card_state_map(data.get('state', {}))
+            state_map = sanitize_card_state_map(data.get('state', {}))
+            card_states[pack_id] = state_map
+            card_state_maps.append(state_map)
 
         return jsonify({
             'daily_goal': daily_goal,
             'streak_data': streak_data,
-            'timezone': timezone,
+            'timezone': sanitize_timezone_name(timezone),
             'card_states': card_states,
+            'summary': compute_study_progress_summary(progress_data, card_state_maps),
         })
     except Exception as e:
         print(f"Error fetching study progress for user {uid}: {e}")
@@ -2969,6 +3426,8 @@ def update_study_progress():
         return jsonify({'error': 'Invalid payload'}), 400
 
     try:
+        existing_progress_doc = get_study_progress_doc(uid).get()
+        existing_progress_data = existing_progress_doc.to_dict() if existing_progress_doc.exists else {}
         updates = {
             'uid': uid,
             'updated_at': time.time(),
@@ -2981,10 +3440,10 @@ def update_study_progress():
             updates['daily_goal'] = daily_goal
 
         if 'streak_data' in payload:
-            updates['streak_data'] = sanitize_streak_data(payload.get('streak_data'))
+            updates['streak_data'] = merge_streak_data(existing_progress_data.get('streak_data', {}), payload.get('streak_data'))
 
         if 'timezone' in payload:
-            updates['timezone'] = str(payload.get('timezone', '') or '').strip()[:80]
+            updates['timezone'] = merge_timezone_value(existing_progress_data.get('timezone', ''), payload.get('timezone', ''))
 
         get_study_progress_doc(uid).set(updates, merge=True)
 
@@ -3002,17 +3461,18 @@ def update_study_progress():
                 cleaned_state = sanitize_card_state_map(raw_state)
                 doc_ref = get_study_card_state_doc(uid, pack_id)
                 if cleaned_state:
+                    existing_pack_doc = doc_ref.get()
+                    existing_pack_state = {}
+                    if existing_pack_doc.exists:
+                        existing_pack_data = existing_pack_doc.to_dict() or {}
+                        existing_pack_state = sanitize_card_state_map(existing_pack_data.get('state', {}))
+                    merged_state = merge_card_state_maps(existing_pack_state, cleaned_state)
                     doc_ref.set({
                         'uid': uid,
                         'pack_id': pack_id,
-                        'state': cleaned_state,
+                        'state': merged_state,
                         'updated_at': time.time(),
                     }, merge=True)
-                else:
-                    try:
-                        doc_ref.delete()
-                    except Exception:
-                        pass
                 processed += 1
 
         remove_pack_ids = payload.get('remove_pack_ids')
@@ -3042,32 +3502,13 @@ def get_study_progress_summary():
     try:
         progress_doc = get_study_progress_doc(uid).get()
         progress_data = progress_doc.to_dict() if progress_doc.exists else {}
-        streak_data = sanitize_streak_data(progress_data.get('streak_data', {}))
-        daily_goal = sanitize_daily_goal_value(progress_data.get('daily_goal'))
-        if daily_goal is None:
-            daily_goal = 20
-
-        today_local = datetime.now().strftime('%Y-%m-%d')
-        yesterday_local = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-        current_streak = 0
-        if streak_data.get('last_study_date') in {today_local, yesterday_local}:
-            current_streak = sanitize_int(streak_data.get('current_streak', 0), default=0, min_value=0, max_value=36500)
-        today_progress = 0
-        if streak_data.get('daily_progress_date') == today_local:
-            today_progress = sanitize_int(streak_data.get('daily_progress_count', 0), default=0, min_value=0, max_value=100000)
-
-        due_today = 0
+        card_state_maps = []
         docs = db.collection('study_card_states').where('uid', '==', uid).limit(MAX_PROGRESS_PACKS_PER_SYNC).stream()
         for doc in docs:
             data = doc.to_dict() or {}
-            due_today += count_due_cards_in_state(sanitize_card_state_map(data.get('state', {})), today_local)
+            card_state_maps.append(sanitize_card_state_map(data.get('state', {})))
 
-        return jsonify({
-            'daily_goal': daily_goal,
-            'current_streak': current_streak,
-            'today_progress': today_progress,
-            'due_today': due_today,
-        })
+        return jsonify(compute_study_progress_summary(progress_data, card_state_maps))
     except Exception as e:
         print(f"Error fetching study progress summary for user {uid}: {e}")
         return jsonify({'error': 'Could not load study progress summary'}), 500
@@ -3744,7 +4185,7 @@ def get_admin_overview():
 
         mode_breakdown = {
             'lecture-notes': {'label': 'Lecture Notes', 'total': 0, 'complete': 0, 'error': 0},
-            'slides-only': {'label': 'Slides Only', 'total': 0, 'complete': 0, 'error': 0},
+            'slides-only': {'label': 'Slide Extract', 'total': 0, 'complete': 0, 'error': 0},
             'interview': {'label': 'Interview Transcript', 'total': 0, 'complete': 0, 'error': 0},
             'other': {'label': 'Other', 'total': 0, 'complete': 0, 'error': 0},
         }
@@ -3998,6 +4439,60 @@ def export_admin_csv():
 
 # --- Upload & Processing Routes ---
 
+@app.route('/api/import-audio-url', methods=['POST'])
+def import_audio_from_url():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Please sign in to continue'}), 401
+    uid = decoded_token['uid']
+    email = decoded_token.get('email', '')
+    if not is_email_allowed(email):
+        return jsonify({'error': 'Email not allowed'}), 403
+
+    allowed_import, retry_after = check_rate_limit(
+        key=f"audio_import:{normalize_rate_limit_key_part(uid, fallback='anon_uid')}",
+        limit=VIDEO_IMPORT_RATE_LIMIT_MAX_REQUESTS,
+        window_seconds=VIDEO_IMPORT_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    if not allowed_import:
+        return build_rate_limited_response(
+            'Too many video import attempts right now. Please wait and try again.',
+            retry_after,
+        )
+
+    data = request.get_json(silent=True) or {}
+    safe_url, error_message = validate_video_import_url(data.get('url', ''))
+    if not safe_url:
+        return jsonify({'error': error_message}), 400
+
+    cleanup_expired_audio_import_tokens()
+    prefix = f"urlimport_{uuid.uuid4().hex}"
+    try:
+        audio_path, output_name, size_bytes = download_audio_from_video_url(safe_url, prefix)
+        token = register_audio_import_token(uid, audio_path, safe_url, output_name)
+        return jsonify({
+            'ok': True,
+            'audio_import_token': token,
+            'file_name': output_name,
+            'size_bytes': int(size_bytes),
+            'expires_in_seconds': AUDIO_IMPORT_TOKEN_TTL_SECONDS,
+        })
+    except Exception as e:
+        print(f"Error importing audio from URL for user {uid}: {e}")
+        return jsonify({'error': str(e) or 'Could not import audio from URL.'}), 400
+
+@app.route('/api/import-audio-url/release', methods=['POST'])
+def release_imported_audio():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+    payload = request.get_json(silent=True) or {}
+    token = str(payload.get('audio_import_token', '') or '').strip()
+    if token:
+        release_audio_import_token(uid, token)
+    return jsonify({'ok': True})
+
 @app.route('/upload', methods=['POST'])
 def upload_files():
     decoded_token = verify_firebase_token(request)
@@ -4026,29 +4521,58 @@ def upload_files():
     mode = request.form.get('mode', 'lecture-notes')
     flashcard_selection = parse_requested_amount(request.form.get('flashcard_amount', '20'), {'10', '20', '30', 'auto'}, '20')
     question_selection = parse_requested_amount(request.form.get('question_amount', '10'), {'5', '10', '15', 'auto'}, '10')
-    output_language = parse_output_language(request.form.get('output_language', 'english'), request.form.get('output_language_custom', ''))
+    preferred_language_key = sanitize_output_language_pref_key(user.get('preferred_output_language', DEFAULT_OUTPUT_LANGUAGE_KEY))
+    preferred_language_custom = sanitize_output_language_pref_custom(user.get('preferred_output_language_custom', ''))
+    output_language = parse_output_language(
+        request.form.get('output_language', preferred_language_key),
+        request.form.get('output_language_custom', preferred_language_custom),
+    )
     study_features = parse_study_features(request.form.get('study_features', 'none'))
     interview_features = parse_interview_features(request.form.get('interview_features', 'none'))
+    audio_import_token = str(request.form.get('audio_import_token', '') or '').strip()
+    cleanup_expired_audio_import_tokens()
     if request.content_length and request.content_length > MAX_CONTENT_LENGTH:
-        return jsonify({'error': 'Upload too large. Maximum total upload size is 560MB (up to 50MB slides and 500MB audio).'}), 413
+        return jsonify({'error': 'Upload too large. Maximum total upload size is 560MB (up to 50MB slides file (PDF/PPTX) and 500MB audio).'}), 413
     
     if mode == 'lecture-notes':
         total_lecture = user.get('lecture_credits_standard', 0) + user.get('lecture_credits_extended', 0)
         if total_lecture <= 0:
             return jsonify({'error': 'No lecture credits remaining. Please purchase more credits.'}), 402
-        if 'pdf' not in request.files or 'audio' not in request.files: return jsonify({'error': 'Both slide and audio files are required'}), 400
-        pdf_file = request.files['pdf']
-        audio_file = request.files['audio']
-        if pdf_file.filename == '' or audio_file.filename == '': return jsonify({'error': 'Both files must be selected'}), 400
-        if not allowed_file(audio_file.filename, ALLOWED_AUDIO_EXTENSIONS): return jsonify({'error': 'Invalid audio file'}), 400
-        if (audio_file.mimetype or '').lower() not in ALLOWED_AUDIO_MIME_TYPES:
-            return jsonify({'error': 'Invalid audio content type'}), 400
+        if 'pdf' not in request.files:
+            return jsonify({'error': 'Both slides (PDF/PPTX) and audio files are required'}), 400
+        slides_file = request.files['pdf']
+        uploaded_audio_file = request.files.get('audio')
+        has_uploaded_audio = bool(uploaded_audio_file and uploaded_audio_file.filename)
+        has_imported_audio = bool(audio_import_token)
+        if not has_uploaded_audio and not has_imported_audio:
+            return jsonify({'error': 'Both slides (PDF/PPTX) and audio files are required'}), 400
+        if slides_file.filename == '':
+            return jsonify({'error': 'Both files must be selected'}), 400
         job_id = str(uuid.uuid4())
-        pdf_path, slides_error = resolve_uploaded_slides_to_pdf(pdf_file, job_id)
+        pdf_path, slides_error = resolve_uploaded_slides_to_pdf(slides_file, job_id)
         if slides_error:
             return jsonify({'error': slides_error}), 400
-        audio_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{secure_filename(audio_file.filename)}")
-        audio_file.save(audio_path)
+
+        imported_audio_used = False
+        audio_path = ''
+        if has_uploaded_audio:
+            if not allowed_file(uploaded_audio_file.filename, ALLOWED_AUDIO_EXTENSIONS):
+                cleanup_files([pdf_path], [])
+                return jsonify({'error': 'Invalid audio file'}), 400
+            if (uploaded_audio_file.mimetype or '').lower() not in ALLOWED_AUDIO_MIME_TYPES:
+                cleanup_files([pdf_path], [])
+                return jsonify({'error': 'Invalid audio content type'}), 400
+            audio_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{secure_filename(uploaded_audio_file.filename)}")
+            uploaded_audio_file.save(audio_path)
+            if has_imported_audio:
+                release_audio_import_token(uid, audio_import_token)
+        else:
+            audio_path, token_error = get_audio_import_token_path(uid, audio_import_token, consume=False)
+            if token_error:
+                cleanup_files([pdf_path], [])
+                return jsonify({'error': token_error}), 400
+            imported_audio_used = True
+
         audio_size = get_saved_file_size(audio_path)
         if audio_size <= 0 or audio_size > MAX_AUDIO_UPLOAD_BYTES:
             cleanup_files([pdf_path, audio_path], [])
@@ -4060,19 +4584,25 @@ def upload_files():
         if not deducted:
             cleanup_files([pdf_path, audio_path], [])
             return jsonify({'error': 'No lecture credits remaining.'}), 402
+        if imported_audio_used:
+            _consumed_path, token_error = get_audio_import_token_path(uid, audio_import_token, consume=True)
+            if token_error:
+                cleanup_files([pdf_path, audio_path], [])
+                refund_credit(uid, deducted)
+                return jsonify({'error': token_error}), 400
         total_steps = 4 if study_features != 'none' else 3
-        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None}
+        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'billing_receipt': initialize_billing_receipt({deducted: 1})}
         thread = threading.Thread(target=process_lecture_notes, args=(job_id, pdf_path, audio_path))
         thread.start()
         
     elif mode == 'slides-only':
         if user.get('slides_credits', 0) <= 0:
             return jsonify({'error': 'No slides credits remaining. Please purchase more credits.'}), 402
-        if 'pdf' not in request.files: return jsonify({'error': 'Slide file is required'}), 400
-        pdf_file = request.files['pdf']
-        if pdf_file.filename == '': return jsonify({'error': 'Slide file must be selected'}), 400
+        if 'pdf' not in request.files: return jsonify({'error': 'Slide file (PDF or PPTX) is required'}), 400
+        slides_file = request.files['pdf']
+        if slides_file.filename == '': return jsonify({'error': 'Slide file must be selected'}), 400
         job_id = str(uuid.uuid4())
-        pdf_path, slides_error = resolve_uploaded_slides_to_pdf(pdf_file, job_id)
+        pdf_path, slides_error = resolve_uploaded_slides_to_pdf(slides_file, job_id)
         if slides_error:
             return jsonify({'error': slides_error}), 400
         deducted = deduct_credit(uid, 'slides_credits')
@@ -4080,7 +4610,7 @@ def upload_files():
             cleanup_files([pdf_path], [])
             return jsonify({'error': 'No slides credits remaining.'}), 402
         total_steps = 2 if study_features != 'none' else 1
-        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None}
+        jobs[job_id] = {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'billing_receipt': initialize_billing_receipt({deducted: 1})}
         thread = threading.Thread(target=process_slides_only, args=(job_id, pdf_path))
         thread.start()
         
@@ -4088,15 +4618,28 @@ def upload_files():
         total_interview = user.get('interview_credits_short', 0) + user.get('interview_credits_medium', 0) + user.get('interview_credits_long', 0)
         if total_interview <= 0:
             return jsonify({'error': 'No interview credits remaining. Please purchase more credits.'}), 402
-        if 'audio' not in request.files: return jsonify({'error': 'Audio file is required'}), 400
-        audio_file = request.files['audio']
-        if audio_file.filename == '': return jsonify({'error': 'Audio file must be selected'}), 400
-        if not allowed_file(audio_file.filename, ALLOWED_AUDIO_EXTENSIONS): return jsonify({'error': 'Invalid audio file'}), 400
-        if (audio_file.mimetype or '').lower() not in ALLOWED_AUDIO_MIME_TYPES:
-            return jsonify({'error': 'Invalid audio content type'}), 400
+        uploaded_audio_file = request.files.get('audio')
+        has_uploaded_audio = bool(uploaded_audio_file and uploaded_audio_file.filename)
+        has_imported_audio = bool(audio_import_token)
+        if not has_uploaded_audio and not has_imported_audio:
+            return jsonify({'error': 'Audio file is required'}), 400
         job_id = str(uuid.uuid4())
-        audio_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{secure_filename(audio_file.filename)}")
-        audio_file.save(audio_path)
+        imported_audio_used = False
+        if has_uploaded_audio:
+            if not allowed_file(uploaded_audio_file.filename, ALLOWED_AUDIO_EXTENSIONS):
+                return jsonify({'error': 'Invalid audio file'}), 400
+            if (uploaded_audio_file.mimetype or '').lower() not in ALLOWED_AUDIO_MIME_TYPES:
+                return jsonify({'error': 'Invalid audio content type'}), 400
+            audio_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{secure_filename(uploaded_audio_file.filename)}")
+            uploaded_audio_file.save(audio_path)
+            if has_imported_audio:
+                release_audio_import_token(uid, audio_import_token)
+        else:
+            audio_path, token_error = get_audio_import_token_path(uid, audio_import_token, consume=False)
+            if token_error:
+                return jsonify({'error': token_error}), 400
+            imported_audio_used = True
+
         audio_size = get_saved_file_size(audio_path)
         if audio_size <= 0 or audio_size > MAX_AUDIO_UPLOAD_BYTES:
             cleanup_files([audio_path], [])
@@ -4118,6 +4661,14 @@ def upload_files():
                 refund_credit(uid, deducted)
                 cleanup_files([audio_path], [])
                 return jsonify({'error': 'Could not reserve slides credits for interview extras. Please try again.'}), 402
+        if imported_audio_used:
+            _consumed_path, token_error = get_audio_import_token_path(uid, audio_import_token, consume=True)
+            if token_error:
+                cleanup_files([audio_path], [])
+                refund_credit(uid, deducted)
+                if interview_features_cost > 0:
+                    refund_slides_credits(uid, interview_features_cost)
+                return jsonify({'error': token_error}), 400
         total_steps = 2 if interview_features_cost > 0 else 1
         jobs[job_id] = {
             'status': 'starting',
@@ -4144,7 +4695,8 @@ def upload_files():
             'interview_combined': None,
             'extra_slides_refunded': 0,
             'study_generation_error': None,
-            'error': None
+            'error': None,
+            'billing_receipt': initialize_billing_receipt({deducted: 1, 'slides_credits': interview_features_cost}),
         }
         thread = threading.Thread(target=process_interview_transcription, args=(job_id, audio_path))
         thread.start()
@@ -4175,13 +4727,14 @@ def get_status(job_id):
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
-    admin_access = is_admin_user(decoded_token)
-    job, source = get_job_snapshot(job_id, uid, allow_admin=admin_access)
-    if source == 'forbidden':
+    if job_id not in jobs: return jsonify({'error': 'Job not found'}), 404
+    job = jobs[job_id]
+    if job.get('user_id', '') != uid and not is_admin_user(decoded_token):
         return jsonify({'error': 'Forbidden'}), 403
-    if not job:
-        return jsonify({'error': 'Job not found'}), 404
     response = {'status': job['status'], 'step': job['step'], 'step_description': job['step_description'], 'total_steps': job.get('total_steps', 3), 'mode': job.get('mode', 'lecture-notes')}
+    billing_receipt = get_billing_receipt_snapshot(job)
+    if billing_receipt.get('charged') or billing_receipt.get('refunded'):
+        response['billing_receipt'] = billing_receipt
     if job['status'] == 'complete':
         response['result'] = job['result']
         response['flashcards'] = job.get('flashcards', [])
@@ -4211,19 +4764,17 @@ def download_docx(job_id):
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
-    admin_access = is_admin_user(decoded_token)
-    job, source = get_job_snapshot(job_id, uid, allow_admin=admin_access)
-    if source == 'forbidden':
+    if job_id not in jobs: return jsonify({'error': 'Job not found'}), 404
+    job = jobs[job_id]
+    if job.get('user_id', '') != uid and not is_admin_user(decoded_token):
         return jsonify({'error': 'Forbidden'}), 403
-    if not job:
-        return jsonify({'error': 'Job not found'}), 404
     if job['status'] != 'complete': return jsonify({'error': 'Job not complete'}), 400
     content_type = request.args.get('type', 'result')
     
     if content_type == 'slides' and job.get('slide_text'):
-        content, filename, title = job['slide_text'], 'extracted-slides.docx', 'Extracted Slides'
+        content, filename, title = job['slide_text'], 'slide-extract.docx', 'Slide Extract'
     elif content_type == 'transcript' and job.get('transcript'):
-        content, filename, title = job['transcript'], 'transcript.docx', 'Lecture Transcript'
+        content, filename, title = job['transcript'], 'lecture-transcript.docx', 'Lecture Transcript'
     elif content_type == 'summary' and job.get('interview_summary'):
         content, filename, title = job['interview_summary'], 'interview-summary.docx', 'Interview Summary'
     elif content_type == 'sections' and job.get('interview_sections'):
@@ -4234,7 +4785,7 @@ def download_docx(job_id):
         content = job['result']
         mode = job.get('mode', 'lecture-notes')
         if mode == 'lecture-notes': filename, title = 'lecture-notes.docx', 'Lecture Notes'
-        elif mode == 'slides-only': filename, title = 'extracted-slides.docx', 'Extracted Slides'
+        elif mode == 'slides-only': filename, title = 'slide-extract.docx', 'Slide Extract'
         else: filename, title = 'interview-transcript.docx', 'Interview Transcript'
         
     doc = markdown_to_docx(content, title)
@@ -4249,12 +4800,11 @@ def download_flashcards_csv(job_id):
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
-    admin_access = is_admin_user(decoded_token)
-    job, source = get_job_snapshot(job_id, uid, allow_admin=admin_access)
-    if source == 'forbidden':
-        return jsonify({'error': 'Forbidden'}), 403
-    if not job:
+    if job_id not in jobs:
         return jsonify({'error': 'Job not found'}), 404
+    job = jobs[job_id]
+    if job.get('user_id', '') != uid and not is_admin_user(decoded_token):
+        return jsonify({'error': 'Forbidden'}), 403
     if job.get('status') != 'complete':
         return jsonify({'error': 'Job not complete'}), 400
     export_type = request.args.get('type', 'flashcards').strip().lower()

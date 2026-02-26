@@ -4,71 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Terms of Service | Lecture Processor</title>
-  <style>
-    :root{
-      --primary:#4f46e5;
-      --secondary:#0ea5e9;
-      --gray-900:#0f172a;
-      --gray-700:#334155;
-      --gray-600:#475569;
-      --gray-500:#64748b;
-      --gray-300:#cbd5e1;
-      --gray-200:#e2e8f0;
-      --gray-100:#f1f5f9;
-      --white:#ffffff;
-      --radius:14px;
-      --shadow:0 16px 30px rgba(15,23,42,.08);
-    }
-    *{box-sizing:border-box}
-    body{
-      margin:0;
-      font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-      color:var(--gray-700);
-      background:linear-gradient(135deg,#f8fafc 0%,#eef2ff 55%,#f0f9ff 100%);
-      line-height:1.65;
-    }
-    .container{max-width:900px;margin:0 auto;padding:28px 18px 54px}
-    .back-link{
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-      color:var(--primary);
-      text-decoration:none;
-      font-weight:600;
-      margin-bottom:16px;
-    }
-    .card{
-      background:rgba(255,255,255,.94);
-      border:1px solid var(--gray-200);
-      border-radius:var(--radius);
-      box-shadow:var(--shadow);
-      padding:24px;
-    }
-    h1{margin:0 0 8px;color:var(--gray-900);font-size:2rem;line-height:1.2}
-    .meta{margin:0 0 18px;color:var(--gray-500);font-size:.94rem}
-    h2{margin:24px 0 8px;color:var(--gray-900);font-size:1.15rem}
-    p{margin:0 0 11px}
-    ul{margin:0 0 10px 20px;padding:0}
-    li{margin:0 0 6px}
-    .notice{
-      border:1px solid rgba(79,70,229,.22);
-      background:rgba(79,70,229,.07);
-      color:#312e81;
-      border-radius:12px;
-      padding:12px 14px;
-      margin:0 0 18px;
-      font-size:.93rem;
-    }
-    .footer{
-      margin-top:18px;
-      padding-top:14px;
-      border-top:1px solid var(--gray-200);
-      color:var(--gray-500);
-      font-size:.9rem;
-    }
-    .footer a{color:var(--primary);text-decoration:none}
-    .footer a:hover{text-decoration:underline}
-  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/legal-pages.css') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -86,7 +22,7 @@
       <h1>Terms of Service</h1>
       <p class="meta">Last updated: {{ last_updated }}</p>
       <div class="notice">
-        These terms are an operational baseline for launch and should be reviewed by qualified legal counsel before public/commercial release.
+        These terms are an operational baseline for a student-run project and should be reviewed by qualified legal counsel before public/commercial release.
       </div>
 
       <h2>1. Agreement</h2>
@@ -94,6 +30,7 @@
 
       <h2>2. Eligibility and Accounts</h2>
       <ul>
+        <li>You must be legally permitted to use this service in your jurisdiction.</li>
         <li>You must provide accurate account information and keep your login credentials secure.</li>
         <li>You are responsible for activity under your account.</li>
         <li>Access may be restricted to supported email domains/providers.</li>
@@ -101,12 +38,14 @@
 
       <h2>3. Service Description</h2>
       <p>Lecture Processor provides AI-assisted study tooling, including file processing, notes generation, flashcards, tests, transcripts, and study planning features.</p>
+      <p>The service may be offered as a beta product, and behavior, UI, or availability can change without prior notice.</p>
 
       <h2>4. Credits, Billing, and Purchases</h2>
       <ul>
         <li>Certain features require credits.</li>
         <li>Credits are purchased through Stripe checkout.</li>
         <li>Payment methods and billing details are handled by Stripe.</li>
+        <li>Credits are non-transferable, non-refundable by default, and have no cash value unless required by law.</li>
         <li>When processing fails due to internal errors, credits may be refunded according to current product logic.</li>
       </ul>
 
@@ -116,6 +55,7 @@
         <li>Use the service for unlawful, abusive, or fraudulent activities.</li>
         <li>Upload content you do not have the right to process.</li>
         <li>Attempt to disrupt, reverse engineer, scrape, overload, or bypass service protections.</li>
+        <li>Use generated output in a way that violates academic integrity rules or third-party rights.</li>
       </ul>
 
       <h2>6. Your Content and License</h2>
@@ -128,10 +68,11 @@
       <p>AI-generated content can be incomplete or inaccurate. You are responsible for verifying study outputs before relying on them for academic or professional use.</p>
 
       <h2>8. Availability and Changes</h2>
-      <p>The service may change over time and may be unavailable temporarily for maintenance, provider outages, or technical issues.</p>
+      <p>The service may change over time and may be unavailable temporarily for maintenance, provider outages, or technical issues. No specific uptime or service-level commitment is provided unless separately agreed in writing.</p>
 
       <h2>9. Suspension and Termination</h2>
       <p>We may suspend or terminate access for security risks, abuse, policy violations, non-payment, or legal requirements.</p>
+      <p>You can request account deletion via the in-app "Delete account and data" action, subject to active processing jobs and lawful record-retention requirements.</p>
 
       <h2>10. Warranty and Liability Limits</h2>
       <p>The service is provided on an “as is” and “as available” basis to the extent allowed by law. To the maximum extent permitted by law, we disclaim implied warranties and limit liability for indirect, incidental, special, consequential, or punitive damages.</p>

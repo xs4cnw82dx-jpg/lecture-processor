@@ -1,6 +1,6 @@
 # Launch Readiness Checklist
 
-Last updated: 2026-02-25
+Last updated: 2026-02-26
 
 This checklist tracks launch-critical items and current status with evidence.
 
@@ -79,6 +79,11 @@ This checklist tracks launch-critical items and current status with evidence.
     - Guardrails: confirmation phrase + email match + active-job block.
     - Deletes/anonymizes user data and removes auth user where possible.
 
+- [x] Formal retention + backup policy baseline
+  - Evidence:
+    - Operational document: `docs/DATA_RETENTION_BACKUP_POLICY.md`
+    - Covers retention classes, backup cadence targets, restore order, and pre-public-launch upgrade checklist.
+
 ## 4) Automated Verification
 
 - [x] Launch guardrail test suite added
@@ -93,7 +98,7 @@ This checklist tracks launch-critical items and current status with evidence.
   - Command:
     - `SENTRY_DSN_BACKEND='' SENTRY_DSN_FRONTEND='' ./venv/bin/python -m pytest -q tests/test_launch_guardrails.py`
   - Result:
-    - `12 passed`
+    - `23 passed`
 
 - [x] One-command smoke script added
   - Script: `scripts/run_smoke.sh`
@@ -113,5 +118,5 @@ This checklist tracks launch-critical items and current status with evidence.
 ## 5) Still Recommended Before Public Launch
 
 - [ ] Legal review by qualified counsel for Privacy/Terms text (important).
-- [ ] Add CI automation to run pytest on every commit/PR.
+- [x] CI automation to run pytest on every commit/PR.
 - [ ] Optional E2E browser tests (Playwright/Cypress) for full payment/upload UI journeys.

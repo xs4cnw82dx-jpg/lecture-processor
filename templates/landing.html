@@ -210,6 +210,15 @@
       font-size: 0.83rem;
       padding: 24px 0 34px;
     }
+    .footer a {
+      color: var(--gray-600);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .footer a:hover {
+      text-decoration: underline;
+      color: var(--primary);
+    }
 
     @media (max-width: 900px) {
       .value-grid { grid-template-columns: 1fr; }
@@ -275,18 +284,28 @@
     </section>
   </main>
 
-  <footer class="footer">Powered by Gemini AI · Made for students</footer>
+  <footer class="footer">Powered by Gemini AI · Made for students · <a href="/privacy">Privacy Policy</a> · <a href="/terms">Terms</a></footer>
 
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
   <script>
     var firebaseConfig={apiKey:"AIzaSyBAAeEUCPNvP5qnqpP3M6HnFZ6vaaijUvM",authDomain:"lecture-processor-cdff6.firebaseapp.com",projectId:"lecture-processor-cdff6",storageBucket:"lecture-processor-cdff6.firebasestorage.app",messagingSenderId:"374793454161",appId:"1:374793454161:web:c68b21590e9a1fafa32e70"};
     firebase.initializeApp(firebaseConfig);
     var auth=firebase.auth();
+    var topbarUtils=window.LectureProcessorTopbar||{};
     var dashboardBtnLabel=document.getElementById('dashboard-btn-label');
-    auth.onAuthStateChanged(function(user){
-      dashboardBtnLabel.textContent=user?'Dashboard':'Sign in';
-    });
+    if(topbarUtils.bindAuthCta){
+      topbarUtils.bindAuthCta(auth,{
+        labelEl:dashboardBtnLabel,
+        signedInText:'Dashboard',
+        signedOutText:'Sign in'
+      });
+    }else{
+      auth.onAuthStateChanged(function(user){
+        dashboardBtnLabel.textContent=user?'Dashboard':'Sign in';
+      });
+    }
   </script>
 </body>
 </html>

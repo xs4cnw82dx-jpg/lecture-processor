@@ -4,78 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Privacy Policy | Lecture Processor</title>
-  <style>
-    :root{
-      --primary:#4f46e5;
-      --secondary:#0ea5e9;
-      --gray-900:#0f172a;
-      --gray-700:#334155;
-      --gray-600:#475569;
-      --gray-500:#64748b;
-      --gray-300:#cbd5e1;
-      --gray-200:#e2e8f0;
-      --gray-100:#f1f5f9;
-      --white:#ffffff;
-      --radius:14px;
-      --shadow:0 16px 30px rgba(15,23,42,.08);
-    }
-    *{box-sizing:border-box}
-    body{
-      margin:0;
-      font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-      color:var(--gray-700);
-      background:linear-gradient(135deg,#f8fafc 0%,#eef2ff 55%,#f0f9ff 100%);
-      line-height:1.65;
-    }
-    .container{max-width:900px;margin:0 auto;padding:28px 18px 54px}
-    .back-link{
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-      color:var(--primary);
-      text-decoration:none;
-      font-weight:600;
-      margin-bottom:16px;
-    }
-    .card{
-      background:rgba(255,255,255,.94);
-      border:1px solid var(--gray-200);
-      border-radius:var(--radius);
-      box-shadow:var(--shadow);
-      padding:24px;
-    }
-    h1{margin:0 0 8px;color:var(--gray-900);font-size:2rem;line-height:1.2}
-    .meta{margin:0 0 18px;color:var(--gray-500);font-size:.94rem}
-    h2{margin:24px 0 8px;color:var(--gray-900);font-size:1.15rem}
-    p{margin:0 0 11px}
-    ul{margin:0 0 10px 20px;padding:0}
-    li{margin:0 0 6px}
-    .notice{
-      border:1px solid rgba(79,70,229,.22);
-      background:rgba(79,70,229,.07);
-      color:#312e81;
-      border-radius:12px;
-      padding:12px 14px;
-      margin:0 0 18px;
-      font-size:.93rem;
-    }
-    .footer{
-      margin-top:18px;
-      padding-top:14px;
-      border-top:1px solid var(--gray-200);
-      color:var(--gray-500);
-      font-size:.9rem;
-    }
-    .footer a{color:var(--primary);text-decoration:none}
-    .footer a:hover{text-decoration:underline}
-    code{
-      background:var(--gray-100);
-      padding:2px 6px;
-      border-radius:6px;
-      font-size:.9em;
-      color:var(--gray-900);
-    }
-  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/legal-pages.css') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -93,23 +22,26 @@
       <h1>Privacy Policy</h1>
       <p class="meta">Last updated: {{ last_updated }}</p>
       <div class="notice">
-        This policy explains what Lecture Processor stores and how that data is used. It is written in plain language and should be reviewed with legal counsel before public launch.
+        This policy explains what Lecture Processor stores and how that data is used. This document is an operational baseline for a student-run project and should be reviewed by qualified legal counsel before public/commercial launch.
       </div>
 
       <h2>1. Who This Applies To</h2>
       <p>This policy applies to your use of Lecture Processor, including the website, dashboard, study library, planner, and related features.</p>
 
-      <h2>2. Data We Collect</h2>
+      <h2>2. Service Operator</h2>
+      <p>Lecture Processor is operated by the project owner/maintainer (the "operator"). The operator determines how data in this app is processed and is the contact point for privacy requests.</p>
+
+      <h2>3. Data We Collect</h2>
       <p>Depending on how you use the service, we may collect:</p>
       <ul>
         <li>Account and sign-in data (for example email address, user ID, sign-in provider) through Firebase Authentication.</li>
         <li>Uploaded files and generated learning content (such as PDFs, audio files, transcripts, notes, flashcards, and practice questions).</li>
         <li>Study organization and progress data (such as folders, study packs, card states, goals, and planner entries).</li>
         <li>Purchase and credit data (for example bundle purchased, amount, currency, and Stripe session ID).</li>
-        <li>Operational and security logs (for example processing job logs, error details, and high-level event telemetry).</li>
+        <li>Operational and security logs (for example processing job logs, error details, rate-limit events, and high-level event telemetry).</li>
       </ul>
 
-      <h2>3. How We Use Data</h2>
+      <h2>4. How We Use Data</h2>
       <p>We process personal data to:</p>
       <ul>
         <li>Provide core features (file processing, study tools, credits, and account access).</li>
@@ -118,7 +50,16 @@
         <li>Improve product quality using aggregated operational metrics.</li>
       </ul>
 
-      <h2>4. Third-Party Processors</h2>
+      <h2>5. Legal Bases (EEA/UK-style Summary)</h2>
+      <p>Where applicable, we process data under one or more of these bases:</p>
+      <ul>
+        <li>Contract/performance: to provide requested features and account functionality.</li>
+        <li>Legitimate interests: to secure, monitor, and improve service reliability.</li>
+        <li>Consent: where a specific feature requires permission (for example browser notifications).</li>
+        <li>Legal obligations: to keep records where required by law.</li>
+      </ul>
+
+      <h2>6. Third-Party Processors</h2>
       <p>Lecture Processor relies on service providers that process data on our behalf, including:</p>
       <ul>
         <li>Google Firebase (authentication and database services).</li>
@@ -127,38 +68,49 @@
         <li>Sentry (error monitoring), when configured.</li>
       </ul>
 
-      <h2>5. Payments</h2>
+      <h2>7. Uploads, Audio, and Transcript Handling</h2>
+      <ul>
+        <li>Uploaded files are processed to generate study outputs.</li>
+        <li>For packs with playback features enabled, a processed audio file may be stored so playback and notes-to-audio sync can work.</li>
+        <li>Audio/transcript data can be removed by deleting the study pack or deleting the account.</li>
+      </ul>
+
+      <h2>8. Payments</h2>
       <p>Card details are processed by Stripe and are not stored on Lecture Processor servers. We store purchase metadata required for crediting, support, accounting, and fraud prevention.</p>
 
-      <h2>6. Data Retention</h2>
+      <h2>9. Data Retention</h2>
       <p>We retain data for as long as reasonably necessary to provide the service and meet legal obligations. Retention can vary by data type:</p>
       <ul>
         <li>Generated study packs and user study data are retained until removed by the user or by administrative cleanup.</li>
         <li>Temporary processing files are intended to be removed after processing completes.</li>
-        <li>Purchase and accounting records may be kept longer where required for legal, tax, or fraud-prevention obligations.</li>
+        <li>Stored study-pack audio files are removed when the corresponding pack or account is deleted (subject to technical failures).</li>
+        <li>Purchase/accounting records may be retained longer where required for legal, tax, audit, or fraud-prevention obligations.</li>
       </ul>
 
-      <h2>7. Security</h2>
+      <h2>10. Security</h2>
       <p>We use access controls, authentication checks, and server-side validation to reduce unauthorized access and abuse. No online system is fully risk-free, so absolute security cannot be guaranteed.</p>
 
-      <h2>8. International Processing</h2>
+      <h2>11. International Processing</h2>
       <p>Your data may be processed in countries where our infrastructure providers operate. Those transfers are handled through provider contractual safeguards where applicable.</p>
 
-      <h2>9. Your Rights</h2>
+      <h2>12. Your Rights</h2>
       <p>Depending on your jurisdiction, you may have rights to access, correct, delete, or export personal data, and to object to certain processing activities.</p>
       <p>You can request a self-service export or account/data deletion from the dashboard user menu when signed in.</p>
 
-      <h2>10. Requests and Contact</h2>
+      <h2>13. Requests and Contact</h2>
       {% if legal_contact_email %}
       <p>For privacy requests (access, deletion, export, correction), contact: <a href="mailto:{{ legal_contact_email }}">{{ legal_contact_email }}</a>.</p>
       {% else %}
       <p>For privacy requests (access, deletion, export, correction), contact the project owner through your support channel and include your account email and request type.</p>
       {% endif %}
 
-      <h2>11. Local Storage and Browser Data</h2>
+      <h2>14. Local Storage and Browser Data</h2>
       <p>The app may use browser storage (for example <code>localStorage</code>) to keep UI preferences and cached study state. Clearing browser data may remove locally cached values.</p>
 
-      <h2>12. Changes to This Policy</h2>
+      <h2>15. Children</h2>
+      <p>This service is intended for students and adult learners and is not designed for children under the age required by applicable law in your region.</p>
+
+      <h2>16. Changes to This Policy</h2>
       <p>We may update this page when product behavior or legal requirements change. Material changes should be reflected by an updated date above.</p>
 
       <div class="footer">
