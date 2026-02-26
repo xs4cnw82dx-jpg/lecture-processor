@@ -1874,6 +1874,17 @@ def resolve_progress_timezone(progress_data):
             pass
     return timezone.utc, 'UTC'
 
+def resolve_user_timezone(uid):
+    safe_uid = str(uid or '').strip()
+    if not safe_uid or not db:
+        return timezone.utc, 'UTC'
+    try:
+        progress_doc = get_study_progress_doc(safe_uid).get()
+        progress_data = progress_doc.to_dict() if progress_doc.exists else {}
+        return resolve_progress_timezone(progress_data)
+    except Exception:
+        return timezone.utc, 'UTC'
+
 def to_timezone_now(base_now, tzinfo):
     base = base_now
     if base is None:
@@ -2765,13 +2776,16 @@ def save_study_pack(job_id, job_data):
 
         doc_ref = db.collection('study_packs').document()
         now_ts = time.time()
+        tzinfo, timezone_name = resolve_user_timezone(job_data.get('user_id', ''))
+        local_title_time = datetime.fromtimestamp(now_ts, tz=timezone.utc).astimezone(tzinfo)
         doc_ref.set({
             'study_pack_id': doc_ref.id,
             'source_job_id': job_id,
             'uid': job_data.get('user_id', ''),
             'email': job_data.get('user_email', ''),
             'mode': job_data.get('mode', ''),
-            'title': f"{job_data.get('mode', 'study-pack')} {datetime.utcfromtimestamp(now_ts).strftime('%Y-%m-%d %H:%M')}",
+            'title': f"{job_data.get('mode', 'study-pack')} {local_title_time.strftime('%Y-%m-%d %H:%M')}",
+            'title_timezone': timezone_name,
             'output_language': job_data.get('output_language', 'English'),
             'notes_markdown': notes_markdown,
             'notes_truncated': notes_truncated,
