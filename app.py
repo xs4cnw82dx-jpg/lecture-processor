@@ -2292,6 +2292,124 @@ def save_study_pack(job_id, job_data):
     except Exception as e:
         print(f"❌ Failed to save study pack for job {job_id}: {e}")
 
+def get_study_pack_for_job(job_id, uid='', allow_admin=False):
+    if not db or not job_id:
+        return None
+    try:
+        docs = db.collection('study_packs').where('source_job_id', '==', job_id).limit(5).stream()
+        for doc in docs:
+            pack = doc.to_dict() or {}
+            pack_uid = str(pack.get('uid', '') or '')
+            if allow_admin or (uid and pack_uid == uid):
+                pack['study_pack_id'] = pack.get('study_pack_id') or doc.id
+                return pack
+    except Exception as e:
+        print(f"⚠️ Could not resolve study pack by job id {job_id}: {e}")
+    return None
+
+def build_complete_job_snapshot_from_pack(pack):
+    mode = str(pack.get('mode', '') or 'lecture-notes')
+    result_text = str(pack.get('notes_markdown', '') or '')
+    snapshot = {
+        'status': 'complete',
+        'step': 1,
+        'step_description': 'Complete!',
+        'total_steps': 1,
+        'mode': mode,
+        'result': result_text,
+        'flashcards': pack.get('flashcards', []) if isinstance(pack.get('flashcards', []), list) else [],
+        'test_questions': pack.get('test_questions', []) if isinstance(pack.get('test_questions', []), list) else [],
+        'study_generation_error': pack.get('study_generation_error'),
+        'study_pack_id': pack.get('study_pack_id', ''),
+        'study_features': pack.get('study_features', 'none'),
+        'output_language': pack.get('output_language', 'English'),
+        'interview_features': pack.get('interview_features', []) if isinstance(pack.get('interview_features', []), list) else [],
+        'interview_features_successful': [],
+        'interview_summary': pack.get('interview_summary'),
+        'interview_sections': pack.get('interview_sections'),
+        'interview_combined': pack.get('interview_combined'),
+    }
+    if mode == 'interview':
+        snapshot['transcript'] = result_text
+    return snapshot
+
+def get_job_log_for_job(job_id, uid='', allow_admin=False):
+    if not db or not job_id:
+        return None
+    try:
+        doc = db.collection('job_logs').document(job_id).get()
+        if not doc.exists:
+            return None
+        log = doc.to_dict() or {}
+        if allow_admin:
+            return log
+        if uid and str(log.get('uid', '') or '') == uid:
+            return log
+    except Exception as e:
+        print(f"⚠️ Could not resolve job log by job id {job_id}: {e}")
+    return None
+
+def user_started_job(job_id, uid):
+    if not db or not job_id or not uid:
+        return False
+    try:
+        docs = (
+            db.collection('analytics_events')
+            .where('uid', '==', uid)
+            .where('session_id', '==', job_id)
+            .limit(1)
+            .stream()
+        )
+        for _ in docs:
+            return True
+    except Exception as e:
+        print(f"⚠️ Could not verify analytics event for job {job_id}: {e}")
+    return False
+
+def get_job_snapshot(job_id, uid, allow_admin=False):
+    if job_id in jobs:
+        job = jobs[job_id]
+        if allow_admin or job.get('user_id', '') == uid:
+            return job, 'memory'
+        return None, 'forbidden'
+
+    pack = get_study_pack_for_job(job_id, uid=uid, allow_admin=allow_admin)
+    if pack:
+        return build_complete_job_snapshot_from_pack(pack), 'pack'
+
+    log = get_job_log_for_job(job_id, uid=uid, allow_admin=allow_admin)
+    if log:
+        log_status = str(log.get('status', '') or '').strip().lower()
+        if log_status == 'error':
+            return {
+                'status': 'error',
+                'step': 0,
+                'step_description': 'Processing failed.',
+                'total_steps': 1,
+                'mode': str(log.get('mode', '') or 'lecture-notes'),
+                'error': str(log.get('error_message', '') or 'Processing failed.'),
+                'credit_refunded': bool(log.get('credit_refunded', False)),
+            }, 'log'
+        if log_status == 'complete':
+            return {
+                'status': 'processing',
+                'step': 0,
+                'step_description': 'Finalizing your study pack...',
+                'total_steps': 1,
+                'mode': str(log.get('mode', '') or 'lecture-notes'),
+            }, 'log'
+
+    if user_started_job(job_id, uid):
+        return {
+            'status': 'processing',
+            'step': 0,
+            'step_description': 'Processing is still running. Checking again...',
+            'total_steps': 1,
+            'mode': 'lecture-notes',
+        }, 'analytics'
+
+    return None, 'missing'
+
 # =============================================
 # AI PROCESSING FUNCTIONS
 # =============================================
@@ -4057,10 +4175,12 @@ def get_status(job_id):
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
-    if job_id not in jobs: return jsonify({'error': 'Job not found'}), 404
-    job = jobs[job_id]
-    if job.get('user_id', '') != uid and not is_admin_user(decoded_token):
+    admin_access = is_admin_user(decoded_token)
+    job, source = get_job_snapshot(job_id, uid, allow_admin=admin_access)
+    if source == 'forbidden':
         return jsonify({'error': 'Forbidden'}), 403
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
     response = {'status': job['status'], 'step': job['step'], 'step_description': job['step_description'], 'total_steps': job.get('total_steps', 3), 'mode': job.get('mode', 'lecture-notes')}
     if job['status'] == 'complete':
         response['result'] = job['result']
@@ -4091,10 +4211,12 @@ def download_docx(job_id):
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
-    if job_id not in jobs: return jsonify({'error': 'Job not found'}), 404
-    job = jobs[job_id]
-    if job.get('user_id', '') != uid and not is_admin_user(decoded_token):
+    admin_access = is_admin_user(decoded_token)
+    job, source = get_job_snapshot(job_id, uid, allow_admin=admin_access)
+    if source == 'forbidden':
         return jsonify({'error': 'Forbidden'}), 403
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
     if job['status'] != 'complete': return jsonify({'error': 'Job not complete'}), 400
     content_type = request.args.get('type', 'result')
     
@@ -4127,11 +4249,12 @@ def download_flashcards_csv(job_id):
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
-    if job_id not in jobs:
-        return jsonify({'error': 'Job not found'}), 404
-    job = jobs[job_id]
-    if job.get('user_id', '') != uid and not is_admin_user(decoded_token):
+    admin_access = is_admin_user(decoded_token)
+    job, source = get_job_snapshot(job_id, uid, allow_admin=admin_access)
+    if source == 'forbidden':
         return jsonify({'error': 'Forbidden'}), 403
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
     if job.get('status') != 'complete':
         return jsonify({'error': 'Job not complete'}), 400
     export_type = request.args.get('type', 'flashcards').strip().lower()
