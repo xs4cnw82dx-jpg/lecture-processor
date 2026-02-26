@@ -203,6 +203,7 @@ SENTRY_ENVIRONMENT = (os.getenv('SENTRY_ENVIRONMENT', os.getenv('FLASK_ENV', 'pr
 SENTRY_RELEASE = (os.getenv('SENTRY_RELEASE', 'lecture-processor') or 'lecture-processor').strip()
 LEGAL_CONTACT_EMAIL = (os.getenv('LEGAL_CONTACT_EMAIL', os.getenv('SUPPORT_EMAIL', '')) or '').strip()
 DEV_ENV_NAMES = {'development', 'dev', 'local', 'test'}
+APP_BOOT_TS = time.time()
 
 def safe_float_env(name, default=0.0):
     raw = os.getenv(name, str(default)).strip()
@@ -228,6 +229,75 @@ def is_dev_environment():
     env_value = str(SENTRY_ENVIRONMENT or '').strip().lower()
     flask_debug = str(os.getenv('FLASK_DEBUG', '0')).strip().lower() in {'1', 'true', 'yes', 'on'}
     return env_value in DEV_ENV_NAMES or flask_debug
+
+
+def infer_stripe_key_mode(key_value):
+    key = str(key_value or '').strip()
+    if not key:
+        return 'missing'
+    if key.startswith('sk_live_') or key.startswith('pk_live_'):
+        return 'live'
+    if key.startswith('sk_test_') or key.startswith('pk_test_'):
+        return 'test'
+    return 'unknown'
+
+
+def build_admin_deployment_info(request_host=''):
+    request_host = str(request_host or '').strip()
+    request_hostname = request_host.split(':', 1)[0].strip().lower()
+    render_hostname = str(os.getenv('RENDER_EXTERNAL_HOSTNAME', '') or '').strip().lower()
+    render_external_url = str(os.getenv('RENDER_EXTERNAL_URL', '') or '').strip()
+    render_service_id = str(os.getenv('RENDER_SERVICE_ID', '') or '').strip()
+    render_deploy_id = str(os.getenv('RENDER_DEPLOY_ID', '') or '').strip()
+    render_instance_id = str(os.getenv('RENDER_INSTANCE_ID', '') or '').strip()
+    render_service_name = str(os.getenv('RENDER_SERVICE_NAME', '') or '').strip()
+    render_git_commit = str(os.getenv('RENDER_GIT_COMMIT', '') or '').strip()
+    render_git_branch = str(os.getenv('RENDER_GIT_BRANCH', '') or '').strip()
+    render_detected = bool(str(os.getenv('RENDER', '') or '').strip() or render_service_id or render_deploy_id)
+    host_matches_render = None
+    if render_hostname and request_hostname:
+        host_matches_render = request_hostname == render_hostname
+    return {
+        'runtime': 'render' if render_detected else 'local',
+        'request_host': request_host,
+        'request_hostname': request_hostname,
+        'render_external_hostname': render_hostname,
+        'render_external_url': render_external_url,
+        'host_matches_render': host_matches_render,
+        'service_id': render_service_id,
+        'service_name': render_service_name,
+        'deploy_id': render_deploy_id,
+        'instance_id': render_instance_id,
+        'git_branch': render_git_branch,
+        'git_commit': render_git_commit,
+        'git_commit_short': (render_git_commit[:12] if render_git_commit else ''),
+        'app_boot_ts': APP_BOOT_TS,
+        'app_uptime_seconds': max(0, round(time.time() - APP_BOOT_TS, 1)),
+    }
+
+
+def build_admin_runtime_checks():
+    secret_key_mode = infer_stripe_key_mode(stripe.api_key)
+    publishable_key_mode = infer_stripe_key_mode(STRIPE_PUBLISHABLE_KEY)
+    stripe_keys_match = (
+        secret_key_mode in {'live', 'test'}
+        and publishable_key_mode in {'live', 'test'}
+        and secret_key_mode == publishable_key_mode
+    )
+    soffice_available = bool(get_soffice_binary())
+    ffmpeg_available = bool(get_ffmpeg_binary())
+    ytdlp_available = bool(shutil.which('yt-dlp'))
+    return {
+        'firebase_ready': bool(db),
+        'gemini_ready': bool(client),
+        'stripe_secret_mode': secret_key_mode,
+        'stripe_publishable_mode': publishable_key_mode,
+        'stripe_keys_match': stripe_keys_match,
+        'pptx_conversion_available': soffice_available,
+        'video_import_available': (ffmpeg_available and ytdlp_available),
+        'ffmpeg_available': ffmpeg_available,
+        'yt_dlp_available': ytdlp_available,
+    }
 
 @app.before_request
 def attach_sentry_route_context():
@@ -4313,6 +4383,8 @@ def get_admin_overview():
             'recent_jobs': recent_jobs,
             'recent_purchases': recent_purchases,
             'recent_rate_limits': recent_rate_limits,
+            'deployment': build_admin_deployment_info(request.host),
+            'runtime_checks': build_admin_runtime_checks(),
         })
     except Exception as e:
         print(f"Error fetching admin overview: {e}")
