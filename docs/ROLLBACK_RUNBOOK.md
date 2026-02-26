@@ -35,18 +35,22 @@ Prefer fix-forward (no rollback) if all are true:
 2. Identify current deploy version:
    - GitHub tag/commit currently live.
    - Render deploy ID currently live.
-3. Check these dashboards in order:
+3. Confirm only one production web service is active:
+   - Keep exactly one service as canonical production.
+   - If a second service exists (old/duplicate), set it to manual deploy + zero traffic or delete it after verification.
+   - Ensure Firebase Authorized Domains includes the canonical host only (and localhost/dev domains as needed).
+4. Check these dashboards in order:
    - Sentry (new errors, release, route tags).
-   - Admin dashboard (`/admin`): success rate, failed jobs, rate-limit spikes.
+   - Admin dashboard (`/admin`): success rate, failed jobs, rate-limit spikes, deployment sanity panel.
    - Render logs: startup/runtime exceptions.
-4. Run production smoke check from terminal:
+5. Run production smoke check from terminal:
 
 ```bash
 cd /Users/jaccovandermeulen/Desktop/lecture-processor
 ./venv/bin/python scripts/smoke_test.py --base-url https://lecture-processor.onrender.com
 ```
 
-5. Decide: `rollback now` or `fix-forward now` using trigger rules above.
+6. Decide: `rollback now` or `fix-forward now` using trigger rules above.
 
 ## Render Rollback (UI Steps)
 

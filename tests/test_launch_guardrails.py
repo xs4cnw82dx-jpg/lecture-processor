@@ -37,6 +37,43 @@ def test_verify_email_blocks_unknown_domain(client):
     assert "university email" in body["message"].lower()
 
 
+def test_build_admin_deployment_info_detects_render_host(monkeypatch):
+    monkeypatch.setenv("RENDER", "true")
+    monkeypatch.setenv("RENDER_SERVICE_NAME", "lecture-processor")
+    monkeypatch.setenv("RENDER_SERVICE_ID", "srv-123")
+    monkeypatch.setenv("RENDER_EXTERNAL_HOSTNAME", "lecture-processor-1.onrender.com")
+    monkeypatch.setenv("RENDER_GIT_BRANCH", "main")
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "abcdef1234567890")
+
+    info = app_module.build_admin_deployment_info("lecture-processor-1.onrender.com")
+    assert info["runtime"] == "render"
+    assert info["service_name"] == "lecture-processor"
+    assert info["git_commit_short"] == "abcdef123456"
+    assert info["host_matches_render"] is True
+
+    mismatch = app_module.build_admin_deployment_info("other-host.onrender.com")
+    assert mismatch["host_matches_render"] is False
+
+
+def test_build_admin_runtime_checks_reports_tool_and_stripe_state(monkeypatch):
+    monkeypatch.setattr(app_module.stripe, "api_key", "sk_test_123")
+    monkeypatch.setattr(app_module, "STRIPE_PUBLISHABLE_KEY", "pk_test_123")
+    monkeypatch.setattr(app_module, "get_soffice_binary", lambda: "/usr/bin/soffice")
+    monkeypatch.setattr(app_module, "get_ffmpeg_binary", lambda: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(app_module.shutil, "which", lambda name: "/usr/bin/yt-dlp" if name == "yt-dlp" else "")
+    monkeypatch.setattr(app_module, "db", object())
+    monkeypatch.setattr(app_module, "client", object())
+
+    checks = app_module.build_admin_runtime_checks()
+    assert checks["stripe_secret_mode"] == "test"
+    assert checks["stripe_publishable_mode"] == "test"
+    assert checks["stripe_keys_match"] is True
+    assert checks["pptx_conversion_available"] is True
+    assert checks["video_import_available"] is True
+    assert checks["firebase_ready"] is True
+    assert checks["gemini_ready"] is True
+
+
 def test_auth_user_includes_preferences(client, monkeypatch):
     monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "pref-u1", "email": "user@gmail.com"})
     monkeypatch.setattr(app_module, "is_email_allowed", lambda _email: True)

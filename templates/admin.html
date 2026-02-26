@@ -55,6 +55,50 @@
             padding: 10px;
             flex-wrap: wrap;
         }
+        .deploy-panel {
+            margin-bottom: 12px;
+        }
+        .deploy-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .deploy-item {
+            border: 1px solid #EEF2FF;
+            border-radius: 10px;
+            background: #F8FAFC;
+            padding: 10px;
+            min-height: 74px;
+        }
+        .deploy-item .label {
+            color: var(--muted);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 6px;
+            display: block;
+        }
+        .deploy-item .value {
+            color: var(--text);
+            font-size: 0.9rem;
+            font-weight: 700;
+            line-height: 1.35;
+            word-break: break-word;
+        }
+        .deploy-badges {
+            margin-top: 10px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .status.warn {
+            color: #7C2D12;
+            background: #FFEDD5;
+        }
+        .status.ok {
+            color: #065F46;
+            background: #D1FAE5;
+        }
         .btn {
             border: 1px solid var(--border);
             background: #fff;
@@ -247,6 +291,7 @@
             .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
             .charts { grid-template-columns: 1fr; }
             .grid { grid-template-columns: 1fr; }
+            .deploy-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
         @media (max-width: 720px) {
             .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -254,6 +299,7 @@
             .mode-value { text-align: left; }
             .funnel-row { grid-template-columns: 1fr; }
             .funnel-count, .funnel-conversion { text-align: left; }
+            .deploy-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -284,6 +330,34 @@
         <div id="state-area" class="loading">Loading admin dashboard...</div>
 
         <div id="dashboard" style="display:none;">
+            <section class="panel deploy-panel">
+                <h2>Deployment Sanity</h2>
+                <div class="deploy-grid">
+                    <article class="deploy-item">
+                        <span class="label">Runtime</span>
+                        <div class="value" id="d-runtime">-</div>
+                    </article>
+                    <article class="deploy-item">
+                        <span class="label">Service</span>
+                        <div class="value" id="d-service">-</div>
+                    </article>
+                    <article class="deploy-item">
+                        <span class="label">Git</span>
+                        <div class="value" id="d-git">-</div>
+                    </article>
+                    <article class="deploy-item">
+                        <span class="label">Host</span>
+                        <div class="value" id="d-host">-</div>
+                    </article>
+                </div>
+                <div class="deploy-badges">
+                    <span class="status other" id="d-host-badge">Host check pending</span>
+                    <span class="status other" id="d-stripe-badge">Stripe mode check pending</span>
+                    <span class="status other" id="d-pptx-badge">PPTX check pending</span>
+                    <span class="status other" id="d-video-badge">Video import check pending</span>
+                </div>
+            </section>
+
             <section class="metrics">
                 <article class="metric"><div class="label">Total users</div><div class="value" id="m-users">0</div><div class="sub" id="m-users-sub">0 new in window</div></article>
                 <article class="metric"><div class="label">Jobs in window</div><div class="value" id="m-jobs">0</div></article>
@@ -412,6 +486,14 @@
         const exportPurchasesBtn = document.getElementById('export-purchases-btn');
         const exportFunnelBtn = document.getElementById('export-funnel-btn');
         const exportFunnelDailyBtn = document.getElementById('export-funnel-daily-btn');
+        const deploymentRuntime = document.getElementById('d-runtime');
+        const deploymentService = document.getElementById('d-service');
+        const deploymentGit = document.getElementById('d-git');
+        const deploymentHost = document.getElementById('d-host');
+        const deploymentHostBadge = document.getElementById('d-host-badge');
+        const deploymentStripeBadge = document.getElementById('d-stripe-badge');
+        const deploymentPptxBadge = document.getElementById('d-pptx-badge');
+        const deploymentVideoBadge = document.getElementById('d-video-badge');
 
         let currentWindow = '7d';
         let currentModeView = 'total';
@@ -450,6 +532,12 @@
             if (key === 'checkout') return 'Checkout';
             if (key === 'analytics') return 'Analytics';
             return 'Other';
+        }
+
+        function setStatusBadge(el, label, ok) {
+            if (!el) return;
+            el.textContent = label;
+            el.className = `status ${ok ? 'ok' : 'warn'}`;
         }
 
         function setState(message, type = 'loading') {
@@ -595,6 +683,41 @@
             const m = data.metrics || {};
             const t = data.trends || {};
             const successRate = m.job_count > 0 ? Math.round((m.success_jobs / m.job_count) * 100) : 0;
+            const deployment = data.deployment || {};
+            const runtimeChecks = data.runtime_checks || {};
+
+            deploymentRuntime.textContent = deployment.runtime || '-';
+            deploymentService.textContent = deployment.service_name || deployment.service_id || '-';
+            deploymentGit.textContent = deployment.git_commit_short ? `${deployment.git_branch || '-'} · ${deployment.git_commit_short}` : (deployment.git_branch || '-');
+            deploymentHost.textContent = deployment.request_host || '-';
+
+            const hostMatchKnown = typeof deployment.host_matches_render === 'boolean';
+            if (!hostMatchKnown) {
+                setStatusBadge(deploymentHostBadge, 'Host check: no Render hostname configured', true);
+            } else if (deployment.host_matches_render) {
+                setStatusBadge(deploymentHostBadge, `Host check: matches ${deployment.render_external_hostname}`, true);
+            } else {
+                setStatusBadge(deploymentHostBadge, `Host check: mismatch (expected ${deployment.render_external_hostname})`, false);
+            }
+
+            const stripeSecretMode = runtimeChecks.stripe_secret_mode || 'missing';
+            const stripePublishableMode = runtimeChecks.stripe_publishable_mode || 'missing';
+            const stripeOk = Boolean(runtimeChecks.stripe_keys_match);
+            setStatusBadge(
+                deploymentStripeBadge,
+                `Stripe keys: secret=${stripeSecretMode}, publishable=${stripePublishableMode}`,
+                stripeOk
+            );
+            setStatusBadge(
+                deploymentPptxBadge,
+                runtimeChecks.pptx_conversion_available ? 'PPTX conversion: available' : 'PPTX conversion: unavailable',
+                Boolean(runtimeChecks.pptx_conversion_available)
+            );
+            setStatusBadge(
+                deploymentVideoBadge,
+                runtimeChecks.video_import_available ? 'Video import toolchain: available' : 'Video import toolchain: unavailable',
+                Boolean(runtimeChecks.video_import_available)
+            );
 
             document.getElementById('m-users').textContent = m.total_users || 0;
             document.getElementById('m-users-sub').textContent = `${m.new_users || 0} new in window`;
@@ -670,13 +793,19 @@
             });
             renderRows('purchases-body', purchaseRows, 'No purchases found in selected window.', 3);
 
-            const rateLimitRows = (data.recent_rate_limits || []).map((entry) => `
-                <tr>
-                    <td>${formatDate(entry.created_at)}</td>
-                    <td>${formatRateLimitLabel(entry.limit_name)}</td>
-                    <td>${entry.retry_after_seconds || 0}s</td>
-                </tr>
-            `);
+            const rateLimitRows = (data.recent_rate_limits || []).map((entry) => {
+                const tr = document.createElement('tr');
+                const tdTime = document.createElement('td');
+                tdTime.textContent = formatDate(entry.created_at);
+                const tdLimiter = document.createElement('td');
+                tdLimiter.textContent = formatRateLimitLabel(entry.limit_name);
+                const tdRetry = document.createElement('td');
+                tdRetry.textContent = `${entry.retry_after_seconds || 0}s`;
+                tr.appendChild(tdTime);
+                tr.appendChild(tdLimiter);
+                tr.appendChild(tdRetry);
+                return tr;
+            });
             renderRows('rate-limit-body', rateLimitRows, 'No rate-limit hits found in selected window.', 3);
 
             stateArea.style.display = 'none';
