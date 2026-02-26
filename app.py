@@ -6,6 +6,7 @@ import io
 import json
 import csv
 import re
+import zipfile
 import shutil
 import subprocess
 import html
@@ -61,12 +62,20 @@ load_dotenv()
 app = Flask(__name__)
 
 UPLOAD_FOLDER = 'uploads'
-ALLOWED_PDF_EXTENSIONS = {'pdf'}
+ALLOWED_SLIDE_EXTENSIONS = {'pdf', 'pptx'}
+ALLOWED_PDF_EXTENSIONS = ALLOWED_SLIDE_EXTENSIONS
 ALLOWED_AUDIO_EXTENSIONS = {'mp3', 'm4a', 'wav', 'aac', 'ogg', 'flac'}
 MAX_PDF_UPLOAD_BYTES = 50 * 1024 * 1024
 MAX_AUDIO_UPLOAD_BYTES = 500 * 1024 * 1024
 MAX_CONTENT_LENGTH = (MAX_PDF_UPLOAD_BYTES + MAX_AUDIO_UPLOAD_BYTES + (10 * 1024 * 1024))
-ALLOWED_PDF_MIME_TYPES = {'application/pdf', 'application/x-pdf', 'application/octet-stream'}
+ALLOWED_SLIDE_MIME_TYPES = {
+    'application/pdf',
+    'application/x-pdf',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/vnd.ms-powerpoint',
+    'application/octet-stream',
+}
+ALLOWED_PDF_MIME_TYPES = ALLOWED_SLIDE_MIME_TYPES
 ALLOWED_AUDIO_MIME_TYPES = {
     'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/x-wav',
     'audio/aac', 'audio/ogg', 'audio/flac', 'application/octet-stream'
@@ -1570,6 +1579,114 @@ def file_has_pdf_signature(path):
     except Exception:
         return False
 
+def file_has_pptx_signature(path):
+    try:
+        with open(path, 'rb') as handle:
+            if handle.read(4) != b'PK\x03\x04':
+                return False
+        with zipfile.ZipFile(path, 'r') as archive:
+            members = set(archive.namelist())
+        return '[Content_Types].xml' in members and 'ppt/presentation.xml' in members
+    except Exception:
+        return False
+
+def get_soffice_binary():
+    preferred = str(os.getenv('LIBREOFFICE_BIN', '') or '').strip()
+    if preferred:
+        candidate = shutil.which(preferred) if os.path.basename(preferred) == preferred else preferred
+        if candidate and os.path.exists(candidate):
+            return candidate
+    for name in ('soffice', 'libreoffice'):
+        candidate = shutil.which(name)
+        if candidate:
+            return candidate
+    for fallback in (
+        '/usr/bin/soffice',
+        '/usr/local/bin/soffice',
+        '/usr/lib/libreoffice/program/soffice',
+        '/usr/bin/libreoffice',
+    ):
+        if os.path.exists(fallback):
+            return fallback
+    return ''
+
+def convert_pptx_to_pdf(source_path, target_pdf_path):
+    soffice_bin = get_soffice_binary()
+    if not soffice_bin:
+        return '', 'PowerPoint conversion is unavailable on this server. Please upload a PDF instead.'
+    output_dir = os.path.dirname(target_pdf_path) or '.'
+    os.makedirs(output_dir, exist_ok=True)
+    cmd = [
+        soffice_bin,
+        '--headless',
+        '--nologo',
+        '--nolockcheck',
+        '--nodefault',
+        '--convert-to', 'pdf',
+        '--outdir', output_dir,
+        source_path,
+    ]
+    try:
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=180)
+    except Exception as e:
+        return '', f'Could not convert PPTX to PDF ({str(e)[:180]}).'
+    if result.returncode != 0:
+        stderr = (result.stderr or result.stdout or '').strip().splitlines()
+        reason = stderr[-1] if stderr else 'conversion process failed'
+        return '', f'Could not convert PPTX to PDF ({reason[:220]}).'
+    expected_path = target_pdf_path
+    if not os.path.exists(expected_path):
+        basename = os.path.splitext(os.path.basename(source_path))[0]
+        fallback_path = os.path.join(output_dir, f'{basename}.pdf')
+        if os.path.exists(fallback_path):
+            expected_path = fallback_path
+    if not os.path.exists(expected_path):
+        return '', 'PowerPoint conversion finished but no PDF output was found.'
+    return expected_path, ''
+
+def resolve_uploaded_slides_to_pdf(uploaded_file, job_id):
+    if not uploaded_file or not uploaded_file.filename:
+        return '', 'Slide file is required'
+    if not allowed_file(uploaded_file.filename, ALLOWED_SLIDE_EXTENSIONS):
+        return '', 'Invalid slide file. Please upload PDF or PPTX.'
+    mime_type = str(uploaded_file.mimetype or '').lower()
+    if mime_type not in ALLOWED_SLIDE_MIME_TYPES:
+        return '', 'Invalid slide content type'
+    safe_name = secure_filename(uploaded_file.filename)
+    source_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{safe_name}")
+    uploaded_file.save(source_path)
+    source_size = get_saved_file_size(source_path)
+    if source_size <= 0 or source_size > MAX_PDF_UPLOAD_BYTES:
+        cleanup_files([source_path], [])
+        return '', 'Slide file exceeds server limit (max 50MB) or is empty.'
+    extension = safe_name.rsplit('.', 1)[1].lower() if '.' in safe_name else ''
+    if extension == 'pdf':
+        if not file_has_pdf_signature(source_path):
+            cleanup_files([source_path], [])
+            return '', 'Uploaded PDF file is invalid.'
+        return source_path, ''
+    if extension != 'pptx' or not file_has_pptx_signature(source_path):
+        cleanup_files([source_path], [])
+        return '', 'Uploaded PPTX file is invalid.'
+    converted_target = os.path.join(UPLOAD_FOLDER, f"{job_id}_slides_converted.pdf")
+    converted_pdf_path, conversion_error = convert_pptx_to_pdf(source_path, converted_target)
+    try:
+        if os.path.exists(source_path):
+            os.remove(source_path)
+    except Exception:
+        pass
+    if conversion_error:
+        cleanup_files([converted_target], [])
+        return '', conversion_error
+    converted_size = get_saved_file_size(converted_pdf_path)
+    if converted_size <= 0 or converted_size > MAX_PDF_UPLOAD_BYTES:
+        cleanup_files([converted_pdf_path], [])
+        return '', 'Converted PDF exceeds server limit (max 50MB) or is empty.'
+    if not file_has_pdf_signature(converted_pdf_path):
+        cleanup_files([converted_pdf_path], [])
+        return '', 'Converted PDF file is invalid.'
+    return converted_pdf_path, ''
+
 def file_has_audio_signature(path):
     try:
         with open(path, 'rb') as handle:
@@ -1626,7 +1743,16 @@ def get_saved_file_size(path):
 
 def get_mime_type(filename):
     ext = filename.rsplit('.', 1)[1].lower()
-    mime_types = {'pdf': 'application/pdf', 'mp3': 'audio/mpeg', 'm4a': 'audio/mp4', 'wav': 'audio/wav', 'aac': 'audio/aac', 'ogg': 'audio/ogg', 'flac': 'audio/flac'}
+    mime_types = {
+        'pdf': 'application/pdf',
+        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'mp3': 'audio/mpeg',
+        'm4a': 'audio/mp4',
+        'wav': 'audio/wav',
+        'aac': 'audio/aac',
+        'ogg': 'audio/ogg',
+        'flac': 'audio/flac'
+    }
     return mime_types.get(ext, 'application/octet-stream')
 
 def wait_for_file_processing(uploaded_file):
@@ -3786,38 +3912,29 @@ def upload_files():
     study_features = parse_study_features(request.form.get('study_features', 'none'))
     interview_features = parse_interview_features(request.form.get('interview_features', 'none'))
     if request.content_length and request.content_length > MAX_CONTENT_LENGTH:
-        return jsonify({'error': 'Upload too large. Maximum total upload size is 560MB (up to 50MB PDF and 500MB audio).'}), 413
+        return jsonify({'error': 'Upload too large. Maximum total upload size is 560MB (up to 50MB slides and 500MB audio).'}), 413
     
     if mode == 'lecture-notes':
         total_lecture = user.get('lecture_credits_standard', 0) + user.get('lecture_credits_extended', 0)
         if total_lecture <= 0:
             return jsonify({'error': 'No lecture credits remaining. Please purchase more credits.'}), 402
-        if 'pdf' not in request.files or 'audio' not in request.files: return jsonify({'error': 'Both PDF and audio files are required'}), 400
+        if 'pdf' not in request.files or 'audio' not in request.files: return jsonify({'error': 'Both slide and audio files are required'}), 400
         pdf_file = request.files['pdf']
         audio_file = request.files['audio']
         if pdf_file.filename == '' or audio_file.filename == '': return jsonify({'error': 'Both files must be selected'}), 400
-        if not allowed_file(pdf_file.filename, ALLOWED_PDF_EXTENSIONS): return jsonify({'error': 'Invalid PDF file'}), 400
         if not allowed_file(audio_file.filename, ALLOWED_AUDIO_EXTENSIONS): return jsonify({'error': 'Invalid audio file'}), 400
-        if (pdf_file.mimetype or '').lower() not in ALLOWED_PDF_MIME_TYPES:
-            return jsonify({'error': 'Invalid PDF content type'}), 400
         if (audio_file.mimetype or '').lower() not in ALLOWED_AUDIO_MIME_TYPES:
             return jsonify({'error': 'Invalid audio content type'}), 400
         job_id = str(uuid.uuid4())
-        pdf_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{secure_filename(pdf_file.filename)}")
+        pdf_path, slides_error = resolve_uploaded_slides_to_pdf(pdf_file, job_id)
+        if slides_error:
+            return jsonify({'error': slides_error}), 400
         audio_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{secure_filename(audio_file.filename)}")
-        pdf_file.save(pdf_path)
         audio_file.save(audio_path)
-        pdf_size = get_saved_file_size(pdf_path)
         audio_size = get_saved_file_size(audio_path)
-        if pdf_size <= 0 or pdf_size > MAX_PDF_UPLOAD_BYTES:
-            cleanup_files([pdf_path, audio_path], [])
-            return jsonify({'error': 'PDF exceeds server limit (max 50MB) or is empty.'}), 400
         if audio_size <= 0 or audio_size > MAX_AUDIO_UPLOAD_BYTES:
             cleanup_files([pdf_path, audio_path], [])
             return jsonify({'error': 'Audio exceeds server limit (max 500MB) or is empty.'}), 400
-        if not file_has_pdf_signature(pdf_path):
-            cleanup_files([pdf_path, audio_path], [])
-            return jsonify({'error': 'Uploaded PDF file is invalid.'}), 400
         if not file_looks_like_audio(audio_path):
             cleanup_files([pdf_path, audio_path], [])
             return jsonify({'error': 'Uploaded audio file is invalid or unsupported.'}), 400
@@ -3833,22 +3950,13 @@ def upload_files():
     elif mode == 'slides-only':
         if user.get('slides_credits', 0) <= 0:
             return jsonify({'error': 'No slides credits remaining. Please purchase more credits.'}), 402
-        if 'pdf' not in request.files: return jsonify({'error': 'PDF file is required'}), 400
+        if 'pdf' not in request.files: return jsonify({'error': 'Slide file is required'}), 400
         pdf_file = request.files['pdf']
-        if pdf_file.filename == '': return jsonify({'error': 'PDF file must be selected'}), 400
-        if not allowed_file(pdf_file.filename, ALLOWED_PDF_EXTENSIONS): return jsonify({'error': 'Invalid PDF file'}), 400
-        if (pdf_file.mimetype or '').lower() not in ALLOWED_PDF_MIME_TYPES:
-            return jsonify({'error': 'Invalid PDF content type'}), 400
+        if pdf_file.filename == '': return jsonify({'error': 'Slide file must be selected'}), 400
         job_id = str(uuid.uuid4())
-        pdf_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{secure_filename(pdf_file.filename)}")
-        pdf_file.save(pdf_path)
-        pdf_size = get_saved_file_size(pdf_path)
-        if pdf_size <= 0 or pdf_size > MAX_PDF_UPLOAD_BYTES:
-            cleanup_files([pdf_path], [])
-            return jsonify({'error': 'PDF exceeds server limit (max 50MB) or is empty.'}), 400
-        if not file_has_pdf_signature(pdf_path):
-            cleanup_files([pdf_path], [])
-            return jsonify({'error': 'Uploaded PDF file is invalid.'}), 400
+        pdf_path, slides_error = resolve_uploaded_slides_to_pdf(pdf_file, job_id)
+        if slides_error:
+            return jsonify({'error': slides_error}), 400
         deducted = deduct_credit(uid, 'slides_credits')
         if not deducted:
             cleanup_files([pdf_path], [])

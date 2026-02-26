@@ -9,11 +9,14 @@ WORKDIR /app
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+      libreoffice \
+      libreoffice-common \
       libreoffice-core \
       libreoffice-impress \
       libreoffice-writer \
       fonts-dejavu-core \
       ca-certificates && \
+    (which soffice || which libreoffice) && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
