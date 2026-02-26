@@ -186,6 +186,7 @@ When an AI agent resumes this project, it should do this in order:
 1. Read these files first:
    - `docs/AI_LAUNCH_HANDOFF.md` (this file)
    - `docs/LAUNCH_READINESS.md`
+   - `docs/DATA_RETENTION_BACKUP_POLICY.md`
    - `docs/ROLLBACK_RUNBOOK.md`
    - `.github/workflows/ci.yml`
 2. Check repo health:
@@ -297,4 +298,3 @@ git push origin vX.Y.Z
 Use this exact sentence in future chats:
 
 > Read `docs/AI_LAUNCH_HANDOFF.md` first, then continue helping me from current state with explicit step-by-step instructions only.
-

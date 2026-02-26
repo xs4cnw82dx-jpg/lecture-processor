@@ -45,6 +45,12 @@
       -webkit-font-smoothing:antialiased;
     }
     input,textarea,select,button{font-family:inherit}
+    a:focus-visible, button:focus-visible, [role="button"]:focus-visible, [role="menuitem"]:focus-visible, [role="option"]:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible{
+      outline:2px solid var(--primary);
+      outline-offset:2px;
+      box-shadow:0 0 0 3px rgba(79,70,229,.16);
+    }
+    button:focus:not(:focus-visible), a:focus:not(:focus-visible){outline:none;box-shadow:none}
     .container{max-width:1240px;margin:0 auto;padding:0 24px}
 
     .topbar{position:sticky;top:0;z-index:40;padding:12px 0;background:linear-gradient(135deg,var(--gray-50),var(--gray-100))}
@@ -104,6 +110,16 @@
     .folder-meta{font-size:.78rem;color:var(--gray-500);margin-top:2px}
     .recommendation{font-size:.84rem;color:var(--gray-700)}
     .recommendation strong{color:var(--gray-900)}
+    .folders-cards{display:none;gap:12px}
+    .folder-card{border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:14px;background:var(--white);box-shadow:var(--shadow-sm)}
+    .folder-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+    .folder-card-title{font-size:.98rem;font-weight:700;color:var(--gray-900);line-height:1.3}
+    .folder-card-meta{margin-top:2px;font-size:.78rem;color:var(--gray-500)}
+    .folder-card-section{margin-top:10px}
+    .folder-card-label{display:block;font-size:.72rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--gray-500);margin-bottom:6px}
+    .folder-card .date-input-wrap{width:100%}
+    .folder-card .input{width:100%}
+    .folder-card-actions{margin-top:12px;display:flex;justify-content:flex-end}
 
     .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:999px;font-size:.74rem;font-weight:700;border:1px solid var(--gray-200);background:var(--gray-50);color:var(--gray-700)}
     .chip.warn{border-color:rgba(245,158,11,.42);background:rgba(245,158,11,.12);color:#92400E}
@@ -141,6 +157,11 @@
       .user-email{max-width:none;width:100%}
       .container{padding:0 12px}
     }
+    @media (max-width:600px){
+      .folders-wrap{display:none}
+      .folders-cards{display:grid}
+      .section{padding:16px}
+    }
   </style>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -160,7 +181,7 @@
         <a class="btn" href="/dashboard">Dashboard</a>
         <a class="btn" href="/study">Study Library</a>
         <a class="btn primary" href="/calendar">Calendar View</a>
-        <button class="btn danger" id="signout-btn" style="display:none;">Sign out</button>
+        <button type="button" class="btn danger" id="signout-btn" style="display:none;">Sign out</button>
         <div class="user-email" id="user-email">Checking sign-in...</div>
       </div>
     </div>
@@ -205,7 +226,7 @@
               <label for="goal-input">Daily Card Goal</label>
               <input class="input" type="number" min="1" max="500" id="goal-input">
             </div>
-            <button class="btn primary" id="save-goal-btn">Save goal</button>
+            <button type="button" class="btn primary" id="save-goal-btn">Save goal</button>
           </div>
         </section>
 
@@ -226,6 +247,7 @@
               <tbody id="folders-body"></tbody>
             </table>
           </div>
+          <div class="folders-cards" id="folders-cards"></div>
           <div class="empty" id="folders-empty" style="display:none;">No folders found yet. Create one in Study Library first.</div>
         </section>
       </div>
@@ -237,6 +259,9 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="{{ url_for('static', filename='js/html-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
   <script>
     const firebaseConfig = {
       apiKey: "AIzaSyBAAeEUCPNvP5qnqpP3M6HnFZ6vaaijUvM",
@@ -248,6 +273,9 @@
     };
     firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
+    const authUtils = window.LectureProcessorAuth || {};
+    const authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Not signed in' }) : null;
+    const topbarUtils = window.LectureProcessorTopbar || {};
 
     const userEmailEl = document.getElementById('user-email');
     const authRequiredEl = document.getElementById('auth-required');
@@ -259,6 +287,7 @@
     const goalInputEl = document.getElementById('goal-input');
     const saveGoalBtn = document.getElementById('save-goal-btn');
     const foldersBodyEl = document.getElementById('folders-body');
+    const foldersCardsEl = document.getElementById('folders-cards');
     const foldersEmptyEl = document.getElementById('folders-empty');
     const signoutBtn = document.getElementById('signout-btn');
     const toastEl = document.getElementById('toast');
@@ -267,6 +296,8 @@
     let idToken = null;
     let folderStatsById = {};
     let examDatePickers = [];
+    let progressSummaryCache = null;
+    let remoteCardStates = {};
 
     function showToast(message, type) {
       toastEl.textContent = message;
@@ -281,17 +312,8 @@
       const day = String(d.getDate()).padStart(2, '0');
       return y + '-' + m + '-' + day;
     }
-    function addDaysLocal(dateString, days) {
-      const parts = String(dateString || localDateString()).split('-').map(function(v){ return parseInt(v, 10); });
-      const base = new Date(parts[0], (parts[1] || 1) - 1, parts[2] || 1);
-      base.setDate(base.getDate() + (parseInt(days, 10) || 0));
-      return localDateString(base.getTime());
-    }
     function safeReadJson(raw, fallback) {
       try { return JSON.parse(raw); } catch (_) { return fallback; }
-    }
-    function getStreakStorage(uid) {
-      return safeReadJson(localStorage.getItem('study_streak_' + uid) || '{}', {});
     }
     function getDailyGoal(uid) {
       const parsed = parseInt(localStorage.getItem('daily_goal_' + uid) || '20', 10);
@@ -300,46 +322,32 @@
     function setDailyGoal(uid, value) {
       localStorage.setItem('daily_goal_' + uid, String(value));
     }
-    function getCurrentStreak(uid) {
-      const data = getStreakStorage(uid);
-      const today = localDateString();
-      const yesterday = addDaysLocal(today, -1);
-      if (data.last_study_date === today) return Math.max(0, parseInt(data.current_streak, 10) || 0);
-      if (data.last_study_date === yesterday) return Math.max(0, parseInt(data.current_streak, 10) || 0);
-      return 0;
-    }
-    function getTodayProgress(uid) {
-      const data = getStreakStorage(uid);
-      if (data.daily_progress_date !== localDateString()) return 0;
-      return Math.max(0, parseInt(data.daily_progress_count, 10) || 0);
-    }
     function isDueDate(dateString) {
       const value = String(dateString || '').trim();
       if (!value) return true;
       return value <= localDateString();
     }
-    function getDueCardsCount(uid) {
-      const prefix = 'card_state_' + uid + '_';
-      let due = 0;
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (!key || key.indexOf(prefix) !== 0) continue;
-        const state = safeReadJson(localStorage.getItem(key) || '{}', {});
-        Object.keys(state).forEach(function(cardId){
-          if (cardId.indexOf('fc_') !== 0) return;
-          const entry = state[cardId] || {};
-          if (!(parseInt(entry.seen, 10) > 0)) return;
-          if (isDueDate(entry.next_review_date)) due += 1;
-        });
+
+    function getProgressSummary(uid) {
+      const summary = (progressSummaryCache && typeof progressSummaryCache === 'object') ? progressSummaryCache : {};
+      const dailyGoal = Number(summary.daily_goal || getDailyGoal(uid) || 20);
+      return {
+        current_streak: Number(summary.current_streak || 0),
+        due_today: Number(summary.due_today || 0),
+        today_progress: Number(summary.today_progress || 0),
+        daily_goal: Number.isFinite(dailyGoal) && dailyGoal > 0 ? dailyGoal : 20,
+      };
+    }
+
+    function getPackState(uid, packId, remoteMap) {
+      const key = String(packId || '');
+      if (remoteMap && remoteMap[key] && typeof remoteMap[key] === 'object') {
+        return remoteMap[key];
       }
-      return due;
+      return safeReadJson(localStorage.getItem('card_state_' + uid + '_' + key) || '{}', {});
     }
 
-    function getPackState(uid, packId) {
-      return safeReadJson(localStorage.getItem('card_state_' + uid + '_' + String(packId || '')) || '{}', {});
-    }
-
-    function computeFolderStats(uid, packs) {
+    function computeFolderStats(uid, packs, remoteMap) {
       const byFolder = {};
       (packs || []).forEach(function(pack){
         const folderId = String(pack.folder_id || '');
@@ -347,7 +355,7 @@
         if (!byFolder[folderId]) byFolder[folderId] = { total: 0, due: 0, unmastered: 0 };
         const total = Math.max(0, parseInt(pack.flashcards_count, 10) || 0);
         byFolder[folderId].total += total;
-        const state = getPackState(uid, pack.study_pack_id);
+        const state = getPackState(uid, pack.study_pack_id, remoteMap);
         for (let i = 0; i < total; i++) {
           const card = state['fc_' + i] || null;
           if (!card || !(parseInt(card.seen, 10) > 0)) {
@@ -404,10 +412,11 @@
     }
 
     function renderOverview(uid) {
-      const streak = getCurrentStreak(uid);
-      const due = getDueCardsCount(uid);
-      const goal = getDailyGoal(uid);
-      const progress = getTodayProgress(uid);
+      const summary = getProgressSummary(uid);
+      const streak = summary.current_streak;
+      const due = summary.due_today;
+      const goal = summary.daily_goal;
+      const progress = summary.today_progress;
       const pct = Math.max(0, Math.min(100, Math.round((Math.min(progress, goal) / Math.max(goal, 1)) * 100)));
       streakValueEl.textContent = streak + ' day' + (streak === 1 ? '' : 's');
       dueValueEl.textContent = String(due);
@@ -417,7 +426,8 @@
     }
 
     function renderFolders(folders) {
-      foldersBodyEl.innerHTML = '';
+      while (foldersBodyEl.firstChild) foldersBodyEl.removeChild(foldersBodyEl.firstChild);
+      while (foldersCardsEl.firstChild) foldersCardsEl.removeChild(foldersCardsEl.firstChild);
       if (!folders || !folders.length) {
         foldersEmptyEl.style.display = 'block';
         return;
@@ -427,30 +437,198 @@
       folders.forEach(function(folder){
         const stats = folderStatsById[folder.folder_id] || { total: 0, due: 0, unmastered: 0 };
         const days = daysUntil(folder.exam_date || '');
-        let countdown = '<span class="chip">No exam date</span>';
-        let recommendation = '<span class="recommendation">Set an exam date to get a daily recommendation.</span>';
+        const folderName = folder.name || 'Untitled folder';
+        const metadata = [folder.course, folder.subject, folder.semester, folder.block].filter(Boolean).join(' · ') || 'No metadata';
+        const countdownBadge = document.createElement('span');
+        countdownBadge.className = 'chip';
+        countdownBadge.textContent = 'No exam date';
+        const recommendation = document.createElement('span');
+        recommendation.className = 'recommendation';
+        recommendation.textContent = 'Set an exam date to get a daily recommendation.';
         if (days !== null) {
           if (days > 0) {
-            countdown = '<span class="chip warn">' + days + ' day' + (days === 1 ? '' : 's') + ' left</span>';
+            countdownBadge.className = 'chip warn';
+            countdownBadge.textContent = days + ' day' + (days === 1 ? '' : 's') + ' left';
             const rec = Math.ceil((stats.unmastered || 0) / Math.max(days, 1));
-            recommendation = '<span class="recommendation">Recommended: <strong>' + rec + '</strong> unmastered cards/day.</span>';
+            recommendation.textContent = 'Recommended: ';
+            const strong = document.createElement('strong');
+            strong.textContent = String(rec);
+            recommendation.appendChild(strong);
+            recommendation.appendChild(document.createTextNode(' unmastered cards/day.'));
           } else if (days === 0) {
-            countdown = '<span class="chip danger">Exam today</span>';
-            recommendation = '<span class="recommendation"><strong>' + (stats.unmastered || 0) + '</strong> cards should be reviewed today.</span>';
+            countdownBadge.className = 'chip danger';
+            countdownBadge.textContent = 'Exam today';
+            recommendation.textContent = '';
+            const strong = document.createElement('strong');
+            strong.textContent = String(stats.unmastered || 0);
+            recommendation.appendChild(strong);
+            recommendation.appendChild(document.createTextNode(' cards should be reviewed today.'));
           } else {
-            countdown = '<span class="chip danger">Exam passed</span>';
-            recommendation = '<span class="recommendation">Update the exam date to restore recommendations.</span>';
+            countdownBadge.className = 'chip danger';
+            countdownBadge.textContent = 'Exam passed';
+            recommendation.textContent = 'Update the exam date to restore recommendations.';
           }
         }
+
+        const createDateInputWrap = function() {
+          const wrap = document.createElement('div');
+          wrap.className = 'date-input-wrap';
+          const input = document.createElement('input');
+          input.className = 'input js-folder-date';
+          input.type = 'text';
+          input.value = formatDisplayDate(folder.exam_date || '');
+          input.placeholder = 'dd-mm-yyyy';
+          input.setAttribute('inputmode', 'numeric');
+          input.setAttribute('aria-label', `Exam date for ${folderName}`);
+          wrap.appendChild(input);
+          const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          icon.setAttribute('class', 'date-input-icon');
+          icon.setAttribute('viewBox', '0 0 24 24');
+          icon.setAttribute('fill', 'none');
+          icon.setAttribute('stroke', 'currentColor');
+          icon.setAttribute('stroke-width', '2');
+          const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          rect.setAttribute('x', '3');
+          rect.setAttribute('y', '4');
+          rect.setAttribute('width', '18');
+          rect.setAttribute('height', '18');
+          rect.setAttribute('rx', '2');
+          icon.appendChild(rect);
+          const l1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          l1.setAttribute('x1', '16');
+          l1.setAttribute('y1', '2');
+          l1.setAttribute('x2', '16');
+          l1.setAttribute('y2', '6');
+          icon.appendChild(l1);
+          const l2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          l2.setAttribute('x1', '8');
+          l2.setAttribute('y1', '2');
+          l2.setAttribute('x2', '8');
+          l2.setAttribute('y2', '6');
+          icon.appendChild(l2);
+          const l3 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          l3.setAttribute('x1', '3');
+          l3.setAttribute('y1', '10');
+          l3.setAttribute('x2', '21');
+          l3.setAttribute('y2', '10');
+          icon.appendChild(l3);
+          wrap.appendChild(icon);
+          return wrap;
+        };
+
+        const createSaveButton = function() {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'btn primary';
+          btn.dataset.saveFolder = String(folder.folder_id || '');
+          btn.textContent = 'Save';
+          return btn;
+        };
+
+        const buildWorkload = function() {
+          const wrap = document.createElement('div');
+          wrap.className = 'recommendation';
+          const totalStrong = document.createElement('strong');
+          totalStrong.textContent = String(stats.total);
+          wrap.appendChild(totalStrong);
+          wrap.appendChild(document.createTextNode(' total · '));
+          const unmasteredStrong = document.createElement('strong');
+          unmasteredStrong.textContent = String(stats.unmastered);
+          wrap.appendChild(unmasteredStrong);
+          wrap.appendChild(document.createTextNode(' unmastered · '));
+          const dueStrong = document.createElement('strong');
+          dueStrong.textContent = String(stats.due);
+          wrap.appendChild(dueStrong);
+          wrap.appendChild(document.createTextNode(' due'));
+          return wrap;
+        };
+
         const tr = document.createElement('tr');
-        tr.innerHTML =
-          '<td><div><strong>' + escapeHtml(folder.name || 'Untitled folder') + '</strong></div>'
-          + '<div class="folder-meta">' + escapeHtml([folder.course, folder.subject, folder.semester, folder.block].filter(Boolean).join(' · ') || 'No metadata') + '</div></td>'
-          + '<td><div class="date-input-wrap"><input class="input js-folder-date" type="text" data-folder-date="' + escapeHtml(folder.folder_id) + '" value="' + escapeHtml(formatDisplayDate(folder.exam_date || '')) + '" placeholder="dd-mm-yyyy" inputmode="numeric"><svg class="date-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg></div></td>'
-          + '<td><div class="recommendation"><strong>' + stats.total + '</strong> total · <strong>' + stats.unmastered + '</strong> unmastered · <strong>' + stats.due + '</strong> due</div><div style="margin-top:6px;">' + countdown + '</div></td>'
-          + '<td>' + recommendation + '</td>'
-          + '<td><button class="btn primary" data-save-folder="' + escapeHtml(folder.folder_id) + '">Save</button></td>';
+        tr.setAttribute('data-folder-editor', String(folder.folder_id || ''));
+        const tdName = document.createElement('td');
+        const nameWrap = document.createElement('div');
+        const nameStrong = document.createElement('strong');
+        nameStrong.textContent = folderName;
+        nameWrap.appendChild(nameStrong);
+        const metaDiv = document.createElement('div');
+        metaDiv.className = 'folder-meta';
+        metaDiv.textContent = metadata;
+        tdName.appendChild(nameWrap);
+        tdName.appendChild(metaDiv);
+
+        const tdDate = document.createElement('td');
+        tdDate.appendChild(createDateInputWrap());
+
+        const tdWorkload = document.createElement('td');
+        tdWorkload.appendChild(buildWorkload());
+        const countdownRow = document.createElement('div');
+        countdownRow.style.marginTop = '6px';
+        countdownRow.appendChild(countdownBadge.cloneNode(true));
+        tdWorkload.appendChild(countdownRow);
+
+        const tdRecommendation = document.createElement('td');
+        tdRecommendation.appendChild(recommendation.cloneNode(true));
+
+        const tdAction = document.createElement('td');
+        tdAction.appendChild(createSaveButton());
+
+        tr.appendChild(tdName);
+        tr.appendChild(tdDate);
+        tr.appendChild(tdWorkload);
+        tr.appendChild(tdRecommendation);
+        tr.appendChild(tdAction);
         foldersBodyEl.appendChild(tr);
+
+        const card = document.createElement('article');
+        card.className = 'folder-card';
+        card.setAttribute('data-folder-editor', String(folder.folder_id || ''));
+        const cardHeader = document.createElement('div');
+        cardHeader.className = 'folder-card-header';
+        const cardHeaderText = document.createElement('div');
+        const cardTitle = document.createElement('div');
+        cardTitle.className = 'folder-card-title';
+        cardTitle.textContent = folderName;
+        const cardMeta = document.createElement('div');
+        cardMeta.className = 'folder-card-meta';
+        cardMeta.textContent = metadata;
+        cardHeaderText.appendChild(cardTitle);
+        cardHeaderText.appendChild(cardMeta);
+        cardHeader.appendChild(cardHeaderText);
+        cardHeader.appendChild(countdownBadge.cloneNode(true));
+        card.appendChild(cardHeader);
+
+        const cardExam = document.createElement('div');
+        cardExam.className = 'folder-card-section';
+        const cardExamLabel = document.createElement('span');
+        cardExamLabel.className = 'folder-card-label';
+        cardExamLabel.textContent = 'Exam date';
+        cardExam.appendChild(cardExamLabel);
+        cardExam.appendChild(createDateInputWrap());
+        card.appendChild(cardExam);
+
+        const cardWorkload = document.createElement('div');
+        cardWorkload.className = 'folder-card-section';
+        const cardWorkloadLabel = document.createElement('span');
+        cardWorkloadLabel.className = 'folder-card-label';
+        cardWorkloadLabel.textContent = 'Workload';
+        cardWorkload.appendChild(cardWorkloadLabel);
+        cardWorkload.appendChild(buildWorkload());
+        card.appendChild(cardWorkload);
+
+        const cardRecommendation = document.createElement('div');
+        cardRecommendation.className = 'folder-card-section';
+        const cardRecommendationLabel = document.createElement('span');
+        cardRecommendationLabel.className = 'folder-card-label';
+        cardRecommendationLabel.textContent = 'Recommendation';
+        cardRecommendation.appendChild(cardRecommendationLabel);
+        cardRecommendation.appendChild(recommendation.cloneNode(true));
+        card.appendChild(cardRecommendation);
+
+        const cardActions = document.createElement('div');
+        cardActions.className = 'folder-card-actions';
+        cardActions.appendChild(createSaveButton());
+        card.appendChild(cardActions);
+        foldersCardsEl.appendChild(card);
       });
       initFolderDatePickers();
     }
@@ -461,7 +639,7 @@
         try { instance.destroy(); } catch (_) {}
       });
       examDatePickers = [];
-      const inputs = foldersBodyEl.querySelectorAll('.js-folder-date');
+      const inputs = document.querySelectorAll('#folders-body .js-folder-date, #folders-cards .js-folder-date');
       inputs.forEach(function(input){
         const instance = flatpickr(input, {
           dateFormat: 'd-m-Y',
@@ -474,46 +652,79 @@
       });
     }
 
-    function escapeHtml(value) {
+    const planHtmlUtils = window.LectureProcessorHtml || {};
+    const escapeHtml = planHtmlUtils.escapeHtml || function(value) {
       return String(value || '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
-    }
+    };
 
     async function authFetch(url, options) {
+      if (authClient && typeof authClient.authFetch === 'function') {
+        return authClient.authFetch(url, options, { retryOn401: true });
+      }
       const opts = options || {};
       const headers = Object.assign({}, opts.headers || {}, { 'Authorization': 'Bearer ' + idToken });
       return fetch(url, Object.assign({}, opts, { headers }));
+    }
+
+    function applyProgressData(progressData) {
+      if (!currentUser) return;
+      const uid = currentUser.uid;
+      if (progressData && typeof progressData === 'object') {
+        remoteCardStates = (progressData.card_states && typeof progressData.card_states === 'object') ? progressData.card_states : {};
+        if (typeof progressData.daily_goal === 'number' && progressData.daily_goal > 0) {
+          try { localStorage.setItem('daily_goal_' + uid, String(progressData.daily_goal)); } catch (_) {}
+        }
+        if (progressData.streak_data && typeof progressData.streak_data === 'object') {
+          try { localStorage.setItem('study_streak_' + uid, JSON.stringify(progressData.streak_data)); } catch (_) {}
+        }
+        if (progressData.summary && typeof progressData.summary === 'object') {
+          progressSummaryCache = progressData.summary;
+        } else {
+          progressSummaryCache = null;
+        }
+      } else {
+        remoteCardStates = {};
+        progressSummaryCache = null;
+      }
     }
 
     async function loadPlannerData() {
       if (!currentUser || !idToken) return;
       renderOverview(currentUser.uid);
       try {
-        const [foldersRes, packsRes] = await Promise.all([
+        const [foldersRes, packsRes, progressRes] = await Promise.all([
           authFetch('/api/study-folders'),
-          authFetch('/api/study-packs')
+          authFetch('/api/study-packs'),
+          authFetch('/api/study-progress'),
         ]);
-        if (foldersRes.status === 401 || packsRes.status === 401) {
+        if (foldersRes.status === 401 || packsRes.status === 401 || progressRes.status === 401) {
           authRequiredEl.style.display = 'block';
           plannerContentEl.style.display = 'none';
           return;
         }
-        const foldersData = await foldersRes.json();
-        const packsData = await packsRes.json();
-        folderStatsById = computeFolderStats(currentUser.uid, packsData.study_packs || []);
+        const [foldersData, packsData, progressData] = await Promise.all([
+          foldersRes.json(),
+          packsRes.json(),
+          progressRes.ok ? progressRes.json() : Promise.resolve({}),
+        ]);
+        applyProgressData(progressData);
+        folderStatsById = computeFolderStats(currentUser.uid, packsData.study_packs || [], remoteCardStates);
+        renderOverview(currentUser.uid);
         renderFolders(foldersData.folders || []);
       } catch (_) {
-        foldersBodyEl.innerHTML = '';
+        while (foldersBodyEl.firstChild) foldersBodyEl.removeChild(foldersBodyEl.firstChild);
+        while (foldersCardsEl.firstChild) foldersCardsEl.removeChild(foldersCardsEl.firstChild);
         foldersEmptyEl.style.display = 'block';
         foldersEmptyEl.textContent = 'Could not load folders right now. Please try again.';
       }
     }
 
-    saveGoalBtn.addEventListener('click', function(){
+    saveGoalBtn.addEventListener('click', async function(){
       if (!currentUser) return;
       const val = parseInt(goalInputEl.value || '0', 10);
       if (!Number.isFinite(val) || val < 1 || val > 500) {
@@ -521,15 +732,31 @@
         return;
       }
       setDailyGoal(currentUser.uid, val);
+      progressSummaryCache = Object.assign({}, progressSummaryCache || {}, { daily_goal: val });
       renderOverview(currentUser.uid);
-      showToast('Daily goal saved.', 'success');
+      try {
+        const response = await authFetch('/api/study-progress', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ daily_goal: val, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '' })
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(function(){ return {}; });
+          throw new Error(data.error || 'Could not save daily goal');
+        }
+        await loadPlannerData();
+        showToast('Daily goal saved.', 'success');
+      } catch (err) {
+        showToast(err.message || 'Could not sync daily goal.', 'error');
+      }
     });
 
-    foldersBodyEl.addEventListener('click', async function(event){
+    async function handleFolderSave(event){
       const btn = event.target.closest('[data-save-folder]');
       if (!btn || !currentUser || !idToken) return;
-      const folderId = btn.getAttribute('data-save-folder');
-      const dateInput = document.querySelector('[data-folder-date="' + folderId + '"]');
+      const editor = btn.closest('[data-folder-editor]');
+      const folderId = editor ? String(editor.getAttribute('data-folder-editor') || '') : String(btn.getAttribute('data-save-folder') || '');
+      const dateInput = editor ? editor.querySelector('.js-folder-date') : null;
       if (!dateInput) return;
       const normalizedDate = parseDateInput(dateInput.value);
       if (normalizedDate === null) {
@@ -555,39 +782,72 @@
         btn.disabled = false;
         btn.textContent = 'Save';
       }
-    });
+    }
 
-    signoutBtn.addEventListener('click', async function(){
-      try {
-        await auth.signOut();
+    foldersBodyEl.addEventListener('click', handleFolderSave);
+    foldersCardsEl.addEventListener('click', handleFolderSave);
+
+    if (topbarUtils.bindSignOutButton) {
+      topbarUtils.bindSignOutButton(signoutBtn, auth, '/dashboard');
+    } else {
+      signoutBtn.addEventListener('click', async function(){
+        try { await auth.signOut(); } catch (_) {}
         window.location.href = '/dashboard';
-      } catch (_) {
-        window.location.href = '/dashboard';
-      }
-    });
+      });
+    }
 
     window.addEventListener('focus', function(){
-      if (currentUser) renderOverview(currentUser.uid);
+      if (currentUser) loadPlannerData();
     });
     document.addEventListener('visibilitychange', function(){
-      if (!document.hidden && currentUser) renderOverview(currentUser.uid);
+      if (!document.hidden && currentUser) loadPlannerData();
     });
 
     auth.onAuthStateChanged(async function(user){
       currentUser = user;
       if (!user) {
         idToken = null;
-        userEmailEl.textContent = 'Not signed in';
-        signoutBtn.style.display = 'none';
-        authRequiredEl.style.display = 'block';
-        plannerContentEl.style.display = 'none';
+        if (authClient && typeof authClient.clearToken === 'function') authClient.clearToken();
+        progressSummaryCache = null;
+        remoteCardStates = {};
+        if (topbarUtils.applyProtectedPageAuthState) {
+          topbarUtils.applyProtectedPageAuthState({
+            user: null,
+            userTextEl: userEmailEl,
+            signOutBtn: signoutBtn,
+            authRequiredEl: authRequiredEl,
+            mainContentEl: plannerContentEl,
+            signOutSignedInDisplay: 'inline-flex',
+            authRequiredSignedOutDisplay: 'block',
+            mainContentSignedInDisplay: 'block',
+          });
+        } else {
+          userEmailEl.textContent = 'Not signed in';
+          signoutBtn.style.display = 'none';
+          authRequiredEl.style.display = 'block';
+          plannerContentEl.style.display = 'none';
+        }
         return;
       }
       idToken = await user.getIdToken();
-      userEmailEl.textContent = user.email || 'Signed in';
-      signoutBtn.style.display = 'inline-flex';
-      authRequiredEl.style.display = 'none';
-      plannerContentEl.style.display = 'block';
+      if (authClient && typeof authClient.setToken === 'function') authClient.setToken(idToken);
+      if (topbarUtils.applyProtectedPageAuthState) {
+        topbarUtils.applyProtectedPageAuthState({
+          user: user,
+          userTextEl: userEmailEl,
+          signOutBtn: signoutBtn,
+          authRequiredEl: authRequiredEl,
+          mainContentEl: plannerContentEl,
+          signOutSignedInDisplay: 'inline-flex',
+          authRequiredSignedOutDisplay: 'block',
+          mainContentSignedInDisplay: 'block',
+        });
+      } else {
+        userEmailEl.textContent = user.email || 'Signed in';
+        signoutBtn.style.display = 'inline-flex';
+        authRequiredEl.style.display = 'none';
+        plannerContentEl.style.display = 'block';
+      }
       await loadPlannerData();
     });
   </script>

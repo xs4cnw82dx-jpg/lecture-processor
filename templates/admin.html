@@ -23,6 +23,12 @@
             color: var(--text);
             min-height: 100vh;
         }
+        a:focus-visible, button:focus-visible, [role="button"]:focus-visible, [role="menuitem"]:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+            outline: 2px solid var(--primary);
+            outline-offset: 2px;
+            box-shadow: 0 0 0 3px rgba(79,70,229,0.16);
+        }
+        button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; box-shadow: none; }
         .container { max-width: 1250px; margin: 0 auto; padding: 24px; }
         .topbar {
             display: flex;
@@ -183,6 +189,30 @@
             min-width: 2px;
         }
         .mode-value { font-size: 0.82rem; color: var(--muted); text-align: right; }
+        .funnel-panel { margin-bottom: 12px; }
+        .funnel-meta { color: var(--muted); font-size: 0.8rem; margin-bottom: 10px; }
+        .funnel-list { display: grid; gap: 10px; }
+        .funnel-row {
+            display: grid;
+            grid-template-columns: 180px 1fr 66px 88px;
+            gap: 10px;
+            align-items: center;
+        }
+        .funnel-label { font-size: 0.84rem; color: var(--text); font-weight: 600; }
+        .funnel-track {
+            height: 12px;
+            border-radius: 999px;
+            background: #E2E8F0;
+            overflow: hidden;
+        }
+        .funnel-fill {
+            height: 100%;
+            border-radius: 999px;
+            background: linear-gradient(135deg, #818CF8, #4F46E5);
+            min-width: 2px;
+        }
+        .funnel-count { font-size: 0.82rem; color: var(--text); text-align: right; font-weight: 700; }
+        .funnel-conversion { font-size: 0.78rem; color: var(--muted); text-align: right; }
         .grid {
             display: grid;
             grid-template-columns: 2fr 1.4fr;
@@ -222,6 +252,8 @@
             .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .mode-row { grid-template-columns: 1fr; }
             .mode-value { text-align: left; }
+            .funnel-row { grid-template-columns: 1fr; }
+            .funnel-count, .funnel-conversion { text-align: left; }
         }
     </style>
 </head>
@@ -237,6 +269,8 @@
                 <button class="btn" id="refresh-btn" type="button">Refresh</button>
                 <button class="btn" id="export-jobs-btn" type="button">Export jobs CSV</button>
                 <button class="btn" id="export-purchases-btn" type="button">Export purchases CSV</button>
+                <button class="btn" id="export-funnel-btn" type="button">Export funnel CSV</button>
+                <button class="btn" id="export-funnel-daily-btn" type="button">Export funnel daily CSV</button>
                 <button class="btn primary" id="auth-btn" type="button">Sign in</button>
             </div>
         </div>
@@ -261,6 +295,7 @@
                 <article class="metric"><div class="label">Avg duration</div><div class="value" id="m-duration">0s</div></article>
                 <article class="metric"><div class="label">Successful jobs</div><div class="value" id="m-success-jobs">0</div></article>
                 <article class="metric"><div class="label">Failed jobs</div><div class="value" id="m-failed-jobs">0</div></article>
+                <article class="metric"><div class="label">Rate-limit 429s</div><div class="value" id="m-rate-limit-total">0</div><div class="sub" id="m-rate-limit-sub">U: 0 · C: 0 · A: 0</div></article>
             </section>
 
             <section class="charts">
@@ -286,6 +321,12 @@
                     </div>
                 </div>
                 <div class="mode-bars" id="mode-breakdown-bars"></div>
+            </section>
+
+            <section class="panel funnel-panel">
+                <h2>Conversion Funnel</h2>
+                <div class="funnel-meta" id="funnel-meta">Counts are based on tracked user/session events.</div>
+                <div class="funnel-list" id="funnel-list"></div>
             </section>
 
             <section class="grid">
@@ -323,11 +364,29 @@
                     </div>
                 </div>
             </section>
+
+            <section class="panel" style="margin-top:12px;">
+                <h2>Recent Rate-limit Hits</h2>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Limiter</th>
+                                <th>Retry-after</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rate-limit-body"></tbody>
+                    </table>
+                </div>
+            </section>
         </div>
     </div>
 
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
     <script>
         const firebaseConfig = {
             apiKey: "AIzaSyBAAeEUCPNvP5qnqpP3M6HnFZ6vaaijUvM",
@@ -339,6 +398,9 @@
         };
         firebase.initializeApp(firebaseConfig);
         const auth = firebase.auth();
+        const authUtils = window.LectureProcessorAuth || {};
+        const authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Not signed in' }) : null;
+        const downloadUtils = window.LectureProcessorDownload || {};
 
         const signedInMeta = document.getElementById('signed-in-meta');
         const stateArea = document.getElementById('state-area');
@@ -348,10 +410,26 @@
         const backBtn = document.getElementById('back-btn');
         const exportJobsBtn = document.getElementById('export-jobs-btn');
         const exportPurchasesBtn = document.getElementById('export-purchases-btn');
+        const exportFunnelBtn = document.getElementById('export-funnel-btn');
+        const exportFunnelDailyBtn = document.getElementById('export-funnel-daily-btn');
 
         let currentWindow = '7d';
         let currentModeView = 'total';
         let latestModeBreakdown = {};
+
+        function authFetch(path, options) {
+            if (authClient && typeof authClient.authFetch === 'function') {
+                return authClient.authFetch(path, options, { retryOn401: true });
+            }
+            if (!auth.currentUser) {
+                return Promise.reject(new Error('Not signed in'));
+            }
+            return auth.currentUser.getIdToken().then((token) => {
+                const opts = options || {};
+                const headers = Object.assign({}, opts.headers || {}, { 'Authorization': `Bearer ${token}` });
+                return fetch(path, Object.assign({}, opts, { headers }));
+            });
+        }
 
         function formatMoney(cents) {
             return `€${((cents || 0) / 100).toFixed(2)}`;
@@ -366,6 +444,14 @@
             });
         }
 
+        function formatRateLimitLabel(limitName) {
+            const key = String(limitName || '').trim().toLowerCase();
+            if (key === 'upload') return 'Upload';
+            if (key === 'checkout') return 'Checkout';
+            if (key === 'analytics') return 'Analytics';
+            return 'Other';
+        }
+
         function setState(message, type = 'loading') {
             stateArea.textContent = message;
             stateArea.className = type;
@@ -373,20 +459,34 @@
             dashboard.style.display = 'none';
         }
 
-        function renderRows(tbodyId, rowsHtml, emptyText, colspan = 8) {
+        function clearChildren(node) {
+            while (node.firstChild) node.removeChild(node.firstChild);
+        }
+
+        function renderRows(tbodyId, rows, emptyText, colspan = 8) {
             const tbody = document.getElementById(tbodyId);
-            if (!rowsHtml.length) {
-                tbody.innerHTML = `<tr><td colspan="${colspan}" class="empty">${emptyText}</td></tr>`;
+            clearChildren(tbody);
+            if (!rows.length) {
+                const tr = document.createElement('tr');
+                const td = document.createElement('td');
+                td.colSpan = colspan;
+                td.className = 'empty';
+                td.textContent = emptyText;
+                tr.appendChild(td);
+                tbody.appendChild(tr);
                 return;
             }
-            tbody.innerHTML = rowsHtml.join('');
+            rows.forEach((row) => tbody.appendChild(row));
         }
 
         function renderBars(containerId, labels, values, type) {
             const container = document.getElementById(containerId);
-            container.innerHTML = '';
+            clearChildren(container);
             if (!labels.length) {
-                container.innerHTML = '<div class="empty">No data for selected window.</div>';
+                const empty = document.createElement('div');
+                empty.className = 'empty';
+                empty.textContent = 'No data for selected window.';
+                container.appendChild(empty);
                 return;
             }
             const maxValue = Math.max(...values, 1);
@@ -412,24 +512,83 @@
 
         function renderModeBreakdown() {
             const container = document.getElementById('mode-breakdown-bars');
+            clearChildren(container);
             const entries = Object.values(latestModeBreakdown || {}).filter((item) => item && item.label);
             if (!entries.length) {
-                container.innerHTML = '<div class=\"empty\">No mode data for selected window.</div>';
+                const empty = document.createElement('div');
+                empty.className = 'empty';
+                empty.textContent = 'No mode data for selected window.';
+                container.appendChild(empty);
                 return;
             }
             const maxValue = Math.max(...entries.map((entry) => entry[currentModeView] || 0), 1);
-            const rows = entries.map((entry) => {
+            entries.forEach((entry) => {
                 const value = entry[currentModeView] || 0;
                 const width = Math.max((value / maxValue) * 100, value > 0 ? 2 : 0);
-                return `
-                    <div class=\"mode-row\">
-                        <div class=\"mode-label\">${entry.label}</div>
-                        <div class=\"mode-track\"><div class=\"mode-fill\" style=\"width:${width}%;\"></div></div>
-                        <div class=\"mode-value\">${value}</div>
-                    </div>
-                `;
+                const row = document.createElement('div');
+                row.className = 'mode-row';
+                const label = document.createElement('div');
+                label.className = 'mode-label';
+                label.textContent = String(entry.label || '-');
+                const track = document.createElement('div');
+                track.className = 'mode-track';
+                const fill = document.createElement('div');
+                fill.className = 'mode-fill';
+                fill.style.width = `${width}%`;
+                track.appendChild(fill);
+                const valueEl = document.createElement('div');
+                valueEl.className = 'mode-value';
+                valueEl.textContent = String(value);
+                row.appendChild(label);
+                row.appendChild(track);
+                row.appendChild(valueEl);
+                container.appendChild(row);
             });
-            container.innerHTML = rows.join('');
+        }
+
+        function renderFunnel(funnel) {
+            const list = document.getElementById('funnel-list');
+            const meta = document.getElementById('funnel-meta');
+            const steps = (funnel && Array.isArray(funnel.steps)) ? funnel.steps : [];
+            clearChildren(list);
+            if (!steps.length) {
+                meta.textContent = 'No funnel events captured in the selected window.';
+                const empty = document.createElement('div');
+                empty.className = 'empty';
+                empty.textContent = 'No conversion data yet.';
+                list.appendChild(empty);
+                return;
+            }
+            meta.textContent = 'Counts are unique users/sessions that reached each stage.';
+            const maxCount = Math.max(...steps.map((step) => Number(step.count || 0)), 1);
+            steps.forEach((step, idx) => {
+                const count = Number(step.count || 0);
+                const width = Math.max((count / maxCount) * 100, count > 0 ? 2 : 0);
+                const conversion = Number(step.conversion_from_prev || 0);
+                const conversionLabel = idx === 0 ? 'Start' : `${conversion}% from previous`;
+                const row = document.createElement('div');
+                row.className = 'funnel-row';
+                const label = document.createElement('div');
+                label.className = 'funnel-label';
+                label.textContent = String(step.label || step.event || '-');
+                const track = document.createElement('div');
+                track.className = 'funnel-track';
+                const fill = document.createElement('div');
+                fill.className = 'funnel-fill';
+                fill.style.width = `${width}%`;
+                track.appendChild(fill);
+                const countEl = document.createElement('div');
+                countEl.className = 'funnel-count';
+                countEl.textContent = String(count);
+                const conversionEl = document.createElement('div');
+                conversionEl.className = 'funnel-conversion';
+                conversionEl.textContent = conversionLabel;
+                row.appendChild(label);
+                row.appendChild(track);
+                row.appendChild(countEl);
+                row.appendChild(conversionEl);
+                list.appendChild(row);
+            });
         }
 
         function renderDashboard(data) {
@@ -448,6 +607,8 @@
             document.getElementById('m-duration').textContent = `${m.avg_duration_seconds || 0}s`;
             document.getElementById('m-success-jobs').textContent = m.success_jobs || 0;
             document.getElementById('m-failed-jobs').textContent = m.failed_jobs || 0;
+            document.getElementById('m-rate-limit-total').textContent = m.rate_limit_429_total || 0;
+            document.getElementById('m-rate-limit-sub').textContent = `U: ${m.rate_limit_upload_429 || 0} · C: ${m.rate_limit_checkout_429 || 0} · A: ${m.rate_limit_analytics_429 || 0}`;
 
             const labels = t.labels || [];
             const successTrend = t.success_rate || [];
@@ -457,6 +618,7 @@
             renderBars('success-chart', labels, successTrend, 'success');
             renderBars('revenue-chart', labels, revenueTrend, 'revenue');
             renderModeBreakdown();
+            renderFunnel(data.funnel || {});
 
             document.getElementById('success-granularity').textContent = `Granularity: ${t.granularity || 'day'}`;
             document.getElementById('revenue-granularity').textContent = `Granularity: ${t.granularity || 'day'}`;
@@ -467,27 +629,55 @@
             const jobRows = (data.recent_jobs || []).map((job) => {
                 const status = job.status || 'unknown';
                 const statusClass = status === 'complete' ? 'complete' : (status === 'error' ? 'error' : 'other');
-                return `
-                    <tr>
-                        <td>${formatDate(job.finished_at)}</td>
-                        <td>${(job.email || '').slice(0, 32) || '-'}</td>
-                        <td>${job.mode || '-'}</td>
-                        <td><span class="status ${statusClass}">${status}</span></td>
-                        <td>${job.duration_seconds || 0}s</td>
-                        <td>${job.credit_refunded ? 'Yes' : 'No'}</td>
-                    </tr>
-                `;
+                const tr = document.createElement('tr');
+                const tdTime = document.createElement('td');
+                tdTime.textContent = formatDate(job.finished_at);
+                const tdEmail = document.createElement('td');
+                tdEmail.textContent = (job.email || '').slice(0, 32) || '-';
+                const tdMode = document.createElement('td');
+                tdMode.textContent = job.mode || '-';
+                const tdStatus = document.createElement('td');
+                const statusBadge = document.createElement('span');
+                statusBadge.className = `status ${statusClass}`;
+                statusBadge.textContent = status;
+                tdStatus.appendChild(statusBadge);
+                const tdDuration = document.createElement('td');
+                tdDuration.textContent = `${job.duration_seconds || 0}s`;
+                const tdRefund = document.createElement('td');
+                tdRefund.textContent = job.credit_refunded ? 'Yes' : 'No';
+                tr.appendChild(tdTime);
+                tr.appendChild(tdEmail);
+                tr.appendChild(tdMode);
+                tr.appendChild(tdStatus);
+                tr.appendChild(tdDuration);
+                tr.appendChild(tdRefund);
+                return tr;
             });
             renderRows('jobs-body', jobRows, 'No jobs found in selected window.', 6);
 
-            const purchaseRows = (data.recent_purchases || []).map((purchase) => `
+            const purchaseRows = (data.recent_purchases || []).map((purchase) => {
+                const tr = document.createElement('tr');
+                const tdTime = document.createElement('td');
+                tdTime.textContent = formatDate(purchase.created_at);
+                const tdBundle = document.createElement('td');
+                tdBundle.textContent = purchase.bundle_name || '-';
+                const tdAmount = document.createElement('td');
+                tdAmount.textContent = formatMoney(purchase.price_cents || 0);
+                tr.appendChild(tdTime);
+                tr.appendChild(tdBundle);
+                tr.appendChild(tdAmount);
+                return tr;
+            });
+            renderRows('purchases-body', purchaseRows, 'No purchases found in selected window.', 3);
+
+            const rateLimitRows = (data.recent_rate_limits || []).map((entry) => `
                 <tr>
-                    <td>${formatDate(purchase.created_at)}</td>
-                    <td>${purchase.bundle_name || '-'}</td>
-                    <td>${formatMoney(purchase.price_cents || 0)}</td>
+                    <td>${formatDate(entry.created_at)}</td>
+                    <td>${formatRateLimitLabel(entry.limit_name)}</td>
+                    <td>${entry.retry_after_seconds || 0}s</td>
                 </tr>
             `);
-            renderRows('purchases-body', purchaseRows, 'No purchases found in selected window.', 3);
+            renderRows('rate-limit-body', rateLimitRows, 'No rate-limit hits found in selected window.', 3);
 
             stateArea.style.display = 'none';
             dashboard.style.display = 'block';
@@ -500,10 +690,7 @@
             }
             setState('Loading admin dashboard...', 'loading');
             try {
-                const token = await user.getIdToken();
-                const res = await fetch(`/api/admin/overview?window=${encodeURIComponent(currentWindow)}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+                const res = await authFetch(`/api/admin/overview?window=${encodeURIComponent(currentWindow)}`);
 
                 if (res.status === 403) {
                     setState('Your account is signed in but not configured as admin. Set ADMIN_EMAILS or ADMIN_UIDS on the server.', 'blocked');
@@ -528,22 +715,20 @@
                 return;
             }
             try {
-                const token = await auth.currentUser.getIdToken();
-                const res = await fetch(`/api/admin/export?type=${encodeURIComponent(type)}&window=${encodeURIComponent(currentWindow)}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+                const res = await authFetch(`/api/admin/export?type=${encodeURIComponent(type)}&window=${encodeURIComponent(currentWindow)}`);
                 if (!res.ok) {
                     setState('Could not export CSV right now.', 'error');
                     return;
                 }
+                if (downloadUtils.downloadResponseBlob) {
+                    await downloadUtils.downloadResponseBlob(res, `admin-${type}-${currentWindow}.csv`);
+                    return;
+                }
                 const blob = await res.blob();
-                const disposition = res.headers.get('Content-Disposition') || '';
-                const match = disposition.match(/filename=([^;]+)/i);
-                const filename = match ? match[1].trim() : `admin-${type}-${currentWindow}.csv`;
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = filename;
+                a.download = `admin-${type}-${currentWindow}.csv`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
@@ -568,10 +753,14 @@
 
         auth.onAuthStateChanged(async (user) => {
             if (user) {
+                if (authClient && typeof authClient.setToken === 'function') {
+                    try { authClient.setToken(await user.getIdToken()); } catch (_) {}
+                }
                 signedInMeta.textContent = `Signed in as ${user.email}`;
                 authBtn.textContent = 'Sign out';
                 await loadAdminOverview(user);
             } else {
+                if (authClient && typeof authClient.clearToken === 'function') authClient.clearToken();
                 signedInMeta.textContent = 'Not signed in';
                 authBtn.textContent = 'Sign in';
                 setState('Please sign in with your admin account.', 'blocked');
@@ -604,6 +793,14 @@
 
         exportPurchasesBtn.addEventListener('click', async () => {
             await exportCsv('purchases');
+        });
+
+        exportFunnelBtn.addEventListener('click', async () => {
+            await exportCsv('funnel');
+        });
+
+        exportFunnelDailyBtn.addEventListener('click', async () => {
+            await exportCsv('funnel-daily');
         });
 
         document.querySelectorAll('.filter').forEach((btn) => {

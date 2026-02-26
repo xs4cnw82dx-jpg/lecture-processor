@@ -239,7 +239,7 @@
       <div class="headline">
         <div>
           <h1>Calendar</h1>
-          <p>Week view planning with study sessions, reminders, and desktop notifications.</p>
+          <p>Week view planning with study sessions and browser reminders.</p>
         </div>
         <button class="btn primary" id="add-session-btn">+ Add Study Session</button>
       </div>
@@ -296,7 +296,8 @@
               </div>
             </div>
             <button class="btn ghost" id="save-reminder-btn">Save reminders</button>
-            <div class="muted" style="margin-top:10px;">Notifications require browser permission and only fire while this page is open.</div>
+            <div class="muted" style="margin-top:10px;">Browser-only reminders: alerts fire only while this tab is open in an active browser session. They do not run after closing the browser, logging out, or when your device is asleep.</div>
+            <div class="muted" style="margin-top:6px;">No email or push reminders are sent yet.</div>
           </div>
         </aside>
 
@@ -322,7 +323,7 @@
   </main>
 
   <div class="overlay" id="session-modal-overlay">
-    <div class="modal" id="session-modal-card">
+    <div class="modal" id="session-modal-card" role="dialog" aria-modal="true" aria-labelledby="session-modal-title">
       <div class="modal-head">
         <div class="modal-title" id="session-modal-title">Add Study Session</div>
         <button class="btn" id="session-modal-close">Close</button>
@@ -370,6 +371,9 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="{{ url_for('static', filename='js/html-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
   <script>
     const firebaseConfig = {
       apiKey: "AIzaSyBAAeEUCPNvP5qnqpP3M6HnFZ6vaaijUvM",
@@ -381,6 +385,9 @@
     };
     firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
+    const authUtils = window.LectureProcessorAuth || {};
+    const authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Not signed in' }) : null;
+    const topbarUtils = window.LectureProcessorTopbar || {};
 
     const weekGrid = document.getElementById('week-grid');
     const weekTitle = document.getElementById('week-title');
@@ -474,19 +481,13 @@
     }
 
     function authFetch(path, options) {
+      if (authClient && typeof authClient.authFetch === 'function') {
+        return authClient.authFetch(path, options, { retryOn401: true });
+      }
       if (!idToken) return Promise.reject(new Error('Not signed in'));
       const opts = options || {};
       const headers = Object.assign({}, opts.headers || {}, { Authorization: 'Bearer ' + idToken });
       return fetch(path, Object.assign({}, opts, { headers }));
-    }
-
-    function escapeHtml(value) {
-      return String(value || '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
     }
 
     function initAppSelect(selectRoot, onChange) {
@@ -539,13 +540,18 @@
     function buildDailyTimeOptions() {
       const menu = document.getElementById('daily-reminder-time-menu');
       if (!menu) return;
-      const options = [];
+      while (menu.firstChild) menu.removeChild(menu.firstChild);
       for (let h = 0; h < 24; h++) {
         for (let m = 0; m < 60; m += 15) {
-          options.push(String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0'));
+          const value = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'app-select-item';
+          button.dataset.value = value;
+          button.textContent = value;
+          menu.appendChild(button);
         }
       }
-      menu.innerHTML = options.map((v) => `<button type="button" class="app-select-item" data-value="${v}">${v}</button>`).join('');
     }
 
     function closeAllSelectMenus() {
@@ -627,7 +633,15 @@
       if (!sessionPackMenu) return;
       const safeSelected = String(selectedPackId || '');
       const options = [{ value: '', label: 'No linked study pack' }].concat((studyPacks || []).map((p) => ({ value: String(p.study_pack_id || ''), label: p.title || 'Untitled pack' })));
-      sessionPackMenu.innerHTML = options.map((opt) => `<button type="button" class="app-select-item${opt.value === safeSelected ? ' active' : ''}" data-value="${escapeHtml(opt.value)}">${escapeHtml(opt.label)}</button>`).join('');
+      while (sessionPackMenu.firstChild) sessionPackMenu.removeChild(sessionPackMenu.firstChild);
+      options.forEach((opt) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'app-select-item' + (opt.value === safeSelected ? ' active' : '');
+        button.dataset.value = String(opt.value || '');
+        button.textContent = String(opt.label || '');
+        sessionPackMenu.appendChild(button);
+      });
       if (sessionPackSelect && typeof sessionPackSelect._setValue === 'function') {
         sessionPackSelect._setValue(safeSelected, true);
       }
@@ -703,7 +717,7 @@
     function renderWeek() {
       const end = addDays(weekStart, 6);
       weekTitle.textContent = `${formatLongDate(weekStart)} - ${formatLongDate(end)}`;
-      weekGrid.innerHTML = '';
+      while (weekGrid.firstChild) weekGrid.removeChild(weekGrid.firstChild);
       const today = localDateString(new Date());
 
       for (let i = 0; i < 7; i++) {
@@ -714,26 +728,93 @@
         const daySessions = sessions
           .filter((s) => s.date === dayKey)
           .sort((a, b) => sessionToTimestamp(a) - sessionToTimestamp(b));
+        const dayHead = document.createElement('div');
+        dayHead.className = 'day-head';
+        const dayName = document.createElement('div');
+        dayName.className = 'day-name';
+        dayName.textContent = formatDayName(dayDate);
+        const dayDateEl = document.createElement('div');
+        dayDateEl.className = 'day-date';
+        dayDateEl.textContent = String(dayDate.getDate());
+        dayHead.appendChild(dayName);
+        dayHead.appendChild(dayDateEl);
 
-        const eventsHtml = daySessions.length
-          ? daySessions.map((s) => {
-              const duration = parseInt(s.duration, 10) || 60;
-              const packMeta = s.pack_title ? `<div class="event-meta"><strong>Pack:</strong> ${escapeHtml(s.pack_title)}</div>` : '';
-              return `<div class="event-card" data-session-id="${s.id}">
-                <div class="event-title">${escapeHtml(s.title || 'Study session')}</div>
-                <div class="event-meta"><span>${escapeHtml(formatTimeDisplay(s.time || '19:00'))}</span><span>${duration} min</span></div>
-                ${packMeta}
-                ${s.notes ? `<div class="event-meta">${escapeHtml(s.notes)}</div>` : ''}
-                <div class="event-actions">
-                  <button class="mini-btn primary" data-open-session="${s.id}">Open</button>
-                  <button class="mini-btn" data-edit-session="${s.id}">Edit</button>
-                  <button class="mini-btn danger" data-delete-session="${s.id}">Delete</button>
-                </div>
-              </div>`;
-            }).join('')
-          : '<div class="empty-day">No sessions planned.</div>';
+        const dayEvents = document.createElement('div');
+        dayEvents.className = 'day-events';
 
-        col.innerHTML = `<div class="day-head"><div class="day-name">${formatDayName(dayDate)}</div><div class="day-date">${dayDate.getDate()}</div></div><div class="day-events">${eventsHtml}</div>`;
+        if (!daySessions.length) {
+          const empty = document.createElement('div');
+          empty.className = 'empty-day';
+          empty.textContent = 'No sessions planned.';
+          dayEvents.appendChild(empty);
+        } else {
+          daySessions.forEach((session) => {
+            const duration = parseInt(session.duration, 10) || 60;
+            const sessionId = String(session.id || '');
+
+            const card = document.createElement('div');
+            card.className = 'event-card';
+            card.dataset.sessionId = sessionId;
+
+            const title = document.createElement('div');
+            title.className = 'event-title';
+            title.textContent = String(session.title || 'Study session');
+            card.appendChild(title);
+
+            const meta = document.createElement('div');
+            meta.className = 'event-meta';
+            const timeSpan = document.createElement('span');
+            timeSpan.textContent = formatTimeDisplay(session.time || '19:00');
+            const durationSpan = document.createElement('span');
+            durationSpan.textContent = `${duration} min`;
+            meta.appendChild(timeSpan);
+            meta.appendChild(durationSpan);
+            card.appendChild(meta);
+
+            if (session.pack_title) {
+              const packMeta = document.createElement('div');
+              packMeta.className = 'event-meta';
+              const packStrong = document.createElement('strong');
+              packStrong.textContent = 'Pack:';
+              packMeta.appendChild(packStrong);
+              packMeta.appendChild(document.createTextNode(` ${String(session.pack_title)}`));
+              card.appendChild(packMeta);
+            }
+
+            if (session.notes) {
+              const notesMeta = document.createElement('div');
+              notesMeta.className = 'event-meta';
+              notesMeta.textContent = String(session.notes);
+              card.appendChild(notesMeta);
+            }
+
+            const actions = document.createElement('div');
+            actions.className = 'event-actions';
+            const openBtn = document.createElement('button');
+            openBtn.type = 'button';
+            openBtn.className = 'mini-btn primary';
+            openBtn.dataset.openSession = sessionId;
+            openBtn.textContent = 'Open';
+            const editBtn = document.createElement('button');
+            editBtn.type = 'button';
+            editBtn.className = 'mini-btn';
+            editBtn.dataset.editSession = sessionId;
+            editBtn.textContent = 'Edit';
+            const deleteBtn = document.createElement('button');
+            deleteBtn.type = 'button';
+            deleteBtn.className = 'mini-btn danger';
+            deleteBtn.dataset.deleteSession = sessionId;
+            deleteBtn.textContent = 'Delete';
+            actions.appendChild(openBtn);
+            actions.appendChild(editBtn);
+            actions.appendChild(deleteBtn);
+            card.appendChild(actions);
+            dayEvents.appendChild(card);
+          });
+        }
+
+        col.appendChild(dayHead);
+        col.appendChild(dayEvents);
         weekGrid.appendChild(col);
       }
     }
@@ -941,13 +1022,14 @@
       if (!e.target.closest('.app-select')) closeAllSelectMenus();
     });
 
-    signoutBtn.addEventListener('click', async () => {
-      try {
-        await auth.signOut();
-      } finally {
+    if (topbarUtils.bindSignOutButton) {
+      topbarUtils.bindSignOutButton(signoutBtn, auth, '/dashboard');
+    } else {
+      signoutBtn.addEventListener('click', async () => {
+        try { await auth.signOut(); } catch (_) {}
         window.location.href = '/dashboard';
-      }
-    });
+      });
+    }
 
     const notifyEnabledSelect = document.getElementById('notify-enabled-select');
     const notifyOffsetSelect = document.getElementById('notify-offset-select');
@@ -968,10 +1050,24 @@
       currentUser = user;
       if (!user) {
         idToken = '';
-        userEmailEl.textContent = 'Not signed in';
-        signoutBtn.style.display = 'none';
-        authRequiredEl.style.display = '';
-        calendarLayoutEl.style.display = 'none';
+        if (authClient && typeof authClient.clearToken === 'function') authClient.clearToken();
+        if (topbarUtils.applyProtectedPageAuthState) {
+          topbarUtils.applyProtectedPageAuthState({
+            user: null,
+            userTextEl: userEmailEl,
+            signOutBtn: signoutBtn,
+            authRequiredEl: authRequiredEl,
+            mainContentEl: calendarLayoutEl,
+            signOutSignedInDisplay: '',
+            authRequiredSignedOutDisplay: '',
+            mainContentSignedInDisplay: '',
+          });
+        } else {
+          userEmailEl.textContent = 'Not signed in';
+          signoutBtn.style.display = 'none';
+          authRequiredEl.style.display = '';
+          calendarLayoutEl.style.display = 'none';
+        }
         if (reminderTimer) clearInterval(reminderTimer);
         studyPacks = [];
         renderPackSelectOptions('');
@@ -979,10 +1075,24 @@
       }
 
       idToken = await user.getIdToken();
-      userEmailEl.textContent = user.email || 'Signed in';
-      signoutBtn.style.display = '';
-      authRequiredEl.style.display = 'none';
-      calendarLayoutEl.style.display = '';
+      if (authClient && typeof authClient.setToken === 'function') authClient.setToken(idToken);
+      if (topbarUtils.applyProtectedPageAuthState) {
+        topbarUtils.applyProtectedPageAuthState({
+          user: user,
+          userTextEl: userEmailEl,
+          signOutBtn: signoutBtn,
+          authRequiredEl: authRequiredEl,
+          mainContentEl: calendarLayoutEl,
+          signOutSignedInDisplay: '',
+          authRequiredSignedOutDisplay: '',
+          mainContentSignedInDisplay: '',
+        });
+      } else {
+        userEmailEl.textContent = user.email || 'Signed in';
+        signoutBtn.style.display = '';
+        authRequiredEl.style.display = 'none';
+        calendarLayoutEl.style.display = '';
+      }
 
       loadSessions();
       await loadStudyPacks();
