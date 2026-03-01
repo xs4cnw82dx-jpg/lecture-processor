@@ -124,3 +124,7 @@ This checklist tracks launch-critical items and current status with evidence.
     - Local config: `playwright.config.js`
     - E2E tests: `e2e/smoke.spec.js`
     - GitHub workflow: `.github/workflows/e2e-playwright.yml` (`workflow_dispatch`)
+- [x] Stripe live switch pack prepared (checklist + automated verifier)
+  - Evidence:
+    - Checklist: `docs/STRIPE_GO_LIVE_CHECKLIST.md`
+    - Verification script: `scripts/stripe_go_live_check.py`

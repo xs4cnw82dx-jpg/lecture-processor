@@ -58,6 +58,7 @@ def test_build_admin_deployment_info_detects_render_host(monkeypatch):
 def test_build_admin_runtime_checks_reports_tool_and_stripe_state(monkeypatch):
     monkeypatch.setattr(app_module.stripe, "api_key", "sk_test_123")
     monkeypatch.setattr(app_module, "STRIPE_PUBLISHABLE_KEY", "pk_test_123")
+    monkeypatch.setattr(app_module, "STRIPE_WEBHOOK_SECRET", "whsec_test_123")
     monkeypatch.setattr(app_module, "get_soffice_binary", lambda: "/usr/bin/soffice")
     monkeypatch.setattr(app_module, "get_ffmpeg_binary", lambda: "/usr/bin/ffmpeg")
     monkeypatch.setattr(app_module.shutil, "which", lambda name: "/usr/bin/yt-dlp" if name == "yt-dlp" else "")
@@ -68,6 +69,7 @@ def test_build_admin_runtime_checks_reports_tool_and_stripe_state(monkeypatch):
     assert checks["stripe_secret_mode"] == "test"
     assert checks["stripe_publishable_mode"] == "test"
     assert checks["stripe_keys_match"] is True
+    assert checks["stripe_webhook_configured"] is True
     assert checks["pptx_conversion_available"] is True
     assert checks["video_import_available"] is True
     assert checks["firebase_ready"] is True

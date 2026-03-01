@@ -86,8 +86,10 @@ Important files:
 - CI workflow: `.github/workflows/ci.yml`
 - Optional E2E workflow: `.github/workflows/e2e-playwright.yml`
 - Smoke script: `scripts/smoke_test.py`
+- Stripe go-live verification script: `scripts/stripe_go_live_check.py`
 - Guardrail tests: `tests/test_launch_guardrails.py`
 - Launch checklist: `docs/LAUNCH_READINESS.md`
+- Stripe switch checklist: `docs/STRIPE_GO_LIVE_CHECKLIST.md`
 - Final prelaunch notes: `docs/FINAL_PRELAUNCH_PASS.md`
 - Rollback process: `docs/ROLLBACK_RUNBOOK.md`
 - Legal pages:
@@ -279,6 +281,17 @@ npm run e2e
 cd /Users/jaccovandermeulen/Desktop/lecture-processor
 source venv/bin/activate
 python scripts/smoke_test.py --base-url https://lecture-processor-1.onrender.com
+```
+
+### Stripe go-live verification (before/after key switch)
+
+```bash
+cd /Users/jaccovandermeulen/Desktop/lecture-processor
+source venv/bin/activate
+python scripts/stripe_go_live_check.py \
+  --base-url https://lecture-processor-1.onrender.com \
+  --expect-mode live \
+  --bearer-token "$FIREBASE_TEST_BEARER"
 ```
 
 ### Git release flow

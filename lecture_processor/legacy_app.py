@@ -327,6 +327,7 @@ def build_admin_deployment_info(request_host=''):
 def build_admin_runtime_checks():
     secret_key_mode = infer_stripe_key_mode(stripe.api_key)
     publishable_key_mode = infer_stripe_key_mode(STRIPE_PUBLISHABLE_KEY)
+    webhook_configured = bool(str(STRIPE_WEBHOOK_SECRET or '').strip())
     stripe_keys_match = (
         secret_key_mode in {'live', 'test'}
         and publishable_key_mode in {'live', 'test'}
@@ -341,6 +342,7 @@ def build_admin_runtime_checks():
         'stripe_secret_mode': secret_key_mode,
         'stripe_publishable_mode': publishable_key_mode,
         'stripe_keys_match': stripe_keys_match,
+        'stripe_webhook_configured': webhook_configured,
         'pptx_conversion_available': soffice_available,
         'video_import_available': (ffmpeg_available and ytdlp_available),
         'ffmpeg_available': ffmpeg_available,
