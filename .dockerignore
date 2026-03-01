@@ -12,5 +12,12 @@ __pycache__/
 .DS_Store
 firebase-credentials.json
 .env
+.env.*
 tests/
 docs/
+context_dump.txt
+test-*.pdf
+test-*.m4a
+*.pre-*backup*
+*.backup
+*.dump

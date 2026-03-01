@@ -1625,6 +1625,7 @@
     var confirmModalOverlay=document.getElementById('confirm-modal-overlay'),confirmModalTitle=document.getElementById('confirm-modal-title'),confirmModalMessage=document.getElementById('confirm-modal-message'),confirmModalClose=document.getElementById('confirm-modal-close'),confirmModalCancel=document.getElementById('confirm-modal-cancel'),confirmModalConfirm=document.getElementById('confirm-modal-confirm');
     var toastEl=document.getElementById('toast');
     var audioPlayerBar=document.getElementById('audio-player-bar'),audioPlayerEl=document.getElementById('audio-player-el'),audioPlayBtn=document.getElementById('audio-play-btn'),audioPlayIcon=document.getElementById('audio-play-icon'),audioPauseIcon=document.getElementById('audio-pause-icon'),audioTime=document.getElementById('audio-time'),audioProgressWrap=document.getElementById('audio-progress-wrap'),audioProgressFill=document.getElementById('audio-progress-fill'),audioSpeedBtn=document.getElementById('audio-speed-btn'),audioPackTitle=document.getElementById('audio-pack-title'),audioCloseBtn=document.getElementById('audio-close-btn');
+    var audioBlobUrl='';
     var difficultyToolbar=document.getElementById('difficulty-toolbar'),difficultyButtons=document.querySelectorAll('.difficulty-btn[data-difficulty]');
     var keyboardHints=document.querySelector('.keyboard-hints');
 
@@ -1790,6 +1791,7 @@
     }
     function closeAudioPlayer(){
       if(audioPlayerEl){audioPlayerEl.pause();audioPlayerEl.removeAttribute('src');audioPlayerEl.load();}
+      if(audioBlobUrl){URL.revokeObjectURL(audioBlobUrl);audioBlobUrl='';}
       if(audioPlayerBar)audioPlayerBar.classList.remove('visible');
       document.querySelectorAll('.notes-audio-section.audio-active').forEach(function(el){el.classList.remove('audio-active');});
       audioReady=false;audioMap=[];audioSections=[];
@@ -1837,9 +1839,17 @@
       if(!selectedPack||!selectedPack.has_audio_playback)return;
       audioMap=(selectedPack.has_audio_sync&&Array.isArray(selectedPack.notes_audio_map))?selectedPack.notes_audio_map.slice():[];
       if(audioPackTitle)audioPackTitle.textContent=selectedPack.title||'Lecture audio';
-      apiCall('/api/study-packs/'+encodeURIComponent(selectedPack.study_pack_id)+'/audio-url').then(function(data){
-        if(!data||!data.audio_url)return;
-        audioPlayerEl.src=data.audio_url;
+      authenticatedFetch('/api/study-packs/'+encodeURIComponent(selectedPack.study_pack_id)+'/audio').then(function(response){
+        if(!response.ok){
+          return response.json().catch(function(){return{};}).then(function(body){
+            throw new Error((body&&body.error)||'Could not load audio');
+          });
+        }
+        return response.blob();
+      }).then(function(blob){
+        if(!blob||!blob.size)return;
+        audioBlobUrl=URL.createObjectURL(blob);
+        audioPlayerEl.src=audioBlobUrl;
         audioPlayerEl.playbackRate=audioSpeeds[audioSpeedIndex];
         audioSpeedBtn.textContent=audioSpeeds[audioSpeedIndex]+'x';
         audioReady=true;

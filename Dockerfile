@@ -1,4 +1,4 @@
-FROM python:3.9-slim-bookworm
+FROM python:3.11-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -19,8 +19,8 @@ RUN apt-get update && \
     (which soffice || which libreoffice) && \
     rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+COPY requirements.txt requirements.constraints.txt ./
+RUN pip install -r requirements.txt -c requirements.constraints.txt
 
 COPY . .
 
