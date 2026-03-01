@@ -9,6 +9,7 @@ venv/
 
 # Uploaded files
 uploads/
+functions/node_modules/
 
 # Python cache
 __pycache__/

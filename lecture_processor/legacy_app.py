@@ -64,6 +64,7 @@ from lecture_processor.services import (
     job_state_service,
     rate_limit_service,
 )
+from lecture_processor.blueprints import auth_bp, account_bp, study_bp, upload_bp
 
 LEGACY_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT_DIR = os.path.dirname(LEGACY_MODULE_DIR)
@@ -3263,7 +3264,7 @@ def terms_of_service():
         last_updated='February 26, 2026',
     )
 
-@app.route('/api/verify-email', methods=['POST'])
+@auth_bp.route('/api/verify-email', methods=['POST'])
 def verify_email():
     # Rate limit by IP to prevent enumeration
     client_ip = request.remote_addr or 'unknown'
@@ -3279,7 +3280,7 @@ def verify_email():
         return jsonify({'allowed': True})
     return jsonify({'allowed': False, 'message': 'Please use your university email or a major email provider (Gmail, Outlook, iCloud, Yahoo).'})
 
-@app.route('/api/dev/sentry-test', methods=['POST'])
+@auth_bp.route('/api/dev/sentry-test', methods=['POST'])
 def dev_sentry_test():
     if not is_dev_environment():
         return jsonify({'error': 'Not found'}), 404
@@ -3303,8 +3304,8 @@ def dev_sentry_test():
             'message': 'Sentry test event captured from backend',
         })
 
-@app.route('/api/analytics/event', methods=['POST'])
-@app.route('/api/lp-event', methods=['POST'])
+@auth_bp.route('/api/analytics/event', methods=['POST'])
+@auth_bp.route('/api/lp-event', methods=['POST'])
 def ingest_analytics_event():
     data = request.get_json(silent=True) or {}
     decoded_token = verify_firebase_token(request)
@@ -3348,7 +3349,7 @@ def ingest_analytics_event():
         return jsonify({'error': 'Could not store event'}), 500
     return jsonify({'ok': True})
 
-@app.route('/api/auth/user', methods=['GET'])
+@auth_bp.route('/api/auth/user', methods=['GET'])
 def get_user():
     decoded_token = verify_firebase_token(request)
     if not decoded_token: return jsonify({'error': 'Unauthorized'}), 401
@@ -3372,7 +3373,7 @@ def get_user():
         'preferences': preferences,
     })
 
-@app.route('/api/user-preferences', methods=['GET'])
+@auth_bp.route('/api/user-preferences', methods=['GET'])
 def get_user_preferences():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -3384,7 +3385,7 @@ def get_user_preferences():
     user = get_or_create_user(uid, email)
     return jsonify({'preferences': build_user_preferences_payload(user)})
 
-@app.route('/api/user-preferences', methods=['PUT'])
+@auth_bp.route('/api/user-preferences', methods=['PUT'])
 def update_user_preferences():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -3423,7 +3424,7 @@ def update_user_preferences():
         logger.info(f"Error updating preferences for user {uid}: {e}")
         return jsonify({'error': 'Could not save preferences'}), 500
 
-@app.route('/api/account/export', methods=['GET'])
+@account_bp.route('/api/account/export', methods=['GET'])
 def export_account_data():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -3448,7 +3449,7 @@ def export_account_data():
         logger.info(f"Error exporting account data for {uid}: {e}")
         return jsonify({'error': 'Could not export account data'}), 500
 
-@app.route('/api/account/delete', methods=['POST'])
+@account_bp.route('/api/account/delete', methods=['POST'])
 def delete_account_data():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -3582,7 +3583,7 @@ def delete_account_data():
         logger.info(f"Error deleting account data for {uid}: {e}")
         return jsonify({'error': 'Could not delete account data'}), 500
 
-@app.route('/api/study-progress', methods=['GET'])
+@study_bp.route('/api/study-progress', methods=['GET'])
 def get_study_progress():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -3620,7 +3621,7 @@ def get_study_progress():
         logger.info(f"Error fetching study progress for user {uid}: {e}")
         return jsonify({'error': 'Could not load study progress'}), 500
 
-@app.route('/api/study-progress', methods=['PUT'])
+@study_bp.route('/api/study-progress', methods=['PUT'])
 def update_study_progress():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -3698,7 +3699,7 @@ def update_study_progress():
         logger.info(f"Error updating study progress for user {uid}: {e}")
         return jsonify({'error': 'Could not save study progress'}), 500
 
-@app.route('/api/study-progress/summary', methods=['GET'])
+@study_bp.route('/api/study-progress/summary', methods=['GET'])
 def get_study_progress_summary():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -3886,7 +3887,7 @@ def get_purchase_history():
         logger.info(f"Error fetching purchase history: {e}")
         return jsonify({'purchases': []})
 
-@app.route('/api/study-packs', methods=['GET'])
+@study_bp.route('/api/study-packs', methods=['GET'])
 def get_study_packs():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -3918,7 +3919,7 @@ def get_study_packs():
         logger.info(f"Error fetching study packs: {e}")
         return jsonify({'error': 'Could not load study packs'}), 500
 
-@app.route('/api/study-packs', methods=['POST'])
+@study_bp.route('/api/study-packs', methods=['POST'])
 def create_study_pack():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -3991,7 +3992,7 @@ def create_study_pack():
         logger.info(f"Error creating study pack: {e}")
         return jsonify({'error': 'Could not create study pack'}), 500
 
-@app.route('/api/study-packs/<pack_id>', methods=['GET'])
+@study_bp.route('/api/study-packs/<pack_id>', methods=['GET'])
 def get_study_pack(pack_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -4038,7 +4039,7 @@ def get_study_pack(pack_id):
         logger.info(f"Error fetching study pack {pack_id}: {e}")
         return jsonify({'error': 'Could not fetch study pack'}), 500
 
-@app.route('/api/study-packs/<pack_id>', methods=['PATCH'])
+@study_bp.route('/api/study-packs/<pack_id>', methods=['PATCH'])
 def update_study_pack(pack_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -4098,7 +4099,7 @@ def update_study_pack(pack_id):
         logger.info(f"Error updating study pack {pack_id}: {e}")
         return jsonify({'error': 'Could not update study pack'}), 500
 
-@app.route('/api/study-packs/<pack_id>', methods=['DELETE'])
+@study_bp.route('/api/study-packs/<pack_id>', methods=['DELETE'])
 def delete_study_pack(pack_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -4123,7 +4124,7 @@ def delete_study_pack(pack_id):
         logger.info(f"Error deleting study pack {pack_id}: {e}")
         return jsonify({'error': 'Could not delete study pack'}), 500
 
-@app.route('/api/study-folders', methods=['GET'])
+@study_bp.route('/api/study-folders', methods=['GET'])
 def get_study_folders():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -4150,7 +4151,7 @@ def get_study_folders():
         logger.info(f"Error fetching study folders: {e}")
         return jsonify({'error': 'Could not load study folders'}), 500
 
-@app.route('/api/study-packs/<pack_id>/audio-url', methods=['GET'])
+@study_bp.route('/api/study-packs/<pack_id>/audio-url', methods=['GET'])
 def get_study_pack_audio_url(pack_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -4181,7 +4182,7 @@ def get_study_pack_audio_url(pack_id):
         logger.info(f"Error generating study-pack audio URL {pack_id}: {e}")
         return jsonify({'error': 'Could not generate audio URL'}), 500
 
-@app.route('/api/study-packs/<pack_id>/audio', methods=['GET'])
+@study_bp.route('/api/study-packs/<pack_id>/audio', methods=['GET'])
 def stream_study_pack_audio(pack_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -4205,7 +4206,7 @@ def stream_study_pack_audio(pack_id):
         logger.info(f"Error streaming study-pack audio {pack_id}: {e}")
         return jsonify({'error': 'Could not stream audio'}), 500
 
-@app.route('/api/audio-stream/<token>', methods=['GET'])
+@study_bp.route('/api/audio-stream/<token>', methods=['GET'])
 def stream_audio_token(token):
     if not ALLOW_LEGACY_AUDIO_STREAM_TOKENS:
         return jsonify({'error': 'Not found'}), 404
@@ -4221,7 +4222,7 @@ def stream_audio_token(token):
     mime_type = get_mime_type(file_path)
     return send_file(file_path, mimetype=mime_type, conditional=True)
 
-@app.route('/api/study-folders', methods=['POST'])
+@study_bp.route('/api/study-folders', methods=['POST'])
 def create_study_folder():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -4255,7 +4256,7 @@ def create_study_folder():
         logger.info(f"Error creating study folder: {e}")
         return jsonify({'error': 'Could not create folder'}), 500
 
-@app.route('/api/study-folders/<folder_id>', methods=['PATCH'])
+@study_bp.route('/api/study-folders/<folder_id>', methods=['PATCH'])
 def update_study_folder(folder_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -4294,7 +4295,7 @@ def update_study_folder(folder_id):
         logger.info(f"Error updating folder {folder_id}: {e}")
         return jsonify({'error': 'Could not update folder'}), 500
 
-@app.route('/api/study-folders/<folder_id>', methods=['DELETE'])
+@study_bp.route('/api/study-folders/<folder_id>', methods=['DELETE'])
 def delete_study_folder(folder_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -4704,7 +4705,7 @@ def export_admin_csv():
 
 # --- Upload & Processing Routes ---
 
-@app.route('/api/import-audio-url', methods=['POST'])
+@upload_bp.route('/api/import-audio-url', methods=['POST'])
 def import_audio_from_url():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -4746,7 +4747,7 @@ def import_audio_from_url():
         logger.info(f"Error importing audio from URL for user {uid}: {e}")
         return jsonify({'error': 'Could not import audio from URL. Please check that the URL is accessible and try again.'}), 400
 
-@app.route('/api/import-audio-url/release', methods=['POST'])
+@upload_bp.route('/api/import-audio-url/release', methods=['POST'])
 def release_imported_audio():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -4758,7 +4759,7 @@ def release_imported_audio():
         release_audio_import_token(uid, token)
     return jsonify({'ok': True})
 
-@app.route('/upload', methods=['POST'])
+@upload_bp.route('/upload', methods=['POST'])
 def upload_files():
     decoded_token = verify_firebase_token(request)
     if not decoded_token: return jsonify({'error': 'Please sign in to continue'}), 401
@@ -4986,7 +4987,7 @@ def upload_files():
 
     return jsonify({'job_id': job_id})
 
-@app.route('/status/<job_id>')
+@upload_bp.route('/status/<job_id>')
 def get_status(job_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -5030,7 +5031,7 @@ def get_status(job_id):
         response['credit_refunded'] = job.get('credit_refunded', False)
     return jsonify(response)
 
-@app.route('/download-docx/<job_id>')
+@upload_bp.route('/download-docx/<job_id>')
 def download_docx(job_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -5070,7 +5071,7 @@ def download_docx(job_id):
     docx_io.seek(0)
     return send_file(docx_io, mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document', as_attachment=True, download_name=filename)
 
-@app.route('/download-flashcards-csv/<job_id>')
+@upload_bp.route('/download-flashcards-csv/<job_id>')
 def download_flashcards_csv(job_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -5118,7 +5119,7 @@ def download_flashcards_csv(job_id):
     csv_bytes.seek(0)
     return send_file(csv_bytes, mimetype='text/csv', as_attachment=True, download_name=filename)
 
-@app.route('/api/study-packs/<pack_id>/export-flashcards-csv', methods=['GET'])
+@study_bp.route('/api/study-packs/<pack_id>/export-flashcards-csv', methods=['GET'])
 def export_study_pack_flashcards_csv(pack_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -5167,7 +5168,7 @@ def export_study_pack_flashcards_csv(pack_id):
         logger.info(f"Error exporting study pack flashcards CSV {pack_id}: {e}")
         return jsonify({'error': 'Could not export CSV'}), 500
 
-@app.route('/api/study-packs/<pack_id>/export-notes', methods=['GET'])
+@study_bp.route('/api/study-packs/<pack_id>/export-notes', methods=['GET'])
 def export_study_pack_notes(pack_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -5217,7 +5218,7 @@ def export_study_pack_notes(pack_id):
         logger.info(f"Error exporting study pack notes {pack_id}: {e}")
         return jsonify({'error': 'Could not export notes'}), 500
 
-@app.route('/api/study-packs/<pack_id>/export-pdf', methods=['GET'])
+@study_bp.route('/api/study-packs/<pack_id>/export-pdf', methods=['GET'])
 def export_study_pack_pdf(pack_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -5251,6 +5252,11 @@ def export_study_pack_pdf(pack_id):
     except Exception as e:
         logger.info(f"Error exporting study pack PDF {pack_id}: {e}")
         return jsonify({'error': 'Could not export PDF'}), 500
+
+# Register extracted non-admin API blueprints (Batch R3).
+for _blueprint in (auth_bp, account_bp, study_bp, upload_bp):
+    if _blueprint.name not in app.blueprints:
+        app.register_blueprint(_blueprint)
 
 # =============================================
 # HEALTH CHECK (Issue 38)
