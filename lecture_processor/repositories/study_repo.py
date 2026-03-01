@@ -47,7 +47,3 @@ def study_card_state_doc_ref(db, uid, pack_id):
 
 def list_study_card_states_by_uid(db, uid, limit):
     return db.collection('study_card_states').where('uid', '==', uid).limit(limit).stream()
-
-
-def query_by_uid(db, collection_name, uid, limit):
-    return list(db.collection(collection_name).where('uid', '==', uid).limit(limit).stream())

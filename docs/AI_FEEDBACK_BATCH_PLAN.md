@@ -185,3 +185,22 @@ Execution order inside Batch 9:
 6. `DONE` `#23` continued modular extraction with shared markdown sanitizer utility and remaining safety/UX cleanup.
 
 All items from the two AI feedback lists are now implemented or intentionally folded into implemented equivalents.
+
+## 5) Issue #4 modular rewrite status (backend architecture)
+
+Status: `DONE` (incremental batches R1-R6 completed, behavior preserved)
+
+- `R1 DONE`: app factory skeleton (`lecture_processor/__init__.py`) + thin compatibility bootstrap (`app.py`)
+- `R2 DONE`: shared service extraction (auth/rate-limit/jobs/analytics/upload helpers)
+- `R3 DONE`: non-admin API blueprint split (`auth`, `upload`, `study`, `account`)
+- `R4 DONE`: admin + payments blueprint split
+- `R5 DONE`: Firestore repository layer and route/service wiring
+- `R6 DONE`: final cleanup and docs/runbook update for current architecture
+
+Current backend structure for future AI agents:
+- Entrypoint: `app.py` (thin bootstrap for Gunicorn/local)
+- Factory: `lecture_processor/__init__.py`
+- Legacy compatibility module: `lecture_processor/legacy_app.py`
+- Route grouping: `lecture_processor/blueprints/*.py`
+- Data access layer: `lecture_processor/repositories/*.py`
+- Domain helpers: `lecture_processor/services/*.py`

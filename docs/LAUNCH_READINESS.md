@@ -1,6 +1,6 @@
 # Launch Readiness Checklist
 
-Last updated: 2026-02-26
+Last updated: 2026-03-01
 
 This checklist tracks launch-critical items and current status with evidence.
 
@@ -13,8 +13,8 @@ This checklist tracks launch-critical items and current status with evidence.
 
 - [x] Backend error monitoring (Sentry)
   - Evidence:
-    - `app.py` initializes Sentry SDK when `SENTRY_DSN_BACKEND` is set.
-    - `app.py` includes route context tags (`route.path`, `route.method`, `route.status_code`, etc.).
+    - `lecture_processor/legacy_app.py` initializes Sentry SDK when `SENTRY_DSN_BACKEND` is set.
+    - `lecture_processor/legacy_app.py` includes route context tags (`route.path`, `route.method`, `route.status_code`, etc.).
     - `/api/dev/sentry-test` exists for development verification.
 
 - [x] Basic analytics funnel events
@@ -96,9 +96,9 @@ This checklist tracks launch-critical items and current status with evidence.
 
 - [x] Test run (latest)
   - Command:
-    - `SENTRY_DSN_BACKEND='' SENTRY_DSN_FRONTEND='' ./venv/bin/python -m pytest -q tests/test_launch_guardrails.py`
+    - `./venv/bin/python -m pytest -q tests/test_launch_guardrails.py tests/test_api_contracts.py`
   - Result:
-    - `23 passed`
+    - `47 passed`
 
 - [x] One-command smoke script added
   - Script: `scripts/run_smoke.sh`
