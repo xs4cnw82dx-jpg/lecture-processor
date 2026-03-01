@@ -64,7 +64,7 @@ from lecture_processor.services import (
     job_state_service,
     rate_limit_service,
 )
-from lecture_processor.blueprints import auth_bp, account_bp, study_bp, upload_bp
+from lecture_processor.blueprints import auth_bp, account_bp, study_bp, upload_bp, admin_bp, payments_bp
 
 LEGACY_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT_DIR = os.path.dirname(LEGACY_MODULE_DIR)
@@ -3721,7 +3721,7 @@ def get_study_progress_summary():
 
 # --- Stripe Routes ---
 
-@app.route('/api/config', methods=['GET'])
+@payments_bp.route('/api/config', methods=['GET'])
 def get_config():
     return jsonify({
         'stripe_publishable_key': STRIPE_PUBLISHABLE_KEY,
@@ -3737,7 +3737,7 @@ def get_config():
         }
     })
 
-@app.route('/api/create-checkout-session', methods=['POST'])
+@payments_bp.route('/api/create-checkout-session', methods=['POST'])
 def create_checkout_session():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -3793,7 +3793,7 @@ def create_checkout_session():
         logger.info(f"Stripe checkout error: {e}")
         return jsonify({'error': 'Could not create checkout session. Please try again.'}), 500
 
-@app.route('/api/confirm-checkout-session', methods=['GET'])
+@payments_bp.route('/api/confirm-checkout-session', methods=['GET'])
 def confirm_checkout_session():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -3821,7 +3821,7 @@ def confirm_checkout_session():
         logger.info(f"Confirm checkout session error: {e}")
         return jsonify({'error': 'Could not confirm checkout session.'}), 500
 
-@app.route('/api/stripe-webhook', methods=['POST'])
+@payments_bp.route('/api/stripe-webhook', methods=['POST'])
 def stripe_webhook():
     payload = request.data
     sig_header = request.headers.get('Stripe-Signature', '')
@@ -3861,7 +3861,7 @@ def stripe_webhook():
 
 # --- Purchase History Route ---
 
-@app.route('/api/purchase-history', methods=['GET'])
+@payments_bp.route('/api/purchase-history', methods=['GET'])
 def get_purchase_history():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -4318,7 +4318,7 @@ def delete_study_folder(folder_id):
         logger.info(f"Error deleting folder {folder_id}: {e}")
         return jsonify({'error': 'Could not delete folder'}), 500
 
-@app.route('/api/admin/overview', methods=['GET'])
+@admin_bp.route('/api/admin/overview', methods=['GET'])
 def get_admin_overview():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -4543,7 +4543,7 @@ def get_admin_overview():
         logger.info(f"Error fetching admin overview: {e}")
         return jsonify({'error': 'Could not fetch admin dashboard data'}), 500
 
-@app.route('/api/admin/export', methods=['GET'])
+@admin_bp.route('/api/admin/export', methods=['GET'])
 def export_admin_csv():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -5254,7 +5254,7 @@ def export_study_pack_pdf(pack_id):
         return jsonify({'error': 'Could not export PDF'}), 500
 
 # Register extracted non-admin API blueprints (Batch R3).
-for _blueprint in (auth_bp, account_bp, study_bp, upload_bp):
+for _blueprint in (auth_bp, account_bp, study_bp, upload_bp, admin_bp, payments_bp):
     if _blueprint.name not in app.blueprints:
         app.register_blueprint(_blueprint)
 
