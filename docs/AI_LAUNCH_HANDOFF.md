@@ -1,9 +1,9 @@
 # AI Launch Handoff (Read This First)
 
-Last updated: 2026-02-25
+Last updated: 2026-03-01
 Project: `lecture-processor`
 Primary repo: `https://github.com/xs4cnw82dx-jpg/lecture-processor`
-Production URL: `https://lecture-processor.onrender.com`
+Production URL: `https://lecture-processor-1.onrender.com`
 
 ---
 
@@ -65,7 +65,7 @@ When in doubt: choose explicitness over brevity.
 
 ## 3) Tech Stack and Architecture Snapshot
 
-- Backend: Flask app in `app.py`
+- Backend: Flask package with app factory (`lecture_processor/__init__.py`) and compatibility bootstrap (`app.py`)
 - Frontend: server-rendered templates + inline JS/CSS in `templates/*.html`
 - Auth: Firebase Auth (Google + email/password)
 - Database: Firestore
@@ -78,7 +78,11 @@ When in doubt: choose explicitness over brevity.
 
 Important files:
 
-- Backend: `app.py`
+- App bootstrap: `app.py`
+- App factory: `lecture_processor/__init__.py`
+- Legacy route module (still active): `lecture_processor/legacy_app.py`
+- API blueprints: `lecture_processor/blueprints/*.py`
+- Firestore repositories: `lecture_processor/repositories/*.py`
 - CI workflow: `.github/workflows/ci.yml`
 - Smoke script: `scripts/smoke_test.py`
 - Guardrail tests: `tests/test_launch_guardrails.py`
@@ -167,6 +171,12 @@ If assistant asks owner to run any Python command, always include venv activatio
 - CI startup made robust when env secrets are absent.
 - Smoke workflow hardened in CI.
 - Rollback runbook added.
+- Issue #4 modular rewrite batches R1-R6 completed:
+  - app factory + bootstrap compatibility
+  - blueprints split for API grouping
+  - service extraction
+  - repository layer for Firestore access
+  - `app.py` retained as thin entrypoint for Gunicorn/local runs
 
 ---
 
@@ -258,7 +268,7 @@ python -m pytest -q tests/test_launch_guardrails.py
 ```bash
 cd /Users/jaccovandermeulen/Desktop/lecture-processor
 source venv/bin/activate
-python scripts/smoke_test.py --base-url https://lecture-processor.onrender.com
+python scripts/smoke_test.py --base-url https://lecture-processor-1.onrender.com
 ```
 
 ### Git release flow

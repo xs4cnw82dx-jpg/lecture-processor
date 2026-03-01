@@ -1,6 +1,6 @@
 # Rollback and Incident Runbook
 
-Last updated: 2026-02-25
+Last updated: 2026-03-01
 Owner: Lecture Processor (engineering)
 
 ## Purpose
@@ -47,7 +47,7 @@ Prefer fix-forward (no rollback) if all are true:
 
 ```bash
 cd /Users/jaccovandermeulen/Desktop/lecture-processor
-./venv/bin/python scripts/smoke_test.py --base-url https://lecture-processor.onrender.com
+./venv/bin/python scripts/smoke_test.py --base-url https://lecture-processor-1.onrender.com
 ```
 
 6. Decide: `rollback now` or `fix-forward now` using trigger rules above.
@@ -55,7 +55,7 @@ cd /Users/jaccovandermeulen/Desktop/lecture-processor
 ## Render Rollback (UI Steps)
 
 1. Open Render dashboard.
-2. Click service: `lecture-processor`.
+2. Click service: `lecture-processor-1`.
 3. Go to `Deploys` tab.
 4. Find the latest known good deploy (usually previous green deploy).
 5. Click `Rollback` on that deploy.
@@ -75,7 +75,7 @@ After rollback is live, complete all checks:
 
 ```bash
 cd /Users/jaccovandermeulen/Desktop/lecture-processor
-./venv/bin/python scripts/smoke_test.py --base-url https://lecture-processor.onrender.com
+./venv/bin/python scripts/smoke_test.py --base-url https://lecture-processor-1.onrender.com
 ```
 
 2. Manual core flow spot-check:
@@ -130,7 +130,7 @@ Mark incident as recovered only when all are true for at least 30 minutes:
 
 ```bash
 cd /Users/jaccovandermeulen/Desktop/lecture-processor
-./venv/bin/python scripts/smoke_test.py --base-url https://lecture-processor.onrender.com
+./venv/bin/python scripts/smoke_test.py --base-url https://lecture-processor-1.onrender.com
 ```
 
 ### 2) Confirm latest CI runs (GitHub UI)
