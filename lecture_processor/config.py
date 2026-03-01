@@ -13,4 +13,14 @@ class AppConfig:
 
 
 def load_config() -> AppConfig:
-    return AppConfig()
+    config = AppConfig()
+    runtime_env = (
+        os.getenv('SENTRY_ENVIRONMENT')
+        or os.getenv('FLASK_ENV')
+        or os.getenv('ENV')
+        or ('production' if os.getenv('RENDER') else 'development')
+    ).strip().lower()
+    is_dev_like = runtime_env in {'development', 'dev', 'local', 'test'}
+    if not is_dev_like and not config.flask_secret_key.strip():
+        raise RuntimeError('FLASK_SECRET_KEY must be set in non-development environments.')
+    return config

@@ -247,6 +247,37 @@ def test_upload_rate_limited_returns_retry_after(client, monkeypatch):
     assert captured == [("upload", 33)]
 
 
+def test_upload_rejected_when_disk_space_low(client, monkeypatch):
+    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u-lowdisk", "email": "user@gmail.com"})
+    monkeypatch.setattr(app_module, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(app_module, "count_active_jobs_for_user", lambda _uid: 0)
+    monkeypatch.setattr(app_module, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(app_module, "has_sufficient_upload_disk_space", lambda _bytes=0: (False, 100, 200))
+
+    response = client.post("/upload", data={"mode": "lecture-notes"})
+
+    assert response.status_code == 503
+    assert "storage" in response.get_json()["error"].lower()
+
+
+def test_upload_rejected_when_daily_quota_reached(client, monkeypatch):
+    captured = []
+    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u-daycap", "email": "user@gmail.com"})
+    monkeypatch.setattr(app_module, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(app_module, "count_active_jobs_for_user", lambda _uid: 0)
+    monkeypatch.setattr(app_module, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(app_module, "has_sufficient_upload_disk_space", lambda _bytes=0: (True, 99999999, 100))
+    monkeypatch.setattr(app_module, "reserve_daily_upload_bytes", lambda _uid, _bytes: (False, 123))
+    monkeypatch.setattr(app_module, "log_rate_limit_hit", lambda name, retry: captured.append((name, retry)) or True)
+
+    response = client.post("/upload", data={"mode": "lecture-notes"})
+
+    assert response.status_code == 429
+    assert response.headers.get("Retry-After") == "123"
+    assert "daily upload quota" in response.get_json()["error"].lower()
+    assert captured == [("upload", 123)]
+
+
 def test_upload_invalid_audio_content_type_rejected(client, monkeypatch):
     monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u5", "email": "user@gmail.com"})
     monkeypatch.setattr(app_module, "is_email_allowed", lambda _email: True)

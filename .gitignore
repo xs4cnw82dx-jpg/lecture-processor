@@ -6,6 +6,7 @@ firebase-credentials.json
 
 # Virtual environment
 venv/
+venv_py39_backup/
 
 # Uploaded files
 uploads/

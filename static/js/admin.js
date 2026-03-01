@@ -379,6 +379,9 @@
 
         authBtn.addEventListener('click', async () => {
             if (auth.currentUser) {
+                try {
+                    await fetch('/api/session/logout', { method: 'POST', credentials: 'include' });
+                } catch (_) {}
                 await auth.signOut();
                 return;
             }
