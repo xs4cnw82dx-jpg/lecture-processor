@@ -747,6 +747,12 @@
         async function signOut() {
             try {
                 await releaseImportedAudioToken({ clearStatus: true });
+                try {
+                    await fetch('/api/session/logout', {
+                        method: 'POST',
+                        credentials: 'include'
+                    });
+                } catch (_) {}
                 await auth.signOut();
                 showToast('Signed out', 'success');
             } catch (e) {
@@ -2904,7 +2910,27 @@
                 else refreshStudyHeaderMetrics();
             }
         });
-        adminDashboardBtn.addEventListener('click', () => { setUserDropdownVisible(false); window.location.href = '/admin'; });
+        adminDashboardBtn.addEventListener('click', async () => {
+            setUserDropdownVisible(false);
+            if (!currentUser || !currentUserIsAdmin) {
+                showToast('Admin access is only available for configured admin accounts.', 'error', 4200);
+                return;
+            }
+            try {
+                const sessionResponse = await authenticatedFetch('/api/session/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                if (!sessionResponse.ok) {
+                    throw new Error('Could not start admin session.');
+                }
+                window.location.href = '/admin';
+            } catch (e) {
+                captureClientError(e, 'admin_session_login');
+                showToast('Could not open admin dashboard right now. Please retry.', 'error', 4500);
+            }
+        });
         buyCreditsLink.addEventListener('click', (e) => { e.preventDefault(); showPricingModal(); });
         pricingModalClose.addEventListener('click', hidePricingModal);
         pricingOverlay.addEventListener('click', (e) => { if (e.target === pricingOverlay) hidePricingModal(); });

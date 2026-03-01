@@ -96,3 +96,49 @@ def test_admin_overview_contract_fields(client, monkeypatch):
     assert "metrics" in data
     assert "recent_jobs" in data
     assert "recent_purchases" in data
+
+
+def test_admin_route_requires_server_session_cookie(client):
+    response = client.get("/admin", follow_redirects=False)
+    assert response.status_code in {302, 301}
+    assert response.headers.get("Location", "").endswith("/dashboard")
+
+
+def test_admin_session_login_sets_cookie(client, monkeypatch):
+    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
+    monkeypatch.setattr(app_module, "is_admin_user", lambda _decoded: True)
+    monkeypatch.setattr(app_module, "_extract_bearer_token", lambda _request: "id-token")
+    monkeypatch.setattr(app_module.auth, "create_session_cookie", lambda _id_token, expires_in: "session-cookie")
+
+    response = client.post("/api/session/login", headers={"Authorization": "Bearer test"})
+
+    assert response.status_code == 200
+    assert response.get_json().get("ok") is True
+    set_cookie = response.headers.get("Set-Cookie", "")
+    assert "lp_admin_session=session-cookie" in set_cookie
+
+
+def test_status_uses_runtime_job_fallback(client, monkeypatch):
+    app_module.jobs.clear()
+    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u-fallback", "email": "user@example.com"})
+    monkeypatch.setattr(
+        app_module,
+        "load_runtime_job_snapshot",
+        lambda _job_id: {
+            "job_id": "job-fallback",
+            "status": "processing",
+            "step": 2,
+            "step_description": "Processing",
+            "total_steps": 3,
+            "mode": "lecture-notes",
+            "user_id": "u-fallback",
+            "billing_receipt": {"charged": {"lecture_credits_standard": 1}, "refunded": {}},
+        },
+    )
+
+    response = client.get("/status/job-fallback")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["status"] == "processing"
+    assert body["step"] == 2

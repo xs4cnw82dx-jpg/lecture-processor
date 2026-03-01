@@ -342,6 +342,6 @@ Total: 0</div></button>
             sentryRelease: {{ sentry_release | tojson }}
         };
     </script>
-    <script src="{{ url_for('static', filename='js/index-app.js') }}"></script>
+    <script src="{{ url_for('static', filename=index_js_asset or 'js/index-app.js') }}"></script>
 </body>
 </html>

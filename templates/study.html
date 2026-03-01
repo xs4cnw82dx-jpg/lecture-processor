@@ -359,6 +359,6 @@
 <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
 <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
 <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/study.js') }}"></script>
+  <script src="{{ url_for('static', filename=study_js_asset or 'js/study.js') }}"></script>
 </body>
 </html>

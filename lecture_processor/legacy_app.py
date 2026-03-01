@@ -26,12 +26,16 @@ warnings.filterwarnings(
 )
 
 import stripe
-from flask import Flask, request, jsonify, render_template, send_file, Response, stream_with_context, g
+from flask import Flask, request, jsonify, render_template, send_file, Response, stream_with_context, g, redirect, abort
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 from werkzeug.exceptions import RequestEntityTooLarge
+try:
+    from flask_compress import Compress
+except Exception:
+    Compress = None
 from docx import Document
 from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -68,6 +72,7 @@ from lecture_processor.repositories import (
     admin_repo,
     job_logs_repo,
     purchases_repo,
+    runtime_jobs_repo,
     study_repo,
     users_repo,
 )
@@ -83,6 +88,8 @@ app = Flask(
     static_folder=os.path.join(PROJECT_ROOT_DIR, 'static'),
 )
 app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(32).hex())
+if Compress is not None:
+    Compress(app)
 LOG_LEVEL = (os.getenv('LOG_LEVEL', 'INFO') or 'INFO').strip().upper()
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.INFO),
@@ -125,29 +132,34 @@ if GEMINI_API_KEY:
         client = genai.Client(api_key=GEMINI_API_KEY)
     except Exception as e:
         client = None
-        logger.info(f"⚠️ Gemini client disabled: {e}")
+        logger.warning(f"⚠️ Gemini client disabled: {e}")
 else:
     client = None
-    logger.info("⚠️ GEMINI_API_KEY not set; AI processing features are disabled.")
+    logger.warning("⚠️ GEMINI_API_KEY not set; AI processing features are disabled.")
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 
 # --- Firebase Setup ---
 db = None
 firebase_init_error = ''
 try:
-    if os.path.exists('firebase-credentials.json'):
+    firebase_creds_raw = (os.getenv('FIREBASE_CREDENTIALS', '') or '').strip()
+    local_creds_file_exists = os.path.exists('firebase-credentials.json')
+    if local_creds_file_exists:
+        logger.warning(
+            "Local firebase-credentials.json detected. Prefer FIREBASE_CREDENTIALS environment variable for safer deployments."
+        )
+    if firebase_creds_raw:
+        cred = credentials.Certificate(json.loads(firebase_creds_raw))
+    elif local_creds_file_exists:
         cred = credentials.Certificate('firebase-credentials.json')
     else:
-        firebase_creds_raw = (os.getenv('FIREBASE_CREDENTIALS', '') or '').strip()
-        if not firebase_creds_raw:
-            raise ValueError("FIREBASE_CREDENTIALS is not set and firebase-credentials.json was not found.")
-        cred = credentials.Certificate(json.loads(firebase_creds_raw))
+        raise ValueError("FIREBASE_CREDENTIALS is not set and firebase-credentials.json was not found.")
     if not firebase_admin._apps:
         firebase_admin.initialize_app(cred)
     db = firestore.client()
 except Exception as e:
     firebase_init_error = str(e)
-    logger.info(f"⚠️ Firebase initialization skipped: {firebase_init_error}")
+    logger.warning(f"⚠️ Firebase initialization skipped: {firebase_init_error}")
 
 # --- Stripe Setup ---
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
@@ -155,10 +167,52 @@ STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY', '')
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
 ADMIN_EMAILS = {email.strip().lower() for email in os.getenv('ADMIN_EMAILS', '').split(',') if email.strip()}
 ADMIN_UIDS = {uid.strip() for uid in os.getenv('ADMIN_UIDS', '').split(',') if uid.strip()}
+ADMIN_SESSION_COOKIE_NAME = 'lp_admin_session'
+ADMIN_SESSION_DURATION_SECONDS = int(os.getenv('ADMIN_SESSION_DURATION_SECONDS', str(8 * 60 * 60)) or (8 * 60 * 60))
+ADMIN_PAGE_UNAUTHORIZED_MODE = str(os.getenv('ADMIN_PAGE_UNAUTHORIZED_MODE', 'redirect')).strip().lower()
 
 # --- In-Memory Storage (jobs only — credits are in Firestore now) ---
 jobs = {}
 JOBS_LOCK = threading.RLock()
+RUNTIME_JOBS_COLLECTION = 'runtime_jobs'
+RUNTIME_JOB_RECOVERY_BATCH_LIMIT = int(os.getenv('RUNTIME_JOB_RECOVERY_BATCH_LIMIT', '200') or 200)
+RUNTIME_JOB_PERSISTED_FIELDS = {
+    'status',
+    'step',
+    'step_description',
+    'total_steps',
+    'mode',
+    'user_id',
+    'user_email',
+    'credit_deducted',
+    'credit_refunded',
+    'started_at',
+    'finished_at',
+    'result',
+    'slide_text',
+    'transcript',
+    'flashcards',
+    'test_questions',
+    'flashcard_selection',
+    'question_selection',
+    'study_features',
+    'output_language',
+    'study_generation_error',
+    'study_pack_id',
+    'error',
+    'billing_receipt',
+    'interview_features',
+    'interview_features_successful',
+    'interview_summary',
+    'interview_sections',
+    'interview_combined',
+    'interview_features_cost',
+    'extra_slides_refunded',
+    'audio_storage_key',
+    'notes_audio_map',
+    'transcript_segments',
+}
+RUNTIME_JOB_MAX_STRING_LENGTH = 200000
 AUDIO_STREAM_TOKEN_TTL_SECONDS = 3600
 AUDIO_STREAM_TOKENS = {}
 ALLOW_LEGACY_AUDIO_STREAM_TOKENS = str(os.getenv('ALLOW_LEGACY_AUDIO_STREAM_TOKENS', '0')).strip().lower() in {'1', 'true', 'yes', 'on'}
@@ -220,6 +274,9 @@ ANALYTICS_RATE_LIMIT_WINDOW_SECONDS = safe_int_env('ANALYTICS_RATE_LIMIT_WINDOW_
 ANALYTICS_RATE_LIMIT_MAX_REQUESTS = safe_int_env('ANALYTICS_RATE_LIMIT_MAX_REQUESTS', 240, minimum=10, maximum=5000)
 VIDEO_IMPORT_RATE_LIMIT_WINDOW_SECONDS = safe_int_env('VIDEO_IMPORT_RATE_LIMIT_WINDOW_SECONDS', 600, minimum=30, maximum=86400)
 VIDEO_IMPORT_RATE_LIMIT_MAX_REQUESTS = safe_int_env('VIDEO_IMPORT_RATE_LIMIT_MAX_REQUESTS', 8, minimum=1, maximum=200)
+UPLOAD_MIN_FREE_DISK_BYTES = safe_int_env('UPLOAD_MIN_FREE_DISK_BYTES', 1024 * 1024 * 1024, minimum=50 * 1024 * 1024, maximum=500 * 1024 * 1024 * 1024)
+UPLOAD_DAILY_BYTE_CAP = safe_int_env('UPLOAD_DAILY_BYTE_CAP', 2 * 1024 * 1024 * 1024, minimum=100 * 1024 * 1024, maximum=5 * 1024 * 1024 * 1024 * 1024)
+UPLOAD_DAILY_COUNTER_COLLECTION = 'upload_usage_daily'
 ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION = safe_int_env('ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION', 10000, minimum=100, maximum=50000)
 ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION = safe_int_env('ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION', 10000, minimum=100, maximum=50000)
 RATE_LIMIT_EVENTS = {}
@@ -277,6 +334,20 @@ def is_dev_environment():
     env_value = str(SENTRY_ENVIRONMENT or '').strip().lower()
     flask_debug = str(os.getenv('FLASK_DEBUG', '0')).strip().lower() in {'1', 'true', 'yes', 'on'}
     return env_value in DEV_ENV_NAMES or flask_debug
+
+
+def resolve_js_asset(filename):
+    """Prefer minified JS assets in non-dev environments when available."""
+    safe_name = str(filename or '').strip()
+    if not safe_name.endswith('.js'):
+        return safe_name
+    if is_dev_environment():
+        return safe_name
+    min_name = safe_name[:-3] + '.min.js'
+    min_path = os.path.join(PROJECT_ROOT_DIR, 'static', min_name)
+    if os.path.exists(min_path):
+        return min_name
+    return safe_name
 
 
 def infer_stripe_key_mode(key_value):
@@ -521,28 +592,28 @@ VIDEO_IMPORT_ALLOWED_HOST_SUFFIXES = tuple(
 )
 
 # --- Prompts ---
-PROMPT_SLIDE_EXTRACTION = """Extraheer alle tekst van de slides uit het bijgevoegde PDF-bestand en identificeer de functie van visuele elementen.
-Instructies:
-1. Geef per slide duidelijk aan welk slide-nummer het betreft (bv. "Slide 1:").
-2. Neem de titel van de slide over.
-3. Neem alle tekstuele inhoud (bullet points, paragrafen) van de slide over.
-4. Identificeer waar afbeeldingen of tabellen staan. Gebruik strikte criteria:
-   - Informatief: Gebruik de placeholder ALLEEN als de afbeelding tekst, data, grafieken, diagrammen, flowcharts, of een specifiek wetenschappelijk/technisch diagram bevat dat cruciaal is voor begrip van de slide. Formaat: [Informatieve Afbeelding/Tabel: Geef een neutrale beschrijving van wat zichtbaar is of het onderwerp]
-   - Decoratief: Gebruik de placeholder voor ALLE foto's van mensen, landschappen, bedrijfslogo's, universiteitslogo's, achtergrondillustraties, stockfoto's, of sfeerbeelden. Bij twijfel, classificeer het als decoratief! Formaat: [Decoratieve Afbeelding]
-5. Laat de zin "Share Your talent move the world" weg, indien aanwezig.
-6. Lever de output als platte tekst, zonder specifieke Word-opmaak anders dan de slide-indicatie en de placeholders."""
+PROMPT_SLIDE_EXTRACTION = """Extract all textual content from the attached slide deck PDF and identify the role of visual elements.
+Instructions:
+1. Clearly label each slide by number (for example: "Slide 1:").
+2. Include the slide title.
+3. Include all textual content (bullet points, paragraphs) from each slide.
+4. Identify where images or tables appear, using strict rules:
+   - Informative: Use this placeholder ONLY when the image/table contains text, data, charts, diagrams, flowcharts, or a specific scientific/technical visual that is essential for understanding. Format: [Informative Image/Table: neutral description of what is visible or the topic]
+   - Decorative: Use this placeholder for photos of people/landscapes, logos, background illustrations, stock photos, or mood visuals. If uncertain, classify as decorative. Format: [Decorative Image]
+5. Omit the phrase "Share Your talent move the world" if present.
+6. Return plain text only, without Word-specific formatting beyond slide labels and placeholders."""
 
-PROMPT_AUDIO_TRANSCRIPTION = """Maak een nauwkeurig en 'schoon' transcript van het bijgevoegde audiobestand.
-Instructies:
-1. Transcribeer de gesproken tekst zo letterlijk mogelijk.
-2. Verwijder stopwoorden en aarzelingen (zoals "eh," "uhm," "nou ja," "weet je wel") om de leesbaarheid te verhogen, maar behoud de volledige inhoudelijke boodschap. Verander geen zinsconstructies.
-3. Gebruik geen tijdcodes.
-4. Gebruik alinea's om langere spreekbeurten op te delen.
-5. Schrijf de uiteindelijke output volledig in deze taal: {output_language}."""
+PROMPT_AUDIO_TRANSCRIPTION = """Create an accurate and clean transcript of the attached audio file.
+Instructions:
+1. Transcribe the spoken text as literally as possible.
+2. Remove filler words and hesitations (such as "uh", "um", "you know") to improve readability while preserving the full meaning. Do not rewrite sentence structure.
+3. Do not include timestamps.
+4. Use paragraphs to split up longer speaking turns.
+5. Write the final output fully in this language: {output_language}."""
 
-PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED = """Maak een nauwkeurig transcript met tijdsegmenten van het bijgevoegde audiobestand.
+PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED = """Create an accurate transcript with time segments from the attached audio file.
 
-Geef ALLEEN geldige JSON terug, zonder markdown of extra tekst, in exact dit formaat:
+Return ONLY valid JSON, without markdown or extra text, in exactly this format:
 {{
   "transcript_segments": [
     {{
@@ -554,12 +625,12 @@ Geef ALLEEN geldige JSON terug, zonder markdown of extra tekst, in exact dit for
   "full_transcript": "..."
 }}
 
-Regels:
-- Gebruik natuurlijke segmenten van ongeveer 5-25 seconden.
-- start_ms en end_ms zijn milliseconden vanaf het begin.
-- Verwijder stopwoorden en aarzelingen om de leesbaarheid te verbeteren zonder inhoud te verliezen.
-- full_transcript bevat de volledige transcriptie als doorlopende tekst.
-- Schrijf tekstinhoud volledig in deze taal: {output_language}."""
+Rules:
+- Use natural segments of about 5-25 seconds.
+- start_ms and end_ms are milliseconds from the beginning.
+- Remove filler words and hesitations to improve readability without losing content.
+- full_transcript contains the complete transcript as continuous text.
+- Write transcript text fully in this language: {output_language}."""
 
 PROMPT_INTERVIEW_TRANSCRIPTION = """Transcribe this interview in the format: timecode (mm:ss) - speaker - caption.
 Rules:
@@ -591,89 +662,77 @@ Transcript:
 {transcript}
 """
 
-PROMPT_MERGE_TEMPLATE = """Maak één complete, consistente en studieklare uitwerking van het college op basis van slide-tekst en audio-transcript.
+PROMPT_MERGE_TEMPLATE = """Create one complete, consistent, study-ready lecture document by combining slide text and audio transcript.
 
-DOEL:
-- Lever een volledig naslagdocument op (geen samenvatting).
-- Maak de tekst direct bruikbaar voor studenten bij voorbereiding op toets/tentamen.
-- Integreer alle relevante inhoud uit beide bronnen in één samenhangende tekst.
+GOAL:
+- Produce a full reference document (not a brief summary).
+- Make the text immediately useful for exam preparation.
+- Integrate all relevant content from both sources into one coherent narrative.
 
-OUTPUTVORM (VERPLICHT):
-1. Start direct met inhoud in Markdown (geen inleidende assistent-zin).
-2. Eerste regel is een titel met `#`.
-3. Gebruik daarna `##` en `###` met duidelijke, logische opbouw.
-4. Gebruik geen transcriptvorm met sprekers, dialooglabels of vraag-antwoord stijl.
-5. Lever alleen de uiteindelijke tekst; geen toelichting op je werkwijze.
+OUTPUT FORMAT (REQUIRED):
+1. Start directly with Markdown content (no assistant preface).
+2. First line must be a title using `#`.
+3. Use `##` and `###` headings with clear logical structure.
+4. Do not use transcript/dialog format (no speaker labels or Q&A style).
+5. Return only the final document text.
 
-VERBODEN OPENINGEN:
-- "Hier is de uitwerking"
-- "Absoluut"
-- "Onderstaand"
-- "In dit document"
-- "Hieronder volgt"
-
-INHOUDELIJKE REGELS:
-1. Integratie:
-   - Gebruik de slide-volgorde als ruggengraat.
-   - Verwerk audio-uitleg op de logisch juiste plaats.
-   - Behoud inhoudelijke details die didactische waarde hebben.
-2. Redactie:
-   - Verwijder conversatie-ruis (opstartzinnen, klasinteractie, herhalingen zonder inhoud).
-   - Zet spreektaal en klasdialoog om naar vloeiende, doorlopende leertekst.
-3. Structuur:
-   - Per onderwerp: korte definitie/afbakening -> uitleg/mechanisme -> klinische of praktische relevantie.
-   - Gebruik bullets alleen waar dat de scanbaarheid verbetert.
-   - Behoud casussen/opdrachten als aparte secties als ze in de input staan.
+CONTENT RULES:
+1. Integration:
+   - Use slide order as the backbone.
+   - Insert audio explanations at the correct conceptual points.
+   - Keep details with learning value.
+2. Editing:
+   - Remove conversational noise (small talk, startup chatter, repetitive filler).
+   - Rewrite spoken classroom phrasing into fluent instructional prose.
+3. Structure:
+   - Per topic: brief definition/scope -> explanation/mechanism -> practical/clinical relevance.
+   - Use bullets only where scanability improves.
+   - Preserve cases/exercises as dedicated sections when present.
 4. Visual placeholders:
-   - Behoud alleen `[Informatieve Afbeelding/Tabel: ...]` op de juiste plek.
-   - Laat decoratieve placeholders weg.
-5. Taal:
-   - Schrijf volledig in: {output_language}.
-   - Houd toon professioneel, neutraal en didactisch.
+   - Keep only `[Informative Image/Table: ...]` at appropriate locations.
+   - Omit decorative placeholders.
+5. Language:
+   - Write fully in: {output_language}.
+   - Keep tone professional, neutral, and didactic.
 
-SOFT FIDELITY (BALANS TUSSEN BETROUWBAARHEID EN LEESBAARHEID):
-- Baseren op slide-tekst + transcript als primaire waarheid.
-- Toegestaan:
-  - Korte verbindingszinnen voor leesbaarheid.
-  - Voorzichtige herformulering/duiding van impliciete verbanden die direct uit de input volgen.
-- Niet toegestaan:
-  - Nieuwe cijfers, richtlijnen, bronnen, diagnoses of behandelclaims die niet uit de input komen.
-  - Nieuwe medische feiten die niet in slide of transcript te herleiden zijn.
-- Bij twijfel: laat weg of formuleer neutraal zonder extra claim.
+FAITHFULNESS:
+- Slide text + transcript are the primary source of truth.
+- Allowed:
+  - Short connective phrasing for readability.
+  - Careful rewording/inference directly supported by the input.
+- Not allowed:
+  - New numbers, guidelines, sources, diagnoses, or treatment claims not present in input.
+  - New facts not traceable to slide text or transcript.
+- If unsure: omit or phrase neutrally without adding claims.
 
-AFSLUITING (VERPLICHT):
-- Voeg een laatste sectie toe: `## Kernpunten voor tentamen`.
-- Geef 8-15 concrete bullets met de belangrijkste leerpunten.
+REQUIRED END SECTION:
+- Add a final section: `## Key Exam Points`.
+- Include 8-15 concrete bullet points with the most important takeaways.
 
-EINDCONTROLE VOOR UITVOER:
-- Staat er nog een meta-inleiding? Verwijderen.
-- Staat er nog letterlijke klasdialoog? Herschrijven.
-- Zijn de hoofdonderwerpen uit zowel slides als transcript afgedekt? Zo niet: aanvullen.
-
-INPUT SLIDE-TEKST:
+INPUT SLIDE TEXT:
 {slide_text}
 
-INPUT AUDIO-TRANSCRIPT:
+INPUT AUDIO TRANSCRIPT:
 {transcript}"""
 
-PROMPT_MERGE_WITH_AUDIO_MARKERS = """Creëer een volledige, integrale en goed leesbare uitwerking van een college door slide-tekst en audio-transcript te combineren.
+PROMPT_MERGE_WITH_AUDIO_MARKERS = """Create a complete, readable lecture document by combining slide text and timestamped audio transcript.
 
-BELANGRIJK - AUDIO MARKERS:
-Voor elke hoofdsectie gebruik je direct onder de kop exact dit marker-formaat:
+IMPORTANT - AUDIO MARKERS:
+For each major section, place this marker format directly below the heading:
 <!-- audio:START_MS-END_MS -->
-waar START_MS en END_MS de relevante tijdrange uit het transcript met tijdsegmenten aangeven.
+where START_MS and END_MS are the relevant transcript time bounds.
 
-Regels:
-1. Niet samenvatten, maar compleet uitschrijven.
-2. Gebruik koppen en subkoppen voor structuur.
-3. Verwijder alleen irrelevante spreektaal; behoud alle inhoudelijke uitleg.
-4. Gebruik geen labels zoals "Audio:" of "Slide:".
-5. Schrijf volledig in deze taal: {output_language}.
+Rules:
+1. Do not summarize; write a complete integrated lecture text.
+2. Use headings and subheadings for clear structure.
+3. Remove only irrelevant spoken filler while preserving substantive explanations.
+4. Do not use labels like "Audio:" or "Slide:".
+5. Write fully in this language: {output_language}.
 
-Input slide-tekst:
+Input slide text:
 {slide_text}
 
-Input audio-transcript met tijdsegmenten:
+Input timestamped transcript:
 {transcript}"""
 
 PROMPT_STUDY_TEMPLATE = """You are an expert university professor creating study materials. I will provide you with the complete text of a lecture or slide deck.
@@ -706,14 +765,15 @@ LECTURE TEXT:
 # FIRESTORE USER FUNCTIONS
 # =============================================
 
-JOB_TTL_SECONDS = 2 * 60 * 60  # 2 hours
+JOB_TTL_SECONDS = safe_int_env('JOB_TTL_SECONDS', 30 * 60, minimum=5 * 60, maximum=24 * 60 * 60)
 JOB_CLEANUP_INTERVAL_SECONDS = 5 * 60  # run cleanup every 5 minutes
+PROCESSING_PUBLIC_ERROR_MESSAGE = 'Processing failed. Your credit has been refunded.'
 
 def cleanup_old_jobs():
     """Evict completed/errored jobs older than JOB_TTL_SECONDS to prevent OOM."""
     now_ts = time.time()
+    expired_ids = []
     with JOBS_LOCK:
-        expired_ids = []
         for job_id, job in list(jobs.items()):
             status = job.get('status', '')
             if status not in ('complete', 'error'):
@@ -723,6 +783,8 @@ def cleanup_old_jobs():
                 expired_ids.append(job_id)
         for job_id in expired_ids:
             jobs.pop(job_id, None)
+    for job_id in expired_ids:
+        delete_runtime_job_snapshot(job_id)
 
 def cleanup_expired_audio_stream_tokens():
     """Evict expired audio stream tokens to prevent unbounded memory growth."""
@@ -739,7 +801,7 @@ def _run_periodic_cleanup():
             cleanup_old_jobs()
             cleanup_expired_audio_stream_tokens()
         except Exception:
-            pass
+            logger.warning("Periodic cleanup failed", exc_info=True)
 
 _cleanup_thread = threading.Thread(target=_run_periodic_cleanup, daemon=True)
 _cleanup_thread.start()
@@ -798,7 +860,7 @@ def grant_credits_to_user(uid, bundle_id):
     """Grant credits from a purchased bundle to a user in Firestore."""
     bundle = CREDIT_BUNDLES.get(bundle_id)
     if not bundle:
-        logger.info(f"Warning: Unknown bundle_id '{bundle_id}' in grant_credits_to_user")
+        logger.warning(f"Warning: Unknown bundle_id '{bundle_id}' in grant_credits_to_user")
         return False
 
     user_ref = users_repo.doc_ref(db, uid)
@@ -875,7 +937,7 @@ def refund_credit(uid, credit_type):
         })
         logger.info(f"✅ Refunded 1 '{credit_type}' credit to user {uid} due to processing failure.")
     except Exception as e:
-        logger.info(f"❌ Failed to refund credit '{credit_type}' to user {uid}: {e}")
+        logger.error(f"❌ Failed to refund credit '{credit_type}' to user {uid}: {e}")
 
 def save_purchase_record(uid, bundle_id, stripe_session_id):
     """Save a purchase record to Firestore for purchase history."""
@@ -899,7 +961,7 @@ def save_purchase_record(uid, bundle_id, stripe_session_id):
             purchases_repo.add_doc(db, record)
         logger.info(f"📝 Saved purchase record for user {uid}: {bundle['name']}")
     except Exception as e:
-        logger.info(f"❌ Failed to save purchase record for user {uid}: {e}")
+        logger.error(f"❌ Failed to save purchase record for user {uid}: {e}")
 
 def purchase_record_exists_for_session(stripe_session_id):
     if not stripe_session_id:
@@ -912,7 +974,7 @@ def purchase_record_exists_for_session(stripe_session_id):
             return True
         return False
     except Exception as e:
-        logger.info(f"⚠️ Could not check purchase record for session {stripe_session_id}: {e}")
+        logger.warning(f"⚠️ Could not check purchase record for session {stripe_session_id}: {e}")
         return False
 
 def process_checkout_session_credits(stripe_session):
@@ -1031,7 +1093,66 @@ def save_job_log(job_id, job_data, finished_at):
         )
         logger.info(f"📊 Logged job {job_id}: mode={job_data.get('mode')}, status={job_data.get('status')}, duration={duration}s")
     except Exception as e:
-        logger.info(f"❌ Failed to log job {job_id}: {e}")
+        logger.error(f"❌ Failed to log job {job_id}: {e}")
+
+
+def recover_stale_runtime_jobs():
+    """Recover jobs left in starting/processing state after a restart."""
+    if db is None:
+        return 0
+    now_ts = time.time()
+    recovered = 0
+    try:
+        stale_docs = runtime_jobs_repo.query_statuses(
+            db,
+            RUNTIME_JOBS_COLLECTION,
+            {'starting', 'processing'},
+            limit=RUNTIME_JOB_RECOVERY_BATCH_LIMIT,
+        )
+    except Exception:
+        logger.warning("Runtime-job recovery query failed", exc_info=True)
+        return 0
+
+    for doc in stale_docs:
+        job_id = doc.id
+        job_data = doc.to_dict() or {}
+        if not isinstance(job_data, dict):
+            continue
+        status = str(job_data.get('status', '') or '').lower()
+        if status not in {'starting', 'processing'}:
+            continue
+
+        uid = str(job_data.get('user_id', '') or '').strip()
+        credit_type = str(job_data.get('credit_deducted', '') or '').strip()
+        already_refunded = bool(job_data.get('credit_refunded', False))
+
+        if uid and credit_type and not already_refunded:
+            refund_credit(uid, credit_type)
+            add_job_credit_refund(job_data, credit_type, 1)
+            job_data['credit_refunded'] = True
+
+        extra_spent = int(job_data.get('interview_features_cost', 0) or 0)
+        extra_refunded = int(job_data.get('extra_slides_refunded', 0) or 0)
+        extra_to_refund = max(0, extra_spent - extra_refunded)
+        if uid and extra_to_refund > 0:
+            refund_slides_credits(uid, extra_to_refund)
+            job_data['extra_slides_refunded'] = extra_refunded + extra_to_refund
+            add_job_credit_refund(job_data, 'slides_credits', extra_to_refund)
+
+        ensure_job_billing_receipt(job_data, {credit_type: 1} if credit_type else None)
+        job_data['status'] = 'error'
+        job_data['step_description'] = 'Interrupted by server restart'
+        job_data['error'] = 'Processing was interrupted by a server restart. Your credit has been refunded.'
+        job_data['finished_at'] = now_ts
+        job_data['job_id'] = job_id
+
+        set_job(job_id, job_data)
+        save_job_log(job_id, job_data, now_ts)
+        recovered += 1
+
+    if recovered:
+        logger.warning("Recovered %s stale runtime jobs after startup.", recovered)
+    return recovered
 
 # =============================================
 # HELPER FUNCTIONS
@@ -1046,6 +1167,32 @@ def is_admin_user(decoded_token):
     uid = decoded_token.get('uid', '')
     email = decoded_token.get('email', '').lower()
     return uid in ADMIN_UIDS or email in ADMIN_EMAILS
+
+
+def _extract_bearer_token(req):
+    auth_header = req.headers.get('Authorization', '')
+    if isinstance(auth_header, str) and auth_header.startswith('Bearer '):
+        token = auth_header.split('Bearer ', 1)[1].strip()
+        if token:
+            return token
+    payload = req.get_json(silent=True) or {}
+    body_token = str(payload.get('id_token', '') or payload.get('idToken', '') or '').strip()
+    if body_token:
+        return body_token
+    return ''
+
+
+def verify_admin_session_cookie(req):
+    session_cookie = req.cookies.get(ADMIN_SESSION_COOKIE_NAME, '')
+    if not session_cookie:
+        return None
+    try:
+        decoded_token = auth.verify_session_cookie(session_cookie, check_revoked=True)
+    except Exception:
+        return None
+    if not is_admin_user(decoded_token):
+        return None
+    return decoded_token
 
 def get_admin_window(window_key):
     windows = {
@@ -1115,6 +1262,13 @@ def safe_query_docs_in_window(collection_name, timestamp_field, window_start, wi
         )
     except Exception:
         # Fallback for missing indexes in early environments.
+        fallback_cap = safe_int_env('ADMIN_FALLBACK_QUERY_CAP', 5000, minimum=100, maximum=50000)
+        logger.warning(
+            "Using fallback in-memory query for %s due to index/query issue; cap=%s",
+            collection_name,
+            fallback_cap,
+            exc_info=True,
+        )
         docs = []
         for doc in admin_repo.stream_collection(db, collection_name):
             data = doc.to_dict() or {}
@@ -1124,6 +1278,8 @@ def safe_query_docs_in_window(collection_name, timestamp_field, window_start, wi
             if window_end is not None and ts > window_end:
                 continue
             docs.append(doc)
+            if len(docs) >= fallback_cap:
+                break
         docs.sort(
             key=lambda d: get_timestamp((d.to_dict() or {}).get(timestamp_field)),
             reverse=order_desc,
@@ -1247,20 +1403,115 @@ def build_admin_funnel_daily_rows(analytics_docs, window_start, window_key, now_
 
     return rows, granularity
 
+def _runtime_job_storage_enabled():
+    return db is not None
+
+
+def _runtime_job_sanitize_value(value):
+    if isinstance(value, str):
+        if len(value) > RUNTIME_JOB_MAX_STRING_LENGTH:
+            return value[:RUNTIME_JOB_MAX_STRING_LENGTH]
+        return value
+    if isinstance(value, list):
+        return [_runtime_job_sanitize_value(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): _runtime_job_sanitize_value(v) for k, v in value.items()}
+    return value
+
+
+def _build_runtime_job_payload(job_id, job_data):
+    payload = {'job_id': job_id, 'updated_at': time.time()}
+    if not isinstance(job_data, dict):
+        payload['status'] = 'unknown'
+        return payload
+    for field in RUNTIME_JOB_PERSISTED_FIELDS:
+        if field in job_data:
+            payload[field] = _runtime_job_sanitize_value(job_data.get(field))
+    return payload
+
+
+def persist_runtime_job_snapshot(job_id, job_data):
+    if not _runtime_job_storage_enabled() or not job_id:
+        return
+    try:
+        runtime_jobs_repo.set_doc(
+            db,
+            RUNTIME_JOBS_COLLECTION,
+            job_id,
+            _build_runtime_job_payload(job_id, job_data),
+            merge=True,
+        )
+    except Exception:
+        logger.warning("Failed to persist runtime job snapshot for %s", job_id, exc_info=True)
+
+
+def load_runtime_job_snapshot(job_id):
+    if not _runtime_job_storage_enabled() or not job_id:
+        return None
+    try:
+        doc = runtime_jobs_repo.get_doc(db, RUNTIME_JOBS_COLLECTION, job_id)
+        if not doc.exists:
+            return None
+        data = doc.to_dict() or {}
+        if not isinstance(data, dict):
+            return None
+        data.setdefault('job_id', job_id)
+        return data
+    except Exception:
+        logger.warning("Failed to load runtime job snapshot for %s", job_id, exc_info=True)
+        return None
+
+
+def delete_runtime_job_snapshot(job_id):
+    if not _runtime_job_storage_enabled() or not job_id:
+        return
+    try:
+        runtime_jobs_repo.delete_doc(db, RUNTIME_JOBS_COLLECTION, job_id)
+    except Exception:
+        logger.warning("Failed to delete runtime job snapshot for %s", job_id, exc_info=True)
+
+
+def update_job_fields(job_id, **fields):
+    if not fields:
+        return get_job_snapshot(job_id)
+
+    def _mutator(job):
+        job.update(fields)
+
+    snapshot = mutate_job(job_id, _mutator)
+    return snapshot
+
+
 def get_job_snapshot(job_id):
-    return job_state_service.get_job_snapshot(job_id, jobs_store=jobs, lock=JOBS_LOCK)
+    snapshot = job_state_service.get_job_snapshot(job_id, jobs_store=jobs, lock=JOBS_LOCK)
+    if snapshot is not None:
+        return snapshot
+    runtime_snapshot = load_runtime_job_snapshot(job_id)
+    if runtime_snapshot is not None:
+        # Warm the in-memory cache for subsequent reads.
+        job_state_service.set_job(job_id, dict(runtime_snapshot), jobs_store=jobs, lock=JOBS_LOCK)
+        return runtime_snapshot
+    return None
 
 
 def mutate_job(job_id, mutator_fn):
-    return job_state_service.mutate_job(job_id, mutator_fn, jobs_store=jobs, lock=JOBS_LOCK)
+    snapshot = job_state_service.mutate_job(job_id, mutator_fn, jobs_store=jobs, lock=JOBS_LOCK)
+    if snapshot is not None:
+        persist_runtime_job_snapshot(job_id, snapshot)
+    return snapshot
 
 
 def set_job(job_id, value):
-    return job_state_service.set_job(job_id, value, jobs_store=jobs, lock=JOBS_LOCK)
+    snapshot = job_state_service.set_job(job_id, value, jobs_store=jobs, lock=JOBS_LOCK)
+    if isinstance(snapshot, dict):
+        persist_runtime_job_snapshot(job_id, snapshot)
+    return snapshot
 
 
 def delete_job(job_id):
-    return job_state_service.delete_job(job_id, jobs_store=jobs, lock=JOBS_LOCK)
+    deleted = job_state_service.delete_job(job_id, jobs_store=jobs, lock=JOBS_LOCK)
+    delete_runtime_job_snapshot(job_id)
+    return deleted
 
 
 def _window_counter_id(key, window_seconds, window_start):
@@ -1310,6 +1561,66 @@ def normalize_rate_limit_key_part(value, fallback='anon', max_len=120):
     safe = re.sub(r'[^a-z0-9_.:@-]+', '_', raw)
     return safe[:max_len] if safe else fallback
 
+
+def has_sufficient_upload_disk_space(required_bytes=0):
+    """Return (ok, free_bytes, threshold_bytes) for upload safety checks."""
+    try:
+        usage = shutil.disk_usage(UPLOAD_FOLDER if os.path.exists(UPLOAD_FOLDER) else '/')
+        free_bytes = int(usage.free)
+    except Exception:
+        return True, 0, UPLOAD_MIN_FREE_DISK_BYTES
+    try:
+        required = int(required_bytes or 0)
+    except Exception:
+        required = 0
+    needed = max(UPLOAD_MIN_FREE_DISK_BYTES, required + UPLOAD_MIN_FREE_DISK_BYTES)
+    return free_bytes >= needed, free_bytes, needed
+
+
+def reserve_daily_upload_bytes(uid, requested_bytes):
+    """Atomically reserve upload bytes for a user in the current UTC day."""
+    if db is None:
+        return True, 0
+    if not uid:
+        return False, 0
+    try:
+        requested = int(requested_bytes or 0)
+    except Exception:
+        requested = 0
+    requested = max(0, requested)
+    if requested <= 0:
+        return True, 0
+    now_ts = time.time()
+    day_key = datetime.fromtimestamp(now_ts, tz=timezone.utc).strftime('%Y-%m-%d')
+    doc_id = f"{uid}:{day_key}"
+    retry_after = max(1, int((datetime.fromtimestamp(now_ts, tz=timezone.utc).replace(hour=23, minute=59, second=59, microsecond=0).timestamp()) - now_ts))
+    counter_ref = db.collection(UPLOAD_DAILY_COUNTER_COLLECTION).document(doc_id)
+    transaction = db.transaction()
+
+    @firestore.transactional
+    def _txn(txn):
+        snapshot = counter_ref.get(transaction=txn)
+        used = 0
+        if snapshot.exists:
+            used = int((snapshot.to_dict() or {}).get('bytes_used', 0) or 0)
+        if used + requested > UPLOAD_DAILY_BYTE_CAP:
+            return False, retry_after
+        txn.set(counter_ref, {
+            'uid': uid,
+            'day': day_key,
+            'bytes_used': used + requested,
+            'updated_at': now_ts,
+            'expires_at': now_ts + (3 * 24 * 60 * 60),
+        }, merge=True)
+        return True, 0
+
+    try:
+        return _txn(transaction)
+    except Exception:
+        logger.warning("Upload daily byte reservation failed for uid=%s", uid, exc_info=True)
+        return True, 0
+
+
 def count_active_jobs_for_user(uid):
     return job_state_service.count_active_jobs_for_user(uid, jobs_store=jobs, lock=JOBS_LOCK)
 
@@ -1334,7 +1645,7 @@ def delete_docs_by_uid(collection_name, uid, max_docs):
             doc.reference.delete()
             deleted += 1
         except Exception as e:
-            logger.info(f"Warning: could not delete doc in {collection_name}/{doc.id}: {e}")
+            logger.warning(f"Warning: could not delete doc in {collection_name}/{doc.id}: {e}")
     return deleted, truncated
 
 def remove_upload_artifacts_for_job_ids(job_ids):
@@ -1357,7 +1668,7 @@ def remove_upload_artifacts_for_job_ids(job_ids):
                 os.remove(file_path)
                 removed += 1
         except Exception as e:
-            logger.info(f"Warning: could not delete upload artifact {file_path}: {e}")
+            logger.warning(f"Warning: could not delete upload artifact {file_path}: {e}")
     return removed
 
 def anonymize_purchase_docs_by_uid(uid, max_docs):
@@ -1374,7 +1685,7 @@ def anonymize_purchase_docs_by_uid(uid, max_docs):
             }, merge=True)
             anonymized += 1
         except Exception as e:
-            logger.info(f"Warning: could not anonymize purchase doc {doc.id}: {e}")
+            logger.warning(f"Warning: could not anonymize purchase doc {doc.id}: {e}")
     return anonymized, truncated
 
 def collect_user_export_payload(uid, email):
@@ -1657,74 +1968,7 @@ def refund_slides_credits(uid, amount):
         users_repo.update_doc(db, uid, {'slides_credits': firestore.Increment(amount)})
         logger.info(f"✅ Refunded {amount} slides credits to user {uid}.")
     except Exception as e:
-        logger.info(f"❌ Failed to refund {amount} slides credits to user {uid}: {e}")
-
-def normalize_credit_ledger(credit_map):
-    normalized = {}
-    if not isinstance(credit_map, dict):
-        return normalized
-    for credit_type, raw_amount in credit_map.items():
-        key = str(credit_type or '').strip()
-        if not key:
-            continue
-        try:
-            amount = int(raw_amount)
-        except Exception:
-            continue
-        if amount > 0:
-            normalized[key] = amount
-    return normalized
-
-def initialize_billing_receipt(charged_map=None):
-    return {
-        'charged': normalize_credit_ledger(charged_map or {}),
-        'refunded': {},
-        'updated_at': time.time(),
-    }
-
-def ensure_job_billing_receipt(job_data, charged_map=None):
-    receipt = job_data.get('billing_receipt')
-    if not isinstance(receipt, dict):
-        receipt = initialize_billing_receipt(charged_map or {})
-        job_data['billing_receipt'] = receipt
-        return receipt
-    charged = receipt.get('charged', {})
-    if not isinstance(charged, dict):
-        charged = {}
-    for credit_type, amount in normalize_credit_ledger(charged_map or {}).items():
-        charged[credit_type] = max(int(charged.get(credit_type, 0) or 0), amount)
-    receipt['charged'] = charged
-    if not isinstance(receipt.get('refunded'), dict):
-        receipt['refunded'] = {}
-    receipt['updated_at'] = time.time()
-    return receipt
-
-def add_job_credit_refund(job_data, credit_type, amount=1):
-    if not credit_type:
-        return
-    try:
-        amount_int = int(amount)
-    except Exception:
-        return
-    if amount_int <= 0:
-        return
-    receipt = ensure_job_billing_receipt(job_data)
-    refunded = receipt.setdefault('refunded', {})
-    refunded[credit_type] = int(refunded.get(credit_type, 0) or 0) + amount_int
-    receipt['updated_at'] = time.time()
-
-def get_billing_receipt_snapshot(job_data):
-    receipt = job_data.get('billing_receipt')
-    if not isinstance(receipt, dict):
-        return {'charged': {}, 'refunded': {}}
-    snapshot = {
-        'charged': normalize_credit_ledger(receipt.get('charged', {})),
-        'refunded': normalize_credit_ledger(receipt.get('refunded', {})),
-    }
-    updated_at = receipt.get('updated_at')
-    if updated_at:
-        snapshot['updated_at'] = updated_at
-    return snapshot
+        logger.error(f"❌ Failed to refund {amount} slides credits to user {uid}: {e}")
 
 def normalize_credit_ledger(credit_map):
     normalized = {}
@@ -2468,7 +2712,7 @@ def transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_languag
             raise ValueError('Empty transcript')
         return full_transcript, clean_segments
     except Exception as e:
-        logger.info(f"⚠️ Timestamp transcription failed, falling back to plain transcript: {e}")
+        logger.warning(f"⚠️ Timestamp transcription failed, falling back to plain transcript: {e}")
         fallback_prompt = PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
         fallback_response = client.models.generate_content(
             model=MODEL_AUDIO,
@@ -2582,7 +2826,7 @@ def persist_audio_for_study_pack(job_id, audio_source_path):
         shutil.copy2(audio_source_path, target_path)
         return target_key
     except Exception as e:
-        logger.info(f"⚠️ Could not persist audio for study pack {job_id}: {e}")
+        logger.warning(f"⚠️ Could not persist audio for study pack {job_id}: {e}")
         return ''
 
 def markdown_to_docx(markdown_text, title="Document"):
@@ -2984,7 +3228,7 @@ def save_study_pack(job_id, job_data):
         })
         job_data['study_pack_id'] = doc_ref.id
     except Exception as e:
-        logger.info(f"❌ Failed to save study pack for job {job_id}: {e}")
+        logger.error(f"❌ Failed to save study pack for job {job_id}: {e}")
 
 # =============================================
 # AI PROCESSING FUNCTIONS
@@ -2993,41 +3237,39 @@ def save_study_pack(job_id, job_data):
 def process_lecture_notes(job_id, pdf_path, audio_path):
     gemini_files = []
     local_paths = [pdf_path, audio_path]
+    set_fields = lambda **fields: update_job_fields(job_id, **fields)
+    get_fields = lambda: get_job_snapshot(job_id) or {}
     try:
-        jobs[job_id]['status'] = 'processing'
-        jobs[job_id]['step'] = 1
-        jobs[job_id]['step_description'] = 'Extracting text from slides...'
+        set_fields(status='processing', step=1, step_description='Extracting text from slides...')
         pdf_file = client.files.upload(file=pdf_path, config={'mime_type': 'application/pdf'})
         gemini_files.append(pdf_file)
         wait_for_file_processing(pdf_file)
         response = client.models.generate_content(model=MODEL_SLIDES, contents=[types.Content(role='user', parts=[types.Part.from_uri(file_uri=pdf_file.uri, mime_type='application/pdf'), types.Part.from_text(text=PROMPT_SLIDE_EXTRACTION)])], config=types.GenerateContentConfig(max_output_tokens=65536))
         slide_text = response.text
-        jobs[job_id]['slide_text'] = slide_text
-        
-        jobs[job_id]['step'] = 2
-        jobs[job_id]['step_description'] = 'Transcribing audio...'
-        output_language = jobs[job_id].get('output_language', 'English')
+        set_fields(slide_text=slide_text, step=2, step_description='Transcribing audio...')
+        output_language = get_fields().get('output_language', 'English')
         converted_audio_path, converted = convert_audio_to_mp3_with_ytdlp(audio_path)
         if converted and converted_audio_path not in local_paths:
             local_paths.append(converted_audio_path)
-        jobs[job_id]['step_description'] = 'Optimizing audio for faster processing...'
+        set_fields(step_description='Optimizing audio for faster processing...')
         audio_mime_type = get_mime_type(converted_audio_path)
         audio_file = client.files.upload(file=converted_audio_path, config={'mime_type': audio_mime_type})
         gemini_files.append(audio_file)
-        jobs[job_id]['step_description'] = 'Processing audio file (this may take a few minutes)...'
+        set_fields(step_description='Processing audio file (this may take a few minutes)...')
         wait_for_file_processing(audio_file)
-        jobs[job_id]['step_description'] = 'Generating transcript...'
+        set_fields(step_description='Generating transcript...')
         if FEATURE_AUDIO_SECTION_SYNC:
             transcript, transcript_segments = transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_language)
         else:
             transcript = transcribe_audio_plain(audio_file, audio_mime_type, output_language)
             transcript_segments = []
-        jobs[job_id]['transcript'] = transcript
-        jobs[job_id]['transcript_segments'] = transcript_segments
-        jobs[job_id]['audio_storage_key'] = persist_audio_for_study_pack(job_id, converted_audio_path)
-        
-        jobs[job_id]['step'] = 3
-        jobs[job_id]['step_description'] = 'Creating complete lecture notes...'
+        set_fields(
+            transcript=transcript,
+            transcript_segments=transcript_segments,
+            audio_storage_key=persist_audio_for_study_pack(job_id, converted_audio_path),
+            step=3,
+            step_description='Creating complete lecture notes...',
+        )
         merge_transcript = format_transcript_with_timestamps(transcript_segments) if transcript_segments else transcript
         if FEATURE_AUDIO_SECTION_SYNC and transcript_segments:
             merge_prompt = PROMPT_MERGE_WITH_AUDIO_MARKERS.format(slide_text=slide_text, transcript=merge_transcript, output_language=output_language)
@@ -3035,169 +3277,201 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
             merge_prompt = PROMPT_MERGE_TEMPLATE.format(slide_text=slide_text, transcript=transcript, output_language=output_language)
         response = client.models.generate_content(model=MODEL_INTEGRATION, contents=[types.Content(role='user', parts=[types.Part.from_text(text=merge_prompt)])], config=types.GenerateContentConfig(max_output_tokens=65536))
         merged_notes = response.text
-        jobs[job_id]['result'] = merged_notes
-        jobs[job_id]['notes_audio_map'] = parse_audio_markers_from_notes(merged_notes) if FEATURE_AUDIO_SECTION_SYNC else []
+        set_fields(
+            result=merged_notes,
+            notes_audio_map=parse_audio_markers_from_notes(merged_notes) if FEATURE_AUDIO_SECTION_SYNC else [],
+        )
 
-        if jobs[job_id].get('study_features', 'none') != 'none':
-            jobs[job_id]['step'] = 4
-            jobs[job_id]['step_description'] = 'Generating flashcards and practice test...'
+        job_data = get_fields()
+        if job_data.get('study_features', 'none') != 'none':
+            set_fields(step=4, step_description='Generating flashcards and practice test...')
             flashcards, test_questions, study_error = generate_study_materials(
                 merged_notes,
-                jobs[job_id].get('flashcard_selection', '20'),
-                jobs[job_id].get('question_selection', '10'),
-                jobs[job_id].get('study_features', 'none'),
+                job_data.get('flashcard_selection', '20'),
+                job_data.get('question_selection', '10'),
+                job_data.get('study_features', 'none'),
                 output_language
             )
-            jobs[job_id]['flashcards'] = flashcards
-            jobs[job_id]['test_questions'] = test_questions
-            jobs[job_id]['study_generation_error'] = study_error
+            set_fields(
+                flashcards=flashcards,
+                test_questions=test_questions,
+                study_generation_error=study_error,
+            )
         else:
-            jobs[job_id]['flashcards'] = []
-            jobs[job_id]['test_questions'] = []
-            jobs[job_id]['study_generation_error'] = None
-        save_study_pack(job_id, jobs[job_id])
-
-        jobs[job_id]['status'] = 'complete'
-        jobs[job_id]['step'] = jobs[job_id].get('total_steps', 3)
-        jobs[job_id]['step_description'] = 'Complete!'
+            set_fields(flashcards=[], test_questions=[], study_generation_error=None)
+        job_data = get_fields()
+        save_study_pack(job_id, job_data)
+        final_snapshot = get_fields()
+        set_fields(
+            status='complete',
+            step=final_snapshot.get('total_steps', 3),
+            step_description='Complete!',
+        )
     except Exception as e:
-        jobs[job_id]['status'] = 'error'
-        jobs[job_id]['error'] = str(e)
+        logger.exception("Lecture-notes processing failed for job %s", job_id)
+        set_fields(status='error', error=PROCESSING_PUBLIC_ERROR_MESSAGE)
         # Refund the credit since processing failed
-        uid = jobs[job_id].get('user_id')
-        credit_type = jobs[job_id].get('credit_deducted')
+        failed_job = get_fields()
+        uid = failed_job.get('user_id')
+        credit_type = failed_job.get('credit_deducted')
         refund_credit(uid, credit_type)
-        add_job_credit_refund(jobs[job_id], credit_type, 1)
-        jobs[job_id]['credit_refunded'] = True
+        failed_job = get_fields()
+        add_job_credit_refund(failed_job, credit_type, 1)
+        set_job(job_id, failed_job)
+        set_fields(credit_refunded=True)
     finally:
         cleanup_files(local_paths, gemini_files)
         # Log the job to Firestore and record finished_at for cleanup thread
-        jobs[job_id]['finished_at'] = time.time()
-        save_job_log(job_id, jobs[job_id], jobs[job_id]['finished_at'])
+        finished_at = time.time()
+        set_fields(finished_at=finished_at)
+        final_job = get_fields()
+        save_job_log(job_id, final_job, finished_at)
 
 def process_slides_only(job_id, pdf_path):
     gemini_files = []
     local_paths = [pdf_path]
+    set_fields = lambda **fields: update_job_fields(job_id, **fields)
+    get_fields = lambda: get_job_snapshot(job_id) or {}
     try:
-        jobs[job_id]['status'] = 'processing'
-        jobs[job_id]['step'] = 1
-        jobs[job_id]['step_description'] = 'Extracting text from slides...'
+        set_fields(status='processing', step=1, step_description='Extracting text from slides...')
         pdf_file = client.files.upload(file=pdf_path, config={'mime_type': 'application/pdf'})
         gemini_files.append(pdf_file)
         wait_for_file_processing(pdf_file)
         response = client.models.generate_content(model=MODEL_SLIDES, contents=[types.Content(role='user', parts=[types.Part.from_uri(file_uri=pdf_file.uri, mime_type='application/pdf'), types.Part.from_text(text=PROMPT_SLIDE_EXTRACTION)])], config=types.GenerateContentConfig(max_output_tokens=65536))
         extracted_text = response.text
-        jobs[job_id]['result'] = extracted_text
-        if jobs[job_id].get('study_features', 'none') != 'none':
-            jobs[job_id]['step'] = 2
-            jobs[job_id]['step_description'] = 'Generating flashcards and practice test...'
+        set_fields(result=extracted_text)
+        job_data = get_fields()
+        if job_data.get('study_features', 'none') != 'none':
+            set_fields(step=2, step_description='Generating flashcards and practice test...')
             flashcards, test_questions, study_error = generate_study_materials(
                 extracted_text,
-                jobs[job_id].get('flashcard_selection', '20'),
-                jobs[job_id].get('question_selection', '10'),
-                jobs[job_id].get('study_features', 'none'),
-                jobs[job_id].get('output_language', 'English')
+                job_data.get('flashcard_selection', '20'),
+                job_data.get('question_selection', '10'),
+                job_data.get('study_features', 'none'),
+                job_data.get('output_language', 'English')
             )
-            jobs[job_id]['flashcards'] = flashcards
-            jobs[job_id]['test_questions'] = test_questions
-            jobs[job_id]['study_generation_error'] = study_error
+            set_fields(
+                flashcards=flashcards,
+                test_questions=test_questions,
+                study_generation_error=study_error,
+            )
         else:
-            jobs[job_id]['flashcards'] = []
-            jobs[job_id]['test_questions'] = []
-            jobs[job_id]['study_generation_error'] = None
-        save_study_pack(job_id, jobs[job_id])
-        jobs[job_id]['status'] = 'complete'
-        jobs[job_id]['step'] = jobs[job_id].get('total_steps', 1)
-        jobs[job_id]['step_description'] = 'Complete!'
+            set_fields(flashcards=[], test_questions=[], study_generation_error=None)
+        job_data = get_fields()
+        save_study_pack(job_id, job_data)
+        final_snapshot = get_fields()
+        set_fields(
+            status='complete',
+            step=final_snapshot.get('total_steps', 1),
+            step_description='Complete!',
+        )
     except Exception as e:
-        jobs[job_id]['status'] = 'error'
-        jobs[job_id]['error'] = str(e)
+        logger.exception("Slides-only processing failed for job %s", job_id)
+        set_fields(status='error', error=PROCESSING_PUBLIC_ERROR_MESSAGE)
         # Refund the credit since processing failed
-        uid = jobs[job_id].get('user_id')
-        credit_type = jobs[job_id].get('credit_deducted')
+        failed_job = get_fields()
+        uid = failed_job.get('user_id')
+        credit_type = failed_job.get('credit_deducted')
         refund_credit(uid, credit_type)
-        add_job_credit_refund(jobs[job_id], credit_type, 1)
-        jobs[job_id]['credit_refunded'] = True
+        failed_job = get_fields()
+        add_job_credit_refund(failed_job, credit_type, 1)
+        set_job(job_id, failed_job)
+        set_fields(credit_refunded=True)
     finally:
         cleanup_files(local_paths, gemini_files)
         # Log the job to Firestore and record finished_at for cleanup thread
-        jobs[job_id]['finished_at'] = time.time()
-        save_job_log(job_id, jobs[job_id], jobs[job_id]['finished_at'])
+        finished_at = time.time()
+        set_fields(finished_at=finished_at)
+        final_job = get_fields()
+        save_job_log(job_id, final_job, finished_at)
 
 def process_interview_transcription(job_id, audio_path):
     gemini_files = []
     local_paths = [audio_path]
+    set_fields = lambda **fields: update_job_fields(job_id, **fields)
+    get_fields = lambda: get_job_snapshot(job_id) or {}
     try:
-        jobs[job_id]['status'] = 'processing'
-        jobs[job_id]['step'] = 1
-        jobs[job_id]['step_description'] = 'Optimizing audio for faster processing...'
-        output_language = jobs[job_id].get('output_language', 'English')
+        set_fields(status='processing', step=1, step_description='Optimizing audio for faster processing...')
+        output_language = get_fields().get('output_language', 'English')
         converted_audio_path, converted = convert_audio_to_mp3_with_ytdlp(audio_path)
         if converted and converted_audio_path not in local_paths:
             local_paths.append(converted_audio_path)
-        jobs[job_id]['audio_storage_key'] = persist_audio_for_study_pack(job_id, converted_audio_path)
+        set_fields(audio_storage_key=persist_audio_for_study_pack(job_id, converted_audio_path))
         audio_mime_type = get_mime_type(converted_audio_path)
         audio_file = client.files.upload(file=converted_audio_path, config={'mime_type': audio_mime_type})
         gemini_files.append(audio_file)
-        jobs[job_id]['step_description'] = 'Processing audio file (this may take a few minutes)...'
+        set_fields(step_description='Processing audio file (this may take a few minutes)...')
         wait_for_file_processing(audio_file)
-        jobs[job_id]['step_description'] = 'Generating transcript with timestamps...'
+        set_fields(step_description='Generating transcript with timestamps...')
         interview_prompt = PROMPT_INTERVIEW_TRANSCRIPTION.format(output_language=output_language)
         response = client.models.generate_content(model=MODEL_INTERVIEW, contents=[types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=interview_prompt)])], config=types.GenerateContentConfig(max_output_tokens=65536))
         transcript_text = response.text or ''
-        jobs[job_id]['transcript'] = transcript_text
-        jobs[job_id]['result'] = transcript_text
+        set_fields(transcript=transcript_text, result=transcript_text)
 
-        selected_features = jobs[job_id].get('interview_features', [])
+        job_data = get_fields()
+        selected_features = job_data.get('interview_features', [])
         if selected_features:
-            jobs[job_id]['step'] = 2
-            jobs[job_id]['step_description'] = 'Creating interview summary and sections...'
+            set_fields(step=2, step_description='Creating interview summary and sections...')
             enhancement = generate_interview_enhancements(transcript_text, selected_features, output_language)
-            jobs[job_id]['interview_summary'] = enhancement.get('summary')
-            jobs[job_id]['interview_sections'] = enhancement.get('sections')
-            jobs[job_id]['interview_combined'] = enhancement.get('combined')
-            jobs[job_id]['interview_features_successful'] = enhancement.get('successful_features', [])
-            jobs[job_id]['study_generation_error'] = enhancement.get('error')
+            set_fields(
+                interview_summary=enhancement.get('summary'),
+                interview_sections=enhancement.get('sections'),
+                interview_combined=enhancement.get('combined'),
+                interview_features_successful=enhancement.get('successful_features', []),
+                study_generation_error=enhancement.get('error'),
+            )
 
             failed_count = enhancement.get('failed_count', 0)
             if failed_count > 0:
-                uid = jobs[job_id].get('user_id')
+                current_job = get_fields()
+                uid = current_job.get('user_id')
                 refund_slides_credits(uid, failed_count)
-                jobs[job_id]['extra_slides_refunded'] = jobs[job_id].get('extra_slides_refunded', 0) + failed_count
-                add_job_credit_refund(jobs[job_id], 'slides_credits', failed_count)
+                current_job = get_fields()
+                current_job['extra_slides_refunded'] = current_job.get('extra_slides_refunded', 0) + failed_count
+                add_job_credit_refund(current_job, 'slides_credits', failed_count)
+                set_job(job_id, current_job)
 
             if enhancement.get('summary') and enhancement.get('sections'):
-                jobs[job_id]['result'] = enhancement.get('combined', transcript_text)
+                set_fields(result=enhancement.get('combined', transcript_text))
             elif enhancement.get('summary'):
-                jobs[job_id]['result'] = enhancement.get('summary')
+                set_fields(result=enhancement.get('summary'))
             elif enhancement.get('sections'):
-                jobs[job_id]['result'] = enhancement.get('sections')
+                set_fields(result=enhancement.get('sections'))
 
-        save_study_pack(job_id, jobs[job_id])
-        jobs[job_id]['status'] = 'complete'
-        jobs[job_id]['step'] = jobs[job_id].get('total_steps', 1)
-        jobs[job_id]['step_description'] = 'Complete!'
+        job_data = get_fields()
+        save_study_pack(job_id, job_data)
+        final_snapshot = get_fields()
+        set_fields(
+            status='complete',
+            step=final_snapshot.get('total_steps', 1),
+            step_description='Complete!',
+        )
     except Exception as e:
-        jobs[job_id]['status'] = 'error'
-        jobs[job_id]['error'] = str(e)
+        logger.exception("Interview processing failed for job %s", job_id)
+        set_fields(status='error', error=PROCESSING_PUBLIC_ERROR_MESSAGE)
         # Refund the credit since processing failed
-        uid = jobs[job_id].get('user_id')
-        credit_type = jobs[job_id].get('credit_deducted')
+        failed_job = get_fields()
+        uid = failed_job.get('user_id')
+        credit_type = failed_job.get('credit_deducted')
         refund_credit(uid, credit_type)
-        add_job_credit_refund(jobs[job_id], credit_type, 1)
-        extra_spent = jobs[job_id].get('interview_features_cost', 0)
-        already_refunded = jobs[job_id].get('extra_slides_refunded', 0)
+        failed_job = get_fields()
+        add_job_credit_refund(failed_job, credit_type, 1)
+        extra_spent = failed_job.get('interview_features_cost', 0)
+        already_refunded = failed_job.get('extra_slides_refunded', 0)
         to_refund = max(0, extra_spent - already_refunded)
         if to_refund > 0:
             refund_slides_credits(uid, to_refund)
-            jobs[job_id]['extra_slides_refunded'] = already_refunded + to_refund
-            add_job_credit_refund(jobs[job_id], 'slides_credits', to_refund)
-        jobs[job_id]['credit_refunded'] = True
+            failed_job['extra_slides_refunded'] = already_refunded + to_refund
+            add_job_credit_refund(failed_job, 'slides_credits', to_refund)
+        failed_job['credit_refunded'] = True
+        set_job(job_id, failed_job)
     finally:
         cleanup_files(local_paths, gemini_files)
         # Log the job to Firestore and record finished_at for cleanup thread
-        jobs[job_id]['finished_at'] = time.time()
-        save_job_log(job_id, jobs[job_id], jobs[job_id]['finished_at'])
+        finished_at = time.time()
+        set_fields(finished_at=finished_at)
+        final_job = get_fields()
+        save_job_log(job_id, final_job, finished_at)
 
 # =============================================
 # ROUTES
@@ -3214,6 +3488,7 @@ def dashboard():
         sentry_frontend_dsn=SENTRY_FRONTEND_DSN,
         sentry_environment=SENTRY_ENVIRONMENT,
         sentry_release=SENTRY_RELEASE,
+        index_js_asset=resolve_js_asset('js/index-app.js'),
     )
 
 @app.route('/plan')
@@ -3231,11 +3506,16 @@ def features_page():
 
 @app.route('/admin')
 def admin_dashboard():
-    return render_template('admin.html')
+    decoded_token = verify_admin_session_cookie(request)
+    if not decoded_token:
+        if ADMIN_PAGE_UNAUTHORIZED_MODE == '404':
+            abort(404)
+        return redirect('/dashboard')
+    return render_template('admin.html', admin_js_asset=resolve_js_asset('js/admin.js'))
 
 @app.route('/study')
 def study_dashboard():
-    return render_template('study.html')
+    return render_template('study.html', study_js_asset=resolve_js_asset('js/study.js'))
 
 @app.route('/privacy')
 def privacy_policy():
@@ -3253,8 +3533,53 @@ def terms_of_service():
         last_updated='February 26, 2026',
     )
 
-@auth_bp.route('/api/verify-email', methods=['POST'])
-def verify_email():
+def create_admin_session_impl():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    if not is_admin_user(decoded_token):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    id_token = _extract_bearer_token(request)
+    if not id_token:
+        return jsonify({'error': 'Missing ID token'}), 400
+
+    try:
+        session_cookie = auth.create_session_cookie(
+            id_token,
+            expires_in=timedelta(seconds=ADMIN_SESSION_DURATION_SECONDS),
+        )
+        response = jsonify({'ok': True})
+        response.set_cookie(
+            ADMIN_SESSION_COOKIE_NAME,
+            session_cookie,
+            max_age=ADMIN_SESSION_DURATION_SECONDS,
+            httponly=True,
+            secure=bool(request.is_secure or os.getenv('RENDER')),
+            samesite='Lax',
+            path='/',
+        )
+        return response
+    except Exception as e:
+        logger.error(f"Error creating admin session cookie: {e}")
+        return jsonify({'error': 'Could not create admin session'}), 500
+
+
+def clear_admin_session_impl():
+    response = jsonify({'ok': True})
+    response.set_cookie(
+        ADMIN_SESSION_COOKIE_NAME,
+        '',
+        expires=0,
+        max_age=0,
+        httponly=True,
+        secure=bool(request.is_secure or os.getenv('RENDER')),
+        samesite='Lax',
+        path='/',
+    )
+    return response
+
+def verify_email_impl():
     # Rate limit by IP to prevent enumeration
     client_ip = request.remote_addr or 'unknown'
     allowed_rl, retry_after_rl = check_rate_limit(
@@ -3269,8 +3594,7 @@ def verify_email():
         return jsonify({'allowed': True})
     return jsonify({'allowed': False, 'message': 'Please use your university email or a major email provider (Gmail, Outlook, iCloud, Yahoo).'})
 
-@auth_bp.route('/api/dev/sentry-test', methods=['POST'])
-def dev_sentry_test():
+def dev_sentry_test_impl():
     if not is_dev_environment():
         return jsonify({'error': 'Not found'}), 404
     decoded_token = verify_firebase_token(request)
@@ -3293,9 +3617,7 @@ def dev_sentry_test():
             'message': 'Sentry test event captured from backend',
         })
 
-@auth_bp.route('/api/analytics/event', methods=['POST'])
-@auth_bp.route('/api/lp-event', methods=['POST'])
-def ingest_analytics_event():
+def ingest_analytics_event_impl():
     data = request.get_json(silent=True) or {}
     decoded_token = verify_firebase_token(request)
     uid = decoded_token.get('uid', '') if decoded_token else ''
@@ -3338,8 +3660,7 @@ def ingest_analytics_event():
         return jsonify({'error': 'Could not store event'}), 500
     return jsonify({'ok': True})
 
-@auth_bp.route('/api/auth/user', methods=['GET'])
-def get_user():
+def get_user_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token: return jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
@@ -3362,8 +3683,7 @@ def get_user():
         'preferences': preferences,
     })
 
-@auth_bp.route('/api/user-preferences', methods=['GET'])
-def get_user_preferences():
+def get_user_preferences_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -3374,8 +3694,7 @@ def get_user_preferences():
     user = get_or_create_user(uid, email)
     return jsonify({'preferences': build_user_preferences_payload(user)})
 
-@auth_bp.route('/api/user-preferences', methods=['PUT'])
-def update_user_preferences():
+def update_user_preferences_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -3410,11 +3729,10 @@ def update_user_preferences():
         user.update(updates)
         return jsonify({'ok': True, 'preferences': build_user_preferences_payload(user)})
     except Exception as e:
-        logger.info(f"Error updating preferences for user {uid}: {e}")
+        logger.error(f"Error updating preferences for user {uid}: {e}")
         return jsonify({'error': 'Could not save preferences'}), 500
 
-@account_bp.route('/api/account/export', methods=['GET'])
-def export_account_data():
+def export_account_data_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -3435,11 +3753,10 @@ def export_account_data():
             download_name=filename,
         )
     except Exception as e:
-        logger.info(f"Error exporting account data for {uid}: {e}")
+        logger.error(f"Error exporting account data for {uid}: {e}")
         return jsonify({'error': 'Could not export account data'}), 500
 
-@account_bp.route('/api/account/delete', methods=['POST'])
-def delete_account_data():
+def delete_account_data_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -3564,11 +3881,10 @@ def delete_account_data():
             'warnings': warnings_list,
         })
     except Exception as e:
-        logger.info(f"Error deleting account data for {uid}: {e}")
+        logger.error(f"Error deleting account data for {uid}: {e}")
         return jsonify({'error': 'Could not delete account data'}), 500
 
-@study_bp.route('/api/study-progress', methods=['GET'])
-def get_study_progress():
+def get_study_progress_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -3602,11 +3918,10 @@ def get_study_progress():
             'summary': compute_study_progress_summary(progress_data, card_state_maps),
         })
     except Exception as e:
-        logger.info(f"Error fetching study progress for user {uid}: {e}")
+        logger.error(f"Error fetching study progress for user {uid}: {e}")
         return jsonify({'error': 'Could not load study progress'}), 500
 
-@study_bp.route('/api/study-progress', methods=['PUT'])
-def update_study_progress():
+def update_study_progress_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -3676,15 +3991,14 @@ def update_study_progress():
                 try:
                     get_study_card_state_doc(uid, pack_id).delete()
                 except Exception as delete_error:
-                    logger.info(f"Warning: failed deleting study progress state for {uid}/{pack_id}: {delete_error}")
+                    logger.warning(f"Warning: failed deleting study progress state for {uid}/{pack_id}: {delete_error}")
 
         return jsonify({'ok': True})
     except Exception as e:
-        logger.info(f"Error updating study progress for user {uid}: {e}")
+        logger.error(f"Error updating study progress for user {uid}: {e}")
         return jsonify({'error': 'Could not save study progress'}), 500
 
-@study_bp.route('/api/study-progress/summary', methods=['GET'])
-def get_study_progress_summary():
+def get_study_progress_summary_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -3700,13 +4014,12 @@ def get_study_progress_summary():
 
         return jsonify(compute_study_progress_summary(progress_data, card_state_maps))
     except Exception as e:
-        logger.info(f"Error fetching study progress summary for user {uid}: {e}")
+        logger.error(f"Error fetching study progress summary for user {uid}: {e}")
         return jsonify({'error': 'Could not load study progress summary'}), 500
 
 # --- Stripe Routes ---
 
-@payments_bp.route('/api/config', methods=['GET'])
-def get_config():
+def get_config_impl():
     return jsonify({
         'stripe_publishable_key': STRIPE_PUBLISHABLE_KEY,
         'bundles': {
@@ -3721,8 +4034,7 @@ def get_config():
         }
     })
 
-@payments_bp.route('/api/create-checkout-session', methods=['POST'])
-def create_checkout_session():
+def create_checkout_session_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Please sign in to continue'}), 401
@@ -3774,11 +4086,10 @@ def create_checkout_session():
         )
         return jsonify({'checkout_url': checkout_session.url})
     except Exception as e:
-        logger.info(f"Stripe checkout error: {e}")
+        logger.error(f"Stripe checkout error: {e}")
         return jsonify({'error': 'Could not create checkout session. Please try again.'}), 500
 
-@payments_bp.route('/api/confirm-checkout-session', methods=['GET'])
-def confirm_checkout_session():
+def confirm_checkout_session_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -3799,14 +4110,13 @@ def confirm_checkout_session():
             return jsonify({'error': status}), 400
         return jsonify({'ok': True, 'status': status})
     except stripe.error.StripeError as e:
-        logger.info(f"Stripe confirm session error: {e}")
+        logger.error(f"Stripe confirm session error: {e}")
         return jsonify({'error': 'Could not verify checkout session.'}), 400
     except Exception as e:
-        logger.info(f"Confirm checkout session error: {e}")
+        logger.error(f"Confirm checkout session error: {e}")
         return jsonify({'error': 'Could not confirm checkout session.'}), 500
 
-@payments_bp.route('/api/stripe-webhook', methods=['POST'])
-def stripe_webhook():
+def stripe_webhook_impl():
     payload = request.data
     sig_header = request.headers.get('Stripe-Signature', '')
 
@@ -3816,18 +4126,18 @@ def stripe_webhook():
                 payload, sig_header, STRIPE_WEBHOOK_SECRET
             )
         except ValueError:
-            logger.info("Stripe webhook: Invalid payload")
+            logger.warning("Stripe webhook: Invalid payload")
             return 'Invalid payload', 400
         except stripe.error.SignatureVerificationError as e:
-            logger.info(f"Stripe webhook signature verification failed: {e}")
+            logger.warning(f"Stripe webhook signature verification failed: {e}")
             return 'Invalid signature', 400
         except Exception as e:
-            logger.info(f"Stripe webhook unexpected error: {e}")
+            logger.error(f"Stripe webhook unexpected error: {e}")
             return 'Webhook processing error', 500
     else:
         # SECURITY: Reject all webhook requests if STRIPE_WEBHOOK_SECRET is not configured.
         # Without signature verification, anyone could forge payment events.
-        logger.info("⚠️ Stripe webhook rejected: STRIPE_WEBHOOK_SECRET is not configured")
+        logger.warning("⚠️ Stripe webhook rejected: STRIPE_WEBHOOK_SECRET is not configured")
         return jsonify({'error': 'Webhook not configured'}), 500
 
     if event.get('type') == 'checkout.session.completed':
@@ -3839,14 +4149,13 @@ def stripe_webhook():
         elif ok and status == 'already_processed':
             logger.info(f"ℹ️ Checkout session {session.get('id', '')} already processed.")
         else:
-            logger.info(f"⚠️ Webhook checkout session {session.get('id', '')} not processed: {status}")
+            logger.warning(f"⚠️ Webhook checkout session {session.get('id', '')} not processed: {status}")
 
     return '', 200
 
 # --- Purchase History Route ---
 
-@payments_bp.route('/api/purchase-history', methods=['GET'])
-def get_purchase_history():
+def get_purchase_history_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -3868,11 +4177,10 @@ def get_purchase_history():
             })
         return jsonify({'purchases': purchases})
     except Exception as e:
-        logger.info(f"Error fetching purchase history: {e}")
+        logger.error(f"Error fetching purchase history: {e}")
         return jsonify({'purchases': []})
 
-@study_bp.route('/api/study-packs', methods=['GET'])
-def get_study_packs():
+def get_study_packs_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -3900,11 +4208,10 @@ def get_study_packs():
         packs.sort(key=lambda p: p.get('created_at', 0), reverse=True)
         return jsonify({'study_packs': packs[:50]})
     except Exception as e:
-        logger.info(f"Error fetching study packs: {e}")
+        logger.error(f"Error fetching study packs: {e}")
         return jsonify({'error': 'Could not load study packs'}), 500
 
-@study_bp.route('/api/study-packs', methods=['POST'])
-def create_study_pack():
+def create_study_pack_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -3973,11 +4280,10 @@ def create_study_pack():
 
         return jsonify({'ok': True, 'study_pack_id': doc_ref.id})
     except Exception as e:
-        logger.info(f"Error creating study pack: {e}")
+        logger.error(f"Error creating study pack: {e}")
         return jsonify({'error': 'Could not create study pack'}), 500
 
-@study_bp.route('/api/study-packs/<pack_id>', methods=['GET'])
-def get_study_pack(pack_id):
+def get_study_pack_impl(pack_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -4020,11 +4326,10 @@ def get_study_pack(pack_id):
             'created_at': pack.get('created_at', 0),
         })
     except Exception as e:
-        logger.info(f"Error fetching study pack {pack_id}: {e}")
+        logger.error(f"Error fetching study pack {pack_id}: {e}")
         return jsonify({'error': 'Could not fetch study pack'}), 500
 
-@study_bp.route('/api/study-packs/<pack_id>', methods=['PATCH'])
-def update_study_pack(pack_id):
+def update_study_pack_impl(pack_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -4080,11 +4385,10 @@ def update_study_pack(pack_id):
         pack_ref.update(updates)
         return jsonify({'ok': True})
     except Exception as e:
-        logger.info(f"Error updating study pack {pack_id}: {e}")
+        logger.error(f"Error updating study pack {pack_id}: {e}")
         return jsonify({'error': 'Could not update study pack'}), 500
 
-@study_bp.route('/api/study-packs/<pack_id>', methods=['DELETE'])
-def delete_study_pack(pack_id):
+def delete_study_pack_impl(pack_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -4102,14 +4406,13 @@ def delete_study_pack(pack_id):
         try:
             get_study_card_state_doc(uid, pack_id).delete()
         except Exception as e:
-            logger.info(f"Warning: could not delete study progress state for pack {pack_id}: {e}")
+            logger.warning(f"Warning: could not delete study progress state for pack {pack_id}: {e}")
         return jsonify({'ok': True})
     except Exception as e:
-        logger.info(f"Error deleting study pack {pack_id}: {e}")
+        logger.error(f"Error deleting study pack {pack_id}: {e}")
         return jsonify({'error': 'Could not delete study pack'}), 500
 
-@study_bp.route('/api/study-folders', methods=['GET'])
-def get_study_folders():
+def get_study_folders_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -4132,11 +4435,10 @@ def get_study_folders():
         folders.sort(key=lambda f: f.get('created_at', 0), reverse=True)
         return jsonify({'folders': folders})
     except Exception as e:
-        logger.info(f"Error fetching study folders: {e}")
+        logger.error(f"Error fetching study folders: {e}")
         return jsonify({'error': 'Could not load study folders'}), 500
 
-@study_bp.route('/api/study-packs/<pack_id>/audio-url', methods=['GET'])
-def get_study_pack_audio_url(pack_id):
+def get_study_pack_audio_url_impl(pack_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -4163,11 +4465,10 @@ def get_study_pack_audio_url(pack_id):
         }
         return jsonify({'audio_url': f"/api/audio-stream/{stream_token}"})
     except Exception as e:
-        logger.info(f"Error generating study-pack audio URL {pack_id}: {e}")
+        logger.error(f"Error generating study-pack audio URL {pack_id}: {e}")
         return jsonify({'error': 'Could not generate audio URL'}), 500
 
-@study_bp.route('/api/study-packs/<pack_id>/audio', methods=['GET'])
-def stream_study_pack_audio(pack_id):
+def stream_study_pack_audio_impl(pack_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -4187,11 +4488,10 @@ def stream_study_pack_audio(pack_id):
             return jsonify({'error': 'Audio file not found'}), 404
         return send_file(audio_storage_path, mimetype=get_mime_type(audio_storage_path), conditional=True)
     except Exception as e:
-        logger.info(f"Error streaming study-pack audio {pack_id}: {e}")
+        logger.error(f"Error streaming study-pack audio {pack_id}: {e}")
         return jsonify({'error': 'Could not stream audio'}), 500
 
-@study_bp.route('/api/audio-stream/<token>', methods=['GET'])
-def stream_audio_token(token):
+def stream_audio_token_impl(token):
     if not ALLOW_LEGACY_AUDIO_STREAM_TOKENS:
         return jsonify({'error': 'Not found'}), 404
     token_data = AUDIO_STREAM_TOKENS.get(token)
@@ -4206,8 +4506,7 @@ def stream_audio_token(token):
     mime_type = get_mime_type(file_path)
     return send_file(file_path, mimetype=mime_type, conditional=True)
 
-@study_bp.route('/api/study-folders', methods=['POST'])
-def create_study_folder():
+def create_study_folder_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -4237,11 +4536,10 @@ def create_study_folder():
         })
         return jsonify({'ok': True, 'folder_id': doc_ref.id})
     except Exception as e:
-        logger.info(f"Error creating study folder: {e}")
+        logger.error(f"Error creating study folder: {e}")
         return jsonify({'error': 'Could not create folder'}), 500
 
-@study_bp.route('/api/study-folders/<folder_id>', methods=['PATCH'])
-def update_study_folder(folder_id):
+def update_study_folder_impl(folder_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -4276,11 +4574,10 @@ def update_study_folder(folder_id):
                 pack_doc.reference.update({'folder_name': updates['name'], 'updated_at': time.time()})
         return jsonify({'ok': True})
     except Exception as e:
-        logger.info(f"Error updating folder {folder_id}: {e}")
+        logger.error(f"Error updating folder {folder_id}: {e}")
         return jsonify({'error': 'Could not update folder'}), 500
 
-@study_bp.route('/api/study-folders/<folder_id>', methods=['DELETE'])
-def delete_study_folder(folder_id):
+def delete_study_folder_impl(folder_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -4299,11 +4596,10 @@ def delete_study_folder(folder_id):
             pack_doc.reference.update({'folder_id': '', 'folder_name': '', 'updated_at': time.time()})
         return jsonify({'ok': True})
     except Exception as e:
-        logger.info(f"Error deleting folder {folder_id}: {e}")
+        logger.error(f"Error deleting folder {folder_id}: {e}")
         return jsonify({'error': 'Could not delete folder'}), 500
 
-@admin_bp.route('/api/admin/overview', methods=['GET'])
-def get_admin_overview():
+def admin_overview_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -4524,11 +4820,10 @@ def get_admin_overview():
             'runtime_checks': build_admin_runtime_checks(),
         })
     except Exception as e:
-        logger.info(f"Error fetching admin overview: {e}")
+        logger.error(f"Error fetching admin overview: {e}")
         return jsonify({'error': 'Could not fetch admin dashboard data'}), 500
 
-@admin_bp.route('/api/admin/export', methods=['GET'])
-def export_admin_csv():
+def admin_export_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -4684,13 +4979,12 @@ def export_admin_csv():
         response.headers['Content-Disposition'] = f'attachment; filename={filename}'
         return response
     except Exception as e:
-        logger.info(f"Error exporting admin CSV ({export_type}): {e}")
+        logger.error(f"Error exporting admin CSV ({export_type}): {e}")
         return jsonify({'error': 'Could not export CSV'}), 500
 
 # --- Upload & Processing Routes ---
 
-@upload_bp.route('/api/import-audio-url', methods=['POST'])
-def import_audio_from_url():
+def import_audio_from_url_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Please sign in to continue'}), 401
@@ -4728,11 +5022,10 @@ def import_audio_from_url():
             'expires_in_seconds': AUDIO_IMPORT_TOKEN_TTL_SECONDS,
         })
     except Exception as e:
-        logger.info(f"Error importing audio from URL for user {uid}: {e}")
+        logger.error(f"Error importing audio from URL for user {uid}: {e}")
         return jsonify({'error': 'Could not import audio from URL. Please check that the URL is accessible and try again.'}), 400
 
-@upload_bp.route('/api/import-audio-url/release', methods=['POST'])
-def release_imported_audio():
+def release_imported_audio_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -4743,8 +5036,7 @@ def release_imported_audio():
         release_audio_import_token(uid, token)
     return jsonify({'ok': True})
 
-@upload_bp.route('/upload', methods=['POST'])
-def upload_files():
+def upload_files_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token: return jsonify({'error': 'Please sign in to continue'}), 401
     uid = decoded_token['uid']
@@ -4766,6 +5058,25 @@ def upload_files():
         return build_rate_limited_response(
             'Too many upload attempts right now. Please wait and try again.',
             retry_after,
+        )
+    requested_bytes = int(request.content_length or 0)
+    disk_ok, free_bytes, needed_bytes = has_sufficient_upload_disk_space(requested_bytes)
+    if not disk_ok:
+        logger.warning(
+            "Upload rejected due to low disk space: free=%s needed=%s uid=%s",
+            free_bytes,
+            needed_bytes,
+            uid,
+        )
+        return jsonify({
+            'error': 'Upload temporarily unavailable due to low server storage. Please try again later.'
+        }), 503
+    reserved_daily, daily_retry_after = reserve_daily_upload_bytes(uid, requested_bytes)
+    if not reserved_daily:
+        log_rate_limit_hit('upload', daily_retry_after)
+        return build_rate_limited_response(
+            'Daily upload quota reached for your account. Please try again tomorrow.',
+            daily_retry_after,
         )
     user = get_or_create_user(uid, email)
     mode = request.form.get('mode', 'lecture-notes')
@@ -4971,8 +5282,7 @@ def upload_files():
 
     return jsonify({'job_id': job_id})
 
-@upload_bp.route('/status/<job_id>')
-def get_status(job_id):
+def get_status_impl(job_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -5015,8 +5325,7 @@ def get_status(job_id):
         response['credit_refunded'] = job.get('credit_refunded', False)
     return jsonify(response)
 
-@upload_bp.route('/download-docx/<job_id>')
-def download_docx(job_id):
+def download_docx_impl(job_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -5055,8 +5364,7 @@ def download_docx(job_id):
     docx_io.seek(0)
     return send_file(docx_io, mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document', as_attachment=True, download_name=filename)
 
-@upload_bp.route('/download-flashcards-csv/<job_id>')
-def download_flashcards_csv(job_id):
+def download_flashcards_csv_impl(job_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -5103,8 +5411,7 @@ def download_flashcards_csv(job_id):
     csv_bytes.seek(0)
     return send_file(csv_bytes, mimetype='text/csv', as_attachment=True, download_name=filename)
 
-@study_bp.route('/api/study-packs/<pack_id>/export-flashcards-csv', methods=['GET'])
-def export_study_pack_flashcards_csv(pack_id):
+def export_study_pack_flashcards_csv_impl(pack_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -5149,11 +5456,10 @@ def export_study_pack_flashcards_csv(pack_id):
         csv_bytes.seek(0)
         return send_file(csv_bytes, mimetype='text/csv', as_attachment=True, download_name=filename)
     except Exception as e:
-        logger.info(f"Error exporting study pack flashcards CSV {pack_id}: {e}")
+        logger.error(f"Error exporting study pack flashcards CSV {pack_id}: {e}")
         return jsonify({'error': 'Could not export CSV'}), 500
 
-@study_bp.route('/api/study-packs/<pack_id>/export-notes', methods=['GET'])
-def export_study_pack_notes(pack_id):
+def export_study_pack_notes_impl(pack_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -5199,11 +5505,10 @@ def export_study_pack_notes(pack_id):
 
         return jsonify({'error': 'Invalid format'}), 400
     except Exception as e:
-        logger.info(f"Error exporting study pack notes {pack_id}: {e}")
+        logger.error(f"Error exporting study pack notes {pack_id}: {e}")
         return jsonify({'error': 'Could not export notes'}), 500
 
-@study_bp.route('/api/study-packs/<pack_id>/export-pdf', methods=['GET'])
-def export_study_pack_pdf(pack_id):
+def export_study_pack_pdf_impl(pack_id):
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -5234,13 +5539,15 @@ def export_study_pack_pdf(pack_id):
             download_name=f"study-pack-{pack_id}{filename_suffix}.pdf"
         )
     except Exception as e:
-        logger.info(f"Error exporting study pack PDF {pack_id}: {e}")
+        logger.error(f"Error exporting study pack PDF {pack_id}: {e}")
         return jsonify({'error': 'Could not export PDF'}), 500
 
 # Register extracted non-admin API blueprints (Batch R3).
 for _blueprint in (auth_bp, account_bp, study_bp, upload_bp, admin_bp, payments_bp):
     if _blueprint.name not in app.blueprints:
         app.register_blueprint(_blueprint)
+
+recover_stale_runtime_jobs()
 
 # =============================================
 # HEALTH CHECK (Issue 38)
