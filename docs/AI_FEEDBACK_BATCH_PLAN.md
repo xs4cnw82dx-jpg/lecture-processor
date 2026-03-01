@@ -204,3 +204,8 @@ Current backend structure for future AI agents:
 - Route grouping: `lecture_processor/blueprints/*.py`
 - Data access layer: `lecture_processor/repositories/*.py`
 - Domain helpers: `lecture_processor/services/*.py`
+
+## 6) Post-R6 follow-up hardening
+
+- `DONE`: Firestore query warnings cleanup via repository-level `FieldFilter` helper (`lecture_processor/repositories/query_utils.py`) with test-double fallback.
+- `DONE`: Optional Playwright E2E smoke suite added (`e2e/smoke.spec.js`) and manual GitHub workflow (`.github/workflows/e2e-playwright.yml`).
