@@ -209,3 +209,4 @@ Current backend structure for future AI agents:
 
 - `DONE`: Firestore query warnings cleanup via repository-level `FieldFilter` helper (`lecture_processor/repositories/query_utils.py`) with test-double fallback.
 - `DONE`: Optional Playwright E2E smoke suite added (`e2e/smoke.spec.js`) and manual GitHub workflow (`.github/workflows/e2e-playwright.yml`).
+- `DONE`: Stripe go-live switch pack added (`docs/STRIPE_GO_LIVE_CHECKLIST.md` + `scripts/stripe_go_live_check.py`).
