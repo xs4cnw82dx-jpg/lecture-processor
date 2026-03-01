@@ -1,5 +1,7 @@
 """Analytics event sanitization and persistence helpers."""
 
+from lecture_processor.repositories import analytics_repo
+
 
 def sanitize_event_name(raw_name, *, name_re, allowed_events):
     name = str(raw_name or '').strip().lower()
@@ -65,7 +67,7 @@ def log_analytics_event(
         'created_at': created_at if isinstance(created_at, (int, float)) else time_module.time(),
     }
     try:
-        db.collection('analytics_events').add(payload)
+        analytics_repo.add_event(db, payload)
         return True
     except Exception as exc:
         if logger is not None:
@@ -83,7 +85,7 @@ def log_rate_limit_hit(limit_name, retry_after=0, *, db, logger, time_module):
         retry_after_seconds = 1
     retry_after_seconds = max(1, retry_after_seconds)
     try:
-        db.collection('rate_limit_logs').add({
+        analytics_repo.add_rate_limit_log(db, {
             'limit_name': safe_name,
             'retry_after_seconds': retry_after_seconds,
             'created_at': time_module.time(),

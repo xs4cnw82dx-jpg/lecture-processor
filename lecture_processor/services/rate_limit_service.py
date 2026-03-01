@@ -2,6 +2,8 @@
 
 import hashlib
 
+from lecture_processor.repositories import rate_limit_repo
+
 
 def window_counter_id(key, window_seconds, window_start):
     raw = f"{key}|{window_seconds}|{int(window_start)}".encode('utf-8')
@@ -25,7 +27,7 @@ def check_rate_limit_firestore(
         window_start = int(now_ts // window_seconds) * int(window_seconds)
         retry_after = max(1, int((window_start + window_seconds) - now_ts))
         counter_id = window_counter_id(key, window_seconds, window_start)
-        counter_ref = db.collection(counter_collection).document(counter_id)
+        counter_ref = rate_limit_repo.counter_doc_ref(db, counter_collection, counter_id)
         transaction = db.transaction()
 
         @firestore_module.transactional

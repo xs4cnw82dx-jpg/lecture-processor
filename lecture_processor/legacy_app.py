@@ -64,6 +64,13 @@ from lecture_processor.services import (
     job_state_service,
     rate_limit_service,
 )
+from lecture_processor.repositories import (
+    admin_repo,
+    job_logs_repo,
+    purchases_repo,
+    study_repo,
+    users_repo,
+)
 from lecture_processor.blueprints import auth_bp, account_bp, study_bp, upload_bp, admin_bp, payments_bp
 
 LEGACY_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -755,7 +762,7 @@ def build_default_user_data(uid, email):
 
 def get_or_create_user(uid, email):
     """Get a user from Firestore, or create them with free credits if they don't exist."""
-    user_ref = db.collection('users').document(uid)
+    user_ref = users_repo.doc_ref(db, uid)
     user_doc = user_ref.get()
 
     if user_doc.exists:
@@ -792,7 +799,7 @@ def grant_credits_to_user(uid, bundle_id):
         logger.info(f"Warning: Unknown bundle_id '{bundle_id}' in grant_credits_to_user")
         return False
 
-    user_ref = db.collection('users').document(uid)
+    user_ref = users_repo.doc_ref(db, uid)
     user_doc = user_ref.get()
 
     if not user_doc.exists:
@@ -829,7 +836,7 @@ def deduct_credit(uid, credit_type_primary, credit_type_fallback=None):
             return credit_type_fallback
         return None
 
-    user_ref = db.collection('users').document(uid)
+    user_ref = users_repo.doc_ref(db, uid)
     transaction = db.transaction()
     return _deduct_in_transaction(transaction, user_ref)
 
@@ -850,7 +857,7 @@ def deduct_interview_credit(uid):
                 return credit_type
         return None
 
-    user_ref = db.collection('users').document(uid)
+    user_ref = users_repo.doc_ref(db, uid)
     transaction = db.transaction()
     return _deduct_in_transaction(transaction, user_ref)
 
@@ -859,7 +866,7 @@ def refund_credit(uid, credit_type):
     if not uid or not credit_type:
         return
     try:
-        user_ref = db.collection('users').document(uid)
+        user_ref = users_repo.doc_ref(db, uid)
         user_ref.update({
             credit_type: firestore.Increment(1),
             'total_processed': firestore.Increment(-1),
@@ -885,9 +892,9 @@ def save_purchase_record(uid, bundle_id, stripe_session_id):
             'created_at': time.time(),
         }
         if stripe_session_id:
-            db.collection('purchases').document(stripe_session_id).set(record, merge=True)
+            purchases_repo.set_doc(db, stripe_session_id, record, merge=True)
         else:
-            db.collection('purchases').add(record)
+            purchases_repo.add_doc(db, record)
         logger.info(f"📝 Saved purchase record for user {uid}: {bundle['name']}")
     except Exception as e:
         logger.info(f"❌ Failed to save purchase record for user {uid}: {e}")
@@ -896,11 +903,10 @@ def purchase_record_exists_for_session(stripe_session_id):
     if not stripe_session_id:
         return False
     try:
-        doc = db.collection('purchases').document(stripe_session_id).get()
+        doc = purchases_repo.get_doc(db, stripe_session_id)
         if doc.exists:
             return True
-        query = db.collection('purchases').where('stripe_session_id', '==', stripe_session_id).limit(1)
-        for _ in query.stream():
+        for _ in purchases_repo.query_by_session_id(db, stripe_session_id, limit=1):
             return True
         return False
     except Exception as e:
@@ -988,7 +994,7 @@ def save_job_log(job_id, job_data, finished_at):
     try:
         started_at = job_data.get('started_at', 0)
         duration = round(finished_at - started_at, 1) if started_at else 0
-        db.collection('job_logs').document(job_id).set({
+        job_logs_repo.set_job_log(db, job_id, {
             'job_id': job_id,
             'uid': job_data.get('user_id', ''),
             'email': job_data.get('user_email', ''),
@@ -1081,15 +1087,16 @@ def get_bucket_key(timestamp, window_key):
 
 
 def query_docs_in_window(collection_name, timestamp_field, window_start, window_end=None, order_desc=False, limit=None):
-    collection = db.collection(collection_name)
-    query = collection.where(timestamp_field, '>=', window_start)
-    if window_end is not None:
-        query = query.where(timestamp_field, '<=', window_end)
-    if order_desc:
-        query = query.order_by(timestamp_field, direction=firestore.Query.DESCENDING)
-    if isinstance(limit, int) and limit > 0:
-        query = query.limit(limit)
-    return list(query.stream())
+    return admin_repo.query_docs_in_window(
+        db,
+        collection_name=collection_name,
+        timestamp_field=timestamp_field,
+        window_start=window_start,
+        window_end=window_end,
+        order_desc=order_desc,
+        limit=limit,
+        firestore_module=firestore,
+    )
 
 
 def safe_query_docs_in_window(collection_name, timestamp_field, window_start, window_end=None, order_desc=False, limit=None):
@@ -1107,7 +1114,7 @@ def safe_query_docs_in_window(collection_name, timestamp_field, window_start, wi
     except Exception:
         # Fallback for missing indexes in early environments.
         docs = []
-        for doc in db.collection(collection_name).stream():
+        for doc in admin_repo.stream_collection(db, collection_name):
             data = doc.to_dict() or {}
             ts = get_timestamp(data.get(timestamp_field))
             if ts < window_start:
@@ -1128,22 +1135,17 @@ def safe_count_collection(collection_name):
     if db is None:
         return 0
     try:
-        agg = db.collection(collection_name).count().get()
-        if agg:
-            return int(agg[0][0].value)
+        return admin_repo.count_collection(db, collection_name)
     except Exception:
         pass
-    return len(list(db.collection(collection_name).stream()))
+    return len(list(admin_repo.stream_collection(db, collection_name)))
 
 
 def safe_count_window(collection_name, timestamp_field, window_start):
     if db is None:
         return 0
     try:
-        query = db.collection(collection_name).where(timestamp_field, '>=', window_start)
-        agg = query.count().get()
-        if agg:
-            return int(agg[0][0].value)
+        return admin_repo.count_window(db, collection_name, timestamp_field, window_start)
     except Exception:
         pass
     docs = safe_query_docs_in_window(collection_name, timestamp_field, window_start)
@@ -1310,12 +1312,7 @@ def count_active_jobs_for_user(uid):
     return job_state_service.count_active_jobs_for_user(uid, jobs_store=jobs, lock=JOBS_LOCK)
 
 def list_docs_by_uid(collection_name, uid, max_docs):
-    docs = list(
-        db.collection(collection_name)
-        .where('uid', '==', uid)
-        .limit(max_docs + 1)
-        .stream()
-    )
+    docs = admin_repo.query_by_uid(db, collection_name, uid, max_docs + 1)
     truncated = len(docs) > max_docs
     limited = docs[:max_docs]
     records = []
@@ -1326,12 +1323,7 @@ def list_docs_by_uid(collection_name, uid, max_docs):
     return records, truncated
 
 def delete_docs_by_uid(collection_name, uid, max_docs):
-    docs = list(
-        db.collection(collection_name)
-        .where('uid', '==', uid)
-        .limit(max_docs + 1)
-        .stream()
-    )
+    docs = admin_repo.query_by_uid(db, collection_name, uid, max_docs + 1)
     truncated = len(docs) > max_docs
     limited = docs[:max_docs]
     deleted = 0
@@ -1367,12 +1359,7 @@ def remove_upload_artifacts_for_job_ids(job_ids):
     return removed
 
 def anonymize_purchase_docs_by_uid(uid, max_docs):
-    docs = list(
-        db.collection('purchases')
-        .where('uid', '==', uid)
-        .limit(max_docs + 1)
-        .stream()
-    )
+    docs = purchases_repo.query_by_uid(db, uid, max_docs + 1)
     truncated = len(docs) > max_docs
     limited = docs[:max_docs]
     anonymized = 0
@@ -1389,7 +1376,7 @@ def anonymize_purchase_docs_by_uid(uid, max_docs):
     return anonymized, truncated
 
 def collect_user_export_payload(uid, email):
-    user_doc = db.collection('users').document(uid).get()
+    user_doc = users_repo.get_doc(db, uid)
     user_profile = user_doc.to_dict() if user_doc.exists else {}
 
     study_progress_doc = get_study_progress_doc(uid).get()
@@ -1657,7 +1644,7 @@ def deduct_slides_credits(uid, amount):
         transaction.update(user_ref, {'slides_credits': firestore.Increment(-amount)})
         return True
 
-    user_ref = db.collection('users').document(uid)
+    user_ref = users_repo.doc_ref(db, uid)
     transaction = db.transaction()
     return _deduct_in_transaction(transaction, user_ref)
 
@@ -1665,7 +1652,7 @@ def refund_slides_credits(uid, amount):
     if not uid or amount <= 0:
         return
     try:
-        db.collection('users').document(uid).update({'slides_credits': firestore.Increment(amount)})
+        users_repo.update_doc(db, uid, {'slides_credits': firestore.Increment(amount)})
         logger.info(f"✅ Refunded {amount} slides credits to user {uid}.")
     except Exception as e:
         logger.info(f"❌ Failed to refund {amount} slides credits to user {uid}: {e}")
@@ -2231,11 +2218,11 @@ def compute_study_progress_summary(progress_data, card_state_maps, base_now=None
     }
 
 def get_study_progress_doc(uid):
-    return db.collection('study_progress').document(uid)
+    return study_repo.study_progress_doc_ref(db, uid)
 
 def get_study_card_state_doc(uid, pack_id):
     safe_pack_id = str(pack_id or '').replace('/', '_')
-    return db.collection('study_card_states').document(f"{uid}__{safe_pack_id}")
+    return study_repo.study_card_state_doc_ref(db, uid, safe_pack_id)
 
 def generate_study_materials(source_text, flashcard_selection, question_selection, study_features='both', output_language='English'):
     if study_features == 'none':
@@ -2955,7 +2942,7 @@ def save_study_pack(job_id, job_data):
         if notes_truncated:
             notes_markdown = notes_markdown[:max_notes_chars]
 
-        doc_ref = db.collection('study_packs').document()
+        doc_ref = study_repo.create_study_pack_doc_ref(db)
         now_ts = time.time()
         tzinfo, timezone_name = resolve_user_timezone(job_data.get('user_id', ''))
         local_title_time = datetime.fromtimestamp(now_ts, tz=timezone.utc).astimezone(tzinfo)
@@ -3417,7 +3404,7 @@ def update_user_preferences():
         updates['onboarding_completed'] = bool(payload.get('onboarding_completed'))
 
     try:
-        db.collection('users').document(uid).set(updates, merge=True)
+        users_repo.set_doc(db, uid, updates, merge=True)
         user.update(updates)
         return jsonify({'ok': True, 'preferences': build_user_preferences_payload(user)})
     except Exception as e:
@@ -3500,12 +3487,7 @@ def delete_account_data():
         deleted['study_folders'] = deleted_folders
         deleted['study_card_states'] = deleted_card_states
 
-        study_pack_docs = list(
-            db.collection('study_packs')
-            .where('uid', '==', uid)
-            .limit(ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION + 1)
-            .stream()
-        )
+        study_pack_docs = study_repo.list_study_packs_by_uid(db, uid, ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION + 1)
         truncated['study_packs'] = len(study_pack_docs) > ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION
         study_pack_docs = study_pack_docs[:ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION]
 
@@ -3545,7 +3527,7 @@ def delete_account_data():
             deleted['study_progress_doc'] = 0
 
         try:
-            db.collection('users').document(uid).delete()
+            users_repo.delete_doc(db, uid)
             deleted['user_profile_doc'] = 1
         except Exception:
             deleted['user_profile_doc'] = 0
@@ -3600,7 +3582,7 @@ def get_study_progress():
 
         card_states = {}
         card_state_maps = []
-        docs = db.collection('study_card_states').where('uid', '==', uid).limit(MAX_PROGRESS_PACKS_PER_SYNC).stream()
+        docs = study_repo.list_study_card_states_by_uid(db, uid, MAX_PROGRESS_PACKS_PER_SYNC)
         for doc in docs:
             data = doc.to_dict() or {}
             pack_id = sanitize_pack_id(data.get('pack_id', ''))
@@ -3709,7 +3691,7 @@ def get_study_progress_summary():
         progress_doc = get_study_progress_doc(uid).get()
         progress_data = progress_doc.to_dict() if progress_doc.exists else {}
         card_state_maps = []
-        docs = db.collection('study_card_states').where('uid', '==', uid).limit(MAX_PROGRESS_PACKS_PER_SYNC).stream()
+        docs = study_repo.list_study_card_states_by_uid(db, uid, MAX_PROGRESS_PACKS_PER_SYNC)
         for doc in docs:
             data = doc.to_dict() or {}
             card_state_maps.append(sanitize_card_state_map(data.get('state', {})))
@@ -3870,9 +3852,9 @@ def get_purchase_history():
     uid = decoded_token['uid']
 
     try:
-        purchases_ref = db.collection('purchases').where('uid', '==', uid).order_by('created_at', direction=firestore.Query.DESCENDING).limit(50)
+        purchases_docs = purchases_repo.list_by_uid_recent(db, uid, 50, firestore)
         purchases = []
-        for doc in purchases_ref.stream():
+        for doc in purchases_docs:
             p = doc.to_dict()
             purchases.append({
                 'id': doc.id,
@@ -3895,7 +3877,7 @@ def get_study_packs():
 
     uid = decoded_token['uid']
     try:
-        study_docs = list(db.collection('study_packs').where('uid', '==', uid).limit(200).stream())
+        study_docs = study_repo.list_study_packs_by_uid(db, uid, 200)
         packs = []
         for doc in study_docs:
             pack = doc.to_dict()
@@ -3937,7 +3919,7 @@ def create_study_pack():
         folder_id = str(payload.get('folder_id', '')).strip()
         folder_name = ''
         if folder_id:
-            folder_doc = db.collection('study_folders').document(folder_id).get()
+            folder_doc = study_repo.get_study_folder_doc(db, folder_id)
             if not folder_doc.exists:
                 return jsonify({'error': 'Folder not found'}), 404
             folder_data = folder_doc.to_dict()
@@ -3952,7 +3934,7 @@ def create_study_pack():
         notes_markdown = str(payload.get('notes_markdown', '')).strip()[:180000]
         notes_audio_map = parse_audio_markers_from_notes(notes_markdown) if FEATURE_AUDIO_SECTION_SYNC else []
 
-        doc_ref = db.collection('study_packs').document()
+        doc_ref = study_repo.create_study_pack_doc_ref(db)
         doc_ref.set({
             'study_pack_id': doc_ref.id,
             'source_job_id': '',
@@ -4000,7 +3982,7 @@ def get_study_pack(pack_id):
 
     uid = decoded_token['uid']
     try:
-        doc = db.collection('study_packs').document(pack_id).get()
+        doc = study_repo.get_study_pack_doc(db, pack_id)
         if not doc.exists:
             return jsonify({'error': 'Study pack not found'}), 404
         pack = doc.to_dict() or {}
@@ -4048,7 +4030,7 @@ def update_study_pack(pack_id):
     payload = request.get_json() or {}
 
     try:
-        pack_ref = db.collection('study_packs').document(pack_id)
+        pack_ref = study_repo.study_pack_doc_ref(db, pack_id)
         doc = pack_ref.get()
         if not doc.exists:
             return jsonify({'error': 'Study pack not found'}), 404
@@ -4073,7 +4055,7 @@ def update_study_pack(pack_id):
             updates['folder_id'] = ''
             updates['folder_name'] = ''
             if folder_id:
-                folder_doc = db.collection('study_folders').document(folder_id).get()
+                folder_doc = study_repo.get_study_folder_doc(db, folder_id)
                 if not folder_doc.exists:
                     return jsonify({'error': 'Folder not found'}), 404
                 folder_data = folder_doc.to_dict()
@@ -4106,7 +4088,7 @@ def delete_study_pack(pack_id):
         return jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
     try:
-        pack_ref = db.collection('study_packs').document(pack_id)
+        pack_ref = study_repo.study_pack_doc_ref(db, pack_id)
         doc = pack_ref.get()
         if not doc.exists:
             return jsonify({'error': 'Study pack not found'}), 404
@@ -4131,7 +4113,7 @@ def get_study_folders():
         return jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
     try:
-        docs = list(db.collection('study_folders').where('uid', '==', uid).stream())
+        docs = study_repo.list_study_folders_by_uid(db, uid)
         folders = []
         for doc in docs:
             folder = doc.to_dict()
@@ -4158,7 +4140,7 @@ def get_study_pack_audio_url(pack_id):
         return jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
     try:
-        doc = db.collection('study_packs').document(pack_id).get()
+        doc = study_repo.get_study_pack_doc(db, pack_id)
         if not doc.exists:
             return jsonify({'error': 'Study pack not found'}), 404
         pack = doc.to_dict() or {}
@@ -4189,7 +4171,7 @@ def stream_study_pack_audio(pack_id):
         return jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
     try:
-        doc = db.collection('study_packs').document(pack_id).get()
+        doc = study_repo.get_study_pack_doc(db, pack_id)
         if not doc.exists:
             return jsonify({'error': 'Study pack not found'}), 404
         pack = doc.to_dict() or {}
@@ -4238,7 +4220,7 @@ def create_study_folder():
             exam_date = normalize_exam_date(payload.get('exam_date', ''))
         except ValueError as ve:
             return jsonify({'error': str(ve)}), 400
-        doc_ref = db.collection('study_folders').document()
+        doc_ref = study_repo.create_study_folder_doc_ref(db)
         doc_ref.set({
             'folder_id': doc_ref.id,
             'uid': uid,
@@ -4264,7 +4246,7 @@ def update_study_folder(folder_id):
     uid = decoded_token['uid']
     payload = request.get_json() or {}
     try:
-        folder_ref = db.collection('study_folders').document(folder_id)
+        folder_ref = study_repo.study_folder_doc_ref(db, folder_id)
         doc = folder_ref.get()
         if not doc.exists:
             return jsonify({'error': 'Folder not found'}), 404
@@ -4287,7 +4269,7 @@ def update_study_folder(folder_id):
                 return jsonify({'error': str(ve)}), 400
         folder_ref.update(updates)
         if 'name' in updates:
-            packs = list(db.collection('study_packs').where('uid', '==', uid).where('folder_id', '==', folder_id).stream())
+            packs = study_repo.list_study_packs_by_uid_and_folder(db, uid, folder_id)
             for pack_doc in packs:
                 pack_doc.reference.update({'folder_name': updates['name'], 'updated_at': time.time()})
         return jsonify({'ok': True})
@@ -4302,7 +4284,7 @@ def delete_study_folder(folder_id):
         return jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
     try:
-        folder_ref = db.collection('study_folders').document(folder_id)
+        folder_ref = study_repo.study_folder_doc_ref(db, folder_id)
         doc = folder_ref.get()
         if not doc.exists:
             return jsonify({'error': 'Folder not found'}), 404
@@ -4310,7 +4292,7 @@ def delete_study_folder(folder_id):
         if folder.get('uid', '') != uid:
             return jsonify({'error': 'Forbidden'}), 403
         folder_ref.delete()
-        packs = list(db.collection('study_packs').where('uid', '==', uid).where('folder_id', '==', folder_id).stream())
+        packs = study_repo.list_study_packs_by_uid_and_folder(db, uid, folder_id)
         for pack_doc in packs:
             pack_doc.reference.update({'folder_id': '', 'folder_name': '', 'updated_at': time.time()})
         return jsonify({'ok': True})
@@ -5126,7 +5108,7 @@ def export_study_pack_flashcards_csv(pack_id):
         return jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
     try:
-        doc = db.collection('study_packs').document(pack_id).get()
+        doc = study_repo.get_study_pack_doc(db, pack_id)
         if not doc.exists:
             return jsonify({'error': 'Study pack not found'}), 404
         pack = doc.to_dict()
@@ -5176,7 +5158,7 @@ def export_study_pack_notes(pack_id):
 
     uid = decoded_token['uid']
     try:
-        doc = db.collection('study_packs').document(pack_id).get()
+        doc = study_repo.get_study_pack_doc(db, pack_id)
         if not doc.exists:
             return jsonify({'error': 'Study pack not found'}), 404
         pack = doc.to_dict()
@@ -5231,7 +5213,7 @@ def export_study_pack_pdf(pack_id):
 
     uid = decoded_token['uid']
     try:
-        doc = db.collection('study_packs').document(pack_id).get()
+        doc = study_repo.get_study_pack_doc(db, pack_id)
         if not doc.exists:
             return jsonify({'error': 'Study pack not found'}), 404
 
