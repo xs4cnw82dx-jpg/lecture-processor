@@ -296,6 +296,11 @@ def test_import_audio_url_success_returns_token(client, monkeypatch, tmp_path):
     monkeypatch.setattr(app_module, "check_rate_limit", lambda **_kwargs: (True, 0))
     monkeypatch.setattr(
         app_module,
+        "validate_video_import_url",
+        lambda _url: ("https://ovp.kaltura.com/path/index.m3u8", ""),
+    )
+    monkeypatch.setattr(
+        app_module,
         "download_audio_from_video_url",
         lambda _url, _prefix: (str(imported_path), "lecture.mp3", imported_path.stat().st_size),
     )
@@ -987,3 +992,78 @@ def test_process_interview_transcription_saves_pack_on_success(monkeypatch, tmp_
 
     assert app_module.jobs[job_id]["status"] == "complete"
     assert saved == [job_id]
+
+
+def test_upload_requires_auth(client):
+    response = client.post("/upload", data={"mode": "slides-only"})
+    assert response.status_code == 401
+
+
+def test_create_checkout_requires_auth(client):
+    response = client.post("/api/create-checkout-session", json={"bundle_id": "lecture_5"})
+    assert response.status_code == 401
+
+
+def test_study_pack_crud_requires_auth(client):
+    assert client.get("/api/study-packs").status_code == 401
+    assert client.post("/api/study-packs", json={}).status_code == 401
+    assert client.get("/api/study-packs/pack-1").status_code == 401
+    assert client.patch("/api/study-packs/pack-1", json={}).status_code == 401
+    assert client.delete("/api/study-packs/pack-1").status_code == 401
+
+
+def test_study_folder_crud_requires_auth(client):
+    assert client.get("/api/study-folders").status_code == 401
+    assert client.post("/api/study-folders", json={"name": "A"}).status_code == 401
+    assert client.patch("/api/study-folders/f-1", json={"name": "B"}).status_code == 401
+    assert client.delete("/api/study-folders/f-1").status_code == 401
+
+
+def test_admin_overview_and_export_forbid_non_admin(client, monkeypatch):
+    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u-non-admin", "email": "user@gmail.com"})
+    monkeypatch.setattr(app_module, "is_admin_user", lambda _decoded: False)
+    assert client.get("/api/admin/overview", headers={"Authorization": "Bearer dev"}).status_code == 403
+    assert client.get("/api/admin/export?type=jobs", headers={"Authorization": "Bearer dev"}).status_code == 403
+
+
+def test_study_pack_audio_requires_auth(client):
+    assert client.get("/api/study-packs/pack-audio/audio").status_code == 401
+
+
+def test_study_pack_audio_forbidden_for_other_user(client, monkeypatch, tmp_path):
+    audio_file = tmp_path / "sample.mp3"
+    audio_file.write_bytes(b"ID3\x03\x00\x00\x00")
+
+    class _FakeDoc:
+        exists = True
+
+        def __init__(self):
+            self.reference = self
+
+        def to_dict(self):
+            return {
+                "uid": "owner-uid",
+                "audio_storage_key": "study_audio/sample.mp3",
+            }
+
+        def set(self, *_args, **_kwargs):
+            return None
+
+    class _FakeCollection:
+        def document(self, _pack_id):
+            return self
+
+        def get(self):
+            return _FakeDoc()
+
+    class _FakeDB:
+        def collection(self, _name):
+            return _FakeCollection()
+
+    monkeypatch.setattr(app_module, "db", _FakeDB())
+    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "other-uid", "email": "user@gmail.com"})
+    monkeypatch.setattr(app_module, "is_admin_user", lambda _decoded: False)
+    monkeypatch.setattr(app_module, "resolve_audio_storage_path_from_key", lambda _key: str(audio_file))
+
+    response = client.get("/api/study-packs/pack-audio/audio", headers={"Authorization": "Bearer dev"})
+    assert response.status_code == 403
