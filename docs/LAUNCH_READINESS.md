@@ -119,4 +119,8 @@ This checklist tracks launch-critical items and current status with evidence.
 
 - [ ] Legal review by qualified counsel for Privacy/Terms text (important).
 - [x] CI automation to run pytest on every commit/PR.
-- [ ] Optional E2E browser tests (Playwright/Cypress) for full payment/upload UI journeys.
+- [x] Optional E2E browser tests are available (Playwright smoke suite, manual trigger).
+  - Evidence:
+    - Local config: `playwright.config.js`
+    - E2E tests: `e2e/smoke.spec.js`
+    - GitHub workflow: `.github/workflows/e2e-playwright.yml` (`workflow_dispatch`)

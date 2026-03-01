@@ -84,6 +84,7 @@ Important files:
 - API blueprints: `lecture_processor/blueprints/*.py`
 - Firestore repositories: `lecture_processor/repositories/*.py`
 - CI workflow: `.github/workflows/ci.yml`
+- Optional E2E workflow: `.github/workflows/e2e-playwright.yml`
 - Smoke script: `scripts/smoke_test.py`
 - Guardrail tests: `tests/test_launch_guardrails.py`
 - Launch checklist: `docs/LAUNCH_READINESS.md`
@@ -261,6 +262,15 @@ cd /Users/jaccovandermeulen/Desktop/lecture-processor
 source venv/bin/activate
 python -m pytest -q tests/test_launch_guardrails.py
 ./scripts/run_smoke.sh
+```
+
+### Optional local E2E smoke (Playwright)
+
+```bash
+cd /Users/jaccovandermeulen/Desktop/lecture-processor
+npm install
+npx playwright install --with-deps chromium
+npm run e2e
 ```
 
 ### Production smoke

@@ -1,0 +1,14 @@
+{
+  "name": "lecture-processor-e2e",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Optional Playwright end-to-end smoke checks for Lecture Processor",
+  "scripts": {
+    "e2e": "playwright test",
+    "e2e:headed": "playwright test --headed",
+    "e2e:install": "playwright install --with-deps chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.51.1"
+  }
+}
