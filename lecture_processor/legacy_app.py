@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import html
+import sys
 import warnings
 import logging
 import ipaddress
@@ -3534,2013 +3535,216 @@ def terms_of_service():
     )
 
 def create_admin_session_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    if not is_admin_user(decoded_token):
-        return jsonify({'error': 'Forbidden'}), 403
+    from lecture_processor.services import auth_api_service
 
-    id_token = _extract_bearer_token(request)
-    if not id_token:
-        return jsonify({'error': 'Missing ID token'}), 400
-
-    try:
-        session_cookie = auth.create_session_cookie(
-            id_token,
-            expires_in=timedelta(seconds=ADMIN_SESSION_DURATION_SECONDS),
-        )
-        response = jsonify({'ok': True})
-        response.set_cookie(
-            ADMIN_SESSION_COOKIE_NAME,
-            session_cookie,
-            max_age=ADMIN_SESSION_DURATION_SECONDS,
-            httponly=True,
-            secure=bool(request.is_secure or os.getenv('RENDER')),
-            samesite='Lax',
-            path='/',
-        )
-        return response
-    except Exception as e:
-        logger.error(f"Error creating admin session cookie: {e}")
-        return jsonify({'error': 'Could not create admin session'}), 500
+    return auth_api_service.create_admin_session(sys.modules[__name__], request)
 
 
 def clear_admin_session_impl():
-    response = jsonify({'ok': True})
-    response.set_cookie(
-        ADMIN_SESSION_COOKIE_NAME,
-        '',
-        expires=0,
-        max_age=0,
-        httponly=True,
-        secure=bool(request.is_secure or os.getenv('RENDER')),
-        samesite='Lax',
-        path='/',
-    )
-    return response
+    from lecture_processor.services import auth_api_service
+
+    return auth_api_service.clear_admin_session(sys.modules[__name__], request)
 
 def verify_email_impl():
-    # Rate limit by IP to prevent enumeration
-    client_ip = request.remote_addr or 'unknown'
-    allowed_rl, retry_after_rl = check_rate_limit(
-        key=f"verify_email:{client_ip}",
-        limit=20,
-        window_seconds=60,
-    )
-    if not allowed_rl:
-        return build_rate_limited_response('Too many verification requests. Please wait.', retry_after_rl)
-    email = request.get_json().get('email', '')
-    if is_email_allowed(email):
-        return jsonify({'allowed': True})
-    return jsonify({'allowed': False, 'message': 'Please use your university email or a major email provider (Gmail, Outlook, iCloud, Yahoo).'})
+    from lecture_processor.services import auth_api_service
+
+    return auth_api_service.verify_email(sys.modules[__name__], request)
 
 def dev_sentry_test_impl():
-    if not is_dev_environment():
-        return jsonify({'error': 'Not found'}), 404
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    if not is_admin_user(decoded_token):
-        return jsonify({'error': 'Forbidden'}), 403
-    if not sentry_sdk or not SENTRY_BACKEND_DSN:
-        return jsonify({'error': 'Sentry backend DSN is not configured'}), 400
+    from lecture_processor.services import auth_api_service
 
-    payload = request.get_json(silent=True) or {}
-    note = str(payload.get('message', 'Manual backend Sentry test')).strip()[:120]
-    try:
-        raise RuntimeError(f"Sentry dev test trigger: {note}")
-    except Exception as exc:
-        event_id = sentry_sdk.capture_exception(exc)
-        return jsonify({
-            'ok': True,
-            'event_id': event_id,
-            'message': 'Sentry test event captured from backend',
-        })
+    return auth_api_service.dev_sentry_test(sys.modules[__name__], request)
 
 def ingest_analytics_event_impl():
-    data = request.get_json(silent=True) or {}
-    decoded_token = verify_firebase_token(request)
-    uid = decoded_token.get('uid', '') if decoded_token else ''
-    email = decoded_token.get('email', '') if decoded_token else ''
-    session_id = sanitize_analytics_session_id(data.get('session_id', ''))
-    if not session_id and uid:
-        session_id = uid[:80]
+    from lecture_processor.services import auth_api_service
 
-    actor_token = uid or session_id or request.headers.get('X-Forwarded-For', request.remote_addr or '')
-    actor_key = normalize_rate_limit_key_part(actor_token, fallback='anon')
-    allowed_analytics, retry_after = check_rate_limit(
-        key=f"analytics:{actor_key}",
-        limit=ANALYTICS_RATE_LIMIT_MAX_REQUESTS,
-        window_seconds=ANALYTICS_RATE_LIMIT_WINDOW_SECONDS,
-    )
-    if not allowed_analytics:
-        log_rate_limit_hit('analytics', retry_after)
-        return build_rate_limited_response(
-            'Too many analytics events from this client. Please retry shortly.',
-            retry_after,
-        )
-
-    event_name = sanitize_analytics_event_name(data.get('event', ''))
-    if not event_name:
-        return jsonify({'error': 'Invalid event name'}), 400
-
-    properties = sanitize_analytics_properties(data.get('properties', {}))
-    properties['path'] = str(data.get('path', '') or '').strip()[:80]
-    properties['page'] = str(data.get('page', '') or '').strip()[:40]
-
-    ok = log_analytics_event(
-        event_name,
-        source='frontend',
-        uid=uid,
-        email=email,
-        session_id=session_id,
-        properties=properties,
-    )
-    if not ok:
-        return jsonify({'error': 'Could not store event'}), 500
-    return jsonify({'ok': True})
+    return auth_api_service.ingest_analytics_event(sys.modules[__name__], request)
 
 def get_user_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token: return jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    email = decoded_token.get('email', '')
-    if not is_email_allowed(email): return jsonify({'error': 'Email not allowed', 'message': 'Please use your university email.'}), 403
-    user = get_or_create_user(uid, email)
-    preferences = build_user_preferences_payload(user)
-    return jsonify({
-        'uid': user['uid'], 'email': user['email'],
-        'credits': {
-            'lecture_standard': user.get('lecture_credits_standard', 0),
-            'lecture_extended': user.get('lecture_credits_extended', 0),
-            'slides': user.get('slides_credits', 0),
-            'interview_short': user.get('interview_credits_short', 0),
-            'interview_medium': user.get('interview_credits_medium', 0),
-            'interview_long': user.get('interview_credits_long', 0),
-        },
-        'total_processed': user.get('total_processed', 0),
-        'is_admin': is_admin_user(decoded_token),
-        'preferences': preferences,
-    })
+    from lecture_processor.services import auth_api_service
+
+    return auth_api_service.get_user(sys.modules[__name__], request)
 
 def get_user_preferences_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    email = decoded_token.get('email', '')
-    if not is_email_allowed(email):
-        return jsonify({'error': 'Email not allowed'}), 403
-    user = get_or_create_user(uid, email)
-    return jsonify({'preferences': build_user_preferences_payload(user)})
+    from lecture_processor.services import auth_api_service
+
+    return auth_api_service.get_user_preferences(sys.modules[__name__], request)
 
 def update_user_preferences_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    email = decoded_token.get('email', '')
-    if not is_email_allowed(email):
-        return jsonify({'error': 'Email not allowed'}), 403
+    from lecture_processor.services import auth_api_service
 
-    payload = request.get_json(silent=True) or {}
-    user = get_or_create_user(uid, email)
-
-    raw_key = payload.get('output_language', user.get('preferred_output_language', DEFAULT_OUTPUT_LANGUAGE_KEY))
-    raw_custom = payload.get('output_language_custom', user.get('preferred_output_language_custom', ''))
-    pref_key = sanitize_output_language_pref_key(raw_key)
-    pref_custom = sanitize_output_language_pref_custom(raw_custom)
-
-    if pref_key == 'other' and not pref_custom:
-        return jsonify({'error': 'Custom language is required when output language is Other.'}), 400
-    if pref_key != 'other':
-        pref_custom = ''
-
-    updates = {
-        'preferred_output_language': pref_key,
-        'preferred_output_language_custom': pref_custom,
-        'updated_at': time.time(),
-    }
-    if 'onboarding_completed' in payload:
-        updates['onboarding_completed'] = bool(payload.get('onboarding_completed'))
-
-    try:
-        users_repo.set_doc(db, uid, updates, merge=True)
-        user.update(updates)
-        return jsonify({'ok': True, 'preferences': build_user_preferences_payload(user)})
-    except Exception as e:
-        logger.error(f"Error updating preferences for user {uid}: {e}")
-        return jsonify({'error': 'Could not save preferences'}), 500
+    return auth_api_service.update_user_preferences(sys.modules[__name__], request)
 
 def export_account_data_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
+    from lecture_processor.services import auth_api_service
 
-    uid = decoded_token['uid']
-    email = decoded_token.get('email', '')
-    try:
-        payload = collect_user_export_payload(uid, email)
-        date_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-        filename = f"lecture-processor-account-export-{date_str}.json"
-        data_bytes = json.dumps(payload, ensure_ascii=False, indent=2, default=str).encode('utf-8')
-        file_obj = io.BytesIO(data_bytes)
-        file_obj.seek(0)
-        return send_file(
-            file_obj,
-            mimetype='application/json',
-            as_attachment=True,
-            download_name=filename,
-        )
-    except Exception as e:
-        logger.error(f"Error exporting account data for {uid}: {e}")
-        return jsonify({'error': 'Could not export account data'}), 500
+    return auth_api_service.export_account_data(sys.modules[__name__], request)
 
 def delete_account_data_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
+    from lecture_processor.services import auth_api_service
 
-    uid = decoded_token['uid']
-    email = str(decoded_token.get('email', '') or '').strip().lower()
-    payload = request.get_json(silent=True) or {}
-
-    confirm_text = str(payload.get('confirm_text', '') or '').strip().upper()
-    if confirm_text != 'DELETE MY ACCOUNT':
-        return jsonify({'error': 'Invalid confirmation text. Type DELETE MY ACCOUNT exactly.'}), 400
-
-    confirm_email = str(payload.get('confirm_email', '') or '').strip().lower()
-    if email and confirm_email != email:
-        return jsonify({'error': 'Confirmation email does not match your account email.'}), 400
-
-    active_jobs = count_active_jobs_for_user(uid)
-    if active_jobs > 0:
-        return jsonify({'error': f'Cannot delete account while {active_jobs} processing job(s) are still active. Please wait until processing finishes.'}), 409
-
-    try:
-        deleted = {}
-        truncated = {}
-        warnings_list = []
-        job_ids = set()
-
-        job_log_docs, job_logs_truncated = list_docs_by_uid('job_logs', uid, ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION)
-        truncated['job_logs'] = job_logs_truncated
-        for item in job_log_docs:
-            jid = str(item.get('job_id', '') or item.get('_id', '')).strip()
-            if jid:
-                job_ids.add(jid)
-
-        deleted_job_logs, _ = delete_docs_by_uid('job_logs', uid, ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION)
-        deleted['job_logs'] = deleted_job_logs
-
-        anonymized_purchases, purchases_truncated = anonymize_purchase_docs_by_uid(uid, ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION)
-        deleted_analytics, analytics_truncated = delete_docs_by_uid('analytics_events', uid, ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION)
-        deleted_folders, folders_truncated = delete_docs_by_uid('study_folders', uid, ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION)
-        deleted_card_states, card_states_truncated = delete_docs_by_uid('study_card_states', uid, ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION)
-        truncated['purchases'] = purchases_truncated
-        truncated['analytics_events'] = analytics_truncated
-        truncated['study_folders'] = folders_truncated
-        truncated['study_card_states'] = card_states_truncated
-        deleted['purchases_anonymized'] = anonymized_purchases
-        deleted['analytics_events'] = deleted_analytics
-        deleted['study_folders'] = deleted_folders
-        deleted['study_card_states'] = deleted_card_states
-
-        study_pack_docs = study_repo.list_study_packs_by_uid(db, uid, ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION + 1)
-        truncated['study_packs'] = len(study_pack_docs) > ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION
-        study_pack_docs = study_pack_docs[:ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION]
-
-        deleted_study_packs = 0
-        deleted_pack_audio_files = 0
-        deleted_pack_progress_states = 0
-        for doc in study_pack_docs:
-            pack = doc.to_dict() or {}
-            pack_id = doc.id
-            job_id = str(pack.get('source_job_id', '') or '').strip()
-            if job_id:
-                job_ids.add(job_id)
-
-            if remove_pack_audio_file(pack):
-                deleted_pack_audio_files += 1
-
-            try:
-                get_study_card_state_doc(uid, pack_id).delete()
-                deleted_pack_progress_states += 1
-            except Exception:
-                pass
-
-            try:
-                doc.reference.delete()
-                deleted_study_packs += 1
-            except Exception as e:
-                warnings_list.append(f"Could not delete study pack {pack_id}: {e}")
-
-        deleted['study_packs'] = deleted_study_packs
-        deleted['study_pack_audio_files'] = deleted_pack_audio_files
-        deleted['study_pack_progress_states'] = deleted_pack_progress_states
-
-        try:
-            get_study_progress_doc(uid).delete()
-            deleted['study_progress_doc'] = 1
-        except Exception:
-            deleted['study_progress_doc'] = 0
-
-        try:
-            users_repo.delete_doc(db, uid)
-            deleted['user_profile_doc'] = 1
-        except Exception:
-            deleted['user_profile_doc'] = 0
-
-        removed_in_memory_jobs = 0
-        with JOBS_LOCK:
-            for jid, job_data in list(jobs.items()):
-                if str(job_data.get('user_id', '') or '') != uid:
-                    continue
-                job_ids.add(jid)
-                try:
-                    del jobs[jid]
-                    removed_in_memory_jobs += 1
-                except Exception:
-                    pass
-        deleted['in_memory_jobs'] = removed_in_memory_jobs
-
-        deleted['upload_artifacts'] = remove_upload_artifacts_for_job_ids(job_ids)
-
-        auth_user_deleted = False
-        try:
-            auth.delete_user(uid)
-            auth_user_deleted = True
-        except Exception as e:
-            warnings_list.append(f"Could not delete Firebase Auth user: {e}")
-
-        return jsonify({
-            'ok': True,
-            'auth_user_deleted': auth_user_deleted,
-            'deleted': deleted,
-            'truncated': truncated,
-            'warnings': warnings_list,
-        })
-    except Exception as e:
-        logger.error(f"Error deleting account data for {uid}: {e}")
-        return jsonify({'error': 'Could not delete account data'}), 500
+    return auth_api_service.delete_account_data(sys.modules[__name__], request)
 
 def get_study_progress_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    try:
-        progress_doc = get_study_progress_doc(uid).get()
-        progress_data = progress_doc.to_dict() if progress_doc.exists else {}
-        daily_goal = sanitize_daily_goal_value(progress_data.get('daily_goal'))
-        if daily_goal is None:
-            daily_goal = 20
-        streak_data = sanitize_streak_data(progress_data.get('streak_data', {}))
-        timezone = str(progress_data.get('timezone', '') or '').strip()[:80]
+    from lecture_processor.services import study_api_service
 
-        card_states = {}
-        card_state_maps = []
-        docs = study_repo.list_study_card_states_by_uid(db, uid, MAX_PROGRESS_PACKS_PER_SYNC)
-        for doc in docs:
-            data = doc.to_dict() or {}
-            pack_id = sanitize_pack_id(data.get('pack_id', ''))
-            if not pack_id:
-                continue
-            state_map = sanitize_card_state_map(data.get('state', {}))
-            card_states[pack_id] = state_map
-            card_state_maps.append(state_map)
-
-        return jsonify({
-            'daily_goal': daily_goal,
-            'streak_data': streak_data,
-            'timezone': sanitize_timezone_name(timezone),
-            'card_states': card_states,
-            'summary': compute_study_progress_summary(progress_data, card_state_maps),
-        })
-    except Exception as e:
-        logger.error(f"Error fetching study progress for user {uid}: {e}")
-        return jsonify({'error': 'Could not load study progress'}), 500
+    return study_api_service.get_study_progress(sys.modules[__name__], request)
 
 def update_study_progress_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    payload = request.get_json(silent=True) or {}
-    if not isinstance(payload, dict):
-        return jsonify({'error': 'Invalid payload'}), 400
+    from lecture_processor.services import study_api_service
 
-    try:
-        existing_progress_doc = get_study_progress_doc(uid).get()
-        existing_progress_data = existing_progress_doc.to_dict() if existing_progress_doc.exists else {}
-        updates = {
-            'uid': uid,
-            'updated_at': time.time(),
-        }
-
-        if 'daily_goal' in payload:
-            daily_goal = sanitize_daily_goal_value(payload.get('daily_goal'))
-            if daily_goal is None:
-                return jsonify({'error': 'daily_goal must be between 1 and 500'}), 400
-            updates['daily_goal'] = daily_goal
-
-        if 'streak_data' in payload:
-            updates['streak_data'] = merge_streak_data(existing_progress_data.get('streak_data', {}), payload.get('streak_data'))
-
-        if 'timezone' in payload:
-            updates['timezone'] = merge_timezone_value(existing_progress_data.get('timezone', ''), payload.get('timezone', ''))
-
-        get_study_progress_doc(uid).set(updates, merge=True)
-
-        card_states = payload.get('card_states')
-        if card_states is not None:
-            if not isinstance(card_states, dict):
-                return jsonify({'error': 'card_states must be an object'}), 400
-            processed = 0
-            for raw_pack_id, raw_state in card_states.items():
-                if processed >= MAX_PROGRESS_PACKS_PER_SYNC:
-                    break
-                pack_id = sanitize_pack_id(raw_pack_id)
-                if not pack_id:
-                    continue
-                cleaned_state = sanitize_card_state_map(raw_state)
-                doc_ref = get_study_card_state_doc(uid, pack_id)
-                if cleaned_state:
-                    existing_pack_doc = doc_ref.get()
-                    existing_pack_state = {}
-                    if existing_pack_doc.exists:
-                        existing_pack_data = existing_pack_doc.to_dict() or {}
-                        existing_pack_state = sanitize_card_state_map(existing_pack_data.get('state', {}))
-                    merged_state = merge_card_state_maps(existing_pack_state, cleaned_state)
-                    doc_ref.set({
-                        'uid': uid,
-                        'pack_id': pack_id,
-                        'state': merged_state,
-                        'updated_at': time.time(),
-                    }, merge=True)
-                processed += 1
-
-        remove_pack_ids = payload.get('remove_pack_ids')
-        if remove_pack_ids is not None:
-            if not isinstance(remove_pack_ids, list):
-                return jsonify({'error': 'remove_pack_ids must be a list'}), 400
-            for raw_pack_id in remove_pack_ids[:MAX_PROGRESS_PACKS_PER_SYNC]:
-                pack_id = sanitize_pack_id(raw_pack_id)
-                if not pack_id:
-                    continue
-                try:
-                    get_study_card_state_doc(uid, pack_id).delete()
-                except Exception as delete_error:
-                    logger.warning(f"Warning: failed deleting study progress state for {uid}/{pack_id}: {delete_error}")
-
-        return jsonify({'ok': True})
-    except Exception as e:
-        logger.error(f"Error updating study progress for user {uid}: {e}")
-        return jsonify({'error': 'Could not save study progress'}), 500
+    return study_api_service.update_study_progress(sys.modules[__name__], request)
 
 def get_study_progress_summary_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    try:
-        progress_doc = get_study_progress_doc(uid).get()
-        progress_data = progress_doc.to_dict() if progress_doc.exists else {}
-        card_state_maps = []
-        docs = study_repo.list_study_card_states_by_uid(db, uid, MAX_PROGRESS_PACKS_PER_SYNC)
-        for doc in docs:
-            data = doc.to_dict() or {}
-            card_state_maps.append(sanitize_card_state_map(data.get('state', {})))
+    from lecture_processor.services import study_api_service
 
-        return jsonify(compute_study_progress_summary(progress_data, card_state_maps))
-    except Exception as e:
-        logger.error(f"Error fetching study progress summary for user {uid}: {e}")
-        return jsonify({'error': 'Could not load study progress summary'}), 500
+    return study_api_service.get_study_progress_summary(sys.modules[__name__], request)
 
 # --- Stripe Routes ---
 
 def get_config_impl():
-    return jsonify({
-        'stripe_publishable_key': STRIPE_PUBLISHABLE_KEY,
-        'bundles': {
-            bundle_id: {
-                'name': bundle['name'],
-                'description': bundle['description'],
-                'price_cents': bundle['price_cents'],
-                'currency': bundle['currency'],
-                'credits': bundle['credits'],
-            }
-            for bundle_id, bundle in CREDIT_BUNDLES.items()
-        }
-    })
+    from lecture_processor.services import payments_api_service
+
+    return payments_api_service.get_config(sys.modules[__name__])
 
 def create_checkout_session_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Please sign in to continue'}), 401
+    from lecture_processor.services import payments_api_service
 
-    uid = decoded_token['uid']
-    email = decoded_token.get('email', '')
-    allowed_checkout, retry_after = check_rate_limit(
-        key=f"checkout:{normalize_rate_limit_key_part(uid, fallback='anon_uid')}",
-        limit=CHECKOUT_RATE_LIMIT_MAX_REQUESTS,
-        window_seconds=CHECKOUT_RATE_LIMIT_WINDOW_SECONDS,
-    )
-    if not allowed_checkout:
-        log_rate_limit_hit('checkout', retry_after)
-        return build_rate_limited_response(
-            'Too many checkout attempts. Please wait before starting another checkout.',
-            retry_after,
-        )
-
-    data = request.get_json(silent=True) or {}
-    bundle_id = data.get('bundle_id', '')
-
-    if bundle_id not in CREDIT_BUNDLES:
-        return jsonify({'error': 'Invalid bundle selected'}), 400
-
-    bundle = CREDIT_BUNDLES[bundle_id]
-
-    try:
-        checkout_session = stripe.checkout.Session.create(
-            payment_method_types=['card', 'ideal'],
-            line_items=[{
-                'price_data': {
-                    'currency': bundle['currency'],
-                    'product_data': {
-                        'name': bundle['name'],
-                        'description': bundle['description'],
-                    },
-                    'unit_amount': bundle['price_cents'],
-                },
-                'quantity': 1,
-            }],
-            mode='payment',
-            success_url=request.host_url.rstrip('/') + '/dashboard?payment=success&session_id={CHECKOUT_SESSION_ID}',
-            cancel_url=request.host_url.rstrip('/') + '/dashboard?payment=cancelled',
-            customer_email=email,
-            metadata={
-                'uid': uid,
-                'bundle_id': bundle_id,
-            },
-        )
-        return jsonify({'checkout_url': checkout_session.url})
-    except Exception as e:
-        logger.error(f"Stripe checkout error: {e}")
-        return jsonify({'error': 'Could not create checkout session. Please try again.'}), 500
+    return payments_api_service.create_checkout_session(sys.modules[__name__], request)
 
 def confirm_checkout_session_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
+    from lecture_processor.services import payments_api_service
 
-    uid = decoded_token.get('uid', '')
-    session_id = str(request.args.get('session_id', '') or '').strip()
-    if not session_id:
-        return jsonify({'error': 'Missing session_id'}), 400
-
-    try:
-        session = stripe.checkout.Session.retrieve(session_id)
-        metadata = session.get('metadata', {}) or {}
-        if metadata.get('uid', '') != uid:
-            return jsonify({'error': 'Forbidden'}), 403
-
-        ok, status = process_checkout_session_credits(session)
-        if not ok:
-            return jsonify({'error': status}), 400
-        return jsonify({'ok': True, 'status': status})
-    except stripe.error.StripeError as e:
-        logger.error(f"Stripe confirm session error: {e}")
-        return jsonify({'error': 'Could not verify checkout session.'}), 400
-    except Exception as e:
-        logger.error(f"Confirm checkout session error: {e}")
-        return jsonify({'error': 'Could not confirm checkout session.'}), 500
+    return payments_api_service.confirm_checkout_session(sys.modules[__name__], request)
 
 def stripe_webhook_impl():
-    payload = request.data
-    sig_header = request.headers.get('Stripe-Signature', '')
+    from lecture_processor.services import payments_api_service
 
-    if STRIPE_WEBHOOK_SECRET:
-        try:
-            event = stripe.Webhook.construct_event(
-                payload, sig_header, STRIPE_WEBHOOK_SECRET
-            )
-        except ValueError:
-            logger.warning("Stripe webhook: Invalid payload")
-            return 'Invalid payload', 400
-        except stripe.error.SignatureVerificationError as e:
-            logger.warning(f"Stripe webhook signature verification failed: {e}")
-            return 'Invalid signature', 400
-        except Exception as e:
-            logger.error(f"Stripe webhook unexpected error: {e}")
-            return 'Webhook processing error', 500
-    else:
-        # SECURITY: Reject all webhook requests if STRIPE_WEBHOOK_SECRET is not configured.
-        # Without signature verification, anyone could forge payment events.
-        logger.warning("⚠️ Stripe webhook rejected: STRIPE_WEBHOOK_SECRET is not configured")
-        return jsonify({'error': 'Webhook not configured'}), 500
-
-    if event.get('type') == 'checkout.session.completed':
-        session = event['data']['object']
-        ok, status = process_checkout_session_credits(session)
-        if ok and status == 'granted':
-            metadata = session.get('metadata', {}) or {}
-            logger.info(f"✅ Payment successful! Granted bundle '{metadata.get('bundle_id', '')}' to user '{metadata.get('uid', '')}'")
-        elif ok and status == 'already_processed':
-            logger.info(f"ℹ️ Checkout session {session.get('id', '')} already processed.")
-        else:
-            logger.warning(f"⚠️ Webhook checkout session {session.get('id', '')} not processed: {status}")
-
-    return '', 200
+    return payments_api_service.stripe_webhook(sys.modules[__name__], request)
 
 # --- Purchase History Route ---
 
 def get_purchase_history_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
+    from lecture_processor.services import payments_api_service
 
-    uid = decoded_token['uid']
-
-    try:
-        purchases_docs = purchases_repo.list_by_uid_recent(db, uid, 50, firestore)
-        purchases = []
-        for doc in purchases_docs:
-            p = doc.to_dict()
-            purchases.append({
-                'id': doc.id,
-                'bundle_name': p.get('bundle_name', 'Unknown'),
-                'price_cents': p.get('price_cents', 0),
-                'currency': p.get('currency', 'eur'),
-                'credits': p.get('credits', {}),
-                'created_at': p.get('created_at', 0),
-            })
-        return jsonify({'purchases': purchases})
-    except Exception as e:
-        logger.error(f"Error fetching purchase history: {e}")
-        return jsonify({'purchases': []})
+    return payments_api_service.get_purchase_history(sys.modules[__name__], request)
 
 def get_study_packs_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
+    from lecture_processor.services import study_api_service
 
-    uid = decoded_token['uid']
-    try:
-        study_docs = study_repo.list_study_packs_by_uid(db, uid, 200)
-        packs = []
-        for doc in study_docs:
-            pack = doc.to_dict()
-            packs.append({
-                'study_pack_id': doc.id,
-                'title': pack.get('title', ''),
-                'mode': pack.get('mode', ''),
-                'flashcards_count': len(pack.get('flashcards', [])),
-                'test_questions_count': len(pack.get('test_questions', [])),
-                'course': pack.get('course', ''),
-                'subject': pack.get('subject', ''),
-                'semester': pack.get('semester', ''),
-                'block': pack.get('block', ''),
-                'folder_id': pack.get('folder_id', ''),
-                'folder_name': pack.get('folder_name', ''),
-                'created_at': pack.get('created_at', 0),
-            })
-        packs.sort(key=lambda p: p.get('created_at', 0), reverse=True)
-        return jsonify({'study_packs': packs[:50]})
-    except Exception as e:
-        logger.error(f"Error fetching study packs: {e}")
-        return jsonify({'error': 'Could not load study packs'}), 500
+    return study_api_service.get_study_packs(sys.modules[__name__], request)
 
 def create_study_pack_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
+    from lecture_processor.services import study_api_service
 
-    uid = decoded_token['uid']
-    payload = request.get_json() or {}
-
-    title = str(payload.get('title', '')).strip()[:120]
-    if not title:
-        title = f"Untitled pack {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}"
-
-    try:
-        now_ts = time.time()
-        folder_id = str(payload.get('folder_id', '')).strip()
-        folder_name = ''
-        if folder_id:
-            folder_doc = study_repo.get_study_folder_doc(db, folder_id)
-            if not folder_doc.exists:
-                return jsonify({'error': 'Folder not found'}), 404
-            folder_data = folder_doc.to_dict()
-            if folder_data.get('uid', '') != uid:
-                return jsonify({'error': 'Forbidden'}), 403
-            folder_name = folder_data.get('name', '')
-        else:
-            folder_id = ''
-
-        flashcards = sanitize_flashcards(payload.get('flashcards', []), 500)
-        test_questions = sanitize_questions(payload.get('test_questions', []), 500)
-        notes_markdown = str(payload.get('notes_markdown', '')).strip()[:180000]
-        notes_audio_map = parse_audio_markers_from_notes(notes_markdown) if FEATURE_AUDIO_SECTION_SYNC else []
-
-        doc_ref = study_repo.create_study_pack_doc_ref(db)
-        doc_ref.set({
-            'study_pack_id': doc_ref.id,
-            'source_job_id': '',
-            'uid': uid,
-            'mode': 'manual',
-            'title': title,
-            'output_language': str(payload.get('output_language', 'English')).strip()[:64] or 'English',
-            'notes_markdown': notes_markdown,
-            'notes_truncated': False,
-            'transcript_segments': [],
-            'notes_audio_map': notes_audio_map,
-            'audio_storage_key': '',
-            'has_audio_sync': False,
-            'has_audio_playback': False,
-            'flashcards': flashcards,
-            'test_questions': test_questions,
-            'flashcard_selection': 'manual',
-            'question_selection': 'manual',
-            'study_features': 'both',
-            'interview_features': [],
-            'interview_summary': None,
-            'interview_sections': None,
-            'interview_combined': None,
-            'study_generation_error': None,
-            'course': str(payload.get('course', '')).strip()[:120],
-            'subject': str(payload.get('subject', '')).strip()[:120],
-            'semester': str(payload.get('semester', '')).strip()[:120],
-            'block': str(payload.get('block', '')).strip()[:120],
-            'folder_id': folder_id,
-            'folder_name': folder_name,
-            'created_at': now_ts,
-            'updated_at': now_ts,
-        })
-
-        return jsonify({'ok': True, 'study_pack_id': doc_ref.id})
-    except Exception as e:
-        logger.error(f"Error creating study pack: {e}")
-        return jsonify({'error': 'Could not create study pack'}), 500
+    return study_api_service.create_study_pack(sys.modules[__name__], request)
 
 def get_study_pack_impl(pack_id):
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
+    from lecture_processor.services import study_api_service
 
-    uid = decoded_token['uid']
-    try:
-        doc = study_repo.get_study_pack_doc(db, pack_id)
-        if not doc.exists:
-            return jsonify({'error': 'Study pack not found'}), 404
-        pack = doc.to_dict() or {}
-        if pack.get('uid', '') != uid:
-            return jsonify({'error': 'Forbidden'}), 403
-        ensure_pack_audio_storage_key(doc.reference, pack)
-        has_audio_playback = bool(pack.get('has_audio_playback', False) or get_audio_storage_key_from_pack(pack))
-        has_audio_sync = FEATURE_AUDIO_SECTION_SYNC and bool(pack.get('has_audio_sync', False))
-        notes_audio_map = pack.get('notes_audio_map', []) if has_audio_sync else []
-        return jsonify({
-            'study_pack_id': pack_id,
-            'title': pack.get('title', ''),
-            'mode': pack.get('mode', ''),
-            'output_language': pack.get('output_language', 'English'),
-            'notes_markdown': pack.get('notes_markdown', ''),
-            'transcript_segments': pack.get('transcript_segments', []),
-            'notes_audio_map': notes_audio_map,
-            'has_audio_sync': has_audio_sync,
-            'has_audio_playback': has_audio_playback,
-            'flashcards': pack.get('flashcards', []),
-            'test_questions': pack.get('test_questions', []),
-            'interview_summary': pack.get('interview_summary'),
-            'interview_sections': pack.get('interview_sections'),
-            'interview_combined': pack.get('interview_combined'),
-            'study_features': pack.get('study_features', 'none'),
-            'interview_features': pack.get('interview_features', []),
-            'course': pack.get('course', ''),
-            'subject': pack.get('subject', ''),
-            'semester': pack.get('semester', ''),
-            'block': pack.get('block', ''),
-            'folder_id': pack.get('folder_id', ''),
-            'folder_name': pack.get('folder_name', ''),
-            'created_at': pack.get('created_at', 0),
-        })
-    except Exception as e:
-        logger.error(f"Error fetching study pack {pack_id}: {e}")
-        return jsonify({'error': 'Could not fetch study pack'}), 500
+    return study_api_service.get_study_pack(sys.modules[__name__], request, pack_id)
 
 def update_study_pack_impl(pack_id):
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    payload = request.get_json() or {}
+    from lecture_processor.services import study_api_service
 
-    try:
-        pack_ref = study_repo.study_pack_doc_ref(db, pack_id)
-        doc = pack_ref.get()
-        if not doc.exists:
-            return jsonify({'error': 'Study pack not found'}), 404
-        pack = doc.to_dict()
-        if pack.get('uid', '') != uid:
-            return jsonify({'error': 'Forbidden'}), 403
-        ensure_pack_audio_storage_key(pack_ref, pack)
-
-        updates = {'updated_at': time.time()}
-        if 'title' in payload:
-            updates['title'] = str(payload.get('title', '')).strip()[:120]
-        if 'course' in payload:
-            updates['course'] = str(payload.get('course', '')).strip()[:120]
-        if 'subject' in payload:
-            updates['subject'] = str(payload.get('subject', '')).strip()[:120]
-        if 'semester' in payload:
-            updates['semester'] = str(payload.get('semester', '')).strip()[:120]
-        if 'block' in payload:
-            updates['block'] = str(payload.get('block', '')).strip()[:120]
-        if 'folder_id' in payload:
-            folder_id = str(payload.get('folder_id', '')).strip()
-            updates['folder_id'] = ''
-            updates['folder_name'] = ''
-            if folder_id:
-                folder_doc = study_repo.get_study_folder_doc(db, folder_id)
-                if not folder_doc.exists:
-                    return jsonify({'error': 'Folder not found'}), 404
-                folder_data = folder_doc.to_dict()
-                if folder_data.get('uid', '') != uid:
-                    return jsonify({'error': 'Forbidden'}), 403
-                updates['folder_id'] = folder_id
-                updates['folder_name'] = folder_data.get('name', '')
-
-        if 'flashcards' in payload:
-            updates['flashcards'] = sanitize_flashcards(payload.get('flashcards', []), 500)
-        if 'test_questions' in payload:
-            updates['test_questions'] = sanitize_questions(payload.get('test_questions', []), 500)
-        if 'notes_markdown' in payload:
-            updates['notes_markdown'] = str(payload.get('notes_markdown', ''))[:180000]
-            notes_audio_map = parse_audio_markers_from_notes(updates['notes_markdown']) if FEATURE_AUDIO_SECTION_SYNC else []
-            updates['notes_audio_map'] = notes_audio_map
-            updates['has_audio_sync'] = FEATURE_AUDIO_SECTION_SYNC and bool(get_audio_storage_key_from_pack(pack)) and bool(notes_audio_map)
-        updates['has_audio_playback'] = bool(get_audio_storage_key_from_pack(pack))
-
-        pack_ref.update(updates)
-        return jsonify({'ok': True})
-    except Exception as e:
-        logger.error(f"Error updating study pack {pack_id}: {e}")
-        return jsonify({'error': 'Could not update study pack'}), 500
+    return study_api_service.update_study_pack(sys.modules[__name__], request, pack_id)
 
 def delete_study_pack_impl(pack_id):
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    try:
-        pack_ref = study_repo.study_pack_doc_ref(db, pack_id)
-        doc = pack_ref.get()
-        if not doc.exists:
-            return jsonify({'error': 'Study pack not found'}), 404
-        pack = doc.to_dict()
-        if pack.get('uid', '') != uid:
-            return jsonify({'error': 'Forbidden'}), 403
-        remove_pack_audio_file(pack)
-        pack_ref.delete()
-        try:
-            get_study_card_state_doc(uid, pack_id).delete()
-        except Exception as e:
-            logger.warning(f"Warning: could not delete study progress state for pack {pack_id}: {e}")
-        return jsonify({'ok': True})
-    except Exception as e:
-        logger.error(f"Error deleting study pack {pack_id}: {e}")
-        return jsonify({'error': 'Could not delete study pack'}), 500
+    from lecture_processor.services import study_api_service
+
+    return study_api_service.delete_study_pack(sys.modules[__name__], request, pack_id)
 
 def get_study_folders_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    try:
-        docs = study_repo.list_study_folders_by_uid(db, uid)
-        folders = []
-        for doc in docs:
-            folder = doc.to_dict()
-            folders.append({
-                'folder_id': doc.id,
-                'name': folder.get('name', ''),
-                'course': folder.get('course', ''),
-                'subject': folder.get('subject', ''),
-                'semester': folder.get('semester', ''),
-                'block': folder.get('block', ''),
-                'exam_date': folder.get('exam_date', ''),
-                'created_at': folder.get('created_at', 0),
-            })
-        folders.sort(key=lambda f: f.get('created_at', 0), reverse=True)
-        return jsonify({'folders': folders})
-    except Exception as e:
-        logger.error(f"Error fetching study folders: {e}")
-        return jsonify({'error': 'Could not load study folders'}), 500
+    from lecture_processor.services import study_api_service
+
+    return study_api_service.get_study_folders(sys.modules[__name__], request)
 
 def get_study_pack_audio_url_impl(pack_id):
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    try:
-        doc = study_repo.get_study_pack_doc(db, pack_id)
-        if not doc.exists:
-            return jsonify({'error': 'Study pack not found'}), 404
-        pack = doc.to_dict() or {}
-        if pack.get('uid', '') != uid:
-            return jsonify({'error': 'Forbidden'}), 403
-        audio_storage_key = ensure_pack_audio_storage_key(doc.reference, pack)
-        audio_storage_path = resolve_audio_storage_path_from_key(audio_storage_key)
-        if not audio_storage_path:
-            return jsonify({'error': 'No audio file for this study pack'}), 404
-        if not os.path.exists(audio_storage_path):
-            return jsonify({'error': 'Audio file not found'}), 404
-        if not ALLOW_LEGACY_AUDIO_STREAM_TOKENS:
-            return jsonify({'error': 'Legacy token audio endpoint is disabled on this server'}), 410
-        stream_token = str(uuid.uuid4())
-        AUDIO_STREAM_TOKENS[stream_token] = {
-            'path': audio_storage_path,
-            'expires_at': time.time() + AUDIO_STREAM_TOKEN_TTL_SECONDS
-        }
-        return jsonify({'audio_url': f"/api/audio-stream/{stream_token}"})
-    except Exception as e:
-        logger.error(f"Error generating study-pack audio URL {pack_id}: {e}")
-        return jsonify({'error': 'Could not generate audio URL'}), 500
+    from lecture_processor.services import study_api_service
+
+    return study_api_service.get_study_pack_audio_url(sys.modules[__name__], request, pack_id)
 
 def stream_study_pack_audio_impl(pack_id):
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    try:
-        doc = study_repo.get_study_pack_doc(db, pack_id)
-        if not doc.exists:
-            return jsonify({'error': 'Study pack not found'}), 404
-        pack = doc.to_dict() or {}
-        if pack.get('uid', '') != uid and not is_admin_user(decoded_token):
-            return jsonify({'error': 'Forbidden'}), 403
-        audio_storage_key = ensure_pack_audio_storage_key(doc.reference, pack)
-        audio_storage_path = resolve_audio_storage_path_from_key(audio_storage_key)
-        if not audio_storage_path:
-            return jsonify({'error': 'No audio file for this study pack'}), 404
-        if not os.path.exists(audio_storage_path):
-            return jsonify({'error': 'Audio file not found'}), 404
-        return send_file(audio_storage_path, mimetype=get_mime_type(audio_storage_path), conditional=True)
-    except Exception as e:
-        logger.error(f"Error streaming study-pack audio {pack_id}: {e}")
-        return jsonify({'error': 'Could not stream audio'}), 500
+    from lecture_processor.services import study_api_service
+
+    return study_api_service.stream_study_pack_audio(sys.modules[__name__], request, pack_id)
 
 def stream_audio_token_impl(token):
-    if not ALLOW_LEGACY_AUDIO_STREAM_TOKENS:
-        return jsonify({'error': 'Not found'}), 404
-    token_data = AUDIO_STREAM_TOKENS.get(token)
-    if not token_data:
-        return jsonify({'error': 'Invalid token'}), 404
-    if time.time() > token_data.get('expires_at', 0):
-        AUDIO_STREAM_TOKENS.pop(token, None)
-        return jsonify({'error': 'Token expired'}), 410
-    file_path = token_data.get('path', '')
-    if not file_path or not os.path.exists(file_path):
-        return jsonify({'error': 'Audio file not found'}), 404
-    mime_type = get_mime_type(file_path)
-    return send_file(file_path, mimetype=mime_type, conditional=True)
+    from lecture_processor.services import study_api_service
+
+    return study_api_service.stream_audio_token(sys.modules[__name__], token)
 
 def create_study_folder_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    payload = request.get_json() or {}
-    name = str(payload.get('name', '')).strip()[:120]
-    if not name:
-        return jsonify({'error': 'Folder name is required'}), 400
-    try:
-        now_ts = time.time()
-        try:
-            exam_date = normalize_exam_date(payload.get('exam_date', ''))
-        except ValueError as ve:
-            return jsonify({'error': str(ve)}), 400
-        doc_ref = study_repo.create_study_folder_doc_ref(db)
-        doc_ref.set({
-            'folder_id': doc_ref.id,
-            'uid': uid,
-            'name': name,
-            'course': str(payload.get('course', '')).strip()[:120],
-            'subject': str(payload.get('subject', '')).strip()[:120],
-            'semester': str(payload.get('semester', '')).strip()[:120],
-            'block': str(payload.get('block', '')).strip()[:120],
-            'exam_date': exam_date,
-            'created_at': now_ts,
-            'updated_at': now_ts,
-        })
-        return jsonify({'ok': True, 'folder_id': doc_ref.id})
-    except Exception as e:
-        logger.error(f"Error creating study folder: {e}")
-        return jsonify({'error': 'Could not create folder'}), 500
+    from lecture_processor.services import study_api_service
+
+    return study_api_service.create_study_folder(sys.modules[__name__], request)
 
 def update_study_folder_impl(folder_id):
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    payload = request.get_json() or {}
-    try:
-        folder_ref = study_repo.study_folder_doc_ref(db, folder_id)
-        doc = folder_ref.get()
-        if not doc.exists:
-            return jsonify({'error': 'Folder not found'}), 404
-        folder = doc.to_dict()
-        if folder.get('uid', '') != uid:
-            return jsonify({'error': 'Forbidden'}), 403
-        updates = {'updated_at': time.time()}
-        if 'name' in payload:
-            name = str(payload.get('name', '')).strip()[:120]
-            if not name:
-                return jsonify({'error': 'Folder name is required'}), 400
-            updates['name'] = name
-        for field in ['course', 'subject', 'semester', 'block']:
-            if field in payload:
-                updates[field] = str(payload.get(field, '')).strip()[:120]
-        if 'exam_date' in payload:
-            try:
-                updates['exam_date'] = normalize_exam_date(payload.get('exam_date', ''))
-            except ValueError as ve:
-                return jsonify({'error': str(ve)}), 400
-        folder_ref.update(updates)
-        if 'name' in updates:
-            packs = study_repo.list_study_packs_by_uid_and_folder(db, uid, folder_id)
-            for pack_doc in packs:
-                pack_doc.reference.update({'folder_name': updates['name'], 'updated_at': time.time()})
-        return jsonify({'ok': True})
-    except Exception as e:
-        logger.error(f"Error updating folder {folder_id}: {e}")
-        return jsonify({'error': 'Could not update folder'}), 500
+    from lecture_processor.services import study_api_service
+
+    return study_api_service.update_study_folder(sys.modules[__name__], request, folder_id)
 
 def delete_study_folder_impl(folder_id):
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    try:
-        folder_ref = study_repo.study_folder_doc_ref(db, folder_id)
-        doc = folder_ref.get()
-        if not doc.exists:
-            return jsonify({'error': 'Folder not found'}), 404
-        folder = doc.to_dict()
-        if folder.get('uid', '') != uid:
-            return jsonify({'error': 'Forbidden'}), 403
-        folder_ref.delete()
-        packs = study_repo.list_study_packs_by_uid_and_folder(db, uid, folder_id)
-        for pack_doc in packs:
-            pack_doc.reference.update({'folder_id': '', 'folder_name': '', 'updated_at': time.time()})
-        return jsonify({'ok': True})
-    except Exception as e:
-        logger.error(f"Error deleting folder {folder_id}: {e}")
-        return jsonify({'error': 'Could not delete folder'}), 500
+    from lecture_processor.services import study_api_service
+
+    return study_api_service.delete_study_folder(sys.modules[__name__], request, folder_id)
 
 def admin_overview_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    if not is_admin_user(decoded_token):
-        return jsonify({'error': 'Forbidden'}), 403
+    from lecture_processor.services import admin_api_service
 
-    try:
-        window_key, window_seconds = get_admin_window(request.args.get('window', '7d'))
-        now_ts = time.time()
-        window_start = now_ts - window_seconds
-
-        total_users = safe_count_collection('users')
-        new_users = safe_count_window('users', 'created_at', window_start)
-        total_processed = safe_count_collection('job_logs')
-
-        filtered_purchases_docs = safe_query_docs_in_window(
-            collection_name='purchases',
-            timestamp_field='created_at',
-            window_start=window_start,
-            window_end=now_ts,
-        )
-        filtered_jobs_docs = safe_query_docs_in_window(
-            collection_name='job_logs',
-            timestamp_field='finished_at',
-            window_start=window_start,
-            window_end=now_ts,
-        )
-        filtered_analytics_docs = safe_query_docs_in_window(
-            collection_name='analytics_events',
-            timestamp_field='created_at',
-            window_start=window_start,
-            window_end=now_ts,
-        )
-        filtered_rate_limit_docs = safe_query_docs_in_window(
-            collection_name='rate_limit_logs',
-            timestamp_field='created_at',
-            window_start=window_start,
-            window_end=now_ts,
-        )
-
-        total_revenue_cents = 0
-        purchase_count = 0
-        filtered_purchases = []
-        for doc in filtered_purchases_docs:
-            purchase = doc.to_dict() or {}
-            filtered_purchases.append(purchase)
-            purchase_count += 1
-            total_revenue_cents += purchase.get('price_cents', 0) or 0
-
-        job_count = 0
-        success_jobs = 0
-        failed_jobs = 0
-        refunded_jobs = 0
-        durations = []
-        filtered_jobs = []
-        for doc in filtered_jobs_docs:
-            job = doc.to_dict() or {}
-            filtered_jobs.append(job)
-            job_count += 1
-            status = job.get('status', '')
-            if status == 'complete':
-                success_jobs += 1
-            elif status == 'error':
-                failed_jobs += 1
-            if job.get('credit_refunded'):
-                refunded_jobs += 1
-            duration = job.get('duration_seconds')
-            if isinstance(duration, (int, float)):
-                durations.append(duration)
-
-        avg_duration_seconds = round(sum(durations) / len(durations), 1) if durations else 0
-
-        funnel_steps, analytics_event_count = build_admin_funnel_steps(filtered_analytics_docs, window_start)
-        rate_limit_counts = {'upload': 0, 'checkout': 0, 'analytics': 0}
-        for doc in filtered_rate_limit_docs:
-            entry = doc.to_dict() or {}
-            limit_name = str(entry.get('limit_name', '') or '').strip().lower()
-            if limit_name in rate_limit_counts:
-                rate_limit_counts[limit_name] += 1
-
-        rate_limit_entries = []
-        for doc in filtered_rate_limit_docs:
-            entry = doc.to_dict() or {}
-            rate_limit_entries.append(entry)
-        recent_rate_limits_sorted = sorted(
-            rate_limit_entries,
-            key=lambda entry: get_timestamp(entry.get('created_at')),
-            reverse=True,
-        )[:20]
-        recent_rate_limits = []
-        for entry in recent_rate_limits_sorted:
-            limit_name = str(entry.get('limit_name', '') or '').strip().lower()
-            if limit_name not in {'upload', 'checkout', 'analytics'}:
-                continue
-            recent_rate_limits.append({
-                'created_at': entry.get('created_at', 0),
-                'limit_name': limit_name,
-                'retry_after_seconds': int(entry.get('retry_after_seconds', 0) or 0),
-            })
-
-        mode_breakdown = {
-            'lecture-notes': {'label': 'Lecture Notes', 'total': 0, 'complete': 0, 'error': 0},
-            'slides-only': {'label': 'Slide Extract', 'total': 0, 'complete': 0, 'error': 0},
-            'interview': {'label': 'Interview Transcript', 'total': 0, 'complete': 0, 'error': 0},
-            'other': {'label': 'Other', 'total': 0, 'complete': 0, 'error': 0},
-        }
-        for job in filtered_jobs:
-            mode = job.get('mode', '')
-            key = mode if mode in mode_breakdown else 'other'
-            status = job.get('status', '')
-            mode_breakdown[key]['total'] += 1
-            if status == 'complete':
-                mode_breakdown[key]['complete'] += 1
-            elif status == 'error':
-                mode_breakdown[key]['error'] += 1
-
-        recent_jobs_sorted = sorted(
-            filtered_jobs,
-            key=lambda j: get_timestamp(j.get('finished_at')),
-            reverse=True
-        )[:20]
-        recent_jobs = []
-        for job in recent_jobs_sorted:
-            recent_jobs.append({
-                'job_id': job.get('job_id', ''),
-                'email': job.get('email', ''),
-                'mode': job.get('mode', ''),
-                'status': job.get('status', ''),
-                'duration_seconds': job.get('duration_seconds', 0),
-                'credit_refunded': job.get('credit_refunded', False),
-                'finished_at': job.get('finished_at', 0),
-            })
-
-        recent_purchases_sorted = sorted(
-            filtered_purchases,
-            key=lambda p: get_timestamp(p.get('created_at')),
-            reverse=True
-        )[:20]
-        recent_purchases = []
-        for purchase in recent_purchases_sorted:
-            recent_purchases.append({
-                'uid': purchase.get('uid', ''),
-                'bundle_name': purchase.get('bundle_name', 'Unknown'),
-                'price_cents': purchase.get('price_cents', 0),
-                'currency': purchase.get('currency', 'eur'),
-                'created_at': purchase.get('created_at', 0),
-            })
-
-        trend_labels, trend_keys, trend_granularity = build_time_buckets(window_key, now_ts)
-        success_by_bucket = {key: {'complete': 0, 'error': 0} for key in trend_keys}
-        revenue_by_bucket = {key: 0 for key in trend_keys}
-
-        for job in filtered_jobs:
-            timestamp = get_timestamp(job.get('finished_at'))
-            bucket_key = get_bucket_key(timestamp, window_key)
-            if bucket_key not in success_by_bucket:
-                continue
-            status = job.get('status', '')
-            if status == 'complete':
-                success_by_bucket[bucket_key]['complete'] += 1
-            elif status == 'error':
-                success_by_bucket[bucket_key]['error'] += 1
-
-        for purchase in filtered_purchases:
-            timestamp = get_timestamp(purchase.get('created_at'))
-            bucket_key = get_bucket_key(timestamp, window_key)
-            if bucket_key not in revenue_by_bucket:
-                continue
-            revenue_by_bucket[bucket_key] += purchase.get('price_cents', 0) or 0
-
-        success_trend = []
-        revenue_trend = []
-        for key in trend_keys:
-            complete_count = success_by_bucket[key]['complete']
-            error_count = success_by_bucket[key]['error']
-            total_count = complete_count + error_count
-            success_rate = round((complete_count / total_count) * 100, 1) if total_count > 0 else 0
-            success_trend.append(success_rate)
-            revenue_trend.append(revenue_by_bucket[key])
-
-        return jsonify({
-            'window': {
-                'key': window_key,
-                'start': window_start,
-                'end': now_ts,
-            },
-            'metrics': {
-                'total_users': total_users,
-                'new_users': new_users,
-                'total_processed': total_processed,
-                'total_revenue_cents': total_revenue_cents,
-                'purchase_count': purchase_count,
-                'job_count': job_count,
-                'success_jobs': success_jobs,
-                'failed_jobs': failed_jobs,
-                'refunded_jobs': refunded_jobs,
-                'avg_duration_seconds': avg_duration_seconds,
-                'analytics_event_count': analytics_event_count,
-                'rate_limit_upload_429': rate_limit_counts['upload'],
-                'rate_limit_checkout_429': rate_limit_counts['checkout'],
-                'rate_limit_analytics_429': rate_limit_counts['analytics'],
-                'rate_limit_429_total': rate_limit_counts['upload'] + rate_limit_counts['checkout'] + rate_limit_counts['analytics'],
-            },
-            'trends': {
-                'labels': trend_labels,
-                'success_rate': success_trend,
-                'revenue_cents': revenue_trend,
-                'granularity': trend_granularity,
-            },
-            'mode_breakdown': mode_breakdown,
-            'funnel': {
-                'steps': funnel_steps,
-            },
-            'recent_jobs': recent_jobs,
-            'recent_purchases': recent_purchases,
-            'recent_rate_limits': recent_rate_limits,
-            'deployment': build_admin_deployment_info(request.host),
-            'runtime_checks': build_admin_runtime_checks(),
-        })
-    except Exception as e:
-        logger.error(f"Error fetching admin overview: {e}")
-        return jsonify({'error': 'Could not fetch admin dashboard data'}), 500
+    return admin_api_service.admin_overview(sys.modules[__name__], request)
 
 def admin_export_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    if not is_admin_user(decoded_token):
-        return jsonify({'error': 'Forbidden'}), 403
+    from lecture_processor.services import admin_api_service
 
-    export_type = request.args.get('type', 'jobs')
-    if export_type not in {'jobs', 'purchases', 'funnel', 'funnel-daily'}:
-        return jsonify({'error': 'Invalid export type'}), 400
-
-    window_key, window_seconds = get_admin_window(request.args.get('window', '7d'))
-    now_ts = time.time()
-    window_start = now_ts - window_seconds
-
-    class _CsvBuffer:
-        def write(self, value):
-            return value
-
-    def iter_rows():
-        if export_type == 'jobs':
-            yield [
-                'job_id', 'uid', 'email', 'mode', 'status', 'credit_deducted',
-                'credit_refunded', 'error_message', 'started_at', 'finished_at', 'duration_seconds'
-            ]
-            docs = safe_query_docs_in_window(
-                collection_name='job_logs',
-                timestamp_field='finished_at',
-                window_start=window_start,
-                window_end=now_ts,
-                order_desc=True,
-            )
-            for doc in docs:
-                job = doc.to_dict() or {}
-                yield [
-                    job.get('job_id', doc.id),
-                    job.get('uid', ''),
-                    job.get('email', ''),
-                    job.get('mode', ''),
-                    job.get('status', ''),
-                    job.get('credit_deducted', ''),
-                    job.get('credit_refunded', False),
-                    job.get('error_message', ''),
-                    job.get('started_at', 0),
-                    job.get('finished_at', 0),
-                    job.get('duration_seconds', 0),
-                ]
-            return
-
-        if export_type == 'purchases':
-            yield [
-                'uid', 'bundle_id', 'bundle_name', 'price_cents', 'currency',
-                'credits', 'stripe_session_id', 'created_at'
-            ]
-            docs = safe_query_docs_in_window(
-                collection_name='purchases',
-                timestamp_field='created_at',
-                window_start=window_start,
-                window_end=now_ts,
-                order_desc=True,
-            )
-            for doc in docs:
-                purchase = doc.to_dict() or {}
-                yield [
-                    purchase.get('uid', ''),
-                    purchase.get('bundle_id', ''),
-                    purchase.get('bundle_name', ''),
-                    purchase.get('price_cents', 0),
-                    purchase.get('currency', 'eur'),
-                    json.dumps(purchase.get('credits', {}), ensure_ascii=True),
-                    purchase.get('stripe_session_id', ''),
-                    purchase.get('created_at', 0),
-                ]
-            return
-
-        analytics_docs = safe_query_docs_in_window(
-            collection_name='analytics_events',
-            timestamp_field='created_at',
-            window_start=window_start,
-            window_end=now_ts,
-            order_desc=False,
-        )
-
-        if export_type == 'funnel':
-            yield [
-                'event',
-                'label',
-                'count',
-                'conversion_from_prev_percent',
-                'window_key',
-                'window_start',
-                'window_end',
-                'generated_at',
-            ]
-            funnel_steps, _ = build_admin_funnel_steps(analytics_docs, window_start)
-            generated_at = now_ts
-            for step in funnel_steps:
-                yield [
-                    step.get('event', ''),
-                    step.get('label', ''),
-                    int(step.get('count', 0) or 0),
-                    float(step.get('conversion_from_prev', 0.0) or 0.0),
-                    window_key,
-                    window_start,
-                    now_ts,
-                    generated_at,
-                ]
-            return
-
-        yield [
-            'bucket_key',
-            'granularity',
-            'event',
-            'label',
-            'unique_actor_count',
-            'event_count',
-            'conversion_from_prev_percent',
-            'window_key',
-            'window_start',
-            'window_end',
-            'generated_at',
-        ]
-        daily_rows, granularity = build_admin_funnel_daily_rows(
-            analytics_docs=analytics_docs,
-            window_start=window_start,
-            window_key=window_key,
-            now_ts=now_ts,
-        )
-        generated_at = now_ts
-        for row in daily_rows:
-            yield [
-                row.get('bucket_key', ''),
-                granularity,
-                row.get('event', ''),
-                row.get('label', ''),
-                int(row.get('unique_actor_count', 0) or 0),
-                int(row.get('event_count', 0) or 0),
-                float(row.get('conversion_from_prev', 0.0) or 0.0),
-                window_key,
-                window_start,
-                now_ts,
-                generated_at,
-            ]
-
-    def generate_csv():
-        buffer = _CsvBuffer()
-        writer = csv.writer(buffer)
-        for row in iter_rows():
-            yield writer.writerow(row)
-
-    try:
-        filename = f"admin-{export_type}-{window_key}.csv"
-        response = Response(stream_with_context(generate_csv()), mimetype='text/csv')
-        response.headers['Content-Disposition'] = f'attachment; filename={filename}'
-        return response
-    except Exception as e:
-        logger.error(f"Error exporting admin CSV ({export_type}): {e}")
-        return jsonify({'error': 'Could not export CSV'}), 500
+    return admin_api_service.admin_export(sys.modules[__name__], request)
 
 # --- Upload & Processing Routes ---
 
 def import_audio_from_url_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Please sign in to continue'}), 401
-    uid = decoded_token['uid']
-    email = decoded_token.get('email', '')
-    if not is_email_allowed(email):
-        return jsonify({'error': 'Email not allowed'}), 403
+    from lecture_processor.services import upload_api_service
 
-    allowed_import, retry_after = check_rate_limit(
-        key=f"audio_import:{normalize_rate_limit_key_part(uid, fallback='anon_uid')}",
-        limit=VIDEO_IMPORT_RATE_LIMIT_MAX_REQUESTS,
-        window_seconds=VIDEO_IMPORT_RATE_LIMIT_WINDOW_SECONDS,
-    )
-    if not allowed_import:
-        return build_rate_limited_response(
-            'Too many video import attempts right now. Please wait and try again.',
-            retry_after,
-        )
-
-    data = request.get_json(silent=True) or {}
-    safe_url, error_message = validate_video_import_url(data.get('url', ''))
-    if not safe_url:
-        return jsonify({'error': error_message}), 400
-
-    cleanup_expired_audio_import_tokens()
-    prefix = f"urlimport_{uuid.uuid4().hex}"
-    try:
-        audio_path, output_name, size_bytes = download_audio_from_video_url(safe_url, prefix)
-        token = register_audio_import_token(uid, audio_path, safe_url, output_name)
-        return jsonify({
-            'ok': True,
-            'audio_import_token': token,
-            'file_name': output_name,
-            'size_bytes': int(size_bytes),
-            'expires_in_seconds': AUDIO_IMPORT_TOKEN_TTL_SECONDS,
-        })
-    except Exception as e:
-        logger.error(f"Error importing audio from URL for user {uid}: {e}")
-        return jsonify({'error': 'Could not import audio from URL. Please check that the URL is accessible and try again.'}), 400
+    return upload_api_service.import_audio_from_url(sys.modules[__name__], request)
 
 def release_imported_audio_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    payload = request.get_json(silent=True) or {}
-    token = str(payload.get('audio_import_token', '') or '').strip()
-    if token:
-        release_audio_import_token(uid, token)
-    return jsonify({'ok': True})
+    from lecture_processor.services import upload_api_service
+
+    return upload_api_service.release_imported_audio(sys.modules[__name__], request)
 
 def upload_files_impl():
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token: return jsonify({'error': 'Please sign in to continue'}), 401
-    uid = decoded_token['uid']
-    email = decoded_token.get('email', '')
-    if not is_email_allowed(email): return jsonify({'error': 'Email not allowed'}), 403
-    active_jobs = count_active_jobs_for_user(uid)
-    if active_jobs >= MAX_ACTIVE_JOBS_PER_USER:
-        log_rate_limit_hit('upload', 10)
-        return jsonify({
-            'error': f'You already have {active_jobs} active processing job(s). Please wait for one to finish before starting another.'
-        }), 429
-    allowed_upload, retry_after = check_rate_limit(
-        key=f"upload:{uid}",
-        limit=UPLOAD_RATE_LIMIT_MAX_REQUESTS,
-        window_seconds=UPLOAD_RATE_LIMIT_WINDOW_SECONDS,
-    )
-    if not allowed_upload:
-        log_rate_limit_hit('upload', retry_after)
-        return build_rate_limited_response(
-            'Too many upload attempts right now. Please wait and try again.',
-            retry_after,
-        )
-    requested_bytes = int(request.content_length or 0)
-    disk_ok, free_bytes, needed_bytes = has_sufficient_upload_disk_space(requested_bytes)
-    if not disk_ok:
-        logger.warning(
-            "Upload rejected due to low disk space: free=%s needed=%s uid=%s",
-            free_bytes,
-            needed_bytes,
-            uid,
-        )
-        return jsonify({
-            'error': 'Upload temporarily unavailable due to low server storage. Please try again later.'
-        }), 503
-    reserved_daily, daily_retry_after = reserve_daily_upload_bytes(uid, requested_bytes)
-    if not reserved_daily:
-        log_rate_limit_hit('upload', daily_retry_after)
-        return build_rate_limited_response(
-            'Daily upload quota reached for your account. Please try again tomorrow.',
-            daily_retry_after,
-        )
-    user = get_or_create_user(uid, email)
-    mode = request.form.get('mode', 'lecture-notes')
-    flashcard_selection = parse_requested_amount(request.form.get('flashcard_amount', '20'), {'10', '20', '30', 'auto'}, '20')
-    question_selection = parse_requested_amount(request.form.get('question_amount', '10'), {'5', '10', '15', 'auto'}, '10')
-    preferred_language_key = sanitize_output_language_pref_key(user.get('preferred_output_language', DEFAULT_OUTPUT_LANGUAGE_KEY))
-    preferred_language_custom = sanitize_output_language_pref_custom(user.get('preferred_output_language_custom', ''))
-    output_language = parse_output_language(
-        request.form.get('output_language', preferred_language_key),
-        request.form.get('output_language_custom', preferred_language_custom),
-    )
-    study_features = parse_study_features(request.form.get('study_features', 'none'))
-    interview_features = parse_interview_features(request.form.get('interview_features', 'none'))
-    audio_import_token = str(request.form.get('audio_import_token', '') or '').strip()
-    cleanup_expired_audio_import_tokens()
-    if request.content_length and request.content_length > MAX_CONTENT_LENGTH:
-        return jsonify({'error': 'Upload too large. Maximum total upload size is 560MB (up to 50MB slides file (PDF/PPTX) and 500MB audio).'}), 413
-    
-    if mode == 'lecture-notes':
-        total_lecture = user.get('lecture_credits_standard', 0) + user.get('lecture_credits_extended', 0)
-        if total_lecture <= 0:
-            return jsonify({'error': 'No lecture credits remaining. Please purchase more credits.'}), 402
-        if 'pdf' not in request.files:
-            return jsonify({'error': 'Both slides (PDF/PPTX) and audio files are required'}), 400
-        slides_file = request.files['pdf']
-        uploaded_audio_file = request.files.get('audio')
-        has_uploaded_audio = bool(uploaded_audio_file and uploaded_audio_file.filename)
-        has_imported_audio = bool(audio_import_token)
-        if not has_uploaded_audio and not has_imported_audio:
-            return jsonify({'error': 'Both slides (PDF/PPTX) and audio files are required'}), 400
-        if slides_file.filename == '':
-            return jsonify({'error': 'Both files must be selected'}), 400
-        job_id = str(uuid.uuid4())
-        pdf_path, slides_error = resolve_uploaded_slides_to_pdf(slides_file, job_id)
-        if slides_error:
-            return jsonify({'error': slides_error}), 400
+    from lecture_processor.services import upload_api_service
 
-        imported_audio_used = False
-        audio_path = ''
-        if has_uploaded_audio:
-            if not allowed_file(uploaded_audio_file.filename, ALLOWED_AUDIO_EXTENSIONS):
-                cleanup_files([pdf_path], [])
-                return jsonify({'error': 'Invalid audio file'}), 400
-            if (uploaded_audio_file.mimetype or '').lower() not in ALLOWED_AUDIO_MIME_TYPES:
-                cleanup_files([pdf_path], [])
-                return jsonify({'error': 'Invalid audio content type'}), 400
-            audio_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{secure_filename(uploaded_audio_file.filename)}")
-            uploaded_audio_file.save(audio_path)
-            if has_imported_audio:
-                release_audio_import_token(uid, audio_import_token)
-        else:
-            audio_path, token_error = get_audio_import_token_path(uid, audio_import_token, consume=False)
-            if token_error:
-                cleanup_files([pdf_path], [])
-                return jsonify({'error': token_error}), 400
-            imported_audio_used = True
-
-        audio_size = get_saved_file_size(audio_path)
-        if audio_size <= 0 or audio_size > MAX_AUDIO_UPLOAD_BYTES:
-            cleanup_files([pdf_path, audio_path], [])
-            return jsonify({'error': 'Audio exceeds server limit (max 500MB) or is empty.'}), 400
-        if not file_looks_like_audio(audio_path):
-            cleanup_files([pdf_path, audio_path], [])
-            return jsonify({'error': 'Uploaded audio file is invalid or unsupported.'}), 400
-        deducted = deduct_credit(uid, 'lecture_credits_standard', 'lecture_credits_extended')
-        if not deducted:
-            cleanup_files([pdf_path, audio_path], [])
-            return jsonify({'error': 'No lecture credits remaining.'}), 402
-        if imported_audio_used:
-            _consumed_path, token_error = get_audio_import_token_path(uid, audio_import_token, consume=True)
-            if token_error:
-                cleanup_files([pdf_path, audio_path], [])
-                refund_credit(uid, deducted)
-                return jsonify({'error': token_error}), 400
-        total_steps = 4 if study_features != 'none' else 3
-        set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'billing_receipt': initialize_billing_receipt({deducted: 1})})
-        thread = threading.Thread(target=process_lecture_notes, args=(job_id, pdf_path, audio_path))
-        thread.start()
-        
-    elif mode == 'slides-only':
-        if user.get('slides_credits', 0) <= 0:
-            return jsonify({'error': 'No slides credits remaining. Please purchase more credits.'}), 402
-        if 'pdf' not in request.files: return jsonify({'error': 'Slide file (PDF or PPTX) is required'}), 400
-        slides_file = request.files['pdf']
-        if slides_file.filename == '': return jsonify({'error': 'Slide file must be selected'}), 400
-        job_id = str(uuid.uuid4())
-        pdf_path, slides_error = resolve_uploaded_slides_to_pdf(slides_file, job_id)
-        if slides_error:
-            return jsonify({'error': slides_error}), 400
-        deducted = deduct_credit(uid, 'slides_credits')
-        if not deducted:
-            cleanup_files([pdf_path], [])
-            return jsonify({'error': 'No slides credits remaining.'}), 402
-        total_steps = 2 if study_features != 'none' else 1
-        set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'billing_receipt': initialize_billing_receipt({deducted: 1})})
-        thread = threading.Thread(target=process_slides_only, args=(job_id, pdf_path))
-        thread.start()
-        
-    elif mode == 'interview':
-        total_interview = user.get('interview_credits_short', 0) + user.get('interview_credits_medium', 0) + user.get('interview_credits_long', 0)
-        if total_interview <= 0:
-            return jsonify({'error': 'No interview credits remaining. Please purchase more credits.'}), 402
-        uploaded_audio_file = request.files.get('audio')
-        has_uploaded_audio = bool(uploaded_audio_file and uploaded_audio_file.filename)
-        has_imported_audio = bool(audio_import_token)
-        if not has_uploaded_audio and not has_imported_audio:
-            return jsonify({'error': 'Audio file is required'}), 400
-        job_id = str(uuid.uuid4())
-        imported_audio_used = False
-        if has_uploaded_audio:
-            if not allowed_file(uploaded_audio_file.filename, ALLOWED_AUDIO_EXTENSIONS):
-                return jsonify({'error': 'Invalid audio file'}), 400
-            if (uploaded_audio_file.mimetype or '').lower() not in ALLOWED_AUDIO_MIME_TYPES:
-                return jsonify({'error': 'Invalid audio content type'}), 400
-            audio_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{secure_filename(uploaded_audio_file.filename)}")
-            uploaded_audio_file.save(audio_path)
-            if has_imported_audio:
-                release_audio_import_token(uid, audio_import_token)
-        else:
-            audio_path, token_error = get_audio_import_token_path(uid, audio_import_token, consume=False)
-            if token_error:
-                return jsonify({'error': token_error}), 400
-            imported_audio_used = True
-
-        audio_size = get_saved_file_size(audio_path)
-        if audio_size <= 0 or audio_size > MAX_AUDIO_UPLOAD_BYTES:
-            cleanup_files([audio_path], [])
-            return jsonify({'error': 'Audio exceeds server limit (max 500MB) or is empty.'}), 400
-        if not file_looks_like_audio(audio_path):
-            cleanup_files([audio_path], [])
-            return jsonify({'error': 'Uploaded audio file is invalid or unsupported.'}), 400
-        deducted = deduct_interview_credit(uid)
-        if not deducted:
-            cleanup_files([audio_path], [])
-            return jsonify({'error': 'No interview credits remaining.'}), 402
-        interview_features_cost = len(interview_features)
-        if interview_features_cost > 0:
-            if user.get('slides_credits', 0) < interview_features_cost:
-                refund_credit(uid, deducted)
-                cleanup_files([audio_path], [])
-                return jsonify({'error': f'Not enough slides credits for interview extras. You selected {interview_features_cost} option(s) and need {interview_features_cost} slides credits.'}), 402
-            if not deduct_slides_credits(uid, interview_features_cost):
-                refund_credit(uid, deducted)
-                cleanup_files([audio_path], [])
-                return jsonify({'error': 'Could not reserve slides credits for interview extras. Please try again.'}), 402
-        if imported_audio_used:
-            _consumed_path, token_error = get_audio_import_token_path(uid, audio_import_token, consume=True)
-            if token_error:
-                cleanup_files([audio_path], [])
-                refund_credit(uid, deducted)
-                if interview_features_cost > 0:
-                    refund_slides_credits(uid, interview_features_cost)
-                return jsonify({'error': token_error}), 400
-        total_steps = 2 if interview_features_cost > 0 else 1
-        set_job(job_id, {
-            'status': 'starting',
-            'step': 0,
-            'step_description': 'Starting...',
-            'total_steps': total_steps,
-            'mode': 'interview',
-            'user_id': uid,
-            'user_email': email,
-            'credit_deducted': deducted,
-            'credit_refunded': False,
-            'started_at': time.time(),
-            'result': None,
-            'transcript': None,
-            'flashcards': [],
-            'test_questions': [],
-            'study_features': 'none',
-            'output_language': output_language,
-            'interview_features': interview_features,
-            'interview_features_cost': interview_features_cost,
-            'interview_features_successful': [],
-            'interview_summary': None,
-            'interview_sections': None,
-            'interview_combined': None,
-            'extra_slides_refunded': 0,
-            'study_generation_error': None,
-            'error': None,
-            'billing_receipt': initialize_billing_receipt({deducted: 1, 'slides_credits': interview_features_cost}),
-        })
-        thread = threading.Thread(target=process_interview_transcription, args=(job_id, audio_path))
-        thread.start()
-    else:
-        return jsonify({'error': 'Invalid mode selected'}), 400
-
-    created_job = get_job_snapshot(job_id) or {}
-    log_analytics_event(
-        'processing_started_backend',
-        source='backend',
-        uid=uid,
-        email=email,
-        session_id=job_id,
-        properties={
-            'job_id': job_id,
-            'mode': created_job.get('mode', mode),
-            'study_features': created_job.get('study_features', 'none'),
-            'interview_features_count': len(created_job.get('interview_features', [])) if isinstance(created_job.get('interview_features'), list) else 0,
-        },
-        created_at=created_job.get('started_at', time.time()),
-    )
-
-    return jsonify({'job_id': job_id})
+    return upload_api_service.upload_files(sys.modules[__name__], request)
 
 def get_status_impl(job_id):
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    job = get_job_snapshot(job_id)
-    if not job:
-        cleanup_old_jobs()  # Attempt cleanup before returning not-found
-        job = get_job_snapshot(job_id)
-        if not job:
-            return jsonify({
-                'error': 'Job not found. It may have expired after a server update. Please re-upload your file to try again.',
-                'job_lost': True,
-            }), 404
-    if job.get('user_id', '') != uid and not is_admin_user(decoded_token):
-        return jsonify({'error': 'Forbidden'}), 403
-    response = {'status': job['status'], 'step': job['step'], 'step_description': job['step_description'], 'total_steps': job.get('total_steps', 3), 'mode': job.get('mode', 'lecture-notes')}
-    billing_receipt = get_billing_receipt_snapshot(job)
-    if billing_receipt.get('charged') or billing_receipt.get('refunded'):
-        response['billing_receipt'] = billing_receipt
-    if job['status'] == 'complete':
-        response['result'] = job['result']
-        response['flashcards'] = job.get('flashcards', [])
-        response['test_questions'] = job.get('test_questions', [])
-        response['study_generation_error'] = job.get('study_generation_error')
-        response['study_pack_id'] = job.get('study_pack_id')
-        response['study_features'] = job.get('study_features', 'none')
-        response['output_language'] = job.get('output_language', 'English')
-        response['interview_features'] = job.get('interview_features', [])
-        response['interview_features_successful'] = job.get('interview_features_successful', [])
-        response['interview_summary'] = job.get('interview_summary')
-        response['interview_sections'] = job.get('interview_sections')
-        response['interview_combined'] = job.get('interview_combined')
-        if job.get('mode') == 'lecture-notes':
-            response['slide_text'] = job.get('slide_text')
-            response['transcript'] = job.get('transcript')
-        if job.get('mode') == 'interview':
-            response['transcript'] = job.get('transcript')
-    elif job['status'] == 'error':
-        response['error'] = job['error']
-        response['credit_refunded'] = job.get('credit_refunded', False)
-    return jsonify(response)
+    from lecture_processor.services import upload_api_service
+
+    return upload_api_service.get_status(sys.modules[__name__], request, job_id)
 
 def download_docx_impl(job_id):
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    job = get_job_snapshot(job_id)
-    if not job:
-        return jsonify({'error': 'Job not found'}), 404
-    if job.get('user_id', '') != uid and not is_admin_user(decoded_token):
-        return jsonify({'error': 'Forbidden'}), 403
-    if job['status'] != 'complete': return jsonify({'error': 'Job not complete'}), 400
-    content_type = request.args.get('type', 'result')
-    ALLOWED_CONTENT_TYPES = {'result', 'slides', 'transcript', 'summary', 'sections', 'combined'}
-    if content_type not in ALLOWED_CONTENT_TYPES:
-        content_type = 'result'
-    
-    if content_type == 'slides' and job.get('slide_text'):
-        content, filename, title = job['slide_text'], 'slide-extract.docx', 'Slide Extract'
-    elif content_type == 'transcript' and job.get('transcript'):
-        content, filename, title = job['transcript'], 'lecture-transcript.docx', 'Lecture Transcript'
-    elif content_type == 'summary' and job.get('interview_summary'):
-        content, filename, title = job['interview_summary'], 'interview-summary.docx', 'Interview Summary'
-    elif content_type == 'sections' and job.get('interview_sections'):
-        content, filename, title = job['interview_sections'], 'interview-structured.docx', 'Structured Interview Transcript'
-    elif content_type == 'combined' and job.get('interview_combined'):
-        content, filename, title = job['interview_combined'], 'interview-summary-structured.docx', 'Interview Summary + Structured Transcript'
-    else:
-        content = job['result']
-        mode = job.get('mode', 'lecture-notes')
-        if mode == 'lecture-notes': filename, title = 'lecture-notes.docx', 'Lecture Notes'
-        elif mode == 'slides-only': filename, title = 'slide-extract.docx', 'Slide Extract'
-        else: filename, title = 'interview-transcript.docx', 'Interview Transcript'
-        
-    doc = markdown_to_docx(content, title)
-    docx_io = io.BytesIO()
-    doc.save(docx_io)
-    docx_io.seek(0)
-    return send_file(docx_io, mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document', as_attachment=True, download_name=filename)
+    from lecture_processor.services import upload_api_service
+
+    return upload_api_service.download_docx(sys.modules[__name__], request, job_id)
 
 def download_flashcards_csv_impl(job_id):
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    job = get_job_snapshot(job_id)
-    if not job:
-        return jsonify({'error': 'Job not found'}), 404
-    if job.get('user_id', '') != uid and not is_admin_user(decoded_token):
-        return jsonify({'error': 'Forbidden'}), 403
-    if job.get('status') != 'complete':
-        return jsonify({'error': 'Job not complete'}), 400
-    export_type = request.args.get('type', 'flashcards').strip().lower()
+    from lecture_processor.services import upload_api_service
 
-    output = io.StringIO()
-    writer = csv.writer(output)
-    if export_type == 'test':
-        test_questions = job.get('test_questions', [])
-        if not test_questions:
-            return jsonify({'error': 'No practice questions available for this job'}), 400
-        writer.writerow(['question', 'option_a', 'option_b', 'option_c', 'option_d', 'answer', 'explanation'])
-        for q in test_questions:
-            options = q.get('options', [])
-            padded = (options + ['', '', '', ''])[:4]
-            writer.writerow([
-                q.get('question', ''),
-                padded[0],
-                padded[1],
-                padded[2],
-                padded[3],
-                q.get('answer', ''),
-                q.get('explanation', ''),
-            ])
-        filename = f'practice-test-{job_id}.csv'
-    else:
-        flashcards = job.get('flashcards', [])
-        if not flashcards:
-            return jsonify({'error': 'No flashcards available for this job'}), 400
-        writer.writerow(['question', 'answer'])
-        for card in flashcards:
-            writer.writerow([card.get('front', ''), card.get('back', '')])
-        filename = f'flashcards-{job_id}.csv'
-
-    csv_bytes = io.BytesIO(output.getvalue().encode('utf-8'))
-    csv_bytes.seek(0)
-    return send_file(csv_bytes, mimetype='text/csv', as_attachment=True, download_name=filename)
+    return upload_api_service.download_flashcards_csv(sys.modules[__name__], request, job_id)
 
 def export_study_pack_flashcards_csv_impl(pack_id):
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    try:
-        doc = study_repo.get_study_pack_doc(db, pack_id)
-        if not doc.exists:
-            return jsonify({'error': 'Study pack not found'}), 404
-        pack = doc.to_dict()
-        if pack.get('uid', '') != uid:
-            return jsonify({'error': 'Forbidden'}), 403
-        export_type = request.args.get('type', 'flashcards').strip().lower()
-        output = io.StringIO()
-        writer = csv.writer(output)
-        if export_type == 'test':
-            test_questions = pack.get('test_questions', [])
-            if not test_questions:
-                return jsonify({'error': 'No practice questions available'}), 400
-            writer.writerow(['question', 'option_a', 'option_b', 'option_c', 'option_d', 'answer', 'explanation'])
-            for q in test_questions:
-                options = q.get('options', [])
-                padded = (options + ['', '', '', ''])[:4]
-                writer.writerow([
-                    q.get('question', ''),
-                    padded[0],
-                    padded[1],
-                    padded[2],
-                    padded[3],
-                    q.get('answer', ''),
-                    q.get('explanation', ''),
-                ])
-            filename = f'study-pack-{pack_id}-practice-test.csv'
-        else:
-            flashcards = pack.get('flashcards', [])
-            if not flashcards:
-                return jsonify({'error': 'No flashcards available'}), 400
-            writer.writerow(['question', 'answer'])
-            for card in flashcards:
-                writer.writerow([card.get('front', ''), card.get('back', '')])
-            filename = f'study-pack-{pack_id}-flashcards.csv'
-        csv_bytes = io.BytesIO(output.getvalue().encode('utf-8'))
-        csv_bytes.seek(0)
-        return send_file(csv_bytes, mimetype='text/csv', as_attachment=True, download_name=filename)
-    except Exception as e:
-        logger.error(f"Error exporting study pack flashcards CSV {pack_id}: {e}")
-        return jsonify({'error': 'Could not export CSV'}), 500
+    from lecture_processor.services import study_api_service
+
+    return study_api_service.export_study_pack_flashcards_csv(sys.modules[__name__], request, pack_id)
 
 def export_study_pack_notes_impl(pack_id):
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
+    from lecture_processor.services import study_api_service
 
-    uid = decoded_token['uid']
-    try:
-        doc = study_repo.get_study_pack_doc(db, pack_id)
-        if not doc.exists:
-            return jsonify({'error': 'Study pack not found'}), 404
-        pack = doc.to_dict()
-        if pack.get('uid', '') != uid:
-            return jsonify({'error': 'Forbidden'}), 403
-
-        notes_markdown = str(pack.get('notes_markdown', '') or '').strip()
-        if not notes_markdown:
-            return jsonify({'error': 'No integrated notes available'}), 400
-
-        export_format = request.args.get('format', 'docx').strip().lower()
-        base_name = f"study-pack-{pack_id}-notes"
-        pack_title = str(pack.get('title', 'Lecture Notes') or 'Lecture Notes').strip()
-
-        if export_format == 'md':
-            md_bytes = io.BytesIO(notes_markdown.encode('utf-8'))
-            md_bytes.seek(0)
-            return send_file(
-                md_bytes,
-                mimetype='text/markdown',
-                as_attachment=True,
-                download_name=f"{base_name}.md"
-            )
-
-        if export_format == 'docx':
-            docx = markdown_to_docx(notes_markdown, pack_title)
-            docx_bytes = io.BytesIO()
-            docx.save(docx_bytes)
-            docx_bytes.seek(0)
-            return send_file(
-                docx_bytes,
-                mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                as_attachment=True,
-                download_name=f"{base_name}.docx"
-            )
-
-        return jsonify({'error': 'Invalid format'}), 400
-    except Exception as e:
-        logger.error(f"Error exporting study pack notes {pack_id}: {e}")
-        return jsonify({'error': 'Could not export notes'}), 500
+    return study_api_service.export_study_pack_notes(sys.modules[__name__], request, pack_id)
 
 def export_study_pack_pdf_impl(pack_id):
-    decoded_token = verify_firebase_token(request)
-    if not decoded_token:
-        return jsonify({'error': 'Unauthorized'}), 401
+    from lecture_processor.services import study_api_service
 
-    if not REPORTLAB_AVAILABLE:
-        return jsonify({
-            'error': "PDF export is currently unavailable on this server. Install dependency: pip install reportlab==4.2.5"
-        }), 503
-
-    uid = decoded_token['uid']
-    try:
-        doc = study_repo.get_study_pack_doc(db, pack_id)
-        if not doc.exists:
-            return jsonify({'error': 'Study pack not found'}), 404
-
-        pack = doc.to_dict()
-        if pack.get('uid', '') != uid:
-            return jsonify({'error': 'Forbidden'}), 403
-
-        include_answers_raw = str(request.args.get('include_answers', '1')).strip().lower()
-        include_answers = include_answers_raw in {'1', 'true', 'yes', 'on'}
-        pdf_io = build_study_pack_pdf(pack, include_answers=include_answers)
-        filename_suffix = '' if include_answers else '-no-answers'
-        return send_file(
-            pdf_io,
-            mimetype='application/pdf',
-            as_attachment=True,
-            download_name=f"study-pack-{pack_id}{filename_suffix}.pdf"
-        )
-    except Exception as e:
-        logger.error(f"Error exporting study pack PDF {pack_id}: {e}")
-        return jsonify({'error': 'Could not export PDF'}), 500
+    return study_api_service.export_study_pack_pdf(sys.modules[__name__], request, pack_id)
 
 # Register extracted non-admin API blueprints (Batch R3).
 for _blueprint in (auth_bp, account_bp, study_bp, upload_bp, admin_bp, payments_bp):
