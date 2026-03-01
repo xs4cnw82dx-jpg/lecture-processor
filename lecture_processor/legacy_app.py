@@ -6,15 +6,12 @@ import io
 import json
 import csv
 import re
-import hashlib
 import shutil
 import subprocess
 import html
 import warnings
 import logging
 import ipaddress
-import glob
-import zipfile
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 try:
@@ -60,6 +57,13 @@ except Exception:
     REPORTLAB_AVAILABLE = False
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
+from lecture_processor.services import (
+    analytics_service,
+    auth_service,
+    file_service,
+    job_state_service,
+    rate_limit_service,
+)
 
 LEGACY_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT_DIR = os.path.dirname(LEGACY_MODULE_DIR)
@@ -937,76 +941,46 @@ def process_checkout_session_credits(stripe_session):
     return True, 'granted'
 
 def sanitize_analytics_event_name(raw_name):
-    name = str(raw_name or '').strip().lower()
-    if not ANALYTICS_NAME_RE.match(name):
-        return ''
-    return name if name in ANALYTICS_ALLOWED_EVENTS else ''
+    return analytics_service.sanitize_event_name(
+        raw_name,
+        name_re=ANALYTICS_NAME_RE,
+        allowed_events=ANALYTICS_ALLOWED_EVENTS,
+    )
 
 def sanitize_analytics_session_id(raw_session_id):
-    session_id = str(raw_session_id or '').strip()
-    if not ANALYTICS_SESSION_ID_RE.match(session_id):
-        return ''
-    return session_id
+    return analytics_service.sanitize_session_id(
+        raw_session_id,
+        session_id_re=ANALYTICS_SESSION_ID_RE,
+    )
 
 def sanitize_analytics_properties(raw_props):
-    if not isinstance(raw_props, dict):
-        return {}
-    cleaned = {}
-    for raw_key, raw_value in raw_props.items():
-        key = str(raw_key or '').strip().lower().replace('-', '_').replace(' ', '_')
-        if not key or not ANALYTICS_NAME_RE.match(key):
-            continue
-        if isinstance(raw_value, bool):
-            cleaned[key] = raw_value
-            continue
-        if isinstance(raw_value, (int, float)):
-            cleaned[key] = round(float(raw_value), 4)
-            continue
-        if isinstance(raw_value, str):
-            cleaned[key] = raw_value.strip()[:200]
-            continue
-    return cleaned
+    return analytics_service.sanitize_properties(raw_props, name_re=ANALYTICS_NAME_RE)
 
 def log_analytics_event(event_name, source='frontend', uid='', email='', session_id='', properties=None, created_at=None):
-    safe_name = sanitize_analytics_event_name(event_name)
-    if not safe_name:
-        return False
-    safe_source = str(source or 'frontend').strip().lower()[:16]
-    payload = {
-        'event': safe_name,
-        'source': safe_source if safe_source in {'frontend', 'backend'} else 'frontend',
-        'uid': str(uid or '')[:128],
-        'email': str(email or '').lower()[:160],
-        'session_id': sanitize_analytics_session_id(session_id),
-        'properties': sanitize_analytics_properties(properties or {}),
-        'created_at': created_at if isinstance(created_at, (int, float)) else time.time(),
-    }
-    try:
-        db.collection('analytics_events').add(payload)
-        return True
-    except Exception as e:
-        logger.info(f"⚠️ Could not store analytics event {safe_name}: {e}")
-        return False
+    return analytics_service.log_analytics_event(
+        event_name,
+        source=source,
+        uid=uid,
+        email=email,
+        session_id=session_id,
+        properties=properties,
+        created_at=created_at,
+        db=db,
+        name_re=ANALYTICS_NAME_RE,
+        session_id_re=ANALYTICS_SESSION_ID_RE,
+        allowed_events=ANALYTICS_ALLOWED_EVENTS,
+        logger=logger,
+        time_module=time,
+    )
 
 def log_rate_limit_hit(limit_name, retry_after=0):
-    safe_name = str(limit_name or '').strip().lower()
-    if safe_name not in {'upload', 'checkout', 'analytics'}:
-        return False
-    try:
-        retry_after_seconds = int(float(retry_after))
-    except Exception:
-        retry_after_seconds = 1
-    retry_after_seconds = max(1, retry_after_seconds)
-    try:
-        db.collection('rate_limit_logs').add({
-            'limit_name': safe_name,
-            'retry_after_seconds': retry_after_seconds,
-            'created_at': time.time(),
-        })
-        return True
-    except Exception as e:
-        logger.info(f"⚠️ Could not store rate limit log ({safe_name}): {e}")
-        return False
+    return analytics_service.log_rate_limit_hit(
+        limit_name,
+        retry_after=retry_after,
+        db=db,
+        logger=logger,
+        time_module=time,
+    )
 
 def save_job_log(job_id, job_data, finished_at):
     """Save a processing job log to Firestore for analytics."""
@@ -1055,14 +1029,7 @@ def save_job_log(job_id, job_data, finished_at):
 # =============================================
 
 def verify_firebase_token(request):
-    auth_header = request.headers.get('Authorization', '')
-    if not auth_header.startswith('Bearer '): return None
-    token = auth_header.split('Bearer ')[1]
-    try:
-        return auth.verify_id_token(token)
-    except Exception as e:
-        logger.info(f"Token verification failed: {e}")
-        return None
+    return auth_service.verify_firebase_token(request, auth_module=auth, logger=logger)
 
 def is_admin_user(decoded_token):
     if not decoded_token:
@@ -1276,89 +1243,51 @@ def build_admin_funnel_daily_rows(analytics_docs, window_start, window_key, now_
     return rows, granularity
 
 def get_job_snapshot(job_id):
-    with JOBS_LOCK:
-        job = jobs.get(job_id)
-        if not isinstance(job, dict):
-            return None
-        return dict(job)
+    return job_state_service.get_job_snapshot(job_id, jobs_store=jobs, lock=JOBS_LOCK)
 
 
 def mutate_job(job_id, mutator_fn):
-    with JOBS_LOCK:
-        job = jobs.get(job_id)
-        if not isinstance(job, dict):
-            return None
-        mutator_fn(job)
-        return dict(job)
+    return job_state_service.mutate_job(job_id, mutator_fn, jobs_store=jobs, lock=JOBS_LOCK)
 
 
 def set_job(job_id, value):
-    with JOBS_LOCK:
-        jobs[job_id] = value
-        return dict(value) if isinstance(value, dict) else value
+    return job_state_service.set_job(job_id, value, jobs_store=jobs, lock=JOBS_LOCK)
 
 
 def delete_job(job_id):
-    with JOBS_LOCK:
-        return jobs.pop(job_id, None)
+    return job_state_service.delete_job(job_id, jobs_store=jobs, lock=JOBS_LOCK)
 
 
 def _window_counter_id(key, window_seconds, window_start):
-    raw = f"{key}|{window_seconds}|{int(window_start)}".encode('utf-8')
-    return hashlib.sha256(raw).hexdigest()
+    return rate_limit_service.window_counter_id(key, window_seconds, window_start)
 
 
 def _check_rate_limit_firestore(key, limit, window_seconds, now_ts):
-    if not RATE_LIMIT_FIRESTORE_ENABLED or db is None:
-        return None
-    try:
-        window_start = int(now_ts // window_seconds) * int(window_seconds)
-        retry_after = max(1, int((window_start + window_seconds) - now_ts))
-        counter_id = _window_counter_id(key, window_seconds, window_start)
-        counter_ref = db.collection(RATE_LIMIT_COUNTER_COLLECTION).document(counter_id)
-        transaction = db.transaction()
-
-        @firestore.transactional
-        def _txn(txn):
-            snapshot = counter_ref.get(transaction=txn)
-            count = 0
-            if snapshot.exists:
-                count = int((snapshot.to_dict() or {}).get('count', 0) or 0)
-            if count >= limit:
-                return False, retry_after
-            txn.set(counter_ref, {
-                'key': key,
-                'count': count + 1,
-                'window_start': window_start,
-                'window_seconds': int(window_seconds),
-                'updated_at': now_ts,
-                'expires_at': window_start + (window_seconds * 3),
-            }, merge=True)
-            return True, 0
-
-        return _txn(transaction)
-    except Exception:
-        return None
+    return rate_limit_service.check_rate_limit_firestore(
+        key,
+        limit,
+        window_seconds,
+        now_ts,
+        firestore_enabled=RATE_LIMIT_FIRESTORE_ENABLED,
+        db=db,
+        firestore_module=firestore,
+        counter_collection=RATE_LIMIT_COUNTER_COLLECTION,
+    )
 
 
 def check_rate_limit(key, limit, window_seconds):
-    now_ts = time.time()
-    firestore_result = _check_rate_limit_firestore(key, limit, window_seconds, now_ts)
-    if firestore_result is not None:
-        return firestore_result
-
-    with RATE_LIMIT_LOCK:
-        timestamps = RATE_LIMIT_EVENTS.get(key, [])
-        cutoff = now_ts - window_seconds
-        kept = [ts for ts in timestamps if ts >= cutoff]
-        if len(kept) >= limit:
-            oldest = kept[0]
-            retry_after = max(1, int((oldest + window_seconds) - now_ts))
-            RATE_LIMIT_EVENTS[key] = kept
-            return False, retry_after
-        kept.append(now_ts)
-        RATE_LIMIT_EVENTS[key] = kept
-    return True, 0
+    return rate_limit_service.check_rate_limit(
+        key,
+        limit,
+        window_seconds,
+        firestore_enabled=RATE_LIMIT_FIRESTORE_ENABLED,
+        db=db,
+        firestore_module=firestore,
+        counter_collection=RATE_LIMIT_COUNTER_COLLECTION,
+        in_memory_events=RATE_LIMIT_EVENTS,
+        in_memory_lock=RATE_LIMIT_LOCK,
+        time_module=time,
+    )
 
 def build_rate_limited_response(message, retry_after):
     response = jsonify({
@@ -1377,15 +1306,7 @@ def normalize_rate_limit_key_part(value, fallback='anon', max_len=120):
     return safe[:max_len] if safe else fallback
 
 def count_active_jobs_for_user(uid):
-    if not uid:
-        return 0
-    active_states = {'starting', 'processing'}
-    with JOBS_LOCK:
-        count = 0
-        for job in jobs.values():
-            if job.get('user_id') == uid and job.get('status') in active_states:
-                count += 1
-        return count
+    return job_state_service.count_active_jobs_for_user(uid, jobs_store=jobs, lock=JOBS_LOCK)
 
 def list_docs_by_uid(collection_name, uid, max_docs):
     docs = list(
@@ -1700,85 +1621,23 @@ def release_audio_import_token(uid, token):
     return True
 
 def get_ffmpeg_binary():
-    ffmpeg_bin = shutil.which('ffmpeg')
-    if ffmpeg_bin:
-        return ffmpeg_bin
-    if imageio_ffmpeg:
-        try:
-            ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
-            if ffmpeg_bin and os.path.exists(ffmpeg_bin):
-                return ffmpeg_bin
-        except Exception:
-            pass
-    return ''
+    return file_service.get_ffmpeg_binary(which_func=shutil.which, imageio_ffmpeg_module=imageio_ffmpeg)
 
 def get_ffprobe_binary():
-    ffprobe_bin = shutil.which('ffprobe')
-    if ffprobe_bin:
-        return ffprobe_bin
-    ffmpeg_bin = get_ffmpeg_binary()
-    if not ffmpeg_bin:
-        return ''
-    candidate = os.path.join(os.path.dirname(ffmpeg_bin), 'ffprobe')
-    if os.path.exists(candidate):
-        return candidate
-    return ''
+    return file_service.get_ffprobe_binary(ffmpeg_binary_getter=get_ffmpeg_binary)
 
 def download_audio_from_video_url(source_url, file_prefix):
-    ytdlp_bin = shutil.which('yt-dlp')
-    ffmpeg_bin = get_ffmpeg_binary()
-    if not ytdlp_bin:
-        raise RuntimeError('yt-dlp is not installed on the server.')
-    if not ffmpeg_bin:
-        raise RuntimeError('ffmpeg is not installed on the server.')
-
-    import_dir = os.path.join(UPLOAD_FOLDER, 'imported_audio')
-    os.makedirs(import_dir, exist_ok=True)
-    safe_prefix = re.sub(r'[^a-zA-Z0-9_-]+', '_', str(file_prefix or 'import')).strip('_') or 'import'
-    base = os.path.join(import_dir, safe_prefix)
-    output_template = f"{base}.%(ext)s"
-
-    cmd = [
-        ytdlp_bin,
-        '--no-playlist',
-        '--extract-audio',
-        '--audio-format', 'mp3',
-        '--audio-quality', '5',
-        '--no-progress',
-        '--restrict-filenames',
-        '--ffmpeg-location', ffmpeg_bin,
-        '--output', output_template,
-        '--',
+    return file_service.download_audio_from_video_url(
         source_url,
-    ]
-    result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=15 * 60)
-    if result.returncode != 0:
-        stderr = (result.stderr or result.stdout or '').strip().splitlines()
-        reason = stderr[-1] if stderr else 'unknown import error'
-        raise RuntimeError(f'Could not fetch audio from the provided URL ({reason[:220]}).')
-
-    candidates = sorted(glob.glob(f"{base}.*"))
-    if not candidates:
-        raise RuntimeError('Audio import finished but no output file was generated.')
-    preferred = [path for path in candidates if path.lower().endswith('.mp3')]
-    output_path = preferred[0] if preferred else candidates[0]
-
-    size_bytes = get_saved_file_size(output_path)
-    if size_bytes <= 0 or size_bytes > MAX_AUDIO_UPLOAD_BYTES:
-        try:
-            if os.path.exists(output_path):
-                os.remove(output_path)
-        except Exception:
-            pass
-        raise RuntimeError('Imported audio exceeds server limit (max 500MB) or is empty.')
-    if not file_looks_like_audio(output_path):
-        try:
-            if os.path.exists(output_path):
-                os.remove(output_path)
-        except Exception:
-            pass
-        raise RuntimeError('Imported audio is invalid or unsupported.')
-    return output_path, os.path.basename(output_path), size_bytes
+        file_prefix,
+        upload_folder=UPLOAD_FOLDER,
+        max_audio_upload_bytes=MAX_AUDIO_UPLOAD_BYTES,
+        ffmpeg_binary_getter=get_ffmpeg_binary,
+        file_looks_like_audio_fn=file_looks_like_audio,
+        get_saved_file_size_fn=get_saved_file_size,
+        which_func=shutil.which,
+        subprocess_module=subprocess,
+    )
 
 def deduct_slides_credits(uid, amount):
     """Deduct slides credits atomically using a Firestore transaction."""
@@ -1962,56 +1821,13 @@ def generate_with_optional_thinking(model, prompt_text, max_output_tokens=65536,
     )
 
 def convert_audio_to_mp3_with_ytdlp(local_audio_path):
-    if not local_audio_path or local_audio_path.lower().endswith('.mp3'):
-        return local_audio_path, False
-    ytdlp_bin = shutil.which('yt-dlp')
-    ffmpeg_bin = get_ffmpeg_binary()
-    base_no_ext = os.path.splitext(local_audio_path)[0]
-    output_path = f"{base_no_ext}_converted.mp3"
-
-    if ytdlp_bin:
-        try:
-            source = f"file://{os.path.abspath(local_audio_path)}"
-            command = [
-                ytdlp_bin,
-                '--no-playlist',
-                '--extract-audio',
-                '--audio-format', 'mp3',
-                '--audio-quality', '5',
-                '--output', f"{base_no_ext}_converted.%(ext)s",
-                source
-            ]
-            if ffmpeg_bin:
-                command.extend(['--ffmpeg-location', ffmpeg_bin])
-            result = subprocess.run(command, check=False, capture_output=True, text=True, timeout=300)
-            if result.returncode == 0 and os.path.exists(output_path):
-                return output_path, True
-            logger.info(f"⚠️ yt-dlp conversion failed: {(result.stderr or '').strip()[:300]}")
-        except Exception as e:
-            logger.info(f"⚠️ yt-dlp conversion exception: {e}")
-    else:
-        logger.info("⚠️ yt-dlp not found, skipping yt-dlp conversion.")
-
-    # Fallback conversion for local files when yt-dlp is unavailable or fails.
-    if not ffmpeg_bin:
-        return local_audio_path, False
-    try:
-        command = [
-            ffmpeg_bin,
-            '-y',
-            '-i', local_audio_path,
-            '-vn',
-            '-codec:a', 'libmp3lame',
-            '-q:a', '5',
-            output_path
-        ]
-        result = subprocess.run(command, check=False, capture_output=True, text=True, timeout=300)
-        if result.returncode == 0 and os.path.exists(output_path):
-            return output_path, True
-        logger.info(f"⚠️ ffmpeg conversion failed: {(result.stderr or '').strip()[:300]}")
-    except Exception as e:
-        logger.info(f"⚠️ ffmpeg conversion exception: {e}")
-    return local_audio_path, False
+    return file_service.convert_audio_to_mp3_with_ytdlp(
+        local_audio_path,
+        ffmpeg_binary_getter=get_ffmpeg_binary,
+        logger=logger,
+        which_func=shutil.which,
+        subprocess_module=subprocess,
+    )
 
 def resolve_auto_amount(kind, source_text):
     word_count = len((source_text or '').split())
@@ -2498,190 +2314,57 @@ def generate_interview_enhancements(transcript_text, selected_features, output_l
     }
 
 def allowed_file(filename, allowed_extensions):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
+    return file_service.allowed_file(filename, allowed_extensions)
 
 def file_has_pdf_signature(path):
-    try:
-        with open(path, 'rb') as handle:
-            return handle.read(5) == b'%PDF-'
-    except Exception:
-        return False
+    return file_service.file_has_pdf_signature(path)
 
 def file_has_pptx_signature(path):
-    try:
-        with open(path, 'rb') as handle:
-            if handle.read(4) != b'PK\x03\x04':
-                return False
-        with zipfile.ZipFile(path, 'r') as archive:
-            members = set(archive.namelist())
-        return '[Content_Types].xml' in members and 'ppt/presentation.xml' in members
-    except Exception:
-        return False
+    return file_service.file_has_pptx_signature(path)
 
 def get_soffice_binary():
-    preferred = str(os.getenv('LIBREOFFICE_BIN', '') or '').strip()
-    if preferred:
-        candidate = shutil.which(preferred) if os.path.basename(preferred) == preferred else preferred
-        if candidate and os.path.exists(candidate):
-            return candidate
-    for name in ('soffice', 'libreoffice'):
-        candidate = shutil.which(name)
-        if candidate:
-            return candidate
-    for fallback in ('/usr/bin/soffice', '/usr/local/bin/soffice'):
-        if os.path.exists(fallback):
-            return fallback
-    return ''
+    return file_service.get_soffice_binary(env_getter=os.getenv, which_func=shutil.which)
 
 def convert_pptx_to_pdf(source_path, target_pdf_path):
-    soffice_bin = get_soffice_binary()
-    if not soffice_bin:
-        return '', 'PowerPoint conversion is unavailable on this server. Please upload a PDF instead.'
-    output_dir = os.path.dirname(target_pdf_path) or '.'
-    os.makedirs(output_dir, exist_ok=True)
-    cmd = [
-        soffice_bin,
-        '--headless',
-        '--nologo',
-        '--nolockcheck',
-        '--nodefault',
-        '--convert-to', 'pdf',
-        '--outdir', output_dir,
+    return file_service.convert_pptx_to_pdf(
         source_path,
-    ]
-    try:
-        result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=180)
-    except Exception as e:
-        return '', f'Could not convert PPTX to PDF ({str(e)[:180]}).'
-    if result.returncode != 0:
-        stderr = (result.stderr or result.stdout or '').strip().splitlines()
-        reason = stderr[-1] if stderr else 'conversion process failed'
-        return '', f'Could not convert PPTX to PDF ({reason[:220]}).'
-    expected_path = target_pdf_path
-    if not os.path.exists(expected_path):
-        basename = os.path.splitext(os.path.basename(source_path))[0]
-        fallback_path = os.path.join(output_dir, f'{basename}.pdf')
-        if os.path.exists(fallback_path):
-            expected_path = fallback_path
-    if not os.path.exists(expected_path):
-        return '', 'PowerPoint conversion finished but no PDF output was found.'
-    return expected_path, ''
+        target_pdf_path,
+        soffice_binary_getter=get_soffice_binary,
+        subprocess_module=subprocess,
+    )
 
 def resolve_uploaded_slides_to_pdf(uploaded_file, job_id):
-    if not uploaded_file or not uploaded_file.filename:
-        return '', 'Slide file is required'
-    if not allowed_file(uploaded_file.filename, ALLOWED_SLIDE_EXTENSIONS):
-        return '', 'Invalid slide file. Please upload PDF or PPTX.'
-    mime_type = str(uploaded_file.mimetype or '').lower()
-    if mime_type not in ALLOWED_SLIDE_MIME_TYPES:
-        return '', 'Invalid slide content type'
-
-    safe_name = secure_filename(uploaded_file.filename)
-    source_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{safe_name}")
-    uploaded_file.save(source_path)
-    source_size = get_saved_file_size(source_path)
-    if source_size <= 0 or source_size > MAX_PDF_UPLOAD_BYTES:
-        cleanup_files([source_path], [])
-        return '', 'Slide file exceeds server limit (max 50MB) or is empty.'
-
-    extension = safe_name.rsplit('.', 1)[1].lower() if '.' in safe_name else ''
-    if extension == 'pdf':
-        if not file_has_pdf_signature(source_path):
-            cleanup_files([source_path], [])
-            return '', 'Uploaded PDF file is invalid.'
-        return source_path, ''
-
-    if extension != 'pptx' or not file_has_pptx_signature(source_path):
-        cleanup_files([source_path], [])
-        return '', 'Uploaded PPTX file is invalid.'
-
-    converted_target = os.path.join(UPLOAD_FOLDER, f"{job_id}_slides_converted.pdf")
-    converted_pdf_path, conversion_error = convert_pptx_to_pdf(source_path, converted_target)
-    try:
-        if os.path.exists(source_path):
-            os.remove(source_path)
-    except Exception:
-        pass
-    if conversion_error:
-        cleanup_files([converted_target], [])
-        return '', conversion_error
-    converted_size = get_saved_file_size(converted_pdf_path)
-    if converted_size <= 0 or converted_size > MAX_PDF_UPLOAD_BYTES:
-        cleanup_files([converted_pdf_path], [])
-        return '', 'Converted PDF exceeds server limit (max 50MB) or is empty.'
-    if not file_has_pdf_signature(converted_pdf_path):
-        cleanup_files([converted_pdf_path], [])
-        return '', 'Converted PDF file is invalid.'
-    return converted_pdf_path, ''
+    return file_service.resolve_uploaded_slides_to_pdf(
+        uploaded_file,
+        job_id,
+        upload_folder=UPLOAD_FOLDER,
+        allowed_slide_extensions=ALLOWED_SLIDE_EXTENSIONS,
+        allowed_slide_mime_types=ALLOWED_SLIDE_MIME_TYPES,
+        max_pdf_upload_bytes=MAX_PDF_UPLOAD_BYTES,
+        cleanup_files_fn=cleanup_files,
+        secure_filename_fn=secure_filename,
+        allowed_file_fn=allowed_file,
+        file_has_pdf_signature_fn=file_has_pdf_signature,
+        file_has_pptx_signature_fn=file_has_pptx_signature,
+        convert_pptx_to_pdf_fn=convert_pptx_to_pdf,
+        get_saved_file_size_fn=get_saved_file_size,
+    )
 
 def file_has_audio_signature(path):
-    try:
-        with open(path, 'rb') as handle:
-            header = handle.read(16)
-        if len(header) < 4:
-            return False
-        if header.startswith(b'ID3'):
-            return True
-        if header.startswith(b'RIFF') and header[8:12] == b'WAVE':
-            return True
-        if header.startswith(b'fLaC'):
-            return True
-        if header.startswith(b'OggS'):
-            return True
-        # MP4/M4A container: [box_size][ftyp]
-        if header[4:8] == b'ftyp':
-            return True
-        # AAC ADTS syncword
-        if header[0] == 0xFF and (header[1] & 0xF0) == 0xF0:
-            return True
-        return False
-    except Exception:
-        return False
+    return file_service.file_has_audio_signature(path)
 
 def file_looks_like_audio(path):
-    if not path or not os.path.exists(path):
-        return False
-    if file_has_audio_signature(path):
-        return True
-    ffprobe_bin = get_ffprobe_binary()
-    if not ffprobe_bin:
-        return False
-    try:
-        cmd = [
-            ffprobe_bin,
-            '-v', 'error',
-            '-select_streams', 'a:0',
-            '-show_entries', 'stream=codec_type',
-            '-of', 'default=noprint_wrappers=1:nokey=1',
-            path
-        ]
-        result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=12)
-        if result.returncode != 0:
-            return False
-        return any(line.strip().lower() == 'audio' for line in (result.stdout or '').splitlines())
-    except Exception:
-        return False
+    return file_service.file_looks_like_audio(
+        path,
+        ffprobe_binary_getter=get_ffprobe_binary,
+        subprocess_module=subprocess,
+    )
 
 def get_saved_file_size(path):
-    try:
-        return os.path.getsize(path)
-    except Exception:
-        return -1
+    return file_service.get_saved_file_size(path)
 
 def get_mime_type(filename):
-    parts = filename.rsplit('.', 1)
-    ext = parts[1].lower() if len(parts) > 1 else ''
-    mime_types = {
-        'pdf': 'application/pdf',
-        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        'mp3': 'audio/mpeg',
-        'm4a': 'audio/mp4',
-        'wav': 'audio/wav',
-        'aac': 'audio/aac',
-        'ogg': 'audio/ogg',
-        'flac': 'audio/flac',
-    }
-    return mime_types.get(ext, 'application/octet-stream')
+    return file_service.get_mime_type(filename)
 
 def wait_for_file_processing(uploaded_file):
     max_wait_time = 300
