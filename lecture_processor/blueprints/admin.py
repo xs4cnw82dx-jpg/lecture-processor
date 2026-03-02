@@ -15,3 +15,10 @@ def admin_export():
     from lecture_processor import legacy_app
 
     return legacy_app.admin_export_impl()
+
+
+@admin_bp.route('/api/admin/prompts', methods=['GET'])
+def admin_prompts():
+    from lecture_processor import legacy_app
+
+    return legacy_app.admin_prompts_impl()

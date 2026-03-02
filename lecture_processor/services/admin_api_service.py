@@ -133,6 +133,9 @@ def admin_overview(app_ctx, request):
                 'duration_seconds': job.get('duration_seconds', 0),
                 'credit_refunded': job.get('credit_refunded', False),
                 'finished_at': job.get('finished_at', 0),
+                'token_input_total': job.get('token_input_total', 0),
+                'token_output_total': job.get('token_output_total', 0),
+                'token_total': job.get('token_total', 0),
             })
 
         recent_purchases_sorted = sorted(

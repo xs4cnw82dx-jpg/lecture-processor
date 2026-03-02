@@ -13,6 +13,7 @@ import sys
 import warnings
 import logging
 import ipaddress
+import statistics
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 try:
@@ -67,6 +68,7 @@ from lecture_processor.services import (
     auth_service,
     file_service,
     job_state_service,
+    prompt_registry,
     rate_limit_service,
 )
 from lecture_processor.repositories import (
@@ -212,6 +214,11 @@ RUNTIME_JOB_PERSISTED_FIELDS = {
     'audio_storage_key',
     'notes_audio_map',
     'transcript_segments',
+    'token_usage_by_stage',
+    'token_input_total',
+    'token_output_total',
+    'token_total',
+    'export_manifest',
 }
 RUNTIME_JOB_MAX_STRING_LENGTH = 200000
 AUDIO_STREAM_TOKEN_TTL_SECONDS = 3600
@@ -593,174 +600,24 @@ VIDEO_IMPORT_ALLOWED_HOST_SUFFIXES = tuple(
 )
 
 # --- Prompts ---
-PROMPT_SLIDE_EXTRACTION = """Extract all textual content from the attached slide deck PDF and identify the role of visual elements.
-Instructions:
-1. Clearly label each slide by number (for example: "Slide 1:").
-2. Include the slide title.
-3. Include all textual content (bullet points, paragraphs) from each slide.
-4. Identify where images or tables appear, using strict rules:
-   - Informative: Use this placeholder ONLY when the image/table contains text, data, charts, diagrams, flowcharts, or a specific scientific/technical visual that is essential for understanding. Format: [Informative Image/Table: neutral description of what is visible or the topic]
-   - Decorative: Use this placeholder for photos of people/landscapes, logos, background illustrations, stock photos, or mood visuals. If uncertain, classify as decorative. Format: [Decorative Image]
-5. Omit the phrase "Share Your talent move the world" if present.
-6. Return plain text only, without Word-specific formatting beyond slide labels and placeholders."""
+PROMPT_REGISTRY_VERSION = prompt_registry.PROMPT_REGISTRY_VERSION
+PROMPT_SLIDE_EXTRACTION = prompt_registry.PROMPT_SLIDE_EXTRACTION
+PROMPT_AUDIO_TRANSCRIPTION = prompt_registry.PROMPT_AUDIO_TRANSCRIPTION
+PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED = prompt_registry.PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED
+PROMPT_INTERVIEW_TRANSCRIPTION = prompt_registry.PROMPT_INTERVIEW_TRANSCRIPTION
+PROMPT_INTERVIEW_SUMMARY = prompt_registry.PROMPT_INTERVIEW_SUMMARY
+PROMPT_INTERVIEW_SECTIONED = prompt_registry.PROMPT_INTERVIEW_SECTIONED
+PROMPT_MERGE_TEMPLATE = prompt_registry.PROMPT_MERGE_TEMPLATE
+PROMPT_MERGE_WITH_AUDIO_MARKERS = prompt_registry.PROMPT_MERGE_WITH_AUDIO_MARKERS
+PROMPT_STUDY_TEMPLATE = prompt_registry.PROMPT_STUDY_TEMPLATE
 
-PROMPT_AUDIO_TRANSCRIPTION = """Create an accurate and clean transcript of the attached audio file.
-Instructions:
-1. Transcribe the spoken text as literally as possible.
-2. Remove filler words and hesitations (such as "uh", "um", "you know") to improve readability while preserving the full meaning. Do not rewrite sentence structure.
-3. Do not include timestamps.
-4. Use paragraphs to split up longer speaking turns.
-5. Write the final output fully in this language: {output_language}."""
 
-PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED = """Create an accurate transcript with time segments from the attached audio file.
+def get_prompt_inventory():
+    return prompt_registry.get_prompt_inventory()
 
-Return ONLY valid JSON, without markdown or extra text, in exactly this format:
-{{
-  "transcript_segments": [
-    {{
-      "start_ms": 0,
-      "end_ms": 10000,
-      "text": "..."
-    }}
-  ],
-  "full_transcript": "..."
-}}
 
-Rules:
-- Use natural segments of about 5-25 seconds.
-- start_ms and end_ms are milliseconds from the beginning.
-- Remove filler words and hesitations to improve readability without losing content.
-- full_transcript contains the complete transcript as continuous text.
-- Write transcript text fully in this language: {output_language}."""
-
-PROMPT_INTERVIEW_TRANSCRIPTION = """Transcribe this interview in the format: timecode (mm:ss) - speaker - caption.
-Rules:
-- Use speaker A, speaker B, etc. to identify speakers.
-- Keep timestamps in each line.
-- Write the output fully in this language: {output_language}."""
-
-PROMPT_INTERVIEW_SUMMARY = """You are an expert interviewer analyst.
-Create a concise summary of this interview.
-Rules:
-- Maximum one page equivalent (about 400-600 words).
-- Focus only on the most important points, commitments, and conclusions.
-- Use short headings and bullet points where useful.
-- Do not invent information outside the transcript.
-- Write the output fully in this language: {output_language}.
-Transcript:
-{transcript}
-"""
-
-PROMPT_INTERVIEW_SECTIONED = """You are an expert transcript editor.
-Rewrite this interview transcript into a structured version with clear headings.
-Rules:
-- Keep timestamps and speaker labels from the source where possible.
-- Split content into relevant sections (for example: Introduction, Background, Key Discussion, Decisions, Next Steps).
-- Use meaningful heading titles based on actual content.
-- Do not invent information outside the transcript.
-- Write the output fully in this language: {output_language}.
-Transcript:
-{transcript}
-"""
-
-PROMPT_MERGE_TEMPLATE = """Create one complete, consistent, study-ready lecture document by combining slide text and audio transcript.
-
-GOAL:
-- Produce a full reference document (not a brief summary).
-- Make the text immediately useful for exam preparation.
-- Integrate all relevant content from both sources into one coherent narrative.
-
-OUTPUT FORMAT (REQUIRED):
-1. Start directly with Markdown content (no assistant preface).
-2. First line must be a title using `#`.
-3. Use `##` and `###` headings with clear logical structure.
-4. Do not use transcript/dialog format (no speaker labels or Q&A style).
-5. Return only the final document text.
-
-CONTENT RULES:
-1. Integration:
-   - Use slide order as the backbone.
-   - Insert audio explanations at the correct conceptual points.
-   - Keep details with learning value.
-2. Editing:
-   - Remove conversational noise (small talk, startup chatter, repetitive filler).
-   - Rewrite spoken classroom phrasing into fluent instructional prose.
-3. Structure:
-   - Per topic: brief definition/scope -> explanation/mechanism -> practical/clinical relevance.
-   - Use bullets only where scanability improves.
-   - Preserve cases/exercises as dedicated sections when present.
-4. Visual placeholders:
-   - Keep only `[Informative Image/Table: ...]` at appropriate locations.
-   - Omit decorative placeholders.
-5. Language:
-   - Write fully in: {output_language}.
-   - Keep tone professional, neutral, and didactic.
-
-FAITHFULNESS:
-- Slide text + transcript are the primary source of truth.
-- Allowed:
-  - Short connective phrasing for readability.
-  - Careful rewording/inference directly supported by the input.
-- Not allowed:
-  - New numbers, guidelines, sources, diagnoses, or treatment claims not present in input.
-  - New facts not traceable to slide text or transcript.
-- If unsure: omit or phrase neutrally without adding claims.
-
-REQUIRED END SECTION:
-- Add a final section: `## Key Exam Points`.
-- Include 8-15 concrete bullet points with the most important takeaways.
-
-INPUT SLIDE TEXT:
-{slide_text}
-
-INPUT AUDIO TRANSCRIPT:
-{transcript}"""
-
-PROMPT_MERGE_WITH_AUDIO_MARKERS = """Create a complete, readable lecture document by combining slide text and timestamped audio transcript.
-
-IMPORTANT - AUDIO MARKERS:
-For each major section, place this marker format directly below the heading:
-<!-- audio:START_MS-END_MS -->
-where START_MS and END_MS are the relevant transcript time bounds.
-
-Rules:
-1. Do not summarize; write a complete integrated lecture text.
-2. Use headings and subheadings for clear structure.
-3. Remove only irrelevant spoken filler while preserving substantive explanations.
-4. Do not use labels like "Audio:" or "Slide:".
-5. Write fully in this language: {output_language}.
-
-Input slide text:
-{slide_text}
-
-Input timestamped transcript:
-{transcript}"""
-
-PROMPT_STUDY_TEMPLATE = """You are an expert university professor creating study materials. I will provide you with the complete text of a lecture or slide deck.
-
-Your task is to generate {flashcard_amount} flashcards and {question_amount} multiple-choice test questions based strictly on the provided text. Do not invent outside information.
-Write all generated output fully in this language: {output_language}.
-
-RULES FOR FLASHCARDS:
-- The 'front' should be a clear term or concept.
-- The 'back' should be a concise, accurate definition/explanation.
-
-RULES FOR TEST QUESTIONS:
-- Create challenging, university-level multiple-choice questions.
-- Provide exactly 4 options (A, B, C, D) as an array of strings.
-- Provide the correct answer (must match one option exactly).
-- Provide a brief 'explanation' of WHY the answer is correct.
-
-REQUIRED OUTPUT FORMAT:
-You must respond with strictly valid JSON matching this structure:
-{{
-  "flashcards": [{{"front": "string", "back": "string"}}],
-  "test_questions": [{{"question": "string", "options": ["string", "string", "string", "string"], "answer": "string", "explanation": "string"}}]
-}}
-
-LECTURE TEXT:
-{source_text}
-"""
+def get_prompt_inventory_markdown():
+    return prompt_registry.get_prompt_inventory_markdown()
 
 # =============================================
 # FIRESTORE USER FUNCTIONS
@@ -2038,22 +1895,78 @@ def get_billing_receipt_snapshot(job_data):
         snapshot['updated_at'] = updated_at
     return snapshot
 
-def generate_with_optional_thinking(model, prompt_text, max_output_tokens=65536, thinking_budget=256):
-    base_config = {'max_output_tokens': max_output_tokens}
+# --- Model thinking policy ---
+# Each model gets a specific thinking configuration.
+MODEL_THINKING_POLICY = {
+    'gemini-2.5-flash-lite': {'thinking_budget': 24576},
+    'gemini-2.5-pro':        {'thinking_budget': 32768},
+    'gemini-3-flash-preview': {'thinking_level': 'high'},
+}
+
+def _build_thinking_config(model_name):
+    """Build a ThinkingConfig for the given model based on MODEL_THINKING_POLICY."""
+    policy = MODEL_THINKING_POLICY.get(model_name)
+    if not policy or not hasattr(types, 'ThinkingConfig'):
+        return None
     try:
-        if hasattr(types, 'ThinkingConfig'):
-            base_config['thinking_config'] = types.ThinkingConfig(thinking_budget=thinking_budget)
+        return types.ThinkingConfig(**policy)
     except Exception:
-        pass
+        return None
+
+def extract_token_usage(response):
+    """Extract token counts from a Gemini response's usage_metadata."""
+    meta = getattr(response, 'usage_metadata', None)
+    if not meta:
+        return {'input_tokens': 0, 'output_tokens': 0, 'total_tokens': 0}
+    return {
+        'input_tokens': getattr(meta, 'prompt_token_count', 0) or 0,
+        'output_tokens': getattr(meta, 'candidates_token_count', 0) or 0,
+        'total_tokens': getattr(meta, 'total_token_count', 0) or 0,
+    }
+
+class TokenAccumulator:
+    """Accumulates token usage across multiple AI calls in a processing job."""
+    def __init__(self):
+        self.stages = {}
+        self.input_total = 0
+        self.output_total = 0
+        self.total = 0
+
+    def record(self, stage_name, response):
+        usage = extract_token_usage(response)
+        self.stages[stage_name] = usage
+        self.input_total += usage['input_tokens']
+        self.output_total += usage['output_tokens']
+        self.total += usage['total_tokens']
+
+    def as_dict(self):
+        return {
+            'token_usage_by_stage': self.stages,
+            'token_input_total': self.input_total,
+            'token_output_total': self.output_total,
+            'token_total': self.total,
+        }
+
+def generate_with_policy(model, contents, max_output_tokens=65536):
+    """Unified generation wrapper that applies model-specific thinking config."""
+    base_config = {'max_output_tokens': max_output_tokens}
+    thinking = _build_thinking_config(model)
+    if thinking:
+        base_config['thinking_config'] = thinking
     try:
         config = types.GenerateContentConfig(**base_config)
     except Exception:
         config = types.GenerateContentConfig(max_output_tokens=max_output_tokens)
     return client.models.generate_content(
         model=model,
-        contents=[types.Content(role='user', parts=[types.Part.from_text(text=prompt_text)])],
+        contents=contents,
         config=config
     )
+
+def generate_with_optional_thinking(model, prompt_text, max_output_tokens=65536, thinking_budget=None):
+    """Convenience wrapper for text-only prompts. Uses model policy for thinking config."""
+    contents = [types.Content(role='user', parts=[types.Part.from_text(text=prompt_text)])]
+    return generate_with_policy(model, contents, max_output_tokens=max_output_tokens)
 
 def convert_audio_to_mp3_with_ytdlp(local_audio_path):
     return file_service.convert_audio_to_mp3_with_ytdlp(
@@ -2488,11 +2401,7 @@ def generate_study_materials(source_text, flashcard_selection, question_selectio
         source_text=source_text[:MAX_SOURCE_TEXT_LEN],
     )
     try:
-        response = client.models.generate_content(
-            model=MODEL_STUDY,
-            contents=[types.Content(role='user', parts=[types.Part.from_text(text=prompt)])],
-            config=types.GenerateContentConfig(max_output_tokens=32768)
-        )
+        response = generate_with_policy(MODEL_STUDY, [types.Content(role='user', parts=[types.Part.from_text(text=prompt)])], max_output_tokens=32768)
         parsed = extract_json_payload(response.text)
         if not isinstance(parsed, dict):
             return [], [], 'Study materials JSON parsing failed.'
@@ -2662,28 +2571,20 @@ def format_transcript_with_timestamps(segments):
 def transcribe_audio_plain(audio_file, audio_mime_type, output_language='English'):
     output_language = OUTPUT_LANGUAGE_MAP.get(str(output_language).lower(), str(output_language))
     prompt = PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
-    response = client.models.generate_content(
-        model=MODEL_AUDIO,
-        contents=[types.Content(role='user', parts=[
-            types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type),
-            types.Part.from_text(text=prompt)
-        ])],
-        config=types.GenerateContentConfig(max_output_tokens=65536)
-    )
+    response = generate_with_policy(MODEL_AUDIO, [types.Content(role='user', parts=[
+        types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type),
+        types.Part.from_text(text=prompt)
+    ])])
     return (getattr(response, 'text', '') or '').strip()
 
 def transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_language='English'):
     output_language = OUTPUT_LANGUAGE_MAP.get(str(output_language).lower(), str(output_language))
     prompt = PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED.format(output_language=output_language)
     try:
-        response = client.models.generate_content(
-            model=MODEL_AUDIO,
-            contents=[types.Content(role='user', parts=[
-                types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type),
-                types.Part.from_text(text=prompt)
-            ])],
-            config=types.GenerateContentConfig(max_output_tokens=65536)
-        )
+        response = generate_with_policy(MODEL_AUDIO, [types.Content(role='user', parts=[
+            types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type),
+            types.Part.from_text(text=prompt)
+        ])])
         parsed = extract_json_payload(getattr(response, 'text', '') or '')
         if not isinstance(parsed, dict):
             raise ValueError('Timestamped transcription JSON not found')
@@ -2715,14 +2616,10 @@ def transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_languag
     except Exception as e:
         logger.warning(f"⚠️ Timestamp transcription failed, falling back to plain transcript: {e}")
         fallback_prompt = PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
-        fallback_response = client.models.generate_content(
-            model=MODEL_AUDIO,
-            contents=[types.Content(role='user', parts=[
-                types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type),
-                types.Part.from_text(text=fallback_prompt)
-            ])],
-            config=types.GenerateContentConfig(max_output_tokens=65536)
-        )
+        fallback_response = generate_with_policy(MODEL_AUDIO, [types.Content(role='user', parts=[
+            types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type),
+            types.Part.from_text(text=fallback_prompt)
+        ])])
         return (getattr(fallback_response, 'text', '') or '').strip(), []
 
 def ensure_study_audio_root():
@@ -3240,12 +3137,14 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
     local_paths = [pdf_path, audio_path]
     set_fields = lambda **fields: update_job_fields(job_id, **fields)
     get_fields = lambda: get_job_snapshot(job_id) or {}
+    tokens = TokenAccumulator()
     try:
         set_fields(status='processing', step=1, step_description='Extracting text from slides...')
         pdf_file = client.files.upload(file=pdf_path, config={'mime_type': 'application/pdf'})
         gemini_files.append(pdf_file)
         wait_for_file_processing(pdf_file)
-        response = client.models.generate_content(model=MODEL_SLIDES, contents=[types.Content(role='user', parts=[types.Part.from_uri(file_uri=pdf_file.uri, mime_type='application/pdf'), types.Part.from_text(text=PROMPT_SLIDE_EXTRACTION)])], config=types.GenerateContentConfig(max_output_tokens=65536))
+        response = generate_with_policy(MODEL_SLIDES, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=pdf_file.uri, mime_type='application/pdf'), types.Part.from_text(text=PROMPT_SLIDE_EXTRACTION)])])
+        tokens.record('slide_extraction', response)
         slide_text = response.text
         set_fields(slide_text=slide_text, step=2, step_description='Transcribing audio...')
         output_language = get_fields().get('output_language', 'English')
@@ -3276,7 +3175,8 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
             merge_prompt = PROMPT_MERGE_WITH_AUDIO_MARKERS.format(slide_text=slide_text, transcript=merge_transcript, output_language=output_language)
         else:
             merge_prompt = PROMPT_MERGE_TEMPLATE.format(slide_text=slide_text, transcript=transcript, output_language=output_language)
-        response = client.models.generate_content(model=MODEL_INTEGRATION, contents=[types.Content(role='user', parts=[types.Part.from_text(text=merge_prompt)])], config=types.GenerateContentConfig(max_output_tokens=65536))
+        response = generate_with_policy(MODEL_INTEGRATION, [types.Content(role='user', parts=[types.Part.from_text(text=merge_prompt)])])
+        tokens.record('merge', response)
         merged_notes = response.text
         set_fields(
             result=merged_notes,
@@ -3322,9 +3222,9 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
         set_fields(credit_refunded=True)
     finally:
         cleanup_files(local_paths, gemini_files)
-        # Log the job to Firestore and record finished_at for cleanup thread
+        # Save token telemetry and log the job
         finished_at = time.time()
-        set_fields(finished_at=finished_at)
+        set_fields(finished_at=finished_at, **tokens.as_dict())
         final_job = get_fields()
         save_job_log(job_id, final_job, finished_at)
 
@@ -3333,12 +3233,14 @@ def process_slides_only(job_id, pdf_path):
     local_paths = [pdf_path]
     set_fields = lambda **fields: update_job_fields(job_id, **fields)
     get_fields = lambda: get_job_snapshot(job_id) or {}
+    tokens = TokenAccumulator()
     try:
         set_fields(status='processing', step=1, step_description='Extracting text from slides...')
         pdf_file = client.files.upload(file=pdf_path, config={'mime_type': 'application/pdf'})
         gemini_files.append(pdf_file)
         wait_for_file_processing(pdf_file)
-        response = client.models.generate_content(model=MODEL_SLIDES, contents=[types.Content(role='user', parts=[types.Part.from_uri(file_uri=pdf_file.uri, mime_type='application/pdf'), types.Part.from_text(text=PROMPT_SLIDE_EXTRACTION)])], config=types.GenerateContentConfig(max_output_tokens=65536))
+        response = generate_with_policy(MODEL_SLIDES, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=pdf_file.uri, mime_type='application/pdf'), types.Part.from_text(text=PROMPT_SLIDE_EXTRACTION)])])
+        tokens.record('slide_extraction', response)
         extracted_text = response.text
         set_fields(result=extracted_text)
         job_data = get_fields()
@@ -3380,9 +3282,9 @@ def process_slides_only(job_id, pdf_path):
         set_fields(credit_refunded=True)
     finally:
         cleanup_files(local_paths, gemini_files)
-        # Log the job to Firestore and record finished_at for cleanup thread
+        # Save token telemetry and log the job
         finished_at = time.time()
-        set_fields(finished_at=finished_at)
+        set_fields(finished_at=finished_at, **tokens.as_dict())
         final_job = get_fields()
         save_job_log(job_id, final_job, finished_at)
 
@@ -3391,6 +3293,7 @@ def process_interview_transcription(job_id, audio_path):
     local_paths = [audio_path]
     set_fields = lambda **fields: update_job_fields(job_id, **fields)
     get_fields = lambda: get_job_snapshot(job_id) or {}
+    tokens = TokenAccumulator()
     try:
         set_fields(status='processing', step=1, step_description='Optimizing audio for faster processing...')
         output_language = get_fields().get('output_language', 'English')
@@ -3405,7 +3308,8 @@ def process_interview_transcription(job_id, audio_path):
         wait_for_file_processing(audio_file)
         set_fields(step_description='Generating transcript with timestamps...')
         interview_prompt = PROMPT_INTERVIEW_TRANSCRIPTION.format(output_language=output_language)
-        response = client.models.generate_content(model=MODEL_INTERVIEW, contents=[types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=interview_prompt)])], config=types.GenerateContentConfig(max_output_tokens=65536))
+        response = generate_with_policy(MODEL_INTERVIEW, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=interview_prompt)])])
+        tokens.record('interview_transcription', response)
         transcript_text = response.text or ''
         set_fields(transcript=transcript_text, result=transcript_text)
 
@@ -3468,9 +3372,9 @@ def process_interview_transcription(job_id, audio_path):
         set_job(job_id, failed_job)
     finally:
         cleanup_files(local_paths, gemini_files)
-        # Log the job to Firestore and record finished_at for cleanup thread
+        # Save token telemetry and log the job
         finished_at = time.time()
-        set_fields(finished_at=finished_at)
+        set_fields(finished_at=finished_at, **tokens.as_dict())
         final_job = get_fields()
         save_job_log(job_id, final_job, finished_at)
 
@@ -3698,6 +3602,52 @@ def admin_export_impl():
     from lecture_processor.services import admin_api_service
 
     return admin_api_service.admin_export(sys.modules[__name__], request)
+
+def admin_prompts_impl():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    if not is_admin_user(decoded_token):
+        return jsonify({'error': 'Forbidden'}), 403
+    fmt = request.args.get('format', 'json')
+    if fmt == 'markdown':
+        return jsonify({'markdown': get_prompt_inventory_markdown()})
+    return jsonify({'prompts': get_prompt_inventory()})
+
+
+def processing_averages_impl():
+    """Return average processing duration per mode from completed job_logs.
+    No auth required – only aggregate stats are returned."""
+    try:
+        from collections import defaultdict
+        docs = db.collection('job_logs') \
+            .where('status', '==', 'complete') \
+            .order_by('created_at', direction=firestore.Query.DESCENDING) \
+            .limit(200) \
+            .stream()
+        by_mode = defaultdict(list)
+        for doc in docs:
+            job = doc.to_dict() or {}
+            mode = job.get('mode', 'unknown')
+            duration = job.get('duration_seconds')
+            if isinstance(duration, (int, float)) and duration > 0:
+                by_mode[mode].append(duration)
+        averages = {}
+        total_jobs = 0
+        for mode, durations in by_mode.items():
+            total_jobs += len(durations)
+            avg = round(sum(durations) / len(durations), 1)
+            averages[mode] = {
+                'avg_seconds': avg,
+                'job_count': len(durations),
+                'min_seconds': round(min(durations), 1),
+                'max_seconds': round(max(durations), 1),
+            }
+        resp = jsonify({'averages': averages, 'total_jobs': total_jobs})
+        resp.headers['Cache-Control'] = 'public, max-age=300'
+        return resp
+    except Exception as e:
+        return jsonify({'averages': {}, 'total_jobs': 0, 'error': str(e)})
 
 # --- Upload & Processing Routes ---
 

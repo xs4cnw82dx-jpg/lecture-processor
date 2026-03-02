@@ -43,3 +43,10 @@ def download_flashcards_csv(job_id):
     from lecture_processor import legacy_app
 
     return legacy_app.download_flashcards_csv_impl(job_id)
+
+
+@upload_bp.route('/api/processing-averages')
+def processing_averages():
+    from lecture_processor import legacy_app
+
+    return legacy_app.processing_averages_impl()
