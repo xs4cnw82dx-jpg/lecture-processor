@@ -38,6 +38,7 @@ let audioFile = null;
 let currentJobId = null;
 let pollInterval = null;
 let pollFailures = 0;
+let pollMissingResponses = 0;
 let pollStartedAt = 0;
 let currentMode = 'lecture-notes';
 let resultMarkdown = '';
@@ -49,16 +50,10 @@ let activeResultsTab = 'notes';
 let flashcardIndex = 0;
 let flashcardFlipped = false;
 
-let processingAverages = null;
-fetch('/api/processing-averages')
-    .then(res => res.json())
-    .then(data => {
-        if (data && data.averages) {
-            processingAverages = data.averages;
-            updateUploadEstimatePanel();
-        }
-    })
-    .catch(err => console.error('Failed to load processing averages:', err));
+let processingEstimateRange = null;
+let processingEstimateContextKey = '';
+let processingEstimateRequestSeq = 0;
+let processingEstimateDebounceTimer = null;
 
 let quizIndex = 0;
 let quizScore = 0;
@@ -214,6 +209,7 @@ const allowedSlideMimeTypes = [
 
 const headerSignInBtn = document.getElementById('header-sign-in-btn');
 const headerStudyLibraryBtn = document.getElementById('header-study-library-btn');
+const headerToolsBtn = document.getElementById('header-tools-btn');
 const progressMenu = document.getElementById('progress-menu');
 const progressButton = document.getElementById('progress-button');
 const progressDropdown = document.getElementById('progress-dropdown');
@@ -242,6 +238,7 @@ const dropdownInterviewCredits = document.getElementById('dropdown-interview-cre
 const buyCreditsBtn = document.getElementById('buy-credits-btn');
 const featuresPageBtn = document.getElementById('features-page-btn');
 const plannerPageBtn = document.getElementById('planner-page-btn');
+const toolsPageBtn = document.getElementById('tools-page-btn');
 const purchaseHistoryBtn = document.getElementById('purchase-history-btn');
 const exportDataBtn = document.getElementById('export-data-btn');
 const adminDashboardBtn = document.getElementById('admin-dashboard-btn');
@@ -1147,10 +1144,13 @@ function updateQuickstartVisibility() {
 }
 function updateUIForAuthState(user) {
     if (user) {
+        processingEstimateRange = null;
+        processingEstimateContextKey = '';
         closeHeaderDropdowns('');
         headerSignInBtn.style.display = 'none';
         creditsDisplay.style.display = 'flex';
         headerStudyLibraryBtn.style.display = 'inline-flex';
+        headerToolsBtn.style.display = 'inline-flex';
         progressMenu.style.display = 'block';
         userMenu.style.display = 'block';
         adminDashboardBtn.style.display = 'none';
@@ -1189,10 +1189,17 @@ function updateUIForAuthState(user) {
         refreshStudyHeaderMetrics();
         updateQuickstartVisibility();
     } else {
+        processingEstimateRange = null;
+        processingEstimateContextKey = '';
+        if (processingEstimateDebounceTimer) {
+            clearTimeout(processingEstimateDebounceTimer);
+            processingEstimateDebounceTimer = null;
+        }
         closeHeaderDropdowns('');
         headerSignInBtn.style.display = 'flex';
         creditsDisplay.style.display = 'none';
         headerStudyLibraryBtn.style.display = 'none';
+        headerToolsBtn.style.display = 'none';
         progressMenu.style.display = 'none';
         userMenu.style.display = 'none';
         signInRequired.classList.add('visible');
@@ -1535,13 +1542,7 @@ function formatEstimateDuration(seconds) {
     const mins = Math.round(safe / 60);
     return `${mins} min`;
 }
-function calculateProcessingEstimateSeconds() {
-    if (processingAverages && processingAverages[currentMode]) {
-        const avgData = processingAverages[currentMode];
-        if (avgData && avgData.avg_seconds > 0) {
-            return avgData.avg_seconds;
-        }
-    }
+function calculateHeuristicEstimateSeconds() {
     const pdfMb = pdfFile ? (pdfFile.size / (1024 * 1024)) : 0;
     const audioMb = currentAudioBytes() / (1024 * 1024);
     if (currentMode === 'lecture-notes') {
@@ -1553,6 +1554,84 @@ function calculateProcessingEstimateSeconds() {
     const extrasCost = getInterviewExtraCost();
     return 35 + (audioMb * 1.15) + (extrasCost * 18);
 }
+function buildProcessingEstimateContext() {
+    const totalBytes = (pdfFile ? Number(pdfFile.size || 0) : 0) + currentAudioBytes();
+    const totalMb = totalBytes / (1024 * 1024);
+    return {
+        mode: currentMode,
+        studyFeatures: selectedStudyFeatures,
+        interviewFeaturesCount: selectedInterviewFeatures.length,
+        totalMb,
+        key: `${currentMode}|${selectedStudyFeatures}|${selectedInterviewFeatures.length}|${totalMb.toFixed(2)}`,
+    };
+}
+function areRequiredFilesReadyForEstimate() {
+    const config = modeConfig[currentMode];
+    const pdfReady = !config.needsPdf || Boolean(pdfFile);
+    const audioReady = !config.needsAudio || Boolean(audioFile || (currentMode === 'lecture-notes' && importedAudioToken));
+    return pdfReady && audioReady;
+}
+async function fetchProcessingEstimateRange(context) {
+    if (!currentUser || !context) return;
+    const requestSeq = ++processingEstimateRequestSeq;
+    const params = new URLSearchParams({
+        mode: context.mode,
+        total_mb: context.totalMb.toFixed(2),
+        study_features: context.mode === 'interview' ? 'none' : selectedStudyFeatures,
+        interview_features_count: String(context.mode === 'interview' ? selectedInterviewFeatures.length : 0),
+    });
+    try {
+        const response = await authenticatedFetch(`/api/processing-estimate?${params.toString()}`);
+        if (requestSeq !== processingEstimateRequestSeq) return;
+        if (!response.ok) {
+            processingEstimateRange = null;
+            processingEstimateContextKey = '';
+            updateUploadEstimatePanel();
+            return;
+        }
+        const payload = await response.json();
+        const range = payload && payload.range ? payload.range : null;
+        if (!range || !Number.isFinite(Number(range.low_seconds)) || !Number.isFinite(Number(range.high_seconds))) {
+            processingEstimateRange = null;
+            processingEstimateContextKey = '';
+            updateUploadEstimatePanel();
+            return;
+        }
+        processingEstimateRange = {
+            low: Math.max(15, Math.round(Number(range.low_seconds || 0))),
+            high: Math.max(20, Math.round(Number(range.high_seconds || 0))),
+            typical: Math.max(15, Math.round(Number(range.typical_seconds || 0))),
+            sampleCount: Number(payload.sample_count || 0),
+            source: String(payload.source || 'heuristic'),
+        };
+        processingEstimateContextKey = context.key;
+        updateUploadEstimatePanel();
+    } catch (_) {
+        if (requestSeq !== processingEstimateRequestSeq) return;
+        processingEstimateRange = null;
+        processingEstimateContextKey = '';
+        updateUploadEstimatePanel();
+    }
+}
+function scheduleProcessingEstimateFetch() {
+    if (processingEstimateDebounceTimer) {
+        clearTimeout(processingEstimateDebounceTimer);
+        processingEstimateDebounceTimer = null;
+    }
+    if (!currentUser || resultsLocked || !areRequiredFilesReadyForEstimate()) {
+        processingEstimateRange = null;
+        processingEstimateContextKey = '';
+        return;
+    }
+    const context = buildProcessingEstimateContext();
+    if (processingEstimateContextKey === context.key && processingEstimateRange) {
+        return;
+    }
+    processingEstimateDebounceTimer = setTimeout(() => {
+        processingEstimateDebounceTimer = null;
+        fetchProcessingEstimateRange(context);
+    }, 320);
+}
 function updateUploadEstimatePanel() {
     if (!uploadEstimate || !uploadEstimateTime || !uploadEstimateMeta) return;
     if (!currentUser || resultsLocked) {
@@ -1563,18 +1642,19 @@ function updateUploadEstimatePanel() {
     const config = modeConfig[currentMode];
     const pdfReady = !config.needsPdf || Boolean(pdfFile);
     const audioReady = !config.needsAudio || Boolean(audioFile || (currentMode === 'lecture-notes' && importedAudioToken));
-    const estimateSeconds = calculateProcessingEstimateSeconds();
-    const low = Math.max(20, Math.round(estimateSeconds * 0.7));
-    const high = Math.max(low + 10, Math.round(estimateSeconds * 1.35));
+    const context = buildProcessingEstimateContext();
+    scheduleProcessingEstimateFetch();
+    const fallbackEstimate = calculateHeuristicEstimateSeconds();
+    const fallbackLow = Math.max(20, Math.round(fallbackEstimate * 0.7));
+    const fallbackHigh = Math.max(fallbackLow + 10, Math.round(fallbackEstimate * 1.35));
+    const hasFreshServerEstimate = processingEstimateRange && processingEstimateContextKey === context.key;
+    const low = hasFreshServerEstimate ? processingEstimateRange.low : fallbackLow;
+    const high = hasFreshServerEstimate ? processingEstimateRange.high : fallbackHigh;
     let readyText = (pdfReady && audioReady)
         ? `Estimated processing time: ${formatEstimateDuration(low)} - ${formatEstimateDuration(high)}`
         : 'Upload required files to get a better estimate.';
-
-    if (pdfReady && audioReady && processingAverages && processingAverages[currentMode]) {
-        const avgData = processingAverages[currentMode];
-        if (avgData && avgData.job_count > 0) {
-            readyText += ` (Based on ${avgData.job_count} previous jobs)`;
-        }
+    if (pdfReady && audioReady && hasFreshServerEstimate && Number(processingEstimateRange.sampleCount || 0) > 0) {
+        readyText += ` (Based on ${Math.round(processingEstimateRange.sampleCount)} similar jobs)`;
     }
 
     uploadEstimateTime.textContent = readyText;
@@ -1828,6 +1908,7 @@ function retryStatusCheckNow() {
 function startPolling() {
     stopPolling();
     pollFailures = 0;
+    pollMissingResponses = 0;
     pollStartedAt = Date.now();
     setProgressRetryVisible(false);
     scheduleNextPoll(0);
@@ -1836,7 +1917,26 @@ function stopPolling() {
     if (pollInterval) clearTimeout(pollInterval);
     pollInterval = null;
     pollFailures = 0;
+    pollMissingResponses = 0;
     pollStartedAt = 0;
+}
+function resetProcessingSession(options = {}) {
+    const keepProgressVisible = Boolean(options.keepProgressVisible);
+    const keepStatusMessage = Boolean(options.keepStatusMessage);
+    const hideRetry = options.hideRetry !== false;
+    stopPolling();
+    if (hideRetry) setProgressRetryVisible(false);
+    currentJobId = null;
+    trackedTerminalJobId = '';
+    if (!keepStatusMessage) {
+        statusText.textContent = 'Starting...';
+    }
+    if (!keepProgressVisible && !resultsLocked) {
+        progressSection.classList.remove('visible');
+        progressStatus.classList.remove('error');
+        progressStatus.querySelector('.spinner').style.display = 'block';
+    }
+    updateProcessButton();
 }
 async function authenticatedFetch(path, options = {}, allowRefresh = true) {
     if (!currentUser) throw new Error('Please sign in');
@@ -1961,44 +2061,51 @@ async function deleteMyAccountData() {
 async function pollStatus() {
     if (!currentJobId) return;
     if (pollStartedAt && (Date.now() - pollStartedAt) > POLL_MAX_RUNTIME_MS) {
-        stopPolling();
+        const activeJobId = currentJobId;
+        resetProcessingSession({ keepProgressVisible: true, keepStatusMessage: true });
         progressStatus.classList.add('error');
         progressStatus.querySelector('.spinner').style.display = 'none';
-        statusText.textContent = 'Still processing on the server. Use retry to check now, or check again in a minute.';
+        statusText.textContent = 'Still processing on the server. Start a new run or retry later from Study Library.';
         showToast('Processing is taking longer than expected. Please check again shortly.', 'info', 6000);
-        if (currentJobId && trackedTerminalJobId !== currentJobId) {
-            trackedTerminalJobId = currentJobId;
-            trackEvent('processing_timeout', { job_id: currentJobId });
-        }
-        setProgressRetryVisible(true);
-        updateProcessButton();
+        trackEvent('processing_timeout', activeJobId ? { job_id: activeJobId } : {});
         return;
     }
     try {
         const r = await authenticatedFetch(`/status/${currentJobId}`);
         if (r.status === 401) {
-            stopPolling();
-            setProgressRetryVisible(false);
+            resetProcessingSession({ keepProgressVisible: true });
             showAuthModal('signin');
             return;
         }
         if (r.status === 403) {
-            stopPolling();
-            setProgressRetryVisible(false);
+            resetProcessingSession({ keepProgressVisible: true });
             showError('You do not have access to this job.');
             return;
         }
         const d = await r.json();
         if (d.error && d.status !== 'error') {
-            stopPolling();
-            setProgressRetryVisible(false);
-            showToast('Error: Job not found', 'error');
+            const isRetryableMissing = r.status === 404 && (d.retryable || d.error_code === 'JOB_TEMPORARILY_UNAVAILABLE' || d.job_lost);
+            if (isRetryableMissing && pollMissingResponses < 3) {
+                pollMissingResponses += 1;
+                const waitMs = Math.min(POLL_MAX_MS, POLL_BASE_MS * Math.pow(2, pollMissingResponses));
+                statusText.textContent = `Reconnecting to job status... retrying in ${Math.ceil(waitMs / 1000)}s`;
+                scheduleNextPoll(waitMs);
+                return;
+            }
+            const terminalJobId = currentJobId;
+            resetProcessingSession({ keepProgressVisible: true });
+            trackEvent('processing_failed', {
+                reason: d.error_code || 'job_not_found',
+                job_id: terminalJobId || undefined,
+            });
+            showToast(d.error || 'Error: Job not found', 'error');
             return;
         }
         updateProgressUI(d.step, d.step_description, d.total_steps);
         if (d.status === 'complete') {
             stopPolling();
             setProgressRetryVisible(false);
+            pollMissingResponses = 0;
             if (currentJobId && trackedTerminalJobId !== currentJobId) {
                 trackedTerminalJobId = currentJobId;
                 trackEvent('processing_completed', { job_id: currentJobId });
@@ -2020,16 +2127,18 @@ async function pollStatus() {
             );
             fetchUserData();
         } else if (d.status === 'error') {
-            stopPolling();
-            setProgressRetryVisible(false);
-            if (currentJobId && trackedTerminalJobId !== currentJobId) {
-                trackedTerminalJobId = currentJobId;
-                trackEvent('processing_failed', { job_id: currentJobId, credit_refunded: Boolean(d.credit_refunded) });
+            const activeJobId = currentJobId;
+            resetProcessingSession({ keepProgressVisible: true });
+            pollMissingResponses = 0;
+            if (activeJobId && trackedTerminalJobId !== activeJobId) {
+                trackedTerminalJobId = activeJobId;
+                trackEvent('processing_failed', { job_id: activeJobId, credit_refunded: Boolean(d.credit_refunded) });
             }
             showError(d.error, d.credit_refunded, d.billing_receipt || null);
         } else {
             setProgressRetryVisible(false);
             pollFailures = 0;
+            pollMissingResponses = 0;
             scheduleNextPoll(POLL_BASE_MS);
         }
     } catch (e) {
@@ -2111,6 +2220,7 @@ async function processFiles() {
                 showError(retryMsg);
                 showToast(retryMsg, 'info', 6000);
             } else showError(d.error);
+            resetProcessingSession({ keepProgressVisible: true, keepStatusMessage: true });
             return;
         }
         currentJobId = d.job_id;
@@ -2124,6 +2234,7 @@ async function processFiles() {
     } catch (e) {
         captureClientError(e, 'process_files');
         showError('Failed to upload files. Please try again.');
+        resetProcessingSession({ keepProgressVisible: true, keepStatusMessage: true });
     }
 }
 processButton.addEventListener('click', processFiles);
@@ -2811,6 +2922,7 @@ document.addEventListener('click', (e) => { if (!userMenu.contains(e.target)) se
 buyCreditsBtn.addEventListener('click', () => { setUserDropdownVisible(false); showPricingModal(); });
 featuresPageBtn.addEventListener('click', () => { setUserDropdownVisible(false); window.location.href = '/features'; });
 plannerPageBtn.addEventListener('click', () => { setUserDropdownVisible(false); window.location.href = '/plan'; });
+toolsPageBtn.addEventListener('click', () => { setUserDropdownVisible(false); window.location.href = '/tools'; });
 purchaseHistoryBtn.addEventListener('click', () => { setUserDropdownVisible(false); showHistoryModal(); });
 exportDataBtn.addEventListener('click', async () => {
     setUserDropdownVisible(false);
@@ -2823,6 +2935,10 @@ deleteAccountBtn.addEventListener('click', async () => {
 headerStudyLibraryBtn.addEventListener('click', () => {
     trackEvent('study_mode_opened', { source: 'header_study_library' }, { preferBeacon: true });
     window.location.href = '/study';
+});
+headerToolsBtn.addEventListener('click', () => {
+    trackEvent('tools_page_opened', { source: 'header_tools' }, { preferBeacon: true });
+    window.location.href = '/tools';
 });
 function openGoalModal() {
     if (!currentUser) return;

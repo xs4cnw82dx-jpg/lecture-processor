@@ -182,22 +182,32 @@
                     style="display:none;white-space:pre-wrap;max-height:600px;overflow:auto;background:#1a1a2e;color:#e0e0e0;padding:12px;border-radius:8px;font-size:13px;margin-top:8px;"></pre>
             </section>
 
-            <section class="panel" style="margin-top:12px;">
-                <h2>Cost Calculator</h2>
-                <div style="display:flex;gap:12px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
-                    <label for="calc-scenario" style="font-weight:600;">Scenario:</label>
-                    <select id="calc-scenario"
-                        style="padding:6px 10px;border-radius:6px;border:1px solid #444;background:#1a1a2e;color:#e0e0e0;font-size:14px;"></select>
-                    <label for="calc-bundle-price" style="font-weight:600;margin-left:12px;">Bundle price (€):</label>
-                    <input id="calc-bundle-price" type="number" value="2.49" step="0.01" min="0"
-                        style="width:80px;padding:6px;border-radius:6px;border:1px solid #444;background:#1a1a2e;color:#e0e0e0;font-size:14px;">
+            <section class="panel calculator-panel">
+                <div class="calculator-head">
+                    <h2>Cost Calculator</h2>
+                    <div class="calculator-meta" id="calc-pricing-version">Pricing version: -</div>
+                </div>
+                <div class="calculator-controls">
+                    <label class="calculator-control">
+                        <span>Scenario</span>
+                        <select id="calc-scenario" class="calculator-input"></select>
+                    </label>
+                    <label class="calculator-control">
+                        <span>Bundle Price (€)</span>
+                        <input id="calc-bundle-price" class="calculator-input" type="number" value="2.49" step="0.01" min="0">
+                    </label>
+                    <label class="calculator-control">
+                        <span>EUR → USD</span>
+                        <input id="calc-eur-usd" class="calculator-input" type="number" value="1.08" step="0.01" min="0.1">
+                    </label>
                 </div>
                 <div class="table-wrap">
                     <table>
                         <thead>
                             <tr>
                                 <th>Stage</th>
-                                <th>Model</th>
+                                <th>Model ID</th>
+                                <th>Modality</th>
                                 <th>Input tokens</th>
                                 <th>Output tokens</th>
                                 <th>Input cost ($)</th>
@@ -207,18 +217,32 @@
                         </thead>
                         <tbody id="calc-body"></tbody>
                         <tfoot>
-                            <tr style="font-weight:700;">
-                                <td colspan="4" style="text-align:right;">Total API cost:</td>
-                                <td id="calc-total-input">$0.000</td>
-                                <td id="calc-total-output">$0.000</td>
-                                <td id="calc-total">$0.000</td>
-                            </tr>
-                            <tr style="font-weight:700;">
-                                <td colspan="6" style="text-align:right;">Margin (bundle − cost):</td>
-                                <td id="calc-margin" style="color:#4ade80;">$0.000</td>
+                            <tr class="calculator-total-row">
+                                <td colspan="5">Total API Cost</td>
+                                <td id="calc-total-input">$0.0000</td>
+                                <td id="calc-total-output">$0.0000</td>
+                                <td id="calc-total">$0.0000</td>
                             </tr>
                         </tfoot>
                     </table>
+                </div>
+                <div class="calculator-summary">
+                    <div class="calculator-summary-item">
+                        <span>Revenue (USD)</span>
+                        <strong id="calc-revenue-usd">$0.0000</strong>
+                    </div>
+                    <div class="calculator-summary-item">
+                        <span>Margin Value</span>
+                        <strong id="calc-margin">$0.0000</strong>
+                    </div>
+                    <div class="calculator-summary-item">
+                        <span>Margin %</span>
+                        <strong id="calc-margin-pct">0.0%</strong>
+                    </div>
+                    <div class="calculator-summary-item">
+                        <span>Break-even Bundle (€)</span>
+                        <strong id="calc-break-even">€0.0000</strong>
+                    </div>
                 </div>
             </section>
         </div>

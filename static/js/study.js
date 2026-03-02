@@ -17,7 +17,7 @@ let builderAutoSaveTimer = null, builderAutoSaving = false, builderAutoSaveQueue
 let learnFlashcardIndex = 0, learnFlashcardFlipped = false, learnQuestionIndex = 0, learnScore = 0, learnAnswered = false;
 let activeLearnMode = ''; // 'flashcards','test','write','match','notes'
 let orderedFlashcards = [];
-let learnSessionRecorded = false, flashcardReviewedThisCard = false;
+let learnSessionRecorded = false;
 let audioSections = [], audioMap = [], audioReady = false, audioSpeedIndex = 1, audioHiddenForLearn = false;
 let remoteProgressCardStates = {};
 let progressTimezone = (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
@@ -77,7 +77,7 @@ let activeSetupPane = 'mastery';
 /* ── Card mastery + spaced repetition (localStorage) ── */
 const SR_MIN_INTERVAL_DAYS = 1;
 const SR_MAX_INTERVAL_DAYS = 120;
-const SR_DIFFICULTY_MULTIPLIER = { easy: 2.4, medium: 2.0, hard: 1.45 };
+const REVIEW_ACTIONS = ['retry', 'hard', 'good', 'easy'];
 function getBrowserTimezone() {
   var tz = 'UTC';
   try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (e) { }
@@ -370,20 +370,32 @@ function clampIntervalDays(value) {
   if (parsed > SR_MAX_INTERVAL_DAYS) { return SR_MAX_INTERVAL_DAYS; }
   return parsed;
 }
-function getNextIntervalDays(currentDays, correct, difficulty) {
+function normalizeReviewAction(action) {
+  var value = String(action || '').toLowerCase();
+  return REVIEW_ACTIONS.indexOf(value) >= 0 ? value : 'good';
+}
+function mapLegacyDifficultyToAction(difficulty) {
+  var value = String(difficulty || '').toLowerCase();
+  if (value === 'easy') return 'easy';
+  if (value === 'hard') return 'hard';
+  return 'good';
+}
+function getNextIntervalDaysForReviewAction(currentDays, action) {
   var current = Math.max(0, parseInt(currentDays, 10) || 0);
-  var level = String(difficulty || 'medium').toLowerCase();
-  if (!SR_DIFFICULTY_MULTIPLIER[level]) { level = 'medium'; }
-  if (!correct) {
-    if (current <= 1) { return SR_MIN_INTERVAL_DAYS; }
-    return clampIntervalDays(current * 0.45);
+  var normalized = normalizeReviewAction(action);
+  if (normalized === 'retry') {
+    return SR_MIN_INTERVAL_DAYS;
   }
-  if (current <= 0) {
-    return level === 'easy' ? 2 : 1;
+  if (normalized === 'hard') {
+    if (current <= 0) return 1;
+    return clampIntervalDays(Math.max(current + 1, current * 1.25));
   }
-  var growth = Math.max(current + 1, current * SR_DIFFICULTY_MULTIPLIER[level]);
-  if (level === 'easy') { growth = Math.max(growth, current + 2); }
-  return clampIntervalDays(growth);
+  if (normalized === 'easy') {
+    if (current <= 0) return 4;
+    return clampIntervalDays(Math.max(current + 3, current * 2.4));
+  }
+  if (current <= 0) return 2;
+  return clampIntervalDays(Math.max(current + 2, current * 1.8));
 }
 function ensureStudyActivityRecorded() {
   var today = todayLocalDateString();
@@ -408,54 +420,62 @@ function recordStudyActivity() {
   return data;
 }
 function setCardDifficulty(cardId, difficulty) {
+  var action = mapLegacyDifficultyToAction(difficulty);
+  setCardReviewAction(cardId, action);
+}
+function setCardReviewAction(cardId, action) {
   if (!cardId) return;
-  var value = String(difficulty || '').toLowerCase();
-  if (['easy', 'medium', 'hard'].indexOf(value) < 0) return;
+  var value = normalizeReviewAction(action);
   var state = loadCardState();
-  if (!state[cardId]) { state[cardId] = { seen: 0, correct: 0, wrong: 0, level: 'new', interval_days: 0, next_review_date: '', difficulty: 'medium' }; }
-  state[cardId].difficulty = value;
+  if (!state[cardId]) { state[cardId] = { seen: 0, correct: 0, wrong: 0, level: 'new', interval_days: 0, next_review_date: '', difficulty: 'medium', last_action: '' }; }
+  state[cardId].last_action = value;
+  if (value === 'hard') state[cardId].difficulty = 'hard';
+  else if (value === 'easy') state[cardId].difficulty = 'easy';
+  else state[cardId].difficulty = 'medium';
   saveCardState(state);
   updateDifficultyToolbar();
   renderMasteryGauge();
 }
+function applyReviewAction(cardId, action) {
+  if (!cardId) return;
+  var state = loadCardState();
+  if (!state[cardId]) {
+    state[cardId] = { seen: 0, correct: 0, wrong: 0, level: 'new', interval_days: 0, next_review_date: '', difficulty: 'medium', last_review_date: '', last_action: '' };
+  }
+  var entry = state[cardId];
+  var reviewAction = normalizeReviewAction(action);
+  entry.seen = (entry.seen || 0) + 1;
+  if (reviewAction === 'retry') { entry.wrong = (entry.wrong || 0) + 1; }
+  else { entry.correct = (entry.correct || 0) + 1; }
+  entry.interval_days = getNextIntervalDaysForReviewAction(entry.interval_days, reviewAction);
+  entry.last_review_date = todayLocalDateString();
+  entry.next_review_date = reviewAction === 'retry'
+    ? entry.last_review_date
+    : addDaysToLocalDate(entry.last_review_date, entry.interval_days);
+  if (reviewAction === 'retry') { entry.level = 'retry'; }
+  else if (entry.interval_days >= 14) { entry.level = 'mastered'; }
+  else { entry.level = 'familiar'; }
+  if (reviewAction === 'hard') entry.difficulty = 'hard';
+  else if (reviewAction === 'easy') entry.difficulty = 'easy';
+  else entry.difficulty = 'medium';
+  entry.last_action = reviewAction;
+  state[cardId] = entry;
+  saveCardState(state);
+  recordStudyActivity();
+  renderMasteryGauge();
+  updateTopbarDueCount();
+  updateDifficultyToolbar();
+  queueProgressSync(true);
+}
 function markCardReview(cardId, correct) {
   if (!cardId) return;
   var state = loadCardState();
-  if (!state[cardId]) {
-    state[cardId] = { seen: 0, correct: 0, wrong: 0, level: 'new', interval_days: 0, next_review_date: '', difficulty: 'medium', last_review_date: '' };
+  var entry = state[cardId] || {};
+  if (!correct) {
+    applyReviewAction(cardId, 'retry');
+    return;
   }
-  var entry = state[cardId];
-  entry.seen = (entry.seen || 0) + 1;
-  if (correct) { entry.correct = (entry.correct || 0) + 1; } else { entry.wrong = (entry.wrong || 0) + 1; }
-  entry.interval_days = getNextIntervalDays(entry.interval_days, correct, entry.difficulty || 'medium');
-  entry.last_review_date = todayLocalDateString();
-  entry.next_review_date = addDaysToLocalDate(entry.last_review_date, entry.interval_days);
-  if (entry.interval_days >= 14) { entry.level = 'mastered'; }
-  else if (entry.seen > 0) { entry.level = 'familiar'; }
-  else { entry.level = 'new'; }
-  if (!entry.difficulty) { entry.difficulty = 'medium'; }
-  state[cardId] = entry;
-  saveCardState(state);
-  recordStudyActivity();
-  renderMasteryGauge();
-  updateTopbarDueCount();
-}
-function markCardViewed(cardId) {
-  if (!cardId) return;
-  var state = loadCardState();
-  if (!state[cardId]) {
-    state[cardId] = { seen: 0, correct: 0, wrong: 0, level: 'new', interval_days: 0, next_review_date: '', difficulty: 'medium', last_review_date: '' };
-  }
-  var entry = state[cardId];
-  entry.seen = (entry.seen || 0) + 1;
-  entry.last_review_date = todayLocalDateString();
-  if (entry.level !== 'mastered') { entry.level = 'familiar'; }
-  if (!entry.difficulty) { entry.difficulty = 'medium'; }
-  state[cardId] = entry;
-  saveCardState(state);
-  recordStudyActivity();
-  renderMasteryGauge();
-  updateTopbarDueCount();
+  applyReviewAction(cardId, mapLegacyDifficultyToAction(entry.difficulty || 'medium'));
 }
 function markCardSeen(cardId, correct) { markCardReview(cardId, correct); }
 function getCardStateKeyForPack(packId) {
@@ -557,8 +577,12 @@ function orderCardsByAlgo(cards) {
       if (!cs || cs.level === 'new') { buckets.new.push(entry); }
       else if (cs.level === 'familiar') { buckets.familiar.push(entry); }
       else if (cs.level === 'mastered') { buckets.remaster.push(entry); }
-      if (cs && cs.wrong > 0) { buckets.retry.push(entry); }
-      if (cs && cs.difficulty === 'hard') { buckets.hard.push(entry); }
+      var wrongCount = Number(cs && cs.wrong || 0);
+      var correctCount = Number(cs && cs.correct || 0);
+      if (cs && (cs.level === 'retry' || cs.last_action === 'retry' || wrongCount > correctCount)) {
+        buckets.retry.push(entry);
+      }
+      if (cs && (cs.difficulty === 'hard' || cs.last_action === 'hard')) { buckets.hard.push(entry); }
     } else {
       deferred.push(entry);
     }
@@ -601,7 +625,7 @@ function updateDifficultyToolbar() {
     difficultyToolbar.classList.remove('faded');
     return;
   }
-  if (['flashcards', 'write', 'test'].indexOf(activeLearnMode) < 0) {
+  if (activeLearnMode !== 'flashcards') {
     difficultyToolbar.classList.remove('visible');
     difficultyToolbar.classList.remove('faded');
     return;
@@ -613,10 +637,11 @@ function updateDifficultyToolbar() {
     return;
   }
   var state = loadCardState();
-  var current = ((state[cardId] && state[cardId].difficulty) || 'medium').toLowerCase();
+  var entry = state[cardId] || {};
+  var current = normalizeReviewAction(entry.last_action || mapLegacyDifficultyToAction(entry.difficulty || 'medium'));
   difficultyButtons.forEach(function (btn) {
-    var diff = btn.dataset.difficulty;
-    btn.classList.toggle('active', diff === current);
+    var action = normalizeReviewAction(btn.dataset.reviewAction || 'good');
+    btn.classList.toggle('active', action === current);
   });
   difficultyToolbar.classList.add('visible');
   difficultyToolbar.classList.remove('faded');
@@ -659,7 +684,7 @@ var learnQProgress = document.getElementById('learn-q-progress'), learnQScore = 
 var writePromptEl = document.getElementById('write-prompt'), writeInputEl = document.getElementById('write-input'), writeCheckBtn = document.getElementById('write-check-btn'), writeRevealBtn = document.getElementById('write-reveal-btn'), writeFeedbackEl = document.getElementById('write-feedback'), writeNextBtn = document.getElementById('write-next-btn'), writeProgressEl = document.getElementById('write-progress');
 var matchGridEl = document.getElementById('match-grid'), matchTimerEl = document.getElementById('match-timer'), matchResultsEl = document.getElementById('match-results'), matchResultsTime = document.getElementById('match-results-time'), matchResultsBadge = document.getElementById('match-results-badge'), matchResultsHistory = document.getElementById('match-results-history'), matchPlayAgainBtn = document.getElementById('match-play-again');
 var setupOverlay = document.getElementById('setup-overlay'), setupPackName = document.getElementById('setup-pack-name'), setupCloseBtn = document.getElementById('setup-close-btn'), setupStartBtn = document.getElementById('setup-start-btn'), setupMainContent = document.getElementById('setup-main-content'), setupTabs = document.querySelectorAll('.setup-tab'), algoLane = document.getElementById('algo-lane'), algoPresets = document.querySelectorAll('.algo-preset');
-var masterySeenEl = document.getElementById('mastery-seen'), masteryTotalEl = document.getElementById('mastery-total'), masteryNewPctEl = document.getElementById('mastery-new-pct'), masteryFamiliarPctEl = document.getElementById('mastery-familiar-pct'), masteryMasteredPctEl = document.getElementById('mastery-mastered-pct'), masteryDueTodayEl = document.getElementById('mastery-due-today'), masteryUnmasteredEl = document.getElementById('mastery-unmastered'), diffEasyCountEl = document.getElementById('diff-easy-count'), diffMediumCountEl = document.getElementById('diff-medium-count'), diffHardCountEl = document.getElementById('diff-hard-count'), examRecommendationEl = document.getElementById('exam-recommendation');
+var masterySeenEl = document.getElementById('mastery-seen'), masteryTotalEl = document.getElementById('mastery-total'), masteryNewPctEl = document.getElementById('mastery-new-pct'), masteryFamiliarPctEl = document.getElementById('mastery-familiar-pct'), masteryMasteredPctEl = document.getElementById('mastery-mastered-pct'), masteryDueTodayEl = document.getElementById('mastery-due-today'), masteryUnmasteredEl = document.getElementById('mastery-unmastered'), diffRetryCountEl = document.getElementById('diff-retry-count'), diffHardCountEl = document.getElementById('diff-hard-count'), diffGoodCountEl = document.getElementById('diff-good-count'), diffEasyCountEl = document.getElementById('diff-easy-count'), examRecommendationEl = document.getElementById('exam-recommendation');
 var modePicker = document.getElementById('mode-picker'), modePickerGrid = document.getElementById('mode-picker-grid'), modePickerBack = document.getElementById('mode-picker-back');
 var builderOverlay = document.getElementById('builder-overlay'), builderBrandSub = document.getElementById('builder-brand-sub'), builderSaveBtn = document.getElementById('builder-save-btn'), builderExitBtn = document.getElementById('builder-exit-btn'), builderShareBtn = document.getElementById('builder-share-btn'), builderTitleEl = document.getElementById('builder-title'), builderSubEl = document.getElementById('builder-sub'), builderSummary = document.getElementById('builder-summary'), builderOpenLearnShortcut = document.getElementById('builder-open-learn-shortcut');
 var builderPaneButtons = document.querySelectorAll('.builder-nav-btn[data-builder-pane]'), builderStatCards = document.getElementById('builder-stat-cards'), builderStatQuestions = document.getElementById('builder-stat-questions'), builderStatDirty = document.getElementById('builder-stat-dirty');
@@ -674,7 +699,7 @@ var confirmModalOverlay = document.getElementById('confirm-modal-overlay'), conf
 var toastEl = document.getElementById('toast');
 var audioPlayerBar = document.getElementById('audio-player-bar'), audioPlayerEl = document.getElementById('audio-player-el'), audioPlayBtn = document.getElementById('audio-play-btn'), audioPlayIcon = document.getElementById('audio-play-icon'), audioPauseIcon = document.getElementById('audio-pause-icon'), audioTime = document.getElementById('audio-time'), audioProgressWrap = document.getElementById('audio-progress-wrap'), audioProgressFill = document.getElementById('audio-progress-fill'), audioSpeedBtn = document.getElementById('audio-speed-btn'), audioPackTitle = document.getElementById('audio-pack-title'), audioCloseBtn = document.getElementById('audio-close-btn');
 var audioBlobUrl = '';
-var difficultyToolbar = document.getElementById('difficulty-toolbar'), difficultyButtons = document.querySelectorAll('.difficulty-btn[data-difficulty]');
+var difficultyToolbar = document.getElementById('difficulty-toolbar'), difficultyButtons = document.querySelectorAll('.difficulty-btn[data-review-action]');
 var keyboardHints = document.querySelector('.keyboard-hints');
 
 /* ── Helpers ── */
@@ -1700,7 +1725,7 @@ function renderLessonCards() {
 function renderMasteryGauge() {
   var cards = selectedPack ? (selectedPack.flashcards || []) : [];
   var total = cards.length; var state = loadCardState();
-  var seen = 0, famCount = 0, mastCount = 0, dueToday = 0, diffEasy = 0, diffMedium = 0, diffHard = 0;
+  var seen = 0, famCount = 0, mastCount = 0, dueToday = 0, diffRetry = 0, diffHard = 0, diffGood = 0, diffEasy = 0;
   cards.forEach(function (c, i) {
     var cs = state['fc_' + i];
     if (cs && parseInt(cs.seen, 10) > 0) {
@@ -1708,10 +1733,11 @@ function renderMasteryGauge() {
       if (cs.level === 'mastered') { mastCount++; } else if (cs.level === 'familiar') { famCount++; }
       if (isDueDate(cs.next_review_date)) { dueToday++; }
     }
-    var diff = ((cs && cs.difficulty) || 'medium').toLowerCase();
-    if (diff === 'easy') diffEasy++;
-    else if (diff === 'hard') diffHard++;
-    else diffMedium++;
+    var action = normalizeReviewAction((cs && cs.last_action) || mapLegacyDifficultyToAction((cs && cs.difficulty) || 'medium'));
+    if (action === 'retry') diffRetry++;
+    else if (action === 'hard') diffHard++;
+    else if (action === 'easy') diffEasy++;
+    else diffGood++;
   });
   var newCount = total - seen;
   var unmastered = Math.max(0, total - mastCount);
@@ -1722,9 +1748,10 @@ function renderMasteryGauge() {
   masteryMasteredPctEl.textContent = total ? Math.round((mastCount / total) * 100) + '%' : '0%';
   if (masteryDueTodayEl) masteryDueTodayEl.textContent = String(dueToday);
   if (masteryUnmasteredEl) masteryUnmasteredEl.textContent = String(unmastered);
-  if (diffEasyCountEl) diffEasyCountEl.textContent = String(diffEasy);
-  if (diffMediumCountEl) diffMediumCountEl.textContent = String(diffMedium);
+  if (diffRetryCountEl) diffRetryCountEl.textContent = String(diffRetry);
   if (diffHardCountEl) diffHardCountEl.textContent = String(diffHard);
+  if (diffGoodCountEl) diffGoodCountEl.textContent = String(diffGood);
+  if (diffEasyCountEl) diffEasyCountEl.textContent = String(diffEasy);
 
   if (examRecommendationEl) {
     var folder = (selectedPack && selectedPack.folder_id) ? folders.find(function (f) { return f.folder_id === selectedPack.folder_id; }) : null;
@@ -2451,7 +2478,6 @@ function updateFlashcardContent() {
   learnFPrev.disabled = (learnFlashcardIndex === 0);
   learnFNext.disabled = (learnFlashcardIndex === cards.length - 1);
   learnFFlip.disabled = false;
-  flashcardReviewedThisCard = false;
   updateDifficultyToolbar();
   updateLearnProgressBar();
 }
@@ -2635,10 +2661,7 @@ function openPack(packId) {
     packBlock.value = selectedPack.block || '';
     packAdvancedMetadataOpen = !!String(selectedPack.semester || '').trim() || !!String(selectedPack.block || '').trim();
     syncPackAdvancedMetadataState();
-    setSafeInnerHtml(notesView, mdToHtml(selectedPack.notes_markdown || ''));
-    audioMap = selectedPack.has_audio_sync ? selectedPack.notes_audio_map.slice() : [];
-    audioSections = [];
-    if (selectedPack.has_audio_sync && audioMap.length) { decorateNotesWithAudio(notesView); }
+    renderNotesForSelectedPackBase();
     reapplyHighlightsForPack();
     initAudioForSelectedPack();
     renderFlashcardEditor(); renderQuestionEditor();
@@ -3204,20 +3227,28 @@ difficultyButtons.forEach(function (btn) {
   btn.addEventListener('click', function () {
     var cardId = getCurrentDifficultyCardId();
     if (!cardId) { return; }
-    setCardDifficulty(cardId, btn.dataset.difficulty);
+    applyReviewAction(cardId, btn.dataset.reviewAction || 'good');
     resetLearnHintVisibility();
   });
 });
 
+function applyCurrentFlashcardReviewAction(action) {
+  if (activeLearnMode !== 'flashcards') return;
+  var queue = getFlashcardQueue();
+  var entry = queue[learnFlashcardIndex];
+  if (!entry) return;
+  applyReviewAction('fc_' + entry.idx, action);
+  resetLearnHintVisibility();
+}
+
 /* Flashcard controls */
 learnFlashcard3d.addEventListener('click', function () {
+  if (suppressNextFlashcardTap) {
+    suppressNextFlashcardTap = false;
+    return;
+  }
   if (fcSliding) return;
   learnFlashcardFlipped = !learnFlashcardFlipped;
-  if (learnFlashcardFlipped && !flashcardReviewedThisCard) {
-    var queue = getFlashcardQueue();
-    var entry = queue[learnFlashcardIndex];
-    if (entry) { markCardViewed('fc_' + entry.idx); flashcardReviewedThisCard = true; }
-  }
   renderLearnFlashcard();
   resetLearnHintVisibility();
 });
@@ -3226,14 +3257,41 @@ learnFNext.addEventListener('click', function () { doFlashcardSlide('next'); res
 learnFFlip.addEventListener('click', function () {
   if (fcSliding) return;
   learnFlashcardFlipped = !learnFlashcardFlipped;
-  if (learnFlashcardFlipped && !flashcardReviewedThisCard) {
-    var queue = getFlashcardQueue();
-    var entry = queue[learnFlashcardIndex];
-    if (entry) { markCardViewed('fc_' + entry.idx); flashcardReviewedThisCard = true; }
-  }
   renderLearnFlashcard();
   resetLearnHintVisibility();
 });
+
+var flashcardTouchStartX = 0;
+var flashcardTouchStartY = 0;
+var flashcardTouchActive = false;
+var suppressNextFlashcardTap = false;
+if (learnFlashcard3d) {
+  learnFlashcard3d.addEventListener('touchstart', function (e) {
+    if (activeLearnMode !== 'flashcards' || fcSliding) return;
+    if (!e.touches || !e.touches.length) return;
+    var touch = e.touches[0];
+    flashcardTouchStartX = touch.clientX;
+    flashcardTouchStartY = touch.clientY;
+    flashcardTouchActive = true;
+  }, { passive: true });
+  learnFlashcard3d.addEventListener('touchend', function (e) {
+    if (!flashcardTouchActive || activeLearnMode !== 'flashcards' || fcSliding) return;
+    flashcardTouchActive = false;
+    if (!e.changedTouches || !e.changedTouches.length) return;
+    var touch = e.changedTouches[0];
+    var deltaX = touch.clientX - flashcardTouchStartX;
+    var deltaY = touch.clientY - flashcardTouchStartY;
+    if (Math.abs(deltaX) < 70 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
+    suppressNextFlashcardTap = true;
+    if (deltaX < 0) {
+      applyCurrentFlashcardReviewAction('retry');
+      showToast('Marked Retry');
+    } else {
+      applyCurrentFlashcardReviewAction('good');
+      showToast('Marked Good');
+    }
+  }, { passive: true });
+}
 
 /* Quiz next */
 learnQNext.addEventListener('click', function () {
@@ -3281,15 +3339,11 @@ window.addEventListener('keydown', function (e) {
     activeElement.tagName === 'SELECT' ||
     activeElement.isContentEditable
   );
-  if (!isTypingTarget && ['flashcards', 'write', 'test'].indexOf(activeLearnMode) >= 0) {
-    if (e.key === '1' || e.key === '2' || e.key === '3') {
+  if (!isTypingTarget && activeLearnMode === 'flashcards') {
+    if (e.key === '1' || e.key === '2' || e.key === '3' || e.key === '4') {
       e.preventDefault();
-      var cardId = getCurrentDifficultyCardId();
-      if (cardId) {
-        var mapped = e.key === '1' ? 'easy' : (e.key === '2' ? 'medium' : 'hard');
-        setCardDifficulty(cardId, mapped);
-        resetLearnHintVisibility();
-      }
+      var mapped = e.key === '1' ? 'retry' : (e.key === '2' ? 'hard' : (e.key === '3' ? 'good' : 'easy'));
+      applyCurrentFlashcardReviewAction(mapped);
       return;
     }
   }
@@ -3327,107 +3381,260 @@ confirmModalOverlay.addEventListener('click', function (e) { if (e.target === co
 var hlActiveColor = 'yellow';
 var hlToolbar = document.getElementById('highlight-toolbar');
 var hlClearAllBtn = document.getElementById('hl-clear-all');
+var hlUndoBtn = document.getElementById('hl-undo');
+var hlRedoBtn = document.getElementById('hl-redo');
+var hlDownloadBtn = document.getElementById('hl-download');
+var hlDownloadMenu = null;
+var HL_HISTORY_LIMIT = 50;
+var hlUndoStack = [];
+var hlRedoStack = [];
 
-function hlStorageKey() { return selectedPackId ? ('hl_' + selectedPackId) : null; }
-function loadHighlights() { var k = hlStorageKey(); if (!k) return []; try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch (e) { return []; } }
-function saveHighlights(arr) { var k = hlStorageKey(); if (!k) return; try { localStorage.setItem(k, JSON.stringify(arr)); } catch (e) { } }
+function renderNotesForSelectedPackBase() {
+  if (!notesView || !selectedPack) return;
+  setSafeInnerHtml(notesView, mdToHtml(selectedPack.notes_markdown || ''));
+  audioMap = selectedPack.has_audio_sync ? selectedPack.notes_audio_map.slice() : [];
+  audioSections = [];
+  if (selectedPack.has_audio_sync && audioMap.length) {
+    decorateNotesWithAudio(notesView);
+  }
+}
 
-function serializeHighlight(mark) {
-  var text = mark.textContent || '';
-  var color = mark.getAttribute('data-hl') || 'yellow';
+function hlStorageKey() { return selectedPackId ? ('hl_html_' + selectedPackId) : null; }
+function getHighlightBaseKey() {
+  if (!selectedPack || !selectedPackId) return '';
+  return selectedPackId + ':' + String(selectedPack.updated_at || 0) + ':' + String((selectedPack.notes_markdown || '').length);
+}
+function loadHighlightPayload() {
+  var key = hlStorageKey();
+  if (!key) return null;
+  try {
+    var parsed = JSON.parse(localStorage.getItem(key) || 'null');
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (parsed.base_key !== getHighlightBaseKey()) return null;
+    if (typeof parsed.annotated_html !== 'string') return null;
+    return parsed;
+  } catch (e) {
+    return null;
+  }
+}
+function saveHighlightMarkup(annotatedHtml) {
+  var key = hlStorageKey();
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify({
+      base_key: getHighlightBaseKey(),
+      annotated_html: String(annotatedHtml || ''),
+      saved_at: Date.now()
+    }));
+  } catch (e) { }
+}
+function clearHighlightMarkup() {
+  var key = hlStorageKey();
+  if (!key) return;
+  try { localStorage.removeItem(key); } catch (e) { }
+}
+
+function getCurrentNotesHtml() {
+  if (!notesView) return '';
+  return String(notesView.innerHTML || '');
+}
+function setNotesHtml(html) {
+  if (!notesView) return;
+  notesView.innerHTML = String(html || '');
+}
+function updateHighlightHistoryButtons() {
+  if (hlUndoBtn) hlUndoBtn.disabled = hlUndoStack.length === 0;
+  if (hlRedoBtn) hlRedoBtn.disabled = hlRedoStack.length === 0;
+}
+function pushUndoSnapshot(snapshot) {
+  if (!snapshot) return;
+  if (hlUndoStack.length && hlUndoStack[hlUndoStack.length - 1] === snapshot) return;
+  hlUndoStack.push(snapshot);
+  if (hlUndoStack.length > HL_HISTORY_LIMIT) {
+    hlUndoStack.splice(0, hlUndoStack.length - HL_HISTORY_LIMIT);
+  }
+  updateHighlightHistoryButtons();
+}
+function resetHighlightHistory(initialSnapshot) {
+  hlUndoStack = [];
+  hlRedoStack = [];
+  // Baseline snapshot is represented by current DOM state; undo stack starts empty.
+  void initialSnapshot;
+  updateHighlightHistoryButtons();
+}
+function commitHighlightMutation(mutator, successMessage) {
+  if (!notesView || !selectedPackId || typeof mutator !== 'function') return;
+  var before = getCurrentNotesHtml();
+  mutator();
+  var after = getCurrentNotesHtml();
+  if (before === after) return;
+  pushUndoSnapshot(before);
+  hlRedoStack = [];
+  updateHighlightHistoryButtons();
+  if (after && after.trim()) {
+    saveHighlightMarkup(after);
+  } else {
+    clearHighlightMarkup();
+  }
+  if (successMessage) showToast(successMessage);
+}
+
+function unwrapHighlightMark(mark) {
+  if (!mark || !mark.parentNode) return;
   var parent = mark.parentNode;
-  var prev = '', next = '';
-  if (parent) {
-    var html = parent.innerHTML || '';
-    var idx = html.indexOf(mark.outerHTML);
-    if (idx >= 0) { prev = html.substring(Math.max(0, idx - 40), idx); next = html.substring(idx + mark.outerHTML.length, idx + mark.outerHTML.length + 40); }
+  while (mark.firstChild) {
+    parent.insertBefore(mark.firstChild, mark);
   }
-  return { text: text, color: color, prev: prev, next: next };
+  parent.removeChild(mark);
+  parent.normalize();
 }
-
-function collectAndSaveHighlights() {
-  if (!notesView || !selectedPackId) return;
+function removeHighlightsInRange(range) {
+  if (!notesView || !range) return;
   var marks = notesView.querySelectorAll('mark[data-hl]');
-  var arr = [];
-  marks.forEach(function (m) { arr.push(serializeHighlight(m)); });
-  saveHighlights(arr);
+  marks.forEach(function (mark) {
+    try {
+      if (range.intersectsNode(mark)) unwrapHighlightMark(mark);
+    } catch (e) { }
+  });
 }
-
-function findTextNodeAt(root, searchText, prevCtx, nextCtx) {
-  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
-  var candidates = [];
-  var node;
-  while (node = walker.nextNode()) {
-    var idx = node.textContent.indexOf(searchText);
-    if (idx >= 0) { candidates.push({ node: node, offset: idx }); }
+function wrapTextNodeSegment(node, startOffset, endOffset, color) {
+  if (!node || startOffset >= endOffset) return;
+  var target = node;
+  if (startOffset > 0) target = target.splitText(startOffset);
+  var selectedLen = endOffset - startOffset;
+  if (selectedLen < target.nodeValue.length) {
+    target.splitText(selectedLen);
   }
-  if (candidates.length === 0) return null;
-  if (candidates.length === 1) return candidates[0];
-  // disambiguate by context
-  for (var i = 0; i < candidates.length; i++) {
-    var c = candidates[i];
-    var parentHtml = (c.node.parentNode && c.node.parentNode.innerHTML) || '';
-    if (prevCtx && parentHtml.indexOf(prevCtx) >= 0) return c;
+  var parentMark = target.parentElement && target.parentElement.closest('mark[data-hl]');
+  if (parentMark) {
+    parentMark.setAttribute('data-hl', color);
+    return;
   }
-  return candidates[0];
+  var mark = document.createElement('mark');
+  mark.setAttribute('data-hl', color);
+  target.parentNode.insertBefore(mark, target);
+  mark.appendChild(target);
+}
+function mergeAdjacentHighlightMarks(root) {
+  if (!root) return;
+  var marks = root.querySelectorAll('mark[data-hl]');
+  marks.forEach(function (mark) {
+    if (!mark.parentNode) return;
+    if (!mark.textContent) {
+      mark.remove();
+      return;
+    }
+    var next = mark.nextSibling;
+    while (
+      next &&
+      next.nodeType === Node.ELEMENT_NODE &&
+      next.tagName === 'MARK' &&
+      next.getAttribute('data-hl') === mark.getAttribute('data-hl')
+    ) {
+      while (next.firstChild) {
+        mark.appendChild(next.firstChild);
+      }
+      var toRemove = next;
+      next = next.nextSibling;
+      toRemove.remove();
+    }
+  });
+}
+function getTextNodesIntersectingRange(range) {
+  if (!range || !notesView) return [];
+  var walker = document.createTreeWalker(notesView, NodeFilter.SHOW_TEXT, {
+    acceptNode: function (node) {
+      if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      try {
+        return range.intersectsNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      } catch (e) {
+        return NodeFilter.FILTER_REJECT;
+      }
+    }
+  }, false);
+  var nodes = [];
+  var current;
+  while ((current = walker.nextNode())) {
+    nodes.push(current);
+  }
+  return nodes;
+}
+function applyColorToRange(range, color) {
+  var textNodes = getTextNodesIntersectingRange(range);
+  textNodes.forEach(function (node) {
+    var start = 0;
+    var end = node.nodeValue.length;
+    if (node === range.startContainer) start = range.startOffset;
+    if (node === range.endContainer) end = range.endOffset;
+    start = Math.max(0, Math.min(start, node.nodeValue.length));
+    end = Math.max(0, Math.min(end, node.nodeValue.length));
+    if (start < end) {
+      wrapTextNodeSegment(node, start, end, color);
+    }
+  });
+  mergeAdjacentHighlightMarks(notesView);
 }
 
 function reapplyHighlightsForPack() {
   if (!notesView || !selectedPackId) return;
-  var arr = loadHighlights();
-  arr.forEach(function (h) {
-    var found = findTextNodeAt(notesView, h.text, h.prev, h.next);
-    if (!found) return;
-    var range = document.createRange();
-    try {
-      range.setStart(found.node, found.offset);
-      range.setEnd(found.node, found.offset + h.text.length);
-    } catch (e) { return; }
-    var mark = document.createElement('mark');
-    mark.setAttribute('data-hl', h.color || 'yellow');
-    try { range.surroundContents(mark); } catch (e) { }
-  });
+  var payload = loadHighlightPayload();
+  if (!payload || !payload.annotated_html) {
+    clearHighlightMarkup();
+    resetHighlightHistory(getCurrentNotesHtml());
+    return;
+  }
+  setNotesHtml(payload.annotated_html);
+  resetHighlightHistory(getCurrentNotesHtml());
 }
 
 function applyHighlightToSelection() {
   var sel = window.getSelection();
-  if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+  if (!sel || sel.isCollapsed || !sel.rangeCount || !notesView) return;
   var range = sel.getRangeAt(0);
-  // ensure selection is within notesView
-  if (!notesView || !notesView.contains(range.commonAncestorContainer)) return;
-  var text = range.toString().trim();
-  if (!text) return;
-  if (hlActiveColor === 'eraser') {
-    // remove any marks in the selection
-    var marks = notesView.querySelectorAll('mark[data-hl]');
-    marks.forEach(function (m) {
-      if (sel.containsNode(m, true)) {
-        var parent = m.parentNode;
-        while (m.firstChild) { parent.insertBefore(m.firstChild, m); }
-        parent.removeChild(m);
-        parent.normalize();
-      }
-    });
-    sel.removeAllRanges();
-    collectAndSaveHighlights();
+  if (!notesView.contains(range.commonAncestorContainer)) return;
+  if (!range.toString().trim()) return;
+  commitHighlightMutation(function () {
+    removeHighlightsInRange(range);
+    if (hlActiveColor !== 'eraser') {
+      applyColorToRange(range, hlActiveColor);
+    }
+  });
+  sel.removeAllRanges();
+}
+
+function undoHighlightChange() {
+  if (!hlUndoStack.length || !notesView) return;
+  var current = getCurrentNotesHtml();
+  var previous = hlUndoStack.pop();
+  if (!previous || previous === current) {
+    updateHighlightHistoryButtons();
     return;
   }
-  var mark = document.createElement('mark');
-  mark.setAttribute('data-hl', hlActiveColor);
-  try { range.surroundContents(mark); } catch (e) {
-    // fallback for cross-element selections
-    mark.textContent = text;
-    range.deleteContents();
-    range.insertNode(mark);
+  hlRedoStack.push(current);
+  if (hlRedoStack.length > HL_HISTORY_LIMIT) {
+    hlRedoStack.splice(0, hlRedoStack.length - HL_HISTORY_LIMIT);
   }
-  sel.removeAllRanges();
-  collectAndSaveHighlights();
+  setNotesHtml(previous);
+  saveHighlightMarkup(previous);
+  updateHighlightHistoryButtons();
+}
+function redoHighlightChange() {
+  if (!hlRedoStack.length || !notesView) return;
+  var current = getCurrentNotesHtml();
+  var next = hlRedoStack.pop();
+  if (!next || next === current) {
+    updateHighlightHistoryButtons();
+    return;
+  }
+  pushUndoSnapshot(current);
+  setNotesHtml(next);
+  saveHighlightMarkup(next);
+  updateHighlightHistoryButtons();
 }
 
 // Toolbar color selection
 if (hlToolbar) {
   hlToolbar.querySelectorAll('.hl-btn[data-hl-color]').forEach(function (btn) {
-    if (btn.id === 'hl-clear-all') return;
     btn.addEventListener('click', function () {
       hlActiveColor = btn.getAttribute('data-hl-color') || 'yellow';
       hlToolbar.querySelectorAll('.hl-btn[data-hl-color]').forEach(function (b) { b.classList.remove('active'); });
@@ -3439,16 +3646,10 @@ if (hlToolbar) {
 // Clear all highlights
 if (hlClearAllBtn) {
   hlClearAllBtn.addEventListener('click', function () {
-    if (!notesView) return;
-    var marks = notesView.querySelectorAll('mark[data-hl]');
-    marks.forEach(function (m) {
-      var parent = m.parentNode;
-      while (m.firstChild) { parent.insertBefore(m.firstChild, m); }
-      parent.removeChild(m);
-      parent.normalize();
-    });
-    saveHighlights([]);
-    showToast('All highlights cleared.');
+    if (!notesView || !selectedPack) return;
+    commitHighlightMutation(function () {
+      renderNotesForSelectedPackBase();
+    }, 'All highlights cleared.');
   });
 }
 
@@ -3458,11 +3659,7 @@ if (notesView) {
     if (hlActiveColor !== 'eraser') return;
     var mark = e.target.closest('mark[data-hl]');
     if (!mark) return;
-    var parent = mark.parentNode;
-    while (mark.firstChild) { parent.insertBefore(mark.firstChild, mark); }
-    parent.removeChild(mark);
-    parent.normalize();
-    collectAndSaveHighlights();
+    commitHighlightMutation(function () { unwrapHighlightMark(mark); });
   });
 }
 
@@ -3473,36 +3670,104 @@ if (notesView) {
   });
 }
 
-// Download notes with highlights as HTML
-var hlDownloadBtn = document.getElementById('hl-download');
-if (hlDownloadBtn) {
-  hlDownloadBtn.addEventListener('click', function () {
-    if (!notesView || !notesView.innerHTML.trim()) {
-      showToast('No notes to download.', 'error');
-      return;
+function downloadBlob(filename, mime, textContent) {
+  var blob = new Blob([textContent], { type: mime });
+  var url = URL.createObjectURL(blob);
+  var anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+function buildNotesHtmlDocument(title, bodyHtml) {
+  var safeTitle = String(title || 'Study Notes').replace(/</g, '&lt;');
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + safeTitle + '</title><style>' +
+    'body{font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;color:#111827;line-height:1.72}' +
+    'h1,h2,h3{margin-top:1.45em}' +
+    'mark[data-hl=\"yellow\"]{background:#fef08a}' +
+    'mark[data-hl=\"green\"]{background:#bbf7d0}' +
+    'mark[data-hl=\"blue\"]{background:#bfdbfe}' +
+    'mark[data-hl=\"pink\"]{background:#fbcfe8}' +
+    '</style></head><body><h1>' + safeTitle + '</h1>' + bodyHtml + '</body></html>';
+}
+function downloadOriginalNotes() {
+  if (!selectedPack) return;
+  var title = (selectedPack.title || 'Study Notes').replace(/[^a-zA-Z0-9 _-]/g, '').substring(0, 60).trim() || 'Study Notes';
+  downloadBlob(title + ' - Original.md', 'text/markdown', String(selectedPack.notes_markdown || ''));
+  showToast('Original notes downloaded.');
+}
+function downloadAnnotatedNotes() {
+  if (!notesView || !notesView.innerHTML.trim()) {
+    showToast('No notes to download.', 'error');
+    return;
+  }
+  var title = (selectedPack && selectedPack.title) ? selectedPack.title : 'Study Notes';
+  var filename = title.replace(/[^a-zA-Z0-9 _-]/g, '').substring(0, 60).trim() || 'Study Notes';
+  var htmlDoc = buildNotesHtmlDocument(title, notesView.innerHTML);
+  downloadBlob(filename + ' - Annotated.html', 'text/html', htmlDoc);
+  showToast('Annotated notes downloaded.');
+}
+function ensureHighlightDownloadMenu() {
+  if (hlDownloadMenu || !hlToolbar) return hlDownloadMenu;
+  hlDownloadMenu = document.createElement('div');
+  hlDownloadMenu.className = 'hl-download-menu';
+  var originalBtn = document.createElement('button');
+  originalBtn.type = 'button';
+  originalBtn.className = 'hl-download-item';
+  originalBtn.textContent = 'Download Original Notes (.md)';
+  originalBtn.addEventListener('click', function () {
+    hlDownloadMenu.classList.remove('visible');
+    downloadOriginalNotes();
+  });
+  var annotatedBtn = document.createElement('button');
+  annotatedBtn.type = 'button';
+  annotatedBtn.className = 'hl-download-item';
+  annotatedBtn.textContent = 'Download Annotated Notes (.html)';
+  annotatedBtn.addEventListener('click', function () {
+    hlDownloadMenu.classList.remove('visible');
+    downloadAnnotatedNotes();
+  });
+  hlDownloadMenu.appendChild(originalBtn);
+  hlDownloadMenu.appendChild(annotatedBtn);
+  hlToolbar.appendChild(hlDownloadMenu);
+  document.addEventListener('click', function (e) {
+    if (!hlDownloadBtn || !hlDownloadMenu) return;
+    if (!hlToolbar.contains(e.target)) {
+      hlDownloadMenu.classList.remove('visible');
     }
-    var title = (selectedPack && selectedPack.title) ? selectedPack.title : 'Study Notes';
-    var htmlDoc = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' +
-      title.replace(/</g, '&lt;') + '</title><style>' +
-      'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;color:#1a1a2e;line-height:1.7}' +
-      'h1,h2,h3{margin-top:1.5em}' +
-      'mark[data-hl="yellow"]{background:#fef08a}' +
-      'mark[data-hl="green"]{background:#bbf7d0}' +
-      'mark[data-hl="blue"]{background:#bfdbfe}' +
-      'mark[data-hl="pink"]{background:#fbcfe8}' +
-      '</style></head><body>' +
-      '<h1>' + title.replace(/</g, '&lt;') + '</h1>' +
-      notesView.innerHTML +
-      '</body></html>';
-    var blob = new Blob([htmlDoc], { type: 'text/html' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = title.replace(/[^a-zA-Z0-9 _-]/g, '').substring(0, 60).trim() + ' - Highlighted.html';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast('Highlighted notes downloaded.');
+  });
+  return hlDownloadMenu;
+}
+if (hlDownloadBtn) {
+  ensureHighlightDownloadMenu();
+  hlDownloadBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var menu = ensureHighlightDownloadMenu();
+    if (!menu) return;
+    menu.classList.toggle('visible');
   });
 }
+if (hlUndoBtn) {
+  hlUndoBtn.addEventListener('click', function () { undoHighlightChange(); });
+}
+if (hlRedoBtn) {
+  hlRedoBtn.addEventListener('click', function () { redoHighlightChange(); });
+}
+document.addEventListener('keydown', function (e) {
+  if (!selectedPackId || !notesView) return;
+  var active = document.activeElement;
+  if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+  var cmdOrCtrl = e.metaKey || e.ctrlKey;
+  if (!cmdOrCtrl) return;
+  var isZ = (e.key || '').toLowerCase() === 'z';
+  if (!isZ) return;
+  e.preventDefault();
+  if (e.shiftKey) {
+    redoHighlightChange();
+  } else {
+    undoHighlightChange();
+  }
+});
+updateHighlightHistoryButtons();

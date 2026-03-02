@@ -47,7 +47,9 @@ def test_status_not_found_contract(client, monkeypatch):
     assert response.status_code == 404
     body = response.get_json()
     assert body.get("job_lost") is True
-    assert "job not found" in body.get("error", "").lower()
+    assert body.get("retryable") is True
+    assert body.get("error_code") == "JOB_TEMPORARILY_UNAVAILABLE"
+    assert "temporarily unavailable" in body.get("error", "").lower()
 
 
 def test_stripe_webhook_requires_secret(client, monkeypatch):

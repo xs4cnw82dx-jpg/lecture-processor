@@ -24,6 +24,13 @@ def upload_file():
     return legacy_app.upload_files_impl()
 
 
+@upload_bp.route('/api/tools/extract', methods=['POST'])
+def tools_extract():
+    from lecture_processor import legacy_app
+
+    return legacy_app.tools_extract_impl()
+
+
 @upload_bp.route('/status/<job_id>')
 def get_status(job_id):
     from lecture_processor import legacy_app
@@ -50,3 +57,10 @@ def processing_averages():
     from lecture_processor import legacy_app
 
     return legacy_app.processing_averages_impl()
+
+
+@upload_bp.route('/api/processing-estimate')
+def processing_estimate():
+    from lecture_processor import legacy_app
+
+    return legacy_app.processing_estimate_impl()
