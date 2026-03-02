@@ -1,0 +1,95 @@
+{
+    "version": "2026-03-02",
+    "models": {
+        "gemini-2.5-flash-lite": {
+            "label": "Gemini 2.5 Flash Lite",
+            "input_text_per_M": 0.10,
+            "input_audio_per_M": 0.30,
+            "output_per_M": 0.40
+        },
+        "gemini-2.5-pro": {
+            "label": "Gemini 2.5 Pro (≤200k)",
+            "input_text_per_M": 1.25,
+            "input_audio_per_M": null,
+            "output_per_M": 10.00
+        },
+        "gemini-2.5-pro-200k": {
+            "label": "Gemini 2.5 Pro (>200k)",
+            "input_text_per_M": 2.50,
+            "input_audio_per_M": null,
+            "output_per_M": 15.00
+        },
+        "gemini-3-flash-preview": {
+            "label": "Gemini 3 Flash Preview",
+            "input_text_per_M": 0.50,
+            "input_audio_per_M": 1.00,
+            "output_per_M": 3.00
+        }
+    },
+    "scenarios": {
+        "lecture_1h_35slides": {
+            "label": "1h Lecture + 35 slides",
+            "stages": [
+                {
+                    "stage": "Slide extraction",
+                    "model": "gemini-2.5-flash-lite",
+                    "input_tokens": 80000,
+                    "output_tokens": 15000
+                },
+                {
+                    "stage": "Audio transcription",
+                    "model": "gemini-3-flash-preview",
+                    "input_tokens": 500000,
+                    "output_tokens": 30000,
+                    "audio": true
+                },
+                {
+                    "stage": "Merge (notes)",
+                    "model": "gemini-2.5-pro",
+                    "input_tokens": 60000,
+                    "output_tokens": 25000
+                },
+                {
+                    "stage": "Study tools",
+                    "model": "gemini-2.5-flash-lite",
+                    "input_tokens": 30000,
+                    "output_tokens": 20000
+                }
+            ]
+        },
+        "slides_only_35": {
+            "label": "Slides only (35 slides)",
+            "stages": [
+                {
+                    "stage": "Slide extraction",
+                    "model": "gemini-2.5-flash-lite",
+                    "input_tokens": 80000,
+                    "output_tokens": 15000
+                },
+                {
+                    "stage": "Study tools",
+                    "model": "gemini-2.5-flash-lite",
+                    "input_tokens": 20000,
+                    "output_tokens": 15000
+                }
+            ]
+        },
+        "interview_1h": {
+            "label": "1h Interview",
+            "stages": [
+                {
+                    "stage": "Interview transcription",
+                    "model": "gemini-2.5-pro",
+                    "input_tokens": 500000,
+                    "output_tokens": 40000
+                },
+                {
+                    "stage": "Summary + sections",
+                    "model": "gemini-2.5-pro",
+                    "input_tokens": 50000,
+                    "output_tokens": 15000
+                }
+            ]
+        }
+    }
+}

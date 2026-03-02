@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lecture Processor Admin</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
 </head>
+
 <body>
     <div class="container">
         <div class="topbar">
@@ -34,29 +36,67 @@
 
         <div id="dashboard" style="display:none;">
             <section class="metrics">
-                <article class="metric"><div class="label">Total users</div><div class="value" id="m-users">0</div><div class="sub" id="m-users-sub">0 new in window</div></article>
-                <article class="metric"><div class="label">Jobs in window</div><div class="value" id="m-jobs">0</div></article>
-                <article class="metric"><div class="label">Success rate</div><div class="value" id="m-success-rate">0%</div></article>
-                <article class="metric"><div class="label">Revenue in window</div><div class="value" id="m-revenue">€0.00</div></article>
-                <article class="metric"><div class="label">Purchases in window</div><div class="value" id="m-purchases">0</div></article>
-                <article class="metric"><div class="label">Credits processed</div><div class="value" id="m-processed">0</div><div class="sub">All-time</div></article>
-                <article class="metric"><div class="label">Refunded jobs</div><div class="value" id="m-refunds">0</div></article>
-                <article class="metric"><div class="label">Avg duration</div><div class="value" id="m-duration">0s</div></article>
-                <article class="metric"><div class="label">Successful jobs</div><div class="value" id="m-success-jobs">0</div></article>
-                <article class="metric"><div class="label">Failed jobs</div><div class="value" id="m-failed-jobs">0</div></article>
-                <article class="metric"><div class="label">Rate-limit 429s</div><div class="value" id="m-rate-limit-total">0</div><div class="sub" id="m-rate-limit-sub">U: 0 · C: 0 · A: 0</div></article>
+                <article class="metric">
+                    <div class="label">Total users</div>
+                    <div class="value" id="m-users">0</div>
+                    <div class="sub" id="m-users-sub">0 new in window</div>
+                </article>
+                <article class="metric">
+                    <div class="label">Jobs in window</div>
+                    <div class="value" id="m-jobs">0</div>
+                </article>
+                <article class="metric">
+                    <div class="label">Success rate</div>
+                    <div class="value" id="m-success-rate">0%</div>
+                </article>
+                <article class="metric">
+                    <div class="label">Revenue in window</div>
+                    <div class="value" id="m-revenue">€0.00</div>
+                </article>
+                <article class="metric">
+                    <div class="label">Purchases in window</div>
+                    <div class="value" id="m-purchases">0</div>
+                </article>
+                <article class="metric">
+                    <div class="label">Credits processed</div>
+                    <div class="value" id="m-processed">0</div>
+                    <div class="sub">All-time</div>
+                </article>
+                <article class="metric">
+                    <div class="label">Refunded jobs</div>
+                    <div class="value" id="m-refunds">0</div>
+                </article>
+                <article class="metric">
+                    <div class="label">Avg duration</div>
+                    <div class="value" id="m-duration">0s</div>
+                </article>
+                <article class="metric">
+                    <div class="label">Successful jobs</div>
+                    <div class="value" id="m-success-jobs">0</div>
+                </article>
+                <article class="metric">
+                    <div class="label">Failed jobs</div>
+                    <div class="value" id="m-failed-jobs">0</div>
+                </article>
+                <article class="metric">
+                    <div class="label">Rate-limit 429s</div>
+                    <div class="value" id="m-rate-limit-total">0</div>
+                    <div class="sub" id="m-rate-limit-sub">U: 0 · C: 0 · A: 0</div>
+                </article>
             </section>
 
             <section class="charts">
                 <div class="chart-panel">
                     <h2>Success Rate Trend</h2>
                     <div class="chart-wrap" id="success-chart"></div>
-                    <div class="chart-meta"><span id="success-granularity">Granularity: day</span><span id="success-latest">Latest: 0%</span></div>
+                    <div class="chart-meta"><span id="success-granularity">Granularity: day</span><span
+                            id="success-latest">Latest: 0%</span></div>
                 </div>
                 <div class="chart-panel">
                     <h2>Revenue Trend (EUR)</h2>
                     <div class="chart-wrap" id="revenue-chart"></div>
-                    <div class="chart-meta"><span id="revenue-granularity">Granularity: day</span><span id="revenue-total">Window total: €0.00</span></div>
+                    <div class="chart-meta"><span id="revenue-granularity">Granularity: day</span><span
+                            id="revenue-total">Window total: €0.00</span></div>
                 </div>
             </section>
 
@@ -91,6 +131,9 @@
                                     <th>Status</th>
                                     <th>Duration</th>
                                     <th>Refund</th>
+                                    <th>In Tokens</th>
+                                    <th>Out Tokens</th>
+                                    <th>Total Tokens</th>
                                 </tr>
                             </thead>
                             <tbody id="jobs-body"></tbody>
@@ -129,6 +172,55 @@
                     </table>
                 </div>
             </section>
+
+            <section class="panel" style="margin-top:12px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <h2>Prompt Inventory</h2>
+                    <button class="btn" id="load-prompts-btn" type="button">Load prompts</button>
+                </div>
+                <pre id="prompts-output"
+                    style="display:none;white-space:pre-wrap;max-height:600px;overflow:auto;background:#1a1a2e;color:#e0e0e0;padding:12px;border-radius:8px;font-size:13px;margin-top:8px;"></pre>
+            </section>
+
+            <section class="panel" style="margin-top:12px;">
+                <h2>Cost Calculator</h2>
+                <div style="display:flex;gap:12px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+                    <label for="calc-scenario" style="font-weight:600;">Scenario:</label>
+                    <select id="calc-scenario"
+                        style="padding:6px 10px;border-radius:6px;border:1px solid #444;background:#1a1a2e;color:#e0e0e0;font-size:14px;"></select>
+                    <label for="calc-bundle-price" style="font-weight:600;margin-left:12px;">Bundle price (€):</label>
+                    <input id="calc-bundle-price" type="number" value="2.49" step="0.01" min="0"
+                        style="width:80px;padding:6px;border-radius:6px;border:1px solid #444;background:#1a1a2e;color:#e0e0e0;font-size:14px;">
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Stage</th>
+                                <th>Model</th>
+                                <th>Input tokens</th>
+                                <th>Output tokens</th>
+                                <th>Input cost ($)</th>
+                                <th>Output cost ($)</th>
+                                <th>Stage cost ($)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="calc-body"></tbody>
+                        <tfoot>
+                            <tr style="font-weight:700;">
+                                <td colspan="4" style="text-align:right;">Total API cost:</td>
+                                <td id="calc-total-input">$0.000</td>
+                                <td id="calc-total-output">$0.000</td>
+                                <td id="calc-total">$0.000</td>
+                            </tr>
+                            <tr style="font-weight:700;">
+                                <td colspan="6" style="text-align:right;">Margin (bundle − cost):</td>
+                                <td id="calc-margin" style="color:#4ade80;">$0.000</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </section>
         </div>
     </div>
 
@@ -138,4 +230,5 @@
     <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
     <script src="{{ url_for('static', filename=admin_js_asset or 'js/admin.js') }}"></script>
 </body>
+
 </html>
