@@ -59,6 +59,7 @@ function formatRateLimitLabel(limitName) {
         'upload': 'Upload',
         'checkout': 'Checkout',
         'analytics': 'Analytics',
+        'tools': 'Tools',
     };
     return labels[limitName] || limitName;
 }
@@ -94,7 +95,13 @@ function renderRows(tbodyId, rows, emptyText, colspan = 8) {
         tbody.appendChild(tr);
         return;
     }
-    rows.forEach((row) => tbody.appendChild(row));
+    rows.forEach((row) => {
+        if (!(row instanceof Node)) {
+            console.warn('renderRows skipped non-Node row for', tbodyId, row);
+            return;
+        }
+        tbody.appendChild(row);
+    });
 }
 
 function renderBars(containerId, labels, values, type) {
@@ -297,13 +304,19 @@ function renderDashboard(data) {
     });
     renderRows('purchases-body', purchaseRows, 'No purchases found in selected window.', 3);
 
-    const rateLimitRows = (data.recent_rate_limits || []).map((entry) => `
-                <tr>
-                    <td>${formatDate(entry.created_at)}</td>
-                    <td>${formatRateLimitLabel(entry.limit_name)}</td>
-                    <td>${entry.retry_after_seconds || 0}s</td>
-                </tr>
-            `);
+    const rateLimitRows = (data.recent_rate_limits || []).map((entry) => {
+        const tr = document.createElement('tr');
+        const tdTime = document.createElement('td');
+        tdTime.textContent = formatDate(entry.created_at);
+        const tdLimiter = document.createElement('td');
+        tdLimiter.textContent = formatRateLimitLabel(entry.limit_name);
+        const tdRetry = document.createElement('td');
+        tdRetry.textContent = `${entry.retry_after_seconds || 0}s`;
+        tr.appendChild(tdTime);
+        tr.appendChild(tdLimiter);
+        tr.appendChild(tdRetry);
+        return tr;
+    });
     renderRows('rate-limit-body', rateLimitRows, 'No rate-limit hits found in selected window.', 3);
 
     stateArea.style.display = 'none';
@@ -386,6 +399,7 @@ auth.onAuthStateChanged(async (user) => {
         signedInMeta.textContent = `Signed in as ${user.email}`;
         authBtn.textContent = 'Sign out';
         await loadAdminOverview(user);
+        await initCostCalculator();
     } else {
         if (authClient && typeof authClient.clearToken === 'function') authClient.clearToken();
         signedInMeta.textContent = 'Not signed in';
@@ -411,6 +425,7 @@ refreshBtn.addEventListener('click', async () => {
         return;
     }
     await loadAdminOverview(auth.currentUser);
+    await initCostCalculator();
 });
 
 backBtn.addEventListener('click', () => {
@@ -478,105 +493,188 @@ setActiveFilterButton();
 setActiveModeViewButton();
 
 /* ── Cost Calculator ── */
-const PRICING = {
-    'gemini-2.5-flash-lite': { label: 'Flash Lite', input_text: 0.10, input_audio: 0.30, output: 0.40 },
-    'gemini-2.5-pro': { label: 'Pro ≤200k', input_text: 1.25, input_audio: null, output: 10.00 },
-    'gemini-2.5-pro-200k': { label: 'Pro >200k', input_text: 2.50, input_audio: null, output: 15.00 },
-    'gemini-3-flash-preview': { label: '3 Flash', input_text: 0.50, input_audio: 1.00, output: 3.00 },
-};
-const SCENARIOS = {
-    'lecture_1h_35slides': {
-        label: '1h Lecture + 35 slides',
-        stages: [
-            { stage: 'Slide extraction', model: 'gemini-2.5-flash-lite', input: 80000, output: 15000, audio: false },
-            { stage: 'Audio transcription', model: 'gemini-3-flash-preview', input: 500000, output: 30000, audio: true },
-            { stage: 'Merge (notes)', model: 'gemini-2.5-pro', input: 60000, output: 25000, audio: false },
-            { stage: 'Study tools', model: 'gemini-2.5-flash-lite', input: 30000, output: 20000, audio: false },
-        ]
-    },
-    'slides_only_35': {
-        label: 'Slides only (35 slides)',
-        stages: [
-            { stage: 'Slide extraction', model: 'gemini-2.5-flash-lite', input: 80000, output: 15000, audio: false },
-            { stage: 'Study tools', model: 'gemini-2.5-flash-lite', input: 20000, output: 15000, audio: false },
-        ]
-    },
-    'interview_1h': {
-        label: '1h Interview',
-        stages: [
-            { stage: 'Transcription', model: 'gemini-2.5-pro', input: 500000, output: 40000, audio: false },
-            { stage: 'Summary + sections', model: 'gemini-2.5-pro', input: 50000, output: 15000, audio: false },
-        ]
-    },
-};
-
 const calcScenario = document.getElementById('calc-scenario');
 const calcBody = document.getElementById('calc-body');
 const calcBundlePrice = document.getElementById('calc-bundle-price');
+const calcEurUsd = document.getElementById('calc-eur-usd');
+const calcPricingVersion = document.getElementById('calc-pricing-version');
+const calcRevenueUsd = document.getElementById('calc-revenue-usd');
+const calcMargin = document.getElementById('calc-margin');
+const calcMarginPct = document.getElementById('calc-margin-pct');
+const calcBreakEven = document.getElementById('calc-break-even');
+let calculatorConfig = null;
+let calculatorBound = false;
 
-if (calcScenario && calcBody) {
-    Object.entries(SCENARIOS).forEach(([key, sc]) => {
-        const opt = document.createElement('option');
-        opt.value = key;
-        opt.textContent = sc.label;
-        calcScenario.appendChild(opt);
+function numberOrZero(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatUsd(value) {
+    return `$${numberOrZero(value).toFixed(4)}`;
+}
+
+function formatPercent(value) {
+    return `${numberOrZero(value).toFixed(1)}%`;
+}
+
+function formatEur(value) {
+    return `€${numberOrZero(value).toFixed(4)}`;
+}
+
+function resolveStageModelId(baseModelId, inputTokens) {
+    if (baseModelId === 'gemini-2.5-pro' && Number(inputTokens || 0) > 200000) {
+        return 'gemini-2.5-pro-200k';
+    }
+    return baseModelId;
+}
+
+function getCalculatorModels() {
+    return (calculatorConfig && calculatorConfig.models && typeof calculatorConfig.models === 'object')
+        ? calculatorConfig.models
+        : {};
+}
+
+function getCalculatorScenarios() {
+    return (calculatorConfig && calculatorConfig.scenarios && typeof calculatorConfig.scenarios === 'object')
+        ? calculatorConfig.scenarios
+        : {};
+}
+
+function recalcCalculatorCosts() {
+    if (!calcBody) return;
+    const models = getCalculatorModels();
+    const rows = calcBody.querySelectorAll('tr[data-stage]');
+    let totalInputCost = 0;
+    let totalOutputCost = 0;
+    let totalCost = 0;
+
+    rows.forEach((row) => {
+        const baseModel = String(row.dataset.model || '');
+        const stageName = String(row.dataset.stage || '');
+        const isAudio = row.dataset.audio === 'true';
+        const inputTokens = Math.max(0, Math.round(numberOrZero((row.querySelector('.calc-in') || {}).value)));
+        const outputTokens = Math.max(0, Math.round(numberOrZero((row.querySelector('.calc-out') || {}).value)));
+        const effectiveModel = resolveStageModelId(baseModel, inputTokens);
+        const pricing = models[effectiveModel] || models[baseModel] || {};
+        const inputTextRate = numberOrZero(pricing.input_text_per_M);
+        const inputAudioRate = pricing.input_audio_per_M === null ? NaN : numberOrZero(pricing.input_audio_per_M);
+        const outputRate = numberOrZero(pricing.output_per_M);
+        const inputRate = isAudio && Number.isFinite(inputAudioRate) ? inputAudioRate : inputTextRate;
+        const inputCost = (inputTokens / 1_000_000) * inputRate;
+        const outputCost = (outputTokens / 1_000_000) * outputRate;
+        const stageCost = inputCost + outputCost;
+
+        const modelCell = row.querySelector('.calc-model-cell');
+        if (modelCell) {
+            const label = String(pricing.label || baseModel || '-');
+            modelCell.innerHTML = `<div>${effectiveModel || baseModel || '-'}</div><div class=\"empty\">${label}</div>`;
+        }
+        const modalityCell = row.querySelector('.calc-modality');
+        if (modalityCell) {
+            modalityCell.textContent = isAudio ? 'Audio input' : 'Text / vision input';
+        }
+        const inCostCell = row.querySelector('.cost-in');
+        const outCostCell = row.querySelector('.cost-out');
+        const stageCostCell = row.querySelector('.cost-stage');
+        if (inCostCell) inCostCell.textContent = formatUsd(inputCost);
+        if (outCostCell) outCostCell.textContent = formatUsd(outputCost);
+        if (stageCostCell) stageCostCell.textContent = formatUsd(stageCost);
+
+        totalInputCost += inputCost;
+        totalOutputCost += outputCost;
+        totalCost += stageCost;
+        row.dataset.modelEffective = effectiveModel;
+        row.dataset.inputTokens = String(inputTokens);
+        row.dataset.outputTokens = String(outputTokens);
+        row.dataset.stageName = stageName;
     });
 
-    function recalcCosts() {
-        const rows = calcBody.querySelectorAll('tr[data-stage]');
-        let totalIn = 0, totalOut = 0, totalCost = 0;
-        rows.forEach(row => {
-            const model = row.dataset.model;
-            const isAudio = row.dataset.audio === 'true';
-            const inTokens = parseInt(row.querySelector('.calc-in').value) || 0;
-            const outTokens = parseInt(row.querySelector('.calc-out').value) || 0;
-            const p = PRICING[model] || { input_text: 0, input_audio: 0, output: 0 };
-            const inRate = isAudio && p.input_audio ? p.input_audio : p.input_text;
-            const inCost = (inTokens / 1_000_000) * inRate;
-            const outCost = (outTokens / 1_000_000) * p.output;
-            row.querySelector('.cost-in').textContent = `$${inCost.toFixed(4)}`;
-            row.querySelector('.cost-out').textContent = `$${outCost.toFixed(4)}`;
-            row.querySelector('.cost-stage').textContent = `$${(inCost + outCost).toFixed(4)}`;
-            totalIn += inCost;
-            totalOut += outCost;
-            totalCost += inCost + outCost;
-        });
-        document.getElementById('calc-total-input').textContent = `$${totalIn.toFixed(4)}`;
-        document.getElementById('calc-total-output').textContent = `$${totalOut.toFixed(4)}`;
-        document.getElementById('calc-total').textContent = `$${totalCost.toFixed(4)}`;
-        const bundleEur = parseFloat(calcBundlePrice.value) || 0;
-        const bundleUsd = bundleEur * 1.08;
-        const margin = bundleUsd - totalCost;
-        const marginEl = document.getElementById('calc-margin');
-        marginEl.textContent = `$${margin.toFixed(4)}`;
-        marginEl.style.color = margin >= 0 ? '#4ade80' : '#f87171';
-    }
+    const totalInputEl = document.getElementById('calc-total-input');
+    const totalOutputEl = document.getElementById('calc-total-output');
+    const totalEl = document.getElementById('calc-total');
+    if (totalInputEl) totalInputEl.textContent = formatUsd(totalInputCost);
+    if (totalOutputEl) totalOutputEl.textContent = formatUsd(totalOutputCost);
+    if (totalEl) totalEl.textContent = formatUsd(totalCost);
 
-    function loadScenario(key) {
-        const sc = SCENARIOS[key];
-        if (!sc) return;
-        clearChildren(calcBody);
-        sc.stages.forEach(s => {
-            const tr = document.createElement('tr');
-            tr.dataset.stage = s.stage;
-            tr.dataset.model = s.model;
-            tr.dataset.audio = String(s.audio || false);
-            const p = PRICING[s.model] || {};
-            tr.innerHTML = `
-                <td>${s.stage}</td>
-                <td>${p.label || s.model}</td>
-                <td><input class="calc-in" type="number" value="${s.input}" min="0" style="width:90px;padding:4px;border-radius:4px;border:1px solid #444;background:#1a1a2e;color:#e0e0e0;font-size:13px;"></td>
-                <td><input class="calc-out" type="number" value="${s.output}" min="0" style="width:90px;padding:4px;border-radius:4px;border:1px solid #444;background:#1a1a2e;color:#e0e0e0;font-size:13px;"></td>
-                <td class="cost-in">-</td>
-                <td class="cost-out">-</td>
-                <td class="cost-stage">-</td>`;
-            calcBody.appendChild(tr);
-        });
-        calcBody.querySelectorAll('input').forEach(inp => inp.addEventListener('input', recalcCosts));
-        recalcCosts();
-    }
+    const bundleEur = Math.max(0, numberOrZero(calcBundlePrice ? calcBundlePrice.value : 0));
+    const eurUsdRate = Math.max(0.1, numberOrZero(calcEurUsd ? calcEurUsd.value : 1.08));
+    const revenueUsd = bundleEur * eurUsdRate;
+    const marginValue = revenueUsd - totalCost;
+    const marginPercent = revenueUsd > 0 ? (marginValue / revenueUsd) * 100 : 0;
+    const breakEvenEur = eurUsdRate > 0 ? (totalCost / eurUsdRate) : 0;
 
-    calcScenario.addEventListener('change', () => loadScenario(calcScenario.value));
-    if (calcBundlePrice) calcBundlePrice.addEventListener('input', recalcCosts);
-    loadScenario(Object.keys(SCENARIOS)[0]);
+    if (calcRevenueUsd) calcRevenueUsd.textContent = formatUsd(revenueUsd);
+    if (calcMargin) {
+        calcMargin.textContent = formatUsd(marginValue);
+        calcMargin.style.color = marginValue >= 0 ? '#10B981' : '#EF4444';
+    }
+    if (calcMarginPct) {
+        calcMarginPct.textContent = formatPercent(marginPercent);
+        calcMarginPct.style.color = marginPercent >= 0 ? '#10B981' : '#EF4444';
+    }
+    if (calcBreakEven) calcBreakEven.textContent = formatEur(breakEvenEur);
+}
+
+function loadCalculatorScenario(scenarioKey) {
+    const scenarios = getCalculatorScenarios();
+    const scenario = scenarios[scenarioKey];
+    if (!scenario || !Array.isArray(scenario.stages) || !calcBody) return;
+    clearChildren(calcBody);
+    scenario.stages.forEach((stage) => {
+        const tr = document.createElement('tr');
+        tr.dataset.stage = String(stage.stage || '');
+        tr.dataset.model = String(stage.model || '');
+        tr.dataset.audio = String(Boolean(stage.audio));
+        tr.innerHTML = `
+            <td>${String(stage.stage || '-')}</td>
+            <td class=\"calc-model-cell\">${String(stage.model || '-')}</td>
+            <td class=\"calc-modality\">-</td>
+            <td><input class=\"calc-in calculator-input\" type=\"number\" min=\"0\" step=\"1000\" value=\"${Math.max(0, Math.round(numberOrZero(stage.input_tokens)))}\"></td>
+            <td><input class=\"calc-out calculator-input\" type=\"number\" min=\"0\" step=\"1000\" value=\"${Math.max(0, Math.round(numberOrZero(stage.output_tokens)))}\"></td>
+            <td class=\"cost-in\">$0.0000</td>
+            <td class=\"cost-out\">$0.0000</td>
+            <td class=\"cost-stage\">$0.0000</td>
+        `;
+        calcBody.appendChild(tr);
+    });
+    calcBody.querySelectorAll('input').forEach((input) => {
+        input.addEventListener('input', recalcCalculatorCosts);
+    });
+    recalcCalculatorCosts();
+}
+
+async function initCostCalculator() {
+    if (!calcScenario || !calcBody) return;
+    try {
+        const response = await authFetch('/api/admin/model-pricing');
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (!payload || typeof payload !== 'object') return;
+        calculatorConfig = payload;
+        if (calcPricingVersion) {
+            calcPricingVersion.textContent = `Pricing version: ${String(payload.version || '-')}`;
+        }
+        clearChildren(calcScenario);
+        const scenarios = getCalculatorScenarios();
+        Object.entries(scenarios).forEach(([key, scenario]) => {
+            const opt = document.createElement('option');
+            opt.value = key;
+            opt.textContent = String((scenario && scenario.label) || key);
+            calcScenario.appendChild(opt);
+        });
+
+        const firstScenario = calcScenario.options.length ? calcScenario.options[0].value : '';
+        if (firstScenario) {
+            loadCalculatorScenario(firstScenario);
+        }
+        if (!calculatorBound) {
+            calcScenario.addEventListener('change', () => loadCalculatorScenario(calcScenario.value));
+            if (calcBundlePrice) calcBundlePrice.addEventListener('input', recalcCalculatorCosts);
+            if (calcEurUsd) calcEurUsd.addEventListener('input', recalcCalculatorCosts);
+            calculatorBound = true;
+        }
+    } catch (error) {
+        console.error('Could not initialize cost calculator:', error);
+    }
 }

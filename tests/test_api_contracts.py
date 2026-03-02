@@ -47,7 +47,9 @@ def test_status_not_found_contract(client, monkeypatch):
     assert response.status_code == 404
     body = response.get_json()
     assert body.get("job_lost") is True
-    assert "job not found" in body.get("error", "").lower()
+    assert body.get("retryable") is True
+    assert body.get("error_code") == "JOB_TEMPORARILY_UNAVAILABLE"
+    assert "temporarily unavailable" in body.get("error", "").lower()
 
 
 def test_stripe_webhook_requires_secret(client, monkeypatch):
@@ -142,3 +144,65 @@ def test_status_uses_runtime_job_fallback(client, monkeypatch):
     body = response.get_json()
     assert body["status"] == "processing"
     assert body["step"] == 2
+
+
+def test_verify_email_handles_empty_body(client, monkeypatch):
+    monkeypatch.setattr(app_module, "check_rate_limit", lambda **_kwargs: (True, 0))
+
+    response = client.post("/api/verify-email", data=b"", headers={"Content-Type": "text/plain"})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload.get("allowed") is False
+
+
+def test_processing_averages_error_returns_500_without_raw_details(client, monkeypatch):
+    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u", "email": "user@example.com"})
+
+    class _BrokenDB:
+        def collection(self, _name):
+            raise RuntimeError("firestore internal detail")
+
+    monkeypatch.setattr(app_module, "db", _BrokenDB())
+
+    response = client.get("/api/processing-averages")
+
+    assert response.status_code == 500
+    payload = response.get_json()
+    assert payload.get("averages") == {}
+    assert payload.get("total_jobs") == 0
+    assert "error" not in payload
+
+
+def test_processing_estimate_uses_sanitized_total_mb_and_percentiles(client, monkeypatch):
+    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u", "email": "user@example.com"})
+
+    class _Doc:
+        def __init__(self, row):
+            self._row = row
+
+        def to_dict(self):
+            return dict(self._row)
+
+    durations = [90, 100, 110, 120, 130, 140, 150, 160]
+    docs = [
+        _Doc({
+            "status": "complete",
+            "mode": "lecture-notes",
+            "duration_seconds": d,
+            "study_features": "both",
+            "file_size_mb": 55.0,
+        })
+        for d in durations
+    ]
+    monkeypatch.setattr(app_module, "safe_query_docs_in_window", lambda *_args, **_kwargs: docs)
+
+    response = client.get("/api/processing-estimate?mode=lecture-notes&study_features=both&total_mb=55.25")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload.get("source") == "strict"
+    assert payload.get("sample_count") == 8
+    assert payload["range"]["low_seconds"] > 0
+    assert payload["range"]["typical_seconds"] >= payload["range"]["low_seconds"]
+    assert payload["range"]["high_seconds"] >= payload["range"]["typical_seconds"]

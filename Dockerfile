@@ -26,4 +26,4 @@ COPY . .
 
 EXPOSE 10000
 
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-10000} app:app"]
+CMD ["sh", "-c", "gunicorn --workers 1 --bind 0.0.0.0:${PORT:-10000} app:app"]

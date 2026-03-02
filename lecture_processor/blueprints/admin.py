@@ -22,3 +22,10 @@ def admin_prompts():
     from lecture_processor import legacy_app
 
     return legacy_app.admin_prompts_impl()
+
+
+@admin_bp.route('/api/admin/model-pricing', methods=['GET'])
+def admin_model_pricing():
+    from lecture_processor import legacy_app
+
+    return legacy_app.admin_model_pricing_impl()

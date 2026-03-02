@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tools · Lecture Processor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tools.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a href="/dashboard" class="brand" aria-label="Back to dashboard">
+      <span class="brand-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+        </svg>
+      </span>
+      <span class="brand-text">Lecture Processor</span>
+    </a>
+    <div class="topbar-actions">
+      <button type="button" class="topbar-btn" id="tools-open-library-btn">Study Library</button>
+      <button type="button" class="topbar-btn" id="tools-open-dashboard-btn">Dashboard</button>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <section class="hero-card">
+      <span class="hero-badge">Beta</span>
+      <h1>Tools</h1>
+      <p>Use Gemini 2.5 Flash Lite to extract structured text from documents and images.</p>
+      <p class="hero-meta" id="tools-user-meta">Checking sign-in...</p>
+    </section>
+
+    <section class="panel auth-required" id="tools-auth-required">
+      <h2>Sign in required</h2>
+      <p>Tools is available for signed-in users and uses slides credits per run.</p>
+      <button type="button" class="primary-btn" id="tools-signin-btn">Open Dashboard to Sign In</button>
+    </section>
+
+    <section class="panel" id="tools-app" style="display:none;">
+      <div class="tools-grid">
+        <article class="tool-card">
+          <h2>Extract Content</h2>
+          <p class="muted">Choose a source type, upload a file, and run extraction.</p>
+          <div class="source-toggle" role="tablist" aria-label="Source type">
+            <button type="button" class="source-btn active" id="source-document-btn" data-source-type="document" role="tab" aria-selected="true">Document Reader</button>
+            <button type="button" class="source-btn" id="source-image-btn" data-source-type="image" role="tab" aria-selected="false">Image Reader</button>
+          </div>
+          <label class="dropzone" id="tools-dropzone" for="tools-file-input">
+            <input type="file" id="tools-file-input" accept=".pdf,.pptx,.png,.jpg,.jpeg,.webp,.heic,.heif">
+            <div class="dropzone-title">Drop a file here or click to browse</div>
+            <div class="dropzone-sub" id="tools-dropzone-sub">PDF/PPTX up to 50 MB</div>
+          </label>
+          <div class="file-selected" id="tools-file-selected" style="display:none;">
+            <div>
+              <div class="file-name" id="tools-file-name"></div>
+              <div class="file-meta" id="tools-file-meta"></div>
+            </div>
+            <button type="button" class="ghost-btn" id="tools-file-remove-btn">Remove</button>
+          </div>
+          <div class="run-row">
+            <button type="button" class="primary-btn" id="tools-run-btn" disabled>Extract</button>
+            <span class="credit-note" id="tools-credit-text">Slides credits: -</span>
+          </div>
+          <div class="status" id="tools-status" aria-live="polite"></div>
+          <div class="billing" id="tools-billing" style="display:none;"></div>
+        </article>
+
+        <article class="tool-card result-card" id="tools-result-card">
+          <div class="result-head">
+            <h2>Result</h2>
+            <div class="result-actions">
+              <button type="button" class="ghost-btn active" id="tools-view-rendered-btn">Rendered</button>
+              <button type="button" class="ghost-btn" id="tools-view-raw-btn">Raw Markdown</button>
+              <button type="button" class="ghost-btn" id="tools-copy-btn">Copy</button>
+              <button type="button" class="ghost-btn" id="tools-download-btn">Download .md</button>
+            </div>
+          </div>
+          <div class="result-body" id="tools-result-preview"></div>
+          <pre class="result-raw" id="tools-result-markdown" style="display:none;"></pre>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/markdown-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename=tools_js_asset or 'js/tools.js') }}"></script>
+</body>
+</html>

@@ -14,6 +14,8 @@ import warnings
 import logging
 import ipaddress
 import statistics
+import random
+import math
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 try:
@@ -84,13 +86,22 @@ from lecture_processor.blueprints import auth_bp, account_bp, study_bp, upload_b
 LEGACY_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT_DIR = os.path.dirname(LEGACY_MODULE_DIR)
 
-load_dotenv()
+# In deployed environments (Render), rely on platform-managed secrets.
+if not os.getenv('RENDER'):
+    load_dotenv()
 app = Flask(
     __name__,
     template_folder=os.path.join(PROJECT_ROOT_DIR, 'templates'),
     static_folder=os.path.join(PROJECT_ROOT_DIR, 'static'),
 )
-app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(32).hex())
+_flask_secret_key = (os.getenv('FLASK_SECRET_KEY', '') or '').strip()
+if _flask_secret_key:
+    app.secret_key = _flask_secret_key
+elif os.getenv('RENDER'):
+    raise RuntimeError('FLASK_SECRET_KEY must be set in deployed environments.')
+else:
+    # Deterministic dev fallback keeps local sessions stable between restarts.
+    app.secret_key = 'dev-only-secret-key-change-me'
 if Compress is not None:
     Compress(app)
 LOG_LEVEL = (os.getenv('LOG_LEVEL', 'INFO') or 'INFO').strip().upper()
@@ -282,6 +293,8 @@ ANALYTICS_RATE_LIMIT_WINDOW_SECONDS = safe_int_env('ANALYTICS_RATE_LIMIT_WINDOW_
 ANALYTICS_RATE_LIMIT_MAX_REQUESTS = safe_int_env('ANALYTICS_RATE_LIMIT_MAX_REQUESTS', 240, minimum=10, maximum=5000)
 VIDEO_IMPORT_RATE_LIMIT_WINDOW_SECONDS = safe_int_env('VIDEO_IMPORT_RATE_LIMIT_WINDOW_SECONDS', 600, minimum=30, maximum=86400)
 VIDEO_IMPORT_RATE_LIMIT_MAX_REQUESTS = safe_int_env('VIDEO_IMPORT_RATE_LIMIT_MAX_REQUESTS', 8, minimum=1, maximum=200)
+TOOLS_RATE_LIMIT_WINDOW_SECONDS = safe_int_env('TOOLS_RATE_LIMIT_WINDOW_SECONDS', 600, minimum=30, maximum=86400)
+TOOLS_RATE_LIMIT_MAX_REQUESTS = safe_int_env('TOOLS_RATE_LIMIT_MAX_REQUESTS', 10, minimum=1, maximum=300)
 UPLOAD_MIN_FREE_DISK_BYTES = safe_int_env('UPLOAD_MIN_FREE_DISK_BYTES', 1024 * 1024 * 1024, minimum=50 * 1024 * 1024, maximum=500 * 1024 * 1024 * 1024)
 UPLOAD_DAILY_BYTE_CAP = safe_int_env('UPLOAD_DAILY_BYTE_CAP', 2 * 1024 * 1024 * 1024, minimum=100 * 1024 * 1024, maximum=5 * 1024 * 1024 * 1024 * 1024)
 UPLOAD_DAILY_COUNTER_COLLECTION = 'upload_usage_daily'
@@ -345,7 +358,7 @@ def is_dev_environment():
 
 
 def resolve_js_asset(filename):
-    """Prefer minified JS assets in non-dev environments when available."""
+    """Prefer minified JS assets in non-dev environments when available and fresh."""
     safe_name = str(filename or '').strip()
     if not safe_name.endswith('.js'):
         return safe_name
@@ -353,7 +366,14 @@ def resolve_js_asset(filename):
         return safe_name
     min_name = safe_name[:-3] + '.min.js'
     min_path = os.path.join(PROJECT_ROOT_DIR, 'static', min_name)
+    source_path = os.path.join(PROJECT_ROOT_DIR, 'static', safe_name)
     if os.path.exists(min_path):
+        try:
+            # Avoid serving stale bundles when source JS changed but minified assets were not rebuilt.
+            if os.path.exists(source_path) and os.path.getmtime(source_path) > os.path.getmtime(min_path):
+                return safe_name
+        except Exception:
+            return safe_name
         return min_name
     return safe_name
 
@@ -576,6 +596,24 @@ MODEL_AUDIO = 'gemini-3-flash-preview'
 MODEL_INTEGRATION = 'gemini-2.5-pro'
 MODEL_INTERVIEW = 'gemini-2.5-pro'
 MODEL_STUDY = 'gemini-2.5-flash-lite'
+MODEL_TOOLS = 'gemini-2.5-flash-lite'
+
+ALLOWED_TOOLS_DOC_EXTENSIONS = {'pdf', 'pptx'}
+ALLOWED_TOOLS_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'heic', 'heif'}
+ALLOWED_TOOLS_DOC_MIME_TYPES = ALLOWED_SLIDE_MIME_TYPES
+ALLOWED_TOOLS_IMAGE_MIME_TYPES = {
+    'image/png',
+    'image/jpeg',
+    'image/jpg',
+    'image/webp',
+    'image/heic',
+    'image/heif',
+}
+MAX_TOOLS_DOCUMENT_BYTES = safe_int_env('MAX_TOOLS_DOCUMENT_BYTES', 50 * 1024 * 1024, minimum=1 * 1024 * 1024, maximum=100 * 1024 * 1024)
+MAX_TOOLS_IMAGE_BYTES = safe_int_env('MAX_TOOLS_IMAGE_BYTES', 20 * 1024 * 1024, minimum=1 * 1024 * 1024, maximum=50 * 1024 * 1024)
+MODEL_PRICING_CONFIG_PATH = os.path.join(PROJECT_ROOT_DIR, 'config', 'model_pricing.json')
+MODEL_PRICING_CACHE_TTL_SECONDS = safe_int_env('MODEL_PRICING_CACHE_TTL_SECONDS', 300, minimum=30, maximum=3600)
+MODEL_PRICING_CACHE = {'loaded_at': 0.0, 'payload': None}
 
 FREE_LECTURE_CREDITS = 1
 FREE_SLIDES_CREDITS = 2
@@ -922,9 +960,19 @@ def save_job_log(job_id, job_data, finished_at):
             'email': job_data.get('user_email', ''),
             'mode': job_data.get('mode', ''),
             'status': job_data.get('status', ''),
+            'study_features': job_data.get('study_features', 'none'),
+            'interview_features_count': len(job_data.get('interview_features', [])) if isinstance(job_data.get('interview_features'), list) else 0,
             'credit_deducted': job_data.get('credit_deducted', ''),
             'credit_refunded': job_data.get('credit_refunded', False),
             'error_message': job_data.get('error', ''),
+            'failed_stage': job_data.get('failed_stage', ''),
+            'provider_error_code': job_data.get('provider_error_code', ''),
+            'retry_attempts': int(job_data.get('retry_attempts', 0) or 0),
+            'token_usage_by_stage': job_data.get('token_usage_by_stage', {}),
+            'token_input_total': int(job_data.get('token_input_total', 0) or 0),
+            'token_output_total': int(job_data.get('token_output_total', 0) or 0),
+            'token_total': int(job_data.get('token_total', 0) or 0),
+            'file_size_mb': round(float(job_data.get('file_size_mb', 0) or 0), 2),
             'started_at': started_at,
             'finished_at': finished_at,
             'duration_seconds': duration,
@@ -1902,6 +1950,21 @@ MODEL_THINKING_POLICY = {
     'gemini-2.5-pro':        {'thinking_budget': 32768},
     'gemini-3-flash-preview': {'thinking_level': 'high'},
 }
+PROVIDER_RETRY_MAX_ATTEMPTS = safe_int_env('PROVIDER_RETRY_MAX_ATTEMPTS', 3, minimum=1, maximum=6)
+PROVIDER_RETRY_BASE_SECONDS = max(0.2, min(10.0, float(os.getenv('PROVIDER_RETRY_BASE_SECONDS', '1.2') or 1.2)))
+PROVIDER_RETRY_MAX_SECONDS = max(1.0, min(30.0, float(os.getenv('PROVIDER_RETRY_MAX_SECONDS', '10.0') or 10.0)))
+PROVIDER_TRANSIENT_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
+PROVIDER_TRANSIENT_MESSAGE_HINTS = (
+    'timeout',
+    'timed out',
+    'temporarily unavailable',
+    'try again',
+    'resource exhausted',
+    'unavailable',
+    'internal error',
+    'connection reset',
+    'deadline exceeded',
+)
 
 def _build_thinking_config(model_name):
     """Build a ThinkingConfig for the given model based on MODEL_THINKING_POLICY."""
@@ -1912,6 +1975,81 @@ def _build_thinking_config(model_name):
         return types.ThinkingConfig(**policy)
     except Exception:
         return None
+
+
+def get_provider_status_code(error):
+    if error is None:
+        return None
+    for attr in ('status_code', 'code'):
+        value = getattr(error, attr, None)
+        if isinstance(value, int) and value > 0:
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+    response = getattr(error, 'response', None)
+    if response is not None:
+        value = getattr(response, 'status_code', None)
+        if isinstance(value, int) and value > 0:
+            return value
+    return None
+
+
+def classify_provider_error_code(error):
+    status_code = get_provider_status_code(error)
+    if status_code:
+        return f'HTTP_{status_code}'
+    text = str(error or '').lower()
+    if 'timeout' in text or 'timed out' in text or 'deadline exceeded' in text:
+        return 'TIMEOUT'
+    if 'resource exhausted' in text or 'rate limit' in text or 'too many requests' in text:
+        return 'RATE_LIMIT'
+    if 'unavailable' in text or 'temporarily unavailable' in text:
+        return 'UNAVAILABLE'
+    if 'connection reset' in text:
+        return 'CONNECTION_RESET'
+    return 'GENERIC'
+
+
+def is_transient_provider_error(error):
+    status_code = get_provider_status_code(error)
+    if status_code in PROVIDER_TRANSIENT_STATUS_CODES:
+        return True
+    if isinstance(error, (TimeoutError, ConnectionError)):
+        return True
+    text = str(error or '').lower()
+    return any(fragment in text for fragment in PROVIDER_TRANSIENT_MESSAGE_HINTS)
+
+
+def run_with_provider_retry(operation_name, func, retry_tracker=None):
+    attempts = max(1, PROVIDER_RETRY_MAX_ATTEMPTS)
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            result = func()
+            if retry_tracker is not None:
+                retry_tracker[operation_name] = max(retry_tracker.get(operation_name, 0), attempt - 1)
+            return result
+        except Exception as error:
+            last_error = error
+            transient = is_transient_provider_error(error)
+            if retry_tracker is not None:
+                retry_tracker[operation_name] = max(retry_tracker.get(operation_name, 0), attempt)
+            if not transient or attempt >= attempts:
+                raise
+            delay = min(PROVIDER_RETRY_MAX_SECONDS, PROVIDER_RETRY_BASE_SECONDS * (2 ** (attempt - 1)))
+            delay += random.uniform(0.0, 0.4)
+            logger.warning(
+                "Transient provider error during %s (attempt %s/%s, code=%s): %s. Retrying in %.1fs",
+                operation_name,
+                attempt,
+                attempts,
+                classify_provider_error_code(error),
+                error,
+                delay,
+            )
+            time.sleep(delay)
+    if last_error is not None:
+        raise last_error
 
 def extract_token_usage(response):
     """Extract token counts from a Gemini response's usage_metadata."""
@@ -1947,8 +2085,10 @@ class TokenAccumulator:
             'token_total': self.total,
         }
 
-def generate_with_policy(model, contents, max_output_tokens=65536):
+def generate_with_policy(model, contents, max_output_tokens=65536, retry_tracker=None, operation_name=None):
     """Unified generation wrapper that applies model-specific thinking config."""
+    if client is None:
+        raise RuntimeError('Gemini client is not configured.')
     base_config = {'max_output_tokens': max_output_tokens}
     thinking = _build_thinking_config(model)
     if thinking:
@@ -1957,16 +2097,26 @@ def generate_with_policy(model, contents, max_output_tokens=65536):
         config = types.GenerateContentConfig(**base_config)
     except Exception:
         config = types.GenerateContentConfig(max_output_tokens=max_output_tokens)
-    return client.models.generate_content(
-        model=model,
-        contents=contents,
-        config=config
+    return run_with_provider_retry(
+        operation_name or f'generate_content:{model}',
+        lambda: client.models.generate_content(
+            model=model,
+            contents=contents,
+            config=config,
+        ),
+        retry_tracker=retry_tracker,
     )
 
-def generate_with_optional_thinking(model, prompt_text, max_output_tokens=65536, thinking_budget=None):
+def generate_with_optional_thinking(model, prompt_text, max_output_tokens=65536, thinking_budget=None, retry_tracker=None, operation_name=None):
     """Convenience wrapper for text-only prompts. Uses model policy for thinking config."""
     contents = [types.Content(role='user', parts=[types.Part.from_text(text=prompt_text)])]
-    return generate_with_policy(model, contents, max_output_tokens=max_output_tokens)
+    return generate_with_policy(
+        model,
+        contents,
+        max_output_tokens=max_output_tokens,
+        retry_tracker=retry_tracker,
+        operation_name=operation_name,
+    )
 
 def convert_audio_to_mp3_with_ytdlp(local_audio_path):
     return file_service.convert_audio_to_mp3_with_ytdlp(
@@ -2093,6 +2243,17 @@ def sanitize_progress_date(value):
 def sanitize_int(value, default=0, min_value=0, max_value=10_000_000):
     try:
         parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed < min_value:
+        return min_value
+    if parsed > max_value:
+        return max_value
+    return parsed
+
+def sanitize_float(value, default=0.0, min_value=0.0, max_value=10_000_000.0):
+    try:
+        parsed = float(value)
     except (TypeError, ValueError):
         return default
     if parsed < min_value:
@@ -2384,7 +2545,7 @@ def get_study_card_state_doc(uid, pack_id):
     safe_pack_id = str(pack_id or '').replace('/', '_')
     return study_repo.study_card_state_doc_ref(db, uid, safe_pack_id)
 
-def generate_study_materials(source_text, flashcard_selection, question_selection, study_features='both', output_language='English'):
+def generate_study_materials(source_text, flashcard_selection, question_selection, study_features='both', output_language='English', retry_tracker=None):
     if study_features == 'none':
         return [], [], None
     flashcard_amount, question_amount = resolve_study_amounts(flashcard_selection, question_selection, source_text)
@@ -2401,7 +2562,13 @@ def generate_study_materials(source_text, flashcard_selection, question_selectio
         source_text=source_text[:MAX_SOURCE_TEXT_LEN],
     )
     try:
-        response = generate_with_policy(MODEL_STUDY, [types.Content(role='user', parts=[types.Part.from_text(text=prompt)])], max_output_tokens=32768)
+        response = generate_with_policy(
+            MODEL_STUDY,
+            [types.Content(role='user', parts=[types.Part.from_text(text=prompt)])],
+            max_output_tokens=32768,
+            retry_tracker=retry_tracker,
+            operation_name='study_materials_generation',
+        )
         parsed = extract_json_payload(response.text)
         if not isinstance(parsed, dict):
             return [], [], 'Study materials JSON parsing failed.'
@@ -2416,7 +2583,7 @@ def generate_study_materials(source_text, flashcard_selection, question_selectio
     except Exception as e:
         return [], [], f'Study materials generation failed: {e}'
 
-def generate_interview_enhancements(transcript_text, selected_features, output_language='English'):
+def generate_interview_enhancements(transcript_text, selected_features, output_language='English', retry_tracker=None):
     summary_text = None
     sectioned_text = None
     errors = []
@@ -2424,13 +2591,27 @@ def generate_interview_enhancements(transcript_text, selected_features, output_l
         try:
             if feature == 'summary':
                 prompt = PROMPT_INTERVIEW_SUMMARY.format(transcript=transcript_text[:120000], output_language=output_language)
-                response = generate_with_optional_thinking(MODEL_STUDY, prompt, max_output_tokens=8192, thinking_budget=384)
+                response = generate_with_optional_thinking(
+                    MODEL_STUDY,
+                    prompt,
+                    max_output_tokens=8192,
+                    thinking_budget=384,
+                    retry_tracker=retry_tracker,
+                    operation_name='interview_summary_generation',
+                )
                 summary_text = (response.text or '').strip()
                 if not summary_text:
                     errors.append('Summary generation returned empty output.')
             elif feature == 'sections':
                 prompt = PROMPT_INTERVIEW_SECTIONED.format(transcript=transcript_text[:120000], output_language=output_language)
-                response = generate_with_optional_thinking(MODEL_STUDY, prompt, max_output_tokens=32768, thinking_budget=384)
+                response = generate_with_optional_thinking(
+                    MODEL_STUDY,
+                    prompt,
+                    max_output_tokens=32768,
+                    thinking_budget=384,
+                    retry_tracker=retry_tracker,
+                    operation_name='interview_sections_generation',
+                )
                 sectioned_text = (response.text or '').strip()
                 if not sectioned_text:
                     errors.append('Sectioned transcript generation returned empty output.')
@@ -2515,9 +2696,24 @@ def wait_for_file_processing(uploaded_file):
     wait_interval = 5
     total_waited = 0
     while total_waited < max_wait_time:
-        file_info = client.files.get(name=uploaded_file.name)
-        if file_info.state.name == 'ACTIVE': return True
-        elif file_info.state.name == 'FAILED': raise Exception(f"File processing failed: {uploaded_file.name}")
+        try:
+            file_info = client.files.get(name=uploaded_file.name)
+        except Exception as error:
+            if not is_transient_provider_error(error):
+                raise
+            logger.warning(
+                "Transient error while checking file status for %s (code=%s): %s",
+                getattr(uploaded_file, 'name', '<unknown>'),
+                classify_provider_error_code(error),
+                error,
+            )
+            time.sleep(wait_interval)
+            total_waited += wait_interval
+            continue
+        if file_info.state.name == 'ACTIVE':
+            return True
+        elif file_info.state.name == 'FAILED':
+            raise Exception(f"File processing failed: {uploaded_file.name}")
         time.sleep(wait_interval)
         total_waited += wait_interval
     raise Exception(f"File processing timed out after {max_wait_time} seconds")
@@ -2526,11 +2722,13 @@ def cleanup_files(local_paths, gemini_files):
     for path in local_paths:
         try:
             if os.path.exists(path): os.remove(path)
-        except Exception as e: print(f"Warning: Could not delete local file {path}: {e}")
+        except Exception as e:
+            logger.warning("Could not delete local file %s: %s", path, e)
     for gemini_file in gemini_files:
         try:
             client.files.delete(name=gemini_file.name)
-        except Exception as e: print(f"Warning: Could not delete Gemini file {gemini_file.name}: {e}")
+        except Exception as e:
+            logger.warning("Could not delete Gemini file %s: %s", getattr(gemini_file, 'name', '<unknown>'), e)
 
 def parse_audio_markers_from_notes(notes_markdown):
     if not notes_markdown:
@@ -2568,23 +2766,33 @@ def format_transcript_with_timestamps(segments):
         lines.append(f"[{start_ms}-{end_ms}] {text}")
     return '\n'.join(lines)
 
-def transcribe_audio_plain(audio_file, audio_mime_type, output_language='English'):
+def transcribe_audio_plain(audio_file, audio_mime_type, output_language='English', retry_tracker=None):
     output_language = OUTPUT_LANGUAGE_MAP.get(str(output_language).lower(), str(output_language))
     prompt = PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
-    response = generate_with_policy(MODEL_AUDIO, [types.Content(role='user', parts=[
-        types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type),
-        types.Part.from_text(text=prompt)
-    ])])
+    response = generate_with_policy(
+        MODEL_AUDIO,
+        [types.Content(role='user', parts=[
+            types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type),
+            types.Part.from_text(text=prompt),
+        ])],
+        retry_tracker=retry_tracker,
+        operation_name='audio_transcription',
+    )
     return (getattr(response, 'text', '') or '').strip()
 
-def transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_language='English'):
+def transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_language='English', retry_tracker=None):
     output_language = OUTPUT_LANGUAGE_MAP.get(str(output_language).lower(), str(output_language))
     prompt = PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED.format(output_language=output_language)
     try:
-        response = generate_with_policy(MODEL_AUDIO, [types.Content(role='user', parts=[
-            types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type),
-            types.Part.from_text(text=prompt)
-        ])])
+        response = generate_with_policy(
+            MODEL_AUDIO,
+            [types.Content(role='user', parts=[
+                types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type),
+                types.Part.from_text(text=prompt),
+            ])],
+            retry_tracker=retry_tracker,
+            operation_name='audio_transcription_timestamped',
+        )
         parsed = extract_json_payload(getattr(response, 'text', '') or '')
         if not isinstance(parsed, dict):
             raise ValueError('Timestamped transcription JSON not found')
@@ -2616,10 +2824,15 @@ def transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_languag
     except Exception as e:
         logger.warning(f"⚠️ Timestamp transcription failed, falling back to plain transcript: {e}")
         fallback_prompt = PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
-        fallback_response = generate_with_policy(MODEL_AUDIO, [types.Content(role='user', parts=[
-            types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type),
-            types.Part.from_text(text=fallback_prompt)
-        ])])
+        fallback_response = generate_with_policy(
+            MODEL_AUDIO,
+            [types.Content(role='user', parts=[
+                types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type),
+                types.Part.from_text(text=fallback_prompt),
+            ])],
+            retry_tracker=retry_tracker,
+            operation_name='audio_transcription_fallback',
+        )
         return (getattr(fallback_response, 'text', '') or '').strip(), []
 
 def ensure_study_audio_root():
@@ -3138,12 +3351,30 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
     set_fields = lambda **fields: update_job_fields(job_id, **fields)
     get_fields = lambda: get_job_snapshot(job_id) or {}
     tokens = TokenAccumulator()
+    retry_tracker = {}
+    failed_stage = 'initialization'
     try:
         set_fields(status='processing', step=1, step_description='Extracting text from slides...')
-        pdf_file = client.files.upload(file=pdf_path, config={'mime_type': 'application/pdf'})
+        failed_stage = 'slide_upload'
+        pdf_file = run_with_provider_retry(
+            'slide_upload',
+            lambda: client.files.upload(file=pdf_path, config={'mime_type': 'application/pdf'}),
+            retry_tracker=retry_tracker,
+        )
         gemini_files.append(pdf_file)
-        wait_for_file_processing(pdf_file)
-        response = generate_with_policy(MODEL_SLIDES, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=pdf_file.uri, mime_type='application/pdf'), types.Part.from_text(text=PROMPT_SLIDE_EXTRACTION)])])
+        failed_stage = 'slide_file_processing'
+        run_with_provider_retry(
+            'slide_file_processing',
+            lambda: wait_for_file_processing(pdf_file),
+            retry_tracker=retry_tracker,
+        )
+        failed_stage = 'slide_extraction'
+        response = generate_with_policy(
+            MODEL_SLIDES,
+            [types.Content(role='user', parts=[types.Part.from_uri(file_uri=pdf_file.uri, mime_type='application/pdf'), types.Part.from_text(text=PROMPT_SLIDE_EXTRACTION)])],
+            retry_tracker=retry_tracker,
+            operation_name='slide_extraction',
+        )
         tokens.record('slide_extraction', response)
         slide_text = response.text
         set_fields(slide_text=slide_text, step=2, step_description='Transcribing audio...')
@@ -3153,15 +3384,36 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
             local_paths.append(converted_audio_path)
         set_fields(step_description='Optimizing audio for faster processing...')
         audio_mime_type = get_mime_type(converted_audio_path)
-        audio_file = client.files.upload(file=converted_audio_path, config={'mime_type': audio_mime_type})
+        failed_stage = 'audio_upload'
+        audio_file = run_with_provider_retry(
+            'audio_upload',
+            lambda: client.files.upload(file=converted_audio_path, config={'mime_type': audio_mime_type}),
+            retry_tracker=retry_tracker,
+        )
         gemini_files.append(audio_file)
         set_fields(step_description='Processing audio file (this may take a few minutes)...')
-        wait_for_file_processing(audio_file)
+        failed_stage = 'audio_file_processing'
+        run_with_provider_retry(
+            'audio_file_processing',
+            lambda: wait_for_file_processing(audio_file),
+            retry_tracker=retry_tracker,
+        )
         set_fields(step_description='Generating transcript...')
+        failed_stage = 'audio_transcription'
         if FEATURE_AUDIO_SECTION_SYNC:
-            transcript, transcript_segments = transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_language)
+            transcript, transcript_segments = transcribe_audio_with_timestamps(
+                audio_file,
+                audio_mime_type,
+                output_language,
+                retry_tracker=retry_tracker,
+            )
         else:
-            transcript = transcribe_audio_plain(audio_file, audio_mime_type, output_language)
+            transcript = transcribe_audio_plain(
+                audio_file,
+                audio_mime_type,
+                output_language,
+                retry_tracker=retry_tracker,
+            )
             transcript_segments = []
         set_fields(
             transcript=transcript,
@@ -3175,7 +3427,13 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
             merge_prompt = PROMPT_MERGE_WITH_AUDIO_MARKERS.format(slide_text=slide_text, transcript=merge_transcript, output_language=output_language)
         else:
             merge_prompt = PROMPT_MERGE_TEMPLATE.format(slide_text=slide_text, transcript=transcript, output_language=output_language)
-        response = generate_with_policy(MODEL_INTEGRATION, [types.Content(role='user', parts=[types.Part.from_text(text=merge_prompt)])])
+        failed_stage = 'notes_merge'
+        response = generate_with_policy(
+            MODEL_INTEGRATION,
+            [types.Content(role='user', parts=[types.Part.from_text(text=merge_prompt)])],
+            retry_tracker=retry_tracker,
+            operation_name='notes_merge',
+        )
         tokens.record('merge', response)
         merged_notes = response.text
         set_fields(
@@ -3186,12 +3444,14 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
         job_data = get_fields()
         if job_data.get('study_features', 'none') != 'none':
             set_fields(step=4, step_description='Generating flashcards and practice test...')
+            failed_stage = 'study_tools_generation'
             flashcards, test_questions, study_error = generate_study_materials(
                 merged_notes,
                 job_data.get('flashcard_selection', '20'),
                 job_data.get('question_selection', '10'),
                 job_data.get('study_features', 'none'),
-                output_language
+                output_language,
+                retry_tracker=retry_tracker,
             )
             set_fields(
                 flashcards=flashcards,
@@ -3210,7 +3470,13 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
         )
     except Exception as e:
         logger.exception("Lecture-notes processing failed for job %s", job_id)
-        set_fields(status='error', error=PROCESSING_PUBLIC_ERROR_MESSAGE)
+        set_fields(
+            status='error',
+            error=PROCESSING_PUBLIC_ERROR_MESSAGE,
+            failed_stage=failed_stage,
+            retry_attempts=sum(int(v or 0) for v in retry_tracker.values()),
+            provider_error_code=classify_provider_error_code(e),
+        )
         # Refund the credit since processing failed
         failed_job = get_fields()
         uid = failed_job.get('user_id')
@@ -3224,7 +3490,11 @@ def process_lecture_notes(job_id, pdf_path, audio_path):
         cleanup_files(local_paths, gemini_files)
         # Save token telemetry and log the job
         finished_at = time.time()
-        set_fields(finished_at=finished_at, **tokens.as_dict())
+        set_fields(
+            finished_at=finished_at,
+            retry_attempts=sum(int(v or 0) for v in retry_tracker.values()),
+            **tokens.as_dict(),
+        )
         final_job = get_fields()
         save_job_log(job_id, final_job, finished_at)
 
@@ -3234,24 +3504,44 @@ def process_slides_only(job_id, pdf_path):
     set_fields = lambda **fields: update_job_fields(job_id, **fields)
     get_fields = lambda: get_job_snapshot(job_id) or {}
     tokens = TokenAccumulator()
+    retry_tracker = {}
+    failed_stage = 'initialization'
     try:
         set_fields(status='processing', step=1, step_description='Extracting text from slides...')
-        pdf_file = client.files.upload(file=pdf_path, config={'mime_type': 'application/pdf'})
+        failed_stage = 'slide_upload'
+        pdf_file = run_with_provider_retry(
+            'slide_upload',
+            lambda: client.files.upload(file=pdf_path, config={'mime_type': 'application/pdf'}),
+            retry_tracker=retry_tracker,
+        )
         gemini_files.append(pdf_file)
-        wait_for_file_processing(pdf_file)
-        response = generate_with_policy(MODEL_SLIDES, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=pdf_file.uri, mime_type='application/pdf'), types.Part.from_text(text=PROMPT_SLIDE_EXTRACTION)])])
+        failed_stage = 'slide_file_processing'
+        run_with_provider_retry(
+            'slide_file_processing',
+            lambda: wait_for_file_processing(pdf_file),
+            retry_tracker=retry_tracker,
+        )
+        failed_stage = 'slide_extraction'
+        response = generate_with_policy(
+            MODEL_SLIDES,
+            [types.Content(role='user', parts=[types.Part.from_uri(file_uri=pdf_file.uri, mime_type='application/pdf'), types.Part.from_text(text=PROMPT_SLIDE_EXTRACTION)])],
+            retry_tracker=retry_tracker,
+            operation_name='slide_extraction',
+        )
         tokens.record('slide_extraction', response)
         extracted_text = response.text
         set_fields(result=extracted_text)
         job_data = get_fields()
         if job_data.get('study_features', 'none') != 'none':
             set_fields(step=2, step_description='Generating flashcards and practice test...')
+            failed_stage = 'study_tools_generation'
             flashcards, test_questions, study_error = generate_study_materials(
                 extracted_text,
                 job_data.get('flashcard_selection', '20'),
                 job_data.get('question_selection', '10'),
                 job_data.get('study_features', 'none'),
-                job_data.get('output_language', 'English')
+                job_data.get('output_language', 'English'),
+                retry_tracker=retry_tracker,
             )
             set_fields(
                 flashcards=flashcards,
@@ -3270,7 +3560,13 @@ def process_slides_only(job_id, pdf_path):
         )
     except Exception as e:
         logger.exception("Slides-only processing failed for job %s", job_id)
-        set_fields(status='error', error=PROCESSING_PUBLIC_ERROR_MESSAGE)
+        set_fields(
+            status='error',
+            error=PROCESSING_PUBLIC_ERROR_MESSAGE,
+            failed_stage=failed_stage,
+            retry_attempts=sum(int(v or 0) for v in retry_tracker.values()),
+            provider_error_code=classify_provider_error_code(e),
+        )
         # Refund the credit since processing failed
         failed_job = get_fields()
         uid = failed_job.get('user_id')
@@ -3284,7 +3580,11 @@ def process_slides_only(job_id, pdf_path):
         cleanup_files(local_paths, gemini_files)
         # Save token telemetry and log the job
         finished_at = time.time()
-        set_fields(finished_at=finished_at, **tokens.as_dict())
+        set_fields(
+            finished_at=finished_at,
+            retry_attempts=sum(int(v or 0) for v in retry_tracker.values()),
+            **tokens.as_dict(),
+        )
         final_job = get_fields()
         save_job_log(job_id, final_job, finished_at)
 
@@ -3294,6 +3594,8 @@ def process_interview_transcription(job_id, audio_path):
     set_fields = lambda **fields: update_job_fields(job_id, **fields)
     get_fields = lambda: get_job_snapshot(job_id) or {}
     tokens = TokenAccumulator()
+    retry_tracker = {}
+    failed_stage = 'initialization'
     try:
         set_fields(status='processing', step=1, step_description='Optimizing audio for faster processing...')
         output_language = get_fields().get('output_language', 'English')
@@ -3302,13 +3604,29 @@ def process_interview_transcription(job_id, audio_path):
             local_paths.append(converted_audio_path)
         set_fields(audio_storage_key=persist_audio_for_study_pack(job_id, converted_audio_path))
         audio_mime_type = get_mime_type(converted_audio_path)
-        audio_file = client.files.upload(file=converted_audio_path, config={'mime_type': audio_mime_type})
+        failed_stage = 'audio_upload'
+        audio_file = run_with_provider_retry(
+            'audio_upload',
+            lambda: client.files.upload(file=converted_audio_path, config={'mime_type': audio_mime_type}),
+            retry_tracker=retry_tracker,
+        )
         gemini_files.append(audio_file)
         set_fields(step_description='Processing audio file (this may take a few minutes)...')
-        wait_for_file_processing(audio_file)
+        failed_stage = 'audio_file_processing'
+        run_with_provider_retry(
+            'audio_file_processing',
+            lambda: wait_for_file_processing(audio_file),
+            retry_tracker=retry_tracker,
+        )
         set_fields(step_description='Generating transcript with timestamps...')
         interview_prompt = PROMPT_INTERVIEW_TRANSCRIPTION.format(output_language=output_language)
-        response = generate_with_policy(MODEL_INTERVIEW, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=interview_prompt)])])
+        failed_stage = 'interview_transcription'
+        response = generate_with_policy(
+            MODEL_INTERVIEW,
+            [types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=interview_prompt)])],
+            retry_tracker=retry_tracker,
+            operation_name='interview_transcription',
+        )
         tokens.record('interview_transcription', response)
         transcript_text = response.text or ''
         set_fields(transcript=transcript_text, result=transcript_text)
@@ -3317,7 +3635,13 @@ def process_interview_transcription(job_id, audio_path):
         selected_features = job_data.get('interview_features', [])
         if selected_features:
             set_fields(step=2, step_description='Creating interview summary and sections...')
-            enhancement = generate_interview_enhancements(transcript_text, selected_features, output_language)
+            failed_stage = 'interview_enhancements'
+            enhancement = generate_interview_enhancements(
+                transcript_text,
+                selected_features,
+                output_language,
+                retry_tracker=retry_tracker,
+            )
             set_fields(
                 interview_summary=enhancement.get('summary'),
                 interview_sections=enhancement.get('sections'),
@@ -3353,7 +3677,13 @@ def process_interview_transcription(job_id, audio_path):
         )
     except Exception as e:
         logger.exception("Interview processing failed for job %s", job_id)
-        set_fields(status='error', error=PROCESSING_PUBLIC_ERROR_MESSAGE)
+        set_fields(
+            status='error',
+            error=PROCESSING_PUBLIC_ERROR_MESSAGE,
+            failed_stage=failed_stage,
+            retry_attempts=sum(int(v or 0) for v in retry_tracker.values()),
+            provider_error_code=classify_provider_error_code(e),
+        )
         # Refund the credit since processing failed
         failed_job = get_fields()
         uid = failed_job.get('user_id')
@@ -3374,7 +3704,11 @@ def process_interview_transcription(job_id, audio_path):
         cleanup_files(local_paths, gemini_files)
         # Save token telemetry and log the job
         finished_at = time.time()
-        set_fields(finished_at=finished_at, **tokens.as_dict())
+        set_fields(
+            finished_at=finished_at,
+            retry_attempts=sum(int(v or 0) for v in retry_tracker.values()),
+            **tokens.as_dict(),
+        )
         final_job = get_fields()
         save_job_log(job_id, final_job, finished_at)
 
@@ -3408,6 +3742,10 @@ def calendar_dashboard():
 @app.route('/features')
 def features_page():
     return render_template('features.html')
+
+@app.route('/tools')
+def tools_page():
+    return render_template('tools.html', tools_js_asset=resolve_js_asset('js/tools.js'))
 
 @app.route('/admin')
 def admin_dashboard():
@@ -3603,6 +3941,11 @@ def admin_export_impl():
 
     return admin_api_service.admin_export(sys.modules[__name__], request)
 
+def admin_model_pricing_impl():
+    from lecture_processor.services import admin_api_service
+
+    return admin_api_service.admin_model_pricing(sys.modules[__name__], request)
+
 def admin_prompts_impl():
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
@@ -3615,14 +3958,174 @@ def admin_prompts_impl():
     return jsonify({'prompts': get_prompt_inventory()})
 
 
+def _estimate_size_bucket(total_mb):
+    try:
+        value = float(total_mb or 0.0)
+    except Exception:
+        value = 0.0
+    if value <= 0:
+        return 'unknown'
+    if value < 25:
+        return 's'
+    if value < 100:
+        return 'm'
+    if value < 300:
+        return 'l'
+    return 'xl'
+
+
+def _duration_percentile(sorted_values, percentile):
+    if not sorted_values:
+        return 0
+    if len(sorted_values) == 1:
+        return int(round(sorted_values[0]))
+    pos = max(0.0, min(1.0, float(percentile))) * (len(sorted_values) - 1)
+    lo = int(math.floor(pos))
+    hi = int(math.ceil(pos))
+    if lo == hi:
+        return int(round(sorted_values[lo]))
+    frac = pos - lo
+    value = sorted_values[lo] + (sorted_values[hi] - sorted_values[lo]) * frac
+    return int(round(value))
+
+
+def _heuristic_estimate_range(mode, total_mb, study_features, interview_features_count):
+    mb = max(0.0, float(total_mb or 0.0))
+    if mode == 'lecture-notes':
+        base = 70 + (mb * 1.0)
+        if study_features == 'none':
+            base -= 18
+        elif study_features == 'both':
+            base += 12
+    elif mode == 'slides-only':
+        base = 25 + (mb * 0.6)
+        if study_features in {'flashcards', 'test', 'both'}:
+            base += 10
+    else:
+        base = 45 + (mb * 1.2) + (int(interview_features_count or 0) * 16)
+    typical = max(20, int(round(base)))
+    low = max(15, int(round(typical * 0.72)))
+    high = max(low + 10, int(round(typical * 1.34)))
+    return low, typical, high
+
+
+def get_model_pricing_config(force_reload=False):
+    now_ts = time.time()
+    cached = MODEL_PRICING_CACHE.get('payload')
+    loaded_at = float(MODEL_PRICING_CACHE.get('loaded_at', 0.0) or 0.0)
+    if (not force_reload) and isinstance(cached, dict) and cached and (now_ts - loaded_at) < MODEL_PRICING_CACHE_TTL_SECONDS:
+        return json.loads(json.dumps(cached))
+
+    with open(MODEL_PRICING_CONFIG_PATH, 'r', encoding='utf-8') as handle:
+        payload = json.load(handle)
+    if not isinstance(payload, dict):
+        raise ValueError(f'Model pricing config must be a JSON object: {MODEL_PRICING_CONFIG_PATH}')
+    MODEL_PRICING_CACHE['payload'] = payload
+    MODEL_PRICING_CACHE['loaded_at'] = now_ts
+    return json.loads(json.dumps(payload))
+
+
+def processing_estimate_impl():
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
+    mode = str(request.args.get('mode', 'lecture-notes') or 'lecture-notes').strip().lower()
+    if mode not in {'lecture-notes', 'slides-only', 'interview'}:
+        return jsonify({'error': 'Invalid mode'}), 400
+    study_features = str(request.args.get('study_features', 'none') or 'none').strip().lower()
+    if study_features not in {'none', 'flashcards', 'test', 'both'}:
+        study_features = 'none'
+    interview_features_count = sanitize_int(request.args.get('interview_features_count', 0), default=0, min_value=0, max_value=2)
+    total_mb = sanitize_float(request.args.get('total_mb', 0), default=0.0, min_value=0.0, max_value=1024.0)
+    requested_bucket = _estimate_size_bucket(total_mb)
+
+    # Query last 30 days for better recency while keeping reads bounded.
+    window_start = time.time() - (30 * 86400)
+    docs = safe_query_docs_in_window('job_logs', 'finished_at', window_start, order_desc=True, limit=600)
+    strict = []
+    feature_only = []
+    mode_only = []
+
+    for doc in docs:
+        row = doc.to_dict() if hasattr(doc, 'to_dict') else {}
+        if not isinstance(row, dict):
+            continue
+        if str(row.get('status', '')).lower() != 'complete':
+            continue
+        if str(row.get('mode', '')).lower() != mode:
+            continue
+        duration = row.get('duration_seconds', 0)
+        if not isinstance(duration, (int, float)) or duration <= 0:
+            continue
+        mode_only.append(float(duration))
+
+        if mode in {'lecture-notes', 'slides-only'}:
+            row_feature = str(row.get('study_features', 'none') or 'none').strip().lower()
+            if row_feature != study_features:
+                continue
+            feature_only.append(float(duration))
+            row_bucket = _estimate_size_bucket(row.get('file_size_mb', 0))
+            if requested_bucket != 'unknown' and row_bucket == requested_bucket:
+                strict.append(float(duration))
+            elif requested_bucket == 'unknown':
+                strict.append(float(duration))
+        else:
+            row_extras = sanitize_int(row.get('interview_features_count', 0), default=0, min_value=0, max_value=4)
+            if row_extras != interview_features_count:
+                continue
+            feature_only.append(float(duration))
+            row_bucket = _estimate_size_bucket(row.get('file_size_mb', 0))
+            if requested_bucket != 'unknown' and row_bucket == requested_bucket:
+                strict.append(float(duration))
+            elif requested_bucket == 'unknown':
+                strict.append(float(duration))
+
+    source = 'heuristic'
+    sample = []
+    if len(strict) >= 8:
+        sample = strict
+        source = 'strict'
+    elif len(feature_only) >= 8:
+        sample = feature_only
+        source = 'feature'
+    elif len(mode_only) >= 8:
+        sample = mode_only
+        source = 'mode'
+
+    if sample:
+        sorted_values = sorted(sample)
+        low = _duration_percentile(sorted_values, 0.25)
+        typical = _duration_percentile(sorted_values, 0.50)
+        high = _duration_percentile(sorted_values, 0.75)
+        low = max(15, low)
+        typical = max(low, typical)
+        high = max(typical + 5, high)
+    else:
+        low, typical, high = _heuristic_estimate_range(mode, total_mb, study_features, interview_features_count)
+
+    response = {
+        'mode': mode,
+        'range': {
+            'low_seconds': int(low),
+            'high_seconds': int(high),
+            'typical_seconds': int(typical),
+        },
+        'sample_count': len(sample),
+        'source': source,
+    }
+    return jsonify(response)
+
+
 def processing_averages_impl():
-    """Return average processing duration per mode from completed job_logs.
-    No auth required – only aggregate stats are returned."""
+    """Legacy endpoint kept for compatibility. Requires auth and returns coarse averages."""
+    decoded_token = verify_firebase_token(request)
+    if not decoded_token:
+        return jsonify({'error': 'Unauthorized'}), 401
     try:
         from collections import defaultdict
         docs = db.collection('job_logs') \
             .where('status', '==', 'complete') \
-            .order_by('created_at', direction=firestore.Query.DESCENDING) \
+            .order_by('finished_at', direction=firestore.Query.DESCENDING) \
             .limit(200) \
             .stream()
         by_mode = defaultdict(list)
@@ -3647,7 +4150,8 @@ def processing_averages_impl():
         resp.headers['Cache-Control'] = 'public, max-age=300'
         return resp
     except Exception as e:
-        return jsonify({'averages': {}, 'total_jobs': 0, 'error': str(e)})
+        logger.exception("Could not load processing averages")
+        return jsonify({'averages': {}, 'total_jobs': 0}), 500
 
 # --- Upload & Processing Routes ---
 
@@ -3665,6 +4169,11 @@ def upload_files_impl():
     from lecture_processor.services import upload_api_service
 
     return upload_api_service.upload_files(sys.modules[__name__], request)
+
+def tools_extract_impl():
+    from lecture_processor.services import upload_api_service
+
+    return upload_api_service.tools_extract(sys.modules[__name__], request)
 
 def get_status_impl(job_id):
     from lecture_processor.services import upload_api_service
