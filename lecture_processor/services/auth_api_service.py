@@ -62,7 +62,8 @@ def verify_email(app_ctx, request):
     )
     if not allowed_rl:
         return app_ctx.build_rate_limited_response('Too many verification requests. Please wait.', retry_after_rl)
-    email = request.get_json().get('email', '')
+    payload = request.get_json(silent=True) or {}
+    email = payload.get('email', '')
     if app_ctx.is_email_allowed(email):
         return app_ctx.jsonify({'allowed': True})
     return app_ctx.jsonify({

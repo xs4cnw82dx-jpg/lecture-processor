@@ -15,6 +15,7 @@ import logging
 import ipaddress
 import statistics
 import random
+import math
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 try:
@@ -85,13 +86,22 @@ from lecture_processor.blueprints import auth_bp, account_bp, study_bp, upload_b
 LEGACY_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT_DIR = os.path.dirname(LEGACY_MODULE_DIR)
 
-load_dotenv()
+# In deployed environments (Render), rely on platform-managed secrets.
+if not os.getenv('RENDER'):
+    load_dotenv()
 app = Flask(
     __name__,
     template_folder=os.path.join(PROJECT_ROOT_DIR, 'templates'),
     static_folder=os.path.join(PROJECT_ROOT_DIR, 'static'),
 )
-app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(32).hex())
+_flask_secret_key = (os.getenv('FLASK_SECRET_KEY', '') or '').strip()
+if _flask_secret_key:
+    app.secret_key = _flask_secret_key
+elif os.getenv('RENDER'):
+    raise RuntimeError('FLASK_SECRET_KEY must be set in deployed environments.')
+else:
+    # Deterministic dev fallback keeps local sessions stable between restarts.
+    app.secret_key = 'dev-only-secret-key-change-me'
 if Compress is not None:
     Compress(app)
 LOG_LEVEL = (os.getenv('LOG_LEVEL', 'INFO') or 'INFO').strip().upper()
@@ -2241,6 +2251,17 @@ def sanitize_int(value, default=0, min_value=0, max_value=10_000_000):
         return max_value
     return parsed
 
+def sanitize_float(value, default=0.0, min_value=0.0, max_value=10_000_000.0):
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed < min_value:
+        return min_value
+    if parsed > max_value:
+        return max_value
+    return parsed
+
 def sanitize_streak_data(payload):
     base = default_streak_data()
     if not isinstance(payload, dict):
@@ -2701,11 +2722,13 @@ def cleanup_files(local_paths, gemini_files):
     for path in local_paths:
         try:
             if os.path.exists(path): os.remove(path)
-        except Exception as e: print(f"Warning: Could not delete local file {path}: {e}")
+        except Exception as e:
+            logger.warning("Could not delete local file %s: %s", path, e)
     for gemini_file in gemini_files:
         try:
             client.files.delete(name=gemini_file.name)
-        except Exception as e: print(f"Warning: Could not delete Gemini file {gemini_file.name}: {e}")
+        except Exception as e:
+            logger.warning("Could not delete Gemini file %s: %s", getattr(gemini_file, 'name', '<unknown>'), e)
 
 def parse_audio_markers_from_notes(notes_markdown):
     if not notes_markdown:
@@ -4127,7 +4150,8 @@ def processing_averages_impl():
         resp.headers['Cache-Control'] = 'public, max-age=300'
         return resp
     except Exception as e:
-        return jsonify({'averages': {}, 'total_jobs': 0, 'error': str(e)})
+        logger.exception("Could not load processing averages")
+        return jsonify({'averages': {}, 'total_jobs': 0}), 500
 
 # --- Upload & Processing Routes ---
 
