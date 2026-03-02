@@ -978,7 +978,7 @@ def test_process_interview_transcription_saves_pack_on_success(monkeypatch, tmp_
     monkeypatch.setattr(
         app_module,
         "generate_interview_enhancements",
-        lambda _transcript, _features, _language="English": {
+        lambda _transcript, _features, _language="English", retry_tracker=None: {
             "summary": "Summary text",
             "sections": None,
             "combined": None,

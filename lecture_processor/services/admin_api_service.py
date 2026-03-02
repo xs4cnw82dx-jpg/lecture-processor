@@ -75,7 +75,7 @@ def admin_overview(app_ctx, request):
         avg_duration_seconds = round(sum(durations) / len(durations), 1) if durations else 0
 
         funnel_steps, analytics_event_count = app_ctx.build_admin_funnel_steps(filtered_analytics_docs, window_start)
-        rate_limit_counts = {'upload': 0, 'checkout': 0, 'analytics': 0}
+        rate_limit_counts = {'upload': 0, 'checkout': 0, 'analytics': 0, 'tools': 0}
         for doc in filtered_rate_limit_docs:
             entry = doc.to_dict() or {}
             limit_name = str(entry.get('limit_name', '') or '').strip().lower()
@@ -94,7 +94,7 @@ def admin_overview(app_ctx, request):
         recent_rate_limits = []
         for entry in recent_rate_limits_sorted:
             limit_name = str(entry.get('limit_name', '') or '').strip().lower()
-            if limit_name not in {'upload', 'checkout', 'analytics'}:
+            if limit_name not in {'upload', 'checkout', 'analytics', 'tools'}:
                 continue
             recent_rate_limits.append({
                 'created_at': entry.get('created_at', 0),
@@ -206,7 +206,8 @@ def admin_overview(app_ctx, request):
                 'rate_limit_upload_429': rate_limit_counts['upload'],
                 'rate_limit_checkout_429': rate_limit_counts['checkout'],
                 'rate_limit_analytics_429': rate_limit_counts['analytics'],
-                'rate_limit_429_total': rate_limit_counts['upload'] + rate_limit_counts['checkout'] + rate_limit_counts['analytics'],
+                'rate_limit_tools_429': rate_limit_counts['tools'],
+                'rate_limit_429_total': rate_limit_counts['upload'] + rate_limit_counts['checkout'] + rate_limit_counts['analytics'] + rate_limit_counts['tools'],
             },
             'trends': {
                 'labels': trend_labels,
@@ -387,3 +388,21 @@ def admin_export(app_ctx, request):
     except Exception as e:
         app_ctx.logger.error(f"Error exporting admin CSV ({export_type}): {e}")
         return app_ctx.jsonify({'error': 'Could not export CSV'}), 500
+
+
+def admin_model_pricing(app_ctx, request):
+    decoded_token = app_ctx.verify_firebase_token(request)
+    if not decoded_token:
+        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    if not app_ctx.is_admin_user(decoded_token):
+        return app_ctx.jsonify({'error': 'Forbidden'}), 403
+
+    try:
+        payload = app_ctx.get_model_pricing_config()
+    except Exception as error:
+        app_ctx.logger.error(f"Error loading model pricing config: {error}")
+        return app_ctx.jsonify({'error': 'Could not load model pricing configuration'}), 500
+
+    if not isinstance(payload, dict):
+        return app_ctx.jsonify({'error': 'Invalid model pricing configuration'}), 500
+    return app_ctx.jsonify(payload)

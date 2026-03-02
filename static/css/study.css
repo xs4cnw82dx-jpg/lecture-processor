@@ -801,19 +801,23 @@
       overscroll-behavior: contain;
     }
 
-    .notes-pane-shell:fullscreen .notes-fullscreen-btn,
-    .notes-pane-shell:-webkit-full-screen .notes-fullscreen-btn {
-      top: 16px;
-      left: 16px
+    .notes-controls {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      position: sticky;
+      top: 0;
+      z-index: 8;
+      margin-bottom: 8px;
     }
 
     .notes-fullscreen-btn {
-      position: absolute;
-      top: 10px;
-      left: 10px;
+      position: relative;
+      flex-shrink: 0;
       z-index: 6;
-      width: 34px;
-      height: 34px;
+      width: 42px;
+      height: 42px;
       border-radius: 10px;
       border: 1px solid rgba(129, 140, 248, .45);
       background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%);
@@ -828,8 +832,8 @@
     }
 
     .notes-fullscreen-btn svg {
-      width: 16px;
-      height: 16px
+      width: 18px;
+      height: 18px
     }
 
     .notes-fullscreen-btn:hover {
@@ -851,26 +855,32 @@
     /* Highlight toolbar */
     .highlight-toolbar {
       display: flex;
-      gap: 5px;
+      gap: 6px;
       align-items: center;
-      padding: 6px 10px;
+      padding: 8px 10px;
       background: var(--gray-100);
       border-radius: var(--radius-md);
-      margin-bottom: 6px;
       flex-wrap: wrap;
-      position: sticky;
-      top: 0;
-      z-index: 5
+      flex: 1;
+      min-height: 42px;
+      position: relative;
     }
 
-    .notes-pane-shell:fullscreen .highlight-toolbar {
+    .notes-pane-shell:fullscreen .notes-controls,
+    .notes-pane-shell:-webkit-full-screen .notes-controls {
+      top: -6px;
+      padding-top: 4px;
+    }
+
+    .notes-pane-shell:fullscreen .highlight-toolbar,
+    .notes-pane-shell:-webkit-full-screen .highlight-toolbar {
       background: rgba(30, 30, 60, .85);
       backdrop-filter: blur(8px)
     }
 
     .hl-btn {
-      width: 24px;
-      height: 24px;
+      width: 26px;
+      height: 26px;
       border-radius: 50%;
       border: 2px solid transparent;
       cursor: pointer;
@@ -895,6 +905,32 @@
       border-color: #fff
     }
 
+    .hl-btn.hl-action {
+      width: auto;
+      border-radius: var(--radius-sm);
+      padding: 4px 10px;
+      background: var(--white);
+      border: 1px solid var(--gray-300);
+      color: var(--gray-700);
+      font-size: .78rem;
+      font-weight: 600;
+      line-height: 1;
+      transform: none;
+      gap: 5px;
+    }
+
+    .hl-btn.hl-action:hover {
+      transform: translateY(-1px);
+      border-color: rgba(79, 70, 229, .35);
+      color: var(--gray-900);
+    }
+
+    .notes-pane-shell:fullscreen .hl-btn.hl-action,
+    .notes-pane-shell:-webkit-full-screen .hl-btn.hl-action {
+      background: rgba(255, 255, 255, .97);
+      color: var(--gray-900);
+    }
+
     .hl-yellow {
       background: #fef08a
     }
@@ -911,41 +947,72 @@
       background: #fbcfe8
     }
 
-    .hl-eraser {
-      background: var(--white);
+    .hl-download-btn {
+      margin-left: auto;
+      gap: 8px;
+      min-height: 34px;
+      padding: 6px 12px;
+      border-radius: var(--radius-md);
+      font-size: .92rem;
+      font-weight: 600;
+      color: var(--gray-700);
       border: 1px solid var(--gray-300);
-      font-weight: 700;
-      color: var(--gray-600)
+      background: var(--white);
+      box-shadow: var(--shadow-sm);
     }
 
-    .hl-clear-all {
-      width: auto;
-      border-radius: var(--radius-sm);
-      padding: 2px 8px;
+    .hl-download-btn:hover {
+      color: var(--gray-900);
+      border-color: rgba(79, 70, 229, .35);
+      background: var(--gray-50);
+    }
+
+    .hl-download-btn svg {
+      width: 14px;
+      height: 14px
+    }
+
+    .hl-download-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 10px;
+      min-width: 250px;
       background: var(--white);
-      border: 1px solid var(--gray-300);
-      font-size: .7rem;
-      color: var(--gray-600);
-      font-weight: 600
+      border: 1px solid var(--gray-200);
+      border-radius: 10px;
+      box-shadow: var(--shadow-lg);
+      padding: 6px;
+      display: none;
+      z-index: 20;
+    }
+
+    .hl-download-menu.visible {
+      display: block;
+    }
+
+    .hl-download-item {
+      width: 100%;
+      border: none;
+      background: transparent;
+      text-align: left;
+      padding: 9px 10px;
+      border-radius: 8px;
+      color: var(--gray-700);
+      font-size: .84rem;
+      cursor: pointer;
+    }
+
+    .hl-download-item:hover {
+      background: var(--gray-100);
+      color: var(--gray-900);
+    }
+
+    .notes-pane-shell:fullscreen .hl-download-menu,
+    .notes-pane-shell:-webkit-full-screen .hl-download-menu {
+      background: rgba(255, 255, 255, .98);
     }
 
     .hl-clear-all:hover {
-      background: var(--gray-200)
-    }
-
-    .hl-download {
-      width: auto;
-      border-radius: var(--radius-sm);
-      padding: 2px 8px;
-      background: var(--white);
-      border: 1px solid var(--gray-300);
-      font-size: .7rem;
-      color: var(--gray-600);
-      font-weight: 600;
-      margin-left: auto
-    }
-
-    .hl-download:hover {
       background: var(--gray-200)
     }
 
@@ -1627,22 +1694,28 @@
       border: 1px solid
     }
 
-    .difficulty-chip.easy {
-      background: rgba(16, 185, 129, .12);
-      color: #065F46;
-      border-color: rgba(16, 185, 129, .34)
+    .difficulty-chip.retry {
+      background: rgba(239, 68, 68, .12);
+      color: #991B1B;
+      border-color: rgba(239, 68, 68, .35)
     }
 
-    .difficulty-chip.medium {
+    .difficulty-chip.hard {
       background: rgba(245, 158, 11, .12);
       color: #92400E;
       border-color: rgba(245, 158, 11, .36)
     }
 
-    .difficulty-chip.hard {
-      background: rgba(239, 68, 68, .12);
-      color: #991B1B;
-      border-color: rgba(239, 68, 68, .35)
+    .difficulty-chip.good {
+      background: rgba(59, 130, 246, .12);
+      color: #1D4ED8;
+      border-color: rgba(59, 130, 246, .3)
+    }
+
+    .difficulty-chip.easy {
+      background: rgba(16, 185, 129, .12);
+      color: #065F46;
+      border-color: rgba(16, 185, 129, .34)
     }
 
     .exam-recommendation {
@@ -1868,22 +1941,28 @@
       border-color: var(--gray-500)
     }
 
-    .difficulty-btn.easy.active {
-      border-color: rgba(16, 185, 129, .45);
-      background: rgba(16, 185, 129, .12);
-      color: #065F46
+    .difficulty-btn.retry.active {
+      border-color: rgba(239, 68, 68, .45);
+      background: rgba(239, 68, 68, .12);
+      color: #991B1B
     }
 
-    .difficulty-btn.medium.active {
+    .difficulty-btn.hard.active {
       border-color: rgba(245, 158, 11, .45);
       background: rgba(245, 158, 11, .12);
       color: #92400E
     }
 
-    .difficulty-btn.hard.active {
-      border-color: rgba(239, 68, 68, .45);
-      background: rgba(239, 68, 68, .12);
-      color: #991B1B
+    .difficulty-btn.good.active {
+      border-color: rgba(59, 130, 246, .45);
+      background: rgba(59, 130, 246, .12);
+      color: #1D4ED8
+    }
+
+    .difficulty-btn.easy.active {
+      border-color: rgba(16, 185, 129, .45);
+      background: rgba(16, 185, 129, .12);
+      color: #065F46
     }
 
     .difficulty-hint {

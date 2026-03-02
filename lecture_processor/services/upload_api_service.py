@@ -1,6 +1,58 @@
 """Business logic handlers for upload/status/download APIs."""
 
 
+def _build_tools_prompt(source_type):
+    if source_type == 'image':
+        return (
+            "You are a study extraction assistant.\n"
+            "Read the uploaded image and return structured markdown only.\n"
+            "Output sections in this order:\n"
+            "1. # Raw Text (verbatim OCR where possible)\n"
+            "2. # Structured Notes (clean bullet points)\n"
+            "3. # Key Terms (term: concise definition)\n"
+            "4. # Open Questions (uncertain or ambiguous parts)\n"
+            "Do not fabricate details. If text is unreadable, say so explicitly."
+        )
+    return (
+        "You are a study extraction assistant.\n"
+        "Read the uploaded document and return structured markdown only.\n"
+        "Output sections in this order:\n"
+        "1. # Extracted Outline\n"
+        "2. # Detailed Notes\n"
+        "3. # Key Terms (term: concise definition)\n"
+        "4. # Review Questions\n"
+        "Preserve important formulas, lists, and headings. Do not invent missing content."
+    )
+
+
+def _detect_tools_source_type(app_ctx, uploaded_file, requested_source):
+    filename = str(getattr(uploaded_file, 'filename', '') or '')
+    lower_name = filename.strip().lower()
+    extension = lower_name.rsplit('.', 1)[-1] if '.' in lower_name else ''
+    mime_type = str(getattr(uploaded_file, 'mimetype', '') or '').strip().lower()
+
+    is_doc = extension in app_ctx.ALLOWED_TOOLS_DOC_EXTENSIONS
+    is_image = extension in app_ctx.ALLOWED_TOOLS_IMAGE_EXTENSIONS
+    requested = str(requested_source or 'auto').strip().lower()
+    if requested not in {'auto', 'document', 'image'}:
+        requested = 'auto'
+
+    if requested == 'document':
+        if not is_doc:
+            return None, extension, mime_type, 'Please upload a PDF or PPTX document for Document Reader.'
+        return 'document', extension, mime_type, None
+    if requested == 'image':
+        if not is_image:
+            return None, extension, mime_type, 'Please upload an image file for Image Reader.'
+        return 'image', extension, mime_type, None
+
+    if is_doc:
+        return 'document', extension, mime_type, None
+    if is_image:
+        return 'image', extension, mime_type, None
+    return None, extension, mime_type, 'Unsupported file type. Upload PDF, PPTX, PNG, JPG, JPEG, WEBP, HEIC, or HEIF.'
+
+
 def import_audio_from_url(app_ctx, request):
     decoded_token = app_ctx.verify_firebase_token(request)
     if not decoded_token:
@@ -134,6 +186,7 @@ def upload_files(app_ctx, request):
         pdf_path, slides_error = app_ctx.resolve_uploaded_slides_to_pdf(slides_file, job_id)
         if slides_error:
             return app_ctx.jsonify({'error': slides_error}), 400
+        pdf_size = app_ctx.get_saved_file_size(pdf_path)
 
         imported_audio_used = False
         audio_path = ''
@@ -173,7 +226,7 @@ def upload_files(app_ctx, request):
                 app_ctx.refund_credit(uid, deducted)
                 return app_ctx.jsonify({'error': token_error}), 400
         total_steps = 4 if study_features != 'none' else 3
-        app_ctx.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'billing_receipt': app_ctx.initialize_billing_receipt({deducted: 1})})
+        app_ctx.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round(((pdf_size if pdf_size > 0 else 0) + audio_size) / (1024 * 1024), 2), 'billing_receipt': app_ctx.initialize_billing_receipt({deducted: 1})})
         thread = app_ctx.threading.Thread(target=app_ctx.process_lecture_notes, args=(job_id, pdf_path, audio_path))
         thread.start()
 
@@ -189,12 +242,13 @@ def upload_files(app_ctx, request):
         pdf_path, slides_error = app_ctx.resolve_uploaded_slides_to_pdf(slides_file, job_id)
         if slides_error:
             return app_ctx.jsonify({'error': slides_error}), 400
+        pdf_size = app_ctx.get_saved_file_size(pdf_path)
         deducted = app_ctx.deduct_credit(uid, 'slides_credits')
         if not deducted:
             app_ctx.cleanup_files([pdf_path], [])
             return app_ctx.jsonify({'error': 'No slides credits remaining.'}), 402
         total_steps = 2 if study_features != 'none' else 1
-        app_ctx.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'billing_receipt': app_ctx.initialize_billing_receipt({deducted: 1})})
+        app_ctx.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round((pdf_size if pdf_size > 0 else 0) / (1024 * 1024), 2), 'billing_receipt': app_ctx.initialize_billing_receipt({deducted: 1})})
         thread = app_ctx.threading.Thread(target=app_ctx.process_slides_only, args=(job_id, pdf_path))
         thread.start()
 
@@ -280,6 +334,10 @@ def upload_files(app_ctx, request):
             'extra_slides_refunded': 0,
             'study_generation_error': None,
             'error': None,
+            'failed_stage': '',
+            'provider_error_code': '',
+            'retry_attempts': 0,
+            'file_size_mb': round(audio_size / (1024 * 1024), 2),
             'billing_receipt': app_ctx.initialize_billing_receipt({deducted: 1, 'slides_credits': interview_features_cost}),
         })
         thread = app_ctx.threading.Thread(target=app_ctx.process_interview_transcription, args=(job_id, audio_path))
@@ -306,6 +364,189 @@ def upload_files(app_ctx, request):
     return app_ctx.jsonify({'job_id': job_id})
 
 
+def tools_extract(app_ctx, request):
+    decoded_token = app_ctx.verify_firebase_token(request)
+    if not decoded_token:
+        return app_ctx.jsonify({'error': 'Please sign in to continue'}), 401
+
+    uid = decoded_token['uid']
+    email = decoded_token.get('email', '')
+    if not app_ctx.is_email_allowed(email):
+        return app_ctx.jsonify({'error': 'Email not allowed'}), 403
+
+    allowed, retry_after = app_ctx.check_rate_limit(
+        key=f"tools_extract:{app_ctx.normalize_rate_limit_key_part(uid, fallback='anon_uid')}",
+        limit=app_ctx.TOOLS_RATE_LIMIT_MAX_REQUESTS,
+        window_seconds=app_ctx.TOOLS_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    if not allowed:
+        app_ctx.log_rate_limit_hit('tools', retry_after)
+        return app_ctx.build_rate_limited_response(
+            'Too many tools extraction attempts right now. Please wait and try again.',
+            retry_after,
+        )
+
+    user = app_ctx.get_or_create_user(uid, email)
+    if int(user.get('slides_credits', 0) or 0) <= 0:
+        return app_ctx.jsonify({'error': 'No slides credits remaining. Please purchase more credits.'}), 402
+
+    if 'file' not in request.files:
+        return app_ctx.jsonify({'error': 'Please upload a file to extract.'}), 400
+    uploaded_file = request.files['file']
+    if not uploaded_file or not str(uploaded_file.filename or '').strip():
+        return app_ctx.jsonify({'error': 'Please choose a file before running extraction.'}), 400
+
+    requested_source = request.form.get('source_type', request.form.get('source', 'auto'))
+    source_type, extension, mime_type, detect_error = _detect_tools_source_type(
+        app_ctx,
+        uploaded_file,
+        requested_source,
+    )
+    if detect_error:
+        return app_ctx.jsonify({'error': detect_error}), 400
+
+    job_id = str(app_ctx.uuid.uuid4())
+    local_paths = []
+    gemini_files = []
+    retry_tracker = {}
+    deducted_credit = ''
+    refunded_credit = False
+    provider_error_code = ''
+    extracted_markdown = ''
+    normalized_input_name = ''
+
+    try:
+        if source_type == 'document':
+            if mime_type and mime_type not in app_ctx.ALLOWED_TOOLS_DOC_MIME_TYPES:
+                return app_ctx.jsonify({'error': 'Unsupported document content type for tools extraction.'}), 400
+            pdf_path, slides_error = app_ctx.resolve_uploaded_slides_to_pdf(uploaded_file, f"tools_{job_id}")
+            if slides_error:
+                return app_ctx.jsonify({'error': slides_error}), 400
+            local_paths.append(pdf_path)
+            normalized_input_name = app_ctx.os.path.basename(pdf_path)
+            saved_size = app_ctx.get_saved_file_size(pdf_path)
+            if saved_size <= 0 or saved_size > app_ctx.MAX_TOOLS_DOCUMENT_BYTES:
+                app_ctx.cleanup_files(local_paths, gemini_files)
+                local_paths = []
+                return app_ctx.jsonify({
+                    'error': f'Document exceeds size limit ({int(app_ctx.MAX_TOOLS_DOCUMENT_BYTES / (1024 * 1024))} MB max) or is empty.'
+                }), 400
+            upload_mime_type = 'application/pdf'
+            upload_path = pdf_path
+        else:
+            if mime_type and mime_type not in app_ctx.ALLOWED_TOOLS_IMAGE_MIME_TYPES:
+                return app_ctx.jsonify({'error': 'Unsupported image content type for tools extraction.'}), 400
+            if not app_ctx.allowed_file(uploaded_file.filename, app_ctx.ALLOWED_TOOLS_IMAGE_EXTENSIONS):
+                return app_ctx.jsonify({'error': 'Unsupported image file extension.'}), 400
+            safe_name = app_ctx.secure_filename(uploaded_file.filename)
+            image_path = app_ctx.os.path.join(app_ctx.UPLOAD_FOLDER, f"tools_{job_id}_{safe_name}")
+            uploaded_file.save(image_path)
+            local_paths.append(image_path)
+            normalized_input_name = app_ctx.os.path.basename(image_path)
+            saved_size = app_ctx.get_saved_file_size(image_path)
+            if saved_size <= 0 or saved_size > app_ctx.MAX_TOOLS_IMAGE_BYTES:
+                app_ctx.cleanup_files(local_paths, gemini_files)
+                local_paths = []
+                return app_ctx.jsonify({
+                    'error': f'Image exceeds size limit ({int(app_ctx.MAX_TOOLS_IMAGE_BYTES / (1024 * 1024))} MB max) or is empty.'
+                }), 400
+            upload_mime_type = mime_type or app_ctx.get_mime_type(uploaded_file.filename) or 'image/jpeg'
+            upload_path = image_path
+
+        deducted_credit = app_ctx.deduct_credit(uid, 'slides_credits')
+        if not deducted_credit:
+            return app_ctx.jsonify({'error': 'No slides credits remaining.'}), 402
+
+        uploaded_provider_file = app_ctx.run_with_provider_retry(
+            'tools_file_upload',
+            lambda: app_ctx.client.files.upload(file=upload_path, config={'mime_type': upload_mime_type}),
+            retry_tracker=retry_tracker,
+        )
+        gemini_files.append(uploaded_provider_file)
+
+        app_ctx.run_with_provider_retry(
+            'tools_file_processing',
+            lambda: app_ctx.wait_for_file_processing(uploaded_provider_file),
+            retry_tracker=retry_tracker,
+        )
+
+        prompt = _build_tools_prompt(source_type)
+        response = app_ctx.generate_with_policy(
+            app_ctx.MODEL_TOOLS,
+            [app_ctx.types.Content(role='user', parts=[
+                app_ctx.types.Part.from_uri(file_uri=uploaded_provider_file.uri, mime_type=upload_mime_type),
+                app_ctx.types.Part.from_text(text=prompt),
+            ])],
+            max_output_tokens=32768,
+            retry_tracker=retry_tracker,
+            operation_name=f'tools_extract_{source_type}',
+        )
+        extracted_markdown = str(getattr(response, 'text', '') or '').strip()
+        if not extracted_markdown:
+            raise ValueError('Extraction returned empty output')
+
+        usage = app_ctx.extract_token_usage(response)
+        app_ctx.log_analytics_event(
+            'tools_extract_completed',
+            source='backend',
+            uid=uid,
+            email=email,
+            session_id=job_id,
+            properties={
+                'source_type': source_type,
+                'file_name': normalized_input_name,
+                'retry_attempts': sum(int(v or 0) for v in retry_tracker.values()),
+                'input_tokens': int(usage.get('input_tokens', 0) or 0),
+                'output_tokens': int(usage.get('output_tokens', 0) or 0),
+            },
+        )
+
+        return app_ctx.jsonify({
+            'ok': True,
+            'source_type': source_type,
+            'file_name': normalized_input_name,
+            'model': app_ctx.MODEL_TOOLS,
+            'content_markdown': extracted_markdown,
+            'retry_attempts': sum(int(v or 0) for v in retry_tracker.values()),
+            'provider_error_code': '',
+            'billing_receipt': {
+                'charged': {deducted_credit: 1},
+                'refunded': {},
+            },
+        })
+    except Exception as error:
+        provider_error_code = app_ctx.classify_provider_error_code(error)
+        app_ctx.logger.exception("Tools extraction failed for user %s source=%s", uid, source_type)
+        if deducted_credit and not refunded_credit:
+            app_ctx.refund_credit(uid, deducted_credit)
+            refunded_credit = True
+        app_ctx.log_analytics_event(
+            'tools_extract_failed',
+            source='backend',
+            uid=uid,
+            email=email,
+            session_id=job_id,
+            properties={
+                'source_type': source_type or 'unknown',
+                'provider_error_code': provider_error_code,
+                'retry_attempts': sum(int(v or 0) for v in retry_tracker.values()),
+            },
+        )
+        return app_ctx.jsonify({
+            'error': 'Tools extraction failed. Your slides credit has been refunded.',
+            'error_code': 'TOOLS_EXTRACTION_FAILED',
+            'provider_error_code': provider_error_code,
+            'retry_attempts': sum(int(v or 0) for v in retry_tracker.values()),
+            'billing_receipt': {
+                'charged': {deducted_credit: 1} if deducted_credit else {},
+                'refunded': {deducted_credit: 1} if (deducted_credit and refunded_credit) else {},
+            },
+        }), 502
+    finally:
+        if local_paths or gemini_files:
+            app_ctx.cleanup_files(local_paths, gemini_files)
+
+
 def get_status(app_ctx, request, job_id):
     decoded_token = app_ctx.verify_firebase_token(request)
     if not decoded_token:
@@ -317,12 +558,23 @@ def get_status(app_ctx, request, job_id):
         job = app_ctx.get_job_snapshot(job_id)
         if not job:
             return app_ctx.jsonify({
-                'error': 'Job not found. It may have expired after a server update. Please re-upload your file to try again.',
+                'error': 'Job status is temporarily unavailable. Retrying should usually recover it within a few seconds.',
+                'error_code': 'JOB_TEMPORARILY_UNAVAILABLE',
                 'job_lost': True,
+                'retryable': True,
             }), 404
     if job.get('user_id', '') != uid and not app_ctx.is_admin_user(decoded_token):
         return app_ctx.jsonify({'error': 'Forbidden'}), 403
-    response = {'status': job['status'], 'step': job['step'], 'step_description': job['step_description'], 'total_steps': job.get('total_steps', 3), 'mode': job.get('mode', 'lecture-notes')}
+    response = {
+        'status': job['status'],
+        'step': job['step'],
+        'step_description': job['step_description'],
+        'total_steps': job.get('total_steps', 3),
+        'mode': job.get('mode', 'lecture-notes'),
+        'retry_attempts': int(job.get('retry_attempts', 0) or 0),
+        'failed_stage': job.get('failed_stage', ''),
+        'provider_error_code': job.get('provider_error_code', ''),
+    }
     billing_receipt = app_ctx.get_billing_receipt_snapshot(job)
     if billing_receipt.get('charged') or billing_receipt.get('refunded'):
         response['billing_receipt'] = billing_receipt
@@ -339,6 +591,10 @@ def get_status(app_ctx, request, job_id):
         response['interview_summary'] = job.get('interview_summary')
         response['interview_sections'] = job.get('interview_sections')
         response['interview_combined'] = job.get('interview_combined')
+        response['token_input_total'] = int(job.get('token_input_total', 0) or 0)
+        response['token_output_total'] = int(job.get('token_output_total', 0) or 0)
+        response['token_total'] = int(job.get('token_total', 0) or 0)
+        response['token_usage_by_stage'] = job.get('token_usage_by_stage', {})
         if job.get('mode') == 'lecture-notes':
             response['slide_text'] = job.get('slide_text')
             response['transcript'] = job.get('transcript')
