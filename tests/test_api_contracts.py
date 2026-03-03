@@ -1,5 +1,6 @@
 import app as app_module
 import pytest
+from types import SimpleNamespace
 
 
 @pytest.fixture()
@@ -206,3 +207,106 @@ def test_processing_estimate_uses_sanitized_total_mb_and_percentiles(client, mon
     assert payload["range"]["low_seconds"] > 0
     assert payload["range"]["typical_seconds"] >= payload["range"]["low_seconds"]
     assert payload["range"]["high_seconds"] >= payload["range"]["typical_seconds"]
+
+
+def test_checkout_session_uses_trusted_public_base_url(client, monkeypatch):
+    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "checkout-u1", "email": "u@example.com"})
+    monkeypatch.setattr(app_module, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(app_module, "PUBLIC_BASE_URL", "https://trusted.example")
+
+    captured = {}
+
+    def _fake_create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(url="https://checkout.stripe.test/session/abc")
+
+    monkeypatch.setattr(app_module.stripe.checkout.Session, "create", _fake_create)
+
+    response = client.post(
+        "/api/create-checkout-session",
+        json={"bundle_id": "lecture_5"},
+        headers={
+            "Authorization": "Bearer dev",
+            "Host": "attacker.invalid",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json().get("checkout_url", "").startswith("https://checkout.stripe.test/")
+    assert captured.get("success_url", "").startswith("https://trusted.example/dashboard?payment=success")
+    assert captured.get("cancel_url") == "https://trusted.example/dashboard?payment=cancelled"
+
+
+def test_admin_export_sanitizes_formula_like_cells(client, monkeypatch):
+    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
+    monkeypatch.setattr(app_module, "is_admin_user", lambda _decoded: True)
+
+    class _Doc:
+        def __init__(self, doc_id, payload):
+            self.id = doc_id
+            self._payload = payload
+
+        def to_dict(self):
+            return dict(self._payload)
+
+    docs = [
+        _Doc(
+            "job-1",
+            {
+                "job_id": "job-1",
+                "uid": "u-1",
+                "email": "=malicious@example.com",
+                "mode": "lecture-notes",
+                "source_type": "url",
+                "source_url": "+https://evil.example",
+                "custom_prompt": "-SUM(1,1)",
+                "prompt_template_key": "@template",
+                "prompt_source": "custom",
+                "status": "complete",
+                "credit_deducted": "slides_credits",
+                "credit_refund_method": "",
+                "credit_refunded": False,
+                "error_message": "",
+                "started_at": 1,
+                "finished_at": 2,
+                "duration_seconds": 1,
+            },
+        )
+    ]
+    monkeypatch.setattr(app_module, "safe_query_docs_in_window", lambda **_kwargs: docs)
+
+    response = client.get("/api/admin/export?type=jobs&window=7d", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    csv_text = response.get_data(as_text=True)
+    assert "'=malicious@example.com" in csv_text
+    assert "'+https://evil.example" in csv_text
+    assert "'-SUM(1,1)" in csv_text
+    assert "'@template" in csv_text
+
+
+def test_safe_query_docs_in_window_skips_streaming_fallback(monkeypatch):
+    monkeypatch.setattr(app_module, "db", object())
+
+    def _raise(*_args, **_kwargs):
+        raise RuntimeError("missing index")
+
+    stream_called = {"value": False}
+
+    def _stream(*_args, **_kwargs):
+        stream_called["value"] = True
+        return []
+
+    monkeypatch.setattr(app_module, "query_docs_in_window", _raise)
+    monkeypatch.setattr(app_module.admin_repo, "stream_collection", _stream)
+
+    docs = app_module.safe_query_docs_in_window(
+        collection_name="job_logs",
+        timestamp_field="finished_at",
+        window_start=1,
+        window_end=2,
+        order_desc=True,
+    )
+
+    assert docs == []
+    assert stream_called["value"] is False

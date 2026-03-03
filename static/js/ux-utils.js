@@ -65,10 +65,75 @@
     items[0].focus();
   }
 
+  function toDate(value, options) {
+    if (value instanceof Date) return value;
+    var opts = options || {};
+    if (value == null || value === '') return null;
+    var normalized = value;
+    if (typeof normalized === 'number' && opts.unit === 'seconds') {
+      normalized = normalized * 1000;
+    }
+    var date = new Date(normalized);
+    if (Number.isNaN(date.getTime())) return null;
+    return date;
+  }
+
+  function getLocale(options) {
+    var opts = options || {};
+    if (opts.locale) return String(opts.locale);
+    if (global.navigator && typeof global.navigator.language === 'string' && global.navigator.language) {
+      return global.navigator.language;
+    }
+    return 'en-US';
+  }
+
+  function formatDateTime(value, options) {
+    var opts = options || {};
+    var date = toDate(value, opts);
+    if (!date) return opts.fallback || '-';
+    var locale = getLocale(opts);
+    var intlOptions = opts.intlOptions || {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    };
+    return date.toLocaleString(locale, intlOptions);
+  }
+
+  function formatDate(value, options) {
+    var opts = options || {};
+    var date = toDate(value, opts);
+    if (!date) return opts.fallback || '-';
+    var locale = getLocale(opts);
+    var intlOptions = opts.intlOptions || {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    };
+    return date.toLocaleDateString(locale, intlOptions);
+  }
+
+  function formatTime(value, options) {
+    var opts = options || {};
+    var date = toDate(value, opts);
+    if (!date) return opts.fallback || '-';
+    var locale = getLocale(opts);
+    var intlOptions = opts.intlOptions || {
+      hour: '2-digit',
+      minute: '2-digit',
+    };
+    return date.toLocaleTimeString(locale, intlOptions);
+  }
+
   global.LectureProcessorUx = {
     getModalContainer: getModalContainer,
     getFocusableElements: getFocusableElements,
     getVisibleMenuItems: getVisibleMenuItems,
     focusMenuItem: focusMenuItem,
+    formatDateTime: formatDateTime,
+    formatDate: formatDate,
+    formatTime: formatTime,
   };
 })(window);

@@ -10,7 +10,7 @@ All prompts are defined in a single file:
 lecture_processor/services/prompt_registry.py
 ```
 
-Each prompt has a unique constant name (e.g. `PROMPT_SLIDE_EXTRACTION`, `PROMPT_AUDIO_TRANSCRIPTION`) and is imported into `legacy_app.py`.
+Each prompt has a unique constant name (e.g. `PROMPT_SLIDE_EXTRACTION`, `PROMPT_AUDIO_TRANSCRIPTION`) and is imported into `lecture_processor/runtime/core.py`.
 
 ## How to View Current Prompts
 

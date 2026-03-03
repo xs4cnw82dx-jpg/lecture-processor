@@ -16,8 +16,8 @@ When Google updates Gemini model pricing, follow these steps to update the cost 
    - Mirror the same rate changes.
    - If a new model is added and used in processing, also update the `SCENARIOS` object.
 
-4. **Update `legacy_app.py`** (if model names changed):
-   - Find `MODEL_SLIDES`, `MODEL_AUDIO`, `MODEL_INTEGRATION`, `MODEL_INTERVIEW`, `MODEL_STUDY`.
+4. **Update runtime model constants** (if model names changed):
+   - Find `MODEL_SLIDES`, `MODEL_AUDIO`, `MODEL_INTEGRATION`, `MODEL_INTERVIEW`, `MODEL_STUDY` in `lecture_processor/runtime/core.py`.
    - Update model strings and `MODEL_THINKING_POLICY` if needed.
 
 5. **Deploy and verify**:

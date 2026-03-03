@@ -1,6 +1,9 @@
 """Business logic handlers for payment APIs."""
 
 
+from urllib.parse import urlparse
+
+
 def get_config(app_ctx):
     return app_ctx.jsonify({
         'stripe_publishable_key': app_ctx.STRIPE_PUBLISHABLE_KEY,
@@ -43,6 +46,18 @@ def create_checkout_session(app_ctx, request):
         return app_ctx.jsonify({'error': 'Invalid bundle selected'}), 400
 
     bundle = app_ctx.CREDIT_BUNDLES[bundle_id]
+    public_base_url = str(getattr(app_ctx, 'PUBLIC_BASE_URL', '') or '').strip().rstrip('/')
+    if not public_base_url:
+        app_ctx.logger.error("Stripe checkout blocked: PUBLIC_BASE_URL is not configured.")
+        return app_ctx.jsonify({'error': 'Checkout is temporarily unavailable. Please try again later.'}), 500
+    expected_host = (urlparse(public_base_url).hostname or '').strip().lower()
+    request_host = str(request.host or '').split(':', 1)[0].strip().lower()
+    if expected_host and request_host and expected_host != request_host:
+        app_ctx.logger.warning(
+            "Checkout host mismatch: request_host=%s expected_host=%s",
+            request_host,
+            expected_host,
+        )
 
     try:
         checkout_session = app_ctx.stripe.checkout.Session.create(
@@ -59,8 +74,8 @@ def create_checkout_session(app_ctx, request):
                 'quantity': 1,
             }],
             mode='payment',
-            success_url=request.host_url.rstrip('/') + '/dashboard?payment=success&session_id={CHECKOUT_SESSION_ID}',
-            cancel_url=request.host_url.rstrip('/') + '/dashboard?payment=cancelled',
+            success_url=public_base_url + '/dashboard?payment=success&session_id={CHECKOUT_SESSION_ID}',
+            cancel_url=public_base_url + '/dashboard?payment=cancelled',
             customer_email=email,
             metadata={
                 'uid': uid,

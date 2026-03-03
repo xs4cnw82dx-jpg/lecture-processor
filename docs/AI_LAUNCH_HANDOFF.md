@@ -80,7 +80,7 @@ Important files:
 
 - App bootstrap: `app.py`
 - App factory: `lecture_processor/__init__.py`
-- Legacy route module (still active): `lecture_processor/legacy_app.py`
+- Runtime core module: `lecture_processor/runtime/core.py`
 - API blueprints: `lecture_processor/blueprints/*.py`
 - Firestore repositories: `lecture_processor/repositories/*.py`
 - CI workflow: `.github/workflows/ci.yml`

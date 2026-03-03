@@ -1,16 +1,9 @@
-const firebaseConfig = {
-    apiKey: "AIzaSyBAAeEUCPNvP5qnqpP3M6HnFZ6vaaijUvM",
-    authDomain: "lecture-processor-cdff6.firebaseapp.com",
-    projectId: "lecture-processor-cdff6",
-    storageBucket: "lecture-processor-cdff6.firebasestorage.app",
-    messagingSenderId: "374793454161",
-    appId: "1:374793454161:web:c68b21590e9a1fafa32e70"
-};
-firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
+const bootstrap = window.LectureProcessorBootstrap || {};
+const auth = bootstrap.getAuth ? bootstrap.getAuth() : firebase.auth();
 const authUtils = window.LectureProcessorAuth || {};
 const authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Not signed in' }) : null;
 const downloadUtils = window.LectureProcessorDownload || {};
+const uxUtils = window.LectureProcessorUx || {};
 
 const signedInMeta = document.getElementById('signed-in-meta');
 const stateArea = document.getElementById('state-area');
@@ -47,10 +40,13 @@ function formatMoney(cents) {
 
 function formatDate(timestampSeconds) {
     if (!timestampSeconds) return '-';
+    if (uxUtils.formatDateTime) {
+        return uxUtils.formatDateTime(timestampSeconds, { unit: 'seconds' });
+    }
     const dt = new Date(timestampSeconds * 1000);
-    return dt.toLocaleString('en-GB', {
+    return dt.toLocaleString(navigator.language || 'en-US', {
         day: '2-digit', month: 'short', year: 'numeric',
-        hour: '2-digit', minute: '2-digit'
+        hour: '2-digit', minute: '2-digit',
     });
 }
 

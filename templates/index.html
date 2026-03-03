@@ -83,7 +83,7 @@ Total: 0</div></button>
     </aside>
 
     <div class="auth-overlay" id="auth-overlay" aria-hidden="true"><div class="auth-modal" role="dialog" aria-modal="true" aria-label="Authentication">
-        <button type="button" class="auth-modal-close" id="auth-modal-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+        <button type="button" class="auth-modal-close" id="auth-modal-close" aria-label="Close authentication dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
         <div class="auth-view active" id="signin-view">
             <div class="auth-modal-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
             <h2>Welcome back</h2><p class="auth-modal-subtitle">Sign in to your account to continue</p>
@@ -112,7 +112,7 @@ Total: 0</div></button>
     </div></div>
 
     <div class="pricing-overlay" id="pricing-overlay" aria-hidden="true"><div class="pricing-modal" role="dialog" aria-modal="true" aria-labelledby="pricing-modal-title">
-        <button type="button" class="pricing-modal-close" id="pricing-modal-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+        <button type="button" class="pricing-modal-close" id="pricing-modal-close" aria-label="Close pricing dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
         <div class="pricing-modal-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg></div>
         <h2 id="pricing-modal-title">Buy Credits</h2><p class="pricing-modal-subtitle">Choose a credit pack to continue processing your lectures</p>
         <div class="pricing-grid">
@@ -124,7 +124,7 @@ Total: 0</div></button>
     </div></div>
 
     <div class="history-overlay" id="history-overlay" aria-hidden="true"><div class="history-modal" role="dialog" aria-modal="true" aria-labelledby="history-modal-title">
-        <button type="button" class="history-modal-close" id="history-modal-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+        <button type="button" class="history-modal-close" id="history-modal-close" aria-label="Close purchase history dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
         <div class="history-modal-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg></div>
         <h2 id="history-modal-title">Purchase History</h2>
         <p class="history-modal-subtitle">Your past credit purchases</p>
@@ -371,17 +371,18 @@ Total: 0</div></button>
     </div>
     <div class="toast" id="toast"><svg id="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span id="toast-text"></span></div>
 
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" integrity="sha384-4gq9w/AGf72FXdNQ3Kn3EqWP7633NbCMjpYHt8YCZyXf23o2opcuAr4cif41tLrC" crossorigin="anonymous"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js" integrity="sha384-xtdq4MQqPj1dB5DQsuw9O7dh4kHhMP/Wp5u8O1jiaWiou13ZfJIgiccjtVK2pBhL" crossorigin="anonymous"></script>
+    <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js" integrity="sha384-948ahk4ZmxYVYOc+rxN1H2gM1EJ2Duhp7uHtZ4WSLkV4Vtx5MUqnV+l7u9B+jFv+" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js" integrity="sha384-XQqX/4yiUGu+oyr87jvWzRuqBUK/adrY0DunhL+tID9m/9dwSpV8h9Fk/Sg6ifVQ" crossorigin="anonymous"></script>
     <script src="{{ url_for('static', filename='js/html-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/markdown-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
-    <script src="https://browser.sentry-cdn.com/7.120.3/bundle.min.js" crossorigin="anonymous"></script>
+    <script src="https://browser.sentry-cdn.com/7.120.3/bundle.min.js" integrity="sha384-QhNWP5Exx8ZPPgZF2s+nKw/cl8cah1/6MVdZfR8a22f2KO0OsBNonujHvYJlrWIP" crossorigin="anonymous"></script>
     <script>
         window.LectureProcessorRuntime = {
             sentryFrontendDsn: {{ sentry_frontend_dsn | tojson }},

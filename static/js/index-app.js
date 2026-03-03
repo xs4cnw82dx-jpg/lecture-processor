@@ -12,16 +12,8 @@ if (window.Sentry && sentryFrontendDsn) {
     });
 }
 
-const firebaseConfig = {
-    apiKey: "AIzaSyBAAeEUCPNvP5qnqpP3M6HnFZ6vaaijUvM",
-    authDomain: "lecture-processor-cdff6.firebaseapp.com",
-    projectId: "lecture-processor-cdff6",
-    storageBucket: "lecture-processor-cdff6.firebasestorage.app",
-    messagingSenderId: "374793454161",
-    appId: "1:374793454161:web:c68b21590e9a1fafa32e70"
-};
-firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
+const bootstrap = window.LectureProcessorBootstrap || {};
+const auth = bootstrap.getAuth ? bootstrap.getAuth() : firebase.auth();
 const authUtils = window.LectureProcessorAuth || {};
 const authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
 const markdownUtils = window.LectureProcessorMarkdown || {};
@@ -2839,7 +2831,12 @@ async function loadPurchaseHistory() {
             name.textContent = p.bundle_name || '-';
             const dateEl = document.createElement('div');
             dateEl.className = 'history-item-date';
-            dateEl.textContent = `${date.toLocaleDateString('en-GB')} at ${date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+            if (uxUtils.formatDate && uxUtils.formatTime) {
+                dateEl.textContent = `${uxUtils.formatDate(date)} at ${uxUtils.formatTime(date)}`;
+            } else {
+                const locale = navigator.language || 'en-US';
+                dateEl.textContent = `${date.toLocaleDateString(locale)} at ${date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}`;
+            }
             const credits = document.createElement('div');
             credits.className = 'history-item-credits';
             credits.textContent = formatCreditsText(p.credits || {});

@@ -1,0 +1,5 @@
+from lecture_processor.runtime import core
+
+check_rate_limit = core.check_rate_limit
+build_rate_limited_response = core.build_rate_limited_response
+normalize_rate_limit_key_part = core.normalize_rate_limit_key_part

@@ -878,13 +878,13 @@
     }
 
     .hl-btn {
-      width: 26px;
-      height: 26px;
+      width: 40px;
+      height: 40px;
       border-radius: 50%;
       border: 2px solid transparent;
       cursor: pointer;
       transition: all .15s;
-      font-size: 11px;
+      font-size: 13px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -907,11 +907,12 @@
     .hl-btn.hl-action {
       width: auto;
       border-radius: var(--radius-sm);
-      padding: 4px 10px;
+      min-height: 40px;
+      padding: 8px 12px;
       background: var(--white);
       border: 1px solid var(--gray-300);
       color: var(--gray-700);
-      font-size: .78rem;
+      font-size: .88rem;
       font-weight: 600;
       line-height: 1;
       transform: none;

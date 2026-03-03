@@ -1,0 +1,5 @@
+from lecture_processor.runtime import core
+
+recover_stale_runtime_jobs = core.recover_stale_runtime_jobs
+acquire_runtime_job_recovery_lease = core.acquire_runtime_job_recovery_lease
+run_startup_recovery_once = core.run_startup_recovery_once
