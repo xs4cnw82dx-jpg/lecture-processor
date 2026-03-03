@@ -6,6 +6,7 @@ import json
 import time
 
 from lecture_processor.domains.auth import policy as auth_policy
+from lecture_processor.domains.auth import session as auth_session
 
 
 def create_admin_session(app_ctx, request):
@@ -15,7 +16,7 @@ def create_admin_session(app_ctx, request):
     if not app_ctx.is_admin_user(decoded_token):
         return app_ctx.jsonify({'error': 'Forbidden'}), 403
 
-    id_token = app_ctx._extract_bearer_token(request)
+    id_token = auth_session._extract_bearer_token(request, runtime=app_ctx)
     if not id_token:
         return app_ctx.jsonify({'error': 'Missing ID token'}), 400
 

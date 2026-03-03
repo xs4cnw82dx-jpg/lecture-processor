@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from flask import Blueprint, abort, redirect, render_template, request
 
+from lecture_processor.domains.auth import session as auth_session
 from lecture_processor.runtime.container import get_runtime
 
 
@@ -50,7 +51,7 @@ def tools_page():
 @pages_bp.route('/admin')
 def admin_dashboard():
     runtime = get_runtime()
-    decoded_token = runtime.verify_admin_session_cookie(request)
+    decoded_token = auth_session.verify_admin_session_cookie(request, runtime=runtime)
     if not decoded_token:
         if runtime.ADMIN_PAGE_UNAUTHORIZED_MODE == '404':
             abort(404)
