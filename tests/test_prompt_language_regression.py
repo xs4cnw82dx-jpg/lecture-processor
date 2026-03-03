@@ -1,6 +1,8 @@
 import app as app_module
 
-core = app_module.app.extensions["lecture_processor"]["runtime"].core
+from lecture_processor.runtime.container import get_runtime
+
+core = get_runtime(app_module.app).core
 
 
 def _contains_any(text, needles):

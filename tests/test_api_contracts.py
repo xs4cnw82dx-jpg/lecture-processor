@@ -2,7 +2,9 @@ import app as app_module
 import pytest
 from types import SimpleNamespace
 
-core = app_module.app.extensions["lecture_processor"]["runtime"].core
+from lecture_processor.runtime.container import get_runtime
+
+core = get_runtime(app_module.app).core
 
 
 @pytest.fixture()
