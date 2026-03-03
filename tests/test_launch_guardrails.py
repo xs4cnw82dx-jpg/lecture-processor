@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import pytest
 
 import app as app_module
+from lecture_processor.services import upload_api_service
 
 
 @pytest.fixture()
@@ -889,6 +890,80 @@ def test_billing_receipt_helpers_track_charged_and_refunded_credits():
     snapshot = app_module.get_billing_receipt_snapshot(job)
     assert snapshot["charged"] == {"interview_credits_short": 1, "slides_credits": 2}
     assert snapshot["refunded"] == {"slides_credits": 1, "interview_credits_short": 1}
+
+
+def test_refund_credit_returns_false_when_user_document_is_missing(monkeypatch):
+    class _MissingDoc:
+        exists = False
+
+    update_called = {"value": False}
+
+    monkeypatch.setattr(app_module.users_repo, "get_doc", lambda _db, _uid: _MissingDoc())
+    monkeypatch.setattr(
+        app_module.users_repo,
+        "update_doc",
+        lambda _db, _uid, _updates: update_called.__setitem__("value", True),
+    )
+
+    refunded = app_module.refund_credit("missing-u", "lecture_credits_standard")
+
+    assert refunded is False
+    assert update_called["value"] is False
+
+
+def test_refund_slides_credits_returns_false_when_user_document_is_missing(monkeypatch):
+    class _MissingDoc:
+        exists = False
+
+    update_called = {"value": False}
+
+    monkeypatch.setattr(app_module.users_repo, "get_doc", lambda _db, _uid: _MissingDoc())
+    monkeypatch.setattr(
+        app_module.users_repo,
+        "update_doc",
+        lambda _db, _uid, _updates: update_called.__setitem__("value", True),
+    )
+
+    refunded = app_module.refund_slides_credits("missing-u", 1)
+
+    assert refunded is False
+    assert update_called["value"] is False
+
+
+def test_tools_refund_fallback_does_not_claim_success_when_slides_refund_fails():
+    class _Time:
+        def __init__(self):
+            self.sleeps = []
+
+        def sleep(self, seconds):
+            self.sleeps.append(seconds)
+
+    class _AppCtx:
+        def __init__(self):
+            self.time = _Time()
+            self.refund_credit_calls = 0
+            self.refund_slides_calls = 0
+
+        def refund_credit(self, _uid, _credit_type):
+            self.refund_credit_calls += 1
+            return False
+
+        def refund_slides_credits(self, _uid, _amount):
+            self.refund_slides_calls += 1
+            return False
+
+    app_ctx = _AppCtx()
+
+    refunded, method = upload_api_service._attempt_credit_refund(
+        app_ctx,
+        "u-missing",
+        "slides_credits",
+    )
+
+    assert refunded is False
+    assert method == ""
+    assert app_ctx.refund_credit_calls == 3
+    assert app_ctx.refund_slides_calls == 2
 
 
 def test_status_returns_interview_billing_receipt(client, monkeypatch):

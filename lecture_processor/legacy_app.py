@@ -833,14 +833,31 @@ def refund_credit(uid, credit_type):
     if not uid or not credit_type:
         return False
     try:
-        user_ref = users_repo.doc_ref(db, uid)
-        user_ref.update({
+        user_doc = users_repo.get_doc(db, uid)
+    except Exception:
+        user_doc = None
+    if user_doc is not None and not getattr(user_doc, 'exists', False):
+        logger.warning(
+            "Skipping refund for credit '%s' on missing user document: %s",
+            credit_type,
+            uid,
+        )
+        return False
+    try:
+        users_repo.update_doc(db, uid, {
             credit_type: firestore.Increment(1),
             'total_processed': firestore.Increment(-1),
         })
         logger.info(f"✅ Refunded 1 '{credit_type}' credit to user {uid} due to processing failure.")
         return True
     except Exception as e:
+        if 'No document to update' in str(e or ''):
+            logger.warning(
+                "Skipping refund for credit '%s' on missing user document: %s",
+                credit_type,
+                uid,
+            )
+            return False
         logger.error(f"❌ Failed to refund credit '{credit_type}' to user {uid}: {e}")
         return False
 
@@ -1887,12 +1904,32 @@ def deduct_slides_credits(uid, amount):
 
 def refund_slides_credits(uid, amount):
     if not uid or amount <= 0:
-        return
+        return False
+    try:
+        user_doc = users_repo.get_doc(db, uid)
+    except Exception:
+        user_doc = None
+    if user_doc is not None and not getattr(user_doc, 'exists', False):
+        logger.warning(
+            "Skipping slides credit refund for missing user document: %s (amount=%s)",
+            uid,
+            amount,
+        )
+        return False
     try:
         users_repo.update_doc(db, uid, {'slides_credits': firestore.Increment(amount)})
         logger.info(f"✅ Refunded {amount} slides credits to user {uid}.")
+        return True
     except Exception as e:
+        if 'No document to update' in str(e or ''):
+            logger.warning(
+                "Skipping slides credit refund for missing user document: %s (amount=%s)",
+                uid,
+                amount,
+            )
+            return False
         logger.error(f"❌ Failed to refund {amount} slides credits to user {uid}: {e}")
+        return False
 
 def normalize_credit_ledger(credit_map):
     normalized = {}
@@ -4242,9 +4279,11 @@ def processing_averages_impl():
         resp = jsonify({'averages': averages, 'total_jobs': total_jobs})
         resp.headers['Cache-Control'] = 'public, max-age=300'
         return resp
-    except Exception as e:
-        logger.exception("Could not load processing averages")
-        return jsonify({'averages': {}, 'total_jobs': 0}), 500
+    except Exception:
+        logger.warning("Could not load processing averages; returning empty fallback", exc_info=True)
+        response = jsonify({'averages': {}, 'total_jobs': 0})
+        response.headers['Cache-Control'] = 'no-store'
+        return response
 
 # --- Upload & Processing Routes ---
 
