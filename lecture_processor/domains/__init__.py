@@ -1,1 +1,1 @@
-"""Domain modules extracted from legacy runtime logic."""
+"""Domain modules for business logic and service-level orchestration."""

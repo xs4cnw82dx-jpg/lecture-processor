@@ -1,4 +1,5 @@
 from lecture_processor.runtime import core
+from lecture_processor.services import admin_api_service, upload_api_service
 
 build_admin_deployment_info = core.build_admin_deployment_info
 build_admin_runtime_checks = core.build_admin_runtime_checks
@@ -14,5 +15,6 @@ safe_count_window = core.safe_count_window
 build_admin_funnel_steps = core.build_admin_funnel_steps
 build_admin_funnel_daily_rows = core.build_admin_funnel_daily_rows
 get_model_pricing_config = core.get_model_pricing_config
-processing_estimate_impl = core.processing_estimate_impl
-processing_averages_impl = core.processing_averages_impl
+admin_prompts = admin_api_service.admin_prompts
+processing_estimate = upload_api_service.processing_estimate
+processing_averages = upload_api_service.processing_averages

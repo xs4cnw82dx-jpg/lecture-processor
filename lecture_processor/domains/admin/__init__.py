@@ -1,4 +1,5 @@
 from .metrics import (
+    admin_prompts,
     build_admin_deployment_info,
     build_admin_funnel_daily_rows,
     build_admin_funnel_steps,
@@ -9,14 +10,15 @@ from .metrics import (
     get_bucket_key,
     get_model_pricing_config,
     get_timestamp,
-    processing_averages_impl,
-    processing_estimate_impl,
+    processing_averages,
+    processing_estimate,
     safe_count_collection,
     safe_count_window,
     safe_query_docs_in_window,
 )
 
 __all__ = [
+    'admin_prompts',
     'build_admin_deployment_info',
     'build_admin_funnel_daily_rows',
     'build_admin_funnel_steps',
@@ -27,8 +29,8 @@ __all__ = [
     'get_bucket_key',
     'get_model_pricing_config',
     'get_timestamp',
-    'processing_averages_impl',
-    'processing_estimate_impl',
+    'processing_averages',
+    'processing_estimate',
     'safe_count_collection',
     'safe_count_window',
     'safe_query_docs_in_window',
