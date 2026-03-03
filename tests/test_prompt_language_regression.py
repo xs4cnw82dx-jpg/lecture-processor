@@ -1,5 +1,7 @@
 import app as app_module
 
+core = app_module.app.extensions["lecture_processor"]["runtime"].core
+
 
 def _contains_any(text, needles):
     lower = text.lower()
@@ -8,13 +10,13 @@ def _contains_any(text, needles):
 
 def test_core_prompts_are_english_and_language_controlled():
     language_controlled_prompts = [
-        app_module.PROMPT_AUDIO_TRANSCRIPTION,
-        app_module.PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED,
-        app_module.PROMPT_MERGE_TEMPLATE,
-        app_module.PROMPT_MERGE_WITH_AUDIO_MARKERS,
+        core.PROMPT_AUDIO_TRANSCRIPTION,
+        core.PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED,
+        core.PROMPT_MERGE_TEMPLATE,
+        core.PROMPT_MERGE_WITH_AUDIO_MARKERS,
     ]
     all_core_prompts = [
-        app_module.PROMPT_SLIDE_EXTRACTION,
+        core.PROMPT_SLIDE_EXTRACTION,
         *language_controlled_prompts,
     ]
     dutch_markers = [
@@ -33,14 +35,14 @@ def test_core_prompts_are_english_and_language_controlled():
 
 
 def test_output_language_mapping_stays_stable():
-    assert app_module.parse_output_language("english") == "English"
-    assert app_module.parse_output_language("dutch") == "Dutch"
-    assert app_module.parse_output_language("spanish") == "Spanish"
-    assert app_module.parse_output_language("other", "Italian") == "Italian"
+    assert core.parse_output_language("english") == "English"
+    assert core.parse_output_language("dutch") == "Dutch"
+    assert core.parse_output_language("spanish") == "Spanish"
+    assert core.parse_output_language("other", "Italian") == "Italian"
 
 
 def test_study_prompt_template_formats_without_key_errors():
-    rendered = app_module.PROMPT_STUDY_TEMPLATE.format(
+    rendered = core.PROMPT_STUDY_TEMPLATE.format(
         flashcard_amount=30,
         question_amount=15,
         output_language="English",

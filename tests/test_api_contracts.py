@@ -2,23 +2,25 @@ import app as app_module
 import pytest
 from types import SimpleNamespace
 
+core = app_module.app.extensions["lecture_processor"]["runtime"].core
+
 
 @pytest.fixture()
 def client():
     app_module.app.config["TESTING"] = True
-    app_module.jobs.clear()
+    core.jobs.clear()
     with app_module.app.test_client() as test_client:
         yield test_client
-    app_module.jobs.clear()
+    core.jobs.clear()
 
 
 @pytest.fixture(autouse=True)
 def disable_sentry(monkeypatch):
-    monkeypatch.setattr(app_module, "sentry_sdk", None)
+    monkeypatch.setattr(core, "sentry_sdk", None)
 
 
 def test_config_endpoint_shape(client, monkeypatch):
-    monkeypatch.setattr(app_module, "STRIPE_PUBLISHABLE_KEY", "pk_test_contract")
+    monkeypatch.setattr(core, "STRIPE_PUBLISHABLE_KEY", "pk_test_contract")
 
     response = client.get("/api/config")
 
@@ -31,8 +33,8 @@ def test_config_endpoint_shape(client, monkeypatch):
 
 
 def test_checkout_invalid_bundle_returns_400(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "contract-u1", "email": "u@example.com"})
-    monkeypatch.setattr(app_module, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "contract-u1", "email": "u@example.com"})
+    monkeypatch.setattr(core, "check_rate_limit", lambda **_kwargs: (True, 0))
 
     response = client.post("/api/create-checkout-session", json={"bundle_id": "not_real"})
 
@@ -41,7 +43,7 @@ def test_checkout_invalid_bundle_returns_400(client, monkeypatch):
 
 
 def test_status_not_found_contract(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "contract-u2", "email": "u@example.com"})
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "contract-u2", "email": "u@example.com"})
 
     response = client.get("/status/job-does-not-exist")
 
@@ -54,7 +56,7 @@ def test_status_not_found_contract(client, monkeypatch):
 
 
 def test_stripe_webhook_requires_secret(client, monkeypatch):
-    monkeypatch.setattr(app_module, "STRIPE_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(core, "STRIPE_WEBHOOK_SECRET", "")
 
     response = client.post("/api/stripe-webhook", data=b"{}", headers={"Content-Type": "application/json"})
 
@@ -77,8 +79,8 @@ def test_study_pack_get_missing_returns_404(client, monkeypatch):
         def collection(self, _name):
             return _Collection()
 
-    monkeypatch.setattr(app_module, "db", _DB())
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "contract-u3", "email": "u@example.com"})
+    monkeypatch.setattr(core, "db", _DB())
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "contract-u3", "email": "u@example.com"})
 
     response = client.get("/api/study-packs/missing-pack")
 
@@ -87,9 +89,9 @@ def test_study_pack_get_missing_returns_404(client, monkeypatch):
 
 
 def test_admin_overview_contract_fields(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
-    monkeypatch.setattr(app_module, "is_admin_user", lambda _decoded: True)
-    monkeypatch.setattr(app_module, "db", None)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
+    monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)
+    monkeypatch.setattr(core, "db", None)
 
     response = client.get("/api/admin/overview?window=7d")
 
@@ -108,10 +110,10 @@ def test_admin_route_requires_server_session_cookie(client):
 
 
 def test_admin_session_login_sets_cookie(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
-    monkeypatch.setattr(app_module, "is_admin_user", lambda _decoded: True)
-    monkeypatch.setattr(app_module, "_extract_bearer_token", lambda _request: "id-token")
-    monkeypatch.setattr(app_module.auth, "create_session_cookie", lambda _id_token, expires_in: "session-cookie")
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
+    monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)
+    monkeypatch.setattr(core, "_extract_bearer_token", lambda _request: "id-token")
+    monkeypatch.setattr(core.auth, "create_session_cookie", lambda _id_token, expires_in: "session-cookie")
 
     response = client.post("/api/session/login", headers={"Authorization": "Bearer test"})
 
@@ -122,10 +124,10 @@ def test_admin_session_login_sets_cookie(client, monkeypatch):
 
 
 def test_status_uses_runtime_job_fallback(client, monkeypatch):
-    app_module.jobs.clear()
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u-fallback", "email": "user@example.com"})
+    core.jobs.clear()
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-fallback", "email": "user@example.com"})
     monkeypatch.setattr(
-        app_module,
+        core,
         "load_runtime_job_snapshot",
         lambda _job_id: {
             "job_id": "job-fallback",
@@ -148,7 +150,7 @@ def test_status_uses_runtime_job_fallback(client, monkeypatch):
 
 
 def test_verify_email_handles_empty_body(client, monkeypatch):
-    monkeypatch.setattr(app_module, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(core, "check_rate_limit", lambda **_kwargs: (True, 0))
 
     response = client.post("/api/verify-email", data=b"", headers={"Content-Type": "text/plain"})
 
@@ -158,13 +160,13 @@ def test_verify_email_handles_empty_body(client, monkeypatch):
 
 
 def test_processing_averages_error_returns_empty_fallback_without_raw_details(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u", "email": "user@example.com"})
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u", "email": "user@example.com"})
 
     class _BrokenDB:
         def collection(self, _name):
             raise RuntimeError("firestore internal detail")
 
-    monkeypatch.setattr(app_module, "db", _BrokenDB())
+    monkeypatch.setattr(core, "db", _BrokenDB())
 
     response = client.get("/api/processing-averages")
 
@@ -176,7 +178,7 @@ def test_processing_averages_error_returns_empty_fallback_without_raw_details(cl
 
 
 def test_processing_estimate_uses_sanitized_total_mb_and_percentiles(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u", "email": "user@example.com"})
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u", "email": "user@example.com"})
 
     class _Doc:
         def __init__(self, row):
@@ -196,7 +198,7 @@ def test_processing_estimate_uses_sanitized_total_mb_and_percentiles(client, mon
         })
         for d in durations
     ]
-    monkeypatch.setattr(app_module, "safe_query_docs_in_window", lambda *_args, **_kwargs: docs)
+    monkeypatch.setattr(core, "safe_query_docs_in_window", lambda *_args, **_kwargs: docs)
 
     response = client.get("/api/processing-estimate?mode=lecture-notes&study_features=both&total_mb=55.25")
 
@@ -210,9 +212,9 @@ def test_processing_estimate_uses_sanitized_total_mb_and_percentiles(client, mon
 
 
 def test_checkout_session_uses_trusted_public_base_url(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "checkout-u1", "email": "u@example.com"})
-    monkeypatch.setattr(app_module, "check_rate_limit", lambda **_kwargs: (True, 0))
-    monkeypatch.setattr(app_module, "PUBLIC_BASE_URL", "https://trusted.example")
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "checkout-u1", "email": "u@example.com"})
+    monkeypatch.setattr(core, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(core, "PUBLIC_BASE_URL", "https://trusted.example")
 
     captured = {}
 
@@ -220,7 +222,7 @@ def test_checkout_session_uses_trusted_public_base_url(client, monkeypatch):
         captured.update(kwargs)
         return SimpleNamespace(url="https://checkout.stripe.test/session/abc")
 
-    monkeypatch.setattr(app_module.stripe.checkout.Session, "create", _fake_create)
+    monkeypatch.setattr(core.stripe.checkout.Session, "create", _fake_create)
 
     response = client.post(
         "/api/create-checkout-session",
@@ -238,8 +240,8 @@ def test_checkout_session_uses_trusted_public_base_url(client, monkeypatch):
 
 
 def test_admin_export_sanitizes_formula_like_cells(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
-    monkeypatch.setattr(app_module, "is_admin_user", lambda _decoded: True)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
+    monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)
 
     class _Doc:
         def __init__(self, doc_id, payload):
@@ -273,7 +275,7 @@ def test_admin_export_sanitizes_formula_like_cells(client, monkeypatch):
             },
         )
     ]
-    monkeypatch.setattr(app_module, "safe_query_docs_in_window", lambda **_kwargs: docs)
+    monkeypatch.setattr(core, "safe_query_docs_in_window", lambda **_kwargs: docs)
 
     response = client.get("/api/admin/export?type=jobs&window=7d", headers={"Authorization": "Bearer dev"})
 
@@ -286,7 +288,7 @@ def test_admin_export_sanitizes_formula_like_cells(client, monkeypatch):
 
 
 def test_safe_query_docs_in_window_skips_streaming_fallback(monkeypatch):
-    monkeypatch.setattr(app_module, "db", object())
+    monkeypatch.setattr(core, "db", object())
 
     def _raise(*_args, **_kwargs):
         raise RuntimeError("missing index")
@@ -297,10 +299,10 @@ def test_safe_query_docs_in_window_skips_streaming_fallback(monkeypatch):
         stream_called["value"] = True
         return []
 
-    monkeypatch.setattr(app_module, "query_docs_in_window", _raise)
-    monkeypatch.setattr(app_module.admin_repo, "stream_collection", _stream)
+    monkeypatch.setattr(core, "query_docs_in_window", _raise)
+    monkeypatch.setattr(core.admin_repo, "stream_collection", _stream)
 
-    docs = app_module.safe_query_docs_in_window(
+    docs = core.safe_query_docs_in_window(
         collection_name="job_logs",
         timestamp_field="finished_at",
         window_start=1,
