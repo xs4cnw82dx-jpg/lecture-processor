@@ -81,6 +81,10 @@
   function getLocale(options) {
     var opts = options || {};
     if (opts.locale) return String(opts.locale);
+    if (global.navigator && Array.isArray(global.navigator.languages) && global.navigator.languages.length) {
+      var locales = global.navigator.languages.filter(Boolean);
+      if (locales.length) return locales;
+    }
     if (global.navigator && typeof global.navigator.language === 'string' && global.navigator.language) {
       return global.navigator.language;
     }

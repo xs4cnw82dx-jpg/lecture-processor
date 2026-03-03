@@ -21,6 +21,22 @@ const uxUtils = window.LectureProcessorUx || {};
 const downloadUtils = window.LectureProcessorDownload || {};
 const topbarUtils = window.LectureProcessorTopbar || {};
 
+function formatDateLabel(value) {
+    if (typeof uxUtils.formatDate === 'function') return uxUtils.formatDate(value);
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '-';
+    const locale = navigator.language || 'en-US';
+    return date.toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatTimeLabel(value) {
+    if (typeof uxUtils.formatTime === 'function') return uxUtils.formatTime(value);
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '-';
+    const locale = navigator.language || 'en-US';
+    return date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+}
+
 let currentUser = null;
 let userCredits = null;
 let idToken = null;
@@ -2831,12 +2847,7 @@ async function loadPurchaseHistory() {
             name.textContent = p.bundle_name || '-';
             const dateEl = document.createElement('div');
             dateEl.className = 'history-item-date';
-            if (uxUtils.formatDate && uxUtils.formatTime) {
-                dateEl.textContent = `${uxUtils.formatDate(date)} at ${uxUtils.formatTime(date)}`;
-            } else {
-                const locale = navigator.language || 'en-US';
-                dateEl.textContent = `${date.toLocaleDateString(locale)} at ${date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}`;
-            }
+            dateEl.textContent = `${formatDateLabel(date)} at ${formatTimeLabel(date)}`;
             const credits = document.createElement('div');
             credits.className = 'history-item-credits';
             credits.textContent = formatCreditsText(p.credits || {});
