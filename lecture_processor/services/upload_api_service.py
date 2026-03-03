@@ -1,6 +1,7 @@
 """Business logic handlers for upload/status/download APIs."""
 
 from lecture_processor.domains.auth import policy as auth_policy
+from lecture_processor.domains.rate_limit import limiter as rate_limiter
 
 
 def _sanitize_tools_custom_prompt(raw_prompt, max_chars=6000):
@@ -370,15 +371,17 @@ def import_audio_from_url(app_ctx, request):
     if not auth_policy.is_email_allowed(email, runtime=app_ctx):
         return app_ctx.jsonify({'error': 'Email not allowed'}), 403
 
-    allowed_import, retry_after = app_ctx.check_rate_limit(
-        key=f"audio_import:{app_ctx.normalize_rate_limit_key_part(uid, fallback='anon_uid')}",
+    allowed_import, retry_after = rate_limiter.check_rate_limit(
+        key=f"audio_import:{rate_limiter.normalize_rate_limit_key_part(uid, fallback='anon_uid', runtime=app_ctx)}",
         limit=app_ctx.VIDEO_IMPORT_RATE_LIMIT_MAX_REQUESTS,
         window_seconds=app_ctx.VIDEO_IMPORT_RATE_LIMIT_WINDOW_SECONDS,
+        runtime=app_ctx,
     )
     if not allowed_import:
-        return app_ctx.build_rate_limited_response(
+        return rate_limiter.build_rate_limited_response(
             'Too many video import attempts right now. Please wait and try again.',
             retry_after,
+            runtime=app_ctx,
         )
 
     data = request.get_json(silent=True) or {}
@@ -429,16 +432,18 @@ def upload_files(app_ctx, request):
         return app_ctx.jsonify({
             'error': f'You already have {active_jobs} active processing job(s). Please wait for one to finish before starting another.'
         }), 429
-    allowed_upload, retry_after = app_ctx.check_rate_limit(
+    allowed_upload, retry_after = rate_limiter.check_rate_limit(
         key=f"upload:{uid}",
         limit=app_ctx.UPLOAD_RATE_LIMIT_MAX_REQUESTS,
         window_seconds=app_ctx.UPLOAD_RATE_LIMIT_WINDOW_SECONDS,
+        runtime=app_ctx,
     )
     if not allowed_upload:
         app_ctx.log_rate_limit_hit('upload', retry_after)
-        return app_ctx.build_rate_limited_response(
+        return rate_limiter.build_rate_limited_response(
             'Too many upload attempts right now. Please wait and try again.',
             retry_after,
+            runtime=app_ctx,
         )
     requested_bytes = int(request.content_length or 0)
     disk_ok, free_bytes, needed_bytes = app_ctx.has_sufficient_upload_disk_space(requested_bytes)
@@ -455,9 +460,10 @@ def upload_files(app_ctx, request):
     reserved_daily, daily_retry_after = app_ctx.reserve_daily_upload_bytes(uid, requested_bytes)
     if not reserved_daily:
         app_ctx.log_rate_limit_hit('upload', daily_retry_after)
-        return app_ctx.build_rate_limited_response(
+        return rate_limiter.build_rate_limited_response(
             'Daily upload quota reached for your account. Please try again tomorrow.',
             daily_retry_after,
+            runtime=app_ctx,
         )
     user = app_ctx.get_or_create_user(uid, email)
     mode = request.form.get('mode', 'lecture-notes')
@@ -682,16 +688,18 @@ def tools_extract(app_ctx, request):
     if not auth_policy.is_email_allowed(email, runtime=app_ctx):
         return app_ctx.jsonify({'error': 'Email not allowed'}), 403
 
-    allowed, retry_after = app_ctx.check_rate_limit(
-        key=f"tools_extract:{app_ctx.normalize_rate_limit_key_part(uid, fallback='anon_uid')}",
+    allowed, retry_after = rate_limiter.check_rate_limit(
+        key=f"tools_extract:{rate_limiter.normalize_rate_limit_key_part(uid, fallback='anon_uid', runtime=app_ctx)}",
         limit=app_ctx.TOOLS_RATE_LIMIT_MAX_REQUESTS,
         window_seconds=app_ctx.TOOLS_RATE_LIMIT_WINDOW_SECONDS,
+        runtime=app_ctx,
     )
     if not allowed:
         app_ctx.log_rate_limit_hit('tools', retry_after)
-        return app_ctx.build_rate_limited_response(
+        return rate_limiter.build_rate_limited_response(
             'Too many tools extraction attempts right now. Please wait and try again.',
             retry_after,
+            runtime=app_ctx,
         )
 
     user = app_ctx.get_or_create_user(uid, email)

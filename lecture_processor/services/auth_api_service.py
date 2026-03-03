@@ -7,6 +7,7 @@ import time
 
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.auth import session as auth_session
+from lecture_processor.domains.rate_limit import limiter as rate_limiter
 
 
 def create_admin_session(app_ctx, request):
@@ -58,13 +59,18 @@ def clear_admin_session(app_ctx, request):
 
 def verify_email(app_ctx, request):
     client_ip = request.remote_addr or 'unknown'
-    allowed_rl, retry_after_rl = app_ctx.check_rate_limit(
+    allowed_rl, retry_after_rl = rate_limiter.check_rate_limit(
         key=f"verify_email:{client_ip}",
         limit=20,
         window_seconds=60,
+        runtime=app_ctx,
     )
     if not allowed_rl:
-        return app_ctx.build_rate_limited_response('Too many verification requests. Please wait.', retry_after_rl)
+        return rate_limiter.build_rate_limited_response(
+            'Too many verification requests. Please wait.',
+            retry_after_rl,
+            runtime=app_ctx,
+        )
     payload = request.get_json(silent=True) or {}
     email = payload.get('email', '')
     if auth_policy.is_email_allowed(email, runtime=app_ctx):
@@ -109,17 +115,19 @@ def ingest_analytics_event(app_ctx, request):
         session_id = uid[:80]
 
     actor_token = uid or session_id or request.headers.get('X-Forwarded-For', request.remote_addr or '')
-    actor_key = app_ctx.normalize_rate_limit_key_part(actor_token, fallback='anon')
-    allowed_analytics, retry_after = app_ctx.check_rate_limit(
+    actor_key = rate_limiter.normalize_rate_limit_key_part(actor_token, fallback='anon', runtime=app_ctx)
+    allowed_analytics, retry_after = rate_limiter.check_rate_limit(
         key=f"analytics:{actor_key}",
         limit=app_ctx.ANALYTICS_RATE_LIMIT_MAX_REQUESTS,
         window_seconds=app_ctx.ANALYTICS_RATE_LIMIT_WINDOW_SECONDS,
+        runtime=app_ctx,
     )
     if not allowed_analytics:
         app_ctx.log_rate_limit_hit('analytics', retry_after)
-        return app_ctx.build_rate_limited_response(
+        return rate_limiter.build_rate_limited_response(
             'Too many analytics events from this client. Please retry shortly.',
             retry_after,
+            runtime=app_ctx,
         )
 
     event_name = app_ctx.sanitize_analytics_event_name(data.get('event', ''))
