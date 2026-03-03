@@ -5,11 +5,9 @@ from datetime import datetime, timezone
 
 import pytest
 
-import app as app_module
+from tests.runtime_test_support import get_test_core
 
-from lecture_processor.runtime.container import get_runtime
-
-core = get_runtime(app_module.app).core
+core = get_test_core()
 from lecture_processor.services import upload_api_service
 
 pytestmark = pytest.mark.usefixtures("disable_sentry")

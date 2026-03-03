@@ -1,12 +1,12 @@
-import app as app_module
 import pytest
 
+from lecture_processor import create_app
 from lecture_processor.runtime.container import get_runtime
 
 
 @pytest.fixture(scope="session")
 def app():
-    return app_module.app
+    return create_app()
 
 
 @pytest.fixture(scope="session")
