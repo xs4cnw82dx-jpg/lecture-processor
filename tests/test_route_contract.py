@@ -1,6 +1,3 @@
-import app as app_module
-
-
 EXPECTED_ROUTES = [
     ('GET', '/', 'pages.index'),
     ('GET', '/admin', 'pages.admin_dashboard'),
@@ -65,9 +62,9 @@ EXPECTED_ROUTES = [
 ]
 
 
-def test_route_contract_snapshot_stable():
+def test_route_contract_snapshot_stable(app):
     actual = []
-    for rule in app_module.app.url_map.iter_rules():
+    for rule in app.url_map.iter_rules():
         if rule.endpoint == 'static':
             continue
         methods = sorted(rule.methods - {'HEAD', 'OPTIONS'})
