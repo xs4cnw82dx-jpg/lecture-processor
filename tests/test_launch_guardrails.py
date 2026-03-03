@@ -6,21 +6,23 @@ from datetime import datetime, timezone
 import pytest
 
 import app as app_module
+
+core = app_module.app.extensions["lecture_processor"]["runtime"].core
 from lecture_processor.services import upload_api_service
 
 
 @pytest.fixture()
 def client():
     app_module.app.config["TESTING"] = True
-    app_module.jobs.clear()
+    core.jobs.clear()
     with app_module.app.test_client() as test_client:
         yield test_client
-    app_module.jobs.clear()
+    core.jobs.clear()
 
 
 @pytest.fixture(autouse=True)
 def disable_sentry(monkeypatch):
-    monkeypatch.setattr(app_module, "sentry_sdk", None)
+    monkeypatch.setattr(core, "sentry_sdk", None)
 
 
 def test_verify_email_allows_student_domain(client):
@@ -46,27 +48,27 @@ def test_build_admin_deployment_info_detects_render_host(monkeypatch):
     monkeypatch.setenv("RENDER_GIT_BRANCH", "main")
     monkeypatch.setenv("RENDER_GIT_COMMIT", "abcdef1234567890")
 
-    info = app_module.build_admin_deployment_info("lecture-processor-1.onrender.com")
+    info = core.build_admin_deployment_info("lecture-processor-1.onrender.com")
     assert info["runtime"] == "render"
     assert info["service_name"] == "lecture-processor"
     assert info["git_commit_short"] == "abcdef123456"
     assert info["host_matches_render"] is True
 
-    mismatch = app_module.build_admin_deployment_info("other-host.onrender.com")
+    mismatch = core.build_admin_deployment_info("other-host.onrender.com")
     assert mismatch["host_matches_render"] is False
 
 
 def test_build_admin_runtime_checks_reports_tool_and_stripe_state(monkeypatch):
-    monkeypatch.setattr(app_module.stripe, "api_key", "sk_test_123")
-    monkeypatch.setattr(app_module, "STRIPE_PUBLISHABLE_KEY", "pk_test_123")
-    monkeypatch.setattr(app_module, "STRIPE_WEBHOOK_SECRET", "whsec_test_123")
-    monkeypatch.setattr(app_module, "get_soffice_binary", lambda: "/usr/bin/soffice")
-    monkeypatch.setattr(app_module, "get_ffmpeg_binary", lambda: "/usr/bin/ffmpeg")
-    monkeypatch.setattr(app_module.shutil, "which", lambda name: "/usr/bin/yt-dlp" if name == "yt-dlp" else "")
-    monkeypatch.setattr(app_module, "db", object())
-    monkeypatch.setattr(app_module, "client", object())
+    monkeypatch.setattr(core.stripe, "api_key", "sk_test_123")
+    monkeypatch.setattr(core, "STRIPE_PUBLISHABLE_KEY", "pk_test_123")
+    monkeypatch.setattr(core, "STRIPE_WEBHOOK_SECRET", "whsec_test_123")
+    monkeypatch.setattr(core, "get_soffice_binary", lambda: "/usr/bin/soffice")
+    monkeypatch.setattr(core, "get_ffmpeg_binary", lambda: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(core.shutil, "which", lambda name: "/usr/bin/yt-dlp" if name == "yt-dlp" else "")
+    monkeypatch.setattr(core, "db", object())
+    monkeypatch.setattr(core, "client", object())
 
-    checks = app_module.build_admin_runtime_checks()
+    checks = core.build_admin_runtime_checks()
     assert checks["stripe_secret_mode"] == "test"
     assert checks["stripe_publishable_mode"] == "test"
     assert checks["stripe_keys_match"] is True
@@ -78,10 +80,10 @@ def test_build_admin_runtime_checks_reports_tool_and_stripe_state(monkeypatch):
 
 
 def test_auth_user_includes_preferences(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "pref-u1", "email": "user@gmail.com"})
-    monkeypatch.setattr(app_module, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "pref-u1", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(
-        app_module,
+        core,
         "get_or_create_user",
         lambda _uid, _email: {
             "uid": "pref-u1",
@@ -124,11 +126,11 @@ def test_user_preferences_put_persists_language_and_onboarding(client, monkeypat
         def collection(self, _name):
             return _FakeCollection()
 
-    monkeypatch.setattr(app_module, "db", _FakeDB())
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "pref-u2", "email": "user@gmail.com"})
-    monkeypatch.setattr(app_module, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(core, "db", _FakeDB())
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "pref-u2", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(
-        app_module,
+        core,
         "get_or_create_user",
         lambda _uid, _email: {
             "uid": "pref-u2",
@@ -159,10 +161,10 @@ def test_user_preferences_put_persists_language_and_onboarding(client, monkeypat
 
 
 def test_user_preferences_put_requires_custom_language_for_other(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "pref-u3", "email": "user@gmail.com"})
-    monkeypatch.setattr(app_module, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "pref-u3", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(
-        app_module,
+        core,
         "get_or_create_user",
         lambda _uid, _email: {
             "uid": "pref-u3",
@@ -185,9 +187,9 @@ def test_user_preferences_put_requires_custom_language_for_other(client, monkeyp
 
 def test_analytics_rate_limited_returns_retry_after(client, monkeypatch):
     captured = []
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u1", "email": "user@example.com"})
-    monkeypatch.setattr(app_module, "check_rate_limit", lambda **_kwargs: (False, 12))
-    monkeypatch.setattr(app_module, "log_rate_limit_hit", lambda name, retry: captured.append((name, retry)) or True)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u1", "email": "user@example.com"})
+    monkeypatch.setattr(core, "check_rate_limit", lambda **_kwargs: (False, 12))
+    monkeypatch.setattr(core, "log_rate_limit_hit", lambda name, retry: captured.append((name, retry)) or True)
 
     response = client.post("/api/lp-event", json={"event": "auth_success", "session_id": "manualtest123"})
 
@@ -201,9 +203,9 @@ def test_analytics_rate_limited_returns_retry_after(client, monkeypatch):
 
 def test_checkout_rate_limited_returns_retry_after(client, monkeypatch):
     captured = []
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u2", "email": "user@example.com"})
-    monkeypatch.setattr(app_module, "check_rate_limit", lambda **_kwargs: (False, 21))
-    monkeypatch.setattr(app_module, "log_rate_limit_hit", lambda name, retry: captured.append((name, retry)) or True)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u2", "email": "user@example.com"})
+    monkeypatch.setattr(core, "check_rate_limit", lambda **_kwargs: (False, 21))
+    monkeypatch.setattr(core, "log_rate_limit_hit", lambda name, retry: captured.append((name, retry)) or True)
 
     response = client.post("/api/create-checkout-session", json={"bundle_id": "lecture_5"})
 
@@ -217,10 +219,10 @@ def test_checkout_rate_limited_returns_retry_after(client, monkeypatch):
 
 def test_upload_active_jobs_returns_429(client, monkeypatch):
     captured = []
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u3", "email": "user@gmail.com"})
-    monkeypatch.setattr(app_module, "is_email_allowed", lambda _email: True)
-    monkeypatch.setattr(app_module, "count_active_jobs_for_user", lambda _uid: 2)
-    monkeypatch.setattr(app_module, "log_rate_limit_hit", lambda name, retry: captured.append((name, retry)) or True)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u3", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(core, "count_active_jobs_for_user", lambda _uid: 2)
+    monkeypatch.setattr(core, "log_rate_limit_hit", lambda name, retry: captured.append((name, retry)) or True)
 
     response = client.post("/upload", data={"mode": "lecture-notes"})
 
@@ -232,11 +234,11 @@ def test_upload_active_jobs_returns_429(client, monkeypatch):
 
 def test_upload_rate_limited_returns_retry_after(client, monkeypatch):
     captured = []
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u4", "email": "user@gmail.com"})
-    monkeypatch.setattr(app_module, "is_email_allowed", lambda _email: True)
-    monkeypatch.setattr(app_module, "count_active_jobs_for_user", lambda _uid: 0)
-    monkeypatch.setattr(app_module, "check_rate_limit", lambda **_kwargs: (False, 33))
-    monkeypatch.setattr(app_module, "log_rate_limit_hit", lambda name, retry: captured.append((name, retry)) or True)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u4", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(core, "count_active_jobs_for_user", lambda _uid: 0)
+    monkeypatch.setattr(core, "check_rate_limit", lambda **_kwargs: (False, 33))
+    monkeypatch.setattr(core, "log_rate_limit_hit", lambda name, retry: captured.append((name, retry)) or True)
 
     response = client.post("/upload", data={"mode": "lecture-notes"})
 
@@ -249,11 +251,11 @@ def test_upload_rate_limited_returns_retry_after(client, monkeypatch):
 
 
 def test_upload_rejected_when_disk_space_low(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u-lowdisk", "email": "user@gmail.com"})
-    monkeypatch.setattr(app_module, "is_email_allowed", lambda _email: True)
-    monkeypatch.setattr(app_module, "count_active_jobs_for_user", lambda _uid: 0)
-    monkeypatch.setattr(app_module, "check_rate_limit", lambda **_kwargs: (True, 0))
-    monkeypatch.setattr(app_module, "has_sufficient_upload_disk_space", lambda _bytes=0: (False, 100, 200))
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-lowdisk", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(core, "count_active_jobs_for_user", lambda _uid: 0)
+    monkeypatch.setattr(core, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(core, "has_sufficient_upload_disk_space", lambda _bytes=0: (False, 100, 200))
 
     response = client.post("/upload", data={"mode": "lecture-notes"})
 
@@ -263,13 +265,13 @@ def test_upload_rejected_when_disk_space_low(client, monkeypatch):
 
 def test_upload_rejected_when_daily_quota_reached(client, monkeypatch):
     captured = []
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u-daycap", "email": "user@gmail.com"})
-    monkeypatch.setattr(app_module, "is_email_allowed", lambda _email: True)
-    monkeypatch.setattr(app_module, "count_active_jobs_for_user", lambda _uid: 0)
-    monkeypatch.setattr(app_module, "check_rate_limit", lambda **_kwargs: (True, 0))
-    monkeypatch.setattr(app_module, "has_sufficient_upload_disk_space", lambda _bytes=0: (True, 99999999, 100))
-    monkeypatch.setattr(app_module, "reserve_daily_upload_bytes", lambda _uid, _bytes: (False, 123))
-    monkeypatch.setattr(app_module, "log_rate_limit_hit", lambda name, retry: captured.append((name, retry)) or True)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-daycap", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(core, "count_active_jobs_for_user", lambda _uid: 0)
+    monkeypatch.setattr(core, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(core, "has_sufficient_upload_disk_space", lambda _bytes=0: (True, 99999999, 100))
+    monkeypatch.setattr(core, "reserve_daily_upload_bytes", lambda _uid, _bytes: (False, 123))
+    monkeypatch.setattr(core, "log_rate_limit_hit", lambda name, retry: captured.append((name, retry)) or True)
 
     response = client.post("/upload", data={"mode": "lecture-notes"})
 
@@ -280,12 +282,12 @@ def test_upload_rejected_when_daily_quota_reached(client, monkeypatch):
 
 
 def test_upload_invalid_audio_content_type_rejected(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u5", "email": "user@gmail.com"})
-    monkeypatch.setattr(app_module, "is_email_allowed", lambda _email: True)
-    monkeypatch.setattr(app_module, "count_active_jobs_for_user", lambda _uid: 0)
-    monkeypatch.setattr(app_module, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u5", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(core, "count_active_jobs_for_user", lambda _uid: 0)
+    monkeypatch.setattr(core, "check_rate_limit", lambda **_kwargs: (True, 0))
     monkeypatch.setattr(
-        app_module,
+        core,
         "get_or_create_user",
         lambda _uid, _email: {"lecture_credits_standard": 1, "lecture_credits_extended": 0},
     )
@@ -306,9 +308,9 @@ def test_upload_invalid_audio_content_type_rejected(client, monkeypatch):
 
 
 def test_import_audio_url_rejects_invalid_host(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "imp-u1", "email": "user@gmail.com"})
-    monkeypatch.setattr(app_module, "is_email_allowed", lambda _email: True)
-    monkeypatch.setattr(app_module, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "imp-u1", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(core, "check_rate_limit", lambda **_kwargs: (True, 0))
 
     response = client.post(
         "/api/import-audio-url",
@@ -321,20 +323,20 @@ def test_import_audio_url_rejects_invalid_host(client, monkeypatch):
 
 
 def test_import_audio_url_success_returns_token(client, monkeypatch, tmp_path):
-    app_module.AUDIO_IMPORT_TOKENS.clear()
+    core.AUDIO_IMPORT_TOKENS.clear()
     imported_path = tmp_path / "imported.mp3"
     imported_path.write_bytes(b"ID3\x03\x00\x00\x00")
 
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "imp-u2", "email": "user@gmail.com"})
-    monkeypatch.setattr(app_module, "is_email_allowed", lambda _email: True)
-    monkeypatch.setattr(app_module, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "imp-u2", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(core, "check_rate_limit", lambda **_kwargs: (True, 0))
     monkeypatch.setattr(
-        app_module,
+        core,
         "validate_video_import_url",
         lambda _url: ("https://ovp.kaltura.com/path/index.m3u8", ""),
     )
     monkeypatch.setattr(
-        app_module,
+        core,
         "download_audio_from_video_url",
         lambda _url, _prefix: (str(imported_path), "lecture.mp3", imported_path.stat().st_size),
     )
@@ -349,18 +351,18 @@ def test_import_audio_url_success_returns_token(client, monkeypatch, tmp_path):
     body = response.get_json()
     assert body["ok"] is True
     token = body["audio_import_token"]
-    assert token in app_module.AUDIO_IMPORT_TOKENS
+    assert token in core.AUDIO_IMPORT_TOKENS
     assert body["file_name"] == "lecture.mp3"
 
 
 def test_upload_accepts_audio_import_token_for_lecture_mode(client, monkeypatch):
     token_calls = []
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "imp-u3", "email": "user@gmail.com"})
-    monkeypatch.setattr(app_module, "is_email_allowed", lambda _email: True)
-    monkeypatch.setattr(app_module, "count_active_jobs_for_user", lambda _uid: 0)
-    monkeypatch.setattr(app_module, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "imp-u3", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(core, "count_active_jobs_for_user", lambda _uid: 0)
+    monkeypatch.setattr(core, "check_rate_limit", lambda **_kwargs: (True, 0))
     monkeypatch.setattr(
-        app_module,
+        core,
         "get_or_create_user",
         lambda _uid, _email: {
             "lecture_credits_standard": 1,
@@ -369,15 +371,15 @@ def test_upload_accepts_audio_import_token_for_lecture_mode(client, monkeypatch)
             "preferred_output_language_custom": "",
         },
     )
-    monkeypatch.setattr(app_module, "allowed_file", lambda _filename, _allowed: True)
-    monkeypatch.setattr(app_module, "file_has_pdf_signature", lambda _path: True)
-    monkeypatch.setattr(app_module, "file_looks_like_audio", lambda _path: True)
-    monkeypatch.setattr(app_module, "get_saved_file_size", lambda _path: 2048)
-    monkeypatch.setattr(app_module, "deduct_credit", lambda *_args, **_kwargs: "lecture_credits_standard")
-    monkeypatch.setattr(app_module, "cleanup_expired_audio_import_tokens", lambda: None)
-    monkeypatch.setattr(app_module, "process_lecture_notes", lambda _job_id, _pdf_path, _audio_path: None)
+    monkeypatch.setattr(core, "allowed_file", lambda _filename, _allowed: True)
+    monkeypatch.setattr(core, "file_has_pdf_signature", lambda _path: True)
+    monkeypatch.setattr(core, "file_looks_like_audio", lambda _path: True)
+    monkeypatch.setattr(core, "get_saved_file_size", lambda _path: 2048)
+    monkeypatch.setattr(core, "deduct_credit", lambda *_args, **_kwargs: "lecture_credits_standard")
+    monkeypatch.setattr(core, "cleanup_expired_audio_import_tokens", lambda: None)
+    monkeypatch.setattr(core, "process_lecture_notes", lambda _job_id, _pdf_path, _audio_path: None)
     monkeypatch.setattr(
-        app_module,
+        core,
         "get_audio_import_token_path",
         lambda _uid, token, consume=False: token_calls.append((token, consume)) or ("/tmp/imported-audio.mp3", ""),
     )
@@ -397,17 +399,17 @@ def test_upload_accepts_audio_import_token_for_lecture_mode(client, monkeypatch)
     body = response.get_json()
     assert "job_id" in body
     assert token_calls == [("tok-abc-123", False), ("tok-abc-123", True)]
-    assert app_module.jobs[body["job_id"]]["output_language"] == "Dutch"
-    assert app_module.jobs[body["job_id"]]["mode"] == "lecture-notes"
+    assert core.jobs[body["job_id"]]["output_language"] == "Dutch"
+    assert core.jobs[body["job_id"]]["mode"] == "lecture-notes"
 
 
 def test_upload_slides_only_accepts_pptx_after_conversion(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "pptx-u1", "email": "user@gmail.com"})
-    monkeypatch.setattr(app_module, "is_email_allowed", lambda _email: True)
-    monkeypatch.setattr(app_module, "count_active_jobs_for_user", lambda _uid: 0)
-    monkeypatch.setattr(app_module, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "pptx-u1", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(core, "count_active_jobs_for_user", lambda _uid: 0)
+    monkeypatch.setattr(core, "check_rate_limit", lambda **_kwargs: (True, 0))
     monkeypatch.setattr(
-        app_module,
+        core,
         "get_or_create_user",
         lambda _uid, _email: {
             "slides_credits": 1,
@@ -415,9 +417,9 @@ def test_upload_slides_only_accepts_pptx_after_conversion(client, monkeypatch):
             "preferred_output_language_custom": "",
         },
     )
-    monkeypatch.setattr(app_module, "resolve_uploaded_slides_to_pdf", lambda _file, _job_id: ("/tmp/converted-slides.pdf", ""))
-    monkeypatch.setattr(app_module, "deduct_credit", lambda *_args, **_kwargs: "slides_credits")
-    monkeypatch.setattr(app_module, "process_slides_only", lambda _job_id, _pdf_path: None)
+    monkeypatch.setattr(core, "resolve_uploaded_slides_to_pdf", lambda _file, _job_id: ("/tmp/converted-slides.pdf", ""))
+    monkeypatch.setattr(core, "deduct_credit", lambda *_args, **_kwargs: "slides_credits")
+    monkeypatch.setattr(core, "process_slides_only", lambda _job_id, _pdf_path: None)
 
     response = client.post(
         "/upload",
@@ -436,7 +438,7 @@ def test_upload_slides_only_accepts_pptx_after_conversion(client, monkeypatch):
     assert response.status_code == 200
     body = response.get_json()
     assert body.get("job_id")
-    assert app_module.jobs[body["job_id"]]["mode"] == "slides-only"
+    assert core.jobs[body["job_id"]]["mode"] == "slides-only"
 
 
 def test_file_has_pptx_signature_detects_valid_archive(tmp_path):
@@ -444,11 +446,11 @@ def test_file_has_pptx_signature_detects_valid_archive(tmp_path):
     with zipfile.ZipFile(valid_path, "w") as archive:
         archive.writestr("[Content_Types].xml", "<Types></Types>")
         archive.writestr("ppt/presentation.xml", "<presentation></presentation>")
-    assert app_module.file_has_pptx_signature(str(valid_path)) is True
+    assert core.file_has_pptx_signature(str(valid_path)) is True
 
     invalid_path = tmp_path / "invalid.pptx"
     invalid_path.write_bytes(b"not-a-pptx")
-    assert app_module.file_has_pptx_signature(str(invalid_path)) is False
+    assert core.file_has_pptx_signature(str(invalid_path)) is False
 
 
 def test_account_export_requires_auth(client):
@@ -458,9 +460,9 @@ def test_account_export_requires_auth(client):
 
 
 def test_account_export_returns_json_attachment(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u6", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u6", "email": "user@gmail.com"})
     monkeypatch.setattr(
-        app_module,
+        core,
         "collect_user_export_payload",
         lambda uid, email: {"meta": {"uid": uid, "email": email}, "collections": {}},
     )
@@ -477,7 +479,7 @@ def test_account_export_returns_json_attachment(client, monkeypatch):
 
 
 def test_account_delete_rejects_bad_confirmation_text(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u7", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u7", "email": "user@gmail.com"})
 
     response = client.post(
         "/api/account/delete",
@@ -490,8 +492,8 @@ def test_account_delete_rejects_bad_confirmation_text(client, monkeypatch):
 
 
 def test_account_delete_rejects_when_active_jobs_exist(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u8", "email": "user@gmail.com"})
-    monkeypatch.setattr(app_module, "count_active_jobs_for_user", lambda _uid: 1)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u8", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "count_active_jobs_for_user", lambda _uid: 1)
 
     response = client.post(
         "/api/account/delete",
@@ -532,16 +534,16 @@ def test_account_delete_success_path_returns_ok(client, monkeypatch):
         def delete(self):
             return None
 
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u9", "email": "user@gmail.com"})
-    monkeypatch.setattr(app_module, "count_active_jobs_for_user", lambda _uid: 0)
-    monkeypatch.setattr(app_module, "list_docs_by_uid", lambda *_args, **_kwargs: ([], False))
-    monkeypatch.setattr(app_module, "delete_docs_by_uid", lambda *_args, **_kwargs: (0, False))
-    monkeypatch.setattr(app_module, "anonymize_purchase_docs_by_uid", lambda *_args, **_kwargs: (0, False))
-    monkeypatch.setattr(app_module, "remove_upload_artifacts_for_job_ids", lambda _job_ids: 0)
-    monkeypatch.setattr(app_module, "get_study_progress_doc", lambda _uid: _FakeProgressDoc())
-    monkeypatch.setattr(app_module, "get_study_card_state_doc", lambda _uid, _pack_id: _FakeProgressDoc())
-    monkeypatch.setattr(app_module, "db", _FakeDB())
-    monkeypatch.setattr(app_module.auth, "delete_user", lambda _uid: None)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u9", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "count_active_jobs_for_user", lambda _uid: 0)
+    monkeypatch.setattr(core, "list_docs_by_uid", lambda *_args, **_kwargs: ([], False))
+    monkeypatch.setattr(core, "delete_docs_by_uid", lambda *_args, **_kwargs: (0, False))
+    monkeypatch.setattr(core, "anonymize_purchase_docs_by_uid", lambda *_args, **_kwargs: (0, False))
+    monkeypatch.setattr(core, "remove_upload_artifacts_for_job_ids", lambda _job_ids: 0)
+    monkeypatch.setattr(core, "get_study_progress_doc", lambda _uid: _FakeProgressDoc())
+    monkeypatch.setattr(core, "get_study_card_state_doc", lambda _uid, _pack_id: _FakeProgressDoc())
+    monkeypatch.setattr(core, "db", _FakeDB())
+    monkeypatch.setattr(core.auth, "delete_user", lambda _uid: None)
 
     response = client.post(
         "/api/account/delete",
@@ -569,7 +571,7 @@ def test_merge_streak_data_keeps_most_recent_progress_day():
         "daily_progress_count": 2,
     }
 
-    merged = app_module.merge_streak_data(server, incoming)
+    merged = core.merge_streak_data(server, incoming)
 
     assert merged["last_study_date"] == "2026-02-26"
     assert merged["current_streak"] == 4
@@ -599,7 +601,7 @@ def test_merge_card_state_entries_keeps_counts_monotonic():
         "difficulty": "easy",
     }
 
-    merged = app_module.merge_card_state_entries(server, incoming)
+    merged = core.merge_card_state_entries(server, incoming)
 
     assert merged["seen"] == 5
     assert merged["correct"] == 4
@@ -656,9 +658,9 @@ def test_update_study_progress_empty_card_state_payload_does_not_delete_existing
     fake_progress_doc = _FakeProgressDoc()
     fake_card_doc = _FakeCardStateDoc()
 
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u10", "email": "user@gmail.com"})
-    monkeypatch.setattr(app_module, "get_study_progress_doc", lambda _uid: fake_progress_doc)
-    monkeypatch.setattr(app_module, "get_study_card_state_doc", lambda _uid, _pack_id: fake_card_doc)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u10", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "get_study_progress_doc", lambda _uid: fake_progress_doc)
+    monkeypatch.setattr(core, "get_study_card_state_doc", lambda _uid, _pack_id: fake_card_doc)
 
     response = client.put(
         "/api/study-progress",
@@ -673,9 +675,9 @@ def test_update_study_progress_empty_card_state_payload_does_not_delete_existing
 
 
 def test_compute_study_progress_summary_uses_server_logic_for_overview():
-    now = app_module.datetime.now()
+    now = core.datetime.now()
     today = now.strftime("%Y-%m-%d")
-    tomorrow = (now + app_module.timedelta(days=1)).strftime("%Y-%m-%d")
+    tomorrow = (now + core.timedelta(days=1)).strftime("%Y-%m-%d")
 
     progress_data = {
         "daily_goal": 30,
@@ -693,7 +695,7 @@ def test_compute_study_progress_summary_uses_server_logic_for_overview():
         }
     ]
 
-    summary = app_module.compute_study_progress_summary(progress_data, card_state_maps)
+    summary = core.compute_study_progress_summary(progress_data, card_state_maps)
 
     assert summary["daily_goal"] == 30
     assert summary["current_streak"] == 6
@@ -714,7 +716,7 @@ def test_compute_study_progress_summary_respects_timezone_boundary():
         },
     }
 
-    summary = app_module.compute_study_progress_summary(progress_data, [], base_now=base_now)
+    summary = core.compute_study_progress_summary(progress_data, [], base_now=base_now)
 
     assert summary["current_streak"] == 3
     assert summary["today_progress"] == 2
@@ -733,7 +735,7 @@ def test_compute_study_progress_summary_invalid_timezone_falls_back_to_utc():
         },
     }
 
-    summary = app_module.compute_study_progress_summary(progress_data, [], base_now=base_now)
+    summary = core.compute_study_progress_summary(progress_data, [], base_now=base_now)
 
     assert summary["current_streak"] == 0
     assert summary["today_progress"] == 0
@@ -752,7 +754,7 @@ def test_compute_study_progress_summary_timezone_yesterday_window():
         },
     }
 
-    summary = app_module.compute_study_progress_summary(progress_data, [], base_now=base_now)
+    summary = core.compute_study_progress_summary(progress_data, [], base_now=base_now)
 
     assert summary["current_streak"] == 4
     assert summary["today_progress"] == 3
@@ -793,10 +795,10 @@ def test_update_study_progress_merges_cross_browser_card_states(client, monkeypa
     progress_store = {}
     card_state_store = {}
 
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u12", "email": "user@gmail.com"})
-    monkeypatch.setattr(app_module, "get_study_progress_doc", lambda uid: _FakeDocRef(progress_store, uid))
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u12", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "get_study_progress_doc", lambda uid: _FakeDocRef(progress_store, uid))
     monkeypatch.setattr(
-        app_module,
+        core,
         "get_study_card_state_doc",
         lambda uid, pack_id: _FakeDocRef(card_state_store, f"{uid}:{pack_id}"),
     )
@@ -882,12 +884,12 @@ def test_update_study_progress_merges_cross_browser_card_states(client, monkeypa
 
 
 def test_billing_receipt_helpers_track_charged_and_refunded_credits():
-    job = {"billing_receipt": app_module.initialize_billing_receipt({"interview_credits_short": 1, "slides_credits": 2})}
+    job = {"billing_receipt": core.initialize_billing_receipt({"interview_credits_short": 1, "slides_credits": 2})}
 
-    app_module.add_job_credit_refund(job, "slides_credits", 1)
-    app_module.add_job_credit_refund(job, "interview_credits_short", 1)
+    core.add_job_credit_refund(job, "slides_credits", 1)
+    core.add_job_credit_refund(job, "interview_credits_short", 1)
 
-    snapshot = app_module.get_billing_receipt_snapshot(job)
+    snapshot = core.get_billing_receipt_snapshot(job)
     assert snapshot["charged"] == {"interview_credits_short": 1, "slides_credits": 2}
     assert snapshot["refunded"] == {"slides_credits": 1, "interview_credits_short": 1}
 
@@ -898,14 +900,14 @@ def test_refund_credit_returns_false_when_user_document_is_missing(monkeypatch):
 
     update_called = {"value": False}
 
-    monkeypatch.setattr(app_module.users_repo, "get_doc", lambda _db, _uid: _MissingDoc())
+    monkeypatch.setattr(core.users_repo, "get_doc", lambda _db, _uid: _MissingDoc())
     monkeypatch.setattr(
-        app_module.users_repo,
+        core.users_repo,
         "update_doc",
         lambda _db, _uid, _updates: update_called.__setitem__("value", True),
     )
 
-    refunded = app_module.refund_credit("missing-u", "lecture_credits_standard")
+    refunded = core.refund_credit("missing-u", "lecture_credits_standard")
 
     assert refunded is False
     assert update_called["value"] is False
@@ -917,14 +919,14 @@ def test_refund_slides_credits_returns_false_when_user_document_is_missing(monke
 
     update_called = {"value": False}
 
-    monkeypatch.setattr(app_module.users_repo, "get_doc", lambda _db, _uid: _MissingDoc())
+    monkeypatch.setattr(core.users_repo, "get_doc", lambda _db, _uid: _MissingDoc())
     monkeypatch.setattr(
-        app_module.users_repo,
+        core.users_repo,
         "update_doc",
         lambda _db, _uid, _updates: update_called.__setitem__("value", True),
     )
 
-    refunded = app_module.refund_slides_credits("missing-u", 1)
+    refunded = core.refund_slides_credits("missing-u", 1)
 
     assert refunded is False
     assert update_called["value"] is False
@@ -967,8 +969,8 @@ def test_tools_refund_fallback_does_not_claim_success_when_slides_refund_fails()
 
 
 def test_status_returns_interview_billing_receipt(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u13", "email": "user@gmail.com"})
-    app_module.jobs["job-interview-receipt"] = {
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u13", "email": "user@gmail.com"})
+    core.jobs["job-interview-receipt"] = {
         "status": "complete",
         "step": 2,
         "step_description": "Complete!",
@@ -1003,8 +1005,8 @@ def test_status_returns_interview_billing_receipt(client, monkeypatch):
 
 
 def test_download_docx_transcript_uses_consistent_filename(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u14", "email": "user@gmail.com"})
-    app_module.jobs["job-transcript-docx"] = {
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u14", "email": "user@gmail.com"})
+    core.jobs["job-transcript-docx"] = {
         "status": "complete",
         "mode": "lecture-notes",
         "user_id": "u14",
@@ -1045,13 +1047,13 @@ def test_process_interview_transcription_saves_pack_on_success(monkeypatch, tmp_
     audio_path = tmp_path / "interview.wav"
     audio_path.write_bytes(b"RIFF0000WAVEfmt ")
 
-    monkeypatch.setattr(app_module, "client", _FakeClient())
-    monkeypatch.setattr(app_module, "convert_audio_to_mp3_with_ytdlp", lambda path: (str(path), False))
-    monkeypatch.setattr(app_module, "persist_audio_for_study_pack", lambda _job_id, _path: "/tmp/persisted.mp3")
-    monkeypatch.setattr(app_module, "get_mime_type", lambda _path: "audio/mpeg")
-    monkeypatch.setattr(app_module, "wait_for_file_processing", lambda _uploaded: None)
+    monkeypatch.setattr(core, "client", _FakeClient())
+    monkeypatch.setattr(core, "convert_audio_to_mp3_with_ytdlp", lambda path: (str(path), False))
+    monkeypatch.setattr(core, "persist_audio_for_study_pack", lambda _job_id, _path: "/tmp/persisted.mp3")
+    monkeypatch.setattr(core, "get_mime_type", lambda _path: "audio/mpeg")
+    monkeypatch.setattr(core, "wait_for_file_processing", lambda _uploaded: None)
     monkeypatch.setattr(
-        app_module,
+        core,
         "generate_interview_enhancements",
         lambda _transcript, _features, _language="English", retry_tracker=None: {
             "summary": "Summary text",
@@ -1062,12 +1064,12 @@ def test_process_interview_transcription_saves_pack_on_success(monkeypatch, tmp_
             "error": None,
         },
     )
-    monkeypatch.setattr(app_module, "save_study_pack", lambda job_id, _job: saved.append(job_id))
-    monkeypatch.setattr(app_module, "cleanup_files", lambda _local, _gemini: None)
-    monkeypatch.setattr(app_module, "save_job_log", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(core, "save_study_pack", lambda job_id, _job: saved.append(job_id))
+    monkeypatch.setattr(core, "cleanup_files", lambda _local, _gemini: None)
+    monkeypatch.setattr(core, "save_job_log", lambda *_args, **_kwargs: None)
 
     job_id = "job-interview-save"
-    app_module.jobs[job_id] = {
+    core.jobs[job_id] = {
         "status": "starting",
         "step": 0,
         "step_description": "Starting...",
@@ -1093,12 +1095,12 @@ def test_process_interview_transcription_saves_pack_on_success(monkeypatch, tmp_
         "extra_slides_refunded": 0,
         "study_generation_error": None,
         "error": None,
-        "billing_receipt": app_module.initialize_billing_receipt({"interview_credits_short": 1, "slides_credits": 1}),
+        "billing_receipt": core.initialize_billing_receipt({"interview_credits_short": 1, "slides_credits": 1}),
     }
 
-    app_module.process_interview_transcription(job_id, str(audio_path))
+    core.process_interview_transcription(job_id, str(audio_path))
 
-    assert app_module.jobs[job_id]["status"] == "complete"
+    assert core.jobs[job_id]["status"] == "complete"
     assert saved == [job_id]
 
 
@@ -1128,8 +1130,8 @@ def test_study_folder_crud_requires_auth(client):
 
 
 def test_admin_overview_and_export_forbid_non_admin(client, monkeypatch):
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u-non-admin", "email": "user@gmail.com"})
-    monkeypatch.setattr(app_module, "is_admin_user", lambda _decoded: False)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-non-admin", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_admin_user", lambda _decoded: False)
     assert client.get("/api/admin/overview", headers={"Authorization": "Bearer dev"}).status_code == 403
     assert client.get("/api/admin/export?type=jobs", headers={"Authorization": "Bearer dev"}).status_code == 403
 
@@ -1168,10 +1170,10 @@ def test_study_pack_audio_forbidden_for_other_user(client, monkeypatch, tmp_path
         def collection(self, _name):
             return _FakeCollection()
 
-    monkeypatch.setattr(app_module, "db", _FakeDB())
-    monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "other-uid", "email": "user@gmail.com"})
-    monkeypatch.setattr(app_module, "is_admin_user", lambda _decoded: False)
-    monkeypatch.setattr(app_module, "resolve_audio_storage_path_from_key", lambda _key: str(audio_file))
+    monkeypatch.setattr(core, "db", _FakeDB())
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "other-uid", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_admin_user", lambda _decoded: False)
+    monkeypatch.setattr(core, "resolve_audio_storage_path_from_key", lambda _key: str(audio_file))
 
     response = client.get("/api/study-packs/pack-audio/audio", headers={"Authorization": "Bearer dev"})
     assert response.status_code == 403

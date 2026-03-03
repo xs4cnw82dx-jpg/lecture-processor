@@ -200,7 +200,7 @@ Status: `DONE` (incremental batches R1-R6 completed, behavior preserved)
 Current backend structure for future AI agents:
 - Entrypoint: `app.py` (thin bootstrap for Gunicorn/local)
 - Factory: `lecture_processor/__init__.py`
-- Legacy compatibility shim (deprecated): `lecture_processor/legacy_app.py`
+- Runtime core module: `lecture_processor/runtime/core.py`
 - Route grouping: `lecture_processor/blueprints/*.py`
 - Data access layer: `lecture_processor/repositories/*.py`
 - Domain helpers: `lecture_processor/services/*.py`
