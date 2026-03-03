@@ -129,6 +129,8 @@ def admin_overview(app_ctx, request):
                 'job_id': job.get('job_id', ''),
                 'email': job.get('email', ''),
                 'mode': job.get('mode', ''),
+                'source_type': job.get('source_type', ''),
+                'source_url': job.get('source_url', ''),
                 'status': job.get('status', ''),
                 'duration_seconds': job.get('duration_seconds', 0),
                 'credit_refunded': job.get('credit_refunded', False),
@@ -136,6 +138,8 @@ def admin_overview(app_ctx, request):
                 'token_input_total': job.get('token_input_total', 0),
                 'token_output_total': job.get('token_output_total', 0),
                 'token_total': job.get('token_total', 0),
+                'custom_prompt': job.get('custom_prompt', ''),
+                'prompt_template_key': job.get('prompt_template_key', ''),
             })
 
         recent_purchases_sorted = sorted(
@@ -252,7 +256,8 @@ def admin_export(app_ctx, request):
     def iter_rows():
         if export_type == 'jobs':
             yield [
-                'job_id', 'uid', 'email', 'mode', 'status', 'credit_deducted',
+                'job_id', 'uid', 'email', 'mode', 'source_type', 'source_url',
+                'custom_prompt', 'prompt_template_key', 'status', 'credit_deducted',
                 'credit_refunded', 'error_message', 'started_at', 'finished_at', 'duration_seconds'
             ]
             docs = app_ctx.safe_query_docs_in_window(
@@ -269,6 +274,10 @@ def admin_export(app_ctx, request):
                     job.get('uid', ''),
                     job.get('email', ''),
                     job.get('mode', ''),
+                    job.get('source_type', ''),
+                    job.get('source_url', ''),
+                    job.get('custom_prompt', ''),
+                    job.get('prompt_template_key', ''),
                     job.get('status', ''),
                     job.get('credit_deducted', ''),
                     job.get('credit_refunded', False),

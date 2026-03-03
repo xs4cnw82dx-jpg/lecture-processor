@@ -16,13 +16,13 @@
             <button type="button" class="header-nav-toggle" id="header-nav-toggle" style="display:none;" aria-label="Open navigation menu" aria-expanded="false" aria-controls="header-sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg><span>Menu</span></button>
             <button type="button" class="sign-in-button" id="header-sign-in-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>Sign in</button>
             <button type="button" class="credits-display" id="credits-display" style="display:none;" aria-label="Buy credits"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg><span><span class="credits-count" id="credits-count">0</span> credits</span><div class="credits-tooltip" id="credits-tooltip">Lecture: 0
-Slides: 0
+Text extraction: 0
 Interview: 0
 Total: 0</div></button>
             <div class="user-menu" id="user-menu" style="display:none;">
                 <button type="button" class="user-button" id="user-button" aria-haspopup="menu" aria-expanded="false" aria-controls="user-dropdown"><div class="user-avatar" id="user-avatar"><span id="user-initial">?</span></div><span class="user-name" id="user-name">User</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:var(--gray-400);"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
                 <div class="user-dropdown" id="user-dropdown" role="menu">
-                    <div class="user-dropdown-header"><div class="user-dropdown-email" id="user-email">email@example.com</div><div class="user-dropdown-credits"><div class="credit-row"><span class="credit-label">Lecture credits</span><span class="credit-value" id="dropdown-lecture-credits">0</span></div><div class="credit-row"><span class="credit-label">Slides credits</span><span class="credit-value" id="dropdown-slides-credits">0</span></div><div class="credit-row"><span class="credit-label">Interview credits</span><span class="credit-value" id="dropdown-interview-credits">0</span></div></div></div>
+                    <div class="user-dropdown-header"><div class="user-dropdown-email" id="user-email">email@example.com</div><div class="user-dropdown-credits"><div class="credit-row"><span class="credit-label">Lecture credits</span><span class="credit-value" id="dropdown-lecture-credits">0</span></div><div class="credit-row"><span class="credit-label">Text extraction credits</span><span class="credit-value" id="dropdown-slides-credits">0</span></div><div class="credit-row"><span class="credit-label">Interview credits</span><span class="credit-value" id="dropdown-interview-credits">0</span></div></div></div>
                     <button type="button" class="user-dropdown-item" role="menuitem" id="buy-credits-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>Buy credits</button>
                     <button type="button" class="user-dropdown-item" role="menuitem" id="purchase-history-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>Purchase history</button>
                     <button type="button" class="user-dropdown-item" role="menuitem" id="export-data-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>Export my data</button>
@@ -47,7 +47,12 @@ Total: 0</div></button>
                 <button type="button" class="header-link-button" id="header-study-library-btn" style="display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18v16H3z"></path><line x1="3" y1="10" x2="21" y2="10"></line><line x1="9" y1="4" x2="9" y2="20"></line></svg>Study Library</button>
                 <button type="button" class="header-link-button" id="header-features-btn" style="display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>Features</button>
                 <button type="button" class="header-link-button" id="header-tools-btn" style="display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 1 1.4 0l1.6 1.6a1 1 0 0 1 0 1.4l-7.8 7.8-3.2.8.8-3.2 7.2-7.2z"></path><path d="M12 3h9v9"></path></svg>Tools</button>
-                <button type="button" class="header-link-button" id="header-planner-btn" style="display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2v4"></path><path d="M16 2v4"></path><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M3 10h18"></path></svg>Planner</button>
+                <div class="sidebar-subnav" id="header-planner-group">
+                    <button type="button" class="header-link-button" id="header-planner-btn" style="display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2v4"></path><path d="M16 2v4"></path><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M3 10h18"></path></svg>Planner</button>
+                    <div class="sidebar-submenu" id="header-planner-submenu">
+                        <button type="button" class="header-link-button sub" id="header-calendar-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2v4"></path><path d="M16 2v4"></path><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M3 10h18"></path></svg>Calendar</button>
+                    </div>
+                </div>
             </div>
         </details>
         <details class="sidebar-section" open>
@@ -68,6 +73,7 @@ Total: 0</div></button>
                         <div class="progress-row"><span>Daily goal</span><strong id="progress-goal-text">0 / 20</strong></div>
                         <div class="progress-actions">
                             <button type="button" class="progress-action-btn" id="progress-set-goal-btn" role="menuitem">Set daily goal</button>
+                            <button type="button" class="progress-action-btn" id="progress-open-calendar-btn" role="menuitem">Open Calendar</button>
                             <button type="button" class="progress-action-btn primary" id="progress-open-plan-btn" role="menuitem">Open Planner</button>
                         </div>
                     </div>
@@ -111,7 +117,7 @@ Total: 0</div></button>
         <h2 id="pricing-modal-title">Buy Credits</h2><p class="pricing-modal-subtitle">Choose a credit pack to continue processing your lectures</p>
         <div class="pricing-grid">
             <div class="pricing-category"><div class="pricing-category-header"><div class="pricing-category-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></div><span class="pricing-category-name">Lecture Notes</span></div><div class="bundle-card"><div class="bundle-credits">5 credits</div><div class="bundle-description">Standard lecture processing</div><div class="bundle-price">&euro;9.99</div><div class="bundle-price-per">&euro;2.00 per credit</div><button type="button" class="bundle-buy-btn" data-bundle-id="lecture_5">Buy now</button></div><div class="bundle-card best-value"><div class="best-value-badge">Best Value</div><div class="bundle-credits">10 credits</div><div class="bundle-description">Standard lecture processing</div><div class="bundle-price">&euro;16.99</div><div class="bundle-price-per">&euro;1.70 per credit</div><button type="button" class="bundle-buy-btn" data-bundle-id="lecture_10">Buy now</button></div></div>
-            <div class="pricing-category"><div class="pricing-category-header"><div class="pricing-category-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg></div><span class="pricing-category-name">Slide Extract / Add-ons</span></div><div class="bundle-card"><div class="bundle-credits">10 credits</div><div class="bundle-description">Slide extraction + interview extras</div><div class="bundle-price">&euro;4.99</div><div class="bundle-price-per">&euro;0.50 per credit</div><button type="button" class="bundle-buy-btn" data-bundle-id="slides_10">Buy now</button></div><div class="bundle-card best-value"><div class="best-value-badge">Best Value</div><div class="bundle-credits">25 credits</div><div class="bundle-description">Slide extraction + interview extras</div><div class="bundle-price">&euro;9.99</div><div class="bundle-price-per">&euro;0.40 per credit</div><button type="button" class="bundle-buy-btn" data-bundle-id="slides_25">Buy now</button></div></div>
+            <div class="pricing-category"><div class="pricing-category-header"><div class="pricing-category-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg></div><span class="pricing-category-name">Text Extraction / Add-ons</span></div><div class="bundle-card"><div class="bundle-credits">10 credits</div><div class="bundle-description">Text extraction + interview extras</div><div class="bundle-price">&euro;4.99</div><div class="bundle-price-per">&euro;0.50 per credit</div><button type="button" class="bundle-buy-btn" data-bundle-id="slides_10">Buy now</button></div><div class="bundle-card best-value"><div class="best-value-badge">Best Value</div><div class="bundle-credits">25 credits</div><div class="bundle-description">Text extraction + interview extras</div><div class="bundle-price">&euro;9.99</div><div class="bundle-price-per">&euro;0.40 per credit</div><button type="button" class="bundle-buy-btn" data-bundle-id="slides_25">Buy now</button></div></div>
             <div class="pricing-category"><div class="pricing-category-header"><div class="pricing-category-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg></div><span class="pricing-category-name">Interview</span></div><div class="bundle-card"><div class="bundle-credits">3 credits</div><div class="bundle-description">Timestamped transcription</div><div class="bundle-price">&euro;7.99</div><div class="bundle-price-per">&euro;2.66 per credit</div><button type="button" class="bundle-buy-btn" data-bundle-id="interview_3">Buy now</button></div><div class="bundle-card best-value"><div class="best-value-badge">Best Value</div><div class="bundle-credits">8 credits</div><div class="bundle-description">Timestamped transcription</div><div class="bundle-price">&euro;17.99</div><div class="bundle-price-per">&euro;2.25 per credit</div><button type="button" class="bundle-buy-btn" data-bundle-id="interview_8">Buy now</button></div></div>
         </div>
         <div class="pricing-footer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Secure payment via Stripe &middot; Cards &amp; iDEAL accepted</div>
@@ -215,7 +221,7 @@ Total: 0</div></button>
                                 <button type="button" class="interview-option" data-feature="summary">Summary (max 1 page)</button>
                                 <button type="button" class="interview-option" data-feature="sections">Structured transcript with headings</button>
                             </div>
-                            <div class="control-note" id="interview-extra-note">No extras selected. Extras use the slide-processing pipeline and cost 1 slides credit per option.</div>
+                            <div class="control-note" id="interview-extra-note">No extras selected. Extras use the text-extraction pipeline and cost 1 text extraction credit per option.</div>
                         </div>
                     </div>
                     <div class="generation-controls" id="language-controls">
@@ -320,6 +326,26 @@ Total: 0</div></button>
             <div class="goal-modal-actions">
                 <button type="button" class="progress-action-btn" id="goal-modal-cancel-btn">Cancel</button>
                 <button type="button" class="progress-action-btn primary" id="goal-modal-save-btn">Save goal</button>
+            </div>
+        </div>
+    </div>
+    <div class="delete-account-overlay" id="delete-account-overlay" aria-hidden="true">
+        <div class="delete-account-modal" role="dialog" aria-modal="true" aria-labelledby="delete-account-title">
+            <div class="delete-account-head">
+                <div class="delete-account-title" id="delete-account-title">Delete Account & Data</div>
+                <button type="button" class="delete-account-close" id="delete-account-close" aria-label="Close">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <p class="delete-account-subtitle">This permanently deletes your account and stored data.</p>
+            <label class="form-label" for="delete-account-text-input">Type DELETE MY ACCOUNT</label>
+            <input class="form-input" id="delete-account-text-input" autocomplete="off" spellcheck="false">
+            <label class="form-label" for="delete-account-email-input">Confirm your email</label>
+            <input class="form-input" id="delete-account-email-input" autocomplete="off" spellcheck="false">
+            <div class="delete-account-error" id="delete-account-error"></div>
+            <div class="delete-account-actions">
+                <button type="button" class="progress-action-btn" id="delete-account-cancel-btn">Cancel</button>
+                <button type="button" class="progress-action-btn danger" id="delete-account-confirm-btn">Delete permanently</button>
             </div>
         </div>
     </div>

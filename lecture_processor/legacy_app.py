@@ -826,7 +826,7 @@ def deduct_interview_credit(uid):
 def refund_credit(uid, credit_type):
     """Refund one credit back to the user after a failed processing job."""
     if not uid or not credit_type:
-        return
+        return False
     try:
         user_ref = users_repo.doc_ref(db, uid)
         user_ref.update({
@@ -834,8 +834,10 @@ def refund_credit(uid, credit_type):
             'total_processed': firestore.Increment(-1),
         })
         logger.info(f"✅ Refunded 1 '{credit_type}' credit to user {uid} due to processing failure.")
+        return True
     except Exception as e:
         logger.error(f"❌ Failed to refund credit '{credit_type}' to user {uid}: {e}")
+        return False
 
 def save_purchase_record(uid, bundle_id, stripe_session_id):
     """Save a purchase record to Firestore for purchase history."""
@@ -961,6 +963,9 @@ def save_job_log(job_id, job_data, finished_at):
             'uid': job_data.get('user_id', ''),
             'email': job_data.get('user_email', ''),
             'mode': job_data.get('mode', ''),
+            'source_type': job_data.get('source_type', ''),
+            'source_url': job_data.get('source_url', ''),
+            'source_name': job_data.get('source_name', ''),
             'status': job_data.get('status', ''),
             'study_features': job_data.get('study_features', 'none'),
             'interview_features_count': len(job_data.get('interview_features', [])) if isinstance(job_data.get('interview_features'), list) else 0,
@@ -975,6 +980,8 @@ def save_job_log(job_id, job_data, finished_at):
             'token_output_total': int(job_data.get('token_output_total', 0) or 0),
             'token_total': int(job_data.get('token_total', 0) or 0),
             'file_size_mb': round(float(job_data.get('file_size_mb', 0) or 0), 2),
+            'custom_prompt': job_data.get('custom_prompt', ''),
+            'prompt_template_key': job_data.get('prompt_template_key', ''),
             'started_at': started_at,
             'finished_at': finished_at,
             'duration_seconds': duration,
@@ -2947,7 +2954,7 @@ def markdown_to_docx(markdown_text, title="Document"):
     style = doc.styles['Normal']
     style.font.name = 'Calibri'
     style.font.size = Pt(11)
-    lines = markdown_text.split('\n')
+    lines = str(markdown_text or '').split('\n')
     i = 0
     is_transcript = any(len(line.strip()) > 3 and line.strip()[0].isdigit() and ':' in line.strip()[:6] and ' - ' in line for line in lines[:20])
 
@@ -2967,35 +2974,72 @@ def markdown_to_docx(markdown_text, title="Document"):
                 run.italic = True
                 continue
             paragraph.add_run(part.replace('**', '').replace('__', ''))
+
+    def pick_list_style(kind, level):
+        safe_level = max(1, min(int(level or 1), 3))
+        if kind == 'number':
+            preferred = ['List Number', 'List Number 2', 'List Number 3'][safe_level - 1]
+            fallback = 'List Number'
+        else:
+            preferred = ['List Bullet', 'List Bullet 2', 'List Bullet 3'][safe_level - 1]
+            fallback = 'List Bullet'
+        for candidate in (preferred, fallback):
+            try:
+                _ = doc.styles[candidate]
+                return candidate
+            except KeyError:
+                continue
+        return ''
+
+    def parse_list_line(raw_line):
+        line_value = str(raw_line or '').replace('\t', '    ')
+        bullet_match = re.match(r'^(\s*)[-*•]\s+(.*)$', line_value)
+        if bullet_match:
+            indent_spaces = len(bullet_match.group(1))
+            content = bullet_match.group(2).strip()
+            if not content:
+                return None
+            # Repair malformed markdown like "- 1. Item" so Word keeps numeric list formatting.
+            nested_number = re.match(r'^(\d+[\.\)])\s+(.*)$', content)
+            kind = 'number' if nested_number else 'bullet'
+            item_text = nested_number.group(2).strip() if nested_number else content
+            return kind, (indent_spaces // 2) + 1, item_text
+        number_match = re.match(r'^(\s*)(\d+[\.\)])\s+(.*)$', line_value)
+        if number_match:
+            indent_spaces = len(number_match.group(1))
+            content = number_match.group(3).strip()
+            if not content:
+                return None
+            return 'number', (indent_spaces // 2) + 1, content
+        return None
     
     while i < len(lines):
-        line = lines[i].strip()
-        numbered_match = re.match(r'^\d+\.\s+(.*)$', line)
+        raw_line = lines[i]
+        line = raw_line.strip()
+        list_info = parse_list_line(raw_line)
         if not line:
             i += 1
             continue
         if line.startswith('### '): doc.add_heading(line[4:], level=3)
         elif line.startswith('## '): doc.add_heading(line[3:], level=2)
         elif line.startswith('# '): doc.add_heading(line[2:], level=1)
-        elif line.startswith('- ') or line.startswith('* '):
-            p = doc.add_paragraph(style='List Bullet')
-            add_inline_markdown_runs(p, line[2:])
-        elif numbered_match:
-            p = doc.add_paragraph(style='List Number')
-            add_inline_markdown_runs(p, numbered_match.group(1))
+        elif list_info:
+            list_kind, list_level, list_text = list_info
+            list_style = pick_list_style(list_kind, list_level)
+            p = doc.add_paragraph(style=list_style) if list_style else doc.add_paragraph()
+            add_inline_markdown_runs(p, list_text)
         elif is_transcript and len(line) > 3 and line[0].isdigit() and ':' in line[:6]:
             p = doc.add_paragraph()
             add_inline_markdown_runs(p, line)
         else:
             paragraph_lines = [line]
             while i + 1 < len(lines):
-                next_line = lines[i + 1].strip()
+                next_raw = lines[i + 1]
+                next_line = next_raw.strip()
                 if (
                     next_line
                     and not next_line.startswith('#')
-                    and not next_line.startswith('- ')
-                    and not next_line.startswith('* ')
-                    and not re.match(r'^\d+\.\s+', next_line)
+                    and not parse_list_line(next_raw)
                 ):
                     paragraph_lines.append(next_line)
                     i += 1
@@ -3043,6 +3087,8 @@ def append_notes_markdown_to_story(story, notes_markdown, styles):
 
     for raw_line in lines:
         line = raw_line.strip()
+        # Normalize malformed list markers such as "- 1. Item" before rendering.
+        line = re.sub(r'^[-*•]\s+(\d+[\.\)]\s+)', r'\1', line)
         if not line:
             flush_bullets()
             story.append(Spacer(1, 4))

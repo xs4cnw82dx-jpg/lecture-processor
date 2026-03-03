@@ -95,7 +95,6 @@
                   </svg></div><span id="pack-stat-test">0 questions</span>
               </div>
             </div>
-            <div class="pack-storage-note" id="pack-storage-note" aria-live="polite"></div>
             <div class="pack-images-tip" id="pack-images-tip" aria-live="polite"></div>
           </div>
           <div class="split">
@@ -507,6 +506,14 @@
           <!-- Flashcards pane -->
           <div class="learn-pane" id="learn-pane-flashcards">
             <div class="flashcard-stage">
+              <div class="flashcard-view-tools">
+                <button class="btn" id="learn-f-list-btn" type="button" aria-pressed="false">Card List</button>
+                <label class="peek-switch" for="learn-f-peek-toggle"><span>Peek</span>
+                  <input type="checkbox" id="learn-f-peek-toggle">
+                  <span class="peek-switch-track"></span>
+                </label>
+              </div>
+              <div class="flashcard-list-view" id="learn-f-list-view" hidden></div>
               <div class="flashcard-3d" id="learn-flashcard-3d">
                 <div class="flashcard-inner" id="learn-flashcard-inner">
                   <div class="flashcard-face front"><span class="flashcard-label">Front</span>
