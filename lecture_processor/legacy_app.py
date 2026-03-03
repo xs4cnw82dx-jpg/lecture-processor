@@ -357,12 +357,17 @@ def is_dev_environment():
     return env_value in DEV_ENV_NAMES or flask_debug
 
 
+def should_use_minified_js_assets():
+    raw = str(os.getenv('USE_MINIFIED_JS_ASSETS', '') or '').strip().lower()
+    return raw in {'1', 'true', 'yes', 'on'}
+
+
 def resolve_js_asset(filename):
-    """Prefer minified JS assets in non-dev environments when available and fresh."""
+    """Use source JS by default; allow minified bundles only when explicitly enabled."""
     safe_name = str(filename or '').strip()
     if not safe_name.endswith('.js'):
         return safe_name
-    if is_dev_environment():
+    if is_dev_environment() or not should_use_minified_js_assets():
         return safe_name
     min_name = safe_name[:-3] + '.min.js'
     min_path = os.path.join(PROJECT_ROOT_DIR, 'static', min_name)
@@ -982,6 +987,10 @@ def save_job_log(job_id, job_data, finished_at):
             'file_size_mb': round(float(job_data.get('file_size_mb', 0) or 0), 2),
             'custom_prompt': job_data.get('custom_prompt', ''),
             'prompt_template_key': job_data.get('prompt_template_key', ''),
+            'prompt_source': job_data.get('prompt_source', ''),
+            'custom_prompt_length': int(job_data.get('custom_prompt_length', 0) or 0),
+            'effective_prompt_preview': str(job_data.get('effective_prompt_preview', '') or '')[:1800],
+            'credit_refund_method': job_data.get('credit_refund_method', ''),
             'started_at': started_at,
             'finished_at': finished_at,
             'duration_seconds': duration,
@@ -2564,13 +2573,13 @@ def generate_study_materials(source_text, flashcard_selection, question_selectio
         flashcard_amount = 0
     MAX_SOURCE_TEXT_LEN = 120000
     was_truncated = len(source_text) > MAX_SOURCE_TEXT_LEN
-    prompt = PROMPT_STUDY_TEMPLATE.format(
-        flashcard_amount=flashcard_amount,
-        question_amount=question_amount,
-        output_language=output_language,
-        source_text=source_text[:MAX_SOURCE_TEXT_LEN],
-    )
     try:
+        prompt = PROMPT_STUDY_TEMPLATE.format(
+            flashcard_amount=flashcard_amount,
+            question_amount=question_amount,
+            output_language=output_language,
+            source_text=source_text[:MAX_SOURCE_TEXT_LEN],
+        )
         response = generate_with_policy(
             MODEL_STUDY,
             [types.Content(role='user', parts=[types.Part.from_text(text=prompt)])],
@@ -2589,6 +2598,8 @@ def generate_study_materials(source_text, flashcard_selection, question_selectio
         if was_truncated:
             error_msg = 'Note: source text was very long and was truncated before study material generation.'
         return flashcards, test_questions, error_msg
+    except (KeyError, ValueError) as e:
+        return [], [], f'Study prompt template formatting failed: {e}'
     except Exception as e:
         return [], [], f'Study materials generation failed: {e}'
 
@@ -2993,24 +3004,58 @@ def markdown_to_docx(markdown_text, title="Document"):
 
     def parse_list_line(raw_line):
         line_value = str(raw_line or '').replace('\t', '    ')
+        if not line_value.strip():
+            return None
         bullet_match = re.match(r'^(\s*)[-*•]\s+(.*)$', line_value)
         if bullet_match:
             indent_spaces = len(bullet_match.group(1))
             content = bullet_match.group(2).strip()
             if not content:
                 return None
+            extra_depth = 0
+            while True:
+                nested_bullet = re.match(r'^[-*•]\s+(.*)$', content)
+                if nested_bullet:
+                    content = nested_bullet.group(1).strip()
+                    extra_depth += 1
+                    if not content:
+                        return None
+                    continue
+                nested_number = re.match(r'^(\d+[\.\)])\s+(.*)$', content)
+                if nested_number:
+                    content = nested_number.group(2).strip()
+                    if not content:
+                        return None
+                    return 'number', (indent_spaces // 2) + 1 + extra_depth, content
+                break
             # Repair malformed markdown like "- 1. Item" so Word keeps numeric list formatting.
             nested_number = re.match(r'^(\d+[\.\)])\s+(.*)$', content)
             kind = 'number' if nested_number else 'bullet'
             item_text = nested_number.group(2).strip() if nested_number else content
-            return kind, (indent_spaces // 2) + 1, item_text
+            return kind, (indent_spaces // 2) + 1 + extra_depth, item_text
         number_match = re.match(r'^(\s*)(\d+[\.\)])\s+(.*)$', line_value)
         if number_match:
             indent_spaces = len(number_match.group(1))
             content = number_match.group(3).strip()
             if not content:
                 return None
-            return 'number', (indent_spaces // 2) + 1, content
+            extra_depth = 0
+            while True:
+                nested_number = re.match(r'^(\d+[\.\)])\s+(.*)$', content)
+                if nested_number:
+                    content = nested_number.group(2).strip()
+                    extra_depth += 1
+                    if not content:
+                        return None
+                    continue
+                nested_bullet = re.match(r'^[-*•]\s+(.*)$', content)
+                if nested_bullet:
+                    content = nested_bullet.group(1).strip()
+                    if not content:
+                        return None
+                    return 'bullet', (indent_spaces // 2) + 1 + extra_depth, content
+                break
+            return 'number', (indent_spaces // 2) + 1 + extra_depth, content
         return None
     
     while i < len(lines):

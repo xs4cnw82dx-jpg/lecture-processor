@@ -373,6 +373,13 @@
         table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
         th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #F1F5F9; }
         th { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+        .prompt-cell {
+            max-width: 290px;
+            white-space: normal;
+            color: var(--muted);
+            font-size: 0.8rem;
+            line-height: 1.35;
+        }
         .status { font-weight: 700; font-size: 0.78rem; padding: 3px 8px; border-radius: 999px; display: inline-block; }
         .status.complete { color: #065F46; background: #D1FAE5; }
         .status.error { color: #991B1B; background: #FEE2E2; }

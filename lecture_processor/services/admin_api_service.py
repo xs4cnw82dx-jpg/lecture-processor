@@ -140,6 +140,8 @@ def admin_overview(app_ctx, request):
                 'token_total': job.get('token_total', 0),
                 'custom_prompt': job.get('custom_prompt', ''),
                 'prompt_template_key': job.get('prompt_template_key', ''),
+                'prompt_source': job.get('prompt_source', ''),
+                'credit_refund_method': job.get('credit_refund_method', ''),
             })
 
         recent_purchases_sorted = sorted(
@@ -257,7 +259,8 @@ def admin_export(app_ctx, request):
         if export_type == 'jobs':
             yield [
                 'job_id', 'uid', 'email', 'mode', 'source_type', 'source_url',
-                'custom_prompt', 'prompt_template_key', 'status', 'credit_deducted',
+                'custom_prompt', 'prompt_template_key', 'prompt_source', 'status', 'credit_deducted',
+                'credit_refund_method',
                 'credit_refunded', 'error_message', 'started_at', 'finished_at', 'duration_seconds'
             ]
             docs = app_ctx.safe_query_docs_in_window(
@@ -278,8 +281,10 @@ def admin_export(app_ctx, request):
                     job.get('source_url', ''),
                     job.get('custom_prompt', ''),
                     job.get('prompt_template_key', ''),
+                    job.get('prompt_source', ''),
                     job.get('status', ''),
                     job.get('credit_deducted', ''),
+                    job.get('credit_refund_method', ''),
                     job.get('credit_refunded', False),
                     job.get('error_message', ''),
                     job.get('started_at', 0),
