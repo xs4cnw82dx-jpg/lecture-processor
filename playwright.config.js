@@ -21,6 +21,7 @@ module.exports = defineConfig({
     timeout: 90_000,
     env: {
       PORT: String(testPort),
+      FLASK_DEBUG: '0',
       SENTRY_DSN_BACKEND: '',
       SENTRY_DSN_FRONTEND: ''
     }
