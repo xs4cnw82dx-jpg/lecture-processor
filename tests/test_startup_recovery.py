@@ -1,11 +1,9 @@
 import ast
 from pathlib import Path
 
-import app as app_module
+from tests.runtime_test_support import get_test_core
 
-from lecture_processor.runtime.container import get_runtime
-
-core = get_runtime(app_module.app).core
+core = get_test_core()
 
 
 def test_runtime_recovery_not_called_at_module_scope():
