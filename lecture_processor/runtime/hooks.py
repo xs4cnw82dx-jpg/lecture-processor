@@ -6,6 +6,26 @@ from flask import g, jsonify, request
 from werkzeug.exceptions import RequestEntityTooLarge
 
 
+def _set_sentry_tags(runtime, tags):
+    sentry_sdk = getattr(runtime, 'sentry_sdk', None)
+    if not sentry_sdk:
+        return
+    try:
+        get_current_scope = getattr(sentry_sdk, 'get_current_scope', None)
+        if callable(get_current_scope):
+            scope = get_current_scope()
+            if scope is not None:
+                for key, value in (tags or {}).items():
+                    scope.set_tag(key, value)
+                return
+        set_tag = getattr(sentry_sdk, 'set_tag', None)
+        if callable(set_tag):
+            for key, value in (tags or {}).items():
+                set_tag(key, value)
+    except Exception:
+        return
+
+
 def register_runtime_hooks(app, runtime) -> None:
     state = app.extensions.setdefault('lecture_processor', {})
     if state.get('hooks_registered'):
@@ -24,32 +44,24 @@ def register_runtime_hooks(app, runtime) -> None:
     def _attach_sentry_route_context():
         request_id = str(request.headers.get('X-Request-ID', '') or '').strip()[:120] or uuid.uuid4().hex
         g.request_id = request_id
-        if not runtime.sentry_sdk:
-            return
-        try:
-            with runtime.sentry_sdk.configure_scope() as scope:
-                scope.set_tag('request.id', request_id)
-                scope.set_tag('route.path', request.path)
-                scope.set_tag('route.method', request.method)
-                scope.set_tag('route.endpoint', request.endpoint or '')
-                scope.set_tag('route.auth_header_present', 'true' if request.headers.get('Authorization') else 'false')
-                scope.set_tag('route.environment', runtime.SENTRY_ENVIRONMENT or 'production')
-                if request.content_type:
-                    scope.set_tag('route.content_type', str(request.content_type).split(';')[0][:80])
-        except Exception:
-            return
+        tags = {
+            'request.id': request_id,
+            'route.path': request.path,
+            'route.method': request.method,
+            'route.endpoint': request.endpoint or '',
+            'route.auth_header_present': 'true' if request.headers.get('Authorization') else 'false',
+            'route.environment': runtime.SENTRY_ENVIRONMENT or 'production',
+        }
+        if request.content_type:
+            tags['route.content_type'] = str(request.content_type).split(';')[0][:80]
+        _set_sentry_tags(runtime, tags)
 
     @app.after_request
     def _attach_sentry_response_context(response):
         request_id = str(getattr(g, 'request_id', '') or '').strip()
         if request_id:
             response.headers['X-Request-ID'] = request_id
-        if runtime.sentry_sdk:
-            try:
-                with runtime.sentry_sdk.configure_scope() as scope:
-                    scope.set_tag('route.status_code', str(response.status_code))
-            except Exception:
-                pass
+        _set_sentry_tags(runtime, {'route.status_code': str(response.status_code)})
         return runtime.apply_cors_headers(response)
 
     @app.errorhandler(RequestEntityTooLarge)

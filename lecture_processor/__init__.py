@@ -30,8 +30,8 @@ def create_app():
         state['blueprints_registered'] = True
 
     register_runtime_hooks(app, runtime)
-    state.setdefault('runtime_version', 'runtime_v2')
+    state.setdefault('runtime_version', 'runtime')
     if not state.get('runtime_version_logged'):
-        runtime.logger.info("runtime_v2 initialized: blueprints=%s hooks_registered=%s", len(app.blueprints), bool(state.get('hooks_registered')))
+        runtime.logger.info("runtime initialized: blueprints=%s hooks_registered=%s", len(app.blueprints), bool(state.get('hooks_registered')))
         state['runtime_version_logged'] = True
     return app
