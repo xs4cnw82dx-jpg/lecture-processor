@@ -1,23 +1,91 @@
-from lecture_processor.runtime import core
+from lecture_processor.runtime.container import get_runtime
 
-default_streak_data = core.default_streak_data
-sanitize_progress_date = core.sanitize_progress_date
-sanitize_int = core.sanitize_int
-sanitize_float = core.sanitize_float
-sanitize_streak_data = core.sanitize_streak_data
-sanitize_daily_goal_value = core.sanitize_daily_goal_value
-sanitize_pack_id = core.sanitize_pack_id
-sanitize_card_state_entry = core.sanitize_card_state_entry
-sanitize_card_state_map = core.sanitize_card_state_map
-derive_card_level_from_stats = core.derive_card_level_from_stats
-merge_streak_data = core.merge_streak_data
-merge_timezone_value = core.merge_timezone_value
-sanitize_timezone_name = core.sanitize_timezone_name
-resolve_progress_timezone = core.resolve_progress_timezone
-resolve_user_timezone = core.resolve_user_timezone
-to_timezone_now = core.to_timezone_now
-card_state_entry_rank = core.card_state_entry_rank
-merge_card_state_entries = core.merge_card_state_entries
-merge_card_state_maps = core.merge_card_state_maps
-count_due_cards_in_state = core.count_due_cards_in_state
-compute_study_progress_summary = core.compute_study_progress_summary
+
+def _resolve_runtime(runtime=None):
+    if runtime is not None:
+        return runtime
+    return get_runtime()
+
+
+def default_streak_data(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).default_streak_data(*args, **kwargs)
+
+
+def sanitize_progress_date(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).sanitize_progress_date(*args, **kwargs)
+
+
+def sanitize_int(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).sanitize_int(*args, **kwargs)
+
+
+def sanitize_float(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).sanitize_float(*args, **kwargs)
+
+
+def sanitize_streak_data(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).sanitize_streak_data(*args, **kwargs)
+
+
+def sanitize_daily_goal_value(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).sanitize_daily_goal_value(*args, **kwargs)
+
+
+def sanitize_pack_id(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).sanitize_pack_id(*args, **kwargs)
+
+
+def sanitize_card_state_entry(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).sanitize_card_state_entry(*args, **kwargs)
+
+
+def sanitize_card_state_map(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).sanitize_card_state_map(*args, **kwargs)
+
+
+def derive_card_level_from_stats(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).derive_card_level_from_stats(*args, **kwargs)
+
+
+def merge_streak_data(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).merge_streak_data(*args, **kwargs)
+
+
+def merge_timezone_value(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).merge_timezone_value(*args, **kwargs)
+
+
+def sanitize_timezone_name(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).sanitize_timezone_name(*args, **kwargs)
+
+
+def resolve_progress_timezone(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).resolve_progress_timezone(*args, **kwargs)
+
+
+def resolve_user_timezone(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).resolve_user_timezone(*args, **kwargs)
+
+
+def to_timezone_now(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).to_timezone_now(*args, **kwargs)
+
+
+def card_state_entry_rank(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).card_state_entry_rank(*args, **kwargs)
+
+
+def merge_card_state_entries(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).merge_card_state_entries(*args, **kwargs)
+
+
+def merge_card_state_maps(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).merge_card_state_maps(*args, **kwargs)
+
+
+def count_due_cards_in_state(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).count_due_cards_in_state(*args, **kwargs)
+
+
+def compute_study_progress_summary(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).compute_study_progress_summary(*args, **kwargs)

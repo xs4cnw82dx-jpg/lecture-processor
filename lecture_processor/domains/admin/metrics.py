@@ -1,20 +1,69 @@
-from lecture_processor.runtime import core
+from lecture_processor.runtime.container import get_runtime
 from lecture_processor.services import admin_api_service, upload_api_service
 
-build_admin_deployment_info = core.build_admin_deployment_info
-build_admin_runtime_checks = core.build_admin_runtime_checks
-get_admin_window = core.get_admin_window
-get_timestamp = core.get_timestamp
-build_time_buckets = core.build_time_buckets
-get_bucket_key = core.get_bucket_key
-mark_admin_data_warning = core.mark_admin_data_warning
-get_admin_data_warnings = core.get_admin_data_warnings
-safe_query_docs_in_window = core.safe_query_docs_in_window
-safe_count_collection = core.safe_count_collection
-safe_count_window = core.safe_count_window
-build_admin_funnel_steps = core.build_admin_funnel_steps
-build_admin_funnel_daily_rows = core.build_admin_funnel_daily_rows
-get_model_pricing_config = core.get_model_pricing_config
+
+def _resolve_runtime(runtime=None):
+    if runtime is not None:
+        return runtime
+    return get_runtime()
+
+
+def build_admin_deployment_info(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).build_admin_deployment_info(*args, **kwargs)
+
+
+def build_admin_runtime_checks(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).build_admin_runtime_checks(*args, **kwargs)
+
+
+def get_admin_window(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).get_admin_window(*args, **kwargs)
+
+
+def get_timestamp(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).get_timestamp(*args, **kwargs)
+
+
+def build_time_buckets(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).build_time_buckets(*args, **kwargs)
+
+
+def get_bucket_key(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).get_bucket_key(*args, **kwargs)
+
+
+def mark_admin_data_warning(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).mark_admin_data_warning(*args, **kwargs)
+
+
+def get_admin_data_warnings(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).get_admin_data_warnings(*args, **kwargs)
+
+
+def safe_query_docs_in_window(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).safe_query_docs_in_window(*args, **kwargs)
+
+
+def safe_count_collection(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).safe_count_collection(*args, **kwargs)
+
+
+def safe_count_window(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).safe_count_window(*args, **kwargs)
+
+
+def build_admin_funnel_steps(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).build_admin_funnel_steps(*args, **kwargs)
+
+
+def build_admin_funnel_daily_rows(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).build_admin_funnel_daily_rows(*args, **kwargs)
+
+
+def get_model_pricing_config(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).get_model_pricing_config(*args, **kwargs)
+
+
 admin_prompts = admin_api_service.admin_prompts
 processing_estimate = upload_api_service.processing_estimate
 processing_averages = upload_api_service.processing_averages

@@ -1,13 +1,51 @@
-from lecture_processor.runtime import core
+from lecture_processor.runtime.container import get_runtime
 
-parse_audio_markers_from_notes = core.parse_audio_markers_from_notes
-format_transcript_with_timestamps = core.format_transcript_with_timestamps
-ensure_study_audio_root = core.ensure_study_audio_root
-normalize_audio_storage_key = core.normalize_audio_storage_key
-resolve_audio_storage_path_from_key = core.resolve_audio_storage_path_from_key
-infer_audio_storage_key_from_path = core.infer_audio_storage_key_from_path
-get_audio_storage_key_from_pack = core.get_audio_storage_key_from_pack
-get_audio_storage_path_from_pack = core.get_audio_storage_path_from_pack
-ensure_pack_audio_storage_key = core.ensure_pack_audio_storage_key
-remove_pack_audio_file = core.remove_pack_audio_file
-persist_audio_for_study_pack = core.persist_audio_for_study_pack
+
+def _resolve_runtime(runtime=None):
+    if runtime is not None:
+        return runtime
+    return get_runtime()
+
+
+def parse_audio_markers_from_notes(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).parse_audio_markers_from_notes(*args, **kwargs)
+
+
+def format_transcript_with_timestamps(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).format_transcript_with_timestamps(*args, **kwargs)
+
+
+def ensure_study_audio_root(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).ensure_study_audio_root(*args, **kwargs)
+
+
+def normalize_audio_storage_key(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).normalize_audio_storage_key(*args, **kwargs)
+
+
+def resolve_audio_storage_path_from_key(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).resolve_audio_storage_path_from_key(*args, **kwargs)
+
+
+def infer_audio_storage_key_from_path(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).infer_audio_storage_key_from_path(*args, **kwargs)
+
+
+def get_audio_storage_key_from_pack(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).get_audio_storage_key_from_pack(*args, **kwargs)
+
+
+def get_audio_storage_path_from_pack(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).get_audio_storage_path_from_pack(*args, **kwargs)
+
+
+def ensure_pack_audio_storage_key(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).ensure_pack_audio_storage_key(*args, **kwargs)
+
+
+def remove_pack_audio_file(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).remove_pack_audio_file(*args, **kwargs)
+
+
+def persist_audio_for_study_pack(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).persist_audio_for_study_pack(*args, **kwargs)
