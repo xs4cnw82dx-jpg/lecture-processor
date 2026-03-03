@@ -233,7 +233,11 @@ def _attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None):
     if credit_type == 'slides_credits':
         for fallback_attempt in range(1, 3):
             try:
-                app_ctx.refund_slides_credits(uid, 1)
+                refunded = bool(app_ctx.refund_slides_credits(uid, 1))
+                if not refunded:
+                    if fallback_attempt < 2:
+                        app_ctx.time.sleep(0.08 * fallback_attempt)
+                    continue
                 try:
                     user_ref = app_ctx.users_repo.doc_ref(app_ctx.db, uid)
                     user_ref.update({'total_processed': app_ctx.firestore.Increment(-1)})

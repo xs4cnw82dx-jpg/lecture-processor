@@ -156,7 +156,7 @@ def test_verify_email_handles_empty_body(client, monkeypatch):
     assert payload.get("allowed") is False
 
 
-def test_processing_averages_error_returns_500_without_raw_details(client, monkeypatch):
+def test_processing_averages_error_returns_empty_fallback_without_raw_details(client, monkeypatch):
     monkeypatch.setattr(app_module, "verify_firebase_token", lambda _request: {"uid": "u", "email": "user@example.com"})
 
     class _BrokenDB:
@@ -167,7 +167,7 @@ def test_processing_averages_error_returns_500_without_raw_details(client, monke
 
     response = client.get("/api/processing-averages")
 
-    assert response.status_code == 500
+    assert response.status_code == 200
     payload = response.get_json()
     assert payload.get("averages") == {}
     assert payload.get("total_jobs") == 0
