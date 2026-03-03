@@ -4,8 +4,10 @@ from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.rate_limit import quotas as rate_limit_quotas
+from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.shared import parsing as shared_parsing
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 
@@ -594,7 +596,7 @@ def upload_files(app_ctx, request):
                 billing_credits.refund_credit(uid, deducted, runtime=app_ctx)
                 return app_ctx.jsonify({'error': token_error}), 400
         total_steps = 4 if study_features != 'none' else 3
-        app_ctx.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round(((pdf_size if pdf_size > 0 else 0) + audio_size) / (1024 * 1024), 2), 'billing_receipt': app_ctx.initialize_billing_receipt({deducted: 1})})
+        runtime_jobs_store.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round(((pdf_size if pdf_size > 0 else 0) + audio_size) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
         thread = app_ctx.threading.Thread(target=app_ctx.process_lecture_notes, args=(job_id, pdf_path, audio_path))
         thread.start()
 
@@ -616,7 +618,7 @@ def upload_files(app_ctx, request):
             app_ctx.cleanup_files([pdf_path], [])
             return app_ctx.jsonify({'error': 'No text extraction credits remaining.'}), 402
         total_steps = 2 if study_features != 'none' else 1
-        app_ctx.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round((pdf_size if pdf_size > 0 else 0) / (1024 * 1024), 2), 'billing_receipt': app_ctx.initialize_billing_receipt({deducted: 1})})
+        runtime_jobs_store.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round((pdf_size if pdf_size > 0 else 0) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
         thread = app_ctx.threading.Thread(target=app_ctx.process_slides_only, args=(job_id, pdf_path))
         thread.start()
 
@@ -686,7 +688,7 @@ def upload_files(app_ctx, request):
                     billing_credits.refund_slides_credits(uid, interview_features_cost, runtime=app_ctx)
                 return app_ctx.jsonify({'error': token_error}), 400
         total_steps = 2 if interview_features_cost > 0 else 1
-        app_ctx.set_job(job_id, {
+        runtime_jobs_store.set_job(job_id, {
             'status': 'starting',
             'step': 0,
             'step_description': 'Starting...',
@@ -716,14 +718,14 @@ def upload_files(app_ctx, request):
             'provider_error_code': '',
             'retry_attempts': 0,
             'file_size_mb': round(audio_size / (1024 * 1024), 2),
-            'billing_receipt': app_ctx.initialize_billing_receipt({deducted: 1, 'slides_credits': interview_features_cost}),
-        })
+            'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1, 'slides_credits': interview_features_cost}, runtime=app_ctx),
+        }, runtime=app_ctx)
         thread = app_ctx.threading.Thread(target=app_ctx.process_interview_transcription, args=(job_id, audio_path))
         thread.start()
     else:
         return app_ctx.jsonify({'error': 'Invalid mode selected'}), 400
 
-    created_job = app_ctx.get_job_snapshot(job_id) or {}
+    created_job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx) or {}
     analytics_events.log_analytics_event(
         'processing_started_backend',
         source='backend',
@@ -1143,10 +1145,10 @@ def get_status(app_ctx, request, job_id):
     if not decoded_token:
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
-    job = app_ctx.get_job_snapshot(job_id)
+    job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx)
     if not job:
         app_ctx.cleanup_old_jobs()
-        job = app_ctx.get_job_snapshot(job_id)
+        job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx)
         if not job:
             return app_ctx.jsonify({
                 'error': 'Job status is temporarily unavailable. Retrying should usually recover it within a few seconds.',
@@ -1166,7 +1168,7 @@ def get_status(app_ctx, request, job_id):
         'failed_stage': job.get('failed_stage', ''),
         'provider_error_code': job.get('provider_error_code', ''),
     }
-    billing_receipt = app_ctx.get_billing_receipt_snapshot(job)
+    billing_receipt = billing_receipts.get_billing_receipt_snapshot(job, runtime=app_ctx)
     if billing_receipt.get('charged') or billing_receipt.get('refunded'):
         response['billing_receipt'] = billing_receipt
     if job['status'] == 'complete':
@@ -1202,7 +1204,7 @@ def download_docx(app_ctx, request, job_id):
     if not decoded_token:
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
-    job = app_ctx.get_job_snapshot(job_id)
+    job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx)
     if not job:
         return app_ctx.jsonify({'error': 'Job not found'}), 404
     if job.get('user_id', '') != uid and not app_ctx.is_admin_user(decoded_token):
@@ -1251,7 +1253,7 @@ def download_flashcards_csv(app_ctx, request, job_id):
     if not decoded_token:
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
-    job = app_ctx.get_job_snapshot(job_id)
+    job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx)
     if not job:
         return app_ctx.jsonify({'error': 'Job not found'}), 404
     if job.get('user_id', '') != uid and not app_ctx.is_admin_user(decoded_token):

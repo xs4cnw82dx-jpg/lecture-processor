@@ -9,8 +9,11 @@ def test_auth_domain_modules_do_not_import_runtime_core_module():
         Path("lecture_processor/domains/auth/session.py"),
         Path("lecture_processor/domains/billing/credits.py"),
         Path("lecture_processor/domains/billing/purchases.py"),
+        Path("lecture_processor/domains/billing/receipts.py"),
         Path("lecture_processor/domains/rate_limit/limiter.py"),
         Path("lecture_processor/domains/rate_limit/quotas.py"),
+        Path("lecture_processor/domains/runtime_jobs/recovery.py"),
+        Path("lecture_processor/domains/runtime_jobs/store.py"),
         Path("lecture_processor/domains/shared/parsing.py"),
         Path("lecture_processor/domains/upload/import_audio.py"),
     )
