@@ -57,10 +57,10 @@ def download_flashcards_csv(job_id):
 @upload_bp.route('/api/processing-averages')
 def processing_averages():
     runtime = get_runtime()
-    return runtime.processing_averages_impl()
+    return upload_api_service.processing_averages(runtime, request)
 
 
 @upload_bp.route('/api/processing-estimate')
 def processing_estimate():
     runtime = get_runtime()
-    return runtime.processing_estimate_impl()
+    return upload_api_service.processing_estimate(runtime, request)

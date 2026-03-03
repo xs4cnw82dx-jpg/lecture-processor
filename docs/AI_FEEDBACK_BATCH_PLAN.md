@@ -190,7 +190,7 @@ All items from the two AI feedback lists are now implemented or intentionally fo
 
 Status: `DONE` (incremental batches R1-R6 completed, behavior preserved)
 
-- `R1 DONE`: app factory skeleton (`lecture_processor/__init__.py`) + thin compatibility bootstrap (`app.py`)
+- `R1 DONE`: app factory skeleton (`lecture_processor/__init__.py`) + thin WSGI/bootstrap entrypoint (`app.py`)
 - `R2 DONE`: shared service extraction (auth/rate-limit/jobs/analytics/upload helpers)
 - `R3 DONE`: non-admin API blueprint split (`auth`, `upload`, `study`, `account`)
 - `R4 DONE`: admin + payments blueprint split

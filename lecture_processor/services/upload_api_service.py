@@ -1214,3 +1214,202 @@ def download_flashcards_csv(app_ctx, request, job_id):
     csv_bytes = app_ctx.io.BytesIO(output.getvalue().encode('utf-8'))
     csv_bytes.seek(0)
     return app_ctx.send_file(csv_bytes, mimetype='text/csv', as_attachment=True, download_name=filename)
+
+
+def _estimate_size_bucket(total_mb):
+    try:
+        value = float(total_mb or 0.0)
+    except Exception:
+        value = 0.0
+    if value <= 0:
+        return 'unknown'
+    if value < 25:
+        return 's'
+    if value < 100:
+        return 'm'
+    if value < 300:
+        return 'l'
+    return 'xl'
+
+
+def _duration_percentile(sorted_values, percentile):
+    import math
+
+    if not sorted_values:
+        return 0
+    if len(sorted_values) == 1:
+        return int(round(sorted_values[0]))
+    pos = max(0.0, min(1.0, float(percentile))) * (len(sorted_values) - 1)
+    lo = int(math.floor(pos))
+    hi = int(math.ceil(pos))
+    if lo == hi:
+        return int(round(sorted_values[lo]))
+    frac = pos - lo
+    value = sorted_values[lo] + (sorted_values[hi] - sorted_values[lo]) * frac
+    return int(round(value))
+
+
+def _heuristic_estimate_range(mode, total_mb, study_features, interview_features_count):
+    mb = max(0.0, float(total_mb or 0.0))
+    if mode == 'lecture-notes':
+        base = 70 + mb * 1.0
+        if study_features == 'none':
+            base -= 18
+        elif study_features == 'both':
+            base += 12
+    elif mode == 'slides-only':
+        base = 25 + mb * 0.6
+        if study_features in {'flashcards', 'test', 'both'}:
+            base += 10
+    else:
+        base = 45 + mb * 1.2 + int(interview_features_count or 0) * 16
+    typical = max(20, int(round(base)))
+    low = max(15, int(round(typical * 0.72)))
+    high = max(low + 10, int(round(typical * 1.34)))
+    return (low, typical, high)
+
+
+def processing_estimate(app_ctx, request):
+    decoded_token = app_ctx.verify_firebase_token(request)
+    if not decoded_token:
+        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+
+    mode = str(request.args.get('mode', 'lecture-notes') or 'lecture-notes').strip().lower()
+    if mode not in {'lecture-notes', 'slides-only', 'interview'}:
+        return app_ctx.jsonify({'error': 'Invalid mode'}), 400
+
+    study_features = str(request.args.get('study_features', 'none') or 'none').strip().lower()
+    if study_features not in {'none', 'flashcards', 'test', 'both'}:
+        study_features = 'none'
+
+    interview_features_count = app_ctx.sanitize_int(
+        request.args.get('interview_features_count', 0),
+        default=0,
+        min_value=0,
+        max_value=2,
+    )
+    total_mb = app_ctx.sanitize_float(
+        request.args.get('total_mb', 0),
+        default=0.0,
+        min_value=0.0,
+        max_value=1024.0,
+    )
+    requested_bucket = _estimate_size_bucket(total_mb)
+    window_start = app_ctx.time.time() - 30 * 86400
+    docs = app_ctx.safe_query_docs_in_window('job_logs', 'finished_at', window_start, order_desc=True, limit=600)
+
+    strict = []
+    feature_only = []
+    mode_only = []
+    for doc in docs:
+        row = doc.to_dict() if hasattr(doc, 'to_dict') else {}
+        if not isinstance(row, dict):
+            continue
+        if str(row.get('status', '')).lower() != 'complete':
+            continue
+        if str(row.get('mode', '')).lower() != mode:
+            continue
+        duration = row.get('duration_seconds', 0)
+        if not isinstance(duration, (int, float)) or duration <= 0:
+            continue
+        mode_only.append(float(duration))
+        if mode in {'lecture-notes', 'slides-only'}:
+            row_feature = str(row.get('study_features', 'none') or 'none').strip().lower()
+            if row_feature != study_features:
+                continue
+            feature_only.append(float(duration))
+            row_bucket = _estimate_size_bucket(row.get('file_size_mb', 0))
+            if requested_bucket != 'unknown' and row_bucket == requested_bucket:
+                strict.append(float(duration))
+            elif requested_bucket == 'unknown':
+                strict.append(float(duration))
+        else:
+            row_extras = app_ctx.sanitize_int(row.get('interview_features_count', 0), default=0, min_value=0, max_value=4)
+            if row_extras != interview_features_count:
+                continue
+            feature_only.append(float(duration))
+            row_bucket = _estimate_size_bucket(row.get('file_size_mb', 0))
+            if requested_bucket != 'unknown' and row_bucket == requested_bucket:
+                strict.append(float(duration))
+            elif requested_bucket == 'unknown':
+                strict.append(float(duration))
+
+    source = 'heuristic'
+    sample = []
+    if len(strict) >= 8:
+        sample = strict
+        source = 'strict'
+    elif len(feature_only) >= 8:
+        sample = feature_only
+        source = 'feature'
+    elif len(mode_only) >= 8:
+        sample = mode_only
+        source = 'mode'
+
+    if sample:
+        sorted_values = sorted(sample)
+        low = _duration_percentile(sorted_values, 0.25)
+        typical = _duration_percentile(sorted_values, 0.5)
+        high = _duration_percentile(sorted_values, 0.75)
+        low = max(15, low)
+        typical = max(low, typical)
+        high = max(typical + 5, high)
+    else:
+        low, typical, high = _heuristic_estimate_range(mode, total_mb, study_features, interview_features_count)
+
+    response = {
+        'mode': mode,
+        'range': {
+            'low_seconds': int(low),
+            'high_seconds': int(high),
+            'typical_seconds': int(typical),
+        },
+        'sample_count': len(sample),
+        'source': source,
+    }
+    return app_ctx.jsonify(response)
+
+
+def processing_averages(app_ctx, request):
+    from collections import defaultdict
+
+    decoded_token = app_ctx.verify_firebase_token(request)
+    if not decoded_token:
+        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+
+    try:
+        docs = (
+            app_ctx.db.collection('job_logs')
+            .where('status', '==', 'complete')
+            .order_by('finished_at', direction=app_ctx.firestore.Query.DESCENDING)
+            .limit(200)
+            .stream()
+        )
+        by_mode = defaultdict(list)
+        for doc in docs:
+            job = doc.to_dict() or {}
+            mode = job.get('mode', 'unknown')
+            duration = job.get('duration_seconds')
+            if isinstance(duration, (int, float)) and duration > 0:
+                by_mode[mode].append(duration)
+
+        averages = {}
+        total_jobs = 0
+        for mode, durations in by_mode.items():
+            total_jobs += len(durations)
+            avg = round(sum(durations) / len(durations), 1)
+            averages[mode] = {
+                'avg_seconds': avg,
+                'job_count': len(durations),
+                'min_seconds': round(min(durations), 1),
+                'max_seconds': round(max(durations), 1),
+            }
+
+        response = app_ctx.jsonify({'averages': averages, 'total_jobs': total_jobs})
+        response.headers['Cache-Control'] = 'public, max-age=300'
+        return response
+    except Exception:
+        app_ctx.logger.warning('Could not load processing averages; returning empty fallback', exc_info=True)
+        response = app_ctx.jsonify({'averages': {}, 'total_jobs': 0})
+        response.headers['Cache-Control'] = 'no-store'
+        return response

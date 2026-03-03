@@ -65,7 +65,7 @@ When in doubt: choose explicitness over brevity.
 
 ## 3) Tech Stack and Architecture Snapshot
 
-- Backend: Flask package with app factory (`lecture_processor/__init__.py`) and compatibility bootstrap (`app.py`)
+- Backend: Flask package with app factory (`lecture_processor/__init__.py`) and WSGI/bootstrap entrypoint (`app.py`)
 - Frontend: server-rendered templates + inline JS/CSS in `templates/*.html`
 - Auth: Firebase Auth (Google + email/password)
 - Database: Firestore
@@ -175,7 +175,7 @@ If assistant asks owner to run any Python command, always include venv activatio
 - Smoke workflow hardened in CI.
 - Rollback runbook added.
 - Issue #4 modular rewrite batches R1-R6 completed:
-  - app factory + bootstrap compatibility
+  - app factory + bootstrap standardization
   - blueprints split for API grouping
   - service extraction
   - repository layer for Firestore access

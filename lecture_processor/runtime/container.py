@@ -41,7 +41,7 @@ def _start_cleanup_thread_once(core_module) -> None:
 def build_runtime(app, settings: AppSettings) -> AppRuntime:
     from lecture_processor.runtime import core
 
-    # Keep legacy helper code wired to the app created by the factory.
+    # Bind runtime helper module state to the app created by this factory instance.
     core.app = app
     app.config['MAX_CONTENT_LENGTH'] = int(getattr(core, 'MAX_CONTENT_LENGTH', app.config.get('MAX_CONTENT_LENGTH', 0)) or 0)
 

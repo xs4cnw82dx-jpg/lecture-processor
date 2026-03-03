@@ -21,7 +21,7 @@ def admin_export():
 @admin_bp.route('/api/admin/prompts', methods=['GET'])
 def admin_prompts():
     runtime = get_runtime()
-    return runtime.admin_prompts_impl()
+    return admin_api_service.admin_prompts(runtime, request)
 
 
 @admin_bp.route('/api/admin/model-pricing', methods=['GET'])
