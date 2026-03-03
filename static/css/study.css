@@ -3545,6 +3545,29 @@
         padding: 12px 14px
       }
 
+      .highlight-toolbar {
+        gap: 8px;
+        padding: 10px 12px;
+        min-height: 48px;
+      }
+
+      .hl-btn {
+        width: 44px;
+        height: 44px;
+      }
+
+      .hl-btn.hl-action {
+        min-height: 44px;
+        font-size: .92rem;
+        padding: 10px 12px;
+      }
+
+      .hl-download-btn {
+        min-height: 44px;
+        font-size: .92rem;
+        padding: 10px 16px;
+      }
+
       .split {
         grid-template-columns: 1fr;
         gap: 12px
