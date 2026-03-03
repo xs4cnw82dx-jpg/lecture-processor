@@ -5,6 +5,8 @@ import io
 import json
 import time
 
+from lecture_processor.domains.auth import policy as auth_policy
+
 
 def create_admin_session(app_ctx, request):
     decoded_token = app_ctx.verify_firebase_token(request)
@@ -64,7 +66,7 @@ def verify_email(app_ctx, request):
         return app_ctx.build_rate_limited_response('Too many verification requests. Please wait.', retry_after_rl)
     payload = request.get_json(silent=True) or {}
     email = payload.get('email', '')
-    if app_ctx.is_email_allowed(email):
+    if auth_policy.is_email_allowed(email, runtime=app_ctx):
         return app_ctx.jsonify({'allowed': True})
     return app_ctx.jsonify({
         'allowed': False,
@@ -146,7 +148,7 @@ def get_user(app_ctx, request):
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
-    if not app_ctx.is_email_allowed(email):
+    if not auth_policy.is_email_allowed(email, runtime=app_ctx):
         return app_ctx.jsonify({'error': 'Email not allowed', 'message': 'Please use your university email.'}), 403
     user = app_ctx.get_or_create_user(uid, email)
     preferences = app_ctx.build_user_preferences_payload(user)
@@ -172,7 +174,7 @@ def get_user_preferences(app_ctx, request):
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
-    if not app_ctx.is_email_allowed(email):
+    if not auth_policy.is_email_allowed(email, runtime=app_ctx):
         return app_ctx.jsonify({'error': 'Email not allowed'}), 403
     user = app_ctx.get_or_create_user(uid, email)
     return app_ctx.jsonify({'preferences': app_ctx.build_user_preferences_payload(user)})
@@ -184,7 +186,7 @@ def update_user_preferences(app_ctx, request):
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
-    if not app_ctx.is_email_allowed(email):
+    if not auth_policy.is_email_allowed(email, runtime=app_ctx):
         return app_ctx.jsonify({'error': 'Email not allowed'}), 403
 
     payload = request.get_json(silent=True) or {}

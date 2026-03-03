@@ -1,5 +1,7 @@
 """Business logic handlers for upload/status/download APIs."""
 
+from lecture_processor.domains.auth import policy as auth_policy
+
 
 def _sanitize_tools_custom_prompt(raw_prompt, max_chars=6000):
     raw_text = str(raw_prompt or '')
@@ -365,7 +367,7 @@ def import_audio_from_url(app_ctx, request):
         return app_ctx.jsonify({'error': 'Please sign in to continue'}), 401
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
-    if not app_ctx.is_email_allowed(email):
+    if not auth_policy.is_email_allowed(email, runtime=app_ctx):
         return app_ctx.jsonify({'error': 'Email not allowed'}), 403
 
     allowed_import, retry_after = app_ctx.check_rate_limit(
@@ -419,7 +421,7 @@ def upload_files(app_ctx, request):
         return app_ctx.jsonify({'error': 'Please sign in to continue'}), 401
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
-    if not app_ctx.is_email_allowed(email):
+    if not auth_policy.is_email_allowed(email, runtime=app_ctx):
         return app_ctx.jsonify({'error': 'Email not allowed'}), 403
     active_jobs = app_ctx.count_active_jobs_for_user(uid)
     if active_jobs >= app_ctx.MAX_ACTIVE_JOBS_PER_USER:
@@ -677,7 +679,7 @@ def tools_extract(app_ctx, request):
 
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
-    if not app_ctx.is_email_allowed(email):
+    if not auth_policy.is_email_allowed(email, runtime=app_ctx):
         return app_ctx.jsonify({'error': 'Email not allowed'}), 403
 
     allowed, retry_after = app_ctx.check_rate_limit(
@@ -1022,7 +1024,7 @@ def tools_export(app_ctx, request):
         return app_ctx.jsonify({'error': 'Please sign in to continue'}), 401
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
-    if not app_ctx.is_email_allowed(email):
+    if not auth_policy.is_email_allowed(email, runtime=app_ctx):
         return app_ctx.jsonify({'error': 'Email not allowed'}), 403
 
     payload = request.get_json(silent=True) or {}
