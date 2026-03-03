@@ -6,14 +6,6 @@ import app as app_module
 from lecture_processor.runtime.container import get_runtime
 
 core = get_runtime(app_module.app).core
-import pytest
-
-
-@pytest.fixture()
-def client():
-    app_module.app.config["TESTING"] = True
-    with app_module.app.test_client() as test_client:
-        yield test_client
 
 
 def test_runtime_recovery_not_called_at_module_scope():

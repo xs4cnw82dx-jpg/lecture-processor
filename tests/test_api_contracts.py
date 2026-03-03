@@ -6,19 +6,7 @@ from lecture_processor.runtime.container import get_runtime
 
 core = get_runtime(app_module.app).core
 
-
-@pytest.fixture()
-def client():
-    app_module.app.config["TESTING"] = True
-    core.jobs.clear()
-    with app_module.app.test_client() as test_client:
-        yield test_client
-    core.jobs.clear()
-
-
-@pytest.fixture(autouse=True)
-def disable_sentry(monkeypatch):
-    monkeypatch.setattr(core, "sentry_sdk", None)
+pytestmark = pytest.mark.usefixtures("disable_sentry")
 
 
 def test_config_endpoint_shape(client, monkeypatch):
