@@ -2,6 +2,7 @@
     const auth = bootstrap.getAuth ? bootstrap.getAuth() : firebase.auth();
     const authUtils = window.LectureProcessorAuth || {};
     const authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Not signed in' }) : null;
+    const uxUtils = window.LectureProcessorUx || {};
     const topbarUtils = window.LectureProcessorTopbar || {};
 
     const weekGrid = document.getElementById('week-grid');
@@ -74,17 +75,15 @@
       return d;
     }
 
-    function preferredLocales() {
-      if (Array.isArray(navigator.languages) && navigator.languages.length) {
-        return navigator.languages.filter(Boolean);
-      }
-      if (navigator.language) return [navigator.language];
-      return ['en-US'];
-    }
-
     function formatLocaleDate(date, options) {
+      if (typeof uxUtils.formatDate === 'function') {
+        return uxUtils.formatDate(date, { intlOptions: options });
+      }
       try {
-        return new Intl.DateTimeFormat(preferredLocales(), options).format(date);
+        const locales = (Array.isArray(navigator.languages) && navigator.languages.length)
+          ? navigator.languages.filter(Boolean)
+          : (navigator.language || 'en-US');
+        return new Intl.DateTimeFormat(locales, options).format(date);
       } catch (_) {
         return new Intl.DateTimeFormat('en-US', options).format(date);
       }
