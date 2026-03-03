@@ -1,7 +1,27 @@
-from lecture_processor.runtime import core
+from lecture_processor.runtime.container import get_runtime
 
-normalize_credit_ledger = core.normalize_credit_ledger
-initialize_billing_receipt = core.initialize_billing_receipt
-ensure_job_billing_receipt = core.ensure_job_billing_receipt
-add_job_credit_refund = core.add_job_credit_refund
-get_billing_receipt_snapshot = core.get_billing_receipt_snapshot
+
+def _resolve_runtime(runtime=None):
+    if runtime is not None:
+        return runtime
+    return get_runtime()
+
+
+def normalize_credit_ledger(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).normalize_credit_ledger(*args, **kwargs)
+
+
+def initialize_billing_receipt(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).initialize_billing_receipt(*args, **kwargs)
+
+
+def ensure_job_billing_receipt(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).ensure_job_billing_receipt(*args, **kwargs)
+
+
+def add_job_credit_refund(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).add_job_credit_refund(*args, **kwargs)
+
+
+def get_billing_receipt_snapshot(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).get_billing_receipt_snapshot(*args, **kwargs)

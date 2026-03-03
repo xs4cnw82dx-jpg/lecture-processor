@@ -1,5 +1,9 @@
 """Business logic handlers for study APIs."""
 
+from lecture_processor.domains.study import audio as study_audio
+from lecture_processor.domains.study import export as study_export
+from lecture_processor.domains.study import progress as study_progress
+
 
 def get_study_progress(app_ctx, request):
     decoded_token = app_ctx.verify_firebase_token(request)
@@ -9,10 +13,10 @@ def get_study_progress(app_ctx, request):
     try:
         progress_doc = app_ctx.get_study_progress_doc(uid).get()
         progress_data = progress_doc.to_dict() if progress_doc.exists else {}
-        daily_goal = app_ctx.sanitize_daily_goal_value(progress_data.get('daily_goal'))
+        daily_goal = study_progress.sanitize_daily_goal_value(progress_data.get('daily_goal'), runtime=app_ctx)
         if daily_goal is None:
             daily_goal = 20
-        streak_data = app_ctx.sanitize_streak_data(progress_data.get('streak_data', {}))
+        streak_data = study_progress.sanitize_streak_data(progress_data.get('streak_data', {}), runtime=app_ctx)
         timezone = str(progress_data.get('timezone', '') or '').strip()[:80]
 
         card_states = {}
@@ -20,19 +24,19 @@ def get_study_progress(app_ctx, request):
         docs = app_ctx.study_repo.list_study_card_states_by_uid(app_ctx.db, uid, app_ctx.MAX_PROGRESS_PACKS_PER_SYNC)
         for doc in docs:
             data = doc.to_dict() or {}
-            pack_id = app_ctx.sanitize_pack_id(data.get('pack_id', ''))
+            pack_id = study_progress.sanitize_pack_id(data.get('pack_id', ''), runtime=app_ctx)
             if not pack_id:
                 continue
-            state_map = app_ctx.sanitize_card_state_map(data.get('state', {}))
+            state_map = study_progress.sanitize_card_state_map(data.get('state', {}), runtime=app_ctx)
             card_states[pack_id] = state_map
             card_state_maps.append(state_map)
 
         return app_ctx.jsonify({
             'daily_goal': daily_goal,
             'streak_data': streak_data,
-            'timezone': app_ctx.sanitize_timezone_name(timezone),
+            'timezone': study_progress.sanitize_timezone_name(timezone, runtime=app_ctx),
             'card_states': card_states,
-            'summary': app_ctx.compute_study_progress_summary(progress_data, card_state_maps),
+            'summary': study_progress.compute_study_progress_summary(progress_data, card_state_maps, runtime=app_ctx),
         })
     except Exception as e:
         app_ctx.logger.error(f"Error fetching study progress for user {uid}: {e}")
@@ -57,16 +61,24 @@ def update_study_progress(app_ctx, request):
         }
 
         if 'daily_goal' in payload:
-            daily_goal = app_ctx.sanitize_daily_goal_value(payload.get('daily_goal'))
+            daily_goal = study_progress.sanitize_daily_goal_value(payload.get('daily_goal'), runtime=app_ctx)
             if daily_goal is None:
                 return app_ctx.jsonify({'error': 'daily_goal must be between 1 and 500'}), 400
             updates['daily_goal'] = daily_goal
 
         if 'streak_data' in payload:
-            updates['streak_data'] = app_ctx.merge_streak_data(existing_progress_data.get('streak_data', {}), payload.get('streak_data'))
+            updates['streak_data'] = study_progress.merge_streak_data(
+                existing_progress_data.get('streak_data', {}),
+                payload.get('streak_data'),
+                runtime=app_ctx,
+            )
 
         if 'timezone' in payload:
-            updates['timezone'] = app_ctx.merge_timezone_value(existing_progress_data.get('timezone', ''), payload.get('timezone', ''))
+            updates['timezone'] = study_progress.merge_timezone_value(
+                existing_progress_data.get('timezone', ''),
+                payload.get('timezone', ''),
+                runtime=app_ctx,
+            )
 
         app_ctx.get_study_progress_doc(uid).set(updates, merge=True)
 
@@ -78,18 +90,25 @@ def update_study_progress(app_ctx, request):
             for raw_pack_id, raw_state in card_states.items():
                 if processed >= app_ctx.MAX_PROGRESS_PACKS_PER_SYNC:
                     break
-                pack_id = app_ctx.sanitize_pack_id(raw_pack_id)
+                pack_id = study_progress.sanitize_pack_id(raw_pack_id, runtime=app_ctx)
                 if not pack_id:
                     continue
-                cleaned_state = app_ctx.sanitize_card_state_map(raw_state)
+                cleaned_state = study_progress.sanitize_card_state_map(raw_state, runtime=app_ctx)
                 doc_ref = app_ctx.get_study_card_state_doc(uid, pack_id)
                 if cleaned_state:
                     existing_pack_doc = doc_ref.get()
                     existing_pack_state = {}
                     if existing_pack_doc.exists:
                         existing_pack_data = existing_pack_doc.to_dict() or {}
-                        existing_pack_state = app_ctx.sanitize_card_state_map(existing_pack_data.get('state', {}))
-                    merged_state = app_ctx.merge_card_state_maps(existing_pack_state, cleaned_state)
+                        existing_pack_state = study_progress.sanitize_card_state_map(
+                            existing_pack_data.get('state', {}),
+                            runtime=app_ctx,
+                        )
+                    merged_state = study_progress.merge_card_state_maps(
+                        existing_pack_state,
+                        cleaned_state,
+                        runtime=app_ctx,
+                    )
                     doc_ref.set({
                         'uid': uid,
                         'pack_id': pack_id,
@@ -103,7 +122,7 @@ def update_study_progress(app_ctx, request):
             if not isinstance(remove_pack_ids, list):
                 return app_ctx.jsonify({'error': 'remove_pack_ids must be a list'}), 400
             for raw_pack_id in remove_pack_ids[:app_ctx.MAX_PROGRESS_PACKS_PER_SYNC]:
-                pack_id = app_ctx.sanitize_pack_id(raw_pack_id)
+                pack_id = study_progress.sanitize_pack_id(raw_pack_id, runtime=app_ctx)
                 if not pack_id:
                     continue
                 try:
@@ -129,9 +148,11 @@ def get_study_progress_summary(app_ctx, request):
         docs = app_ctx.study_repo.list_study_card_states_by_uid(app_ctx.db, uid, app_ctx.MAX_PROGRESS_PACKS_PER_SYNC)
         for doc in docs:
             data = doc.to_dict() or {}
-            card_state_maps.append(app_ctx.sanitize_card_state_map(data.get('state', {})))
+            card_state_maps.append(study_progress.sanitize_card_state_map(data.get('state', {}), runtime=app_ctx))
 
-        return app_ctx.jsonify(app_ctx.compute_study_progress_summary(progress_data, card_state_maps))
+        return app_ctx.jsonify(
+            study_progress.compute_study_progress_summary(progress_data, card_state_maps, runtime=app_ctx)
+        )
     except Exception as e:
         app_ctx.logger.error(f"Error fetching study progress summary for user {uid}: {e}")
         return app_ctx.jsonify({'error': 'Could not load study progress summary'}), 500
@@ -199,7 +220,11 @@ def create_study_pack(app_ctx, request):
         flashcards = app_ctx.sanitize_flashcards(payload.get('flashcards', []), 500)
         test_questions = app_ctx.sanitize_questions(payload.get('test_questions', []), 500)
         notes_markdown = str(payload.get('notes_markdown', '')).strip()[:180000]
-        notes_audio_map = app_ctx.parse_audio_markers_from_notes(notes_markdown) if app_ctx.FEATURE_AUDIO_SECTION_SYNC else []
+        notes_audio_map = (
+            study_audio.parse_audio_markers_from_notes(notes_markdown, runtime=app_ctx)
+            if app_ctx.FEATURE_AUDIO_SECTION_SYNC
+            else []
+        )
 
         doc_ref = app_ctx.study_repo.create_study_pack_doc_ref(app_ctx.db)
         doc_ref.set({
@@ -255,8 +280,11 @@ def get_study_pack(app_ctx, request, pack_id):
         pack = doc.to_dict() or {}
         if pack.get('uid', '') != uid:
             return app_ctx.jsonify({'error': 'Forbidden'}), 403
-        app_ctx.ensure_pack_audio_storage_key(doc.reference, pack)
-        has_audio_playback = bool(pack.get('has_audio_playback', False) or app_ctx.get_audio_storage_key_from_pack(pack))
+        study_audio.ensure_pack_audio_storage_key(doc.reference, pack, runtime=app_ctx)
+        has_audio_playback = bool(
+            pack.get('has_audio_playback', False)
+            or study_audio.get_audio_storage_key_from_pack(pack, runtime=app_ctx)
+        )
         has_audio_sync = app_ctx.FEATURE_AUDIO_SECTION_SYNC and bool(pack.get('has_audio_sync', False))
         notes_audio_map = pack.get('notes_audio_map', []) if has_audio_sync else []
         return app_ctx.jsonify({
@@ -304,7 +332,7 @@ def update_study_pack(app_ctx, request, pack_id):
         pack = doc.to_dict()
         if pack.get('uid', '') != uid:
             return app_ctx.jsonify({'error': 'Forbidden'}), 403
-        app_ctx.ensure_pack_audio_storage_key(pack_ref, pack)
+        study_audio.ensure_pack_audio_storage_key(pack_ref, pack, runtime=app_ctx)
 
         updates = {'updated_at': app_ctx.time.time()}
         if 'title' in payload:
@@ -337,10 +365,18 @@ def update_study_pack(app_ctx, request, pack_id):
             updates['test_questions'] = app_ctx.sanitize_questions(payload.get('test_questions', []), 500)
         if 'notes_markdown' in payload:
             updates['notes_markdown'] = str(payload.get('notes_markdown', ''))[:180000]
-            notes_audio_map = app_ctx.parse_audio_markers_from_notes(updates['notes_markdown']) if app_ctx.FEATURE_AUDIO_SECTION_SYNC else []
+            notes_audio_map = (
+                study_audio.parse_audio_markers_from_notes(updates['notes_markdown'], runtime=app_ctx)
+                if app_ctx.FEATURE_AUDIO_SECTION_SYNC
+                else []
+            )
             updates['notes_audio_map'] = notes_audio_map
-            updates['has_audio_sync'] = app_ctx.FEATURE_AUDIO_SECTION_SYNC and bool(app_ctx.get_audio_storage_key_from_pack(pack)) and bool(notes_audio_map)
-        updates['has_audio_playback'] = bool(app_ctx.get_audio_storage_key_from_pack(pack))
+            updates['has_audio_sync'] = (
+                app_ctx.FEATURE_AUDIO_SECTION_SYNC
+                and bool(study_audio.get_audio_storage_key_from_pack(pack, runtime=app_ctx))
+                and bool(notes_audio_map)
+            )
+        updates['has_audio_playback'] = bool(study_audio.get_audio_storage_key_from_pack(pack, runtime=app_ctx))
 
         pack_ref.update(updates)
         return app_ctx.jsonify({'ok': True})
@@ -362,7 +398,7 @@ def delete_study_pack(app_ctx, request, pack_id):
         pack = doc.to_dict()
         if pack.get('uid', '') != uid:
             return app_ctx.jsonify({'error': 'Forbidden'}), 403
-        app_ctx.remove_pack_audio_file(pack)
+        study_audio.remove_pack_audio_file(pack, runtime=app_ctx)
         pack_ref.delete()
         try:
             app_ctx.get_study_card_state_doc(uid, pack_id).delete()
@@ -413,8 +449,8 @@ def get_study_pack_audio_url(app_ctx, request, pack_id):
         pack = doc.to_dict() or {}
         if pack.get('uid', '') != uid:
             return app_ctx.jsonify({'error': 'Forbidden'}), 403
-        audio_storage_key = app_ctx.ensure_pack_audio_storage_key(doc.reference, pack)
-        audio_storage_path = app_ctx.resolve_audio_storage_path_from_key(audio_storage_key)
+        audio_storage_key = study_audio.ensure_pack_audio_storage_key(doc.reference, pack, runtime=app_ctx)
+        audio_storage_path = study_audio.resolve_audio_storage_path_from_key(audio_storage_key, runtime=app_ctx)
         if not audio_storage_path:
             return app_ctx.jsonify({'error': 'No audio file for this study pack'}), 404
         if not app_ctx.os.path.exists(audio_storage_path):
@@ -444,8 +480,8 @@ def stream_study_pack_audio(app_ctx, request, pack_id):
         pack = doc.to_dict() or {}
         if pack.get('uid', '') != uid and not app_ctx.is_admin_user(decoded_token):
             return app_ctx.jsonify({'error': 'Forbidden'}), 403
-        audio_storage_key = app_ctx.ensure_pack_audio_storage_key(doc.reference, pack)
-        audio_storage_path = app_ctx.resolve_audio_storage_path_from_key(audio_storage_key)
+        audio_storage_key = study_audio.ensure_pack_audio_storage_key(doc.reference, pack, runtime=app_ctx)
+        audio_storage_path = study_audio.resolve_audio_storage_path_from_key(audio_storage_key, runtime=app_ctx)
         if not audio_storage_path:
             return app_ctx.jsonify({'error': 'No audio file for this study pack'}), 404
         if not app_ctx.os.path.exists(audio_storage_path):
@@ -484,7 +520,7 @@ def create_study_folder(app_ctx, request):
     try:
         now_ts = app_ctx.time.time()
         try:
-            exam_date = app_ctx.normalize_exam_date(payload.get('exam_date', ''))
+            exam_date = study_export.normalize_exam_date(payload.get('exam_date', ''), runtime=app_ctx)
         except ValueError as ve:
             return app_ctx.jsonify({'error': str(ve)}), 400
         doc_ref = app_ctx.study_repo.create_study_folder_doc_ref(app_ctx.db)
@@ -531,7 +567,10 @@ def update_study_folder(app_ctx, request, folder_id):
                 updates[field] = str(payload.get(field, '')).strip()[:120]
         if 'exam_date' in payload:
             try:
-                updates['exam_date'] = app_ctx.normalize_exam_date(payload.get('exam_date', ''))
+                    updates['exam_date'] = study_export.normalize_exam_date(
+                        payload.get('exam_date', ''),
+                        runtime=app_ctx,
+                    )
             except ValueError as ve:
                 return app_ctx.jsonify({'error': str(ve)}), 400
         folder_ref.update(updates)
@@ -650,7 +689,7 @@ def export_study_pack_notes(app_ctx, request, pack_id):
             )
 
         if export_format == 'docx':
-            docx = app_ctx.markdown_to_docx(notes_markdown, pack_title)
+            docx = study_export.markdown_to_docx(notes_markdown, pack_title, runtime=app_ctx)
             docx_bytes = app_ctx.io.BytesIO()
             docx.save(docx_bytes)
             docx_bytes.seek(0)
@@ -689,7 +728,7 @@ def export_study_pack_pdf(app_ctx, request, pack_id):
 
         include_answers_raw = str(request.args.get('include_answers', '1')).strip().lower()
         include_answers = include_answers_raw in {'1', 'true', 'yes', 'on'}
-        pdf_io = app_ctx.build_study_pack_pdf(pack, include_answers=include_answers)
+        pdf_io = study_export.build_study_pack_pdf(pack, include_answers=include_answers, runtime=app_ctx)
         filename_suffix = '' if include_answers else '-no-answers'
         return app_ctx.send_file(
             pdf_io,

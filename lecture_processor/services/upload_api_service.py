@@ -1,7 +1,19 @@
 """Business logic handlers for upload/status/download APIs."""
 
 from lecture_processor.domains.auth import policy as auth_policy
+from lecture_processor.domains.admin import metrics as admin_metrics
+from lecture_processor.domains.account import lifecycle as account_lifecycle
+from lecture_processor.domains.analytics import events as analytics_events
+from lecture_processor.domains.ai import provider as ai_provider
+from lecture_processor.domains.ai import pipelines as ai_pipelines
+from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
+from lecture_processor.domains.rate_limit import quotas as rate_limit_quotas
+from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
+from lecture_processor.domains.shared import parsing as shared_parsing
+from lecture_processor.domains.study import export as study_export
+from lecture_processor.domains.upload import import_audio as upload_import_audio
 
 
 def _sanitize_tools_custom_prompt(raw_prompt, max_chars=6000):
@@ -229,7 +241,7 @@ def _attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None):
 
     for attempt in range(1, 4):
         try:
-            refunded = bool(app_ctx.refund_credit(uid, credit_type))
+            refunded = bool(billing_credits.refund_credit(uid, credit_type, runtime=app_ctx))
         except Exception:
             refunded = False
         if refunded:
@@ -256,7 +268,7 @@ def _attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None):
     if credit_type == 'slides_credits':
         for fallback_attempt in range(1, 3):
             try:
-                refunded = bool(app_ctx.refund_slides_credits(uid, 1))
+                refunded = bool(billing_credits.refund_slides_credits(uid, 1, runtime=app_ctx))
                 if not refunded:
                     if fallback_attempt < 2:
                         app_ctx.time.sleep(0.08 * fallback_attempt)
@@ -385,15 +397,24 @@ def import_audio_from_url(app_ctx, request):
         )
 
     data = request.get_json(silent=True) or {}
-    safe_url, error_message = app_ctx.validate_video_import_url(data.get('url', ''))
+    safe_url, error_message = upload_import_audio.validate_video_import_url(
+        data.get('url', ''),
+        runtime=app_ctx,
+    )
     if not safe_url:
         return app_ctx.jsonify({'error': error_message}), 400
 
-    app_ctx.cleanup_expired_audio_import_tokens()
+    upload_import_audio.cleanup_expired_audio_import_tokens(runtime=app_ctx)
     prefix = f"urlimport_{app_ctx.uuid.uuid4().hex}"
     try:
         audio_path, output_name, size_bytes = app_ctx.download_audio_from_video_url(safe_url, prefix)
-        token = app_ctx.register_audio_import_token(uid, audio_path, safe_url, output_name)
+        token = upload_import_audio.register_audio_import_token(
+            uid,
+            audio_path,
+            safe_url,
+            output_name,
+            runtime=app_ctx,
+        )
         return app_ctx.jsonify({
             'ok': True,
             'audio_import_token': token,
@@ -414,7 +435,7 @@ def release_imported_audio(app_ctx, request):
     payload = request.get_json(silent=True) or {}
     token = str(payload.get('audio_import_token', '') or '').strip()
     if token:
-        app_ctx.release_audio_import_token(uid, token)
+        upload_import_audio.release_audio_import_token(uid, token, runtime=app_ctx)
     return app_ctx.jsonify({'ok': True})
 
 
@@ -426,9 +447,9 @@ def upload_files(app_ctx, request):
     email = decoded_token.get('email', '')
     if not auth_policy.is_email_allowed(email, runtime=app_ctx):
         return app_ctx.jsonify({'error': 'Email not allowed'}), 403
-    active_jobs = app_ctx.count_active_jobs_for_user(uid)
+    active_jobs = account_lifecycle.count_active_jobs_for_user(uid, runtime=app_ctx)
     if active_jobs >= app_ctx.MAX_ACTIVE_JOBS_PER_USER:
-        app_ctx.log_rate_limit_hit('upload', 10)
+        analytics_events.log_rate_limit_hit('upload', 10, runtime=app_ctx)
         return app_ctx.jsonify({
             'error': f'You already have {active_jobs} active processing job(s). Please wait for one to finish before starting another.'
         }), 429
@@ -439,14 +460,17 @@ def upload_files(app_ctx, request):
         runtime=app_ctx,
     )
     if not allowed_upload:
-        app_ctx.log_rate_limit_hit('upload', retry_after)
+        analytics_events.log_rate_limit_hit('upload', retry_after, runtime=app_ctx)
         return rate_limiter.build_rate_limited_response(
             'Too many upload attempts right now. Please wait and try again.',
             retry_after,
             runtime=app_ctx,
         )
     requested_bytes = int(request.content_length or 0)
-    disk_ok, free_bytes, needed_bytes = app_ctx.has_sufficient_upload_disk_space(requested_bytes)
+    disk_ok, free_bytes, needed_bytes = rate_limit_quotas.has_sufficient_upload_disk_space(
+        requested_bytes,
+        runtime=app_ctx,
+    )
     if not disk_ok:
         app_ctx.logger.warning(
             "Upload rejected due to low disk space: free=%s needed=%s uid=%s",
@@ -457,9 +481,13 @@ def upload_files(app_ctx, request):
         return app_ctx.jsonify({
             'error': 'Upload temporarily unavailable due to low server storage. Please try again later.'
         }), 503
-    reserved_daily, daily_retry_after = app_ctx.reserve_daily_upload_bytes(uid, requested_bytes)
+    reserved_daily, daily_retry_after = rate_limit_quotas.reserve_daily_upload_bytes(
+        uid,
+        requested_bytes,
+        runtime=app_ctx,
+    )
     if not reserved_daily:
-        app_ctx.log_rate_limit_hit('upload', daily_retry_after)
+        analytics_events.log_rate_limit_hit('upload', daily_retry_after, runtime=app_ctx)
         return rate_limiter.build_rate_limited_response(
             'Daily upload quota reached for your account. Please try again tomorrow.',
             daily_retry_after,
@@ -467,18 +495,35 @@ def upload_files(app_ctx, request):
         )
     user = app_ctx.get_or_create_user(uid, email)
     mode = request.form.get('mode', 'lecture-notes')
-    flashcard_selection = app_ctx.parse_requested_amount(request.form.get('flashcard_amount', '20'), {'10', '20', '30', 'auto'}, '20')
-    question_selection = app_ctx.parse_requested_amount(request.form.get('question_amount', '10'), {'5', '10', '15', 'auto'}, '10')
-    preferred_language_key = app_ctx.sanitize_output_language_pref_key(user.get('preferred_output_language', app_ctx.DEFAULT_OUTPUT_LANGUAGE_KEY))
-    preferred_language_custom = app_ctx.sanitize_output_language_pref_custom(user.get('preferred_output_language_custom', ''))
-    output_language = app_ctx.parse_output_language(
+    flashcard_selection = shared_parsing.parse_requested_amount(
+        request.form.get('flashcard_amount', '20'),
+        {'10', '20', '30', 'auto'},
+        '20',
+        runtime=app_ctx,
+    )
+    question_selection = shared_parsing.parse_requested_amount(
+        request.form.get('question_amount', '10'),
+        {'5', '10', '15', 'auto'},
+        '10',
+        runtime=app_ctx,
+    )
+    preferred_language_key = shared_parsing.sanitize_output_language_pref_key(
+        user.get('preferred_output_language', app_ctx.DEFAULT_OUTPUT_LANGUAGE_KEY),
+        runtime=app_ctx,
+    )
+    preferred_language_custom = shared_parsing.sanitize_output_language_pref_custom(
+        user.get('preferred_output_language_custom', ''),
+        runtime=app_ctx,
+    )
+    output_language = shared_parsing.parse_output_language(
         request.form.get('output_language', preferred_language_key),
         request.form.get('output_language_custom', preferred_language_custom),
+        runtime=app_ctx,
     )
-    study_features = app_ctx.parse_study_features(request.form.get('study_features', 'none'))
-    interview_features = app_ctx.parse_interview_features(request.form.get('interview_features', 'none'))
+    study_features = shared_parsing.parse_study_features(request.form.get('study_features', 'none'), runtime=app_ctx)
+    interview_features = shared_parsing.parse_interview_features(request.form.get('interview_features', 'none'), runtime=app_ctx)
     audio_import_token = str(request.form.get('audio_import_token', '') or '').strip()
-    app_ctx.cleanup_expired_audio_import_tokens()
+    upload_import_audio.cleanup_expired_audio_import_tokens(runtime=app_ctx)
     if request.content_length and request.content_length > app_ctx.MAX_CONTENT_LENGTH:
         return app_ctx.jsonify({'error': 'Upload too large. Maximum total upload size is 560MB (up to 50MB slides file (PDF/PPTX) and 500MB audio).'}), 413
 
@@ -514,9 +559,14 @@ def upload_files(app_ctx, request):
             audio_path = app_ctx.os.path.join(app_ctx.UPLOAD_FOLDER, f"{job_id}_{app_ctx.secure_filename(uploaded_audio_file.filename)}")
             uploaded_audio_file.save(audio_path)
             if has_imported_audio:
-                app_ctx.release_audio_import_token(uid, audio_import_token)
+                upload_import_audio.release_audio_import_token(uid, audio_import_token, runtime=app_ctx)
         else:
-            audio_path, token_error = app_ctx.get_audio_import_token_path(uid, audio_import_token, consume=False)
+            audio_path, token_error = upload_import_audio.get_audio_import_token_path(
+                uid,
+                audio_import_token,
+                consume=False,
+                runtime=app_ctx,
+            )
             if token_error:
                 app_ctx.cleanup_files([pdf_path], [])
                 return app_ctx.jsonify({'error': token_error}), 400
@@ -529,19 +579,33 @@ def upload_files(app_ctx, request):
         if not app_ctx.file_looks_like_audio(audio_path):
             app_ctx.cleanup_files([pdf_path, audio_path], [])
             return app_ctx.jsonify({'error': 'Uploaded audio file is invalid or unsupported.'}), 400
-        deducted = app_ctx.deduct_credit(uid, 'lecture_credits_standard', 'lecture_credits_extended')
+        deducted = billing_credits.deduct_credit(
+            uid,
+            'lecture_credits_standard',
+            'lecture_credits_extended',
+            runtime=app_ctx,
+        )
         if not deducted:
             app_ctx.cleanup_files([pdf_path, audio_path], [])
             return app_ctx.jsonify({'error': 'No lecture credits remaining.'}), 402
         if imported_audio_used:
-            _consumed_path, token_error = app_ctx.get_audio_import_token_path(uid, audio_import_token, consume=True)
+            _consumed_path, token_error = upload_import_audio.get_audio_import_token_path(
+                uid,
+                audio_import_token,
+                consume=True,
+                runtime=app_ctx,
+            )
             if token_error:
                 app_ctx.cleanup_files([pdf_path, audio_path], [])
-                app_ctx.refund_credit(uid, deducted)
+                billing_credits.refund_credit(uid, deducted, runtime=app_ctx)
                 return app_ctx.jsonify({'error': token_error}), 400
         total_steps = 4 if study_features != 'none' else 3
-        app_ctx.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round(((pdf_size if pdf_size > 0 else 0) + audio_size) / (1024 * 1024), 2), 'billing_receipt': app_ctx.initialize_billing_receipt({deducted: 1})})
-        thread = app_ctx.threading.Thread(target=app_ctx.process_lecture_notes, args=(job_id, pdf_path, audio_path))
+        runtime_jobs_store.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round(((pdf_size if pdf_size > 0 else 0) + audio_size) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
+        thread = app_ctx.threading.Thread(
+            target=ai_pipelines.process_lecture_notes,
+            args=(job_id, pdf_path, audio_path),
+            kwargs={'runtime': app_ctx},
+        )
         thread.start()
 
     elif mode == 'slides-only':
@@ -557,13 +621,17 @@ def upload_files(app_ctx, request):
         if slides_error:
             return app_ctx.jsonify({'error': slides_error}), 400
         pdf_size = app_ctx.get_saved_file_size(pdf_path)
-        deducted = app_ctx.deduct_credit(uid, 'slides_credits')
+        deducted = billing_credits.deduct_credit(uid, 'slides_credits', runtime=app_ctx)
         if not deducted:
             app_ctx.cleanup_files([pdf_path], [])
             return app_ctx.jsonify({'error': 'No text extraction credits remaining.'}), 402
         total_steps = 2 if study_features != 'none' else 1
-        app_ctx.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round((pdf_size if pdf_size > 0 else 0) / (1024 * 1024), 2), 'billing_receipt': app_ctx.initialize_billing_receipt({deducted: 1})})
-        thread = app_ctx.threading.Thread(target=app_ctx.process_slides_only, args=(job_id, pdf_path))
+        runtime_jobs_store.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round((pdf_size if pdf_size > 0 else 0) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
+        thread = app_ctx.threading.Thread(
+            target=ai_pipelines.process_slides_only,
+            args=(job_id, pdf_path),
+            kwargs={'runtime': app_ctx},
+        )
         thread.start()
 
     elif mode == 'interview':
@@ -585,9 +653,14 @@ def upload_files(app_ctx, request):
             audio_path = app_ctx.os.path.join(app_ctx.UPLOAD_FOLDER, f"{job_id}_{app_ctx.secure_filename(uploaded_audio_file.filename)}")
             uploaded_audio_file.save(audio_path)
             if has_imported_audio:
-                app_ctx.release_audio_import_token(uid, audio_import_token)
+                upload_import_audio.release_audio_import_token(uid, audio_import_token, runtime=app_ctx)
         else:
-            audio_path, token_error = app_ctx.get_audio_import_token_path(uid, audio_import_token, consume=False)
+            audio_path, token_error = upload_import_audio.get_audio_import_token_path(
+                uid,
+                audio_import_token,
+                consume=False,
+                runtime=app_ctx,
+            )
             if token_error:
                 return app_ctx.jsonify({'error': token_error}), 400
             imported_audio_used = True
@@ -599,30 +672,35 @@ def upload_files(app_ctx, request):
         if not app_ctx.file_looks_like_audio(audio_path):
             app_ctx.cleanup_files([audio_path], [])
             return app_ctx.jsonify({'error': 'Uploaded audio file is invalid or unsupported.'}), 400
-        deducted = app_ctx.deduct_interview_credit(uid)
+        deducted = billing_credits.deduct_interview_credit(uid, runtime=app_ctx)
         if not deducted:
             app_ctx.cleanup_files([audio_path], [])
             return app_ctx.jsonify({'error': 'No interview credits remaining.'}), 402
         interview_features_cost = len(interview_features)
         if interview_features_cost > 0:
             if user.get('slides_credits', 0) < interview_features_cost:
-                app_ctx.refund_credit(uid, deducted)
+                billing_credits.refund_credit(uid, deducted, runtime=app_ctx)
                 app_ctx.cleanup_files([audio_path], [])
                 return app_ctx.jsonify({'error': f'Not enough text extraction credits for interview extras. You selected {interview_features_cost} option(s) and need {interview_features_cost} text extraction credits.'}), 402
-            if not app_ctx.deduct_slides_credits(uid, interview_features_cost):
-                app_ctx.refund_credit(uid, deducted)
+            if not billing_credits.deduct_slides_credits(uid, interview_features_cost, runtime=app_ctx):
+                billing_credits.refund_credit(uid, deducted, runtime=app_ctx)
                 app_ctx.cleanup_files([audio_path], [])
                 return app_ctx.jsonify({'error': 'Could not reserve text extraction credits for interview extras. Please try again.'}), 402
         if imported_audio_used:
-            _consumed_path, token_error = app_ctx.get_audio_import_token_path(uid, audio_import_token, consume=True)
+            _consumed_path, token_error = upload_import_audio.get_audio_import_token_path(
+                uid,
+                audio_import_token,
+                consume=True,
+                runtime=app_ctx,
+            )
             if token_error:
                 app_ctx.cleanup_files([audio_path], [])
-                app_ctx.refund_credit(uid, deducted)
+                billing_credits.refund_credit(uid, deducted, runtime=app_ctx)
                 if interview_features_cost > 0:
-                    app_ctx.refund_slides_credits(uid, interview_features_cost)
+                    billing_credits.refund_slides_credits(uid, interview_features_cost, runtime=app_ctx)
                 return app_ctx.jsonify({'error': token_error}), 400
         total_steps = 2 if interview_features_cost > 0 else 1
-        app_ctx.set_job(job_id, {
+        runtime_jobs_store.set_job(job_id, {
             'status': 'starting',
             'step': 0,
             'step_description': 'Starting...',
@@ -652,15 +730,19 @@ def upload_files(app_ctx, request):
             'provider_error_code': '',
             'retry_attempts': 0,
             'file_size_mb': round(audio_size / (1024 * 1024), 2),
-            'billing_receipt': app_ctx.initialize_billing_receipt({deducted: 1, 'slides_credits': interview_features_cost}),
-        })
-        thread = app_ctx.threading.Thread(target=app_ctx.process_interview_transcription, args=(job_id, audio_path))
+            'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1, 'slides_credits': interview_features_cost}, runtime=app_ctx),
+        }, runtime=app_ctx)
+        thread = app_ctx.threading.Thread(
+            target=ai_pipelines.process_interview_transcription,
+            args=(job_id, audio_path),
+            kwargs={'runtime': app_ctx},
+        )
         thread.start()
     else:
         return app_ctx.jsonify({'error': 'Invalid mode selected'}), 400
 
-    created_job = app_ctx.get_job_snapshot(job_id) or {}
-    app_ctx.log_analytics_event(
+    created_job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx) or {}
+    analytics_events.log_analytics_event(
         'processing_started_backend',
         source='backend',
         uid=uid,
@@ -673,6 +755,7 @@ def upload_files(app_ctx, request):
             'interview_features_count': len(created_job.get('interview_features', [])) if isinstance(created_job.get('interview_features'), list) else 0,
         },
         created_at=created_job.get('started_at', app_ctx.time.time()),
+        runtime=app_ctx,
     )
 
     return app_ctx.jsonify({'job_id': job_id})
@@ -695,7 +778,7 @@ def tools_extract(app_ctx, request):
         runtime=app_ctx,
     )
     if not allowed:
-        app_ctx.log_rate_limit_hit('tools', retry_after)
+        analytics_events.log_rate_limit_hit('tools', retry_after, runtime=app_ctx)
         return rate_limiter.build_rate_limited_response(
             'Too many tools extraction attempts right now. Please wait and try again.',
             retry_after,
@@ -823,7 +906,7 @@ def tools_extract(app_ctx, request):
             upload_path = image_path
             source_size_mb = round(saved_size / (1024 * 1024), 4)
 
-        deducted_credit = app_ctx.deduct_credit(uid, 'slides_credits')
+        deducted_credit = billing_credits.deduct_credit(uid, 'slides_credits', runtime=app_ctx)
         if not deducted_credit:
             return app_ctx.jsonify({'error': 'No text extraction credits remaining.'}), 402
 
@@ -836,7 +919,7 @@ def tools_extract(app_ctx, request):
             else:
                 source_block_title = 'Source content extracted from DOCX:'
                 operation_name = 'tools_extract_document_docx'
-            response = app_ctx.generate_with_policy(
+            response = ai_provider.generate_with_policy(
                 app_ctx.MODEL_TOOLS,
                 [app_ctx.types.Content(role='user', parts=[
                     app_ctx.types.Part.from_text(text=prompt),
@@ -845,22 +928,25 @@ def tools_extract(app_ctx, request):
                 max_output_tokens=32768,
                 retry_tracker=retry_tracker,
                 operation_name=operation_name,
+                runtime=app_ctx,
             )
         else:
-            uploaded_provider_file = app_ctx.run_with_provider_retry(
+            uploaded_provider_file = ai_provider.run_with_provider_retry(
                 'tools_file_upload',
                 lambda: app_ctx.client.files.upload(file=upload_path, config={'mime_type': upload_mime_type}),
                 retry_tracker=retry_tracker,
+                runtime=app_ctx,
             )
             gemini_files.append(uploaded_provider_file)
 
-            app_ctx.run_with_provider_retry(
+            ai_provider.run_with_provider_retry(
                 'tools_file_processing',
                 lambda: app_ctx.wait_for_file_processing(uploaded_provider_file),
                 retry_tracker=retry_tracker,
+                runtime=app_ctx,
             )
 
-            response = app_ctx.generate_with_policy(
+            response = ai_provider.generate_with_policy(
                 app_ctx.MODEL_TOOLS,
                 [app_ctx.types.Content(role='user', parts=[
                     app_ctx.types.Part.from_uri(file_uri=uploaded_provider_file.uri, mime_type=upload_mime_type),
@@ -869,14 +955,15 @@ def tools_extract(app_ctx, request):
                 max_output_tokens=32768,
                 retry_tracker=retry_tracker,
                 operation_name=f'tools_extract_{source_type}',
+                runtime=app_ctx,
             )
         extracted_markdown = str(getattr(response, 'text', '') or '').strip()
         if not extracted_markdown:
             raise ValueError('Extraction returned empty output')
 
-        usage = app_ctx.extract_token_usage(response)
+        usage = ai_provider.extract_token_usage(response, runtime=app_ctx)
         retry_attempts_total = _sum_retry_attempts(retry_tracker)
-        app_ctx.log_analytics_event(
+        analytics_events.log_analytics_event(
             'tools_extract_completed',
             source='backend',
             uid=uid,
@@ -894,6 +981,7 @@ def tools_extract(app_ctx, request):
                 'input_tokens': int(usage.get('input_tokens', 0) or 0),
                 'output_tokens': int(usage.get('output_tokens', 0) or 0),
             },
+            runtime=app_ctx,
         )
 
         app_ctx.save_job_log(
@@ -945,7 +1033,7 @@ def tools_extract(app_ctx, request):
             },
         })
     except Exception as error:
-        provider_error_code = app_ctx.classify_provider_error_code(error)
+        provider_error_code = ai_provider.classify_provider_error_code(error, runtime=app_ctx)
         app_ctx.logger.exception("Tools extraction failed for user %s source=%s", uid, source_type)
         if deducted_credit and not refunded_credit:
             expected_floor = user_text_credits_before if deducted_credit == 'slides_credits' else None
@@ -956,7 +1044,7 @@ def tools_extract(app_ctx, request):
                 expected_floor=expected_floor,
             )
         retry_attempts_total = _sum_retry_attempts(retry_tracker)
-        app_ctx.log_analytics_event(
+        analytics_events.log_analytics_event(
             'tools_extract_failed',
             source='backend',
             uid=uid,
@@ -973,6 +1061,7 @@ def tools_extract(app_ctx, request):
                 'retry_attempts': retry_attempts_total,
                 'credit_refund_method': credit_refund_method,
             },
+            runtime=app_ctx,
         )
         app_ctx.save_job_log(
             job_id,
@@ -1048,19 +1137,20 @@ def tools_export(app_ctx, request):
         return app_ctx.jsonify({'error': 'Export content is too large. Please shorten the result and retry.'}), 400
 
     export_markdown = _normalize_tools_markdown_for_export(markdown)
-    doc = app_ctx.markdown_to_docx(export_markdown, title or 'Tools Extract')
+    doc = study_export.markdown_to_docx(export_markdown, title or 'Tools Extract', runtime=app_ctx)
     docx_io = app_ctx.io.BytesIO()
     doc.save(docx_io)
     docx_io.seek(0)
     base_name = _normalize_export_base_name(title)
 
-    app_ctx.log_analytics_event(
+    analytics_events.log_analytics_event(
         'tools_export_requested',
         source='backend',
         uid=uid,
         email=email,
         session_id=app_ctx.uuid.uuid4().hex,
         properties={'format': export_format},
+        runtime=app_ctx,
     )
     return app_ctx.send_file(
         docx_io,
@@ -1075,10 +1165,10 @@ def get_status(app_ctx, request, job_id):
     if not decoded_token:
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
-    job = app_ctx.get_job_snapshot(job_id)
+    job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx)
     if not job:
         app_ctx.cleanup_old_jobs()
-        job = app_ctx.get_job_snapshot(job_id)
+        job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx)
         if not job:
             return app_ctx.jsonify({
                 'error': 'Job status is temporarily unavailable. Retrying should usually recover it within a few seconds.',
@@ -1098,7 +1188,7 @@ def get_status(app_ctx, request, job_id):
         'failed_stage': job.get('failed_stage', ''),
         'provider_error_code': job.get('provider_error_code', ''),
     }
-    billing_receipt = app_ctx.get_billing_receipt_snapshot(job)
+    billing_receipt = billing_receipts.get_billing_receipt_snapshot(job, runtime=app_ctx)
     if billing_receipt.get('charged') or billing_receipt.get('refunded'):
         response['billing_receipt'] = billing_receipt
     if job['status'] == 'complete':
@@ -1134,7 +1224,7 @@ def download_docx(app_ctx, request, job_id):
     if not decoded_token:
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
-    job = app_ctx.get_job_snapshot(job_id)
+    job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx)
     if not job:
         return app_ctx.jsonify({'error': 'Job not found'}), 404
     if job.get('user_id', '') != uid and not app_ctx.is_admin_user(decoded_token):
@@ -1166,7 +1256,7 @@ def download_docx(app_ctx, request, job_id):
         else:
             filename, title = 'interview-transcript.docx', 'Interview Transcript'
 
-    doc = app_ctx.markdown_to_docx(content, title)
+    doc = study_export.markdown_to_docx(content, title, runtime=app_ctx)
     docx_io = app_ctx.io.BytesIO()
     doc.save(docx_io)
     docx_io.seek(0)
@@ -1183,7 +1273,7 @@ def download_flashcards_csv(app_ctx, request, job_id):
     if not decoded_token:
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
-    job = app_ctx.get_job_snapshot(job_id)
+    job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx)
     if not job:
         return app_ctx.jsonify({'error': 'Job not found'}), 404
     if job.get('user_id', '') != uid and not app_ctx.is_admin_user(decoded_token):
@@ -1306,7 +1396,14 @@ def processing_estimate(app_ctx, request):
     )
     requested_bucket = _estimate_size_bucket(total_mb)
     window_start = app_ctx.time.time() - 30 * 86400
-    docs = app_ctx.safe_query_docs_in_window('job_logs', 'finished_at', window_start, order_desc=True, limit=600)
+    docs = admin_metrics.safe_query_docs_in_window(
+        collection_name='job_logs',
+        timestamp_field='finished_at',
+        window_start=window_start,
+        order_desc=True,
+        limit=600,
+        runtime=app_ctx,
+    )
 
     strict = []
     feature_only = []

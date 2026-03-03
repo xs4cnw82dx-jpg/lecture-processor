@@ -3,6 +3,8 @@
 
 from urllib.parse import urlparse
 
+from lecture_processor.domains.billing import purchases as billing_purchases
+from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 
 
@@ -36,7 +38,7 @@ def create_checkout_session(app_ctx, request):
         runtime=app_ctx,
     )
     if not allowed_checkout:
-        app_ctx.log_rate_limit_hit('checkout', retry_after)
+        analytics_events.log_rate_limit_hit('checkout', retry_after, runtime=app_ctx)
         return rate_limiter.build_rate_limited_response(
             'Too many checkout attempts. Please wait before starting another checkout.',
             retry_after,
@@ -108,7 +110,7 @@ def confirm_checkout_session(app_ctx, request):
         if metadata.get('uid', '') != uid:
             return app_ctx.jsonify({'error': 'Forbidden'}), 403
 
-        ok, status = app_ctx.process_checkout_session_credits(session)
+        ok, status = billing_purchases.process_checkout_session_credits(session, runtime=app_ctx)
         if not ok:
             return app_ctx.jsonify({'error': status}), 400
         return app_ctx.jsonify({'ok': True, 'status': status})
@@ -144,7 +146,7 @@ def stripe_webhook(app_ctx, request):
 
     if event.get('type') == 'checkout.session.completed':
         session = event['data']['object']
-        ok, status = app_ctx.process_checkout_session_credits(session)
+        ok, status = billing_purchases.process_checkout_session_credits(session, runtime=app_ctx)
         if ok and status == 'granted':
             metadata = session.get('metadata', {}) or {}
             app_ctx.logger.info(f"✅ Payment successful! Granted bundle '{metadata.get('bundle_id', '')}' to user '{metadata.get('uid', '')}'")

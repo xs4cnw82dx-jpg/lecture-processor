@@ -7,7 +7,11 @@ import time
 
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.auth import session as auth_session
+from lecture_processor.domains.account import lifecycle as account_lifecycle
+from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
+from lecture_processor.domains.shared import parsing as shared_parsing
+from lecture_processor.domains.study import audio as study_audio
 
 
 def create_admin_session(app_ctx, request):
@@ -110,7 +114,10 @@ def ingest_analytics_event(app_ctx, request):
     decoded_token = app_ctx.verify_firebase_token(request)
     uid = decoded_token.get('uid', '') if decoded_token else ''
     email = decoded_token.get('email', '') if decoded_token else ''
-    session_id = app_ctx.sanitize_analytics_session_id(data.get('session_id', ''))
+    session_id = analytics_events.sanitize_analytics_session_id(
+        data.get('session_id', ''),
+        runtime=app_ctx,
+    )
     if not session_id and uid:
         session_id = uid[:80]
 
@@ -123,28 +130,29 @@ def ingest_analytics_event(app_ctx, request):
         runtime=app_ctx,
     )
     if not allowed_analytics:
-        app_ctx.log_rate_limit_hit('analytics', retry_after)
+        analytics_events.log_rate_limit_hit('analytics', retry_after, runtime=app_ctx)
         return rate_limiter.build_rate_limited_response(
             'Too many analytics events from this client. Please retry shortly.',
             retry_after,
             runtime=app_ctx,
         )
 
-    event_name = app_ctx.sanitize_analytics_event_name(data.get('event', ''))
+    event_name = analytics_events.sanitize_analytics_event_name(data.get('event', ''), runtime=app_ctx)
     if not event_name:
         return app_ctx.jsonify({'error': 'Invalid event name'}), 400
 
-    properties = app_ctx.sanitize_analytics_properties(data.get('properties', {}))
+    properties = analytics_events.sanitize_analytics_properties(data.get('properties', {}), runtime=app_ctx)
     properties['path'] = str(data.get('path', '') or '').strip()[:80]
     properties['page'] = str(data.get('page', '') or '').strip()[:40]
 
-    ok = app_ctx.log_analytics_event(
+    ok = analytics_events.log_analytics_event(
         event_name,
         source='frontend',
         uid=uid,
         email=email,
         session_id=session_id,
         properties=properties,
+        runtime=app_ctx,
     )
     if not ok:
         return app_ctx.jsonify({'error': 'Could not store event'}), 500
@@ -160,7 +168,7 @@ def get_user(app_ctx, request):
     if not auth_policy.is_email_allowed(email, runtime=app_ctx):
         return app_ctx.jsonify({'error': 'Email not allowed', 'message': 'Please use your university email.'}), 403
     user = app_ctx.get_or_create_user(uid, email)
-    preferences = app_ctx.build_user_preferences_payload(user)
+    preferences = shared_parsing.build_user_preferences_payload(user, runtime=app_ctx)
     return app_ctx.jsonify({
         'uid': user['uid'], 'email': user['email'],
         'credits': {
@@ -186,7 +194,7 @@ def get_user_preferences(app_ctx, request):
     if not auth_policy.is_email_allowed(email, runtime=app_ctx):
         return app_ctx.jsonify({'error': 'Email not allowed'}), 403
     user = app_ctx.get_or_create_user(uid, email)
-    return app_ctx.jsonify({'preferences': app_ctx.build_user_preferences_payload(user)})
+    return app_ctx.jsonify({'preferences': shared_parsing.build_user_preferences_payload(user, runtime=app_ctx)})
 
 
 def update_user_preferences(app_ctx, request):
@@ -203,8 +211,8 @@ def update_user_preferences(app_ctx, request):
 
     raw_key = payload.get('output_language', user.get('preferred_output_language', app_ctx.DEFAULT_OUTPUT_LANGUAGE_KEY))
     raw_custom = payload.get('output_language_custom', user.get('preferred_output_language_custom', ''))
-    pref_key = app_ctx.sanitize_output_language_pref_key(raw_key)
-    pref_custom = app_ctx.sanitize_output_language_pref_custom(raw_custom)
+    pref_key = shared_parsing.sanitize_output_language_pref_key(raw_key, runtime=app_ctx)
+    pref_custom = shared_parsing.sanitize_output_language_pref_custom(raw_custom, runtime=app_ctx)
 
     if pref_key == 'other' and not pref_custom:
         return app_ctx.jsonify({'error': 'Custom language is required when output language is Other.'}), 400
@@ -222,7 +230,7 @@ def update_user_preferences(app_ctx, request):
     try:
         app_ctx.users_repo.set_doc(app_ctx.db, uid, updates, merge=True)
         user.update(updates)
-        return app_ctx.jsonify({'ok': True, 'preferences': app_ctx.build_user_preferences_payload(user)})
+        return app_ctx.jsonify({'ok': True, 'preferences': shared_parsing.build_user_preferences_payload(user, runtime=app_ctx)})
     except Exception as e:
         app_ctx.logger.error(f"Error updating preferences for user {uid}: {e}")
         return app_ctx.jsonify({'error': 'Could not save preferences'}), 500
@@ -236,7 +244,7 @@ def export_account_data(app_ctx, request):
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
     try:
-        payload = app_ctx.collect_user_export_payload(uid, email)
+        payload = account_lifecycle.collect_user_export_payload(uid, email, runtime=app_ctx)
         date_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
         filename = f"lecture-processor-account-export-{date_str}.json"
         data_bytes = json.dumps(payload, ensure_ascii=False, indent=2, default=str).encode('utf-8')
@@ -270,7 +278,7 @@ def delete_account_data(app_ctx, request):
     if email and confirm_email != email:
         return app_ctx.jsonify({'error': 'Confirmation email does not match your account email.'}), 400
 
-    active_jobs = app_ctx.count_active_jobs_for_user(uid)
+    active_jobs = account_lifecycle.count_active_jobs_for_user(uid, runtime=app_ctx)
     if active_jobs > 0:
         return app_ctx.jsonify({
             'error': f'Cannot delete account while {active_jobs} processing job(s) are still active. Please wait until processing finishes.'
@@ -282,20 +290,49 @@ def delete_account_data(app_ctx, request):
         warnings_list = []
         job_ids = set()
 
-        job_log_docs, job_logs_truncated = app_ctx.list_docs_by_uid('job_logs', uid, app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION)
+        job_log_docs, job_logs_truncated = account_lifecycle.list_docs_by_uid(
+            'job_logs',
+            uid,
+            app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION,
+            runtime=app_ctx,
+        )
         truncated['job_logs'] = job_logs_truncated
         for item in job_log_docs:
             jid = str(item.get('job_id', '') or item.get('_id', '')).strip()
             if jid:
                 job_ids.add(jid)
 
-        deleted_job_logs, _ = app_ctx.delete_docs_by_uid('job_logs', uid, app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION)
+        deleted_job_logs, _ = account_lifecycle.delete_docs_by_uid(
+            'job_logs',
+            uid,
+            app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION,
+            runtime=app_ctx,
+        )
         deleted['job_logs'] = deleted_job_logs
 
-        anonymized_purchases, purchases_truncated = app_ctx.anonymize_purchase_docs_by_uid(uid, app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION)
-        deleted_analytics, analytics_truncated = app_ctx.delete_docs_by_uid('analytics_events', uid, app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION)
-        deleted_folders, folders_truncated = app_ctx.delete_docs_by_uid('study_folders', uid, app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION)
-        deleted_card_states, card_states_truncated = app_ctx.delete_docs_by_uid('study_card_states', uid, app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION)
+        anonymized_purchases, purchases_truncated = account_lifecycle.anonymize_purchase_docs_by_uid(
+            uid,
+            app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION,
+            runtime=app_ctx,
+        )
+        deleted_analytics, analytics_truncated = account_lifecycle.delete_docs_by_uid(
+            'analytics_events',
+            uid,
+            app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION,
+            runtime=app_ctx,
+        )
+        deleted_folders, folders_truncated = account_lifecycle.delete_docs_by_uid(
+            'study_folders',
+            uid,
+            app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION,
+            runtime=app_ctx,
+        )
+        deleted_card_states, card_states_truncated = account_lifecycle.delete_docs_by_uid(
+            'study_card_states',
+            uid,
+            app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION,
+            runtime=app_ctx,
+        )
         truncated['purchases'] = purchases_truncated
         truncated['analytics_events'] = analytics_truncated
         truncated['study_folders'] = folders_truncated
@@ -319,7 +356,7 @@ def delete_account_data(app_ctx, request):
             if job_id:
                 job_ids.add(job_id)
 
-            if app_ctx.remove_pack_audio_file(pack):
+            if study_audio.remove_pack_audio_file(pack, runtime=app_ctx):
                 deleted_pack_audio_files += 1
 
             try:
@@ -363,7 +400,7 @@ def delete_account_data(app_ctx, request):
                     pass
         deleted['in_memory_jobs'] = removed_in_memory_jobs
 
-        deleted['upload_artifacts'] = app_ctx.remove_upload_artifacts_for_job_ids(job_ids)
+        deleted['upload_artifacts'] = account_lifecycle.remove_upload_artifacts_for_job_ids(job_ids, runtime=app_ctx)
 
         auth_user_deleted = False
         try:
