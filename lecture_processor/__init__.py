@@ -1,18 +1,37 @@
+from .blueprints import account_bp, admin_bp, auth_bp, payments_bp, study_bp, upload_bp
 from .config import load_config
 from .extensions import init_extensions
 from .logging_config import configure_logging
+from .runtime.container import build_runtime
+from .runtime.hooks import register_runtime_hooks
+from .runtime.settings import load_runtime_settings
+from .web import health_bp, pages_bp
 
 
 def create_app():
-    """App factory entrypoint.
+    """Canonical app-factory entrypoint for the modular runtime."""
 
-    In Batch R1 we keep all route and behavior definitions in legacy_app,
-    while exposing a factory contract for the upcoming modular batches.
-    """
     config = load_config()
     configure_logging(config.log_level)
 
-    from .legacy_app import app as legacy_app
+    from .runtime import core
 
-    init_extensions(legacy_app)
-    return legacy_app
+    app = core.app
+    init_extensions(app)
+
+    settings = load_runtime_settings()
+    runtime = build_runtime(app, settings)
+    state = app.extensions.setdefault('lecture_processor', {})
+
+    if not state.get('blueprints_registered'):
+        for blueprint in (pages_bp, health_bp, auth_bp, account_bp, study_bp, upload_bp, admin_bp, payments_bp):
+            if blueprint.name not in app.blueprints:
+                app.register_blueprint(blueprint)
+        state['blueprints_registered'] = True
+
+    register_runtime_hooks(app, runtime)
+    state.setdefault('runtime_version', 'runtime_v2')
+    if not state.get('runtime_version_logged'):
+        runtime.logger.info("runtime_v2 initialized: blueprints=%s hooks_registered=%s", len(app.blueprints), bool(state.get('hooks_registered')))
+        state['runtime_version_logged'] = True
+    return app

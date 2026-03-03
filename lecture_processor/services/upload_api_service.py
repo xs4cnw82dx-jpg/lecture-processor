@@ -23,25 +23,23 @@ def _sanitize_tools_template_key(raw_key, max_chars=80):
 
 
 def _sanitize_tools_source_url(raw_url, max_chars=2000):
-    from urllib.parse import urlparse
+    from lecture_processor.services import url_security
 
     candidate = str(raw_url or '').strip()
     if not candidate:
         return '', 'Please provide a URL to extract from.'
     if len(candidate) > max_chars:
         return '', 'URL is too long.'
-    parsed = urlparse(candidate)
-    if parsed.scheme not in {'http', 'https'}:
-        return '', 'Only http:// or https:// URLs are supported.'
-    if not parsed.netloc:
-        return '', 'URL is missing a valid host.'
-    host = str(parsed.hostname or '').strip().lower()
-    if not host:
-        return '', 'URL is missing a valid host.'
-    blocked_hosts = {'localhost', '127.0.0.1', '::1'}
-    if host in blocked_hosts or host.endswith('.local'):
-        return '', 'Local/private URLs are not supported.'
-    return candidate, None
+    safe_url, error = url_security.validate_external_url_for_fetch(
+        candidate,
+        allowed_schemes=('http', 'https'),
+        allow_credentials=False,
+        allow_non_standard_ports=False,
+        resolve_dns=True,
+    )
+    if error:
+        return '', error
+    return safe_url, None
 
 
 def _extract_text_from_html_document(raw_html, max_chars=180000):
@@ -69,16 +67,33 @@ def _fetch_tools_url_text(source_url, max_bytes=1_500_000, max_chars=180000):
     import re
     import urllib.error
     import urllib.request
+    from lecture_processor.services import url_security
+
+    def _validate_url(candidate_url):
+        return url_security.validate_external_url_for_fetch(
+            candidate_url,
+            allowed_schemes=('http', 'https'),
+            allow_credentials=False,
+            allow_non_standard_ports=False,
+            resolve_dns=True,
+        )
+
+    safe_url, validation_error = _validate_url(source_url)
+    if validation_error:
+        return '', validation_error, ''
 
     request = urllib.request.Request(
-        source_url,
+        safe_url,
         headers={
             'User-Agent': 'LectureProcessorTools/1.0',
             'Accept': 'text/html,text/plain,application/xhtml+xml;q=0.9,*/*;q=0.5',
         },
     )
+    opener = urllib.request.build_opener(
+        url_security.ValidatingRedirectHandler(_validate_url),
+    )
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with opener.open(request, timeout=20) as response:
             status_code = int(getattr(response, 'status', 200) or 200)
             if status_code >= 400:
                 return '', f'Could not read URL (HTTP {status_code}).', ''
@@ -86,7 +101,12 @@ def _fetch_tools_url_text(source_url, max_bytes=1_500_000, max_chars=180000):
             raw_bytes = response.read(max_bytes + 1)
     except urllib.error.HTTPError as error:
         return '', f'Could not read URL (HTTP {int(getattr(error, "code", 0) or 0)}).', ''
-    except urllib.error.URLError:
+    except urllib.error.URLError as error:
+        reason = str(getattr(error, 'reason', '') or '').lower()
+        if 'restricted network address' in reason or 'not allowed' in reason:
+            return '', 'This URL host is not allowed.', ''
+        if 'could not resolve' in reason:
+            return '', 'Could not resolve that URL host.', ''
         return '', 'Could not connect to that URL.', ''
     except Exception:
         return '', 'Could not read that URL right now. Please try again.', ''

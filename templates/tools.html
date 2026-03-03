@@ -95,10 +95,11 @@
     </section>
   </main>
 
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" integrity="sha384-4gq9w/AGf72FXdNQ3Kn3EqWP7633NbCMjpYHt8YCZyXf23o2opcuAr4cif41tLrC" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js" integrity="sha384-xtdq4MQqPj1dB5DQsuw9O7dh4kHhMP/Wp5u8O1jiaWiou13ZfJIgiccjtVK2pBhL" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js" integrity="sha384-948ahk4ZmxYVYOc+rxN1H2gM1EJ2Duhp7uHtZ4WSLkV4Vtx5MUqnV+l7u9B+jFv+" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js" integrity="sha384-XQqX/4yiUGu+oyr87jvWzRuqBUK/adrY0DunhL+tID9m/9dwSpV8h9Fk/Sg6ifVQ" crossorigin="anonymous"></script>
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/markdown-utils.js') }}"></script>
   <script src="{{ url_for('static', filename=tools_js_asset or 'js/tools.js') }}"></script>

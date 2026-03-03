@@ -1,5 +1,16 @@
 const { test, expect } = require('@playwright/test');
 
+async function assertAppHealth(request) {
+  const healthResponse = await request.get('/healthz');
+  expect(healthResponse.ok()).toBeTruthy();
+  const payload = await healthResponse.json();
+  expect(payload).toMatchObject({ status: 'ok' });
+}
+
+test.beforeEach(async ({ request }) => {
+  await assertAppHealth(request);
+});
+
 test('landing and config endpoints are healthy', async ({ page, request }) => {
   await page.goto('/');
   await expect(page.locator('body')).toContainText(/Lecture Processor|Transform Lectures/i);

@@ -62,8 +62,9 @@
 
   <footer class="footer">Powered by Gemini AI · Made for students · <a href="/privacy">Privacy Policy</a> · <a href="/terms">Terms</a></footer>
 
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" integrity="sha384-4gq9w/AGf72FXdNQ3Kn3EqWP7633NbCMjpYHt8YCZyXf23o2opcuAr4cif41tLrC" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js" integrity="sha384-xtdq4MQqPj1dB5DQsuw9O7dh4kHhMP/Wp5u8O1jiaWiou13ZfJIgiccjtVK2pBhL" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
   <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/landing.js') }}"></script>
 </body>

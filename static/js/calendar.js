@@ -1,13 +1,5 @@
-    const firebaseConfig = {
-      apiKey: "AIzaSyBAAeEUCPNvP5qnqpP3M6HnFZ6vaaijUvM",
-      authDomain: "lecture-processor-cdff6.firebaseapp.com",
-      projectId: "lecture-processor-cdff6",
-      storageBucket: "lecture-processor-cdff6.firebasestorage.app",
-      messagingSenderId: "374793454161",
-      appId: "1:374793454161:web:c68b21590e9a1fafa32e70"
-    };
-    firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
+    const bootstrap = window.LectureProcessorBootstrap || {};
+    const auth = bootstrap.getAuth ? bootstrap.getAuth() : firebase.auth();
     const authUtils = window.LectureProcessorAuth || {};
     const authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Not signed in' }) : null;
     const topbarUtils = window.LectureProcessorTopbar || {};

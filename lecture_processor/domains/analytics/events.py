@@ -1,0 +1,7 @@
+from lecture_processor.runtime import core
+
+sanitize_analytics_event_name = core.sanitize_analytics_event_name
+sanitize_analytics_session_id = core.sanitize_analytics_session_id
+sanitize_analytics_properties = core.sanitize_analytics_properties
+log_analytics_event = core.log_analytics_event
+log_rate_limit_hit = core.log_rate_limit_hit

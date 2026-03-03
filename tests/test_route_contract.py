@@ -1,0 +1,76 @@
+import app as app_module
+
+
+EXPECTED_ROUTES = [
+    ('GET', '/', 'pages.index'),
+    ('GET', '/admin', 'pages.admin_dashboard'),
+    ('POST', '/api/account/delete', 'account_api.delete_account_data'),
+    ('GET', '/api/account/export', 'account_api.export_account_data'),
+    ('GET', '/api/admin/export', 'admin_api.admin_export'),
+    ('GET', '/api/admin/model-pricing', 'admin_api.admin_model_pricing'),
+    ('GET', '/api/admin/overview', 'admin_api.admin_overview'),
+    ('GET', '/api/admin/prompts', 'admin_api.admin_prompts'),
+    ('POST', '/api/analytics/event', 'auth_api.ingest_analytics_event'),
+    ('GET', '/api/audio-stream/<token>', 'study_api.stream_audio_token'),
+    ('GET', '/api/auth/user', 'auth_api.get_user'),
+    ('GET', '/api/config', 'payments_api.get_config'),
+    ('GET', '/api/confirm-checkout-session', 'payments_api.confirm_checkout_session'),
+    ('POST', '/api/create-checkout-session', 'payments_api.create_checkout_session'),
+    ('POST', '/api/dev/sentry-test', 'auth_api.dev_sentry_test'),
+    ('POST', '/api/import-audio-url', 'upload_api.import_audio_url'),
+    ('POST', '/api/import-audio-url/release', 'upload_api.release_audio_import'),
+    ('POST', '/api/lp-event', 'auth_api.ingest_analytics_event'),
+    ('GET', '/api/processing-averages', 'upload_api.processing_averages'),
+    ('GET', '/api/processing-estimate', 'upload_api.processing_estimate'),
+    ('GET', '/api/purchase-history', 'payments_api.purchase_history'),
+    ('POST', '/api/session/login', 'auth_api.create_admin_session'),
+    ('POST', '/api/session/logout', 'auth_api.clear_admin_session'),
+    ('POST', '/api/stripe-webhook', 'payments_api.stripe_webhook'),
+    ('GET', '/api/study-folders', 'study_api.get_study_folders'),
+    ('POST', '/api/study-folders', 'study_api.create_study_folder'),
+    ('DELETE', '/api/study-folders/<folder_id>', 'study_api.delete_study_folder'),
+    ('PATCH', '/api/study-folders/<folder_id>', 'study_api.update_study_folder'),
+    ('GET', '/api/study-packs', 'study_api.get_study_packs'),
+    ('POST', '/api/study-packs', 'study_api.create_study_pack'),
+    ('DELETE', '/api/study-packs/<pack_id>', 'study_api.delete_study_pack'),
+    ('GET', '/api/study-packs/<pack_id>', 'study_api.get_study_pack'),
+    ('PATCH', '/api/study-packs/<pack_id>', 'study_api.update_study_pack'),
+    ('GET', '/api/study-packs/<pack_id>/audio', 'study_api.stream_study_pack_audio'),
+    ('GET', '/api/study-packs/<pack_id>/audio-url', 'study_api.get_study_pack_audio_url'),
+    ('GET', '/api/study-packs/<pack_id>/export-flashcards-csv', 'study_api.export_study_pack_flashcards_csv'),
+    ('GET', '/api/study-packs/<pack_id>/export-notes', 'study_api.export_study_pack_notes'),
+    ('GET', '/api/study-packs/<pack_id>/export-pdf', 'study_api.export_study_pack_pdf'),
+    ('GET', '/api/study-progress', 'study_api.get_study_progress'),
+    ('PUT', '/api/study-progress', 'study_api.update_study_progress'),
+    ('GET', '/api/study-progress/summary', 'study_api.get_study_progress_summary'),
+    ('POST', '/api/tools/export', 'upload_api.tools_export'),
+    ('POST', '/api/tools/extract', 'upload_api.tools_extract'),
+    ('GET', '/api/user-preferences', 'auth_api.get_user_preferences'),
+    ('PUT', '/api/user-preferences', 'auth_api.update_user_preferences'),
+    ('POST', '/api/verify-email', 'auth_api.verify_email'),
+    ('GET', '/calendar', 'pages.calendar_dashboard'),
+    ('GET', '/dashboard', 'pages.dashboard'),
+    ('GET', '/download-docx/<job_id>', 'upload_api.download_docx'),
+    ('GET', '/download-flashcards-csv/<job_id>', 'upload_api.download_flashcards_csv'),
+    ('GET', '/features', 'pages.features_page'),
+    ('GET', '/healthz', 'health.healthz'),
+    ('GET', '/plan', 'pages.plan_dashboard'),
+    ('GET', '/privacy', 'pages.privacy_policy'),
+    ('GET', '/stats', 'pages.plan_dashboard'),
+    ('GET', '/status/<job_id>', 'upload_api.get_status'),
+    ('GET', '/study', 'pages.study_dashboard'),
+    ('GET', '/terms', 'pages.terms_of_service'),
+    ('GET', '/tools', 'pages.tools_page'),
+    ('POST', '/upload', 'upload_api.upload_file'),
+]
+
+
+def test_route_contract_snapshot_stable():
+    actual = []
+    for rule in app_module.app.url_map.iter_rules():
+        if rule.endpoint == 'static':
+            continue
+        methods = sorted(rule.methods - {'HEAD', 'OPTIONS'})
+        for method in methods:
+            actual.append((method, str(rule.rule), str(rule.endpoint)))
+    assert sorted(actual) == sorted(EXPECTED_ROUTES)

@@ -1,6 +1,21 @@
 """Business logic handlers for admin APIs."""
 
 
+def sanitize_csv_cell(value):
+    if value is None:
+        return ''
+    if isinstance(value, (int, float, bool)):
+        return value
+    text = str(value)
+    if text and text[0] in {'=', '+', '-', '@', '\t', '\r', '\n'}:
+        return "'" + text
+    return text
+
+
+def sanitize_csv_row(values):
+    return [sanitize_csv_cell(value) for value in (values or [])]
+
+
 def admin_overview(app_ctx, request):
     decoded_token = app_ctx.verify_firebase_token(request)
     if not decoded_token:
@@ -228,6 +243,7 @@ def admin_overview(app_ctx, request):
             'recent_jobs': recent_jobs,
             'recent_purchases': recent_purchases,
             'recent_rate_limits': recent_rate_limits,
+            'data_warnings': app_ctx.get_admin_data_warnings(),
             'deployment': app_ctx.build_admin_deployment_info(request.host),
             'runtime_checks': app_ctx.build_admin_runtime_checks(),
         })
@@ -392,7 +408,7 @@ def admin_export(app_ctx, request):
         buffer = _CsvBuffer()
         writer = app_ctx.csv.writer(buffer)
         for row in iter_rows():
-            yield writer.writerow(row)
+            yield writer.writerow(sanitize_csv_row(row))
 
     try:
         filename = f"admin-{export_type}-{window_key}.csv"

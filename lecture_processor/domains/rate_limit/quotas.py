@@ -1,0 +1,4 @@
+from lecture_processor.runtime import core
+
+has_sufficient_upload_disk_space = core.has_sufficient_upload_disk_space
+reserve_daily_upload_bytes = core.reserve_daily_upload_bytes

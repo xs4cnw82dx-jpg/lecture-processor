@@ -1,0 +1,4 @@
+from lecture_processor.runtime import core
+
+generate_study_materials = core.generate_study_materials
+generate_interview_enhancements = core.generate_interview_enhancements

@@ -13,8 +13,8 @@ This checklist tracks launch-critical items and current status with evidence.
 
 - [x] Backend error monitoring (Sentry)
   - Evidence:
-    - `lecture_processor/legacy_app.py` initializes Sentry SDK when `SENTRY_DSN_BACKEND` is set.
-    - `lecture_processor/legacy_app.py` includes route context tags (`route.path`, `route.method`, `route.status_code`, etc.).
+    - `lecture_processor/runtime/core.py` initializes Sentry SDK when `SENTRY_DSN_BACKEND` is set.
+    - `lecture_processor/runtime/hooks.py` includes route context tags (`route.path`, `route.method`, `route.status_code`, etc.).
     - `/api/dev/sentry-test` exists for development verification.
 
 - [x] Basic analytics funnel events
