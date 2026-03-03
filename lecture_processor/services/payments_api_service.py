@@ -3,6 +3,8 @@
 
 from urllib.parse import urlparse
 
+from lecture_processor.domains.rate_limit import limiter as rate_limiter
+
 
 def get_config(app_ctx):
     return app_ctx.jsonify({
@@ -27,16 +29,18 @@ def create_checkout_session(app_ctx, request):
 
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
-    allowed_checkout, retry_after = app_ctx.check_rate_limit(
-        key=f"checkout:{app_ctx.normalize_rate_limit_key_part(uid, fallback='anon_uid')}",
+    allowed_checkout, retry_after = rate_limiter.check_rate_limit(
+        key=f"checkout:{rate_limiter.normalize_rate_limit_key_part(uid, fallback='anon_uid', runtime=app_ctx)}",
         limit=app_ctx.CHECKOUT_RATE_LIMIT_MAX_REQUESTS,
         window_seconds=app_ctx.CHECKOUT_RATE_LIMIT_WINDOW_SECONDS,
+        runtime=app_ctx,
     )
     if not allowed_checkout:
         app_ctx.log_rate_limit_hit('checkout', retry_after)
-        return app_ctx.build_rate_limited_response(
+        return rate_limiter.build_rate_limited_response(
             'Too many checkout attempts. Please wait before starting another checkout.',
             retry_after,
+            runtime=app_ctx,
         )
 
     data = request.get_json(silent=True) or {}
