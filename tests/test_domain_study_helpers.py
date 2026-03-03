@@ -1,31 +1,95 @@
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
+import pytest
+
 from lecture_processor.domains.study import audio
 from lecture_processor.domains.study import export
 from lecture_processor.domains.study import progress
-from lecture_processor.runtime.container import get_runtime
 
 
-def test_study_helpers_dispatch_uses_explicit_runtime():
-    class _Runtime:
-        def normalize_audio_storage_key(self, value):
-            return f"audio:{value}"
+def test_progress_summary_counts_due_cards_and_streak():
+    progress_data = {
+        'daily_goal': 25,
+        'timezone': 'UTC',
+        'streak_data': {
+            'last_study_date': '2026-01-02',
+            'current_streak': 4,
+            'daily_progress_date': '2026-01-02',
+            'daily_progress_count': 6,
+        },
+    }
+    card_state_maps = [
+        {
+            'fc_1': {
+                'seen': 1,
+                'correct': 1,
+                'wrong': 0,
+                'interval_days': 2,
+                'next_review_date': '2026-01-01',
+                'last_review_date': '2026-01-01',
+                'difficulty': 'easy',
+            },
+            'q_1': {
+                'seen': 1,
+                'correct': 1,
+                'wrong': 0,
+                'interval_days': 2,
+                'next_review_date': '2026-01-01',
+                'last_review_date': '2026-01-01',
+                'difficulty': 'easy',
+            },
+        }
+    ]
 
-        def markdown_to_docx(self, markdown, title):
-            return {"markdown": markdown, "title": title}
+    summary = progress.compute_study_progress_summary(
+        progress_data,
+        card_state_maps,
+        base_now=datetime(2026, 1, 2, 12, 0, tzinfo=timezone.utc),
+        runtime=SimpleNamespace(),
+    )
 
-        def sanitize_daily_goal_value(self, value):
-            return int(value)
+    assert summary == {
+        'daily_goal': 25,
+        'current_streak': 4,
+        'today_progress': 6,
+        'due_today': 1,
+    }
 
-    runtime = _Runtime()
-    assert audio.normalize_audio_storage_key("pack/1.mp3", runtime=runtime) == "audio:pack/1.mp3"
-    assert export.markdown_to_docx("# Title", "Doc", runtime=runtime) == {"markdown": "# Title", "title": "Doc"}
-    assert progress.sanitize_daily_goal_value("7", runtime=runtime) == 7
+
+def test_audio_storage_round_trip_and_persist(tmp_path):
+    root = tmp_path / 'uploads' / 'study_audio'
+    runtime = SimpleNamespace(
+        STUDY_AUDIO_RELATIVE_DIR='study_audio',
+        STUDY_AUDIO_ROOT=str(root),
+        UPLOAD_FOLDER=str(tmp_path / 'uploads'),
+        time=SimpleNamespace(time=lambda: 123.0),
+        logger=SimpleNamespace(warning=lambda *args, **kwargs: None),
+    )
+
+    assert audio.normalize_audio_storage_key('../etc/passwd', runtime=runtime) == ''
+
+    source_path = tmp_path / 'input.mp3'
+    source_path.write_bytes(b'abc123')
+
+    key = audio.persist_audio_for_study_pack('job-1', str(source_path), runtime=runtime)
+    assert key == 'study_audio/job-1.mp3'
+
+    saved_path = audio.resolve_audio_storage_path_from_key(key, runtime=runtime)
+    assert saved_path
+    assert (root / 'job-1.mp3').exists()
+    assert audio.infer_audio_storage_key_from_path(saved_path, runtime=runtime) == key
 
 
-def test_study_helpers_dispatch_uses_current_app_runtime(app, monkeypatch):
-    runtime = get_runtime(app)
-    monkeypatch.setattr(runtime.core, "normalize_audio_storage_key", lambda value: f"core_audio:{value}")
-    monkeypatch.setattr(runtime.core, "sanitize_daily_goal_value", lambda value: f"goal:{value}")
+def test_export_helpers_handle_dates_markdown_and_html():
+    assert export.normalize_exam_date('2026-12-31') == '2026-12-31'
+    with pytest.raises(ValueError):
+        export.normalize_exam_date('31-12-2026')
 
-    with app.app_context():
-        assert audio.normalize_audio_storage_key("x") == "core_audio:x"
-        assert progress.sanitize_daily_goal_value("9") == "goal:9"
+    html_value = export.markdown_inline_to_pdf_html('**Bold** *Italic* <x>')
+    assert '<b>Bold</b>' in html_value
+    assert '<i>Italic</i>' in html_value
+    assert '&lt;x&gt;' in html_value
+
+    doc = export.markdown_to_docx('# Title\n\n- Item one')
+    assert len(doc.paragraphs) >= 2

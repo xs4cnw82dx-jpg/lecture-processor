@@ -2,24 +2,36 @@ from lecture_processor.domains.auth import session
 from lecture_processor.runtime.container import get_runtime
 
 
-def test_auth_session_dispatch_uses_explicit_runtime():
-    class _Runtime:
-        def _extract_bearer_token(self, req):
-            return f"token:{req}"
+def test_extract_bearer_token_prefers_auth_header():
+    class _Req:
+        headers = {'Authorization': 'Bearer header-token'}
 
-        def verify_admin_session_cookie(self, req):
-            return {"uid": f"admin:{req}"}
+        @staticmethod
+        def get_json(silent=True):
+            return {'id_token': 'body-token'}
 
-    runtime = _Runtime()
-    assert session._extract_bearer_token("request-1", runtime=runtime) == "token:request-1"
-    assert session.verify_admin_session_cookie("request-2", runtime=runtime) == {"uid": "admin:request-2"}
+    assert session._extract_bearer_token(_Req()) == 'header-token'
 
 
-def test_auth_session_dispatch_uses_current_app_runtime(app, monkeypatch):
+def test_extract_bearer_token_falls_back_to_json_payload():
+    class _Req:
+        headers = {}
+
+        @staticmethod
+        def get_json(silent=True):
+            return {'idToken': 'payload-token'}
+
+    assert session._extract_bearer_token(_Req()) == 'payload-token'
+
+
+def test_verify_admin_session_cookie_uses_runtime_auth_and_policy(app, monkeypatch):
     runtime = get_runtime(app)
-    monkeypatch.setattr(runtime.core, "_extract_bearer_token", lambda req: f"bearer:{req}")
-    monkeypatch.setattr(runtime.core, "verify_admin_session_cookie", lambda req: {"uid": f"cookie:{req}"})
 
     with app.app_context():
-        assert session._extract_bearer_token("abc") == "bearer:abc"
-        assert session.verify_admin_session_cookie("xyz") == {"uid": "cookie:xyz"}
+        class _Req:
+            cookies = {'lp_admin_session': 'cookie-token'}
+
+        monkeypatch.setattr(runtime, 'ADMIN_SESSION_COOKIE_NAME', 'lp_admin_session')
+        monkeypatch.setattr(runtime.auth, 'verify_session_cookie', lambda token, check_revoked=True: {'uid': token})
+        monkeypatch.setattr(runtime, 'is_admin_user', lambda decoded: decoded.get('uid') == 'cookie-token')
+        assert session.verify_admin_session_cookie(_Req(), runtime=runtime) == {'uid': 'cookie-token'}
