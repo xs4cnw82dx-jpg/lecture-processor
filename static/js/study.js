@@ -26,6 +26,8 @@ let creatingDemoPack = false;
 let progressHydrationDone = false;
 let packAdvancedMetadataOpen = false, builderAdvancedMetadataOpen = false;
 let folderExamDatePicker = null;
+let flashcardListMode = false, flashcardPeekMode = false;
+let flashcardPeekRevealed = {};
 const audioSpeeds = [0.75, 1, 1.25, 1.5, 2];
 let difficultyFadeTimer = null, keyboardHintFadeTimer = null, notesFullscreenFadeTimer = null;
 const HINT_FADE_DELAY_MS = 10000;
@@ -723,7 +725,7 @@ var searchInput = document.getElementById('search-input'), folderList = document
 var packEmpty = document.getElementById('pack-empty'), packEmptyDefault = document.getElementById('pack-empty-default'), packEmptyOnboarding = document.getElementById('pack-empty-onboarding'), packEmptyCreateBtn = document.getElementById('pack-empty-create-btn'), packEmptyDemoBtn = document.getElementById('pack-empty-demo-btn'), packEditorWrap = document.getElementById('pack-editor-wrap'), packTitle = document.getElementById('pack-title'), packFolderSelect = document.getElementById('pack-folder-select'), packFolderPicker = document.getElementById('pack-folder-picker'), packFolderButton = document.getElementById('pack-folder-button'), packFolderLabel = document.getElementById('pack-folder-label'), packFolderMenu = document.getElementById('pack-folder-menu');
 var packCourse = document.getElementById('pack-course'), packSubject = document.getElementById('pack-subject'), packSemester = document.getElementById('pack-semester'), packBlock = document.getElementById('pack-block'), notesView = document.getElementById('notes-view');
 var packAdvancedMetaBtn = document.getElementById('pack-advanced-meta-btn'), packAdvancedMetaPanel = document.getElementById('pack-advanced-meta-panel');
-var packSummary = document.getElementById('pack-summary'), packSummaryTitle = document.getElementById('pack-summary-title'), packSummaryMeta = document.getElementById('pack-summary-meta'), packStatNotes = document.getElementById('pack-stat-notes'), packStatCards = document.getElementById('pack-stat-cards'), packStatTest = document.getElementById('pack-stat-test'), packStorageNote = document.getElementById('pack-storage-note');
+var packSummary = document.getElementById('pack-summary'), packSummaryTitle = document.getElementById('pack-summary-title'), packSummaryMeta = document.getElementById('pack-summary-meta'), packStatNotes = document.getElementById('pack-stat-notes'), packStatCards = document.getElementById('pack-stat-cards'), packStatTest = document.getElementById('pack-stat-test');
 var createPackBtn = document.getElementById('create-pack-btn'), openBuilderBtn = document.getElementById('open-builder-btn'), savePackBtn = document.getElementById('save-pack-btn'), deletePackBtn = document.getElementById('delete-pack-btn'), exportPackNotesBtn = document.getElementById('export-pack-notes-btn'), openLearnBtn = document.getElementById('open-learn-btn');
 var exportMenu = document.getElementById('export-menu'), exportMenuBtn = document.getElementById('export-menu-btn'), exportMenuList = document.getElementById('export-menu-list'), exportPdfSubmenu = document.getElementById('export-pdf-submenu');
 var editorTabs = document.querySelectorAll('.editor-tab'), flashcardCount = document.getElementById('flashcard-count'), questionCount = document.getElementById('question-count'), addFlashcardBtn = document.getElementById('add-flashcard-btn'), addQuestionBtn = document.getElementById('add-question-btn'), flashcardEditorList = document.getElementById('flashcard-editor-list'), questionEditorList = document.getElementById('question-editor-list');
@@ -732,6 +734,7 @@ var notesPaneShell = document.getElementById('notes-pane-shell'), notesFullscree
 var learnModeLabel = document.getElementById('learn-mode-label');
 var learnFlashcard3d = document.getElementById('learn-flashcard-3d'), learnFlashcardInner = document.getElementById('learn-flashcard-inner'), learnFlashcardFront = document.getElementById('learn-flashcard-front'), learnFlashcardBack = document.getElementById('learn-flashcard-back');
 var learnFPrev = document.getElementById('learn-f-prev'), learnFFlip = document.getElementById('learn-f-flip'), learnFNext = document.getElementById('learn-f-next'), learnFProgress = document.getElementById('learn-f-progress');
+var learnFListBtn = document.getElementById('learn-f-list-btn'), learnFPeekToggle = document.getElementById('learn-f-peek-toggle'), learnFListView = document.getElementById('learn-f-list-view');
 var learnProgressFill = document.getElementById('learn-progress-fill'), learnProgressText = document.getElementById('learn-progress-text');
 var learnQProgress = document.getElementById('learn-q-progress'), learnQScore = document.getElementById('learn-q-score'), learnQText = document.getElementById('learn-q-text'), learnQOptions = document.getElementById('learn-q-options'), learnQExpl = document.getElementById('learn-q-expl'), learnQNext = document.getElementById('learn-q-next');
 var writePromptEl = document.getElementById('write-prompt'), writeInputEl = document.getElementById('write-input'), writeCheckBtn = document.getElementById('write-check-btn'), writeRevealBtn = document.getElementById('write-reveal-btn'), writeFeedbackEl = document.getElementById('write-feedback'), writeNextBtn = document.getElementById('write-next-btn'), writeProgressEl = document.getElementById('write-progress');
@@ -2356,15 +2359,6 @@ function updatePackSummary() {
   packStatNotes.textContent = selectedPack.notes_markdown ? 'Has notes' : 'No notes';
   packStatCards.textContent = (selectedPack.flashcards || []).length + ' flashcards';
   packStatTest.textContent = (selectedPack.test_questions || []).length + ' questions';
-  if (packStorageNote) {
-    if (selectedPack.has_audio_playback) {
-      var syncText = selectedPack.has_audio_sync
-        ? ' Timestamp-linked note sections are enabled for this pack.' : '';
-      packStorageNote.textContent = 'Audio and transcript storage: This pack includes a private audio file for playback.' + syncText + ' To remove stored audio/transcript data, delete this study pack or use "Delete account and data" from the user menu.';
-    } else {
-      packStorageNote.textContent = 'Audio and transcript storage: This pack does not currently include a stored audio playback file.';
-    }
-  }
   /* Informative images tip */
   var imagesTipEl = document.getElementById('pack-images-tip');
   if (imagesTipEl) {
@@ -2521,6 +2515,75 @@ function updateLearnProgressBar() {
   learnProgressText.textContent = t > 0 ? c + '/' + t : '';
 }
 
+function setFlashcardListMode(enabled) {
+  flashcardListMode = Boolean(enabled);
+  if (learnFListBtn) {
+    learnFListBtn.classList.toggle('active', flashcardListMode);
+    learnFListBtn.setAttribute('aria-pressed', flashcardListMode ? 'true' : 'false');
+    learnFListBtn.textContent = flashcardListMode ? 'Card View' : 'Card List';
+  }
+  var flashcardPane = document.getElementById('learn-pane-flashcards');
+  if (flashcardPane) {
+    flashcardPane.classList.toggle('list-mode', flashcardListMode);
+  }
+  if (learnFListView) {
+    learnFListView.hidden = !flashcardListMode;
+  }
+  renderFlashcardListView();
+}
+
+function renderFlashcardListView() {
+  if (!learnFListView) { return; }
+  if (!flashcardListMode || activeLearnMode !== 'flashcards') {
+    learnFListView.innerHTML = '';
+    return;
+  }
+  var queue = getFlashcardQueue();
+  if (!queue.length) {
+    setSafeInnerHtml(learnFListView, '<div class="peek-empty">No flashcards available.</div>');
+    return;
+  }
+  var rowsHtml = queue.map(function (entry, idx) {
+    var card = entry && entry.card ? entry.card : {};
+    var cardKey = String(entry && Number.isFinite(entry.idx) ? entry.idx : idx);
+    var frontText = escapeHtml(String(card.front || '').trim() || 'Untitled flashcard');
+    var backText = escapeHtml(String(card.back || '').trim() || 'No definition available.');
+    var revealed = flashcardPeekMode || Boolean(flashcardPeekRevealed[cardKey]);
+    var rowClass = 'peek-row' + (idx === learnFlashcardIndex ? ' active' : '');
+    var rightContent = revealed
+      ? ('<div class="peek-answer">' + backText + '</div>')
+      : ('<button type="button" class="peek-reveal-btn" data-peek-reveal="' + cardKey + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>Show definition</button>');
+    return '<div class="' + rowClass + '" role="button" tabindex="0" data-peek-index="' + idx + '"><span class="peek-index">' + (idx + 1) + '</span><span class="peek-front">' + frontText + '</span><span class="peek-divider"></span><span class="peek-right">' + rightContent + '</span></div>';
+  }).join('');
+  setSafeInnerHtml(learnFListView, rowsHtml);
+  learnFListView.querySelectorAll('[data-peek-index]').forEach(function (row) {
+    var activateRow = function () {
+      var index = parseInt(row.dataset.peekIndex, 10);
+      if (!Number.isFinite(index)) { return; }
+      learnFlashcardIndex = Math.max(0, Math.min(index, queue.length - 1));
+      learnFlashcardFlipped = false;
+      renderLearnFlashcard();
+      resetLearnHintVisibility();
+    };
+    row.addEventListener('click', activateRow);
+    row.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        activateRow();
+      }
+    });
+  });
+  learnFListView.querySelectorAll('[data-peek-reveal]').forEach(function (button) {
+    button.addEventListener('click', function (event) {
+      event.stopPropagation();
+      var key = String(button.dataset.peekReveal || '');
+      if (!key) { return; }
+      flashcardPeekRevealed[key] = true;
+      renderFlashcardListView();
+    });
+  });
+}
+
 /* ── Learn flashcard with slide animation ── */
 var fcSliding = false;
 function updateFlashcardContent() {
@@ -2539,6 +2602,7 @@ function updateFlashcardContent() {
   learnFPrev.disabled = (learnFlashcardIndex === 0);
   learnFNext.disabled = (learnFlashcardIndex === cards.length - 1);
   learnFFlip.disabled = false;
+  renderFlashcardListView();
   updateDifficultyToolbar();
   updateLearnProgressBar();
 }
@@ -2630,6 +2694,10 @@ function openLearnStageWithMode(mode, requestFullscreen) {
 
   // Activate only the selected mode pane
   if (mode === 'flashcards') {
+    flashcardPeekMode = false;
+    flashcardPeekRevealed = {};
+    if (learnFPeekToggle) { learnFPeekToggle.checked = false; }
+    setFlashcardListMode(false);
     document.getElementById('learn-pane-flashcards').classList.add('active');
     renderLearnFlashcard();
   } else if (mode === 'test') {
@@ -2869,6 +2937,13 @@ openBuilderBtn.addEventListener('click', function () {
     return;
   }
   openBuilderOverlay('edit', selectedPack);
+  if (activeEditorPane === 'flashcards') {
+    setBuilderPane('flashcards');
+  } else if (activeEditorPane === 'test') {
+    setBuilderPane('test');
+  } else {
+    setBuilderPane('info');
+  }
 });
 builderSaveBtn.addEventListener('click', function () {
   saveBuilderPack(false);
@@ -3327,6 +3402,21 @@ learnFFlip.addEventListener('click', function () {
   renderLearnFlashcard();
   resetLearnHintVisibility();
 });
+if (learnFListBtn) {
+  learnFListBtn.addEventListener('click', function () {
+    setFlashcardListMode(!flashcardListMode);
+    resetLearnHintVisibility();
+  });
+}
+if (learnFPeekToggle) {
+  learnFPeekToggle.addEventListener('change', function () {
+    flashcardPeekMode = Boolean(learnFPeekToggle.checked);
+    if (flashcardPeekMode) {
+      flashcardPeekRevealed = {};
+    }
+    renderFlashcardListView();
+  });
+}
 
 var flashcardTouchStartX = 0;
 var flashcardTouchStartY = 0;
@@ -3350,7 +3440,7 @@ if (learnFlashcard3d) {
     var deltaY = touch.clientY - flashcardTouchStartY;
     if (Math.abs(deltaX) < 70 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
     suppressNextFlashcardTap = true;
-    doFlashcardSlide('next');
+    doFlashcardSlide(deltaX > 0 ? 'prev' : 'next');
     resetLearnHintVisibility();
   }, { passive: true });
 }
@@ -3743,23 +3833,6 @@ function downloadBlob(filename, mime, textContent) {
   document.body.removeChild(anchor);
   URL.revokeObjectURL(url);
 }
-function buildNotesHtmlDocument(title, bodyHtml) {
-  var safeTitle = String(title || 'Study Notes').replace(/</g, '&lt;');
-  return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + safeTitle + '</title><style>' +
-    'body{font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;color:#111827;line-height:1.72}' +
-    'h1,h2,h3{margin-top:1.45em}' +
-    'mark[data-hl=\"yellow\"]{background:#fef08a}' +
-    'mark[data-hl=\"green\"]{background:#bbf7d0}' +
-    'mark[data-hl=\"blue\"]{background:#bfdbfe}' +
-    'mark[data-hl=\"pink\"]{background:#fbcfe8}' +
-    '</style></head><body><h1>' + safeTitle + '</h1>' + bodyHtml + '</body></html>';
-}
-function downloadOriginalNotes() {
-  if (!selectedPack) return;
-  var title = (selectedPack.title || 'Study Notes').replace(/[^a-zA-Z0-9 _-]/g, '').substring(0, 60).trim() || 'Study Notes';
-  downloadBlob(title + ' - Original.md', 'text/markdown', String(selectedPack.notes_markdown || ''));
-  showToast('Original notes downloaded.');
-}
 function downloadOriginalNotesDocx() {
   if (!selectedPackId) {
     showToast('No notes to download.', 'error');
@@ -3804,22 +3877,12 @@ function downloadAnnotatedNotesPdf() {
     });
     return;
   }
-  var htmlDoc = buildNotesHtmlDocument(title, notesView.innerHTML);
-  downloadBlob(filename + ' - Annotated.html', 'text/html', htmlDoc);
-  showToast('Annotated notes downloaded as HTML (PDF export unavailable).');
+  showToast('Annotated PDF export is currently unavailable on this device.', 'error');
 }
 function ensureHighlightDownloadMenu() {
   if (hlDownloadMenu || !hlToolbar) return hlDownloadMenu;
   hlDownloadMenu = document.createElement('div');
   hlDownloadMenu.className = 'hl-download-menu';
-  var originalBtn = document.createElement('button');
-  originalBtn.type = 'button';
-  originalBtn.className = 'hl-download-item';
-  originalBtn.textContent = 'Download Original Notes (.md)';
-  originalBtn.addEventListener('click', function () {
-    hlDownloadMenu.classList.remove('visible');
-    downloadOriginalNotes();
-  });
   var originalDocxBtn = document.createElement('button');
   originalDocxBtn.type = 'button';
   originalDocxBtn.className = 'hl-download-item';
@@ -3836,7 +3899,6 @@ function ensureHighlightDownloadMenu() {
     hlDownloadMenu.classList.remove('visible');
     downloadAnnotatedNotesPdf();
   });
-  hlDownloadMenu.appendChild(originalBtn);
   hlDownloadMenu.appendChild(originalDocxBtn);
   hlDownloadMenu.appendChild(annotatedBtn);
   hlToolbar.appendChild(hlDownloadMenu);

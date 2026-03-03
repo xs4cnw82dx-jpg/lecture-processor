@@ -30,14 +30,14 @@
     <section class="hero-card">
       <span class="hero-badge">Beta</span>
       <h1>Tools</h1>
-      <p>Use Gemini 2.5 Flash Lite (high reasoning mode) to extract, summarize, and question documents or images.</p>
-      <p class="hero-tip">Best value: ask multiple questions in one run so you spend fewer slides credits.</p>
+      <p>Use Gemini 2.5 Flash Lite (high reasoning mode) to extract, summarize, and question documents, images, or URLs.</p>
+      <p class="hero-tip">Best value: ask multiple questions in one run so you spend fewer text extraction credits.</p>
       <p class="hero-meta" id="tools-user-meta">Checking sign-in...</p>
     </section>
 
     <section class="panel auth-required" id="tools-auth-required">
       <h2>Sign in required</h2>
-      <p>Tools is available for signed-in users and uses slides credits per run.</p>
+      <p>Tools is available for signed-in users and uses text extraction credits per run.</p>
       <button type="button" class="primary-btn" id="tools-signin-btn">Open Dashboard to Sign In</button>
     </section>
 
@@ -49,15 +49,17 @@
           <div class="source-toggle" role="tablist" aria-label="Source type">
             <button type="button" class="source-btn active" id="source-document-btn" data-source-type="document" role="tab" aria-selected="true">Document Reader</button>
             <button type="button" class="source-btn" id="source-image-btn" data-source-type="image" role="tab" aria-selected="false">Image Reader</button>
+            <button type="button" class="source-btn" id="source-url-btn" data-source-type="url" role="tab" aria-selected="false">URL Reader</button>
           </div>
           <label class="prompt-label" for="tools-custom-prompt">Custom prompt (optional)</label>
           <textarea id="tools-custom-prompt" class="prompt-input" rows="5" placeholder="Example: Create concise exam notes, then answer these questions in order: 1) ... 2) ... 3) ..."></textarea>
           <div class="prompt-templates" id="tools-prompt-templates">
-            <button type="button" class="ghost-btn prompt-template-btn" data-template="summary">Template: Exam Summary</button>
             <button type="button" class="ghost-btn prompt-template-btn" data-template="qa">Template: Q&A Batch</button>
-            <button type="button" class="ghost-btn prompt-template-btn" data-template="terms">Template: Terms + Definitions</button>
           </div>
           <p class="prompt-help">Q&A tip: Ask multiple questions at once, for example: "Answer these 5 questions from this file: ..."</p>
+          <label class="prompt-label tools-url-label" id="tools-url-label" for="tools-url-input" style="display:none;">Source URL</label>
+          <input type="url" id="tools-url-input" class="url-input" placeholder="https://pubmed.ncbi.nlm.nih.gov/..." autocomplete="off" spellcheck="false" style="display:none;">
+          <p class="prompt-help" id="tools-url-help" style="display:none;">URL Reader fetches article text from a public webpage and runs your prompt on it.</p>
           <label class="dropzone" id="tools-dropzone" for="tools-file-input">
             <input type="file" id="tools-file-input" accept=".pdf,.pptx,.docx,.png,.jpg,.jpeg,.webp,.heic,.heif">
             <div class="dropzone-title">Drop a file here or click to browse</div>
@@ -72,7 +74,7 @@
           </div>
           <div class="run-row">
             <button type="button" class="primary-btn" id="tools-run-btn" disabled>Extract</button>
-            <span class="credit-note" id="tools-credit-text">Slides credits: -</span>
+            <span class="credit-note" id="tools-credit-text">Text extraction credits: -</span>
           </div>
           <div class="status" id="tools-status" aria-live="polite"></div>
           <div class="billing" id="tools-billing" style="display:none;"></div>
@@ -83,15 +85,11 @@
             <h2>Result</h2>
             <div class="result-actions">
               <button type="button" class="ghost-btn active" id="tools-view-rendered-btn">Rendered</button>
-              <button type="button" class="ghost-btn" id="tools-view-raw-btn">Raw Markdown</button>
               <button type="button" class="ghost-btn" id="tools-copy-btn">Copy</button>
-              <button type="button" class="ghost-btn" id="tools-download-md-btn">Download .md</button>
-              <button type="button" class="ghost-btn" id="tools-download-pdf-btn">Download .pdf</button>
               <button type="button" class="ghost-btn" id="tools-download-docx-btn">Download .docx</button>
             </div>
           </div>
           <div class="result-body" id="tools-result-preview"></div>
-          <pre class="result-raw" id="tools-result-markdown" style="display:none;"></pre>
         </article>
       </div>
     </section>
@@ -101,7 +99,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/markdown-utils.js') }}"></script>
   <script src="{{ url_for('static', filename=tools_js_asset or 'js/tools.js') }}"></script>

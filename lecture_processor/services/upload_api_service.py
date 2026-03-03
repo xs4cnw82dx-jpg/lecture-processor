@@ -2,11 +2,116 @@
 
 
 def _sanitize_tools_custom_prompt(raw_prompt, max_chars=6000):
-    text = str(raw_prompt or '').strip()
+    raw_text = str(raw_prompt or '')
+    if not raw_text.strip():
+        return ''
+    normalized = raw_text.replace('\r\n', '\n').replace('\r', '\n')
+    # Keep user phrasing verbatim (including line breaks) while stripping control chars.
+    cleaned = ''.join(
+        ch for ch in normalized
+        if ch in {'\n', '\t'} or ord(ch) >= 32
+    )
+    return cleaned[:max_chars].strip()
+
+
+def _sanitize_tools_template_key(raw_key, max_chars=80):
+    key = str(raw_key or '').strip().lower()
+    if not key:
+        return ''
+    normalized = ''.join(ch for ch in key[:max_chars] if ch.isalnum() or ch in {'-', '_'})
+    return normalized
+
+
+def _sanitize_tools_source_url(raw_url, max_chars=2000):
+    from urllib.parse import urlparse
+
+    candidate = str(raw_url or '').strip()
+    if not candidate:
+        return '', 'Please provide a URL to extract from.'
+    if len(candidate) > max_chars:
+        return '', 'URL is too long.'
+    parsed = urlparse(candidate)
+    if parsed.scheme not in {'http', 'https'}:
+        return '', 'Only http:// or https:// URLs are supported.'
+    if not parsed.netloc:
+        return '', 'URL is missing a valid host.'
+    host = str(parsed.hostname or '').strip().lower()
+    if not host:
+        return '', 'URL is missing a valid host.'
+    blocked_hosts = {'localhost', '127.0.0.1', '::1'}
+    if host in blocked_hosts or host.endswith('.local'):
+        return '', 'Local/private URLs are not supported.'
+    return candidate, None
+
+
+def _extract_text_from_html_document(raw_html, max_chars=180000):
+    import html as html_lib
+    import re
+
+    text = str(raw_html or '')
     if not text:
         return ''
-    text = ' '.join(text.split())
-    return text[:max_chars]
+    text = re.sub(r'(?is)<(script|style|noscript|svg|canvas|iframe).*?>.*?</\\1>', ' ', text)
+    text = re.sub(r'(?i)<br\\s*/?>', '\n', text)
+    text = re.sub(r'(?i)</(p|div|li|section|article|h1|h2|h3|h4|h5|h6|tr|td|th)>', '\n', text)
+    text = re.sub(r'(?is)<[^>]+>', ' ', text)
+    text = html_lib.unescape(text)
+    lines = []
+    for line in text.splitlines():
+        compact = ' '.join(line.split())
+        if compact:
+            lines.append(compact)
+    merged = '\n'.join(lines).strip()
+    return merged[:max_chars]
+
+
+def _fetch_tools_url_text(source_url, max_bytes=1_500_000, max_chars=180000):
+    import re
+    import urllib.error
+    import urllib.request
+
+    request = urllib.request.Request(
+        source_url,
+        headers={
+            'User-Agent': 'LectureProcessorTools/1.0',
+            'Accept': 'text/html,text/plain,application/xhtml+xml;q=0.9,*/*;q=0.5',
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            status_code = int(getattr(response, 'status', 200) or 200)
+            if status_code >= 400:
+                return '', f'Could not read URL (HTTP {status_code}).', ''
+            content_type = str(response.headers.get('Content-Type', '') or '').lower()
+            raw_bytes = response.read(max_bytes + 1)
+    except urllib.error.HTTPError as error:
+        return '', f'Could not read URL (HTTP {int(getattr(error, "code", 0) or 0)}).', ''
+    except urllib.error.URLError:
+        return '', 'Could not connect to that URL.', ''
+    except Exception:
+        return '', 'Could not read that URL right now. Please try again.', ''
+
+    if len(raw_bytes) > max_bytes:
+        return '', 'URL content is too large to process.', content_type
+
+    charset = 'utf-8'
+    match = re.search(r'charset=([\\w\\-]+)', content_type)
+    if match:
+        charset = match.group(1).strip().lower() or 'utf-8'
+    try:
+        decoded = raw_bytes.decode(charset, errors='replace')
+    except Exception:
+        decoded = raw_bytes.decode('utf-8', errors='replace')
+
+    if 'text/html' in content_type or '<html' in decoded.lower():
+        extracted = _extract_text_from_html_document(decoded, max_chars=max_chars)
+    else:
+        extracted = '\n'.join(' '.join(line.split()) for line in decoded.splitlines() if line.strip())[:max_chars]
+
+    if not extracted.strip():
+        return '', 'No readable text was found at this URL.', content_type
+
+    return extracted.strip(), None, content_type
 
 
 def _build_tools_prompt(source_type, custom_prompt=''):
@@ -20,7 +125,23 @@ def _build_tools_prompt(source_type, custom_prompt=''):
             "3. # Key Terms (term: concise definition)\n"
             "4. # Open Questions (uncertain or ambiguous parts)\n"
             "Do not fabricate details. If text is unreadable, say so explicitly.\n"
-            "Use maximum available reasoning depth for Gemini 2.5 Flash Lite."
+            "Use maximum available reasoning depth for Gemini 2.5 Flash Lite.\n"
+            "Use clean markdown with valid headings and bullet lists only.\n"
+            "Do not use malformed list markers like '- 1. item'."
+        )
+    elif source_type == 'url':
+        base_prompt = (
+            "You are a study extraction assistant.\n"
+            "Read the extracted webpage text and return structured markdown only.\n"
+            "Output sections in this order:\n"
+            "1. # Source Summary\n"
+            "2. # Extracted Outline\n"
+            "3. # Key Terms (term: concise definition)\n"
+            "4. # Review Questions\n"
+            "Use only facts present in the source text.\n"
+            "Use maximum available reasoning depth for Gemini 2.5 Flash Lite.\n"
+            "Use clean markdown with valid headings and bullet lists only.\n"
+            "Do not use malformed list markers like '- 1. item'."
         )
     else:
         base_prompt = (
@@ -32,7 +153,10 @@ def _build_tools_prompt(source_type, custom_prompt=''):
             "3. # Key Terms (term: concise definition)\n"
             "4. # Review Questions\n"
             "Preserve important formulas, lists, and headings. Do not invent missing content.\n"
-            "Use maximum available reasoning depth for Gemini 2.5 Flash Lite."
+            "Use maximum available reasoning depth for Gemini 2.5 Flash Lite.\n"
+            "Use clean markdown with valid headings and bullet lists only.\n"
+            "Prefer '-' for bullet points and avoid malformed nested list markers.\n"
+            "Do not use malformed list markers like '- 1. item'."
         )
     sanitized_custom = _sanitize_tools_custom_prompt(custom_prompt)
     if not sanitized_custom:
@@ -69,6 +193,30 @@ def _sum_retry_attempts(retry_tracker):
     return sum(int(v or 0) for v in (retry_tracker or {}).values())
 
 
+def _normalize_tools_markdown_for_export(markdown_text):
+    import re
+
+    normalized_lines = []
+    for raw_line in str(markdown_text or '').splitlines():
+        line = raw_line.replace('\t', '    ')
+        stripped = line.strip()
+        if stripped in {'*', '-', '•'}:
+            continue
+        if re.match(r'^\\s*[-*•]\\s+\\d+[\\.)]\\s+', line):
+            line = re.sub(r'^\\s*[-*•]\\s+(\\d+[\\.)]\\s+)', r'\\1', line)
+        bullet_match = re.match(r'^\\s*\\*\\s+(.*)$', line)
+        if bullet_match:
+            content = bullet_match.group(1).strip()
+            if content:
+                normalized_lines.append(f"- {content}")
+            continue
+        normalized_lines.append(line.rstrip())
+
+    merged = '\n'.join(normalized_lines)
+    merged = re.sub(r'\\n{3,}', '\\n\\n', merged)
+    return merged.strip()
+
+
 def _normalize_export_base_name(raw_title):
     title = str(raw_title or '').strip() or 'tools-extract'
     safe = ''.join(ch if ch.isalnum() or ch in ('-', '_') else '-' for ch in title.lower())
@@ -77,16 +225,18 @@ def _normalize_export_base_name(raw_title):
 
 
 def _detect_tools_source_type(app_ctx, uploaded_file, requested_source):
-    filename = str(getattr(uploaded_file, 'filename', '') or '')
+    filename = str(getattr(uploaded_file, 'filename', '') or '') if uploaded_file else ''
     lower_name = filename.strip().lower()
     extension = lower_name.rsplit('.', 1)[-1] if '.' in lower_name else ''
-    mime_type = str(getattr(uploaded_file, 'mimetype', '') or '').strip().lower()
+    mime_type = str(getattr(uploaded_file, 'mimetype', '') or '').strip().lower() if uploaded_file else ''
 
     is_doc = extension in app_ctx.ALLOWED_TOOLS_DOC_EXTENSIONS
     is_image = extension in app_ctx.ALLOWED_TOOLS_IMAGE_EXTENSIONS
     requested = str(requested_source or 'auto').strip().lower()
-    if requested not in {'auto', 'document', 'image'}:
+    if requested not in {'auto', 'document', 'image', 'url'}:
         requested = 'auto'
+    if requested == 'url':
+        return 'url', extension, mime_type, None
 
     if requested == 'document':
         if not is_doc:
@@ -101,6 +251,8 @@ def _detect_tools_source_type(app_ctx, uploaded_file, requested_source):
         return 'document', extension, mime_type, None
     if is_image:
         return 'image', extension, mime_type, None
+    if requested == 'auto' and not uploaded_file:
+        return None, extension, mime_type, 'Please upload a file or switch to URL Reader.'
     return None, extension, mime_type, 'Unsupported file type. Upload PDF, PPTX, DOCX, PNG, JPG, JPEG, WEBP, HEIC, or HEIF.'
 
 
@@ -283,7 +435,7 @@ def upload_files(app_ctx, request):
 
     elif mode == 'slides-only':
         if user.get('slides_credits', 0) <= 0:
-            return app_ctx.jsonify({'error': 'No slides credits remaining. Please purchase more credits.'}), 402
+            return app_ctx.jsonify({'error': 'No text extraction credits remaining. Please purchase more credits.'}), 402
         if 'pdf' not in request.files:
             return app_ctx.jsonify({'error': 'Slide file (PDF or PPTX) is required'}), 400
         slides_file = request.files['pdf']
@@ -297,7 +449,7 @@ def upload_files(app_ctx, request):
         deducted = app_ctx.deduct_credit(uid, 'slides_credits')
         if not deducted:
             app_ctx.cleanup_files([pdf_path], [])
-            return app_ctx.jsonify({'error': 'No slides credits remaining.'}), 402
+            return app_ctx.jsonify({'error': 'No text extraction credits remaining.'}), 402
         total_steps = 2 if study_features != 'none' else 1
         app_ctx.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round((pdf_size if pdf_size > 0 else 0) / (1024 * 1024), 2), 'billing_receipt': app_ctx.initialize_billing_receipt({deducted: 1})})
         thread = app_ctx.threading.Thread(target=app_ctx.process_slides_only, args=(job_id, pdf_path))
@@ -345,11 +497,11 @@ def upload_files(app_ctx, request):
             if user.get('slides_credits', 0) < interview_features_cost:
                 app_ctx.refund_credit(uid, deducted)
                 app_ctx.cleanup_files([audio_path], [])
-                return app_ctx.jsonify({'error': f'Not enough slides credits for interview extras. You selected {interview_features_cost} option(s) and need {interview_features_cost} slides credits.'}), 402
+                return app_ctx.jsonify({'error': f'Not enough text extraction credits for interview extras. You selected {interview_features_cost} option(s) and need {interview_features_cost} text extraction credits.'}), 402
             if not app_ctx.deduct_slides_credits(uid, interview_features_cost):
                 app_ctx.refund_credit(uid, deducted)
                 app_ctx.cleanup_files([audio_path], [])
-                return app_ctx.jsonify({'error': 'Could not reserve slides credits for interview extras. Please try again.'}), 402
+                return app_ctx.jsonify({'error': 'Could not reserve text extraction credits for interview extras. Please try again.'}), 402
         if imported_audio_used:
             _consumed_path, token_error = app_ctx.get_audio_import_token_path(uid, audio_import_token, consume=True)
             if token_error:
@@ -439,23 +591,34 @@ def tools_extract(app_ctx, request):
 
     user = app_ctx.get_or_create_user(uid, email)
     if int(user.get('slides_credits', 0) or 0) <= 0:
-        return app_ctx.jsonify({'error': 'No slides credits remaining. Please purchase more credits.'}), 402
-
-    if 'file' not in request.files:
-        return app_ctx.jsonify({'error': 'Please upload a file to extract.'}), 400
-    uploaded_file = request.files['file']
-    if not uploaded_file or not str(uploaded_file.filename or '').strip():
-        return app_ctx.jsonify({'error': 'Please choose a file before running extraction.'}), 400
+        return app_ctx.jsonify({'error': 'No text extraction credits remaining. Please purchase more credits.'}), 402
 
     requested_source = request.form.get('source_type', request.form.get('source', 'auto'))
     custom_prompt = _sanitize_tools_custom_prompt(request.form.get('custom_prompt', ''))
-    source_type, extension, mime_type, detect_error = _detect_tools_source_type(
-        app_ctx,
-        uploaded_file,
-        requested_source,
-    )
-    if detect_error:
-        return app_ctx.jsonify({'error': detect_error}), 400
+    prompt_template_key = _sanitize_tools_template_key(request.form.get('prompt_template_key', ''))
+    source_url = ''
+    uploaded_file = None
+    source_type = ''
+    extension = ''
+    mime_type = ''
+
+    if str(requested_source or '').strip().lower() == 'url':
+        source_url, url_error = _sanitize_tools_source_url(request.form.get('source_url', ''))
+        if url_error:
+            return app_ctx.jsonify({'error': url_error}), 400
+        source_type = 'url'
+        mime_type = 'text/html'
+    else:
+        uploaded_file = request.files.get('file')
+        if not uploaded_file or not str(uploaded_file.filename or '').strip():
+            return app_ctx.jsonify({'error': 'Please choose a file before running extraction.'}), 400
+        source_type, extension, mime_type, detect_error = _detect_tools_source_type(
+            app_ctx,
+            uploaded_file,
+            requested_source,
+        )
+        if detect_error:
+            return app_ctx.jsonify({'error': detect_error}), 400
 
     job_id = str(app_ctx.uuid.uuid4())
     local_paths = []
@@ -470,9 +633,17 @@ def tools_extract(app_ctx, request):
     upload_mime_type = ''
     upload_path = ''
     uploaded_provider_file = None
+    source_size_mb = 0.0
+    started_at_ts = app_ctx.time.time()
 
     try:
-        if source_type == 'document':
+        if source_type == 'url':
+            normalized_input_name = source_url
+            docx_text, source_error, upload_mime_type = _fetch_tools_url_text(source_url)
+            if source_error:
+                return app_ctx.jsonify({'error': source_error}), 400
+            source_size_mb = round(len(docx_text.encode('utf-8')) / (1024 * 1024), 4)
+        elif source_type == 'document':
             if mime_type and mime_type not in app_ctx.ALLOWED_TOOLS_DOC_MIME_TYPES:
                 return app_ctx.jsonify({'error': 'Unsupported document content type for tools extraction.'}), 400
             if extension == 'docx':
@@ -493,6 +664,7 @@ def tools_extract(app_ctx, request):
                     app_ctx.cleanup_files(local_paths, gemini_files)
                     local_paths = []
                     return app_ctx.jsonify({'error': docx_error}), 400
+                source_size_mb = round(saved_size / (1024 * 1024), 4)
             else:
                 pdf_path, slides_error = app_ctx.resolve_uploaded_slides_to_pdf(uploaded_file, f"tools_{job_id}")
                 if slides_error:
@@ -508,6 +680,7 @@ def tools_extract(app_ctx, request):
                     }), 400
                 upload_mime_type = 'application/pdf'
                 upload_path = pdf_path
+                source_size_mb = round(saved_size / (1024 * 1024), 4)
         else:
             if mime_type and mime_type not in app_ctx.ALLOWED_TOOLS_IMAGE_MIME_TYPES:
                 return app_ctx.jsonify({'error': 'Unsupported image content type for tools extraction.'}), 400
@@ -527,22 +700,29 @@ def tools_extract(app_ctx, request):
                 }), 400
             upload_mime_type = mime_type or app_ctx.get_mime_type(uploaded_file.filename) or 'image/jpeg'
             upload_path = image_path
+            source_size_mb = round(saved_size / (1024 * 1024), 4)
 
         deducted_credit = app_ctx.deduct_credit(uid, 'slides_credits')
         if not deducted_credit:
-            return app_ctx.jsonify({'error': 'No slides credits remaining.'}), 402
+            return app_ctx.jsonify({'error': 'No text extraction credits remaining.'}), 402
 
         prompt = _build_tools_prompt(source_type, custom_prompt)
         if docx_text:
+            if source_type == 'url':
+                source_block_title = f"Source content extracted from URL ({source_url}):"
+                operation_name = 'tools_extract_url'
+            else:
+                source_block_title = 'Source content extracted from DOCX:'
+                operation_name = 'tools_extract_document_docx'
             response = app_ctx.generate_with_policy(
                 app_ctx.MODEL_TOOLS,
                 [app_ctx.types.Content(role='user', parts=[
                     app_ctx.types.Part.from_text(text=prompt),
-                    app_ctx.types.Part.from_text(text=f"Source content extracted from DOCX:\n\n{docx_text}"),
+                    app_ctx.types.Part.from_text(text=f"{source_block_title}\n\n{docx_text}"),
                 ])],
                 max_output_tokens=32768,
                 retry_tracker=retry_tracker,
-                operation_name='tools_extract_document_docx',
+                operation_name=operation_name,
             )
         else:
             uploaded_provider_file = app_ctx.run_with_provider_retry(
@@ -573,6 +753,7 @@ def tools_extract(app_ctx, request):
             raise ValueError('Extraction returned empty output')
 
         usage = app_ctx.extract_token_usage(response)
+        retry_attempts_total = _sum_retry_attempts(retry_tracker)
         app_ctx.log_analytics_event(
             'tools_extract_completed',
             source='backend',
@@ -582,10 +763,41 @@ def tools_extract(app_ctx, request):
             properties={
                 'source_type': source_type,
                 'file_name': normalized_input_name,
-                'retry_attempts': _sum_retry_attempts(retry_tracker),
+                'custom_prompt': custom_prompt,
+                'prompt_template_key': prompt_template_key,
+                'source_url': source_url,
+                'retry_attempts': retry_attempts_total,
                 'input_tokens': int(usage.get('input_tokens', 0) or 0),
                 'output_tokens': int(usage.get('output_tokens', 0) or 0),
             },
+        )
+
+        app_ctx.save_job_log(
+            job_id,
+            {
+                'user_id': uid,
+                'user_email': email,
+                'mode': 'tools',
+                'source_type': source_type,
+                'source_url': source_url,
+                'source_name': normalized_input_name,
+                'status': 'complete',
+                'credit_deducted': deducted_credit,
+                'credit_refunded': False,
+                'error': '',
+                'failed_stage': '',
+                'provider_error_code': '',
+                'retry_attempts': retry_attempts_total,
+                'token_usage_by_stage': {f'tools_extract_{source_type}': usage},
+                'token_input_total': int(usage.get('input_tokens', 0) or 0),
+                'token_output_total': int(usage.get('output_tokens', 0) or 0),
+                'token_total': int(usage.get('total_tokens', 0) or 0),
+                'file_size_mb': source_size_mb,
+                'custom_prompt': custom_prompt,
+                'prompt_template_key': prompt_template_key,
+                'started_at': started_at_ts,
+            },
+            app_ctx.time.time(),
         )
 
         return app_ctx.jsonify({
@@ -594,7 +806,10 @@ def tools_extract(app_ctx, request):
             'file_name': normalized_input_name,
             'model': app_ctx.MODEL_TOOLS,
             'content_markdown': extracted_markdown,
-            'retry_attempts': _sum_retry_attempts(retry_tracker),
+            'custom_prompt': custom_prompt,
+            'prompt_template_key': prompt_template_key,
+            'source_url': source_url,
+            'retry_attempts': retry_attempts_total,
             'provider_error_code': '',
             'billing_receipt': {
                 'charged': {deducted_credit: 1},
@@ -605,8 +820,8 @@ def tools_extract(app_ctx, request):
         provider_error_code = app_ctx.classify_provider_error_code(error)
         app_ctx.logger.exception("Tools extraction failed for user %s source=%s", uid, source_type)
         if deducted_credit and not refunded_credit:
-            app_ctx.refund_credit(uid, deducted_credit)
-            refunded_credit = True
+            refunded_credit = bool(app_ctx.refund_credit(uid, deducted_credit))
+        retry_attempts_total = _sum_retry_attempts(retry_tracker)
         app_ctx.log_analytics_event(
             'tools_extract_failed',
             source='backend',
@@ -616,14 +831,49 @@ def tools_extract(app_ctx, request):
             properties={
                 'source_type': source_type or 'unknown',
                 'provider_error_code': provider_error_code,
-                'retry_attempts': _sum_retry_attempts(retry_tracker),
+                'custom_prompt': custom_prompt,
+                'prompt_template_key': prompt_template_key,
+                'source_url': source_url,
+                'retry_attempts': retry_attempts_total,
             },
         )
+        app_ctx.save_job_log(
+            job_id,
+            {
+                'user_id': uid,
+                'user_email': email,
+                'mode': 'tools',
+                'source_type': source_type or 'unknown',
+                'source_url': source_url,
+                'source_name': normalized_input_name,
+                'status': 'error',
+                'credit_deducted': deducted_credit,
+                'credit_refunded': bool(refunded_credit),
+                'error': str(error)[:1200],
+                'failed_stage': 'tools_extract',
+                'provider_error_code': provider_error_code,
+                'retry_attempts': retry_attempts_total,
+                'token_usage_by_stage': {},
+                'token_input_total': 0,
+                'token_output_total': 0,
+                'token_total': 0,
+                'file_size_mb': source_size_mb,
+                'custom_prompt': custom_prompt,
+                'prompt_template_key': prompt_template_key,
+                'started_at': started_at_ts,
+            },
+            app_ctx.time.time(),
+        )
+        if refunded_credit:
+            error_message = 'Tools extraction failed. Your text extraction credit has been refunded.'
+        else:
+            error_message = 'Tools extraction failed. Refund could not be confirmed automatically, so support has been notified.'
         return app_ctx.jsonify({
-            'error': 'Tools extraction failed. Your slides credit has been refunded.',
+            'error': error_message,
             'error_code': 'TOOLS_EXTRACTION_FAILED',
             'provider_error_code': provider_error_code,
-            'retry_attempts': _sum_retry_attempts(retry_tracker),
+            'retry_attempts': retry_attempts_total,
+            'refund_confirmed': bool(refunded_credit),
             'billing_receipt': {
                 'charged': {deducted_credit: 1} if deducted_credit else {},
                 'refunded': {deducted_credit: 1} if (deducted_credit and refunded_credit) else {},
@@ -655,7 +905,8 @@ def tools_export(app_ctx, request):
     if len(markdown) > 800000:
         return app_ctx.jsonify({'error': 'Export content is too large. Please shorten the result and retry.'}), 400
 
-    doc = app_ctx.markdown_to_docx(markdown, title or 'Tools Extract')
+    export_markdown = _normalize_tools_markdown_for_export(markdown)
+    doc = app_ctx.markdown_to_docx(export_markdown, title or 'Tools Extract')
     docx_io = app_ctx.io.BytesIO()
     doc.save(docx_io)
     docx_io.seek(0)

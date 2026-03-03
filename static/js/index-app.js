@@ -176,7 +176,7 @@ const modeConfig = {
     },
     'slides-only': {
         description: 'Upload lecture slides (PDF or PPTX) to run slide extraction and generate clean text notes.',
-        creditCost: 'Uses <strong>1 slides credit</strong>',
+        creditCost: 'Uses <strong>1 text extraction credit</strong>',
         creditType: 'slides',
         needsPdf: true,
         needsAudio: false,
@@ -186,8 +186,8 @@ const modeConfig = {
         steps: [{ num: 1, label: 'Extract Text' }, { num: 2, label: 'Build Study Tools' }]
     },
     'interview': {
-        description: 'Upload an interview recording to generate a timestamped transcript with speaker identification. Optional extras run through the slide-processing pipeline.',
-        creditCost: 'Uses <strong>1 interview credit</strong> (+ <strong>1 slides credit</strong> per selected extra)',
+        description: 'Upload an interview recording to generate a timestamped transcript with speaker identification. Optional extras run through the text-extraction pipeline.',
+        creditCost: 'Uses <strong>1 interview credit</strong> (+ <strong>1 text extraction credit</strong> per selected extra)',
         creditType: 'interview',
         needsPdf: false,
         needsAudio: true,
@@ -216,6 +216,9 @@ const headerStudyLibraryBtn = document.getElementById('header-study-library-btn'
 const headerFeaturesBtn = document.getElementById('header-features-btn');
 const headerToolsBtn = document.getElementById('header-tools-btn');
 const headerPlannerBtn = document.getElementById('header-planner-btn');
+const headerPlannerGroup = document.getElementById('header-planner-group');
+const headerPlannerSubmenu = document.getElementById('header-planner-submenu');
+const headerCalendarBtn = document.getElementById('header-calendar-btn');
 const progressMenu = document.getElementById('progress-menu');
 const progressButton = document.getElementById('progress-button');
 const progressDropdown = document.getElementById('progress-dropdown');
@@ -223,12 +226,20 @@ const progressStreakCount = document.getElementById('progress-streak-count');
 const progressDueCount = document.getElementById('progress-due-count');
 const progressGoalText = document.getElementById('progress-goal-text');
 const progressSetGoalBtn = document.getElementById('progress-set-goal-btn');
+const progressOpenCalendarBtn = document.getElementById('progress-open-calendar-btn');
 const progressOpenPlanBtn = document.getElementById('progress-open-plan-btn');
 const goalModalOverlay = document.getElementById('goal-modal-overlay');
 const goalModalInput = document.getElementById('goal-modal-input');
 const goalModalError = document.getElementById('goal-modal-error');
 const goalModalCancelBtn = document.getElementById('goal-modal-cancel-btn');
 const goalModalSaveBtn = document.getElementById('goal-modal-save-btn');
+const deleteAccountOverlay = document.getElementById('delete-account-overlay');
+const deleteAccountClose = document.getElementById('delete-account-close');
+const deleteAccountCancelBtn = document.getElementById('delete-account-cancel-btn');
+const deleteAccountConfirmBtn = document.getElementById('delete-account-confirm-btn');
+const deleteAccountTextInput = document.getElementById('delete-account-text-input');
+const deleteAccountEmailInput = document.getElementById('delete-account-email-input');
+const deleteAccountError = document.getElementById('delete-account-error');
 const creditsDisplay = document.getElementById('credits-display');
 const creditsCount = document.getElementById('credits-count');
 const creditsTooltip = document.getElementById('credits-tooltip');
@@ -425,7 +436,7 @@ function formatCreditTypeLabel(creditType) {
     const map = {
         lecture_credits_standard: 'lecture credit',
         lecture_credits_extended: 'lecture extended credit',
-        slides_credits: 'slides credit',
+        slides_credits: 'text extraction credit',
         interview_credits_short: 'interview short credit',
         interview_credits_medium: 'interview medium credit',
         interview_credits_long: 'interview long credit',
@@ -633,6 +644,9 @@ function setHeaderSidebarVisible(visible) {
     headerSidebar.setAttribute('aria-hidden', show ? 'false' : 'true');
     headerNavToggle.setAttribute('aria-expanded', show ? 'true' : 'false');
     document.body.classList.toggle('sidebar-open', show);
+    if (!show && headerPlannerGroup) {
+        headerPlannerGroup.classList.remove('open');
+    }
 }
 function closeHeaderDropdowns(except) {
     if (except !== 'user') setUserDropdownVisible(false);
@@ -640,7 +654,7 @@ function closeHeaderDropdowns(except) {
     if (except !== 'download') setDownloadDropdownVisible(false);
     if (except !== 'more-actions') setMoreActionsDropdownVisible(false);
     if (except !== 'language') setOutputLanguageMenuVisible(false);
-    if (except !== 'sidebar') setHeaderSidebarVisible(false);
+    if (except !== 'sidebar' && except !== 'progress') setHeaderSidebarVisible(false);
 }
 function showAuthModal(view = 'signin') {
     openOverlay(authOverlay);
@@ -818,12 +832,12 @@ function updateCreditsDisplay() {
     const interview = userCredits.interview_short + userCredits.interview_medium + userCredits.interview_long;
     const total = lecture + userCredits.slides + interview;
     creditsCount.textContent = total;
-    creditsDisplay.setAttribute('data-tooltip', `Lecture ${lecture}, Slides ${userCredits.slides}, Interview ${interview}, Total ${total}`);
+    creditsDisplay.setAttribute('data-tooltip', `Lecture ${lecture}, Text extraction ${userCredits.slides}, Interview ${interview}, Total ${total}`);
     if (creditsTooltip) {
         setSanitizedHtml(
             creditsTooltip,
             `<div class="credit-tip-row"><span>Lecture</span><strong>${lecture}</strong></div>
-             <div class="credit-tip-row"><span>Slides</span><strong>${userCredits.slides}</strong></div>
+             <div class="credit-tip-row"><span>Text extraction</span><strong>${userCredits.slides}</strong></div>
              <div class="credit-tip-row"><span>Interview</span><strong>${interview}</strong></div>
              <div class="credit-tip-row total"><span>Total</span><strong>${total}</strong></div>`
         );
@@ -862,14 +876,14 @@ function updateModeCostSummary() {
         return;
     }
     if (currentMode === 'slides-only') {
-        modeCostSummary.textContent = `This run costs 1 slides credit. You have ${slidesCredits} slides credits.`;
+        modeCostSummary.textContent = `This run costs 1 text extraction credit. You have ${slidesCredits} text extraction credits.`;
         return;
     }
     const extras = getInterviewExtraCost();
     if (extras > 0) {
-        modeCostSummary.textContent = `This run costs 1 interview credit + ${extras} slides credits for slide-pipeline extras. You have ${interviewCredits} interview credits and ${slidesCredits} slides credits.`;
+        modeCostSummary.textContent = `This run costs 1 interview credit + ${extras} text extraction credits for slide-pipeline extras. You have ${interviewCredits} interview credits and ${slidesCredits} text extraction credits.`;
     } else {
-        modeCostSummary.textContent = `This run costs 1 interview credit. Optional extras use slides credits (slide pipeline). You have ${interviewCredits} interview credits and ${slidesCredits} slides credits.`;
+        modeCostSummary.textContent = `This run costs 1 interview credit. Optional extras use text extraction credits (text-extraction pipeline). You have ${interviewCredits} interview credits and ${slidesCredits} text extraction credits.`;
     }
 }
 function updateInterviewOptionAvailability() {
@@ -882,7 +896,7 @@ function updateInterviewOptionAvailability() {
         const canEnable = slidesCredits >= nextCost;
         btn.disabled = !canEnable && !selected;
         btn.classList.toggle('disabled', btn.disabled);
-        btn.title = btn.disabled ? 'Not enough slides credits for this extra.' : '';
+        btn.title = btn.disabled ? 'Not enough text extraction credits for this extra.' : '';
         btn.setAttribute('aria-disabled', btn.disabled ? 'true' : 'false');
     });
 }
@@ -894,9 +908,9 @@ function updateModeCreditDisplay() {
     }
     const extraCost = getInterviewExtraCost();
     if (!extraCost) {
-        setSanitizedHtml(modeCreditCost, 'Uses <strong>1 interview credit</strong>. Optional extras cost <strong>1 slides credit</strong> each.');
+        setSanitizedHtml(modeCreditCost, 'Uses <strong>1 interview credit</strong>. Optional extras cost <strong>1 text extraction credit</strong> each.');
     } else {
-        setSanitizedHtml(modeCreditCost, `Uses <strong>1 interview credit</strong> + <strong>${extraCost} slides credits</strong> for selected extras.`);
+        setSanitizedHtml(modeCreditCost, `Uses <strong>1 interview credit</strong> + <strong>${extraCost} text extraction credits</strong> for selected extras.`);
     }
     updateModeCostSummary();
 }
@@ -956,13 +970,13 @@ function updateInterviewOptionsUI() {
     });
     const slidesCredits = userCredits ? Number(userCredits.slides || 0) : 0;
     if (!selectedInterviewFeatures.length && userCredits && slidesCredits <= 0) {
-        interviewExtraNote.textContent = 'No extras selected. You currently have 0 slides credits, so slide-pipeline extras are disabled.';
+        interviewExtraNote.textContent = 'No extras selected. You currently have 0 text extraction credits, so slide-pipeline extras are disabled.';
     } else if (!selectedInterviewFeatures.length) {
-        interviewExtraNote.textContent = 'No extras selected. Select one or both options (1 slides credit per option via the slide-processing pipeline).';
+        interviewExtraNote.textContent = 'No extras selected. Select one or both options (1 text extraction credit per option via the text-extraction pipeline).';
     } else if (selectedInterviewFeatures.length === 1) {
-        interviewExtraNote.textContent = 'Selected 1 extra option. This adds 1 slides credit (slide-processing pipeline).';
+        interviewExtraNote.textContent = 'Selected 1 extra option. This adds 1 text extraction credit (text-extraction pipeline).';
     } else {
-        interviewExtraNote.textContent = 'Selected both extra options. This adds 2 slides credits (slide-processing pipeline).';
+        interviewExtraNote.textContent = 'Selected both extra options. This adds 2 text extraction credits (text-extraction pipeline).';
     }
     updateModeCreditDisplay();
     updateProcessButton();
@@ -1693,7 +1707,7 @@ function updateUploadEstimatePanel() {
         uploadEstimateMeta.textContent = `Requires PDF or PPTX (max 50 MB). Current upload: ${totalMb.toFixed(1)} MB.`;
     } else {
         const extras = getInterviewExtraCost();
-        uploadEstimateMeta.textContent = `Requires audio only (max 500 MB). Selected extras: ${extras} (${extras} slides credits). Current upload: ${totalMb.toFixed(1)} MB.`;
+        uploadEstimateMeta.textContent = `Requires audio only (max 500 MB). Selected extras: ${extras} (${extras} text extraction credits). Current upload: ${totalMb.toFixed(1)} MB.`;
     }
 }
 function updateProcessButton() {
@@ -1713,7 +1727,7 @@ function updateProcessButton() {
     processButton.querySelector('span').textContent = config.buttonText;
     if (currentUser && !hasCredits && !resultsLocked) {
         if (currentMode === 'interview' && getTotalInterviewCredits() > 0 && userCredits.slides < getInterviewExtraCost()) {
-            setSanitizedHtml(noCreditsWarning, "You don't have enough slides credits for the selected interview extras (slide-processing pipeline). <a href=\"#\" id=\"buy-credits-link-inline\">Buy more credits</a>");
+            setSanitizedHtml(noCreditsWarning, "You don't have enough text extraction credits for the selected interview extras (text-extraction pipeline). <a href=\"#\" id=\"buy-credits-link-inline\">Buy more credits</a>");
         } else {
             setSanitizedHtml(noCreditsWarning, "You don't have enough credits. <a href=\"#\" id=\"buy-credits-link-inline\">Buy more credits</a>");
         }
@@ -1762,19 +1776,10 @@ function switchMode(mode) {
         audioZone.classList.remove('hidden');
     }
     if (!config.needsPdf) {
-        pdfFile = null;
-        pdfInput.value = '';
-        pdfInfo.style.display = 'none';
-        pdfZone.classList.remove('has-file');
+        pdfInfo.style.display = pdfFile ? 'flex' : 'none';
+        pdfZone.classList.toggle('has-file', Boolean(pdfFile));
     }
     if (!config.needsAudio) {
-        audioFile = null;
-        audioInput.value = '';
-        releaseImportedAudioToken({ clearStatus: true });
-        syncAudioInfoUI();
-    }
-    if (mode !== 'lecture-notes' && importedAudioToken) {
-        releaseImportedAudioToken({ clearStatus: true });
         syncAudioInfoUI();
     }
     if (audioUrlImport) {
@@ -1853,8 +1858,42 @@ function setupDropZone(zone, input, handler) {
     zone.addEventListener('dragleave', (e) => { e.preventDefault(); zone.classList.remove('drag-over'); });
     zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('drag-over'); if (e.dataTransfer.files.length) handler(e.dataTransfer.files[0]); });
 }
+function downloadLocalPreviewFile(file) {
+    if (!file) return false;
+    const blobUrl = URL.createObjectURL(file);
+    const anchor = document.createElement('a');
+    anchor.href = blobUrl;
+    anchor.download = String(file.name || 'upload');
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(blobUrl);
+    return true;
+}
 setupDropZone(pdfZone, pdfInput, handlePdfFile);
 setupDropZone(audioZone, audioInput, handleAudioFile);
+if (pdfInfo) {
+    pdfInfo.title = 'Click to download this selected file';
+    pdfInfo.addEventListener('click', (e) => {
+        if (e.target.closest('.file-remove')) return;
+        if (downloadLocalPreviewFile(pdfFile)) {
+            showToast('Lecture slides download started.', 'success', 1600);
+        }
+    });
+}
+if (audioInfo) {
+    audioInfo.title = 'Click to download this selected file';
+    audioInfo.addEventListener('click', (e) => {
+        if (e.target.closest('.file-remove')) return;
+        if (downloadLocalPreviewFile(audioFile)) {
+            showToast('Audio file download started.', 'success', 1600);
+            return;
+        }
+        if (importedAudioToken) {
+            showToast('Imported audio is temporary and cannot be downloaded from this preview.', 'info', 2800);
+        }
+    });
+}
 pdfRemove.addEventListener('click', (e) => { e.stopPropagation(); pdfFile = null; pdfInput.value = ''; pdfInfo.style.display = 'none'; pdfZone.classList.remove('has-file'); updateProcessButton(); });
 audioRemove.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -2025,39 +2064,53 @@ async function exportMyAccountData() {
         accountActionInFlight = false;
     }
 }
-async function deleteMyAccountData() {
-    if (!currentUser) {
-        showAuthModal('signin');
-        return;
+function setDeleteAccountError(message) {
+    if (!deleteAccountError) return;
+    deleteAccountError.textContent = String(message || '').trim();
+}
+function openDeleteAccountModal() {
+    if (!deleteAccountOverlay) return;
+    const expectedEmail = String((currentUser && currentUser.email) || '').trim();
+    if (deleteAccountTextInput) deleteAccountTextInput.value = '';
+    if (deleteAccountEmailInput) deleteAccountEmailInput.value = expectedEmail;
+    setDeleteAccountError('');
+    if (deleteAccountConfirmBtn) {
+        deleteAccountConfirmBtn.disabled = false;
+        deleteAccountConfirmBtn.textContent = 'Delete permanently';
     }
-    if (accountActionInFlight) return;
+    openOverlay(deleteAccountOverlay);
+    setTimeout(() => {
+        if (deleteAccountTextInput) deleteAccountTextInput.focus();
+    }, 20);
+}
+function closeDeleteAccountModal() {
+    if (!deleteAccountOverlay) return;
+    closeOverlay(deleteAccountOverlay);
+    setDeleteAccountError('');
+}
+async function submitDeleteAccountModal() {
+    if (!currentUser || accountActionInFlight) return;
     const expectedEmail = String(currentUser.email || '').trim();
     if (!expectedEmail) {
-        showToast('Could not verify account email. Please sign in again.', 'error', 5000);
+        setDeleteAccountError('Could not verify account email. Please sign in again.');
         return;
     }
-
-    const confirmText = window.prompt(
-        'This will permanently delete your account and stored data.\n\nType DELETE MY ACCOUNT to continue.'
-    );
-    if (confirmText === null) return;
-    if (confirmText.trim().toUpperCase() !== 'DELETE MY ACCOUNT') {
-        showToast('Deletion cancelled: confirmation text did not match.', 'info', 4500);
+    const confirmText = String((deleteAccountTextInput && deleteAccountTextInput.value) || '').trim().toUpperCase();
+    if (confirmText !== 'DELETE MY ACCOUNT') {
+        setDeleteAccountError('Type DELETE MY ACCOUNT exactly to continue.');
         return;
     }
-
-    const confirmEmail = window.prompt(`Type your account email to confirm:\n${expectedEmail}`);
-    if (confirmEmail === null) return;
-    if (confirmEmail.trim().toLowerCase() !== expectedEmail.toLowerCase()) {
-        showToast('Deletion cancelled: email did not match.', 'info', 4500);
-        return;
-    }
-
-    if (!window.confirm('Final confirmation: this action is permanent and cannot be undone. Delete now?')) {
+    const confirmEmail = String((deleteAccountEmailInput && deleteAccountEmailInput.value) || '').trim().toLowerCase();
+    if (confirmEmail !== expectedEmail.toLowerCase()) {
+        setDeleteAccountError('Email does not match your signed-in account.');
         return;
     }
 
     accountActionInFlight = true;
+    if (deleteAccountConfirmBtn) {
+        deleteAccountConfirmBtn.disabled = true;
+        deleteAccountConfirmBtn.textContent = 'Deleting...';
+    }
     try {
         const response = await authenticatedFetch('/api/account/delete', {
             method: 'POST',
@@ -2072,6 +2125,7 @@ async function deleteMyAccountData() {
             throw new Error(data.error || 'Could not delete account data.');
         }
 
+        closeDeleteAccountModal();
         showToast('Account deleted. Signing out...', 'success', 5000);
         try {
             await auth.signOut();
@@ -2079,10 +2133,22 @@ async function deleteMyAccountData() {
         window.location.href = '/';
     } catch (e) {
         captureClientError(e, 'account_delete');
-        showToast(e.message || 'Could not delete account data.', 'error', 6000);
+        setDeleteAccountError(e.message || 'Could not delete account data.');
     } finally {
         accountActionInFlight = false;
+        if (deleteAccountConfirmBtn) {
+            deleteAccountConfirmBtn.disabled = false;
+            deleteAccountConfirmBtn.textContent = 'Delete permanently';
+        }
     }
+}
+async function deleteMyAccountData() {
+    if (!currentUser) {
+        showAuthModal('signin');
+        return;
+    }
+    if (accountActionInFlight) return;
+    openDeleteAccountModal();
 }
 async function pollStatus() {
     if (!currentJobId) return;
@@ -2221,6 +2287,9 @@ async function processFiles() {
     resultsSection.classList.remove('visible');
     progressStatus.classList.remove('error');
     progressStatus.querySelector('.spinner').style.display = 'block';
+    try {
+        progressSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (_) { }
     updateProgressUI(0, 'Uploading files...', steps.length);
     trackEvent('process_clicked', {
         study_features: selectedStudyFeatures,
@@ -2593,7 +2662,7 @@ function showResults(md, slides, trans, generatedFlashcards, generatedQuestions,
         } else if (successfulSet.size < selectedInterviewFeatures.length) {
             const failed = selectedInterviewFeatures.length - successfulSet.size;
             studyWarning.style.display = 'block';
-            studyWarning.textContent = `Some interview extras could not be generated (${failed} failed). Failed extras were refunded as slides credits.`;
+            studyWarning.textContent = `Some interview extras could not be generated (${failed} failed). Failed extras were refunded as text extraction credits.`;
         } else {
             studyWarning.style.display = 'none';
             studyWarning.textContent = '';
@@ -2968,6 +3037,36 @@ deleteAccountBtn.addEventListener('click', async () => {
     setUserDropdownVisible(false);
     await deleteMyAccountData();
 });
+if (deleteAccountClose) {
+    deleteAccountClose.addEventListener('click', closeDeleteAccountModal);
+}
+if (deleteAccountCancelBtn) {
+    deleteAccountCancelBtn.addEventListener('click', closeDeleteAccountModal);
+}
+if (deleteAccountConfirmBtn) {
+    deleteAccountConfirmBtn.addEventListener('click', submitDeleteAccountModal);
+}
+if (deleteAccountOverlay) {
+    deleteAccountOverlay.addEventListener('click', (e) => {
+        if (e.target === deleteAccountOverlay) closeDeleteAccountModal();
+    });
+}
+if (deleteAccountTextInput) {
+    deleteAccountTextInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            submitDeleteAccountModal();
+        }
+    });
+}
+if (deleteAccountEmailInput) {
+    deleteAccountEmailInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            submitDeleteAccountModal();
+        }
+    });
+}
 headerStudyLibraryBtn.addEventListener('click', () => {
     setHeaderSidebarVisible(false);
     trackEvent('study_mode_opened', { source: 'header_study_library' }, { preferBeacon: true });
@@ -2986,8 +3085,27 @@ headerToolsBtn.addEventListener('click', () => {
 });
 if (headerPlannerBtn) {
     headerPlannerBtn.addEventListener('click', () => {
+        const touchLike = window.matchMedia('(hover: none), (pointer: coarse)').matches;
+        if (touchLike && headerPlannerGroup && !headerPlannerGroup.classList.contains('open')) {
+            headerPlannerGroup.classList.add('open');
+            return;
+        }
         setHeaderSidebarVisible(false);
         window.location.href = '/plan';
+    });
+}
+if (headerPlannerGroup) {
+    headerPlannerGroup.addEventListener('mouseenter', () => {
+        headerPlannerGroup.classList.add('open');
+    });
+    headerPlannerGroup.addEventListener('mouseleave', () => {
+        headerPlannerGroup.classList.remove('open');
+    });
+}
+if (headerCalendarBtn) {
+    headerCalendarBtn.addEventListener('click', () => {
+        setHeaderSidebarVisible(false);
+        window.location.href = '/calendar';
     });
 }
 function openGoalModal() {
@@ -3083,6 +3201,13 @@ progressOpenPlanBtn.addEventListener('click', () => {
     setProgressDropdownVisible(false);
     window.location.href = '/plan';
 });
+if (progressOpenCalendarBtn) {
+    progressOpenCalendarBtn.addEventListener('click', () => {
+        setHeaderSidebarVisible(false);
+        setProgressDropdownVisible(false);
+        window.location.href = '/calendar';
+    });
+}
 let mobileCreditsTooltipTimer = null;
 creditsDisplay.addEventListener('click', (e) => {
     const touchLike = window.matchMedia('(hover: none), (pointer: coarse)').matches;
@@ -3175,6 +3300,7 @@ document.addEventListener('keydown', (e) => {
         else if (activeModalOverlay === pricingOverlay) hidePricingModal();
         else if (activeModalOverlay === historyOverlay) hideHistoryModal();
         else if (activeModalOverlay === goalModalOverlay) closeGoalModal();
+        else if (activeModalOverlay === deleteAccountOverlay) closeDeleteAccountModal();
         return;
     }
     if (e.key !== 'Tab') return;
@@ -3389,7 +3515,7 @@ interviewOptionButtons.forEach(btn => {
         } else {
             const maxAffordable = userCredits ? Math.max(0, Number(userCredits.slides || 0)) : 2;
             if (selectedInterviewFeatures.length >= maxAffordable) {
-                showToast('Not enough slides credits for more interview extras.', 'info', 2600);
+                showToast('Not enough text extraction credits for more interview extras.', 'info', 2600);
                 updateInterviewOptionsUI();
                 return;
             }
