@@ -4,6 +4,7 @@
 from urllib.parse import urlparse
 
 from lecture_processor.domains.billing import purchases as billing_purchases
+from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 
 
@@ -37,7 +38,7 @@ def create_checkout_session(app_ctx, request):
         runtime=app_ctx,
     )
     if not allowed_checkout:
-        app_ctx.log_rate_limit_hit('checkout', retry_after)
+        analytics_events.log_rate_limit_hit('checkout', retry_after, runtime=app_ctx)
         return rate_limiter.build_rate_limited_response(
             'Too many checkout attempts. Please wait before starting another checkout.',
             retry_after,

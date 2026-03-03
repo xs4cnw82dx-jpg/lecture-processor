@@ -1,9 +1,12 @@
 """Business logic handlers for upload/status/download APIs."""
 
 from lecture_processor.domains.auth import policy as auth_policy
+from lecture_processor.domains.account import lifecycle as account_lifecycle
+from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.rate_limit import quotas as rate_limit_quotas
+from lecture_processor.domains.shared import parsing as shared_parsing
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 
 
@@ -438,9 +441,9 @@ def upload_files(app_ctx, request):
     email = decoded_token.get('email', '')
     if not auth_policy.is_email_allowed(email, runtime=app_ctx):
         return app_ctx.jsonify({'error': 'Email not allowed'}), 403
-    active_jobs = app_ctx.count_active_jobs_for_user(uid)
+    active_jobs = account_lifecycle.count_active_jobs_for_user(uid, runtime=app_ctx)
     if active_jobs >= app_ctx.MAX_ACTIVE_JOBS_PER_USER:
-        app_ctx.log_rate_limit_hit('upload', 10)
+        analytics_events.log_rate_limit_hit('upload', 10, runtime=app_ctx)
         return app_ctx.jsonify({
             'error': f'You already have {active_jobs} active processing job(s). Please wait for one to finish before starting another.'
         }), 429
@@ -451,7 +454,7 @@ def upload_files(app_ctx, request):
         runtime=app_ctx,
     )
     if not allowed_upload:
-        app_ctx.log_rate_limit_hit('upload', retry_after)
+        analytics_events.log_rate_limit_hit('upload', retry_after, runtime=app_ctx)
         return rate_limiter.build_rate_limited_response(
             'Too many upload attempts right now. Please wait and try again.',
             retry_after,
@@ -478,7 +481,7 @@ def upload_files(app_ctx, request):
         runtime=app_ctx,
     )
     if not reserved_daily:
-        app_ctx.log_rate_limit_hit('upload', daily_retry_after)
+        analytics_events.log_rate_limit_hit('upload', daily_retry_after, runtime=app_ctx)
         return rate_limiter.build_rate_limited_response(
             'Daily upload quota reached for your account. Please try again tomorrow.',
             daily_retry_after,
@@ -486,16 +489,33 @@ def upload_files(app_ctx, request):
         )
     user = app_ctx.get_or_create_user(uid, email)
     mode = request.form.get('mode', 'lecture-notes')
-    flashcard_selection = app_ctx.parse_requested_amount(request.form.get('flashcard_amount', '20'), {'10', '20', '30', 'auto'}, '20')
-    question_selection = app_ctx.parse_requested_amount(request.form.get('question_amount', '10'), {'5', '10', '15', 'auto'}, '10')
-    preferred_language_key = app_ctx.sanitize_output_language_pref_key(user.get('preferred_output_language', app_ctx.DEFAULT_OUTPUT_LANGUAGE_KEY))
-    preferred_language_custom = app_ctx.sanitize_output_language_pref_custom(user.get('preferred_output_language_custom', ''))
-    output_language = app_ctx.parse_output_language(
+    flashcard_selection = shared_parsing.parse_requested_amount(
+        request.form.get('flashcard_amount', '20'),
+        {'10', '20', '30', 'auto'},
+        '20',
+        runtime=app_ctx,
+    )
+    question_selection = shared_parsing.parse_requested_amount(
+        request.form.get('question_amount', '10'),
+        {'5', '10', '15', 'auto'},
+        '10',
+        runtime=app_ctx,
+    )
+    preferred_language_key = shared_parsing.sanitize_output_language_pref_key(
+        user.get('preferred_output_language', app_ctx.DEFAULT_OUTPUT_LANGUAGE_KEY),
+        runtime=app_ctx,
+    )
+    preferred_language_custom = shared_parsing.sanitize_output_language_pref_custom(
+        user.get('preferred_output_language_custom', ''),
+        runtime=app_ctx,
+    )
+    output_language = shared_parsing.parse_output_language(
         request.form.get('output_language', preferred_language_key),
         request.form.get('output_language_custom', preferred_language_custom),
+        runtime=app_ctx,
     )
-    study_features = app_ctx.parse_study_features(request.form.get('study_features', 'none'))
-    interview_features = app_ctx.parse_interview_features(request.form.get('interview_features', 'none'))
+    study_features = shared_parsing.parse_study_features(request.form.get('study_features', 'none'), runtime=app_ctx)
+    interview_features = shared_parsing.parse_interview_features(request.form.get('interview_features', 'none'), runtime=app_ctx)
     audio_import_token = str(request.form.get('audio_import_token', '') or '').strip()
     upload_import_audio.cleanup_expired_audio_import_tokens(runtime=app_ctx)
     if request.content_length and request.content_length > app_ctx.MAX_CONTENT_LENGTH:
@@ -704,7 +724,7 @@ def upload_files(app_ctx, request):
         return app_ctx.jsonify({'error': 'Invalid mode selected'}), 400
 
     created_job = app_ctx.get_job_snapshot(job_id) or {}
-    app_ctx.log_analytics_event(
+    analytics_events.log_analytics_event(
         'processing_started_backend',
         source='backend',
         uid=uid,
@@ -717,6 +737,7 @@ def upload_files(app_ctx, request):
             'interview_features_count': len(created_job.get('interview_features', [])) if isinstance(created_job.get('interview_features'), list) else 0,
         },
         created_at=created_job.get('started_at', app_ctx.time.time()),
+        runtime=app_ctx,
     )
 
     return app_ctx.jsonify({'job_id': job_id})
@@ -739,7 +760,7 @@ def tools_extract(app_ctx, request):
         runtime=app_ctx,
     )
     if not allowed:
-        app_ctx.log_rate_limit_hit('tools', retry_after)
+        analytics_events.log_rate_limit_hit('tools', retry_after, runtime=app_ctx)
         return rate_limiter.build_rate_limited_response(
             'Too many tools extraction attempts right now. Please wait and try again.',
             retry_after,
@@ -920,7 +941,7 @@ def tools_extract(app_ctx, request):
 
         usage = app_ctx.extract_token_usage(response)
         retry_attempts_total = _sum_retry_attempts(retry_tracker)
-        app_ctx.log_analytics_event(
+        analytics_events.log_analytics_event(
             'tools_extract_completed',
             source='backend',
             uid=uid,
@@ -938,6 +959,7 @@ def tools_extract(app_ctx, request):
                 'input_tokens': int(usage.get('input_tokens', 0) or 0),
                 'output_tokens': int(usage.get('output_tokens', 0) or 0),
             },
+            runtime=app_ctx,
         )
 
         app_ctx.save_job_log(
@@ -1000,7 +1022,7 @@ def tools_extract(app_ctx, request):
                 expected_floor=expected_floor,
             )
         retry_attempts_total = _sum_retry_attempts(retry_tracker)
-        app_ctx.log_analytics_event(
+        analytics_events.log_analytics_event(
             'tools_extract_failed',
             source='backend',
             uid=uid,
@@ -1017,6 +1039,7 @@ def tools_extract(app_ctx, request):
                 'retry_attempts': retry_attempts_total,
                 'credit_refund_method': credit_refund_method,
             },
+            runtime=app_ctx,
         )
         app_ctx.save_job_log(
             job_id,
@@ -1098,13 +1121,14 @@ def tools_export(app_ctx, request):
     docx_io.seek(0)
     base_name = _normalize_export_base_name(title)
 
-    app_ctx.log_analytics_event(
+    analytics_events.log_analytics_event(
         'tools_export_requested',
         source='backend',
         uid=uid,
         email=email,
         session_id=app_ctx.uuid.uuid4().hex,
         properties={'format': export_format},
+        runtime=app_ctx,
     )
     return app_ctx.send_file(
         docx_io,

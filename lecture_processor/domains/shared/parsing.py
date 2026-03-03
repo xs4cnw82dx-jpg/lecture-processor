@@ -1,10 +1,39 @@
-from lecture_processor.runtime import core
+from lecture_processor.runtime.container import get_runtime
 
-parse_requested_amount = core.parse_requested_amount
-parse_study_features = core.parse_study_features
-normalize_output_language_choice = core.normalize_output_language_choice
-parse_output_language = core.parse_output_language
-sanitize_output_language_pref_key = core.sanitize_output_language_pref_key
-sanitize_output_language_pref_custom = core.sanitize_output_language_pref_custom
-build_user_preferences_payload = core.build_user_preferences_payload
-parse_interview_features = core.parse_interview_features
+
+def _resolve_runtime(runtime=None):
+    if runtime is not None:
+        return runtime
+    return get_runtime()
+
+
+def parse_requested_amount(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).parse_requested_amount(*args, **kwargs)
+
+
+def parse_study_features(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).parse_study_features(*args, **kwargs)
+
+
+def normalize_output_language_choice(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).normalize_output_language_choice(*args, **kwargs)
+
+
+def parse_output_language(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).parse_output_language(*args, **kwargs)
+
+
+def sanitize_output_language_pref_key(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).sanitize_output_language_pref_key(*args, **kwargs)
+
+
+def sanitize_output_language_pref_custom(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).sanitize_output_language_pref_custom(*args, **kwargs)
+
+
+def build_user_preferences_payload(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).build_user_preferences_payload(*args, **kwargs)
+
+
+def parse_interview_features(*args, runtime=None, **kwargs):
+    return _resolve_runtime(runtime).parse_interview_features(*args, **kwargs)
