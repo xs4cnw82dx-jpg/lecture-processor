@@ -31,6 +31,13 @@ def tools_extract():
     return legacy_app.tools_extract_impl()
 
 
+@upload_bp.route('/api/tools/export', methods=['POST'])
+def tools_export():
+    from lecture_processor import legacy_app
+
+    return legacy_app.tools_export_impl()
+
+
 @upload_bp.route('/status/<job_id>')
 def get_status(job_id):
     from lecture_processor import legacy_app

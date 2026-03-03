@@ -25,6 +25,7 @@ let progressSyncTimer = null, progressSyncInFlight = false;
 let creatingDemoPack = false;
 let progressHydrationDone = false;
 let packAdvancedMetadataOpen = false, builderAdvancedMetadataOpen = false;
+let folderExamDatePicker = null;
 const audioSpeeds = [0.75, 1, 1.25, 1.5, 2];
 let difficultyFadeTimer = null, keyboardHintFadeTimer = null, notesFullscreenFadeTimer = null;
 const HINT_FADE_DELAY_MS = 10000;
@@ -92,6 +93,58 @@ function normalizeTimezoneName(value) {
   } catch (e) {
     return '';
   }
+}
+function formatDisplayDate(isoDate) {
+  var value = String(isoDate || '').trim();
+  var match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return '';
+  return match[3] + '-' + match[2] + '-' + match[1];
+}
+function parseDateInput(value) {
+  var raw = String(value || '').trim();
+  if (!raw) return '';
+  var match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    var date1 = new Date(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10));
+    if (date1.getFullYear() !== parseInt(match[1], 10) || (date1.getMonth() + 1) !== parseInt(match[2], 10) || date1.getDate() !== parseInt(match[3], 10)) {
+      return null;
+    }
+    return raw;
+  }
+  match = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (match) {
+    var day = parseInt(match[1], 10);
+    var month = parseInt(match[2], 10);
+    var year = parseInt(match[3], 10);
+    var date2 = new Date(year, month - 1, day);
+    if (date2.getFullYear() !== year || (date2.getMonth() + 1) !== month || date2.getDate() !== day) {
+      return null;
+    }
+    return year + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+  }
+  return null;
+}
+function setFolderExamDateValue(rawValue) {
+  if (!folderExamDateInput) return;
+  var normalized = parseDateInput(rawValue);
+  var isoDate = normalized === null ? '' : normalized;
+  if (folderExamDatePicker && typeof folderExamDatePicker.setDate === 'function') {
+    folderExamDatePicker.setDate(isoDate || null, true, 'Y-m-d');
+  } else {
+    folderExamDateInput.value = formatDisplayDate(isoDate);
+  }
+}
+function initFolderExamDatePicker() {
+  if (typeof flatpickr === 'undefined' || !folderExamDateInput) return;
+  if (folderExamDatePicker && typeof folderExamDatePicker.destroy === 'function') {
+    try { folderExamDatePicker.destroy(); } catch (e) { }
+  }
+  folderExamDatePicker = flatpickr(folderExamDateInput, {
+    dateFormat: 'd-m-Y',
+    allowInput: true,
+    disableMobile: true,
+    locale: { firstDayOfWeek: 1 },
+  });
 }
 function getDateStringInTimezone(ts, timezoneName) {
   var resolved = normalizeTimezoneName(timezoneName) || getBrowserTimezone();
@@ -1179,13 +1232,19 @@ function clearBuilderAutoSaveTimer() {
   }
 }
 function updateBuilderDirtyIndicator() {
+  if (!builderStatDirty) return;
   if (builderAutoSaving) {
     builderStatDirty.textContent = 'Saving...';
-    builderStatDirty.style.color = 'var(--gray-700)';
+    builderStatDirty.className = 'builder-status saving';
     return;
   }
-  builderStatDirty.textContent = builderDirty ? 'Yes' : 'No';
-  builderStatDirty.style.color = builderDirty ? '#991B1B' : 'var(--gray-900)';
+  if (builderDirty) {
+    builderStatDirty.textContent = 'Auto-save pending';
+    builderStatDirty.className = 'builder-status pending';
+    return;
+  }
+  builderStatDirty.textContent = 'Saved';
+  builderStatDirty.className = 'builder-status saved';
 }
 function scheduleBuilderAutoSave() {
   if (builderMode !== 'edit' || !builderDraft) { return; }
@@ -1201,7 +1260,7 @@ function scheduleBuilderAutoSave() {
     if (!builderOverlay.classList.contains('visible')) { return; }
     builderAutoSaving = true;
     updateBuilderDirtyIndicator();
-    saveBuilderPack(false, { silent: true, refreshAfterSave: false, skipAutoSave: true })
+    saveBuilderPack(false, { silent: true, refreshAfterSave: false, skipAutoSave: true, autoSavedToast: true })
       .finally(function () {
         builderAutoSaving = false;
         updateBuilderDirtyIndicator();
@@ -1480,6 +1539,8 @@ function saveBuilderPack(closeAfter, options) {
     markBuilderDirty(false, { skipAutoSave: true });
     if (!opts.silent) {
       showToast('Study pack saved.');
+    } else if (opts.autoSavedToast) {
+      showToast('Saved.', 'success');
     }
     if (closeAfter) {
       closeBuilderOverlay();
@@ -2308,7 +2369,7 @@ function updatePackSummary() {
   var imagesTipEl = document.getElementById('pack-images-tip');
   if (imagesTipEl) {
     imagesTipEl.textContent = selectedPack.notes_markdown
-      ? 'Tip: Some informative slide images may not appear in the generated notes. You can manually add any relevant slide images to your final document if desired.'
+      ? 'Tip: Informative slide images do not appear in the generated notes. You can manually add any relevant slide images to your final document if desired.'
       : '';
   }
 }
@@ -2619,7 +2680,7 @@ function openFolderModal(mode, folder) {
   folderSubjectInput.value = folder ? (folder.subject || '') : '';
   folderSemesterInput.value = folder ? (folder.semester || '') : '';
   folderBlockInput.value = folder ? (folder.block || '') : '';
-  folderExamDateInput.value = folder ? (folder.exam_date || '') : '';
+  setFolderExamDateValue(folder ? (folder.exam_date || '') : '');
   openModal(folderModalOverlay);
   setTimeout(function () { folderNameInput.focus(); }, 100);
 }
@@ -2629,10 +2690,16 @@ function closeFolderModal() {
   folderNameInput.value = ''; folderCourseInput.value = '';
   folderSubjectInput.value = ''; folderSemesterInput.value = '';
   folderBlockInput.value = '';
-  folderExamDateInput.value = '';
+  setFolderExamDateValue('');
 }
 function saveFolderFromModal() {
-  var payload = { name: folderNameInput.value.trim(), course: folderCourseInput.value.trim(), subject: folderSubjectInput.value.trim(), semester: folderSemesterInput.value.trim(), block: folderBlockInput.value.trim(), exam_date: folderExamDateInput.value || '' };
+  var normalizedExamDate = parseDateInput(folderExamDateInput.value);
+  if (normalizedExamDate === null) {
+    showToast('Use a valid date: dd-mm-yyyy or yyyy-mm-dd.', 'error');
+    folderExamDateInput.focus();
+    return;
+  }
+  var payload = { name: folderNameInput.value.trim(), course: folderCourseInput.value.trim(), subject: folderSubjectInput.value.trim(), semester: folderSemesterInput.value.trim(), block: folderBlockInput.value.trim(), exam_date: normalizedExamDate || '' };
   if (!payload.name) { showToast('Folder name is required.', 'error'); folderNameInput.focus(); return; }
   var promise;
   if (folderModalMode === 'edit' && editingFolderId) {
@@ -3283,13 +3350,8 @@ if (learnFlashcard3d) {
     var deltaY = touch.clientY - flashcardTouchStartY;
     if (Math.abs(deltaX) < 70 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
     suppressNextFlashcardTap = true;
-    if (deltaX < 0) {
-      applyCurrentFlashcardReviewAction('retry');
-      showToast('Marked Retry');
-    } else {
-      applyCurrentFlashcardReviewAction('good');
-      showToast('Marked Good');
-    }
+    doFlashcardSlide('next');
+    resetLearnHintVisibility();
   }, { passive: true });
 }
 
@@ -3698,16 +3760,53 @@ function downloadOriginalNotes() {
   downloadBlob(title + ' - Original.md', 'text/markdown', String(selectedPack.notes_markdown || ''));
   showToast('Original notes downloaded.');
 }
-function downloadAnnotatedNotes() {
+function downloadOriginalNotesDocx() {
+  if (!selectedPackId) {
+    showToast('No notes to download.', 'error');
+    return;
+  }
+  downloadStudyPackNotes(selectedPackId, 'docx').then(function () {
+    showToast('Original notes Word export started.');
+  }).catch(function (e) {
+    showToast(e.message || 'Could not export Word file.', 'error');
+  });
+}
+function downloadAnnotatedNotesPdf() {
   if (!notesView || !notesView.innerHTML.trim()) {
     showToast('No notes to download.', 'error');
     return;
   }
   var title = (selectedPack && selectedPack.title) ? selectedPack.title : 'Study Notes';
   var filename = title.replace(/[^a-zA-Z0-9 _-]/g, '').substring(0, 60).trim() || 'Study Notes';
+  if (window.html2pdf) {
+    var exportRoot = document.createElement('div');
+    exportRoot.style.padding = '0';
+    exportRoot.style.margin = '0';
+    exportRoot.style.background = '#ffffff';
+    exportRoot.style.color = '#111827';
+    exportRoot.style.fontFamily = 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    exportRoot.innerHTML = '<h1 style="font-size:24px;line-height:1.2;margin:0 0 14px 0;">' + escapeHtml(title) + '</h1>' + notesView.innerHTML;
+    document.body.appendChild(exportRoot);
+    var options = {
+      margin: [10, 10, 10, 10],
+      filename: filename + ' - Annotated.pdf',
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['css', 'legacy'] }
+    };
+    window.html2pdf().set(options).from(exportRoot).save().then(function () {
+      document.body.removeChild(exportRoot);
+      showToast('Annotated notes downloaded as PDF.');
+    }).catch(function () {
+      if (document.body.contains(exportRoot)) { document.body.removeChild(exportRoot); }
+      showToast('Could not export annotated PDF.', 'error');
+    });
+    return;
+  }
   var htmlDoc = buildNotesHtmlDocument(title, notesView.innerHTML);
   downloadBlob(filename + ' - Annotated.html', 'text/html', htmlDoc);
-  showToast('Annotated notes downloaded.');
+  showToast('Annotated notes downloaded as HTML (PDF export unavailable).');
 }
 function ensureHighlightDownloadMenu() {
   if (hlDownloadMenu || !hlToolbar) return hlDownloadMenu;
@@ -3721,15 +3820,24 @@ function ensureHighlightDownloadMenu() {
     hlDownloadMenu.classList.remove('visible');
     downloadOriginalNotes();
   });
+  var originalDocxBtn = document.createElement('button');
+  originalDocxBtn.type = 'button';
+  originalDocxBtn.className = 'hl-download-item';
+  originalDocxBtn.textContent = 'Download Original Notes (.docx)';
+  originalDocxBtn.addEventListener('click', function () {
+    hlDownloadMenu.classList.remove('visible');
+    downloadOriginalNotesDocx();
+  });
   var annotatedBtn = document.createElement('button');
   annotatedBtn.type = 'button';
   annotatedBtn.className = 'hl-download-item';
-  annotatedBtn.textContent = 'Download Annotated Notes (.html)';
+  annotatedBtn.textContent = 'Download Annotated Notes (.pdf)';
   annotatedBtn.addEventListener('click', function () {
     hlDownloadMenu.classList.remove('visible');
-    downloadAnnotatedNotes();
+    downloadAnnotatedNotesPdf();
   });
   hlDownloadMenu.appendChild(originalBtn);
+  hlDownloadMenu.appendChild(originalDocxBtn);
   hlDownloadMenu.appendChild(annotatedBtn);
   hlToolbar.appendChild(hlDownloadMenu);
   document.addEventListener('click', function (e) {
@@ -3770,4 +3878,5 @@ document.addEventListener('keydown', function (e) {
     undoHighlightChange();
   }
 });
+initFolderExamDatePicker();
 updateHighlightHistoryButtons();
