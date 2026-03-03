@@ -74,12 +74,28 @@
       return d;
     }
 
+    function preferredLocales() {
+      if (Array.isArray(navigator.languages) && navigator.languages.length) {
+        return navigator.languages.filter(Boolean);
+      }
+      if (navigator.language) return [navigator.language];
+      return ['en-US'];
+    }
+
+    function formatLocaleDate(date, options) {
+      try {
+        return new Intl.DateTimeFormat(preferredLocales(), options).format(date);
+      } catch (_) {
+        return new Intl.DateTimeFormat('en-US', options).format(date);
+      }
+    }
+
     function formatDayName(date) {
-      return new Intl.DateTimeFormat('en-GB', { weekday: 'short' }).format(date);
+      return formatLocaleDate(date, { weekday: 'short' });
     }
 
     function formatLongDate(date) {
-      return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(date);
+      return formatLocaleDate(date, { day: '2-digit', month: 'short', year: 'numeric' });
     }
 
     function formatTimeDisplay(value) {
