@@ -1,5 +1,4 @@
 from lecture_processor.runtime.container import get_runtime
-from lecture_processor.services import admin_api_service, upload_api_service
 
 
 def _resolve_runtime(runtime=None):
@@ -62,8 +61,3 @@ def build_admin_funnel_daily_rows(*args, runtime=None, **kwargs):
 
 def get_model_pricing_config(*args, runtime=None, **kwargs):
     return _resolve_runtime(runtime).get_model_pricing_config(*args, **kwargs)
-
-
-admin_prompts = admin_api_service.admin_prompts
-processing_estimate = upload_api_service.processing_estimate
-processing_averages = upload_api_service.processing_averages

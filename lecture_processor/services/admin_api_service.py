@@ -1,5 +1,7 @@
 """Business logic handlers for admin APIs."""
 
+from lecture_processor.domains.admin import metrics as admin_metrics
+
 
 def sanitize_csv_cell(value):
     if value is None:
@@ -24,37 +26,44 @@ def admin_overview(app_ctx, request):
         return app_ctx.jsonify({'error': 'Forbidden'}), 403
 
     try:
-        window_key, window_seconds = app_ctx.get_admin_window(request.args.get('window', '7d'))
+        window_key, window_seconds = admin_metrics.get_admin_window(
+            request.args.get('window', '7d'),
+            runtime=app_ctx,
+        )
         now_ts = app_ctx.time.time()
         window_start = now_ts - window_seconds
 
-        total_users = app_ctx.safe_count_collection('users')
-        new_users = app_ctx.safe_count_window('users', 'created_at', window_start)
-        total_processed = app_ctx.safe_count_collection('job_logs')
+        total_users = admin_metrics.safe_count_collection('users', runtime=app_ctx)
+        new_users = admin_metrics.safe_count_window('users', 'created_at', window_start, runtime=app_ctx)
+        total_processed = admin_metrics.safe_count_collection('job_logs', runtime=app_ctx)
 
-        filtered_purchases_docs = app_ctx.safe_query_docs_in_window(
+        filtered_purchases_docs = admin_metrics.safe_query_docs_in_window(
             collection_name='purchases',
             timestamp_field='created_at',
             window_start=window_start,
             window_end=now_ts,
+            runtime=app_ctx,
         )
-        filtered_jobs_docs = app_ctx.safe_query_docs_in_window(
+        filtered_jobs_docs = admin_metrics.safe_query_docs_in_window(
             collection_name='job_logs',
             timestamp_field='finished_at',
             window_start=window_start,
             window_end=now_ts,
+            runtime=app_ctx,
         )
-        filtered_analytics_docs = app_ctx.safe_query_docs_in_window(
+        filtered_analytics_docs = admin_metrics.safe_query_docs_in_window(
             collection_name='analytics_events',
             timestamp_field='created_at',
             window_start=window_start,
             window_end=now_ts,
+            runtime=app_ctx,
         )
-        filtered_rate_limit_docs = app_ctx.safe_query_docs_in_window(
+        filtered_rate_limit_docs = admin_metrics.safe_query_docs_in_window(
             collection_name='rate_limit_logs',
             timestamp_field='created_at',
             window_start=window_start,
             window_end=now_ts,
+            runtime=app_ctx,
         )
 
         total_revenue_cents = 0
@@ -89,7 +98,11 @@ def admin_overview(app_ctx, request):
 
         avg_duration_seconds = round(sum(durations) / len(durations), 1) if durations else 0
 
-        funnel_steps, analytics_event_count = app_ctx.build_admin_funnel_steps(filtered_analytics_docs, window_start)
+        funnel_steps, analytics_event_count = admin_metrics.build_admin_funnel_steps(
+            filtered_analytics_docs,
+            window_start,
+            runtime=app_ctx,
+        )
         rate_limit_counts = {'upload': 0, 'checkout': 0, 'analytics': 0, 'tools': 0}
         for doc in filtered_rate_limit_docs:
             entry = doc.to_dict() or {}
@@ -103,7 +116,7 @@ def admin_overview(app_ctx, request):
             rate_limit_entries.append(entry)
         recent_rate_limits_sorted = sorted(
             rate_limit_entries,
-            key=lambda entry: app_ctx.get_timestamp(entry.get('created_at')),
+            key=lambda entry: admin_metrics.get_timestamp(entry.get('created_at'), runtime=app_ctx),
             reverse=True,
         )[:20]
         recent_rate_limits = []
@@ -135,7 +148,7 @@ def admin_overview(app_ctx, request):
 
         recent_jobs_sorted = sorted(
             filtered_jobs,
-            key=lambda j: app_ctx.get_timestamp(j.get('finished_at')),
+            key=lambda j: admin_metrics.get_timestamp(j.get('finished_at'), runtime=app_ctx),
             reverse=True
         )[:20]
         recent_jobs = []
@@ -161,7 +174,7 @@ def admin_overview(app_ctx, request):
 
         recent_purchases_sorted = sorted(
             filtered_purchases,
-            key=lambda p: app_ctx.get_timestamp(p.get('created_at')),
+            key=lambda p: admin_metrics.get_timestamp(p.get('created_at'), runtime=app_ctx),
             reverse=True
         )[:20]
         recent_purchases = []
@@ -174,13 +187,17 @@ def admin_overview(app_ctx, request):
                 'created_at': purchase.get('created_at', 0),
             })
 
-        trend_labels, trend_keys, trend_granularity = app_ctx.build_time_buckets(window_key, now_ts)
+        trend_labels, trend_keys, trend_granularity = admin_metrics.build_time_buckets(
+            window_key,
+            now_ts,
+            runtime=app_ctx,
+        )
         success_by_bucket = {key: {'complete': 0, 'error': 0} for key in trend_keys}
         revenue_by_bucket = {key: 0 for key in trend_keys}
 
         for job in filtered_jobs:
-            timestamp = app_ctx.get_timestamp(job.get('finished_at'))
-            bucket_key = app_ctx.get_bucket_key(timestamp, window_key)
+            timestamp = admin_metrics.get_timestamp(job.get('finished_at'), runtime=app_ctx)
+            bucket_key = admin_metrics.get_bucket_key(timestamp, window_key, runtime=app_ctx)
             if bucket_key not in success_by_bucket:
                 continue
             status = job.get('status', '')
@@ -190,8 +207,8 @@ def admin_overview(app_ctx, request):
                 success_by_bucket[bucket_key]['error'] += 1
 
         for purchase in filtered_purchases:
-            timestamp = app_ctx.get_timestamp(purchase.get('created_at'))
-            bucket_key = app_ctx.get_bucket_key(timestamp, window_key)
+            timestamp = admin_metrics.get_timestamp(purchase.get('created_at'), runtime=app_ctx)
+            bucket_key = admin_metrics.get_bucket_key(timestamp, window_key, runtime=app_ctx)
             if bucket_key not in revenue_by_bucket:
                 continue
             revenue_by_bucket[bucket_key] += purchase.get('price_cents', 0) or 0
@@ -243,9 +260,9 @@ def admin_overview(app_ctx, request):
             'recent_jobs': recent_jobs,
             'recent_purchases': recent_purchases,
             'recent_rate_limits': recent_rate_limits,
-            'data_warnings': app_ctx.get_admin_data_warnings(),
-            'deployment': app_ctx.build_admin_deployment_info(request.host),
-            'runtime_checks': app_ctx.build_admin_runtime_checks(),
+            'data_warnings': admin_metrics.get_admin_data_warnings(runtime=app_ctx),
+            'deployment': admin_metrics.build_admin_deployment_info(request.host, runtime=app_ctx),
+            'runtime_checks': admin_metrics.build_admin_runtime_checks(runtime=app_ctx),
         })
     except Exception as e:
         app_ctx.logger.error(f"Error fetching admin overview: {e}")
@@ -263,7 +280,10 @@ def admin_export(app_ctx, request):
     if export_type not in {'jobs', 'purchases', 'funnel', 'funnel-daily'}:
         return app_ctx.jsonify({'error': 'Invalid export type'}), 400
 
-    window_key, window_seconds = app_ctx.get_admin_window(request.args.get('window', '7d'))
+    window_key, window_seconds = admin_metrics.get_admin_window(
+        request.args.get('window', '7d'),
+        runtime=app_ctx,
+    )
     now_ts = app_ctx.time.time()
     window_start = now_ts - window_seconds
 
@@ -279,12 +299,13 @@ def admin_export(app_ctx, request):
                 'credit_refund_method',
                 'credit_refunded', 'error_message', 'started_at', 'finished_at', 'duration_seconds'
             ]
-            docs = app_ctx.safe_query_docs_in_window(
+            docs = admin_metrics.safe_query_docs_in_window(
                 collection_name='job_logs',
                 timestamp_field='finished_at',
                 window_start=window_start,
                 window_end=now_ts,
                 order_desc=True,
+                runtime=app_ctx,
             )
             for doc in docs:
                 job = doc.to_dict() or {}
@@ -314,12 +335,13 @@ def admin_export(app_ctx, request):
                 'uid', 'bundle_id', 'bundle_name', 'price_cents', 'currency',
                 'credits', 'stripe_session_id', 'created_at'
             ]
-            docs = app_ctx.safe_query_docs_in_window(
+            docs = admin_metrics.safe_query_docs_in_window(
                 collection_name='purchases',
                 timestamp_field='created_at',
                 window_start=window_start,
                 window_end=now_ts,
                 order_desc=True,
+                runtime=app_ctx,
             )
             for doc in docs:
                 purchase = doc.to_dict() or {}
@@ -335,12 +357,13 @@ def admin_export(app_ctx, request):
                 ]
             return
 
-        analytics_docs = app_ctx.safe_query_docs_in_window(
+        analytics_docs = admin_metrics.safe_query_docs_in_window(
             collection_name='analytics_events',
             timestamp_field='created_at',
             window_start=window_start,
             window_end=now_ts,
             order_desc=False,
+            runtime=app_ctx,
         )
 
         if export_type == 'funnel':
@@ -354,7 +377,11 @@ def admin_export(app_ctx, request):
                 'window_end',
                 'generated_at',
             ]
-            funnel_steps, _ = app_ctx.build_admin_funnel_steps(analytics_docs, window_start)
+            funnel_steps, _ = admin_metrics.build_admin_funnel_steps(
+                analytics_docs,
+                window_start,
+                runtime=app_ctx,
+            )
             generated_at = now_ts
             for step in funnel_steps:
                 yield [
@@ -382,11 +409,12 @@ def admin_export(app_ctx, request):
             'window_end',
             'generated_at',
         ]
-        daily_rows, granularity = app_ctx.build_admin_funnel_daily_rows(
+        daily_rows, granularity = admin_metrics.build_admin_funnel_daily_rows(
             analytics_docs=analytics_docs,
             window_start=window_start,
             window_key=window_key,
             now_ts=now_ts,
+            runtime=app_ctx,
         )
         generated_at = now_ts
         for row in daily_rows:
@@ -441,7 +469,7 @@ def admin_model_pricing(app_ctx, request):
         return app_ctx.jsonify({'error': 'Forbidden'}), 403
 
     try:
-        payload = app_ctx.get_model_pricing_config()
+        payload = admin_metrics.get_model_pricing_config(runtime=app_ctx)
     except Exception as error:
         app_ctx.logger.error(f"Error loading model pricing config: {error}")
         return app_ctx.jsonify({'error': 'Could not load model pricing configuration'}), 500

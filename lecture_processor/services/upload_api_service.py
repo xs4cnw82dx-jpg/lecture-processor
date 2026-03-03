@@ -1,14 +1,18 @@
 """Business logic handlers for upload/status/download APIs."""
 
 from lecture_processor.domains.auth import policy as auth_policy
+from lecture_processor.domains.admin import metrics as admin_metrics
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.analytics import events as analytics_events
+from lecture_processor.domains.ai import provider as ai_provider
+from lecture_processor.domains.ai import pipelines as ai_pipelines
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.rate_limit import quotas as rate_limit_quotas
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.shared import parsing as shared_parsing
+from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 
 
@@ -597,7 +601,11 @@ def upload_files(app_ctx, request):
                 return app_ctx.jsonify({'error': token_error}), 400
         total_steps = 4 if study_features != 'none' else 3
         runtime_jobs_store.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round(((pdf_size if pdf_size > 0 else 0) + audio_size) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
-        thread = app_ctx.threading.Thread(target=app_ctx.process_lecture_notes, args=(job_id, pdf_path, audio_path))
+        thread = app_ctx.threading.Thread(
+            target=ai_pipelines.process_lecture_notes,
+            args=(job_id, pdf_path, audio_path),
+            kwargs={'runtime': app_ctx},
+        )
         thread.start()
 
     elif mode == 'slides-only':
@@ -619,7 +627,11 @@ def upload_files(app_ctx, request):
             return app_ctx.jsonify({'error': 'No text extraction credits remaining.'}), 402
         total_steps = 2 if study_features != 'none' else 1
         runtime_jobs_store.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round((pdf_size if pdf_size > 0 else 0) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
-        thread = app_ctx.threading.Thread(target=app_ctx.process_slides_only, args=(job_id, pdf_path))
+        thread = app_ctx.threading.Thread(
+            target=ai_pipelines.process_slides_only,
+            args=(job_id, pdf_path),
+            kwargs={'runtime': app_ctx},
+        )
         thread.start()
 
     elif mode == 'interview':
@@ -720,7 +732,11 @@ def upload_files(app_ctx, request):
             'file_size_mb': round(audio_size / (1024 * 1024), 2),
             'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1, 'slides_credits': interview_features_cost}, runtime=app_ctx),
         }, runtime=app_ctx)
-        thread = app_ctx.threading.Thread(target=app_ctx.process_interview_transcription, args=(job_id, audio_path))
+        thread = app_ctx.threading.Thread(
+            target=ai_pipelines.process_interview_transcription,
+            args=(job_id, audio_path),
+            kwargs={'runtime': app_ctx},
+        )
         thread.start()
     else:
         return app_ctx.jsonify({'error': 'Invalid mode selected'}), 400
@@ -903,7 +919,7 @@ def tools_extract(app_ctx, request):
             else:
                 source_block_title = 'Source content extracted from DOCX:'
                 operation_name = 'tools_extract_document_docx'
-            response = app_ctx.generate_with_policy(
+            response = ai_provider.generate_with_policy(
                 app_ctx.MODEL_TOOLS,
                 [app_ctx.types.Content(role='user', parts=[
                     app_ctx.types.Part.from_text(text=prompt),
@@ -912,22 +928,25 @@ def tools_extract(app_ctx, request):
                 max_output_tokens=32768,
                 retry_tracker=retry_tracker,
                 operation_name=operation_name,
+                runtime=app_ctx,
             )
         else:
-            uploaded_provider_file = app_ctx.run_with_provider_retry(
+            uploaded_provider_file = ai_provider.run_with_provider_retry(
                 'tools_file_upload',
                 lambda: app_ctx.client.files.upload(file=upload_path, config={'mime_type': upload_mime_type}),
                 retry_tracker=retry_tracker,
+                runtime=app_ctx,
             )
             gemini_files.append(uploaded_provider_file)
 
-            app_ctx.run_with_provider_retry(
+            ai_provider.run_with_provider_retry(
                 'tools_file_processing',
                 lambda: app_ctx.wait_for_file_processing(uploaded_provider_file),
                 retry_tracker=retry_tracker,
+                runtime=app_ctx,
             )
 
-            response = app_ctx.generate_with_policy(
+            response = ai_provider.generate_with_policy(
                 app_ctx.MODEL_TOOLS,
                 [app_ctx.types.Content(role='user', parts=[
                     app_ctx.types.Part.from_uri(file_uri=uploaded_provider_file.uri, mime_type=upload_mime_type),
@@ -936,12 +955,13 @@ def tools_extract(app_ctx, request):
                 max_output_tokens=32768,
                 retry_tracker=retry_tracker,
                 operation_name=f'tools_extract_{source_type}',
+                runtime=app_ctx,
             )
         extracted_markdown = str(getattr(response, 'text', '') or '').strip()
         if not extracted_markdown:
             raise ValueError('Extraction returned empty output')
 
-        usage = app_ctx.extract_token_usage(response)
+        usage = ai_provider.extract_token_usage(response, runtime=app_ctx)
         retry_attempts_total = _sum_retry_attempts(retry_tracker)
         analytics_events.log_analytics_event(
             'tools_extract_completed',
@@ -1013,7 +1033,7 @@ def tools_extract(app_ctx, request):
             },
         })
     except Exception as error:
-        provider_error_code = app_ctx.classify_provider_error_code(error)
+        provider_error_code = ai_provider.classify_provider_error_code(error, runtime=app_ctx)
         app_ctx.logger.exception("Tools extraction failed for user %s source=%s", uid, source_type)
         if deducted_credit and not refunded_credit:
             expected_floor = user_text_credits_before if deducted_credit == 'slides_credits' else None
@@ -1117,7 +1137,7 @@ def tools_export(app_ctx, request):
         return app_ctx.jsonify({'error': 'Export content is too large. Please shorten the result and retry.'}), 400
 
     export_markdown = _normalize_tools_markdown_for_export(markdown)
-    doc = app_ctx.markdown_to_docx(export_markdown, title or 'Tools Extract')
+    doc = study_export.markdown_to_docx(export_markdown, title or 'Tools Extract', runtime=app_ctx)
     docx_io = app_ctx.io.BytesIO()
     doc.save(docx_io)
     docx_io.seek(0)
@@ -1236,7 +1256,7 @@ def download_docx(app_ctx, request, job_id):
         else:
             filename, title = 'interview-transcript.docx', 'Interview Transcript'
 
-    doc = app_ctx.markdown_to_docx(content, title)
+    doc = study_export.markdown_to_docx(content, title, runtime=app_ctx)
     docx_io = app_ctx.io.BytesIO()
     doc.save(docx_io)
     docx_io.seek(0)
@@ -1376,7 +1396,14 @@ def processing_estimate(app_ctx, request):
     )
     requested_bucket = _estimate_size_bucket(total_mb)
     window_start = app_ctx.time.time() - 30 * 86400
-    docs = app_ctx.safe_query_docs_in_window('job_logs', 'finished_at', window_start, order_desc=True, limit=600)
+    docs = admin_metrics.safe_query_docs_in_window(
+        collection_name='job_logs',
+        timestamp_field='finished_at',
+        window_start=window_start,
+        order_desc=True,
+        limit=600,
+        runtime=app_ctx,
+    )
 
     strict = []
     feature_only = []

@@ -11,6 +11,7 @@ from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.shared import parsing as shared_parsing
+from lecture_processor.domains.study import audio as study_audio
 
 
 def create_admin_session(app_ctx, request):
@@ -355,7 +356,7 @@ def delete_account_data(app_ctx, request):
             if job_id:
                 job_ids.add(job_id)
 
-            if app_ctx.remove_pack_audio_file(pack):
+            if study_audio.remove_pack_audio_file(pack, runtime=app_ctx):
                 deleted_pack_audio_files += 1
 
             try:
