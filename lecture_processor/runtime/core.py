@@ -1,4 +1,4 @@
-"""Core runtime logic extracted from legacy_app without route/decorator bindings."""
+"""Core runtime logic shared across blueprints and service modules."""
 
 import os
 
@@ -2982,7 +2982,7 @@ def processing_estimate_impl():
     return jsonify(response)
 
 def processing_averages_impl():
-    """Legacy endpoint kept for compatibility. Requires auth and returns coarse averages."""
+    """Endpoint helper that requires auth and returns coarse processing averages."""
     decoded_token = verify_firebase_token(request)
     if not decoded_token:
         return (jsonify({'error': 'Unauthorized'}), 401)

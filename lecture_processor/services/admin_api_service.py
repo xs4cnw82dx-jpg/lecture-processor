@@ -420,6 +420,19 @@ def admin_export(app_ctx, request):
         return app_ctx.jsonify({'error': 'Could not export CSV'}), 500
 
 
+def admin_prompts(app_ctx, request):
+    decoded_token = app_ctx.verify_firebase_token(request)
+    if not decoded_token:
+        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    if not app_ctx.is_admin_user(decoded_token):
+        return app_ctx.jsonify({'error': 'Forbidden'}), 403
+
+    fmt = request.args.get('format', 'json')
+    if fmt == 'markdown':
+        return app_ctx.jsonify({'markdown': app_ctx.get_prompt_inventory_markdown()})
+    return app_ctx.jsonify({'prompts': app_ctx.get_prompt_inventory()})
+
+
 def admin_model_pricing(app_ctx, request):
     decoded_token = app_ctx.verify_firebase_token(request)
     if not decoded_token:

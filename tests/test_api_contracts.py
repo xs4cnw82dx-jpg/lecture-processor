@@ -103,6 +103,18 @@ def test_admin_overview_contract_fields(client, monkeypatch):
     assert "recent_purchases" in data
 
 
+def test_admin_prompts_markdown_contract(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
+    monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)
+    monkeypatch.setattr(core, "get_prompt_inventory_markdown", lambda: "# Prompt Inventory")
+
+    response = client.get("/api/admin/prompts?format=markdown")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload.get("markdown") == "# Prompt Inventory"
+
+
 def test_admin_route_requires_server_session_cookie(client):
     response = client.get("/admin", follow_redirects=False)
     assert response.status_code in {302, 301}
