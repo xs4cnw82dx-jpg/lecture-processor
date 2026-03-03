@@ -19,7 +19,7 @@ def create_app():
     app = core.app
     init_extensions(app)
 
-    settings = load_runtime_settings()
+    settings = load_runtime_settings(config=config)
     runtime = build_runtime(app, settings)
     state = app.extensions.setdefault('lecture_processor', {})
 
