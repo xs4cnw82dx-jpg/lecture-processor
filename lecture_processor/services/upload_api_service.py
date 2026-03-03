@@ -1,9 +1,17 @@
 """Business logic handlers for upload/status/download APIs."""
 
 
-def _build_tools_prompt(source_type):
+def _sanitize_tools_custom_prompt(raw_prompt, max_chars=6000):
+    text = str(raw_prompt or '').strip()
+    if not text:
+        return ''
+    text = ' '.join(text.split())
+    return text[:max_chars]
+
+
+def _build_tools_prompt(source_type, custom_prompt=''):
     if source_type == 'image':
-        return (
+        base_prompt = (
             "You are a study extraction assistant.\n"
             "Read the uploaded image and return structured markdown only.\n"
             "Output sections in this order:\n"
@@ -11,18 +19,61 @@ def _build_tools_prompt(source_type):
             "2. # Structured Notes (clean bullet points)\n"
             "3. # Key Terms (term: concise definition)\n"
             "4. # Open Questions (uncertain or ambiguous parts)\n"
-            "Do not fabricate details. If text is unreadable, say so explicitly."
+            "Do not fabricate details. If text is unreadable, say so explicitly.\n"
+            "Use maximum available reasoning depth for Gemini 2.5 Flash Lite."
         )
+    else:
+        base_prompt = (
+            "You are a study extraction assistant.\n"
+            "Read the uploaded document and return structured markdown only.\n"
+            "Output sections in this order:\n"
+            "1. # Extracted Outline\n"
+            "2. # Detailed Notes\n"
+            "3. # Key Terms (term: concise definition)\n"
+            "4. # Review Questions\n"
+            "Preserve important formulas, lists, and headings. Do not invent missing content.\n"
+            "Use maximum available reasoning depth for Gemini 2.5 Flash Lite."
+        )
+    sanitized_custom = _sanitize_tools_custom_prompt(custom_prompt)
+    if not sanitized_custom:
+        return base_prompt
     return (
-        "You are a study extraction assistant.\n"
-        "Read the uploaded document and return structured markdown only.\n"
-        "Output sections in this order:\n"
-        "1. # Extracted Outline\n"
-        "2. # Detailed Notes\n"
-        "3. # Key Terms (term: concise definition)\n"
-        "4. # Review Questions\n"
-        "Preserve important formulas, lists, and headings. Do not invent missing content."
+        f"{base_prompt}\n\n"
+        "Additional user instruction (follow this if it does not conflict with source facts):\n"
+        f"{sanitized_custom}"
     )
+
+
+def _extract_docx_text(app_ctx, docx_path, max_chars=180000):
+    try:
+        document = app_ctx.Document(docx_path)
+    except Exception:
+        return '', 'Uploaded DOCX file is invalid or unreadable.'
+    chunks = []
+    total_chars = 0
+    for paragraph in getattr(document, 'paragraphs', []) or []:
+        text = str(getattr(paragraph, 'text', '') or '').strip()
+        if not text:
+            continue
+        chunks.append(text)
+        total_chars += len(text)
+        if total_chars >= max_chars:
+            break
+    merged = '\n\n'.join(chunks).strip()
+    if not merged:
+        return '', 'DOCX appears to be empty. Please upload a document with readable text.'
+    return merged[:max_chars], None
+
+
+def _sum_retry_attempts(retry_tracker):
+    return sum(int(v or 0) for v in (retry_tracker or {}).values())
+
+
+def _normalize_export_base_name(raw_title):
+    title = str(raw_title or '').strip() or 'tools-extract'
+    safe = ''.join(ch if ch.isalnum() or ch in ('-', '_') else '-' for ch in title.lower())
+    safe = '-'.join(part for part in safe.split('-') if part)
+    return safe[:80] or 'tools-extract'
 
 
 def _detect_tools_source_type(app_ctx, uploaded_file, requested_source):
@@ -39,7 +90,7 @@ def _detect_tools_source_type(app_ctx, uploaded_file, requested_source):
 
     if requested == 'document':
         if not is_doc:
-            return None, extension, mime_type, 'Please upload a PDF or PPTX document for Document Reader.'
+            return None, extension, mime_type, 'Please upload a PDF, PPTX, or DOCX document for Document Reader.'
         return 'document', extension, mime_type, None
     if requested == 'image':
         if not is_image:
@@ -50,7 +101,7 @@ def _detect_tools_source_type(app_ctx, uploaded_file, requested_source):
         return 'document', extension, mime_type, None
     if is_image:
         return 'image', extension, mime_type, None
-    return None, extension, mime_type, 'Unsupported file type. Upload PDF, PPTX, PNG, JPG, JPEG, WEBP, HEIC, or HEIF.'
+    return None, extension, mime_type, 'Unsupported file type. Upload PDF, PPTX, DOCX, PNG, JPG, JPEG, WEBP, HEIC, or HEIF.'
 
 
 def import_audio_from_url(app_ctx, request):
@@ -397,6 +448,7 @@ def tools_extract(app_ctx, request):
         return app_ctx.jsonify({'error': 'Please choose a file before running extraction.'}), 400
 
     requested_source = request.form.get('source_type', request.form.get('source', 'auto'))
+    custom_prompt = _sanitize_tools_custom_prompt(request.form.get('custom_prompt', ''))
     source_type, extension, mime_type, detect_error = _detect_tools_source_type(
         app_ctx,
         uploaded_file,
@@ -414,25 +466,48 @@ def tools_extract(app_ctx, request):
     provider_error_code = ''
     extracted_markdown = ''
     normalized_input_name = ''
+    docx_text = ''
+    upload_mime_type = ''
+    upload_path = ''
+    uploaded_provider_file = None
 
     try:
         if source_type == 'document':
             if mime_type and mime_type not in app_ctx.ALLOWED_TOOLS_DOC_MIME_TYPES:
                 return app_ctx.jsonify({'error': 'Unsupported document content type for tools extraction.'}), 400
-            pdf_path, slides_error = app_ctx.resolve_uploaded_slides_to_pdf(uploaded_file, f"tools_{job_id}")
-            if slides_error:
-                return app_ctx.jsonify({'error': slides_error}), 400
-            local_paths.append(pdf_path)
-            normalized_input_name = app_ctx.os.path.basename(pdf_path)
-            saved_size = app_ctx.get_saved_file_size(pdf_path)
-            if saved_size <= 0 or saved_size > app_ctx.MAX_TOOLS_DOCUMENT_BYTES:
-                app_ctx.cleanup_files(local_paths, gemini_files)
-                local_paths = []
-                return app_ctx.jsonify({
-                    'error': f'Document exceeds size limit ({int(app_ctx.MAX_TOOLS_DOCUMENT_BYTES / (1024 * 1024))} MB max) or is empty.'
-                }), 400
-            upload_mime_type = 'application/pdf'
-            upload_path = pdf_path
+            if extension == 'docx':
+                safe_name = app_ctx.secure_filename(uploaded_file.filename)
+                source_docx_path = app_ctx.os.path.join(app_ctx.UPLOAD_FOLDER, f"tools_{job_id}_{safe_name}")
+                uploaded_file.save(source_docx_path)
+                local_paths.append(source_docx_path)
+                normalized_input_name = app_ctx.os.path.basename(source_docx_path)
+                saved_size = app_ctx.get_saved_file_size(source_docx_path)
+                if saved_size <= 0 or saved_size > app_ctx.MAX_TOOLS_DOCUMENT_BYTES:
+                    app_ctx.cleanup_files(local_paths, gemini_files)
+                    local_paths = []
+                    return app_ctx.jsonify({
+                        'error': f'Document exceeds size limit ({int(app_ctx.MAX_TOOLS_DOCUMENT_BYTES / (1024 * 1024))} MB max) or is empty.'
+                    }), 400
+                docx_text, docx_error = _extract_docx_text(app_ctx, source_docx_path)
+                if docx_error:
+                    app_ctx.cleanup_files(local_paths, gemini_files)
+                    local_paths = []
+                    return app_ctx.jsonify({'error': docx_error}), 400
+            else:
+                pdf_path, slides_error = app_ctx.resolve_uploaded_slides_to_pdf(uploaded_file, f"tools_{job_id}")
+                if slides_error:
+                    return app_ctx.jsonify({'error': slides_error}), 400
+                local_paths.append(pdf_path)
+                normalized_input_name = app_ctx.os.path.basename(pdf_path)
+                saved_size = app_ctx.get_saved_file_size(pdf_path)
+                if saved_size <= 0 or saved_size > app_ctx.MAX_TOOLS_DOCUMENT_BYTES:
+                    app_ctx.cleanup_files(local_paths, gemini_files)
+                    local_paths = []
+                    return app_ctx.jsonify({
+                        'error': f'Document exceeds size limit ({int(app_ctx.MAX_TOOLS_DOCUMENT_BYTES / (1024 * 1024))} MB max) or is empty.'
+                    }), 400
+                upload_mime_type = 'application/pdf'
+                upload_path = pdf_path
         else:
             if mime_type and mime_type not in app_ctx.ALLOWED_TOOLS_IMAGE_MIME_TYPES:
                 return app_ctx.jsonify({'error': 'Unsupported image content type for tools extraction.'}), 400
@@ -457,30 +532,42 @@ def tools_extract(app_ctx, request):
         if not deducted_credit:
             return app_ctx.jsonify({'error': 'No slides credits remaining.'}), 402
 
-        uploaded_provider_file = app_ctx.run_with_provider_retry(
-            'tools_file_upload',
-            lambda: app_ctx.client.files.upload(file=upload_path, config={'mime_type': upload_mime_type}),
-            retry_tracker=retry_tracker,
-        )
-        gemini_files.append(uploaded_provider_file)
+        prompt = _build_tools_prompt(source_type, custom_prompt)
+        if docx_text:
+            response = app_ctx.generate_with_policy(
+                app_ctx.MODEL_TOOLS,
+                [app_ctx.types.Content(role='user', parts=[
+                    app_ctx.types.Part.from_text(text=prompt),
+                    app_ctx.types.Part.from_text(text=f"Source content extracted from DOCX:\n\n{docx_text}"),
+                ])],
+                max_output_tokens=32768,
+                retry_tracker=retry_tracker,
+                operation_name='tools_extract_document_docx',
+            )
+        else:
+            uploaded_provider_file = app_ctx.run_with_provider_retry(
+                'tools_file_upload',
+                lambda: app_ctx.client.files.upload(file=upload_path, config={'mime_type': upload_mime_type}),
+                retry_tracker=retry_tracker,
+            )
+            gemini_files.append(uploaded_provider_file)
 
-        app_ctx.run_with_provider_retry(
-            'tools_file_processing',
-            lambda: app_ctx.wait_for_file_processing(uploaded_provider_file),
-            retry_tracker=retry_tracker,
-        )
+            app_ctx.run_with_provider_retry(
+                'tools_file_processing',
+                lambda: app_ctx.wait_for_file_processing(uploaded_provider_file),
+                retry_tracker=retry_tracker,
+            )
 
-        prompt = _build_tools_prompt(source_type)
-        response = app_ctx.generate_with_policy(
-            app_ctx.MODEL_TOOLS,
-            [app_ctx.types.Content(role='user', parts=[
-                app_ctx.types.Part.from_uri(file_uri=uploaded_provider_file.uri, mime_type=upload_mime_type),
-                app_ctx.types.Part.from_text(text=prompt),
-            ])],
-            max_output_tokens=32768,
-            retry_tracker=retry_tracker,
-            operation_name=f'tools_extract_{source_type}',
-        )
+            response = app_ctx.generate_with_policy(
+                app_ctx.MODEL_TOOLS,
+                [app_ctx.types.Content(role='user', parts=[
+                    app_ctx.types.Part.from_uri(file_uri=uploaded_provider_file.uri, mime_type=upload_mime_type),
+                    app_ctx.types.Part.from_text(text=prompt),
+                ])],
+                max_output_tokens=32768,
+                retry_tracker=retry_tracker,
+                operation_name=f'tools_extract_{source_type}',
+            )
         extracted_markdown = str(getattr(response, 'text', '') or '').strip()
         if not extracted_markdown:
             raise ValueError('Extraction returned empty output')
@@ -495,7 +582,7 @@ def tools_extract(app_ctx, request):
             properties={
                 'source_type': source_type,
                 'file_name': normalized_input_name,
-                'retry_attempts': sum(int(v or 0) for v in retry_tracker.values()),
+                'retry_attempts': _sum_retry_attempts(retry_tracker),
                 'input_tokens': int(usage.get('input_tokens', 0) or 0),
                 'output_tokens': int(usage.get('output_tokens', 0) or 0),
             },
@@ -507,7 +594,7 @@ def tools_extract(app_ctx, request):
             'file_name': normalized_input_name,
             'model': app_ctx.MODEL_TOOLS,
             'content_markdown': extracted_markdown,
-            'retry_attempts': sum(int(v or 0) for v in retry_tracker.values()),
+            'retry_attempts': _sum_retry_attempts(retry_tracker),
             'provider_error_code': '',
             'billing_receipt': {
                 'charged': {deducted_credit: 1},
@@ -529,14 +616,14 @@ def tools_extract(app_ctx, request):
             properties={
                 'source_type': source_type or 'unknown',
                 'provider_error_code': provider_error_code,
-                'retry_attempts': sum(int(v or 0) for v in retry_tracker.values()),
+                'retry_attempts': _sum_retry_attempts(retry_tracker),
             },
         )
         return app_ctx.jsonify({
             'error': 'Tools extraction failed. Your slides credit has been refunded.',
             'error_code': 'TOOLS_EXTRACTION_FAILED',
             'provider_error_code': provider_error_code,
-            'retry_attempts': sum(int(v or 0) for v in retry_tracker.values()),
+            'retry_attempts': _sum_retry_attempts(retry_tracker),
             'billing_receipt': {
                 'charged': {deducted_credit: 1} if deducted_credit else {},
                 'refunded': {deducted_credit: 1} if (deducted_credit and refunded_credit) else {},
@@ -545,6 +632,49 @@ def tools_extract(app_ctx, request):
     finally:
         if local_paths or gemini_files:
             app_ctx.cleanup_files(local_paths, gemini_files)
+
+
+def tools_export(app_ctx, request):
+    decoded_token = app_ctx.verify_firebase_token(request)
+    if not decoded_token:
+        return app_ctx.jsonify({'error': 'Please sign in to continue'}), 401
+    uid = decoded_token['uid']
+    email = decoded_token.get('email', '')
+    if not app_ctx.is_email_allowed(email):
+        return app_ctx.jsonify({'error': 'Email not allowed'}), 403
+
+    payload = request.get_json(silent=True) or {}
+    export_format = str(payload.get('format', 'docx') or '').strip().lower()
+    markdown = str(payload.get('content_markdown', '') or '').strip()
+    title = str(payload.get('title', 'Tools Extract') or '').strip()
+
+    if export_format != 'docx':
+        return app_ctx.jsonify({'error': 'Unsupported export format.'}), 400
+    if not markdown:
+        return app_ctx.jsonify({'error': 'No extracted content to export.'}), 400
+    if len(markdown) > 800000:
+        return app_ctx.jsonify({'error': 'Export content is too large. Please shorten the result and retry.'}), 400
+
+    doc = app_ctx.markdown_to_docx(markdown, title or 'Tools Extract')
+    docx_io = app_ctx.io.BytesIO()
+    doc.save(docx_io)
+    docx_io.seek(0)
+    base_name = _normalize_export_base_name(title)
+
+    app_ctx.log_analytics_event(
+        'tools_export_requested',
+        source='backend',
+        uid=uid,
+        email=email,
+        session_id=app_ctx.uuid.uuid4().hex,
+        properties={'format': export_format},
+    )
+    return app_ctx.send_file(
+        docx_io,
+        as_attachment=True,
+        download_name=f'{base_name}.docx',
+        mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    )
 
 
 def get_status(app_ctx, request, job_id):

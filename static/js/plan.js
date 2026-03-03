@@ -33,6 +33,10 @@
     let examDatePickers = [];
     let progressSummaryCache = null;
     let remoteCardStates = {};
+    let goalAutoSaveTimer = null;
+    let goalSaveInFlight = false;
+    const folderSaveTimers = new Map();
+    const folderSaveInFlight = new Set();
 
     function showToast(message, type) {
       toastEl.textContent = message;
@@ -146,6 +150,16 @@
       return null;
     }
 
+    function setFolderSaveState(folderId, stateText, stateClass) {
+      const safeId = String(folderId || '');
+      if (!safeId) return;
+      const states = document.querySelectorAll(`[data-folder-save-state="${safeId}"]`);
+      states.forEach(function(node){
+        node.textContent = stateText || 'Auto-save';
+        node.className = 'autosave-pill' + (stateClass ? ' ' + stateClass : '');
+      });
+    }
+
     function renderOverview(uid) {
       const summary = getProgressSummary(uid);
       const streak = summary.current_streak;
@@ -211,10 +225,13 @@
           const input = document.createElement('input');
           input.className = 'input js-folder-date';
           input.type = 'text';
-          input.value = formatDisplayDate(folder.exam_date || '');
+          const savedDate = String(folder.exam_date || '');
+          input.value = formatDisplayDate(savedDate);
           input.placeholder = 'dd-mm-yyyy';
           input.setAttribute('inputmode', 'numeric');
           input.setAttribute('aria-label', `Exam date for ${folderName}`);
+          input.dataset.folderId = String(folder.folder_id || '');
+          input.dataset.savedExamDate = savedDate;
           wrap.appendChild(input);
           const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
           icon.setAttribute('class', 'date-input-icon');
@@ -251,13 +268,12 @@
           return wrap;
         };
 
-        const createSaveButton = function() {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'btn primary';
-          btn.dataset.saveFolder = String(folder.folder_id || '');
-          btn.textContent = 'Save';
-          return btn;
+        const createAutosavePill = function() {
+          const status = document.createElement('span');
+          status.className = 'autosave-pill';
+          status.dataset.folderSaveState = String(folder.folder_id || '');
+          status.textContent = 'Auto-save';
+          return status;
         };
 
         const buildWorkload = function() {
@@ -305,7 +321,7 @@
         tdRecommendation.appendChild(recommendation.cloneNode(true));
 
         const tdAction = document.createElement('td');
-        tdAction.appendChild(createSaveButton());
+        tdAction.appendChild(createAutosavePill());
 
         tr.appendChild(tdName);
         tr.appendChild(tdDate);
@@ -361,11 +377,12 @@
 
         const cardActions = document.createElement('div');
         cardActions.className = 'folder-card-actions';
-        cardActions.appendChild(createSaveButton());
+        cardActions.appendChild(createAutosavePill());
         card.appendChild(cardActions);
         foldersCardsEl.appendChild(card);
       });
       initFolderDatePickers();
+      bindFolderAutosaveListeners();
     }
 
     function initFolderDatePickers() {
@@ -376,14 +393,40 @@
       examDatePickers = [];
       const inputs = document.querySelectorAll('#folders-body .js-folder-date, #folders-cards .js-folder-date');
       inputs.forEach(function(input){
+        const editor = input.closest('[data-folder-editor]');
+        const folderId = editor ? String(editor.getAttribute('data-folder-editor') || '') : '';
         const instance = flatpickr(input, {
           dateFormat: 'd-m-Y',
           allowInput: true,
           disableMobile: true,
           locale: { firstDayOfWeek: 1 },
-          defaultDate: input.value || null
+          defaultDate: input.value || null,
+          onClose: function() {
+            if (folderId) scheduleFolderAutosave(folderId, input, true);
+          },
         });
         examDatePickers.push(instance);
+      });
+    }
+
+    function bindFolderAutosaveListeners() {
+      const inputs = document.querySelectorAll('#folders-body .js-folder-date, #folders-cards .js-folder-date');
+      inputs.forEach(function(input){
+        const editor = input.closest('[data-folder-editor]');
+        const folderId = editor ? String(editor.getAttribute('data-folder-editor') || '') : '';
+        if (!folderId) return;
+        input.addEventListener('input', function() {
+          scheduleFolderAutosave(folderId, input, false);
+        });
+        input.addEventListener('blur', function() {
+          scheduleFolderAutosave(folderId, input, true);
+        });
+        input.addEventListener('keydown', function(event) {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            scheduleFolderAutosave(folderId, input, true);
+          }
+        });
       });
     }
 
@@ -459,13 +502,17 @@
       }
     }
 
-    saveGoalBtn.addEventListener('click', async function(){
+    async function persistDailyGoalFromInput(showValidationError) {
       if (!currentUser) return;
       const val = parseInt(goalInputEl.value || '0', 10);
       if (!Number.isFinite(val) || val < 1 || val > 500) {
-        showToast('Use a goal between 1 and 500.', 'error');
+        if (showValidationError) showToast('Use a goal between 1 and 500.', 'error');
         return;
       }
+      if (goalSaveInFlight) return;
+      const currentSavedGoal = Number((progressSummaryCache && progressSummaryCache.daily_goal) || getDailyGoal(currentUser.uid) || 20);
+      if (currentSavedGoal === val) return;
+      goalSaveInFlight = true;
       setDailyGoal(currentUser.uid, val);
       progressSummaryCache = Object.assign({}, progressSummaryCache || {}, { daily_goal: val });
       renderOverview(currentUser.uid);
@@ -483,24 +530,56 @@
         showToast('Daily goal saved.', 'success');
       } catch (err) {
         showToast(err.message || 'Could not sync daily goal.', 'error');
+      } finally {
+        goalSaveInFlight = false;
+      }
+    }
+
+    function scheduleGoalAutosave(immediate) {
+      if (goalAutoSaveTimer) {
+        clearTimeout(goalAutoSaveTimer);
+        goalAutoSaveTimer = null;
+      }
+      if (immediate) {
+        persistDailyGoalFromInput(false);
+        return;
+      }
+      goalAutoSaveTimer = setTimeout(function() {
+        persistDailyGoalFromInput(false);
+      }, 600);
+    }
+
+    saveGoalBtn.addEventListener('click', function(){
+      persistDailyGoalFromInput(true);
+    });
+    goalInputEl.addEventListener('input', function() { scheduleGoalAutosave(false); });
+    goalInputEl.addEventListener('blur', function() { scheduleGoalAutosave(true); });
+    goalInputEl.addEventListener('keydown', function(event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        if (goalAutoSaveTimer) {
+          clearTimeout(goalAutoSaveTimer);
+          goalAutoSaveTimer = null;
+        }
+        persistDailyGoalFromInput(true);
       }
     });
 
-    async function handleFolderSave(event){
-      const btn = event.target.closest('[data-save-folder]');
-      if (!btn || !currentUser || !idToken) return;
-      const editor = btn.closest('[data-folder-editor]');
-      const folderId = editor ? String(editor.getAttribute('data-folder-editor') || '') : String(btn.getAttribute('data-save-folder') || '');
-      const dateInput = editor ? editor.querySelector('.js-folder-date') : null;
-      if (!dateInput) return;
+    async function persistFolderExamDate(folderId, dateInput, showValidationError){
+      if (!folderId || !currentUser || !idToken || !dateInput) return;
+      if (folderSaveInFlight.has(folderId)) return;
       const normalizedDate = parseDateInput(dateInput.value);
       if (normalizedDate === null) {
-        showToast('Use a valid date: dd-mm-yyyy or yyyy-mm-dd.', 'error');
-        dateInput.focus();
+        if (showValidationError) {
+          showToast('Use a valid date: dd-mm-yyyy or yyyy-mm-dd.', 'error');
+          dateInput.focus();
+        }
         return;
       }
-      btn.disabled = true;
-      btn.textContent = 'Saving...';
+      const lastSaved = parseDateInput(dateInput.dataset.savedExamDate || '');
+      if (lastSaved === normalizedDate) return;
+      folderSaveInFlight.add(folderId);
+      setFolderSaveState(folderId, 'Saving...', 'saving');
       try {
         const resp = await authFetch('/api/study-folders/' + encodeURIComponent(folderId), {
           method: 'PATCH',
@@ -510,17 +589,38 @@
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || 'Could not save exam date');
         showToast('Exam date saved.', 'success');
+        setFolderSaveState(folderId, 'Saved', 'saved');
+        const relatedInputs = document.querySelectorAll(`.js-folder-date[data-folder-id="${folderId}"]`);
+        relatedInputs.forEach(function(input){
+          input.dataset.savedExamDate = normalizedDate || '';
+        });
         await loadPlannerData();
       } catch (err) {
+        setFolderSaveState(folderId, 'Error', 'error');
         showToast(err.message || 'Could not save exam date.', 'error');
       } finally {
-        btn.disabled = false;
-        btn.textContent = 'Save';
+        folderSaveInFlight.delete(folderId);
+        setTimeout(function() { setFolderSaveState(folderId, 'Auto-save', ''); }, 1300);
       }
     }
 
-    foldersBodyEl.addEventListener('click', handleFolderSave);
-    foldersCardsEl.addEventListener('click', handleFolderSave);
+    function scheduleFolderAutosave(folderId, dateInput, immediate) {
+      if (!folderId || !dateInput) return;
+      const existingTimer = folderSaveTimers.get(folderId);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+        folderSaveTimers.delete(folderId);
+      }
+      if (immediate) {
+        persistFolderExamDate(folderId, dateInput, false);
+        return;
+      }
+      const timer = setTimeout(function() {
+        folderSaveTimers.delete(folderId);
+        persistFolderExamDate(folderId, dateInput, false);
+      }, 700);
+      folderSaveTimers.set(folderId, timer);
+    }
 
     if (topbarUtils.bindSignOutButton) {
       topbarUtils.bindSignOutButton(signoutBtn, auth, '/dashboard');

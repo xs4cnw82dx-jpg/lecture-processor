@@ -208,8 +208,14 @@ const allowedSlideMimeTypes = [
 ];
 
 const headerSignInBtn = document.getElementById('header-sign-in-btn');
+const headerNavToggle = document.getElementById('header-nav-toggle');
+const headerSidebar = document.getElementById('header-sidebar');
+const headerSidebarBackdrop = document.getElementById('header-sidebar-backdrop');
+const headerSidebarClose = document.getElementById('header-sidebar-close');
 const headerStudyLibraryBtn = document.getElementById('header-study-library-btn');
+const headerFeaturesBtn = document.getElementById('header-features-btn');
 const headerToolsBtn = document.getElementById('header-tools-btn');
+const headerPlannerBtn = document.getElementById('header-planner-btn');
 const progressMenu = document.getElementById('progress-menu');
 const progressButton = document.getElementById('progress-button');
 const progressDropdown = document.getElementById('progress-dropdown');
@@ -236,9 +242,6 @@ const dropdownLectureCredits = document.getElementById('dropdown-lecture-credits
 const dropdownSlidesCredits = document.getElementById('dropdown-slides-credits');
 const dropdownInterviewCredits = document.getElementById('dropdown-interview-credits');
 const buyCreditsBtn = document.getElementById('buy-credits-btn');
-const featuresPageBtn = document.getElementById('features-page-btn');
-const plannerPageBtn = document.getElementById('planner-page-btn');
-const toolsPageBtn = document.getElementById('tools-page-btn');
 const purchaseHistoryBtn = document.getElementById('purchase-history-btn');
 const exportDataBtn = document.getElementById('export-data-btn');
 const adminDashboardBtn = document.getElementById('admin-dashboard-btn');
@@ -622,12 +625,22 @@ function setOutputLanguageMenuVisible(visible) {
     outputLanguageButton.classList.toggle('open', visible);
     outputLanguageButton.setAttribute('aria-expanded', visible ? 'true' : 'false');
 }
+function setHeaderSidebarVisible(visible) {
+    if (!headerSidebar || !headerSidebarBackdrop || !headerNavToggle) return;
+    const show = Boolean(visible);
+    headerSidebar.classList.toggle('visible', show);
+    headerSidebarBackdrop.classList.toggle('visible', show);
+    headerSidebar.setAttribute('aria-hidden', show ? 'false' : 'true');
+    headerNavToggle.setAttribute('aria-expanded', show ? 'true' : 'false');
+    document.body.classList.toggle('sidebar-open', show);
+}
 function closeHeaderDropdowns(except) {
     if (except !== 'user') setUserDropdownVisible(false);
     if (except !== 'progress') setProgressDropdownVisible(false);
     if (except !== 'download') setDownloadDropdownVisible(false);
     if (except !== 'more-actions') setMoreActionsDropdownVisible(false);
     if (except !== 'language') setOutputLanguageMenuVisible(false);
+    if (except !== 'sidebar') setHeaderSidebarVisible(false);
 }
 function showAuthModal(view = 'signin') {
     openOverlay(authOverlay);
@@ -804,10 +817,17 @@ function updateCreditsDisplay() {
     const lecture = userCredits.lecture_standard + userCredits.lecture_extended;
     const interview = userCredits.interview_short + userCredits.interview_medium + userCredits.interview_long;
     const total = lecture + userCredits.slides + interview;
-    const tooltipText = `Lecture: ${lecture}\nSlides: ${userCredits.slides}\nInterview: ${interview}\nTotal: ${total}`;
     creditsCount.textContent = total;
-    creditsDisplay.setAttribute('data-tooltip', tooltipText);
-    if (creditsTooltip) creditsTooltip.textContent = tooltipText;
+    creditsDisplay.setAttribute('data-tooltip', `Lecture ${lecture}, Slides ${userCredits.slides}, Interview ${interview}, Total ${total}`);
+    if (creditsTooltip) {
+        setSanitizedHtml(
+            creditsTooltip,
+            `<div class="credit-tip-row"><span>Lecture</span><strong>${lecture}</strong></div>
+             <div class="credit-tip-row"><span>Slides</span><strong>${userCredits.slides}</strong></div>
+             <div class="credit-tip-row"><span>Interview</span><strong>${interview}</strong></div>
+             <div class="credit-tip-row total"><span>Total</span><strong>${total}</strong></div>`
+        );
+    }
     dropdownLectureCredits.textContent = lecture;
     dropdownSlidesCredits.textContent = userCredits.slides;
     dropdownInterviewCredits.textContent = interview;
@@ -1148,9 +1168,12 @@ function updateUIForAuthState(user) {
         processingEstimateContextKey = '';
         closeHeaderDropdowns('');
         headerSignInBtn.style.display = 'none';
+        if (headerNavToggle) headerNavToggle.style.display = 'inline-flex';
         creditsDisplay.style.display = 'flex';
         headerStudyLibraryBtn.style.display = 'inline-flex';
+        if (headerFeaturesBtn) headerFeaturesBtn.style.display = 'inline-flex';
         headerToolsBtn.style.display = 'inline-flex';
+        if (headerPlannerBtn) headerPlannerBtn.style.display = 'inline-flex';
         progressMenu.style.display = 'block';
         userMenu.style.display = 'block';
         adminDashboardBtn.style.display = 'none';
@@ -1197,9 +1220,12 @@ function updateUIForAuthState(user) {
         }
         closeHeaderDropdowns('');
         headerSignInBtn.style.display = 'flex';
+        if (headerNavToggle) headerNavToggle.style.display = 'none';
         creditsDisplay.style.display = 'none';
         headerStudyLibraryBtn.style.display = 'none';
+        if (headerFeaturesBtn) headerFeaturesBtn.style.display = 'none';
         headerToolsBtn.style.display = 'none';
+        if (headerPlannerBtn) headerPlannerBtn.style.display = 'none';
         progressMenu.style.display = 'none';
         userMenu.style.display = 'none';
         signInRequired.classList.add('visible');
@@ -2875,6 +2901,19 @@ document.querySelectorAll('.password-toggle').forEach(btn => {
         else { input.type = 'password'; open.style.display = 'block'; closed.style.display = 'none'; }
     });
 });
+if (headerNavToggle) {
+    headerNavToggle.addEventListener('click', () => {
+        const shouldOpen = !(headerSidebar && headerSidebar.classList.contains('visible'));
+        closeHeaderDropdowns(shouldOpen ? 'sidebar' : '');
+        setHeaderSidebarVisible(shouldOpen);
+    });
+}
+if (headerSidebarClose) {
+    headerSidebarClose.addEventListener('click', () => setHeaderSidebarVisible(false));
+}
+if (headerSidebarBackdrop) {
+    headerSidebarBackdrop.addEventListener('click', () => setHeaderSidebarVisible(false));
+}
 signOutBtn.addEventListener('click', signOut);
 userButton.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -2920,9 +2959,6 @@ userDropdown.addEventListener('keydown', (e) => {
 });
 document.addEventListener('click', (e) => { if (!userMenu.contains(e.target)) setUserDropdownVisible(false); });
 buyCreditsBtn.addEventListener('click', () => { setUserDropdownVisible(false); showPricingModal(); });
-featuresPageBtn.addEventListener('click', () => { setUserDropdownVisible(false); window.location.href = '/features'; });
-plannerPageBtn.addEventListener('click', () => { setUserDropdownVisible(false); window.location.href = '/plan'; });
-toolsPageBtn.addEventListener('click', () => { setUserDropdownVisible(false); window.location.href = '/tools'; });
 purchaseHistoryBtn.addEventListener('click', () => { setUserDropdownVisible(false); showHistoryModal(); });
 exportDataBtn.addEventListener('click', async () => {
     setUserDropdownVisible(false);
@@ -2933,13 +2969,27 @@ deleteAccountBtn.addEventListener('click', async () => {
     await deleteMyAccountData();
 });
 headerStudyLibraryBtn.addEventListener('click', () => {
+    setHeaderSidebarVisible(false);
     trackEvent('study_mode_opened', { source: 'header_study_library' }, { preferBeacon: true });
     window.location.href = '/study';
 });
+if (headerFeaturesBtn) {
+    headerFeaturesBtn.addEventListener('click', () => {
+        setHeaderSidebarVisible(false);
+        window.location.href = '/features';
+    });
+}
 headerToolsBtn.addEventListener('click', () => {
+    setHeaderSidebarVisible(false);
     trackEvent('tools_page_opened', { source: 'header_tools' }, { preferBeacon: true });
     window.location.href = '/tools';
 });
+if (headerPlannerBtn) {
+    headerPlannerBtn.addEventListener('click', () => {
+        setHeaderSidebarVisible(false);
+        window.location.href = '/plan';
+    });
+}
 function openGoalModal() {
     if (!currentUser) return;
     goalModalError.classList.remove('visible');
@@ -3024,10 +3074,12 @@ progressDropdown.addEventListener('keydown', (e) => {
 });
 progressSetGoalBtn.addEventListener('click', (e) => {
     e.stopPropagation();
+    setHeaderSidebarVisible(false);
     setProgressDropdownVisible(false);
     openGoalModal();
 });
 progressOpenPlanBtn.addEventListener('click', () => {
+    setHeaderSidebarVisible(false);
     setProgressDropdownVisible(false);
     window.location.href = '/plan';
 });
@@ -3060,6 +3112,11 @@ document.addEventListener('click', (e) => {
     }
     if (!progressMenu.contains(e.target)) {
         setProgressDropdownVisible(false);
+    }
+});
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        setHeaderSidebarVisible(false);
     }
 });
 goalModalCancelBtn.addEventListener('click', closeGoalModal);

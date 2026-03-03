@@ -190,7 +190,16 @@
                 <div class="calculator-controls">
                     <label class="calculator-control">
                         <span>Scenario</span>
-                        <select id="calc-scenario" class="calculator-input"></select>
+                        <select id="calc-scenario" class="calculator-input calculator-native-select" aria-hidden="true" tabindex="-1"></select>
+                        <div class="calculator-select" id="calc-scenario-picker">
+                            <button type="button" class="calculator-select-button" id="calc-scenario-button" aria-haspopup="listbox" aria-expanded="false" aria-controls="calc-scenario-menu">
+                                <span id="calc-scenario-label">Select scenario</span>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                            </button>
+                            <div class="calculator-select-menu" id="calc-scenario-menu" role="listbox"></div>
+                        </div>
                     </label>
                     <label class="calculator-control">
                         <span>Bundle Price (€)</span>

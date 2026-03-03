@@ -494,6 +494,10 @@ setActiveModeViewButton();
 
 /* ── Cost Calculator ── */
 const calcScenario = document.getElementById('calc-scenario');
+const calcScenarioPicker = document.getElementById('calc-scenario-picker');
+const calcScenarioButton = document.getElementById('calc-scenario-button');
+const calcScenarioMenu = document.getElementById('calc-scenario-menu');
+const calcScenarioLabel = document.getElementById('calc-scenario-label');
 const calcBody = document.getElementById('calc-body');
 const calcBundlePrice = document.getElementById('calc-bundle-price');
 const calcEurUsd = document.getElementById('calc-eur-usd');
@@ -504,6 +508,52 @@ const calcMarginPct = document.getElementById('calc-margin-pct');
 const calcBreakEven = document.getElementById('calc-break-even');
 let calculatorConfig = null;
 let calculatorBound = false;
+
+function setCalcScenarioMenuVisible(visible) {
+    if (!calcScenarioMenu || !calcScenarioButton) return;
+    const show = Boolean(visible);
+    calcScenarioMenu.classList.toggle('visible', show);
+    calcScenarioButton.classList.toggle('open', show);
+    calcScenarioButton.setAttribute('aria-expanded', show ? 'true' : 'false');
+}
+
+function syncCalcScenarioLabel(value) {
+    if (!calcScenarioLabel || !calcScenarioMenu || !calcScenario) return;
+    const selectedValue = String(value || calcScenario.value || '');
+    let activeText = '';
+    Array.from(calcScenario.options || []).forEach((opt) => {
+        if (String(opt.value) === selectedValue) {
+            activeText = String(opt.textContent || '').trim();
+        }
+    });
+    calcScenarioLabel.textContent = activeText || 'Select scenario';
+    calcScenarioMenu.querySelectorAll('.calculator-select-item').forEach((btn) => {
+        const isActive = btn.dataset.value === selectedValue;
+        btn.classList.toggle('active', isActive);
+        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+}
+
+function rebuildCalcScenarioMenu() {
+    if (!calcScenarioMenu || !calcScenario) return;
+    clearChildren(calcScenarioMenu);
+    Array.from(calcScenario.options || []).forEach((opt) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'calculator-select-item';
+        btn.dataset.value = String(opt.value);
+        btn.setAttribute('role', 'option');
+        btn.textContent = String(opt.textContent || opt.value || '-');
+        btn.addEventListener('click', () => {
+            calcScenario.value = btn.dataset.value || '';
+            syncCalcScenarioLabel(calcScenario.value);
+            setCalcScenarioMenuVisible(false);
+            loadCalculatorScenario(calcScenario.value);
+        });
+        calcScenarioMenu.appendChild(btn);
+    });
+    syncCalcScenarioLabel(calcScenario.value);
+}
 
 function numberOrZero(value) {
     const parsed = Number(value);
@@ -666,10 +716,59 @@ async function initCostCalculator() {
 
         const firstScenario = calcScenario.options.length ? calcScenario.options[0].value : '';
         if (firstScenario) {
+            calcScenario.value = firstScenario;
+            rebuildCalcScenarioMenu();
             loadCalculatorScenario(firstScenario);
+        } else {
+            rebuildCalcScenarioMenu();
         }
         if (!calculatorBound) {
-            calcScenario.addEventListener('change', () => loadCalculatorScenario(calcScenario.value));
+            calcScenario.addEventListener('change', () => {
+                syncCalcScenarioLabel(calcScenario.value);
+                loadCalculatorScenario(calcScenario.value);
+            });
+            if (calcScenarioButton && calcScenarioMenu) {
+                calcScenarioButton.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    const nextVisible = !calcScenarioMenu.classList.contains('visible');
+                    setCalcScenarioMenuVisible(nextVisible);
+                });
+                calcScenarioButton.addEventListener('keydown', (event) => {
+                    if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setCalcScenarioMenuVisible(true);
+                        const first = calcScenarioMenu.querySelector('.calculator-select-item');
+                        if (first) first.focus();
+                    }
+                });
+                calcScenarioMenu.addEventListener('keydown', (event) => {
+                    const items = Array.from(calcScenarioMenu.querySelectorAll('.calculator-select-item'));
+                    if (!items.length) return;
+                    const currentIndex = items.indexOf(document.activeElement);
+                    if (event.key === 'Escape') {
+                        event.preventDefault();
+                        setCalcScenarioMenuVisible(false);
+                        calcScenarioButton.focus();
+                        return;
+                    }
+                    if (event.key === 'ArrowDown') {
+                        event.preventDefault();
+                        const next = items[(currentIndex + 1 + items.length) % items.length];
+                        if (next) next.focus();
+                        return;
+                    }
+                    if (event.key === 'ArrowUp') {
+                        event.preventDefault();
+                        const prev = items[(currentIndex - 1 + items.length) % items.length];
+                        if (prev) prev.focus();
+                    }
+                });
+                document.addEventListener('click', (event) => {
+                    if (calcScenarioPicker && !calcScenarioPicker.contains(event.target)) {
+                        setCalcScenarioMenuVisible(false);
+                    }
+                });
+            }
             if (calcBundlePrice) calcBundlePrice.addEventListener('input', recalcCalculatorCosts);
             if (calcEurUsd) calcEurUsd.addEventListener('input', recalcCalculatorCosts);
             calculatorBound = true;

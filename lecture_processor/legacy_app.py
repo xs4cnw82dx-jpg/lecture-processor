@@ -598,9 +598,11 @@ MODEL_INTERVIEW = 'gemini-2.5-pro'
 MODEL_STUDY = 'gemini-2.5-flash-lite'
 MODEL_TOOLS = 'gemini-2.5-flash-lite'
 
-ALLOWED_TOOLS_DOC_EXTENSIONS = {'pdf', 'pptx'}
+ALLOWED_TOOLS_DOC_EXTENSIONS = {'pdf', 'pptx', 'docx'}
 ALLOWED_TOOLS_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'heic', 'heif'}
-ALLOWED_TOOLS_DOC_MIME_TYPES = ALLOWED_SLIDE_MIME_TYPES
+ALLOWED_TOOLS_DOC_MIME_TYPES = set(ALLOWED_SLIDE_MIME_TYPES) | {
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+}
 ALLOWED_TOOLS_IMAGE_MIME_TYPES = {
     'image/png',
     'image/jpeg',
@@ -4174,6 +4176,11 @@ def tools_extract_impl():
     from lecture_processor.services import upload_api_service
 
     return upload_api_service.tools_extract(sys.modules[__name__], request)
+
+def tools_export_impl():
+    from lecture_processor.services import upload_api_service
+
+    return upload_api_service.tools_export(sys.modules[__name__], request)
 
 def get_status_impl(job_id):
     from lecture_processor.services import upload_api_service

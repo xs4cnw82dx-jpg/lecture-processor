@@ -8,13 +8,14 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/study.css') }}">
 </head>
 
 <body>
   <div class="container">
     <div class="topbar">
-      <div class="topbar-logo">
+      <a href="/dashboard" class="topbar-logo" aria-label="Back to dashboard">
         <div class="topbar-logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
             <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
@@ -24,7 +25,7 @@
           <h1>Study Library</h1>
           <div class="topbar-sub" id="user-meta">Checking sign-in...</div>
         </div>
-      </div>
+      </a>
       <div class="actions">
         <div class="study-pill due" id="topbar-due-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="2">
@@ -627,7 +628,7 @@
         <div class="builder-mini-stats">
           <div class="builder-stat">Cards: <strong id="builder-stat-cards">0</strong></div>
           <div class="builder-stat">Questions: <strong id="builder-stat-questions">0</strong></div>
-          <div class="builder-stat">Unsaved: <strong id="builder-stat-dirty">No</strong></div>
+          <div class="builder-stat">Status: <strong id="builder-stat-dirty">Saved</strong></div>
         </div>
       </aside>
       <main class="builder-main">
@@ -752,7 +753,7 @@
         <div class="field"><label>Subject</label><input id="folder-subject-input"></div>
         <div class="field"><label>Semester</label><input id="folder-semester-input"></div>
         <div class="field"><label>Block</label><input id="folder-block-input"></div>
-        <div class="field"><label>Exam Date</label><input type="date" id="folder-exam-date-input"></div>
+        <div class="field"><label>Exam Date</label><input type="text" id="folder-exam-date-input" placeholder="dd-mm-yyyy" inputmode="numeric"></div>
       </div>
       <div class="actions" style="justify-content:flex-end;"><button class="btn" id="folder-modal-cancel"
           type="button">Cancel</button><button class="btn primary" id="folder-modal-save" type="button">Save
@@ -806,6 +807,8 @@
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
   <script src="{{ url_for('static', filename='js/html-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/markdown-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
