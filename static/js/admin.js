@@ -71,6 +71,23 @@ function formatTokenCount(count) {
     return String(count);
 }
 
+function formatPromptSummary(job) {
+    const templateKey = String(job.prompt_template_key || '').trim();
+    const customPrompt = String(job.custom_prompt || '').trim();
+    const source = String(job.prompt_source || '').trim();
+    const parts = [];
+    if (templateKey) {
+        parts.push(`Template: ${templateKey}`);
+    } else if (source === 'default') {
+        parts.push('Default prompt');
+    }
+    if (customPrompt) {
+        const compact = customPrompt.replace(/\s+/g, ' ').trim();
+        parts.push(compact.length > 90 ? `${compact.slice(0, 87)}...` : compact);
+    }
+    return parts.join(' · ') || 'Default prompt';
+}
+
 function setState(message, type = 'loading') {
     stateArea.textContent = message;
     stateArea.className = type;
@@ -261,6 +278,9 @@ function renderDashboard(data) {
         tdEmail.textContent = (job.email || '').slice(0, 32) || '-';
         const tdMode = document.createElement('td');
         tdMode.textContent = job.mode || '-';
+        const tdPrompt = document.createElement('td');
+        tdPrompt.className = 'prompt-cell';
+        tdPrompt.textContent = formatPromptSummary(job);
         const tdStatus = document.createElement('td');
         const statusBadge = document.createElement('span');
         statusBadge.className = `status ${statusClass}`;
@@ -279,6 +299,7 @@ function renderDashboard(data) {
         tr.appendChild(tdTime);
         tr.appendChild(tdEmail);
         tr.appendChild(tdMode);
+        tr.appendChild(tdPrompt);
         tr.appendChild(tdStatus);
         tr.appendChild(tdDuration);
         tr.appendChild(tdRefund);
@@ -287,7 +308,7 @@ function renderDashboard(data) {
         tr.appendChild(tdTokenTotal);
         return tr;
     });
-    renderRows('jobs-body', jobRows, 'No jobs found in selected window.', 9);
+    renderRows('jobs-body', jobRows, 'No jobs found in selected window.', 10);
 
     const purchaseRows = (data.recent_purchases || []).map((purchase) => {
         const tr = document.createElement('tr');

@@ -193,27 +193,106 @@ def _sum_retry_attempts(retry_tracker):
     return sum(int(v or 0) for v in (retry_tracker or {}).values())
 
 
+def _attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None):
+    if not uid or not credit_type:
+        return False, ''
+
+    expected_floor_value = None
+    if expected_floor is not None:
+        try:
+            expected_floor_value = max(0, int(expected_floor))
+        except Exception:
+            expected_floor_value = None
+
+    for attempt in range(1, 4):
+        try:
+            refunded = bool(app_ctx.refund_credit(uid, credit_type))
+        except Exception:
+            refunded = False
+        if refunded:
+            if credit_type == 'slides_credits' and expected_floor_value is not None:
+                try:
+                    latest_user = app_ctx.get_or_create_user(uid, '')
+                    latest_balance = int(latest_user.get('slides_credits', 0) or 0)
+                    if latest_balance < expected_floor_value:
+                        app_ctx.logger.warning(
+                            "Refund reported success but balance verification failed for %s (balance=%s expected>=%s)",
+                            uid,
+                            latest_balance,
+                            expected_floor_value,
+                        )
+                        if attempt < 3:
+                            app_ctx.time.sleep(0.08 * attempt)
+                            continue
+                except Exception:
+                    pass
+            return True, 'refund_credit'
+        if attempt < 3:
+            app_ctx.time.sleep(0.08 * attempt)
+
+    if credit_type == 'slides_credits':
+        for fallback_attempt in range(1, 3):
+            try:
+                app_ctx.refund_slides_credits(uid, 1)
+                try:
+                    user_ref = app_ctx.users_repo.doc_ref(app_ctx.db, uid)
+                    user_ref.update({'total_processed': app_ctx.firestore.Increment(-1)})
+                except Exception:
+                    # Keep the refund even when total_processed adjustment fails.
+                    pass
+                return True, 'fallback_slides_refund'
+            except Exception:
+                if fallback_attempt < 2:
+                    app_ctx.time.sleep(0.08 * fallback_attempt)
+
+    return False, ''
+
+
 def _normalize_tools_markdown_for_export(markdown_text):
     import re
 
     normalized_lines = []
     for raw_line in str(markdown_text or '').splitlines():
-        line = raw_line.replace('\t', '    ')
+        line = raw_line.replace('\t', '    ').rstrip()
         stripped = line.strip()
-        if stripped in {'*', '-', '•'}:
+        if not stripped:
+            normalized_lines.append('')
             continue
-        if re.match(r'^\\s*[-*•]\\s+\\d+[\\.)]\\s+', line):
-            line = re.sub(r'^\\s*[-*•]\\s+(\\d+[\\.)]\\s+)', r'\\1', line)
-        bullet_match = re.match(r'^\\s*\\*\\s+(.*)$', line)
+        if stripped in {'*', '-', '•', '* *', '- -'}:
+            continue
+
+        line = re.sub(r'^(\s*)[-*•]\s+(\d+[\.)]\s+)', r'\1\2', line)
+        line = re.sub(r'^(\s*)•\s+', r'\1- ', line)
+
+        bullet_match = re.match(r'^(\s*)[-*•]\s+(.*)$', line)
         if bullet_match:
-            content = bullet_match.group(1).strip()
+            base_indent = bullet_match.group(1)
+            content = bullet_match.group(2).strip()
+            extra_depth = 0
+            while True:
+                nested = re.match(r'^[-*•]\s+(.*)$', content)
+                if not nested:
+                    break
+                content = nested.group(1).strip()
+                extra_depth += 1
             if content:
-                normalized_lines.append(f"- {content}")
+                adjusted_indent = base_indent + ('  ' * extra_depth)
+                line = f"{adjusted_indent}- {content}"
+            else:
+                continue
+
+        heading_match = re.match(r'^\s*-\s+\*\*(.+?)\*\*:\s*$', line)
+        if heading_match:
+            heading_text = heading_match.group(1).strip()
+            if heading_text:
+                line = f"## {heading_text}"
+
+        if re.match(r'^\s*[-*•]\s*$', line):
             continue
-        normalized_lines.append(line.rstrip())
+        normalized_lines.append(line)
 
     merged = '\n'.join(normalized_lines)
-    merged = re.sub(r'\\n{3,}', '\\n\\n', merged)
+    merged = re.sub(r'\n{3,}', '\n\n', merged)
     return merged.strip()
 
 
@@ -592,10 +671,16 @@ def tools_extract(app_ctx, request):
     user = app_ctx.get_or_create_user(uid, email)
     if int(user.get('slides_credits', 0) or 0) <= 0:
         return app_ctx.jsonify({'error': 'No text extraction credits remaining. Please purchase more credits.'}), 402
+    user_text_credits_before = int(user.get('slides_credits', 0) or 0)
 
     requested_source = request.form.get('source_type', request.form.get('source', 'auto'))
     custom_prompt = _sanitize_tools_custom_prompt(request.form.get('custom_prompt', ''))
     prompt_template_key = _sanitize_tools_template_key(request.form.get('prompt_template_key', ''))
+    prompt_source = 'default'
+    if prompt_template_key:
+        prompt_source = 'template'
+    elif custom_prompt:
+        prompt_source = 'custom'
     source_url = ''
     uploaded_file = None
     source_type = ''
@@ -628,6 +713,8 @@ def tools_extract(app_ctx, request):
     refunded_credit = False
     provider_error_code = ''
     extracted_markdown = ''
+    effective_prompt_preview = ''
+    credit_refund_method = ''
     normalized_input_name = ''
     docx_text = ''
     upload_mime_type = ''
@@ -707,6 +794,7 @@ def tools_extract(app_ctx, request):
             return app_ctx.jsonify({'error': 'No text extraction credits remaining.'}), 402
 
         prompt = _build_tools_prompt(source_type, custom_prompt)
+        effective_prompt_preview = prompt[:1400]
         if docx_text:
             if source_type == 'url':
                 source_block_title = f"Source content extracted from URL ({source_url}):"
@@ -765,6 +853,8 @@ def tools_extract(app_ctx, request):
                 'file_name': normalized_input_name,
                 'custom_prompt': custom_prompt,
                 'prompt_template_key': prompt_template_key,
+                'prompt_source': prompt_source,
+                'custom_prompt_length': len(custom_prompt),
                 'source_url': source_url,
                 'retry_attempts': retry_attempts_total,
                 'input_tokens': int(usage.get('input_tokens', 0) or 0),
@@ -795,6 +885,9 @@ def tools_extract(app_ctx, request):
                 'file_size_mb': source_size_mb,
                 'custom_prompt': custom_prompt,
                 'prompt_template_key': prompt_template_key,
+                'prompt_source': prompt_source,
+                'custom_prompt_length': len(custom_prompt),
+                'effective_prompt_preview': effective_prompt_preview,
                 'started_at': started_at_ts,
             },
             app_ctx.time.time(),
@@ -808,6 +901,7 @@ def tools_extract(app_ctx, request):
             'content_markdown': extracted_markdown,
             'custom_prompt': custom_prompt,
             'prompt_template_key': prompt_template_key,
+            'prompt_source': prompt_source,
             'source_url': source_url,
             'retry_attempts': retry_attempts_total,
             'provider_error_code': '',
@@ -820,7 +914,13 @@ def tools_extract(app_ctx, request):
         provider_error_code = app_ctx.classify_provider_error_code(error)
         app_ctx.logger.exception("Tools extraction failed for user %s source=%s", uid, source_type)
         if deducted_credit and not refunded_credit:
-            refunded_credit = bool(app_ctx.refund_credit(uid, deducted_credit))
+            expected_floor = user_text_credits_before if deducted_credit == 'slides_credits' else None
+            refunded_credit, credit_refund_method = _attempt_credit_refund(
+                app_ctx,
+                uid,
+                deducted_credit,
+                expected_floor=expected_floor,
+            )
         retry_attempts_total = _sum_retry_attempts(retry_tracker)
         app_ctx.log_analytics_event(
             'tools_extract_failed',
@@ -833,8 +933,11 @@ def tools_extract(app_ctx, request):
                 'provider_error_code': provider_error_code,
                 'custom_prompt': custom_prompt,
                 'prompt_template_key': prompt_template_key,
+                'prompt_source': prompt_source,
+                'custom_prompt_length': len(custom_prompt),
                 'source_url': source_url,
                 'retry_attempts': retry_attempts_total,
+                'credit_refund_method': credit_refund_method,
             },
         )
         app_ctx.save_job_log(
@@ -860,6 +963,10 @@ def tools_extract(app_ctx, request):
                 'file_size_mb': source_size_mb,
                 'custom_prompt': custom_prompt,
                 'prompt_template_key': prompt_template_key,
+                'prompt_source': prompt_source,
+                'custom_prompt_length': len(custom_prompt),
+                'effective_prompt_preview': effective_prompt_preview,
+                'credit_refund_method': credit_refund_method,
                 'started_at': started_at_ts,
             },
             app_ctx.time.time(),
@@ -874,6 +981,7 @@ def tools_extract(app_ctx, request):
             'provider_error_code': provider_error_code,
             'retry_attempts': retry_attempts_total,
             'refund_confirmed': bool(refunded_credit),
+            'credit_refund_method': credit_refund_method,
             'billing_receipt': {
                 'charged': {deducted_credit: 1} if deducted_credit else {},
                 'refunded': {deducted_credit: 1} if (deducted_credit and refunded_credit) else {},

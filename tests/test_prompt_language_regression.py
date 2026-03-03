@@ -37,3 +37,14 @@ def test_output_language_mapping_stays_stable():
     assert app_module.parse_output_language("dutch") == "Dutch"
     assert app_module.parse_output_language("spanish") == "Spanish"
     assert app_module.parse_output_language("other", "Italian") == "Italian"
+
+
+def test_study_prompt_template_formats_without_key_errors():
+    rendered = app_module.PROMPT_STUDY_TEMPLATE.format(
+        flashcard_amount=30,
+        question_amount=15,
+        output_language="English",
+        source_text="Sample source text",
+    )
+    assert '"flashcards"' in rendered
+    assert '"test_questions"' in rendered

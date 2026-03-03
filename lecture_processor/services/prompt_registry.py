@@ -169,10 +169,10 @@ RULES FOR TEST QUESTIONS:
 
 REQUIRED OUTPUT FORMAT:
 You must respond with strictly valid JSON matching this structure:
-{
-  "flashcards": [{"front": "string", "back": "string"}],
-  "test_questions": [{"question": "string", "options": ["string", "string", "string", "string"], "answer": "string", "explanation": "string"}]
-}
+{{
+  "flashcards": [{{"front": "string", "back": "string"}}],
+  "test_questions": [{{"question": "string", "options": ["string", "string", "string", "string"], "answer": "string", "explanation": "string"}}]
+}}
 
 LECTURE TEXT:
 {source_text}
