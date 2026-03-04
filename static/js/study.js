@@ -13,6 +13,7 @@ let activeEditorPane = 'notes', exportType = 'flashcards', draggedPackId = '';
 let folderModalMode = 'create', editingFolderId = '', pendingOpenPackId = '', confirmModalResolver = null;
 let builderDraft = null, builderMode = 'edit', builderPane = 'info', builderDirty = false, builderPackId = '', builderExitResolver = null, builderImportParsed = null;
 let builderAutoSaveTimer = null, builderAutoSaving = false, builderAutoSaveQueued = false;
+let inlineAutoSaveTimer = null, inlineAutoSaving = false, inlineAutoSaveQueued = false;
 let learnFlashcardIndex = 0, learnFlashcardFlipped = false, learnQuestionIndex = 0, learnScore = 0, learnAnswered = false;
 let activeLearnMode = ''; // 'flashcards','test','write','match','notes'
 let orderedFlashcards = [];
@@ -2306,6 +2307,11 @@ function renderFolderSelect() {
       setPackFolderSelection(item.folder_id);
       setPackFolderMenuOpen(false);
       packFolderButton.focus();
+      if (selectedPack) {
+        selectedPack.folder_id = item.folder_id || '';
+        selectedPack.folder_name = getFolderNameById(item.folder_id || '');
+        queueInlineAutosave();
+      }
     });
     packFolderMenu.appendChild(b);
   });
@@ -2381,10 +2387,19 @@ function renderFlashcardEditor(hi) {
     flashcardEditorList.appendChild(row);
   });
   flashcardEditorList.querySelectorAll('[data-card-field]').forEach(function (el) {
-    el.addEventListener('input', function () { selectedPack.flashcards[parseInt(el.dataset.cardIndex, 10)][el.dataset.cardField] = el.value; });
+    el.addEventListener('input', function () {
+      selectedPack.flashcards[parseInt(el.dataset.cardIndex, 10)][el.dataset.cardField] = el.value;
+      queueInlineAutosave();
+    });
   });
   flashcardEditorList.querySelectorAll('[data-delete-card]').forEach(function (btn) {
-    btn.addEventListener('click', function () { selectedPack.flashcards.splice(parseInt(btn.dataset.deleteCard, 10), 1); if (learnFlashcardIndex >= selectedPack.flashcards.length) { learnFlashcardIndex = Math.max(0, selectedPack.flashcards.length - 1); } renderFlashcardEditor(); showToast('Flashcard deleted.'); });
+    btn.addEventListener('click', function () {
+      selectedPack.flashcards.splice(parseInt(btn.dataset.deleteCard, 10), 1);
+      if (learnFlashcardIndex >= selectedPack.flashcards.length) { learnFlashcardIndex = Math.max(0, selectedPack.flashcards.length - 1); }
+      renderFlashcardEditor();
+      queueInlineAutosave();
+      showToast('Flashcard deleted.');
+    });
   });
   if (idx >= 0) { var row = flashcardEditorList.querySelector('[data-row-index="' + idx + '"]'); if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); var inp = row.querySelector('input[data-card-field="front"]'); if (inp) { inp.focus(); } } }
 }
@@ -2431,7 +2446,10 @@ function renderQuestionEditor(hi) {
     questionEditorList.appendChild(row);
   });
   questionEditorList.querySelectorAll('[data-question-field="question"],[data-question-field="explanation"]').forEach(function (el) {
-    el.addEventListener('input', function () { selectedPack.test_questions[parseInt(el.dataset.questionIndex, 10)][el.dataset.questionField] = el.value; });
+    el.addEventListener('input', function () {
+      selectedPack.test_questions[parseInt(el.dataset.questionIndex, 10)][el.dataset.questionField] = el.value;
+      queueInlineAutosave();
+    });
   });
   questionEditorList.querySelectorAll('input[data-option-index]').forEach(function (el) {
     el.addEventListener('input', function () {
@@ -2439,6 +2457,7 @@ function renderQuestionEditor(hi) {
       var qn = selectedPack.test_questions[qi2]; qn.options[oi2] = el.value;
       if (qn.options.indexOf(qn.answer) < 0) { qn.answer = qn.options[0] || ''; }
       renderQuestionEditor(qi2);
+      queueInlineAutosave();
     });
   });
   questionEditorList.querySelectorAll('[data-answer-button]').forEach(function (b) {
@@ -2484,13 +2503,16 @@ function renderQuestionEditor(hi) {
       var qi2 = parseInt(item.dataset.questionIndex, 10), oi2 = parseInt(item.dataset.optionIndex, 10);
       selectedPack.test_questions[qi2].answer = selectedPack.test_questions[qi2].options[oi2] || '';
       renderQuestionEditor(qi2);
+      queueInlineAutosave();
     });
   });
   questionEditorList.querySelectorAll('[data-delete-question]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       selectedPack.test_questions.splice(parseInt(btn.dataset.deleteQuestion, 10), 1);
       if (learnQuestionIndex >= selectedPack.test_questions.length) { learnQuestionIndex = Math.max(0, selectedPack.test_questions.length - 1); }
-      renderQuestionEditor(); showToast('Practice question deleted.');
+      renderQuestionEditor();
+      queueInlineAutosave();
+      showToast('Practice question deleted.');
     });
   });
   if (idx >= 0) { var row2 = questionEditorList.querySelector('[data-row-index="' + idx + '"]'); if (row2) { row2.scrollIntoView({ behavior: 'smooth', block: 'center' }); var ta = row2.querySelector('textarea[data-question-field="question"]'); if (ta) { ta.focus(); } } }
@@ -2860,6 +2882,72 @@ function loadData(preferredPackId) {
   });
 }
 
+function buildInlineAutosavePayload() {
+  if (!selectedPackId || !selectedPack) return null;
+  return {
+    title: String(packTitle && packTitle.value || '').trim(),
+    folder_id: String(packFolderSelect && packFolderSelect.value || ''),
+    course: String(packCourse && packCourse.value || '').trim(),
+    subject: String(packSubject && packSubject.value || '').trim(),
+    semester: String(packSemester && packSemester.value || '').trim(),
+    block: String(packBlock && packBlock.value || '').trim(),
+    notes_markdown: String(selectedPack.notes_markdown || ''),
+    flashcards: selectedPack.flashcards || [],
+    test_questions: selectedPack.test_questions || [],
+  };
+}
+
+function runInlineAutosaveNow() {
+  if (!selectedPackId || !selectedPack || !token) return Promise.resolve();
+  if (inlineAutoSaving) {
+    inlineAutoSaveQueued = true;
+    return Promise.resolve();
+  }
+  inlineAutoSaving = true;
+  var packId = selectedPackId;
+  var payload = buildInlineAutosavePayload();
+  if (!payload) {
+    inlineAutoSaving = false;
+    return Promise.resolve();
+  }
+  return apiCall('/api/study-packs/' + encodeURIComponent(packId), {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  }).then(function () {
+    if (selectedPack && selectedPack.study_pack_id === packId) {
+      selectedPack.title = payload.title;
+      selectedPack.folder_id = payload.folder_id;
+      selectedPack.course = payload.course;
+      selectedPack.subject = payload.subject;
+      selectedPack.semester = payload.semester;
+      selectedPack.block = payload.block;
+      selectedPack.updated_at = Date.now() / 1000;
+      updatePackSummary();
+    }
+    showToast('Saved successfully.', 'success');
+  }).catch(function (e) {
+    showToast(e.message || 'Could not save study pack.', 'error');
+  }).finally(function () {
+    inlineAutoSaving = false;
+    if (inlineAutoSaveQueued) {
+      inlineAutoSaveQueued = false;
+      runInlineAutosaveNow();
+    }
+  });
+}
+
+function queueInlineAutosave() {
+  if (!selectedPackId || !selectedPack || !token) return;
+  if (inlineAutoSaveTimer) {
+    clearTimeout(inlineAutoSaveTimer);
+    inlineAutoSaveTimer = null;
+  }
+  inlineAutoSaveTimer = setTimeout(function () {
+    inlineAutoSaveTimer = null;
+    runInlineAutosaveNow();
+  }, 650);
+}
+
 /* ── Auth ── */
 auth.onAuthStateChanged(function (user) {
   if (!user) {
@@ -2877,13 +2965,13 @@ auth.onAuthStateChanged(function (user) {
       markBuilderDirty(false);
       closeBuilderOverlay();
     }
-    if (topbarUtils.applyAuthState) {
+    if (topbarUtils.applyAuthState && userMeta) {
       topbarUtils.applyAuthState({
         user: null,
         userTextEl: userMeta,
         signedOutText: 'Not signed in'
       });
-    } else {
+    } else if (userMeta) {
       userMeta.textContent = 'Not signed in';
     }
     if (topbarDueText) topbarDueText.textContent = '0 due today';
@@ -2892,13 +2980,13 @@ auth.onAuthStateChanged(function (user) {
   user.getIdToken().then(function (t) {
     token = t;
     if (authClient && typeof authClient.setToken === 'function') { authClient.setToken(t); }
-    if (topbarUtils.applyAuthState) {
+    if (topbarUtils.applyAuthState && userMeta) {
       topbarUtils.applyAuthState({
         user: user,
         userTextEl: userMeta,
         signedInPrefix: 'Signed in as '
       });
-    } else {
+    } else if (userMeta) {
       userMeta.textContent = 'Signed in as ' + user.email;
     }
     return loadRemoteProgress().then(function () {
@@ -3120,10 +3208,12 @@ window.addEventListener('beforeunload', function (event) {
     event.returnValue = '';
   }
 });
-if (topbarUtils.bindRedirectButton) {
-  topbarUtils.bindRedirectButton(backAppBtn, '/dashboard');
-} else {
-  backAppBtn.addEventListener('click', function () { window.location.href = '/dashboard'; });
+if (backAppBtn) {
+  if (topbarUtils.bindRedirectButton) {
+    topbarUtils.bindRedirectButton(backAppBtn, '/dashboard');
+  } else {
+    backAppBtn.addEventListener('click', function () { window.location.href = '/dashboard'; });
+  }
 }
 fullscreenBtn.addEventListener('click', function () {
   if (!selectedPack) { showToast('Select a study pack first.', 'error'); return; }
@@ -3176,6 +3266,42 @@ packFolderMenu.addEventListener('keydown', function (e) {
   }
   if (e.key === 'Tab') { setPackFolderMenuOpen(false); }
 });
+if (packTitle) {
+  packTitle.addEventListener('input', function () {
+    if (!selectedPack) return;
+    selectedPack.title = packTitle.value;
+    updatePackSummary();
+    queueInlineAutosave();
+  });
+}
+if (packCourse) {
+  packCourse.addEventListener('input', function () {
+    if (!selectedPack) return;
+    selectedPack.course = packCourse.value;
+    queueInlineAutosave();
+  });
+}
+if (packSubject) {
+  packSubject.addEventListener('input', function () {
+    if (!selectedPack) return;
+    selectedPack.subject = packSubject.value;
+    queueInlineAutosave();
+  });
+}
+if (packSemester) {
+  packSemester.addEventListener('input', function () {
+    if (!selectedPack) return;
+    selectedPack.semester = packSemester.value;
+    queueInlineAutosave();
+  });
+}
+if (packBlock) {
+  packBlock.addEventListener('input', function () {
+    if (!selectedPack) return;
+    selectedPack.block = packBlock.value;
+    queueInlineAutosave();
+  });
+}
 newFolderBtn.addEventListener('click', function () { openFolderModal('create', null); });
 
 deleteFolderBtn.addEventListener('click', function () {
@@ -3191,18 +3317,12 @@ deleteFolderBtn.addEventListener('click', function () {
   });
 });
 
-savePackBtn.addEventListener('click', function () {
-  if (!selectedPackId || !selectedPack) { showToast('Select a study pack first.', 'error'); return; }
-  apiCall('/api/study-packs/' + encodeURIComponent(selectedPackId), {
-    method: 'PATCH',
-    body: JSON.stringify({ title: packTitle.value.trim(), folder_id: packFolderSelect.value, course: packCourse.value.trim(), subject: packSubject.value.trim(), semester: packSemester.value.trim(), block: packBlock.value.trim(), flashcards: selectedPack.flashcards || [], test_questions: selectedPack.test_questions || [] })
-  }).then(function () {
-    pendingOpenPackId = selectedPackId;
-    return loadData(selectedPackId);
-  }).then(function () {
-    pendingOpenPackId = ''; showToast('Study pack saved.');
-  }).catch(function (e) { showToast(e.message || 'Could not save study pack.', 'error'); });
-});
+if (savePackBtn) {
+  savePackBtn.addEventListener('click', function () {
+    if (!selectedPackId || !selectedPack) { showToast('Select a study pack first.', 'error'); return; }
+    runInlineAutosaveNow();
+  });
+}
 
 deletePackBtn.addEventListener('click', function () {
   if (!selectedPackId) { showToast('Select a study pack first.', 'error'); return; }
@@ -3305,6 +3425,7 @@ addFlashcardBtn.addEventListener('click', function () {
   var ni = selectedPack.flashcards.length - 1;
   learnFlashcardIndex = ni; learnFlashcardFlipped = false;
   renderFlashcardEditor(ni); setEditorPane('flashcards');
+  queueInlineAutosave();
   showToast('New flashcard added.');
 });
 
@@ -3315,6 +3436,7 @@ addQuestionBtn.addEventListener('click', function () {
   var ni = selectedPack.test_questions.length - 1;
   learnQuestionIndex = ni;
   renderQuestionEditor(ni); setEditorPane('test');
+  queueInlineAutosave();
   showToast('New practice question added.');
 });
 

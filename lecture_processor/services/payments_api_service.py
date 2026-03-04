@@ -80,8 +80,8 @@ def create_checkout_session(app_ctx, request):
                 'quantity': 1,
             }],
             mode='payment',
-            success_url=public_base_url + '/dashboard?payment=success&session_id={CHECKOUT_SESSION_ID}',
-            cancel_url=public_base_url + '/dashboard?payment=cancelled',
+            success_url=public_base_url + '/buy_credits?payment=success&session_id={CHECKOUT_SESSION_ID}',
+            cancel_url=public_base_url + '/buy_credits?payment=cancelled',
             customer_email=email,
             metadata={
                 'uid': uid,

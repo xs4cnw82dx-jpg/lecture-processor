@@ -5,40 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Study Calendar - Lecture Processor</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/calendar.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" integrity="sha384-RkASv+6KfBMW9eknReJIJ6b3UnjKOKC5bOUaNgIY778NFbQ8MtWq9Lr/khUgqtTt" crossorigin="anonymous">
 </head>
 <body>
-  <header class="topbar">
-    <div class="container">
-      <div class="topbar-inner">
-        <a href="/dashboard" class="logo">
-          <span class="logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></span>
-          <span>Study Calendar</span>
-        </a>
-        <a class="btn" href="/dashboard">Dashboard</a>
-        <a class="btn" href="/plan">Planner</a>
-        <a class="btn" href="/study">Study Library</a>
-        <button class="btn danger" id="signout-btn" style="display:none;">Sign out</button>
-        <div class="user-email" id="user-email">Checking sign-in...</div>
-      </div>
-    </div>
-  </header>
-
-  <main class="page">
+  {% set shell_title = 'Calendar' %}
+  {% include '_app_shell.html' %}
+  <main class="app-shell-page page">
     <div class="container">
       <div class="headline">
         <div>
           <h1>Calendar</h1>
           <p>Week view planning with study sessions and browser reminders.</p>
         </div>
-        <button class="btn primary" id="add-session-btn">+ Add Study Session</button>
+        <div class="headline-actions">
+          <button class="btn" id="jump-reminders-btn">Reminder Settings</button>
+          <button class="btn primary" id="add-session-btn">+ Add Study Session</button>
+        </div>
       </div>
 
       <div class="layout" id="calendar-layout" style="display:none;">
-        <aside class="panel">
+        <aside class="panel" id="reminder-settings-panel">
           <div class="panel-head"><div class="panel-title">Reminder Settings</div></div>
           <div class="panel-body">
             <div class="field">
@@ -88,7 +78,6 @@
                 <div class="app-select-menu" id="daily-reminder-time-menu"></div>
               </div>
             </div>
-            <button class="btn ghost" id="save-reminder-btn">Save reminders</button>
             <div class="muted" style="margin-top:10px;">Browser-only reminders: alerts fire only while this tab is open in an active browser session. They do not run after closing the browser, logging out, or when your device is asleep.</div>
             <div class="muted" style="margin-top:6px;">No email or push reminders are sent yet.</div>
           </div>
@@ -114,6 +103,8 @@
       </div>
     </div>
   </main>
+  </div>
+  </div>
 
   <div class="overlay" id="session-modal-overlay">
     <div class="modal" id="session-modal-card" role="dialog" aria-modal="true" aria-labelledby="session-modal-title">
@@ -169,6 +160,7 @@
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
   <script src="{{ url_for('static', filename='js/calendar.js') }}"></script>
 </body>
 </html>

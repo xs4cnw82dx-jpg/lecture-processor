@@ -20,6 +20,10 @@ const markdownUtils = window.LectureProcessorMarkdown || {};
 const uxUtils = window.LectureProcessorUx || {};
 const downloadUtils = window.LectureProcessorDownload || {};
 const topbarUtils = window.LectureProcessorTopbar || {};
+const pageConfig = window.LectureProcessorPageConfig || {};
+const forcedMode = ['lecture-notes', 'slides-only', 'interview'].includes(String(pageConfig.forcedMode || '').trim())
+    ? String(pageConfig.forcedMode || '').trim()
+    : '';
 
 function formatDateLabel(value) {
     if (typeof uxUtils.formatDate === 'function') return uxUtils.formatDate(value);
@@ -48,7 +52,7 @@ let pollInterval = null;
 let pollFailures = 0;
 let pollMissingResponses = 0;
 let pollStartedAt = 0;
-let currentMode = 'lecture-notes';
+let currentMode = forcedMode || 'lecture-notes';
 let resultMarkdown = '';
 let slideText = '';
 let transcript = '';
@@ -97,7 +101,7 @@ const DOWNLOAD_LABELS = Object.freeze({
     lectureNotes: 'Lecture Notes',
     slideExtract: 'Slide Extract',
     lectureTranscript: 'Lecture Transcript',
-    interviewTranscript: 'Interview Transcript',
+    interviewTranscript: 'Interview Transcription',
 });
 const OUTPUT_LANGUAGE_LABELS = Object.freeze({
     dutch: '🇳🇱 Dutch',
@@ -194,14 +198,14 @@ const modeConfig = {
         steps: [{ num: 1, label: 'Extract Text' }, { num: 2, label: 'Build Study Tools' }]
     },
     'interview': {
-        description: 'Upload an interview recording to generate a timestamped transcript with speaker identification. Optional extras run through the text-extraction pipeline.',
+        description: 'Upload an interview recording to generate a timestamped transcript with speaker identification.',
         creditCost: 'Uses <strong>1 interview credit</strong> (+ <strong>1 text extraction credit</strong> per selected extra)',
         creditType: 'interview',
         needsPdf: false,
         needsAudio: true,
         audioTitle: 'Interview Recording',
-        buttonText: 'Transcribe Interview',
-        resultTitle: 'Interview Transcript',
+        buttonText: 'Run Interview Transcription',
+        resultTitle: 'Interview Transcription',
         steps: [{ num: 1, label: 'Transcribe' }]
     }
 };
@@ -294,6 +298,7 @@ const backToSignin = document.getElementById('back-to-signin');
 
 const signInRequired = document.getElementById('sign-in-required');
 const signInToProcessBtn = document.getElementById('sign-in-to-process-btn');
+const studyPackTitleInput = document.getElementById('study-pack-title-input');
 const modeTabs = document.querySelectorAll('.mode-tab');
 const modeDescriptionText = document.getElementById('mode-description-text');
 const modeCreditCost = document.getElementById('mode-credit-cost');
@@ -870,29 +875,17 @@ function getInterviewFeaturesValue() {
     if (selectedInterviewFeatures.length === 2) return 'both';
     return selectedInterviewFeatures[0];
 }
+function getStudyPackTitleValue() {
+    if (!studyPackTitleInput) return '';
+    return String(studyPackTitleInput.value || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120);
+}
 function updateModeCostSummary() {
     if (!modeCostSummary) return;
-    if (!userCredits) {
-        modeCostSummary.textContent = 'Sign in to view run cost and available credits.';
-        return;
-    }
-    const lectureCredits = userCredits.lecture_standard + userCredits.lecture_extended;
-    const slidesCredits = userCredits.slides;
-    const interviewCredits = getTotalInterviewCredits();
-    if (currentMode === 'lecture-notes') {
-        modeCostSummary.textContent = `This run costs 1 lecture credit. You have ${lectureCredits} lecture credits.`;
-        return;
-    }
-    if (currentMode === 'slides-only') {
-        modeCostSummary.textContent = `This run costs 1 text extraction credit. You have ${slidesCredits} text extraction credits.`;
-        return;
-    }
-    const extras = getInterviewExtraCost();
-    if (extras > 0) {
-        modeCostSummary.textContent = `This run costs 1 interview credit + ${extras} text extraction credits for slide-pipeline extras. You have ${interviewCredits} interview credits and ${slidesCredits} text extraction credits.`;
-    } else {
-        modeCostSummary.textContent = `This run costs 1 interview credit. Optional extras use text extraction credits (text-extraction pipeline). You have ${interviewCredits} interview credits and ${slidesCredits} text extraction credits.`;
-    }
+    modeCostSummary.textContent = '';
+    modeCostSummary.style.display = 'none';
 }
 function updateInterviewOptionAvailability() {
     const slidesCredits = userCredits ? Number(userCredits.slides || 0) : Number.POSITIVE_INFINITY;
@@ -978,13 +971,13 @@ function updateInterviewOptionsUI() {
     });
     const slidesCredits = userCredits ? Number(userCredits.slides || 0) : 0;
     if (!selectedInterviewFeatures.length && userCredits && slidesCredits <= 0) {
-        interviewExtraNote.textContent = 'No extras selected. You currently have 0 text extraction credits, so slide-pipeline extras are disabled.';
+        interviewExtraNote.textContent = 'No extras selected. You currently have 0 text extraction credits, so extras are disabled.';
     } else if (!selectedInterviewFeatures.length) {
-        interviewExtraNote.textContent = 'No extras selected. Select one or both options (1 text extraction credit per option via the text-extraction pipeline).';
+        interviewExtraNote.textContent = 'No extras selected. Select one or both options (1 text extraction credit per option).';
     } else if (selectedInterviewFeatures.length === 1) {
-        interviewExtraNote.textContent = 'Selected 1 extra option. This adds 1 text extraction credit (text-extraction pipeline).';
+        interviewExtraNote.textContent = 'Selected 1 extra option. This adds 1 text extraction credit.';
     } else {
-        interviewExtraNote.textContent = 'Selected both extra options. This adds 2 text extraction credits (text-extraction pipeline).';
+        interviewExtraNote.textContent = 'Selected both extra options. This adds 2 text extraction credits.';
     }
     updateModeCreditDisplay();
     updateProcessButton();
@@ -1735,7 +1728,7 @@ function updateProcessButton() {
     processButton.querySelector('span').textContent = config.buttonText;
     if (currentUser && !hasCredits && !resultsLocked) {
         if (currentMode === 'interview' && getTotalInterviewCredits() > 0 && userCredits.slides < getInterviewExtraCost()) {
-            setSanitizedHtml(noCreditsWarning, "You don't have enough text extraction credits for the selected interview extras (text-extraction pipeline). <a href=\"#\" id=\"buy-credits-link-inline\">Buy more credits</a>");
+            setSanitizedHtml(noCreditsWarning, "You don't have enough text extraction credits for the selected interview extras. <a href=\"#\" id=\"buy-credits-link-inline\">Buy more credits</a>");
         } else {
             setSanitizedHtml(noCreditsWarning, "You don't have enough credits. <a href=\"#\" id=\"buy-credits-link-inline\">Buy more credits</a>");
         }
@@ -1744,7 +1737,7 @@ function updateProcessButton() {
         if (inlineLink) {
             inlineLink.addEventListener('click', (e) => {
                 e.preventDefault();
-                showPricingModal();
+                window.location.href = '/buy_credits';
             });
         }
     } else {
@@ -1752,6 +1745,9 @@ function updateProcessButton() {
     }
 }
 function switchMode(mode) {
+    if (forcedMode && mode !== forcedMode) {
+        mode = forcedMode;
+    }
     currentMode = mode;
     const config = modeConfig[mode];
     modeTabs.forEach(tab => {
@@ -2263,8 +2259,17 @@ async function processFiles() {
         return;
     }
     const config = modeConfig[currentMode];
+    const studyPackTitle = getStudyPackTitleValue();
+    if (!studyPackTitle) {
+        showToast('Lecture Topic / Name is required.', 'error');
+        if (studyPackTitleInput && typeof studyPackTitleInput.focus === 'function') {
+            studyPackTitleInput.focus();
+        }
+        return;
+    }
     const fd = new FormData();
     fd.append('mode', currentMode);
+    fd.append('study_pack_title', studyPackTitle);
     if (config.needsPdf && pdfFile) fd.append('pdf', pdfFile);
     if (config.needsAudio && audioFile) fd.append('audio', audioFile);
     if (currentMode === 'lecture-notes' && config.needsAudio && importedAudioToken && !audioFile) {
@@ -2751,12 +2756,11 @@ function resetResultsState() {
 }
 
 function showPricingModal() {
-    openOverlay(pricingOverlay);
-    applyCheckoutButtonsState();
+    window.location.href = '/buy_credits';
 }
-function hidePricingModal() { closeOverlay(pricingOverlay); }
-function showHistoryModal() { openOverlay(historyOverlay); loadPurchaseHistory(); }
-function hideHistoryModal() { closeOverlay(historyOverlay); }
+function hidePricingModal() {}
+function showHistoryModal() { window.location.href = '/buy_credits'; }
+function hideHistoryModal() {}
 function formatPrice(cents, currency) { const amount = (cents / 100).toFixed(2); return currency === 'eur' ? `€${amount}` : `${amount} ${currency.toUpperCase()}`; }
 function formatCreditsText(credits) { return Object.entries(credits).map(([k, v]) => `${v} ${k.replace(/_/g, ' ').replace('credits ', '').replace('credits', '').trim()}`).join(', '); }
 function setHistoryMessage(message, loading = false) {
@@ -3665,6 +3669,12 @@ setAmountSelection('questions', selectedQuestionAmount);
 setStudyFeature('both');
 updateInterviewOptionsUI();
 setOutputLanguage('english', '🇬🇧 English');
-switchMode('lecture-notes');
+if (forcedMode) {
+    modeTabs.forEach((tab) => {
+        tab.disabled = true;
+        tab.setAttribute('aria-disabled', 'true');
+    });
+}
+switchMode(forcedMode || 'lecture-notes');
 resetResultsState();
 updateHeaderNavActiveState();

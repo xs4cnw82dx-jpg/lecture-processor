@@ -3,105 +3,56 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tools · Lecture Processor</title>
+  <title>Tools Overview · Lecture Processor</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/tools.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tools-hub.css') }}">
 </head>
 <body>
-  <header class="topbar">
-    <a href="/dashboard" class="brand" aria-label="Back to dashboard">
-      <span class="brand-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-        </svg>
-      </span>
-      <span class="brand-text">Lecture Processor</span>
-    </a>
-    <div class="topbar-actions">
-      <button type="button" class="topbar-btn" id="tools-open-library-btn">Study Library</button>
-      <button type="button" class="topbar-btn" id="tools-open-dashboard-btn">Dashboard</button>
-    </div>
-  </header>
+  {% set shell_title = 'Tools Overview' %}
+  {% include '_app_shell.html' %}
+    <main class="app-shell-page tools-hub-page">
+      <section class="shell-panel hub-hero">
+        <h1>Extraction tools</h1>
+        <p>Choose the right reader for your source, or jump directly into full lecture processing flows.</p>
+      </section>
+      <section class="hub-grid">
+        <a class="shell-panel hub-card" href="/document-reader">
+          <h2>Document Reader</h2>
+          <p>Upload PDF, PPTX, or DOCX and ask focused questions.</p>
+        </a>
+        <a class="shell-panel hub-card" href="/image-reader">
+          <h2>Image Reader</h2>
+          <p>Upload up to five images and extract clean notes.</p>
+        </a>
+        <a class="shell-panel hub-card" href="/url-reader">
+          <h2>URL Reader</h2>
+          <p>Analyze article pages and simplify complex findings.</p>
+        </a>
+      </section>
+      <section class="hub-grid flow-grid">
+        <a class="shell-panel hub-card" href="/lecture-notes">
+          <h2>Lecture Notes</h2>
+          <p>Slides + audio to full notes, flashcards, and tests.</p>
+        </a>
+        <a class="shell-panel hub-card" href="/slides-extraction">
+          <h2>Slides Extraction</h2>
+          <p>Turn slide decks into clear study text quickly.</p>
+        </a>
+        <a class="shell-panel hub-card" href="/interview-transcription">
+          <h2>Interview Transcription</h2>
+          <p>Timestamped transcript with optional enhancement extras.</p>
+        </a>
+      </section>
+    </main>
+  </div>
+  </div>
 
-  <main class="page-shell">
-    <section class="hero-card">
-      <span class="hero-badge">Beta</span>
-      <h1>Tools</h1>
-      <p>Use Gemini 2.5 Flash Lite (high reasoning mode) to extract, summarize, and question documents, images, or URLs.</p>
-      <p class="hero-tip">Best value: ask multiple questions in one run so you spend fewer text extraction credits.</p>
-      <p class="hero-meta" id="tools-user-meta">Checking sign-in...</p>
-    </section>
-
-    <section class="panel auth-required" id="tools-auth-required">
-      <h2>Sign in required</h2>
-      <p>Tools is available for signed-in users and uses text extraction credits per run.</p>
-      <button type="button" class="primary-btn" id="tools-signin-btn">Open Dashboard to Sign In</button>
-    </section>
-
-    <section class="panel" id="tools-app" style="display:none;">
-      <div class="tools-grid">
-        <article class="tool-card">
-          <h2>Extract Content</h2>
-          <p class="muted">Choose a source type, upload a file, add optional instructions, and run extraction.</p>
-          <div class="source-toggle" role="tablist" aria-label="Source type">
-            <button type="button" class="source-btn active" id="source-document-btn" data-source-type="document" role="tab" aria-selected="true">Document Reader</button>
-            <button type="button" class="source-btn" id="source-image-btn" data-source-type="image" role="tab" aria-selected="false">Image Reader</button>
-            <button type="button" class="source-btn" id="source-url-btn" data-source-type="url" role="tab" aria-selected="false">URL Reader</button>
-          </div>
-          <label class="prompt-label" for="tools-custom-prompt">Custom prompt (optional)</label>
-          <textarea id="tools-custom-prompt" class="prompt-input" rows="5" placeholder="Example: Create concise exam notes, then answer these questions in order: 1) ... 2) ... 3) ..."></textarea>
-          <div class="prompt-templates" id="tools-prompt-templates">
-            <button type="button" class="ghost-btn prompt-template-btn" data-template="qa">Template: Q&A Batch</button>
-          </div>
-          <p class="prompt-help">Q&A tip: Ask multiple questions at once, for example: "Answer these 5 questions from this file: ..."</p>
-          <label class="prompt-label tools-url-label" id="tools-url-label" for="tools-url-input" style="display:none;">Source URL</label>
-          <input type="url" id="tools-url-input" class="url-input" placeholder="https://pubmed.ncbi.nlm.nih.gov/..." autocomplete="off" spellcheck="false" style="display:none;">
-          <p class="prompt-help" id="tools-url-help" style="display:none;">URL Reader fetches article text from a public webpage and runs your prompt on it.</p>
-          <label class="dropzone" id="tools-dropzone" for="tools-file-input">
-            <input type="file" id="tools-file-input" accept=".pdf,.pptx,.docx,.png,.jpg,.jpeg,.webp,.heic,.heif">
-            <div class="dropzone-title">Drop a file here or click to browse</div>
-            <div class="dropzone-sub" id="tools-dropzone-sub">PDF/PPTX/DOCX up to 50 MB</div>
-          </label>
-          <div class="file-selected" id="tools-file-selected" style="display:none;">
-            <div>
-              <div class="file-name" id="tools-file-name"></div>
-              <div class="file-meta" id="tools-file-meta"></div>
-            </div>
-            <button type="button" class="ghost-btn" id="tools-file-remove-btn">Remove</button>
-          </div>
-          <div class="run-row">
-            <button type="button" class="primary-btn" id="tools-run-btn" disabled>Extract</button>
-            <span class="credit-note" id="tools-credit-text">Text extraction credits: -</span>
-          </div>
-          <div class="status" id="tools-status" aria-live="polite"></div>
-          <div class="billing" id="tools-billing" style="display:none;"></div>
-        </article>
-
-        <article class="tool-card result-card" id="tools-result-card">
-          <div class="result-head">
-            <h2>Result</h2>
-            <div class="result-actions">
-              <button type="button" class="ghost-btn active" id="tools-view-rendered-btn">Rendered</button>
-              <button type="button" class="ghost-btn" id="tools-copy-btn">Copy</button>
-              <button type="button" class="ghost-btn" id="tools-download-docx-btn">Download .docx</button>
-            </div>
-          </div>
-          <div class="result-body" id="tools-result-preview"></div>
-        </article>
-      </div>
-    </section>
-  </main>
-
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" integrity="sha384-4gq9w/AGf72FXdNQ3Kn3EqWP7633NbCMjpYHt8YCZyXf23o2opcuAr4cif41tLrC" crossorigin="anonymous"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js" integrity="sha384-xtdq4MQqPj1dB5DQsuw9O7dh4kHhMP/Wp5u8O1jiaWiou13ZfJIgiccjtVK2pBhL" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
   <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js" integrity="sha384-948ahk4ZmxYVYOc+rxN1H2gM1EJ2Duhp7uHtZ4WSLkV4Vtx5MUqnV+l7u9B+jFv+" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js" integrity="sha384-XQqX/4yiUGu+oyr87jvWzRuqBUK/adrY0DunhL+tID9m/9dwSpV8h9Fk/Sg6ifVQ" crossorigin="anonymous"></script>
-  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/markdown-utils.js') }}"></script>
-  <script src="{{ url_for('static', filename=tools_js_asset or 'js/tools.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
 </body>
 </html>

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ reader_title }} · Lecture Processor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/reader.css') }}">
+</head>
+<body>
+  {% set shell_title = reader_title %}
+  {% include '_app_shell.html' %}
+    <main class="app-shell-page reader-page" data-reader-source="{{ reader_source }}">
+      <section class="shell-panel reader-hero">
+        <h1>{{ reader_title }}</h1>
+        <p>{{ reader_subtitle }}</p>
+      </section>
+
+      <section class="reader-grid">
+        <article class="shell-panel reader-input-card">
+          <h2>Extract Content</h2>
+          <div class="reader-advanced">
+            <button type="button" class="advanced-toggle" id="reader-advanced-toggle" aria-expanded="false" aria-controls="reader-advanced-body">
+              Advanced
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </button>
+            <div class="advanced-body" id="reader-advanced-body">
+              <label for="reader-question-input">Question (optional)</label>
+              <textarea id="reader-question-input" rows="5"></textarea>
+              <p class="reader-help" id="reader-question-help"></p>
+            </div>
+          </div>
+
+          <label class="reader-url-wrap" id="reader-url-wrap" for="reader-url-input" style="display:none;">
+            <span>Source URL</span>
+            <input type="url" id="reader-url-input" placeholder="https://example.com/article" autocomplete="off">
+          </label>
+
+          <div class="dropzone-wrap" id="reader-dropzone-wrap">
+            <label class="dropzone" id="reader-dropzone" for="reader-file-input">
+              <input type="file" id="reader-file-input">
+              <div class="dropzone-title" id="reader-dropzone-title">Drop a file here or click to browse</div>
+              <div class="dropzone-sub" id="reader-dropzone-sub"></div>
+            </label>
+            <button type="button" class="add-image-btn" id="reader-add-image-btn" style="display:none;">+ Add image</button>
+            <div class="selected-files" id="reader-selected-files"></div>
+          </div>
+
+          <div class="run-row">
+            <button type="button" class="primary-btn" id="reader-run-btn" disabled>Extract</button>
+            <span class="credit-note" id="reader-credit-note">Text extraction credits: -</span>
+          </div>
+          <div class="status" id="reader-status"></div>
+        </article>
+
+        <article class="shell-panel reader-output-card">
+          <div class="result-head">
+            <h2>Output</h2>
+            <div class="actions">
+              <button type="button" class="ghost-btn" id="reader-copy-btn">Copy</button>
+              <button type="button" class="ghost-btn" id="reader-download-docx-btn">Download .docx</button>
+            </div>
+          </div>
+          <pre class="output-pre" id="reader-output-pre"></pre>
+        </article>
+      </section>
+    </main>
+  </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+  <script>
+    window.ReaderConfig = {
+      source: {{ reader_source|tojson }},
+      title: {{ reader_title|tojson }}
+    };
+  </script>
+  <script src="{{ url_for('static', filename=reader_js_asset or 'js/reader.js') }}"></script>
+</body>
+</html>

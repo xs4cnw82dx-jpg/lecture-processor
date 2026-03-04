@@ -1,0 +1,42 @@
+.tools-hub-page {
+  display: grid;
+  gap: 14px;
+}
+
+.hub-hero h1 {
+  margin: 0 0 8px;
+  font-size: 1.9rem;
+}
+
+.hub-hero p {
+  margin: 0;
+  color: #64748b;
+}
+
+.hub-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.hub-card {
+  text-decoration: none;
+  color: inherit;
+}
+
+.hub-card h2 {
+  margin: 0 0 6px;
+  font-size: 1.08rem;
+}
+
+.hub-card p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.92rem;
+}
+
+@media (max-width: 960px) {
+  .hub-grid {
+    grid-template-columns: 1fr;
+  }
+}

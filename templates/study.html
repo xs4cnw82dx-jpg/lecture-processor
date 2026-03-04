@@ -9,10 +9,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" integrity="sha384-RkASv+6KfBMW9eknReJIJ6b3UnjKOKC5bOUaNgIY778NFbQ8MtWq9Lr/khUgqtTt" crossorigin="anonymous">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/study.css') }}">
 </head>
 
 <body>
+  {% set shell_title = 'Study Library' %}
+  {% include '_app_shell.html' %}
+  <main class="app-shell-page">
   <div class="container">
     <div class="topbar">
       <a href="/dashboard" class="topbar-logo" aria-label="Back to dashboard">
@@ -23,7 +27,7 @@
           </svg></div>
         <div>
           <h1>Study Library</h1>
-          <div class="topbar-sub" id="user-meta">Checking sign-in...</div>
+          <div class="topbar-sub">Manage packs and keep your study material organized.</div>
         </div>
       </a>
       <div class="actions">
@@ -32,11 +36,6 @@
             <circle cx="12" cy="12" r="10"></circle>
             <path d="M12 6v6l4 2"></path>
           </svg><span id="topbar-due-text">0 due today</span></div>
-        <button class="btn" id="back-app-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="19" y1="12" x2="5" y2="12"></line>
-            <polyline points="12 19 5 12 12 5"></polyline>
-          </svg>Back to App</button>
         <button class="btn" id="fullscreen-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="15 3 21 3 21 9"></polyline>
@@ -65,8 +64,7 @@
                 stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>Manually Create Study Pack</button><button class="btn" id="save-pack-btn">Save
-              Changes</button><button class="btn danger" id="delete-pack-btn">Delete Pack</button></div>
+              </svg>Manually Create Study Pack</button><button class="btn danger" id="delete-pack-btn">Delete Pack</button></div>
         </div>
         <div class="panel-body">
           <div class="pack-summary" id="pack-summary">
@@ -265,6 +263,8 @@
         </div>
       </section>
     </div>
+  </main>
+  </div>
   </div>
 
   <!-- Session Setup -->
@@ -823,6 +823,7 @@
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
   <script src="{{ url_for('static', filename=study_js_asset or 'js/study.js') }}"></script>
 </body>
 

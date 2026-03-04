@@ -3,7 +3,6 @@
     const authUtils = window.LectureProcessorAuth || {};
     const authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Not signed in' }) : null;
     const uxUtils = window.LectureProcessorUx || {};
-    const topbarUtils = window.LectureProcessorTopbar || {};
 
     const weekGrid = document.getElementById('week-grid');
     const weekTitle = document.getElementById('week-title');
@@ -11,10 +10,10 @@
     const nextWeekBtn = document.getElementById('next-week-btn');
     const todayWeekBtn = document.getElementById('today-week-btn');
     const addSessionBtn = document.getElementById('add-session-btn');
-    const signoutBtn = document.getElementById('signout-btn');
-    const userEmailEl = document.getElementById('user-email');
+    const jumpRemindersBtn = document.getElementById('jump-reminders-btn');
     const authRequiredEl = document.getElementById('auth-required');
     const calendarLayoutEl = document.getElementById('calendar-layout');
+    const reminderSettingsPanel = document.getElementById('reminder-settings-panel');
     const toastEl = document.getElementById('toast');
 
     const modalOverlay = document.getElementById('session-modal-overlay');
@@ -36,7 +35,6 @@
     const dailyReminderEnabledEl = document.getElementById('daily-reminder-enabled');
     const dailyReminderTimeEl = document.getElementById('daily-reminder-time');
     const dailyReminderTimeRow = document.getElementById('daily-reminder-time-row');
-    const saveReminderBtn = document.getElementById('save-reminder-btn');
 
     let currentUser = null;
     let idToken = '';
@@ -45,6 +43,7 @@
     let studyPacks = [];
     let editingSessionId = '';
     let reminderTimer = null;
+    let reminderSaveDebounceTimer = null;
     let sessionDatePicker = null;
     let sessionTimePicker = null;
 
@@ -520,7 +519,7 @@
       toggleDailyReminderTimeInput();
     }
 
-    async function saveReminderSettingsFromUI() {
+    async function saveReminderSettingsFromUI(options = {}) {
       const settings = loadReminderSettings();
       settings.enabled = notifyEnabledEl.value === 'on' ? 'on' : 'off';
       settings.offset = String(parseInt(notifyOffsetEl.value || '30', 10) || 30);
@@ -547,8 +546,19 @@
       }
 
       saveReminderSettings(settings);
-      showToast('Reminder settings saved.', 'success');
+      if (!options.silent) {
+        showToast('Saved successfully.', 'success');
+      }
       startReminderLoop();
+    }
+
+    function queueReminderSettingsAutoSave() {
+      if (!currentUser) return;
+      if (reminderSaveDebounceTimer) clearTimeout(reminderSaveDebounceTimer);
+      reminderSaveDebounceTimer = setTimeout(() => {
+        reminderSaveDebounceTimer = null;
+        saveReminderSettingsFromUI();
+      }, 450);
     }
 
     function maybeNotify(title, body, session) {
@@ -634,11 +644,15 @@
     nextWeekBtn.addEventListener('click', () => { weekStart = addDays(weekStart, 7); renderWeek(); });
     todayWeekBtn.addEventListener('click', () => { weekStart = startOfWeek(new Date()); renderWeek(); });
     addSessionBtn.addEventListener('click', () => openModal(null));
+    if (jumpRemindersBtn && reminderSettingsPanel) {
+      jumpRemindersBtn.addEventListener('click', () => {
+        reminderSettingsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
     modalCloseBtn.addEventListener('click', closeModal);
     modalCancelBtn.addEventListener('click', closeModal);
     modalSaveBtn.addEventListener('click', saveSessionFromModal);
     modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
-    saveReminderBtn.addEventListener('click', saveReminderSettingsFromUI);
 
     modalCard.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
@@ -652,15 +666,6 @@
       if (!e.target.closest('.app-select')) closeAllSelectMenus();
     });
 
-    if (topbarUtils.bindSignOutButton) {
-      topbarUtils.bindSignOutButton(signoutBtn, auth, '/dashboard');
-    } else {
-      signoutBtn.addEventListener('click', async () => {
-        try { await auth.signOut(); } catch (_) {}
-        window.location.href = '/dashboard';
-      });
-    }
-
     const notifyEnabledSelect = document.getElementById('notify-enabled-select');
     const notifyOffsetSelect = document.getElementById('notify-offset-select');
     const dailyReminderEnabledSelect = document.getElementById('daily-reminder-enabled-select');
@@ -668,10 +673,10 @@
     const sessionPackSelect = document.getElementById('session-pack-select');
 
     buildDailyTimeOptions();
-    initAppSelect(notifyEnabledSelect, () => {});
-    initAppSelect(notifyOffsetSelect, () => {});
-    initAppSelect(dailyReminderEnabledSelect, () => { toggleDailyReminderTimeInput(); });
-    initAppSelect(dailyReminderTimeSelect, () => {});
+    initAppSelect(notifyEnabledSelect, () => { queueReminderSettingsAutoSave(); });
+    initAppSelect(notifyOffsetSelect, () => { queueReminderSettingsAutoSave(); });
+    initAppSelect(dailyReminderEnabledSelect, () => { toggleDailyReminderTimeInput(); queueReminderSettingsAutoSave(); });
+    initAppSelect(dailyReminderTimeSelect, () => { queueReminderSettingsAutoSave(); });
     initAppSelect(sessionPackSelect, () => {});
     initPickers();
     wireWeekActions();
@@ -681,24 +686,13 @@
       if (!user) {
         idToken = '';
         if (authClient && typeof authClient.clearToken === 'function') authClient.clearToken();
-        if (topbarUtils.applyProtectedPageAuthState) {
-          topbarUtils.applyProtectedPageAuthState({
-            user: null,
-            userTextEl: userEmailEl,
-            signOutBtn: signoutBtn,
-            authRequiredEl: authRequiredEl,
-            mainContentEl: calendarLayoutEl,
-            signOutSignedInDisplay: '',
-            authRequiredSignedOutDisplay: '',
-            mainContentSignedInDisplay: '',
-          });
-        } else {
-          userEmailEl.textContent = 'Not signed in';
-          signoutBtn.style.display = 'none';
-          authRequiredEl.style.display = '';
-          calendarLayoutEl.style.display = 'none';
-        }
+        authRequiredEl.style.display = '';
+        calendarLayoutEl.style.display = 'none';
         if (reminderTimer) clearInterval(reminderTimer);
+        if (reminderSaveDebounceTimer) {
+          clearTimeout(reminderSaveDebounceTimer);
+          reminderSaveDebounceTimer = null;
+        }
         studyPacks = [];
         renderPackSelectOptions('');
         return;
@@ -706,23 +700,8 @@
 
       idToken = await user.getIdToken();
       if (authClient && typeof authClient.setToken === 'function') authClient.setToken(idToken);
-      if (topbarUtils.applyProtectedPageAuthState) {
-        topbarUtils.applyProtectedPageAuthState({
-          user: user,
-          userTextEl: userEmailEl,
-          signOutBtn: signoutBtn,
-          authRequiredEl: authRequiredEl,
-          mainContentEl: calendarLayoutEl,
-          signOutSignedInDisplay: '',
-          authRequiredSignedOutDisplay: '',
-          mainContentSignedInDisplay: '',
-        });
-      } else {
-        userEmailEl.textContent = user.email || 'Signed in';
-        signoutBtn.style.display = '';
-        authRequiredEl.style.display = 'none';
-        calendarLayoutEl.style.display = '';
-      }
+      authRequiredEl.style.display = 'none';
+      calendarLayoutEl.style.display = '';
 
       loadSessions();
       await loadStudyPacks();

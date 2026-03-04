@@ -3,14 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lecture Processor — AI-Powered Study Notes</title>
+    <title>{% if forced_mode == 'lecture-notes' %}Lecture Notes{% elif forced_mode == 'slides-only' %}Slides Extraction{% elif forced_mode == 'interview' %}Interview Transcription{% else %}Lecture Processor — Processing{% endif %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
-<body>
-    <header class="header"><div class="container"><div class="header-content">
+<body data-forced-mode="{{ forced_mode or '' }}">
+    {% if forced_mode == 'lecture-notes' %}
+        {% set shell_title = 'Lecture Notes' %}
+    {% elif forced_mode == 'slides-only' %}
+        {% set shell_title = 'Slides Extraction' %}
+    {% elif forced_mode == 'interview' %}
+        {% set shell_title = 'Interview Transcription' %}
+    {% else %}
+        {% set shell_title = 'Extraction' %}
+    {% endif %}
+    {% include '_app_shell.html' %}
+    <header class="header" style="display:none;" aria-hidden="true"><div class="container"><div class="header-content">
         <a href="/dashboard" class="logo" aria-label="Lecture Processor dashboard"><div class="logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div><span class="logo-text">Lecture Processor</span></a>
         <div class="header-right">
             <button type="button" class="header-nav-toggle" id="header-nav-toggle" style="display:none;" aria-label="Open navigation menu" aria-expanded="false" aria-controls="header-sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg><span>Menu</span></button>
@@ -33,8 +44,8 @@ Total: 0</div></button>
             </div>
         </div>
     </div></div></header>
-    <div class="header-sidebar-backdrop" id="header-sidebar-backdrop"></div>
-    <aside class="header-sidebar" id="header-sidebar" aria-hidden="true">
+    <div class="header-sidebar-backdrop" id="header-sidebar-backdrop" style="display:none;" aria-hidden="true"></div>
+    <aside class="header-sidebar" id="header-sidebar" style="display:none;" aria-hidden="true">
         <div class="header-sidebar-head">
             <strong>Navigation</strong>
             <button type="button" class="header-sidebar-close" id="header-sidebar-close" aria-label="Close navigation">
@@ -133,8 +144,8 @@ Total: 0</div></button>
         </div>
     </div></div>
 
-    <main>
-        <section class="hero"><div class="container"><div class="hero-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>AI-Powered Processing</div><h1 class="hero-title">Transform Lectures into<br><span>Study-Ready Notes</span></h1><p class="hero-description">Upload your lecture slides and audio recordings. Get complete, structured notes ready for exam preparation in minutes.</p></div></section>
+    <main class="app-shell-page">
+        <section class="hero"><div class="container"><div class="hero-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>{% if forced_mode %}Extraction{% else %}Processing{% endif %}</div><h1 class="hero-title">{% if forced_mode == 'lecture-notes' %}Create Complete<br><span>Lecture Notes</span>{% elif forced_mode == 'slides-only' %}Run Focused<br><span>Slides Extraction</span>{% elif forced_mode == 'interview' %}Generate Clean<br><span>Interview Transcription</span>{% else %}Create Study-Ready<br><span>Lecture Outputs</span>{% endif %}</h1><p class="hero-description">{% if forced_mode == 'lecture-notes' %}Upload lecture slides and audio to build complete notes for study sessions.{% elif forced_mode == 'slides-only' %}Upload slide decks and extract clean text output with optional study tools.{% elif forced_mode == 'interview' %}Upload interview recordings and generate a timestamped transcript.{% else %}Upload your lecture files and generate notes, flashcards, and tests in one flow.{% endif %}</p></div></section>
         <section class="container"><h2 class="sr-only">Core features</h2><div class="features"><div class="feature-card"><div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></div><h3 class="feature-title">Smart Slide Extraction</h3><p class="feature-description">Extracts all text and identifies important visuals automatically</p></div><div class="feature-card"><div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg></div><h3 class="feature-title">Audio Transcription</h3><p class="feature-description">Converts spoken explanations into clean, readable text</p></div><div class="feature-card"><div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg></div><h3 class="feature-title">Intelligent Merging</h3><p class="feature-description">Combines slides and audio into comprehensive study notes</p></div></div></section>
         <section class="container"><div class="app-card">
             <div class="quickstart-card" id="quickstart-card" style="display:none;" aria-live="polite">
@@ -145,9 +156,13 @@ Total: 0</div></button>
                     <button type="button" class="quickstart-btn" id="quickstart-dismiss-btn">Hide this tip</button>
                 </div>
             </div>
-            <div class="mode-section"><span class="mode-label">Processing Mode</span><div class="mode-tabs" role="tablist" aria-label="Processing mode"><button type="button" class="mode-tab active" data-mode="lecture-notes" role="tab" aria-selected="true" aria-controls="mode-description" tabindex="0">Lecture Notes</button><button type="button" class="mode-tab" data-mode="slides-only" role="tab" aria-selected="false" aria-controls="mode-description" tabindex="-1">Slide Extract</button><button type="button" class="mode-tab" data-mode="interview" role="tab" aria-selected="false" aria-controls="mode-description" tabindex="-1">Interview Transcript</button></div><div class="mode-description" id="mode-description"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg><div><span id="mode-description-text">Upload lecture slides (PDF or PPTX) and audio recording to generate complete, integrated study notes.</span><div class="mode-credit-cost" id="mode-credit-cost">Uses <strong>1 lecture credit</strong></div><div class="mode-cost-summary" id="mode-cost-summary" aria-live="polite">Sign in to view run cost and available credits.</div></div></div></div>
+            <div class="mode-section"><span class="mode-label">Processing Mode</span><div class="mode-tabs" role="tablist" aria-label="Processing mode"{% if forced_mode %} style="display:none;"{% endif %}><button type="button" class="mode-tab active" data-mode="lecture-notes" role="tab" aria-selected="true" aria-controls="mode-description" tabindex="0">Lecture Notes</button><button type="button" class="mode-tab" data-mode="slides-only" role="tab" aria-selected="false" aria-controls="mode-description" tabindex="-1">Slides Extraction</button><button type="button" class="mode-tab" data-mode="interview" role="tab" aria-selected="false" aria-controls="mode-description" tabindex="-1">Interview Transcription</button></div><div class="mode-description" id="mode-description"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg><div><span id="mode-description-text">Upload lecture slides (PDF or PPTX) and audio recording to generate complete, integrated study notes.</span><div class="mode-credit-cost" id="mode-credit-cost">Uses <strong>1 lecture credit</strong></div><div class="mode-cost-summary" id="mode-cost-summary" aria-live="polite" style="display:none;"></div></div></div></div>
             <div class="sign-in-required" id="sign-in-required"><p>Please sign in to start processing your lectures</p><button class="process-button" id="sign-in-to-process-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg><span>Sign in to continue</span></button></div>
             <div class="upload-section" id="upload-section" style="display:none;">
+                <div class="field lecture-topic-field" id="lecture-topic-field">
+                    <label class="control-label" for="study-pack-title-input">Lecture Topic / Name</label>
+                    <input id="study-pack-title-input" class="language-custom-input" placeholder="For example: Cellular Respiration Week 3" maxlength="120">
+                </div>
                 <div class="upload-zone" id="pdf-zone"><svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg><div class="upload-title">Lecture Slides</div><div class="upload-subtitle">Drag &amp; drop or click to browse</div><div class="upload-formats">PDF or PPTX · Max 50 MB</div><input type="file" id="pdf-input" accept=".pdf,.pptx"><div class="file-info" id="pdf-info" style="display:none;"><div class="file-details"><div class="file-name"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span id="pdf-name"></span></div><div class="file-size" id="pdf-size"></div></div><button class="file-remove" id="pdf-remove" type="button" aria-label="Remove selected slides file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div></div>
                 <div class="upload-zone" id="audio-zone"><svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg><div class="upload-title" id="audio-zone-title">Lecture Recording</div><div class="upload-subtitle">Drag &amp; drop or click to browse</div><div class="upload-formats">MP3, M4A, WAV · Max 500 MB</div><input type="file" id="audio-input" accept=".mp3,.m4a,.wav,.aac,.ogg,.flac"><div class="file-info" id="audio-info" style="display:none;"><div class="file-details"><div class="file-name"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span id="audio-name"></span></div><div class="file-size" id="audio-size"></div></div><button class="file-remove" id="audio-remove" type="button" aria-label="Remove selected audio file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div></div>
                 <div class="upload-url-import" id="audio-url-import">
@@ -221,7 +236,7 @@ Total: 0</div></button>
                                 <button type="button" class="interview-option" data-feature="summary">Summary (max 1 page)</button>
                                 <button type="button" class="interview-option" data-feature="sections">Structured transcript with headings</button>
                             </div>
-                            <div class="control-note" id="interview-extra-note">No extras selected. Extras use the text-extraction pipeline and cost 1 text extraction credit per option.</div>
+                            <div class="control-note" id="interview-extra-note">No extras selected. Select one or both options (1 text extraction credit per option).</div>
                         </div>
                     </div>
                     <div class="generation-controls" id="language-controls">
@@ -249,7 +264,7 @@ Total: 0</div></button>
                 </div>
             </div>
             <div class="button-section" id="button-section" style="display:none;"><button class="process-button" id="process-button" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg><span>Process Lecture</span></button><div class="no-credits-warning" id="no-credits-warning">You don't have enough credits. <a href="#" id="buy-credits-link">Buy more credits</a></div></div>
-            <div class="progress-section" id="progress-section"><div class="progress-header"><h3 class="progress-title">Processing Your Files</h3><p class="progress-subtitle">This may take a few minutes depending on file size</p></div><div class="progress-steps" id="progress-steps"></div><div class="progress-status" id="progress-status"><div class="spinner"></div><span id="status-text">Starting...</span></div><div class="progress-retry" id="progress-retry"><button type="button" class="progress-retry-btn" id="progress-retry-btn">Retry status check now</button></div></div>
+            <div class="progress-section" id="progress-section"><div class="progress-header"><h3 class="progress-title">Processing Your Files</h3><p class="progress-subtitle">This may take a few minutes depending on how long your lecture is</p></div><div class="progress-steps" id="progress-steps"></div><div class="progress-status" id="progress-status"><div class="spinner"></div><span id="status-text">Starting...</span></div><div class="progress-retry" id="progress-retry"><button type="button" class="progress-retry-btn" id="progress-retry-btn">Retry status check now</button></div></div>
             <div class="results-section" id="results-section">
                 <div class="focus-dashboard">
                     <aside class="focus-sidebar">
@@ -316,6 +331,8 @@ Total: 0</div></button>
         </div></section>
     </main>
     <footer class="footer"><div class="container"><p class="footer-text">Powered by Gemini AI · Made for students · <a href="/privacy">Privacy Policy</a> · <a href="/terms">Terms</a></p></div></footer>
+    </div>
+    </div>
     <div class="goal-modal-overlay" id="goal-modal-overlay" aria-hidden="true">
         <div class="goal-modal" role="dialog" aria-modal="true" aria-labelledby="goal-modal-title">
             <div class="goal-modal-title" id="goal-modal-title">Set Daily Card Goal</div>
@@ -382,12 +399,16 @@ Total: 0</div></button>
     <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
     <script src="https://browser.sentry-cdn.com/7.120.3/bundle.min.js" integrity="sha384-QhNWP5Exx8ZPPgZF2s+nKw/cl8cah1/6MVdZfR8a22f2KO0OsBNonujHvYJlrWIP" crossorigin="anonymous"></script>
     <script>
         window.LectureProcessorRuntime = {
             sentryFrontendDsn: {{ sentry_frontend_dsn | tojson }},
             sentryEnvironment: {{ sentry_environment | tojson }},
             sentryRelease: {{ sentry_release | tojson }}
+        };
+        window.LectureProcessorPageConfig = {
+            forcedMode: {{ forced_mode | tojson }}
         };
     </script>
     <script src="{{ url_for('static', filename=index_js_asset or 'js/index-app.js') }}"></script>

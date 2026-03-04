@@ -63,6 +63,7 @@
 
     .page{padding:14px 0 34px}
     .headline{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap;margin-bottom:16px}
+    .headline-actions{display:flex;gap:10px;flex-wrap:wrap}
     .headline h1{margin:0 0 6px;font-size:2rem;letter-spacing:-.02em;line-height:1.12}
     .headline p{margin:0;color:var(--gray-500);font-size:1rem}
 
@@ -202,5 +203,6 @@
       .container{padding:0 12px}
       .topbar-inner{flex-wrap:wrap}
       .user-email{max-width:none;width:100%}
+      .headline-actions{width:100%}
       .week-grid{grid-template-columns:1fr}
     }
