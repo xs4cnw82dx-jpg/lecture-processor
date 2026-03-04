@@ -18,7 +18,19 @@ def index():
 def dashboard():
     runtime = get_runtime()
     return render_template(
+        'dashboard.html',
+        dashboard_js_asset=runtime.resolve_js_asset('js/dashboard.js'),
+        sentry_frontend_dsn=runtime.SENTRY_FRONTEND_DSN,
+        sentry_environment=runtime.SENTRY_ENVIRONMENT,
+        sentry_release=runtime.SENTRY_RELEASE,
+    )
+
+
+def _render_processing_page(forced_mode: str):
+    runtime = get_runtime()
+    return render_template(
         'index.html',
+        forced_mode=forced_mode,
         sentry_frontend_dsn=runtime.SENTRY_FRONTEND_DSN,
         sentry_environment=runtime.SENTRY_ENVIRONMENT,
         sentry_release=runtime.SENTRY_RELEASE,
@@ -44,8 +56,67 @@ def features_page():
 
 @pages_bp.route('/tools')
 def tools_page():
+    return render_template('tools.html')
+
+
+@pages_bp.route('/lecture-notes')
+def lecture_notes_page():
+    return _render_processing_page('lecture-notes')
+
+
+@pages_bp.route('/slides-extraction')
+def slides_extraction_page():
+    return _render_processing_page('slides-only')
+
+
+@pages_bp.route('/interview-transcription')
+def interview_transcription_page():
+    return _render_processing_page('interview')
+
+
+@pages_bp.route('/document-reader')
+def document_reader_page():
     runtime = get_runtime()
-    return render_template('tools.html', tools_js_asset=runtime.resolve_js_asset('js/tools.js'))
+    return render_template(
+        'reader.html',
+        reader_title='Document Reader',
+        reader_subtitle='Extract notes and answers from documents with optional question prompts.',
+        reader_source='document',
+        reader_js_asset=runtime.resolve_js_asset('js/reader.js'),
+    )
+
+
+@pages_bp.route('/image-reader')
+def image_reader_page():
+    runtime = get_runtime()
+    return render_template(
+        'reader.html',
+        reader_title='Image Reader',
+        reader_subtitle='Extract text and structured notes from up to five images per run.',
+        reader_source='image',
+        reader_js_asset=runtime.resolve_js_asset('js/reader.js'),
+    )
+
+
+@pages_bp.route('/url-reader')
+def url_reader_page():
+    runtime = get_runtime()
+    return render_template(
+        'reader.html',
+        reader_title='URL Reader',
+        reader_subtitle='Analyze public webpage content with a focused question prompt.',
+        reader_source='url',
+        reader_js_asset=runtime.resolve_js_asset('js/reader.js'),
+    )
+
+
+@pages_bp.route('/buy_credits')
+def buy_credits_page():
+    runtime = get_runtime()
+    return render_template(
+        'buy_credits.html',
+        buy_credits_js_asset=runtime.resolve_js_asset('js/buy-credits.js'),
+    )
 
 
 @pages_bp.route('/admin')

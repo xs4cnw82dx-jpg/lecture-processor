@@ -29,6 +29,8 @@ def save_study_pack(job_id, job_data, runtime=None):
         now_ts = resolved_runtime.time.time()
         tzinfo, timezone_name = study_progress.resolve_user_timezone(job_data.get('user_id', ''), runtime=resolved_runtime)
         local_title_time = datetime.fromtimestamp(now_ts, tz=timezone.utc).astimezone(tzinfo)
+        requested_title = str(job_data.get('study_pack_title', '') or '').strip()[:120]
+        pack_title = requested_title or f"{job_data.get('mode', 'study-pack')} {local_title_time.strftime('%Y-%m-%d %H:%M')}"
 
         doc_ref.set(
             {
@@ -36,7 +38,7 @@ def save_study_pack(job_id, job_data, runtime=None):
                 'source_job_id': job_id,
                 'uid': job_data.get('user_id', ''),
                 'mode': job_data.get('mode', ''),
-                'title': f"{job_data.get('mode', 'study-pack')} {local_title_time.strftime('%Y-%m-%d %H:%M')}",
+                'title': pack_title,
                 'title_timezone': timezone_name,
                 'output_language': job_data.get('output_language', 'English'),
                 'notes_markdown': notes_markdown,

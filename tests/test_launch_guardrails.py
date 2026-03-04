@@ -2,13 +2,16 @@ import io
 import json
 import zipfile
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
+from werkzeug.datastructures import MultiDict
 
 from tests.runtime_test_support import get_test_core
 
 core = get_test_core()
 from lecture_processor.domains.account import lifecycle as account_lifecycle
+from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai import pipelines as ai_pipelines
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.billing import credits as billing_credits
@@ -283,6 +286,7 @@ def test_upload_invalid_audio_content_type_rejected(client, monkeypatch):
         "/upload",
         data={
             "mode": "lecture-notes",
+            "study_pack_title": "Neural Networks Week 1",
             "pdf": (io.BytesIO(b"%PDF-1.4\n1 0 obj"), "slides.pdf", "application/pdf"),
             "audio": (io.BytesIO(b"not-audio"), "audio.mp3", "text/plain"),
         },
@@ -375,6 +379,7 @@ def test_upload_accepts_audio_import_token_for_lecture_mode(client, monkeypatch)
         "/upload",
         data={
             "mode": "lecture-notes",
+            "study_pack_title": "Distributed Systems Interview",
             "audio_import_token": "tok-abc-123",
             "pdf": (io.BytesIO(b"%PDF-1.4\n1 0 obj"), "slides.pdf", "application/pdf"),
         },
@@ -412,6 +417,7 @@ def test_upload_slides_only_accepts_pptx_after_conversion(client, monkeypatch):
         "/upload",
         data={
             "mode": "slides-only",
+            "study_pack_title": "Linear Algebra Slides",
             "pdf": (
                 io.BytesIO(b"PK\x03\x04pptx-bytes"),
                 "slides.pptx",
@@ -426,6 +432,144 @@ def test_upload_slides_only_accepts_pptx_after_conversion(client, monkeypatch):
     body = response.get_json()
     assert body.get("job_id")
     assert core.jobs[body["job_id"]]["mode"] == "slides-only"
+
+
+@pytest.mark.parametrize("mode", ["lecture-notes", "slides-only", "interview"])
+def test_upload_requires_study_pack_title_for_processing_modes(client, monkeypatch, mode):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "title-u1", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
+    monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(rate_limit_quotas, "has_sufficient_upload_disk_space", lambda _bytes=0, runtime=None: (True, 10_000_000, 0))
+    monkeypatch.setattr(rate_limit_quotas, "reserve_daily_upload_bytes", lambda _uid, _bytes, runtime=None: (True, 0))
+    monkeypatch.setattr(
+        core,
+        "get_or_create_user",
+        lambda _uid, _email: {
+            "lecture_credits_standard": 1,
+            "lecture_credits_extended": 0,
+            "slides_credits": 1,
+            "interview_credits_short": 1,
+            "interview_credits_medium": 0,
+            "interview_credits_long": 0,
+        },
+    )
+
+    response = client.post(
+        "/upload",
+        data={"mode": mode},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "Lecture Topic / Name is required."
+
+
+def test_tools_extract_image_rejects_more_than_five_files(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "tools-u1", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(core, "get_or_create_user", lambda _uid, _email: {"slides_credits": 5})
+
+    response = client.post(
+        "/api/tools/extract",
+        data=MultiDict([
+            ("source_type", "image"),
+            ("files", (io.BytesIO(b"\x89PNG\r\n\x1a\none"), "one.png", "image/png")),
+            ("files", (io.BytesIO(b"\x89PNG\r\n\x1a\ntwo"), "two.png", "image/png")),
+            ("files", (io.BytesIO(b"\x89PNG\r\n\x1a\nthree"), "three.png", "image/png")),
+            ("files", (io.BytesIO(b"\x89PNG\r\n\x1a\nfour"), "four.png", "image/png")),
+            ("files", (io.BytesIO(b"\x89PNG\r\n\x1a\nfive"), "five.png", "image/png")),
+            ("files", (io.BytesIO(b"\x89PNG\r\n\x1a\nsix"), "six.png", "image/png")),
+        ]),
+        content_type="multipart/form-data",
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 400
+    assert "up to 5 images" in response.get_json()["error"].lower()
+
+
+def test_tools_extract_image_accepts_five_files_bills_once_and_returns_output_text(client, monkeypatch):
+    deduct_calls = []
+    log_calls = []
+    cleanup_calls = []
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "tools-u2", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(core, "get_or_create_user", lambda _uid, _email: {"slides_credits": 9})
+    monkeypatch.setattr(core, "allowed_file", lambda _filename, _allowed: True)
+    monkeypatch.setattr(core, "get_saved_file_size", lambda _path: 4096)
+    monkeypatch.setattr(core, "get_mime_type", lambda _path: "image/png")
+    monkeypatch.setattr(core, "cleanup_files", lambda local_paths, remote_files: cleanup_calls.append((list(local_paths), list(remote_files))))
+    monkeypatch.setattr(core, "save_job_log", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(analytics_events, "log_analytics_event", lambda *_args, **_kwargs: log_calls.append(True) or True)
+
+    monkeypatch.setattr(
+        billing_credits,
+        "deduct_credit",
+        lambda _uid, _credit_type, runtime=None: deduct_calls.append((_uid, _credit_type)) or "slides_credits",
+    )
+
+    monkeypatch.setattr(
+        ai_provider,
+        "run_with_provider_retry",
+        lambda _name, fn, retry_tracker=None, runtime=None: fn(),
+    )
+    monkeypatch.setattr(
+        ai_provider,
+        "generate_with_policy",
+        lambda *_args, **_kwargs: SimpleNamespace(text="Combined image extraction output"),
+    )
+    monkeypatch.setattr(ai_provider, "extract_token_usage", lambda *_args, **_kwargs: {})
+
+    class _Part:
+        @staticmethod
+        def from_uri(file_uri=None, mime_type=None):
+            return {"uri": file_uri, "mime_type": mime_type}
+
+        @staticmethod
+        def from_text(text=''):
+            return {"text": text}
+
+    class _Content:
+        def __init__(self, role=None, parts=None):
+            self.role = role
+            self.parts = parts or []
+
+    class _UploadApi:
+        def upload(self, file=None, config=None):
+            return SimpleNamespace(uri=f"mock://{file}", name="mock-file")
+
+    monkeypatch.setattr(core, "types", SimpleNamespace(Part=_Part, Content=_Content))
+    monkeypatch.setattr(core, "client", SimpleNamespace(files=_UploadApi()))
+    monkeypatch.setattr(core, "wait_for_file_processing", lambda _uploaded: None)
+
+    response = client.post(
+        "/api/tools/extract",
+        data=MultiDict([
+            ("source_type", "image"),
+            ("custom_prompt", "Extract all visible text"),
+            ("files", (io.BytesIO(b"\x89PNG\r\n\x1a\none"), "one.png", "image/png")),
+            ("files", (io.BytesIO(b"\x89PNG\r\n\x1a\ntwo"), "two.png", "image/png")),
+            ("files", (io.BytesIO(b"\x89PNG\r\n\x1a\nthree"), "three.png", "image/png")),
+            ("files", (io.BytesIO(b"\x89PNG\r\n\x1a\nfour"), "four.png", "image/png")),
+            ("files", (io.BytesIO(b"\x89PNG\r\n\x1a\nfive"), "five.png", "image/png")),
+        ]),
+        content_type="multipart/form-data",
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["output_text"] == "Combined image extraction output"
+    assert payload["content_markdown"] == "Combined image extraction output"
+    assert len(deduct_calls) == 1
+    assert deduct_calls[0][1] == "slides_credits"
+    assert log_calls
+    assert cleanup_calls
 
 
 def test_file_has_pptx_signature_detects_valid_archive(tmp_path):

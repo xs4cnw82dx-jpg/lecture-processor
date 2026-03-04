@@ -1,0 +1,304 @@
+:root {
+  --shell-bg: #f5f7fb;
+  --shell-surface: #ffffff;
+  --shell-border: #dde4f2;
+  --shell-text: #0f172a;
+  --shell-muted: #5f6f89;
+  --shell-accent: #2563eb;
+  --shell-accent-soft: #e7efff;
+}
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  background: var(--shell-bg);
+  color: var(--shell-text);
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 260px 1fr;
+}
+
+.app-shell-overlay {
+  display: none;
+}
+
+.app-shell-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  background: #0f1a2f;
+  color: #e6edf9;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 20px 14px;
+  overflow-y: auto;
+}
+
+.app-shell-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #f4f8ff;
+  text-decoration: none;
+  font-weight: 700;
+  margin-bottom: 22px;
+}
+
+.app-shell-brand-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #2563eb, #0ea5e9);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-shell-brand-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.app-shell-nav {
+  display: grid;
+  gap: 6px;
+}
+
+.app-shell-link {
+  display: block;
+  color: #d7e1f4;
+  text-decoration: none;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 0.94rem;
+}
+
+.app-shell-link.sub {
+  font-size: 0.88rem;
+  font-weight: 500;
+  padding-left: 24px;
+}
+
+.app-shell-link:hover,
+.app-shell-link.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.app-shell-group {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 6px;
+}
+
+.app-shell-group summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 8px 8px 8px 10px;
+  font-weight: 700;
+  color: #f3f7ff;
+}
+
+.app-shell-group summary::-webkit-details-marker { display: none; }
+
+.app-shell-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--shell-border);
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+}
+
+.app-shell-menu-btn {
+  display: none;
+  border: 1px solid var(--shell-border);
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px 10px;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.app-shell-menu-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.app-shell-title {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.app-shell-credits {
+  text-decoration: none;
+  border-radius: 999px;
+  padding: 8px 13px;
+  background: linear-gradient(135deg, #4f46e5, #2563eb);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+  border: none;
+}
+
+.app-shell-signin,
+.app-shell-account-btn {
+  border: 1px solid var(--shell-border);
+  background: #fff;
+  color: var(--shell-text);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.app-shell-account {
+  position: relative;
+}
+
+.app-shell-account-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-shell-account-btn .avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--shell-accent-soft);
+  color: var(--shell-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.82rem;
+}
+
+.app-shell-account-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.app-shell-account-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 220px;
+  background: #fff;
+  border: 1px solid var(--shell-border);
+  border-radius: 12px;
+  box-shadow: 0 22px 40px rgba(15, 23, 42, 0.14);
+  display: none;
+  padding: 8px;
+}
+
+.app-shell-account-menu.visible {
+  display: block;
+}
+
+.app-shell-email {
+  font-size: 0.78rem;
+  color: var(--shell-muted);
+  padding: 8px;
+  border-bottom: 1px solid var(--shell-border);
+  margin-bottom: 4px;
+}
+
+.app-shell-account-item {
+  width: 100%;
+  text-align: left;
+  display: block;
+  text-decoration: none;
+  color: var(--shell-text);
+  border: none;
+  background: transparent;
+  font: inherit;
+  padding: 9px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.app-shell-account-item:hover {
+  background: var(--shell-accent-soft);
+}
+
+.app-shell-account-item.danger {
+  color: #b91c1c;
+}
+
+.app-shell-page {
+  padding: 22px;
+}
+
+.shell-panel {
+  background: var(--shell-surface);
+  border: 1px solid var(--shell-border);
+  border-radius: 16px;
+  padding: 18px;
+}
+
+@media (max-width: 1024px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 260px;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    z-index: 20;
+  }
+
+  .app-shell.sidebar-open .app-shell-sidebar {
+    transform: translateX(0);
+  }
+
+  .app-shell-menu-btn {
+    display: inline-flex;
+  }
+
+  .app-shell-overlay {
+    border: 0;
+    background: rgba(15, 23, 42, 0.45);
+    position: fixed;
+    inset: 0;
+    z-index: 15;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .app-shell.sidebar-open .app-shell-overlay {
+    display: block;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .app-shell-topbar {
+    grid-template-columns: auto 1fr auto auto;
+  }
+}

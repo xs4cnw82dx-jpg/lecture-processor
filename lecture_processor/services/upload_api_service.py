@@ -37,6 +37,14 @@ def _sanitize_tools_template_key(raw_key, max_chars=80):
     return normalized
 
 
+def _sanitize_study_pack_title(raw_title, max_chars=120):
+    text = str(raw_title or '').strip()
+    if not text:
+        return ''
+    collapsed = ' '.join(text.split())
+    return collapsed[:max_chars].strip()
+
+
 def _sanitize_tools_source_url(raw_url, max_chars=2000):
     from lecture_processor.services import url_security
 
@@ -495,6 +503,9 @@ def upload_files(app_ctx, request):
         )
     user = app_ctx.get_or_create_user(uid, email)
     mode = request.form.get('mode', 'lecture-notes')
+    study_pack_title = _sanitize_study_pack_title(request.form.get('study_pack_title', ''))
+    if mode in {'lecture-notes', 'slides-only', 'interview'} and not study_pack_title:
+        return app_ctx.jsonify({'error': 'Lecture Topic / Name is required.'}), 400
     flashcard_selection = shared_parsing.parse_requested_amount(
         request.form.get('flashcard_amount', '20'),
         {'10', '20', '30', 'auto'},
@@ -600,7 +611,7 @@ def upload_files(app_ctx, request):
                 billing_credits.refund_credit(uid, deducted, runtime=app_ctx)
                 return app_ctx.jsonify({'error': token_error}), 400
         total_steps = 4 if study_features != 'none' else 3
-        runtime_jobs_store.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round(((pdf_size if pdf_size > 0 else 0) + audio_size) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
+        runtime_jobs_store.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'study_pack_title': study_pack_title, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round(((pdf_size if pdf_size > 0 else 0) + audio_size) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
         thread = app_ctx.threading.Thread(
             target=ai_pipelines.process_lecture_notes,
             args=(job_id, pdf_path, audio_path),
@@ -626,7 +637,7 @@ def upload_files(app_ctx, request):
             app_ctx.cleanup_files([pdf_path], [])
             return app_ctx.jsonify({'error': 'No text extraction credits remaining.'}), 402
         total_steps = 2 if study_features != 'none' else 1
-        runtime_jobs_store.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round((pdf_size if pdf_size > 0 else 0) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
+        runtime_jobs_store.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'study_pack_title': study_pack_title, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round((pdf_size if pdf_size > 0 else 0) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
         thread = app_ctx.threading.Thread(
             target=ai_pipelines.process_slides_only,
             args=(job_id, pdf_path),
@@ -712,6 +723,7 @@ def upload_files(app_ctx, request):
             'credit_refunded': False,
             'started_at': app_ctx.time.time(),
             'result': None,
+            'study_pack_title': study_pack_title,
             'transcript': None,
             'flashcards': [],
             'test_questions': [],
@@ -800,6 +812,7 @@ def tools_extract(app_ctx, request):
         prompt_source = 'custom'
     source_url = ''
     uploaded_file = None
+    uploaded_image_files = []
     source_type = ''
     extension = ''
     mime_type = ''
@@ -811,14 +824,32 @@ def tools_extract(app_ctx, request):
         source_type = 'url'
         mime_type = 'text/html'
     else:
-        uploaded_file = request.files.get('file')
-        if not uploaded_file or not str(uploaded_file.filename or '').strip():
-            return app_ctx.jsonify({'error': 'Please choose a file before running extraction.'}), 400
-        source_type, extension, mime_type, detect_error = _detect_tools_source_type(
-            app_ctx,
-            uploaded_file,
-            requested_source,
-        )
+        requested_source_key = str(requested_source or '').strip().lower()
+        if requested_source_key == 'image':
+            uploaded_image_files = [f for f in (request.files.getlist('files') or []) if f and str(f.filename or '').strip()]
+            if not uploaded_image_files:
+                single_image = request.files.get('file')
+                if single_image and str(single_image.filename or '').strip():
+                    uploaded_image_files = [single_image]
+            if not uploaded_image_files:
+                return app_ctx.jsonify({'error': 'Please choose at least one image before running extraction.'}), 400
+            if len(uploaded_image_files) > 5:
+                return app_ctx.jsonify({'error': 'You can upload up to 5 images per run.'}), 400
+            uploaded_file = uploaded_image_files[0]
+            source_type, extension, mime_type, detect_error = _detect_tools_source_type(
+                app_ctx,
+                uploaded_file,
+                'image',
+            )
+        else:
+            uploaded_file = request.files.get('file')
+            if not uploaded_file or not str(uploaded_file.filename or '').strip():
+                return app_ctx.jsonify({'error': 'Please choose a file before running extraction.'}), 400
+            source_type, extension, mime_type, detect_error = _detect_tools_source_type(
+                app_ctx,
+                uploaded_file,
+                requested_source,
+            )
         if detect_error:
             return app_ctx.jsonify({'error': detect_error}), 400
 
@@ -833,6 +864,7 @@ def tools_extract(app_ctx, request):
     effective_prompt_preview = ''
     credit_refund_method = ''
     normalized_input_name = ''
+    normalized_input_names = []
     docx_text = ''
     upload_mime_type = ''
     upload_path = ''
@@ -886,25 +918,36 @@ def tools_extract(app_ctx, request):
                 upload_path = pdf_path
                 source_size_mb = round(saved_size / (1024 * 1024), 4)
         else:
-            if mime_type and mime_type not in app_ctx.ALLOWED_TOOLS_IMAGE_MIME_TYPES:
-                return app_ctx.jsonify({'error': 'Unsupported image content type for tools extraction.'}), 400
-            if not app_ctx.allowed_file(uploaded_file.filename, app_ctx.ALLOWED_TOOLS_IMAGE_EXTENSIONS):
-                return app_ctx.jsonify({'error': 'Unsupported image file extension.'}), 400
-            safe_name = app_ctx.secure_filename(uploaded_file.filename)
-            image_path = app_ctx.os.path.join(app_ctx.UPLOAD_FOLDER, f"tools_{job_id}_{safe_name}")
-            uploaded_file.save(image_path)
-            local_paths.append(image_path)
-            normalized_input_name = app_ctx.os.path.basename(image_path)
-            saved_size = app_ctx.get_saved_file_size(image_path)
-            if saved_size <= 0 or saved_size > app_ctx.MAX_TOOLS_IMAGE_BYTES:
-                app_ctx.cleanup_files(local_paths, gemini_files)
-                local_paths = []
-                return app_ctx.jsonify({
-                    'error': f'Image exceeds size limit ({int(app_ctx.MAX_TOOLS_IMAGE_BYTES / (1024 * 1024))} MB max) or is empty.'
-                }), 400
-            upload_mime_type = mime_type or app_ctx.get_mime_type(uploaded_file.filename) or 'image/jpeg'
-            upload_path = image_path
-            source_size_mb = round(saved_size / (1024 * 1024), 4)
+            image_inputs = uploaded_image_files if uploaded_image_files else [uploaded_file]
+            if len(image_inputs) > 5:
+                return app_ctx.jsonify({'error': 'You can upload up to 5 images per run.'}), 400
+            total_image_bytes = 0
+            for idx, image_file in enumerate(image_inputs):
+                image_mime_type = str(getattr(image_file, 'mimetype', '') or '').strip().lower()
+                if image_mime_type and image_mime_type not in app_ctx.ALLOWED_TOOLS_IMAGE_MIME_TYPES:
+                    app_ctx.cleanup_files(local_paths, gemini_files)
+                    local_paths = []
+                    return app_ctx.jsonify({'error': 'Unsupported image content type for tools extraction.'}), 400
+                if not app_ctx.allowed_file(image_file.filename, app_ctx.ALLOWED_TOOLS_IMAGE_EXTENSIONS):
+                    app_ctx.cleanup_files(local_paths, gemini_files)
+                    local_paths = []
+                    return app_ctx.jsonify({'error': 'Unsupported image file extension.'}), 400
+                safe_name = app_ctx.secure_filename(image_file.filename)
+                image_path = app_ctx.os.path.join(app_ctx.UPLOAD_FOLDER, f"tools_{job_id}_{idx + 1}_{safe_name}")
+                image_file.save(image_path)
+                local_paths.append(image_path)
+                normalized_input_names.append(app_ctx.os.path.basename(image_path))
+                saved_size = app_ctx.get_saved_file_size(image_path)
+                if saved_size <= 0 or saved_size > app_ctx.MAX_TOOLS_IMAGE_BYTES:
+                    app_ctx.cleanup_files(local_paths, gemini_files)
+                    local_paths = []
+                    return app_ctx.jsonify({
+                        'error': f'Image exceeds size limit ({int(app_ctx.MAX_TOOLS_IMAGE_BYTES / (1024 * 1024))} MB max) or is empty.'
+                    }), 400
+                total_image_bytes += saved_size
+
+            normalized_input_name = ', '.join(normalized_input_names)
+            source_size_mb = round(total_image_bytes / (1024 * 1024), 4)
 
         deducted_credit = billing_credits.deduct_credit(uid, 'slides_credits', runtime=app_ctx)
         if not deducted_credit:
@@ -931,32 +974,61 @@ def tools_extract(app_ctx, request):
                 runtime=app_ctx,
             )
         else:
-            uploaded_provider_file = ai_provider.run_with_provider_retry(
-                'tools_file_upload',
-                lambda: app_ctx.client.files.upload(file=upload_path, config={'mime_type': upload_mime_type}),
-                retry_tracker=retry_tracker,
-                runtime=app_ctx,
-            )
-            gemini_files.append(uploaded_provider_file)
+            if source_type == 'image':
+                image_parts = []
+                for index, image_path in enumerate(local_paths):
+                    image_mime_type = app_ctx.get_mime_type(image_path) or 'image/jpeg'
+                    uploaded_provider_file = ai_provider.run_with_provider_retry(
+                        f'tools_image_upload_{index + 1}',
+                        lambda p=image_path, m=image_mime_type: app_ctx.client.files.upload(file=p, config={'mime_type': m}),
+                        retry_tracker=retry_tracker,
+                        runtime=app_ctx,
+                    )
+                    gemini_files.append(uploaded_provider_file)
+                    ai_provider.run_with_provider_retry(
+                        f'tools_image_processing_{index + 1}',
+                        lambda uploaded=uploaded_provider_file: app_ctx.wait_for_file_processing(uploaded),
+                        retry_tracker=retry_tracker,
+                        runtime=app_ctx,
+                    )
+                    image_parts.append(app_ctx.types.Part.from_uri(file_uri=uploaded_provider_file.uri, mime_type=image_mime_type))
 
-            ai_provider.run_with_provider_retry(
-                'tools_file_processing',
-                lambda: app_ctx.wait_for_file_processing(uploaded_provider_file),
-                retry_tracker=retry_tracker,
-                runtime=app_ctx,
-            )
+                image_parts.append(app_ctx.types.Part.from_text(text=prompt))
+                response = ai_provider.generate_with_policy(
+                    app_ctx.MODEL_TOOLS,
+                    [app_ctx.types.Content(role='user', parts=image_parts)],
+                    max_output_tokens=32768,
+                    retry_tracker=retry_tracker,
+                    operation_name='tools_extract_image',
+                    runtime=app_ctx,
+                )
+            else:
+                uploaded_provider_file = ai_provider.run_with_provider_retry(
+                    'tools_file_upload',
+                    lambda: app_ctx.client.files.upload(file=upload_path, config={'mime_type': upload_mime_type}),
+                    retry_tracker=retry_tracker,
+                    runtime=app_ctx,
+                )
+                gemini_files.append(uploaded_provider_file)
 
-            response = ai_provider.generate_with_policy(
-                app_ctx.MODEL_TOOLS,
-                [app_ctx.types.Content(role='user', parts=[
-                    app_ctx.types.Part.from_uri(file_uri=uploaded_provider_file.uri, mime_type=upload_mime_type),
-                    app_ctx.types.Part.from_text(text=prompt),
-                ])],
-                max_output_tokens=32768,
-                retry_tracker=retry_tracker,
-                operation_name=f'tools_extract_{source_type}',
-                runtime=app_ctx,
-            )
+                ai_provider.run_with_provider_retry(
+                    'tools_file_processing',
+                    lambda: app_ctx.wait_for_file_processing(uploaded_provider_file),
+                    retry_tracker=retry_tracker,
+                    runtime=app_ctx,
+                )
+
+                response = ai_provider.generate_with_policy(
+                    app_ctx.MODEL_TOOLS,
+                    [app_ctx.types.Content(role='user', parts=[
+                        app_ctx.types.Part.from_uri(file_uri=uploaded_provider_file.uri, mime_type=upload_mime_type),
+                        app_ctx.types.Part.from_text(text=prompt),
+                    ])],
+                    max_output_tokens=32768,
+                    retry_tracker=retry_tracker,
+                    operation_name=f'tools_extract_{source_type}',
+                    runtime=app_ctx,
+                )
         extracted_markdown = str(getattr(response, 'text', '') or '').strip()
         if not extracted_markdown:
             raise ValueError('Extraction returned empty output')
@@ -1020,6 +1092,7 @@ def tools_extract(app_ctx, request):
             'source_type': source_type,
             'file_name': normalized_input_name,
             'model': app_ctx.MODEL_TOOLS,
+            'output_text': extracted_markdown,
             'content_markdown': extracted_markdown,
             'custom_prompt': custom_prompt,
             'prompt_template_key': prompt_template_key,
@@ -1126,7 +1199,7 @@ def tools_export(app_ctx, request):
 
     payload = request.get_json(silent=True) or {}
     export_format = str(payload.get('format', 'docx') or '').strip().lower()
-    markdown = str(payload.get('content_markdown', '') or '').strip()
+    markdown = str(payload.get('content_markdown') or payload.get('output_text') or '').strip()
     title = str(payload.get('title', 'Tools Extract') or '').strip()
 
     if export_format != 'docx':

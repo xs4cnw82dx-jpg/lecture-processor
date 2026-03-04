@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard · Lecture Processor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+  {% set shell_title = 'Student Dashboard' %}
+  {% include '_app_shell.html' %}
+    <main class="app-shell-page dashboard-page">
+      <section class="shell-panel hero">
+        <p class="eyebrow">Study first</p>
+        <h1>Your semester at a glance</h1>
+        <p>Track what is due, continue recent packs, and launch the right extraction flow when you need new material.</p>
+        <div class="hero-actions">
+          <a href="/lecture-notes" class="hero-btn primary">Create Lecture Notes</a>
+          <a href="/study" class="hero-btn">Open Study Library</a>
+        </div>
+      </section>
+
+      <section class="dashboard-grid">
+        <article class="shell-panel stat-card">
+          <div class="stat-label">Current streak</div>
+          <div class="stat-value" id="dash-streak">0 days</div>
+          <div class="stat-sub">Keep momentum by reviewing every day.</div>
+        </article>
+        <article class="shell-panel stat-card">
+          <div class="stat-label">Due today</div>
+          <div class="stat-value" id="dash-due">0 cards</div>
+          <div class="stat-sub">Cards ready for active recall now.</div>
+        </article>
+        <article class="shell-panel stat-card">
+          <div class="stat-label">Daily goal</div>
+          <div class="stat-value" id="dash-goal">0 / 20</div>
+          <div class="goal-track"><div class="goal-fill" id="dash-goal-fill"></div></div>
+        </article>
+      </section>
+
+      <section class="dashboard-grid two-col">
+        <article class="shell-panel">
+          <div class="section-head">
+            <h2>Upcoming Sessions</h2>
+            <a href="/calendar">Calendar</a>
+          </div>
+          <div class="list-block" id="dash-sessions-list">
+            <div class="list-empty">No study sessions planned yet.</div>
+          </div>
+        </article>
+        <article class="shell-panel">
+          <div class="section-head">
+            <h2>Recent Study Packs</h2>
+            <a href="/study">Study Library</a>
+          </div>
+          <div class="list-block" id="dash-packs-list">
+            <div class="list-empty">Sign in to load your latest packs.</div>
+          </div>
+        </article>
+      </section>
+
+      <section class="shell-panel">
+        <div class="section-head">
+          <h2>Extraction Shortcuts</h2>
+        </div>
+        <div class="quick-links">
+          <a href="/lecture-notes" class="quick-link-card">
+            <h3>Lecture Notes</h3>
+            <p>Slides + audio to complete study pack</p>
+          </a>
+          <a href="/slides-extraction" class="quick-link-card">
+            <h3>Slides Extraction</h3>
+            <p>Extract clean text from lecture slides</p>
+          </a>
+          <a href="/interview-transcription" class="quick-link-card">
+            <h3>Interview Transcription</h3>
+            <p>Transcribe interview recordings with optional extras</p>
+          </a>
+          <a href="/tools" class="quick-link-card">
+            <h3>Tools Overview</h3>
+            <p>Document, image, and URL readers</p>
+          </a>
+        </div>
+      </section>
+    </main>
+  </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+  <script src="{{ url_for('static', filename=dashboard_js_asset or 'js/dashboard.js') }}"></script>
+</body>
+</html>

@@ -239,8 +239,8 @@ def test_checkout_session_uses_trusted_public_base_url(client, monkeypatch):
 
     assert response.status_code == 200
     assert response.get_json().get("checkout_url", "").startswith("https://checkout.stripe.test/")
-    assert captured.get("success_url", "").startswith("https://trusted.example/dashboard?payment=success")
-    assert captured.get("cancel_url") == "https://trusted.example/dashboard?payment=cancelled"
+    assert captured.get("success_url", "").startswith("https://trusted.example/buy_credits?payment=success")
+    assert captured.get("cancel_url") == "https://trusted.example/buy_credits?payment=cancelled"
 
 
 def test_admin_export_sanitizes_formula_like_cells(client, monkeypatch):
