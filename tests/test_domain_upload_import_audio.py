@@ -1,37 +1,38 @@
+from pathlib import Path
+
 from lecture_processor.domains.upload import import_audio
 from lecture_processor.runtime.container import get_runtime
 
 
-def test_upload_import_audio_dispatch_uses_explicit_runtime():
-    class _Runtime:
-        def validate_video_import_url(self, url):
-            return (url, "")
-
-        def cleanup_expired_audio_import_tokens(self):
-            return "cleaned"
-
-        def register_audio_import_token(self, uid, path, source_url, output_name):
-            return f"tok:{uid}:{output_name}"
-
-        def get_audio_import_token_path(self, uid, token, consume=False):
-            return (f"/tmp/{uid}/{token}", "" if not consume else "consumed")
-
-        def release_audio_import_token(self, uid, token):
-            return f"released:{uid}:{token}"
-
-    runtime = _Runtime()
-    assert import_audio.validate_video_import_url("https://video.example", runtime=runtime) == ("https://video.example", "")
-    assert import_audio.cleanup_expired_audio_import_tokens(runtime=runtime) == "cleaned"
-    assert import_audio.register_audio_import_token("u1", "/tmp/a.mp3", "https://video.example", "a.mp3", runtime=runtime) == "tok:u1:a.mp3"
-    assert import_audio.get_audio_import_token_path("u1", "tok1", runtime=runtime) == ("/tmp/u1/tok1", "")
-    assert import_audio.release_audio_import_token("u1", "tok1", runtime=runtime) == "released:u1:tok1"
-
-
-def test_upload_import_audio_dispatch_uses_current_app_runtime(app, monkeypatch):
+def test_validate_video_import_url_enforces_allowed_host_suffixes(app, monkeypatch):
     runtime = get_runtime(app)
-    monkeypatch.setattr(runtime.core, "validate_video_import_url", lambda url: (f"safe:{url}", ""))
-    monkeypatch.setattr(runtime.core, "cleanup_expired_audio_import_tokens", lambda: "ok")
+    monkeypatch.setattr(runtime, "VIDEO_IMPORT_ALLOWED_HOST_SUFFIXES", ("example.com",))
+    monkeypatch.setattr(runtime, "VIDEO_IMPORT_MAX_URL_LENGTH", 4096)
+    monkeypatch.setattr(
+        runtime.url_security,
+        "validate_external_url_for_fetch",
+        lambda *_args, **_kwargs: ("https://video.example.com/watch", ""),
+    )
+    assert import_audio.validate_video_import_url("https://video.example.com/watch", runtime=runtime) == (
+        "https://video.example.com/watch",
+        "",
+    )
 
-    with app.app_context():
-        assert import_audio.validate_video_import_url("https://x") == ("safe:https://x", "")
-        assert import_audio.cleanup_expired_audio_import_tokens() == "ok"
+
+def test_audio_import_token_lifecycle(app, tmp_path, monkeypatch):
+    runtime = get_runtime(app)
+    monkeypatch.setattr(runtime, "VIDEO_IMPORT_MAX_URL_LENGTH", 4096)
+    monkeypatch.setattr(runtime, "AUDIO_IMPORT_TOKEN_TTL_SECONDS", 600)
+
+    audio_file = Path(tmp_path / "audio.mp3")
+    audio_file.write_bytes(b"abc")
+
+    token = import_audio.register_audio_import_token("u1", str(audio_file), runtime=runtime)
+    assert token
+
+    path, error = import_audio.get_audio_import_token_path("u1", token, runtime=runtime)
+    assert error == ""
+    assert path == str(audio_file)
+
+    assert import_audio.release_audio_import_token("u1", token, runtime=runtime) is True
+    assert not audio_file.exists()

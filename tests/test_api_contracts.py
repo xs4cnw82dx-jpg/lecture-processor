@@ -1,6 +1,9 @@
 import pytest
 from types import SimpleNamespace
 
+from lecture_processor.domains.admin import metrics as admin_metrics
+from lecture_processor.domains.rate_limit import limiter as rate_limiter
+from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from tests.runtime_test_support import get_test_core
 
 core = get_test_core()
@@ -23,7 +26,7 @@ def test_config_endpoint_shape(client, monkeypatch):
 
 def test_checkout_invalid_bundle_returns_400(client, monkeypatch):
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "contract-u1", "email": "u@example.com"})
-    monkeypatch.setattr(core, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
 
     response = client.post("/api/create-checkout-session", json={"bundle_id": "not_real"})
 
@@ -128,9 +131,9 @@ def test_status_uses_runtime_job_fallback(client, monkeypatch):
     core.jobs.clear()
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-fallback", "email": "user@example.com"})
     monkeypatch.setattr(
-        core,
+        runtime_jobs_store,
         "load_runtime_job_snapshot",
-        lambda _job_id: {
+        lambda _job_id, runtime=None: {
             "job_id": "job-fallback",
             "status": "processing",
             "step": 2,
@@ -151,7 +154,7 @@ def test_status_uses_runtime_job_fallback(client, monkeypatch):
 
 
 def test_verify_email_handles_empty_body(client, monkeypatch):
-    monkeypatch.setattr(core, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
 
     response = client.post("/api/verify-email", data=b"", headers={"Content-Type": "text/plain"})
 
@@ -199,7 +202,7 @@ def test_processing_estimate_uses_sanitized_total_mb_and_percentiles(client, mon
         })
         for d in durations
     ]
-    monkeypatch.setattr(core, "safe_query_docs_in_window", lambda *_args, **_kwargs: docs)
+    monkeypatch.setattr(admin_metrics, "safe_query_docs_in_window", lambda *_args, **_kwargs: docs)
 
     response = client.get("/api/processing-estimate?mode=lecture-notes&study_features=both&total_mb=55.25")
 
@@ -214,7 +217,7 @@ def test_processing_estimate_uses_sanitized_total_mb_and_percentiles(client, mon
 
 def test_checkout_session_uses_trusted_public_base_url(client, monkeypatch):
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "checkout-u1", "email": "u@example.com"})
-    monkeypatch.setattr(core, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
     monkeypatch.setattr(core, "PUBLIC_BASE_URL", "https://trusted.example")
 
     captured = {}
@@ -276,7 +279,7 @@ def test_admin_export_sanitizes_formula_like_cells(client, monkeypatch):
             },
         )
     ]
-    monkeypatch.setattr(core, "safe_query_docs_in_window", lambda **_kwargs: docs)
+    monkeypatch.setattr(admin_metrics, "safe_query_docs_in_window", lambda **_kwargs: docs)
 
     response = client.get("/api/admin/export?type=jobs&window=7d", headers={"Authorization": "Bearer dev"})
 
