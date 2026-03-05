@@ -17,74 +17,89 @@
   {% endif %}
   {% include '_app_shell.html' %}
   <main class="app-shell-page batch-page" id="batch-page">
-    <section class="shell-panel">
+    <section class="shell-panel batch-hero">
       <h1>Batch processing</h1>
-      <p>Create one batch request with multiple rows. Each row produces its own outputs and tokens, and the batch can be downloaded as one ZIP.</p>
+      <p>Create one batch request with multiple lectures. Each row produces its own outputs and tokens, and the batch can be downloaded as one ZIP.</p>
       <div class="mode-links">
-        <a href="/batch_mode" class="mode-link{% if forced_mode == 'lecture-notes' %} active{% endif %}">Lecture</a>
+        <a href="/batch_mode" class="mode-link{% if forced_mode == 'lecture-notes' %} active{% endif %}">Lectures</a>
         <a href="/batch_mode_slides_extraction" class="mode-link{% if forced_mode == 'slides-only' %} active{% endif %}">Slides</a>
-        <a href="/batch_mode_interview_transcription" class="mode-link{% if forced_mode == 'interview' %} active{% endif %}">Interview</a>
+        <a href="/batch_mode_interview_transcription" class="mode-link{% if forced_mode == 'interview' %} active{% endif %}">Interviews</a>
       </div>
     </section>
 
     <section class="shell-panel">
-      <form id="batch-form" class="batch-form">
+      <form id="batch-form" class="batch-form" novalidate>
         <div class="batch-grid">
-          <label>
+          <label class="field-control">
             <span>Batch title</span>
             <input id="batch-title" name="batch_title" placeholder="Example: Week 3 Neuro Lecture Batch" maxlength="120" required>
           </label>
-          <label>
+          <div class="field-control">
             <span>Output language</span>
-            <select id="output-language" name="output_language">
-              <option value="english">English</option>
-              <option value="dutch">Dutch</option>
-              <option value="spanish">Spanish</option>
-              <option value="french">French</option>
-              <option value="german">German</option>
-              <option value="chinese">Chinese</option>
-            </select>
-          </label>
-          <label id="study-features-wrap">
-            <span>Study tools</span>
-            <select id="study-features" name="study_features">
-              <option value="none">No study tools</option>
-              <option value="flashcards">Flashcards only</option>
-              <option value="test">Practice test only</option>
-              <option value="both" selected>Flashcards + test</option>
-            </select>
-          </label>
-          <label id="flashcard-wrap">
-            <span>Flashcards</span>
-            <select id="flashcard-amount" name="flashcard_amount">
-              <option value="10">10</option>
-              <option value="20" selected>20</option>
-              <option value="30">30</option>
-              <option value="auto">Auto</option>
-            </select>
-          </label>
-          <label id="question-wrap">
-            <span>Questions</span>
-            <select id="question-amount" name="question_amount">
-              <option value="5">5</option>
-              <option value="10" selected>10</option>
-              <option value="15">15</option>
-              <option value="auto">Auto</option>
-            </select>
-          </label>
-          <label>
-            <span>Folder ID (optional)</span>
-            <input id="folder-id" name="folder_id" placeholder="Study folder id">
-          </label>
+            <input type="hidden" id="output-language" name="output_language" value="english">
+            <div class="app-select" id="output-language-picker">
+              <button type="button" class="app-select-button" id="output-language-button" aria-haspopup="listbox" aria-expanded="false" aria-controls="output-language-menu">
+                <span id="output-language-label">English</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </button>
+              <div class="app-select-menu" id="output-language-menu" role="listbox">
+                <button type="button" role="option" class="app-select-item active" data-value="english" aria-selected="true">English</button>
+                <button type="button" role="option" class="app-select-item" data-value="dutch" aria-selected="false">Dutch</button>
+                <button type="button" role="option" class="app-select-item" data-value="spanish" aria-selected="false">Spanish</button>
+                <button type="button" role="option" class="app-select-item" data-value="french" aria-selected="false">French</button>
+                <button type="button" role="option" class="app-select-item" data-value="german" aria-selected="false">German</button>
+                <button type="button" role="option" class="app-select-item" data-value="chinese" aria-selected="false">Chinese</button>
+                <button type="button" role="option" class="app-select-item" data-value="other" aria-selected="false">Other</button>
+              </div>
+            </div>
+            <input id="output-language-custom" name="output_language_custom" class="language-custom-input" placeholder="Type custom output language" style="display:none;">
+          </div>
+        </div>
+
+        <div id="study-defaults-wrap" class="study-defaults-wrap">
+          <div class="generation-control wide">
+            <span class="control-label">Study tools</span>
+            <input type="hidden" id="study-features" name="study_features" value="both">
+            <div id="study-tool-chips" class="tool-chip-grid">
+              <button type="button" class="tool-chip" data-study-feature="none">No study tools</button>
+              <button type="button" class="tool-chip" data-study-feature="flashcards">Flashcards only</button>
+              <button type="button" class="tool-chip" data-study-feature="test">Practice test only</button>
+              <button type="button" class="tool-chip active" data-study-feature="both">Flashcards + test <span class="chip-badge">Recommended</span></button>
+            </div>
+            <div class="control-note" id="study-tools-note">Recommended for first runs: both flashcards and practice test questions will be generated.</div>
+          </div>
+          <div class="generation-control" id="flashcard-wrap">
+            <span class="control-label">Flashcard amount</span>
+            <input type="hidden" id="flashcard-amount" name="flashcard_amount" value="20">
+            <div class="amount-chips" id="flashcard-amount-chips">
+              <button type="button" class="amount-chip" data-value="10">10</button>
+              <button type="button" class="amount-chip active" data-value="20">20</button>
+              <button type="button" class="amount-chip" data-value="30">30</button>
+              <button type="button" class="amount-chip" data-value="auto">Auto</button>
+            </div>
+          </div>
+          <div class="generation-control" id="question-wrap">
+            <span class="control-label">Practice questions</span>
+            <input type="hidden" id="question-amount" name="question_amount" value="10">
+            <div class="amount-chips" id="question-amount-chips">
+              <button type="button" class="amount-chip" data-value="5">5</button>
+              <button type="button" class="amount-chip active" data-value="10">10</button>
+              <button type="button" class="amount-chip" data-value="15">15</button>
+              <button type="button" class="amount-chip" data-value="auto">Auto</button>
+            </div>
+          </div>
         </div>
 
         <div class="rows-head">
-          <h2>Rows</h2>
-          <button type="button" id="add-row-btn" class="btn">Add row</button>
+          <h2 id="rows-title">Lectures</h2>
+          <button type="button" id="add-row-btn" class="btn add-btn">
+            <span class="btn-plus" aria-hidden="true">+</span>
+            <span id="add-row-label">Add lecture</span>
+          </button>
         </div>
         <div id="rows-wrap" class="rows-wrap"></div>
         <div class="rows-foot">
-          <small>Minimum 2 rows required for batch mode.</small>
+          <small id="rows-minimum-note">Minimum 2 lectures required for batch mode.</small>
           <button type="submit" id="submit-batch-btn" class="btn primary">Start batch</button>
         </div>
       </form>
@@ -103,7 +118,7 @@
         <table>
           <thead>
             <tr>
-              <th>Row</th>
+              <th id="status-row-header">Lecture</th>
               <th>Status</th>
               <th>In Tokens</th>
               <th>Out Tokens</th>

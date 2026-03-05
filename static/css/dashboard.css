@@ -1,6 +1,13 @@
 .dashboard-page {
   display: grid;
   gap: 18px;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+.dashboard-page[data-load-state="loading"] {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .hero {
