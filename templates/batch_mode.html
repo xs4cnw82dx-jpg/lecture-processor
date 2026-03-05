@@ -20,6 +20,10 @@
     <section class="shell-panel batch-hero">
       <h1>Batch processing</h1>
       <p id="batch-hero-description">Create one batch request with multiple lectures. Each row produces its own outputs, and the batch can be downloaded as one ZIP.</p>
+      <p class="batch-hero-note">
+        Batch jobs are asynchronous and can take up to 24 hours to finish.<br>
+        You will receive an email when your batch reaches a final status.
+      </p>
       <div class="mode-links">
         <a href="/batch_mode" class="mode-link{% if forced_mode == 'lecture-notes' %} active{% endif %}">Lectures</a>
         <a href="/batch_mode_slides_extraction" class="mode-link{% if forced_mode == 'slides-only' %} active{% endif %}">Slides</a>
@@ -31,15 +35,11 @@
       <form id="batch-form" class="batch-form" novalidate>
         <div class="batch-grid">
           <label class="field-control">
-            <div class="field-label-row">
-              <span>Batch title</span>
-              <span class="field-info-dot" tabindex="0" aria-label="This title is required. It will be used as the Study Library folder name and as the ZIP filename." title="This title is required. It will be used as the Study Library folder name and as the ZIP filename.">i</span>
-            </div>
+            <span>Batch title</span>
             <input id="batch-title" name="batch_title" placeholder="Example: Week 3 Neuro Lecture Batch" maxlength="120" required>
             <small class="field-help">Required: this will be the folder name in your Study Library and the ZIP file name.</small>
-            <small class="field-error" id="batch-title-error" role="alert"></small>
           </label>
-          <div class="field-control">
+          <div class="field-control field-control-language">
             <span>Output language</span>
             <input type="hidden" id="output-language" name="output_language" value="english">
             <div class="app-select" id="output-language-picker">

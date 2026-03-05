@@ -120,7 +120,7 @@
     if (sourceType === 'url') {
       urlWrap.style.display = '';
       dropzoneWrap.style.display = 'none';
-      setAdvancedOpen(false);
+      setAdvancedOpen(true);
       return;
     }
 

@@ -10,6 +10,7 @@ from lecture_processor.domains.ai import pipelines as ai_pipelines
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.study import audio as study_audio
+from lecture_processor.services import notification_service
 from lecture_processor.runtime.container import get_runtime
 
 
@@ -43,6 +44,106 @@ def _batch_model(stage_name, runtime):
     if stage_name == 'notes_merge':
         return runtime.MODEL_INTEGRATION
     return runtime.MODEL_STUDY
+
+
+def _batch_page_path(mode_name):
+    mode_value = str(mode_name or '').strip().lower()
+    if mode_value == 'slides-only':
+        return '/batch_mode_slides_extraction'
+    if mode_value == 'interview':
+        return '/batch_mode_interview_transcription'
+    return '/batch_mode'
+
+
+def _completion_email_subject(status, batch_title):
+    safe_title = str(batch_title or 'Batch job').strip() or 'Batch job'
+    if status == 'complete':
+        return f'Batch finished: {safe_title}'
+    if status == 'partial':
+        return f'Batch finished with partial results: {safe_title}'
+    return f'Batch finished with errors: {safe_title}'
+
+
+def _completion_email_body(batch, status, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    mode_name = str(batch.get('mode', '') or '').strip()
+    batch_id = str(batch.get('batch_id', '') or '').strip()
+    batch_title = str(batch.get('batch_title', '') or batch_id or 'Batch job').strip()
+    total_rows = int(batch.get('total_rows', 0) or 0)
+    completed_rows = int(batch.get('completed_rows', 0) or 0)
+    failed_rows = int(batch.get('failed_rows', 0) or 0)
+    finished_at = batch.get('finished_at', 0)
+    finished_at_label = ''
+    try:
+        safe_finished = float(finished_at or 0)
+        if safe_finished > 0:
+            finished_at_label = datetime.fromtimestamp(safe_finished, tz=timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+    except Exception:
+        finished_at_label = ''
+
+    path = _batch_page_path(mode_name)
+    deep_link = f'{path}?batch_id={batch_id}' if batch_id else path
+    public_base = str(getattr(resolved_runtime, 'PUBLIC_BASE_URL', '') or '').rstrip('/')
+    if public_base:
+        full_link = f'{public_base}{deep_link}'
+    else:
+        full_link = deep_link
+
+    status_line = {
+        'complete': 'Your batch completed successfully.',
+        'partial': 'Your batch finished with partial results.',
+        'error': 'Your batch finished with errors.',
+    }.get(status, 'Your batch reached a final status.')
+
+    finished_line = f'Finished at: {finished_at_label}' if finished_at_label else ''
+    return '\n'.join(
+        line for line in [
+            f'Hi,',
+            '',
+            status_line,
+            f'Batch title: {batch_title}',
+            f'Batch ID: {batch_id}',
+            f'Rows: {completed_rows}/{total_rows} completed, {failed_rows} failed',
+            finished_line,
+            '',
+            f'Open batch status: {full_link}',
+            '',
+            'This is an automated message from Lecture Processor.',
+        ] if line
+    )
+
+
+def _send_batch_completion_email_if_needed(batch_id, status, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    terminal_status = str(status or '').strip()
+    if terminal_status not in {'complete', 'partial', 'error'}:
+        return
+
+    batch = _get_batch(batch_id, runtime=resolved_runtime)
+    if not batch:
+        return
+
+    current_notification_status = str(batch.get('completion_email_status', 'pending') or 'pending').strip().lower()
+    if current_notification_status in {'sent', 'skipped', 'failed'}:
+        return
+
+    recipient = str(batch.get('email', '') or '').strip()
+    subject = _completion_email_subject(terminal_status, batch.get('batch_title', ''))
+    body = _completion_email_body(batch, terminal_status, runtime=resolved_runtime)
+    email_status, error_message = notification_service.send_batch_completion_email(
+        recipient,
+        subject,
+        body,
+        runtime=resolved_runtime,
+    )
+    now_ts = resolved_runtime.time.time()
+    payload = {
+        'completion_email_status': str(email_status or 'failed'),
+        'completion_email_sent_at': now_ts if email_status == 'sent' else 0,
+        'completion_email_error': str(error_message or '')[:600],
+        'updated_at': now_ts,
+    }
+    _upsert_batch(batch_id, payload, runtime=resolved_runtime, merge=True)
 
 
 def _upsert_batch(batch_id, payload, runtime=None, merge=True):
@@ -151,6 +252,9 @@ def create_batch_job(batch_payload, row_payloads, runtime=None):
             'token_total': int(payload.get('token_total', 0) or 0),
             'billing_mode': 'batch',
             'billing_multiplier': float(payload.get('billing_multiplier', 0.5) or 0.5),
+            'completion_email_status': str(payload.get('completion_email_status', 'pending') or 'pending'),
+            'completion_email_sent_at': float(payload.get('completion_email_sent_at', 0) or 0),
+            'completion_email_error': str(payload.get('completion_email_error', '') or ''),
         }
     )
     _upsert_batch(batch_id, payload, runtime=resolved_runtime, merge=False)
@@ -582,6 +686,7 @@ def process_batch_job(batch_id, runtime=None):
             runtime=resolved_runtime,
             merge=True,
         )
+        _send_batch_completion_email_if_needed(batch_id, 'error', runtime=resolved_runtime)
         return
 
     _upsert_batch(batch_id, {'status': 'processing', 'updated_at': resolved_runtime.time.time()}, runtime=resolved_runtime, merge=True)
@@ -1001,6 +1106,7 @@ def process_batch_job(batch_id, runtime=None):
             runtime=resolved_runtime,
             merge=True,
         )
+        _send_batch_completion_email_if_needed(batch_id, status, runtime=resolved_runtime)
 
 
 def get_batch_status(batch_id, runtime=None):
@@ -1043,6 +1149,9 @@ def get_batch_status(batch_id, runtime=None):
         'rows': response_rows,
         'external_batch_refs': batch.get('external_batch_refs', {}),
         'error_summary': batch.get('error_summary', ''),
+        'completion_email_status': batch.get('completion_email_status', 'pending'),
+        'completion_email_sent_at': batch.get('completion_email_sent_at', 0),
+        'completion_email_error': batch.get('completion_email_error', ''),
     }
 
 

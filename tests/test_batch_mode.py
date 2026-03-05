@@ -7,6 +7,7 @@ from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.upload import import_audio as upload_import_audio
+from lecture_processor.services import notification_service
 from tests.runtime_test_support import get_test_core
 
 core = get_test_core()
@@ -38,6 +39,15 @@ class _SimpleDocx:
 def _patch_batch_auth(monkeypatch):
     monkeypatch.setattr(core, 'verify_firebase_token', lambda _request: {'uid': 'u-batch', 'email': 'batch@example.com'})
     monkeypatch.setattr(auth_policy, 'is_email_allowed', lambda _email, runtime=None: True)
+
+
+def _clear_batch_memory():
+    jobs = getattr(core, '_BATCH_JOBS_MEMORY', None)
+    rows = getattr(core, '_BATCH_ROWS_MEMORY', None)
+    if isinstance(jobs, dict):
+        jobs.clear()
+    if isinstance(rows, dict):
+        rows.clear()
 
 
 def test_batch_create_requires_minimum_two_rows(client, monkeypatch):
@@ -146,6 +156,9 @@ def test_batch_create_slides_only_contract(client, monkeypatch):
     assert capture.batch_payload is not None
     assert capture.batch_payload.get('mode') == 'slides-only'
     assert capture.batch_payload.get('total_rows') == 2
+    assert capture.batch_payload.get('completion_email_status') == 'pending'
+    assert capture.batch_payload.get('completion_email_sent_at') == 0
+    assert capture.batch_payload.get('completion_email_error') == ''
     assert isinstance(capture.rows, list)
     assert len(capture.rows) == 2
     assert capture.rows[0].get('billing_mode') == 'batch'
@@ -177,6 +190,9 @@ def test_batch_status_contract(client, monkeypatch):
             'token_input_total': 123,
             'token_output_total': 45,
             'token_total': 168,
+            'completion_email_status': 'pending',
+            'completion_email_sent_at': 0,
+            'completion_email_error': '',
             'rows': [
                 {
                     'row_id': 'row-1',
@@ -197,3 +213,93 @@ def test_batch_status_contract(client, monkeypatch):
     assert body.get('batch_id') == 'batch-123'
     assert body.get('mode') == 'lecture-notes'
     assert isinstance(body.get('rows'), list)
+    assert body.get('completion_email_status') == 'pending'
+
+
+def test_batch_completion_email_status_sent_is_persisted(monkeypatch):
+    _clear_batch_memory()
+    batch_id = 'batch-notify-sent'
+    batch_orchestrator.create_batch_job(
+        {
+            'batch_id': batch_id,
+            'uid': 'u-batch',
+            'email': 'batch@example.com',
+            'mode': 'lecture-notes',
+            'status': 'processing',
+            'batch_title': 'Batch Notify',
+            'total_rows': 1,
+            'completion_email_status': 'pending',
+            'completion_email_sent_at': 0,
+            'completion_email_error': '',
+        },
+        [],
+        runtime=core,
+    )
+    sent = {'count': 0}
+
+    def _fake_send(recipient_email, subject, body_text, runtime=None):
+        _ = subject, body_text, runtime
+        assert recipient_email == 'batch@example.com'
+        sent['count'] += 1
+        return 'sent', ''
+
+    monkeypatch.setattr(notification_service, 'send_batch_completion_email', _fake_send)
+    batch_orchestrator._send_batch_completion_email_if_needed(batch_id, 'complete', runtime=core)
+    batch = batch_orchestrator.get_batch(batch_id, runtime=core)
+    assert sent['count'] == 1
+    assert batch.get('completion_email_status') == 'sent'
+    assert float(batch.get('completion_email_sent_at', 0) or 0) > 0
+    assert batch.get('completion_email_error', '') == ''
+
+
+def test_batch_completion_email_status_skipped_when_missing_email(monkeypatch):
+    _clear_batch_memory()
+    batch_id = 'batch-notify-missing-email'
+    batch_orchestrator.create_batch_job(
+        {
+            'batch_id': batch_id,
+            'uid': 'u-batch',
+            'email': '',
+            'mode': 'slides-only',
+            'status': 'processing',
+            'batch_title': 'Batch Missing Email',
+            'total_rows': 1,
+            'completion_email_status': 'pending',
+            'completion_email_sent_at': 0,
+            'completion_email_error': '',
+        },
+        [],
+        runtime=core,
+    )
+
+    batch_orchestrator._send_batch_completion_email_if_needed(batch_id, 'error', runtime=core)
+    batch = batch_orchestrator.get_batch(batch_id, runtime=core)
+    assert batch.get('completion_email_status') == 'skipped'
+    assert 'missing recipient email' in str(batch.get('completion_email_error', '')).lower()
+
+
+def test_batch_completion_email_status_skipped_when_disabled(monkeypatch):
+    _clear_batch_memory()
+    batch_id = 'batch-notify-disabled'
+    batch_orchestrator.create_batch_job(
+        {
+            'batch_id': batch_id,
+            'uid': 'u-batch',
+            'email': 'batch@example.com',
+            'mode': 'interview',
+            'status': 'processing',
+            'batch_title': 'Batch Disabled',
+            'total_rows': 1,
+            'completion_email_status': 'pending',
+            'completion_email_sent_at': 0,
+            'completion_email_error': '',
+        },
+        [],
+        runtime=core,
+    )
+
+    monkeypatch.setattr(core, 'BATCH_EMAIL_NOTIFICATIONS_ENABLED', False)
+    batch_orchestrator._send_batch_completion_email_if_needed(batch_id, 'partial', runtime=core)
+    batch = batch_orchestrator.get_batch(batch_id, runtime=core)
+    assert batch.get('completion_email_status') == 'skipped'
+    assert 'disabled' in str(batch.get('completion_email_error', '')).lower()

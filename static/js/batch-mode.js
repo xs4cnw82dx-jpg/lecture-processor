@@ -57,7 +57,6 @@
   var rowsMinimumNote = document.getElementById('rows-minimum-note');
   var statusRowHeader = document.getElementById('status-row-header');
   var batchTitleInput = document.getElementById('batch-title');
-  var batchTitleError = document.getElementById('batch-title-error');
 
   var outputLanguageInput = document.getElementById('output-language');
   var outputLanguageButton = document.getElementById('output-language-button');
@@ -87,6 +86,7 @@
   var rowStates = new Map();
   var currentBatchId = '';
   var pollTimer = null;
+  var queryBatchId = '';
 
   function modeMeta() {
     return MODE_META[mode] || MODE_META['lecture-notes'];
@@ -117,19 +117,9 @@
     return rowsWrap ? rowsWrap.querySelectorAll('.batch-row').length : 0;
   }
 
-  function setBatchTitleError(message) {
-    if (batchTitleError) batchTitleError.textContent = String(message || '').trim();
-    if (batchTitleInput) batchTitleInput.classList.toggle('invalid', !!String(message || '').trim());
-  }
-
   function hasValidBatchTitle() {
     var value = String((batchTitleInput && batchTitleInput.value) || '').trim();
     return value.length > 0;
-  }
-
-  function syncSubmitEnabled() {
-    if (!submitBtn) return;
-    submitBtn.disabled = !hasValidBatchTitle();
   }
 
   function formatDate(secondsValue) {
@@ -458,7 +448,7 @@
     }
     var url = getRowM3u8Url(rowNode);
     if (!url) {
-      setRowAudioImportStatus(rowNode, 'Paste the index.m3u8 URL first.', 'error');
+      setRowAudioImportStatus(rowNode, 'Paste the Brightspace video URL first.', 'error');
       return Promise.resolve({ ok: false, reason: 'empty-url' });
     }
 
@@ -486,10 +476,10 @@
         return { response: response, payload: payload };
       });
     }).then(function (result) {
-      if (!result.response.ok) {
-        setRowAudioImportStatus(rowNode, 'Import failed: ' + String(result.payload.error || 'Could not import audio from URL.'), 'error');
-        return { ok: false, reason: 'import-failed' };
-      }
+        if (!result.response.ok) {
+          setRowAudioImportStatus(rowNode, 'Import failed: ' + String(result.payload.error || 'Could not import audio from URL.'), 'error');
+          return { ok: false, reason: 'import-failed' };
+        }
       return applyRowImportedAudio(
         rowNode,
         result.payload,
@@ -500,7 +490,7 @@
         return { ok: true, reason: 'imported' };
       });
     }).catch(function () {
-      setRowAudioImportStatus(rowNode, 'Import failed: Could not import audio from URL. Please try again.', 'error');
+      setRowAudioImportStatus(rowNode, 'Import failed: Could not import audio from Brightspace video URL. Please try again.', 'error');
       return { ok: false, reason: 'network-error' };
     }).finally(function () {
       setRowAudioImportPending(rowNode, false);
@@ -670,7 +660,7 @@
     if (!enabledCheckbox || !panel) return;
 
     var syncOverrideVisible = function () {
-      panel.classList.toggle('visible', !!enabledCheckbox.checked);
+      panel.classList.toggle('enabled', !!enabledCheckbox.checked);
     };
 
     enabledCheckbox.addEventListener('change', syncOverrideVisible);
@@ -725,8 +715,53 @@
     var ordinal = rowCount() + 1;
     var rowId = makeRowId();
 
+    var overrideBlockHtml = mode !== 'interview' ? (
+      '<div class="row-override">' +
+      '  <div class="row-override-head">' +
+      '    <label class="custom-check">' +
+      '      <input type="checkbox" data-field="override-enabled">' +
+      '      <span class="custom-check-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg></span>' +
+      '      <span class="custom-check-label">Study tools override</span>' +
+      '    </label>' +
+      '    <div class="row-override-help"><span class="info-dot" aria-hidden="true">i</span><span>Change study tools for this row only. If disabled, this row uses the top Study tools settings.</span></div>' +
+      '  </div>' +
+      '  <div class="row-override-panel" data-override-panel>' +
+      '    <input type="hidden" data-field="override-study" value="both">' +
+      '    <input type="hidden" data-field="override-flashcards" value="20">' +
+      '    <input type="hidden" data-field="override-questions" value="10">' +
+      '    <div>' +
+      '      <span class="control-label">Study tools</span>' +
+      '      <div class="tool-chip-grid">' +
+      '        <button type="button" class="tool-chip" data-override-study-chip="none">No study tools</button>' +
+      '        <button type="button" class="tool-chip" data-override-study-chip="flashcards">Flashcards only</button>' +
+      '        <button type="button" class="tool-chip" data-override-study-chip="test">Practice test only</button>' +
+      '        <button type="button" class="tool-chip active" data-override-study-chip="both">Flashcards + test</button>' +
+      '      </div>' +
+      '    </div>' +
+      '    <div data-override-flashcards-wrap>' +
+      '      <span class="control-label">Flashcard amount</span>' +
+      '      <div class="amount-chips">' +
+      '        <button type="button" class="amount-chip" data-override-flashcards-chip="10">10</button>' +
+      '        <button type="button" class="amount-chip active" data-override-flashcards-chip="20">20</button>' +
+      '        <button type="button" class="amount-chip" data-override-flashcards-chip="30">30</button>' +
+      '        <button type="button" class="amount-chip" data-override-flashcards-chip="auto">Auto</button>' +
+      '      </div>' +
+      '    </div>' +
+      '    <div data-override-questions-wrap>' +
+      '      <span class="control-label">Practice questions</span>' +
+      '      <div class="amount-chips">' +
+      '        <button type="button" class="amount-chip" data-override-questions-chip="5">5</button>' +
+      '        <button type="button" class="amount-chip active" data-override-questions-chip="10">10</button>' +
+      '        <button type="button" class="amount-chip" data-override-questions-chip="15">15</button>' +
+      '        <button type="button" class="amount-chip" data-override-questions-chip="auto">Auto</button>' +
+      '      </div>' +
+      '    </div>' +
+      '  </div>' +
+      '</div>'
+    ) : '';
+
     var slidesFieldHtml = meta.requiresSlides ? (
-      '<div class="row-field">' +
+      '<div class="row-field row-field--slides">' +
       '  <span class="row-label">Slides (PDF/PPTX)</span>' +
       '  <div class="row-upload-zone" data-upload-zone="slides" tabindex="0">' +
       '    <div class="row-upload-title">Upload slides</div>' +
@@ -746,7 +781,7 @@
     ) : '';
 
     var audioFieldHtml = meta.requiresAudio ? (
-      '<div class="row-field">' +
+      '<div class="row-field row-field--audio">' +
       '  <span class="row-label">Audio file</span>' +
       '  <div class="row-upload-zone" data-upload-zone="audio" tabindex="0">' +
       '    <div class="row-upload-title">Upload audio</div>' +
@@ -767,8 +802,8 @@
           ? (
             '  <div class="row-url-import" data-audio-url-wrap>' +
             '    <div class="row-url-head">' +
-            '      <strong>Import audio from m3u8 URL</strong>' +
-            '      <span>Paste the full URL ending in <code>index.m3u8</code>. Audio can be auto-imported for this lecture row.</span>' +
+            '      <strong>Import from Brightspace video URL</strong>' +
+            '      <span>Paste the Brightspace video URL (contains <code>index.m3u8</code>). Audio can be auto-imported for this lecture row.</span>' +
             '    </div>' +
             '    <div class="row-url-row">' +
             '      <input type="url" class="row-url-input" data-field="m3u8" placeholder="https://.../index.m3u8?..." autocomplete="off">' +
@@ -779,7 +814,8 @@
             '      <span>These links expire quickly. Importing stores audio immediately so the batch can still run even when processing takes longer.</span>' +
             '    </div>' +
             '    <div class="row-url-status" data-field="m3u8-status" aria-live="polite"></div>' +
-            '  </div>'
+            '  </div>' +
+            overrideBlockHtml
           )
           : ''
       ) +
@@ -797,55 +833,13 @@
       '</div>'
     ) : '';
 
-    var overrideHtml = mode !== 'interview' ? (
-      '<div class="row-field">' +
-      '  <div class="row-override">' +
-      '    <div class="row-override-head">' +
-      '      <label class="custom-check">' +
-      '        <input type="checkbox" data-field="override-enabled">' +
-      '        <span class="custom-check-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg></span>' +
-      '        <span class="custom-check-label">Study tools override</span>' +
-      '      </label>' +
-      '      <div class="row-override-help"><span class="info-dot" aria-hidden="true">i</span><span>Change study tools for this row only. If disabled, this row uses the top Study tools settings.</span></div>' +
-      '    </div>' +
-      '    <div class="row-override-panel" data-override-panel>' +
-      '      <input type="hidden" data-field="override-study" value="both">' +
-      '      <input type="hidden" data-field="override-flashcards" value="20">' +
-      '      <input type="hidden" data-field="override-questions" value="10">' +
-      '      <div>' +
-      '        <span class="control-label">Study tools</span>' +
-      '        <div class="tool-chip-grid">' +
-      '          <button type="button" class="tool-chip" data-override-study-chip="none">No study tools</button>' +
-      '          <button type="button" class="tool-chip" data-override-study-chip="flashcards">Flashcards only</button>' +
-      '          <button type="button" class="tool-chip" data-override-study-chip="test">Practice test only</button>' +
-      '          <button type="button" class="tool-chip active" data-override-study-chip="both">Flashcards + test</button>' +
-      '        </div>' +
-      '      </div>' +
-      '      <div data-override-flashcards-wrap>' +
-      '        <span class="control-label">Flashcard amount</span>' +
-      '        <div class="amount-chips">' +
-      '          <button type="button" class="amount-chip" data-override-flashcards-chip="10">10</button>' +
-      '          <button type="button" class="amount-chip active" data-override-flashcards-chip="20">20</button>' +
-      '          <button type="button" class="amount-chip" data-override-flashcards-chip="30">30</button>' +
-      '          <button type="button" class="amount-chip" data-override-flashcards-chip="auto">Auto</button>' +
-      '        </div>' +
-      '      </div>' +
-      '      <div data-override-questions-wrap>' +
-      '        <span class="control-label">Practice questions</span>' +
-      '        <div class="amount-chips">' +
-      '          <button type="button" class="amount-chip" data-override-questions-chip="5">5</button>' +
-      '          <button type="button" class="amount-chip active" data-override-questions-chip="10">10</button>' +
-      '          <button type="button" class="amount-chip" data-override-questions-chip="15">15</button>' +
-      '          <button type="button" class="amount-chip" data-override-questions-chip="auto">Auto</button>' +
-      '        </div>' +
-      '      </div>' +
-      '    </div>' +
-      '  </div>' +
-      '</div>'
+    var overrideHtml = mode === 'slides-only' ? (
+      '<div class="row-field row-field-override">' + overrideBlockHtml + '</div>'
     ) : '';
 
+    var rowModeClass = mode === 'lecture-notes' ? 'mode-lecture' : (mode === 'slides-only' ? 'mode-slides' : 'mode-interview');
     var card = document.createElement('article');
-    card.className = 'batch-row';
+    card.className = 'batch-row ' + rowModeClass;
     card.dataset.rowId = rowId;
     card.innerHTML =
       '<div class="batch-row-head">' +
@@ -923,7 +917,7 @@
 
         if (!audioFile && !importedToken && !m3u8Url) {
           if (mode === 'lecture-notes') {
-            throw new Error(meta.singular + ' ' + rowOrdinal + ': provide an audio file or import from m3u8 URL.');
+            throw new Error(meta.singular + ' ' + rowOrdinal + ': provide an audio file or import from Brightspace video URL.');
           }
           throw new Error(meta.singular + ' ' + rowOrdinal + ': provide an audio file.');
         }
@@ -1079,7 +1073,7 @@
           silentIfAlreadyImported: true,
         }).then(function (result) {
           if (!result || !result.ok) {
-            throw new Error('Lecture ' + String(index + 1) + ': could not auto-import the m3u8 URL. Please import it manually or upload audio.');
+            throw new Error('Lecture ' + String(index + 1) + ': could not auto-import the Brightspace video URL. Please import it manually or upload audio.');
           }
           if (result.reason === 'imported') importedCount += 1;
           return true;
@@ -1101,14 +1095,13 @@
     }
     if (!submitBtn) return;
     if (!hasValidBatchTitle()) {
-      setBatchTitleError('Batch title is required.');
+      showShellToast('Batch title is required.', 'error');
       if (batchTitleInput) batchTitleInput.focus();
       return;
     }
 
     submitBtn.disabled = true;
     submitBtn.textContent = 'Starting...';
-    setBatchTitleError('');
 
     try {
       await runAutoImportSweepBeforeStart();
@@ -1128,11 +1121,33 @@
       if (pollTimer) window.clearInterval(pollTimer);
       pollTimer = window.setInterval(refreshBatchStatus, 5000);
     } catch (error) {
-      alert(String(error && error.message ? error.message : error));
+      showShellToast(String(error && error.message ? error.message : error), 'error');
     } finally {
       submitBtn.textContent = 'Start batch';
-      syncSubmitEnabled();
+      submitBtn.disabled = false;
     }
+  }
+
+  function startPollingForBatch() {
+    if (!currentBatchId) return;
+    if (statusPanel) statusPanel.style.display = 'block';
+    if (!auth || !auth.currentUser) return;
+    refreshBatchStatus();
+    if (pollTimer) window.clearInterval(pollTimer);
+    pollTimer = window.setInterval(refreshBatchStatus, 5000);
+  }
+
+  function restoreBatchIdFromQuery() {
+    try {
+      var params = new URLSearchParams(window.location.search || '');
+      var value = String(params.get('batch_id') || '').trim();
+      queryBatchId = value;
+    } catch (_error) {
+      queryBatchId = '';
+    }
+    if (!queryBatchId) return;
+    currentBatchId = queryBatchId;
+    startPollingForBatch();
   }
 
   function wireEvents() {
@@ -1151,13 +1166,8 @@
 
     if (batchTitleInput) {
       batchTitleInput.addEventListener('input', function () {
-        if (hasValidBatchTitle()) setBatchTitleError('');
-        syncSubmitEnabled();
-      });
-      batchTitleInput.addEventListener('blur', function () {
-        if (!hasValidBatchTitle()) {
-          setBatchTitleError('Batch title is required.');
-        }
+        if (!submitBtn) return;
+        submitBtn.disabled = false;
       });
     }
 
@@ -1231,10 +1241,14 @@
     updateTopControls();
     ensureMinimumRows();
     wireEvents();
-    syncSubmitEnabled();
+    restoreBatchIdFromQuery();
 
     if (auth) {
       auth.onAuthStateChanged(function (user) {
+        if (user && queryBatchId) {
+          currentBatchId = queryBatchId;
+          startPollingForBatch();
+        }
         if (!user) {
           currentBatchId = '';
           if (pollTimer) {

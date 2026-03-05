@@ -495,7 +495,7 @@ def _get_batch_with_permission(app_ctx, request, batch_id):
 
 
 def create_batch_job(app_ctx, request):
-    uid, _decoded, error_response, status = _batch_user_guard(app_ctx, request)
+    uid, decoded_token, error_response, status = _batch_user_guard(app_ctx, request)
     if error_response is not None:
         return error_response, status
 
@@ -509,7 +509,8 @@ def create_batch_job(app_ctx, request):
     if len(rows) < 2:
         return app_ctx.jsonify({'error': 'Batch mode requires at least 2 rows.'}), 400
 
-    user = app_ctx.get_or_create_user(uid, '')
+    decoded_email = str((decoded_token or {}).get('email', '') or '').strip()
+    user = app_ctx.get_or_create_user(uid, decoded_email)
     preferred_language_key = shared_parsing.sanitize_output_language_pref_key(
         user.get('preferred_output_language', app_ctx.DEFAULT_OUTPUT_LANGUAGE_KEY),
         runtime=app_ctx,
@@ -737,7 +738,7 @@ def create_batch_job(app_ctx, request):
         batch_payload = {
             'batch_id': batch_id,
             'uid': uid,
-            'email': user.get('email', ''),
+            'email': decoded_email or str(user.get('email', '') or '').strip(),
             'mode': mode,
             'status': 'queued',
             'batch_title': batch_title,
@@ -762,6 +763,9 @@ def create_batch_job(app_ctx, request):
             'finished_at': 0,
             'billing_mode': 'batch',
             'billing_multiplier': 0.5,
+            'completion_email_status': 'pending',
+            'completion_email_sent_at': 0,
+            'completion_email_error': '',
         }
         batch_orchestrator.create_batch_job(batch_payload, prepared_rows, runtime=app_ctx)
 

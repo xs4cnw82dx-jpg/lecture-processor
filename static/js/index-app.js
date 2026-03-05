@@ -1432,7 +1432,7 @@ async function importAudioFromUrl() {
     }
     const url = String(audioUrlInput.value || '').trim();
     if (!url) {
-        setAudioImportStatus('Paste the Brightspace/Kaltura m3u8 URL first.', true);
+        setAudioImportStatus('Paste the Brightspace video URL first.', true);
         return;
     }
     setAudioImportPending(true);
