@@ -598,7 +598,7 @@ _cleanup_thread = threading.Thread(target=_run_periodic_cleanup, daemon=True)
 
 def build_default_user_data(uid, email):
     """Return the canonical default user document structure."""
-    return {'uid': uid, 'email': email, 'lecture_credits_standard': FREE_LECTURE_CREDITS, 'lecture_credits_extended': 0, 'slides_credits': FREE_SLIDES_CREDITS, 'interview_credits_short': FREE_INTERVIEW_CREDITS, 'interview_credits_medium': 0, 'interview_credits_long': 0, 'total_processed': 0, 'created_at': time.time(), 'preferred_output_language': DEFAULT_OUTPUT_LANGUAGE_KEY, 'preferred_output_language_custom': '', 'onboarding_completed': False}
+    return {'uid': uid, 'email': email, 'lecture_credits_standard': FREE_LECTURE_CREDITS, 'lecture_credits_extended': 0, 'slides_credits': FREE_SLIDES_CREDITS, 'interview_credits_short': FREE_INTERVIEW_CREDITS, 'interview_credits_medium': 0, 'interview_credits_long': 0, 'total_processed': 0, 'has_created_study_pack': False, 'created_at': time.time(), 'preferred_output_language': DEFAULT_OUTPUT_LANGUAGE_KEY, 'preferred_output_language_custom': '', 'onboarding_completed': False}
 
 def get_or_create_user(uid, email):
     """Get a user from Firestore, or create them with free credits if they don't exist."""
@@ -619,6 +619,8 @@ def get_or_create_user(uid, email):
             updates['preferred_output_language_custom'] = pref_custom
         if not isinstance(user_data.get('onboarding_completed'), bool):
             updates['onboarding_completed'] = False
+        if not isinstance(user_data.get('has_created_study_pack'), bool):
+            updates['has_created_study_pack'] = bool(user_data.get('total_processed', 0))
         if updates:
             user_ref.update(updates)
             user_data.update(updates)

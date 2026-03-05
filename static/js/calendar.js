@@ -6,14 +6,13 @@
 
     const weekGrid = document.getElementById('week-grid');
     const weekTitle = document.getElementById('week-title');
+    const weekSubtitle = document.getElementById('week-subtitle');
     const prevWeekBtn = document.getElementById('prev-week-btn');
     const nextWeekBtn = document.getElementById('next-week-btn');
     const todayWeekBtn = document.getElementById('today-week-btn');
     const addSessionBtn = document.getElementById('add-session-btn');
-    const jumpRemindersBtn = document.getElementById('jump-reminders-btn');
     const authRequiredEl = document.getElementById('auth-required');
     const calendarLayoutEl = document.getElementById('calendar-layout');
-    const reminderSettingsPanel = document.getElementById('reminder-settings-panel');
     const toastEl = document.getElementById('toast');
 
     const modalOverlay = document.getElementById('session-modal-overlay');
@@ -99,6 +98,14 @@
     function formatTimeDisplay(value) {
       if (!/^\d{2}:\d{2}$/.test(String(value || ''))) return '00:00';
       return String(value);
+    }
+
+    function getIsoWeekNumber(date) {
+      const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+      const day = target.getUTCDay() || 7;
+      target.setUTCDate(target.getUTCDate() + 4 - day);
+      const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+      return Math.ceil((((target - yearStart) / 86400000) + 1) / 7);
     }
 
     function getSessionStorageKey() {
@@ -346,6 +353,9 @@
     function renderWeek() {
       const end = addDays(weekStart, 6);
       weekTitle.textContent = `${formatLongDate(weekStart)} - ${formatLongDate(end)}`;
+      if (weekSubtitle) {
+        weekSubtitle.textContent = 'Week ' + String(getIsoWeekNumber(weekStart)).padStart(2, '0');
+      }
       while (weekGrid.firstChild) weekGrid.removeChild(weekGrid.firstChild);
       const today = localDateString(new Date());
 
@@ -644,11 +654,6 @@
     nextWeekBtn.addEventListener('click', () => { weekStart = addDays(weekStart, 7); renderWeek(); });
     todayWeekBtn.addEventListener('click', () => { weekStart = startOfWeek(new Date()); renderWeek(); });
     addSessionBtn.addEventListener('click', () => openModal(null));
-    if (jumpRemindersBtn && reminderSettingsPanel) {
-      jumpRemindersBtn.addEventListener('click', () => {
-        reminderSettingsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    }
     modalCloseBtn.addEventListener('click', closeModal);
     modalCancelBtn.addEventListener('click', closeModal);
     modalSaveBtn.addEventListener('click', saveSessionFromModal);

@@ -143,3 +143,29 @@ def collect_user_export_payload(uid, email, runtime=None):
             'study_card_states': card_states,
         },
     }
+
+
+EXPORT_BUNDLE_KEYS = (
+    'flashcards_csv',
+    'practice_tests_csv',
+    'lecture_notes_docx',
+    'lecture_notes_pdf_marked',
+    'lecture_notes_pdf_unmarked',
+    'account_json',
+)
+
+
+def normalize_export_bundle_include(payload_include, runtime=None):
+    _ = runtime
+    include = payload_include if isinstance(payload_include, dict) else {}
+    normalized = {}
+    for key in EXPORT_BUNDLE_KEYS:
+        normalized[key] = bool(include.get(key))
+    return normalized
+
+
+def has_export_bundle_selection(include_map, runtime=None):
+    _ = runtime
+    if not isinstance(include_map, dict):
+        return False
+    return any(bool(include_map.get(key)) for key in EXPORT_BUNDLE_KEYS)

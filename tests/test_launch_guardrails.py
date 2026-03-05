@@ -18,6 +18,7 @@ from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.rate_limit import quotas as rate_limit_quotas
 from lecture_processor.domains.study import audio as study_audio
+from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 from lecture_processor.services import upload_api_service
 
@@ -94,6 +95,7 @@ def test_auth_user_includes_preferences(client, monkeypatch):
             "interview_credits_medium": 0,
             "interview_credits_long": 0,
             "total_processed": 4,
+            "has_created_study_pack": True,
             "preferred_output_language": "dutch",
             "preferred_output_language_custom": "",
             "onboarding_completed": False,
@@ -104,6 +106,7 @@ def test_auth_user_includes_preferences(client, monkeypatch):
 
     assert response.status_code == 200
     body = response.get_json()
+    assert body["has_created_study_pack"] is True
     assert body["preferences"]["output_language"] == "dutch"
     assert body["preferences"]["output_language_label"] == "Dutch"
     assert body["preferences"]["onboarding_completed"] is False
@@ -607,6 +610,142 @@ def test_account_export_returns_json_attachment(client, monkeypatch):
     assert "lecture-processor-account-export-" in content_disposition
     parsed = json.loads(response.data.decode("utf-8"))
     assert parsed["meta"]["uid"] == "u6"
+
+
+def test_account_export_bundle_requires_auth(client):
+    response = client.post(
+        "/api/account/export-bundle",
+        json={"scope": "account", "include": {"account_json": True}},
+    )
+    assert response.status_code == 401
+    assert response.get_json()["error"] == "Unauthorized"
+
+
+def test_account_export_bundle_rejects_empty_selection(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "bundle-u1", "email": "user@gmail.com"})
+
+    response = client.post(
+        "/api/account/export-bundle",
+        json={"scope": "account", "include": {}},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 400
+    assert "select at least one export option" in response.get_json()["error"].lower()
+
+
+def test_account_export_bundle_returns_selected_folders_and_files(client, monkeypatch):
+    class _PackDoc:
+        def __init__(self, pack_id, payload):
+            self.id = pack_id
+            self._payload = payload
+
+        def to_dict(self):
+            return dict(self._payload)
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "bundle-u2", "email": "user@gmail.com"})
+    monkeypatch.setattr(
+        core.study_repo,
+        "list_study_packs_by_uid",
+        lambda _db, _uid, _limit: [
+            _PackDoc(
+                "pack-1",
+                {
+                    "study_pack_id": "pack-1",
+                    "title": "Biology Week 1",
+                    "flashcards": [{"front": "Q1", "back": "A1"}],
+                    "test_questions": [],
+                    "notes_markdown": "",
+                },
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        account_lifecycle,
+        "collect_user_export_payload",
+        lambda uid, email, runtime=None: {"meta": {"uid": uid, "email": email}, "collections": {}},
+    )
+
+    response = client.post(
+        "/api/account/export-bundle",
+        json={
+            "scope": "account",
+            "include": {
+                "flashcards_csv": True,
+                "account_json": True,
+            },
+        },
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/zip"
+    with zipfile.ZipFile(io.BytesIO(response.data), "r") as archive:
+        names = set(archive.namelist())
+    assert "flashcards_csv/" in names
+    assert "account_json/" in names
+    assert any(name.startswith("flashcards_csv/") and name.endswith(".csv") for name in names)
+    assert "account_json/account-export.json" in names
+    assert not any(name.startswith("practice_tests_csv/") for name in names)
+    assert not any(name.startswith("lecture_notes_docx/") for name in names)
+    assert not any(name.startswith("lecture_notes_pdf_marked/") for name in names)
+    assert not any(name.startswith("lecture_notes_pdf_unmarked/") for name in names)
+
+
+def test_account_export_bundle_marked_and_unmarked_pdf_flags_are_independent(client, monkeypatch):
+    class _PackDoc:
+        def __init__(self, pack_id, payload):
+            self.id = pack_id
+            self._payload = payload
+
+        def to_dict(self):
+            return dict(self._payload)
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "bundle-u3", "email": "user@gmail.com"})
+    monkeypatch.setattr(
+        core.study_repo,
+        "list_study_packs_by_uid",
+        lambda _db, _uid, _limit: [
+            _PackDoc(
+                "pack-2",
+                {
+                    "study_pack_id": "pack-2",
+                    "title": "Calculus Midterm",
+                    "flashcards": [],
+                    "test_questions": [],
+                    "notes_markdown": "# Notes",
+                },
+            )
+        ],
+    )
+
+    def _fake_pdf(_pack, include_answers=True, runtime=None):
+        _ = runtime
+        return b"marked-pdf" if include_answers else b"unmarked-pdf"
+
+    monkeypatch.setattr(study_export, "build_notes_pdf_bytes", _fake_pdf)
+
+    marked_only = client.post(
+        "/api/account/export-bundle",
+        json={"scope": "account", "include": {"lecture_notes_pdf_marked": True}},
+        headers={"Authorization": "Bearer dev"},
+    )
+    assert marked_only.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(marked_only.data), "r") as archive:
+        marked_names = set(archive.namelist())
+    assert any(name.startswith("lecture_notes_pdf_marked/") and name.endswith("-marked.pdf") for name in marked_names)
+    assert not any(name.startswith("lecture_notes_pdf_unmarked/") and name.endswith("-unmarked.pdf") for name in marked_names)
+
+    unmarked_only = client.post(
+        "/api/account/export-bundle",
+        json={"scope": "account", "include": {"lecture_notes_pdf_unmarked": True}},
+        headers={"Authorization": "Bearer dev"},
+    )
+    assert unmarked_only.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(unmarked_only.data), "r") as archive:
+        unmarked_names = set(archive.namelist())
+    assert any(name.startswith("lecture_notes_pdf_unmarked/") and name.endswith("-unmarked.pdf") for name in unmarked_names)
+    assert not any(name.startswith("lecture_notes_pdf_marked/") and name.endswith("-marked.pdf") for name in unmarked_names)
 
 
 def test_account_delete_rejects_bad_confirmation_text(client, monkeypatch):

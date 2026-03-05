@@ -75,6 +75,20 @@ def save_study_pack(job_id, job_data, runtime=None):
                 'updated_at': now_ts,
             }
         )
+        uid = str(job_data.get('user_id', '') or '').strip()
+        if uid:
+            try:
+                resolved_runtime.users_repo.set_doc(
+                    resolved_runtime.db,
+                    uid,
+                    {
+                        'has_created_study_pack': True,
+                        'updated_at': now_ts,
+                    },
+                    merge=True,
+                )
+            except Exception:
+                resolved_runtime.logger.warning('Could not mark has_created_study_pack for user %s', uid)
         job_data['study_pack_id'] = doc_ref.id
     except Exception as error:
         resolved_runtime.logger.error('❌ Failed to save study pack for job %s: %s', job_id, error)

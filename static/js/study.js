@@ -37,7 +37,9 @@ const learnPackFromUrl = urlParams.get('pack_id') || '';
 const openLearnFromUrl = urlParams.get('mode') === 'learn';
 const fullscreenFromUrl = urlParams.get('fullscreen') === '1';
 const focusFromUrl = urlParams.get('focus') || '';
+const actionFromUrl = String(urlParams.get('action') || '').trim().toLowerCase();
 let autoLearnConsumed = false;
+let autoCreateConsumed = false;
 
 /* Write mode state */
 let writeIndex = 0, writeRevealed = false, writeChecked = false, writePromptSwapped = false;
@@ -734,7 +736,7 @@ var notesPaneShell = document.getElementById('notes-pane-shell'), notesFullscree
 var learnModeLabel = document.getElementById('learn-mode-label');
 var learnFlashcard3d = document.getElementById('learn-flashcard-3d'), learnFlashcardInner = document.getElementById('learn-flashcard-inner'), learnFlashcardFront = document.getElementById('learn-flashcard-front'), learnFlashcardBack = document.getElementById('learn-flashcard-back');
 var learnFPrev = document.getElementById('learn-f-prev'), learnFFlip = document.getElementById('learn-f-flip'), learnFNext = document.getElementById('learn-f-next'), learnFProgress = document.getElementById('learn-f-progress');
-var learnFListBtn = document.getElementById('learn-f-list-btn'), learnFPeekToggle = document.getElementById('learn-f-peek-toggle'), learnFListView = document.getElementById('learn-f-list-view');
+var learnFListBtn = document.getElementById('learn-f-list-btn'), learnFPeekWrap = document.getElementById('learn-f-peek-wrap'), learnFPeekToggle = document.getElementById('learn-f-peek-toggle'), learnFListView = document.getElementById('learn-f-list-view');
 var learnProgressFill = document.getElementById('learn-progress-fill'), learnProgressText = document.getElementById('learn-progress-text');
 var learnQProgress = document.getElementById('learn-q-progress'), learnQScore = document.getElementById('learn-q-score'), learnQText = document.getElementById('learn-q-text'), learnQOptions = document.getElementById('learn-q-options'), learnQExpl = document.getElementById('learn-q-expl'), learnQNext = document.getElementById('learn-q-next');
 var writePromptEl = document.getElementById('write-prompt'), writeInputEl = document.getElementById('write-input'), writeCheckBtn = document.getElementById('write-check-btn'), writeRevealBtn = document.getElementById('write-reveal-btn'), writeFeedbackEl = document.getElementById('write-feedback'), writeNextBtn = document.getElementById('write-next-btn'), writeProgressEl = document.getElementById('write-progress');
@@ -2550,6 +2552,17 @@ function setFlashcardListMode(enabled) {
   if (learnFListView) {
     learnFListView.hidden = !flashcardListMode;
   }
+  if (learnFPeekWrap) {
+    learnFPeekWrap.style.display = flashcardListMode ? 'inline-flex' : 'none';
+  }
+  if (!flashcardListMode) {
+    flashcardPeekMode = false;
+    if (learnFPeekToggle) learnFPeekToggle.checked = false;
+  }
+  document.body.classList.toggle('flashcard-list-mode', flashcardListMode);
+  if (difficultyToolbar) {
+    difficultyToolbar.classList.toggle('list-mode', flashcardListMode);
+  }
   renderFlashcardListView();
 }
 
@@ -2992,6 +3005,10 @@ auth.onAuthStateChanged(function (user) {
     return loadRemoteProgress().then(function () {
       return loadData();
     }).then(function () {
+      if (actionFromUrl === 'create-pack' && !autoCreateConsumed) {
+        autoCreateConsumed = true;
+        openBuilderOverlay('create', null);
+      }
       queueProgressSync(false);
     });
   }).catch(function (e) {

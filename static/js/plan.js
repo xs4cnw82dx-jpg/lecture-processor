@@ -142,16 +142,6 @@
       return null;
     }
 
-    function setFolderSaveState(folderId, stateText, stateClass) {
-      const safeId = String(folderId || '');
-      if (!safeId) return;
-      const states = document.querySelectorAll(`[data-folder-save-state="${safeId}"]`);
-      states.forEach(function(node){
-        node.textContent = stateText || 'Auto-save';
-        node.className = 'autosave-pill' + (stateClass ? ' ' + stateClass : '');
-      });
-    }
-
     function renderOverview(uid) {
       const summary = getProgressSummary(uid);
       const streak = summary.current_streak;
@@ -187,7 +177,16 @@
         recommendation.className = 'recommendation';
         recommendation.textContent = 'Set an exam date to get a daily recommendation.';
         if (days !== null) {
-          if (days > 0) {
+          if (days > 15) {
+            countdownBadge.className = 'chip success';
+            countdownBadge.textContent = days + ' day' + (days === 1 ? '' : 's') + ' left';
+            const rec = Math.ceil((stats.unmastered || 0) / Math.max(days, 1));
+            recommendation.textContent = 'Recommended: ';
+            const strong = document.createElement('strong');
+            strong.textContent = String(rec);
+            recommendation.appendChild(strong);
+            recommendation.appendChild(document.createTextNode(' unmastered cards/day.'));
+          } else if (days >= 6) {
             countdownBadge.className = 'chip warn';
             countdownBadge.textContent = days + ' day' + (days === 1 ? '' : 's') + ' left';
             const rec = Math.ceil((stats.unmastered || 0) / Math.max(days, 1));
@@ -196,9 +195,18 @@
             strong.textContent = String(rec);
             recommendation.appendChild(strong);
             recommendation.appendChild(document.createTextNode(' unmastered cards/day.'));
+          } else if (days >= 1) {
+            countdownBadge.className = 'chip urgent';
+            countdownBadge.textContent = days + ' day' + (days === 1 ? '' : 's') + ' left';
+            const rec = Math.ceil((stats.unmastered || 0) / Math.max(days, 1));
+            recommendation.textContent = 'Recommended: ';
+            const strong = document.createElement('strong');
+            strong.textContent = String(rec);
+            recommendation.appendChild(strong);
+            recommendation.appendChild(document.createTextNode(' unmastered cards/day.'));
           } else if (days === 0) {
-            countdownBadge.className = 'chip danger';
-            countdownBadge.textContent = 'Exam today';
+            countdownBadge.className = 'chip today';
+            countdownBadge.textContent = 'Today';
             recommendation.textContent = '';
             const strong = document.createElement('strong');
             strong.textContent = String(stats.unmastered || 0);
@@ -260,14 +268,6 @@
           return wrap;
         };
 
-        const createAutosavePill = function() {
-          const status = document.createElement('span');
-          status.className = 'autosave-pill';
-          status.dataset.folderSaveState = String(folder.folder_id || '');
-          status.textContent = 'Auto-save';
-          return status;
-        };
-
         const buildWorkload = function() {
           const wrap = document.createElement('div');
           wrap.className = 'recommendation';
@@ -312,14 +312,10 @@
         const tdRecommendation = document.createElement('td');
         tdRecommendation.appendChild(recommendation.cloneNode(true));
 
-        const tdAction = document.createElement('td');
-        tdAction.appendChild(createAutosavePill());
-
         tr.appendChild(tdName);
         tr.appendChild(tdDate);
         tr.appendChild(tdWorkload);
         tr.appendChild(tdRecommendation);
-        tr.appendChild(tdAction);
         foldersBodyEl.appendChild(tr);
 
         const card = document.createElement('article');
@@ -367,10 +363,6 @@
         cardRecommendation.appendChild(recommendation.cloneNode(true));
         card.appendChild(cardRecommendation);
 
-        const cardActions = document.createElement('div');
-        cardActions.className = 'folder-card-actions';
-        cardActions.appendChild(createAutosavePill());
-        card.appendChild(cardActions);
         foldersCardsEl.appendChild(card);
       });
       initFolderDatePickers();
@@ -571,7 +563,6 @@
       const lastSaved = parseDateInput(dateInput.dataset.savedExamDate || '');
       if (lastSaved === normalizedDate) return;
       folderSaveInFlight.add(folderId);
-      setFolderSaveState(folderId, 'Saving...', 'saving');
       try {
         const resp = await authFetch('/api/study-folders/' + encodeURIComponent(folderId), {
           method: 'PATCH',
@@ -580,19 +571,16 @@
         });
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || 'Could not save exam date');
-        showToast('Exam date saved.', 'success');
-        setFolderSaveState(folderId, 'Saved', 'saved');
+        showToast('Saved successfully.', 'success');
         const relatedInputs = document.querySelectorAll(`.js-folder-date[data-folder-id="${folderId}"]`);
         relatedInputs.forEach(function(input){
           input.dataset.savedExamDate = normalizedDate || '';
         });
         await loadPlannerData();
       } catch (err) {
-        setFolderSaveState(folderId, 'Error', 'error');
         showToast(err.message || 'Could not save exam date.', 'error');
       } finally {
         folderSaveInFlight.delete(folderId);
-        setTimeout(function() { setFolderSaveState(folderId, 'Auto-save', ''); }, 1300);
       }
     }
 

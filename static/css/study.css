@@ -143,10 +143,10 @@
       font-size: .8125rem;
       color: var(--gray-500);
       margin-top: 1px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      max-width: 220px
+      white-space: normal;
+      overflow: visible;
+      text-overflow: initial;
+      max-width: 100%
     }
 
     .actions {
@@ -1909,9 +1909,20 @@
       justify-content: center;
       gap: 8px;
       flex-wrap: wrap;
-      margin-top: -4px;
+      margin-top: 12px;
       opacity: 1;
       transition: opacity .8s ease
+    }
+
+    .difficulty-toolbar.list-mode {
+      margin-top: 14px;
+      margin-bottom: 8px;
+      position: static;
+      z-index: auto;
+      border-top: 0;
+      box-shadow: none;
+      background: transparent;
+      padding: 0;
     }
 
     .difficulty-toolbar.visible {
@@ -3664,6 +3675,35 @@
 
       .learn-card {
         padding-bottom: 88px;
+      }
+
+      body.flashcard-list-mode .difficulty-toolbar {
+        position: static;
+        left: auto;
+        right: auto;
+        bottom: auto;
+        margin-top: 14px;
+        padding: 0;
+        border-top: 0;
+        box-shadow: none;
+        background: transparent;
+      }
+
+      body.flashcard-list-mode .difficulty-toolbar.visible {
+        display: flex;
+        grid-template-columns: none;
+      }
+
+      body.flashcard-list-mode .difficulty-toolbar .difficulty-hint {
+        display: inline-flex;
+      }
+
+      body.flashcard-list-mode .difficulty-btn {
+        min-height: 40px;
+      }
+
+      body.flashcard-list-mode .learn-card {
+        padding-bottom: 16px;
       }
 
       .algo-slot {

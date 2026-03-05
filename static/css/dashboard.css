@@ -7,17 +7,8 @@
   background: linear-gradient(140deg, #f2f7ff, #eef6f1);
 }
 
-.hero .eyebrow {
-  margin: 0;
-  color: #2563eb;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 0.74rem;
-}
-
 .hero h1 {
-  margin: 8px 0 10px;
+  margin: 0 0 10px;
   font-size: 2rem;
   line-height: 1.15;
 }
@@ -52,6 +43,19 @@
   background: linear-gradient(135deg, #3b82f6, #2563eb);
   border-color: transparent;
   color: #fff;
+}
+
+.hero-btn.manual {
+  background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 4px 14px 0 rgba(79, 70, 229, 0.3);
+}
+
+.hero-btn.manual:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px 0 rgba(79, 70, 229, 0.4);
 }
 
 .dashboard-grid {

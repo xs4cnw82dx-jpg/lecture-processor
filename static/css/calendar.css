@@ -113,7 +113,9 @@
     .field.disabled-row{pointer-events:none}
 
     .week-controls{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+    .week-title-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
     .week-title{font-size:1.08rem;font-weight:800;color:var(--gray-900);letter-spacing:-.01em}
+    .week-subtitle{font-size:.82rem;color:var(--gray-400);font-weight:600}
 
     .week-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}
     .day-col{
@@ -204,5 +206,6 @@
       .topbar-inner{flex-wrap:wrap}
       .user-email{max-width:none;width:100%}
       .headline-actions{width:100%}
+      .week-title-wrap{align-items:flex-start}
       .week-grid{grid-template-columns:1fr}
     }

@@ -127,6 +127,24 @@ def test_admin_session_login_sets_cookie(client, monkeypatch):
     assert "lp_admin_session=session-cookie" in set_cookie
 
 
+def test_admin_session_login_allows_admin_page_access(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
+    monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)
+    monkeypatch.setattr(core, "_extract_bearer_token", lambda _request: "id-token")
+    monkeypatch.setattr(core.auth, "create_session_cookie", lambda _id_token, expires_in: "session-cookie")
+    monkeypatch.setattr(core.auth, "verify_session_cookie", lambda _cookie, check_revoked=True: {"uid": "admin-u", "email": "admin@example.com"})
+
+    login = client.post("/api/session/login", headers={"Authorization": "Bearer test"})
+    assert login.status_code == 200
+    raw_cookie = login.headers.get("Set-Cookie", "")
+    cookie = raw_cookie.split(";", 1)[0]
+
+    response = client.get("/admin", headers={"Cookie": cookie}, follow_redirects=False)
+
+    assert response.status_code == 200
+    assert "text/html" in response.content_type
+
+
 def test_status_uses_runtime_job_fallback(client, monkeypatch):
     core.jobs.clear()
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-fallback", "email": "user@example.com"})

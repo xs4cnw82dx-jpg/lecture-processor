@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Dict, List
 
 
-PROMPT_REGISTRY_VERSION = "2026-03-02"
+PROMPT_REGISTRY_VERSION = "2026-03-05"
 
 
 PROMPT_SLIDE_EXTRACTION = """Extract all textual content from the attached slide deck PDF and identify the role of visual elements.
@@ -15,10 +15,15 @@ Instructions:
 2. Include the slide title.
 3. Include all textual content (bullet points, paragraphs) from each slide.
 4. Identify where images or tables appear, using strict rules:
-   - Informative: Use this placeholder ONLY when the image/table contains text, data, charts, diagrams, flowcharts, or a specific scientific/technical visual that is essential for understanding. Format: [Informative Image/Table: neutral description of what is visible or the topic]
-   - Decorative: Use this placeholder for photos of people/landscapes, logos, background illustrations, stock photos, or mood visuals. If uncertain, classify as decorative. Format: [Decorative Image]
-5. Omit the phrase "Share Your talent move the world" if present.
-6. Return plain text only, without Word-specific formatting beyond slide labels and placeholders."""
+   - Informative: Use this placeholder ONLY when the image/table contains text, data, charts, diagrams, flowcharts, formulas, labels, or a scientific/technical visual that is essential for understanding.
+     Format: [Informative Image/Table: neutral description of what is visible or the topic]
+   - Decorative: Use this placeholder for photos of people/landscapes, logos, background illustrations, stock photos, or mood visuals. If uncertain, classify as decorative.
+     Format: [Decorative Image]
+5. For every informative visual, also extract any readable embedded text, table values, chart axes, legends, and figure labels into plain text under that slide.
+6. If an informative visual exists but text is not readable, still include the placeholder and append "(text unreadable)".
+7. Never classify a chart/diagram/table as decorative.
+8. Omit the phrase "Share Your talent move the world" if present.
+9. Return plain text only, without Word-specific formatting beyond slide labels and placeholders."""
 
 PROMPT_AUDIO_TRANSCRIPTION = """Create an accurate and clean transcript of the attached audio file.
 Instructions:

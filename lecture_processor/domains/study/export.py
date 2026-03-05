@@ -189,6 +189,72 @@ def markdown_to_docx(markdown_text, title='Document', runtime=None):
     return doc
 
 
+def sanitize_export_filename(value, fallback='study-pack'):
+    raw = str(value or '').strip().lower()
+    if not raw:
+        return str(fallback or 'study-pack')
+    safe = re.sub(r'[^a-z0-9._-]+', '-', raw)
+    safe = re.sub(r'-{2,}', '-', safe).strip('._-')
+    return safe[:80] or str(fallback or 'study-pack')
+
+
+def build_flashcards_csv_bytes(pack, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    flashcards = pack.get('flashcards', []) if isinstance(pack.get('flashcards', []), list) else []
+    if not flashcards:
+        return None
+    output = resolved_runtime.io.StringIO()
+    writer = resolved_runtime.csv.writer(output)
+    writer.writerow(['question', 'answer'])
+    for card in flashcards:
+        writer.writerow([card.get('front', ''), card.get('back', '')])
+    return output.getvalue().encode('utf-8')
+
+
+def build_practice_test_csv_bytes(pack, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    questions = pack.get('test_questions', []) if isinstance(pack.get('test_questions', []), list) else []
+    if not questions:
+        return None
+    output = resolved_runtime.io.StringIO()
+    writer = resolved_runtime.csv.writer(output)
+    writer.writerow(['question', 'option_a', 'option_b', 'option_c', 'option_d', 'answer', 'explanation'])
+    for question in questions:
+        options = question.get('options', []) if isinstance(question.get('options', []), list) else []
+        padded = (options + ['', '', '', ''])[:4]
+        writer.writerow([
+            question.get('question', ''),
+            padded[0],
+            padded[1],
+            padded[2],
+            padded[3],
+            question.get('answer', ''),
+            question.get('explanation', ''),
+        ])
+    return output.getvalue().encode('utf-8')
+
+
+def build_notes_docx_bytes(pack, runtime=None):
+    notes_markdown = str(pack.get('notes_markdown', '') or '').strip()
+    if not notes_markdown:
+        return None
+    title = str(pack.get('title', 'Lecture Notes') or 'Lecture Notes').strip()
+    docx = markdown_to_docx(notes_markdown, title=title, runtime=runtime)
+    buffer = io.BytesIO()
+    docx.save(buffer)
+    buffer.seek(0)
+    return buffer.read()
+
+
+def build_notes_pdf_bytes(pack, include_answers=True, runtime=None):
+    notes_markdown = str(pack.get('notes_markdown', '') or '').strip()
+    if not notes_markdown:
+        return None
+    pdf_buffer = build_study_pack_pdf(pack, include_answers=include_answers, runtime=runtime)
+    pdf_buffer.seek(0)
+    return pdf_buffer.read()
+
+
 def normalize_exam_date(raw_value, runtime=None):
     _ = runtime
     exam_date = str(raw_value or '').strip()

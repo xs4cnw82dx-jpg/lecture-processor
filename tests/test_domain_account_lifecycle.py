@@ -54,3 +54,18 @@ def test_collect_user_export_payload_returns_expected_shape(app, monkeypatch):
     assert payload["meta"]["uid"] == "u1"
     assert payload["account"]["profile"] == {"uid": "u1"}
     assert "collections" in payload
+
+
+def test_normalize_export_bundle_include_defaults_missing_keys_to_false():
+    normalized = lifecycle.normalize_export_bundle_include({"flashcards_csv": True})
+    assert normalized["flashcards_csv"] is True
+    assert normalized["practice_tests_csv"] is False
+    assert normalized["lecture_notes_docx"] is False
+    assert normalized["lecture_notes_pdf_marked"] is False
+    assert normalized["lecture_notes_pdf_unmarked"] is False
+    assert normalized["account_json"] is False
+
+
+def test_has_export_bundle_selection_requires_at_least_one_true_flag():
+    assert lifecycle.has_export_bundle_selection({"flashcards_csv": False}) is False
+    assert lifecycle.has_export_bundle_selection({"flashcards_csv": True}) is True

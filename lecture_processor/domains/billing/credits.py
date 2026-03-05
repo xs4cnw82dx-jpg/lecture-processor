@@ -18,6 +18,7 @@ def _build_default_user_data(uid, email, runtime):
         'interview_credits_medium': 0,
         'interview_credits_long': 0,
         'total_processed': 0,
+        'has_created_study_pack': False,
         'created_at': runtime.time.time(),
         'preferred_output_language': runtime.DEFAULT_OUTPUT_LANGUAGE_KEY,
         'preferred_output_language_custom': '',
