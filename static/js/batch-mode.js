@@ -11,19 +11,40 @@
   var mode = ['lecture-notes', 'slides-only', 'interview'].indexOf(forcedMode) >= 0 ? forcedMode : 'lecture-notes';
 
   var MODE_META = {
-    'lecture-notes': { plural: 'Lectures', singular: 'Lecture', requiresSlides: true, requiresAudio: true },
-    'slides-only': { plural: 'Slides', singular: 'Slide set', requiresSlides: true, requiresAudio: false },
-    interview: { plural: 'Interviews', singular: 'Interview', requiresSlides: false, requiresAudio: true },
+    'lecture-notes': {
+      plural: 'Lectures',
+      singular: 'Lecture',
+      requiresSlides: true,
+      requiresAudio: true,
+      heroDescription: 'Create one batch request with multiple lectures. Each row produces its own outputs, and the batch can be downloaded as one ZIP.',
+      minimumNote: 'Minimum 2 lectures required for batch mode.',
+    },
+    'slides-only': {
+      plural: 'Slides',
+      singular: 'Slide set',
+      requiresSlides: true,
+      requiresAudio: false,
+      heroDescription: 'Create one batch request with multiple slide sets. Each row produces its own outputs, and the batch can be downloaded as one ZIP.',
+      minimumNote: 'Minimum 2 slides sets required for batch mode.',
+    },
+    interview: {
+      plural: 'Interviews',
+      singular: 'Interview',
+      requiresSlides: false,
+      requiresAudio: true,
+      heroDescription: 'Create one batch request with multiple interviews. Each row produces its own outputs, and the batch can be downloaded as one ZIP.',
+      minimumNote: 'Minimum 2 interviews required for batch mode.',
+    },
   };
 
   var OUTPUT_LANGUAGE_LABELS = {
-    english: 'English',
-    dutch: 'Dutch',
-    spanish: 'Spanish',
-    french: 'French',
-    german: 'German',
-    chinese: 'Chinese',
-    other: 'Other',
+    english: '🇬🇧 English',
+    dutch: '🇳🇱 Dutch',
+    spanish: '🇪🇸 Spanish',
+    french: '🇫🇷 French',
+    german: '🇩🇪 German',
+    chinese: '🇨🇳 Chinese',
+    other: '🌐 Other',
   };
 
   var form = document.getElementById('batch-form');
@@ -31,9 +52,12 @@
   var addRowBtn = document.getElementById('add-row-btn');
   var addRowLabel = document.getElementById('add-row-label');
   var submitBtn = document.getElementById('submit-batch-btn');
+  var heroDescription = document.getElementById('batch-hero-description');
   var rowsTitle = document.getElementById('rows-title');
   var rowsMinimumNote = document.getElementById('rows-minimum-note');
   var statusRowHeader = document.getElementById('status-row-header');
+  var batchTitleInput = document.getElementById('batch-title');
+  var batchTitleError = document.getElementById('batch-title-error');
 
   var outputLanguageInput = document.getElementById('output-language');
   var outputLanguageButton = document.getElementById('output-language-button');
@@ -44,7 +68,6 @@
 
   var studyDefaultsWrap = document.getElementById('study-defaults-wrap');
   var studyFeaturesInput = document.getElementById('study-features');
-  var studyToolsNote = document.getElementById('study-tools-note');
   var studyToolChips = Array.prototype.slice.call(document.querySelectorAll('#study-tool-chips [data-study-feature]'));
 
   var flashcardWrap = document.getElementById('flashcard-wrap');
@@ -69,6 +92,13 @@
     return MODE_META[mode] || MODE_META['lecture-notes'];
   }
 
+  function showShellToast(message, variant) {
+    var shell = window.LectureProcessorShell || {};
+    if (shell && typeof shell.showToast === 'function') {
+      shell.showToast(message, variant || '');
+    }
+  }
+
   function authFetch(path, options) {
     if (authClient && typeof authClient.authFetch === 'function') {
       return authClient.authFetch(path, options, { retryOn401: true });
@@ -85,6 +115,21 @@
 
   function rowCount() {
     return rowsWrap ? rowsWrap.querySelectorAll('.batch-row').length : 0;
+  }
+
+  function setBatchTitleError(message) {
+    if (batchTitleError) batchTitleError.textContent = String(message || '').trim();
+    if (batchTitleInput) batchTitleInput.classList.toggle('invalid', !!String(message || '').trim());
+  }
+
+  function hasValidBatchTitle() {
+    var value = String((batchTitleInput && batchTitleInput.value) || '').trim();
+    return value.length > 0;
+  }
+
+  function syncSubmitEnabled() {
+    if (!submitBtn) return;
+    submitBtn.disabled = !hasValidBatchTitle();
   }
 
   function formatDate(secondsValue) {
@@ -160,13 +205,6 @@
       chip.classList.toggle('active', chip.dataset.studyFeature === next);
     });
 
-    if (studyToolsNote) {
-      if (next === 'none') studyToolsNote.textContent = 'Notes-only output. No flashcards or practice test questions will be generated.';
-      else if (next === 'flashcards') studyToolsNote.textContent = 'Only flashcards will be generated.';
-      else if (next === 'test') studyToolsNote.textContent = 'Only practice test questions will be generated.';
-      else studyToolsNote.textContent = 'Recommended for first runs: both flashcards and practice test questions will be generated.';
-    }
-
     var hideFlashcards = mode === 'interview' || next === 'none' || next === 'test';
     var hideQuestions = mode === 'interview' || next === 'none' || next === 'flashcards';
     if (flashcardWrap) flashcardWrap.style.display = hideFlashcards ? 'none' : '';
@@ -190,9 +228,10 @@
   function updateRowLabels() {
     var meta = modeMeta();
     if (rowsTitle) rowsTitle.textContent = meta.plural;
-    if (rowsMinimumNote) rowsMinimumNote.textContent = 'Minimum 2 ' + meta.plural.toLowerCase() + ' required for batch mode.';
+    if (rowsMinimumNote) rowsMinimumNote.textContent = meta.minimumNote || ('Minimum 2 ' + meta.plural.toLowerCase() + ' required for batch mode.');
     if (statusRowHeader) statusRowHeader.textContent = meta.singular;
     if (addRowLabel) addRowLabel.textContent = 'Add ' + meta.singular.toLowerCase();
+    if (heroDescription) heroDescription.textContent = meta.heroDescription || '';
 
     Array.prototype.slice.call(rowsWrap.querySelectorAll('.batch-row')).forEach(function (rowNode, index) {
       var titleEl = rowNode.querySelector('.batch-row-head h3');
@@ -213,23 +252,44 @@
 
   function getRowState(rowNode) {
     var rowId = String((rowNode && rowNode.dataset && rowNode.dataset.rowId) || '');
-    if (!rowId) return { importedAudioToken: '', importedAudioName: '', importedAudioSizeBytes: 0 };
+    if (!rowId) {
+      return {
+        importedAudioToken: '',
+        importedAudioName: '',
+        importedAudioSizeBytes: 0,
+        importedAudioSourceUrl: '',
+        importingInFlight: false,
+        importPromise: null,
+      };
+    }
     if (!rowStates.has(rowId)) {
-      rowStates.set(rowId, { importedAudioToken: '', importedAudioName: '', importedAudioSizeBytes: 0 });
+      rowStates.set(rowId, {
+        importedAudioToken: '',
+        importedAudioName: '',
+        importedAudioSizeBytes: 0,
+        importedAudioSourceUrl: '',
+        importingInFlight: false,
+        importPromise: null,
+      });
     }
     return rowStates.get(rowId);
   }
 
-  function setRowAudioImportStatus(rowNode, message, isError) {
+  function setRowAudioImportStatus(rowNode, message, statusKind) {
     var statusEl = rowNode.querySelector('[data-field="m3u8-status"]');
     if (!statusEl) return;
     var text = String(message || '').trim();
     statusEl.textContent = text;
-    statusEl.classList.toggle('error', !!(isError && text));
+    statusEl.classList.remove('pending', 'success', 'error', 'info');
+    if (text && ['pending', 'success', 'error', 'info'].indexOf(statusKind) >= 0) {
+      statusEl.classList.add(statusKind);
+    }
   }
 
   function setRowAudioImportPending(rowNode, inFlight) {
     var button = rowNode.querySelector('[data-action="import-audio-url"]');
+    var state = getRowState(rowNode);
+    state.importingInFlight = !!inFlight;
     if (!button) return;
     if (!button.dataset.defaultLabel) button.dataset.defaultLabel = button.textContent || 'Import audio';
     button.disabled = !!inFlight;
@@ -291,6 +351,9 @@
     state.importedAudioToken = '';
     state.importedAudioName = '';
     state.importedAudioSizeBytes = 0;
+    state.importedAudioSourceUrl = '';
+    state.importingInFlight = false;
+    state.importPromise = null;
   }
 
   function releaseRowImportedAudio(rowNode, options) {
@@ -299,13 +362,13 @@
     var token = String(state.importedAudioToken || '').trim();
     var clearStatus = opts.clearStatus !== false;
     if (!token) {
-      if (clearStatus) setRowAudioImportStatus(rowNode, '', false);
+      if (clearStatus) setRowAudioImportStatus(rowNode, '', '');
       return Promise.resolve();
     }
 
     clearRowImportedAudioState(rowNode);
     syncRowFileUI(rowNode, 'audio');
-    if (clearStatus) setRowAudioImportStatus(rowNode, '', false);
+    if (clearStatus) setRowAudioImportStatus(rowNode, '', '');
 
     if (!auth || !auth.currentUser) return Promise.resolve();
     return authFetch('/api/import-audio-url/release', {
@@ -319,7 +382,7 @@
     });
   }
 
-  function applyRowImportedAudio(rowNode, payload, previousToken) {
+  function applyRowImportedAudio(rowNode, payload, previousToken, importedUrl, announceToast) {
     var state = getRowState(rowNode);
     var token = String(payload && payload.audio_import_token ? payload.audio_import_token : '').trim();
     if (!token) return Promise.resolve(false);
@@ -327,6 +390,7 @@
     state.importedAudioToken = token;
     state.importedAudioName = String(payload.file_name || 'Imported audio').trim();
     state.importedAudioSizeBytes = Math.max(0, Number(payload.size_bytes || 0));
+    state.importedAudioSourceUrl = String(importedUrl || '').trim();
 
     var audioInput = rowNode.querySelector('input[data-field="audio"]');
     if (audioInput && audioInput.files && audioInput.files.length) {
@@ -340,10 +404,13 @@
       setRowAudioImportStatus(
         rowNode,
         'Imported ' + state.importedAudioName + '. Token expires in about ' + minutes + ' minute' + (minutes === 1 ? '' : 's') + '. Batch mode stores the imported audio immediately when you start the batch.',
-        false
+        'success'
       );
     } else {
-      setRowAudioImportStatus(rowNode, 'Imported ' + state.importedAudioName + '.', false);
+      setRowAudioImportStatus(rowNode, 'Imported ' + state.importedAudioName + '.', 'success');
+    }
+    if (announceToast) {
+      showShellToast('Audio imported successfully for this row.', 'success');
     }
 
     if (previousToken && previousToken !== token && auth && auth.currentUser) {
@@ -360,23 +427,57 @@
     return Promise.resolve(true);
   }
 
-  function importRowAudioFromUrl(rowNode) {
-    if (!auth || !auth.currentUser) {
-      alert('Please sign in first.');
-      return;
-    }
+  function getRowM3u8Url(rowNode) {
     var urlInput = rowNode.querySelector('input[data-field="m3u8"]');
-    var url = String((urlInput && urlInput.value) || '').trim();
+    return String((urlInput && urlInput.value) || '').trim();
+  }
+
+  function rowHasLocalAudioFile(rowNode) {
+    var audioInput = rowNode.querySelector('input[data-field="audio"]');
+    return !!(audioInput && audioInput.files && audioInput.files[0]);
+  }
+
+  function shouldAutoImportRow(rowNode) {
+    var url = getRowM3u8Url(rowNode);
+    if (!url) return false;
+    if (rowHasLocalAudioFile(rowNode)) return false;
+    var state = getRowState(rowNode);
+    if (state.importingInFlight) return false;
+    if (!state.importedAudioToken) return true;
+    return String(state.importedAudioSourceUrl || '').trim() !== url;
+  }
+
+  function importRowAudioFromUrl(rowNode, options) {
+    var opts = options || {};
+    var reason = String(opts.reason || 'manual');
+    var silentIfAlreadyImported = opts.silentIfAlreadyImported !== false;
+
+    if (!auth || !auth.currentUser) {
+      if (reason === 'manual') alert('Please sign in first.');
+      return Promise.resolve({ ok: false, reason: 'not-signed-in' });
+    }
+    var url = getRowM3u8Url(rowNode);
     if (!url) {
-      setRowAudioImportStatus(rowNode, 'Paste the index.m3u8 URL first.', true);
-      return;
+      setRowAudioImportStatus(rowNode, 'Paste the index.m3u8 URL first.', 'error');
+      return Promise.resolve({ ok: false, reason: 'empty-url' });
+    }
+
+    var state = getRowState(rowNode);
+    if (state.importingInFlight) {
+      return Promise.resolve({ ok: false, reason: 'in-flight' });
+    }
+    if (state.importedAudioToken && String(state.importedAudioSourceUrl || '').trim() === url) {
+      if (!silentIfAlreadyImported) {
+        setRowAudioImportStatus(rowNode, 'Already imported from this URL.', 'info');
+      }
+      return Promise.resolve({ ok: true, reason: 'already-imported' });
     }
 
     setRowAudioImportPending(rowNode, true);
-    setRowAudioImportStatus(rowNode, 'Importing audio from URL...', false);
-    var previousToken = String(getRowState(rowNode).importedAudioToken || '').trim();
+    setRowAudioImportStatus(rowNode, 'Pending import...', 'pending');
+    var previousToken = String(state.importedAudioToken || '').trim();
 
-    authFetch('/api/import-audio-url', {
+    var importPromise = authFetch('/api/import-audio-url', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: url }),
@@ -386,16 +487,29 @@
       });
     }).then(function (result) {
       if (!result.response.ok) {
-        setRowAudioImportStatus(rowNode, String(result.payload.error || 'Could not import audio from URL.'), true);
-        return;
+        setRowAudioImportStatus(rowNode, 'Import failed: ' + String(result.payload.error || 'Could not import audio from URL.'), 'error');
+        return { ok: false, reason: 'import-failed' };
       }
-      return applyRowImportedAudio(rowNode, result.payload, previousToken).then(function () {
-        return true;
+      return applyRowImportedAudio(
+        rowNode,
+        result.payload,
+        previousToken,
+        url,
+        reason !== 'auto-start'
+      ).then(function () {
+        return { ok: true, reason: 'imported' };
       });
     }).catch(function () {
-      setRowAudioImportStatus(rowNode, 'Could not import audio from URL. Please try again.', true);
+      setRowAudioImportStatus(rowNode, 'Import failed: Could not import audio from URL. Please try again.', 'error');
+      return { ok: false, reason: 'network-error' };
     }).finally(function () {
       setRowAudioImportPending(rowNode, false);
+    });
+    state.importPromise = importPromise;
+    return importPromise.finally(function () {
+      if (state.importPromise === importPromise) {
+        state.importPromise = null;
+      }
     });
   }
 
@@ -433,14 +547,51 @@
     var removeBtn = rowNode.querySelector('[data-remove-file="' + fieldName + '"]');
     if (!zone || !input) return;
 
+    var applyDroppedFiles = function (files) {
+      if (!files || !files.length) return;
+      try {
+        var transfer = new DataTransfer();
+        transfer.items.add(files[0]);
+        input.files = transfer.files;
+      } catch (_error) {
+        return;
+      }
+      if (fieldName === 'audio') {
+        releaseRowImportedAudio(rowNode, { clearStatus: true }).finally(function () {
+          syncRowFileUI(rowNode, fieldName);
+        });
+      } else {
+        syncRowFileUI(rowNode, fieldName);
+      }
+    };
+
     zone.addEventListener('click', function (event) {
       if (event.target && event.target.closest('[data-remove-file]')) return;
       input.click();
     });
+    zone.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        input.click();
+      }
+    });
+    zone.addEventListener('dragover', function (event) {
+      event.preventDefault();
+      zone.classList.add('dragover');
+    });
+    zone.addEventListener('dragleave', function (event) {
+      if (event.relatedTarget && zone.contains(event.relatedTarget)) return;
+      zone.classList.remove('dragover');
+    });
+    zone.addEventListener('drop', function (event) {
+      event.preventDefault();
+      zone.classList.remove('dragover');
+      applyDroppedFiles(event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files : null);
+    });
 
     input.addEventListener('change', function () {
       if (fieldName === 'audio') {
-        releaseRowImportedAudio(rowNode, { clearStatus: false }).finally(function () {
+        releaseRowImportedAudio(rowNode, { clearStatus: true }).finally(function () {
           syncRowFileUI(rowNode, fieldName);
         });
       } else {
@@ -470,22 +621,44 @@
 
     urlInput.addEventListener('input', function () {
       syncRowAudioSourceVisual(rowNode);
+      var url = getRowM3u8Url(rowNode);
+      if (!url) {
+        setRowAudioImportStatus(rowNode, '', '');
+        return;
+      }
+      var state = getRowState(rowNode);
+      if (state.importedAudioToken && String(state.importedAudioSourceUrl || '').trim() === url) {
+        setRowAudioImportStatus(rowNode, 'Already imported from this URL.', 'info');
+        return;
+      }
+      setRowAudioImportStatus(rowNode, 'Pending import.', 'pending');
     });
     urlInput.addEventListener('focus', function () {
       syncRowAudioSourceVisual(rowNode);
     });
     urlInput.addEventListener('blur', function () {
       syncRowAudioSourceVisual(rowNode);
+      if (shouldAutoImportRow(rowNode)) {
+        importRowAudioFromUrl(rowNode, { reason: 'auto-blur', silentIfAlreadyImported: true });
+      }
+    });
+    urlInput.addEventListener('paste', function () {
+      window.setTimeout(function () {
+        syncRowAudioSourceVisual(rowNode);
+        if (shouldAutoImportRow(rowNode)) {
+          importRowAudioFromUrl(rowNode, { reason: 'auto-paste', silentIfAlreadyImported: true });
+        }
+      }, 0);
     });
     urlInput.addEventListener('keydown', function (event) {
       if (event.key === 'Enter') {
         event.preventDefault();
-        importRowAudioFromUrl(rowNode);
+        importRowAudioFromUrl(rowNode, { reason: 'manual', silentIfAlreadyImported: false });
       }
     });
 
     importBtn.addEventListener('click', function () {
-      importRowAudioFromUrl(rowNode);
+      importRowAudioFromUrl(rowNode, { reason: 'manual', silentIfAlreadyImported: false });
     });
 
     syncRowAudioSourceVisual(rowNode);
@@ -526,6 +699,14 @@
     syncOverrideVisible();
   }
 
+  function wireInterviewExtras(rowNode) {
+    Array.prototype.slice.call(rowNode.querySelectorAll('[data-interview-feature-chip]')).forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        chip.classList.toggle('active');
+      });
+    });
+  }
+
   function removeRow(rowNode) {
     if (rowCount() <= 2) {
       alert('Batch mode requires at least 2 rows.');
@@ -549,7 +730,7 @@
       '  <span class="row-label">Slides (PDF/PPTX)</span>' +
       '  <div class="row-upload-zone" data-upload-zone="slides" tabindex="0">' +
       '    <div class="row-upload-title">Upload slides</div>' +
-      '    <div class="row-upload-subtitle">Click to select a PDF or PPTX file</div>' +
+      '    <div class="row-upload-subtitle">Drag & drop or click to browse</div>' +
       '    <input type="file" data-field="slides" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation">' +
       '    <div class="row-file-info" data-file-info="slides" style="display:none;">' +
       '      <div>' +
@@ -569,7 +750,7 @@
       '  <span class="row-label">Audio file</span>' +
       '  <div class="row-upload-zone" data-upload-zone="audio" tabindex="0">' +
       '    <div class="row-upload-title">Upload audio</div>' +
-      '    <div class="row-upload-subtitle">Click to select MP3, M4A, WAV, AAC, OGG, or FLAC</div>' +
+      '    <div class="row-upload-subtitle">Drag & drop or click to browse</div>' +
       '    <input type="file" data-field="audio" accept=".mp3,.m4a,.wav,.aac,.ogg,.flac,audio/*">' +
       '    <div class="row-file-info" data-file-info="audio" style="display:none;">' +
       '      <div>' +
@@ -581,31 +762,38 @@
       '      </button>' +
       '    </div>' +
       '  </div>' +
-      '  <div class="row-url-import" data-audio-url-wrap>' +
-      '    <div class="row-url-head">' +
-      '      <strong>Import audio from m3u8 URL</strong>' +
-      '      <span>Paste the full URL ending with <code>index.m3u8</code>, then import the audio for this lecture row.</span>' +
-      '    </div>' +
-      '    <div class="row-url-row">' +
-      '      <input type="url" class="row-url-input" data-field="m3u8" placeholder="https://.../index.m3u8?..." autocomplete="off">' +
-      '      <button type="button" class="btn small" data-action="import-audio-url">Import audio</button>' +
-      '    </div>' +
-      '    <div class="row-url-help">' +
-      '      <span class="info-dot" aria-hidden="true">i</span>' +
-      '      <span>These links expire quickly. Importing stores audio immediately so the batch can still run even when processing takes longer.</span>' +
-      '    </div>' +
-      '    <div class="row-url-status" data-field="m3u8-status" aria-live="polite"></div>' +
-      '  </div>' +
+      (
+        mode === 'lecture-notes'
+          ? (
+            '  <div class="row-url-import" data-audio-url-wrap>' +
+            '    <div class="row-url-head">' +
+            '      <strong>Import audio from m3u8 URL</strong>' +
+            '      <span>Paste the full URL ending in <code>index.m3u8</code>. Audio can be auto-imported for this lecture row.</span>' +
+            '    </div>' +
+            '    <div class="row-url-row">' +
+            '      <input type="url" class="row-url-input" data-field="m3u8" placeholder="https://.../index.m3u8?..." autocomplete="off">' +
+            '      <button type="button" class="btn small" data-action="import-audio-url">Import audio</button>' +
+            '    </div>' +
+            '    <div class="row-url-help">' +
+            '      <span class="info-dot" aria-hidden="true">i</span>' +
+            '      <span>These links expire quickly. Importing stores audio immediately so the batch can still run even when processing takes longer.</span>' +
+            '    </div>' +
+            '    <div class="row-url-status" data-field="m3u8-status" aria-live="polite"></div>' +
+            '  </div>'
+          )
+          : ''
+      ) +
       '</div>'
     ) : '';
 
     var interviewExtrasHtml = mode === 'interview' ? (
       '<div class="row-field">' +
       '  <span class="row-label">Interview extras</span>' +
-      '  <div class="row-inline-group">' +
-      '    <label class="row-inline-checkbox"><input type="checkbox" data-interview-feature="summary" value="summary" checked> <span>Summary</span></label>' +
-      '    <label class="row-inline-checkbox"><input type="checkbox" data-interview-feature="sections" value="sections" checked> <span>Sections</span></label>' +
+      '  <div class="interview-extra-grid">' +
+      '    <button type="button" class="interview-extra-chip active" data-interview-feature-chip="summary">Summary (max 1 page)</button>' +
+      '    <button type="button" class="interview-extra-chip active" data-interview-feature-chip="sections">Structured transcript with headings</button>' +
       '  </div>' +
+      '  <div class="control-note">Select one or both options (1 text extraction credit per option).</div>' +
       '</div>'
     ) : '';
 
@@ -613,8 +801,12 @@
       '<div class="row-field">' +
       '  <div class="row-override">' +
       '    <div class="row-override-head">' +
-      '      <label class="row-inline-checkbox"><input type="checkbox" data-field="override-enabled"> <span>Study tools override</span></label>' +
-      '      <div class="row-override-help"><span class="info-dot" aria-hidden="true">i</span><span>Change study tools for this lecture only. If disabled, this lecture uses the top Study tools settings.</span></div>' +
+      '      <label class="custom-check">' +
+      '        <input type="checkbox" data-field="override-enabled">' +
+      '        <span class="custom-check-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg></span>' +
+      '        <span class="custom-check-label">Study tools override</span>' +
+      '      </label>' +
+      '      <div class="row-override-help"><span class="info-dot" aria-hidden="true">i</span><span>Change study tools for this row only. If disabled, this row uses the top Study tools settings.</span></div>' +
       '    </div>' +
       '    <div class="row-override-panel" data-override-panel>' +
       '      <input type="hidden" data-field="override-study" value="both">' +
@@ -665,7 +857,14 @@
       '</div>';
 
     rowsWrap.appendChild(card);
-    rowStates.set(rowId, { importedAudioToken: '', importedAudioName: '', importedAudioSizeBytes: 0 });
+    rowStates.set(rowId, {
+      importedAudioToken: '',
+      importedAudioName: '',
+      importedAudioSizeBytes: 0,
+      importedAudioSourceUrl: '',
+      importingInFlight: false,
+      importPromise: null,
+    });
 
     var removeBtn = card.querySelector('[data-action="remove-row"]');
     if (removeBtn) {
@@ -675,10 +874,13 @@
     }
 
     if (meta.requiresSlides) wireUploadField(card, 'slides');
-    if (meta.requiresAudio) {
+    if (mode === 'lecture-notes') {
       wireUploadField(card, 'audio');
       wireAudioImport(card);
+    } else if (meta.requiresAudio) {
+      wireUploadField(card, 'audio');
     }
+    if (mode === 'interview') wireInterviewExtras(card);
     if (mode !== 'interview') wireRowOverride(card);
 
     updateRowLabels();
@@ -720,7 +922,10 @@
         var importedToken = String(state.importedAudioToken || '').trim();
 
         if (!audioFile && !importedToken && !m3u8Url) {
-          throw new Error(meta.singular + ' ' + rowOrdinal + ': provide an audio file or import from m3u8 URL.');
+          if (mode === 'lecture-notes') {
+            throw new Error(meta.singular + ' ' + rowOrdinal + ': provide an audio file or import from m3u8 URL.');
+          }
+          throw new Error(meta.singular + ' ' + rowOrdinal + ': provide an audio file.');
         }
 
         if (audioFile) {
@@ -728,16 +933,16 @@
           row.audio_file_field = audioField;
           formData.append(audioField, audioFile);
         }
-        if (importedToken) {
+        if (!audioFile && importedToken) {
           row.audio_import_token = importedToken;
-        } else if (m3u8Url) {
+        } else if (!audioFile && m3u8Url) {
           row.audio_m3u8_url = m3u8Url;
         }
       }
 
       if (mode === 'interview') {
-        row.interview_features = Array.prototype.slice.call(rowNode.querySelectorAll('input[data-interview-feature]:checked')).map(function (input) {
-          return input.value;
+        row.interview_features = Array.prototype.slice.call(rowNode.querySelectorAll('[data-interview-feature-chip].active')).map(function (chip) {
+          return String(chip.dataset.interviewFeatureChip || '').trim();
         });
       } else {
         var overrideEnabled = rowNode.querySelector('input[data-field="override-enabled"]');
@@ -855,50 +1060,79 @@
       });
   }
 
-  function startBatch() {
+  function runAutoImportSweepBeforeStart() {
+    if (mode !== 'lecture-notes') return Promise.resolve();
+    var rowNodes = Array.prototype.slice.call(rowsWrap.querySelectorAll('.batch-row'));
+    var importedCount = 0;
+    var chain = Promise.resolve();
+    rowNodes.forEach(function (rowNode, index) {
+      chain = chain.then(function () {
+        var state = getRowState(rowNode);
+        if (state.importPromise) {
+          return state.importPromise.then(function () {
+            return true;
+          });
+        }
+        if (!shouldAutoImportRow(rowNode)) return true;
+        return importRowAudioFromUrl(rowNode, {
+          reason: 'auto-start',
+          silentIfAlreadyImported: true,
+        }).then(function (result) {
+          if (!result || !result.ok) {
+            throw new Error('Lecture ' + String(index + 1) + ': could not auto-import the m3u8 URL. Please import it manually or upload audio.');
+          }
+          if (result.reason === 'imported') importedCount += 1;
+          return true;
+        });
+      });
+    });
+    return chain.then(function () {
+      if (importedCount > 0) {
+        showShellToast('Imported audio for ' + importedCount + ' lecture row' + (importedCount === 1 ? '' : 's') + '.', 'success');
+      }
+      return true;
+    });
+  }
+
+  async function startBatch() {
     if (!auth || !auth.currentUser) {
       alert('Please sign in first.');
       return;
     }
     if (!submitBtn) return;
-
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Starting...';
-
-    var formData;
-    try {
-      formData = collectRowsAndFormData();
-    } catch (error) {
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Start batch';
-      alert(String(error && error.message ? error.message : error));
+    if (!hasValidBatchTitle()) {
+      setBatchTitleError('Batch title is required.');
+      if (batchTitleInput) batchTitleInput.focus();
       return;
     }
 
-    authFetch('/api/batch/jobs', {
-      method: 'POST',
-      body: formData,
-    }).then(function (response) {
-      return response.json().then(function (payload) {
-        return { response: response, payload: payload };
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Starting...';
+    setBatchTitleError('');
+
+    try {
+      await runAutoImportSweepBeforeStart();
+      var formData = collectRowsAndFormData();
+      var response = await authFetch('/api/batch/jobs', {
+        method: 'POST',
+        body: formData,
       });
-    }).then(function (result) {
-      if (!result.response.ok) {
-        throw new Error(String(result.payload.error || 'Could not create batch.'));
+      var payload = await response.json().catch(function () { return {}; });
+      if (!response.ok) {
+        throw new Error(String(payload.error || 'Could not create batch.'));
       }
-      currentBatchId = String(result.payload.batch_id || '');
+      currentBatchId = String(payload.batch_id || '');
       if (!currentBatchId) throw new Error('No batch id returned.');
       if (statusPanel) statusPanel.style.display = 'block';
-      return refreshBatchStatus().then(function () {
-        if (pollTimer) window.clearInterval(pollTimer);
-        pollTimer = window.setInterval(refreshBatchStatus, 5000);
-      });
-    }).catch(function (error) {
+      await refreshBatchStatus();
+      if (pollTimer) window.clearInterval(pollTimer);
+      pollTimer = window.setInterval(refreshBatchStatus, 5000);
+    } catch (error) {
       alert(String(error && error.message ? error.message : error));
-    }).finally(function () {
-      submitBtn.disabled = false;
+    } finally {
       submitBtn.textContent = 'Start batch';
-    });
+      syncSubmitEnabled();
+    }
   }
 
   function wireEvents() {
@@ -912,6 +1146,18 @@
       form.addEventListener('submit', function (event) {
         event.preventDefault();
         startBatch();
+      });
+    }
+
+    if (batchTitleInput) {
+      batchTitleInput.addEventListener('input', function () {
+        if (hasValidBatchTitle()) setBatchTitleError('');
+        syncSubmitEnabled();
+      });
+      batchTitleInput.addEventListener('blur', function () {
+        if (!hasValidBatchTitle()) {
+          setBatchTitleError('Batch title is required.');
+        }
       });
     }
 
@@ -985,6 +1231,7 @@
     updateTopControls();
     ensureMinimumRows();
     wireEvents();
+    syncSubmitEnabled();
 
     if (auth) {
       auth.onAuthStateChanged(function (user) {

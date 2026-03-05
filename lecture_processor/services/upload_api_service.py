@@ -713,7 +713,9 @@ def create_batch_job(app_ctx, request):
                 }
             )
 
-        batch_title = _sanitize_study_pack_title(request.form.get('batch_title', '')) or f'Batch {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")}'
+        batch_title = _sanitize_study_pack_title(request.form.get('batch_title', ''))
+        if not batch_title:
+            raise ValueError('Batch title is required.')
         folder_name = batch_title
         folder_id = ''
         if app_ctx.db is not None:
