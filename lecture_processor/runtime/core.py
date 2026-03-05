@@ -97,7 +97,7 @@ from firebase_admin import credentials, auth, firestore
 
 from lecture_processor.services import analytics_service, auth_service, file_service, job_state_service, prompt_registry, rate_limit_service, url_security
 
-from lecture_processor.repositories import admin_repo, job_logs_repo, purchases_repo, runtime_jobs_repo, study_repo, users_repo
+from lecture_processor.repositories import admin_repo, batch_repo, job_logs_repo, purchases_repo, runtime_jobs_repo, study_repo, users_repo
 
 LEGACY_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT_DIR = os.path.dirname(os.path.dirname(LEGACY_MODULE_DIR))
@@ -229,7 +229,7 @@ RUNTIME_JOB_RECOVERY_LOCK = threading.Lock()
 
 RUNTIME_JOB_RECOVERY_DONE = False
 
-RUNTIME_JOB_PERSISTED_FIELDS = {'status', 'step', 'step_description', 'total_steps', 'mode', 'user_id', 'user_email', 'credit_deducted', 'credit_refunded', 'started_at', 'finished_at', 'result', 'slide_text', 'transcript', 'flashcards', 'test_questions', 'flashcard_selection', 'question_selection', 'study_features', 'output_language', 'study_generation_error', 'study_pack_id', 'error', 'billing_receipt', 'interview_features', 'interview_features_successful', 'interview_summary', 'interview_sections', 'interview_combined', 'interview_features_cost', 'extra_slides_refunded', 'audio_storage_key', 'notes_audio_map', 'transcript_segments', 'token_usage_by_stage', 'token_input_total', 'token_output_total', 'token_total', 'export_manifest'}
+RUNTIME_JOB_PERSISTED_FIELDS = {'status', 'step', 'step_description', 'total_steps', 'mode', 'user_id', 'user_email', 'credit_deducted', 'credit_refunded', 'started_at', 'finished_at', 'result', 'slide_text', 'transcript', 'flashcards', 'test_questions', 'flashcard_selection', 'question_selection', 'study_features', 'output_language', 'study_generation_error', 'study_pack_id', 'error', 'billing_receipt', 'interview_features', 'interview_features_successful', 'interview_summary', 'interview_sections', 'interview_combined', 'interview_features_cost', 'extra_slides_refunded', 'audio_storage_key', 'notes_audio_map', 'transcript_segments', 'token_usage_by_stage', 'token_input_total', 'token_output_total', 'token_total', 'export_manifest', 'is_batch', 'batch_parent_id', 'batch_row_id', 'billing_mode', 'billing_multiplier', 'stage_costs'}
 
 RUNTIME_JOB_MAX_STRING_LENGTH = 200000
 
@@ -779,7 +779,45 @@ def save_job_log(job_id, job_data, finished_at):
     try:
         started_at = job_data.get('started_at', 0)
         duration = round(finished_at - started_at, 1) if started_at else 0
-        job_logs_repo.set_job_log(db, job_id, {'job_id': job_id, 'uid': job_data.get('user_id', ''), 'email': job_data.get('user_email', ''), 'mode': job_data.get('mode', ''), 'source_type': job_data.get('source_type', ''), 'source_url': job_data.get('source_url', ''), 'source_name': job_data.get('source_name', ''), 'status': job_data.get('status', ''), 'study_features': job_data.get('study_features', 'none'), 'interview_features_count': len(job_data.get('interview_features', [])) if isinstance(job_data.get('interview_features'), list) else 0, 'credit_deducted': job_data.get('credit_deducted', ''), 'credit_refunded': job_data.get('credit_refunded', False), 'error_message': job_data.get('error', ''), 'failed_stage': job_data.get('failed_stage', ''), 'provider_error_code': job_data.get('provider_error_code', ''), 'retry_attempts': int(job_data.get('retry_attempts', 0) or 0), 'token_usage_by_stage': job_data.get('token_usage_by_stage', {}), 'token_input_total': int(job_data.get('token_input_total', 0) or 0), 'token_output_total': int(job_data.get('token_output_total', 0) or 0), 'token_total': int(job_data.get('token_total', 0) or 0), 'file_size_mb': round(float(job_data.get('file_size_mb', 0) or 0), 2), 'custom_prompt': job_data.get('custom_prompt', ''), 'prompt_template_key': job_data.get('prompt_template_key', ''), 'prompt_source': job_data.get('prompt_source', ''), 'custom_prompt_length': int(job_data.get('custom_prompt_length', 0) or 0), 'effective_prompt_preview': str(job_data.get('effective_prompt_preview', '') or '')[:1800], 'credit_refund_method': job_data.get('credit_refund_method', ''), 'started_at': started_at, 'finished_at': finished_at, 'duration_seconds': duration})
+        payload = {
+            'job_id': job_id,
+            'uid': job_data.get('user_id', ''),
+            'email': job_data.get('user_email', ''),
+            'mode': job_data.get('mode', ''),
+            'source_type': job_data.get('source_type', ''),
+            'source_url': job_data.get('source_url', ''),
+            'source_name': job_data.get('source_name', ''),
+            'status': job_data.get('status', ''),
+            'study_features': job_data.get('study_features', 'none'),
+            'interview_features_count': len(job_data.get('interview_features', [])) if isinstance(job_data.get('interview_features'), list) else 0,
+            'credit_deducted': job_data.get('credit_deducted', ''),
+            'credit_refunded': job_data.get('credit_refunded', False),
+            'error_message': job_data.get('error', ''),
+            'failed_stage': job_data.get('failed_stage', ''),
+            'provider_error_code': job_data.get('provider_error_code', ''),
+            'retry_attempts': int(job_data.get('retry_attempts', 0) or 0),
+            'token_usage_by_stage': job_data.get('token_usage_by_stage', {}),
+            'token_input_total': int(job_data.get('token_input_total', 0) or 0),
+            'token_output_total': int(job_data.get('token_output_total', 0) or 0),
+            'token_total': int(job_data.get('token_total', 0) or 0),
+            'file_size_mb': round(float(job_data.get('file_size_mb', 0) or 0), 2),
+            'custom_prompt': job_data.get('custom_prompt', ''),
+            'prompt_template_key': job_data.get('prompt_template_key', ''),
+            'prompt_source': job_data.get('prompt_source', ''),
+            'custom_prompt_length': int(job_data.get('custom_prompt_length', 0) or 0),
+            'effective_prompt_preview': str(job_data.get('effective_prompt_preview', '') or '')[:1800],
+            'credit_refund_method': job_data.get('credit_refund_method', ''),
+            'is_batch': bool(job_data.get('is_batch', False)),
+            'batch_parent_id': str(job_data.get('batch_parent_id', '') or ''),
+            'batch_row_id': str(job_data.get('batch_row_id', '') or ''),
+            'billing_mode': str(job_data.get('billing_mode', 'standard') or 'standard'),
+            'billing_multiplier': float(job_data.get('billing_multiplier', 1.0) or 1.0),
+            'stage_costs': job_data.get('stage_costs', []),
+            'started_at': started_at,
+            'finished_at': finished_at,
+            'duration_seconds': duration,
+        }
+        job_logs_repo.set_job_log(db, job_id, payload)
         status = str(job_data.get('status', '') or '').lower()
         backend_event = 'processing_finished_backend'
         if status == 'complete':
@@ -2202,17 +2240,21 @@ def format_transcript_with_timestamps(segments):
         lines.append(f'[{start_ms}-{end_ms}] {text}')
     return '\n'.join(lines)
 
-def transcribe_audio_plain(audio_file, audio_mime_type, output_language='English', retry_tracker=None):
+def transcribe_audio_plain(audio_file, audio_mime_type, output_language='English', retry_tracker=None, include_usage=False):
     output_language = OUTPUT_LANGUAGE_MAP.get(str(output_language).lower(), str(output_language))
     prompt = PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
     response = generate_with_policy(MODEL_AUDIO, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=prompt)])], retry_tracker=retry_tracker, operation_name='audio_transcription')
-    return (getattr(response, 'text', '') or '').strip()
+    transcript = (getattr(response, 'text', '') or '').strip()
+    if include_usage:
+        return (transcript, extract_token_usage(response))
+    return transcript
 
-def transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_language='English', retry_tracker=None):
+def transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_language='English', retry_tracker=None, include_usage=False):
     output_language = OUTPUT_LANGUAGE_MAP.get(str(output_language).lower(), str(output_language))
     prompt = PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED.format(output_language=output_language)
     try:
         response = generate_with_policy(MODEL_AUDIO, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=prompt)])], retry_tracker=retry_tracker, operation_name='audio_transcription_timestamped')
+        usage = extract_token_usage(response)
         parsed = extract_json_payload(getattr(response, 'text', '') or '')
         if not isinstance(parsed, dict):
             raise ValueError('Timestamped transcription JSON not found')
@@ -2236,12 +2278,18 @@ def transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_languag
             full_transcript = '\n'.join([s['text'] for s in clean_segments]).strip()
         if not full_transcript:
             raise ValueError('Empty transcript')
+        if include_usage:
+            return (full_transcript, clean_segments, usage)
         return (full_transcript, clean_segments)
     except Exception as e:
         logger.warning(f'⚠️ Timestamp transcription failed, falling back to plain transcript: {e}')
         fallback_prompt = PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
         fallback_response = generate_with_policy(MODEL_AUDIO, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=fallback_prompt)])], retry_tracker=retry_tracker, operation_name='audio_transcription_fallback')
-        return ((getattr(fallback_response, 'text', '') or '').strip(), [])
+        fallback_usage = extract_token_usage(fallback_response)
+        fallback_text = (getattr(fallback_response, 'text', '') or '').strip()
+        if include_usage:
+            return (fallback_text, [], fallback_usage)
+        return (fallback_text, [])
 
 def ensure_study_audio_root():
     os.makedirs(STUDY_AUDIO_ROOT, exist_ok=True)

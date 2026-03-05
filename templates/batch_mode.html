@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Batch Mode · Lecture Processor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/batch-mode.css') }}">
+</head>
+<body data-forced-mode="{{ forced_mode or '' }}">
+  {% if forced_mode == 'lecture-notes' %}
+    {% set shell_title = 'Batch Mode' %}
+  {% elif forced_mode == 'slides-only' %}
+    {% set shell_title = 'Batch Slides Extraction' %}
+  {% else %}
+    {% set shell_title = 'Batch Interview Transcription' %}
+  {% endif %}
+  {% include '_app_shell.html' %}
+  <main class="app-shell-page batch-page" id="batch-page">
+    <section class="shell-panel">
+      <h1>Batch processing</h1>
+      <p>Create one batch request with multiple rows. Each row produces its own outputs and tokens, and the batch can be downloaded as one ZIP.</p>
+      <div class="mode-links">
+        <a href="/batch_mode" class="mode-link{% if forced_mode == 'lecture-notes' %} active{% endif %}">Lecture</a>
+        <a href="/batch_mode_slides_extraction" class="mode-link{% if forced_mode == 'slides-only' %} active{% endif %}">Slides</a>
+        <a href="/batch_mode_interview_transcription" class="mode-link{% if forced_mode == 'interview' %} active{% endif %}">Interview</a>
+      </div>
+    </section>
+
+    <section class="shell-panel">
+      <form id="batch-form" class="batch-form">
+        <div class="batch-grid">
+          <label>
+            <span>Batch title</span>
+            <input id="batch-title" name="batch_title" placeholder="Example: Week 3 Neuro Lecture Batch" maxlength="120" required>
+          </label>
+          <label>
+            <span>Output language</span>
+            <select id="output-language" name="output_language">
+              <option value="english">English</option>
+              <option value="dutch">Dutch</option>
+              <option value="spanish">Spanish</option>
+              <option value="french">French</option>
+              <option value="german">German</option>
+              <option value="chinese">Chinese</option>
+            </select>
+          </label>
+          <label id="study-features-wrap">
+            <span>Study tools</span>
+            <select id="study-features" name="study_features">
+              <option value="none">No study tools</option>
+              <option value="flashcards">Flashcards only</option>
+              <option value="test">Practice test only</option>
+              <option value="both" selected>Flashcards + test</option>
+            </select>
+          </label>
+          <label id="flashcard-wrap">
+            <span>Flashcards</span>
+            <select id="flashcard-amount" name="flashcard_amount">
+              <option value="10">10</option>
+              <option value="20" selected>20</option>
+              <option value="30">30</option>
+              <option value="auto">Auto</option>
+            </select>
+          </label>
+          <label id="question-wrap">
+            <span>Questions</span>
+            <select id="question-amount" name="question_amount">
+              <option value="5">5</option>
+              <option value="10" selected>10</option>
+              <option value="15">15</option>
+              <option value="auto">Auto</option>
+            </select>
+          </label>
+          <label>
+            <span>Folder ID (optional)</span>
+            <input id="folder-id" name="folder_id" placeholder="Study folder id">
+          </label>
+        </div>
+
+        <div class="rows-head">
+          <h2>Rows</h2>
+          <button type="button" id="add-row-btn" class="btn">Add row</button>
+        </div>
+        <div id="rows-wrap" class="rows-wrap"></div>
+        <div class="rows-foot">
+          <small>Minimum 2 rows required for batch mode.</small>
+          <button type="submit" id="submit-batch-btn" class="btn primary">Start batch</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="shell-panel" id="batch-status-panel" style="display:none;">
+      <div class="status-head">
+        <h2>Batch status</h2>
+        <div>
+          <button type="button" id="refresh-status-btn" class="btn">Refresh</button>
+          <button type="button" id="download-zip-btn" class="btn">Download ZIP</button>
+        </div>
+      </div>
+      <div id="batch-summary" class="batch-summary"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Row</th>
+              <th>Status</th>
+              <th>In Tokens</th>
+              <th>Out Tokens</th>
+              <th>Total Tokens</th>
+              <th>Downloads</th>
+            </tr>
+          </thead>
+          <tbody id="batch-rows-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  {% include '_shell_footer.html' %}
+  </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+  <script src="{{ url_for('static', filename=batch_mode_js_asset or 'js/batch-mode.js') }}"></script>
+</body>
+</html>

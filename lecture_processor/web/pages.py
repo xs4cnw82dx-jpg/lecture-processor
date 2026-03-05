@@ -54,6 +54,21 @@ def _render_processing_page(forced_mode: str):
     )
 
 
+def _render_batch_page(forced_mode: str):
+    runtime = get_runtime()
+    page_key = {
+        'lecture-notes': 'batch-mode',
+        'slides-only': 'batch-mode-slides',
+        'interview': 'batch-mode-interview',
+    }.get(forced_mode, 'batch-mode')
+    return render_template(
+        'batch_mode.html',
+        forced_mode=forced_mode,
+        batch_mode_js_asset=runtime.resolve_js_asset('js/batch-mode.js'),
+        **_shell_context(runtime=runtime, page_key=page_key),
+    )
+
+
 @pages_bp.route('/plan')
 @pages_bp.route('/stats')
 def plan_dashboard():
@@ -101,6 +116,21 @@ def slides_extraction_page():
 @pages_bp.route('/interview-transcription')
 def interview_transcription_page():
     return _render_processing_page('interview')
+
+
+@pages_bp.route('/batch_mode')
+def batch_mode_page():
+    return _render_batch_page('lecture-notes')
+
+
+@pages_bp.route('/batch_mode_interview_transcription')
+def batch_mode_interview_page():
+    return _render_batch_page('interview')
+
+
+@pages_bp.route('/batch_mode_slides_extraction')
+def batch_mode_slides_page():
+    return _render_batch_page('slides-only')
 
 
 @pages_bp.route('/document-reader')

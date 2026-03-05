@@ -177,12 +177,30 @@ class TokenAccumulator:
         self.output_total = 0
         self.total = 0
 
-    def record(self, stage_name, response):
+    def record(self, stage_name, response, model=None, billing_mode='standard', input_modality='text'):
         usage = extract_token_usage(response, runtime=self._runtime)
-        self.stages[stage_name] = usage
-        self.input_total += usage['input_tokens']
-        self.output_total += usage['output_tokens']
-        self.total += usage['total_tokens']
+        return self.record_usage(
+            stage_name,
+            usage,
+            model=model,
+            billing_mode=billing_mode,
+            input_modality=input_modality,
+        )
+
+    def record_usage(self, stage_name, usage, model=None, billing_mode='standard', input_modality='text'):
+        normalized = {
+            'input_tokens': int((usage or {}).get('input_tokens', 0) or 0),
+            'output_tokens': int((usage or {}).get('output_tokens', 0) or 0),
+            'total_tokens': int((usage or {}).get('total_tokens', 0) or 0),
+            'model': str(model or '').strip(),
+            'billing_mode': str(billing_mode or 'standard').strip() or 'standard',
+            'input_modality': str(input_modality or 'text').strip() or 'text',
+        }
+        self.stages[stage_name] = normalized
+        self.input_total += normalized['input_tokens']
+        self.output_total += normalized['output_tokens']
+        self.total += normalized['total_tokens']
+        return normalized
 
     def as_dict(self):
         return {

@@ -417,6 +417,7 @@ auth.onAuthStateChanged(async (user) => {
         authBtn.textContent = 'Sign out';
         await loadAdminOverview(user);
         await initCostCalculator();
+        await runActualCostAnalysis(false);
     } else {
         if (authClient && typeof authClient.clearToken === 'function') authClient.clearToken();
         signedInMeta.textContent = 'Not signed in';
@@ -443,6 +444,7 @@ refreshBtn.addEventListener('click', async () => {
     }
     await loadAdminOverview(auth.currentUser);
     await initCostCalculator();
+    await runActualCostAnalysis(false);
 });
 
 backBtn.addEventListener('click', () => {
@@ -793,4 +795,237 @@ async function initCostCalculator() {
     } catch (error) {
         console.error('Could not initialize cost calculator:', error);
     }
+}
+
+/* ── Actual Cost Analyzer ── */
+const analyzerRunBtn = document.getElementById('analyzer-run-btn');
+const analyzerExportBtn = document.getElementById('analyzer-export-btn');
+const analyzerSelectAllBtn = document.getElementById('analyzer-select-all-btn');
+const analyzerClearBtn = document.getElementById('analyzer-clear-btn');
+const analyzerPeriod = document.getElementById('analyzer-period');
+const analyzerUid = document.getElementById('analyzer-uid');
+const analyzerEmail = document.getElementById('analyzer-email');
+const analyzerMode = document.getElementById('analyzer-mode');
+const analyzerStatus = document.getElementById('analyzer-status');
+const analyzerUsdEur = document.getElementById('analyzer-usd-eur');
+const analyzerJobsBody = document.getElementById('analyzer-jobs-body');
+const analyzerSelectionMeta = document.getElementById('analyzer-selection-meta');
+const analyzerJobsSelected = document.getElementById('analyzer-jobs-selected');
+const analyzerInputTotal = document.getElementById('analyzer-input-total');
+const analyzerOutputTotal = document.getElementById('analyzer-output-total');
+const analyzerTokenTotal = document.getElementById('analyzer-token-total');
+const analyzerCostUsd = document.getElementById('analyzer-cost-usd');
+const analyzerCostEur = document.getElementById('analyzer-cost-eur');
+
+let analyzerPayload = null;
+let analyzerSelectedIds = new Set();
+
+function analyzerFiltersPayload() {
+    return {
+        period: analyzerPeriod ? String(analyzerPeriod.value || 'monthly') : 'monthly',
+        uid: analyzerUid ? String(analyzerUid.value || '').trim() : '',
+        email: analyzerEmail ? String(analyzerEmail.value || '').trim() : '',
+        mode: analyzerMode ? String(analyzerMode.value || '').trim() : '',
+        status: analyzerStatus ? String(analyzerStatus.value || '').trim() : '',
+        usd_to_eur: analyzerUsdEur ? Number(analyzerUsdEur.value || 0.93) : 0.93,
+        selection: 'all',
+    };
+}
+
+function formatInteger(value) {
+    const num = Number(value || 0);
+    if (!Number.isFinite(num)) return '0';
+    return Math.round(num).toLocaleString();
+}
+
+function recomputeAnalyzerSummary() {
+    const payload = analyzerPayload || {};
+    const jobs = Array.isArray(payload.jobs) ? payload.jobs : [];
+    let selectedRows = jobs;
+    if (analyzerSelectedIds.size > 0) {
+        selectedRows = jobs.filter((job) => analyzerSelectedIds.has(String(job.job_id || '')));
+    }
+    const totals = selectedRows.reduce((acc, job) => {
+        acc.input += Number(job.token_input_total || 0);
+        acc.output += Number(job.token_output_total || 0);
+        acc.total += Number(job.token_total || 0);
+        acc.usd += Number(job.cost_usd || 0);
+        acc.eur += Number(job.cost_eur || 0);
+        return acc;
+    }, { input: 0, output: 0, total: 0, usd: 0, eur: 0 });
+
+    if (analyzerJobsSelected) analyzerJobsSelected.textContent = String(selectedRows.length);
+    if (analyzerInputTotal) analyzerInputTotal.textContent = formatInteger(totals.input);
+    if (analyzerOutputTotal) analyzerOutputTotal.textContent = formatInteger(totals.output);
+    if (analyzerTokenTotal) analyzerTokenTotal.textContent = formatInteger(totals.total);
+    if (analyzerCostUsd) analyzerCostUsd.textContent = formatUsd(totals.usd);
+    if (analyzerCostEur) analyzerCostEur.textContent = formatEur(totals.eur);
+    if (analyzerSelectionMeta) {
+        const scopeLabel = analyzerSelectedIds.size > 0 ? 'selected manually' : 'all filtered jobs';
+        analyzerSelectionMeta.textContent = `${selectedRows.length} selected (${scopeLabel})`;
+    }
+}
+
+function renderActualCostJobs() {
+    if (!analyzerJobsBody) return;
+    clearChildren(analyzerJobsBody);
+    const payload = analyzerPayload || {};
+    const rows = Array.isArray(payload.jobs) ? payload.jobs : [];
+    if (!rows.length) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 11;
+        td.className = 'empty';
+        td.textContent = 'No jobs found for the selected filters.';
+        tr.appendChild(td);
+        analyzerJobsBody.appendChild(tr);
+        recomputeAnalyzerSummary();
+        return;
+    }
+
+    rows.forEach((job) => {
+        const jobId = String(job.job_id || '');
+        const tr = document.createElement('tr');
+        const selectTd = document.createElement('td');
+        selectTd.className = 'analyzer-checkbox-cell';
+        const check = document.createElement('input');
+        check.type = 'checkbox';
+        check.checked = analyzerSelectedIds.has(jobId);
+        check.addEventListener('change', () => {
+            if (check.checked) analyzerSelectedIds.add(jobId);
+            else analyzerSelectedIds.delete(jobId);
+            recomputeAnalyzerSummary();
+        });
+        selectTd.appendChild(check);
+
+        const idTd = document.createElement('td');
+        idTd.className = 'analyzer-job-id';
+        idTd.title = jobId;
+        idTd.textContent = jobId || '-';
+        const userTd = document.createElement('td');
+        userTd.textContent = String(job.email || job.uid || '-');
+        const modeTd = document.createElement('td');
+        modeTd.textContent = String(job.mode || '-');
+        const statusTd = document.createElement('td');
+        statusTd.textContent = String(job.status || '-');
+        const finishedTd = document.createElement('td');
+        finishedTd.textContent = formatDate(Number(job.finished_at || 0));
+        const inTd = document.createElement('td');
+        inTd.textContent = formatInteger(job.token_input_total || 0);
+        const outTd = document.createElement('td');
+        outTd.textContent = formatInteger(job.token_output_total || 0);
+        const totalTd = document.createElement('td');
+        totalTd.textContent = formatInteger(job.token_total || 0);
+        const usdTd = document.createElement('td');
+        usdTd.textContent = formatUsd(Number(job.cost_usd || 0));
+        const eurTd = document.createElement('td');
+        eurTd.textContent = formatEur(Number(job.cost_eur || 0));
+        tr.appendChild(selectTd);
+        tr.appendChild(idTd);
+        tr.appendChild(userTd);
+        tr.appendChild(modeTd);
+        tr.appendChild(statusTd);
+        tr.appendChild(finishedTd);
+        tr.appendChild(inTd);
+        tr.appendChild(outTd);
+        tr.appendChild(totalTd);
+        tr.appendChild(usdTd);
+        tr.appendChild(eurTd);
+        analyzerJobsBody.appendChild(tr);
+    });
+
+    recomputeAnalyzerSummary();
+}
+
+async function runActualCostAnalysis(preserveSelection = true) {
+    if (!auth.currentUser || !analyzerRunBtn) return;
+    analyzerRunBtn.disabled = true;
+    analyzerRunBtn.textContent = 'Running…';
+    try {
+        const payload = analyzerFiltersPayload();
+        const response = await authFetch('/api/admin/cost-analysis', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+            setState('Could not run cost analysis.', 'error');
+            return;
+        }
+        const data = await response.json();
+        if (!preserveSelection) {
+            analyzerSelectedIds = new Set();
+        } else {
+            const available = new Set((Array.isArray(data.jobs) ? data.jobs : []).map((job) => String(job.job_id || '')));
+            analyzerSelectedIds = new Set(Array.from(analyzerSelectedIds).filter((jobId) => available.has(jobId)));
+        }
+        analyzerPayload = data;
+        renderActualCostJobs();
+    } catch (error) {
+        console.error(error);
+    } finally {
+        analyzerRunBtn.disabled = false;
+        analyzerRunBtn.textContent = 'Run analysis';
+    }
+}
+
+async function exportActualCostAnalysis() {
+    if (!auth.currentUser || !analyzerExportBtn) return;
+    analyzerExportBtn.disabled = true;
+    analyzerExportBtn.textContent = 'Exporting…';
+    try {
+        const payload = analyzerFiltersPayload();
+        payload.job_ids = Array.from(analyzerSelectedIds);
+        const response = await authFetch('/api/admin/cost-analysis/export', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+            setState('Could not export XLSX right now.', 'error');
+            return;
+        }
+        if (downloadUtils.downloadResponseBlob) {
+            await downloadUtils.downloadResponseBlob(response, 'admin-cost-analysis.xlsx');
+            return;
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'admin-cost-analysis.xlsx';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    } catch (error) {
+        console.error(error);
+    } finally {
+        analyzerExportBtn.disabled = false;
+        analyzerExportBtn.textContent = 'Export XLSX';
+    }
+}
+
+if (analyzerRunBtn) {
+    analyzerRunBtn.addEventListener('click', async () => {
+        await runActualCostAnalysis(false);
+    });
+}
+if (analyzerExportBtn) {
+    analyzerExportBtn.addEventListener('click', async () => {
+        await exportActualCostAnalysis();
+    });
+}
+if (analyzerSelectAllBtn) {
+    analyzerSelectAllBtn.addEventListener('click', () => {
+        const rows = (analyzerPayload && Array.isArray(analyzerPayload.jobs)) ? analyzerPayload.jobs : [];
+        analyzerSelectedIds = new Set(rows.map((job) => String(job.job_id || '')));
+        renderActualCostJobs();
+    });
+}
+if (analyzerClearBtn) {
+    analyzerClearBtn.addEventListener('click', () => {
+        analyzerSelectedIds = new Set();
+        renderActualCostJobs();
+    });
 }

@@ -369,6 +369,50 @@
             font-size: 1rem;
             color: var(--text);
         }
+        .analyzer-panel {
+            margin-top: 12px;
+        }
+        .analyzer-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+        .analyzer-controls {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .analyzer-selection {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+        #analyzer-selection-meta {
+            color: var(--muted);
+            font-size: 0.82rem;
+            font-weight: 600;
+        }
+        .analyzer-summary {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .analyzer-checkbox-cell {
+            text-align: center;
+        }
+        .analyzer-job-id {
+            max-width: 180px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
         .table-wrap { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
         th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #F1F5F9; }
@@ -400,6 +444,8 @@
             .grid { grid-template-columns: 1fr; }
             .calculator-controls { grid-template-columns: 1fr; }
             .calculator-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .analyzer-controls { grid-template-columns: 1fr; }
+            .analyzer-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
         @media (max-width: 720px) {
             .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -408,4 +454,5 @@
             .funnel-row { grid-template-columns: 1fr; }
             .funnel-count, .funnel-conversion { text-align: left; }
             .calculator-summary { grid-template-columns: 1fr; }
+            .analyzer-summary { grid-template-columns: 1fr; }
         }

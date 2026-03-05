@@ -139,7 +139,7 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
             operation_name='slide_extraction',
             runtime=resolved_runtime,
         )
-        tokens.record('slide_extraction', response)
+        tokens.record('slide_extraction', response, model=resolved_runtime.MODEL_SLIDES, billing_mode='standard', input_modality='text')
         slide_text = response.text
         set_fields(slide_text=slide_text, step=2, step_description='Transcribing audio...')
 
@@ -172,20 +172,29 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
         set_fields(step_description='Generating transcript...')
         failed_stage = 'audio_transcription'
         if resolved_runtime.FEATURE_AUDIO_SECTION_SYNC:
-            transcript, transcript_segments = resolved_runtime.transcribe_audio_with_timestamps(
+            transcript, transcript_segments, transcription_usage = resolved_runtime.transcribe_audio_with_timestamps(
                 audio_file,
                 audio_mime_type,
                 output_language,
                 retry_tracker=retry_tracker,
+                include_usage=True,
             )
         else:
-            transcript = resolved_runtime.transcribe_audio_plain(
+            transcript, transcription_usage = resolved_runtime.transcribe_audio_plain(
                 audio_file,
                 audio_mime_type,
                 output_language,
                 retry_tracker=retry_tracker,
+                include_usage=True,
             )
             transcript_segments = []
+        tokens.record_usage(
+            'audio_transcription',
+            transcription_usage,
+            model=resolved_runtime.MODEL_AUDIO,
+            billing_mode='standard',
+            input_modality='audio',
+        )
 
         set_fields(
             transcript=transcript,
@@ -221,7 +230,7 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
             operation_name='notes_merge',
             runtime=resolved_runtime,
         )
-        tokens.record('merge', response)
+        tokens.record('merge', response, model=resolved_runtime.MODEL_INTEGRATION, billing_mode='standard', input_modality='text')
         merged_notes = response.text
 
         set_fields(
@@ -237,7 +246,7 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
         if job_data.get('study_features', 'none') != 'none':
             set_fields(step=4, step_description='Generating flashcards and practice test...')
             failed_stage = 'study_tools_generation'
-            flashcards, test_questions, study_error = study_generation.generate_study_materials(
+            flashcards, test_questions, study_error, study_usage = study_generation.generate_study_materials(
                 merged_notes,
                 job_data.get('flashcard_selection', '20'),
                 job_data.get('question_selection', '10'),
@@ -245,7 +254,16 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
                 output_language,
                 retry_tracker=retry_tracker,
                 runtime=resolved_runtime,
+                include_usage=True,
             )
+            for stage_name, stage_usage in (study_usage.get('token_usage_by_stage', {}) or {}).items():
+                tokens.record_usage(
+                    stage_name,
+                    stage_usage,
+                    model=stage_usage.get('model') or resolved_runtime.MODEL_STUDY,
+                    billing_mode=stage_usage.get('billing_mode') or 'standard',
+                    input_modality=stage_usage.get('input_modality') or 'text',
+                )
             set_fields(
                 flashcards=flashcards,
                 test_questions=test_questions,
@@ -333,7 +351,7 @@ def process_slides_only(job_id, pdf_path, runtime=None):
             operation_name='slide_extraction',
             runtime=resolved_runtime,
         )
-        tokens.record('slide_extraction', response)
+        tokens.record('slide_extraction', response, model=resolved_runtime.MODEL_SLIDES, billing_mode='standard', input_modality='text')
 
         extracted_text = response.text
         set_fields(result=extracted_text)
@@ -342,7 +360,7 @@ def process_slides_only(job_id, pdf_path, runtime=None):
         if job_data.get('study_features', 'none') != 'none':
             set_fields(step=2, step_description='Generating flashcards and practice test...')
             failed_stage = 'study_tools_generation'
-            flashcards, test_questions, study_error = study_generation.generate_study_materials(
+            flashcards, test_questions, study_error, study_usage = study_generation.generate_study_materials(
                 extracted_text,
                 job_data.get('flashcard_selection', '20'),
                 job_data.get('question_selection', '10'),
@@ -350,7 +368,16 @@ def process_slides_only(job_id, pdf_path, runtime=None):
                 job_data.get('output_language', 'English'),
                 retry_tracker=retry_tracker,
                 runtime=resolved_runtime,
+                include_usage=True,
             )
+            for stage_name, stage_usage in (study_usage.get('token_usage_by_stage', {}) or {}).items():
+                tokens.record_usage(
+                    stage_name,
+                    stage_usage,
+                    model=stage_usage.get('model') or resolved_runtime.MODEL_STUDY,
+                    billing_mode=stage_usage.get('billing_mode') or 'standard',
+                    input_modality=stage_usage.get('input_modality') or 'text',
+                )
             set_fields(
                 flashcards=flashcards,
                 test_questions=test_questions,
@@ -449,7 +476,7 @@ def process_interview_transcription(job_id, audio_path, runtime=None):
             operation_name='interview_transcription',
             runtime=resolved_runtime,
         )
-        tokens.record('interview_transcription', response)
+        tokens.record('interview_transcription', response, model=resolved_runtime.MODEL_INTERVIEW, billing_mode='standard', input_modality='audio')
 
         transcript_text = response.text or ''
         set_fields(transcript=transcript_text, result=transcript_text)
@@ -465,7 +492,16 @@ def process_interview_transcription(job_id, audio_path, runtime=None):
                 output_language,
                 retry_tracker=retry_tracker,
                 runtime=resolved_runtime,
+                include_usage=True,
             )
+            for stage_name, stage_usage in (enhancement.get('token_usage_by_stage', {}) or {}).items():
+                tokens.record_usage(
+                    stage_name,
+                    stage_usage,
+                    model=stage_usage.get('model') or resolved_runtime.MODEL_STUDY,
+                    billing_mode=stage_usage.get('billing_mode') or 'standard',
+                    input_modality=stage_usage.get('input_modality') or 'text',
+                )
             set_fields(
                 interview_summary=enhancement.get('summary'),
                 interview_sections=enhancement.get('sections'),
