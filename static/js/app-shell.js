@@ -102,8 +102,9 @@
   function showToast(message, variant) {
     if (!shellToast || !message) return;
     shellToast.textContent = String(message);
-    shellToast.classList.remove('error');
+    shellToast.classList.remove('error', 'success');
     if (variant === 'error') shellToast.classList.add('error');
+    if (variant === 'success') shellToast.classList.add('success');
     shellToast.classList.add('visible');
     if (toastTimer) window.clearTimeout(toastTimer);
     toastTimer = window.setTimeout(function () {
@@ -151,7 +152,7 @@
     hydrateBatchGroupState(hasActiveBatchChild);
     syncToolsGroupAria();
     syncBatchGroupAria();
-    if (batchGroupSummary) batchGroupSummary.classList.toggle('active', hasActiveBatchChild);
+    if (batchGroupSummary) batchGroupSummary.classList.toggle('active', !!(batchGroup && batchGroup.open));
   }
 
   function hydrateToolsGroupState(hasActiveChild) {
@@ -392,6 +393,7 @@
     batchGroup.addEventListener('toggle', function () {
       syncBatchGroupAria();
       writeCacheString(CACHE_KEYS.batchExpanded, batchGroup.open ? '1' : '0');
+      if (batchGroupSummary) batchGroupSummary.classList.toggle('active', !!batchGroup.open);
     });
   }
 
@@ -534,4 +536,7 @@
   applyCreditBreakdown(cachedBreakdown);
   markActiveNav();
   setupRoutePrefetch();
+  window.LectureProcessorShell = Object.assign({}, window.LectureProcessorShell || {}, {
+    showToast: showToast,
+  });
 })();

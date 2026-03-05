@@ -57,6 +57,46 @@ def test_batch_create_requires_minimum_two_rows(client, monkeypatch):
     assert 'at least 2 rows' in str(body.get('error', '')).lower()
 
 
+def test_batch_create_requires_batch_title(client, monkeypatch):
+    _patch_batch_auth(monkeypatch)
+    monkeypatch.setattr(upload_import_audio, 'cleanup_expired_audio_import_tokens', lambda runtime=None: None)
+    monkeypatch.setattr(core, 'threading', type('T', (), {'Thread': _DummyThread}))
+    monkeypatch.setattr(
+        core,
+        'get_or_create_user',
+        lambda uid, email: {
+            'uid': uid,
+            'email': email,
+            'preferred_output_language': 'english',
+            'preferred_output_language_custom': '',
+        },
+    )
+    monkeypatch.setattr(core, 'resolve_uploaded_slides_to_pdf', lambda uploaded_file, _job_id: ('test-slides.pdf', None))
+    monkeypatch.setattr(billing_credits, 'deduct_credit', lambda uid, credit_type, runtime=None: 'slides_credits')
+    monkeypatch.setattr(batch_orchestrator, 'create_batch_job', lambda batch_payload, rows, runtime=None: None)
+    monkeypatch.setattr(batch_orchestrator, 'process_batch_job', lambda _batch_id, runtime=None: None)
+
+    rows = [
+        {'row_id': 'row-1', 'slides_file_field': 'row_1_slides'},
+        {'row_id': 'row-2', 'slides_file_field': 'row_2_slides'},
+    ]
+    response = client.post(
+        '/api/batch/jobs',
+        data={
+            'mode': 'slides-only',
+            'batch_title': '   ',
+            'rows': json.dumps(rows),
+            'row_1_slides': (io.BytesIO(b'%PDF-1.4 row-1'), 'row-1.pdf'),
+            'row_2_slides': (io.BytesIO(b'%PDF-1.4 row-2'), 'row-2.pdf'),
+        },
+        content_type='multipart/form-data',
+    )
+
+    assert response.status_code == 400
+    body = response.get_json()
+    assert str(body.get('error', '')).strip() == 'Batch title is required.'
+
+
 def test_batch_create_slides_only_contract(client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     monkeypatch.setattr(upload_import_audio, 'cleanup_expired_audio_import_tokens', lambda runtime=None: None)

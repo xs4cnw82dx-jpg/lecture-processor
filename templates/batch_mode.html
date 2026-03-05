@@ -19,7 +19,7 @@
   <main class="app-shell-page batch-page" id="batch-page">
     <section class="shell-panel batch-hero">
       <h1>Batch processing</h1>
-      <p>Create one batch request with multiple lectures. Each row produces its own outputs and tokens, and the batch can be downloaded as one ZIP.</p>
+      <p id="batch-hero-description">Create one batch request with multiple lectures. Each row produces its own outputs, and the batch can be downloaded as one ZIP.</p>
       <div class="mode-links">
         <a href="/batch_mode" class="mode-link{% if forced_mode == 'lecture-notes' %} active{% endif %}">Lectures</a>
         <a href="/batch_mode_slides_extraction" class="mode-link{% if forced_mode == 'slides-only' %} active{% endif %}">Slides</a>
@@ -31,25 +31,30 @@
       <form id="batch-form" class="batch-form" novalidate>
         <div class="batch-grid">
           <label class="field-control">
-            <span>Batch title</span>
+            <div class="field-label-row">
+              <span>Batch title</span>
+              <span class="field-info-dot" tabindex="0" aria-label="This title is required. It will be used as the Study Library folder name and as the ZIP filename." title="This title is required. It will be used as the Study Library folder name and as the ZIP filename.">i</span>
+            </div>
             <input id="batch-title" name="batch_title" placeholder="Example: Week 3 Neuro Lecture Batch" maxlength="120" required>
+            <small class="field-help">Required: this will be the folder name in your Study Library and the ZIP file name.</small>
+            <small class="field-error" id="batch-title-error" role="alert"></small>
           </label>
           <div class="field-control">
             <span>Output language</span>
             <input type="hidden" id="output-language" name="output_language" value="english">
             <div class="app-select" id="output-language-picker">
               <button type="button" class="app-select-button" id="output-language-button" aria-haspopup="listbox" aria-expanded="false" aria-controls="output-language-menu">
-                <span id="output-language-label">English</span>
+                <span id="output-language-label">🇬🇧 English</span>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
               </button>
               <div class="app-select-menu" id="output-language-menu" role="listbox">
-                <button type="button" role="option" class="app-select-item active" data-value="english" aria-selected="true">English</button>
-                <button type="button" role="option" class="app-select-item" data-value="dutch" aria-selected="false">Dutch</button>
-                <button type="button" role="option" class="app-select-item" data-value="spanish" aria-selected="false">Spanish</button>
-                <button type="button" role="option" class="app-select-item" data-value="french" aria-selected="false">French</button>
-                <button type="button" role="option" class="app-select-item" data-value="german" aria-selected="false">German</button>
-                <button type="button" role="option" class="app-select-item" data-value="chinese" aria-selected="false">Chinese</button>
-                <button type="button" role="option" class="app-select-item" data-value="other" aria-selected="false">Other</button>
+                <button type="button" role="option" class="app-select-item active" data-value="english" aria-selected="true">🇬🇧 English</button>
+                <button type="button" role="option" class="app-select-item" data-value="dutch" aria-selected="false">🇳🇱 Dutch</button>
+                <button type="button" role="option" class="app-select-item" data-value="spanish" aria-selected="false">🇪🇸 Spanish</button>
+                <button type="button" role="option" class="app-select-item" data-value="french" aria-selected="false">🇫🇷 French</button>
+                <button type="button" role="option" class="app-select-item" data-value="german" aria-selected="false">🇩🇪 German</button>
+                <button type="button" role="option" class="app-select-item" data-value="chinese" aria-selected="false">🇨🇳 Chinese</button>
+                <button type="button" role="option" class="app-select-item" data-value="other" aria-selected="false">🌐 Other</button>
               </div>
             </div>
             <input id="output-language-custom" name="output_language_custom" class="language-custom-input" placeholder="Type custom output language" style="display:none;">
@@ -66,7 +71,6 @@
               <button type="button" class="tool-chip" data-study-feature="test">Practice test only</button>
               <button type="button" class="tool-chip active" data-study-feature="both">Flashcards + test <span class="chip-badge">Recommended</span></button>
             </div>
-            <div class="control-note" id="study-tools-note">Recommended for first runs: both flashcards and practice test questions will be generated.</div>
           </div>
           <div class="generation-control" id="flashcard-wrap">
             <span class="control-label">Flashcard amount</span>
