@@ -6,13 +6,14 @@
   <title>Study Planner - Lecture Processor</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/plan.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" integrity="sha384-RkASv+6KfBMW9eknReJIJ6b3UnjKOKC5bOUaNgIY778NFbQ8MtWq9Lr/khUgqtTt" crossorigin="anonymous">
 </head>
 <body>
-  {% set shell_title = 'Planner' %}
+  {% set shell_title = 'Planning & Progress' %}
   {% include '_app_shell.html' %}
   <main class="app-shell-page page">
     <div class="container">
@@ -29,17 +30,17 @@
         <section class="grid">
           <article class="card streak">
             <div class="metric-label">Current Streak</div>
-            <div class="metric-value" id="streak-value">0 days</div>
+            <div class="metric-value" id="streak-value">&mdash; days</div>
             <div class="metric-note">Updated after each completed learn session.</div>
           </article>
           <article class="card due">
             <div class="metric-label">Cards Due Today</div>
-            <div class="metric-value" id="due-value">0</div>
+            <div class="metric-value" id="due-value">&mdash;</div>
             <div class="metric-note">Based on spaced repetition review dates.</div>
           </article>
           <article class="card goal">
             <div class="metric-label">Daily Goal</div>
-            <div class="metric-value" id="goal-value">0 / 20</div>
+            <div class="metric-value" id="goal-value">&mdash; / &mdash;</div>
             <div class="metric-note">Progress today</div>
             <div class="progress-track"><div class="progress-fill" id="goal-fill"></div></div>
           </article>
@@ -79,6 +80,7 @@
       </div>
     </div>
   </main>
+  {% include '_shell_footer.html' %}
   </div>
   </div>
 
@@ -91,6 +93,7 @@
   <script src="{{ url_for('static', filename='js/html-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
   <script src="{{ url_for('static', filename='js/plan.js') }}"></script>
 </body>

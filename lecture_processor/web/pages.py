@@ -9,9 +9,18 @@ from lecture_processor.runtime.container import get_runtime
 pages_bp = Blueprint('pages', __name__)
 
 
+def _shell_context(*, runtime, page_key: str, show_credits_pill: bool = False) -> dict:
+    return {
+        'shell_page_key': page_key,
+        'shell_show_credits_pill': bool(show_credits_pill),
+        'legal_contact_email': runtime.LEGAL_CONTACT_EMAIL,
+    }
+
+
 @pages_bp.route('/')
 def index():
-    return render_template('landing.html')
+    runtime = get_runtime()
+    return render_template('landing.html', legal_contact_email=runtime.LEGAL_CONTACT_EMAIL)
 
 
 @pages_bp.route('/dashboard')
@@ -23,11 +32,17 @@ def dashboard():
         sentry_frontend_dsn=runtime.SENTRY_FRONTEND_DSN,
         sentry_environment=runtime.SENTRY_ENVIRONMENT,
         sentry_release=runtime.SENTRY_RELEASE,
+        **_shell_context(runtime=runtime, page_key='dashboard', show_credits_pill=True),
     )
 
 
 def _render_processing_page(forced_mode: str):
     runtime = get_runtime()
+    page_key = {
+        'lecture-notes': 'lecture-notes',
+        'slides-only': 'slides-extraction',
+        'interview': 'interview-transcription',
+    }.get(forced_mode, 'extraction')
     return render_template(
         'index.html',
         forced_mode=forced_mode,
@@ -35,28 +50,42 @@ def _render_processing_page(forced_mode: str):
         sentry_environment=runtime.SENTRY_ENVIRONMENT,
         sentry_release=runtime.SENTRY_RELEASE,
         index_js_asset=runtime.resolve_js_asset('js/index-app.js'),
+        **_shell_context(runtime=runtime, page_key=page_key),
     )
 
 
 @pages_bp.route('/plan')
 @pages_bp.route('/stats')
 def plan_dashboard():
-    return render_template('plan.html')
+    runtime = get_runtime()
+    return render_template(
+        'plan.html',
+        **_shell_context(runtime=runtime, page_key='plan'),
+    )
 
 
 @pages_bp.route('/calendar')
 def calendar_dashboard():
-    return render_template('calendar.html')
+    runtime = get_runtime()
+    return render_template(
+        'calendar.html',
+        **_shell_context(runtime=runtime, page_key='calendar'),
+    )
 
 
 @pages_bp.route('/features')
 def features_page():
-    return render_template('features.html')
+    runtime = get_runtime()
+    return render_template('features.html', legal_contact_email=runtime.LEGAL_CONTACT_EMAIL)
 
 
 @pages_bp.route('/tools')
 def tools_page():
-    return render_template('tools.html')
+    runtime = get_runtime()
+    return render_template(
+        'tools.html',
+        **_shell_context(runtime=runtime, page_key='tools'),
+    )
 
 
 @pages_bp.route('/lecture-notes')
@@ -83,6 +112,7 @@ def document_reader_page():
         reader_subtitle='Extract notes and answers from documents with optional question prompts.',
         reader_source='document',
         reader_js_asset=runtime.resolve_js_asset('js/reader.js'),
+        **_shell_context(runtime=runtime, page_key='document-reader'),
     )
 
 
@@ -95,6 +125,7 @@ def image_reader_page():
         reader_subtitle='Extract text and structured notes from up to five images per run.',
         reader_source='image',
         reader_js_asset=runtime.resolve_js_asset('js/reader.js'),
+        **_shell_context(runtime=runtime, page_key='image-reader'),
     )
 
 
@@ -107,6 +138,7 @@ def url_reader_page():
         reader_subtitle='Analyze public webpage content with a focused question prompt.',
         reader_source='url',
         reader_js_asset=runtime.resolve_js_asset('js/reader.js'),
+        **_shell_context(runtime=runtime, page_key='url-reader'),
     )
 
 
@@ -116,6 +148,7 @@ def buy_credits_page():
     return render_template(
         'buy_credits.html',
         buy_credits_js_asset=runtime.resolve_js_asset('js/buy-credits.js'),
+        **_shell_context(runtime=runtime, page_key='buy-credits', show_credits_pill=True),
     )
 
 
@@ -133,7 +166,11 @@ def admin_dashboard():
 @pages_bp.route('/study')
 def study_dashboard():
     runtime = get_runtime()
-    return render_template('study.html', study_js_asset=runtime.resolve_js_asset('js/study.js'))
+    return render_template(
+        'study.html',
+        study_js_asset=runtime.resolve_js_asset('js/study.js'),
+        **_shell_context(runtime=runtime, page_key='study'),
+    )
 
 
 @pages_bp.route('/privacy')

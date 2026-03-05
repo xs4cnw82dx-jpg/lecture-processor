@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 </head>
 <body>
@@ -20,24 +21,23 @@
         <div class="hero-actions">
           <a href="/study?action=create-pack" class="hero-btn manual">Manually Create Study Pack</a>
           <a href="/lecture-notes" class="hero-btn primary">Create Lecture Notes</a>
-          <a href="/study" class="hero-btn">Open Study Library</a>
         </div>
       </section>
 
       <section class="dashboard-grid">
         <article class="shell-panel stat-card">
           <div class="stat-label">Current streak</div>
-          <div class="stat-value" id="dash-streak">0 days</div>
+          <div class="stat-value" id="dash-streak">&mdash; days</div>
           <div class="stat-sub">Keep momentum by reviewing every day.</div>
         </article>
         <article class="shell-panel stat-card">
           <div class="stat-label">Due today</div>
-          <div class="stat-value" id="dash-due">0 cards</div>
+          <div class="stat-value" id="dash-due">&mdash; cards</div>
           <div class="stat-sub">Cards ready for active recall now.</div>
         </article>
         <article class="shell-panel stat-card">
           <div class="stat-label">Daily goal</div>
-          <div class="stat-value" id="dash-goal">0 / 20</div>
+          <div class="stat-value" id="dash-goal">&mdash; / &mdash;</div>
           <div class="goal-track"><div class="goal-fill" id="dash-goal-fill"></div></div>
         </article>
       </section>
@@ -87,6 +87,7 @@
         </div>
       </section>
     </main>
+    {% include '_shell_footer.html' %}
   </div>
   </div>
 
@@ -94,6 +95,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
   <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
   <script src="{{ url_for('static', filename=dashboard_js_asset or 'js/dashboard.js') }}"></script>
 </body>

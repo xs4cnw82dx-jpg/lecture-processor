@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/reader.css') }}">
 </head>
 <body>
@@ -54,7 +55,7 @@
 
           <div class="run-row">
             <button type="button" class="primary-btn" id="reader-run-btn" disabled>Extract</button>
-            <span class="credit-note" id="reader-credit-note">Text extraction credits: -</span>
+            <span class="credit-note" id="reader-credit-note">Text extraction credits: &mdash;</span>
           </div>
           <div class="status" id="reader-status"></div>
         </article>
@@ -71,6 +72,7 @@
         </article>
       </section>
     </main>
+  {% include '_shell_footer.html' %}
   </div>
   </div>
   <div class="reader-toast" id="reader-toast" aria-live="polite"></div>
@@ -79,6 +81,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
   <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
   <script>
     window.ReaderConfig = {

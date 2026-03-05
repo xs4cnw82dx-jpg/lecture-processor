@@ -37,6 +37,7 @@
   border-radius: 11px;
   padding: 10px 14px;
   font-weight: 600;
+  font-family: inherit;
 }
 
 .hero-btn.primary {
@@ -71,6 +72,16 @@
 .stat-card {
   display: grid;
   gap: 6px;
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.92), rgba(240, 246, 255, 0.82));
+  backdrop-filter: blur(8px);
+  border-color: rgba(191, 204, 233, 0.8);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 28px rgba(37, 99, 235, 0.14);
+  border-color: rgba(99, 129, 239, 0.42);
 }
 
 .stat-label {
@@ -165,8 +176,15 @@
   color: inherit;
   border: 1px solid #dbe5f6;
   border-radius: 12px;
-  background: #fff;
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.94), rgba(242, 248, 255, 0.84));
   padding: 12px;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
+}
+
+.quick-link-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(88, 120, 239, 0.45);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.14);
 }
 
 .quick-link-card h3 {

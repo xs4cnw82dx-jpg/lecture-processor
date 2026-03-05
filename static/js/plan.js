@@ -3,6 +3,7 @@
     const authUtils = window.LectureProcessorAuth || {};
     const authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Not signed in' }) : null;
     const topbarUtils = window.LectureProcessorTopbar || {};
+    const uiCache = window.LectureProcessorUiCache || null;
 
     const userEmailEl = document.getElementById('user-email');
     const authRequiredEl = document.getElementById('auth-required');
@@ -29,6 +30,8 @@
     let goalSaveInFlight = false;
     const folderSaveTimers = new Map();
     const folderSaveInFlight = new Set();
+    const PLAN_CACHE_GLOBAL_KEY = 'plan_summary:last';
+    const PLAN_CACHE_USER_PREFIX = 'plan_summary:user:';
 
     function showToast(message, type) {
       toastEl.textContent = message;
@@ -42,6 +45,41 @@
       const m = String(d.getMonth() + 1).padStart(2, '0');
       const day = String(d.getDate()).padStart(2, '0');
       return y + '-' + m + '-' + day;
+    }
+    function readCacheJson(key, fallbackValue) {
+      if (uiCache && typeof uiCache.getJson === 'function') {
+        return uiCache.getJson(key, fallbackValue);
+      }
+      try {
+        const raw = localStorage.getItem('lp_ui_v2:' + key);
+        return raw ? JSON.parse(raw) : fallbackValue;
+      } catch (_) {
+        return fallbackValue;
+      }
+    }
+    function writeCacheJson(key, value) {
+      if (uiCache && typeof uiCache.setJson === 'function') {
+        return uiCache.setJson(key, value);
+      }
+      try {
+        localStorage.setItem('lp_ui_v2:' + key, JSON.stringify(value));
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+    function getUserSummaryCacheKey(uid) {
+      return PLAN_CACHE_USER_PREFIX + String(uid || 'anon');
+    }
+    function hydrateProgressSummaryFromCache(uid) {
+      const userKey = getUserSummaryCacheKey(uid);
+      const cached = readCacheJson(userKey, null) || readCacheJson(PLAN_CACHE_GLOBAL_KEY, null);
+      if (cached && typeof cached === 'object') progressSummaryCache = cached;
+    }
+    function persistProgressSummaryToCache(uid, summary) {
+      if (!summary || typeof summary !== 'object') return;
+      writeCacheJson(PLAN_CACHE_GLOBAL_KEY, summary);
+      writeCacheJson(getUserSummaryCacheKey(uid), summary);
     }
     function safeReadJson(raw, fallback) {
       try { return JSON.parse(raw); } catch (_) { return fallback; }
@@ -446,17 +484,19 @@
         }
         if (progressData.summary && typeof progressData.summary === 'object') {
           progressSummaryCache = progressData.summary;
+          persistProgressSummaryToCache(uid, progressSummaryCache);
         } else {
-          progressSummaryCache = null;
+          progressSummaryCache = readCacheJson(getUserSummaryCacheKey(uid), null) || readCacheJson(PLAN_CACHE_GLOBAL_KEY, null);
         }
       } else {
         remoteCardStates = {};
-        progressSummaryCache = null;
+        progressSummaryCache = readCacheJson(getUserSummaryCacheKey(uid), null) || readCacheJson(PLAN_CACHE_GLOBAL_KEY, null);
       }
     }
 
     async function loadPlannerData() {
       if (!currentUser || !idToken) return;
+      if (!progressSummaryCache) hydrateProgressSummaryFromCache(currentUser.uid);
       renderOverview(currentUser.uid);
       try {
         const [foldersRes, packsRes, progressRes] = await Promise.all([
@@ -646,6 +686,7 @@
       }
       idToken = await user.getIdToken();
       if (authClient && typeof authClient.setToken === 'function') authClient.setToken(idToken);
+      hydrateProgressSummaryFromCache(user.uid);
       if (topbarUtils.applyProtectedPageAuthState) {
         topbarUtils.applyProtectedPageAuthState({
           user: user,
@@ -663,5 +704,6 @@
         authRequiredEl.style.display = 'none';
         plannerContentEl.style.display = 'block';
       }
+      renderOverview(user.uid);
       await loadPlannerData();
     });
