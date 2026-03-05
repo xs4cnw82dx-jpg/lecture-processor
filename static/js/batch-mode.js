@@ -1,30 +1,73 @@
 (function () {
   'use strict';
 
-  const bootstrap = window.LectureProcessorBootstrap || {};
-  const auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
-  const authUtils = window.LectureProcessorAuth || {};
-  const authClient = auth && authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
+  var bootstrap = window.LectureProcessorBootstrap || {};
+  var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
+  var authUtils = window.LectureProcessorAuth || {};
+  var authClient = auth && authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
 
-  const body = document.body;
-  const forcedMode = String((body && body.dataset && body.dataset.forcedMode) || 'lecture-notes').trim();
-  const mode = ['lecture-notes', 'slides-only', 'interview'].includes(forcedMode) ? forcedMode : 'lecture-notes';
+  var body = document.body;
+  var forcedMode = String((body && body.dataset && body.dataset.forcedMode) || 'lecture-notes').trim();
+  var mode = ['lecture-notes', 'slides-only', 'interview'].indexOf(forcedMode) >= 0 ? forcedMode : 'lecture-notes';
 
-  const form = document.getElementById('batch-form');
-  const rowsWrap = document.getElementById('rows-wrap');
-  const addRowBtn = document.getElementById('add-row-btn');
-  const submitBtn = document.getElementById('submit-batch-btn');
-  const statusPanel = document.getElementById('batch-status-panel');
-  const refreshStatusBtn = document.getElementById('refresh-status-btn');
-  const downloadZipBtn = document.getElementById('download-zip-btn');
-  const summaryEl = document.getElementById('batch-summary');
-  const rowsBody = document.getElementById('batch-rows-body');
-  const studyFeaturesWrap = document.getElementById('study-features-wrap');
-  const flashcardWrap = document.getElementById('flashcard-wrap');
-  const questionWrap = document.getElementById('question-wrap');
+  var MODE_META = {
+    'lecture-notes': { plural: 'Lectures', singular: 'Lecture', requiresSlides: true, requiresAudio: true },
+    'slides-only': { plural: 'Slides', singular: 'Slide set', requiresSlides: true, requiresAudio: false },
+    interview: { plural: 'Interviews', singular: 'Interview', requiresSlides: false, requiresAudio: true },
+  };
 
-  let currentBatchId = '';
-  let pollTimer = null;
+  var OUTPUT_LANGUAGE_LABELS = {
+    english: 'English',
+    dutch: 'Dutch',
+    spanish: 'Spanish',
+    french: 'French',
+    german: 'German',
+    chinese: 'Chinese',
+    other: 'Other',
+  };
+
+  var form = document.getElementById('batch-form');
+  var rowsWrap = document.getElementById('rows-wrap');
+  var addRowBtn = document.getElementById('add-row-btn');
+  var addRowLabel = document.getElementById('add-row-label');
+  var submitBtn = document.getElementById('submit-batch-btn');
+  var rowsTitle = document.getElementById('rows-title');
+  var rowsMinimumNote = document.getElementById('rows-minimum-note');
+  var statusRowHeader = document.getElementById('status-row-header');
+
+  var outputLanguageInput = document.getElementById('output-language');
+  var outputLanguageButton = document.getElementById('output-language-button');
+  var outputLanguageLabel = document.getElementById('output-language-label');
+  var outputLanguageMenu = document.getElementById('output-language-menu');
+  var outputLanguageItems = outputLanguageMenu ? Array.prototype.slice.call(outputLanguageMenu.querySelectorAll('.app-select-item[data-value]')) : [];
+  var outputLanguageCustom = document.getElementById('output-language-custom');
+
+  var studyDefaultsWrap = document.getElementById('study-defaults-wrap');
+  var studyFeaturesInput = document.getElementById('study-features');
+  var studyToolsNote = document.getElementById('study-tools-note');
+  var studyToolChips = Array.prototype.slice.call(document.querySelectorAll('#study-tool-chips [data-study-feature]'));
+
+  var flashcardWrap = document.getElementById('flashcard-wrap');
+  var flashcardInput = document.getElementById('flashcard-amount');
+  var flashcardAmountChips = Array.prototype.slice.call(document.querySelectorAll('#flashcard-amount-chips .amount-chip[data-value]'));
+
+  var questionWrap = document.getElementById('question-wrap');
+  var questionInput = document.getElementById('question-amount');
+  var questionAmountChips = Array.prototype.slice.call(document.querySelectorAll('#question-amount-chips .amount-chip[data-value]'));
+
+  var statusPanel = document.getElementById('batch-status-panel');
+  var refreshStatusBtn = document.getElementById('refresh-status-btn');
+  var downloadZipBtn = document.getElementById('download-zip-btn');
+  var summaryEl = document.getElementById('batch-summary');
+  var rowsBody = document.getElementById('batch-rows-body');
+
+  var rowStates = new Map();
+  var currentBatchId = '';
+  var pollTimer = null;
+
+  function modeMeta() {
+    return MODE_META[mode] || MODE_META['lecture-notes'];
+  }
 
   function authFetch(path, options) {
     if (authClient && typeof authClient.authFetch === 'function') {
@@ -33,10 +76,10 @@
     if (!auth || !auth.currentUser) {
       return Promise.reject(new Error('Please sign in'));
     }
-    return auth.currentUser.getIdToken().then((token) => {
-      const opts = options || {};
-      const headers = Object.assign({}, opts.headers || {}, { Authorization: `Bearer ${token}` });
-      return fetch(path, Object.assign({}, opts, { headers }));
+    return auth.currentUser.getIdToken().then(function (token) {
+      var opts = options || {};
+      var headers = Object.assign({}, opts.headers || {}, { Authorization: 'Bearer ' + token });
+      return fetch(path, Object.assign({}, opts, { headers: headers }));
     });
   }
 
@@ -45,9 +88,9 @@
   }
 
   function formatDate(secondsValue) {
-    const safe = Number(secondsValue || 0);
+    var safe = Number(secondsValue || 0);
     if (!safe) return '-';
-    const date = new Date(safe * 1000);
+    var date = new Date(safe * 1000);
     if (Number.isNaN(date.getTime())) return '-';
     return date.toLocaleString(navigator.language || 'en-US', {
       day: '2-digit',
@@ -59,235 +102,650 @@
   }
 
   function formatTokens(value) {
-    const safe = Number(value || 0);
+    var safe = Number(value || 0);
     if (!Number.isFinite(safe)) return '0';
     return Math.round(safe).toLocaleString();
+  }
+
+  function formatFileSize(bytes) {
+    var total = Math.max(0, Number(bytes || 0));
+    if (!total) return '0 B';
+    var units = ['B', 'KB', 'MB', 'GB'];
+    var idx = Math.min(units.length - 1, Math.floor(Math.log(total) / Math.log(1024)));
+    return (total / Math.pow(1024, idx)).toFixed(idx === 0 ? 0 : 2) + ' ' + units[idx];
   }
 
   function makeRowId() {
     if (window.crypto && typeof window.crypto.randomUUID === 'function') {
       return window.crypto.randomUUID();
     }
-    return `row-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    return 'row-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+  }
+
+  function setOutputLanguageMenuVisible(visible) {
+    if (!outputLanguageMenu || !outputLanguageButton) return;
+    outputLanguageMenu.classList.toggle('visible', !!visible);
+    outputLanguageButton.classList.toggle('open', !!visible);
+    outputLanguageButton.setAttribute('aria-expanded', visible ? 'true' : 'false');
+  }
+
+  function getLanguageLabel(value, customValue) {
+    var key = String(value || 'english').trim().toLowerCase();
+    if (key === 'other') {
+      var custom = String(customValue || '').trim();
+      return custom || OUTPUT_LANGUAGE_LABELS.other;
+    }
+    return OUTPUT_LANGUAGE_LABELS[key] || OUTPUT_LANGUAGE_LABELS.english;
+  }
+
+  function setOutputLanguage(value) {
+    var key = Object.prototype.hasOwnProperty.call(OUTPUT_LANGUAGE_LABELS, value) ? value : 'english';
+    if (outputLanguageInput) outputLanguageInput.value = key;
+    if (outputLanguageLabel) outputLanguageLabel.textContent = getLanguageLabel(key, outputLanguageCustom ? outputLanguageCustom.value : '');
+    outputLanguageItems.forEach(function (item) {
+      var active = item.dataset.value === key;
+      item.classList.toggle('active', active);
+      item.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    if (outputLanguageCustom) {
+      outputLanguageCustom.style.display = key === 'other' ? '' : 'none';
+      if (key !== 'other') outputLanguageCustom.value = '';
+    }
+  }
+
+  function setStudyFeature(value) {
+    var next = ['none', 'flashcards', 'test', 'both'].indexOf(value) >= 0 ? value : 'none';
+    if (studyFeaturesInput) studyFeaturesInput.value = next;
+    studyToolChips.forEach(function (chip) {
+      chip.classList.toggle('active', chip.dataset.studyFeature === next);
+    });
+
+    if (studyToolsNote) {
+      if (next === 'none') studyToolsNote.textContent = 'Notes-only output. No flashcards or practice test questions will be generated.';
+      else if (next === 'flashcards') studyToolsNote.textContent = 'Only flashcards will be generated.';
+      else if (next === 'test') studyToolsNote.textContent = 'Only practice test questions will be generated.';
+      else studyToolsNote.textContent = 'Recommended for first runs: both flashcards and practice test questions will be generated.';
+    }
+
+    var hideFlashcards = mode === 'interview' || next === 'none' || next === 'test';
+    var hideQuestions = mode === 'interview' || next === 'none' || next === 'flashcards';
+    if (flashcardWrap) flashcardWrap.style.display = hideFlashcards ? 'none' : '';
+    if (questionWrap) questionWrap.style.display = hideQuestions ? 'none' : '';
+  }
+
+  function setAmountSelection(kind, value) {
+    if (kind === 'flashcards') {
+      if (flashcardInput) flashcardInput.value = value;
+      flashcardAmountChips.forEach(function (chip) {
+        chip.classList.toggle('active', chip.dataset.value === value);
+      });
+      return;
+    }
+    if (questionInput) questionInput.value = value;
+    questionAmountChips.forEach(function (chip) {
+      chip.classList.toggle('active', chip.dataset.value === value);
+    });
+  }
+
+  function updateRowLabels() {
+    var meta = modeMeta();
+    if (rowsTitle) rowsTitle.textContent = meta.plural;
+    if (rowsMinimumNote) rowsMinimumNote.textContent = 'Minimum 2 ' + meta.plural.toLowerCase() + ' required for batch mode.';
+    if (statusRowHeader) statusRowHeader.textContent = meta.singular;
+    if (addRowLabel) addRowLabel.textContent = 'Add ' + meta.singular.toLowerCase();
+
+    Array.prototype.slice.call(rowsWrap.querySelectorAll('.batch-row')).forEach(function (rowNode, index) {
+      var titleEl = rowNode.querySelector('.batch-row-head h3');
+      if (titleEl) titleEl.textContent = meta.singular + ' ' + String(index + 1);
+    });
   }
 
   function updateTopControls() {
-    if (!studyFeaturesWrap || !flashcardWrap || !questionWrap) return;
-    const showStudy = mode !== 'interview';
-    studyFeaturesWrap.style.display = showStudy ? '' : 'none';
-    flashcardWrap.style.display = showStudy ? '' : 'none';
-    questionWrap.style.display = showStudy ? '' : 'none';
+    var showStudyDefaults = mode !== 'interview';
+    if (studyDefaultsWrap) studyDefaultsWrap.style.display = showStudyDefaults ? '' : 'none';
+    if (!showStudyDefaults) {
+      if (studyFeaturesInput) studyFeaturesInput.value = 'none';
+    } else {
+      setStudyFeature(studyFeaturesInput ? studyFeaturesInput.value : 'both');
+    }
+    updateRowLabels();
   }
 
-  function buildInterviewFeatureCheckbox(label, value, checked) {
-    const wrapper = document.createElement('label');
-    wrapper.className = 'row-inline-checkbox';
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.value = value;
-    input.checked = !!checked;
-    input.dataset.interviewFeature = value;
-    wrapper.appendChild(input);
-    const span = document.createElement('span');
-    span.textContent = label;
-    wrapper.appendChild(span);
-    return wrapper;
+  function getRowState(rowNode) {
+    var rowId = String((rowNode && rowNode.dataset && rowNode.dataset.rowId) || '');
+    if (!rowId) return { importedAudioToken: '', importedAudioName: '', importedAudioSizeBytes: 0 };
+    if (!rowStates.has(rowId)) {
+      rowStates.set(rowId, { importedAudioToken: '', importedAudioName: '', importedAudioSizeBytes: 0 });
+    }
+    return rowStates.get(rowId);
+  }
+
+  function setRowAudioImportStatus(rowNode, message, isError) {
+    var statusEl = rowNode.querySelector('[data-field="m3u8-status"]');
+    if (!statusEl) return;
+    var text = String(message || '').trim();
+    statusEl.textContent = text;
+    statusEl.classList.toggle('error', !!(isError && text));
+  }
+
+  function setRowAudioImportPending(rowNode, inFlight) {
+    var button = rowNode.querySelector('[data-action="import-audio-url"]');
+    if (!button) return;
+    if (!button.dataset.defaultLabel) button.dataset.defaultLabel = button.textContent || 'Import audio';
+    button.disabled = !!inFlight;
+    button.textContent = inFlight ? 'Importing...' : (button.dataset.defaultLabel || 'Import audio');
+  }
+
+  function syncRowAudioSourceVisual(rowNode) {
+    var wrap = rowNode.querySelector('[data-audio-url-wrap]');
+    if (!wrap) return;
+    var state = getRowState(rowNode);
+    var input = rowNode.querySelector('input[data-field="m3u8"]');
+    var hasInput = input && String(input.value || '').trim().length > 0;
+    wrap.classList.toggle('active', hasInput || !!state.importedAudioToken);
+  }
+
+  function syncRowFileUI(rowNode, fieldName) {
+    var input = rowNode.querySelector('input[data-field="' + fieldName + '"]');
+    var zone = rowNode.querySelector('[data-upload-zone="' + fieldName + '"]');
+    var info = rowNode.querySelector('[data-file-info="' + fieldName + '"]');
+    var nameEl = rowNode.querySelector('[data-file-name="' + fieldName + '"]');
+    var metaEl = rowNode.querySelector('[data-file-meta="' + fieldName + '"]');
+    if (!input || !zone || !info || !nameEl || !metaEl) return;
+
+    var file = input.files && input.files[0] ? input.files[0] : null;
+    if (fieldName === 'audio') {
+      var state = getRowState(rowNode);
+      if (file) {
+        nameEl.textContent = file.name;
+        metaEl.textContent = formatFileSize(file.size);
+        info.style.display = 'flex';
+        zone.classList.add('has-file');
+        syncRowAudioSourceVisual(rowNode);
+        return;
+      }
+      if (state.importedAudioToken) {
+        nameEl.textContent = state.importedAudioName || 'Imported audio';
+        metaEl.textContent = (state.importedAudioSizeBytes > 0 ? formatFileSize(state.importedAudioSizeBytes) + ' · ' : '') + 'Imported from URL';
+        info.style.display = 'flex';
+        zone.classList.add('has-file');
+        syncRowAudioSourceVisual(rowNode);
+        return;
+      }
+    }
+
+    if (file) {
+      nameEl.textContent = file.name;
+      metaEl.textContent = formatFileSize(file.size);
+      info.style.display = 'flex';
+      zone.classList.add('has-file');
+    } else {
+      info.style.display = 'none';
+      zone.classList.remove('has-file');
+    }
+    syncRowAudioSourceVisual(rowNode);
+  }
+
+  function clearRowImportedAudioState(rowNode) {
+    var state = getRowState(rowNode);
+    state.importedAudioToken = '';
+    state.importedAudioName = '';
+    state.importedAudioSizeBytes = 0;
+  }
+
+  function releaseRowImportedAudio(rowNode, options) {
+    var opts = options || {};
+    var state = getRowState(rowNode);
+    var token = String(state.importedAudioToken || '').trim();
+    var clearStatus = opts.clearStatus !== false;
+    if (!token) {
+      if (clearStatus) setRowAudioImportStatus(rowNode, '', false);
+      return Promise.resolve();
+    }
+
+    clearRowImportedAudioState(rowNode);
+    syncRowFileUI(rowNode, 'audio');
+    if (clearStatus) setRowAudioImportStatus(rowNode, '', false);
+
+    if (!auth || !auth.currentUser) return Promise.resolve();
+    return authFetch('/api/import-audio-url/release', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audio_import_token: token }),
+    }).then(function () {
+      return true;
+    }).catch(function () {
+      return false;
+    });
+  }
+
+  function applyRowImportedAudio(rowNode, payload, previousToken) {
+    var state = getRowState(rowNode);
+    var token = String(payload && payload.audio_import_token ? payload.audio_import_token : '').trim();
+    if (!token) return Promise.resolve(false);
+
+    state.importedAudioToken = token;
+    state.importedAudioName = String(payload.file_name || 'Imported audio').trim();
+    state.importedAudioSizeBytes = Math.max(0, Number(payload.size_bytes || 0));
+
+    var audioInput = rowNode.querySelector('input[data-field="audio"]');
+    if (audioInput && audioInput.files && audioInput.files.length) {
+      audioInput.value = '';
+    }
+    syncRowFileUI(rowNode, 'audio');
+
+    var ttlSeconds = Math.max(0, Number(payload.expires_in_seconds || 0));
+    if (ttlSeconds > 0) {
+      var minutes = Math.max(1, Math.round(ttlSeconds / 60));
+      setRowAudioImportStatus(
+        rowNode,
+        'Imported ' + state.importedAudioName + '. Token expires in about ' + minutes + ' minute' + (minutes === 1 ? '' : 's') + '. Batch mode stores the imported audio immediately when you start the batch.',
+        false
+      );
+    } else {
+      setRowAudioImportStatus(rowNode, 'Imported ' + state.importedAudioName + '.', false);
+    }
+
+    if (previousToken && previousToken !== token && auth && auth.currentUser) {
+      return authFetch('/api/import-audio-url/release', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audio_import_token: previousToken }),
+      }).then(function () {
+        return true;
+      }).catch(function () {
+        return true;
+      });
+    }
+    return Promise.resolve(true);
+  }
+
+  function importRowAudioFromUrl(rowNode) {
+    if (!auth || !auth.currentUser) {
+      alert('Please sign in first.');
+      return;
+    }
+    var urlInput = rowNode.querySelector('input[data-field="m3u8"]');
+    var url = String((urlInput && urlInput.value) || '').trim();
+    if (!url) {
+      setRowAudioImportStatus(rowNode, 'Paste the index.m3u8 URL first.', true);
+      return;
+    }
+
+    setRowAudioImportPending(rowNode, true);
+    setRowAudioImportStatus(rowNode, 'Importing audio from URL...', false);
+    var previousToken = String(getRowState(rowNode).importedAudioToken || '').trim();
+
+    authFetch('/api/import-audio-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url }),
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (payload) {
+        return { response: response, payload: payload };
+      });
+    }).then(function (result) {
+      if (!result.response.ok) {
+        setRowAudioImportStatus(rowNode, String(result.payload.error || 'Could not import audio from URL.'), true);
+        return;
+      }
+      return applyRowImportedAudio(rowNode, result.payload, previousToken).then(function () {
+        return true;
+      });
+    }).catch(function () {
+      setRowAudioImportStatus(rowNode, 'Could not import audio from URL. Please try again.', true);
+    }).finally(function () {
+      setRowAudioImportPending(rowNode, false);
+    });
+  }
+
+  function setRowOverrideStudyFeature(rowNode, value) {
+    var panel = rowNode.querySelector('[data-override-panel]');
+    if (!panel) return;
+    var hidden = rowNode.querySelector('input[data-field="override-study"]');
+    var next = ['none', 'flashcards', 'test', 'both'].indexOf(value) >= 0 ? value : 'both';
+    if (hidden) hidden.value = next;
+    Array.prototype.slice.call(rowNode.querySelectorAll('[data-override-study-chip]')).forEach(function (chip) {
+      chip.classList.toggle('active', chip.dataset.overrideStudyChip === next);
+    });
+
+    var flashWrap = rowNode.querySelector('[data-override-flashcards-wrap]');
+    var questionWrapNode = rowNode.querySelector('[data-override-questions-wrap]');
+    if (flashWrap) flashWrap.style.display = (next === 'none' || next === 'test') ? 'none' : '';
+    if (questionWrapNode) questionWrapNode.style.display = (next === 'none' || next === 'flashcards') ? 'none' : '';
+  }
+
+  function setRowOverrideAmount(rowNode, kind, value) {
+    var field = kind === 'flashcards' ? 'override-flashcards' : 'override-questions';
+    var hidden = rowNode.querySelector('input[data-field="' + field + '"]');
+    if (hidden) hidden.value = value;
+
+    var selector = kind === 'flashcards' ? '[data-override-flashcards-chip]' : '[data-override-questions-chip]';
+    var dataKey = kind === 'flashcards' ? 'overrideFlashcardsChip' : 'overrideQuestionsChip';
+    Array.prototype.slice.call(rowNode.querySelectorAll(selector)).forEach(function (chip) {
+      chip.classList.toggle('active', chip.dataset[dataKey] === value);
+    });
+  }
+
+  function wireUploadField(rowNode, fieldName) {
+    var zone = rowNode.querySelector('[data-upload-zone="' + fieldName + '"]');
+    var input = rowNode.querySelector('input[data-field="' + fieldName + '"]');
+    var removeBtn = rowNode.querySelector('[data-remove-file="' + fieldName + '"]');
+    if (!zone || !input) return;
+
+    zone.addEventListener('click', function (event) {
+      if (event.target && event.target.closest('[data-remove-file]')) return;
+      input.click();
+    });
+
+    input.addEventListener('change', function () {
+      if (fieldName === 'audio') {
+        releaseRowImportedAudio(rowNode, { clearStatus: false }).finally(function () {
+          syncRowFileUI(rowNode, fieldName);
+        });
+      } else {
+        syncRowFileUI(rowNode, fieldName);
+      }
+    });
+
+    if (removeBtn) {
+      removeBtn.addEventListener('click', function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (fieldName === 'audio') {
+          releaseRowImportedAudio(rowNode, { clearStatus: true });
+        }
+        input.value = '';
+        syncRowFileUI(rowNode, fieldName);
+      });
+    }
+
+    syncRowFileUI(rowNode, fieldName);
+  }
+
+  function wireAudioImport(rowNode) {
+    var urlInput = rowNode.querySelector('input[data-field="m3u8"]');
+    var importBtn = rowNode.querySelector('[data-action="import-audio-url"]');
+    if (!urlInput || !importBtn) return;
+
+    urlInput.addEventListener('input', function () {
+      syncRowAudioSourceVisual(rowNode);
+    });
+    urlInput.addEventListener('focus', function () {
+      syncRowAudioSourceVisual(rowNode);
+    });
+    urlInput.addEventListener('blur', function () {
+      syncRowAudioSourceVisual(rowNode);
+    });
+    urlInput.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        importRowAudioFromUrl(rowNode);
+      }
+    });
+
+    importBtn.addEventListener('click', function () {
+      importRowAudioFromUrl(rowNode);
+    });
+
+    syncRowAudioSourceVisual(rowNode);
+  }
+
+  function wireRowOverride(rowNode) {
+    var enabledCheckbox = rowNode.querySelector('input[data-field="override-enabled"]');
+    var panel = rowNode.querySelector('[data-override-panel]');
+    if (!enabledCheckbox || !panel) return;
+
+    var syncOverrideVisible = function () {
+      panel.classList.toggle('visible', !!enabledCheckbox.checked);
+    };
+
+    enabledCheckbox.addEventListener('change', syncOverrideVisible);
+
+    Array.prototype.slice.call(rowNode.querySelectorAll('[data-override-study-chip]')).forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        setRowOverrideStudyFeature(rowNode, chip.dataset.overrideStudyChip || 'both');
+      });
+    });
+
+    Array.prototype.slice.call(rowNode.querySelectorAll('[data-override-flashcards-chip]')).forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        setRowOverrideAmount(rowNode, 'flashcards', chip.dataset.overrideFlashcardsChip || '20');
+      });
+    });
+
+    Array.prototype.slice.call(rowNode.querySelectorAll('[data-override-questions-chip]')).forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        setRowOverrideAmount(rowNode, 'questions', chip.dataset.overrideQuestionsChip || '10');
+      });
+    });
+
+    setRowOverrideStudyFeature(rowNode, 'both');
+    setRowOverrideAmount(rowNode, 'flashcards', '20');
+    setRowOverrideAmount(rowNode, 'questions', '10');
+    syncOverrideVisible();
+  }
+
+  function removeRow(rowNode) {
+    if (rowCount() <= 2) {
+      alert('Batch mode requires at least 2 rows.');
+      return;
+    }
+    releaseRowImportedAudio(rowNode, { clearStatus: true }).finally(function () {
+      var rowId = String((rowNode.dataset && rowNode.dataset.rowId) || '');
+      if (rowId) rowStates.delete(rowId);
+      rowNode.remove();
+      updateRowLabels();
+    });
   }
 
   function createRow() {
-    const ordinal = rowCount() + 1;
-    const rowId = makeRowId();
-    const card = document.createElement('article');
+    var meta = modeMeta();
+    var ordinal = rowCount() + 1;
+    var rowId = makeRowId();
+
+    var slidesFieldHtml = meta.requiresSlides ? (
+      '<div class="row-field">' +
+      '  <span class="row-label">Slides (PDF/PPTX)</span>' +
+      '  <div class="row-upload-zone" data-upload-zone="slides" tabindex="0">' +
+      '    <div class="row-upload-title">Upload slides</div>' +
+      '    <div class="row-upload-subtitle">Click to select a PDF or PPTX file</div>' +
+      '    <input type="file" data-field="slides" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation">' +
+      '    <div class="row-file-info" data-file-info="slides" style="display:none;">' +
+      '      <div>' +
+      '        <div class="row-file-name" data-file-name="slides"></div>' +
+      '        <div class="row-file-meta" data-file-meta="slides"></div>' +
+      '      </div>' +
+      '      <button type="button" class="file-remove" data-remove-file="slides" aria-label="Remove slides file">' +
+      '        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>' +
+      '      </button>' +
+      '    </div>' +
+      '  </div>' +
+      '</div>'
+    ) : '';
+
+    var audioFieldHtml = meta.requiresAudio ? (
+      '<div class="row-field">' +
+      '  <span class="row-label">Audio file</span>' +
+      '  <div class="row-upload-zone" data-upload-zone="audio" tabindex="0">' +
+      '    <div class="row-upload-title">Upload audio</div>' +
+      '    <div class="row-upload-subtitle">Click to select MP3, M4A, WAV, AAC, OGG, or FLAC</div>' +
+      '    <input type="file" data-field="audio" accept=".mp3,.m4a,.wav,.aac,.ogg,.flac,audio/*">' +
+      '    <div class="row-file-info" data-file-info="audio" style="display:none;">' +
+      '      <div>' +
+      '        <div class="row-file-name" data-file-name="audio"></div>' +
+      '        <div class="row-file-meta" data-file-meta="audio"></div>' +
+      '      </div>' +
+      '      <button type="button" class="file-remove" data-remove-file="audio" aria-label="Remove audio file">' +
+      '        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>' +
+      '      </button>' +
+      '    </div>' +
+      '  </div>' +
+      '  <div class="row-url-import" data-audio-url-wrap>' +
+      '    <div class="row-url-head">' +
+      '      <strong>Import audio from m3u8 URL</strong>' +
+      '      <span>Paste the full URL ending with <code>index.m3u8</code>, then import the audio for this lecture row.</span>' +
+      '    </div>' +
+      '    <div class="row-url-row">' +
+      '      <input type="url" class="row-url-input" data-field="m3u8" placeholder="https://.../index.m3u8?..." autocomplete="off">' +
+      '      <button type="button" class="btn small" data-action="import-audio-url">Import audio</button>' +
+      '    </div>' +
+      '    <div class="row-url-help">' +
+      '      <span class="info-dot" aria-hidden="true">i</span>' +
+      '      <span>These links expire quickly. Importing stores audio immediately so the batch can still run even when processing takes longer.</span>' +
+      '    </div>' +
+      '    <div class="row-url-status" data-field="m3u8-status" aria-live="polite"></div>' +
+      '  </div>' +
+      '</div>'
+    ) : '';
+
+    var interviewExtrasHtml = mode === 'interview' ? (
+      '<div class="row-field">' +
+      '  <span class="row-label">Interview extras</span>' +
+      '  <div class="row-inline-group">' +
+      '    <label class="row-inline-checkbox"><input type="checkbox" data-interview-feature="summary" value="summary" checked> <span>Summary</span></label>' +
+      '    <label class="row-inline-checkbox"><input type="checkbox" data-interview-feature="sections" value="sections" checked> <span>Sections</span></label>' +
+      '  </div>' +
+      '</div>'
+    ) : '';
+
+    var overrideHtml = mode !== 'interview' ? (
+      '<div class="row-field">' +
+      '  <div class="row-override">' +
+      '    <div class="row-override-head">' +
+      '      <label class="row-inline-checkbox"><input type="checkbox" data-field="override-enabled"> <span>Study tools override</span></label>' +
+      '      <div class="row-override-help"><span class="info-dot" aria-hidden="true">i</span><span>Change study tools for this lecture only. If disabled, this lecture uses the top Study tools settings.</span></div>' +
+      '    </div>' +
+      '    <div class="row-override-panel" data-override-panel>' +
+      '      <input type="hidden" data-field="override-study" value="both">' +
+      '      <input type="hidden" data-field="override-flashcards" value="20">' +
+      '      <input type="hidden" data-field="override-questions" value="10">' +
+      '      <div>' +
+      '        <span class="control-label">Study tools</span>' +
+      '        <div class="tool-chip-grid">' +
+      '          <button type="button" class="tool-chip" data-override-study-chip="none">No study tools</button>' +
+      '          <button type="button" class="tool-chip" data-override-study-chip="flashcards">Flashcards only</button>' +
+      '          <button type="button" class="tool-chip" data-override-study-chip="test">Practice test only</button>' +
+      '          <button type="button" class="tool-chip active" data-override-study-chip="both">Flashcards + test</button>' +
+      '        </div>' +
+      '      </div>' +
+      '      <div data-override-flashcards-wrap>' +
+      '        <span class="control-label">Flashcard amount</span>' +
+      '        <div class="amount-chips">' +
+      '          <button type="button" class="amount-chip" data-override-flashcards-chip="10">10</button>' +
+      '          <button type="button" class="amount-chip active" data-override-flashcards-chip="20">20</button>' +
+      '          <button type="button" class="amount-chip" data-override-flashcards-chip="30">30</button>' +
+      '          <button type="button" class="amount-chip" data-override-flashcards-chip="auto">Auto</button>' +
+      '        </div>' +
+      '      </div>' +
+      '      <div data-override-questions-wrap>' +
+      '        <span class="control-label">Practice questions</span>' +
+      '        <div class="amount-chips">' +
+      '          <button type="button" class="amount-chip" data-override-questions-chip="5">5</button>' +
+      '          <button type="button" class="amount-chip active" data-override-questions-chip="10">10</button>' +
+      '          <button type="button" class="amount-chip" data-override-questions-chip="15">15</button>' +
+      '          <button type="button" class="amount-chip" data-override-questions-chip="auto">Auto</button>' +
+      '        </div>' +
+      '      </div>' +
+      '    </div>' +
+      '  </div>' +
+      '</div>'
+    ) : '';
+
+    var card = document.createElement('article');
     card.className = 'batch-row';
     card.dataset.rowId = rowId;
+    card.innerHTML =
+      '<div class="batch-row-head">' +
+      '  <h3>' + meta.singular + ' ' + String(ordinal) + '</h3>' +
+      '  <button type="button" class="btn danger-soft" data-action="remove-row">Remove</button>' +
+      '</div>' +
+      '<div class="batch-row-fields">' +
+      slidesFieldHtml + audioFieldHtml + interviewExtrasHtml + overrideHtml +
+      '</div>';
 
-    const heading = document.createElement('div');
-    heading.className = 'batch-row-head';
-    heading.innerHTML = `<h3>Row ${ordinal}</h3>`;
-
-    const removeBtn = document.createElement('button');
-    removeBtn.type = 'button';
-    removeBtn.className = 'btn';
-    removeBtn.textContent = 'Remove';
-    removeBtn.addEventListener('click', () => {
-      if (rowCount() <= 2) {
-        alert('Batch mode requires at least 2 rows.');
-        return;
-      }
-      card.remove();
-      Array.from(rowsWrap.querySelectorAll('.batch-row h3')).forEach((titleEl, idx) => {
-        titleEl.textContent = `Row ${idx + 1}`;
-      });
-    });
-    heading.appendChild(removeBtn);
-
-    const fields = document.createElement('div');
-    fields.className = 'batch-row-fields';
-
-    if (mode === 'lecture-notes' || mode === 'slides-only') {
-      const slidesLabel = document.createElement('label');
-      slidesLabel.className = 'row-field';
-      slidesLabel.innerHTML = '<span>Slides (PDF/PPTX)</span>';
-      const slidesInput = document.createElement('input');
-      slidesInput.type = 'file';
-      slidesInput.accept = '.pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation';
-      slidesInput.required = true;
-      slidesInput.dataset.field = 'slides';
-      slidesLabel.appendChild(slidesInput);
-      fields.appendChild(slidesLabel);
-    }
-
-    if (mode === 'lecture-notes' || mode === 'interview') {
-      const audioLabel = document.createElement('label');
-      audioLabel.className = 'row-field';
-      audioLabel.innerHTML = '<span>Audio file (optional if m3u8 URL is filled)</span>';
-      const audioInput = document.createElement('input');
-      audioInput.type = 'file';
-      audioInput.accept = '.mp3,.m4a,.wav,.aac,.ogg,.flac,audio/*';
-      audioInput.dataset.field = 'audio';
-      audioLabel.appendChild(audioInput);
-      fields.appendChild(audioLabel);
-
-      const m3u8Label = document.createElement('label');
-      m3u8Label.className = 'row-field';
-      m3u8Label.innerHTML = '<span>M3U8 / media URL (optional)</span>';
-      const m3u8Input = document.createElement('input');
-      m3u8Input.type = 'url';
-      m3u8Input.placeholder = 'https://...';
-      m3u8Input.dataset.field = 'm3u8';
-      m3u8Label.appendChild(m3u8Input);
-      fields.appendChild(m3u8Label);
-    }
-
-    if (mode === 'interview') {
-      const featuresWrap = document.createElement('div');
-      featuresWrap.className = 'row-field';
-      const title = document.createElement('span');
-      title.textContent = 'Interview extras';
-      featuresWrap.appendChild(title);
-      const group = document.createElement('div');
-      group.className = 'row-inline-group';
-      group.appendChild(buildInterviewFeatureCheckbox('Summary', 'summary', true));
-      group.appendChild(buildInterviewFeatureCheckbox('Sections', 'sections', true));
-      featuresWrap.appendChild(group);
-      fields.appendChild(featuresWrap);
-    }
-
-    if (mode !== 'interview') {
-      const overrideWrap = document.createElement('div');
-      overrideWrap.className = 'row-field';
-      const overrideLabel = document.createElement('label');
-      overrideLabel.className = 'row-inline-checkbox';
-      const enabled = document.createElement('input');
-      enabled.type = 'checkbox';
-      enabled.dataset.field = 'override-enabled';
-      overrideLabel.appendChild(enabled);
-      const overrideText = document.createElement('span');
-      overrideText.textContent = 'Row study override';
-      overrideLabel.appendChild(overrideText);
-      overrideWrap.appendChild(overrideLabel);
-
-      const grid = document.createElement('div');
-      grid.className = 'row-inline-grid';
-      grid.innerHTML = `
-        <label><span>Study tools</span>
-          <select data-field="override-study">
-            <option value="none">No study tools</option>
-            <option value="flashcards">Flashcards only</option>
-            <option value="test">Practice test only</option>
-            <option value="both" selected>Flashcards + test</option>
-          </select>
-        </label>
-        <label><span>Flashcards</span>
-          <select data-field="override-flashcards">
-            <option value="10">10</option>
-            <option value="20" selected>20</option>
-            <option value="30">30</option>
-            <option value="auto">Auto</option>
-          </select>
-        </label>
-        <label><span>Questions</span>
-          <select data-field="override-questions">
-            <option value="5">5</option>
-            <option value="10" selected>10</option>
-            <option value="15">15</option>
-            <option value="auto">Auto</option>
-          </select>
-        </label>
-      `;
-      grid.style.display = 'none';
-      enabled.addEventListener('change', () => {
-        grid.style.display = enabled.checked ? 'grid' : 'none';
-      });
-      overrideWrap.appendChild(grid);
-      fields.appendChild(overrideWrap);
-    }
-
-    card.appendChild(heading);
-    card.appendChild(fields);
     rowsWrap.appendChild(card);
+    rowStates.set(rowId, { importedAudioToken: '', importedAudioName: '', importedAudioSizeBytes: 0 });
+
+    var removeBtn = card.querySelector('[data-action="remove-row"]');
+    if (removeBtn) {
+      removeBtn.addEventListener('click', function () {
+        removeRow(card);
+      });
+    }
+
+    if (meta.requiresSlides) wireUploadField(card, 'slides');
+    if (meta.requiresAudio) {
+      wireUploadField(card, 'audio');
+      wireAudioImport(card);
+    }
+    if (mode !== 'interview') wireRowOverride(card);
+
+    updateRowLabels();
   }
 
   function ensureMinimumRows() {
     if (!rowsWrap) return;
-    while (rowCount() < 2) {
-      createRow();
-    }
+    while (rowCount() < 2) createRow();
   }
 
   function collectRowsAndFormData() {
-    const formData = new FormData(form);
+    var formData = new FormData(form);
     formData.append('mode', mode);
 
-    const rowNodes = Array.from(rowsWrap.querySelectorAll('.batch-row'));
-    const rows = [];
+    var meta = modeMeta();
+    var rowNodes = Array.prototype.slice.call(rowsWrap.querySelectorAll('.batch-row'));
+    var rows = [];
 
-    rowNodes.forEach((rowNode, idx) => {
-      const rowId = String(rowNode.dataset.rowId || makeRowId());
-      const rowOrdinal = idx + 1;
-      const row = { row_id: rowId, ordinal: rowOrdinal };
+    rowNodes.forEach(function (rowNode, idx) {
+      var rowId = String((rowNode.dataset && rowNode.dataset.rowId) || makeRowId());
+      var rowOrdinal = idx + 1;
+      var row = { row_id: rowId, ordinal: rowOrdinal };
 
-      if (mode === 'lecture-notes' || mode === 'slides-only') {
-        const slidesInput = rowNode.querySelector('input[data-field="slides"]');
-        const slidesFile = slidesInput && slidesInput.files ? slidesInput.files[0] : null;
-        if (!slidesFile) {
-          throw new Error(`Row ${rowOrdinal}: slides file is required.`);
-        }
-        const slidesField = `row_${rowOrdinal}_slides`;
+      if (meta.requiresSlides) {
+        var slidesInput = rowNode.querySelector('input[data-field="slides"]');
+        var slidesFile = slidesInput && slidesInput.files ? slidesInput.files[0] : null;
+        if (!slidesFile) throw new Error(meta.singular + ' ' + rowOrdinal + ': slides file is required.');
+        var slidesField = 'row_' + rowOrdinal + '_slides';
         row.slides_file_field = slidesField;
         formData.append(slidesField, slidesFile);
       }
 
-      if (mode === 'lecture-notes' || mode === 'interview') {
-        const audioInput = rowNode.querySelector('input[data-field="audio"]');
-        const audioFile = audioInput && audioInput.files ? audioInput.files[0] : null;
-        const m3u8Input = rowNode.querySelector('input[data-field="m3u8"]');
-        const m3u8Url = m3u8Input ? String(m3u8Input.value || '').trim() : '';
+      if (meta.requiresAudio) {
+        var audioInput = rowNode.querySelector('input[data-field="audio"]');
+        var audioFile = audioInput && audioInput.files ? audioInput.files[0] : null;
+        var m3u8Input = rowNode.querySelector('input[data-field="m3u8"]');
+        var m3u8Url = m3u8Input ? String(m3u8Input.value || '').trim() : '';
+        var state = getRowState(rowNode);
+        var importedToken = String(state.importedAudioToken || '').trim();
 
-        if (!audioFile && !m3u8Url) {
-          throw new Error(`Row ${rowOrdinal}: provide an audio file or m3u8/media URL.`);
+        if (!audioFile && !importedToken && !m3u8Url) {
+          throw new Error(meta.singular + ' ' + rowOrdinal + ': provide an audio file or import from m3u8 URL.');
         }
 
         if (audioFile) {
-          const audioField = `row_${rowOrdinal}_audio`;
+          var audioField = 'row_' + rowOrdinal + '_audio';
           row.audio_file_field = audioField;
           formData.append(audioField, audioFile);
         }
-        if (m3u8Url) {
+        if (importedToken) {
+          row.audio_import_token = importedToken;
+        } else if (m3u8Url) {
           row.audio_m3u8_url = m3u8Url;
         }
       }
 
       if (mode === 'interview') {
-        const selected = Array.from(rowNode.querySelectorAll('input[data-interview-feature]:checked')).map((el) => el.value);
-        row.interview_features = selected;
+        row.interview_features = Array.prototype.slice.call(rowNode.querySelectorAll('input[data-interview-feature]:checked')).map(function (input) {
+          return input.value;
+        });
       } else {
-        const overrideEnabled = rowNode.querySelector('input[data-field="override-enabled"]');
+        var overrideEnabled = rowNode.querySelector('input[data-field="override-enabled"]');
         if (overrideEnabled && overrideEnabled.checked) {
           row.study_override = {
-            study_features: String((rowNode.querySelector('select[data-field="override-study"]') || {}).value || 'both'),
-            flashcard_amount: String((rowNode.querySelector('select[data-field="override-flashcards"]') || {}).value || '20'),
-            question_amount: String((rowNode.querySelector('select[data-field="override-questions"]') || {}).value || '10'),
+            study_features: String((rowNode.querySelector('input[data-field="override-study"]') || {}).value || 'both'),
+            flashcard_amount: String((rowNode.querySelector('input[data-field="override-flashcards"]') || {}).value || '20'),
+            question_amount: String((rowNode.querySelector('input[data-field="override-questions"]') || {}).value || '10'),
           };
         }
       }
@@ -303,96 +761,62 @@
     return formData;
   }
 
-  async function startBatch() {
-    if (!auth || !auth.currentUser) {
-      alert('Please sign in first.');
-      return;
-    }
-    if (!submitBtn) return;
-
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Starting…';
-    try {
-      const formData = collectRowsAndFormData();
-      const response = await authFetch('/api/batch/jobs', {
-        method: 'POST',
-        body: formData,
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(String(payload.error || 'Could not create batch.'));
-      }
-      currentBatchId = String(payload.batch_id || '');
-      if (!currentBatchId) {
-        throw new Error('No batch id returned.');
-      }
-      if (statusPanel) statusPanel.style.display = 'block';
-      await refreshBatchStatus();
-      if (pollTimer) window.clearInterval(pollTimer);
-      pollTimer = window.setInterval(refreshBatchStatus, 5000);
-    } catch (error) {
-      alert(String(error && error.message ? error.message : error));
-    } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Start batch';
-    }
-  }
-
   function renderStatus(statusPayload) {
     if (!summaryEl || !rowsBody) return;
-    const summary = statusPayload || {};
-    const status = String(summary.status || 'queued');
-    const totalRows = Number(summary.total_rows || 0);
-    const completedRows = Number(summary.completed_rows || 0);
-    const failedRows = Number(summary.failed_rows || 0);
 
-    summaryEl.innerHTML = `
-      <div><strong>Batch:</strong> ${String(summary.batch_title || summary.batch_id || '-')}</div>
-      <div><strong>Status:</strong> ${status}</div>
-      <div><strong>Rows:</strong> ${completedRows}/${totalRows} complete, ${failedRows} failed</div>
-      <div><strong>Tokens:</strong> in ${formatTokens(summary.token_input_total)} · out ${formatTokens(summary.token_output_total)} · total ${formatTokens(summary.token_total)}</div>
-      <div><strong>Updated:</strong> ${formatDate(summary.updated_at)}</div>
-    `;
+    var meta = modeMeta();
+    var summary = statusPayload || {};
+    var status = String(summary.status || 'queued');
+    var totalRows = Number(summary.total_rows || 0);
+    var completedRows = Number(summary.completed_rows || 0);
+    var failedRows = Number(summary.failed_rows || 0);
+
+    summaryEl.innerHTML =
+      '<div><strong>Batch:</strong> ' + String(summary.batch_title || summary.batch_id || '-') + '</div>' +
+      '<div><strong>Status:</strong> ' + status + '</div>' +
+      '<div><strong>' + meta.plural + ':</strong> ' + completedRows + '/' + totalRows + ' complete, ' + failedRows + ' failed</div>' +
+      '<div><strong>Tokens:</strong> in ' + formatTokens(summary.token_input_total) + ' · out ' + formatTokens(summary.token_output_total) + ' · total ' + formatTokens(summary.token_total) + '</div>' +
+      '<div><strong>Updated:</strong> ' + formatDate(summary.updated_at) + '</div>';
 
     rowsBody.innerHTML = '';
-    const rows = Array.isArray(summary.rows) ? summary.rows : [];
-    rows.forEach((row) => {
-      const rowId = String(row.row_id || '');
-      const rowStatus = String(row.status || 'queued');
-      const tr = document.createElement('tr');
-      const canDownload = rowStatus === 'complete';
-      tr.innerHTML = `
-        <td>${Number(row.ordinal || 0)}</td>
-        <td>${rowStatus}${row.failed_stage ? ` (${String(row.failed_stage)})` : ''}</td>
-        <td>${formatTokens(row.token_input_total)}</td>
-        <td>${formatTokens(row.token_output_total)}</td>
-        <td>${formatTokens(row.token_total)}</td>
-        <td></td>
-      `;
-      const actionsCell = tr.lastElementChild;
+    var rows = Array.isArray(summary.rows) ? summary.rows : [];
+    rows.forEach(function (row) {
+      var rowId = String(row.row_id || '');
+      var rowStatus = String(row.status || 'queued');
+      var tr = document.createElement('tr');
+      var canDownload = rowStatus === 'complete';
+      tr.innerHTML =
+        '<td>' + meta.singular + ' ' + Number(row.ordinal || 0) + '</td>' +
+        '<td>' + rowStatus + (row.failed_stage ? ' (' + String(row.failed_stage) + ')' : '') + '</td>' +
+        '<td>' + formatTokens(row.token_input_total) + '</td>' +
+        '<td>' + formatTokens(row.token_output_total) + '</td>' +
+        '<td>' + formatTokens(row.token_total) + '</td>' +
+        '<td></td>';
+
+      var actionsCell = tr.lastElementChild;
       if (canDownload && currentBatchId) {
-        const docxBtn = document.createElement('button');
+        var docxBtn = document.createElement('button');
         docxBtn.type = 'button';
         docxBtn.className = 'btn tiny';
         docxBtn.textContent = 'DOCX';
-        docxBtn.addEventListener('click', () => {
-          window.open(`/api/batch/jobs/${encodeURIComponent(currentBatchId)}/rows/${encodeURIComponent(rowId)}/download-docx`, '_blank');
+        docxBtn.addEventListener('click', function () {
+          window.open('/api/batch/jobs/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-docx', '_blank');
         });
 
-        const cardsBtn = document.createElement('button');
+        var cardsBtn = document.createElement('button');
         cardsBtn.type = 'button';
         cardsBtn.className = 'btn tiny';
         cardsBtn.textContent = 'Flashcards CSV';
-        cardsBtn.addEventListener('click', () => {
-          window.open(`/api/batch/jobs/${encodeURIComponent(currentBatchId)}/rows/${encodeURIComponent(rowId)}/download-flashcards-csv?type=flashcards`, '_blank');
+        cardsBtn.addEventListener('click', function () {
+          window.open('/api/batch/jobs/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-flashcards-csv?type=flashcards', '_blank');
         });
 
-        const testBtn = document.createElement('button');
+        var testBtn = document.createElement('button');
         testBtn.type = 'button';
         testBtn.className = 'btn tiny';
         testBtn.textContent = 'Test CSV';
-        testBtn.addEventListener('click', () => {
-          window.open(`/api/batch/jobs/${encodeURIComponent(currentBatchId)}/rows/${encodeURIComponent(rowId)}/download-flashcards-csv?type=test`, '_blank');
+        testBtn.addEventListener('click', function () {
+          window.open('/api/batch/jobs/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-flashcards-csv?type=test', '_blank');
         });
 
         actionsCell.appendChild(docxBtn);
@@ -412,48 +836,158 @@
     }
   }
 
-  async function refreshBatchStatus() {
-    if (!currentBatchId) return;
-    try {
-      const response = await authFetch(`/api/batch/jobs/${encodeURIComponent(currentBatchId)}`);
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(String(payload.error || 'Could not read batch status.'));
-      }
-      renderStatus(payload);
-    } catch (error) {
-      console.error('Batch status polling failed:', error);
+  function refreshBatchStatus() {
+    if (!currentBatchId) return Promise.resolve();
+    return authFetch('/api/batch/jobs/' + encodeURIComponent(currentBatchId))
+      .then(function (response) {
+        return response.json().then(function (payload) {
+          return { response: response, payload: payload };
+        });
+      })
+      .then(function (result) {
+        if (!result.response.ok) {
+          throw new Error(String(result.payload.error || 'Could not read batch status.'));
+        }
+        renderStatus(result.payload);
+      })
+      .catch(function (error) {
+        console.error('Batch status polling failed:', error);
+      });
+  }
+
+  function startBatch() {
+    if (!auth || !auth.currentUser) {
+      alert('Please sign in first.');
+      return;
     }
+    if (!submitBtn) return;
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Starting...';
+
+    var formData;
+    try {
+      formData = collectRowsAndFormData();
+    } catch (error) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Start batch';
+      alert(String(error && error.message ? error.message : error));
+      return;
+    }
+
+    authFetch('/api/batch/jobs', {
+      method: 'POST',
+      body: formData,
+    }).then(function (response) {
+      return response.json().then(function (payload) {
+        return { response: response, payload: payload };
+      });
+    }).then(function (result) {
+      if (!result.response.ok) {
+        throw new Error(String(result.payload.error || 'Could not create batch.'));
+      }
+      currentBatchId = String(result.payload.batch_id || '');
+      if (!currentBatchId) throw new Error('No batch id returned.');
+      if (statusPanel) statusPanel.style.display = 'block';
+      return refreshBatchStatus().then(function () {
+        if (pollTimer) window.clearInterval(pollTimer);
+        pollTimer = window.setInterval(refreshBatchStatus, 5000);
+      });
+    }).catch(function (error) {
+      alert(String(error && error.message ? error.message : error));
+    }).finally(function () {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Start batch';
+    });
   }
 
   function wireEvents() {
     if (addRowBtn) {
-      addRowBtn.addEventListener('click', createRow);
+      addRowBtn.addEventListener('click', function () {
+        createRow();
+      });
     }
+
     if (form) {
-      form.addEventListener('submit', (event) => {
+      form.addEventListener('submit', function (event) {
         event.preventDefault();
         startBatch();
       });
     }
-    if (refreshStatusBtn) {
-      refreshStatusBtn.addEventListener('click', refreshBatchStatus);
+
+    studyToolChips.forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        setStudyFeature(chip.dataset.studyFeature || 'none');
+      });
+    });
+
+    flashcardAmountChips.forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        setAmountSelection('flashcards', chip.dataset.value || '20');
+      });
+    });
+
+    questionAmountChips.forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        setAmountSelection('questions', chip.dataset.value || '10');
+      });
+    });
+
+    if (outputLanguageButton && outputLanguageMenu) {
+      outputLanguageButton.addEventListener('click', function (event) {
+        event.stopPropagation();
+        var isVisible = outputLanguageMenu.classList.contains('visible');
+        setOutputLanguageMenuVisible(!isVisible);
+      });
+      outputLanguageItems.forEach(function (item) {
+        item.addEventListener('click', function () {
+          setOutputLanguage(item.dataset.value || 'english');
+          setOutputLanguageMenuVisible(false);
+        });
+      });
     }
+
+    if (outputLanguageCustom) {
+      outputLanguageCustom.addEventListener('input', function () {
+        if (outputLanguageInput && outputLanguageInput.value === 'other' && outputLanguageLabel) {
+          outputLanguageLabel.textContent = getLanguageLabel('other', outputLanguageCustom.value);
+        }
+      });
+    }
+
+    document.addEventListener('click', function (event) {
+      var picker = document.getElementById('output-language-picker');
+      if (!picker || !picker.contains(event.target)) {
+        setOutputLanguageMenuVisible(false);
+      }
+    });
+
+    if (refreshStatusBtn) {
+      refreshStatusBtn.addEventListener('click', function () {
+        refreshBatchStatus();
+      });
+    }
+
     if (downloadZipBtn) {
-      downloadZipBtn.addEventListener('click', () => {
+      downloadZipBtn.addEventListener('click', function () {
         if (!currentBatchId) return;
-        window.open(`/api/batch/jobs/${encodeURIComponent(currentBatchId)}/download.zip`, '_blank');
+        window.open('/api/batch/jobs/' + encodeURIComponent(currentBatchId) + '/download.zip', '_blank');
       });
     }
   }
 
   function boot() {
+    setOutputLanguage((outputLanguageInput && outputLanguageInput.value) || 'english');
+    setStudyFeature((studyFeaturesInput && studyFeaturesInput.value) || 'both');
+    setAmountSelection('flashcards', (flashcardInput && flashcardInput.value) || '20');
+    setAmountSelection('questions', (questionInput && questionInput.value) || '10');
+
     updateTopControls();
     ensureMinimumRows();
     wireEvents();
 
     if (auth) {
-      auth.onAuthStateChanged((user) => {
+      auth.onAuthStateChanged(function (user) {
         if (!user) {
           currentBatchId = '';
           if (pollTimer) {

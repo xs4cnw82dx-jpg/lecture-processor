@@ -140,6 +140,57 @@ select {
   transform: rotate(180deg);
 }
 
+.app-shell-subgroup {
+  margin: 2px 4px 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  overflow: hidden;
+}
+
+.app-shell-subgroup summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #d7e1f4;
+  font-size: 0.88rem;
+  font-weight: 600;
+  border-radius: 8px;
+  transition: background-color var(--motion-fast, 140ms) var(--motion-ease, ease), color var(--motion-fast, 140ms) var(--motion-ease, ease);
+}
+
+.app-shell-subgroup summary::-webkit-details-marker { display: none; }
+
+.app-shell-subgroup-label {
+  line-height: 1.2;
+}
+
+.app-shell-subgroup-chevron {
+  width: 14px;
+  height: 14px;
+  opacity: 0.9;
+  transition: transform var(--motion-fast, 140ms) var(--motion-ease, ease);
+}
+
+.app-shell-subgroup[open] .app-shell-subgroup-chevron {
+  transform: rotate(180deg);
+}
+
+.app-shell-subgroup summary:hover,
+.app-shell-subgroup summary.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.app-shell-link.sub.nested {
+  padding-left: 34px;
+  font-size: 0.84rem;
+}
+
 .app-shell-main {
   min-width: 0;
   display: flex;

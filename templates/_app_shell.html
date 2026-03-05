@@ -20,11 +20,19 @@
           </svg>
         </summary>
         <a href="/lecture-notes" class="app-shell-link sub">Lecture Notes</a>
-        <a href="/batch_mode" class="app-shell-link sub">Batch Mode</a>
+        <details class="app-shell-subgroup" id="shell-batch-group">
+          <summary aria-expanded="false">
+            <span class="app-shell-subgroup-label">Batch Mode</span>
+            <svg class="app-shell-subgroup-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <polyline points="6 8 10 12 14 8"></polyline>
+            </svg>
+          </summary>
+          <a href="/batch_mode" class="app-shell-link sub nested">Batch Lectures</a>
+          <a href="/batch_mode_slides_extraction" class="app-shell-link sub nested">Batch Slides</a>
+          <a href="/batch_mode_interview_transcription" class="app-shell-link sub nested">Batch Interview</a>
+        </details>
         <a href="/slides-extraction" class="app-shell-link sub">Slides Extraction</a>
-        <a href="/batch_mode_slides_extraction" class="app-shell-link sub">Batch Slides</a>
         <a href="/interview-transcription" class="app-shell-link sub">Interview Transcription</a>
-        <a href="/batch_mode_interview_transcription" class="app-shell-link sub">Batch Interview</a>
         <a href="/document-reader" class="app-shell-link sub">Document Reader</a>
         <a href="/image-reader" class="app-shell-link sub">Image Reader</a>
         <a href="/url-reader" class="app-shell-link sub">URL Reader</a>
@@ -52,9 +60,9 @@
         <a href="/buy_credits" class="app-shell-credits" id="shell-credits-link" aria-label="Buy credits">
           <span class="app-shell-credits-total" id="shell-credits-total">&mdash; credits</span>
           <span class="app-shell-credits-tooltip" id="shell-credits-tooltip" role="tooltip">
-            <span class="credit-tip-row"><span>Lecture</span><strong id="shell-credit-lecture">&mdash;</strong></span>
+            <span class="credit-tip-row"><span>Lectures</span><strong id="shell-credit-lecture">&mdash;</strong></span>
             <span class="credit-tip-row"><span>Text extraction</span><strong id="shell-credit-text">&mdash;</strong></span>
-            <span class="credit-tip-row"><span>Interview</span><strong id="shell-credit-interview">&mdash;</strong></span>
+            <span class="credit-tip-row"><span>Interviews</span><strong id="shell-credit-interview">&mdash;</strong></span>
             <span class="credit-tip-row total"><span>Total</span><strong id="shell-credit-total">&mdash;</strong></span>
           </span>
         </a>

@@ -12,8 +12,14 @@
   var goalFillEl = document.getElementById('dash-goal-fill');
   var sessionsList = document.getElementById('dash-sessions-list');
   var packsList = document.getElementById('dash-packs-list');
+  var dashboardPage = document.getElementById('dashboard-page');
   var DASHBOARD_CACHE_GLOBAL_KEY = 'dashboard_summary:last';
   var DASHBOARD_CACHE_USER_PREFIX = 'dashboard_summary:user:';
+
+  function setDashboardLoading(isLoading) {
+    if (!dashboardPage) return;
+    dashboardPage.setAttribute('data-load-state', isLoading ? 'loading' : 'ready');
+  }
 
   function localDateString(value) {
     var date = value ? new Date(value) : new Date();
@@ -100,13 +106,8 @@
     }
   }
 
-  function renderUpcomingSessions(user) {
-    if (!sessionsList) return;
-    while (sessionsList.firstChild) sessionsList.removeChild(sessionsList.firstChild);
-    if (!user) {
-      sessionsList.innerHTML = '<div class="list-empty">Sign in to view upcoming sessions.</div>';
-      return;
-    }
+  function readUpcomingSessions(user) {
+    if (!user) return [];
     var key = 'study_sessions_' + user.uid;
     var sessions = [];
     try {
@@ -116,9 +117,19 @@
       sessions = [];
     }
     var today = localDateString();
-    var future = sortSessions(sessions).filter(function (session) {
+    return sortSessions(sessions).filter(function (session) {
       return String(session.date || '') >= today;
     }).slice(0, 4);
+  }
+
+  function renderUpcomingSessions(user, sessions) {
+    if (!sessionsList) return;
+    while (sessionsList.firstChild) sessionsList.removeChild(sessionsList.firstChild);
+    if (!user) {
+      sessionsList.innerHTML = '<div class="list-empty">Sign in to view upcoming sessions.</div>';
+      return;
+    }
+    var future = Array.isArray(sessions) ? sessions : [];
     if (!future.length) {
       sessionsList.innerHTML = '<div class="list-empty">No study sessions planned yet.</div>';
       return;
@@ -161,14 +172,15 @@
   }
 
   async function loadDashboard(user) {
+    setDashboardLoading(true);
     if (!user) {
       applySnapshot(null);
-      renderUpcomingSessions(null);
+      renderUpcomingSessions(null, []);
       renderRecentPacks([]);
+      setDashboardLoading(false);
       return;
     }
-    hydrateCachedSnapshot(user);
-    renderUpcomingSessions(user);
+    var sessions = readUpcomingSessions(user);
     try {
       var token = await user.getIdToken();
       var headers = { Authorization: 'Bearer ' + token };
@@ -176,13 +188,16 @@
         fetch('/api/study-progress', { headers: headers }),
         fetch('/api/study-packs', { headers: headers })
       ]);
+      var snapshot = null;
       if (result[0].ok) {
         var progressPayload = await result[0].json();
         var summary = progressPayload && progressPayload.summary ? progressPayload.summary : {};
-        var snapshot = toSnapshot(summary);
-        applySnapshot(snapshot);
+        snapshot = toSnapshot(summary);
         persistSnapshot(user, snapshot);
       }
+      if (snapshot) applySnapshot(snapshot);
+      else hydrateCachedSnapshot(user);
+      renderUpcomingSessions(user, sessions);
       if (result[1].ok) {
         var packsPayload = await result[1].json();
         renderRecentPacks((packsPayload && packsPayload.study_packs) || []);
@@ -190,7 +205,11 @@
         renderRecentPacks([]);
       }
     } catch (_) {
+      hydrateCachedSnapshot(user);
+      renderUpcomingSessions(user, sessions);
       renderRecentPacks([]);
+    } finally {
+      setDashboardLoading(false);
     }
   }
 
@@ -198,5 +217,5 @@
     loadDashboard(user || null);
   });
 
-  hydrateCachedSnapshot(null);
+  setDashboardLoading(true);
 })();

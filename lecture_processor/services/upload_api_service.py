@@ -537,22 +537,11 @@ def create_batch_job(app_ctx, request):
         runtime=app_ctx,
     )
 
-    folder_id = str(request.form.get('folder_id', '') or '').strip()
-    folder_name = ''
-    if folder_id and app_ctx.db is not None:
-        folder_doc = app_ctx.study_repo.get_study_folder_doc(app_ctx.db, folder_id)
-        if not folder_doc.exists:
-            return app_ctx.jsonify({'error': 'Selected folder not found'}), 404
-        folder_data = folder_doc.to_dict() or {}
-        if folder_data.get('uid', '') != uid:
-            return app_ctx.jsonify({'error': 'Forbidden folder'}), 403
-        folder_name = folder_data.get('name', '')
-
     batch_id = str(app_ctx.uuid.uuid4())
     prepared_rows = []
     cleanup_paths = []
-    consumed_audio_tokens = []
     charged_rows = []
+    created_folder_ref = None
     now_ts = app_ctx.time.time()
 
     try:
@@ -689,7 +678,6 @@ def create_batch_job(app_ctx, request):
                 )
                 if token_error:
                     raise ValueError(f'Row {idx}: {token_error}')
-                consumed_audio_tokens.append(audio_import_token)
 
             billing_receipt = billing_receipts.initialize_billing_receipt(
                 {charged_credit: 1, 'slides_credits': interview_features_cost},
@@ -726,6 +714,24 @@ def create_batch_job(app_ctx, request):
             )
 
         batch_title = _sanitize_study_pack_title(request.form.get('batch_title', '')) or f'Batch {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")}'
+        folder_name = batch_title
+        folder_id = ''
+        if app_ctx.db is not None:
+            created_folder_ref = app_ctx.study_repo.create_study_folder_doc_ref(app_ctx.db)
+            created_folder_ref.set({
+                'folder_id': created_folder_ref.id,
+                'uid': uid,
+                'name': folder_name,
+                'course': '',
+                'subject': '',
+                'semester': '',
+                'block': '',
+                'exam_date': '',
+                'created_at': now_ts,
+                'updated_at': now_ts,
+            })
+            folder_id = created_folder_ref.id
+
         batch_payload = {
             'batch_id': batch_id,
             'uid': uid,
@@ -765,6 +771,11 @@ def create_batch_job(app_ctx, request):
         thread.start()
         return app_ctx.jsonify({'batch_id': batch_id})
     except Exception as error:
+        if created_folder_ref is not None:
+            try:
+                created_folder_ref.delete()
+            except Exception:
+                pass
         for charged in charged_rows:
             credit_type = str(charged.get('credit_type', '') or '').strip()
             if credit_type:

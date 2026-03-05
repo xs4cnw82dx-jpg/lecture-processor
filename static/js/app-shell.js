@@ -29,6 +29,8 @@
   var signOutBtn = document.getElementById('signout-btn');
   var toolsGroup = document.getElementById('shell-tools-group');
   var toolsGroupSummary = toolsGroup ? toolsGroup.querySelector('summary') : null;
+  var batchGroup = document.getElementById('shell-batch-group');
+  var batchGroupSummary = batchGroup ? batchGroup.querySelector('summary') : null;
   var exportOverlay = document.getElementById('shell-export-overlay');
   var exportCloseBtn = document.getElementById('shell-export-close');
   var exportCancelBtn = document.getElementById('shell-export-cancel');
@@ -37,7 +39,8 @@
   var shellToast = document.getElementById('shell-toast');
   var CACHE_KEYS = {
     credits: 'credits_breakdown',
-    toolsExpanded: 'tools_group_expanded'
+    toolsExpanded: 'tools_group_expanded',
+    batchExpanded: 'batch_group_expanded'
   };
 
   var currentUserIsAdmin = false;
@@ -125,20 +128,30 @@
     toolsGroupSummary.setAttribute('aria-expanded', toolsGroup.open ? 'true' : 'false');
   }
 
+  function syncBatchGroupAria() {
+    if (!batchGroup || !batchGroupSummary) return;
+    batchGroupSummary.setAttribute('aria-expanded', batchGroup.open ? 'true' : 'false');
+  }
+
   function markActiveNav() {
     var currentPath = normalizePath(window.location.pathname || '/');
     var navLinks = Array.prototype.slice.call(document.querySelectorAll('.app-shell-link[href]'));
     var hasActiveChild = false;
+    var hasActiveBatchChild = false;
 
     navLinks.forEach(function (link) {
       var href = normalizePath(link.getAttribute('href') || '/');
       var active = href === currentPath || (href === '/plan' && currentPath === '/stats');
       link.classList.toggle('active', !!active);
       if (active && link.classList.contains('sub')) hasActiveChild = true;
+      if (active && link.classList.contains('nested')) hasActiveBatchChild = true;
     });
 
     hydrateToolsGroupState(hasActiveChild);
+    hydrateBatchGroupState(hasActiveBatchChild);
     syncToolsGroupAria();
+    syncBatchGroupAria();
+    if (batchGroupSummary) batchGroupSummary.classList.toggle('active', hasActiveBatchChild);
   }
 
   function hydrateToolsGroupState(hasActiveChild) {
@@ -154,6 +167,22 @@
     }
     if (hasActiveChild) {
       toolsGroup.open = true;
+    }
+  }
+
+  function hydrateBatchGroupState(hasActiveChild) {
+    if (!batchGroup) return;
+    var stored = readCacheString(CACHE_KEYS.batchExpanded, '');
+    if (stored === '1') {
+      batchGroup.open = true;
+      return;
+    }
+    if (stored === '0') {
+      batchGroup.open = false;
+      return;
+    }
+    if (hasActiveChild) {
+      batchGroup.open = true;
     }
   }
 
@@ -356,6 +385,13 @@
     toolsGroup.addEventListener('toggle', function () {
       syncToolsGroupAria();
       writeCacheString(CACHE_KEYS.toolsExpanded, toolsGroup.open ? '1' : '0');
+    });
+  }
+
+  if (batchGroup) {
+    batchGroup.addEventListener('toggle', function () {
+      syncBatchGroupAria();
+      writeCacheString(CACHE_KEYS.batchExpanded, batchGroup.open ? '1' : '0');
     });
   }
 
