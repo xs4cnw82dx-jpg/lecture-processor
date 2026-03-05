@@ -368,6 +368,23 @@ def get_public_base_url():
 
 PUBLIC_BASE_URL = get_public_base_url()
 
+
+def _env_truthy(name, default='0'):
+    return str(os.getenv(name, default) or default).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+BATCH_EMAIL_NOTIFICATIONS_ENABLED = _env_truthy('BATCH_EMAIL_NOTIFICATIONS_ENABLED', '1')
+SMTP_HOST = (os.getenv('SMTP_HOST', '') or '').strip()
+SMTP_PORT = safe_int_env('SMTP_PORT', 587, minimum=1, maximum=65535)
+SMTP_USERNAME = (os.getenv('SMTP_USERNAME', '') or '').strip()
+SMTP_PASSWORD = (os.getenv('SMTP_PASSWORD', '') or '').strip()
+SMTP_USE_TLS = _env_truthy('SMTP_USE_TLS', '1')
+SMTP_USE_SSL = _env_truthy('SMTP_USE_SSL', '0')
+SMTP_FROM_EMAIL = (os.getenv('SMTP_FROM_EMAIL', '') or '').strip()
+SMTP_FROM_NAME = (os.getenv('SMTP_FROM_NAME', 'Lecture Processor') or 'Lecture Processor').strip()
+SMTP_REPLY_TO = (os.getenv('SMTP_REPLY_TO', '') or '').strip()
+SMTP_TIMEOUT_SECONDS = safe_int_env('SMTP_TIMEOUT_SECONDS', 12, minimum=1, maximum=120)
+
 def should_use_minified_js_assets():
     raw = str(os.getenv('USE_MINIFIED_JS_ASSETS', '') or '').strip().lower()
     return raw in {'1', 'true', 'yes', 'on'}
