@@ -1252,13 +1252,13 @@ function updateUIForAuthState(user) {
         progressMenu.style.display = 'none';
         userMenu.style.display = 'none';
         signInRequired.classList.add('visible');
-        uploadSection.style.display = 'none';
-        uploadEstimate.style.display = 'none';
-        buttonSection.style.display = 'none';
+        uploadSection.style.display = 'grid';
+        uploadEstimate.style.display = '';
+        buttonSection.style.display = 'block';
         generationControls.classList.add('hidden');
-        generationControls.style.display = 'none';
+        generationControls.style.display = '';
         interviewControls.classList.add('hidden');
-        languageControls.style.display = 'none';
+        languageControls.style.display = 'grid';
         setAdvancedSettingsVisible(false);
         releaseImportedAudioToken({ clearStatus: true });
         currentUser = null;
@@ -1280,6 +1280,7 @@ function updateUIForAuthState(user) {
         adminDashboardBtn.style.display = 'none';
         updateInterviewOptionAvailability();
         updateModeCostSummary();
+        if (processButton) processButton.disabled = true;
         setQuickstartVisible(false);
     }
 }

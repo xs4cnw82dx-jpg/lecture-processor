@@ -6,6 +6,7 @@ const markdownUtils = window.LectureProcessorMarkdown || {};
 const uxUtils = window.LectureProcessorUx || {};
 const downloadUtils = window.LectureProcessorDownload || {};
 const topbarUtils = window.LectureProcessorTopbar || {};
+const uiCache = window.LectureProcessorUiCache || null;
 
 /* ── State ── */
 let token = null, folders = [], packs = [], selectedFolderId = '', selectedPackId = '', selectedPack = null;
@@ -583,7 +584,8 @@ function updateTopbarDueCount() {
   } else if (selectedPackId) {
     totalDue = countDueCardsInState(loadCardState());
   }
-  topbarDueText.textContent = totalDue + ' due today';
+  setTopbarDueTextValue(totalDue);
+  persistTopbarDueToCache(auth.currentUser, totalDue);
 }
 
 /* ── Match high scores (localStorage) ── */
@@ -759,9 +761,61 @@ var audioPlayerBar = document.getElementById('audio-player-bar'), audioPlayerEl 
 var audioBlobUrl = '';
 var difficultyToolbar = document.getElementById('difficulty-toolbar'), difficultyButtons = document.querySelectorAll('.difficulty-btn[data-review-action]');
 var keyboardHints = document.querySelector('.keyboard-hints');
+var STUDY_DUE_CACHE_GLOBAL_KEY = 'study_due_today:last';
+var STUDY_DUE_CACHE_USER_PREFIX = 'study_due_today:user:';
 
 /* ── Helpers ── */
 function showToast(msg, type) { toastEl.textContent = msg; toastEl.className = 'toast visible ' + (type || 'success'); setTimeout(function () { toastEl.classList.remove('visible'); }, 2800); }
+function readUiCacheJson(key, fallbackValue) {
+  if (uiCache && typeof uiCache.getJson === 'function') {
+    return uiCache.getJson(key, fallbackValue);
+  }
+  try {
+    var raw = localStorage.getItem('lp_ui_v2:' + key);
+    return raw ? JSON.parse(raw) : fallbackValue;
+  } catch (e) {
+    return fallbackValue;
+  }
+}
+function writeUiCacheJson(key, value) {
+  if (uiCache && typeof uiCache.setJson === 'function') {
+    return uiCache.setJson(key, value);
+  }
+  try {
+    localStorage.setItem('lp_ui_v2:' + key, JSON.stringify(value));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+function getStudyDueCacheKey(user) {
+  return STUDY_DUE_CACHE_USER_PREFIX + String((user && user.uid) || 'anon');
+}
+function setTopbarDueTextValue(countValue) {
+  if (!topbarDueText) return;
+  if (countValue === null || countValue === undefined || countValue === '') {
+    topbarDueText.textContent = '\u2014 due today';
+    return;
+  }
+  var total = Math.max(0, Number(countValue || 0));
+  topbarDueText.textContent = total + ' due today';
+}
+function hydrateTopbarDueFromCache(user) {
+  var cached = readUiCacheJson(getStudyDueCacheKey(user), null);
+  if (!cached || typeof cached !== 'object') {
+    cached = readUiCacheJson(STUDY_DUE_CACHE_GLOBAL_KEY, null);
+  }
+  if (!cached || typeof cached !== 'object' || !Object.prototype.hasOwnProperty.call(cached, 'count')) {
+    setTopbarDueTextValue(null);
+    return;
+  }
+  setTopbarDueTextValue(cached.count);
+}
+function persistTopbarDueToCache(user, countValue) {
+  var payload = { count: Math.max(0, Number(countValue || 0)), updated_at: Date.now() };
+  writeUiCacheJson(STUDY_DUE_CACHE_GLOBAL_KEY, payload);
+  writeUiCacheJson(getStudyDueCacheKey(user), payload);
+}
 function getVisibleMenuItems(menu, selector) {
   if (uxUtils.getVisibleMenuItems) { return uxUtils.getVisibleMenuItems(menu, selector || 'button:not([disabled])'); }
   if (!menu) return [];
@@ -2962,6 +3016,7 @@ function queueInlineAutosave() {
 }
 
 /* ── Auth ── */
+hydrateTopbarDueFromCache(auth.currentUser || null);
 auth.onAuthStateChanged(function (user) {
   if (!user) {
     token = null;
@@ -2987,7 +3042,7 @@ auth.onAuthStateChanged(function (user) {
     } else if (userMeta) {
       userMeta.textContent = 'Not signed in';
     }
-    if (topbarDueText) topbarDueText.textContent = '0 due today';
+    hydrateTopbarDueFromCache(null);
     return;
   }
   user.getIdToken().then(function (t) {
@@ -3002,6 +3057,7 @@ auth.onAuthStateChanged(function (user) {
     } else if (userMeta) {
       userMeta.textContent = 'Signed in as ' + user.email;
     }
+    hydrateTopbarDueFromCache(user);
     return loadRemoteProgress().then(function () {
       return loadData();
     }).then(function () {

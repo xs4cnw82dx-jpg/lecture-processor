@@ -5,6 +5,7 @@
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
   var authUtils = window.LectureProcessorAuth || {};
   var authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
+  var uiCache = window.LectureProcessorUiCache || null;
   var config = window.ReaderConfig || {};
   var sourceType = String(config.source || 'document');
 
@@ -36,6 +37,7 @@
   var lastOutput = '';
   var slidesCredits = null;
   var toastTimer = null;
+  var CREDITS_CACHE_KEY = 'credits_breakdown';
 
   function showReaderToast(message, type) {
     if (!readerToast || !message) return;
@@ -54,10 +56,45 @@
 
   function updateCreditNote() {
     if (slidesCredits === null || slidesCredits === undefined) {
-      creditNote.textContent = 'Text extraction credits: -';
+      creditNote.textContent = 'Text extraction credits: \u2014';
       return;
     }
     creditNote.textContent = 'Text extraction credits: ' + String(slidesCredits);
+  }
+
+  function readCacheJson(key, fallbackValue) {
+    if (uiCache && typeof uiCache.getJson === 'function') {
+      return uiCache.getJson(key, fallbackValue);
+    }
+    try {
+      var raw = window.localStorage.getItem('lp_ui_v2:' + key);
+      return raw ? JSON.parse(raw) : fallbackValue;
+    } catch (_) {
+      return fallbackValue;
+    }
+  }
+
+  function writeCacheJson(key, value) {
+    if (uiCache && typeof uiCache.setJson === 'function') {
+      return uiCache.setJson(key, value);
+    }
+    try {
+      window.localStorage.setItem('lp_ui_v2:' + key, JSON.stringify(value));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function hydrateCachedCredits() {
+    var cached = readCacheJson(CREDITS_CACHE_KEY, null);
+    if (!cached || typeof cached !== 'object') {
+      slidesCredits = null;
+      updateCreditNote();
+      return;
+    }
+    slidesCredits = Number(cached.textExtraction || 0);
+    updateCreditNote();
   }
 
   function getQuestionDefault() {
@@ -210,8 +247,7 @@
 
   async function refreshCredits() {
     if (!currentUser) {
-      slidesCredits = null;
-      updateCreditNote();
+      hydrateCachedCredits();
       return;
     }
     try {
@@ -219,10 +255,19 @@
       if (!response.ok) return;
       var payload = await response.json();
       slidesCredits = payload && payload.credits ? Number(payload.credits.slides || 0) : 0;
+      if (payload && payload.credits) {
+        var lecture = Number(payload.credits.lecture_standard || 0) + Number(payload.credits.lecture_extended || 0);
+        var interview = Number(payload.credits.interview_short || 0) + Number(payload.credits.interview_medium || 0) + Number(payload.credits.interview_long || 0);
+        writeCacheJson(CREDITS_CACHE_KEY, {
+          lecture: lecture,
+          textExtraction: slidesCredits,
+          interview: interview,
+          total: lecture + slidesCredits + interview
+        });
+      }
       updateCreditNote();
     } catch (_) {
-      slidesCredits = null;
-      updateCreditNote();
+      hydrateCachedCredits();
     }
   }
 
@@ -369,6 +414,7 @@
   }
 
   setupModeUI();
+  hydrateCachedCredits();
   auth.onAuthStateChanged(function (user) {
     currentUser = user || null;
     if (authClient && typeof authClient.clearToken === 'function' && !currentUser) authClient.clearToken();

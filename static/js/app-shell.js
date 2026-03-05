@@ -3,6 +3,7 @@
 
   var bootstrap = window.LectureProcessorBootstrap || {};
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
+  var uiCache = window.LectureProcessorUiCache || null;
   if (!auth) return;
 
   var shell = document.getElementById('app-shell');
@@ -34,10 +35,9 @@
   var exportConfirmBtn = document.getElementById('shell-export-confirm');
   var exportCheckboxes = Array.prototype.slice.call(document.querySelectorAll('[data-export-key]'));
   var shellToast = document.getElementById('shell-toast');
-
-  var CREDIT_PATHS = {
-    '/dashboard': true,
-    '/buy_credits': true
+  var CACHE_KEYS = {
+    credits: 'credits_breakdown',
+    toolsExpanded: 'tools_group_expanded'
   };
 
   var currentUserIsAdmin = false;
@@ -46,6 +46,54 @@
   function normalizePath(pathname) {
     var normalized = String(pathname || '/').replace(/\/+$/, '');
     return normalized || '/';
+  }
+
+  function readCacheJson(key, fallbackValue) {
+    if (uiCache && typeof uiCache.getJson === 'function') {
+      return uiCache.getJson(key, fallbackValue);
+    }
+    try {
+      var raw = window.localStorage.getItem('lp_ui_v2:' + key);
+      return raw ? JSON.parse(raw) : fallbackValue;
+    } catch (_) {
+      return fallbackValue;
+    }
+  }
+
+  function writeCacheJson(key, value) {
+    if (uiCache && typeof uiCache.setJson === 'function') {
+      return uiCache.setJson(key, value);
+    }
+    try {
+      window.localStorage.setItem('lp_ui_v2:' + key, JSON.stringify(value));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function readCacheString(key, fallbackValue) {
+    if (uiCache && typeof uiCache.getString === 'function') {
+      return uiCache.getString(key, fallbackValue);
+    }
+    try {
+      var raw = window.localStorage.getItem('lp_ui_v2:' + key);
+      return raw === null ? fallbackValue : raw;
+    } catch (_) {
+      return fallbackValue;
+    }
+  }
+
+  function writeCacheString(key, value) {
+    if (uiCache && typeof uiCache.setString === 'function') {
+      return uiCache.setString(key, value);
+    }
+    try {
+      window.localStorage.setItem('lp_ui_v2:' + key, String(value));
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   function showToast(message, variant) {
@@ -80,32 +128,33 @@
   function markActiveNav() {
     var currentPath = normalizePath(window.location.pathname || '/');
     var navLinks = Array.prototype.slice.call(document.querySelectorAll('.app-shell-link[href]'));
+    var hasActiveChild = false;
 
     navLinks.forEach(function (link) {
       var href = normalizePath(link.getAttribute('href') || '/');
       var active = href === currentPath || (href === '/plan' && currentPath === '/stats');
       link.classList.toggle('active', !!active);
+      if (active && link.classList.contains('sub')) hasActiveChild = true;
     });
 
-    if (toolsGroup) {
-      var hasActiveChild = navLinks.some(function (link) {
-        return link.classList.contains('sub') && link.classList.contains('active');
-      });
-      if (hasActiveChild) toolsGroup.open = true;
-    }
+    hydrateToolsGroupState(hasActiveChild);
     syncToolsGroupAria();
   }
 
-  function shouldShowCreditsPill() {
-    return !!CREDIT_PATHS[normalizePath(window.location.pathname || '/')];
-  }
-
-  function applyCreditsVisibility() {
-    if (!creditsLink) return;
-    var visible = shouldShowCreditsPill();
-    creditsLink.classList.toggle('hidden', !visible);
-    creditsLink.setAttribute('aria-hidden', visible ? 'false' : 'true');
-    if (!visible) creditsLink.classList.remove('is-open');
+  function hydrateToolsGroupState(hasActiveChild) {
+    if (!toolsGroup) return;
+    var stored = readCacheString(CACHE_KEYS.toolsExpanded, '');
+    if (stored === '1') {
+      toolsGroup.open = true;
+      return;
+    }
+    if (stored === '0') {
+      toolsGroup.open = false;
+      return;
+    }
+    if (hasActiveChild) {
+      toolsGroup.open = true;
+    }
   }
 
   function parseCreditBreakdown(payload) {
@@ -123,7 +172,20 @@
 
   function applyCreditBreakdown(breakdown) {
     if (!creditsTotalLabel) return;
-    var next = breakdown || { lecture: 0, textExtraction: 0, interview: 0, total: 0 };
+    if (!breakdown) {
+      creditsTotalLabel.textContent = '\u2014 credits';
+      if (creditsLectureValue) creditsLectureValue.textContent = '\u2014';
+      if (creditsTextValue) creditsTextValue.textContent = '\u2014';
+      if (creditsInterviewValue) creditsInterviewValue.textContent = '\u2014';
+      if (creditsTotalValue) creditsTotalValue.textContent = '\u2014';
+      return;
+    }
+    var next = {
+      lecture: Number(breakdown.lecture || 0),
+      textExtraction: Number(breakdown.textExtraction || 0),
+      interview: Number(breakdown.interview || 0),
+      total: Number(breakdown.total || 0)
+    };
     creditsTotalLabel.textContent = next.total + ' credits';
     if (creditsLectureValue) creditsLectureValue.textContent = String(next.lecture);
     if (creditsTextValue) creditsTextValue.textContent = String(next.textExtraction);
@@ -170,6 +232,7 @@
       var breakdown = parseCreditBreakdown(payload);
       currentUserIsAdmin = !!payload.is_admin;
       applyCreditBreakdown(breakdown);
+      writeCacheJson(CACHE_KEYS.credits, breakdown);
       if (adminBtn) adminBtn.style.display = currentUserIsAdmin ? '' : 'none';
     } catch (_) {}
   }
@@ -177,8 +240,7 @@
   function applySignedOutState() {
     currentUserIsAdmin = false;
     if (adminBtn) adminBtn.style.display = 'none';
-    applyCreditBreakdown(null);
-    if (creditsTotalLabel) creditsTotalLabel.textContent = 'Buy credits';
+    if (creditsLink) creditsLink.classList.remove('is-open');
     if (userEmail) userEmail.textContent = 'Not signed in';
     if (userName) userName.textContent = 'Account';
     if (userInitial) userInitial.textContent = '?';
@@ -186,8 +248,8 @@
 
   function applyAuth(user) {
     var signedIn = !!user;
-    if (signInBtn) signInBtn.style.display = signedIn ? 'none' : '';
-    if (accountWrap) accountWrap.style.display = signedIn ? '' : 'none';
+    if (signInBtn) signInBtn.hidden = signedIn;
+    if (accountWrap) accountWrap.hidden = !signedIn;
     if (!signedIn) {
       applySignedOutState();
       return;
@@ -223,6 +285,28 @@
 
   function hasAnySelection(include) {
     return Object.keys(include).some(function (key) { return !!include[key]; });
+  }
+
+  function setupRoutePrefetch() {
+    var links = Array.prototype.slice.call(document.querySelectorAll('.app-shell-link[href]'));
+    var prefetched = Object.create(null);
+    links.forEach(function (link) {
+      var href = String(link.getAttribute('href') || '').trim();
+      if (!href || href.charAt(0) !== '/' || prefetched[href]) return;
+      var triggerPrefetch = function () {
+        if (prefetched[href]) return;
+        prefetched[href] = true;
+        try {
+          var prefetch = document.createElement('link');
+          prefetch.rel = 'prefetch';
+          prefetch.href = href;
+          prefetch.as = 'document';
+          document.head.appendChild(prefetch);
+        } catch (_) {}
+      };
+      link.addEventListener('mouseenter', triggerPrefetch, { once: true });
+      link.addEventListener('focus', triggerPrefetch, { once: true });
+    });
   }
 
   async function runBundleExport() {
@@ -269,7 +353,10 @@
   }
 
   if (toolsGroup) {
-    toolsGroup.addEventListener('toggle', syncToolsGroupAria);
+    toolsGroup.addEventListener('toggle', function () {
+      syncToolsGroupAria();
+      writeCacheString(CACHE_KEYS.toolsExpanded, toolsGroup.open ? '1' : '0');
+    });
   }
 
   if (menuBtn) {
@@ -301,7 +388,6 @@
 
   if (creditsLink && creditsTooltip) {
     creditsLink.addEventListener('click', function (event) {
-      if (creditsLink.classList.contains('hidden')) return;
       if (!creditsLink.classList.contains('is-open')) {
         event.preventDefault();
         creditsLink.classList.add('is-open');
@@ -408,6 +494,8 @@
     applyAuth(user || null);
   });
 
-  applyCreditsVisibility();
+  var cachedBreakdown = readCacheJson(CACHE_KEYS.credits, null);
+  applyCreditBreakdown(cachedBreakdown);
   markActiveNav();
+  setupRoutePrefetch();
 })();

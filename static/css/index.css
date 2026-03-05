@@ -567,17 +567,6 @@
         .feature-icon svg { width: 24px; height: 24px; }
         .feature-title { font-size: 1rem; font-weight: 600; color: var(--gray-900); margin-bottom: 8px; }
         .feature-description { font-size: 0.875rem; color: var(--gray-500); }
-        .slides-value-note {
-            margin: 0 0 22px;
-            padding: 12px 14px;
-            border: 1px solid rgba(79,70,229,0.2);
-            border-radius: var(--radius);
-            background: linear-gradient(135deg, rgba(79,70,229,0.08) 0%, rgba(14,165,233,0.08) 100%);
-            color: var(--gray-700);
-            font-size: 0.9rem;
-            text-align: center;
-            font-weight: 600;
-        }
         .app-card { background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius-xl); padding: 32px; box-shadow: var(--shadow-lg); margin-bottom: 40px; }
         .mode-section { margin-bottom: 32px; }
         .mode-label { display: block; font-size: 0.75rem; font-weight: 600; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
@@ -897,10 +886,6 @@
             background-size: 200% 100%;
             animation: shimmer 1.2s ease-in-out infinite;
         }
-        .footer { padding: 32px 0; text-align: center; }
-        .footer-text { font-size: 0.8125rem; color: var(--gray-500); }
-        .footer-text a { color: var(--gray-600); text-decoration: none; font-weight: 600; }
-        .footer-text a:hover { color: var(--primary); text-decoration: underline; }
         .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(100px); background: var(--gray-900); color: var(--white); padding: 14px 24px; border-radius: var(--radius-md); font-size: 0.9375rem; font-weight: 500; box-shadow: var(--shadow-xl); opacity: 0; transition: all 0.3s ease; z-index: 1000; display: flex; align-items: center; gap: 10px; }
         .toast.visible { transform: translateX(-50%) translateY(0); opacity: 1; }
         .toast.success { background: var(--success); }

@@ -3,6 +3,7 @@
 
   var bootstrap = window.LectureProcessorBootstrap || {};
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
+  var uiCache = window.LectureProcessorUiCache || null;
   if (!auth) return;
 
   var streakEl = document.getElementById('dash-streak');
@@ -11,6 +12,8 @@
   var goalFillEl = document.getElementById('dash-goal-fill');
   var sessionsList = document.getElementById('dash-sessions-list');
   var packsList = document.getElementById('dash-packs-list');
+  var DASHBOARD_CACHE_GLOBAL_KEY = 'dashboard_summary:last';
+  var DASHBOARD_CACHE_USER_PREFIX = 'dashboard_summary:user:';
 
   function localDateString(value) {
     var date = value ? new Date(value) : new Date();
@@ -26,6 +29,75 @@
       var right = new Date(String(b.date || '') + 'T' + String(b.time || '00:00') + ':00').getTime();
       return left - right;
     });
+  }
+
+  function readCacheJson(key, fallbackValue) {
+    if (uiCache && typeof uiCache.getJson === 'function') {
+      return uiCache.getJson(key, fallbackValue);
+    }
+    try {
+      var raw = window.localStorage.getItem('lp_ui_v2:' + key);
+      return raw ? JSON.parse(raw) : fallbackValue;
+    } catch (_) {
+      return fallbackValue;
+    }
+  }
+
+  function writeCacheJson(key, value) {
+    if (uiCache && typeof uiCache.setJson === 'function') {
+      return uiCache.setJson(key, value);
+    }
+    try {
+      window.localStorage.setItem('lp_ui_v2:' + key, JSON.stringify(value));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function toSnapshot(summary) {
+    var streak = Math.max(0, Number(summary.current_streak || 0));
+    var due = Math.max(0, Number(summary.due_today || 0));
+    var goal = Math.max(1, Number(summary.daily_goal || 20));
+    var done = Math.max(0, Number(summary.today_progress || 0));
+    return {
+      streak: streak,
+      due: due,
+      goal: goal,
+      done: done,
+    };
+  }
+
+  function applySnapshot(snapshot) {
+    if (!snapshot) {
+      if (streakEl) streakEl.textContent = '\u2014 days';
+      if (dueEl) dueEl.textContent = '\u2014 cards';
+      if (goalEl) goalEl.textContent = '\u2014 / \u2014';
+      if (goalFillEl) goalFillEl.style.width = '0%';
+      return;
+    }
+    var streak = Math.max(0, Number(snapshot.streak || 0));
+    var due = Math.max(0, Number(snapshot.due || 0));
+    var goal = Math.max(1, Number(snapshot.goal || 20));
+    var done = Math.max(0, Number(snapshot.done || 0));
+    if (streakEl) streakEl.textContent = streak + ' day' + (streak === 1 ? '' : 's');
+    if (dueEl) dueEl.textContent = due + ' card' + (due === 1 ? '' : 's');
+    if (goalEl) goalEl.textContent = Math.min(done, goal) + ' / ' + goal;
+    if (goalFillEl) goalFillEl.style.width = String(Math.max(0, Math.min(100, Math.round((Math.min(done, goal) / goal) * 100)))) + '%';
+  }
+
+  function hydrateCachedSnapshot(user) {
+    var fromUser = user && user.uid ? readCacheJson(DASHBOARD_CACHE_USER_PREFIX + user.uid, null) : null;
+    var fromGlobal = readCacheJson(DASHBOARD_CACHE_GLOBAL_KEY, null);
+    applySnapshot(fromUser || fromGlobal || null);
+  }
+
+  function persistSnapshot(user, snapshot) {
+    if (!snapshot) return;
+    writeCacheJson(DASHBOARD_CACHE_GLOBAL_KEY, snapshot);
+    if (user && user.uid) {
+      writeCacheJson(DASHBOARD_CACHE_USER_PREFIX + user.uid, snapshot);
+    }
   }
 
   function renderUpcomingSessions(user) {
@@ -90,14 +162,12 @@
 
   async function loadDashboard(user) {
     if (!user) {
-      if (streakEl) streakEl.textContent = '0 days';
-      if (dueEl) dueEl.textContent = '0 cards';
-      if (goalEl) goalEl.textContent = '0 / 20';
-      if (goalFillEl) goalFillEl.style.width = '0%';
+      applySnapshot(null);
       renderUpcomingSessions(null);
       renderRecentPacks([]);
       return;
     }
+    hydrateCachedSnapshot(user);
     renderUpcomingSessions(user);
     try {
       var token = await user.getIdToken();
@@ -109,14 +179,9 @@
       if (result[0].ok) {
         var progressPayload = await result[0].json();
         var summary = progressPayload && progressPayload.summary ? progressPayload.summary : {};
-        var streak = Number(summary.current_streak || 0);
-        var due = Number(summary.due_today || 0);
-        var goal = Math.max(1, Number(summary.daily_goal || 20));
-        var done = Math.max(0, Number(summary.today_progress || 0));
-        if (streakEl) streakEl.textContent = streak + ' day' + (streak === 1 ? '' : 's');
-        if (dueEl) dueEl.textContent = due + ' card' + (due === 1 ? '' : 's');
-        if (goalEl) goalEl.textContent = Math.min(done, goal) + ' / ' + goal;
-        if (goalFillEl) goalFillEl.style.width = String(Math.max(0, Math.min(100, Math.round((Math.min(done, goal) / goal) * 100)))) + '%';
+        var snapshot = toSnapshot(summary);
+        applySnapshot(snapshot);
+        persistSnapshot(user, snapshot);
       }
       if (result[1].ok) {
         var packsPayload = await result[1].json();
@@ -132,4 +197,6 @@
   auth.onAuthStateChanged(function (user) {
     loadDashboard(user || null);
   });
+
+  hydrateCachedSnapshot(null);
 })();

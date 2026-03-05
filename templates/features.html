@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/features.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
 </head>
 <body>
   <!-- Navigation -->
@@ -335,7 +336,7 @@
 
   <!-- Footer -->
   <footer class="footer">
-    <p>LectureProcessor &middot; AI-powered study material generation &middot; <a href="/features">Features</a> &middot; <a href="/dashboard">Dashboard</a> &middot; <a href="/privacy">Privacy Policy</a> &middot; <a href="/terms">Terms</a></p>
+    <p>LectureProcessor &middot; AI-powered study material generation &middot; <a href="/features">Features</a> &middot; <a href="/dashboard">Dashboard</a> &middot; <a href="/privacy">Privacy Policy</a> &middot; <a href="/terms">Terms</a>{% if legal_contact_email %} &middot; <a href="mailto:{{ legal_contact_email }}">Contact me</a>{% endif %}</p>
   </footer>
 
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" integrity="sha384-4gq9w/AGf72FXdNQ3Kn3EqWP7633NbCMjpYHt8YCZyXf23o2opcuAr4cif41tLrC" crossorigin="anonymous"></script>

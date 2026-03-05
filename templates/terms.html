@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Terms of Service | Lecture Processor</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/legal-pages.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -91,7 +92,7 @@
       <p>We may update these Terms. Continued use after updates means you accept the revised Terms.</p>
 
       <div class="footer">
-        <a href="/privacy">Privacy Policy</a> &middot; <a href="/dashboard">Dashboard</a> &middot; <a href="/features">Features</a>
+        <a href="/privacy">Privacy Policy</a> &middot; <a href="/dashboard">Dashboard</a> &middot; <a href="/features">Features</a>{% if legal_contact_email %} &middot; <a href="mailto:{{ legal_contact_email }}">Contact me</a>{% endif %}
       </div>
     </main>
   </div>
