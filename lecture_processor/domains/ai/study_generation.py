@@ -156,9 +156,18 @@ def generate_study_materials(
     output_language='English',
     retry_tracker=None,
     runtime=None,
+    include_usage=False,
 ):
     resolved_runtime = _resolve_runtime(runtime)
+    empty_usage = {
+        'token_usage_by_stage': {},
+        'token_input_total': 0,
+        'token_output_total': 0,
+        'token_total': 0,
+    }
     if study_features == 'none':
+        if include_usage:
+            return ([], [], None, empty_usage)
         return ([], [], None)
 
     flashcard_amount, question_amount = resolve_study_amounts(
@@ -191,8 +200,24 @@ def generate_study_materials(
             operation_name='study_materials_generation',
             runtime=resolved_runtime,
         )
+        usage = ai_provider.extract_token_usage(response, runtime=resolved_runtime)
+        usage_payload = {
+            'token_usage_by_stage': {
+                'study_materials_generation': {
+                    **usage,
+                    'model': resolved_runtime.MODEL_STUDY,
+                    'billing_mode': 'standard',
+                    'input_modality': 'text',
+                }
+            },
+            'token_input_total': int(usage.get('input_tokens', 0) or 0),
+            'token_output_total': int(usage.get('output_tokens', 0) or 0),
+            'token_total': int(usage.get('total_tokens', 0) or 0),
+        }
         parsed = extract_json_payload(getattr(response, 'text', ''), runtime=resolved_runtime)
         if not isinstance(parsed, dict):
+            if include_usage:
+                return ([], [], 'Study materials JSON parsing failed.', usage_payload)
             return ([], [], 'Study materials JSON parsing failed.')
 
         flashcards = sanitize_flashcards(
@@ -207,15 +232,23 @@ def generate_study_materials(
         )
 
         if not flashcards and (not test_questions) and (study_features != 'none'):
+            if include_usage:
+                return ([], [], 'Study materials were empty after validation.', usage_payload)
             return ([], [], 'Study materials were empty after validation.')
 
         error_msg = None
         if was_truncated:
             error_msg = 'Note: source text was very long and was truncated before study material generation.'
+        if include_usage:
+            return (flashcards, test_questions, error_msg, usage_payload)
         return (flashcards, test_questions, error_msg)
     except (KeyError, ValueError) as error:
+        if include_usage:
+            return ([], [], f'Study prompt template formatting failed: {error}', empty_usage)
         return ([], [], f'Study prompt template formatting failed: {error}')
     except Exception as error:
+        if include_usage:
+            return ([], [], f'Study materials generation failed: {error}', empty_usage)
         return ([], [], f'Study materials generation failed: {error}')
 
 
@@ -225,11 +258,16 @@ def generate_interview_enhancements(
     output_language='English',
     retry_tracker=None,
     runtime=None,
+    include_usage=False,
 ):
     resolved_runtime = _resolve_runtime(runtime)
     summary_text = None
     sectioned_text = None
     errors = []
+    usage_by_stage = {}
+    input_total = 0
+    output_total = 0
+    total_tokens = 0
 
     for feature in selected_features:
         try:
@@ -247,6 +285,16 @@ def generate_interview_enhancements(
                     operation_name='interview_summary_generation',
                     runtime=resolved_runtime,
                 )
+                usage = ai_provider.extract_token_usage(response, runtime=resolved_runtime)
+                usage_by_stage['interview_summary_generation'] = {
+                    **usage,
+                    'model': resolved_runtime.MODEL_STUDY,
+                    'billing_mode': 'standard',
+                    'input_modality': 'text',
+                }
+                input_total += int(usage.get('input_tokens', 0) or 0)
+                output_total += int(usage.get('output_tokens', 0) or 0)
+                total_tokens += int(usage.get('total_tokens', 0) or 0)
                 summary_text = (getattr(response, 'text', '') or '').strip()
                 if not summary_text:
                     errors.append('Summary generation returned empty output.')
@@ -264,6 +312,16 @@ def generate_interview_enhancements(
                     operation_name='interview_sections_generation',
                     runtime=resolved_runtime,
                 )
+                usage = ai_provider.extract_token_usage(response, runtime=resolved_runtime)
+                usage_by_stage['interview_sections_generation'] = {
+                    **usage,
+                    'model': resolved_runtime.MODEL_STUDY,
+                    'billing_mode': 'standard',
+                    'input_modality': 'text',
+                }
+                input_total += int(usage.get('input_tokens', 0) or 0)
+                output_total += int(usage.get('output_tokens', 0) or 0)
+                total_tokens += int(usage.get('total_tokens', 0) or 0)
                 sectioned_text = (getattr(response, 'text', '') or '').strip()
                 if not sectioned_text:
                     errors.append('Sectioned transcript generation returned empty output.')
@@ -281,11 +339,18 @@ def generate_interview_enhancements(
         combined_text = f'# Interview Summary\n\n{summary_text}\n\n# Structured Interview Transcript\n\n{sectioned_text}'
 
     failed_count = max(0, len(selected_features) - len(successful))
-    return {
+    response_payload = {
         'summary': summary_text,
         'sections': sectioned_text,
         'combined': combined_text,
         'successful_features': successful,
         'failed_count': failed_count,
         'error': '; '.join(errors) if errors else None,
+        'token_usage_by_stage': usage_by_stage,
+        'token_input_total': input_total,
+        'token_output_total': output_total,
+        'token_total': total_tokens,
     }
+    if include_usage:
+        return response_payload
+    return response_payload

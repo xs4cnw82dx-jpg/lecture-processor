@@ -1,9 +1,14 @@
 """Business logic handlers for upload/status/download APIs."""
 
+import json
+import zipfile
+from datetime import datetime, timezone
+
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.admin import metrics as admin_metrics
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.analytics import events as analytics_events
+from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai import pipelines as ai_pipelines
 from lecture_processor.domains.billing import credits as billing_credits
@@ -445,6 +450,479 @@ def release_imported_audio(app_ctx, request):
     if token:
         upload_import_audio.release_audio_import_token(uid, token, runtime=app_ctx)
     return app_ctx.jsonify({'ok': True})
+
+
+def _parse_batch_rows_payload(request):
+    rows_raw = str(request.form.get('rows', '') or '').strip()
+    if not rows_raw:
+        return []
+    try:
+        parsed = json.loads(rows_raw)
+    except Exception:
+        return None
+    if not isinstance(parsed, list):
+        return None
+    rows = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        rows.append(dict(item))
+    return rows
+
+
+def _batch_user_guard(app_ctx, request):
+    decoded_token = app_ctx.verify_firebase_token(request)
+    if not decoded_token:
+        return None, None, app_ctx.jsonify({'error': 'Please sign in to continue'}), 401
+    uid = decoded_token['uid']
+    email = decoded_token.get('email', '')
+    if not auth_policy.is_email_allowed(email, runtime=app_ctx):
+        return None, None, app_ctx.jsonify({'error': 'Email not allowed'}), 403
+    return uid, decoded_token, None, None
+
+
+def _get_batch_with_permission(app_ctx, request, batch_id):
+    decoded_token = app_ctx.verify_firebase_token(request)
+    if not decoded_token:
+        return None, None, app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    batch = batch_orchestrator.get_batch(batch_id, runtime=app_ctx)
+    if not batch:
+        return None, None, app_ctx.jsonify({'error': 'Batch not found'}), 404
+    uid = decoded_token.get('uid', '')
+    if batch.get('uid', '') != uid and not app_ctx.is_admin_user(decoded_token):
+        return None, None, app_ctx.jsonify({'error': 'Forbidden'}), 403
+    return batch, decoded_token, None, None
+
+
+def create_batch_job(app_ctx, request):
+    uid, _decoded, error_response, status = _batch_user_guard(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
+
+    mode = str(request.form.get('mode', 'lecture-notes') or '').strip()
+    if mode not in {'lecture-notes', 'slides-only', 'interview'}:
+        return app_ctx.jsonify({'error': 'Invalid mode selected'}), 400
+
+    rows = _parse_batch_rows_payload(request)
+    if rows is None:
+        return app_ctx.jsonify({'error': 'Invalid rows payload'}), 400
+    if len(rows) < 2:
+        return app_ctx.jsonify({'error': 'Batch mode requires at least 2 rows.'}), 400
+
+    user = app_ctx.get_or_create_user(uid, '')
+    preferred_language_key = shared_parsing.sanitize_output_language_pref_key(
+        user.get('preferred_output_language', app_ctx.DEFAULT_OUTPUT_LANGUAGE_KEY),
+        runtime=app_ctx,
+    )
+    preferred_language_custom = shared_parsing.sanitize_output_language_pref_custom(
+        user.get('preferred_output_language_custom', ''),
+        runtime=app_ctx,
+    )
+    output_language = shared_parsing.parse_output_language(
+        request.form.get('output_language', preferred_language_key),
+        request.form.get('output_language_custom', preferred_language_custom),
+        runtime=app_ctx,
+    )
+    default_study_features = shared_parsing.parse_study_features(request.form.get('study_features', 'none'), runtime=app_ctx)
+    default_flashcards = shared_parsing.parse_requested_amount(
+        request.form.get('flashcard_amount', '20'),
+        {'10', '20', '30', 'auto'},
+        '20',
+        runtime=app_ctx,
+    )
+    default_questions = shared_parsing.parse_requested_amount(
+        request.form.get('question_amount', '10'),
+        {'5', '10', '15', 'auto'},
+        '10',
+        runtime=app_ctx,
+    )
+
+    folder_id = str(request.form.get('folder_id', '') or '').strip()
+    folder_name = ''
+    if folder_id and app_ctx.db is not None:
+        folder_doc = app_ctx.study_repo.get_study_folder_doc(app_ctx.db, folder_id)
+        if not folder_doc.exists:
+            return app_ctx.jsonify({'error': 'Selected folder not found'}), 404
+        folder_data = folder_doc.to_dict() or {}
+        if folder_data.get('uid', '') != uid:
+            return app_ctx.jsonify({'error': 'Forbidden folder'}), 403
+        folder_name = folder_data.get('name', '')
+
+    batch_id = str(app_ctx.uuid.uuid4())
+    prepared_rows = []
+    cleanup_paths = []
+    consumed_audio_tokens = []
+    charged_rows = []
+    now_ts = app_ctx.time.time()
+
+    try:
+        for idx, row_cfg in enumerate(rows, start=1):
+            row_id = str(row_cfg.get('row_id', '') or app_ctx.uuid.uuid4())
+            slides_required = mode in {'lecture-notes', 'slides-only'}
+            audio_required = mode in {'lecture-notes', 'interview'}
+
+            slides_local_path = ''
+            slides_field = str(row_cfg.get('slides_file_field', f'row_{idx}_slides') or '').strip()
+            if slides_required:
+                slides_file = request.files.get(slides_field)
+                if not slides_file or slides_file.filename == '':
+                    raise ValueError(f'Row {idx}: slides file is required.')
+                slides_local_path, slides_error = app_ctx.resolve_uploaded_slides_to_pdf(slides_file, f'{batch_id}_{row_id}')
+                if slides_error:
+                    raise ValueError(f'Row {idx}: {slides_error}')
+                cleanup_paths.append(slides_local_path)
+
+            audio_local_path = ''
+            audio_source_type = ''
+            audio_source_url = ''
+            audio_import_token = str(row_cfg.get('audio_import_token', '') or '').strip()
+            audio_url = str(row_cfg.get('audio_m3u8_url', '') or '').strip()
+            audio_field = str(row_cfg.get('audio_file_field', f'row_{idx}_audio') or '').strip()
+            if audio_required:
+                if audio_import_token:
+                    audio_local_path, token_error = upload_import_audio.get_audio_import_token_path(
+                        uid,
+                        audio_import_token,
+                        consume=False,
+                        runtime=app_ctx,
+                    )
+                    if token_error:
+                        raise ValueError(f'Row {idx}: {token_error}')
+                    audio_source_type = 'import_token'
+                elif audio_url:
+                    safe_url, url_error = upload_import_audio.validate_video_import_url(audio_url, runtime=app_ctx)
+                    if not safe_url:
+                        raise ValueError(f'Row {idx}: {url_error}')
+                    prefix = f'batch_{batch_id}_{row_id}'
+                    audio_local_path, _output_name, _size_bytes = app_ctx.download_audio_from_video_url(safe_url, prefix)
+                    cleanup_paths.append(audio_local_path)
+                    audio_source_type = 'm3u8_url'
+                    audio_source_url = safe_url
+                else:
+                    audio_file = request.files.get(audio_field)
+                    if not audio_file or audio_file.filename == '':
+                        raise ValueError(f'Row {idx}: audio file is required.')
+                    if not app_ctx.allowed_file(audio_file.filename, app_ctx.ALLOWED_AUDIO_EXTENSIONS):
+                        raise ValueError(f'Row {idx}: invalid audio file extension.')
+                    if (audio_file.mimetype or '').lower() not in app_ctx.ALLOWED_AUDIO_MIME_TYPES:
+                        raise ValueError(f'Row {idx}: invalid audio content type.')
+                    audio_local_path = app_ctx.os.path.join(app_ctx.UPLOAD_FOLDER, f'{batch_id}_{row_id}_{app_ctx.secure_filename(audio_file.filename)}')
+                    audio_file.save(audio_local_path)
+                    cleanup_paths.append(audio_local_path)
+                    audio_source_type = 'upload'
+
+                audio_size = app_ctx.get_saved_file_size(audio_local_path)
+                if audio_size <= 0 or audio_size > app_ctx.MAX_AUDIO_UPLOAD_BYTES:
+                    raise ValueError(f'Row {idx}: audio exceeds server limit or is empty.')
+                if not app_ctx.file_looks_like_audio(audio_local_path):
+                    raise ValueError(f'Row {idx}: uploaded audio is invalid or unsupported.')
+
+            row_study_features = default_study_features
+            row_flashcards = default_flashcards
+            row_questions = default_questions
+            override = row_cfg.get('study_override', {})
+            if isinstance(override, dict):
+                if 'study_features' in override:
+                    row_study_features = shared_parsing.parse_study_features(override.get('study_features', default_study_features), runtime=app_ctx)
+                if 'flashcard_amount' in override:
+                    row_flashcards = shared_parsing.parse_requested_amount(
+                        override.get('flashcard_amount', default_flashcards),
+                        {'10', '20', '30', 'auto'},
+                        default_flashcards,
+                        runtime=app_ctx,
+                    )
+                if 'question_amount' in override:
+                    row_questions = shared_parsing.parse_requested_amount(
+                        override.get('question_amount', default_questions),
+                        {'5', '10', '15', 'auto'},
+                        default_questions,
+                        runtime=app_ctx,
+                    )
+
+            row_interview_features = []
+            interview_features_cost = 0
+            if mode == 'interview':
+                raw_features = row_cfg.get('interview_features', [])
+                if isinstance(raw_features, list):
+                    raw_features_text = ','.join(str(item) for item in raw_features)
+                else:
+                    raw_features_text = str(raw_features or 'none')
+                row_interview_features = shared_parsing.parse_interview_features(raw_features_text, runtime=app_ctx)
+                interview_features_cost = len(row_interview_features)
+
+            charged_credit = ''
+            if mode == 'lecture-notes':
+                charged_credit = billing_credits.deduct_credit(
+                    uid,
+                    'lecture_credits_standard',
+                    'lecture_credits_extended',
+                    runtime=app_ctx,
+                )
+                if not charged_credit:
+                    raise ValueError('Not enough lecture credits to start this batch.')
+            elif mode == 'slides-only':
+                charged_credit = billing_credits.deduct_credit(uid, 'slides_credits', runtime=app_ctx)
+                if not charged_credit:
+                    raise ValueError('Not enough text extraction credits to start this batch.')
+            elif mode == 'interview':
+                charged_credit = billing_credits.deduct_interview_credit(uid, runtime=app_ctx)
+                if not charged_credit:
+                    raise ValueError('Not enough interview credits to start this batch.')
+                if interview_features_cost > 0:
+                    if not billing_credits.deduct_slides_credits(uid, interview_features_cost, runtime=app_ctx):
+                        billing_credits.refund_credit(uid, charged_credit, runtime=app_ctx)
+                        raise ValueError('Not enough text extraction credits for interview extras in this batch row.')
+
+            charged_rows.append(
+                {
+                    'credit_type': charged_credit,
+                    'interview_features_cost': interview_features_cost,
+                }
+            )
+
+            if audio_import_token:
+                _consumed_path, token_error = upload_import_audio.get_audio_import_token_path(
+                    uid,
+                    audio_import_token,
+                    consume=True,
+                    runtime=app_ctx,
+                )
+                if token_error:
+                    raise ValueError(f'Row {idx}: {token_error}')
+                consumed_audio_tokens.append(audio_import_token)
+
+            billing_receipt = billing_receipts.initialize_billing_receipt(
+                {charged_credit: 1, 'slides_credits': interview_features_cost},
+                runtime=app_ctx,
+            )
+            prepared_rows.append(
+                {
+                    'row_id': row_id,
+                    'ordinal': idx,
+                    'status': 'queued',
+                    'source_type': audio_source_type if audio_source_type else ('upload' if slides_required else 'audio'),
+                    'source_url': audio_source_url,
+                    'source_name': f'row-{idx}',
+                    'slides_local_path': slides_local_path,
+                    'audio_local_path': audio_local_path,
+                    'output_language': output_language,
+                    'study_features': row_study_features if mode != 'interview' else 'none',
+                    'flashcard_selection': row_flashcards,
+                    'question_selection': row_questions,
+                    'interview_features': row_interview_features,
+                    'interview_features_cost': interview_features_cost,
+                    'credit_deducted': charged_credit,
+                    'credit_refunded': False,
+                    'billing_receipt': billing_receipt,
+                    'billing_mode': 'batch',
+                    'billing_multiplier': 0.5,
+                    'token_usage_by_stage': {},
+                    'token_input_total': 0,
+                    'token_output_total': 0,
+                    'token_total': 0,
+                    'started_at': now_ts,
+                    'created_at': now_ts,
+                }
+            )
+
+        batch_title = _sanitize_study_pack_title(request.form.get('batch_title', '')) or f'Batch {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")}'
+        batch_payload = {
+            'batch_id': batch_id,
+            'uid': uid,
+            'email': user.get('email', ''),
+            'mode': mode,
+            'status': 'queued',
+            'batch_title': batch_title,
+            'output_language': output_language,
+            'study_defaults': {
+                'study_features': default_study_features,
+                'flashcard_amount': default_flashcards,
+                'question_amount': default_questions,
+            },
+            'folder_id': folder_id,
+            'folder_name': folder_name,
+            'total_rows': len(prepared_rows),
+            'completed_rows': 0,
+            'failed_rows': 0,
+            'token_input_total': 0,
+            'token_output_total': 0,
+            'token_total': 0,
+            'external_batch_refs': {},
+            'error_summary': '',
+            'created_at': now_ts,
+            'updated_at': now_ts,
+            'finished_at': 0,
+            'billing_mode': 'batch',
+            'billing_multiplier': 0.5,
+        }
+        batch_orchestrator.create_batch_job(batch_payload, prepared_rows, runtime=app_ctx)
+
+        thread = app_ctx.threading.Thread(
+            target=batch_orchestrator.process_batch_job,
+            args=(batch_id,),
+            kwargs={'runtime': app_ctx},
+        )
+        thread.start()
+        return app_ctx.jsonify({'batch_id': batch_id})
+    except Exception as error:
+        for charged in charged_rows:
+            credit_type = str(charged.get('credit_type', '') or '').strip()
+            if credit_type:
+                billing_credits.refund_credit(uid, credit_type, runtime=app_ctx)
+            extras = int(charged.get('interview_features_cost', 0) or 0)
+            if extras > 0:
+                billing_credits.refund_slides_credits(uid, extras, runtime=app_ctx)
+        app_ctx.cleanup_files(cleanup_paths, [])
+        return app_ctx.jsonify({'error': str(error)}), 400
+
+
+def get_batch_job_status(app_ctx, request, batch_id):
+    batch, _decoded, error_response, status = _get_batch_with_permission(app_ctx, request, batch_id)
+    if error_response is not None:
+        return error_response, status
+    status_payload = batch_orchestrator.get_batch_status(batch_id, runtime=app_ctx)
+    if not status_payload:
+        return app_ctx.jsonify({'error': 'Batch not found'}), 404
+    return app_ctx.jsonify(status_payload)
+
+
+def _batch_row_docx_bytes(app_ctx, row, content_type='result'):
+    if content_type == 'slides' and row.get('slide_text'):
+        content, title = row.get('slide_text', ''), 'Slides Extracted'
+    elif content_type == 'transcript' and row.get('transcript'):
+        content, title = row.get('transcript', ''), 'Transcript'
+    elif content_type == 'summary' and row.get('interview_summary'):
+        content, title = row.get('interview_summary', ''), 'Interview Summary'
+    elif content_type == 'sections' and row.get('interview_sections'):
+        content, title = row.get('interview_sections', ''), 'Interview Sections'
+    elif content_type == 'combined' and row.get('interview_combined'):
+        content, title = row.get('interview_combined', ''), 'Interview Combined'
+    else:
+        content = row.get('result', '') or row.get('merged_notes', '') or row.get('transcript', '') or row.get('slide_text', '')
+        title = 'Batch Output'
+    doc = study_export.markdown_to_docx(content, title, runtime=app_ctx)
+    docx_io = app_ctx.io.BytesIO()
+    doc.save(docx_io)
+    docx_io.seek(0)
+    return docx_io.read()
+
+
+def _batch_row_csv_bytes(app_ctx, row, export_type='flashcards'):
+    output = app_ctx.io.StringIO()
+    writer = app_ctx.csv.writer(output)
+    if export_type == 'test':
+        writer.writerow(['Question', 'Option A', 'Option B', 'Option C', 'Option D', 'Correct Answer', 'Explanation'])
+        for question in row.get('test_questions', []):
+            options = question.get('options', ['', '', '', ''])
+            while len(options) < 4:
+                options.append('')
+            writer.writerow(
+                [
+                    question.get('question', ''),
+                    options[0],
+                    options[1],
+                    options[2],
+                    options[3],
+                    question.get('answer', ''),
+                    question.get('explanation', ''),
+                ]
+            )
+    else:
+        writer.writerow(['Front', 'Back'])
+        for card in row.get('flashcards', []):
+            writer.writerow([card.get('front', ''), card.get('back', '')])
+    return output.getvalue().encode('utf-8')
+
+
+def download_batch_row_docx(app_ctx, request, batch_id, row_id):
+    _batch, _decoded, error_response, status = _get_batch_with_permission(app_ctx, request, batch_id)
+    if error_response is not None:
+        return error_response, status
+    row = batch_orchestrator.get_batch_row(batch_id, row_id, runtime=app_ctx)
+    if not row:
+        return app_ctx.jsonify({'error': 'Row not found'}), 404
+    if row.get('status') != 'complete':
+        return app_ctx.jsonify({'error': 'Row is not complete'}), 400
+    content_type = request.args.get('type', 'result')
+    docx_bytes = _batch_row_docx_bytes(app_ctx, row, content_type=content_type)
+    return app_ctx.send_file(
+        app_ctx.io.BytesIO(docx_bytes),
+        mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        as_attachment=True,
+        download_name=f'batch-{batch_id}-{row_id}-{content_type}.docx',
+    )
+
+
+def download_batch_row_flashcards_csv(app_ctx, request, batch_id, row_id):
+    _batch, _decoded, error_response, status = _get_batch_with_permission(app_ctx, request, batch_id)
+    if error_response is not None:
+        return error_response, status
+    row = batch_orchestrator.get_batch_row(batch_id, row_id, runtime=app_ctx)
+    if not row:
+        return app_ctx.jsonify({'error': 'Row not found'}), 404
+    if row.get('status') != 'complete':
+        return app_ctx.jsonify({'error': 'Row is not complete'}), 400
+    export_type = request.args.get('type', 'flashcards').strip().lower()
+    if export_type not in {'flashcards', 'test'}:
+        export_type = 'flashcards'
+    csv_bytes = _batch_row_csv_bytes(app_ctx, row, export_type=export_type)
+    return app_ctx.send_file(
+        app_ctx.io.BytesIO(csv_bytes),
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name=f'batch-{batch_id}-{row_id}-{export_type}.csv',
+    )
+
+
+def download_batch_zip(app_ctx, request, batch_id):
+    batch, _decoded, error_response, status = _get_batch_with_permission(app_ctx, request, batch_id)
+    if error_response is not None:
+        return error_response, status
+    rows = batch_orchestrator.list_batch_rows(batch_id, runtime=app_ctx)
+    archive_bytes = app_ctx.io.BytesIO()
+    with zipfile.ZipFile(archive_bytes, mode='w', compression=zipfile.ZIP_DEFLATED) as archive:
+        summary = {
+            'batch_id': batch.get('batch_id', batch_id),
+            'mode': batch.get('mode', ''),
+            'status': batch.get('status', ''),
+            'total_rows': batch.get('total_rows', len(rows)),
+            'completed_rows': batch.get('completed_rows', 0),
+            'failed_rows': batch.get('failed_rows', 0),
+            'token_input_total': batch.get('token_input_total', 0),
+            'token_output_total': batch.get('token_output_total', 0),
+            'token_total': batch.get('token_total', 0),
+        }
+        archive.writestr('summary.json', json.dumps(summary, ensure_ascii=False, indent=2))
+        for row in rows:
+            row_id = str(row.get('row_id', '') or '')
+            folder = f'rows/{row_id}'
+            archive.writestr(f'{folder}/meta.json', json.dumps(row, ensure_ascii=False, indent=2, default=str))
+            if row.get('status') != 'complete':
+                continue
+            try:
+                archive.writestr(f'{folder}/result.docx', _batch_row_docx_bytes(app_ctx, row, content_type='result'))
+                if row.get('slide_text'):
+                    archive.writestr(f'{folder}/slides.docx', _batch_row_docx_bytes(app_ctx, row, content_type='slides'))
+                if row.get('transcript'):
+                    archive.writestr(f'{folder}/transcript.docx', _batch_row_docx_bytes(app_ctx, row, content_type='transcript'))
+                if row.get('interview_summary'):
+                    archive.writestr(f'{folder}/summary.docx', _batch_row_docx_bytes(app_ctx, row, content_type='summary'))
+                if row.get('interview_sections'):
+                    archive.writestr(f'{folder}/sections.docx', _batch_row_docx_bytes(app_ctx, row, content_type='sections'))
+                if row.get('flashcards'):
+                    archive.writestr(f'{folder}/flashcards.csv', _batch_row_csv_bytes(app_ctx, row, export_type='flashcards'))
+                if row.get('test_questions'):
+                    archive.writestr(f'{folder}/test_questions.csv', _batch_row_csv_bytes(app_ctx, row, export_type='test'))
+            except Exception as error:
+                archive.writestr(f'{folder}/error.txt', str(error))
+    archive_bytes.seek(0)
+    filename = f'batch-{batch_id}.zip'
+    return app_ctx.send_file(
+        archive_bytes,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name=filename,
+    )
 
 
 def upload_files(app_ctx, request):
@@ -1034,6 +1512,12 @@ def tools_extract(app_ctx, request):
             raise ValueError('Extraction returned empty output')
 
         usage = ai_provider.extract_token_usage(response, runtime=app_ctx)
+        stage_usage = {
+            **usage,
+            'model': app_ctx.MODEL_TOOLS,
+            'billing_mode': 'standard',
+            'input_modality': 'text' if source_type in {'document', 'url'} else 'image',
+        }
         retry_attempts_total = _sum_retry_attempts(retry_tracker)
         analytics_events.log_analytics_event(
             'tools_extract_completed',
@@ -1072,7 +1556,8 @@ def tools_extract(app_ctx, request):
                 'failed_stage': '',
                 'provider_error_code': '',
                 'retry_attempts': retry_attempts_total,
-                'token_usage_by_stage': {f'tools_extract_{source_type}': usage},
+                'token_usage_by_stage': {f'tools_extract_{source_type}': stage_usage},
+                'billing_mode': 'standard',
                 'token_input_total': int(usage.get('input_tokens', 0) or 0),
                 'token_output_total': int(usage.get('output_tokens', 0) or 0),
                 'token_total': int(usage.get('total_tokens', 0) or 0),
@@ -1153,6 +1638,7 @@ def tools_extract(app_ctx, request):
                 'provider_error_code': provider_error_code,
                 'retry_attempts': retry_attempts_total,
                 'token_usage_by_stage': {},
+                'billing_mode': 'standard',
                 'token_input_total': 0,
                 'token_output_total': 0,
                 'token_total': 0,

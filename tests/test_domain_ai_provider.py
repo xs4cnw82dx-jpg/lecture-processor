@@ -60,8 +60,22 @@ def test_token_accumulator_aggregates_usage():
 
     assert acc.as_dict() == {
         'token_usage_by_stage': {
-            'stage-1': {'input_tokens': 12, 'output_tokens': 8, 'total_tokens': 20},
-            'stage-2': {'input_tokens': 12, 'output_tokens': 8, 'total_tokens': 20},
+            'stage-1': {
+                'input_tokens': 12,
+                'output_tokens': 8,
+                'total_tokens': 20,
+                'model': '',
+                'billing_mode': 'standard',
+                'input_modality': 'text',
+            },
+            'stage-2': {
+                'input_tokens': 12,
+                'output_tokens': 8,
+                'total_tokens': 20,
+                'model': '',
+                'billing_mode': 'standard',
+                'input_modality': 'text',
+            },
         },
         'token_input_total': 24,
         'token_output_total': 16,

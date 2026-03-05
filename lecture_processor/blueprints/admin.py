@@ -28,3 +28,15 @@ def admin_prompts():
 def admin_model_pricing():
     runtime = get_runtime()
     return admin_api_service.admin_model_pricing(runtime, request)
+
+
+@admin_bp.route('/api/admin/cost-analysis', methods=['POST'])
+def admin_cost_analysis():
+    runtime = get_runtime()
+    return admin_api_service.admin_cost_analysis(runtime, request)
+
+
+@admin_bp.route('/api/admin/cost-analysis/export', methods=['POST'])
+def admin_cost_analysis_export():
+    runtime = get_runtime()
+    return admin_api_service.admin_cost_analysis_export(runtime, request)

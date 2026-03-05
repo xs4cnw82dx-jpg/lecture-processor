@@ -331,3 +331,239 @@ def get_model_pricing_config(force_reload=False, runtime=None):
     resolved_runtime.MODEL_PRICING_CACHE['payload'] = payload
     resolved_runtime.MODEL_PRICING_CACHE['loaded_at'] = now_ts
     return json.loads(json.dumps(payload))
+
+
+def coerce_analysis_period(period_key, runtime=None):
+    _ = runtime
+    normalized = str(period_key or '').strip().lower()
+    if normalized in {'daily', 'day', 'd'}:
+        return 'daily'
+    if normalized in {'weekly', 'week', 'w'}:
+        return 'weekly'
+    if normalized in {'monthly', 'month', 'm'}:
+        return 'monthly'
+    if normalized in {'quarterly', 'quarter', 'q'}:
+        return 'quarterly'
+    return 'monthly'
+
+
+def resolve_period_window(period_key, now_ts=None, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    safe_period = coerce_analysis_period(period_key, runtime=resolved_runtime)
+    now_ts_value = float(now_ts if isinstance(now_ts, (int, float)) else resolved_runtime.time.time())
+    now_dt = datetime.fromtimestamp(now_ts_value, tz=timezone.utc)
+    end_dt = now_dt.replace(microsecond=0)
+
+    if safe_period == 'daily':
+        start_dt = end_dt.replace(hour=0, minute=0, second=0)
+    elif safe_period == 'weekly':
+        start_of_day = end_dt.replace(hour=0, minute=0, second=0)
+        start_dt = start_of_day - timedelta(days=start_of_day.weekday())
+    elif safe_period == 'quarterly':
+        quarter_month = ((end_dt.month - 1) // 3) * 3 + 1
+        start_dt = end_dt.replace(month=quarter_month, day=1, hour=0, minute=0, second=0)
+    else:
+        start_dt = end_dt.replace(day=1, hour=0, minute=0, second=0)
+
+    return {
+        'period': safe_period,
+        'start': start_dt.timestamp(),
+        'end': end_dt.timestamp(),
+    }
+
+
+def _get_pricing_table(config_payload):
+    payload = config_payload if isinstance(config_payload, dict) else {}
+    table = payload.get('pricing_table')
+    if isinstance(table, dict):
+        return table
+    # Backwards compatibility: fall back to the legacy flat "models" structure.
+    models = payload.get('models')
+    if not isinstance(models, dict):
+        return {}
+    fallback = {}
+    for model_id, rates in models.items():
+        if not isinstance(rates, dict):
+            continue
+        fallback[model_id] = {
+            'standard': {
+                'input_text_per_M': float(rates.get('input_text_per_M', 0) or 0),
+                'input_audio_per_M': (
+                    None if rates.get('input_audio_per_M') is None else float(rates.get('input_audio_per_M', 0) or 0)
+                ),
+                'output_per_M': float(rates.get('output_per_M', 0) or 0),
+            }
+        }
+    return fallback
+
+
+def _as_non_negative_int(value):
+    try:
+        return max(0, int(value or 0))
+    except Exception:
+        return 0
+
+
+def _as_non_negative_float(value, default=0.0):
+    try:
+        parsed = float(value)
+    except Exception:
+        parsed = float(default)
+    if parsed < 0:
+        return 0.0
+    return parsed
+
+
+def resolve_stage_pricing(
+    config_payload,
+    model_id,
+    billing_mode='standard',
+    input_modality='text',
+    input_tokens=0,
+    runtime=None,
+):
+    _ = runtime
+    safe_model = str(model_id or '').strip()
+    safe_billing_mode = str(billing_mode or 'standard').strip().lower() or 'standard'
+    safe_input_modality = str(input_modality or 'text').strip().lower() or 'text'
+    safe_input_tokens = _as_non_negative_int(input_tokens)
+
+    pricing_table = _get_pricing_table(config_payload)
+    model_entry = pricing_table.get(safe_model)
+    if not isinstance(model_entry, dict):
+        return {
+            'model': safe_model,
+            'billing_mode': safe_billing_mode,
+            'input_modality': safe_input_modality,
+            'matched': False,
+            'tier': '',
+            'input_rate_per_million': 0.0,
+            'output_rate_per_million': 0.0,
+        }
+
+    billing_entry = model_entry.get(safe_billing_mode)
+    if not isinstance(billing_entry, dict):
+        # Fallback to standard if a model has no explicit batch table.
+        billing_entry = model_entry.get('standard')
+    if not isinstance(billing_entry, dict):
+        return {
+            'model': safe_model,
+            'billing_mode': safe_billing_mode,
+            'input_modality': safe_input_modality,
+            'matched': False,
+            'tier': '',
+            'input_rate_per_million': 0.0,
+            'output_rate_per_million': 0.0,
+        }
+
+    tier_label = ''
+    rates = billing_entry
+    tiers = billing_entry.get('tiers')
+    if isinstance(tiers, list) and tiers:
+        selected = None
+        for tier in tiers:
+            if not isinstance(tier, dict):
+                continue
+            max_tokens = tier.get('max_input_tokens')
+            min_tokens = tier.get('min_input_tokens')
+            if max_tokens is not None and safe_input_tokens > _as_non_negative_int(max_tokens):
+                continue
+            if min_tokens is not None and safe_input_tokens < _as_non_negative_int(min_tokens):
+                continue
+            selected = tier
+            break
+        if selected is None:
+            selected = tiers[-1] if isinstance(tiers[-1], dict) else {}
+        rates = selected if isinstance(selected, dict) else {}
+        tier_label = str(rates.get('label', '') or '').strip()
+
+    input_text_rate = _as_non_negative_float(rates.get('input_text_per_M', 0.0), default=0.0)
+    input_audio_rate = rates.get('input_audio_per_M')
+    output_rate = _as_non_negative_float(rates.get('output_per_M', 0.0), default=0.0)
+    if input_audio_rate is None:
+        input_audio_rate = input_text_rate
+    else:
+        input_audio_rate = _as_non_negative_float(input_audio_rate, default=input_text_rate)
+
+    input_rate = input_audio_rate if safe_input_modality == 'audio' else input_text_rate
+    return {
+        'model': safe_model,
+        'billing_mode': safe_billing_mode,
+        'input_modality': safe_input_modality,
+        'matched': True,
+        'tier': tier_label,
+        'input_rate_per_million': input_rate,
+        'output_rate_per_million': output_rate,
+    }
+
+
+def compute_job_stage_costs(job_payload, config_payload, runtime=None):
+    _ = runtime
+    job = job_payload if isinstance(job_payload, dict) else {}
+    billing_mode = str(job.get('billing_mode', 'standard') or 'standard').strip().lower() or 'standard'
+    stage_usage = job.get('token_usage_by_stage')
+    if not isinstance(stage_usage, dict) or not stage_usage:
+        return {
+            'stages': [],
+            'input_tokens': _as_non_negative_int(job.get('token_input_total', 0)),
+            'output_tokens': _as_non_negative_int(job.get('token_output_total', 0)),
+            'total_tokens': _as_non_negative_int(job.get('token_total', 0)),
+            'cost_usd': 0.0,
+            'missing_stage_usage': True,
+        }
+
+    stages = []
+    input_total = 0
+    output_total = 0
+    total_total = 0
+    cost_total = 0.0
+    for stage_name, usage in stage_usage.items():
+        safe_usage = usage if isinstance(usage, dict) else {}
+        input_tokens = _as_non_negative_int(safe_usage.get('input_tokens', 0))
+        output_tokens = _as_non_negative_int(safe_usage.get('output_tokens', 0))
+        total_tokens = _as_non_negative_int(safe_usage.get('total_tokens', input_tokens + output_tokens))
+        model_id = str(safe_usage.get('model') or '').strip()
+        stage_billing_mode = str(safe_usage.get('billing_mode') or billing_mode).strip().lower() or billing_mode
+        input_modality = str(safe_usage.get('input_modality') or 'text').strip().lower() or 'text'
+        pricing = resolve_stage_pricing(
+            config_payload,
+            model_id,
+            billing_mode=stage_billing_mode,
+            input_modality=input_modality,
+            input_tokens=input_tokens,
+        )
+        input_cost = (input_tokens / 1_000_000.0) * _as_non_negative_float(pricing.get('input_rate_per_million', 0.0))
+        output_cost = (output_tokens / 1_000_000.0) * _as_non_negative_float(pricing.get('output_rate_per_million', 0.0))
+        stage_cost = input_cost + output_cost
+
+        stages.append(
+            {
+                'stage': str(stage_name or ''),
+                'model': model_id,
+                'billing_mode': stage_billing_mode,
+                'input_modality': input_modality,
+                'input_tokens': input_tokens,
+                'output_tokens': output_tokens,
+                'total_tokens': total_tokens,
+                'input_rate_per_million': _as_non_negative_float(pricing.get('input_rate_per_million', 0.0)),
+                'output_rate_per_million': _as_non_negative_float(pricing.get('output_rate_per_million', 0.0)),
+                'tier': str(pricing.get('tier', '') or ''),
+                'cost_input_usd': input_cost,
+                'cost_output_usd': output_cost,
+                'cost_usd': stage_cost,
+                'matched_pricing': bool(pricing.get('matched', False)),
+            }
+        )
+        input_total += input_tokens
+        output_total += output_tokens
+        total_total += total_tokens
+        cost_total += stage_cost
+
+    return {
+        'stages': stages,
+        'input_tokens': input_total,
+        'output_tokens': output_total,
+        'total_tokens': total_total,
+        'cost_usd': cost_total,
+        'missing_stage_usage': False,
+    }

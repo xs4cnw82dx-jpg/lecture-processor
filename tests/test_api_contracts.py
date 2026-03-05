@@ -107,6 +107,21 @@ def test_admin_prompts_markdown_contract(client, monkeypatch):
     assert payload.get("markdown") == "# Prompt Inventory"
 
 
+def test_admin_cost_analysis_contract_fields(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
+    monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)
+    monkeypatch.setattr(core, "db", None)
+
+    response = client.post("/api/admin/cost-analysis", json={"period": "monthly", "usd_to_eur": 0.9})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert "filters" in payload
+    assert "summary" in payload
+    assert "jobs" in payload
+    assert "stages" in payload
+
+
 def test_admin_route_requires_server_session_cookie(client):
     response = client.get("/admin", follow_redirects=False)
     assert response.status_code in {302, 301}

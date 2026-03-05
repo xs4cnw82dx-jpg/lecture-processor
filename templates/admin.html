@@ -255,6 +255,91 @@
                     </div>
                 </div>
             </section>
+
+            <section class="panel analyzer-panel">
+                <div class="analyzer-head">
+                    <h2>Actual Job Cost Analyzer</h2>
+                    <div class="actions">
+                        <button class="btn" id="analyzer-run-btn" type="button">Run analysis</button>
+                        <button class="btn" id="analyzer-export-btn" type="button">Export XLSX</button>
+                    </div>
+                </div>
+                <div class="analyzer-controls">
+                    <label class="calculator-control">
+                        <span>Period</span>
+                        <select id="analyzer-period" class="calculator-input">
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                            <option value="monthly" selected>Monthly</option>
+                            <option value="quarterly">Quarterly</option>
+                        </select>
+                    </label>
+                    <label class="calculator-control">
+                        <span>User UID</span>
+                        <input id="analyzer-uid" class="calculator-input" placeholder="Optional user uid">
+                    </label>
+                    <label class="calculator-control">
+                        <span>User Email</span>
+                        <input id="analyzer-email" class="calculator-input" placeholder="Optional user email">
+                    </label>
+                    <label class="calculator-control">
+                        <span>Mode</span>
+                        <select id="analyzer-mode" class="calculator-input">
+                            <option value="">All modes</option>
+                            <option value="lecture-notes">Lecture Notes</option>
+                            <option value="slides-only">Slides only</option>
+                            <option value="interview">Interview</option>
+                            <option value="tools">Tools</option>
+                        </select>
+                    </label>
+                    <label class="calculator-control">
+                        <span>Status</span>
+                        <select id="analyzer-status" class="calculator-input">
+                            <option value="">All statuses</option>
+                            <option value="complete">Complete</option>
+                            <option value="error">Error</option>
+                            <option value="partial">Partial</option>
+                        </select>
+                    </label>
+                    <label class="calculator-control">
+                        <span>USD → EUR</span>
+                        <input id="analyzer-usd-eur" class="calculator-input" type="number" value="0.93" min="0.01" step="0.0001">
+                    </label>
+                </div>
+                <div class="analyzer-selection">
+                    <button class="btn" id="analyzer-select-all-btn" type="button">Select all filtered</button>
+                    <button class="btn" id="analyzer-clear-btn" type="button">Clear selection</button>
+                    <span id="analyzer-selection-meta">0 selected</span>
+                </div>
+                <div class="analyzer-summary" id="analyzer-summary">
+                    <div class="calculator-summary-item"><span>Jobs Selected</span><strong id="analyzer-jobs-selected">0</strong></div>
+                    <div class="calculator-summary-item"><span>Input Tokens</span><strong id="analyzer-input-total">0</strong></div>
+                    <div class="calculator-summary-item"><span>Output Tokens</span><strong id="analyzer-output-total">0</strong></div>
+                    <div class="calculator-summary-item"><span>Total Tokens</span><strong id="analyzer-token-total">0</strong></div>
+                    <div class="calculator-summary-item"><span>Cost USD</span><strong id="analyzer-cost-usd">$0.0000</strong></div>
+                    <div class="calculator-summary-item"><span>Cost EUR</span><strong id="analyzer-cost-eur">€0.0000</strong></div>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Select</th>
+                                <th>Job ID</th>
+                                <th>User</th>
+                                <th>Mode</th>
+                                <th>Status</th>
+                                <th>Finished</th>
+                                <th>Input</th>
+                                <th>Output</th>
+                                <th>Total</th>
+                                <th>USD</th>
+                                <th>EUR</th>
+                            </tr>
+                        </thead>
+                        <tbody id="analyzer-jobs-body"></tbody>
+                    </table>
+                </div>
+            </section>
         </div>
     </div>
 
