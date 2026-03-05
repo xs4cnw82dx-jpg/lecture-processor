@@ -4,6 +4,7 @@ from datetime import datetime, timezone, timedelta
 import io
 import json
 import time
+import zipfile
 
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.auth import session as auth_session
@@ -12,6 +13,7 @@ from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.shared import parsing as shared_parsing
 from lecture_processor.domains.study import audio as study_audio
+from lecture_processor.domains.study import export as study_export
 
 
 def create_admin_session(app_ctx, request):
@@ -180,6 +182,7 @@ def get_user(app_ctx, request):
             'interview_long': user.get('interview_credits_long', 0),
         },
         'total_processed': user.get('total_processed', 0),
+        'has_created_study_pack': bool(user.get('has_created_study_pack', bool(user.get('total_processed', 0)))),
         'is_admin': app_ctx.is_admin_user(decoded_token),
         'preferences': preferences,
     })
@@ -259,6 +262,109 @@ def export_account_data(app_ctx, request):
     except Exception as e:
         app_ctx.logger.error(f"Error exporting account data for {uid}: {e}")
         return app_ctx.jsonify({'error': 'Could not export account data'}), 500
+
+
+def export_account_bundle(app_ctx, request):
+    decoded_token = app_ctx.verify_firebase_token(request)
+    if not decoded_token:
+        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+
+    uid = decoded_token['uid']
+    email = decoded_token.get('email', '')
+    payload = request.get_json(silent=True) or {}
+    scope = str(payload.get('scope', 'account') or 'account').strip().lower()
+    if scope != 'account':
+        return app_ctx.jsonify({'error': 'Only account scope is supported.'}), 400
+
+    include = account_lifecycle.normalize_export_bundle_include(payload.get('include', {}), runtime=app_ctx)
+    if not account_lifecycle.has_export_bundle_selection(include, runtime=app_ctx):
+        return app_ctx.jsonify({'error': 'Select at least one export option.'}), 400
+
+    packs = []
+    if any(
+        include.get(key)
+        for key in (
+            'flashcards_csv',
+            'practice_tests_csv',
+            'lecture_notes_docx',
+            'lecture_notes_pdf_marked',
+            'lecture_notes_pdf_unmarked',
+        )
+    ):
+        docs = app_ctx.study_repo.list_study_packs_by_uid(
+            app_ctx.db,
+            uid,
+            app_ctx.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION + 1,
+        )
+        packs = docs[: app_ctx.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION]
+
+    folder_map = {
+        'flashcards_csv': 'flashcards_csv',
+        'practice_tests_csv': 'practice_tests_csv',
+        'lecture_notes_docx': 'lecture_notes_docx',
+        'lecture_notes_pdf_marked': 'lecture_notes_pdf_marked',
+        'lecture_notes_pdf_unmarked': 'lecture_notes_pdf_unmarked',
+        'account_json': 'account_json',
+    }
+
+    archive_bytes = io.BytesIO()
+    try:
+        with zipfile.ZipFile(archive_bytes, mode='w', compression=zipfile.ZIP_DEFLATED) as archive:
+            for key, folder in folder_map.items():
+                if include.get(key):
+                    archive.writestr(folder + '/', '')
+
+            for doc in packs:
+                pack = doc.to_dict() or {}
+                pack_id = str(pack.get('study_pack_id', '') or doc.id or '').strip() or str(doc.id)
+                safe_title = study_export.sanitize_export_filename(
+                    pack.get('title', '') or pack_id,
+                    fallback=pack_id,
+                )
+
+                if include.get('flashcards_csv'):
+                    csv_bytes = study_export.build_flashcards_csv_bytes(pack, runtime=app_ctx)
+                    if csv_bytes:
+                        archive.writestr(f'flashcards_csv/{safe_title}-{pack_id}.csv', csv_bytes)
+
+                if include.get('practice_tests_csv'):
+                    test_bytes = study_export.build_practice_test_csv_bytes(pack, runtime=app_ctx)
+                    if test_bytes:
+                        archive.writestr(f'practice_tests_csv/{safe_title}-{pack_id}.csv', test_bytes)
+
+                if include.get('lecture_notes_docx'):
+                    docx_bytes = study_export.build_notes_docx_bytes(pack, runtime=app_ctx)
+                    if docx_bytes:
+                        archive.writestr(f'lecture_notes_docx/{safe_title}-{pack_id}.docx', docx_bytes)
+
+                if include.get('lecture_notes_pdf_marked'):
+                    pdf_marked = study_export.build_notes_pdf_bytes(pack, include_answers=True, runtime=app_ctx)
+                    if pdf_marked:
+                        archive.writestr(f'lecture_notes_pdf_marked/{safe_title}-{pack_id}-marked.pdf', pdf_marked)
+
+                if include.get('lecture_notes_pdf_unmarked'):
+                    pdf_unmarked = study_export.build_notes_pdf_bytes(pack, include_answers=False, runtime=app_ctx)
+                    if pdf_unmarked:
+                        archive.writestr(f'lecture_notes_pdf_unmarked/{safe_title}-{pack_id}-unmarked.pdf', pdf_unmarked)
+
+            if include.get('account_json'):
+                account_payload = account_lifecycle.collect_user_export_payload(uid, email, runtime=app_ctx)
+                account_bytes = json.dumps(account_payload, ensure_ascii=False, indent=2, default=str).encode('utf-8')
+                archive.writestr('account_json/account-export.json', account_bytes)
+    except RuntimeError as error:
+        return app_ctx.jsonify({'error': str(error)}), 500
+    except Exception as error:
+        app_ctx.logger.error(f"Error building export bundle for {uid}: {error}")
+        return app_ctx.jsonify({'error': 'Could not build export bundle'}), 500
+
+    archive_bytes.seek(0)
+    filename = f"lecture-processor-export-{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.zip"
+    return app_ctx.send_file(
+        archive_bytes,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name=filename,
+    )
 
 
 def delete_account_data(app_ctx, request):

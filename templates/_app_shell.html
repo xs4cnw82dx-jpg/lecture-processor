@@ -12,8 +12,13 @@
     </a>
     <nav class="app-shell-nav">
       <a href="/dashboard" class="app-shell-link">Dashboard</a>
-      <details class="app-shell-group" open>
-        <summary>Extraction</summary>
+      <details class="app-shell-group" id="shell-tools-group" open>
+        <summary aria-expanded="true">
+          <span class="app-shell-group-label">Tools</span>
+          <svg class="app-shell-group-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <polyline points="6 8 10 12 14 8"></polyline>
+          </svg>
+        </summary>
         <a href="/lecture-notes" class="app-shell-link sub">Lecture Notes</a>
         <a href="/slides-extraction" class="app-shell-link sub">Slides Extraction</a>
         <a href="/interview-transcription" class="app-shell-link sub">Interview Transcription</a>
@@ -23,7 +28,7 @@
         <a href="/tools" class="app-shell-link sub">Tools Overview</a>
       </details>
       <a href="/study" class="app-shell-link">Study Library</a>
-      <a href="/plan" class="app-shell-link">Planner</a>
+      <a href="/plan" class="app-shell-link">Planning &amp; Progress</a>
       <a href="/calendar" class="app-shell-link">Calendar</a>
       <a href="/buy_credits" class="app-shell-link">Buy Credits</a>
     </nav>
@@ -39,7 +44,15 @@
         <span>Menu</span>
       </button>
       <div class="app-shell-title">{{ shell_title or 'Lecture Processor' }}</div>
-      <a href="/buy_credits" class="app-shell-credits" id="shell-credits-link">0 credits</a>
+      <a href="/buy_credits" class="app-shell-credits" id="shell-credits-link" aria-label="Buy credits">
+        <span class="app-shell-credits-total" id="shell-credits-total">0 credits</span>
+        <span class="app-shell-credits-tooltip" id="shell-credits-tooltip" role="tooltip">
+          <span class="credit-tip-row"><span>Lecture</span><strong id="shell-credit-lecture">0</strong></span>
+          <span class="credit-tip-row"><span>Text extraction</span><strong id="shell-credit-text">0</strong></span>
+          <span class="credit-tip-row"><span>Interview</span><strong id="shell-credit-interview">0</strong></span>
+          <span class="credit-tip-row total"><span>Total</span><strong id="shell-credit-total">0</strong></span>
+        </span>
+      </a>
       <button type="button" class="app-shell-signin" id="shell-sign-in-btn">Sign in</button>
       <div class="app-shell-account" id="shell-account" style="display:none;">
         <button type="button" class="app-shell-account-btn" id="shell-account-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="shell-account-menu">
@@ -53,8 +66,29 @@
           <div class="app-shell-email" id="user-email">Checking sign-in...</div>
           <a href="/buy_credits" class="app-shell-account-item" role="menuitem">Buy credits</a>
           <button type="button" class="app-shell-account-item" id="shell-purchase-history-btn" role="menuitem">Purchase history</button>
+          <button type="button" class="app-shell-account-item" id="shell-admin-btn" role="menuitem" style="display:none;">Admin</button>
           <button type="button" class="app-shell-account-item" id="shell-export-data-btn" role="menuitem">Export data</button>
           <button type="button" class="app-shell-account-item danger" id="signout-btn" role="menuitem">Sign out</button>
         </div>
       </div>
     </header>
+    <div class="shell-modal-overlay" id="shell-export-overlay" hidden>
+      <div class="shell-modal" role="dialog" aria-modal="true" aria-labelledby="shell-export-title">
+        <button type="button" class="shell-modal-close" id="shell-export-close" aria-label="Close export options">×</button>
+        <h2 id="shell-export-title">Export Data</h2>
+        <p class="shell-modal-subtitle">Choose which account data you want in your ZIP export.</p>
+        <div class="shell-export-grid" id="shell-export-grid">
+          <label class="shell-export-option"><input type="checkbox" data-export-key="flashcards_csv" checked> <span>Flashcards CSV</span></label>
+          <label class="shell-export-option"><input type="checkbox" data-export-key="practice_tests_csv" checked> <span>Practice Tests CSV</span></label>
+          <label class="shell-export-option"><input type="checkbox" data-export-key="lecture_notes_docx" checked> <span>Lecture Notes DOCX</span></label>
+          <label class="shell-export-option"><input type="checkbox" data-export-key="lecture_notes_pdf_marked"> <span>Lecture Notes PDF (marked answers)</span></label>
+          <label class="shell-export-option"><input type="checkbox" data-export-key="lecture_notes_pdf_unmarked" checked> <span>Lecture Notes PDF (unmarked answers)</span></label>
+          <label class="shell-export-option"><input type="checkbox" data-export-key="account_json"> <span>Legacy account JSON</span></label>
+        </div>
+        <div class="shell-modal-actions">
+          <button type="button" class="app-shell-account-item shell-modal-action" id="shell-export-cancel">Cancel</button>
+          <button type="button" class="shell-modal-primary" id="shell-export-confirm">Export ZIP</button>
+        </div>
+      </div>
+    </div>
+    <div class="app-shell-toast" id="shell-toast" aria-live="polite"></div>

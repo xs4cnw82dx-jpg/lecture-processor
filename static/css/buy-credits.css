@@ -35,12 +35,18 @@
   border: 1px solid #dbe6f7;
   border-radius: 14px;
   background: #fff;
+  font: inherit;
+  font-family: inherit;
   text-align: left;
   padding: 14px;
   display: grid;
   gap: 4px;
   cursor: pointer;
   position: relative;
+}
+
+.bundle-buy-btn * {
+  font-family: inherit;
 }
 
 .bundle-buy-btn.featured {

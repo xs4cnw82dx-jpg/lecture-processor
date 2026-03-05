@@ -22,7 +22,6 @@
           <p>Week view planning with study sessions and browser reminders.</p>
         </div>
         <div class="headline-actions">
-          <button class="btn" id="jump-reminders-btn">Reminder Settings</button>
           <button class="btn primary" id="add-session-btn">+ Add Study Session</button>
         </div>
       </div>
@@ -91,7 +90,10 @@
                 <button class="btn" id="today-week-btn">Today</button>
                 <button class="btn" id="next-week-btn">Next →</button>
               </div>
-              <div class="week-title" id="week-title">Week</div>
+              <div class="week-title-wrap">
+                <div class="week-title" id="week-title">Week</div>
+                <div class="week-subtitle" id="week-subtitle"></div>
+              </div>
             </div>
             <div class="week-grid" id="week-grid"></div>
           </div>

@@ -18,6 +18,7 @@
   var dropzone = document.getElementById('reader-dropzone');
   var dropzoneTitle = document.getElementById('reader-dropzone-title');
   var dropzoneSub = document.getElementById('reader-dropzone-sub');
+  var dropzoneSubExtra = document.getElementById('reader-dropzone-sub-extra');
   var fileInput = document.getElementById('reader-file-input');
   var addImageBtn = document.getElementById('reader-add-image-btn');
   var selectedFilesEl = document.getElementById('reader-selected-files');
@@ -27,12 +28,24 @@
   var outputPre = document.getElementById('reader-output-pre');
   var copyBtn = document.getElementById('reader-copy-btn');
   var downloadBtn = document.getElementById('reader-download-docx-btn');
+  var readerToast = document.getElementById('reader-toast');
 
   var currentUser = null;
   var selectedFiles = [];
   var running = false;
   var lastOutput = '';
   var slidesCredits = null;
+  var toastTimer = null;
+
+  function showReaderToast(message, type) {
+    if (!readerToast || !message) return;
+    readerToast.textContent = String(message);
+    readerToast.className = 'reader-toast visible' + (type ? ' ' + type : '');
+    if (toastTimer) window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(function () {
+      readerToast.className = 'reader-toast';
+    }, 2200);
+  }
 
   function setStatus(message, type) {
     statusEl.textContent = String(message || '');
@@ -48,9 +61,15 @@
   }
 
   function getQuestionDefault() {
-    if (sourceType === 'document') return 'Answer the following questions in order:\n1) ...\n2) ...\n3) ...';
+    if (sourceType === 'document') return 'Answer the following questions about this document:';
     if (sourceType === 'image') return 'Extract text from images...';
     return 'Explain the results section of this study in simple language';
+  }
+
+  function setAdvancedOpen(open) {
+    if (!advancedBody || !advancedToggle) return;
+    advancedBody.classList.toggle('visible', !!open);
+    advancedToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
   function setupModeUI() {
@@ -64,21 +83,25 @@
     if (sourceType === 'url') {
       urlWrap.style.display = '';
       dropzoneWrap.style.display = 'none';
+      setAdvancedOpen(false);
       return;
     }
 
+    setAdvancedOpen(sourceType === 'document');
     urlWrap.style.display = 'none';
     dropzoneWrap.style.display = '';
     if (sourceType === 'image') {
       fileInput.accept = '.png,.jpg,.jpeg,.webp,.heic,.heif';
       fileInput.multiple = true;
       addImageBtn.style.display = '';
-      dropzoneSub.textContent = 'PNG, JPG, WEBP, HEIC, HEIF · up to 20 MB each · max 5 images';
+      dropzoneSub.textContent = 'PNG, JPG, WEBP, HEIC, HEIF';
+      if (dropzoneSubExtra) dropzoneSubExtra.textContent = 'up to 20 MB each · max 5 images';
     } else {
       fileInput.accept = '.pdf,.pptx,.docx';
       fileInput.multiple = false;
       addImageBtn.style.display = 'none';
       dropzoneSub.textContent = 'PDF, PPTX, DOCX · up to 50 MB';
+      if (dropzoneSubExtra) dropzoneSubExtra.textContent = '';
     }
   }
 
@@ -140,19 +163,20 @@
     var incoming = Array.prototype.slice.call(files);
     var errors = [];
     if (sourceType === 'image') {
+      var exceededLimit = false;
       incoming.forEach(function (file) {
         var error = validateFile(file);
         if (error) {
           errors.push(error);
           return;
         }
-        if (selectedFiles.length < 5) {
-          selectedFiles.push(file);
+        if (selectedFiles.length >= 5) {
+          exceededLimit = true;
+          return;
         }
+        selectedFiles.push(file);
       });
-      if (selectedFiles.length > 5) {
-        selectedFiles = selectedFiles.slice(0, 5);
-      }
+      if (exceededLimit) showReaderToast('Max 5 images per run.', 'error');
     } else {
       var file = incoming[0];
       var docError = validateFile(file);
@@ -265,8 +289,7 @@
   if (advancedToggle) {
     advancedToggle.addEventListener('click', function () {
       var nextOpen = !advancedBody.classList.contains('visible');
-      advancedBody.classList.toggle('visible', nextOpen);
-      advancedToggle.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+      setAdvancedOpen(nextOpen);
     });
   }
 

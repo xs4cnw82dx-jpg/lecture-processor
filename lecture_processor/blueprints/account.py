@@ -12,6 +12,12 @@ def export_account_data():
     return auth_api_service.export_account_data(runtime, request)
 
 
+@account_bp.route('/api/account/export-bundle', methods=['POST'])
+def export_account_bundle():
+    runtime = get_runtime()
+    return auth_api_service.export_account_bundle(runtime, request)
+
+
 @account_bp.route('/api/account/delete', methods=['POST'])
 def delete_account_data():
     runtime = get_runtime()

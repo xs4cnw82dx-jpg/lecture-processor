@@ -30,7 +30,7 @@
               </svg>
             </button>
             <div class="advanced-body" id="reader-advanced-body">
-              <label for="reader-question-input">Question (optional)</label>
+              <label for="reader-question-input">Question</label>
               <textarea id="reader-question-input" rows="5"></textarea>
               <p class="reader-help" id="reader-question-help"></p>
             </div>
@@ -46,6 +46,7 @@
               <input type="file" id="reader-file-input">
               <div class="dropzone-title" id="reader-dropzone-title">Drop a file here or click to browse</div>
               <div class="dropzone-sub" id="reader-dropzone-sub"></div>
+              <div class="dropzone-sub-extra" id="reader-dropzone-sub-extra"></div>
             </label>
             <button type="button" class="add-image-btn" id="reader-add-image-btn" style="display:none;">+ Add image</button>
             <div class="selected-files" id="reader-selected-files"></div>
@@ -72,6 +73,7 @@
     </main>
   </div>
   </div>
+  <div class="reader-toast" id="reader-toast" aria-live="polite"></div>
 
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" crossorigin="anonymous"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js" crossorigin="anonymous"></script>

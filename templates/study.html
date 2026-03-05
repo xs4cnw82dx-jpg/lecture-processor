@@ -508,7 +508,7 @@
             <div class="flashcard-stage">
               <div class="flashcard-view-tools">
                 <button class="btn" id="learn-f-list-btn" type="button" aria-pressed="false">Card List</button>
-                <label class="peek-switch" for="learn-f-peek-toggle"><span>Peek</span>
+                <label class="peek-switch" id="learn-f-peek-wrap" for="learn-f-peek-toggle" style="display:none;"><span>Peek</span>
                   <input type="checkbox" id="learn-f-peek-toggle">
                   <span class="peek-switch-track"></span>
                 </label>
@@ -576,8 +576,8 @@
             <div class="learn-notes" id="learn-notes-content"></div>
           </div>
           <div class="difficulty-toolbar" id="difficulty-toolbar">
-            <span class="difficulty-hint">Grade this flashcard (<span class="kbd">1</span> Retry · <span
-                class="kbd">2</span> Hard · <span class="kbd">3</span> Good · <span class="kbd">4</span> Easy):</span>
+            <span class="difficulty-hint">Grade this flashcard <span class="kbd">1</span> Retry · <span
+                class="kbd">2</span> Hard · <span class="kbd">3</span> Good · <span class="kbd">4</span> Easy:</span>
             <button class="difficulty-btn retry" type="button" data-review-action="retry">Retry</button>
             <button class="difficulty-btn hard" type="button" data-review-action="hard">Hard</button>
             <button class="difficulty-btn good" type="button" data-review-action="good">Good</button>

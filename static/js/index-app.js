@@ -92,6 +92,8 @@ let currentBillingReceipt = null;
 let exportCsvType = 'flashcards';
 let progressSummaryCache = null;
 let userTotalProcessed = 0;
+let userHasCreatedStudyPack = false;
+let userProfileLoaded = false;
 let trackedTerminalJobId = '';
 const analyticsEndpoint = '/api/lp-event';
 const POLL_BASE_MS = 2000;
@@ -819,12 +821,15 @@ async function fetchUserData() {
                 userPreferences = null;
                 closeLanguageOnboarding();
                 adminDashboardBtn.style.display = 'none';
+                userProfileLoaded = false;
             }
             return;
         }
         const d = await r.json();
         userCredits = d.credits;
         userTotalProcessed = Number(d.total_processed || 0);
+        userHasCreatedStudyPack = Boolean(d.has_created_study_pack || userTotalProcessed > 0);
+        userProfileLoaded = true;
         currentUserIsAdmin = Boolean(d.is_admin);
         userPreferences = (d.preferences && typeof d.preferences === 'object') ? d.preferences : null;
         adminDashboardBtn.style.display = currentUserIsAdmin ? 'flex' : 'none';
@@ -837,6 +842,7 @@ async function fetchUserData() {
         updateQuickstartVisibility();
     } catch (e) {
         console.error(e);
+        userProfileLoaded = false;
     }
 }
 function updateCreditsDisplay() {
@@ -1166,11 +1172,11 @@ function applyRecommendedSetup() {
     } catch (_) { }
 }
 function updateQuickstartVisibility() {
-    if (!currentUser || !quickstartCard) {
+    if (!currentUser || !quickstartCard || !userProfileLoaded) {
         setQuickstartVisible(false);
         return;
     }
-    const isNewUser = Number(userTotalProcessed || 0) <= 0;
+    const isNewUser = !userHasCreatedStudyPack;
     let dismissed = false;
     try {
         dismissed = localStorage.getItem(`quickstart_dismissed_${currentUser.uid}`) === '1';
@@ -1181,6 +1187,8 @@ function updateUIForAuthState(user) {
     if (user) {
         processingEstimateRange = null;
         processingEstimateContextKey = '';
+        userProfileLoaded = false;
+        userHasCreatedStudyPack = false;
         closeHeaderDropdowns('');
         headerSignInBtn.style.display = 'none';
         if (headerNavToggle) headerNavToggle.style.display = 'inline-flex';
@@ -1259,6 +1267,8 @@ function updateUIForAuthState(user) {
         if (authClient && typeof authClient.clearToken === 'function') authClient.clearToken();
         progressSummaryCache = null;
         userTotalProcessed = 0;
+        userHasCreatedStudyPack = false;
+        userProfileLoaded = false;
         currentUserIsAdmin = false;
         userPreferences = null;
         clearLanguagePreferenceSaveTimer();
@@ -2654,6 +2664,10 @@ function showResults(md, slides, trans, generatedFlashcards, generatedQuestions,
     interviewCombinedText = combinedText || '';
     studyGenerationError = generationError;
     currentStudyPackId = studyPackId;
+    if (currentStudyPackId) {
+        userHasCreatedStudyPack = true;
+        userProfileLoaded = true;
+    }
     currentBillingReceipt = billingReceipt && typeof billingReceipt === 'object' ? billingReceipt : null;
     resultsLocked = true;
     updateQuickstartVisibility();

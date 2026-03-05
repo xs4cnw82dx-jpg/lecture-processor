@@ -3,6 +3,7 @@ EXPECTED_ROUTES = [
     ('GET', '/admin', 'pages.admin_dashboard'),
     ('POST', '/api/account/delete', 'account_api.delete_account_data'),
     ('GET', '/api/account/export', 'account_api.export_account_data'),
+    ('POST', '/api/account/export-bundle', 'account_api.export_account_bundle'),
     ('GET', '/api/admin/export', 'admin_api.admin_export'),
     ('GET', '/api/admin/model-pricing', 'admin_api.admin_model_pricing'),
     ('GET', '/api/admin/overview', 'admin_api.admin_overview'),
