@@ -2971,6 +2971,18 @@ async function checkPaymentResult() {
     }
 }
 
+function maybeOpenAuthModalFromQuery() {
+    const params = new URLSearchParams(window.location.search);
+    const requested = String(params.get('auth') || '').trim().toLowerCase();
+    if (!requested) return;
+    const view = ['signin', 'signup', 'reset'].includes(requested) ? requested : 'signin';
+    showAuthModal(view);
+    params.delete('auth');
+    const query = params.toString();
+    const nextUrl = window.location.pathname + (query ? `?${query}` : '') + window.location.hash;
+    window.history.replaceState({}, '', nextUrl);
+}
+
 headerSignInBtn.addEventListener('click', () => showAuthModal('signin'));
 signInToProcessBtn.addEventListener('click', () => showAuthModal('signin'));
 authModalClose.addEventListener('click', hideAuthModal);
@@ -3691,5 +3703,6 @@ if (forcedMode) {
     });
 }
 switchMode(forcedMode || 'lecture-notes');
+maybeOpenAuthModalFromQuery();
 resetResultsState();
 updateHeaderNavActiveState();

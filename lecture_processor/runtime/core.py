@@ -330,7 +330,16 @@ def parse_cors_allowed_origins():
     if raw:
         origins = [part.strip().lower() for part in raw.split(',') if part.strip()]
         return set(origins)
-    return {'http://127.0.0.1:5000', 'http://localhost:5000', 'http://127.0.0.1:10000', 'http://localhost:10000', 'https://lecture-processor.onrender.com', 'https://lecture-processor-1.onrender.com'}
+    return {
+        'http://127.0.0.1:5000',
+        'http://localhost:5000',
+        'http://127.0.0.1:10000',
+        'http://localhost:10000',
+        'https://lecture-processor.onrender.com',
+        'https://lecture-processor-1.onrender.com',
+        'https://lectureprocessor.com',
+        'https://www.lectureprocessor.com',
+    }
 
 CORS_ALLOWED_ORIGINS = parse_cors_allowed_origins()
 

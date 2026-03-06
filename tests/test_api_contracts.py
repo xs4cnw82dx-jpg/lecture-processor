@@ -276,6 +276,13 @@ def test_checkout_session_uses_trusted_public_base_url(client, monkeypatch):
     assert captured.get("cancel_url") == "https://trusted.example/buy_credits?payment=cancelled"
 
 
+def test_index_auth_query_redirects_to_lecture_notes_modal_page(client):
+    response = client.get("/?auth=signin", follow_redirects=False)
+
+    assert response.status_code in {301, 302}
+    assert response.headers.get("Location", "").endswith("/lecture-notes?auth=signin")
+
+
 def test_admin_export_sanitizes_formula_like_cells(client, monkeypatch):
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
     monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)

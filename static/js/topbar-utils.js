@@ -81,7 +81,7 @@
     var signedInText = opts.signedInText || 'Dashboard';
     var signedOutText = opts.signedOutText || 'Sign in';
     var signedInHref = opts.signedInHref || '/dashboard';
-    var signedOutHref = opts.signedOutHref || '/dashboard';
+    var signedOutHref = opts.signedOutHref || '/lecture-notes?auth=signin';
 
     auth.onAuthStateChanged(function (user) {
       if (labelEl) {

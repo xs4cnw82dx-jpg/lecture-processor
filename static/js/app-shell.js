@@ -175,9 +175,7 @@
 
   function openSignInPortal() {
     if (openInlineAuthModal('signin')) return;
-    var params = new URLSearchParams(window.location.search || '');
-    params.set('auth', 'signin');
-    window.location.href = '/?' + params.toString();
+    window.location.href = '/lecture-notes?auth=signin';
   }
 
   function maybeOpenAuthFromQuery() {
@@ -331,6 +329,8 @@
     currentUserIsAdmin = false;
     if (adminBtn) adminBtn.style.display = 'none';
     if (creditsLink) creditsLink.classList.remove('is-open');
+    applyCreditBreakdown(null);
+    writeCacheJson(CACHE_KEYS.credits, null);
     if (userEmail) userEmail.textContent = 'Not signed in';
     if (userName) userName.textContent = 'Account';
     if (userInitial) userInitial.textContent = '?';
@@ -593,7 +593,11 @@
   });
 
   var cachedBreakdown = readCacheJson(CACHE_KEYS.credits, null);
-  applyCreditBreakdown(cachedBreakdown);
+  if (auth.currentUser) {
+    applyCreditBreakdown(cachedBreakdown);
+  } else {
+    applyCreditBreakdown(null);
+  }
   markActiveNav();
   maybeOpenAuthFromQuery();
   setupRoutePrefetch();

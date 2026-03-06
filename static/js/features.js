@@ -12,7 +12,7 @@
         signedInText:'Dashboard',
         signedOutText:'Sign In',
         signedInHref:'/dashboard',
-        signedOutHref:'/dashboard'
+        signedOutHref:'/lecture-notes?auth=signin'
       });
     }else{
       auth.onAuthStateChanged(function(user){
@@ -21,7 +21,7 @@
           navAuthBtn.href='/dashboard';
         }else{
           navAuthLabel.textContent='Sign In';
-          navAuthBtn.href='/dashboard';
+          navAuthBtn.href='/lecture-notes?auth=signin';
         }
       });
     }
