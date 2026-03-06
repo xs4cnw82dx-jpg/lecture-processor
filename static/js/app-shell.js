@@ -134,6 +134,66 @@
     batchGroupSummary.setAttribute('aria-expanded', batchGroup.open ? 'true' : 'false');
   }
 
+  function setAuthView(view) {
+    var signinView = document.getElementById('signin-view');
+    var signupView = document.getElementById('signup-view');
+    var resetView = document.getElementById('reset-view');
+    if (!signinView || !signupView || !resetView) return false;
+    signinView.classList.remove('active');
+    signupView.classList.remove('active');
+    resetView.classList.remove('active');
+    if (view === 'signup') {
+      signupView.classList.add('active');
+      return true;
+    }
+    if (view === 'reset') {
+      resetView.classList.add('active');
+      return true;
+    }
+    signinView.classList.add('active');
+    return true;
+  }
+
+  function clearAuthMessages() {
+    ['signin-error', 'signup-error', 'reset-error', 'reset-success'].forEach(function (id) {
+      var node = document.getElementById(id);
+      if (!node) return;
+      node.textContent = '';
+      node.classList.remove('visible');
+    });
+  }
+
+  function openInlineAuthModal(view) {
+    var authOverlay = document.getElementById('auth-overlay');
+    if (!authOverlay) return false;
+    if (!setAuthView(view || 'signin')) return false;
+    clearAuthMessages();
+    authOverlay.classList.add('visible');
+    authOverlay.setAttribute('aria-hidden', 'false');
+    return true;
+  }
+
+  function openSignInPortal() {
+    if (openInlineAuthModal('signin')) return;
+    var params = new URLSearchParams(window.location.search || '');
+    params.set('auth', 'signin');
+    window.location.href = '/?' + params.toString();
+  }
+
+  function maybeOpenAuthFromQuery() {
+    var params = new URLSearchParams(window.location.search || '');
+    var authView = String(params.get('auth') || '').trim().toLowerCase();
+    if (!authView) return;
+    if (authView !== 'signin' && authView !== 'signup' && authView !== 'reset') {
+      authView = 'signin';
+    }
+    if (!openInlineAuthModal(authView)) return;
+    params.delete('auth');
+    var query = params.toString();
+    var nextUrl = window.location.pathname + (query ? ('?' + query) : '') + (window.location.hash || '');
+    window.history.replaceState({}, '', nextUrl);
+  }
+
   function markActiveNav() {
     var currentPath = normalizePath(window.location.pathname || '/');
     var navLinks = Array.prototype.slice.call(document.querySelectorAll('.app-shell-link[href]'));
@@ -412,7 +472,7 @@
 
   if (signInBtn) {
     signInBtn.addEventListener('click', function () {
-      window.location.href = '/dashboard';
+      openSignInPortal();
     });
   }
 
@@ -535,6 +595,7 @@
   var cachedBreakdown = readCacheJson(CACHE_KEYS.credits, null);
   applyCreditBreakdown(cachedBreakdown);
   markActiveNav();
+  maybeOpenAuthFromQuery();
   setupRoutePrefetch();
   window.LectureProcessorShell = Object.assign({}, window.LectureProcessorShell || {}, {
     showToast: showToast,
