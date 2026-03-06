@@ -3,6 +3,7 @@
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.study import progress as study_progress
+from lecture_processor.domains.ai import batch_orchestrator
 
 
 def get_study_progress(app_ctx, request):
@@ -416,12 +417,27 @@ def get_study_folders(app_ctx, request):
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
     try:
+        pending_batches = batch_orchestrator.list_batches_for_uid(
+            uid,
+            statuses=['queued', 'processing'],
+            limit=300,
+            runtime=app_ctx,
+        )
+        pending_by_folder = {}
+        for batch in pending_batches:
+            folder_id = str(batch.get('folder_id', '') or '').strip()
+            if not folder_id:
+                continue
+            pending_by_folder[folder_id] = int(pending_by_folder.get(folder_id, 0) or 0) + 1
+
         docs = app_ctx.study_repo.list_study_folders_by_uid(app_ctx.db, uid)
         folders = []
         for doc in docs:
             folder = doc.to_dict()
+            folder_id = doc.id
+            pending_count = int(pending_by_folder.get(folder_id, 0) or 0)
             folders.append({
-                'folder_id': doc.id,
+                'folder_id': folder_id,
                 'name': folder.get('name', ''),
                 'course': folder.get('course', ''),
                 'subject': folder.get('subject', ''),
@@ -429,6 +445,12 @@ def get_study_folders(app_ctx, request):
                 'block': folder.get('block', ''),
                 'exam_date': folder.get('exam_date', ''),
                 'created_at': folder.get('created_at', 0),
+                'pending_batch_count': pending_count,
+                'pending_batch_hint': (
+                    'This folder will fill once the batch completes.'
+                    if pending_count > 0
+                    else ''
+                ),
             })
         folders.sort(key=lambda f: f.get('created_at', 0), reverse=True)
         return app_ctx.jsonify({'folders': folders})

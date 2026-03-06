@@ -15,10 +15,23 @@ const exportJobsBtn = document.getElementById('export-jobs-btn');
 const exportPurchasesBtn = document.getElementById('export-purchases-btn');
 const exportFunnelBtn = document.getElementById('export-funnel-btn');
 const exportFunnelDailyBtn = document.getElementById('export-funnel-daily-btn');
+const adminTabButtons = Array.from(document.querySelectorAll('[data-admin-tab]'));
+const adminOverviewContent = document.getElementById('admin-tab-overview-content');
+const adminBatchContent = document.getElementById('admin-tab-batch-content');
+const adminBatchRefreshBtn = document.getElementById('admin-batch-refresh-btn');
+const adminBatchMode = document.getElementById('admin-batch-mode');
+const adminBatchStatus = document.getElementById('admin-batch-status');
+const adminBatchJobsBody = document.getElementById('admin-batch-jobs-body');
 
 let currentWindow = '7d';
 let currentModeView = 'total';
 let latestModeBreakdown = {};
+let activeAdminTab = 'overview';
+let adminToastTimer = null;
+
+const adminToast = document.createElement('div');
+adminToast.className = 'admin-toast';
+document.body.appendChild(adminToast);
 
 function authFetch(path, options) {
     if (authClient && typeof authClient.authFetch === 'function') {
@@ -65,6 +78,91 @@ function formatTokenCount(count) {
     if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
     if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`;
     return String(count);
+}
+
+function showAdminToast(message, type) {
+    if (!message) return;
+    adminToast.textContent = String(message);
+    adminToast.classList.remove('success', 'error', 'visible');
+    if (type === 'success') adminToast.classList.add('success');
+    if (type === 'error') adminToast.classList.add('error');
+    adminToast.classList.add('visible');
+    if (adminToastTimer) window.clearTimeout(adminToastTimer);
+    adminToastTimer = window.setTimeout(() => {
+        adminToast.classList.remove('visible');
+    }, 2400);
+}
+
+function setAdminTab(tabKey) {
+    const next = tabKey === 'batch-jobs' ? 'batch-jobs' : 'overview';
+    activeAdminTab = next;
+    adminTabButtons.forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.adminTab === next);
+    });
+    if (adminOverviewContent) adminOverviewContent.style.display = next === 'overview' ? '' : 'none';
+    if (adminBatchContent) adminBatchContent.style.display = next === 'batch-jobs' ? '' : 'none';
+}
+
+function renderAdminBatchJobs(rows) {
+    if (!adminBatchJobsBody) return;
+    adminBatchJobsBody.innerHTML = '';
+    const batches = Array.isArray(rows) ? rows : [];
+    if (!batches.length) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 9;
+        td.className = 'empty';
+        td.textContent = 'No batch jobs found for this filter.';
+        tr.appendChild(td);
+        adminBatchJobsBody.appendChild(tr);
+        return;
+    }
+    batches.forEach((batch) => {
+        const tr = document.createElement('tr');
+        const status = String(batch.status || 'queued');
+        const statusClass = status === 'complete' ? 'complete' : (status === 'error' ? 'error' : (status === 'partial' ? 'partial' : (status === 'processing' ? 'processing' : 'queued')));
+        const rowSummary = `${Number(batch.completed_rows || 0)}/${Number(batch.total_rows || 0)} complete · ${Number(batch.failed_rows || 0)} failed`;
+        const stageSummary = [batch.current_stage || '-', batch.current_stage_state || '-', batch.provider_state || '-'].join(' · ');
+        const refundSummary = `${Number(batch.credits_refunded || 0)} refunded · ${Number(batch.credits_refund_pending || 0)} pending`;
+        tr.innerHTML = `
+            <td>${formatDate(batch.created_at)}</td>
+            <td>${(batch.email || '').slice(0, 64) || '-'}</td>
+            <td>${batch.batch_title || batch.batch_id || '-'}</td>
+            <td>${batch.mode || '-'}</td>
+            <td><span class="status ${statusClass}">${status}</span></td>
+            <td>${stageSummary}</td>
+            <td>${rowSummary}</td>
+            <td>${batch.completion_email_status || 'pending'}</td>
+            <td>${refundSummary}</td>
+        `;
+        adminBatchJobsBody.appendChild(tr);
+    });
+}
+
+async function loadAdminBatchJobs(showToastOnSuccess = false) {
+    if (!auth.currentUser) {
+        renderAdminBatchJobs([]);
+        return;
+    }
+    const params = new URLSearchParams();
+    params.set('limit', '300');
+    if (adminBatchMode && adminBatchMode.value) params.set('mode', adminBatchMode.value);
+    if (adminBatchStatus && adminBatchStatus.value) params.set('status', adminBatchStatus.value);
+    try {
+        const res = await authFetch(`/api/admin/batch-jobs?${params.toString()}`);
+        if (!res.ok) {
+            const payload = await res.json().catch(() => ({}));
+            throw new Error(payload.error || 'Could not load batch jobs.');
+        }
+        const payload = await res.json();
+        renderAdminBatchJobs(payload.batches || []);
+        if (showToastOnSuccess) {
+            showAdminToast('Batch jobs refreshed.', 'success');
+        }
+    } catch (error) {
+        console.error(error);
+        showAdminToast(error.message || 'Could not load batch jobs.', 'error');
+    }
 }
 
 function formatPromptSummary(job) {
@@ -418,10 +516,13 @@ auth.onAuthStateChanged(async (user) => {
         await loadAdminOverview(user);
         await initCostCalculator();
         await runActualCostAnalysis(false);
+        await loadAdminBatchJobs(false);
     } else {
         if (authClient && typeof authClient.clearToken === 'function') authClient.clearToken();
         signedInMeta.textContent = 'Not signed in';
         authBtn.textContent = 'Sign in';
+        setAdminTab('overview');
+        renderAdminBatchJobs([]);
         setState('Please sign in with your admin account.', 'blocked');
     }
 });
@@ -440,6 +541,10 @@ authBtn.addEventListener('click', async () => {
 refreshBtn.addEventListener('click', async () => {
     if (!auth.currentUser) {
         setState('Please sign in to refresh.', 'blocked');
+        return;
+    }
+    if (activeAdminTab === 'batch-jobs') {
+        await loadAdminBatchJobs(true);
         return;
     }
     await loadAdminOverview(auth.currentUser);
@@ -485,6 +590,34 @@ document.querySelectorAll('.mode-view').forEach((btn) => {
     });
 });
 
+adminTabButtons.forEach((btn) => {
+    btn.addEventListener('click', async () => {
+        const tabKey = btn.dataset.adminTab || 'overview';
+        setAdminTab(tabKey);
+        if (tabKey === 'batch-jobs' && auth.currentUser) {
+            await loadAdminBatchJobs(false);
+        }
+    });
+});
+
+if (adminBatchRefreshBtn) {
+    adminBatchRefreshBtn.addEventListener('click', async () => {
+        await loadAdminBatchJobs(true);
+    });
+}
+
+if (adminBatchMode) {
+    adminBatchMode.addEventListener('change', async () => {
+        await loadAdminBatchJobs(false);
+    });
+}
+
+if (adminBatchStatus) {
+    adminBatchStatus.addEventListener('change', async () => {
+        await loadAdminBatchJobs(false);
+    });
+}
+
 const loadPromptsBtn = document.getElementById('load-prompts-btn');
 const promptsOutput = document.getElementById('prompts-output');
 if (loadPromptsBtn && promptsOutput) {
@@ -510,6 +643,7 @@ if (loadPromptsBtn && promptsOutput) {
 
 setActiveFilterButton();
 setActiveModeViewButton();
+setAdminTab('overview');
 
 /* ── Cost Calculator ── */
 const calcScenario = document.getElementById('calc-scenario');

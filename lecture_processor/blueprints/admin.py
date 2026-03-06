@@ -40,3 +40,9 @@ def admin_cost_analysis():
 def admin_cost_analysis_export():
     runtime = get_runtime()
     return admin_api_service.admin_cost_analysis_export(runtime, request)
+
+
+@admin_bp.route('/api/admin/batch-jobs', methods=['GET'])
+def admin_batch_jobs():
+    runtime = get_runtime()
+    return admin_api_service.admin_batch_jobs(runtime, request)

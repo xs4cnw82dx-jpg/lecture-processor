@@ -106,6 +106,7 @@
           <small id="rows-minimum-note">Minimum 2 lectures required for batch mode.</small>
           <button type="submit" id="submit-batch-btn" class="btn primary">Start batch</button>
         </div>
+        <div class="batch-submit-feedback" id="batch-submit-feedback" style="display:none;"></div>
       </form>
     </section>
 
@@ -114,9 +115,10 @@
         <h2>Batch status</h2>
         <div>
           <button type="button" id="refresh-status-btn" class="btn">Refresh</button>
-          <button type="button" id="download-zip-btn" class="btn">Download ZIP</button>
+          <button type="button" id="download-zip-btn" class="btn" style="display:none;">Download ZIP</button>
         </div>
       </div>
+      <p class="status-note">You can safely leave this page. API usage includes status polling requests.</p>
       <div id="batch-summary" class="batch-summary"></div>
       <div class="table-wrap">
         <table>

@@ -8,6 +8,7 @@ except Exception:
     Workbook = None
 
 from lecture_processor.domains.admin import metrics as admin_metrics
+from lecture_processor.domains.ai import batch_orchestrator
 
 
 def sanitize_csv_cell(value):
@@ -872,3 +873,27 @@ def admin_cost_analysis_export(app_ctx, request):
         as_attachment=True,
         download_name=filename,
     )
+
+
+def admin_batch_jobs(app_ctx, request):
+    _decoded, error_response, status = _require_admin(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
+
+    status_filter = str(request.args.get('status', '') or '').strip()
+    mode_filter = str(request.args.get('mode', '') or '').strip()
+    try:
+        limit = int(request.args.get('limit', 200) or 200)
+    except Exception:
+        limit = 200
+    limit = max(1, min(500, limit))
+
+    statuses = [part.strip() for part in status_filter.split(',') if part.strip()] if status_filter else []
+    batches = batch_orchestrator.list_batches_for_admin(
+        statuses=statuses,
+        limit=limit,
+        runtime=app_ctx,
+    )
+    if mode_filter:
+        batches = [item for item in batches if str(item.get('mode', '') or '') == mode_filter]
+    return app_ctx.jsonify({'batches': batches})

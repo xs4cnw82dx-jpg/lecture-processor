@@ -508,6 +508,22 @@ def create_batch_job(app_ctx, request):
         return app_ctx.jsonify({'error': 'Invalid rows payload'}), 400
     if len(rows) < 2:
         return app_ctx.jsonify({'error': 'Batch mode requires at least 2 rows.'}), 400
+    client_submission_id = str(request.form.get('client_submission_id', '') or '').strip()[:120]
+    if client_submission_id:
+        existing = batch_orchestrator.find_batch_by_submission_id(
+            uid,
+            client_submission_id,
+            runtime=app_ctx,
+        )
+        existing_batch_id = str((existing or {}).get('batch_id', '') or '').strip()
+        if existing_batch_id:
+            return app_ctx.jsonify(
+                {
+                    'batch_id': existing_batch_id,
+                    'deduplicated': True,
+                    'status': str((existing or {}).get('status', 'queued') or 'queued'),
+                }
+            )
 
     decoded_email = str((decoded_token or {}).get('email', '') or '').strip()
     user = app_ctx.get_or_create_user(uid, decoded_email)
@@ -766,6 +782,16 @@ def create_batch_job(app_ctx, request):
             'completion_email_status': 'pending',
             'completion_email_sent_at': 0,
             'completion_email_error': '',
+            'current_stage': 'queued',
+            'current_stage_state': 'queued',
+            'stage_started_at': 0,
+            'provider_state': 'JOB_STATE_PENDING',
+            'submission_locked': True,
+            'client_submission_id': client_submission_id,
+            'last_heartbeat_at': now_ts,
+            'credits_charged': sum(1 + int(item.get('interview_features_cost', 0) or 0) for item in charged_rows),
+            'credits_refunded': 0,
+            'credits_refund_pending': 0,
         }
         batch_orchestrator.create_batch_job(batch_payload, prepared_rows, runtime=app_ctx)
 
@@ -791,6 +817,30 @@ def create_batch_job(app_ctx, request):
                 billing_credits.refund_slides_credits(uid, extras, runtime=app_ctx)
         app_ctx.cleanup_files(cleanup_paths, [])
         return app_ctx.jsonify({'error': str(error)}), 400
+
+
+def list_batch_jobs(app_ctx, request):
+    uid, _decoded_token, error_response, status = _batch_user_guard(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
+
+    mode = str(request.args.get('mode', '') or '').strip()
+    status_filter = str(request.args.get('status', '') or '').strip()
+    limit = 100
+    try:
+        limit = int(request.args.get('limit', 100) or 100)
+    except Exception:
+        limit = 100
+    limit = max(1, min(200, limit))
+
+    statuses = []
+    if status_filter:
+        statuses = [part.strip() for part in status_filter.split(',') if part.strip()]
+
+    batches = batch_orchestrator.list_batches_for_uid(uid, statuses=statuses, limit=limit, runtime=app_ctx)
+    if mode:
+        batches = [item for item in batches if str(item.get('mode', '') or '') == mode]
+    return app_ctx.jsonify({'batches': batches})
 
 
 def get_batch_job_status(app_ctx, request, batch_id):
@@ -895,6 +945,9 @@ def download_batch_zip(app_ctx, request, batch_id):
     batch, _decoded, error_response, status = _get_batch_with_permission(app_ctx, request, batch_id)
     if error_response is not None:
         return error_response, status
+    batch_status = batch_orchestrator.get_batch_status(batch_id, runtime=app_ctx) or {}
+    if not bool(batch_status.get('can_download_zip', False)):
+        return app_ctx.jsonify({'error': 'Batch ZIP is available after at least one row completes.'}), 400
     rows = batch_orchestrator.list_batch_rows(batch_id, runtime=app_ctx)
     archive_bytes = app_ctx.io.BytesIO()
     with zipfile.ZipFile(archive_bytes, mode='w', compression=zipfile.ZIP_DEFLATED) as archive:

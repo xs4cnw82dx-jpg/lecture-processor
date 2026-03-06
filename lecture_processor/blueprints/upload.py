@@ -30,6 +30,12 @@ def create_batch_job():
     return upload_api_service.create_batch_job(runtime, request)
 
 
+@upload_bp.route('/api/batch/jobs', methods=['GET'])
+def list_batch_jobs():
+    runtime = get_runtime()
+    return upload_api_service.list_batch_jobs(runtime, request)
+
+
 @upload_bp.route('/api/batch/jobs/<batch_id>', methods=['GET'])
 def get_batch_job_status(batch_id):
     runtime = get_runtime()
