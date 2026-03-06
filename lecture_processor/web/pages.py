@@ -20,6 +20,9 @@ def _shell_context(*, runtime, page_key: str, show_credits_pill: bool = False) -
 @pages_bp.route('/')
 def index():
     runtime = get_runtime()
+    auth_view = str(request.args.get('auth', '') or '').strip().lower()
+    if auth_view in {'signin', 'signup', 'reset'}:
+        return redirect(f'/lecture-notes?auth={auth_view}')
     return render_template('landing.html', legal_contact_email=runtime.LEGAL_CONTACT_EMAIL)
 
 
