@@ -1164,11 +1164,12 @@ def test_update_study_progress_invalid_card_states_returns_400_without_writes(cl
 
     fake_progress_doc = _FakeProgressDoc()
     fake_card_doc = _FakeCardDoc()
+    runtime = get_runtime(client.application)
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-invalid-cards", "email": "user@gmail.com"})
     monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
-    monkeypatch.setattr(core, "get_study_progress_doc", lambda _uid: fake_progress_doc)
-    monkeypatch.setattr(core, "get_study_card_state_doc", lambda _uid, _pack_id: fake_card_doc)
+    monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: fake_progress_doc, raising=False)
+    monkeypatch.setattr(runtime, "get_study_card_state_doc", lambda _uid, _pack_id: fake_card_doc, raising=False)
 
     response = client.put(
         "/api/study-progress",
@@ -1215,11 +1216,12 @@ def test_update_study_progress_invalid_remove_pack_ids_returns_400_without_write
 
     fake_progress_doc = _FakeProgressDoc()
     fake_card_doc = _FakeCardDoc()
+    runtime = get_runtime(client.application)
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-invalid-remove", "email": "user@gmail.com"})
     monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
-    monkeypatch.setattr(core, "get_study_progress_doc", lambda _uid: fake_progress_doc)
-    monkeypatch.setattr(core, "get_study_card_state_doc", lambda _uid, _pack_id: fake_card_doc)
+    monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: fake_progress_doc, raising=False)
+    monkeypatch.setattr(runtime, "get_study_card_state_doc", lambda _uid, _pack_id: fake_card_doc, raising=False)
 
     response = client.put(
         "/api/study-progress",
