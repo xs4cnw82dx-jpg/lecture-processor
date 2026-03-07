@@ -6,8 +6,8 @@ import pytest
 from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.upload import import_audio as upload_import_audio
-from lecture_processor.services import notification_service
 from tests.runtime_test_support import get_test_core
 
 core = get_test_core()
@@ -50,8 +50,18 @@ def _clear_batch_memory():
         rows.clear()
 
 
+def _patch_batch_refunds(monkeypatch):
+    monkeypatch.setattr(core, 'db', None)
+    monkeypatch.setattr(billing_credits, 'refund_credit', lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(billing_credits, 'refund_slides_credits', lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(billing_receipts, 'add_job_credit_refund', lambda *args, **kwargs: None)
+    monkeypatch.setattr(core, 'save_job_log', lambda *args, **kwargs: None)
+    monkeypatch.setattr(batch_orchestrator, 'send_batch_completion_email', lambda *args, **kwargs: ('skipped', 'disabled in test'))
+
+
 def test_batch_create_requires_minimum_two_rows(client, monkeypatch):
     _patch_batch_auth(monkeypatch)
+    monkeypatch.setattr(core, 'client', None)
 
     response = client.post(
         '/api/batch/jobs',
@@ -69,6 +79,7 @@ def test_batch_create_requires_minimum_two_rows(client, monkeypatch):
 
 def test_batch_create_requires_batch_title(client, monkeypatch):
     _patch_batch_auth(monkeypatch)
+    monkeypatch.setattr(core, 'client', None)
     monkeypatch.setattr(upload_import_audio, 'cleanup_expired_audio_import_tokens', lambda runtime=None: None)
     monkeypatch.setattr(core, 'threading', type('T', (), {'Thread': _DummyThread}))
     monkeypatch.setattr(
@@ -109,6 +120,7 @@ def test_batch_create_requires_batch_title(client, monkeypatch):
 
 def test_batch_create_deduplicates_client_submission_id(client, monkeypatch):
     _patch_batch_auth(monkeypatch)
+    monkeypatch.setattr(core, 'client', None)
     monkeypatch.setattr(
         batch_orchestrator,
         'find_batch_by_submission_id',
@@ -147,6 +159,7 @@ def test_batch_create_deduplicates_client_submission_id(client, monkeypatch):
 
 def test_batch_create_slides_only_contract(client, monkeypatch):
     _patch_batch_auth(monkeypatch)
+    monkeypatch.setattr(core, 'client', object())
     monkeypatch.setattr(upload_import_audio, 'cleanup_expired_audio_import_tokens', lambda runtime=None: None)
     monkeypatch.setattr(core, 'threading', type('T', (), {'Thread': _DummyThread}))
     monkeypatch.setattr(
@@ -278,6 +291,79 @@ def test_batch_status_contract(client, monkeypatch):
     assert body.get('completion_email_status') == 'pending'
 
 
+def test_batch_status_repairs_terminal_batch_with_incomplete_rows(monkeypatch):
+    _clear_batch_memory()
+    _patch_batch_refunds(monkeypatch)
+    batch_id = 'batch-terminal-repair'
+    batch_orchestrator.create_batch_job(
+        {
+            'batch_id': batch_id,
+            'uid': 'u-batch',
+            'email': 'batch@example.com',
+            'mode': 'lecture-notes',
+            'status': 'error',
+            'batch_title': 'Broken batch',
+            'total_rows': 2,
+            'current_stage': 'slide_extraction',
+            'current_stage_state': 'failed',
+            'provider_state': 'FAILED',
+            'completed_rows': 0,
+            'failed_rows': 0,
+            'completion_email_status': 'pending',
+        },
+        [
+            {'row_id': 'row-1', 'ordinal': 1, 'status': 'queued', 'credit_deducted': 'lecture_credits_standard'},
+            {'row_id': 'row-2', 'ordinal': 2, 'status': 'queued', 'credit_deducted': 'lecture_credits_standard'},
+        ],
+        runtime=core,
+    )
+
+    payload = batch_orchestrator.get_batch_status(batch_id, runtime=core)
+
+    assert payload.get('status') == 'error'
+    assert payload.get('failed_rows') == 2
+    assert 'interrupted' in str(payload.get('error_message', '')).lower()
+    assert all(str(row.get('status', '')) == 'error' for row in payload.get('rows', []))
+
+
+def test_list_batches_repairs_stale_processing_batch(monkeypatch):
+    _clear_batch_memory()
+    _patch_batch_refunds(monkeypatch)
+    now_holder = {'value': 100.0}
+    monkeypatch.setattr(core.time, 'time', lambda: now_holder['value'])
+    monkeypatch.setattr(batch_orchestrator, '_batch_recovery_stale_seconds', lambda runtime=None: 30)
+
+    batch_id = batch_orchestrator.create_batch_job(
+        {
+            'batch_id': 'batch-stale-processing',
+            'uid': 'u-batch',
+            'email': 'batch@example.com',
+            'mode': 'slides-only',
+            'status': 'processing',
+            'batch_title': 'Stale batch',
+            'total_rows': 1,
+            'current_stage': 'file_upload',
+            'current_stage_state': 'running',
+            'provider_state': 'FILE_UPLOAD',
+            'completion_email_status': 'pending',
+        },
+        [
+            {'row_id': 'row-1', 'ordinal': 1, 'status': 'processing', 'current_stage': 'file_upload', 'credit_deducted': 'slides_credits'},
+        ],
+        runtime=core,
+    )
+
+    now_holder['value'] = 1000.0
+    rows = batch_orchestrator.list_batches_for_uid('u-batch', runtime=core)
+
+    assert rows
+    assert rows[0].get('batch_id') == batch_id
+    assert rows[0].get('status') == 'error'
+    assert 'interrupted' in str(rows[0].get('error_message', '')).lower()
+    repaired = batch_orchestrator.get_batch(batch_id, runtime=core)
+    assert repaired.get('status') == 'error'
+
+
 def test_batch_completion_email_status_sent_is_persisted(monkeypatch):
     _clear_batch_memory()
     batch_id = 'batch-notify-sent'
@@ -305,7 +391,7 @@ def test_batch_completion_email_status_sent_is_persisted(monkeypatch):
         sent['count'] += 1
         return 'sent', ''
 
-    monkeypatch.setattr(notification_service, 'send_batch_completion_email', _fake_send)
+    monkeypatch.setattr(batch_orchestrator, 'send_batch_completion_email', _fake_send)
     batch_orchestrator._send_batch_completion_email_if_needed(batch_id, 'complete', runtime=core)
     batch = batch_orchestrator.get_batch(batch_id, runtime=core)
     assert sent['count'] == 1

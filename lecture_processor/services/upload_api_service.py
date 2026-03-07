@@ -241,6 +241,13 @@ def _sum_retry_attempts(retry_tracker):
     return sum(int(v or 0) for v in (retry_tracker or {}).values())
 
 
+def _require_ai_processing_ready(app_ctx):
+    if getattr(app_ctx, 'client', None) is not None:
+        return None
+    app_ctx.logger.error('AI processing requested while Gemini client is not configured.')
+    return app_ctx.jsonify({'error': 'AI processing is temporarily unavailable right now. Please try again later.'}), 503
+
+
 def _attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None):
     if not uid or not credit_type:
         return False, ''
@@ -525,6 +532,14 @@ def create_batch_job(app_ctx, request):
                 }
             )
 
+    batch_title = _sanitize_study_pack_title(request.form.get('batch_title', ''))
+    if not batch_title:
+        return app_ctx.jsonify({'error': 'Batch title is required.'}), 400
+
+    ai_unavailable = _require_ai_processing_ready(app_ctx)
+    if ai_unavailable is not None:
+        return ai_unavailable
+
     decoded_email = str((decoded_token or {}).get('email', '') or '').strip()
     user = app_ctx.get_or_create_user(uid, decoded_email)
     preferred_language_key = shared_parsing.sanitize_output_language_pref_key(
@@ -729,10 +744,6 @@ def create_batch_job(app_ctx, request):
                     'created_at': now_ts,
                 }
             )
-
-        batch_title = _sanitize_study_pack_title(request.form.get('batch_title', ''))
-        if not batch_title:
-            raise ValueError('Batch title is required.')
         folder_name = batch_title
         folder_id = ''
         if app_ctx.db is not None:
@@ -1138,6 +1149,10 @@ def upload_files(app_ctx, request):
         if not app_ctx.file_looks_like_audio(audio_path):
             app_ctx.cleanup_files([pdf_path, audio_path], [])
             return app_ctx.jsonify({'error': 'Uploaded audio file is invalid or unsupported.'}), 400
+        ai_unavailable = _require_ai_processing_ready(app_ctx)
+        if ai_unavailable is not None:
+            app_ctx.cleanup_files([pdf_path, audio_path], [])
+            return ai_unavailable
         deducted = billing_credits.deduct_credit(
             uid,
             'lecture_credits_standard',
@@ -1180,6 +1195,10 @@ def upload_files(app_ctx, request):
         if slides_error:
             return app_ctx.jsonify({'error': slides_error}), 400
         pdf_size = app_ctx.get_saved_file_size(pdf_path)
+        ai_unavailable = _require_ai_processing_ready(app_ctx)
+        if ai_unavailable is not None:
+            app_ctx.cleanup_files([pdf_path], [])
+            return ai_unavailable
         deducted = billing_credits.deduct_credit(uid, 'slides_credits', runtime=app_ctx)
         if not deducted:
             app_ctx.cleanup_files([pdf_path], [])
@@ -1231,6 +1250,10 @@ def upload_files(app_ctx, request):
         if not app_ctx.file_looks_like_audio(audio_path):
             app_ctx.cleanup_files([audio_path], [])
             return app_ctx.jsonify({'error': 'Uploaded audio file is invalid or unsupported.'}), 400
+        ai_unavailable = _require_ai_processing_ready(app_ctx)
+        if ai_unavailable is not None:
+            app_ctx.cleanup_files([audio_path], [])
+            return ai_unavailable
         deducted = billing_credits.deduct_interview_credit(uid, runtime=app_ctx)
         if not deducted:
             app_ctx.cleanup_files([audio_path], [])

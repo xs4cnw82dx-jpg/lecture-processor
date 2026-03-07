@@ -5,6 +5,8 @@ import uuid
 from flask import g, jsonify, request
 from werkzeug.exceptions import RequestEntityTooLarge
 
+from lecture_processor.domains.ai import batch_orchestrator
+
 
 def _set_sentry_tags(runtime, tags):
     sentry_sdk = getattr(runtime, 'sentry_sdk', None)
@@ -34,6 +36,7 @@ def register_runtime_hooks(app, runtime) -> None:
     @app.before_request
     def _run_startup_recovery_on_first_request():
         runtime.run_startup_recovery_once()
+        batch_orchestrator.run_startup_batch_recovery_once(runtime=runtime)
 
     @app.before_request
     def _handle_api_options_preflight():

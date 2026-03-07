@@ -48,6 +48,15 @@
     });
   }
 
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function modeLabel(mode) {
     var key = String(mode || '').trim();
     if (key === 'lecture-notes') return 'Lectures';
@@ -63,9 +72,9 @@
   }
 
   function stageText(batch) {
-    var stage = String(batch.current_stage || '').trim();
+    var stage = String(batch.stage_label || batch.current_stage || '').trim();
     var stageState = String(batch.current_stage_state || '').trim();
-    var provider = String(batch.provider_state || '').trim();
+    var provider = String(batch.provider_label || batch.provider_state || '').trim();
     if (!stage && !stageState && !provider) return '-';
     return [stage || '-', stageState || '-', provider || '-'].join(' · ');
   }
@@ -85,6 +94,13 @@
     return tr;
   }
 
+  function batchTitleCell(batch) {
+    var title = String(batch.batch_title || batch.batch_id || '-');
+    var detail = String(batch.error_message || batch.status_message || '').trim();
+    if (!detail) return escapeHtml(title);
+    return '<div class="batch-title-cell"><strong>' + escapeHtml(title) + '</strong><span>' + escapeHtml(detail) + '</span></div>';
+  }
+
   function renderTable(body, rows, isActiveTable) {
     if (!body) return;
     body.innerHTML = '';
@@ -101,29 +117,36 @@
       var actions = [];
       var viewHref = modePath(batch.mode) + '?batch_id=' + encodeURIComponent(batchId);
       actions.push('<a class="btn-link" href="' + viewHref + '">View</a>');
+      if (batch.next_action_label && batch.next_action_href && batch.next_action_href !== viewHref) {
+        if (String(batch.next_action_href).indexOf('/api/batch/jobs/') === 0) {
+          actions.push('<button type="button" class="btn-link" data-action="open-href" data-href="' + escapeHtml(String(batch.next_action_href)) + '">' + escapeHtml(String(batch.next_action_label)) + '</button>');
+        } else {
+          actions.push('<a class="btn-link" href="' + escapeHtml(String(batch.next_action_href)) + '">' + escapeHtml(String(batch.next_action_label)) + '</a>');
+        }
+      }
       if (batch.can_download_zip) {
         actions.push('<button type="button" class="btn-link" data-action="download-zip" data-batch-id="' + batchId + '">Download ZIP</button>');
       }
       var tr = document.createElement('tr');
       if (isActiveTable) {
         tr.innerHTML =
-          '<td>' + (batch.batch_title || batchId || '-') + '</td>' +
+          '<td>' + batchTitleCell(batch) + '</td>' +
           '<td>' + modeLabel(batch.mode) + '</td>' +
           '<td>' + created + '</td>' +
           '<td>' + stageText(batch) + '</td>' +
           '<td>' + rowsText + '</td>' +
           '<td>' + updated + '</td>' +
-          '<td>' + String(batch.completion_email_status || 'pending') + '</td>' +
+          '<td>' + escapeHtml(String(batch.email_status_label || batch.completion_email_status || 'pending')) + '</td>' +
           '<td><div class="table-actions">' + actions.join('') + '</div></td>';
       } else {
         tr.innerHTML =
-          '<td>' + (batch.batch_title || batchId || '-') + '</td>' +
+          '<td>' + batchTitleCell(batch) + '</td>' +
           '<td>' + modeLabel(batch.mode) + '</td>' +
           '<td>' + statusPill(batch.status) + '</td>' +
           '<td>' + created + '</td>' +
           '<td>' + rowsText + '</td>' +
           '<td>' + updated + '</td>' +
-          '<td>' + String(batch.completion_email_status || 'pending') + '</td>' +
+          '<td>' + escapeHtml(String(batch.email_status_label || batch.completion_email_status || 'pending')) + '</td>' +
           '<td><div class="table-actions">' + actions.join('') + '</div></td>';
       }
       body.appendChild(tr);
@@ -136,6 +159,13 @@
         var batchId = String(button.getAttribute('data-batch-id') || '').trim();
         if (!batchId) return;
         window.open('/api/batch/jobs/' + encodeURIComponent(batchId) + '/download.zip', '_blank');
+      });
+    });
+    Array.prototype.slice.call(document.querySelectorAll('[data-action="open-href"]')).forEach(function (button) {
+      button.addEventListener('click', function () {
+        var href = String(button.getAttribute('data-href') || '').trim();
+        if (!href) return;
+        window.open(href, '_blank');
       });
     });
   }

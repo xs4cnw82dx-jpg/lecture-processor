@@ -80,6 +80,7 @@
   var statusPanel = document.getElementById('batch-status-panel');
   var refreshStatusBtn = document.getElementById('refresh-status-btn');
   var downloadZipBtn = document.getElementById('download-zip-btn');
+  var statusBanner = document.getElementById('batch-status-banner');
   var summaryEl = document.getElementById('batch-summary');
   var rowsBody = document.getElementById('batch-rows-body');
   var submitFeedback = document.getElementById('batch-submit-feedback');
@@ -145,6 +146,61 @@
     var safe = Number(value || 0);
     if (!Number.isFinite(safe)) return '0';
     return Math.round(safe).toLocaleString();
+  }
+
+  function truncateText(value, maxLength) {
+    var text = String(value || '').trim();
+    var limit = Math.max(20, Number(maxLength || 0) || 140);
+    if (text.length <= limit) return text;
+    return text.slice(0, limit - 1).trim() + '…';
+  }
+
+  function statusTone(status) {
+    var safe = String(status || '').trim().toLowerCase();
+    if (safe === 'complete') return 'success';
+    if (safe === 'partial') return 'warning';
+    if (safe === 'error') return 'error';
+    return 'info';
+  }
+
+  function batchActionHtml(summary) {
+    var label = String(summary.next_action_label || '').trim();
+    var href = String(summary.next_action_href || '').trim();
+    if (!label || !href) return '';
+    var className = href.indexOf('/api/batch/jobs/') === 0 ? 'btn small' : 'btn small secondary';
+    if (href.indexOf('/api/batch/jobs/') === 0) {
+      return '<button type="button" class="' + className + '" data-batch-action-href="' + escapeHtml(href) + '">' + escapeHtml(label) + '</button>';
+    }
+    return '<a class="' + className + '" href="' + escapeHtml(href) + '">' + escapeHtml(label) + '</a>';
+  }
+
+  function renderStatusBanner(summary) {
+    if (!statusBanner) return;
+    var message = String(summary.status_message || '').trim();
+    var errorMessage = String(summary.error_message || '').trim();
+    var details = errorMessage && errorMessage !== message ? errorMessage : '';
+    var actionHtml = batchActionHtml(summary);
+    if (!message && !details && !actionHtml) {
+      statusBanner.style.display = 'none';
+      statusBanner.innerHTML = '';
+      statusBanner.className = 'batch-status-banner';
+      return;
+    }
+    statusBanner.className = 'batch-status-banner tone-' + statusTone(summary.status);
+    statusBanner.innerHTML =
+      '<div class="batch-status-banner-head">' +
+      '  <strong>' + escapeHtml(message || 'Batch update') + '</strong>' +
+      (details ? '<span>' + escapeHtml(details) + '</span>' : '') +
+      '</div>' +
+      (actionHtml ? '<div class="batch-status-banner-actions">' + actionHtml + '</div>' : '');
+    statusBanner.style.display = '';
+    Array.prototype.slice.call(statusBanner.querySelectorAll('[data-batch-action-href]')).forEach(function (button) {
+      button.addEventListener('click', function () {
+        var href = String(button.getAttribute('data-batch-action-href') || '').trim();
+        if (!href) return;
+        window.open(href, '_blank');
+      });
+    });
   }
 
   function formatFileSize(bytes) {
@@ -1056,19 +1112,54 @@
     var totalRows = Number(summary.total_rows || 0);
     var completedRows = Number(summary.completed_rows || 0);
     var failedRows = Number(summary.failed_rows || 0);
+    var currentStage = String(summary.stage_label || summary.current_stage || '-').trim() || '-';
+    var providerState = String(summary.provider_label || summary.provider_state || '-').trim() || '-';
+    var errorMessage = String(summary.error_message || '').trim();
+    var batchAction = batchActionHtml(summary);
+
+    renderStatusBanner(summary);
 
     summaryEl.innerHTML =
-      '<div><strong>Batch:</strong> ' + escapeHtml(String(summary.batch_title || summary.batch_id || '-')) + '</div>' +
-      '<div><strong>Status:</strong> ' + escapeHtml(status) + '</div>' +
-      '<div><strong>Submitted:</strong> ' + formatDate(summary.created_at) + '</div>' +
-      '<div><strong>Last update:</strong> ' + formatDate(summary.updated_at || summary.last_heartbeat_at || 0) + '</div>' +
-      '<div><strong>Current stage:</strong> ' + escapeHtml(String(summary.current_stage || '-')) + '</div>' +
-      '<div><strong>Stage state:</strong> ' + escapeHtml(String(summary.current_stage_state || '-')) + '</div>' +
-      '<div><strong>Provider:</strong> ' + escapeHtml(String(summary.provider_state || '-')) + '</div>' +
-      '<div><strong>' + escapeHtml(meta.plural) + ':</strong> ' + completedRows + '/' + totalRows + ' complete, ' + failedRows + ' failed</div>' +
-      '<div><strong>Tokens:</strong> in ' + formatTokens(summary.token_input_total) + ' · out ' + formatTokens(summary.token_output_total) + ' · total ' + formatTokens(summary.token_total) + '</div>' +
-      '<div><strong>Email:</strong> ' + escapeHtml(String(summary.completion_email_status || 'pending')) + '</div>' +
-      '<div><strong>Credits:</strong> charged ' + formatTokens(summary.credits_charged) + ' · refunded ' + formatTokens(summary.credits_refunded) + ' · pending ' + formatTokens(summary.credits_refund_pending) + '</div>';
+      '<div class="batch-summary-card">' +
+      '  <span class="batch-summary-label">Batch</span>' +
+      '  <strong>' + escapeHtml(String(summary.batch_title || summary.batch_id || '-')) + '</strong>' +
+      '  <span class="batch-summary-sub">' + escapeHtml(String(summary.status_message || '')) + '</span>' +
+      '</div>' +
+      '<div class="batch-summary-card">' +
+      '  <span class="batch-summary-label">Status</span>' +
+      '  <strong>' + escapeHtml(status) + '</strong>' +
+      '  <span class="batch-summary-sub">' + escapeHtml(String(summary.current_stage_state || '-')) + '</span>' +
+      '</div>' +
+      '<div class="batch-summary-card">' +
+      '  <span class="batch-summary-label">Current stage</span>' +
+      '  <strong>' + escapeHtml(currentStage) + '</strong>' +
+      '  <span class="batch-summary-sub">' + escapeHtml(providerState) + '</span>' +
+      '</div>' +
+      '<div class="batch-summary-card">' +
+      '  <span class="batch-summary-label">' + escapeHtml(meta.plural) + '</span>' +
+      '  <strong>' + completedRows + '/' + totalRows + ' complete</strong>' +
+      '  <span class="batch-summary-sub">' + failedRows + ' failed</span>' +
+      '</div>' +
+      '<div class="batch-summary-card">' +
+      '  <span class="batch-summary-label">Submitted</span>' +
+      '  <strong>' + formatDate(summary.created_at) + '</strong>' +
+      '  <span class="batch-summary-sub">Last update ' + formatDate(summary.updated_at || summary.last_heartbeat_at || 0) + '</span>' +
+      '</div>' +
+      '<div class="batch-summary-card">' +
+      '  <span class="batch-summary-label">Credits</span>' +
+      '  <strong>' + formatTokens(summary.credits_charged) + ' charged</strong>' +
+      '  <span class="batch-summary-sub">' + formatTokens(summary.credits_refunded) + ' refunded · ' + formatTokens(summary.credits_refund_pending) + ' pending</span>' +
+      '</div>' +
+      '<div class="batch-summary-card">' +
+      '  <span class="batch-summary-label">Tokens</span>' +
+      '  <strong>' + formatTokens(summary.token_total) + ' total</strong>' +
+      '  <span class="batch-summary-sub">in ' + formatTokens(summary.token_input_total) + ' · out ' + formatTokens(summary.token_output_total) + '</span>' +
+      '</div>' +
+      '<div class="batch-summary-card">' +
+      '  <span class="batch-summary-label">Email</span>' +
+      '  <strong>' + escapeHtml(String(summary.email_status_label || summary.completion_email_status || 'pending')) + '</strong>' +
+      '  <span class="batch-summary-sub">' + escapeHtml(truncateText(String(summary.completion_email_error || ''), 120) || 'Notification state saved for this batch.') + '</span>' +
+      '</div>';
 
     if (downloadZipBtn) {
       downloadZipBtn.style.display = summary.can_download_zip ? '' : 'none';
@@ -1079,13 +1170,15 @@
     rows.forEach(function (row) {
       var rowId = String(row.row_id || '');
       var rowStatus = String(row.status || 'queued');
-      var rowStage = String(row.current_stage || '').trim();
+      var rowStage = String(row.current_stage_label || row.current_stage || '').trim();
+      var rowError = String(row.error || '').trim();
       var tr = document.createElement('tr');
       var canDownload = rowStatus === 'complete';
       var statusText = rowStatus + (rowStage ? ' · ' + rowStage : '') + (row.failed_stage ? ' (' + String(row.failed_stage) + ')' : '');
+      var statusDetail = rowError ? '<div class="batch-row-error-text">' + escapeHtml(truncateText(rowError, 180)) + '</div>' : '';
       tr.innerHTML =
         '<td>' + meta.singular + ' ' + Number(row.ordinal || 0) + '</td>' +
-        '<td>' + escapeHtml(statusText) + '</td>' +
+        '<td><div class="batch-row-status-line">' + escapeHtml(statusText) + '</div>' + statusDetail + '</td>' +
         '<td>' + formatTokens(row.token_input_total) + '</td>' +
         '<td>' + formatTokens(row.token_output_total) + '</td>' +
         '<td>' + formatTokens(row.token_total) + '</td>' +
