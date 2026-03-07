@@ -21,6 +21,8 @@ TERMINAL_BATCH_STATES = {
     'JOB_STATE_EXPIRED',
 }
 
+ACTIVE_BATCH_STATUSES = {'queued', 'processing'}
+
 
 def _resolve_runtime(runtime=None):
     if runtime is not None:
@@ -255,6 +257,16 @@ def create_batch_job(batch_payload, row_payloads, runtime=None):
             'completion_email_status': str(payload.get('completion_email_status', 'pending') or 'pending'),
             'completion_email_sent_at': float(payload.get('completion_email_sent_at', 0) or 0),
             'completion_email_error': str(payload.get('completion_email_error', '') or ''),
+            'current_stage': str(payload.get('current_stage', '') or ''),
+            'current_stage_state': str(payload.get('current_stage_state', 'queued') or 'queued'),
+            'stage_started_at': float(payload.get('stage_started_at', 0) or 0),
+            'provider_state': str(payload.get('provider_state', 'JOB_STATE_PENDING') or 'JOB_STATE_PENDING'),
+            'submission_locked': bool(payload.get('submission_locked', True)),
+            'credits_charged': int(payload.get('credits_charged', 0) or 0),
+            'credits_refunded': int(payload.get('credits_refunded', 0) or 0),
+            'credits_refund_pending': int(payload.get('credits_refund_pending', 0) or 0),
+            'last_heartbeat_at': float(payload.get('last_heartbeat_at', now_ts) or now_ts),
+            'client_submission_id': str(payload.get('client_submission_id', '') or ''),
         }
     )
     _upsert_batch(batch_id, payload, runtime=resolved_runtime, merge=False)
@@ -274,6 +286,15 @@ def create_batch_job(batch_payload, row_payloads, runtime=None):
                 'token_total': int(row_payload.get('token_total', 0) or 0),
                 'billing_mode': 'batch',
                 'billing_multiplier': float(row_payload.get('billing_multiplier', 0.5) or 0.5),
+                'current_stage': str(row_payload.get('current_stage', 'queued') or 'queued'),
+                'last_stage_update_at': float(row_payload.get('last_stage_update_at', now_ts) or now_ts),
+                'interview_features_refunded_count': int(row_payload.get('interview_features_refunded_count', 0) or 0),
+                'credits_charged': int(
+                    row_payload.get(
+                        'credits_charged',
+                        1 + int(row_payload.get('interview_features_cost', 0) or 0),
+                    ) or 0
+                ),
             }
         )
         _upsert_row(batch_id, row_id, row_payload, runtime=resolved_runtime, merge=False)
@@ -285,6 +306,17 @@ def _batch_state_name(batch_job):
     if isinstance(state, str):
         return state
     return str(getattr(state, 'name', '') or '')
+
+
+def _is_terminal_status(status):
+    return str(status or '').strip().lower() in {'complete', 'partial', 'error'}
+
+
+def _coerce_int(value, fallback=0):
+    try:
+        return int(value)
+    except Exception:
+        return int(fallback)
 
 
 def _response_usage(response, runtime=None):
@@ -354,17 +386,31 @@ def _response_text(response, runtime=None):
     return ''
 
 
-def _wait_for_batch(batch_name, runtime=None):
+def _wait_for_batch(batch_name, runtime=None, on_poll=None):
     resolved_runtime = _resolve_runtime(runtime)
-    poll_seconds = max(5, int(getattr(resolved_runtime, 'BATCH_POLL_SECONDS', 10) or 10))
+    poll_seconds = max(5, int(getattr(resolved_runtime, 'BATCH_POLL_SECONDS', 20) or 20))
+    pending_poll_seconds = max(5, int(getattr(resolved_runtime, 'BATCH_PENDING_POLL_SECONDS', poll_seconds) or poll_seconds))
+    running_poll_seconds = max(5, int(getattr(resolved_runtime, 'BATCH_RUNNING_POLL_SECONDS', poll_seconds) or poll_seconds))
     max_wait_seconds = max(300, int(getattr(resolved_runtime, 'BATCH_MAX_WAIT_SECONDS', 24 * 60 * 60) or (24 * 60 * 60)))
     started_at = resolved_runtime.time.time()
     batch_job = resolved_runtime.client.batches.get(name=batch_name)
+    if callable(on_poll):
+        try:
+            on_poll(_batch_state_name(batch_job))
+        except Exception:
+            pass
     while _batch_state_name(batch_job) not in TERMINAL_BATCH_STATES:
         if resolved_runtime.time.time() - started_at >= max_wait_seconds:
             raise TimeoutError(f'Batch job {batch_name} timed out.')
-        resolved_runtime.time.sleep(poll_seconds)
+        current_state = _batch_state_name(batch_job)
+        sleep_seconds = running_poll_seconds if current_state == 'JOB_STATE_RUNNING' else pending_poll_seconds
+        resolved_runtime.time.sleep(max(5, sleep_seconds if sleep_seconds > 0 else poll_seconds))
         batch_job = resolved_runtime.client.batches.get(name=batch_name)
+        if callable(on_poll):
+            try:
+                on_poll(_batch_state_name(batch_job))
+            except Exception:
+                pass
     return batch_job
 
 
@@ -373,6 +419,20 @@ def _run_batch_stage(batch_id, stage_name, requests, request_keys=None, runtime=
     if not requests:
         return []
     model = _batch_model(stage_name, resolved_runtime)
+    now_ts = resolved_runtime.time.time()
+    _upsert_batch(
+        batch_id,
+        {
+            'current_stage': str(stage_name or ''),
+            'current_stage_state': 'queued',
+            'stage_started_at': now_ts,
+            'provider_state': 'JOB_STATE_PENDING',
+            'last_heartbeat_at': now_ts,
+            'updated_at': now_ts,
+        },
+        runtime=resolved_runtime,
+        merge=True,
+    )
     local_input_path = resolved_runtime.os.path.join(
         resolved_runtime.UPLOAD_FOLDER,
         f'{batch_id}_{stage_name}_{resolved_runtime.uuid.uuid4().hex}.jsonl',
@@ -399,6 +459,18 @@ def _run_batch_stage(batch_id, stage_name, requests, request_keys=None, runtime=
             src=getattr(input_file_handle, 'name', ''),
             config={'display_name': display_name or f'{batch_id}-{stage_name}'},
         )
+        _upsert_batch(
+            batch_id,
+            {
+                'current_stage': str(stage_name or ''),
+                'current_stage_state': 'running',
+                'provider_state': _batch_state_name(batch_job) or 'JOB_STATE_PENDING',
+                'last_heartbeat_at': resolved_runtime.time.time(),
+                'updated_at': resolved_runtime.time.time(),
+            },
+            runtime=resolved_runtime,
+            merge=True,
+        )
     finally:
         try:
             resolved_runtime.os.remove(local_input_path)
@@ -410,10 +482,45 @@ def _run_batch_stage(batch_id, stage_name, requests, request_keys=None, runtime=
         parent = _get_batch(batch_id, runtime=resolved_runtime) or {}
         refs = dict(parent.get('external_batch_refs', {}))
         refs[stage_name] = external_ref
-        _upsert_batch(batch_id, {'external_batch_refs': refs, 'updated_at': resolved_runtime.time.time()}, runtime=resolved_runtime, merge=True)
+        _upsert_batch(
+            batch_id,
+            {
+                'external_batch_refs': refs,
+                'updated_at': resolved_runtime.time.time(),
+            },
+            runtime=resolved_runtime,
+            merge=True,
+        )
     try:
-        final_job = _wait_for_batch(getattr(batch_job, 'name', ''), runtime=resolved_runtime)
+        def _on_poll(state_name):
+            now = resolved_runtime.time.time()
+            _upsert_batch(
+                batch_id,
+                {
+                    'current_stage': str(stage_name or ''),
+                    'current_stage_state': 'running',
+                    'provider_state': str(state_name or ''),
+                    'last_heartbeat_at': now,
+                    'updated_at': now,
+                },
+                runtime=resolved_runtime,
+                merge=True,
+            )
+
+        final_job = _wait_for_batch(getattr(batch_job, 'name', ''), runtime=resolved_runtime, on_poll=_on_poll)
         final_state = _batch_state_name(final_job)
+        _upsert_batch(
+            batch_id,
+            {
+                'current_stage': str(stage_name or ''),
+                'current_stage_state': 'finished' if final_state == 'JOB_STATE_SUCCEEDED' else 'failed',
+                'provider_state': final_state,
+                'last_heartbeat_at': resolved_runtime.time.time(),
+                'updated_at': resolved_runtime.time.time(),
+            },
+            runtime=resolved_runtime,
+            merge=True,
+        )
         if final_state != 'JOB_STATE_SUCCEEDED':
             error_obj = getattr(final_job, 'error', None)
             raise RuntimeError(f'Batch stage {stage_name} failed with state {final_state}: {error_obj}')
@@ -516,8 +623,67 @@ def _build_stage_requests(rows, builder):
 
 def _run_stage_with_builder(batch_id, rows, stage_name, builder, handler, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
+    now_ts = resolved_runtime.time.time()
+    _upsert_batch(
+        batch_id,
+        {
+            'current_stage': str(stage_name or ''),
+            'current_stage_state': 'running',
+            'stage_started_at': now_ts,
+            'updated_at': now_ts,
+        },
+        runtime=resolved_runtime,
+        merge=True,
+    )
+    for row in rows:
+        if str(row.get('status', '') or '') == 'error':
+            continue
+        row['status'] = 'processing'
+        row['current_stage'] = str(stage_name or '')
+        row['last_stage_update_at'] = now_ts
+        row['updated_at'] = now_ts
+        _upsert_row(
+            batch_id,
+            row.get('row_id', ''),
+            {
+                'status': row['status'],
+                'current_stage': row['current_stage'],
+                'last_stage_update_at': row['last_stage_update_at'],
+                'updated_at': row['updated_at'],
+            },
+            runtime=resolved_runtime,
+            merge=True,
+        )
+
     requests, request_rows = _build_stage_requests(rows, builder)
+    for row in rows:
+        if row in request_rows:
+            continue
+        _upsert_row(
+            batch_id,
+            row.get('row_id', ''),
+            {
+                'status': row.get('status', 'queued'),
+                'failed_stage': row.get('failed_stage', ''),
+                'error': row.get('error', ''),
+                'current_stage': row.get('current_stage', ''),
+                'last_stage_update_at': row.get('last_stage_update_at', now_ts),
+                'updated_at': resolved_runtime.time.time(),
+            },
+            runtime=resolved_runtime,
+            merge=True,
+        )
     if not requests:
+        _upsert_batch(
+            batch_id,
+            {
+                'current_stage': str(stage_name or ''),
+                'current_stage_state': 'skipped',
+                'updated_at': resolved_runtime.time.time(),
+            },
+            runtime=resolved_runtime,
+            merge=True,
+        )
         return
     request_keys = []
     for idx, row in enumerate(request_rows):
@@ -541,11 +707,46 @@ def _run_stage_with_builder(batch_id, rows, stage_name, builder, handler, runtim
             row['status'] = 'error'
             row['failed_stage'] = stage_name
             row['error'] = str(error)
+            row['last_stage_update_at'] = resolved_runtime.time.time()
+            _upsert_row(
+                batch_id,
+                row.get('row_id', ''),
+                {
+                    'status': row.get('status', 'error'),
+                    'failed_stage': row.get('failed_stage', ''),
+                    'error': row.get('error', ''),
+                    'current_stage': str(stage_name or ''),
+                    'last_stage_update_at': row.get('last_stage_update_at', 0),
+                    'updated_at': resolved_runtime.time.time(),
+                },
+                runtime=resolved_runtime,
+                merge=True,
+            )
             continue
         response = response_entry.get('response')
         usage = _response_usage(response, runtime=resolved_runtime)
         _record_stage_tokens(row, stage_name, usage, runtime=resolved_runtime)
         handler(row, response)
+        row['current_stage'] = str(stage_name or '')
+        row['last_stage_update_at'] = resolved_runtime.time.time()
+        _upsert_row(
+            batch_id,
+            row.get('row_id', ''),
+            {
+                'status': row.get('status', 'processing'),
+                'failed_stage': row.get('failed_stage', ''),
+                'error': row.get('error', ''),
+                'current_stage': row.get('current_stage', ''),
+                'last_stage_update_at': row.get('last_stage_update_at', 0),
+                'token_usage_by_stage': row.get('token_usage_by_stage', {}),
+                'token_input_total': int(row.get('token_input_total', 0) or 0),
+                'token_output_total': int(row.get('token_output_total', 0) or 0),
+                'token_total': int(row.get('token_total', 0) or 0),
+                'updated_at': resolved_runtime.time.time(),
+            },
+            runtime=resolved_runtime,
+            merge=True,
+        )
 
 
 def _upload_row_files(row, runtime=None):
@@ -650,22 +851,39 @@ def _finalize_row_job_log(batch, row, runtime=None):
 
 def _refund_failed_row(batch, row, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
-    if row.get('credit_refunded'):
-        return
     uid = batch.get('uid', '')
+    if not uid:
+        return
+
     credit_type = str(row.get('credit_deducted', '') or '').strip()
-    if uid and credit_type:
-        billing_credits.refund_credit(uid, credit_type, runtime=resolved_runtime)
-        row['credit_refunded'] = True
-        billing_receipt = dict(row.get('billing_receipt', {}) or {})
-        billing_receipt = billing_receipts.add_job_credit_refund(
-            {'billing_receipt': billing_receipt},
-            credit_type,
-            1,
-            runtime=resolved_runtime,
-        )
-        if isinstance(billing_receipt, dict):
-            row['billing_receipt'] = billing_receipt
+    billing_receipt = dict(row.get('billing_receipt', {}) or {})
+    receipt_holder = {'billing_receipt': billing_receipt}
+    if credit_type and not bool(row.get('credit_refunded', False)):
+        refunded_primary = bool(billing_credits.refund_credit(uid, credit_type, runtime=resolved_runtime))
+        if refunded_primary:
+            row['credit_refunded'] = True
+            billing_receipts.add_job_credit_refund(
+                receipt_holder,
+                credit_type,
+                1,
+                runtime=resolved_runtime,
+            )
+
+    interview_feature_cost = int(row.get('interview_features_cost', 0) or 0)
+    already_refunded = int(row.get('interview_features_refunded_count', 0) or 0)
+    pending_refund = max(0, interview_feature_cost - already_refunded)
+    if pending_refund > 0:
+        refunded_extras = bool(billing_credits.refund_slides_credits(uid, pending_refund, runtime=resolved_runtime))
+        if refunded_extras:
+            row['interview_features_refunded_count'] = already_refunded + pending_refund
+            billing_receipts.add_job_credit_refund(
+                receipt_holder,
+                'slides_credits',
+                pending_refund,
+                runtime=resolved_runtime,
+            )
+
+    row['billing_receipt'] = receipt_holder.get('billing_receipt', billing_receipt)
 
 
 def process_batch_job(batch_id, runtime=None):
@@ -680,8 +898,12 @@ def process_batch_job(batch_id, runtime=None):
             {
                 'status': 'error',
                 'error_summary': 'Batch has no rows.',
+                'current_stage': 'validation',
+                'current_stage_state': 'failed',
+                'provider_state': 'NO_ROWS',
                 'updated_at': resolved_runtime.time.time(),
                 'finished_at': resolved_runtime.time.time(),
+                'submission_locked': False,
             },
             runtime=resolved_runtime,
             merge=True,
@@ -689,7 +911,21 @@ def process_batch_job(batch_id, runtime=None):
         _send_batch_completion_email_if_needed(batch_id, 'error', runtime=resolved_runtime)
         return
 
-    _upsert_batch(batch_id, {'status': 'processing', 'updated_at': resolved_runtime.time.time()}, runtime=resolved_runtime, merge=True)
+    _upsert_batch(
+        batch_id,
+        {
+            'status': 'processing',
+            'current_stage': 'file_upload',
+            'current_stage_state': 'running',
+            'stage_started_at': resolved_runtime.time.time(),
+            'provider_state': 'FILE_UPLOAD',
+            'last_heartbeat_at': resolved_runtime.time.time(),
+            'updated_at': resolved_runtime.time.time(),
+            'submission_locked': True,
+        },
+        runtime=resolved_runtime,
+        merge=True,
+    )
     stage_error = ''
     try:
         for row in rows:
@@ -700,7 +936,37 @@ def process_batch_job(batch_id, runtime=None):
             row.setdefault('token_output_total', 0)
             row.setdefault('token_total', 0)
             row.setdefault('row_job_id', str(resolved_runtime.uuid.uuid4()))
+            row.setdefault('current_stage', 'file_upload')
+            row.setdefault('last_stage_update_at', resolved_runtime.time.time())
+            row['status'] = 'processing'
+            row['current_stage'] = 'file_upload'
+            row['last_stage_update_at'] = resolved_runtime.time.time()
+            _upsert_row(
+                batch_id,
+                row.get('row_id', ''),
+                {
+                    'status': row['status'],
+                    'current_stage': row['current_stage'],
+                    'last_stage_update_at': row['last_stage_update_at'],
+                    'updated_at': resolved_runtime.time.time(),
+                },
+                runtime=resolved_runtime,
+                merge=True,
+            )
             _upload_row_files(row, runtime=resolved_runtime)
+            row['last_stage_update_at'] = resolved_runtime.time.time()
+            _upsert_row(
+                batch_id,
+                row.get('row_id', ''),
+                {
+                    'status': row.get('status', 'processing'),
+                    'current_stage': row.get('current_stage', 'file_upload'),
+                    'last_stage_update_at': row.get('last_stage_update_at', 0),
+                    'updated_at': resolved_runtime.time.time(),
+                },
+                runtime=resolved_runtime,
+                merge=True,
+            )
 
         mode = str(batch.get('mode', '') or '')
         if mode in {'lecture-notes', 'slides-only'}:
@@ -1068,6 +1334,9 @@ def process_batch_job(batch_id, runtime=None):
         token_input_total = 0
         token_output_total = 0
         token_total = 0
+        credits_charged_total = 0
+        credits_refunded_total = 0
+        expected_refund_total = 0
         for row in _list_rows(batch_id, runtime=resolved_runtime):
             status = str(row.get('status', '') or '')
             if status == 'complete':
@@ -1077,6 +1346,17 @@ def process_batch_job(batch_id, runtime=None):
             token_input_total += int(row.get('token_input_total', 0) or 0)
             token_output_total += int(row.get('token_output_total', 0) or 0)
             token_total += int(row.get('token_total', 0) or 0)
+            row_credits_charged = int(
+                row.get(
+                    'credits_charged',
+                    1 + int(row.get('interview_features_cost', 0) or 0),
+                ) or 0
+            )
+            credits_charged_total += max(0, row_credits_charged)
+            row_refunded = (1 if bool(row.get('credit_refunded', False)) else 0) + int(row.get('interview_features_refunded_count', 0) or 0)
+            credits_refunded_total += max(0, row_refunded)
+            if status == 'error':
+                expected_refund_total += max(0, row_credits_charged)
             local_paths = row.get('_local_paths', []) or []
             gemini_files = row.get('_gemini_files', []) or []
             if local_paths or gemini_files:
@@ -1090,6 +1370,8 @@ def process_batch_job(batch_id, runtime=None):
             status = 'partial'
         else:
             status = 'error'
+        credits_refund_pending = max(0, expected_refund_total - credits_refunded_total)
+        latest_batch_snapshot = _get_batch(batch_id, runtime=resolved_runtime) or {}
         _upsert_batch(
             batch_id,
             {
@@ -1099,9 +1381,17 @@ def process_batch_job(batch_id, runtime=None):
                 'token_input_total': token_input_total,
                 'token_output_total': token_output_total,
                 'token_total': token_total,
+                'credits_charged': credits_charged_total,
+                'credits_refunded': credits_refunded_total,
+                'credits_refund_pending': credits_refund_pending,
                 'updated_at': finished_at,
                 'finished_at': finished_at,
                 'error_summary': stage_error[:1500] if stage_error else '',
+                'current_stage': latest_batch_snapshot.get('current_stage', '') or '',
+                'current_stage_state': 'finished' if _is_terminal_status(status) else 'running',
+                'provider_state': 'COMPLETED' if status == 'complete' else ('PARTIAL' if status == 'partial' else 'FAILED'),
+                'last_heartbeat_at': finished_at,
+                'submission_locked': False,
             },
             runtime=resolved_runtime,
             merge=True,
@@ -1126,12 +1416,23 @@ def get_batch_status(batch_id, runtime=None):
                 'error': row.get('error', ''),
                 'study_pack_id': row.get('study_pack_id'),
                 'job_log_id': row.get('job_log_id', ''),
+                'current_stage': row.get('current_stage', ''),
+                'last_stage_update_at': row.get('last_stage_update_at', 0),
                 'token_input_total': int(row.get('token_input_total', 0) or 0),
                 'token_output_total': int(row.get('token_output_total', 0) or 0),
                 'token_total': int(row.get('token_total', 0) or 0),
+                'credits_charged': int(
+                    row.get(
+                        'credits_charged',
+                        1 + int(row.get('interview_features_cost', 0) or 0),
+                    ) or 0
+                ),
+                'interview_features_refunded_count': int(row.get('interview_features_refunded_count', 0) or 0),
+                'credits_refunded_total': (1 if bool(row.get('credit_refunded', False)) else 0) + int(row.get('interview_features_refunded_count', 0) or 0),
                 'billing_receipt': row.get('billing_receipt', {}),
             }
         )
+    can_download_zip = any(str(row.get('status', '') or '') == 'complete' for row in response_rows)
     return {
         'batch_id': batch.get('batch_id', batch_id),
         'status': batch.get('status', 'queued'),
@@ -1146,6 +1447,16 @@ def get_batch_status(batch_id, runtime=None):
         'token_input_total': int(batch.get('token_input_total', 0) or 0),
         'token_output_total': int(batch.get('token_output_total', 0) or 0),
         'token_total': int(batch.get('token_total', 0) or 0),
+        'current_stage': batch.get('current_stage', ''),
+        'current_stage_state': batch.get('current_stage_state', ''),
+        'stage_started_at': batch.get('stage_started_at', 0),
+        'provider_state': batch.get('provider_state', ''),
+        'submission_locked': bool(batch.get('submission_locked', False)),
+        'credits_charged': int(batch.get('credits_charged', 0) or 0),
+        'credits_refunded': int(batch.get('credits_refunded', 0) or 0),
+        'credits_refund_pending': int(batch.get('credits_refund_pending', 0) or 0),
+        'can_download_zip': bool(can_download_zip),
+        'last_heartbeat_at': batch.get('last_heartbeat_at', 0),
         'rows': response_rows,
         'external_batch_refs': batch.get('external_batch_refs', {}),
         'error_summary': batch.get('error_summary', ''),
@@ -1165,3 +1476,183 @@ def list_batch_rows(batch_id, runtime=None):
 
 def get_batch(batch_id, runtime=None):
     return _get_batch(batch_id, runtime=runtime)
+
+
+def find_batch_by_submission_id(uid, client_submission_id, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    safe_uid = str(uid or '').strip()
+    safe_submission_id = str(client_submission_id or '').strip()
+    if not safe_uid or not safe_submission_id:
+        return None
+
+    db = getattr(resolved_runtime, 'db', None)
+    candidates = []
+    if db is not None:
+        docs = resolved_runtime.batch_repo.list_batch_jobs_by_uid_and_submission_id(
+            db,
+            safe_uid,
+            safe_submission_id,
+            limit=5,
+        )
+        for doc in docs:
+            item = doc.to_dict() or {}
+            item.setdefault('batch_id', doc.id)
+            candidates.append(item)
+    else:
+        batch_jobs, _rows = _memory_store(resolved_runtime)
+        for batch_id, item in batch_jobs.items():
+            if not isinstance(item, dict):
+                continue
+            if str(item.get('uid', '') or '') != safe_uid:
+                continue
+            if str(item.get('client_submission_id', '') or '') != safe_submission_id:
+                continue
+            payload = dict(item)
+            payload.setdefault('batch_id', batch_id)
+            candidates.append(payload)
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda entry: float(entry.get('created_at', 0) or 0), reverse=True)
+    return candidates[0]
+
+
+def list_batches_for_uid(uid, statuses=None, limit=100, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    safe_uid = str(uid or '').strip()
+    if not safe_uid:
+        return []
+    safe_limit = max(1, int(limit or 100))
+    safe_statuses = [str(status or '').strip() for status in (statuses or []) if str(status or '').strip()]
+
+    db = getattr(resolved_runtime, 'db', None)
+    rows = []
+    if db is not None:
+        if safe_statuses:
+            docs = resolved_runtime.batch_repo.list_batch_jobs_by_uid_and_statuses(
+                db,
+                safe_uid,
+                safe_statuses,
+                limit=safe_limit,
+            )
+        else:
+            docs = resolved_runtime.batch_repo.list_batch_jobs_by_uid(db, safe_uid, limit=safe_limit)
+        for doc in docs:
+            item = doc.to_dict() or {}
+            item.setdefault('batch_id', doc.id)
+            rows.append(item)
+    else:
+        batch_jobs, _rows = _memory_store(resolved_runtime)
+        for batch_id, item in batch_jobs.items():
+            if not isinstance(item, dict):
+                continue
+            if str(item.get('uid', '') or '') != safe_uid:
+                continue
+            if safe_statuses and str(item.get('status', '') or '') not in safe_statuses:
+                continue
+            payload = dict(item)
+            payload.setdefault('batch_id', batch_id)
+            rows.append(payload)
+        rows.sort(key=lambda entry: float(entry.get('created_at', 0) or 0), reverse=True)
+        rows = rows[:safe_limit]
+
+    results = []
+    for batch in rows:
+        batch_id = str(batch.get('batch_id', '') or '').strip()
+        batch_rows = _list_rows(batch_id, runtime=resolved_runtime) if batch_id else []
+        can_download_zip = any(str(row.get('status', '') or '') == 'complete' for row in batch_rows)
+        results.append(
+            {
+                'batch_id': batch_id,
+                'mode': str(batch.get('mode', '') or ''),
+                'batch_title': str(batch.get('batch_title', '') or ''),
+                'status': str(batch.get('status', 'queued') or 'queued'),
+                'total_rows': int(batch.get('total_rows', len(batch_rows)) or len(batch_rows)),
+                'completed_rows': int(batch.get('completed_rows', 0) or 0),
+                'failed_rows': int(batch.get('failed_rows', 0) or 0),
+                'created_at': float(batch.get('created_at', 0) or 0),
+                'updated_at': float(batch.get('updated_at', 0) or 0),
+                'finished_at': float(batch.get('finished_at', 0) or 0),
+                'current_stage': str(batch.get('current_stage', '') or ''),
+                'current_stage_state': str(batch.get('current_stage_state', '') or ''),
+                'provider_state': str(batch.get('provider_state', '') or ''),
+                'stage_started_at': float(batch.get('stage_started_at', 0) or 0),
+                'last_heartbeat_at': float(batch.get('last_heartbeat_at', 0) or 0),
+                'can_download_zip': bool(can_download_zip),
+                'completion_email_status': str(batch.get('completion_email_status', 'pending') or 'pending'),
+                'completion_email_sent_at': float(batch.get('completion_email_sent_at', 0) or 0),
+                'credits_charged': int(batch.get('credits_charged', 0) or 0),
+                'credits_refunded': int(batch.get('credits_refunded', 0) or 0),
+                'credits_refund_pending': int(batch.get('credits_refund_pending', 0) or 0),
+                'submission_locked': bool(batch.get('submission_locked', False)),
+                'folder_id': str(batch.get('folder_id', '') or ''),
+                'folder_name': str(batch.get('folder_name', '') or ''),
+            }
+        )
+    results.sort(key=lambda entry: float(entry.get('created_at', 0) or 0), reverse=True)
+    return results
+
+
+def list_batches_for_admin(statuses=None, limit=200, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    safe_limit = max(1, int(limit or 200))
+    safe_statuses = [str(status or '').strip() for status in (statuses or []) if str(status or '').strip()]
+    db = getattr(resolved_runtime, 'db', None)
+    rows = []
+
+    if db is not None:
+        docs = resolved_runtime.batch_repo.list_batch_jobs(db, limit=safe_limit)
+        for doc in docs:
+            item = doc.to_dict() or {}
+            item.setdefault('batch_id', doc.id)
+            rows.append(item)
+    else:
+        batch_jobs, _rows = _memory_store(resolved_runtime)
+        for batch_id, item in batch_jobs.items():
+            if not isinstance(item, dict):
+                continue
+            payload = dict(item)
+            payload.setdefault('batch_id', batch_id)
+            rows.append(payload)
+
+    if safe_statuses:
+        rows = [row for row in rows if str(row.get('status', '') or '') in safe_statuses]
+    rows.sort(key=lambda entry: float(entry.get('created_at', 0) or 0), reverse=True)
+    rows = rows[:safe_limit]
+
+    results = []
+    for batch in rows:
+        batch_id = str(batch.get('batch_id', '') or '').strip()
+        batch_rows = _list_rows(batch_id, runtime=resolved_runtime) if batch_id else []
+        can_download_zip = any(str(row.get('status', '') or '') == 'complete' for row in batch_rows)
+        results.append(
+            {
+                'batch_id': batch_id,
+                'uid': str(batch.get('uid', '') or ''),
+                'email': str(batch.get('email', '') or ''),
+                'mode': str(batch.get('mode', '') or ''),
+                'batch_title': str(batch.get('batch_title', '') or ''),
+                'status': str(batch.get('status', 'queued') or 'queued'),
+                'total_rows': int(batch.get('total_rows', len(batch_rows)) or len(batch_rows)),
+                'completed_rows': int(batch.get('completed_rows', 0) or 0),
+                'failed_rows': int(batch.get('failed_rows', 0) or 0),
+                'created_at': float(batch.get('created_at', 0) or 0),
+                'updated_at': float(batch.get('updated_at', 0) or 0),
+                'finished_at': float(batch.get('finished_at', 0) or 0),
+                'current_stage': str(batch.get('current_stage', '') or ''),
+                'current_stage_state': str(batch.get('current_stage_state', '') or ''),
+                'provider_state': str(batch.get('provider_state', '') or ''),
+                'stage_started_at': float(batch.get('stage_started_at', 0) or 0),
+                'last_heartbeat_at': float(batch.get('last_heartbeat_at', 0) or 0),
+                'can_download_zip': bool(can_download_zip),
+                'completion_email_status': str(batch.get('completion_email_status', 'pending') or 'pending'),
+                'completion_email_sent_at': float(batch.get('completion_email_sent_at', 0) or 0),
+                'credits_charged': int(batch.get('credits_charged', 0) or 0),
+                'credits_refunded': int(batch.get('credits_refunded', 0) or 0),
+                'credits_refund_pending': int(batch.get('credits_refund_pending', 0) or 0),
+                'submission_locked': bool(batch.get('submission_locked', False)),
+                'folder_id': str(batch.get('folder_id', '') or ''),
+                'folder_name': str(batch.get('folder_name', '') or ''),
+            }
+        )
+    return results

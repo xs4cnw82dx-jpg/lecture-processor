@@ -107,6 +107,44 @@ def test_batch_create_requires_batch_title(client, monkeypatch):
     assert str(body.get('error', '')).strip() == 'Batch title is required.'
 
 
+def test_batch_create_deduplicates_client_submission_id(client, monkeypatch):
+    _patch_batch_auth(monkeypatch)
+    monkeypatch.setattr(
+        batch_orchestrator,
+        'find_batch_by_submission_id',
+        lambda uid, client_submission_id, runtime=None: {
+            'batch_id': 'existing-batch-1',
+            'status': 'processing',
+        },
+    )
+    monkeypatch.setattr(
+        billing_credits,
+        'deduct_credit',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError('Should not deduct credits for deduplicated submit')),
+    )
+
+    rows = [
+        {'row_id': 'row-1', 'slides_file_field': 'row_1_slides'},
+        {'row_id': 'row-2', 'slides_file_field': 'row_2_slides'},
+    ]
+    response = client.post(
+        '/api/batch/jobs',
+        data={
+            'mode': 'slides-only',
+            'batch_title': 'Batch dedupe test',
+            'client_submission_id': 'submission-123',
+            'rows': json.dumps(rows),
+        },
+        content_type='multipart/form-data',
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload.get('batch_id') == 'existing-batch-1'
+    assert payload.get('deduplicated') is True
+    assert payload.get('status') == 'processing'
+
+
 def test_batch_create_slides_only_contract(client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     monkeypatch.setattr(upload_import_audio, 'cleanup_expired_audio_import_tokens', lambda runtime=None: None)
@@ -162,6 +200,30 @@ def test_batch_create_slides_only_contract(client, monkeypatch):
     assert isinstance(capture.rows, list)
     assert len(capture.rows) == 2
     assert capture.rows[0].get('billing_mode') == 'batch'
+
+
+def test_batch_jobs_list_contract(client, monkeypatch):
+    _patch_batch_auth(monkeypatch)
+    monkeypatch.setattr(
+        batch_orchestrator,
+        'list_batches_for_uid',
+        lambda uid, statuses=None, limit=100, runtime=None: [
+            {
+                'batch_id': 'batch-1',
+                'mode': 'lecture-notes',
+                'status': 'queued',
+                'batch_title': 'Batch contract',
+            }
+        ],
+    )
+
+    response = client.get('/api/batch/jobs?status=queued&mode=lecture-notes')
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert isinstance(body.get('batches'), list)
+    assert body['batches'][0]['batch_id'] == 'batch-1'
+    assert body['batches'][0]['status'] == 'queued'
 
 
 def test_batch_status_contract(client, monkeypatch):

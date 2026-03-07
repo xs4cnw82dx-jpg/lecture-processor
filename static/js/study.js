@@ -2296,6 +2296,13 @@ function renderFolders() {
     div.dataset.folderId = f.folder_id;
     var metaParts = [f.course, f.subject, f.semester, f.block].filter(Boolean).map(escapeHtml);
     var metaLine = (metaParts.join(' &middot; ') || (f.meta_default || 'No metadata'));
+    var pendingCount = Math.max(0, parseInt(f.pending_batch_count, 10) || 0);
+    var pendingBadge = pendingCount > 0
+      ? '<span class="folder-pending-badge">Batch pending' + (pendingCount > 1 ? ' (' + pendingCount + ')' : '') + '</span>'
+      : '';
+    var pendingHint = pendingCount > 0 && String(f.pending_batch_hint || '').trim()
+      ? '<div class="item-sub pending-hint">' + escapeHtml(String(f.pending_batch_hint || '').trim()) + '</div>'
+      : '';
     var pinLine = f.is_pinned ? '<div class="item-sub pinned-note">Pinned</div>' : '';
     var examLine = '';
     if (f.folder_id && !f.is_builtin && f.exam_date) {
@@ -2317,7 +2324,10 @@ function renderFolders() {
       var pinLabel = f.is_pinned ? 'Unpin' : 'Pin';
       actions = '<span class="folder-head-actions"><button class="btn folder-mini-btn" data-toggle-pin="1">' + pinLabel + '</button><button class="btn folder-mini-btn" data-edit-folder="1">Edit</button></span>';
     }
-    setSafeInnerHtml(div, '<div class="item-head"><span class="item-title">' + escapeHtml(f.name) + '</span>' + actions + '</div><div class="item-sub">' + metaLine + '</div>' + pinLine + examLine);
+    setSafeInnerHtml(
+      div,
+      '<div class="item-head"><span class="item-title-wrap"><span class="item-title">' + escapeHtml(f.name) + '</span>' + pendingBadge + '</span>' + actions + '</div><div class="item-sub">' + metaLine + '</div>' + pendingHint + pinLine + examLine
+    );
     div.addEventListener('click', function (e) { if (e.target.closest('[data-edit-folder]') || e.target.closest('[data-toggle-pin]')) return; selectedFolderId = f.folder_id; renderFolders(); renderPacks(); });
     if (!f.is_builtin) {
       var eb = div.querySelector('[data-edit-folder]');

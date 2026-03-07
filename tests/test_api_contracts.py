@@ -2,6 +2,8 @@ import pytest
 from types import SimpleNamespace
 
 from lecture_processor.domains.admin import metrics as admin_metrics
+from lecture_processor.domains.ai import batch_orchestrator
+from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from tests.runtime_test_support import get_test_core
@@ -105,6 +107,84 @@ def test_admin_prompts_markdown_contract(client, monkeypatch):
     assert response.status_code == 200
     payload = response.get_json()
     assert payload.get("markdown") == "# Prompt Inventory"
+
+
+def test_admin_batch_jobs_contract_fields(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
+    monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)
+    monkeypatch.setattr(
+        batch_orchestrator,
+        "list_batches_for_admin",
+        lambda statuses=None, limit=200, runtime=None: [
+            {
+                "batch_id": "batch-1",
+                "uid": "u-1",
+                "email": "u@example.com",
+                "mode": "lecture-notes",
+                "batch_title": "Batch A",
+                "status": "processing",
+                "total_rows": 2,
+                "completed_rows": 1,
+                "failed_rows": 0,
+                "created_at": 1,
+                "updated_at": 2,
+                "current_stage": "audio_transcription",
+                "current_stage_state": "running",
+                "provider_state": "JOB_STATE_RUNNING",
+                "completion_email_status": "pending",
+                "credits_charged": 2,
+                "credits_refunded": 0,
+                "credits_refund_pending": 0,
+            }
+        ],
+    )
+
+    response = client.get("/api/admin/batch-jobs?status=processing&mode=lecture-notes&limit=50")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert isinstance(payload.get("batches"), list)
+    assert payload["batches"][0]["batch_id"] == "batch-1"
+    assert payload["batches"][0]["status"] == "processing"
+
+
+def test_user_batch_jobs_list_contract_fields(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-batch", "email": "batch@example.com"})
+    monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: True)
+    monkeypatch.setattr(
+        batch_orchestrator,
+        "list_batches_for_uid",
+        lambda uid, statuses=None, limit=100, runtime=None: [
+            {
+                "batch_id": "batch-1",
+                "mode": "lecture-notes",
+                "batch_title": "Batch A",
+                "status": "queued",
+                "total_rows": 2,
+                "completed_rows": 0,
+                "failed_rows": 0,
+                "created_at": 1,
+                "updated_at": 1,
+                "current_stage": "file_upload",
+                "current_stage_state": "running",
+                "provider_state": "FILE_UPLOAD",
+                "can_download_zip": False,
+                "completion_email_status": "pending",
+                "credits_charged": 2,
+                "credits_refunded": 0,
+                "credits_refund_pending": 0,
+            }
+        ],
+    )
+
+    response = client.get("/api/batch/jobs?status=queued&mode=lecture-notes&limit=100")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert isinstance(payload.get("batches"), list)
+    assert payload["batches"][0]["batch_id"] == "batch-1"
+    assert payload["batches"][0]["status"] == "queued"
+    assert payload["batches"][0]["can_download_zip"] is False
 
 
 def test_admin_cost_analysis_contract_fields(client, monkeypatch):

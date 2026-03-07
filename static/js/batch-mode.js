@@ -82,11 +82,16 @@
   var downloadZipBtn = document.getElementById('download-zip-btn');
   var summaryEl = document.getElementById('batch-summary');
   var rowsBody = document.getElementById('batch-rows-body');
+  var submitFeedback = document.getElementById('batch-submit-feedback');
 
   var rowStates = new Map();
   var currentBatchId = '';
   var pollTimer = null;
   var queryBatchId = '';
+  var activeSubmissionId = '';
+  var pendingStartRequest = false;
+  var startLockedByBatchState = false;
+  var BATCH_CACHE_KEY_PREFIX = 'batch_mode_last_batch_';
 
   function modeMeta() {
     return MODE_META[mode] || MODE_META['lecture-notes'];
@@ -148,6 +153,82 @@
     var units = ['B', 'KB', 'MB', 'GB'];
     var idx = Math.min(units.length - 1, Math.floor(Math.log(total) / Math.log(1024)));
     return (total / Math.pow(1024, idx)).toFixed(idx === 0 ? 0 : 2) + ' ' + units[idx];
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function storageKeyForMode() {
+    return BATCH_CACHE_KEY_PREFIX + mode;
+  }
+
+  function cacheCurrentBatchId(batchId) {
+    try {
+      if (!batchId) {
+        window.localStorage.removeItem(storageKeyForMode());
+        return;
+      }
+      window.localStorage.setItem(storageKeyForMode(), String(batchId));
+    } catch (_error) {
+      // Ignore local storage failures.
+    }
+  }
+
+  function readCachedBatchId() {
+    try {
+      return String(window.localStorage.getItem(storageKeyForMode()) || '').trim();
+    } catch (_error) {
+      return '';
+    }
+  }
+
+  function setBatchIdInUrl(batchId) {
+    try {
+      var params = new URLSearchParams(window.location.search || '');
+      if (batchId) {
+        params.set('batch_id', String(batchId));
+      } else {
+        params.delete('batch_id');
+      }
+      var query = params.toString();
+      var nextUrl = window.location.pathname + (query ? ('?' + query) : '') + (window.location.hash || '');
+      window.history.replaceState({}, '', nextUrl);
+    } catch (_error) {
+      // Ignore URL rewrite failures.
+    }
+  }
+
+  function makeSubmissionId() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+      return window.crypto.randomUUID();
+    }
+    return 'submit-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+  }
+
+  function setStartButtonState(locked, label) {
+    if (!submitBtn) return;
+    submitBtn.disabled = !!locked;
+    submitBtn.textContent = String(label || (locked ? 'Queued…' : 'Start batch'));
+  }
+
+  function showSubmitFeedback(summary) {
+    if (!submitFeedback) return;
+    var payload = summary || {};
+    var title = String(payload.batch_title || (batchTitleInput ? batchTitleInput.value : '') || currentBatchId || 'Batch').trim();
+    var submittedAt = payload.created_at ? formatDate(payload.created_at) : formatDate(Date.now() / 1000);
+    var status = String(payload.status || 'queued').trim();
+    submitFeedback.innerHTML =
+      'Batch accepted at <strong>' + escapeHtml(submittedAt) + '</strong> (' + escapeHtml(status) + '). ' +
+      'You can continue using the app while it runs. ' +
+      'Study Library folder: <strong>' + escapeHtml(title) + '</strong>. ' +
+      '<a href="/batch_dashboard">Open Batch Dashboard</a>.';
+    submitFeedback.style.display = '';
   }
 
   function makeRowId() {
@@ -885,9 +966,10 @@
     while (rowCount() < 2) createRow();
   }
 
-  function collectRowsAndFormData() {
+  function collectRowsAndFormData(clientSubmissionId) {
     var formData = new FormData(form);
     formData.append('mode', mode);
+    formData.append('client_submission_id', String(clientSubmissionId || '').trim());
 
     var meta = modeMeta();
     var rowNodes = Array.prototype.slice.call(rowsWrap.querySelectorAll('.batch-row'));
@@ -960,6 +1042,11 @@
     return formData;
   }
 
+  function isTerminalStatus(status) {
+    var value = String(status || '').trim().toLowerCase();
+    return value === 'complete' || value === 'partial' || value === 'error';
+  }
+
   function renderStatus(statusPayload) {
     if (!summaryEl || !rowsBody) return;
 
@@ -971,22 +1058,34 @@
     var failedRows = Number(summary.failed_rows || 0);
 
     summaryEl.innerHTML =
-      '<div><strong>Batch:</strong> ' + String(summary.batch_title || summary.batch_id || '-') + '</div>' +
-      '<div><strong>Status:</strong> ' + status + '</div>' +
-      '<div><strong>' + meta.plural + ':</strong> ' + completedRows + '/' + totalRows + ' complete, ' + failedRows + ' failed</div>' +
+      '<div><strong>Batch:</strong> ' + escapeHtml(String(summary.batch_title || summary.batch_id || '-')) + '</div>' +
+      '<div><strong>Status:</strong> ' + escapeHtml(status) + '</div>' +
+      '<div><strong>Submitted:</strong> ' + formatDate(summary.created_at) + '</div>' +
+      '<div><strong>Last update:</strong> ' + formatDate(summary.updated_at || summary.last_heartbeat_at || 0) + '</div>' +
+      '<div><strong>Current stage:</strong> ' + escapeHtml(String(summary.current_stage || '-')) + '</div>' +
+      '<div><strong>Stage state:</strong> ' + escapeHtml(String(summary.current_stage_state || '-')) + '</div>' +
+      '<div><strong>Provider:</strong> ' + escapeHtml(String(summary.provider_state || '-')) + '</div>' +
+      '<div><strong>' + escapeHtml(meta.plural) + ':</strong> ' + completedRows + '/' + totalRows + ' complete, ' + failedRows + ' failed</div>' +
       '<div><strong>Tokens:</strong> in ' + formatTokens(summary.token_input_total) + ' · out ' + formatTokens(summary.token_output_total) + ' · total ' + formatTokens(summary.token_total) + '</div>' +
-      '<div><strong>Updated:</strong> ' + formatDate(summary.updated_at) + '</div>';
+      '<div><strong>Email:</strong> ' + escapeHtml(String(summary.completion_email_status || 'pending')) + '</div>' +
+      '<div><strong>Credits:</strong> charged ' + formatTokens(summary.credits_charged) + ' · refunded ' + formatTokens(summary.credits_refunded) + ' · pending ' + formatTokens(summary.credits_refund_pending) + '</div>';
+
+    if (downloadZipBtn) {
+      downloadZipBtn.style.display = summary.can_download_zip ? '' : 'none';
+    }
 
     rowsBody.innerHTML = '';
     var rows = Array.isArray(summary.rows) ? summary.rows : [];
     rows.forEach(function (row) {
       var rowId = String(row.row_id || '');
       var rowStatus = String(row.status || 'queued');
+      var rowStage = String(row.current_stage || '').trim();
       var tr = document.createElement('tr');
       var canDownload = rowStatus === 'complete';
+      var statusText = rowStatus + (rowStage ? ' · ' + rowStage : '') + (row.failed_stage ? ' (' + String(row.failed_stage) + ')' : '');
       tr.innerHTML =
         '<td>' + meta.singular + ' ' + Number(row.ordinal || 0) + '</td>' +
-        '<td>' + rowStatus + (row.failed_stage ? ' (' + String(row.failed_stage) + ')' : '') + '</td>' +
+        '<td>' + escapeHtml(statusText) + '</td>' +
         '<td>' + formatTokens(row.token_input_total) + '</td>' +
         '<td>' + formatTokens(row.token_output_total) + '</td>' +
         '<td>' + formatTokens(row.token_total) + '</td>' +
@@ -1027,15 +1126,43 @@
       rowsBody.appendChild(tr);
     });
 
-    if (status === 'complete' || status === 'error' || status === 'partial') {
-      if (pollTimer) {
-        window.clearInterval(pollTimer);
-        pollTimer = null;
-      }
+    var locked = status === 'queued' || status === 'processing' || Boolean(summary.submission_locked);
+    startLockedByBatchState = locked;
+    setStartButtonState(locked, locked ? 'Queued…' : 'Start batch');
+
+    if (locked) {
+      showSubmitFeedback(summary);
+    }
+    if (isTerminalStatus(status)) {
+      pendingStartRequest = false;
+      activeSubmissionId = '';
     }
   }
 
-  function refreshBatchStatus() {
+  function pollDelayMs() {
+    return document.visibilityState === 'hidden' ? 60000 : 20000;
+  }
+
+  function stopPolling() {
+    if (pollTimer) {
+      window.clearTimeout(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function scheduleNextPoll() {
+    stopPolling();
+    if (!currentBatchId) return;
+    if (!auth || !auth.currentUser) return;
+    pollTimer = window.setTimeout(function () {
+      refreshBatchStatus({ silent: true }).finally(function () {
+        scheduleNextPoll();
+      });
+    }, pollDelayMs());
+  }
+
+  function refreshBatchStatus(options) {
+    var opts = options || {};
     if (!currentBatchId) return Promise.resolve();
     return authFetch('/api/batch/jobs/' + encodeURIComponent(currentBatchId))
       .then(function (response) {
@@ -1048,9 +1175,20 @@
           throw new Error(String(result.payload.error || 'Could not read batch status.'));
         }
         renderStatus(result.payload);
+        if (!opts.silent) {
+          showShellToast('Batch status refreshed.', 'success');
+        }
+        if (isTerminalStatus(String(result.payload.status || ''))) {
+          stopPolling();
+        } else {
+          scheduleNextPoll();
+        }
       })
       .catch(function (error) {
         console.error('Batch status polling failed:', error);
+        if (!opts.silent) {
+          showShellToast(String((error && error.message) || 'Could not read batch status.'), 'error');
+        }
       });
   }
 
@@ -1090,22 +1228,31 @@
 
   async function startBatch() {
     if (!auth || !auth.currentUser) {
-      alert('Please sign in first.');
+      showShellToast('Please sign in first.', 'error');
       return;
     }
     if (!submitBtn) return;
+    if (pendingStartRequest) return;
     if (!hasValidBatchTitle()) {
       showShellToast('Batch title is required.', 'error');
       if (batchTitleInput) batchTitleInput.focus();
       return;
     }
 
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Starting...';
+    pendingStartRequest = true;
+    setStartButtonState(true, 'Queued…');
+    showSubmitFeedback({
+      status: 'queued',
+      created_at: Date.now() / 1000,
+      batch_title: batchTitleInput ? batchTitleInput.value : '',
+    });
 
     try {
       await runAutoImportSweepBeforeStart();
-      var formData = collectRowsAndFormData();
+      if (!activeSubmissionId) {
+        activeSubmissionId = makeSubmissionId();
+      }
+      var formData = collectRowsAndFormData(activeSubmissionId);
       var response = await authFetch('/api/batch/jobs', {
         method: 'POST',
         body: formData,
@@ -1116,15 +1263,25 @@
       }
       currentBatchId = String(payload.batch_id || '');
       if (!currentBatchId) throw new Error('No batch id returned.');
+      cacheCurrentBatchId(currentBatchId);
+      setBatchIdInUrl(currentBatchId);
+      if (payload.deduplicated) {
+        showShellToast('This submission was already accepted. Showing the existing batch.', 'success');
+      }
       if (statusPanel) statusPanel.style.display = 'block';
-      await refreshBatchStatus();
-      if (pollTimer) window.clearInterval(pollTimer);
-      pollTimer = window.setInterval(refreshBatchStatus, 5000);
+      await refreshBatchStatus({ silent: true });
+      scheduleNextPoll();
+      activeSubmissionId = '';
     } catch (error) {
       showShellToast(String(error && error.message ? error.message : error), 'error');
+      pendingStartRequest = false;
+      if (!startLockedByBatchState) {
+        setStartButtonState(false, 'Start batch');
+      }
     } finally {
-      submitBtn.textContent = 'Start batch';
-      submitBtn.disabled = false;
+      if (!pendingStartRequest && !startLockedByBatchState && !currentBatchId) {
+        activeSubmissionId = '';
+      }
     }
   }
 
@@ -1132,9 +1289,8 @@
     if (!currentBatchId) return;
     if (statusPanel) statusPanel.style.display = 'block';
     if (!auth || !auth.currentUser) return;
-    refreshBatchStatus();
-    if (pollTimer) window.clearInterval(pollTimer);
-    pollTimer = window.setInterval(refreshBatchStatus, 5000);
+    refreshBatchStatus({ silent: true });
+    scheduleNextPoll();
   }
 
   function restoreBatchIdFromQuery() {
@@ -1145,8 +1301,14 @@
     } catch (_error) {
       queryBatchId = '';
     }
-    if (!queryBatchId) return;
-    currentBatchId = queryBatchId;
+    if (queryBatchId) {
+      currentBatchId = queryBatchId;
+      cacheCurrentBatchId(queryBatchId);
+    } else {
+      currentBatchId = readCachedBatchId();
+    }
+    if (!currentBatchId) return;
+    setBatchIdInUrl(currentBatchId);
     startPollingForBatch();
   }
 
@@ -1167,7 +1329,18 @@
     if (batchTitleInput) {
       batchTitleInput.addEventListener('input', function () {
         if (!submitBtn) return;
-        submitBtn.disabled = false;
+        if (!pendingStartRequest && !startLockedByBatchState) {
+          activeSubmissionId = '';
+          setStartButtonState(false, 'Start batch');
+        }
+      });
+    }
+
+    if (form) {
+      form.addEventListener('change', function () {
+        if (!pendingStartRequest && !startLockedByBatchState) {
+          activeSubmissionId = '';
+        }
       });
     }
 
@@ -1220,7 +1393,7 @@
 
     if (refreshStatusBtn) {
       refreshStatusBtn.addEventListener('click', function () {
-        refreshBatchStatus();
+        refreshBatchStatus({ silent: false });
       });
     }
 
@@ -1230,6 +1403,11 @@
         window.open('/api/batch/jobs/' + encodeURIComponent(currentBatchId) + '/download.zip', '_blank');
       });
     }
+
+    document.addEventListener('visibilitychange', function () {
+      if (!currentBatchId) return;
+      scheduleNextPoll();
+    });
   }
 
   function boot() {
@@ -1248,13 +1426,21 @@
         if (user && queryBatchId) {
           currentBatchId = queryBatchId;
           startPollingForBatch();
+          return;
+        }
+        if (user && !queryBatchId) {
+          var cachedBatchId = readCachedBatchId();
+          if (cachedBatchId) {
+            currentBatchId = cachedBatchId;
+            startPollingForBatch();
+          }
         }
         if (!user) {
           currentBatchId = '';
-          if (pollTimer) {
-            window.clearInterval(pollTimer);
-            pollTimer = null;
-          }
+          startLockedByBatchState = false;
+          pendingStartRequest = false;
+          setStartButtonState(false, 'Start batch');
+          stopPolling();
         }
       });
     }

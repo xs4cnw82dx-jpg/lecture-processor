@@ -566,10 +566,33 @@
       align-items: center
     }
 
+    .item-title-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
     .item-title {
       font-size: .9rem;
       font-weight: 700;
       color: var(--gray-900)
+    }
+
+    .folder-pending-badge {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid rgba(16, 185, 129, .35);
+      background: rgba(16, 185, 129, .12);
+      color: #0f766e;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: .68rem;
+      font-weight: 700;
+      line-height: 1.2;
+      text-transform: uppercase;
+      letter-spacing: .02em;
+      flex-shrink: 0;
     }
 
     .item-sub {
@@ -582,6 +605,12 @@
       margin-top: 6px;
       color: var(--primary-dark);
       font-weight: 600
+    }
+
+    .item-sub.pending-hint {
+      margin-top: 6px;
+      color: #0f766e;
+      font-weight: 600;
     }
 
     .folder-head-actions {

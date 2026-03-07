@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Batch Dashboard · Lecture Processor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/batch-dashboard.css') }}">
+</head>
+<body>
+  {% set shell_title = 'Batch Dashboard' %}
+  {% include '_app_shell.html' %}
+  <main class="app-shell-page batch-dashboard-page">
+    <section class="shell-panel">
+      <div class="batch-dashboard-head">
+        <div>
+          <h1>Batch Dashboard</h1>
+          <p>Track active and recent batches in one place. You can safely leave and return later.</p>
+        </div>
+        <div class="batch-dashboard-head-actions">
+          <a href="/batch_mode" class="btn-link">New batch</a>
+          <button type="button" class="btn-link" id="batch-dashboard-refresh-btn">Refresh</button>
+        </div>
+      </div>
+      <div class="batch-dashboard-filters">
+        <label>
+          <span>Mode</span>
+          <select id="batch-dashboard-mode-filter">
+            <option value="">All modes</option>
+            <option value="lecture-notes">Lectures</option>
+            <option value="slides-only">Slides</option>
+            <option value="interview">Interviews</option>
+          </select>
+        </label>
+        <label>
+          <span>Status</span>
+          <select id="batch-dashboard-status-filter">
+            <option value="">All statuses</option>
+            <option value="queued">Queued</option>
+            <option value="processing">Processing</option>
+            <option value="complete">Complete</option>
+            <option value="partial">Partial</option>
+            <option value="error">Error</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="shell-panel">
+      <h2>Active batches</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Mode</th>
+              <th>Submitted</th>
+              <th>Stage</th>
+              <th>Rows</th>
+              <th>Updated</th>
+              <th>Email</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="batch-dashboard-active-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="shell-panel">
+      <h2>Recent batches</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Mode</th>
+              <th>Status</th>
+              <th>Submitted</th>
+              <th>Rows</th>
+              <th>Updated</th>
+              <th>Email</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="batch-dashboard-recent-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  {% include '_shell_footer.html' %}
+  </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+  <script src="{{ url_for('static', filename=batch_dashboard_js_asset or 'js/batch-dashboard.js') }}"></script>
+</body>
+</html>

@@ -35,6 +35,14 @@
         <div id="state-area" class="loading">Loading admin dashboard...</div>
 
         <div id="dashboard" style="display:none;">
+            <section class="panel admin-tabs-panel">
+                <div class="admin-tabs">
+                    <button class="btn admin-tab active" data-admin-tab="overview" type="button">Overview</button>
+                    <button class="btn admin-tab" data-admin-tab="batch-jobs" type="button">Batch Jobs</button>
+                </div>
+            </section>
+
+            <div id="admin-tab-overview-content">
             <section class="metrics">
                 <article class="metric">
                     <div class="label">Total users</div>
@@ -340,6 +348,58 @@
                     </table>
                 </div>
             </section>
+            </div>
+
+            <div id="admin-tab-batch-content" style="display:none;">
+                <section class="panel">
+                    <div class="analyzer-head">
+                        <h2>Batch Jobs</h2>
+                        <div class="actions">
+                            <button class="btn" id="admin-batch-refresh-btn" type="button">Refresh</button>
+                        </div>
+                    </div>
+                    <div class="analyzer-controls">
+                        <label class="calculator-control">
+                            <span>Mode</span>
+                            <select id="admin-batch-mode" class="calculator-input">
+                                <option value="">All modes</option>
+                                <option value="lecture-notes">Lectures</option>
+                                <option value="slides-only">Slides</option>
+                                <option value="interview">Interviews</option>
+                            </select>
+                        </label>
+                        <label class="calculator-control">
+                            <span>Status</span>
+                            <select id="admin-batch-status" class="calculator-input">
+                                <option value="">All statuses</option>
+                                <option value="queued">Queued</option>
+                                <option value="processing">Processing</option>
+                                <option value="complete">Complete</option>
+                                <option value="partial">Partial</option>
+                                <option value="error">Error</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Submitted</th>
+                                    <th>User</th>
+                                    <th>Title</th>
+                                    <th>Mode</th>
+                                    <th>Status</th>
+                                    <th>Stage</th>
+                                    <th>Rows</th>
+                                    <th>Email</th>
+                                    <th>Refunds</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-batch-jobs-body"></tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
         </div>
     </div>
 

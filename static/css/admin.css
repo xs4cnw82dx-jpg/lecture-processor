@@ -218,6 +218,17 @@
             padding: 14px;
         }
         .panel h2 { font-size: 1rem; margin-bottom: 10px; }
+        .admin-tabs-panel { margin-bottom: 12px; }
+        .admin-tabs {
+            display: inline-flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .btn.admin-tab.active {
+            border: 1px solid transparent;
+            color: #fff;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+        }
         .calculator-panel { margin-top: 12px; }
         .calculator-head {
             display: flex;
@@ -428,7 +439,34 @@
         .status.complete { color: #065F46; background: #D1FAE5; }
         .status.error { color: #991B1B; background: #FEE2E2; }
         .status.other { color: #1E40AF; background: #DBEAFE; }
+        .status.queued, .status.processing { color: #1d4ed8; background: #dbeafe; }
+        .status.partial { color: #92400e; background: #fef3c7; }
         .empty { color: var(--muted); font-size: 0.9rem; padding: 6px 0; }
+        .admin-toast {
+            position: fixed;
+            left: 50%;
+            bottom: 20px;
+            transform: translateX(-50%);
+            background: #111827;
+            color: #fff;
+            border-radius: 10px;
+            padding: 9px 12px;
+            font-size: 0.84rem;
+            font-weight: 600;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            z-index: 50;
+        }
+        .admin-toast.visible {
+            opacity: 1;
+        }
+        .admin-toast.success {
+            background: #0f7a4a;
+        }
+        .admin-toast.error {
+            background: #991b1b;
+        }
         .loading, .error, .blocked {
             background: #fff;
             border: 1px solid var(--border);
