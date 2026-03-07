@@ -585,7 +585,7 @@
     }
     var url = getRowM3u8Url(rowNode);
     if (!url) {
-      setRowAudioImportStatus(rowNode, 'Paste the Brightspace video URL first.', 'error');
+      setRowAudioImportStatus(rowNode, 'Paste the LMS video URL first.', 'error');
       return Promise.resolve({ ok: false, reason: 'empty-url' });
     }
 
@@ -627,7 +627,7 @@
         return { ok: true, reason: 'imported' };
       });
     }).catch(function () {
-      setRowAudioImportStatus(rowNode, 'Import failed: Could not import audio from Brightspace video URL. Please try again.', 'error');
+      setRowAudioImportStatus(rowNode, 'Import failed: Could not import audio from the LMS video URL. Please try again.', 'error');
       return { ok: false, reason: 'network-error' };
     }).finally(function () {
       setRowAudioImportPending(rowNode, false);
@@ -939,8 +939,8 @@
           ? (
             '  <div class="row-url-import" data-audio-url-wrap>' +
             '    <div class="row-url-head">' +
-            '      <strong>Import from Brightspace video URL</strong>' +
-            '      <span>Paste the Brightspace video URL (contains <code>index.m3u8</code>). Audio can be auto-imported for this lecture row.</span>' +
+            '      <strong>Import from LMS video URL</strong>' +
+            '      <span>Paste the LMS video playlist URL (usually contains <code>index.m3u8</code>). Audio can be auto-imported for this lecture row.</span>' +
             '    </div>' +
             '    <div class="row-url-row">' +
             '      <input type="url" class="row-url-input" data-field="m3u8" placeholder="https://.../index.m3u8?..." autocomplete="off">' +
@@ -1055,7 +1055,7 @@
 
         if (!audioFile && !importedToken && !m3u8Url) {
           if (mode === 'lecture-notes') {
-            throw new Error(meta.singular + ' ' + rowOrdinal + ': provide an audio file or import from Brightspace video URL.');
+            throw new Error(meta.singular + ' ' + rowOrdinal + ': provide an audio file or import from an LMS video URL.');
           }
           throw new Error(meta.singular + ' ' + rowOrdinal + ': provide an audio file.');
         }
@@ -1304,7 +1304,7 @@
           silentIfAlreadyImported: true,
         }).then(function (result) {
           if (!result || !result.ok) {
-            throw new Error('Lecture ' + String(index + 1) + ': could not auto-import the Brightspace video URL. Please import it manually or upload audio.');
+            throw new Error('Lecture ' + String(index + 1) + ': could not auto-import the LMS video URL. Please import it manually or upload audio.');
           }
           if (result.reason === 'imported') importedCount += 1;
           return true;

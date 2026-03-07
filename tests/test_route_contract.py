@@ -66,12 +66,15 @@ EXPECTED_ROUTES = [
     ('GET', '/download-flashcards-csv/<job_id>', 'upload_api.download_flashcards_csv'),
     ('GET', '/document-reader', 'pages.document_reader_page'),
     ('GET', '/features', 'pages.features_page'),
+    ('GET', '/FAQ', 'pages.faq_page'),
     ('GET', '/healthz', 'health.healthz'),
+    ('GET', '/helpcenter', 'pages.help_center_page'),
     ('GET', '/image-reader', 'pages.image_reader_page'),
     ('GET', '/interview-transcription', 'pages.interview_transcription_page'),
     ('GET', '/lecture-notes', 'pages.lecture_notes_page'),
     ('GET', '/plan', 'pages.plan_dashboard'),
     ('GET', '/privacy', 'pages.privacy_policy'),
+    ('GET', '/faq', 'pages.faq_page_lowercase'),
     ('GET', '/slides-extraction', 'pages.slides_extraction_page'),
     ('GET', '/stats', 'pages.plan_dashboard'),
     ('GET', '/status/<job_id>', 'upload_api.get_status'),
@@ -92,3 +95,21 @@ def test_route_contract_snapshot_stable(app):
         for method in methods:
             actual.append((method, str(rule.rule), str(rule.endpoint)))
     assert sorted(actual) == sorted(EXPECTED_ROUTES)
+
+
+def test_support_pages_and_shell_footer_render_consistent_links(client):
+    for path in ['/', '/features', '/helpcenter', '/FAQ', '/privacy', '/terms', '/dashboard']:
+        response = client.get(path)
+        assert response.status_code == 200
+        html = response.get_data(as_text=True)
+        assert 'Help Center' in html
+        assert 'FAQ' in html
+        assert 'mailto:email@lectureprocessor.com' in html
+        assert 'Support' in html
+
+
+def test_lowercase_faq_redirects_to_canonical_route(client):
+    response = client.get('/faq')
+
+    assert response.status_code == 302
+    assert response.headers['Location'].endswith('/FAQ')

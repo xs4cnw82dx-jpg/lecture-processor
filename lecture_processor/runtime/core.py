@@ -335,7 +335,9 @@ SENTRY_ENVIRONMENT = (os.getenv('SENTRY_ENVIRONMENT', os.getenv('FLASK_ENV', 'pr
 
 SENTRY_RELEASE = (os.getenv('SENTRY_RELEASE', 'lecture-processor') or 'lecture-processor').strip()
 
-LEGAL_CONTACT_EMAIL = (os.getenv('LEGAL_CONTACT_EMAIL', os.getenv('SUPPORT_EMAIL', '')) or '').strip()
+SENTRY_CAPTURE_LOCAL = str(os.getenv('SENTRY_CAPTURE_LOCAL', '0')).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+LEGAL_CONTACT_EMAIL = 'email@lectureprocessor.com'
 
 DEV_ENV_NAMES = {'development', 'dev', 'local', 'test'}
 
@@ -369,7 +371,23 @@ def safe_float_env(name, default=0.0):
 
 SENTRY_TRACES_SAMPLE_RATE = safe_float_env('SENTRY_TRACES_SAMPLE_RATE', 0.0)
 
-if SENTRY_BACKEND_DSN and sentry_sdk and FlaskIntegration:
+def should_init_backend_sentry():
+    if not (SENTRY_BACKEND_DSN and sentry_sdk and FlaskIntegration):
+        return False
+    if SENTRY_CAPTURE_LOCAL:
+        return True
+    if str(os.getenv('TESTING', os.getenv('FLASK_TESTING', '0'))).strip().lower() in {'1', 'true', 'yes', 'on'}:
+        return False
+    if os.getenv('PYTEST_CURRENT_TEST'):
+        return False
+    if any('pytest' in str(arg or '').lower() for arg in sys.argv):
+        return False
+    if not os.getenv('RENDER'):
+        return False
+    return True
+
+
+if should_init_backend_sentry():
     sentry_sdk.init(dsn=SENTRY_BACKEND_DSN, integrations=[FlaskIntegration()], traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE, send_default_pii=False, environment=SENTRY_ENVIRONMENT, release=SENTRY_RELEASE)
 
 def is_dev_environment():
@@ -1476,7 +1494,7 @@ def validate_video_import_url(raw_url):
     if not host:
         return ('', 'Video URL host is missing.')
     if VIDEO_IMPORT_ALLOWED_HOST_SUFFIXES and (not host_matches_allowed_suffix(host)):
-        return ('', 'Only Brightspace/Kaltura video hosts are supported for automatic import.')
+        return ('', 'Only supported LMS/Kaltura video hosts are allowed for automatic import.')
     return (safe_url, '')
 
 def cleanup_expired_audio_import_tokens():

@@ -831,7 +831,7 @@ function getStudyDueCacheKey(user) {
 function setTopbarDueTextValue(countValue) {
   if (!topbarDueText) return;
   if (countValue === null || countValue === undefined || countValue === '') {
-    topbarDueText.textContent = '\u2014 due today';
+    topbarDueText.textContent = 'Loading due count';
     return;
   }
   var total = Math.max(0, Number(countValue || 0));

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FAQ | Lecture Processor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/support-pages.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+</head>
+<body>
+  <header class="support-topbar">
+    <a href="/" class="support-brand">Lecture Processor</a>
+    <div class="support-topbar-actions">
+      <a href="/helpcenter" class="support-link-btn">Help Center</a>
+      <a href="/dashboard" class="support-link-btn primary">Dashboard</a>
+    </div>
+  </header>
+
+  <main class="support-shell">
+    <section class="support-hero">
+      <span class="support-badge">FAQ</span>
+      <h1>Short answers to the questions people ask before and after their first upload.</h1>
+      <p>If you need step-by-step help instead of a short answer, open the <a href="/helpcenter">Help Center</a>.</p>
+    </section>
+
+    <section class="faq-sections">
+      <div class="faq-group">
+        <h2>Account</h2>
+        <details class="faq-item" open>
+          <summary>Do I need an account to process files?</summary>
+          <p>Yes. Processing, credits, saved study packs, and planning all depend on a signed-in account.</p>
+        </details>
+        <details class="faq-item">
+          <summary>Why do I briefly see loading in the header?</summary>
+          <p>The app checks your Firebase session first. During that short auth-pending state, cached profile data is used to avoid confusing sign-in flashes.</p>
+        </details>
+      </div>
+
+      <div class="faq-group">
+        <h2>Uploads</h2>
+        <details class="faq-item">
+          <summary>Do Lecture Notes require both slides and audio?</summary>
+          <p>Yes. Lecture Notes uses slides plus audio together. If you only have slides, use Slides Extraction. If you only have audio, use Interview Transcription.</p>
+        </details>
+        <details class="faq-item">
+          <summary>What does “Import from LMS video URL” mean?</summary>
+          <p>It means you can import audio from a learning platform video source. Brightspace is one example, but Canvas, Moodle, and Blackboard-style flows are also covered by the wording.</p>
+        </details>
+      </div>
+
+      <div class="faq-group">
+        <h2>Credits</h2>
+        <details class="faq-item">
+          <summary>Where do I buy credits?</summary>
+          <p>Open <a href="/buy_credits">Buy Credits</a>. Payment is handled by Stripe.</p>
+        </details>
+        <details class="faq-item">
+          <summary>What happens if processing fails?</summary>
+          <p>Internal processing failures may trigger a credit refund based on the app’s refund logic. You can also contact support if something looks incorrect.</p>
+        </details>
+      </div>
+
+      <div class="faq-group">
+        <h2>Study packs and batch mode</h2>
+        <details class="faq-item">
+          <summary>Where do generated packs go?</summary>
+          <p>Saved packs appear in <a href="/study">Study Library</a>, where you can organize them into folders and launch study modes.</p>
+        </details>
+        <details class="faq-item">
+          <summary>When should I use batch processing?</summary>
+          <p>Use <a href="/batch_mode">Batch Processing</a> when you want to queue many rows in one submission and export the results together.</p>
+        </details>
+      </div>
+
+      <div class="faq-group">
+        <h2>Privacy and support</h2>
+        <details class="faq-item">
+          <summary>Where can I read privacy or terms details?</summary>
+          <p>See <a href="/privacy">Privacy Policy</a> and <a href="/terms">Terms</a>.</p>
+        </details>
+        <details class="faq-item">
+          <summary>How do I contact support?</summary>
+          <p>Email <a href="mailto:{{ legal_contact_email }}">{{ legal_contact_email }}</a>.</p>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <footer class="support-footer">
+    <p>{% include '_footer_links.html' %}</p>
+  </footer>
+</body>
+</html>

@@ -27,10 +27,8 @@
   var adminBtn = document.getElementById('shell-admin-btn');
   var exportDataBtn = document.getElementById('shell-export-data-btn');
   var signOutBtn = document.getElementById('signout-btn');
-  var toolsGroup = document.getElementById('shell-tools-group');
-  var toolsGroupSummary = toolsGroup ? toolsGroup.querySelector('summary') : null;
-  var batchGroup = document.getElementById('shell-batch-group');
-  var batchGroupSummary = batchGroup ? batchGroup.querySelector('summary') : null;
+  var moreToolsGroup = document.getElementById('shell-more-tools-group');
+  var moreToolsTrigger = document.getElementById('shell-more-tools-trigger');
   var exportOverlay = document.getElementById('shell-export-overlay');
   var exportCloseBtn = document.getElementById('shell-export-close');
   var exportCancelBtn = document.getElementById('shell-export-cancel');
@@ -39,8 +37,8 @@
   var shellToast = document.getElementById('shell-toast');
   var CACHE_KEYS = {
     credits: 'credits_breakdown',
-    toolsExpanded: 'tools_group_expanded',
-    batchExpanded: 'batch_group_expanded'
+    moreToolsExpanded: 'more_tools_group_expanded',
+    profile: 'shell_profile'
   };
 
   var currentUserIsAdmin = false;
@@ -124,14 +122,15 @@
     accountBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
-  function syncToolsGroupAria() {
-    if (!toolsGroup || !toolsGroupSummary) return;
-    toolsGroupSummary.setAttribute('aria-expanded', toolsGroup.open ? 'true' : 'false');
+  function setAuthState(state) {
+    if (!shell) return;
+    shell.setAttribute('data-auth-state', String(state || 'pending'));
   }
 
-  function syncBatchGroupAria() {
-    if (!batchGroup || !batchGroupSummary) return;
-    batchGroupSummary.setAttribute('aria-expanded', batchGroup.open ? 'true' : 'false');
+  function setMoreToolsOpen(open) {
+    if (!moreToolsGroup || !moreToolsTrigger) return;
+    moreToolsGroup.classList.toggle('is-open', !!open);
+    moreToolsTrigger.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
   function setAuthView(view) {
@@ -195,54 +194,32 @@
   function markActiveNav() {
     var currentPath = normalizePath(window.location.pathname || '/');
     var navLinks = Array.prototype.slice.call(document.querySelectorAll('.app-shell-link[href]'));
-    var hasActiveChild = false;
-    var hasActiveBatchChild = false;
+    var hasActiveMoreToolsChild = false;
 
     navLinks.forEach(function (link) {
       var href = normalizePath(link.getAttribute('href') || '/');
       var active = href === currentPath || (href === '/plan' && currentPath === '/stats');
       link.classList.toggle('active', !!active);
-      if (active && link.classList.contains('sub')) hasActiveChild = true;
-      if (active && link.classList.contains('nested')) hasActiveBatchChild = true;
+      if (active && link.classList.contains('sub')) hasActiveMoreToolsChild = true;
     });
 
-    hydrateToolsGroupState(hasActiveChild);
-    hydrateBatchGroupState(hasActiveBatchChild);
-    syncToolsGroupAria();
-    syncBatchGroupAria();
-    if (batchGroupSummary) batchGroupSummary.classList.toggle('active', !!(batchGroup && batchGroup.open));
-  }
-
-  function hydrateToolsGroupState(hasActiveChild) {
-    if (!toolsGroup) return;
-    var stored = readCacheString(CACHE_KEYS.toolsExpanded, '');
-    if (stored === '1') {
-      toolsGroup.open = true;
-      return;
-    }
-    if (stored === '0') {
-      toolsGroup.open = false;
-      return;
-    }
-    if (hasActiveChild) {
-      toolsGroup.open = true;
+    hydrateMoreToolsState(hasActiveMoreToolsChild);
+    if (moreToolsTrigger) {
+      moreToolsTrigger.classList.toggle('active', hasActiveMoreToolsChild || !!(moreToolsGroup && moreToolsGroup.classList.contains('is-open')));
     }
   }
 
-  function hydrateBatchGroupState(hasActiveChild) {
-    if (!batchGroup) return;
-    var stored = readCacheString(CACHE_KEYS.batchExpanded, '');
+  function hydrateMoreToolsState(hasActiveChild) {
+    var stored = readCacheString(CACHE_KEYS.moreToolsExpanded, '');
     if (stored === '1') {
-      batchGroup.open = true;
+      setMoreToolsOpen(true);
       return;
     }
     if (stored === '0') {
-      batchGroup.open = false;
+      setMoreToolsOpen(false);
       return;
     }
-    if (hasActiveChild) {
-      batchGroup.open = true;
-    }
+    setMoreToolsOpen(!!hasActiveChild);
   }
 
   function parseCreditBreakdown(payload) {
@@ -261,11 +238,11 @@
   function applyCreditBreakdown(breakdown) {
     if (!creditsTotalLabel) return;
     if (!breakdown) {
-      creditsTotalLabel.textContent = '\u2014 credits';
-      if (creditsLectureValue) creditsLectureValue.textContent = '\u2014';
-      if (creditsTextValue) creditsTextValue.textContent = '\u2014';
-      if (creditsInterviewValue) creditsInterviewValue.textContent = '\u2014';
-      if (creditsTotalValue) creditsTotalValue.textContent = '\u2014';
+      creditsTotalLabel.textContent = 'Loading credits';
+      if (creditsLectureValue) creditsLectureValue.textContent = '...';
+      if (creditsTextValue) creditsTextValue.textContent = '...';
+      if (creditsInterviewValue) creditsInterviewValue.textContent = '...';
+      if (creditsTotalValue) creditsTotalValue.textContent = '...';
       return;
     }
     var next = {
@@ -329,23 +306,54 @@
       currentUserIsAdmin = !!payload.is_admin;
       applyCreditBreakdown(breakdown);
       writeCacheJson(CACHE_KEYS.credits, breakdown);
+      writeCacheJson(CACHE_KEYS.profile, {
+        email: String(user.email || payload.email || 'user'),
+        name: String((payload.email || user.email || 'Account')).split('@')[0] || 'Account',
+        initial: String((user.email || payload.email || '?').charAt(0) || '?').toUpperCase(),
+        isAdmin: currentUserIsAdmin
+      });
       if (adminBtn) adminBtn.style.display = currentUserIsAdmin ? '' : 'none';
     } catch (_) {}
   }
 
   function applySignedOutState() {
     currentUserIsAdmin = false;
+    setAuthState('signed-out');
     if (adminBtn) adminBtn.style.display = 'none';
     setCreditsVisible(false);
     applyCreditBreakdown(null);
     writeCacheJson(CACHE_KEYS.credits, null);
+    writeCacheJson(CACHE_KEYS.profile, null);
     if (userEmail) userEmail.textContent = 'Not signed in';
     if (userName) userName.textContent = 'Account';
     if (userInitial) userInitial.textContent = '?';
+    if (signInBtn) signInBtn.hidden = false;
+    if (accountWrap) accountWrap.hidden = true;
+  }
+
+  function applyCachedProfile() {
+    var cachedProfile = readCacheJson(CACHE_KEYS.profile, null);
+    if (!cachedProfile || typeof cachedProfile !== 'object') return false;
+    if (signInBtn) signInBtn.hidden = true;
+    if (accountWrap) accountWrap.hidden = false;
+    if (userEmail) userEmail.textContent = String(cachedProfile.email || 'Checking sign-in...');
+    if (userName) userName.textContent = String(cachedProfile.name || 'Account');
+    if (userInitial) userInitial.textContent = String(cachedProfile.initial || '?').slice(0, 1).toUpperCase();
+    currentUserIsAdmin = !!cachedProfile.isAdmin;
+    if (adminBtn) adminBtn.style.display = currentUserIsAdmin ? '' : 'none';
+    return true;
+  }
+
+  function applyUserIdentity(user) {
+    var email = String((user && user.email) || 'user').trim();
+    if (userEmail) userEmail.textContent = email;
+    if (userName) userName.textContent = email.split('@')[0] || 'Account';
+    if (userInitial) userInitial.textContent = (email.charAt(0) || '?').toUpperCase();
   }
 
   function applyAuth(user) {
     var signedIn = !!user;
+    setAuthState(signedIn ? 'signed-in' : 'signed-out');
     if (signInBtn) signInBtn.hidden = signedIn;
     if (accountWrap) accountWrap.hidden = !signedIn;
     if (!signedIn) {
@@ -354,10 +362,7 @@
     }
 
     setCreditsVisible(true);
-    var email = String(user.email || 'user').trim();
-    if (userEmail) userEmail.textContent = email;
-    if (userName) userName.textContent = email.split('@')[0] || 'Account';
-    if (userInitial) userInitial.textContent = (email.charAt(0) || '?').toUpperCase();
+    applyUserIdentity(user);
     refreshUserProfile(user);
   }
 
@@ -451,18 +456,12 @@
     }
   }
 
-  if (toolsGroup) {
-    toolsGroup.addEventListener('toggle', function () {
-      syncToolsGroupAria();
-      writeCacheString(CACHE_KEYS.toolsExpanded, toolsGroup.open ? '1' : '0');
-    });
-  }
-
-  if (batchGroup) {
-    batchGroup.addEventListener('toggle', function () {
-      syncBatchGroupAria();
-      writeCacheString(CACHE_KEYS.batchExpanded, batchGroup.open ? '1' : '0');
-      if (batchGroupSummary) batchGroupSummary.classList.toggle('active', !!batchGroup.open);
+  if (moreToolsTrigger) {
+    moreToolsTrigger.addEventListener('click', function () {
+      var next = !(moreToolsGroup && moreToolsGroup.classList.contains('is-open'));
+      setMoreToolsOpen(next);
+      writeCacheString(CACHE_KEYS.moreToolsExpanded, next ? '1' : '0');
+      moreToolsTrigger.classList.toggle('active', next);
     });
   }
 
@@ -602,10 +601,19 @@
   });
 
   var cachedBreakdown = readCacheJson(CACHE_KEYS.credits, null);
-  if (auth.currentUser) {
+  setAuthState('pending');
+  if (cachedBreakdown) {
     applyCreditBreakdown(cachedBreakdown);
   } else {
     applyCreditBreakdown(null);
+  }
+  if (auth.currentUser) {
+    applyUserIdentity(auth.currentUser);
+    if (signInBtn) signInBtn.hidden = true;
+    if (accountWrap) accountWrap.hidden = false;
+    setCreditsVisible(true);
+  } else {
+    applyCachedProfile();
   }
   markActiveNav();
   maybeOpenAuthFromQuery();

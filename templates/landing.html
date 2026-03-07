@@ -30,7 +30,6 @@
 
       <div class="hero-actions">
         <a href="/dashboard" class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Start Studying</a>
-        <a href="/features" class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>Explore Features</a>
       </div>
 
       <div class="value-grid">
@@ -52,16 +51,22 @@
       </div>
     </section>
 
-    <section class="bottom-cta">
+    <section class="bottom-cta trust-band">
       <div>
-        <h2>Ready to process your next lecture?</h2>
-        <p>Open your dashboard to upload files, manage packs, and launch focused learn sessions.</p>
+        <h2>Questions before you upload?</h2>
+        <p>Read the practical docs, check the FAQ, or contact support before you process your next lecture.</p>
       </div>
-      <a href="/dashboard" class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>Go to Dashboard</a>
+      <div class="trust-links" aria-label="Support links">
+        <a href="/helpcenter" class="btn">Help Center</a>
+        <a href="/FAQ" class="btn">FAQ</a>
+        {% if legal_contact_email %}
+        <a href="mailto:{{ legal_contact_email }}" class="btn support-link">Support</a>
+        {% endif %}
+      </div>
     </section>
   </main>
 
-  <footer class="footer">Powered by Gemini AI · Made for students · <a href="/privacy">Privacy Policy</a> · <a href="/terms">Terms</a>{% if legal_contact_email %} · <a href="mailto:{{ legal_contact_email }}">Contact me</a>{% endif %}</footer>
+  <footer class="footer">{% include '_footer_links.html' %}</footer>
 
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" integrity="sha384-4gq9w/AGf72FXdNQ3Kn3EqWP7633NbCMjpYHt8YCZyXf23o2opcuAr4cif41tLrC" crossorigin="anonymous"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js" integrity="sha384-xtdq4MQqPj1dB5DQsuw9O7dh4kHhMP/Wp5u8O1jiaWiou13ZfJIgiccjtVK2pBhL" crossorigin="anonymous"></script>

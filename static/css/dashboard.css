@@ -172,6 +172,53 @@
   padding: 8px 0;
 }
 
+.empty-state-card {
+  border: 1px dashed #cad7ec;
+  border-radius: 14px;
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.96), rgba(241, 246, 255, 0.88));
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.empty-state-card h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.empty-state-card p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #60708a;
+}
+
+.empty-state-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.empty-state-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid #dbe5f6;
+  background: #fff;
+  color: #0f172a;
+  text-decoration: none;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.empty-state-link.primary {
+  border-color: transparent;
+  background: linear-gradient(135deg, #4f46e5, #2563eb);
+  color: #fff;
+}
+
 .quick-links {
   display: grid;
   gap: 10px;

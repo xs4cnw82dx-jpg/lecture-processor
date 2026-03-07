@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Help Center | Lecture Processor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/support-pages.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+</head>
+<body>
+  <header class="support-topbar">
+    <a href="/" class="support-brand">Lecture Processor</a>
+    <div class="support-topbar-actions">
+      <a href="/FAQ" class="support-link-btn">FAQ</a>
+      <a href="/dashboard" class="support-link-btn primary">Dashboard</a>
+    </div>
+  </header>
+
+  <main class="support-shell">
+    <section class="support-hero">
+      <span class="support-badge">Help Center</span>
+      <h1>Practical help for uploads, credits, study packs, and troubleshooting.</h1>
+      <p>Use this page when you need the fastest route from “something feels off” to “I know what to do next.”</p>
+      <div class="support-hero-links">
+        <a href="#getting-started" class="support-pill">Getting Started</a>
+        <a href="#file-requirements" class="support-pill">File Requirements</a>
+        <a href="#billing" class="support-pill">Credits & Billing</a>
+        <a href="#troubleshooting" class="support-pill">Troubleshooting</a>
+      </div>
+    </section>
+
+    <section class="support-grid">
+      <article class="support-card" id="getting-started">
+        <h2>Getting started</h2>
+        <ol>
+          <li>Go to <a href="/dashboard">Dashboard</a> and choose the processing flow you need.</li>
+          <li>Use <strong>Lecture Notes</strong> when you have slides and audio for the same lecture.</li>
+          <li>Use <strong>Slides Extraction</strong> when you only need clean text from slides.</li>
+          <li>Use <strong>Interview Transcription</strong> when you only have recorded audio.</li>
+          <li>Save the generated study pack, then review it in <a href="/study">Study Library</a>.</li>
+        </ol>
+      </article>
+
+      <article class="support-card" id="file-requirements">
+        <h2>File requirements</h2>
+        <ul>
+          <li>Slides: PDF or PPTX, up to 50 MB.</li>
+          <li>Audio: MP3, M4A, WAV, AAC, OGG, or FLAC, up to 500 MB.</li>
+          <li>Lecture Notes currently requires both slides and audio. An LMS import can serve as the audio source.</li>
+          <li>Slides Extraction requires slides only.</li>
+          <li>Interview Transcription requires audio only.</li>
+        </ul>
+      </article>
+
+      <article class="support-card" id="billing">
+        <h2>Credits and billing</h2>
+        <ul>
+          <li>Lecture Notes uses lecture credits.</li>
+          <li>Slides Extraction uses text extraction credits.</li>
+          <li>Interview Transcription uses interview credits. Optional extras can add text extraction credit usage.</li>
+          <li>Buy credits from <a href="/buy_credits">Buy Credits</a>. Checkout is handled by Stripe.</li>
+          <li>If a run fails because of an internal processing error, the app may refund credits based on current refund rules.</li>
+        </ul>
+      </article>
+
+      <article class="support-card" id="batch-processing">
+        <h2>Batch processing</h2>
+        <ul>
+          <li>Open <a href="/batch_mode">Batch Processing</a> when you need to process many rows in one submission.</li>
+          <li>Pick the batch type on the page tabs, not in multiple places in the sidebar.</li>
+          <li>Use batch mode when you want one queue, one progress view, and one export ZIP.</li>
+          <li>Check <a href="/batch_dashboard">Batch Dashboard</a> for recent batch status.</li>
+        </ul>
+      </article>
+
+      <article class="support-card" id="study-library">
+        <h2>Study Library and planning</h2>
+        <ul>
+          <li>Use <a href="/study">Study Library</a> to organize packs into folders.</li>
+          <li>Use <a href="/plan">Planning &amp; Progress</a> to set a daily review goal and add exam dates per folder.</li>
+          <li>Use <a href="/calendar">Calendar</a> to track planned sessions.</li>
+          <li>Progress and due counts improve after you start studying saved packs.</li>
+        </ul>
+      </article>
+
+      <article class="support-card" id="troubleshooting">
+        <h2>Troubleshooting</h2>
+        <ul>
+          <li>If a button looks disabled, check that you are signed in and have the required files uploaded.</li>
+          <li>If credits look wrong, refresh once, then open the account menu or Buy Credits page to verify the balance.</li>
+          <li>If an LMS import fails, retry with the direct media playlist URL and confirm it still plays in your browser session.</li>
+          <li>If study pages look empty, upload a first lecture or create a folder in Study Library to unlock the next steps.</li>
+        </ul>
+      </article>
+
+      <article class="support-card" id="privacy-contact">
+        <h2>Privacy and contact</h2>
+        <p>Read <a href="/privacy">Privacy Policy</a> and <a href="/terms">Terms</a> for legal details.</p>
+        <p>If you need help with billing, access, or a broken upload, contact <a href="mailto:{{ legal_contact_email }}">{{ legal_contact_email }}</a>.</p>
+      </article>
+    </section>
+  </main>
+
+  <footer class="support-footer">
+    <p>{% include '_footer_links.html' %}</p>
+  </footer>
+</body>
+</html>

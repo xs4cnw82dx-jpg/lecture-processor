@@ -126,12 +126,12 @@
     if (!sessionsList) return;
     while (sessionsList.firstChild) sessionsList.removeChild(sessionsList.firstChild);
     if (!user) {
-      sessionsList.innerHTML = '<div class="list-empty">Sign in to view upcoming sessions.</div>';
+      sessionsList.innerHTML = '<div class="empty-state-card"><h3>Sign in to plan study sessions</h3><p>Use your account to save sessions, track what is due, and keep your calendar connected to your packs.</p><div class="empty-state-actions"><a class="empty-state-link primary" href="/lecture-notes?auth=signin">Sign in</a><a class="empty-state-link" href="/helpcenter">Help Center</a></div></div>';
       return;
     }
     var future = Array.isArray(sessions) ? sessions : [];
     if (!future.length) {
-      sessionsList.innerHTML = '<div class="list-empty">No study sessions planned yet.</div>';
+      sessionsList.innerHTML = '<div class="empty-state-card"><h3>Plan your first study session</h3><p>Set up a session once, then use Calendar to see what is coming up and keep your semester visible.</p><div class="empty-state-actions"><a class="empty-state-link primary" href="/calendar">Open Calendar</a><a class="empty-state-link" href="/plan">Planning &amp; Progress</a></div></div>';
       return;
     }
     future.forEach(function (session) {
@@ -152,7 +152,7 @@
     if (!packsList) return;
     while (packsList.firstChild) packsList.removeChild(packsList.firstChild);
     if (!packs || !packs.length) {
-      packsList.innerHTML = '<div class="list-empty">No study packs yet.</div>';
+      packsList.innerHTML = '<div class="empty-state-card"><h3>Upload your first lecture</h3><p>Create a study pack first, then your latest packs will appear here for quick access.</p><div class="empty-state-actions"><a class="empty-state-link primary" href="/lecture-notes">Upload first lecture</a><a class="empty-state-link" href="/study">Open Study Library</a></div></div>';
       return;
     }
     packs.slice(0, 5).forEach(function (pack) {
