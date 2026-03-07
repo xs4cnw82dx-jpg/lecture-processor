@@ -212,6 +212,7 @@ def test_checkout_rate_limited_returns_retry_after(client, monkeypatch):
 
 def test_upload_active_jobs_returns_429(client, monkeypatch):
     captured = []
+    monkeypatch.setattr(core, "client", None)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u3", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 2)
@@ -227,6 +228,7 @@ def test_upload_active_jobs_returns_429(client, monkeypatch):
 
 def test_upload_rate_limited_returns_retry_after(client, monkeypatch):
     captured = []
+    monkeypatch.setattr(core, "client", None)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u4", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
@@ -244,6 +246,7 @@ def test_upload_rate_limited_returns_retry_after(client, monkeypatch):
 
 
 def test_upload_rejected_when_disk_space_low(client, monkeypatch):
+    monkeypatch.setattr(core, "client", None)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-lowdisk", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
@@ -258,6 +261,7 @@ def test_upload_rejected_when_disk_space_low(client, monkeypatch):
 
 def test_upload_rejected_when_daily_quota_reached(client, monkeypatch):
     captured = []
+    monkeypatch.setattr(core, "client", None)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-daycap", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
@@ -275,6 +279,7 @@ def test_upload_rejected_when_daily_quota_reached(client, monkeypatch):
 
 
 def test_upload_invalid_audio_content_type_rejected(client, monkeypatch):
+    monkeypatch.setattr(core, "client", None)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u5", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
@@ -351,6 +356,7 @@ def test_import_audio_url_success_returns_token(client, monkeypatch, tmp_path):
 
 def test_upload_accepts_audio_import_token_for_lecture_mode(client, monkeypatch):
     token_calls = []
+    monkeypatch.setattr(core, "client", object())
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "imp-u3", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
@@ -399,6 +405,7 @@ def test_upload_accepts_audio_import_token_for_lecture_mode(client, monkeypatch)
 
 
 def test_upload_slides_only_accepts_pptx_after_conversion(client, monkeypatch):
+    monkeypatch.setattr(core, "client", object())
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "pptx-u1", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
@@ -439,6 +446,7 @@ def test_upload_slides_only_accepts_pptx_after_conversion(client, monkeypatch):
 
 @pytest.mark.parametrize("mode", ["lecture-notes", "slides-only", "interview"])
 def test_upload_requires_study_pack_title_for_processing_modes(client, monkeypatch, mode):
+    monkeypatch.setattr(core, "client", None)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "title-u1", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)

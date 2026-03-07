@@ -61,6 +61,7 @@ def _patch_batch_refunds(monkeypatch):
 
 def test_batch_create_requires_minimum_two_rows(client, monkeypatch):
     _patch_batch_auth(monkeypatch)
+    monkeypatch.setattr(core, 'client', None)
 
     response = client.post(
         '/api/batch/jobs',
@@ -78,6 +79,7 @@ def test_batch_create_requires_minimum_two_rows(client, monkeypatch):
 
 def test_batch_create_requires_batch_title(client, monkeypatch):
     _patch_batch_auth(monkeypatch)
+    monkeypatch.setattr(core, 'client', None)
     monkeypatch.setattr(upload_import_audio, 'cleanup_expired_audio_import_tokens', lambda runtime=None: None)
     monkeypatch.setattr(core, 'threading', type('T', (), {'Thread': _DummyThread}))
     monkeypatch.setattr(
@@ -118,6 +120,7 @@ def test_batch_create_requires_batch_title(client, monkeypatch):
 
 def test_batch_create_deduplicates_client_submission_id(client, monkeypatch):
     _patch_batch_auth(monkeypatch)
+    monkeypatch.setattr(core, 'client', None)
     monkeypatch.setattr(
         batch_orchestrator,
         'find_batch_by_submission_id',
@@ -156,6 +159,7 @@ def test_batch_create_deduplicates_client_submission_id(client, monkeypatch):
 
 def test_batch_create_slides_only_contract(client, monkeypatch):
     _patch_batch_auth(monkeypatch)
+    monkeypatch.setattr(core, 'client', object())
     monkeypatch.setattr(upload_import_audio, 'cleanup_expired_audio_import_tokens', lambda runtime=None: None)
     monkeypatch.setattr(core, 'threading', type('T', (), {'Thread': _DummyThread}))
     monkeypatch.setattr(
