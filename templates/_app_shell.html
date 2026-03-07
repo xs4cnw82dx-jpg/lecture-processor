@@ -1,4 +1,4 @@
-<div class="app-shell" id="app-shell" data-page-key="{{ shell_page_key or '' }}">
+<div class="app-shell" id="app-shell" data-page-key="{{ shell_page_key or '' }}" data-auth-state="pending">
   <button type="button" class="app-shell-overlay" id="app-shell-overlay" aria-label="Close navigation"></button>
   <aside class="app-shell-sidebar" id="app-shell-sidebar" aria-label="Main navigation">
     <a href="/dashboard" class="app-shell-brand">
@@ -12,39 +12,34 @@
     </a>
     <nav class="app-shell-nav">
       <a href="/dashboard" class="app-shell-link">Dashboard</a>
-      <details class="app-shell-group" id="shell-tools-group">
-        <summary aria-expanded="false">
-          <span class="app-shell-group-label">Tools</span>
-          <svg class="app-shell-group-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <polyline points="6 8 10 12 14 8"></polyline>
-          </svg>
-        </summary>
-        <a href="/lecture-notes" class="app-shell-link sub">Lecture Notes</a>
-        <details class="app-shell-subgroup" id="shell-batch-group">
-          <summary aria-expanded="false">
-            <span class="app-shell-subgroup-label">Batch Mode</span>
-            <svg class="app-shell-subgroup-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <polyline points="6 8 10 12 14 8"></polyline>
-            </svg>
-          </summary>
-          <div class="app-shell-subgroup-links">
-            <a href="/batch_mode" class="app-shell-link sub nested">Batch Lectures</a>
-            <a href="/batch_mode_slides_extraction" class="app-shell-link sub nested">Batch Slides</a>
-            <a href="/batch_mode_interview_transcription" class="app-shell-link sub nested">Batch Interview</a>
-            <a href="/batch_dashboard" class="app-shell-link sub nested">Batch Dashboard</a>
-          </div>
-        </details>
-        <a href="/slides-extraction" class="app-shell-link sub">Slides Extraction</a>
-        <a href="/interview-transcription" class="app-shell-link sub">Interview Transcription</a>
-        <a href="/document-reader" class="app-shell-link sub">Document Reader</a>
-        <a href="/image-reader" class="app-shell-link sub">Image Reader</a>
-        <a href="/url-reader" class="app-shell-link sub">URL Reader</a>
-        <a href="/tools" class="app-shell-link sub">Tools Overview</a>
-      </details>
+      <a href="/lecture-notes" class="app-shell-link">New Lecture</a>
+      <a href="/batch_mode" class="app-shell-link">Batch Processing</a>
       <a href="/study" class="app-shell-link">Study Library</a>
       <a href="/plan" class="app-shell-link">Planning &amp; Progress</a>
       <a href="/calendar" class="app-shell-link">Calendar</a>
       <a href="/buy_credits" class="app-shell-link">Buy Credits</a>
+      <div class="app-shell-group" id="shell-more-tools-group">
+        <button
+          type="button"
+          class="app-shell-group-trigger"
+          id="shell-more-tools-trigger"
+          aria-expanded="false"
+          aria-controls="shell-more-tools-panel"
+        >
+          <span class="app-shell-group-label">More Tools</span>
+          <svg class="app-shell-group-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <polyline points="6 8 10 12 14 8"></polyline>
+          </svg>
+        </button>
+        <div class="app-shell-group-panel-wrap">
+          <div class="app-shell-group-panel" id="shell-more-tools-panel">
+            <a href="/document-reader" class="app-shell-link sub">Document Reader</a>
+            <a href="/image-reader" class="app-shell-link sub">Image Reader</a>
+            <a href="/url-reader" class="app-shell-link sub">URL Reader</a>
+            <a href="/tools" class="app-shell-link sub">Tools Overview</a>
+          </div>
+        </div>
+      </div>
     </nav>
   </aside>
   <div class="app-shell-main">
@@ -61,20 +56,20 @@
       <div class="app-shell-topbar-right">
         {% if shell_show_credits_pill %}
         <a href="/buy_credits" class="app-shell-credits" id="shell-credits-link" aria-label="Buy credits" hidden>
-          <span class="app-shell-credits-total" id="shell-credits-total">&mdash; credits</span>
+          <span class="app-shell-credits-total" id="shell-credits-total">Loading credits</span>
           <span class="app-shell-credits-tooltip" id="shell-credits-tooltip" role="tooltip">
-            <span class="credit-tip-row"><span>Lectures</span><strong id="shell-credit-lecture">&mdash;</strong></span>
-            <span class="credit-tip-row"><span>Text extraction</span><strong id="shell-credit-text">&mdash;</strong></span>
-            <span class="credit-tip-row"><span>Interviews</span><strong id="shell-credit-interview">&mdash;</strong></span>
-            <span class="credit-tip-row total"><span>Total</span><strong id="shell-credit-total">&mdash;</strong></span>
+            <span class="credit-tip-row"><span>Lectures</span><strong id="shell-credit-lecture">...</strong></span>
+            <span class="credit-tip-row"><span>Text extraction</span><strong id="shell-credit-text">...</strong></span>
+            <span class="credit-tip-row"><span>Interviews</span><strong id="shell-credit-interview">...</strong></span>
+            <span class="credit-tip-row total"><span>Total</span><strong id="shell-credit-total">...</strong></span>
           </span>
         </a>
         {% endif %}
-        <button type="button" class="app-shell-signin" id="shell-sign-in-btn">Sign in</button>
+        <button type="button" class="app-shell-signin" id="shell-sign-in-btn" hidden>Sign in</button>
         <div class="app-shell-account" id="shell-account" hidden>
           <button type="button" class="app-shell-account-btn" id="shell-account-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="shell-account-menu">
             <span class="avatar" id="shell-account-initial">?</span>
-            <span id="shell-account-name">Account</span>
+            <span id="shell-account-name">Loading account</span>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="6 9 12 15 18 9"></polyline>
             </svg>

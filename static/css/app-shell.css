@@ -92,7 +92,7 @@ select {
 .app-shell-link.sub {
   font-size: 0.88rem;
   font-weight: 500;
-  padding-left: 24px;
+  padding-left: 20px;
 }
 
 .app-shell-link:hover,
@@ -106,12 +106,20 @@ select {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   padding: 6px;
-  transition: border-color var(--motion-fast, 140ms) var(--motion-ease, ease), background-color var(--motion-fast, 140ms) var(--motion-ease, ease);
+  transition: border-color var(--motion-fast, 140ms) var(--motion-ease, ease), background-color var(--motion-fast, 140ms) var(--motion-ease, ease), box-shadow var(--motion-fast, 140ms) var(--motion-ease, ease);
 }
 
-.app-shell-group summary {
+.app-shell-group.is-open,
+.app-shell-group:focus-within {
+  border-color: rgba(160, 180, 214, 0.32);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.app-shell-group-trigger {
+  width: 100%;
   cursor: pointer;
-  list-style: none;
+  border: none;
+  background: transparent;
   padding: 8px 8px 8px 10px;
   font-weight: 600;
   font-size: 0.94rem;
@@ -120,10 +128,15 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  transition: color var(--motion-fast, 140ms) var(--motion-ease, ease);
+  border-radius: 10px;
+  transition: background-color var(--motion-fast, 140ms) var(--motion-ease, ease), color var(--motion-fast, 140ms) var(--motion-ease, ease);
 }
 
-.app-shell-group summary::-webkit-details-marker { display: none; }
+.app-shell-group-trigger:hover,
+.app-shell-group-trigger.active {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
 
 .app-shell-group-label {
   line-height: 1.2;
@@ -136,82 +149,42 @@ select {
   transition: transform var(--motion-fast, 140ms) var(--motion-ease, ease);
 }
 
-.app-shell-group[open] .app-shell-group-chevron {
+.app-shell-group.is-open .app-shell-group-chevron {
   transform: rotate(180deg);
 }
 
-.app-shell-subgroup {
-  margin: 4px 4px 8px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  overflow: visible;
-  padding: 4px;
+.app-shell-group-panel-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows var(--motion-mid, 220ms) var(--motion-ease, ease), opacity var(--motion-mid, 220ms) var(--motion-ease, ease);
 }
 
-.app-shell-subgroup summary {
-  list-style: none;
-  cursor: pointer;
-  padding: 9px 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  color: #d7e1f4;
-  font-size: 0.88rem;
-  font-weight: 600;
-  border-radius: 9px;
-  transition: background-color var(--motion-fast, 140ms) var(--motion-ease, ease), color var(--motion-fast, 140ms) var(--motion-ease, ease), border-color var(--motion-fast, 140ms) var(--motion-ease, ease);
-  border: 1px solid transparent;
+.app-shell-group.is-open .app-shell-group-panel-wrap {
+  grid-template-rows: 1fr;
+  opacity: 1;
 }
 
-.app-shell-subgroup summary::-webkit-details-marker { display: none; }
-
-.app-shell-subgroup-label {
-  line-height: 1.2;
-}
-
-.app-shell-subgroup-chevron {
-  width: 14px;
-  height: 14px;
-  opacity: 0.9;
-  transition: transform var(--motion-fast, 140ms) var(--motion-ease, ease);
-}
-
-.app-shell-subgroup[open] .app-shell-subgroup-chevron {
-  transform: rotate(180deg);
-}
-
-.app-shell-subgroup summary:hover,
-.app-shell-subgroup summary.active {
-  background: rgba(255, 255, 255, 0.06);
-  color: #fff;
-}
-
-.app-shell-subgroup:focus-within summary {
-  background: rgba(255, 255, 255, 0.06);
-  color: #fff;
-}
-
-.app-shell-subgroup[open] summary {
-  border-color: rgba(160, 180, 214, 0.38);
-}
-
-.app-shell-subgroup-links {
+.app-shell-group-panel {
+  min-height: 0;
+  overflow: hidden;
   display: grid;
   gap: 4px;
-  padding: 6px 0 2px;
+  padding: 0 2px;
 }
 
-.app-shell-link.sub.nested {
-  padding-left: 34px;
-  font-size: 0.84rem;
-  border-radius: 9px;
+.app-shell-group.is-open .app-shell-group-panel {
+  padding-top: 6px;
+  padding-bottom: 2px;
 }
 
-.app-shell-link.sub.nested.active {
-  background: rgba(255, 255, 255, 0.16);
-  color: #ffffff;
+@media (prefers-reduced-motion: reduce) {
+  .app-shell-group,
+  .app-shell-group-trigger,
+  .app-shell-group-chevron,
+  .app-shell-group-panel-wrap {
+    transition: none;
+  }
 }
 
 .app-shell-main {
@@ -342,6 +315,10 @@ select {
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
+}
+
+.app-shell[data-auth-state="pending"] .app-shell-signin {
+  visibility: hidden;
 }
 
 .app-shell-account {

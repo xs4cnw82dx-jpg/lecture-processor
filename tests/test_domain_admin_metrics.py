@@ -53,3 +53,23 @@ def test_build_admin_funnel_steps_counts_unique_actors(app):
     assert by_event['auth_success']['count'] == 1
     assert by_event['checkout_started']['count'] == 1
     assert by_event['auth_modal_opened']['conversion_from_prev'] == 100.0
+
+
+def test_admin_status_helpers_expose_warning_and_runtime_metadata(app):
+    runtime = get_runtime(app)
+
+    with app.test_request_context('/api/admin/data'):
+        metrics.mark_admin_data_warning('job_logs', 'query_failed', runtime=runtime)
+        warnings = metrics.get_admin_data_warnings(runtime=runtime)
+
+    deployment = metrics.build_admin_deployment_info('lectureprocessor.com', runtime=runtime)
+    runtime_checks = metrics.build_admin_runtime_checks(runtime=runtime)
+
+    assert warnings == ['job_logs:query_failed']
+    assert 'runtime' in deployment
+    assert 'request_host' in deployment
+    assert 'app_uptime_seconds' in deployment
+    assert 'firebase_ready' in runtime_checks
+    assert 'video_import_available' in runtime_checks
+    assert 'ffmpeg_available' in runtime_checks
+    assert 'yt_dlp_available' in runtime_checks

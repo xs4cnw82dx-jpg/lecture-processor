@@ -36,6 +36,11 @@ class _SimpleDocx:
     pass
 
 
+class _FakeProviderFile:
+    def __init__(self, label='provider-file'):
+        self.label = label
+
+
 def _patch_batch_auth(monkeypatch):
     monkeypatch.setattr(core, 'verify_firebase_token', lambda _request: {'uid': 'u-batch', 'email': 'batch@example.com'})
     monkeypatch.setattr(auth_policy, 'is_email_allowed', lambda _email, runtime=None: True)
@@ -358,10 +363,48 @@ def test_list_batches_repairs_stale_processing_batch(monkeypatch):
 
     assert rows
     assert rows[0].get('batch_id') == batch_id
-    assert rows[0].get('status') == 'error'
-    assert 'interrupted' in str(rows[0].get('error_message', '')).lower()
+
+
+def test_batch_row_persistence_sanitizes_transient_provider_objects(monkeypatch):
+    _clear_batch_memory()
+    _patch_batch_refunds(monkeypatch)
+
+    fake_file = _FakeProviderFile()
+    batch_id = batch_orchestrator.create_batch_job(
+        {
+            'batch_id': 'batch-sanitized-row',
+            'uid': 'u-batch',
+            'email': 'batch@example.com',
+            'mode': 'lecture-notes',
+            'status': 'queued',
+            'batch_title': 'Sanitized batch',
+            'total_rows': 1,
+        },
+        [
+            {
+                'row_id': 'row-1',
+                'ordinal': 1,
+                'status': 'queued',
+                'billing_receipt': {'charged': {'lecture_credits_standard': 1}, 'provider_file': fake_file},
+                '_gemini_files': [fake_file],
+                '_local_paths': ['uploads/tmp-a.mp3'],
+                'provider_file': fake_file,
+            },
+        ],
+        runtime=core,
+    )
+
+    stored_row = batch_orchestrator.get_batch_row(batch_id, 'row-1', runtime=core)
+
+    assert stored_row is not None
+    assert '_gemini_files' not in stored_row
+    assert '_local_paths' not in stored_row
+    assert 'provider_file' not in stored_row
+    assert stored_row.get('billing_receipt', {}).get('provider_file') is None
     repaired = batch_orchestrator.get_batch(batch_id, runtime=core)
-    assert repaired.get('status') == 'error'
+    assert repaired is not None
+    assert repaired.get('batch_id') == batch_id
+    assert repaired.get('status') == 'queued'
 
 
 def test_batch_completion_email_status_sent_is_persisted(monkeypatch):

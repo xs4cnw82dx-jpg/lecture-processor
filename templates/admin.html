@@ -93,6 +93,27 @@
                 </article>
             </section>
 
+            <section class="panel admin-status-panel">
+                <div class="admin-warning-banner" id="admin-partial-banner" hidden>
+                    <strong>Partial dataset</strong>
+                    <span id="admin-partial-copy">Some admin queries failed, so these numbers may be incomplete.</span>
+                </div>
+                <div class="admin-status-grid">
+                    <article class="admin-status-card">
+                        <h2>Data Warnings</h2>
+                        <ul class="status-list" id="admin-data-warnings"></ul>
+                    </article>
+                    <article class="admin-status-card">
+                        <h2>Deployment</h2>
+                        <dl class="status-pairs" id="admin-deployment"></dl>
+                    </article>
+                    <article class="admin-status-card">
+                        <h2>Runtime Checks</h2>
+                        <dl class="status-pairs" id="admin-runtime-checks"></dl>
+                    </article>
+                </div>
+            </section>
+
             <section class="charts">
                 <div class="chart-panel">
                     <h2>Success Rate Trend</h2>

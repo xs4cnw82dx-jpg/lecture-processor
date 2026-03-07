@@ -191,8 +191,27 @@
       gap: 16px;
       flex-wrap: wrap;
     }
+    .trust-band {
+      align-items: flex-start;
+    }
     .bottom-cta h2 { font-size: 1.15rem; color: var(--gray-900); margin-bottom: 4px; }
     .bottom-cta p { color: var(--gray-600); font-size: 0.9rem; }
+    .trust-links {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .support-link {
+      border-color: rgba(79,70,229,0.28);
+      color: var(--primary-dark);
+      background: rgba(255,255,255,0.9);
+    }
+    .support-link:hover {
+      border-color: rgba(79,70,229,0.45);
+      color: var(--primary);
+      background: var(--white);
+    }
 
     .footer {
       text-align: center;

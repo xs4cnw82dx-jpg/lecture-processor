@@ -336,7 +336,7 @@
 
   <!-- Footer -->
   <footer class="footer">
-    <p>LectureProcessor &middot; AI-powered study material generation &middot; <a href="/features">Features</a> &middot; <a href="/dashboard">Dashboard</a> &middot; <a href="/privacy">Privacy Policy</a> &middot; <a href="/terms">Terms</a>{% if legal_contact_email %} &middot; <a href="mailto:{{ legal_contact_email }}">Contact me</a>{% endif %}</p>
+    <p>{% include '_footer_links.html' %}</p>
   </footer>
 
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" integrity="sha384-4gq9w/AGf72FXdNQ3Kn3EqWP7633NbCMjpYHt8YCZyXf23o2opcuAr4cif41tLrC" crossorigin="anonymous"></script>

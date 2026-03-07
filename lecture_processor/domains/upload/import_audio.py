@@ -46,7 +46,7 @@ def validate_video_import_url(raw_url, runtime=None):
         return ('', 'Video URL host is missing.')
     allowed_suffixes = tuple(getattr(resolved_runtime, 'VIDEO_IMPORT_ALLOWED_HOST_SUFFIXES', ()) or ())
     if allowed_suffixes and (not _host_matches_allowed_suffix(host, allowed_suffixes)):
-        return ('', 'Only Brightspace/Kaltura video hosts are supported for automatic import.')
+        return ('', 'Only supported LMS/Kaltura video hosts are allowed for automatic import.')
     return (safe_url, '')
 
 

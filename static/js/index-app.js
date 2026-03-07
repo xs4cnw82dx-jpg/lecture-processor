@@ -2,8 +2,19 @@ const runtimeConfig = window.LectureProcessorRuntime || {};
 const sentryFrontendDsn = runtimeConfig.sentryFrontendDsn || '';
 const sentryEnvironment = runtimeConfig.sentryEnvironment || '';
 const sentryRelease = runtimeConfig.sentryRelease || '';
+const sentryCaptureLocal = runtimeConfig.sentryCaptureLocal === true;
+const sentryLocalHostnames = new Set(['localhost', '127.0.0.1', '[::1]']);
+const sentryHostname = String(window.location.hostname || '').trim().toLowerCase();
+const sentryEnvironmentName = String(sentryEnvironment || '').trim().toLowerCase();
+const frontendSentryEnabled = (
+    !!window.Sentry
+    && !!sentryFrontendDsn
+    && (sentryCaptureLocal || (!sentryLocalHostnames.has(sentryHostname) && !sentryHostname.endsWith('.local')))
+    && sentryEnvironmentName !== 'test'
+    && sentryEnvironmentName !== 'testing'
+);
 
-if (window.Sentry && sentryFrontendDsn) {
+if (frontendSentryEnabled) {
     window.Sentry.init({
         dsn: sentryFrontendDsn,
         environment: sentryEnvironment || 'production',
@@ -138,7 +149,7 @@ const analyticsSessionId = (() => {
 })();
 
 function captureClientError(error, context = '') {
-    if (!window.Sentry || !error) return;
+    if (!frontendSentryEnabled || !window.Sentry || !error) return;
     if (context) {
         window.Sentry.withScope((scope) => {
             scope.setTag('context', context);
@@ -178,12 +189,21 @@ function trackEvent(eventName, properties = {}, options = {}) {
 
 const modeConfig = {
     'lecture-notes': {
-        description: 'Upload lecture slides (PDF or PPTX) and audio recording to generate complete, integrated study notes.',
+        description: 'Upload lecture slides and audio to generate complete notes, flashcards, and practice tests from the same lecture.',
         creditCost: 'Uses <strong>1 lecture credit</strong>',
         creditType: 'lecture',
         needsPdf: true,
         needsAudio: true,
+        pdfTitle: 'Lecture Slides',
+        pdfRequirement: 'Required',
+        pdfRequirementTone: 'required',
+        pdfHelper: 'Required for lecture notes. Upload the slide deck used in the lecture.',
         audioTitle: 'Lecture Recording',
+        audioRequirement: 'Required',
+        audioRequirementTone: 'required',
+        audioHelper: 'Required for lecture notes. LMS import counts as your audio source.',
+        lmsImportTitle: 'Import from LMS video URL',
+        lmsImportHint: 'Paste the direct video playlist URL from Brightspace, Canvas, Moodle, or Blackboard browser network tools.',
         buttonText: 'Process Lecture',
         resultTitle: 'Study Dashboard',
         steps: [{ num: 1, label: 'Extract Slides' }, { num: 2, label: 'Transcribe Audio' }, { num: 3, label: 'Merge Notes' }, { num: 4, label: 'Build Study Tools' }]
@@ -194,7 +214,16 @@ const modeConfig = {
         creditType: 'slides',
         needsPdf: true,
         needsAudio: false,
+        pdfTitle: 'Lecture Slides',
+        pdfRequirement: 'Required',
+        pdfRequirementTone: 'required',
+        pdfHelper: 'Required in this mode. Audio is not used for slides extraction.',
         audioTitle: 'Lecture Recording',
+        audioRequirement: 'Optional',
+        audioRequirementTone: 'optional',
+        audioHelper: 'Not used in this mode. Switch to Lecture Notes if you want slides and audio merged together.',
+        lmsImportTitle: 'Import from LMS video URL',
+        lmsImportHint: 'Only needed in Lecture Notes mode.',
         buttonText: 'Extract Slides',
         resultTitle: 'Study Dashboard',
         steps: [{ num: 1, label: 'Extract Text' }, { num: 2, label: 'Build Study Tools' }]
@@ -205,7 +234,16 @@ const modeConfig = {
         creditType: 'interview',
         needsPdf: false,
         needsAudio: true,
+        pdfTitle: 'Lecture Slides',
+        pdfRequirement: 'Optional',
+        pdfRequirementTone: 'optional',
+        pdfHelper: 'Slides are not used in interview mode.',
         audioTitle: 'Interview Recording',
+        audioRequirement: 'Required',
+        audioRequirementTone: 'required',
+        audioHelper: 'Required in this mode. Upload the source audio you want transcribed.',
+        lmsImportTitle: 'Import from LMS video URL',
+        lmsImportHint: 'Use this only when the interview audio is hosted in an LMS video player.',
         buttonText: 'Run Interview Transcription',
         resultTitle: 'Interview Transcription',
         steps: [{ num: 1, label: 'Transcribe' }]
@@ -339,7 +377,12 @@ const outputLanguageCustom = document.getElementById('output-language-custom');
 
 const pdfZone = document.getElementById('pdf-zone');
 const audioZone = document.getElementById('audio-zone');
+const pdfZoneTitle = document.getElementById('pdf-zone-title');
+const pdfZoneBadge = document.getElementById('pdf-zone-badge');
+const pdfZoneHelper = document.getElementById('pdf-zone-helper');
 const audioZoneTitle = document.getElementById('audio-zone-title');
+const audioZoneBadge = document.getElementById('audio-zone-badge');
+const audioZoneHelper = document.getElementById('audio-zone-helper');
 const pdfInput = document.getElementById('pdf-input');
 const audioInput = document.getElementById('audio-input');
 const pdfInfo = document.getElementById('pdf-info');
@@ -351,6 +394,8 @@ const audioSize = document.getElementById('audio-size');
 const pdfRemove = document.getElementById('pdf-remove');
 const audioRemove = document.getElementById('audio-remove');
 const audioUrlImport = document.getElementById('audio-url-import');
+const audioUrlImportTitle = document.getElementById('audio-url-import-title');
+const audioUrlImportHint = document.getElementById('audio-url-import-hint');
 const audioUrlInput = document.getElementById('audio-url-input');
 const audioUrlFetchBtn = document.getElementById('audio-url-fetch-btn');
 const audioUrlStatus = document.getElementById('audio-url-status');
@@ -1441,7 +1486,7 @@ async function importAudioFromUrl() {
     }
     const url = String(audioUrlInput.value || '').trim();
     if (!url) {
-        setAudioImportStatus('Paste the Brightspace video URL first.', true);
+        setAudioImportStatus('Paste the LMS video URL first.', true);
         return;
     }
     setAudioImportPending(true);
@@ -1777,7 +1822,20 @@ function switchMode(mode) {
         tab.tabIndex = isActive ? 0 : -1;
     });
     modeDescriptionText.textContent = config.description;
+    if (pdfZoneTitle) pdfZoneTitle.textContent = config.pdfTitle || 'Lecture Slides';
+    if (pdfZoneBadge) {
+        pdfZoneBadge.textContent = config.pdfRequirement || 'Required';
+        pdfZoneBadge.className = `upload-badge ${config.pdfRequirementTone || 'required'}`;
+    }
+    if (pdfZoneHelper) pdfZoneHelper.textContent = config.pdfHelper || '';
     audioZoneTitle.textContent = config.audioTitle;
+    if (audioZoneBadge) {
+        audioZoneBadge.textContent = config.audioRequirement || 'Required';
+        audioZoneBadge.className = `upload-badge ${config.audioRequirementTone || 'required'}`;
+    }
+    if (audioZoneHelper) audioZoneHelper.textContent = config.audioHelper || '';
+    if (audioUrlImportTitle) audioUrlImportTitle.textContent = config.lmsImportTitle || 'Import from LMS video URL';
+    if (audioUrlImportHint) audioUrlImportHint.textContent = config.lmsImportHint || '';
     generationControls.classList.toggle('hidden', mode === 'interview');
     generationControls.style.display = mode === 'interview' ? 'none' : 'grid';
     interviewControls.classList.toggle('hidden', mode !== 'interview');

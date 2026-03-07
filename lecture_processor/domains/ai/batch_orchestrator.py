@@ -58,6 +58,9 @@ BATCH_INTERRUPTED_PUBLIC_MESSAGE = (
     'Unfinished rows were marked as failed and refunded when possible.'
 )
 
+TRANSIENT_ROW_KEYS = {'_gemini_files', '_local_paths'}
+_DROP_PERSISTED_VALUE = object()
+
 
 def _resolve_runtime(runtime=None):
     if runtime is not None:
@@ -71,6 +74,46 @@ def _memory_store(runtime):
     if not hasattr(runtime, '_BATCH_ROWS_MEMORY'):
         runtime._BATCH_ROWS_MEMORY = {}
     return runtime._BATCH_JOBS_MEMORY, runtime._BATCH_ROWS_MEMORY
+
+
+def _sanitize_persisted_value(value):
+    if value is None or isinstance(value, (str, int, float, bool, datetime)):
+        return value
+    if isinstance(value, dict):
+        cleaned = {}
+        for key, nested in value.items():
+            safe_key = str(key or '').strip()
+            if not safe_key or safe_key.startswith('_') or safe_key in TRANSIENT_ROW_KEYS:
+                continue
+            safe_value = _sanitize_persisted_value(nested)
+            if safe_value is _DROP_PERSISTED_VALUE:
+                continue
+            cleaned[safe_key] = safe_value
+        return cleaned
+    if isinstance(value, (list, tuple, set)):
+        cleaned_items = []
+        for item in value:
+            safe_item = _sanitize_persisted_value(item)
+            if safe_item is _DROP_PERSISTED_VALUE:
+                continue
+            cleaned_items.append(safe_item)
+        return cleaned_items
+    return _DROP_PERSISTED_VALUE
+
+
+def _sanitize_row_payload(payload):
+    if not isinstance(payload, dict):
+        return payload
+    cleaned = {}
+    for key, value in payload.items():
+        safe_key = str(key or '').strip()
+        if not safe_key or safe_key.startswith('_') or safe_key in TRANSIENT_ROW_KEYS:
+            continue
+        safe_value = _sanitize_persisted_value(value)
+        if safe_value is _DROP_PERSISTED_VALUE:
+            continue
+        cleaned[safe_key] = safe_value
+    return cleaned
 
 
 def _batch_model(stage_name, runtime):
@@ -397,18 +440,19 @@ def _list_rows(batch_id, runtime=None):
 
 def _upsert_row(batch_id, row_id, payload, runtime=None, merge=True):
     resolved_runtime = _resolve_runtime(runtime)
+    safe_payload = _sanitize_row_payload(payload)
     db = getattr(resolved_runtime, 'db', None)
     if db is not None:
-        resolved_runtime.batch_repo.set_batch_row(db, batch_id, row_id, payload, merge=merge)
+        resolved_runtime.batch_repo.set_batch_row(db, batch_id, row_id, safe_payload, merge=merge)
         return
     _jobs, rows_store = _memory_store(resolved_runtime)
     rows_store.setdefault(batch_id, {})
     existing = dict(rows_store[batch_id].get(row_id, {}))
     if merge:
-        existing.update(payload)
+        existing.update(safe_payload)
         rows_store[batch_id][row_id] = existing
     else:
-        rows_store[batch_id][row_id] = dict(payload)
+        rows_store[batch_id][row_id] = dict(safe_payload)
 
 
 def _get_row(batch_id, row_id, runtime=None):

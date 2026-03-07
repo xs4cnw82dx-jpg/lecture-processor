@@ -9,6 +9,12 @@ from lecture_processor.runtime.container import get_runtime
 pages_bp = Blueprint('pages', __name__)
 
 
+def _public_context(*, runtime) -> dict:
+    return {
+        'legal_contact_email': runtime.LEGAL_CONTACT_EMAIL,
+    }
+
+
 def _shell_context(*, runtime, page_key: str, show_credits_pill: bool = False) -> dict:
     return {
         'shell_page_key': page_key,
@@ -23,7 +29,7 @@ def index():
     auth_view = str(request.args.get('auth', '') or '').strip().lower()
     if auth_view in {'signin', 'signup', 'reset'}:
         return redirect(f'/lecture-notes?auth={auth_view}')
-    return render_template('landing.html', legal_contact_email=runtime.LEGAL_CONTACT_EMAIL)
+    return render_template('landing.html', **_public_context(runtime=runtime))
 
 
 @pages_bp.route('/dashboard')
@@ -52,6 +58,7 @@ def _render_processing_page(forced_mode: str):
         sentry_frontend_dsn=runtime.SENTRY_FRONTEND_DSN,
         sentry_environment=runtime.SENTRY_ENVIRONMENT,
         sentry_release=runtime.SENTRY_RELEASE,
+        sentry_capture_local=runtime.SENTRY_CAPTURE_LOCAL,
         index_js_asset=runtime.resolve_js_asset('js/index-app.js'),
         **_shell_context(runtime=runtime, page_key=page_key),
     )
@@ -94,7 +101,24 @@ def calendar_dashboard():
 @pages_bp.route('/features')
 def features_page():
     runtime = get_runtime()
-    return render_template('features.html', legal_contact_email=runtime.LEGAL_CONTACT_EMAIL)
+    return render_template('features.html', **_public_context(runtime=runtime))
+
+
+@pages_bp.route('/helpcenter')
+def help_center_page():
+    runtime = get_runtime()
+    return render_template('helpcenter.html', **_public_context(runtime=runtime))
+
+
+@pages_bp.route('/FAQ')
+def faq_page():
+    runtime = get_runtime()
+    return render_template('faq.html', **_public_context(runtime=runtime))
+
+
+@pages_bp.route('/faq')
+def faq_page_lowercase():
+    return redirect('/FAQ', code=302)
 
 
 @pages_bp.route('/tools')
@@ -221,7 +245,7 @@ def privacy_policy():
     runtime = get_runtime()
     return render_template(
         'privacy.html',
-        legal_contact_email=runtime.LEGAL_CONTACT_EMAIL,
+        **_public_context(runtime=runtime),
         last_updated='February 26, 2026',
     )
 
@@ -231,6 +255,6 @@ def terms_of_service():
     runtime = get_runtime()
     return render_template(
         'terms.html',
-        legal_contact_email=runtime.LEGAL_CONTACT_EMAIL,
+        **_public_context(runtime=runtime),
         last_updated='February 26, 2026',
     )

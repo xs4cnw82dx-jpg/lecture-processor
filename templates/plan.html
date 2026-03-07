@@ -30,17 +30,17 @@
         <section class="grid">
           <article class="card streak">
             <div class="metric-label">Current Streak</div>
-            <div class="metric-value" id="streak-value">&mdash; days</div>
+            <div class="metric-value" id="streak-value">Loading streak</div>
             <div class="metric-note">Updated after each completed learn session.</div>
           </article>
           <article class="card due">
             <div class="metric-label">Cards Due Today</div>
-            <div class="metric-value" id="due-value">&mdash;</div>
+            <div class="metric-value" id="due-value">Loading due cards</div>
             <div class="metric-note">Based on spaced repetition review dates.</div>
           </article>
           <article class="card goal">
             <div class="metric-label">Daily Goal</div>
-            <div class="metric-value" id="goal-value">&mdash; / &mdash;</div>
+            <div class="metric-value" id="goal-value">Loading goal</div>
             <div class="metric-note">Progress today</div>
             <div class="progress-track"><div class="progress-fill" id="goal-fill"></div></div>
           </article>
@@ -75,7 +75,11 @@
             </table>
           </div>
           <div class="folders-cards" id="folders-cards"></div>
-          <div class="empty" id="folders-empty" style="display:none;">No folders found yet. Create one in Study Library first.</div>
+          <div class="empty" id="folders-empty" style="display:none;">
+            <strong>Create a folder in Study Library</strong>
+            <span>Folders power exam-date planning and workload recommendations.</span>
+            <a href="/study" class="empty-link">Open Study Library</a>
+          </div>
         </section>
       </div>
     </div>

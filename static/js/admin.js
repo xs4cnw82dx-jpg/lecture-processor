@@ -228,35 +228,237 @@ function renderRows(tbodyId, rows, emptyText, colspan = 8) {
     });
 }
 
-function renderBars(containerId, labels, values, type) {
+function renderEmptyChart(containerId) {
     const container = document.getElementById(containerId);
+    if (!container) return null;
     clearChildren(container);
-    if (!labels.length) {
-        const empty = document.createElement('div');
-        empty.className = 'empty';
-        empty.textContent = 'No data for selected window.';
-        container.appendChild(empty);
+    const empty = document.createElement('div');
+    empty.className = 'chart-empty';
+    empty.textContent = 'No data for selected window.';
+    container.appendChild(empty);
+    return container;
+}
+
+function svgNode(tagName, attrs = {}) {
+    const node = document.createElementNS('http://www.w3.org/2000/svg', tagName);
+    Object.entries(attrs).forEach(([key, value]) => {
+        if (value === null || value === undefined) return;
+        node.setAttribute(key, String(value));
+    });
+    return node;
+}
+
+function formatStatusValue(value, key = '') {
+    if (value === null || value === undefined || value === '') return '-';
+    if (key === 'host_matches_render') {
+        return value ? 'Matches' : 'Mismatch';
+    }
+    if (typeof value === 'boolean') return value ? 'Ready' : 'Not ready';
+    if (key === 'app_uptime_seconds') {
+        const totalSeconds = Math.max(0, Number(value || 0));
+        if (!Number.isFinite(totalSeconds)) return '-';
+        if (totalSeconds < 60) return `${Math.round(totalSeconds)}s`;
+        if (totalSeconds < 3600) return `${Math.floor(totalSeconds / 60)}m`;
+        return `${Math.floor(totalSeconds / 3600)}h ${Math.floor((totalSeconds % 3600) / 60)}m`;
+    }
+    return String(value);
+}
+
+function renderStatusPairs(containerId, rows) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    clearChildren(container);
+    rows.forEach((entry) => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'status-row';
+        const dt = document.createElement('dt');
+        dt.textContent = entry.label;
+        const dd = document.createElement('dd');
+        dd.textContent = formatStatusValue(entry.value, entry.key);
+        wrapper.appendChild(dt);
+        wrapper.appendChild(dd);
+        container.appendChild(wrapper);
+    });
+}
+
+function renderDataWarnings(warnings) {
+    const list = document.getElementById('admin-data-warnings');
+    const banner = document.getElementById('admin-partial-banner');
+    if (!list || !banner) return;
+    clearChildren(list);
+    const items = Array.isArray(warnings) ? warnings : [];
+    banner.hidden = items.length === 0;
+    if (!items.length) {
+        const li = document.createElement('li');
+        li.className = 'ok';
+        li.textContent = 'No data warnings in the selected window.';
+        list.appendChild(li);
         return;
     }
-    const maxValue = Math.max(...values, 1);
-    labels.forEach((label, idx) => {
-        const value = values[idx] || 0;
-        const heightPercent = (value / maxValue) * 100;
-        const col = document.createElement('div');
-        col.className = 'bar-col';
-        col.title = `${label}: ${type === 'success' ? value + '%' : formatMoney(value)}`;
-        const bar = document.createElement('div');
-        bar.className = `bar ${type}`;
-        bar.style.height = `${Math.max(heightPercent, 1)}%`;
-        const labelEl = document.createElement('div');
-        labelEl.className = 'bar-label';
-        labelEl.textContent = label;
-        col.appendChild(bar);
-        if (labels.length <= 12 || idx % Math.ceil(labels.length / 10) === 0 || idx === labels.length - 1) {
-            col.appendChild(labelEl);
-        }
-        container.appendChild(col);
+    items.forEach((warning) => {
+        const li = document.createElement('li');
+        li.textContent = String(warning || '').replace(/_/g, ' ');
+        list.appendChild(li);
     });
+}
+
+function tickIndices(length, maxLabels = 6) {
+    if (length <= maxLabels) return Array.from({ length }, (_, idx) => idx);
+    const step = Math.ceil((length - 1) / (maxLabels - 1));
+    const indices = [];
+    for (let idx = 0; idx < length; idx += step) indices.push(idx);
+    if (indices[indices.length - 1] !== length - 1) indices.push(length - 1);
+    return indices;
+}
+
+function niceCeiling(value) {
+    const numeric = Math.max(0, Number(value || 0));
+    if (!numeric) return 100;
+    const magnitude = Math.pow(10, Math.max(0, Math.floor(Math.log10(numeric)) - 1));
+    return Math.ceil(numeric / magnitude) * magnitude;
+}
+
+function renderSuccessChart(containerId, labels, values) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    clearChildren(container);
+    if (!labels.length) {
+        renderEmptyChart(containerId);
+        return;
+    }
+    const width = 720;
+    const height = 260;
+    const pad = { top: 14, right: 16, bottom: 34, left: 46 };
+    const innerWidth = width - pad.left - pad.right;
+    const innerHeight = height - pad.top - pad.bottom;
+    const svg = svgNode('svg', { viewBox: `0 0 ${width} ${height}`, class: 'admin-chart-svg', role: 'img', 'aria-label': 'Success rate trend chart' });
+    const xForIndex = (idx) => (labels.length === 1 ? pad.left + (innerWidth / 2) : pad.left + ((innerWidth / Math.max(labels.length - 1, 1)) * idx));
+    const yForValue = (value) => pad.top + innerHeight - ((Math.max(0, Math.min(100, Number(value || 0))) / 100) * innerHeight);
+
+    [0, 25, 50, 75, 100].forEach((tick) => {
+        const y = yForValue(tick);
+        svg.appendChild(svgNode('line', { x1: pad.left, y1: y, x2: width - pad.right, y2: y, class: 'chart-grid-line' }));
+        const label = svgNode('text', { x: pad.left - 8, y: y + 4, class: 'chart-axis-label y' });
+        label.textContent = `${tick}%`;
+        svg.appendChild(label);
+    });
+
+    const shownX = new Set(tickIndices(labels.length, labels.length > 14 ? 5 : 7));
+    labels.forEach((label, idx) => {
+        if (!shownX.has(idx)) return;
+        const x = xForIndex(idx);
+        const text = svgNode('text', { x, y: height - 8, class: 'chart-axis-label x' });
+        text.textContent = label;
+        svg.appendChild(text);
+    });
+
+    const points = values.map((value, idx) => [xForIndex(idx), yForValue(value)]);
+    const linePath = points.map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${point[0]} ${point[1]}`).join(' ');
+    const areaPath = `${linePath} L ${points[points.length - 1][0]} ${pad.top + innerHeight} L ${points[0][0]} ${pad.top + innerHeight} Z`;
+    svg.appendChild(svgNode('path', { d: areaPath, fill: 'rgba(16, 185, 129, 0.14)' }));
+    svg.appendChild(svgNode('path', { d: linePath, fill: 'none', stroke: '#10B981', 'stroke-width': 3, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+
+    points.forEach((point, idx) => {
+        const circle = svgNode('circle', { cx: point[0], cy: point[1], r: 4, fill: '#ffffff', stroke: '#10B981', 'stroke-width': 2 });
+        const title = svgNode('title');
+        title.textContent = `${labels[idx]}: ${Number(values[idx] || 0).toFixed(1)}%`;
+        circle.appendChild(title);
+        svg.appendChild(circle);
+    });
+
+    container.appendChild(svg);
+}
+
+function renderRevenueChart(containerId, labels, values) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    clearChildren(container);
+    if (!labels.length) {
+        renderEmptyChart(containerId);
+        return;
+    }
+    const width = 720;
+    const height = 260;
+    const pad = { top: 14, right: 16, bottom: 34, left: 58 };
+    const innerWidth = width - pad.left - pad.right;
+    const innerHeight = height - pad.top - pad.bottom;
+    const maxValue = niceCeiling(Math.max(...values, 0));
+    const svg = svgNode('svg', { viewBox: `0 0 ${width} ${height}`, class: 'admin-chart-svg', role: 'img', 'aria-label': 'Revenue trend chart' });
+    const stepWidth = innerWidth / Math.max(labels.length, 1);
+    const barWidth = Math.max(10, Math.min(34, stepWidth * 0.55));
+    const yForValue = (value) => pad.top + innerHeight - ((Math.max(0, Number(value || 0)) / maxValue) * innerHeight);
+
+    for (let tick = 0; tick <= 4; tick += 1) {
+        const value = (maxValue / 4) * tick;
+        const y = yForValue(value);
+        svg.appendChild(svgNode('line', { x1: pad.left, y1: y, x2: width - pad.right, y2: y, class: 'chart-grid-line' }));
+        const label = svgNode('text', { x: pad.left - 8, y: y + 4, class: 'chart-axis-label y' });
+        label.textContent = formatMoney(Math.round(value));
+        svg.appendChild(label);
+    }
+
+    const shownX = new Set(tickIndices(labels.length, labels.length > 14 ? 5 : 7));
+    labels.forEach((label, idx) => {
+        const centerX = pad.left + (stepWidth * idx) + (stepWidth / 2);
+        if (shownX.has(idx)) {
+            const text = svgNode('text', { x: centerX, y: height - 8, class: 'chart-axis-label x' });
+            text.textContent = label;
+            svg.appendChild(text);
+        }
+        const value = Math.max(0, Number(values[idx] || 0));
+        const y = yForValue(value);
+        const rectHeight = Math.max(0, pad.top + innerHeight - y);
+        const rect = svgNode('rect', {
+            x: centerX - (barWidth / 2),
+            y,
+            width: barWidth,
+            height: rectHeight,
+            rx: 8,
+            fill: 'url(#revenueGradient)'
+        });
+        const title = svgNode('title');
+        title.textContent = `${label}: ${formatMoney(value)}`;
+        rect.appendChild(title);
+        svg.appendChild(rect);
+        if (value > 0) {
+            const amount = svgNode('text', { x: centerX, y: Math.max(18, y - 6), class: 'chart-column-label' });
+            amount.textContent = formatMoney(value);
+            svg.appendChild(amount);
+        }
+    });
+
+    const defs = svgNode('defs');
+    const gradient = svgNode('linearGradient', { id: 'revenueGradient', x1: '0', y1: '0', x2: '0', y2: '1' });
+    gradient.appendChild(svgNode('stop', { offset: '0%', 'stop-color': '#60A5FA' }));
+    gradient.appendChild(svgNode('stop', { offset: '100%', 'stop-color': '#0EA5E9' }));
+    defs.appendChild(gradient);
+    svg.insertBefore(defs, svg.firstChild);
+    container.appendChild(svg);
+}
+
+function renderAdminSystemStatus(data) {
+    renderDataWarnings(data.data_warnings || []);
+    renderStatusPairs('admin-deployment', [
+        { key: 'runtime', label: 'Runtime', value: data.deployment && data.deployment.runtime },
+        { key: 'request_host', label: 'Request host', value: data.deployment && data.deployment.request_host },
+        { key: 'host_matches_render', label: 'Render host match', value: data.deployment && data.deployment.host_matches_render },
+        { key: 'service_name', label: 'Service', value: data.deployment && data.deployment.service_name },
+        { key: 'git_branch', label: 'Git branch', value: data.deployment && data.deployment.git_branch },
+        { key: 'git_commit_short', label: 'Git commit', value: data.deployment && data.deployment.git_commit_short },
+        { key: 'app_uptime_seconds', label: 'App uptime', value: data.deployment && data.deployment.app_uptime_seconds },
+    ]);
+    renderStatusPairs('admin-runtime-checks', [
+        { key: 'firebase_ready', label: 'Firebase', value: data.runtime_checks && data.runtime_checks.firebase_ready },
+        { key: 'gemini_ready', label: 'Gemini', value: data.runtime_checks && data.runtime_checks.gemini_ready },
+        { key: 'stripe_secret_mode', label: 'Stripe secret key', value: data.runtime_checks && data.runtime_checks.stripe_secret_mode },
+        { key: 'stripe_publishable_mode', label: 'Stripe publishable key', value: data.runtime_checks && data.runtime_checks.stripe_publishable_mode },
+        { key: 'stripe_keys_match', label: 'Stripe keys aligned', value: data.runtime_checks && data.runtime_checks.stripe_keys_match },
+        { key: 'stripe_webhook_configured', label: 'Stripe webhook', value: data.runtime_checks && data.runtime_checks.stripe_webhook_configured },
+        { key: 'pptx_conversion_available', label: 'PPTX conversion', value: data.runtime_checks && data.runtime_checks.pptx_conversion_available },
+        { key: 'video_import_available', label: 'LMS video import', value: data.runtime_checks && data.runtime_checks.video_import_available },
+        { key: 'ffmpeg_available', label: 'FFmpeg', value: data.runtime_checks && data.runtime_checks.ffmpeg_available },
+        { key: 'yt_dlp_available', label: 'yt-dlp', value: data.runtime_checks && data.runtime_checks.yt_dlp_available },
+    ]);
 }
 
 function renderModeBreakdown() {
@@ -364,8 +566,9 @@ function renderDashboard(data) {
     const revenueTrend = t.revenue_cents || [];
     latestModeBreakdown = data.mode_breakdown || {};
 
-    renderBars('success-chart', labels, successTrend, 'success');
-    renderBars('revenue-chart', labels, revenueTrend, 'revenue');
+    renderSuccessChart('success-chart', labels, successTrend);
+    renderRevenueChart('revenue-chart', labels, revenueTrend);
+    renderAdminSystemStatus(data);
     renderModeBreakdown();
     renderFunnel(data.funnel || {});
 
@@ -566,7 +769,7 @@ refreshBtn.addEventListener('click', async () => {
 });
 
 backBtn.addEventListener('click', () => {
-    window.location.href = '/';
+    window.location.href = '/dashboard';
 });
 
 exportJobsBtn.addEventListener('click', async () => {
