@@ -656,12 +656,24 @@ function renderGoalPanel() {
   if (overallDailyGoalInput && document.activeElement !== overallDailyGoalInput) {
     overallDailyGoalInput.value = String(overallGoal);
   }
+  if (overallDailyGoalInput) {
+    overallDailyGoalInput.disabled = !auth.currentUser;
+  }
   if (overallDailyGoalSave) {
     overallDailyGoalSave.disabled = !auth.currentUser;
+  }
+  if (overallDailyGoalDecrease) {
+    overallDailyGoalDecrease.disabled = !auth.currentUser;
+  }
+  if (overallDailyGoalIncrease) {
+    overallDailyGoalIncrease.disabled = !auth.currentUser;
   }
   if (!packGoalsPanel) return;
 
   packGoalsPanel.classList.toggle('is-disabled', !hasPack);
+  if (packGoalCard) {
+    packGoalCard.classList.toggle('is-disabled', !hasPack);
+  }
 
   var stats = hasPack ? getPackStatsSnapshot(selectedPack) : { due: 0, unmastered: 0 };
   if (packGoalDue) { packGoalDue.textContent = formatCardCount(stats.due); }
@@ -680,11 +692,45 @@ function renderGoalPanel() {
   if (packDailyGoalSave) {
     packDailyGoalSave.disabled = !hasPack;
   }
+  if (packDailyGoalClear) {
+    packDailyGoalClear.disabled = !hasPack;
+  }
+  if (packDailyGoalDecrease) {
+    packDailyGoalDecrease.disabled = !hasPack;
+  }
+  if (packDailyGoalIncrease) {
+    packDailyGoalIncrease.disabled = !hasPack;
+  }
   if (packGoalHelper) {
     packGoalHelper.textContent = hasPack
-      ? 'Leave blank to clear this pack-specific goal.'
+      ? 'Optional and only used for this study pack. Clear removes the saved pack target.'
       : 'Select a study pack to set an optional pack-specific goal.';
   }
+}
+
+function getGoalBounds() {
+  return {
+    min: progressUtils && progressUtils.MIN_DAILY_GOAL ? progressUtils.MIN_DAILY_GOAL : 1,
+    max: progressUtils && progressUtils.MAX_DAILY_GOAL ? progressUtils.MAX_DAILY_GOAL : 500
+  };
+}
+
+function clampGoalNumber(value) {
+  var bounds = getGoalBounds();
+  var parsed = parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return bounds.min;
+  return Math.max(bounds.min, Math.min(bounds.max, parsed));
+}
+
+function nudgeGoalInput(input, delta, fallbackValue) {
+  if (!input || input.disabled) return;
+  var currentValue = String(input.value || '').trim();
+  var baseValue = currentValue
+    ? clampGoalNumber(currentValue)
+    : clampGoalNumber(fallbackValue);
+  input.value = String(clampGoalNumber(baseValue + delta));
+  input.focus();
+  input.select();
 }
 
 function persistOverallDailyGoal(showValidationError) {
@@ -905,13 +951,14 @@ var packEmpty = document.getElementById('pack-empty'), packEmptyDefault = docume
 var packCourse = document.getElementById('pack-course'), packSubject = document.getElementById('pack-subject'), packSemester = document.getElementById('pack-semester'), packBlock = document.getElementById('pack-block'), notesView = document.getElementById('notes-view');
 var packAdvancedMetaBtn = document.getElementById('pack-advanced-meta-btn'), packAdvancedMetaPanel = document.getElementById('pack-advanced-meta-panel');
 var packSummary = document.getElementById('pack-summary'), packSummaryTitle = document.getElementById('pack-summary-title'), packSummaryMeta = document.getElementById('pack-summary-meta'), packStatNotes = document.getElementById('pack-stat-notes'), packStatCards = document.getElementById('pack-stat-cards'), packStatTest = document.getElementById('pack-stat-test');
-var packGoalsPanel = document.getElementById('pack-goals-panel'), overallDailyGoalInput = document.getElementById('overall-daily-goal-input'), overallDailyGoalSave = document.getElementById('overall-daily-goal-save'), packDailyGoalInput = document.getElementById('pack-daily-goal-input'), packDailyGoalSave = document.getElementById('pack-daily-goal-save'), packGoalDue = document.getElementById('pack-goal-due'), packGoalUnmastered = document.getElementById('pack-goal-unmastered'), packGoalHelper = document.getElementById('pack-goal-helper');
+var packGoalsPanel = document.getElementById('pack-goals-panel'), packGoalCard = document.getElementById('pack-goal-card'), overallDailyGoalInput = document.getElementById('overall-daily-goal-input'), overallDailyGoalSave = document.getElementById('overall-daily-goal-save'), overallDailyGoalDecrease = document.getElementById('overall-daily-goal-decrease'), overallDailyGoalIncrease = document.getElementById('overall-daily-goal-increase'), packDailyGoalInput = document.getElementById('pack-daily-goal-input'), packDailyGoalSave = document.getElementById('pack-daily-goal-save'), packDailyGoalClear = document.getElementById('pack-daily-goal-clear'), packDailyGoalDecrease = document.getElementById('pack-daily-goal-decrease'), packDailyGoalIncrease = document.getElementById('pack-daily-goal-increase'), packGoalDue = document.getElementById('pack-goal-due'), packGoalUnmastered = document.getElementById('pack-goal-unmastered'), packGoalHelper = document.getElementById('pack-goal-helper');
 var createPackBtn = document.getElementById('create-pack-btn'), openBuilderBtn = document.getElementById('open-builder-btn'), savePackBtn = document.getElementById('save-pack-btn'), deletePackBtn = document.getElementById('delete-pack-btn'), exportPackNotesBtn = document.getElementById('export-pack-notes-btn'), openLearnBtn = document.getElementById('open-learn-btn');
 var exportMenu = document.getElementById('export-menu'), exportMenuBtn = document.getElementById('export-menu-btn'), exportMenuList = document.getElementById('export-menu-list'), exportPdfSubmenu = document.getElementById('export-pdf-submenu');
 var editorTabs = document.querySelectorAll('.editor-tab'), flashcardCount = document.getElementById('flashcard-count'), questionCount = document.getElementById('question-count'), addFlashcardBtn = document.getElementById('add-flashcard-btn'), addQuestionBtn = document.getElementById('add-question-btn'), flashcardEditorList = document.getElementById('flashcard-editor-list'), questionEditorList = document.getElementById('question-editor-list');
 var learnStage = document.getElementById('learn-stage'), learnTitle = document.getElementById('learn-title'), learnSub = document.getElementById('learn-sub'), learnBackAppBtn = document.getElementById('learn-back-app-btn'), learnBackLibraryBtn = document.getElementById('learn-back-library-btn'), learnFullscreenBtn = document.getElementById('learn-fullscreen-btn');
 var notesPaneShell = document.getElementById('notes-pane-shell'), notesFullscreenBtn = document.getElementById('notes-fullscreen-btn');
 var notesHighlightStatus = document.getElementById('notes-highlight-status');
+var hlDownloadWrap = document.getElementById('hl-download-wrap');
 var learnModeLabel = document.getElementById('learn-mode-label');
 var learnFlashcard3d = document.getElementById('learn-flashcard-3d'), learnFlashcardInner = document.getElementById('learn-flashcard-inner'), learnFlashcardFront = document.getElementById('learn-flashcard-front'), learnFlashcardBack = document.getElementById('learn-flashcard-back');
 var learnFPrev = document.getElementById('learn-f-prev'), learnFFlip = document.getElementById('learn-f-flip'), learnFNext = document.getElementById('learn-f-next'), learnFProgress = document.getElementById('learn-f-progress');
@@ -3640,6 +3687,16 @@ if (overallDailyGoalSave) {
     persistOverallDailyGoal(true);
   });
 }
+if (overallDailyGoalDecrease) {
+  overallDailyGoalDecrease.addEventListener('click', function () {
+    nudgeGoalInput(overallDailyGoalInput, -1, loadDailyGoal());
+  });
+}
+if (overallDailyGoalIncrease) {
+  overallDailyGoalIncrease.addEventListener('click', function () {
+    nudgeGoalInput(overallDailyGoalInput, 1, loadDailyGoal());
+  });
+}
 if (overallDailyGoalInput) {
   overallDailyGoalInput.addEventListener('keydown', function (e) {
     if (e.key !== 'Enter') return;
@@ -3650,6 +3707,29 @@ if (overallDailyGoalInput) {
 if (packDailyGoalSave) {
   packDailyGoalSave.addEventListener('click', function () {
     persistSelectedPackDailyGoal(true);
+  });
+}
+if (packDailyGoalClear) {
+  packDailyGoalClear.addEventListener('click', function () {
+    if (!packDailyGoalInput || packDailyGoalInput.disabled) return;
+    packDailyGoalInput.value = '';
+    persistSelectedPackDailyGoal(false);
+  });
+}
+if (packDailyGoalDecrease) {
+  packDailyGoalDecrease.addEventListener('click', function () {
+    var fallback = selectedPack && selectedPack.daily_card_goal !== null && selectedPack.daily_card_goal !== undefined
+      ? selectedPack.daily_card_goal
+      : loadDailyGoal();
+    nudgeGoalInput(packDailyGoalInput, -1, fallback);
+  });
+}
+if (packDailyGoalIncrease) {
+  packDailyGoalIncrease.addEventListener('click', function () {
+    var fallback = selectedPack && selectedPack.daily_card_goal !== null && selectedPack.daily_card_goal !== undefined
+      ? selectedPack.daily_card_goal
+      : loadDailyGoal();
+    nudgeGoalInput(packDailyGoalInput, 1, fallback);
   });
 }
 if (packDailyGoalInput) {
@@ -4568,12 +4648,15 @@ function downloadAnnotatedNotesPdf() {
   var filename = title.replace(/[^a-zA-Z0-9 _-]/g, '').substring(0, 60).trim() || 'Study Notes';
   if (window.html2pdf) {
     var exportRoot = document.createElement('div');
-    exportRoot.style.padding = '0';
-    exportRoot.style.margin = '0';
-    exportRoot.style.background = '#ffffff';
-    exportRoot.style.color = '#111827';
-    exportRoot.style.fontFamily = 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    exportRoot.innerHTML = '<h1 style="font-size:24px;line-height:1.2;margin:0 0 14px 0;">' + escapeHtml(title) + '</h1>' + notesView.innerHTML;
+    exportRoot.className = 'notes-export-root';
+    var exportTitle = document.createElement('div');
+    exportTitle.className = 'notes-export-title';
+    exportTitle.textContent = title;
+    var exportView = document.createElement('div');
+    exportView.className = 'notes-view notes-export-view';
+    exportView.innerHTML = notesView.innerHTML;
+    exportRoot.appendChild(exportTitle);
+    exportRoot.appendChild(exportView);
     document.body.appendChild(exportRoot);
     var options = {
       margin: [10, 10, 10, 10],
@@ -4594,33 +4677,45 @@ function downloadAnnotatedNotesPdf() {
   }
   showToast('Annotated PDF export is currently unavailable on this device.', 'error');
 }
+function setHighlightDownloadMenuOpen(open) {
+  var menu = ensureHighlightDownloadMenu();
+  if (!menu) return;
+  var shouldOpen = !!open;
+  menu.classList.toggle('visible', shouldOpen);
+  if (hlDownloadBtn) {
+    hlDownloadBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+  }
+}
 function ensureHighlightDownloadMenu() {
   if (hlDownloadMenu || !hlToolbar) return hlDownloadMenu;
   hlDownloadMenu = document.createElement('div');
   hlDownloadMenu.className = 'hl-download-menu';
+  hlDownloadMenu.setAttribute('role', 'menu');
   var originalDocxBtn = document.createElement('button');
   originalDocxBtn.type = 'button';
   originalDocxBtn.className = 'hl-download-item';
+  originalDocxBtn.setAttribute('role', 'menuitem');
   originalDocxBtn.textContent = 'Download Original Notes (.docx)';
   originalDocxBtn.addEventListener('click', function () {
-    hlDownloadMenu.classList.remove('visible');
+    setHighlightDownloadMenuOpen(false);
     downloadOriginalNotesDocx();
   });
   var annotatedBtn = document.createElement('button');
   annotatedBtn.type = 'button';
   annotatedBtn.className = 'hl-download-item';
+  annotatedBtn.setAttribute('role', 'menuitem');
   annotatedBtn.textContent = 'Download Annotated Notes (.pdf)';
   annotatedBtn.addEventListener('click', function () {
-    hlDownloadMenu.classList.remove('visible');
+    setHighlightDownloadMenuOpen(false);
     downloadAnnotatedNotesPdf();
   });
   hlDownloadMenu.appendChild(originalDocxBtn);
   hlDownloadMenu.appendChild(annotatedBtn);
-  hlToolbar.appendChild(hlDownloadMenu);
+  (hlDownloadWrap || hlToolbar).appendChild(hlDownloadMenu);
   document.addEventListener('click', function (e) {
     if (!hlDownloadBtn || !hlDownloadMenu) return;
-    if (!hlToolbar.contains(e.target)) {
-      hlDownloadMenu.classList.remove('visible');
+    if (!((hlDownloadWrap || hlToolbar).contains(e.target))) {
+      setHighlightDownloadMenuOpen(false);
     }
   });
   return hlDownloadMenu;
@@ -4631,9 +4726,14 @@ if (hlDownloadBtn) {
     e.stopPropagation();
     var menu = ensureHighlightDownloadMenu();
     if (!menu) return;
-    menu.classList.toggle('visible');
+    setHighlightDownloadMenuOpen(!menu.classList.contains('visible'));
   });
 }
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape' || !hlDownloadMenu || !hlDownloadMenu.classList.contains('visible')) return;
+  setHighlightDownloadMenuOpen(false);
+  if (hlDownloadBtn) { hlDownloadBtn.focus(); }
+});
 if (hlUndoBtn) {
   hlUndoBtn.addEventListener('click', function () { undoHighlightChange(); });
 }
