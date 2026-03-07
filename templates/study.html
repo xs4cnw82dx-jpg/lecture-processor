@@ -160,21 +160,39 @@
                     </div>
                   </div>
                   <div class="pack-goals-grid">
-                    <div class="pack-goal-control">
-                      <label for="overall-daily-goal-input">Overall Daily Goal</label>
-                      <div class="pack-goal-input-row">
-                        <input type="number" min="1" max="500" id="overall-daily-goal-input" placeholder="20">
-                        <button type="button" class="btn" id="overall-daily-goal-save">Save overall goal</button>
+                    <section class="pack-goal-card pack-goal-card-overall">
+                      <div class="pack-goal-card-top">
+                        <div class="pack-goal-card-title">Overall Daily Goal</div>
+                        <span class="pack-goal-pill">Global</span>
                       </div>
-                    </div>
-                    <div class="pack-goal-control">
-                      <label for="pack-daily-goal-input">This Pack Goal</label>
-                      <div class="pack-goal-input-row">
-                        <input type="number" min="1" max="500" id="pack-daily-goal-input" placeholder="Optional">
+                      <div class="pack-goal-copy">Used across your dashboard, topbar, and planning pages.</div>
+                      <div class="pack-goal-stepper">
+                        <button type="button" class="pack-goal-step" id="overall-daily-goal-decrease" aria-label="Decrease overall daily goal">-</button>
+                        <input type="number" min="1" max="500" id="overall-daily-goal-input" placeholder="20" inputmode="numeric">
+                        <button type="button" class="pack-goal-step" id="overall-daily-goal-increase" aria-label="Increase overall daily goal">+</button>
+                      </div>
+                      <div class="pack-goal-actions">
+                        <button type="button" class="btn primary" id="overall-daily-goal-save">Save overall goal</button>
+                        <div class="pack-goal-helper">Applies everywhere in your account.</div>
+                      </div>
+                    </section>
+                    <section class="pack-goal-card pack-goal-card-pack" id="pack-goal-card">
+                      <div class="pack-goal-card-top">
+                        <div class="pack-goal-card-title">This Pack Goal</div>
+                        <span class="pack-goal-pill pack-goal-pill-pack">Optional</span>
+                      </div>
+                      <div class="pack-goal-copy">Set a focused target for this pack without changing your global goal.</div>
+                      <div class="pack-goal-stepper">
+                        <button type="button" class="pack-goal-step" id="pack-daily-goal-decrease" aria-label="Decrease pack daily goal">-</button>
+                        <input type="number" min="1" max="500" id="pack-daily-goal-input" placeholder="Optional" inputmode="numeric">
+                        <button type="button" class="pack-goal-step" id="pack-daily-goal-increase" aria-label="Increase pack daily goal">+</button>
+                      </div>
+                      <div class="pack-goal-actions">
                         <button type="button" class="btn" id="pack-daily-goal-save">Save pack goal</button>
+                        <button type="button" class="btn" id="pack-daily-goal-clear">Clear</button>
                       </div>
                       <div class="pack-goal-helper" id="pack-goal-helper">Leave blank to clear this pack-specific goal.</div>
-                    </div>
+                    </section>
                     <div class="pack-goal-stats" id="pack-goal-stats">
                       <div class="pack-goal-stat">
                         <span>Due today</span>
@@ -187,7 +205,7 @@
                     </div>
                   </div>
                 </section>
-                <div class="actions" style="margin-bottom:14px;">
+                <div class="actions editor-actions">
                   <button class="btn" id="open-builder-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                       stroke-width="2">
                       <path d="M3 3h7v7H3z"></path>
@@ -258,30 +276,36 @@
                     <div class="notes-controls">
 	                      <div class="notes-controls-main">
 	                        <div class="highlight-toolbar" id="highlight-toolbar">
-	                        <button type="button" class="hl-btn hl-yellow active" data-hl-color="yellow"
-	                          title="Yellow highlight"></button>
-                        <button type="button" class="hl-btn hl-green" data-hl-color="green"
-                          title="Green highlight"></button>
-                        <button type="button" class="hl-btn hl-blue" data-hl-color="blue" title="Blue highlight"></button>
-                        <button type="button" class="hl-btn hl-pink" data-hl-color="pink" title="Pink highlight"></button>
-                        <button type="button" class="hl-btn hl-action hl-eraser" data-hl-color="eraser"
-                          title="Eraser mode">Eraser</button>
-                        <button type="button" class="hl-btn hl-action" id="hl-undo"
-                          title="Undo highlight change">Undo</button>
-                        <button type="button" class="hl-btn hl-action" id="hl-redo"
-                          title="Redo highlight change">Redo</button>
-                        <button type="button" class="hl-btn hl-action hl-clear-all" id="hl-clear-all"
-                          title="Clear all highlights">Clear</button>
-                        <button type="button" class="btn hl-download-btn" id="hl-download"
-                          title="Download notes">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                            <polyline points="7 10 12 15 17 10"></polyline>
-                            <line x1="12" y1="15" x2="12" y2="3"></line>
-                          </svg>
-	                          <span>Download Notes</span>
-	                        </button>
+                          <div class="hl-color-group">
+	                          <button type="button" class="hl-btn hl-yellow active" data-hl-color="yellow"
+	                            title="Yellow highlight"></button>
+                            <button type="button" class="hl-btn hl-green" data-hl-color="green"
+                              title="Green highlight"></button>
+                            <button type="button" class="hl-btn hl-blue" data-hl-color="blue" title="Blue highlight"></button>
+                            <button type="button" class="hl-btn hl-pink" data-hl-color="pink" title="Pink highlight"></button>
+                          </div>
+                          <div class="hl-action-group">
+                            <button type="button" class="hl-btn hl-action hl-eraser" data-hl-color="eraser"
+                              title="Eraser mode">Eraser</button>
+                            <button type="button" class="hl-btn hl-action" id="hl-undo"
+                              title="Undo highlight change">Undo</button>
+                            <button type="button" class="hl-btn hl-action" id="hl-redo"
+                              title="Redo highlight change">Redo</button>
+                            <button type="button" class="hl-btn hl-action hl-clear-all" id="hl-clear-all"
+                              title="Clear all highlights">Clear</button>
+                          </div>
+                          <div class="hl-download-wrap" id="hl-download-wrap">
+                            <button type="button" class="btn hl-download-btn" id="hl-download"
+                              title="Download notes" aria-haspopup="menu" aria-expanded="false">
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                              </svg>
+	                            <span>Download Notes</span>
+	                          </button>
+                          </div>
 	                        </div>
 	                        <div class="notes-highlight-status" id="notes-highlight-status">Highlights save to this study pack automatically.</div>
 	                      </div>
