@@ -156,7 +156,7 @@
                   <div class="pack-goals-head">
                     <div>
                       <div class="pack-goals-title">Goals</div>
-                      <div class="pack-goals-sub">Your overall daily goal stays global. This pack goal is optional and never overrides it.</div>
+                      <div class="pack-goals-sub">Your overall goal stays global. This pack goal is optional and never overrides it.</div>
                     </div>
                   </div>
                   <div class="pack-goals-grid">
@@ -165,7 +165,7 @@
                         <div class="pack-goal-card-title">Overall Daily Goal</div>
                         <span class="pack-goal-pill">Global</span>
                       </div>
-                      <div class="pack-goal-copy">Used across your dashboard, topbar, and planning pages.</div>
+                      <div class="pack-goal-copy">Used across dashboard, topbar, and planning.</div>
                       <div class="pack-goal-stepper">
                         <button type="button" class="pack-goal-step" id="overall-daily-goal-decrease" aria-label="Decrease overall daily goal">-</button>
                         <input type="number" min="1" max="500" id="overall-daily-goal-input" placeholder="20" inputmode="numeric">
@@ -173,7 +173,7 @@
                       </div>
                       <div class="pack-goal-actions">
                         <button type="button" class="btn primary" id="overall-daily-goal-save">Save overall goal</button>
-                        <div class="pack-goal-helper">Applies everywhere in your account.</div>
+                        <div class="pack-goal-helper">Applies across your account.</div>
                       </div>
                     </section>
                     <section class="pack-goal-card pack-goal-card-pack" id="pack-goal-card">
@@ -181,7 +181,7 @@
                         <div class="pack-goal-card-title">This Pack Goal</div>
                         <span class="pack-goal-pill pack-goal-pill-pack">Optional</span>
                       </div>
-                      <div class="pack-goal-copy">Set a focused target for this pack without changing your global goal.</div>
+                      <div class="pack-goal-copy">Focused target for this pack only.</div>
                       <div class="pack-goal-stepper">
                         <button type="button" class="pack-goal-step" id="pack-daily-goal-decrease" aria-label="Decrease pack daily goal">-</button>
                         <input type="number" min="1" max="500" id="pack-daily-goal-input" placeholder="Optional" inputmode="numeric">
@@ -293,18 +293,18 @@
                               title="Redo highlight change">Redo</button>
                             <button type="button" class="hl-btn hl-action hl-clear-all" id="hl-clear-all"
                               title="Clear all highlights">Clear</button>
-                          </div>
-                          <div class="hl-download-wrap" id="hl-download-wrap">
-                            <button type="button" class="btn hl-download-btn" id="hl-download"
-                              title="Download notes" aria-haspopup="menu" aria-expanded="false">
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                                stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="7 10 12 15 17 10"></polyline>
-                                <line x1="12" y1="15" x2="12" y2="3"></line>
-                              </svg>
-	                            <span>Download Notes</span>
-	                          </button>
+                            <div class="hl-download-wrap" id="hl-download-wrap">
+                              <button type="button" class="hl-btn hl-action hl-download-btn" id="hl-download"
+                                title="Download notes" aria-haspopup="menu" aria-expanded="false">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                  stroke-linecap="round" stroke-linejoin="round">
+                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                  <polyline points="7 10 12 15 17 10"></polyline>
+                                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+	                              <span>Download Notes</span>
+	                            </button>
+                            </div>
                           </div>
 	                        </div>
 	                        <div class="notes-highlight-status" id="notes-highlight-status">Highlights save to this study pack automatically.</div>
