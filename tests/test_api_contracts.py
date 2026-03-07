@@ -28,6 +28,7 @@ def test_config_endpoint_shape(client, monkeypatch):
 
 def test_checkout_invalid_bundle_returns_400(client, monkeypatch):
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "contract-u1", "email": "u@example.com"})
+    monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: True)
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
 
     response = client.post("/api/create-checkout-session", json={"bundle_id": "not_real"})
@@ -80,6 +81,54 @@ def test_study_pack_get_missing_returns_404(client, monkeypatch):
 
     assert response.status_code == 404
     assert "not found" in response.get_json().get("error", "").lower()
+
+
+def test_study_pack_list_uses_repo_order_and_count_fallback(client, monkeypatch):
+    class _Doc:
+        def __init__(self, doc_id, payload):
+            self.id = doc_id
+            self._payload = payload
+
+        def to_dict(self):
+            return dict(self._payload)
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u1", "email": "u@example.com"})
+    monkeypatch.setattr(
+        core.study_repo,
+        "list_study_pack_summaries_by_uid",
+        lambda _db, _uid, _limit: [
+            _Doc(
+                "pack-new",
+                {
+                    "title": "Newest",
+                    "mode": "manual",
+                    "flashcards_count": 9,
+                    "test_questions_count": 4,
+                    "created_at": 200,
+                },
+            ),
+            _Doc(
+                "pack-old",
+                {
+                    "title": "Older",
+                    "mode": "manual",
+                    "flashcards": [{"front": "a", "back": "b"}, {"front": "c", "back": "d"}],
+                    "test_questions": [{"question": "Q1"}, {"question": "Q2"}, {"question": "Q3"}],
+                    "created_at": 100,
+                },
+            ),
+        ],
+    )
+
+    response = client.get("/api/study-packs", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    packs = response.get_json()["study_packs"]
+    assert [pack["study_pack_id"] for pack in packs] == ["pack-new", "pack-old"]
+    assert packs[0]["flashcards_count"] == 9
+    assert packs[0]["test_questions_count"] == 4
+    assert packs[1]["flashcards_count"] == 2
+    assert packs[1]["test_questions_count"] == 3
 
 
 def test_admin_overview_contract_fields(client, monkeypatch):
@@ -330,6 +379,7 @@ def test_processing_estimate_uses_sanitized_total_mb_and_percentiles(client, mon
 
 def test_checkout_session_uses_trusted_public_base_url(client, monkeypatch):
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "checkout-u1", "email": "u@example.com"})
+    monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: True)
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
     monkeypatch.setattr(core, "PUBLIC_BASE_URL", "https://trusted.example")
 
@@ -354,6 +404,48 @@ def test_checkout_session_uses_trusted_public_base_url(client, monkeypatch):
     assert response.get_json().get("checkout_url", "").startswith("https://checkout.stripe.test/")
     assert captured.get("success_url", "").startswith("https://trusted.example/buy_credits?payment=success")
     assert captured.get("cancel_url") == "https://trusted.example/buy_credits?payment=cancelled"
+
+
+def test_download_flashcards_csv_sanitizes_formula_like_cells(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "csv-u1", "email": "u@example.com"})
+    monkeypatch.setattr(
+        runtime_jobs_store,
+        "get_job_snapshot",
+        lambda _job_id, runtime=None: {
+            "user_id": "csv-u1",
+            "status": "complete",
+            "flashcards": [{"front": "=front", "back": "+back"}],
+            "test_questions": [],
+        },
+    )
+
+    response = client.get("/download-flashcards-csv/job-1", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    csv_text = response.get_data(as_text=True)
+    assert "'=front" in csv_text
+    assert "'+back" in csv_text
+
+
+def test_study_pack_flashcards_csv_export_sanitizes_formula_like_cells(client, monkeypatch):
+    class _Doc:
+        exists = True
+
+        def to_dict(self):
+            return {
+                "uid": "csv-u2",
+                "flashcards": [{"front": "@front", "back": "-back"}],
+            }
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "csv-u2", "email": "u@example.com"})
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _Doc())
+
+    response = client.get("/api/study-packs/pack-1/export-flashcards-csv", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    csv_text = response.get_data(as_text=True)
+    assert "'@front" in csv_text
+    assert "'-back" in csv_text
 
 
 def test_index_auth_query_redirects_to_lecture_notes_modal_page(client):

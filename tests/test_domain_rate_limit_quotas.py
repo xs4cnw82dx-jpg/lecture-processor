@@ -19,3 +19,10 @@ def test_reserve_daily_upload_bytes_short_circuits_without_db():
         db = None
 
     assert quotas.reserve_daily_upload_bytes("u1", 123, runtime=_Runtime()) == (True, 0)
+
+
+def test_release_daily_upload_bytes_short_circuits_without_db():
+    class _Runtime:
+        db = None
+
+    assert quotas.release_daily_upload_bytes("u1", 123, runtime=_Runtime()) is True

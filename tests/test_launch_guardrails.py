@@ -14,6 +14,7 @@ from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai import pipelines as ai_pipelines
 from lecture_processor.domains.analytics import events as analytics_events
+from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.rate_limit import quotas as rate_limit_quotas
@@ -197,6 +198,7 @@ def test_analytics_rate_limited_returns_retry_after(client, monkeypatch):
 def test_checkout_rate_limited_returns_retry_after(client, monkeypatch):
     captured = []
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u2", "email": "user@example.com"})
+    monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: True)
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (False, 21))
     monkeypatch.setattr(analytics_events, "log_rate_limit_hit", lambda name, retry, runtime=None: captured.append((name, retry)) or True)
 
@@ -208,6 +210,36 @@ def test_checkout_rate_limited_returns_retry_after(client, monkeypatch):
     assert body["retry_after_seconds"] == 21
     assert "too many checkout attempts" in body["error"].lower()
     assert captured == [("checkout", 21)]
+
+
+def test_checkout_disallowed_email_returns_403(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u2-denied", "email": "blocked@example.invalid"})
+    monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: False)
+
+    response = client.post("/api/create-checkout-session", json={"bundle_id": "lecture_5"})
+
+    assert response.status_code == 403
+    assert response.get_json()["error"] == "Email not allowed"
+
+
+def test_confirm_checkout_disallowed_email_returns_403(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u2-denied", "email": "blocked@example.invalid"})
+    monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: False)
+
+    response = client.get("/api/confirm-checkout-session?session_id=sess_123")
+
+    assert response.status_code == 403
+    assert response.get_json()["error"] == "Email not allowed"
+
+
+def test_purchase_history_disallowed_email_returns_403(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u2-denied", "email": "blocked@example.invalid"})
+    monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: False)
+
+    response = client.get("/api/purchase-history")
+
+    assert response.status_code == 403
+    assert response.get_json()["error"] == "Email not allowed"
 
 
 def test_upload_active_jobs_returns_429(client, monkeypatch):
@@ -279,11 +311,15 @@ def test_upload_rejected_when_daily_quota_reached(client, monkeypatch):
 
 
 def test_upload_invalid_audio_content_type_rejected(client, monkeypatch):
+    released = []
     monkeypatch.setattr(core, "client", None)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u5", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(rate_limit_quotas, "has_sufficient_upload_disk_space", lambda _bytes=0, runtime=None: (True, 99999999, 100))
+    monkeypatch.setattr(rate_limit_quotas, "reserve_daily_upload_bytes", lambda _uid, _bytes, runtime=None: (True, 0))
+    monkeypatch.setattr(rate_limit_quotas, "release_daily_upload_bytes", lambda uid, requested, runtime=None: released.append((uid, requested)) or True)
     monkeypatch.setattr(
         core,
         "get_or_create_user",
@@ -304,6 +340,8 @@ def test_upload_invalid_audio_content_type_rejected(client, monkeypatch):
     assert response.status_code == 400
     body = response.get_json()
     assert body["error"] == "Invalid audio content type"
+    assert len(released) == 1
+    assert released[0][0] == "u5"
 
 
 def test_import_audio_url_rejects_invalid_host(client, monkeypatch):
@@ -356,11 +394,15 @@ def test_import_audio_url_success_returns_token(client, monkeypatch, tmp_path):
 
 def test_upload_accepts_audio_import_token_for_lecture_mode(client, monkeypatch):
     token_calls = []
+    released = []
     monkeypatch.setattr(core, "client", object())
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "imp-u3", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(rate_limit_quotas, "has_sufficient_upload_disk_space", lambda _bytes=0, runtime=None: (True, 10_000_000, 0))
+    monkeypatch.setattr(rate_limit_quotas, "reserve_daily_upload_bytes", lambda _uid, _bytes, runtime=None: (True, 0))
+    monkeypatch.setattr(rate_limit_quotas, "release_daily_upload_bytes", lambda uid, requested, runtime=None: released.append((uid, requested)) or True)
     monkeypatch.setattr(
         core,
         "get_or_create_user",
@@ -402,6 +444,7 @@ def test_upload_accepts_audio_import_token_for_lecture_mode(client, monkeypatch)
     assert token_calls == [("tok-abc-123", False), ("tok-abc-123", True)]
     assert core.jobs[body["job_id"]]["output_language"] == "Dutch"
     assert core.jobs[body["job_id"]]["mode"] == "lecture-notes"
+    assert released == []
 
 
 def test_upload_slides_only_accepts_pptx_after_conversion(client, monkeypatch):
@@ -446,6 +489,7 @@ def test_upload_slides_only_accepts_pptx_after_conversion(client, monkeypatch):
 
 @pytest.mark.parametrize("mode", ["lecture-notes", "slides-only", "interview"])
 def test_upload_requires_study_pack_title_for_processing_modes(client, monkeypatch, mode):
+    released = []
     monkeypatch.setattr(core, "client", None)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "title-u1", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
@@ -453,6 +497,7 @@ def test_upload_requires_study_pack_title_for_processing_modes(client, monkeypat
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
     monkeypatch.setattr(rate_limit_quotas, "has_sufficient_upload_disk_space", lambda _bytes=0, runtime=None: (True, 10_000_000, 0))
     monkeypatch.setattr(rate_limit_quotas, "reserve_daily_upload_bytes", lambda _uid, _bytes, runtime=None: (True, 0))
+    monkeypatch.setattr(rate_limit_quotas, "release_daily_upload_bytes", lambda uid, requested, runtime=None: released.append((uid, requested)) or True)
     monkeypatch.setattr(
         core,
         "get_or_create_user",
@@ -474,6 +519,32 @@ def test_upload_requires_study_pack_title_for_processing_modes(client, monkeypat
 
     assert response.status_code == 400
     assert response.get_json()["error"] == "Lecture Topic / Name is required."
+    assert len(released) == 1
+    assert released[0][0] == "title-u1"
+
+
+def test_upload_missing_credits_releases_daily_quota_reservation(client, monkeypatch):
+    released = []
+    monkeypatch.setattr(core, "client", None)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "credits-u1", "email": "user@gmail.com"})
+    monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: True)
+    monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
+    monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(rate_limit_quotas, "has_sufficient_upload_disk_space", lambda _bytes=0, runtime=None: (True, 10_000_000, 0))
+    monkeypatch.setattr(rate_limit_quotas, "reserve_daily_upload_bytes", lambda _uid, _bytes, runtime=None: (True, 0))
+    monkeypatch.setattr(rate_limit_quotas, "release_daily_upload_bytes", lambda uid, requested, runtime=None: released.append((uid, requested)) or True)
+    monkeypatch.setattr(core, "get_or_create_user", lambda _uid, _email: {"lecture_credits_standard": 0, "lecture_credits_extended": 0})
+
+    response = client.post(
+        "/upload",
+        data={"mode": "lecture-notes", "study_pack_title": "Quantum Mechanics Week 1"},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 402
+    assert "no lecture credits remaining" in response.get_json()["error"].lower()
+    assert len(released) == 1
+    assert released[0][0] == "credits-u1"
 
 
 def test_tools_extract_image_rejects_more_than_five_files(client, monkeypatch):

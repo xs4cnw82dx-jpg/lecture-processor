@@ -17,15 +17,16 @@
   {% include '_app_shell.html' %}
   <main class="app-shell-page page">
     <div class="container">
-      <div class="headline">
-        <div>
-          <h1>Calendar</h1>
-          <p>Week view planning with study sessions and browser reminders.</p>
-        </div>
-        <div class="headline-actions">
-          <button class="btn primary" id="add-session-btn">+ Add Study Session</button>
-        </div>
-      </div>
+	      <div class="headline">
+	        <div>
+	          <h1>Calendar</h1>
+	          <p>Week view planning with study sessions and browser reminders.</p>
+	          <div class="muted" style="margin-top:8px;max-width:720px;">Study sessions and reminder preferences are saved only in this browser on this device. They do not sync to your account yet.</div>
+	        </div>
+	        <div class="headline-actions">
+	          <button class="btn primary" id="add-session-btn">+ Add Study Session</button>
+	        </div>
+	      </div>
 
       <div class="layout" id="calendar-layout" style="display:none;">
         <aside class="panel" id="reminder-settings-panel">

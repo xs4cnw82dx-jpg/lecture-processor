@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 
 from lecture_processor.domains.billing import purchases as billing_purchases
 from lecture_processor.domains.analytics import events as analytics_events
+from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 
 
@@ -24,6 +25,12 @@ def get_config(app_ctx):
     })
 
 
+def _require_allowed_email(app_ctx, email):
+    if auth_policy.is_email_allowed(email, runtime=app_ctx):
+        return None
+    return app_ctx.jsonify({'error': 'Email not allowed', 'message': 'Please use your university email.'}), 403
+
+
 def create_checkout_session(app_ctx, request):
     decoded_token = app_ctx.verify_firebase_token(request)
     if not decoded_token:
@@ -31,6 +38,9 @@ def create_checkout_session(app_ctx, request):
 
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
+    disallowed_response = _require_allowed_email(app_ctx, email)
+    if disallowed_response is not None:
+        return disallowed_response
     allowed_checkout, retry_after = rate_limiter.check_rate_limit(
         key=f"checkout:{rate_limiter.normalize_rate_limit_key_part(uid, fallback='anon_uid', runtime=app_ctx)}",
         limit=app_ctx.CHECKOUT_RATE_LIMIT_MAX_REQUESTS,
@@ -100,6 +110,10 @@ def confirm_checkout_session(app_ctx, request):
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
 
     uid = decoded_token.get('uid', '')
+    email = decoded_token.get('email', '')
+    disallowed_response = _require_allowed_email(app_ctx, email)
+    if disallowed_response is not None:
+        return disallowed_response
     session_id = str(request.args.get('session_id', '') or '').strip()
     if not session_id:
         return app_ctx.jsonify({'error': 'Missing session_id'}), 400
@@ -164,6 +178,10 @@ def get_purchase_history(app_ctx, request):
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
 
     uid = decoded_token['uid']
+    email = decoded_token.get('email', '')
+    disallowed_response = _require_allowed_email(app_ctx, email)
+    if disallowed_response is not None:
+        return disallowed_response
     try:
         purchases_docs = app_ctx.purchases_repo.list_by_uid_recent(app_ctx.db, uid, 50, app_ctx.firestore)
         purchases = []

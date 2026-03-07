@@ -124,17 +124,30 @@ function renderAdminBatchJobs(rows) {
         const rowSummary = `${Number(batch.completed_rows || 0)}/${Number(batch.total_rows || 0)} complete · ${Number(batch.failed_rows || 0)} failed`;
         const stageSummary = [batch.current_stage || '-', batch.current_stage_state || '-', batch.provider_state || '-'].join(' · ');
         const refundSummary = `${Number(batch.credits_refunded || 0)} refunded · ${Number(batch.credits_refund_pending || 0)} pending`;
-        tr.innerHTML = `
-            <td>${formatDate(batch.created_at)}</td>
-            <td>${(batch.email || '').slice(0, 64) || '-'}</td>
-            <td>${batch.batch_title || batch.batch_id || '-'}</td>
-            <td>${batch.mode || '-'}</td>
-            <td><span class="status ${statusClass}">${status}</span></td>
-            <td>${stageSummary}</td>
-            <td>${rowSummary}</td>
-            <td>${batch.completion_email_status || 'pending'}</td>
-            <td>${refundSummary}</td>
-        `;
+
+        [
+            formatDate(batch.created_at),
+            (batch.email || '').slice(0, 64) || '-',
+            batch.batch_title || batch.batch_id || '-',
+            batch.mode || '-',
+        ].forEach((value) => {
+            const td = document.createElement('td');
+            td.textContent = String(value || '-');
+            tr.appendChild(td);
+        });
+
+        const statusCell = document.createElement('td');
+        const statusBadge = document.createElement('span');
+        statusBadge.className = `status ${statusClass}`;
+        statusBadge.textContent = status;
+        statusCell.appendChild(statusBadge);
+        tr.appendChild(statusCell);
+
+        [stageSummary, rowSummary, batch.completion_email_status || 'pending', refundSummary].forEach((value) => {
+            const td = document.createElement('td');
+            td.textContent = String(value || '-');
+            tr.appendChild(td);
+        });
         adminBatchJobsBody.appendChild(tr);
     });
 }

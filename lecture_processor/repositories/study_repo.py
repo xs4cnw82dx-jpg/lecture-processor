@@ -15,6 +15,11 @@ def get_study_pack_doc(db, pack_id):
     return study_pack_doc_ref(db, pack_id).get()
 
 
+def list_study_pack_summaries_by_uid(db, uid, limit):
+    query = apply_where(db.collection('study_packs'), 'uid', '==', uid).order_by('created_at', direction='DESCENDING').limit(limit)
+    return list(query.stream())
+
+
 def list_study_packs_by_uid(db, uid, limit):
     return list(apply_where(db.collection('study_packs'), 'uid', '==', uid).limit(limit).stream())
 
