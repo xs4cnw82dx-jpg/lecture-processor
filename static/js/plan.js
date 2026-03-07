@@ -1,709 +1,992 @@
-    const bootstrap = window.LectureProcessorBootstrap || {};
-    const auth = bootstrap.getAuth ? bootstrap.getAuth() : firebase.auth();
-    const authUtils = window.LectureProcessorAuth || {};
-    const authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Not signed in' }) : null;
-    const topbarUtils = window.LectureProcessorTopbar || {};
-    const uiCache = window.LectureProcessorUiCache || null;
+(function () {
+  'use strict';
 
-    const userEmailEl = document.getElementById('user-email');
-    const authRequiredEl = document.getElementById('auth-required');
-    const plannerContentEl = document.getElementById('planner-content');
-    const streakValueEl = document.getElementById('streak-value');
-    const dueValueEl = document.getElementById('due-value');
-    const goalValueEl = document.getElementById('goal-value');
-    const goalFillEl = document.getElementById('goal-fill');
-    const goalInputEl = document.getElementById('goal-input');
-    const saveGoalBtn = document.getElementById('save-goal-btn');
-    const foldersBodyEl = document.getElementById('folders-body');
-    const foldersCardsEl = document.getElementById('folders-cards');
-    const foldersEmptyEl = document.getElementById('folders-empty');
-    const signoutBtn = document.getElementById('signout-btn');
-    const toastEl = document.getElementById('toast');
+  var bootstrap = window.LectureProcessorBootstrap || {};
+  var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
+  var authUtils = window.LectureProcessorAuth || {};
+  var authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Not signed in' }) : null;
+  var uiCache = window.LectureProcessorUiCache || null;
+  var progressUtils = window.LectureProcessorStudyProgressUtils || {};
+  if (!auth) return;
 
-    let currentUser = null;
-    let idToken = null;
-    let folderStatsById = {};
-    let examDatePickers = [];
-    let progressSummaryCache = null;
-    let remoteCardStates = {};
-    let goalAutoSaveTimer = null;
-    let goalSaveInFlight = false;
-    const folderSaveTimers = new Map();
-    const folderSaveInFlight = new Set();
-    const PLAN_CACHE_GLOBAL_KEY = 'plan_summary:last';
-    const PLAN_CACHE_USER_PREFIX = 'plan_summary:user:';
+  var authRequiredEl = document.getElementById('auth-required');
+  var plannerContentEl = document.getElementById('planner-content');
+  var streakValueEl = document.getElementById('streak-value');
+  var dueValueEl = document.getElementById('due-value');
+  var goalValueEl = document.getElementById('goal-value');
+  var goalFillEl = document.getElementById('goal-fill');
+  var goalInputEl = document.getElementById('goal-input');
+  var saveGoalBtn = document.getElementById('save-goal-btn');
+  var foldersBodyEl = document.getElementById('folders-body');
+  var foldersCardsEl = document.getElementById('folders-cards');
+  var foldersEmptyEl = document.getElementById('folders-empty');
+  var packGoalsBodyEl = document.getElementById('pack-goals-body');
+  var packGoalsCardsEl = document.getElementById('pack-goals-cards');
+  var packGoalsEmptyEl = document.getElementById('pack-goals-empty');
+  var toastEl = document.getElementById('toast');
 
-    function showToast(message, type) {
-      toastEl.textContent = message;
-      toastEl.className = 'toast visible' + (type ? ' ' + type : '');
-      setTimeout(function(){ toastEl.className = 'toast'; }, 2200);
-    }
+  var DEFAULT_DAILY_GOAL = progressUtils.DEFAULT_DAILY_GOAL || 20;
+  var flatpickrInstances = [];
+  var currentUser = null;
+  var currentToken = null;
+  var currentFolders = [];
+  var currentPacks = [];
+  var remoteCardStates = {};
+  var progressSummaryCache = null;
+  var timezoneName = '';
+  var goalSaveInFlight = false;
+  var folderSaveTimers = new Map();
+  var folderSaveInFlight = new Set();
+  var packGoalSaveInFlight = new Set();
+  var PLAN_CACHE_GLOBAL_KEY = 'plan_summary:last';
+  var PLAN_CACHE_USER_PREFIX = 'plan_summary:user:';
 
-    function localDateString(ts) {
-      const d = ts ? new Date(ts) : new Date();
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return y + '-' + m + '-' + day;
-    }
-    function readCacheJson(key, fallbackValue) {
-      if (uiCache && typeof uiCache.getJson === 'function') {
-        return uiCache.getJson(key, fallbackValue);
-      }
-      try {
-        const raw = localStorage.getItem('lp_ui_v2:' + key);
-        return raw ? JSON.parse(raw) : fallbackValue;
-      } catch (_) {
-        return fallbackValue;
-      }
-    }
-    function writeCacheJson(key, value) {
-      if (uiCache && typeof uiCache.setJson === 'function') {
-        return uiCache.setJson(key, value);
-      }
-      try {
-        localStorage.setItem('lp_ui_v2:' + key, JSON.stringify(value));
-        return true;
-      } catch (_) {
-        return false;
-      }
-    }
-    function getUserSummaryCacheKey(uid) {
-      return PLAN_CACHE_USER_PREFIX + String(uid || 'anon');
-    }
-    function hydrateProgressSummaryFromCache(uid) {
-      const userKey = getUserSummaryCacheKey(uid);
-      const cached = readCacheJson(userKey, null) || readCacheJson(PLAN_CACHE_GLOBAL_KEY, null);
-      if (cached && typeof cached === 'object') progressSummaryCache = cached;
-    }
-    function persistProgressSummaryToCache(uid, summary) {
-      if (!summary || typeof summary !== 'object') return;
-      writeCacheJson(PLAN_CACHE_GLOBAL_KEY, summary);
-      writeCacheJson(getUserSummaryCacheKey(uid), summary);
-    }
-    function safeReadJson(raw, fallback) {
-      try { return JSON.parse(raw); } catch (_) { return fallback; }
-    }
-    function getDailyGoal(uid) {
-      const parsed = parseInt(localStorage.getItem('daily_goal_' + uid) || '20', 10);
-      return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 500) : 20;
-    }
-    function setDailyGoal(uid, value) {
-      localStorage.setItem('daily_goal_' + uid, String(value));
-    }
-    function isDueDate(dateString) {
-      const value = String(dateString || '').trim();
-      if (!value) return true;
-      return value <= localDateString();
-    }
+  function showToast(message, type) {
+    if (!toastEl || !message) return;
+    toastEl.textContent = String(message);
+    toastEl.className = 'toast visible' + (type ? ' ' + type : '');
+    window.setTimeout(function () {
+      toastEl.className = 'toast';
+    }, 2200);
+  }
 
-    function getProgressSummary(uid) {
-      const summary = (progressSummaryCache && typeof progressSummaryCache === 'object') ? progressSummaryCache : {};
-      const dailyGoal = Number(summary.daily_goal || getDailyGoal(uid) || 20);
-      return {
-        current_streak: Number(summary.current_streak || 0),
-        due_today: Number(summary.due_today || 0),
-        today_progress: Number(summary.today_progress || 0),
-        daily_goal: Number.isFinite(dailyGoal) && dailyGoal > 0 ? dailyGoal : 20,
-      };
+  function readCacheJson(key, fallbackValue) {
+    if (uiCache && typeof uiCache.getJson === 'function') {
+      return uiCache.getJson(key, fallbackValue);
     }
-
-    function getPackState(uid, packId, remoteMap) {
-      const key = String(packId || '');
-      if (remoteMap && remoteMap[key] && typeof remoteMap[key] === 'object') {
-        return remoteMap[key];
-      }
-      return safeReadJson(localStorage.getItem('card_state_' + uid + '_' + key) || '{}', {});
+    try {
+      var raw = window.localStorage.getItem('lp_ui_v2:' + key);
+      return raw ? JSON.parse(raw) : fallbackValue;
+    } catch (_error) {
+      return fallbackValue;
     }
+  }
 
-    function computeFolderStats(uid, packs, remoteMap) {
-      const byFolder = {};
-      (packs || []).forEach(function(pack){
-        const folderId = String(pack.folder_id || '');
-        if (!folderId) return;
-        if (!byFolder[folderId]) byFolder[folderId] = { total: 0, due: 0, unmastered: 0 };
-        const total = Math.max(0, parseInt(pack.flashcards_count, 10) || 0);
-        byFolder[folderId].total += total;
-        const state = getPackState(uid, pack.study_pack_id, remoteMap);
-        for (let i = 0; i < total; i++) {
-          const card = state['fc_' + i] || null;
-          if (!card || !(parseInt(card.seen, 10) > 0)) {
-            byFolder[folderId].unmastered += 1;
-            continue;
-          }
-          if (String(card.level || '').toLowerCase() !== 'mastered') byFolder[folderId].unmastered += 1;
-          if (isDueDate(card.next_review_date)) byFolder[folderId].due += 1;
+  function writeCacheJson(key, value) {
+    if (uiCache && typeof uiCache.setJson === 'function') {
+      return uiCache.setJson(key, value);
+    }
+    try {
+      window.localStorage.setItem('lp_ui_v2:' + key, JSON.stringify(value));
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function getSummaryCacheKey(uid) {
+    return PLAN_CACHE_USER_PREFIX + String(uid || 'anon');
+  }
+
+  function hydrateSummaryCache(uid) {
+    progressSummaryCache = readCacheJson(getSummaryCacheKey(uid), null) || readCacheJson(PLAN_CACHE_GLOBAL_KEY, null);
+  }
+
+  function persistSummaryCache(uid, summary) {
+    if (!summary || typeof summary !== 'object') return;
+    writeCacheJson(PLAN_CACHE_GLOBAL_KEY, summary);
+    writeCacheJson(getSummaryCacheKey(uid), summary);
+  }
+
+  function setAuthView(user) {
+    if (authRequiredEl) authRequiredEl.style.display = user ? 'none' : 'block';
+    if (plannerContentEl) plannerContentEl.style.display = user ? 'block' : 'none';
+  }
+
+  function ensureToken(forceRefresh) {
+    if (!currentUser) return Promise.reject(new Error('Not signed in'));
+    if (authClient && typeof authClient.ensureToken === 'function') {
+      return authClient.ensureToken(!!forceRefresh).then(function (tokenValue) {
+        currentToken = tokenValue;
+        return tokenValue;
+      });
+    }
+    if (currentToken && !forceRefresh) return Promise.resolve(currentToken);
+    return currentUser.getIdToken(!!forceRefresh).then(function (tokenValue) {
+      currentToken = tokenValue;
+      return tokenValue;
+    });
+  }
+
+  function authFetch(path, options) {
+    if (authClient && typeof authClient.authFetch === 'function') {
+      return authClient.authFetch(path, options, { retryOn401: true }).then(function (response) {
+        var authHeader = response && response.config && response.config.headers ? response.config.headers.Authorization : '';
+        if (authHeader && String(authHeader).indexOf('Bearer ') === 0) {
+          currentToken = String(authHeader).slice(7);
         }
-      });
-      return byFolder;
-    }
-
-    function daysUntil(dateString) {
-      if (!dateString) return null;
-      const parts = String(dateString).split('-');
-      if (parts.length !== 3) return null;
-      const exam = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      return Math.ceil((exam.getTime() - today.getTime()) / 86400000);
-    }
-
-    function formatDisplayDate(isoDate) {
-      const val = String(isoDate || '').trim();
-      const m = val.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-      if (!m) return '';
-      return m[3] + '-' + m[2] + '-' + m[1];
-    }
-
-    function parseDateInput(value) {
-      const raw = String(value || '').trim();
-      if (!raw) return '';
-      let m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-      if (m) {
-        const d = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
-        if (d.getFullYear() !== parseInt(m[1], 10) || (d.getMonth() + 1) !== parseInt(m[2], 10) || d.getDate() !== parseInt(m[3], 10)) {
-          return null;
-        }
-        return raw;
-      }
-      m = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
-      if (m) {
-        const y = parseInt(m[3], 10);
-        const mo = parseInt(m[2], 10);
-        const d = parseInt(m[1], 10);
-        const date = new Date(y, mo - 1, d);
-        if (date.getFullYear() !== y || (date.getMonth() + 1) !== mo || date.getDate() !== d) {
-          return null;
-        }
-        return y + '-' + String(mo).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-      }
-      return null;
-    }
-
-    function renderOverview(uid) {
-      const summary = getProgressSummary(uid);
-      const streak = summary.current_streak;
-      const due = summary.due_today;
-      const goal = summary.daily_goal;
-      const progress = summary.today_progress;
-      const pct = Math.max(0, Math.min(100, Math.round((Math.min(progress, goal) / Math.max(goal, 1)) * 100)));
-      streakValueEl.textContent = streak + ' day' + (streak === 1 ? '' : 's');
-      dueValueEl.textContent = String(due);
-      goalValueEl.textContent = Math.min(progress, goal) + ' / ' + goal;
-      goalFillEl.style.width = pct + '%';
-      goalInputEl.value = String(goal);
-    }
-
-    function renderFolders(folders) {
-      while (foldersBodyEl.firstChild) foldersBodyEl.removeChild(foldersBodyEl.firstChild);
-      while (foldersCardsEl.firstChild) foldersCardsEl.removeChild(foldersCardsEl.firstChild);
-      if (!folders || !folders.length) {
-        foldersEmptyEl.style.display = 'block';
-        return;
-      }
-      foldersEmptyEl.style.display = 'none';
-
-      folders.forEach(function(folder){
-        const stats = folderStatsById[folder.folder_id] || { total: 0, due: 0, unmastered: 0 };
-        const days = daysUntil(folder.exam_date || '');
-        const folderName = folder.name || 'Untitled folder';
-        const metadata = [folder.course, folder.subject, folder.semester, folder.block].filter(Boolean).join(' · ') || 'No metadata';
-        const countdownBadge = document.createElement('span');
-        countdownBadge.className = 'chip';
-        countdownBadge.textContent = 'No exam date';
-        const recommendation = document.createElement('span');
-        recommendation.className = 'recommendation';
-        recommendation.textContent = 'Set an exam date to get a daily recommendation.';
-        if (days !== null) {
-          if (days > 15) {
-            countdownBadge.className = 'chip success';
-            countdownBadge.textContent = days + ' day' + (days === 1 ? '' : 's') + ' left';
-            const rec = Math.ceil((stats.unmastered || 0) / Math.max(days, 1));
-            recommendation.textContent = 'Recommended: ';
-            const strong = document.createElement('strong');
-            strong.textContent = String(rec);
-            recommendation.appendChild(strong);
-            recommendation.appendChild(document.createTextNode(' unmastered cards/day.'));
-          } else if (days >= 6) {
-            countdownBadge.className = 'chip warn';
-            countdownBadge.textContent = days + ' day' + (days === 1 ? '' : 's') + ' left';
-            const rec = Math.ceil((stats.unmastered || 0) / Math.max(days, 1));
-            recommendation.textContent = 'Recommended: ';
-            const strong = document.createElement('strong');
-            strong.textContent = String(rec);
-            recommendation.appendChild(strong);
-            recommendation.appendChild(document.createTextNode(' unmastered cards/day.'));
-          } else if (days >= 1) {
-            countdownBadge.className = 'chip urgent';
-            countdownBadge.textContent = days + ' day' + (days === 1 ? '' : 's') + ' left';
-            const rec = Math.ceil((stats.unmastered || 0) / Math.max(days, 1));
-            recommendation.textContent = 'Recommended: ';
-            const strong = document.createElement('strong');
-            strong.textContent = String(rec);
-            recommendation.appendChild(strong);
-            recommendation.appendChild(document.createTextNode(' unmastered cards/day.'));
-          } else if (days === 0) {
-            countdownBadge.className = 'chip today';
-            countdownBadge.textContent = 'Today';
-            recommendation.textContent = '';
-            const strong = document.createElement('strong');
-            strong.textContent = String(stats.unmastered || 0);
-            recommendation.appendChild(strong);
-            recommendation.appendChild(document.createTextNode(' cards should be reviewed today.'));
-          } else {
-            countdownBadge.className = 'chip danger';
-            countdownBadge.textContent = 'Exam passed';
-            recommendation.textContent = 'Update the exam date to restore recommendations.';
-          }
-        }
-
-        const createDateInputWrap = function() {
-          const wrap = document.createElement('div');
-          wrap.className = 'date-input-wrap';
-          const input = document.createElement('input');
-          input.className = 'input js-folder-date';
-          input.type = 'text';
-          const savedDate = String(folder.exam_date || '');
-          input.value = formatDisplayDate(savedDate);
-          input.placeholder = 'dd-mm-yyyy';
-          input.setAttribute('inputmode', 'numeric');
-          input.setAttribute('aria-label', `Exam date for ${folderName}`);
-          input.dataset.folderId = String(folder.folder_id || '');
-          input.dataset.savedExamDate = savedDate;
-          wrap.appendChild(input);
-          const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-          icon.setAttribute('class', 'date-input-icon');
-          icon.setAttribute('viewBox', '0 0 24 24');
-          icon.setAttribute('fill', 'none');
-          icon.setAttribute('stroke', 'currentColor');
-          icon.setAttribute('stroke-width', '2');
-          const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-          rect.setAttribute('x', '3');
-          rect.setAttribute('y', '4');
-          rect.setAttribute('width', '18');
-          rect.setAttribute('height', '18');
-          rect.setAttribute('rx', '2');
-          icon.appendChild(rect);
-          const l1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-          l1.setAttribute('x1', '16');
-          l1.setAttribute('y1', '2');
-          l1.setAttribute('x2', '16');
-          l1.setAttribute('y2', '6');
-          icon.appendChild(l1);
-          const l2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-          l2.setAttribute('x1', '8');
-          l2.setAttribute('y1', '2');
-          l2.setAttribute('x2', '8');
-          l2.setAttribute('y2', '6');
-          icon.appendChild(l2);
-          const l3 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-          l3.setAttribute('x1', '3');
-          l3.setAttribute('y1', '10');
-          l3.setAttribute('x2', '21');
-          l3.setAttribute('y2', '10');
-          icon.appendChild(l3);
-          wrap.appendChild(icon);
-          return wrap;
-        };
-
-        const buildWorkload = function() {
-          const wrap = document.createElement('div');
-          wrap.className = 'recommendation';
-          const totalStrong = document.createElement('strong');
-          totalStrong.textContent = String(stats.total);
-          wrap.appendChild(totalStrong);
-          wrap.appendChild(document.createTextNode(' total · '));
-          const unmasteredStrong = document.createElement('strong');
-          unmasteredStrong.textContent = String(stats.unmastered);
-          wrap.appendChild(unmasteredStrong);
-          wrap.appendChild(document.createTextNode(' unmastered · '));
-          const dueStrong = document.createElement('strong');
-          dueStrong.textContent = String(stats.due);
-          wrap.appendChild(dueStrong);
-          wrap.appendChild(document.createTextNode(' due'));
-          return wrap;
-        };
-
-        const tr = document.createElement('tr');
-        tr.setAttribute('data-folder-editor', String(folder.folder_id || ''));
-        const tdName = document.createElement('td');
-        const nameWrap = document.createElement('div');
-        const nameStrong = document.createElement('strong');
-        nameStrong.textContent = folderName;
-        nameWrap.appendChild(nameStrong);
-        const metaDiv = document.createElement('div');
-        metaDiv.className = 'folder-meta';
-        metaDiv.textContent = metadata;
-        tdName.appendChild(nameWrap);
-        tdName.appendChild(metaDiv);
-
-        const tdDate = document.createElement('td');
-        tdDate.appendChild(createDateInputWrap());
-
-        const tdWorkload = document.createElement('td');
-        tdWorkload.appendChild(buildWorkload());
-        const countdownRow = document.createElement('div');
-        countdownRow.style.marginTop = '6px';
-        countdownRow.appendChild(countdownBadge.cloneNode(true));
-        tdWorkload.appendChild(countdownRow);
-
-        const tdRecommendation = document.createElement('td');
-        tdRecommendation.appendChild(recommendation.cloneNode(true));
-
-        tr.appendChild(tdName);
-        tr.appendChild(tdDate);
-        tr.appendChild(tdWorkload);
-        tr.appendChild(tdRecommendation);
-        foldersBodyEl.appendChild(tr);
-
-        const card = document.createElement('article');
-        card.className = 'folder-card';
-        card.setAttribute('data-folder-editor', String(folder.folder_id || ''));
-        const cardHeader = document.createElement('div');
-        cardHeader.className = 'folder-card-header';
-        const cardHeaderText = document.createElement('div');
-        const cardTitle = document.createElement('div');
-        cardTitle.className = 'folder-card-title';
-        cardTitle.textContent = folderName;
-        const cardMeta = document.createElement('div');
-        cardMeta.className = 'folder-card-meta';
-        cardMeta.textContent = metadata;
-        cardHeaderText.appendChild(cardTitle);
-        cardHeaderText.appendChild(cardMeta);
-        cardHeader.appendChild(cardHeaderText);
-        cardHeader.appendChild(countdownBadge.cloneNode(true));
-        card.appendChild(cardHeader);
-
-        const cardExam = document.createElement('div');
-        cardExam.className = 'folder-card-section';
-        const cardExamLabel = document.createElement('span');
-        cardExamLabel.className = 'folder-card-label';
-        cardExamLabel.textContent = 'Exam date';
-        cardExam.appendChild(cardExamLabel);
-        cardExam.appendChild(createDateInputWrap());
-        card.appendChild(cardExam);
-
-        const cardWorkload = document.createElement('div');
-        cardWorkload.className = 'folder-card-section';
-        const cardWorkloadLabel = document.createElement('span');
-        cardWorkloadLabel.className = 'folder-card-label';
-        cardWorkloadLabel.textContent = 'Workload';
-        cardWorkload.appendChild(cardWorkloadLabel);
-        cardWorkload.appendChild(buildWorkload());
-        card.appendChild(cardWorkload);
-
-        const cardRecommendation = document.createElement('div');
-        cardRecommendation.className = 'folder-card-section';
-        const cardRecommendationLabel = document.createElement('span');
-        cardRecommendationLabel.className = 'folder-card-label';
-        cardRecommendationLabel.textContent = 'Recommendation';
-        cardRecommendation.appendChild(cardRecommendationLabel);
-        cardRecommendation.appendChild(recommendation.cloneNode(true));
-        card.appendChild(cardRecommendation);
-
-        foldersCardsEl.appendChild(card);
-      });
-      initFolderDatePickers();
-      bindFolderAutosaveListeners();
-    }
-
-    function initFolderDatePickers() {
-      if (typeof flatpickr === 'undefined') return;
-      examDatePickers.forEach(function(instance){
-        try { instance.destroy(); } catch (_) {}
-      });
-      examDatePickers = [];
-      const inputs = document.querySelectorAll('#folders-body .js-folder-date, #folders-cards .js-folder-date');
-      inputs.forEach(function(input){
-        const editor = input.closest('[data-folder-editor]');
-        const folderId = editor ? String(editor.getAttribute('data-folder-editor') || '') : '';
-        const instance = flatpickr(input, {
-          dateFormat: 'd-m-Y',
-          allowInput: true,
-          disableMobile: true,
-          locale: { firstDayOfWeek: 1 },
-          defaultDate: input.value || null,
-          onClose: function() {
-            if (folderId) scheduleFolderAutosave(folderId, input, true);
-          },
-        });
-        examDatePickers.push(instance);
+        return response;
       });
     }
-
-    function bindFolderAutosaveListeners() {
-      const inputs = document.querySelectorAll('#folders-body .js-folder-date, #folders-cards .js-folder-date');
-      inputs.forEach(function(input){
-        const editor = input.closest('[data-folder-editor]');
-        const folderId = editor ? String(editor.getAttribute('data-folder-editor') || '') : '';
-        if (!folderId) return;
-        input.addEventListener('input', function() {
-          scheduleFolderAutosave(folderId, input, false);
-        });
-        input.addEventListener('blur', function() {
-          scheduleFolderAutosave(folderId, input, true);
-        });
-        input.addEventListener('keydown', function(event) {
-          if (event.key === 'Enter') {
-            event.preventDefault();
-            scheduleFolderAutosave(folderId, input, true);
-          }
-        });
+    return ensureToken(false).then(function (tokenValue) {
+      var requestOptions = options || {};
+      var headers = Object.assign({}, requestOptions.headers || {}, {
+        Authorization: 'Bearer ' + tokenValue,
       });
-    }
+      return fetch(path, Object.assign({}, requestOptions, { headers: headers }));
+    });
+  }
 
-    const planHtmlUtils = window.LectureProcessorHtml || {};
-    const escapeHtml = planHtmlUtils.escapeHtml || function(value) {
-      return String(value || '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+  function parseGoalValue(value) {
+    if (progressUtils && typeof progressUtils.parseGoalValue === 'function') {
+      return progressUtils.parseGoalValue(value);
+    }
+    var parsed = parseInt(String(value == null ? '' : value).trim(), 10);
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 500) return null;
+    return parsed;
+  }
+
+  function clampGoalValue(value, fallbackValue) {
+    if (progressUtils && typeof progressUtils.clampGoalValue === 'function') {
+      return progressUtils.clampGoalValue(value, fallbackValue);
+    }
+    var parsed = parseGoalValue(value);
+    return parsed === null ? (fallbackValue || DEFAULT_DAILY_GOAL) : parsed;
+  }
+
+  function formatCount(value, singular, plural) {
+    if (progressUtils && typeof progressUtils.formatCount === 'function') {
+      return progressUtils.formatCount(value, singular, plural);
+    }
+    var count = Math.max(0, parseInt(value, 10) || 0);
+    return count + ' ' + (count === 1 ? singular : (plural || singular + 's'));
+  }
+
+  function goalProgressText(summary, fallbackGoal) {
+    if (progressUtils && typeof progressUtils.goalProgressText === 'function') {
+      return progressUtils.goalProgressText(summary, fallbackGoal);
+    }
+    var goal = clampGoalValue(summary && summary.daily_goal, fallbackGoal);
+    var done = Math.max(0, Number(summary && summary.today_progress || 0));
+    return Math.min(done, goal) + ' / ' + goal;
+  }
+
+  function goalCompletionPercent(summary, fallbackGoal) {
+    if (progressUtils && typeof progressUtils.goalCompletionPercent === 'function') {
+      return progressUtils.goalCompletionPercent(summary, fallbackGoal);
+    }
+    var goal = clampGoalValue(summary && summary.daily_goal, fallbackGoal);
+    var done = Math.max(0, Number(summary && summary.today_progress || 0));
+    return Math.max(0, Math.min(100, Math.round((Math.min(done, goal) / Math.max(goal, 1)) * 100)));
+  }
+
+  function normalizeTimezoneName(value) {
+    if (progressUtils && typeof progressUtils.normalizeTimezoneName === 'function') {
+      return progressUtils.normalizeTimezoneName(value);
+    }
+    var timezone = String(value || '').trim();
+    if (!timezone) return '';
+    try {
+      Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date());
+      return timezone;
+    } catch (_error) {
+      return '';
+    }
+  }
+
+  function getTodayString() {
+    if (progressUtils && typeof progressUtils.localDateString === 'function') {
+      return progressUtils.localDateString(Date.now(), timezoneName || '');
+    }
+    var date = new Date();
+    return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+  }
+
+  function summarySnapshot(summary) {
+    if (progressUtils && typeof progressUtils.summarySnapshot === 'function') {
+      return progressUtils.summarySnapshot(summary, DEFAULT_DAILY_GOAL);
+    }
+    var safe = summary && typeof summary === 'object' ? summary : {};
+    return {
+      streak: Math.max(0, Number(safe.current_streak || 0)),
+      due: Math.max(0, Number(safe.due_today || 0)),
+      done: Math.max(0, Number(safe.today_progress || 0)),
+      goal: clampGoalValue(safe.daily_goal, DEFAULT_DAILY_GOAL),
     };
+  }
 
-    async function authFetch(url, options) {
-      if (authClient && typeof authClient.authFetch === 'function') {
-        return authClient.authFetch(url, options, { retryOn401: true });
-      }
-      const opts = options || {};
-      const headers = Object.assign({}, opts.headers || {}, { 'Authorization': 'Bearer ' + idToken });
-      return fetch(url, Object.assign({}, opts, { headers }));
+  function applyOverview(summary) {
+    var snapshot = summarySnapshot(summary || progressSummaryCache || null);
+    if (streakValueEl) streakValueEl.textContent = formatCount(snapshot.streak, 'day');
+    if (dueValueEl) dueValueEl.textContent = formatCount(snapshot.due, 'card');
+    if (goalValueEl) {
+      goalValueEl.textContent = goalProgressText({
+        today_progress: snapshot.done,
+        daily_goal: snapshot.goal,
+      }, snapshot.goal);
     }
-
-    function applyProgressData(progressData) {
-      if (!currentUser) return;
-      const uid = currentUser.uid;
-      if (progressData && typeof progressData === 'object') {
-        remoteCardStates = (progressData.card_states && typeof progressData.card_states === 'object') ? progressData.card_states : {};
-        if (typeof progressData.daily_goal === 'number' && progressData.daily_goal > 0) {
-          try { localStorage.setItem('daily_goal_' + uid, String(progressData.daily_goal)); } catch (_) {}
-        }
-        if (progressData.streak_data && typeof progressData.streak_data === 'object') {
-          try { localStorage.setItem('study_streak_' + uid, JSON.stringify(progressData.streak_data)); } catch (_) {}
-        }
-        if (progressData.summary && typeof progressData.summary === 'object') {
-          progressSummaryCache = progressData.summary;
-          persistProgressSummaryToCache(uid, progressSummaryCache);
-        } else {
-          progressSummaryCache = readCacheJson(getUserSummaryCacheKey(uid), null) || readCacheJson(PLAN_CACHE_GLOBAL_KEY, null);
-        }
-      } else {
-        remoteCardStates = {};
-        progressSummaryCache = readCacheJson(getUserSummaryCacheKey(uid), null) || readCacheJson(PLAN_CACHE_GLOBAL_KEY, null);
-      }
+    if (goalFillEl) {
+      goalFillEl.style.width = String(goalCompletionPercent({
+        today_progress: snapshot.done,
+        daily_goal: snapshot.goal,
+      }, snapshot.goal)) + '%';
     }
-
-    async function loadPlannerData() {
-      if (!currentUser || !idToken) return;
-      if (!progressSummaryCache) hydrateProgressSummaryFromCache(currentUser.uid);
-      renderOverview(currentUser.uid);
-      try {
-        const [foldersRes, packsRes, progressRes] = await Promise.all([
-          authFetch('/api/study-folders'),
-          authFetch('/api/study-packs'),
-          authFetch('/api/study-progress'),
-        ]);
-        if (foldersRes.status === 401 || packsRes.status === 401 || progressRes.status === 401) {
-          authRequiredEl.style.display = 'block';
-          plannerContentEl.style.display = 'none';
-          return;
-        }
-        const [foldersData, packsData, progressData] = await Promise.all([
-          foldersRes.json(),
-          packsRes.json(),
-          progressRes.ok ? progressRes.json() : Promise.resolve({}),
-        ]);
-        applyProgressData(progressData);
-        folderStatsById = computeFolderStats(currentUser.uid, packsData.study_packs || [], remoteCardStates);
-        renderOverview(currentUser.uid);
-        renderFolders(foldersData.folders || []);
-      } catch (_) {
-        while (foldersBodyEl.firstChild) foldersBodyEl.removeChild(foldersBodyEl.firstChild);
-        while (foldersCardsEl.firstChild) foldersCardsEl.removeChild(foldersCardsEl.firstChild);
-        foldersEmptyEl.style.display = 'block';
-        foldersEmptyEl.textContent = 'Could not load folders right now. Please try again.';
-      }
+    if (goalInputEl && document.activeElement !== goalInputEl) {
+      goalInputEl.value = String(snapshot.goal);
     }
+  }
 
-    async function persistDailyGoalFromInput(showValidationError) {
-      if (!currentUser) return;
-      const val = parseInt(goalInputEl.value || '0', 10);
-      if (!Number.isFinite(val) || val < 1 || val > 500) {
-        if (showValidationError) showToast('Use a goal between 1 and 500.', 'error');
-        return;
+  function parseDateInput(value) {
+    var raw = String(value || '').trim();
+    if (!raw) return '';
+    var match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (match) {
+      var isoDate = new Date(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10));
+      if (isoDate.getFullYear() !== parseInt(match[1], 10) || isoDate.getMonth() + 1 !== parseInt(match[2], 10) || isoDate.getDate() !== parseInt(match[3], 10)) {
+        return null;
       }
-      if (goalSaveInFlight) return;
-      const currentSavedGoal = Number((progressSummaryCache && progressSummaryCache.daily_goal) || getDailyGoal(currentUser.uid) || 20);
-      if (currentSavedGoal === val) return;
-      goalSaveInFlight = true;
-      setDailyGoal(currentUser.uid, val);
-      progressSummaryCache = Object.assign({}, progressSummaryCache || {}, { daily_goal: val });
-      renderOverview(currentUser.uid);
-      try {
-        const response = await authFetch('/api/study-progress', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ daily_goal: val, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '' })
-        });
-        if (!response.ok) {
-          const data = await response.json().catch(function(){ return {}; });
-          throw new Error(data.error || 'Could not save daily goal');
-        }
-        await loadPlannerData();
-        showToast('Daily goal saved.', 'success');
-      } catch (err) {
-        showToast(err.message || 'Could not sync daily goal.', 'error');
-      } finally {
-        goalSaveInFlight = false;
-      }
+      return raw;
     }
-
-    function scheduleGoalAutosave(immediate) {
-      if (goalAutoSaveTimer) {
-        clearTimeout(goalAutoSaveTimer);
-        goalAutoSaveTimer = null;
+    match = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (match) {
+      var year = parseInt(match[3], 10);
+      var month = parseInt(match[2], 10);
+      var day = parseInt(match[1], 10);
+      var localDate = new Date(year, month - 1, day);
+      if (localDate.getFullYear() !== year || localDate.getMonth() + 1 !== month || localDate.getDate() !== day) {
+        return null;
       }
-      if (immediate) {
-        persistDailyGoalFromInput(false);
-        return;
-      }
-      goalAutoSaveTimer = setTimeout(function() {
-        persistDailyGoalFromInput(false);
-      }, 600);
+      return year + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
     }
+    return null;
+  }
 
-    saveGoalBtn.addEventListener('click', function(){
-      persistDailyGoalFromInput(true);
+  function formatDisplayDate(value) {
+    var match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return '';
+    return match[3] + '-' + match[2] + '-' + match[1];
+  }
+
+  function readPackState(packId) {
+    var safePackId = String(packId || '').trim();
+    if (!safePackId) return {};
+    if (remoteCardStates && remoteCardStates[safePackId] && typeof remoteCardStates[safePackId] === 'object') {
+      return remoteCardStates[safePackId];
+    }
+    if (!currentUser) return {};
+    try {
+      return JSON.parse(window.localStorage.getItem('card_state_' + currentUser.uid + '_' + safePackId) || '{}') || {};
+    } catch (_error) {
+      return {};
+    }
+  }
+
+  function getPackStats(pack) {
+    if (progressUtils && typeof progressUtils.buildPackStats === 'function') {
+      return progressUtils.buildPackStats(pack, readPackState(pack && pack.study_pack_id), getTodayString());
+    }
+    return {
+      total: Math.max(0, Number(pack && pack.flashcards_count || 0)),
+      due: 0,
+      unmastered: Math.max(0, Number(pack && pack.flashcards_count || 0)),
+    };
+  }
+
+  function buildFolderStatsMap() {
+    var statsByFolder = {};
+    (currentPacks || []).forEach(function (pack) {
+      var folderId = String(pack && pack.folder_id || '').trim();
+      if (!folderId) return;
+      var stats = getPackStats(pack);
+      if (!statsByFolder[folderId]) {
+        statsByFolder[folderId] = { total: 0, due: 0, unmastered: 0 };
+      }
+      statsByFolder[folderId].total += Math.max(0, Number(stats.total || 0));
+      statsByFolder[folderId].due += Math.max(0, Number(stats.due || 0));
+      statsByFolder[folderId].unmastered += Math.max(0, Number(stats.unmastered || 0));
     });
-    goalInputEl.addEventListener('input', function() { scheduleGoalAutosave(false); });
-    goalInputEl.addEventListener('blur', function() { scheduleGoalAutosave(true); });
-    goalInputEl.addEventListener('keydown', function(event) {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        if (goalAutoSaveTimer) {
-          clearTimeout(goalAutoSaveTimer);
-          goalAutoSaveTimer = null;
-        }
-        persistDailyGoalFromInput(true);
-      }
+    return statsByFolder;
+  }
+
+  function buildRecommendation(unmasteredCount, examDate) {
+    if (progressUtils && typeof progressUtils.buildRecommendation === 'function') {
+      return progressUtils.buildRecommendation(unmasteredCount, examDate, getTodayString());
+    }
+    return {
+      tone: 'neutral',
+      text: 'Set an exam date to get a daily recommendation.',
+      days_remaining: null,
+      daily_target: null,
+    };
+  }
+
+  function createCountdownChip(recommendation) {
+    var chip = document.createElement('span');
+    var tone = String(recommendation && recommendation.tone || 'neutral');
+    chip.className = 'chip' + (tone === 'success' || tone === 'warn' || tone === 'urgent' || tone === 'today' || tone === 'danger' ? ' ' + tone : '');
+    if (!recommendation || recommendation.days_remaining === null || recommendation.days_remaining === undefined) {
+      chip.textContent = 'No exam date';
+      return chip;
+    }
+    if (recommendation.days_remaining < 0) {
+      chip.textContent = 'Exam passed';
+      return chip;
+    }
+    if (recommendation.days_remaining === 0) {
+      chip.textContent = 'Today';
+      return chip;
+    }
+    chip.textContent = recommendation.days_remaining + ' day' + (recommendation.days_remaining === 1 ? '' : 's') + ' left';
+    return chip;
+  }
+
+  function createWorkloadNode(stats) {
+    var wrap = document.createElement('div');
+    wrap.className = 'recommendation';
+
+    var totalStrong = document.createElement('strong');
+    totalStrong.textContent = String(Math.max(0, Number(stats.total || 0)));
+    wrap.appendChild(totalStrong);
+    wrap.appendChild(document.createTextNode(' total · '));
+
+    var unmasteredStrong = document.createElement('strong');
+    unmasteredStrong.textContent = String(Math.max(0, Number(stats.unmastered || 0)));
+    wrap.appendChild(unmasteredStrong);
+    wrap.appendChild(document.createTextNode(' unmastered · '));
+
+    var dueStrong = document.createElement('strong');
+    dueStrong.textContent = String(Math.max(0, Number(stats.due || 0)));
+    wrap.appendChild(dueStrong);
+    wrap.appendChild(document.createTextNode(' due'));
+    return wrap;
+  }
+
+  function createDateInput(folder, folderName) {
+    var wrap = document.createElement('div');
+    wrap.className = 'date-input-wrap';
+
+    var input = document.createElement('input');
+    input.className = 'input js-folder-date';
+    input.type = 'text';
+    input.placeholder = 'dd-mm-yyyy';
+    input.setAttribute('inputmode', 'numeric');
+    input.setAttribute('aria-label', 'Exam date for ' + folderName);
+    input.dataset.folderId = String(folder.folder_id || '');
+    input.dataset.savedExamDate = String(folder.exam_date || '');
+    input.value = formatDisplayDate(folder.exam_date || '');
+    wrap.appendChild(input);
+
+    var icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('class', 'date-input-icon');
+    icon.setAttribute('viewBox', '0 0 24 24');
+    icon.setAttribute('fill', 'none');
+    icon.setAttribute('stroke', 'currentColor');
+    icon.setAttribute('stroke-width', '2');
+    var rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', '3');
+    rect.setAttribute('y', '4');
+    rect.setAttribute('width', '18');
+    rect.setAttribute('height', '18');
+    rect.setAttribute('rx', '2');
+    icon.appendChild(rect);
+    var line1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line1.setAttribute('x1', '16');
+    line1.setAttribute('y1', '2');
+    line1.setAttribute('x2', '16');
+    line1.setAttribute('y2', '6');
+    icon.appendChild(line1);
+    var line2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line2.setAttribute('x1', '8');
+    line2.setAttribute('y1', '2');
+    line2.setAttribute('x2', '8');
+    line2.setAttribute('y2', '6');
+    icon.appendChild(line2);
+    var line3 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line3.setAttribute('x1', '3');
+    line3.setAttribute('y1', '10');
+    line3.setAttribute('x2', '21');
+    line3.setAttribute('y2', '10');
+    icon.appendChild(line3);
+    wrap.appendChild(icon);
+
+    return wrap;
+  }
+
+  function clearNode(node) {
+    if (!node) return;
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  function initFolderDatePickers() {
+    if (typeof flatpickr === 'undefined') return;
+    flatpickrInstances.forEach(function (instance) {
+      try { instance.destroy(); } catch (_error) { }
     });
+    flatpickrInstances = [];
 
-    async function persistFolderExamDate(folderId, dateInput, showValidationError){
-      if (!folderId || !currentUser || !idToken || !dateInput) return;
-      if (folderSaveInFlight.has(folderId)) return;
-      const normalizedDate = parseDateInput(dateInput.value);
-      if (normalizedDate === null) {
-        if (showValidationError) {
-          showToast('Use a valid date: dd-mm-yyyy or yyyy-mm-dd.', 'error');
-          dateInput.focus();
-        }
-        return;
-      }
-      const lastSaved = parseDateInput(dateInput.dataset.savedExamDate || '');
-      if (lastSaved === normalizedDate) return;
-      folderSaveInFlight.add(folderId);
-      try {
-        const resp = await authFetch('/api/study-folders/' + encodeURIComponent(folderId), {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ exam_date: normalizedDate || '' })
-        });
-        const data = await resp.json();
-        if (!resp.ok) throw new Error(data.error || 'Could not save exam date');
-        showToast('Saved successfully.', 'success');
-        const relatedInputs = document.querySelectorAll(`.js-folder-date[data-folder-id="${folderId}"]`);
-        relatedInputs.forEach(function(input){
-          input.dataset.savedExamDate = normalizedDate || '';
-        });
-        await loadPlannerData();
-      } catch (err) {
-        showToast(err.message || 'Could not save exam date.', 'error');
-      } finally {
-        folderSaveInFlight.delete(folderId);
-      }
-    }
-
-    function scheduleFolderAutosave(folderId, dateInput, immediate) {
-      if (!folderId || !dateInput) return;
-      const existingTimer = folderSaveTimers.get(folderId);
-      if (existingTimer) {
-        clearTimeout(existingTimer);
-        folderSaveTimers.delete(folderId);
-      }
-      if (immediate) {
-        persistFolderExamDate(folderId, dateInput, false);
-        return;
-      }
-      const timer = setTimeout(function() {
-        folderSaveTimers.delete(folderId);
-        persistFolderExamDate(folderId, dateInput, false);
-      }, 700);
-      folderSaveTimers.set(folderId, timer);
-    }
-
-    if (topbarUtils.bindSignOutButton) {
-      topbarUtils.bindSignOutButton(signoutBtn, auth, '/dashboard');
-    } else {
-      signoutBtn.addEventListener('click', async function(){
-        try { await auth.signOut(); } catch (_) {}
-        window.location.href = '/dashboard';
+    Array.prototype.slice.call(document.querySelectorAll('.js-folder-date')).forEach(function (input) {
+      var folderId = String(input.dataset.folderId || '');
+      var picker = flatpickr(input, {
+        dateFormat: 'd-m-Y',
+        allowInput: true,
+        disableMobile: true,
+        locale: { firstDayOfWeek: 1 },
+        defaultDate: input.value || null,
+        onClose: function () {
+          if (folderId) scheduleFolderExamDateSave(folderId, input, true);
+        },
       });
+      flatpickrInstances.push(picker);
+    });
+  }
+
+  function bindFolderDateAutosave() {
+    Array.prototype.slice.call(document.querySelectorAll('.js-folder-date')).forEach(function (input) {
+      var folderId = String(input.dataset.folderId || '');
+      if (!folderId) return;
+      input.addEventListener('input', function () {
+        scheduleFolderExamDateSave(folderId, input, false);
+      });
+      input.addEventListener('blur', function () {
+        scheduleFolderExamDateSave(folderId, input, true);
+      });
+      input.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        scheduleFolderExamDateSave(folderId, input, true);
+      });
+    });
+  }
+
+  function renderFolders() {
+    clearNode(foldersBodyEl);
+    clearNode(foldersCardsEl);
+
+    if (!currentFolders.length) {
+      if (foldersEmptyEl) foldersEmptyEl.style.display = 'block';
+      return;
     }
 
-    window.addEventListener('focus', function(){
-      if (currentUser) loadPlannerData();
-    });
-    document.addEventListener('visibilitychange', function(){
-      if (!document.hidden && currentUser) loadPlannerData();
+    if (foldersEmptyEl) foldersEmptyEl.style.display = 'none';
+    var folderStatsById = buildFolderStatsMap();
+
+    currentFolders.forEach(function (folder) {
+      var folderName = String(folder.name || 'Untitled folder');
+      var metadata = [folder.course, folder.subject, folder.semester, folder.block].filter(Boolean).join(' · ') || 'No metadata';
+      var stats = folderStatsById[String(folder.folder_id || '')] || { total: 0, due: 0, unmastered: 0 };
+      var recommendation = buildRecommendation(stats.unmastered, folder.exam_date || '');
+      var countdownChip = createCountdownChip(recommendation);
+
+      var tr = document.createElement('tr');
+      tr.setAttribute('data-folder-editor', String(folder.folder_id || ''));
+
+      var tdName = document.createElement('td');
+      var titleWrap = document.createElement('div');
+      var titleStrong = document.createElement('strong');
+      titleStrong.textContent = folderName;
+      titleWrap.appendChild(titleStrong);
+      var metaDiv = document.createElement('div');
+      metaDiv.className = 'folder-meta';
+      metaDiv.textContent = metadata;
+      tdName.appendChild(titleWrap);
+      tdName.appendChild(metaDiv);
+
+      var tdDate = document.createElement('td');
+      tdDate.appendChild(createDateInput(folder, folderName));
+
+      var tdWorkload = document.createElement('td');
+      tdWorkload.appendChild(createWorkloadNode(stats));
+      var countdownRow = document.createElement('div');
+      countdownRow.style.marginTop = '6px';
+      countdownRow.appendChild(countdownChip.cloneNode(true));
+      tdWorkload.appendChild(countdownRow);
+
+      var tdRecommendation = document.createElement('td');
+      var recommendationNode = document.createElement('div');
+      recommendationNode.className = 'recommendation';
+      recommendationNode.textContent = recommendation.text;
+      tdRecommendation.appendChild(recommendationNode);
+
+      tr.appendChild(tdName);
+      tr.appendChild(tdDate);
+      tr.appendChild(tdWorkload);
+      tr.appendChild(tdRecommendation);
+      foldersBodyEl.appendChild(tr);
+
+      var card = document.createElement('article');
+      card.className = 'folder-card';
+      card.setAttribute('data-folder-editor', String(folder.folder_id || ''));
+      var cardHeader = document.createElement('div');
+      cardHeader.className = 'folder-card-header';
+      var headerText = document.createElement('div');
+      var cardTitle = document.createElement('div');
+      cardTitle.className = 'folder-card-title';
+      cardTitle.textContent = folderName;
+      var cardMeta = document.createElement('div');
+      cardMeta.className = 'folder-card-meta';
+      cardMeta.textContent = metadata;
+      headerText.appendChild(cardTitle);
+      headerText.appendChild(cardMeta);
+      cardHeader.appendChild(headerText);
+      cardHeader.appendChild(countdownChip);
+      card.appendChild(cardHeader);
+
+      var examSection = document.createElement('div');
+      examSection.className = 'folder-card-section';
+      var examLabel = document.createElement('span');
+      examLabel.className = 'folder-card-label';
+      examLabel.textContent = 'Exam date';
+      examSection.appendChild(examLabel);
+      examSection.appendChild(createDateInput(folder, folderName));
+      card.appendChild(examSection);
+
+      var workloadSection = document.createElement('div');
+      workloadSection.className = 'folder-card-section';
+      var workloadLabel = document.createElement('span');
+      workloadLabel.className = 'folder-card-label';
+      workloadLabel.textContent = 'Workload';
+      workloadSection.appendChild(workloadLabel);
+      workloadSection.appendChild(createWorkloadNode(stats));
+      card.appendChild(workloadSection);
+
+      var recommendationSection = document.createElement('div');
+      recommendationSection.className = 'folder-card-section';
+      var recommendationLabel = document.createElement('span');
+      recommendationLabel.className = 'folder-card-label';
+      recommendationLabel.textContent = 'Recommendation';
+      recommendationSection.appendChild(recommendationLabel);
+      var cardRecommendation = document.createElement('div');
+      cardRecommendation.className = 'recommendation';
+      cardRecommendation.textContent = recommendation.text;
+      recommendationSection.appendChild(cardRecommendation);
+      card.appendChild(recommendationSection);
+
+      foldersCardsEl.appendChild(card);
     });
 
-    auth.onAuthStateChanged(async function(user){
-      currentUser = user;
-      if (!user) {
-        idToken = null;
-        if (authClient && typeof authClient.clearToken === 'function') authClient.clearToken();
-        progressSummaryCache = null;
-        remoteCardStates = {};
-        if (topbarUtils.applyProtectedPageAuthState) {
-          topbarUtils.applyProtectedPageAuthState({
-            user: null,
-            userTextEl: userEmailEl,
-            signOutBtn: signoutBtn,
-            authRequiredEl: authRequiredEl,
-            mainContentEl: plannerContentEl,
-            signOutSignedInDisplay: 'inline-flex',
-            authRequiredSignedOutDisplay: 'block',
-            mainContentSignedInDisplay: 'block',
-          });
-        } else {
-          userEmailEl.textContent = 'Not signed in';
-          signoutBtn.style.display = 'none';
-          authRequiredEl.style.display = 'block';
-          plannerContentEl.style.display = 'none';
-        }
-        return;
-      }
-      idToken = await user.getIdToken();
-      if (authClient && typeof authClient.setToken === 'function') authClient.setToken(idToken);
-      hydrateProgressSummaryFromCache(user.uid);
-      if (topbarUtils.applyProtectedPageAuthState) {
-        topbarUtils.applyProtectedPageAuthState({
-          user: user,
-          userTextEl: userEmailEl,
-          signOutBtn: signoutBtn,
-          authRequiredEl: authRequiredEl,
-          mainContentEl: plannerContentEl,
-          signOutSignedInDisplay: 'inline-flex',
-          authRequiredSignedOutDisplay: 'block',
-          mainContentSignedInDisplay: 'block',
-        });
-      } else {
-        userEmailEl.textContent = user.email || 'Signed in';
-        signoutBtn.style.display = 'inline-flex';
-        authRequiredEl.style.display = 'none';
-        plannerContentEl.style.display = 'block';
-      }
-      renderOverview(user.uid);
-      await loadPlannerData();
+    initFolderDatePickers();
+    bindFolderDateAutosave();
+  }
+
+  function syncPackGoalInputState(input, value) {
+    if (!input) return;
+    var normalized = parseGoalValue(value);
+    input.value = normalized === null ? '' : String(normalized);
+    input.dataset.savedGoal = normalized === null ? '' : String(normalized);
+  }
+
+  function createPackGoalControls(pack) {
+    var wrap = document.createElement('div');
+    wrap.className = 'pack-goal-row';
+
+    var input = document.createElement('input');
+    input.type = 'number';
+    input.className = 'input pack-goal-input';
+    input.min = '1';
+    input.max = '500';
+    input.placeholder = 'Optional';
+    input.dataset.packGoalInput = String(pack.study_pack_id || '');
+    syncPackGoalInputState(input, pack.daily_card_goal);
+    wrap.appendChild(input);
+
+    var saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'btn primary pack-goal-save';
+    saveBtn.textContent = 'Save';
+    saveBtn.dataset.packGoalSave = String(pack.study_pack_id || '');
+    wrap.appendChild(saveBtn);
+
+    return wrap;
+  }
+
+  function bindPackGoalEvents() {
+    Array.prototype.slice.call(document.querySelectorAll('[data-pack-goal-save]')).forEach(function (button) {
+      button.addEventListener('click', function () {
+        persistPackGoal(String(button.getAttribute('data-pack-goal-save') || ''), true);
+      });
     });
+
+    Array.prototype.slice.call(document.querySelectorAll('[data-pack-goal-input]')).forEach(function (input) {
+      input.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        persistPackGoal(String(input.getAttribute('data-pack-goal-input') || ''), true);
+      });
+    });
+  }
+
+  function renderPackGoals() {
+    clearNode(packGoalsBodyEl);
+    clearNode(packGoalsCardsEl);
+
+    if (!currentPacks.length) {
+      if (packGoalsEmptyEl) packGoalsEmptyEl.style.display = 'block';
+      return;
+    }
+    if (packGoalsEmptyEl) packGoalsEmptyEl.style.display = 'none';
+
+    currentPacks.forEach(function (pack) {
+      var folder = currentFolders.find(function (item) {
+        return String(item.folder_id || '') === String(pack.folder_id || '');
+      }) || null;
+      var folderName = folder ? String(folder.name || 'No folder') : (pack.folder_name ? String(pack.folder_name) : 'No folder');
+      var stats = getPackStats(pack);
+      var recommendation = buildRecommendation(stats.unmastered, folder && folder.exam_date ? folder.exam_date : '');
+
+      var tr = document.createElement('tr');
+      var nameTd = document.createElement('td');
+      var nameStrong = document.createElement('strong');
+      nameStrong.textContent = String(pack.title || 'Untitled pack');
+      nameTd.appendChild(nameStrong);
+      var nameMeta = document.createElement('div');
+      nameMeta.className = 'folder-meta';
+      nameMeta.textContent = String(pack.mode || '');
+      nameTd.appendChild(nameMeta);
+
+      var folderTd = document.createElement('td');
+      folderTd.textContent = folderName;
+
+      var dueTd = document.createElement('td');
+      dueTd.textContent = formatCount(stats.due, 'card');
+
+      var unmasteredTd = document.createElement('td');
+      unmasteredTd.textContent = formatCount(stats.unmastered, 'card');
+
+      var goalTd = document.createElement('td');
+      goalTd.appendChild(createPackGoalControls(pack));
+      var goalNote = document.createElement('div');
+      goalNote.className = 'pack-goal-note';
+      goalNote.textContent = 'Leave empty to clear this pack goal.';
+      goalTd.appendChild(goalNote);
+
+      var recommendationTd = document.createElement('td');
+      var recommendationNode = document.createElement('div');
+      recommendationNode.className = 'pack-recommendation';
+      recommendationNode.textContent = recommendation.text;
+      recommendationTd.appendChild(recommendationNode);
+
+      tr.appendChild(nameTd);
+      tr.appendChild(folderTd);
+      tr.appendChild(dueTd);
+      tr.appendChild(unmasteredTd);
+      tr.appendChild(goalTd);
+      tr.appendChild(recommendationTd);
+      packGoalsBodyEl.appendChild(tr);
+
+      var card = document.createElement('article');
+      card.className = 'pack-goal-card';
+      var cardHead = document.createElement('div');
+      cardHead.className = 'pack-goal-card-head';
+      var headText = document.createElement('div');
+      var cardTitle = document.createElement('div');
+      cardTitle.className = 'pack-goal-card-title';
+      cardTitle.textContent = String(pack.title || 'Untitled pack');
+      var cardFolder = document.createElement('div');
+      cardFolder.className = 'pack-goal-card-folder';
+      cardFolder.textContent = folderName;
+      headText.appendChild(cardTitle);
+      headText.appendChild(cardFolder);
+      cardHead.appendChild(headText);
+      cardHead.appendChild(createCountdownChip(recommendation));
+      card.appendChild(cardHead);
+
+      var statsGrid = document.createElement('div');
+      statsGrid.className = 'pack-goal-card-stats';
+      [['Due today', stats.due], ['Unmastered', stats.unmastered]].forEach(function (entry) {
+        var stat = document.createElement('div');
+        stat.className = 'pack-goal-stat';
+        var label = document.createElement('span');
+        label.className = 'pack-goal-stat-label';
+        label.textContent = entry[0];
+        var value = document.createElement('div');
+        value.className = 'pack-goal-stat-value';
+        value.textContent = formatCount(entry[1], 'card');
+        stat.appendChild(label);
+        stat.appendChild(value);
+        statsGrid.appendChild(stat);
+      });
+      card.appendChild(statsGrid);
+
+      var packGoalControls = createPackGoalControls(pack);
+      card.appendChild(packGoalControls);
+      var packGoalNote = document.createElement('div');
+      packGoalNote.className = 'pack-goal-note';
+      packGoalNote.textContent = recommendation.text;
+      card.appendChild(packGoalNote);
+      packGoalsCardsEl.appendChild(card);
+    });
+
+    bindPackGoalEvents();
+  }
+
+  function applyProgressPayload(progressData) {
+    var safeProgress = progressData && typeof progressData === 'object' ? progressData : {};
+    timezoneName = normalizeTimezoneName(safeProgress.timezone || '') || timezoneName || normalizeTimezoneName(Intl.DateTimeFormat().resolvedOptions().timeZone || '') || '';
+    remoteCardStates = safeProgress.card_states && typeof safeProgress.card_states === 'object' ? safeProgress.card_states : {};
+    progressSummaryCache = safeProgress.summary && typeof safeProgress.summary === 'object'
+      ? safeProgress.summary
+      : (progressSummaryCache || {
+        current_streak: 0,
+        due_today: 0,
+        today_progress: 0,
+        daily_goal: DEFAULT_DAILY_GOAL,
+      });
+    progressSummaryCache.daily_goal = clampGoalValue(safeProgress.daily_goal, progressSummaryCache.daily_goal || DEFAULT_DAILY_GOAL);
+    if (currentUser) {
+      if (progressUtils && typeof progressUtils.writeDailyGoalCache === 'function') {
+        progressUtils.writeDailyGoalCache(currentUser.uid, progressSummaryCache.daily_goal);
+      }
+      persistSummaryCache(currentUser.uid, progressSummaryCache);
+    }
+    applyOverview(progressSummaryCache);
+  }
+
+  function handleLoadFailure(message) {
+    currentFolders = [];
+    currentPacks = [];
+    remoteCardStates = {};
+    clearNode(foldersBodyEl);
+    clearNode(foldersCardsEl);
+    clearNode(packGoalsBodyEl);
+    clearNode(packGoalsCardsEl);
+    if (foldersEmptyEl) {
+      foldersEmptyEl.style.display = 'block';
+      foldersEmptyEl.innerHTML = '<strong>Could not load folders</strong><span>' + message + '</span>';
+    }
+    if (packGoalsEmptyEl) {
+      packGoalsEmptyEl.style.display = 'block';
+      packGoalsEmptyEl.innerHTML = '<strong>Could not load study packs</strong><span>' + message + '</span>';
+    }
+  }
+
+  function loadPlannerData() {
+    if (!currentUser) return Promise.resolve();
+    if (!progressSummaryCache) hydrateSummaryCache(currentUser.uid);
+    applyOverview(progressSummaryCache);
+    return Promise.all([
+      authFetch('/api/study-folders'),
+      authFetch('/api/study-packs'),
+      authFetch('/api/study-progress'),
+    ]).then(function (responses) {
+      return Promise.all([
+        responses[0].json().catch(function () { return {}; }),
+        responses[1].json().catch(function () { return {}; }),
+        responses[2].ok ? responses[2].json().catch(function () { return {}; }) : Promise.resolve({}),
+      ]);
+    }).then(function (payloads) {
+      currentFolders = Array.isArray(payloads[0].folders) ? payloads[0].folders : [];
+      currentPacks = Array.isArray(payloads[1].study_packs) ? payloads[1].study_packs : [];
+      applyProgressPayload(payloads[2]);
+      renderFolders();
+      renderPackGoals();
+    }).catch(function (error) {
+      handleLoadFailure((error && error.message) ? error.message : 'Please try again.');
+    });
+  }
+
+  function persistOverallGoal(showValidationError) {
+    if (!currentUser || goalSaveInFlight) return;
+    var parsedGoal = parseGoalValue(goalInputEl ? goalInputEl.value : '');
+    if (parsedGoal === null) {
+      if (showValidationError) showToast('Use a goal between 1 and 500.', 'error');
+      applyOverview(progressSummaryCache);
+      return;
+    }
+    var currentGoal = clampGoalValue(progressSummaryCache && progressSummaryCache.daily_goal, DEFAULT_DAILY_GOAL);
+    if (parsedGoal === currentGoal) {
+      applyOverview(progressSummaryCache);
+      return;
+    }
+
+    goalSaveInFlight = true;
+    saveGoalBtn.disabled = true;
+    authFetch('/api/study-progress', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        daily_goal: parsedGoal,
+        timezone: timezoneName || (Intl.DateTimeFormat().resolvedOptions().timeZone || ''),
+      }),
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (body) {
+        if (!response.ok) throw new Error(body.error || 'Could not save goal');
+        progressSummaryCache = Object.assign({}, progressSummaryCache || {}, { daily_goal: parsedGoal });
+        if (progressUtils && typeof progressUtils.writeDailyGoalCache === 'function') {
+          progressUtils.writeDailyGoalCache(currentUser.uid, parsedGoal);
+        }
+        persistSummaryCache(currentUser.uid, progressSummaryCache);
+        applyOverview(progressSummaryCache);
+        showToast('Daily goal saved.', 'success');
+      });
+    }).catch(function (error) {
+      applyOverview(progressSummaryCache);
+      showToast((error && error.message) ? error.message : 'Could not save goal.', 'error');
+    }).finally(function () {
+      goalSaveInFlight = false;
+      saveGoalBtn.disabled = false;
+    });
+  }
+
+  function scheduleFolderExamDateSave(folderId, input, immediate) {
+    if (!folderId || !input) return;
+    var existing = folderSaveTimers.get(folderId);
+    if (existing) {
+      window.clearTimeout(existing);
+      folderSaveTimers.delete(folderId);
+    }
+    if (immediate) {
+      persistFolderExamDate(folderId, input, false);
+      return;
+    }
+    var timer = window.setTimeout(function () {
+      folderSaveTimers.delete(folderId);
+      persistFolderExamDate(folderId, input, false);
+    }, 650);
+    folderSaveTimers.set(folderId, timer);
+  }
+
+  function persistFolderExamDate(folderId, input, showValidationError) {
+    if (!currentUser || !folderId || !input || folderSaveInFlight.has(folderId)) return;
+    var parsedDate = parseDateInput(input.value);
+    if (parsedDate === null) {
+      if (showValidationError) {
+        showToast('Use a valid date: dd-mm-yyyy or yyyy-mm-dd.', 'error');
+        input.focus();
+      }
+      return;
+    }
+    var savedValue = parseDateInput(input.dataset.savedExamDate || '');
+    if ((savedValue || '') === (parsedDate || '')) {
+      input.value = formatDisplayDate(parsedDate || '');
+      return;
+    }
+
+    folderSaveInFlight.add(folderId);
+    authFetch('/api/study-folders/' + encodeURIComponent(folderId), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ exam_date: parsedDate || '' }),
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (body) {
+        if (!response.ok) throw new Error(body.error || 'Could not save exam date');
+        Array.prototype.slice.call(document.querySelectorAll('.js-folder-date[data-folder-id="' + folderId + '"]')).forEach(function (node) {
+          node.dataset.savedExamDate = parsedDate || '';
+          node.value = formatDisplayDate(parsedDate || '');
+        });
+        currentFolders = currentFolders.map(function (folder) {
+          if (String(folder.folder_id || '') !== folderId) return folder;
+          return Object.assign({}, folder, { exam_date: parsedDate || '' });
+        });
+        renderFolders();
+        renderPackGoals();
+        showToast('Exam date saved.', 'success');
+      });
+    }).catch(function (error) {
+      Array.prototype.slice.call(document.querySelectorAll('.js-folder-date[data-folder-id="' + folderId + '"]')).forEach(function (node) {
+        node.value = formatDisplayDate(node.dataset.savedExamDate || '');
+      });
+      showToast((error && error.message) ? error.message : 'Could not save exam date.', 'error');
+    }).finally(function () {
+      folderSaveInFlight.delete(folderId);
+    });
+  }
+
+  function findPackById(packId) {
+    var safePackId = String(packId || '').trim();
+    if (!safePackId) return null;
+    return currentPacks.find(function (pack) {
+      return String(pack.study_pack_id || '') === safePackId;
+    }) || null;
+  }
+
+  function persistPackGoal(packId, showValidationError) {
+    var safePackId = String(packId || '').trim();
+    if (!safePackId || !currentUser || packGoalSaveInFlight.has(safePackId)) return;
+    var input = document.querySelector('[data-pack-goal-input="' + safePackId + '"]');
+    var button = document.querySelector('[data-pack-goal-save="' + safePackId + '"]');
+    if (!input || !button) return;
+
+    var rawValue = String(input.value || '').trim();
+    var parsedGoal = rawValue ? parseGoalValue(rawValue) : null;
+    if (rawValue && parsedGoal === null) {
+      if (showValidationError) showToast('Pack goals must be between 1 and 500.', 'error');
+      syncPackGoalInputState(input, input.dataset.savedGoal || '');
+      return;
+    }
+    var savedGoal = parseGoalValue(input.dataset.savedGoal || '');
+    if ((savedGoal || null) === (parsedGoal || null)) {
+      syncPackGoalInputState(input, parsedGoal);
+      return;
+    }
+
+    packGoalSaveInFlight.add(safePackId);
+    button.disabled = true;
+    authFetch('/api/study-packs/' + encodeURIComponent(safePackId), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ daily_card_goal: parsedGoal === null ? null : parsedGoal }),
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (body) {
+        if (!response.ok) throw new Error(body.error || 'Could not save pack goal');
+        currentPacks = currentPacks.map(function (pack) {
+          if (String(pack.study_pack_id || '') !== safePackId) return pack;
+          return Object.assign({}, pack, { daily_card_goal: parsedGoal === null ? null : parsedGoal });
+        });
+        renderPackGoals();
+        showToast(parsedGoal === null ? 'Pack goal cleared.' : 'Pack goal saved.', 'success');
+      });
+    }).catch(function (error) {
+      syncPackGoalInputState(input, savedGoal);
+      showToast((error && error.message) ? error.message : 'Could not save pack goal.', 'error');
+    }).finally(function () {
+      packGoalSaveInFlight.delete(safePackId);
+      var nextButton = document.querySelector('[data-pack-goal-save="' + safePackId + '"]');
+      if (nextButton) nextButton.disabled = false;
+    });
+  }
+
+  if (saveGoalBtn) {
+    saveGoalBtn.addEventListener('click', function () {
+      persistOverallGoal(true);
+    });
+  }
+  if (goalInputEl) {
+    goalInputEl.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      persistOverallGoal(true);
+    });
+  }
+
+  window.addEventListener('focus', function () {
+    if (currentUser) loadPlannerData();
+  });
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && currentUser) loadPlannerData();
+  });
+
+  auth.onAuthStateChanged(function (user) {
+    currentUser = user || null;
+    currentToken = null;
+    if (authClient && !user && typeof authClient.clearToken === 'function') {
+      authClient.clearToken();
+    }
+
+    if (!user) {
+      progressSummaryCache = null;
+      timezoneName = normalizeTimezoneName(Intl.DateTimeFormat().resolvedOptions().timeZone || '') || '';
+      currentFolders = [];
+      currentPacks = [];
+      remoteCardStates = {};
+      setAuthView(null);
+      clearNode(foldersBodyEl);
+      clearNode(foldersCardsEl);
+      clearNode(packGoalsBodyEl);
+      clearNode(packGoalsCardsEl);
+      return;
+    }
+
+    setAuthView(user);
+    hydrateSummaryCache(user.uid);
+    applyOverview(progressSummaryCache);
+    ensureToken(false).then(function (tokenValue) {
+      currentToken = tokenValue;
+      if (authClient && typeof authClient.setToken === 'function') {
+        authClient.setToken(tokenValue);
+      }
+      return loadPlannerData();
+    }).catch(function (error) {
+      handleLoadFailure((error && error.message) ? error.message : 'Please try again.');
+    });
+  });
+})();

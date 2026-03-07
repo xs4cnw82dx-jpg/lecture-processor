@@ -89,112 +89,118 @@
             </div>
             <div class="mode-section"><span class="mode-label">Processing Mode</span><div class="mode-tabs" role="tablist" aria-label="Processing mode"{% if forced_mode %} style="display:none;"{% endif %}><button type="button" class="mode-tab active" data-mode="lecture-notes" role="tab" aria-selected="true" aria-controls="mode-description" tabindex="0">Lecture Notes</button><button type="button" class="mode-tab" data-mode="slides-only" role="tab" aria-selected="false" aria-controls="mode-description" tabindex="-1">Slides Extraction</button><button type="button" class="mode-tab" data-mode="interview" role="tab" aria-selected="false" aria-controls="mode-description" tabindex="-1">Interview Transcription</button></div><div class="mode-description" id="mode-description"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg><div><span id="mode-description-text">Upload lecture slides (PDF or PPTX) and audio recording to generate complete, integrated study notes.</span><div class="mode-credit-cost" id="mode-credit-cost">Uses <strong>1 lecture credit</strong></div><div class="mode-cost-summary" id="mode-cost-summary" aria-live="polite" style="display:none;"></div></div></div></div>
             <div class="sign-in-required" id="sign-in-required"><p>Please sign in to start processing your lectures</p><button class="process-button" id="sign-in-to-process-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg><span>Sign in to continue</span></button></div>
-            <div class="upload-section" id="upload-section">
-                <div class="field lecture-topic-field" id="lecture-topic-field">
-                    <label class="control-label" for="study-pack-title-input">Lecture Topic / Name</label>
-                    <input id="study-pack-title-input" class="language-custom-input" placeholder="For example: Cellular Respiration Week 3" maxlength="120">
-                </div>
-                <div class="upload-zone" id="pdf-zone"><svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg><div class="upload-title-row"><div class="upload-title" id="pdf-zone-title">Lecture Slides</div><span class="upload-badge required" id="pdf-zone-badge">Required</span></div><div class="upload-helper" id="pdf-zone-helper">Required for lecture notes and slides extraction.</div><div class="upload-subtitle">Drag &amp; drop or click to browse</div><div class="upload-formats">PDF or PPTX · Max 50 MB</div><input type="file" id="pdf-input" accept=".pdf,.pptx"><div class="file-info" id="pdf-info" style="display:none;"><div class="file-details"><div class="file-name"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span id="pdf-name"></span></div><div class="file-size" id="pdf-size"></div></div><button class="file-remove" id="pdf-remove" type="button" aria-label="Remove selected slides file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div></div>
-                <div class="upload-zone" id="audio-zone"><svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg><div class="upload-title-row"><div class="upload-title" id="audio-zone-title">Lecture Recording</div><span class="upload-badge required" id="audio-zone-badge">Required</span></div><div class="upload-helper" id="audio-zone-helper">Required for lecture notes. LMS import counts as your audio source.</div><div class="upload-subtitle">Drag &amp; drop or click to browse</div><div class="upload-formats">MP3, M4A, WAV · Max 500 MB</div><input type="file" id="audio-input" accept=".mp3,.m4a,.wav,.aac,.ogg,.flac"><div class="file-info" id="audio-info" style="display:none;"><div class="file-details"><div class="file-name"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span id="audio-name"></span></div><div class="file-size" id="audio-size"></div></div><button class="file-remove" id="audio-remove" type="button" aria-label="Remove selected audio file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div></div>
-                <div class="upload-url-import" id="audio-url-import">
-                    <div class="upload-url-import-head">
-                        <strong id="audio-url-import-title">Import from LMS video URL</strong>
-                        <span class="upload-url-import-hint" id="audio-url-import-hint">Paste the direct video playlist URL from Brightspace, Canvas, Moodle, or Blackboard browser network tools.</span>
-                    </div>
-                    <div class="upload-url-import-row">
-                        <input type="url" id="audio-url-input" class="upload-url-input" placeholder="https://.../index.m3u8?..." autocomplete="off">
-                        <button type="button" class="upload-url-button" id="audio-url-fetch-btn">Import Audio</button>
-                    </div>
-                    <div class="upload-url-help">
-                        <span class="upload-url-help-icon" aria-hidden="true">i</span>
-                        <div class="upload-url-help-text">
-                            Open your LMS recording page, right click and inspect, open the Network tab, filter on <code>index.m3u8</code>, press play, then copy the playlist request URL. The video below shows the Brightspace version of that flow.
-                            <a class="upload-url-help-link" href="https://youtu.be/Sz3W9l8J1q0" target="_blank" rel="noopener noreferrer">Watch Brightspace walkthrough video</a>
+            <div class="processing-layout" id="processing-layout">
+                <div class="processing-main-column">
+                    <div class="upload-section" id="upload-section">
+                        <div class="field lecture-topic-field" id="lecture-topic-field">
+                            <label class="control-label" for="study-pack-title-input">Lecture Topic / Name</label>
+                            <input id="study-pack-title-input" class="language-custom-input" placeholder="For example: Cellular Respiration Week 3" maxlength="120">
                         </div>
-                    </div>
-                    <div class="upload-url-status" id="audio-url-status" aria-live="polite"></div>
-                </div>
-            </div>
-            <div class="upload-estimate" id="upload-estimate">
-                <div class="upload-estimate-title">Processing Estimate</div>
-                <div class="upload-estimate-time" id="upload-estimate-time">Upload files to see an estimate.</div>
-                <div class="upload-estimate-meta" id="upload-estimate-meta">Time depends on file quality, length, and model demand.</div>
-            </div>
-            <div class="advanced-settings" id="advanced-settings">
-                <button type="button" class="advanced-settings-toggle" id="advanced-settings-toggle" aria-expanded="false" aria-controls="advanced-settings-body">
-                    <span>Advanced settings</span>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                </button>
-                <div class="advanced-settings-body" id="advanced-settings-body">
-                    <div class="generation-controls" id="generation-controls">
-                        <div class="generation-control wide">
-                            <span class="control-label">Study Tools</span>
-                            <button type="button" class="study-tools-toggle" id="study-tools-toggle">
-                                <span id="study-tools-toggle-text">Flashcards + test</span>
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                            </button>
-                            <div class="study-tools-panel" id="study-tools-panel">
-                                <button type="button" class="tool-chip" data-study-features="none">No study tools</button>
-                                <button type="button" class="tool-chip" data-study-features="flashcards">Flashcards only</button>
-                                <button type="button" class="tool-chip" data-study-features="test">Practice test only</button>
-                                <button type="button" class="tool-chip active" data-study-features="both">Flashcards + test <span class="chip-badge">Recommended</span></button>
+                        <div class="upload-zone" id="pdf-zone"><svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg><div class="upload-title-row"><div class="upload-title" id="pdf-zone-title">Lecture Slides</div><span class="upload-badge required" id="pdf-zone-badge">Required</span></div><div class="upload-helper" id="pdf-zone-helper">Required for lecture notes and slides extraction.</div><div class="upload-subtitle">Drag &amp; drop or click to browse</div><div class="upload-formats">PDF or PPTX · Max 50 MB</div><input type="file" id="pdf-input" accept=".pdf,.pptx"><div class="file-info" id="pdf-info" style="display:none;"><div class="file-details"><div class="file-name"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span id="pdf-name"></span></div><div class="file-size" id="pdf-size"></div></div><button class="file-remove" id="pdf-remove" type="button" aria-label="Remove selected slides file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div></div>
+                        <div class="upload-zone" id="audio-zone"><svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg><div class="upload-title-row"><div class="upload-title" id="audio-zone-title">Lecture Recording</div><span class="upload-badge required" id="audio-zone-badge">Required</span></div><div class="upload-helper" id="audio-zone-helper">Required for lecture notes. LMS import counts as your audio source.</div><div class="upload-subtitle">Drag &amp; drop or click to browse</div><div class="upload-formats">MP3, M4A, WAV · Max 500 MB</div><input type="file" id="audio-input" accept=".mp3,.m4a,.wav,.aac,.ogg,.flac"><div class="file-info" id="audio-info" style="display:none;"><div class="file-details"><div class="file-name"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span id="audio-name"></span></div><div class="file-size" id="audio-size"></div></div><button class="file-remove" id="audio-remove" type="button" aria-label="Remove selected audio file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div></div>
+                        <div class="upload-url-import" id="audio-url-import">
+                            <div class="upload-url-import-head">
+                                <strong id="audio-url-import-title">Import from LMS video URL</strong>
+                                <span class="upload-url-import-hint" id="audio-url-import-hint">Paste the direct video playlist URL from Brightspace, Canvas, Moodle, or Blackboard browser network tools.</span>
                             </div>
-                            <div class="control-note" id="study-tools-note">Recommended for first runs: both flashcards and a practice test.</div>
-                        </div>
-                        <div class="generation-control" id="flashcard-amount-control">
-                            <span class="control-label">Flashcard Amount</span>
-                            <div class="amount-chips" id="flashcard-amount-chips">
-                                <button type="button" class="amount-chip" data-value="10">10</button>
-                                <button type="button" class="amount-chip active" data-value="20">20</button>
-                                <button type="button" class="amount-chip" data-value="30">30</button>
-                                <button type="button" class="amount-chip" data-value="auto">Auto</button>
+                            <div class="upload-url-import-row">
+                                <input type="url" id="audio-url-input" class="upload-url-input" placeholder="https://.../index.m3u8?..." autocomplete="off">
+                                <button type="button" class="upload-url-button" id="audio-url-fetch-btn">Import Audio</button>
                             </div>
-                        </div>
-                        <div class="generation-control" id="question-amount-control">
-                            <span class="control-label">Practice Questions</span>
-                            <div class="amount-chips" id="question-amount-chips">
-                                <button type="button" class="amount-chip" data-value="5">5</button>
-                                <button type="button" class="amount-chip active" data-value="10">10</button>
-                                <button type="button" class="amount-chip" data-value="15">15</button>
-                                <button type="button" class="amount-chip" data-value="auto">Auto</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="generation-controls hidden" id="interview-controls">
-                        <div class="generation-control wide">
-                            <span class="control-label">Interview Extras</span>
-                            <div class="interview-options">
-                                <button type="button" class="interview-option" data-feature="summary">Summary (max 1 page)</button>
-                                <button type="button" class="interview-option" data-feature="sections">Structured transcript with headings</button>
-                            </div>
-                            <div class="control-note" id="interview-extra-note">No extras selected. Select one or both options (1 text extraction credit per option).</div>
-                        </div>
-                    </div>
-                    <div class="generation-controls" id="language-controls">
-                        <div class="generation-control wide">
-                            <span class="control-label">Output Language</span>
-                            <input type="hidden" id="output-language-select" value="english">
-                            <div class="app-select" id="output-language-picker">
-                                <button type="button" class="app-select-button" id="output-language-button" aria-haspopup="listbox" aria-expanded="false" aria-controls="output-language-menu">
-                                    <span id="output-language-label">🇬🇧 English</span>
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                                </button>
-                                <div class="app-select-menu" id="output-language-menu" role="listbox">
-                                    <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="dutch">🇳🇱 Dutch</button>
-                                    <button type="button" role="option" aria-selected="true" class="app-select-item active" data-value="english">🇬🇧 English</button>
-                                    <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="spanish">🇪🇸 Spanish</button>
-                                    <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="french">🇫🇷 French</button>
-                                    <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="german">🇩🇪 German</button>
-                                    <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="chinese">🇨🇳 Chinese</button>
-                                    <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="other">🌐 Other</button>
+                            <div class="upload-url-help">
+                                <span class="upload-url-help-icon" aria-hidden="true">i</span>
+                                <div class="upload-url-help-text">
+                                    Open your LMS recording page, right click and inspect, open the Network tab, filter on <code>index.m3u8</code>, press play, then copy the playlist request URL. The video below shows the Brightspace version of that flow.
+                                    <a class="upload-url-help-link" href="https://youtu.be/Sz3W9l8J1q0" target="_blank" rel="noopener noreferrer">Watch Brightspace walkthrough video</a>
                                 </div>
                             </div>
-                            <input class="language-custom-input" id="output-language-custom" placeholder="Type your preferred language (for example: Italian)" style="display:none;">
+                            <div class="upload-url-status" id="audio-url-status" aria-live="polite"></div>
                         </div>
                     </div>
                 </div>
+                <aside class="processing-side-column">
+                    <div class="upload-estimate" id="upload-estimate">
+                        <div class="upload-estimate-title">Processing Estimate</div>
+                        <div class="upload-estimate-time" id="upload-estimate-time">Upload files to see an estimate.</div>
+                        <div class="upload-estimate-meta" id="upload-estimate-meta">Time depends on file quality, length, and model demand.</div>
+                    </div>
+                    <div class="advanced-settings" id="advanced-settings">
+                        <button type="button" class="advanced-settings-toggle" id="advanced-settings-toggle" aria-expanded="false" aria-controls="advanced-settings-body">
+                            <span>Advanced settings</span>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                        </button>
+                        <div class="advanced-settings-body" id="advanced-settings-body">
+                            <div class="generation-controls" id="generation-controls">
+                                <div class="generation-control wide">
+                                    <span class="control-label">Study Tools</span>
+                                    <button type="button" class="study-tools-toggle" id="study-tools-toggle">
+                                        <span id="study-tools-toggle-text">Flashcards + test</span>
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                    </button>
+                                    <div class="study-tools-panel" id="study-tools-panel">
+                                        <button type="button" class="tool-chip" data-study-features="none">No study tools</button>
+                                        <button type="button" class="tool-chip" data-study-features="flashcards">Flashcards only</button>
+                                        <button type="button" class="tool-chip" data-study-features="test">Practice test only</button>
+                                        <button type="button" class="tool-chip active" data-study-features="both">Flashcards + test <span class="chip-badge">Recommended</span></button>
+                                    </div>
+                                    <div class="control-note" id="study-tools-note">Recommended for first runs: both flashcards and a practice test.</div>
+                                </div>
+                                <div class="generation-control" id="flashcard-amount-control">
+                                    <span class="control-label">Flashcard Amount</span>
+                                    <div class="amount-chips" id="flashcard-amount-chips">
+                                        <button type="button" class="amount-chip" data-value="10">10</button>
+                                        <button type="button" class="amount-chip active" data-value="20">20</button>
+                                        <button type="button" class="amount-chip" data-value="30">30</button>
+                                        <button type="button" class="amount-chip" data-value="auto">Auto</button>
+                                    </div>
+                                </div>
+                                <div class="generation-control" id="question-amount-control">
+                                    <span class="control-label">Practice Questions</span>
+                                    <div class="amount-chips" id="question-amount-chips">
+                                        <button type="button" class="amount-chip" data-value="5">5</button>
+                                        <button type="button" class="amount-chip active" data-value="10">10</button>
+                                        <button type="button" class="amount-chip" data-value="15">15</button>
+                                        <button type="button" class="amount-chip" data-value="auto">Auto</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="generation-controls hidden" id="interview-controls">
+                                <div class="generation-control wide">
+                                    <span class="control-label">Interview Extras</span>
+                                    <div class="interview-options">
+                                        <button type="button" class="interview-option" data-feature="summary">Summary (max 1 page)</button>
+                                        <button type="button" class="interview-option" data-feature="sections">Structured transcript with headings</button>
+                                    </div>
+                                    <div class="control-note" id="interview-extra-note">No extras selected. Select one or both options (1 text extraction credit per option).</div>
+                                </div>
+                            </div>
+                            <div class="generation-controls" id="language-controls">
+                                <div class="generation-control wide">
+                                    <span class="control-label">Output Language</span>
+                                    <input type="hidden" id="output-language-select" value="english">
+                                    <div class="app-select" id="output-language-picker">
+                                        <button type="button" class="app-select-button" id="output-language-button" aria-haspopup="listbox" aria-expanded="false" aria-controls="output-language-menu">
+                                            <span id="output-language-label">🇬🇧 English</span>
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                        </button>
+                                        <div class="app-select-menu" id="output-language-menu" role="listbox">
+                                            <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="dutch">🇳🇱 Dutch</button>
+                                            <button type="button" role="option" aria-selected="true" class="app-select-item active" data-value="english">🇬🇧 English</button>
+                                            <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="spanish">🇪🇸 Spanish</button>
+                                            <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="french">🇫🇷 French</button>
+                                            <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="german">🇩🇪 German</button>
+                                            <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="chinese">🇨🇳 Chinese</button>
+                                            <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="other">🌐 Other</button>
+                                        </div>
+                                    </div>
+                                    <input class="language-custom-input" id="output-language-custom" placeholder="Type your preferred language (for example: Italian)" style="display:none;">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="button-section" id="button-section"><button class="process-button" id="process-button" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg><span>Process Lecture</span></button><div class="no-credits-warning" id="no-credits-warning">You don't have enough credits. <a href="#" id="buy-credits-link">Buy more credits</a></div></div>
+                </div>
             </div>
-            <div class="button-section" id="button-section"><button class="process-button" id="process-button" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg><span>Process Lecture</span></button><div class="no-credits-warning" id="no-credits-warning">You don't have enough credits. <a href="#" id="buy-credits-link">Buy more credits</a></div></div>
             <div class="progress-section" id="progress-section"><div class="progress-header"><h3 class="progress-title">Processing Your Files</h3><p class="progress-subtitle">This may take a few minutes depending on how long your lecture is</p></div><div class="progress-steps" id="progress-steps"></div><div class="progress-status" id="progress-status"><div class="spinner"></div><span id="status-text">Starting...</span></div><div class="progress-retry" id="progress-retry"><button type="button" class="progress-retry-btn" id="progress-retry-btn">Retry status check now</button></div></div>
             <div class="results-section" id="results-section">
                 <div class="focus-dashboard">
@@ -355,6 +361,7 @@
     <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/study-progress-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
     <script src="https://browser.sentry-cdn.com/7.120.3/bundle.min.js" integrity="sha384-QhNWP5Exx8ZPPgZF2s+nKw/cl8cah1/6MVdZfR8a22f2KO0OsBNonujHvYJlrWIP" crossorigin="anonymous"></script>
     <script>

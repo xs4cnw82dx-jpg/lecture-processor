@@ -27,6 +27,32 @@ def _account_write_guard(app_ctx, uid):
     return app_ctx.jsonify({'error': message, 'status': 'account_deletion_in_progress'}), 409
 
 
+def _parse_daily_card_goal_input(raw_value, runtime=None):
+    if raw_value is None:
+        return (True, None)
+    if isinstance(raw_value, str) and not str(raw_value).strip():
+        return (True, None)
+    if isinstance(raw_value, bool):
+        return (False, None)
+    goal = study_progress.sanitize_daily_card_goal_value(raw_value, runtime=runtime)
+    if goal is None:
+        return (False, None)
+    return (True, goal)
+
+
+def _parse_notes_highlights_input(raw_value, runtime=None):
+    if raw_value is None:
+        return ('clear', None)
+    if isinstance(raw_value, str) and not str(raw_value).strip():
+        return ('clear', None)
+    if isinstance(raw_value, dict) and not raw_value:
+        return ('clear', None)
+    payload = study_progress.sanitize_notes_highlights_payload(raw_value, runtime=runtime)
+    if payload is None:
+        return ('invalid', None)
+    return ('set', payload)
+
+
 def get_study_progress(app_ctx, request):
     decoded_token = app_ctx.verify_firebase_token(request)
     if not decoded_token:
@@ -213,13 +239,14 @@ def get_study_packs(app_ctx, request):
         study_docs = app_ctx.study_repo.list_study_pack_summaries_by_uid(app_ctx.db, uid, 50)
         packs = []
         for doc in study_docs:
-            pack = doc.to_dict()
+            pack = doc.to_dict() or {}
             packs.append({
                 'study_pack_id': doc.id,
                 'title': pack.get('title', ''),
                 'mode': pack.get('mode', ''),
                 'flashcards_count': _pack_item_count(pack, 'flashcards_count', 'flashcards'),
                 'test_questions_count': _pack_item_count(pack, 'test_questions_count', 'test_questions'),
+                'daily_card_goal': study_progress.sanitize_daily_card_goal_value(pack.get('daily_card_goal'), runtime=app_ctx),
                 'course': pack.get('course', ''),
                 'subject': pack.get('subject', ''),
                 'semester': pack.get('semester', ''),
@@ -243,7 +270,9 @@ def create_study_pack(app_ctx, request):
     deletion_guard = _account_write_guard(app_ctx, uid)
     if deletion_guard is not None:
         return deletion_guard
-    payload = request.get_json() or {}
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return app_ctx.jsonify({'error': 'Invalid payload'}), 400
 
     title = str(payload.get('title', '')).strip()[:120]
     if not title:
@@ -267,6 +296,12 @@ def create_study_pack(app_ctx, request):
         flashcards = app_ctx.sanitize_flashcards(payload.get('flashcards', []), 500)
         test_questions = app_ctx.sanitize_questions(payload.get('test_questions', []), 500)
         notes_markdown = str(payload.get('notes_markdown', '')).strip()[:180000]
+        goal_valid, daily_card_goal = _parse_daily_card_goal_input(payload.get('daily_card_goal'), runtime=app_ctx)
+        if not goal_valid:
+            return app_ctx.jsonify({'error': 'daily_card_goal must be between 1 and 500'}), 400
+        notes_highlights_action, notes_highlights = _parse_notes_highlights_input(payload.get('notes_highlights'), runtime=app_ctx)
+        if notes_highlights_action == 'invalid':
+            return app_ctx.jsonify({'error': 'notes_highlights must contain valid ranges and allowed colors'}), 400
         notes_audio_map = (
             study_audio.parse_audio_markers_from_notes(notes_markdown, runtime=app_ctx)
             if app_ctx.FEATURE_AUDIO_SECTION_SYNC
@@ -274,7 +309,7 @@ def create_study_pack(app_ctx, request):
         )
 
         doc_ref = app_ctx.study_repo.create_study_pack_doc_ref(app_ctx.db)
-        doc_ref.set({
+        doc_payload = {
             'study_pack_id': doc_ref.id,
             'source_job_id': '',
             'uid': uid,
@@ -308,7 +343,12 @@ def create_study_pack(app_ctx, request):
             'folder_name': folder_name,
             'created_at': now_ts,
             'updated_at': now_ts,
-        })
+        }
+        if daily_card_goal is not None:
+            doc_payload['daily_card_goal'] = daily_card_goal
+        if notes_highlights_action == 'set':
+            doc_payload['notes_highlights'] = notes_highlights
+        doc_ref.set(doc_payload)
 
         return app_ctx.jsonify({'ok': True, 'study_pack_id': doc_ref.id})
     except Exception as e:
@@ -336,6 +376,8 @@ def get_study_pack(app_ctx, request, pack_id):
         )
         has_audio_sync = app_ctx.FEATURE_AUDIO_SECTION_SYNC and bool(pack.get('has_audio_sync', False))
         notes_audio_map = pack.get('notes_audio_map', []) if has_audio_sync else []
+        daily_card_goal = study_progress.sanitize_daily_card_goal_value(pack.get('daily_card_goal'), runtime=app_ctx)
+        notes_highlights = study_progress.sanitize_notes_highlights_payload(pack.get('notes_highlights'), runtime=app_ctx)
         return app_ctx.jsonify({
             'study_pack_id': pack_id,
             'title': pack.get('title', ''),
@@ -353,6 +395,8 @@ def get_study_pack(app_ctx, request, pack_id):
             'interview_combined': pack.get('interview_combined'),
             'study_features': pack.get('study_features', 'none'),
             'interview_features': pack.get('interview_features', []),
+            'daily_card_goal': daily_card_goal,
+            'notes_highlights': notes_highlights,
             'course': pack.get('course', ''),
             'subject': pack.get('subject', ''),
             'semester': pack.get('semester', ''),
@@ -374,7 +418,9 @@ def update_study_pack(app_ctx, request, pack_id):
     deletion_guard = _account_write_guard(app_ctx, uid)
     if deletion_guard is not None:
         return deletion_guard
-    payload = request.get_json() or {}
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return app_ctx.jsonify({'error': 'Invalid payload'}), 400
 
     try:
         pack_ref = app_ctx.study_repo.study_pack_doc_ref(app_ctx.db, pack_id)
@@ -410,6 +456,11 @@ def update_study_pack(app_ctx, request, pack_id):
                     return app_ctx.jsonify({'error': 'Forbidden'}), 403
                 updates['folder_id'] = folder_id
                 updates['folder_name'] = folder_data.get('name', '')
+        if 'daily_card_goal' in payload:
+            goal_valid, daily_card_goal = _parse_daily_card_goal_input(payload.get('daily_card_goal'), runtime=app_ctx)
+            if not goal_valid:
+                return app_ctx.jsonify({'error': 'daily_card_goal must be between 1 and 500'}), 400
+            updates['daily_card_goal'] = daily_card_goal
 
         if 'flashcards' in payload:
             updates['flashcards'] = app_ctx.sanitize_flashcards(payload.get('flashcards', []), 500)
@@ -430,6 +481,11 @@ def update_study_pack(app_ctx, request, pack_id):
                 and bool(study_audio.get_audio_storage_key_from_pack(pack, runtime=app_ctx))
                 and bool(notes_audio_map)
             )
+        if 'notes_highlights' in payload:
+            notes_highlights_action, notes_highlights = _parse_notes_highlights_input(payload.get('notes_highlights'), runtime=app_ctx)
+            if notes_highlights_action == 'invalid':
+                return app_ctx.jsonify({'error': 'notes_highlights must contain valid ranges and allowed colors'}), 400
+            updates['notes_highlights'] = notes_highlights if notes_highlights_action == 'set' else None
         updates['has_audio_playback'] = bool(study_audio.get_audio_storage_key_from_pack(pack, runtime=app_ctx))
 
         pack_ref.update(updates)

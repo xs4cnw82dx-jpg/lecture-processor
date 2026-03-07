@@ -4,6 +4,7 @@
   var bootstrap = window.LectureProcessorBootstrap || {};
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
   var uiCache = window.LectureProcessorUiCache || null;
+  var progressUtils = window.LectureProcessorStudyProgressUtils || {};
   if (!auth) return;
 
   var streakEl = document.getElementById('dash-streak');
@@ -62,16 +63,14 @@
   }
 
   function toSnapshot(summary) {
+    if (progressUtils && typeof progressUtils.summarySnapshot === 'function') {
+      return progressUtils.summarySnapshot(summary, progressUtils.DEFAULT_DAILY_GOAL || 20);
+    }
     var streak = Math.max(0, Number(summary.current_streak || 0));
     var due = Math.max(0, Number(summary.due_today || 0));
     var goal = Math.max(1, Number(summary.daily_goal || 20));
     var done = Math.max(0, Number(summary.today_progress || 0));
-    return {
-      streak: streak,
-      due: due,
-      goal: goal,
-      done: done,
-    };
+    return { streak: streak, due: due, goal: goal, done: done };
   }
 
   function applySnapshot(snapshot) {
@@ -86,10 +85,28 @@
     var due = Math.max(0, Number(snapshot.due || 0));
     var goal = Math.max(1, Number(snapshot.goal || 20));
     var done = Math.max(0, Number(snapshot.done || 0));
-    if (streakEl) streakEl.textContent = streak + ' day' + (streak === 1 ? '' : 's');
-    if (dueEl) dueEl.textContent = due + ' card' + (due === 1 ? '' : 's');
-    if (goalEl) goalEl.textContent = Math.min(done, goal) + ' / ' + goal;
-    if (goalFillEl) goalFillEl.style.width = String(Math.max(0, Math.min(100, Math.round((Math.min(done, goal) / goal) * 100)))) + '%';
+    if (streakEl) {
+      streakEl.textContent = progressUtils && typeof progressUtils.formatCount === 'function'
+        ? progressUtils.formatCount(streak, 'day')
+        : (streak + ' day' + (streak === 1 ? '' : 's'));
+    }
+    if (dueEl) {
+      dueEl.textContent = progressUtils && typeof progressUtils.formatCount === 'function'
+        ? progressUtils.formatCount(due, 'card')
+        : (due + ' card' + (due === 1 ? '' : 's'));
+    }
+    if (goalEl) {
+      goalEl.textContent = progressUtils && typeof progressUtils.goalProgressText === 'function'
+        ? progressUtils.goalProgressText({ today_progress: done, daily_goal: goal }, goal)
+        : (Math.min(done, goal) + ' / ' + goal);
+    }
+    if (goalFillEl) {
+      goalFillEl.style.width = String(
+        progressUtils && typeof progressUtils.goalCompletionPercent === 'function'
+          ? progressUtils.goalCompletionPercent({ today_progress: done, daily_goal: goal }, goal)
+          : Math.max(0, Math.min(100, Math.round((Math.min(done, goal) / goal) * 100)))
+      ) + '%';
+    }
   }
 
   function hydrateCachedSnapshot(user) {

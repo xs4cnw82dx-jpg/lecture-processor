@@ -7,6 +7,7 @@ const uxUtils = window.LectureProcessorUx || {};
 const downloadUtils = window.LectureProcessorDownload || {};
 const topbarUtils = window.LectureProcessorTopbar || {};
 const uiCache = window.LectureProcessorUiCache || null;
+const progressUtils = window.LectureProcessorStudyProgressUtils || {};
 
 /* ── State ── */
 let token = null, folders = [], packs = [], selectedFolderId = '', selectedPackId = '', selectedPack = null;
@@ -25,14 +26,20 @@ let progressTimezone = (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC
 let progressSyncTimer = null, progressSyncInFlight = false;
 let creatingDemoPack = false;
 let progressHydrationDone = false;
+let progressSummaryCache = null;
+let masterDailyGoal = progressUtils.DEFAULT_DAILY_GOAL || 20;
 let packAdvancedMetadataOpen = false, builderAdvancedMetadataOpen = false;
 let folderExamDatePicker = null;
 let flashcardListMode = false, flashcardPeekMode = false;
 let flashcardPeekRevealed = {};
 const audioSpeeds = [0.75, 1, 1.25, 1.5, 2];
 let difficultyFadeTimer = null, keyboardHintFadeTimer = null, notesFullscreenFadeTimer = null;
+let highlightSyncTimer = null, highlightSyncInFlight = false, pendingHighlightPayload = undefined, pendingHighlightPackId = '';
 const HINT_FADE_DELAY_MS = 10000;
 const NOTES_ICON_IDLE_MS = 5000;
+const HIGHLIGHT_SYNC_DELAY_MS = 450;
+const NOTES_HIGHLIGHT_CACHE_PREFIX = 'hl_ranges_';
+const LEGACY_NOTES_HIGHLIGHT_CACHE_PREFIX = 'hl_html_';
 const urlParams = new URLSearchParams(window.location.search);
 const learnPackFromUrl = urlParams.get('pack_id') || '';
 const openLearnFromUrl = urlParams.get('mode') === 'learn';
@@ -300,21 +307,32 @@ function saveStreakData(data) {
 }
 function getDailyGoalKey() { return 'daily_goal_' + (auth.currentUser ? auth.currentUser.uid : 'anon'); }
 function loadDailyGoal() {
+  if (progressHydrationDone) {
+    return Math.max(progressUtils.MIN_DAILY_GOAL || 1, parseInt(masterDailyGoal, 10) || (progressUtils.DEFAULT_DAILY_GOAL || 20));
+  }
+  if (progressUtils && typeof progressUtils.readDailyGoalCache === 'function') {
+    return progressUtils.readDailyGoalCache(auth.currentUser ? auth.currentUser.uid : 'anon', masterDailyGoal);
+  }
   try {
-    var value = parseInt(localStorage.getItem(getDailyGoalKey()) || '20', 10);
-    return Number.isFinite(value) && value > 0 ? Math.min(value, 500) : 20;
-  } catch (e) { return 20; }
+    var value = parseInt(localStorage.getItem(getDailyGoalKey()) || String(masterDailyGoal || 20), 10);
+    return Number.isFinite(value) && value > 0 ? Math.min(value, 500) : (masterDailyGoal || 20);
+  } catch (e) { return masterDailyGoal || 20; }
 }
 function saveDailyGoal(value) {
-  var parsed = parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) return;
-  try { localStorage.setItem(getDailyGoalKey(), String(Math.min(parsed, 500))); } catch (e) { }
-  queueProgressSync(false);
+  var parsed = progressUtils && typeof progressUtils.clampGoalValue === 'function'
+    ? progressUtils.clampGoalValue(value, masterDailyGoal || (progressUtils.DEFAULT_DAILY_GOAL || 20))
+    : Math.max(1, Math.min(500, parseInt(value, 10) || (masterDailyGoal || 20)));
+  masterDailyGoal = parsed;
+  if (progressUtils && typeof progressUtils.writeDailyGoalCache === 'function') {
+    progressUtils.writeDailyGoalCache(auth.currentUser ? auth.currentUser.uid : 'anon', parsed);
+    return;
+  }
+  try { localStorage.setItem(getDailyGoalKey(), String(parsed)); } catch (e) { }
 }
 function readLocalProgressSnapshot() {
   if (!auth.currentUser) return { daily_goal: 20, streak_data: {}, card_states: {} };
   var uid = auth.currentUser.uid;
-  var dailyGoal = loadDailyGoal();
+  var dailyGoal = masterDailyGoal || loadDailyGoal();
   var streakData = loadStreakData();
   var cardStates = {};
   var trackedPackIds = readCardStateIndex();
@@ -360,8 +378,14 @@ function mergeProgressFromServer(remote) {
   var uid = auth.currentUser.uid;
   var remoteTimezone = normalizeTimezoneName(remote.timezone || '');
   if (remoteTimezone) { progressTimezone = remoteTimezone; }
+  progressSummaryCache = remote.summary && typeof remote.summary === 'object'
+    ? remote.summary
+    : progressSummaryCache;
   if (typeof remote.daily_goal === 'number' && remote.daily_goal > 0) {
-    try { localStorage.setItem('daily_goal_' + uid, String(Math.min(500, Math.max(1, parseInt(remote.daily_goal, 10) || 20)))); } catch (e) { }
+    saveDailyGoal(remote.daily_goal);
+  }
+  if (progressSummaryCache && typeof progressSummaryCache === 'object') {
+    progressSummaryCache.daily_goal = loadDailyGoal();
   }
   if (remote.streak_data && typeof remote.streak_data === 'object') {
     var local = loadStreakData();
@@ -387,6 +411,7 @@ function mergeProgressFromServer(remote) {
       addPackToCardStateIndex(packId);
     }
   });
+  renderGoalPanel();
 }
 function loadRemoteProgress() {
   if (!auth.currentUser || !token) { return Promise.resolve(); }
@@ -401,7 +426,7 @@ function flushProgressSync(forceAllPacks) {
   if (progressSyncInFlight || !auth.currentUser || !token) return;
   progressSyncInFlight = true;
   var snapshot = readLocalProgressSnapshot();
-  var payload = { daily_goal: snapshot.daily_goal, streak_data: snapshot.streak_data, timezone: progressTimezone || getBrowserTimezone() };
+  var payload = { streak_data: snapshot.streak_data, timezone: progressTimezone || getBrowserTimezone() };
   if (forceAllPacks) {
     payload.card_states = snapshot.card_states;
   } else if (selectedPackId) {
@@ -565,6 +590,9 @@ function recordLearnSessionCompletion() {
   learnSessionRecorded = true;
 }
 function countDueCardsInState(state) {
+  if (progressUtils && typeof progressUtils.countDueCardsInState === 'function') {
+    return progressUtils.countDueCardsInState(state || {}, todayLocalDateString());
+  }
   var due = 0;
   Object.keys(state || {}).forEach(function (cardId) {
     if (cardId.indexOf('fc_') !== 0) return;
@@ -586,6 +614,152 @@ function updateTopbarDueCount() {
   }
   setTopbarDueTextValue(totalDue);
   persistTopbarDueToCache(auth.currentUser, totalDue);
+}
+
+function formatCardCount(value) {
+  if (progressUtils && typeof progressUtils.formatCount === 'function') {
+    return progressUtils.formatCount(value, 'card');
+  }
+  var count = Math.max(0, parseInt(value, 10) || 0);
+  return count + ' card' + (count === 1 ? '' : 's');
+}
+
+function getPackStatsSnapshot(pack) {
+  if (!pack) { return { total: 0, due: 0, unmastered: 0 }; }
+  var state = loadCardStateForPack(pack.study_pack_id);
+  if (progressUtils && typeof progressUtils.buildPackStats === 'function') {
+    return progressUtils.buildPackStats(pack, state, todayLocalDateString());
+  }
+  var total = Array.isArray(pack.flashcards) ? pack.flashcards.length : Math.max(0, parseInt(pack.flashcards_count, 10) || 0);
+  return {
+    total: total,
+    due: countDueCardsInState(state),
+    unmastered: Math.max(0, total),
+  };
+}
+
+function findSelectedPackFolder() {
+  if (!selectedPack || !selectedPack.folder_id) return null;
+  return folders.find(function (folder) { return folder.folder_id === selectedPack.folder_id; }) || null;
+}
+
+function buildExamRecommendation(unmasteredCount, examDate) {
+  if (progressUtils && typeof progressUtils.buildRecommendation === 'function') {
+    return progressUtils.buildRecommendation(unmasteredCount, examDate, todayLocalDateString());
+  }
+  return null;
+}
+
+function renderGoalPanel() {
+  var hasPack = !!selectedPack;
+  var overallGoal = loadDailyGoal();
+  if (overallDailyGoalInput && document.activeElement !== overallDailyGoalInput) {
+    overallDailyGoalInput.value = String(overallGoal);
+  }
+  if (overallDailyGoalSave) {
+    overallDailyGoalSave.disabled = !auth.currentUser;
+  }
+  if (!packGoalsPanel) return;
+
+  packGoalsPanel.classList.toggle('is-disabled', !hasPack);
+
+  var stats = hasPack ? getPackStatsSnapshot(selectedPack) : { due: 0, unmastered: 0 };
+  if (packGoalDue) { packGoalDue.textContent = formatCardCount(stats.due); }
+  if (packGoalUnmastered) { packGoalUnmastered.textContent = formatCardCount(stats.unmastered); }
+
+  if (packDailyGoalInput) {
+    var savedPackGoal = hasPack && selectedPack.daily_card_goal !== null && selectedPack.daily_card_goal !== undefined
+      ? String(selectedPack.daily_card_goal)
+      : '';
+    packDailyGoalInput.disabled = !hasPack;
+    packDailyGoalInput.dataset.savedGoal = savedPackGoal;
+    if (document.activeElement !== packDailyGoalInput) {
+      packDailyGoalInput.value = savedPackGoal;
+    }
+  }
+  if (packDailyGoalSave) {
+    packDailyGoalSave.disabled = !hasPack;
+  }
+  if (packGoalHelper) {
+    packGoalHelper.textContent = hasPack
+      ? 'Leave blank to clear this pack-specific goal.'
+      : 'Select a study pack to set an optional pack-specific goal.';
+  }
+}
+
+function persistOverallDailyGoal(showValidationError) {
+  if (!auth.currentUser || !overallDailyGoalInput || !overallDailyGoalSave || overallDailyGoalSave.disabled) return;
+  var parsedGoal = progressUtils && typeof progressUtils.parseGoalValue === 'function'
+    ? progressUtils.parseGoalValue(overallDailyGoalInput.value)
+    : parseInt(overallDailyGoalInput.value || '', 10);
+  if (!Number.isFinite(parsedGoal) || parsedGoal < 1 || parsedGoal > 500) {
+    if (showValidationError) { showToast('Use a goal between 1 and 500.', 'error'); }
+    renderGoalPanel();
+    return;
+  }
+  if (parsedGoal === loadDailyGoal()) {
+    renderGoalPanel();
+    return;
+  }
+
+  overallDailyGoalSave.disabled = true;
+  apiCall('/api/study-progress', {
+    method: 'PUT',
+    body: JSON.stringify({
+      daily_goal: parsedGoal,
+      timezone: progressTimezone || getBrowserTimezone()
+    })
+  }).then(function () {
+    saveDailyGoal(parsedGoal);
+    progressSummaryCache = Object.assign({}, progressSummaryCache || {}, { daily_goal: parsedGoal });
+    renderGoalPanel();
+    showToast('Overall daily goal saved.', 'success');
+  }).catch(function (e) {
+    renderGoalPanel();
+    showToast(e.message || 'Could not save overall goal.', 'error');
+  }).finally(function () {
+    overallDailyGoalSave.disabled = false;
+  });
+}
+
+function persistSelectedPackDailyGoal(showValidationError) {
+  if (!selectedPack || !packDailyGoalInput || !packDailyGoalSave || packDailyGoalSave.disabled) return;
+  var rawValue = String(packDailyGoalInput.value || '').trim();
+  var parsedGoal = rawValue
+    ? ((progressUtils && typeof progressUtils.parseGoalValue === 'function')
+      ? progressUtils.parseGoalValue(rawValue)
+      : parseInt(rawValue, 10))
+    : null;
+  if (rawValue && (!Number.isFinite(parsedGoal) || parsedGoal < 1 || parsedGoal > 500)) {
+    if (showValidationError) { showToast('Pack goals must be between 1 and 500.', 'error'); }
+    renderGoalPanel();
+    return;
+  }
+  var savedGoal = String(packDailyGoalInput.dataset.savedGoal || '').trim();
+  var normalizedSavedGoal = savedGoal ? parseInt(savedGoal, 10) : null;
+  if ((normalizedSavedGoal || null) === (parsedGoal || null)) {
+    renderGoalPanel();
+    return;
+  }
+
+  packDailyGoalSave.disabled = true;
+  apiCall('/api/study-packs/' + encodeURIComponent(selectedPack.study_pack_id), {
+    method: 'PATCH',
+    body: JSON.stringify({ daily_card_goal: parsedGoal === null ? null : parsedGoal })
+  }).then(function () {
+    selectedPack.daily_card_goal = parsedGoal === null ? null : parsedGoal;
+    packs = packs.map(function (pack) {
+      if (pack.study_pack_id !== selectedPack.study_pack_id) return pack;
+      return Object.assign({}, pack, { daily_card_goal: parsedGoal === null ? null : parsedGoal });
+    });
+    renderGoalPanel();
+    showToast(parsedGoal === null ? 'Pack goal cleared.' : 'Pack goal saved.', 'success');
+  }).catch(function (e) {
+    renderGoalPanel();
+    showToast(e.message || 'Could not save pack goal.', 'error');
+  }).finally(function () {
+    packDailyGoalSave.disabled = false;
+  });
 }
 
 /* ── Match high scores (localStorage) ── */
@@ -731,11 +905,13 @@ var packEmpty = document.getElementById('pack-empty'), packEmptyDefault = docume
 var packCourse = document.getElementById('pack-course'), packSubject = document.getElementById('pack-subject'), packSemester = document.getElementById('pack-semester'), packBlock = document.getElementById('pack-block'), notesView = document.getElementById('notes-view');
 var packAdvancedMetaBtn = document.getElementById('pack-advanced-meta-btn'), packAdvancedMetaPanel = document.getElementById('pack-advanced-meta-panel');
 var packSummary = document.getElementById('pack-summary'), packSummaryTitle = document.getElementById('pack-summary-title'), packSummaryMeta = document.getElementById('pack-summary-meta'), packStatNotes = document.getElementById('pack-stat-notes'), packStatCards = document.getElementById('pack-stat-cards'), packStatTest = document.getElementById('pack-stat-test');
+var packGoalsPanel = document.getElementById('pack-goals-panel'), overallDailyGoalInput = document.getElementById('overall-daily-goal-input'), overallDailyGoalSave = document.getElementById('overall-daily-goal-save'), packDailyGoalInput = document.getElementById('pack-daily-goal-input'), packDailyGoalSave = document.getElementById('pack-daily-goal-save'), packGoalDue = document.getElementById('pack-goal-due'), packGoalUnmastered = document.getElementById('pack-goal-unmastered'), packGoalHelper = document.getElementById('pack-goal-helper');
 var createPackBtn = document.getElementById('create-pack-btn'), openBuilderBtn = document.getElementById('open-builder-btn'), savePackBtn = document.getElementById('save-pack-btn'), deletePackBtn = document.getElementById('delete-pack-btn'), exportPackNotesBtn = document.getElementById('export-pack-notes-btn'), openLearnBtn = document.getElementById('open-learn-btn');
 var exportMenu = document.getElementById('export-menu'), exportMenuBtn = document.getElementById('export-menu-btn'), exportMenuList = document.getElementById('export-menu-list'), exportPdfSubmenu = document.getElementById('export-pdf-submenu');
 var editorTabs = document.querySelectorAll('.editor-tab'), flashcardCount = document.getElementById('flashcard-count'), questionCount = document.getElementById('question-count'), addFlashcardBtn = document.getElementById('add-flashcard-btn'), addQuestionBtn = document.getElementById('add-question-btn'), flashcardEditorList = document.getElementById('flashcard-editor-list'), questionEditorList = document.getElementById('question-editor-list');
 var learnStage = document.getElementById('learn-stage'), learnTitle = document.getElementById('learn-title'), learnSub = document.getElementById('learn-sub'), learnBackAppBtn = document.getElementById('learn-back-app-btn'), learnBackLibraryBtn = document.getElementById('learn-back-library-btn'), learnFullscreenBtn = document.getElementById('learn-fullscreen-btn');
 var notesPaneShell = document.getElementById('notes-pane-shell'), notesFullscreenBtn = document.getElementById('notes-fullscreen-btn');
+var notesHighlightStatus = document.getElementById('notes-highlight-status');
 var learnModeLabel = document.getElementById('learn-mode-label');
 var learnFlashcard3d = document.getElementById('learn-flashcard-3d'), learnFlashcardInner = document.getElementById('learn-flashcard-inner'), learnFlashcardFront = document.getElementById('learn-flashcard-front'), learnFlashcardBack = document.getElementById('learn-flashcard-back');
 var learnFPrev = document.getElementById('learn-f-prev'), learnFFlip = document.getElementById('learn-f-flip'), learnFNext = document.getElementById('learn-f-next'), learnFProgress = document.getElementById('learn-f-progress');
@@ -800,6 +976,7 @@ function applyStudySignedOutState() {
   renderPacks();
   showPackEditor(false);
   updatePackSummary();
+  renderGoalPanel();
   closeAudioPlayer();
   setTopbarDueTextValue(null);
 }
@@ -913,6 +1090,7 @@ function syncBuilderAdvancedMetadataState() {
 }
 applyPackAdvancedMetadataState(false);
 applyBuilderAdvancedMetadataState(false);
+renderGoalPanel();
 function setPackFolderMenuOpen(open, focusMode) {
   if (!packFolderMenu || !packFolderButton) return;
   var shouldOpen = !!open;
@@ -1897,13 +2075,14 @@ function renderMasteryGauge() {
     else diffGood++;
   });
   var newCount = total - seen;
-  var unmastered = Math.max(0, total - mastCount);
+  var packStats = getPackStatsSnapshot(selectedPack);
+  var unmastered = Math.max(0, parseInt(packStats.unmastered, 10) || Math.max(0, total - mastCount));
   masteryTotalEl.textContent = String(total);
   masterySeenEl.textContent = String(seen);
   masteryNewPctEl.textContent = total ? Math.round((newCount / total) * 100) + '%' : '0%';
   masteryFamiliarPctEl.textContent = total ? Math.round((famCount / total) * 100) + '%' : '0%';
   masteryMasteredPctEl.textContent = total ? Math.round((mastCount / total) * 100) + '%' : '0%';
-  if (masteryDueTodayEl) masteryDueTodayEl.textContent = String(dueToday);
+  if (masteryDueTodayEl) masteryDueTodayEl.textContent = String(Math.max(0, parseInt(packStats.due, 10) || dueToday));
   if (masteryUnmasteredEl) masteryUnmasteredEl.textContent = String(unmastered);
   if (diffRetryCountEl) diffRetryCountEl.textContent = String(diffRetry);
   if (diffHardCountEl) diffHardCountEl.textContent = String(diffHard);
@@ -1911,22 +2090,20 @@ function renderMasteryGauge() {
   if (diffEasyCountEl) diffEasyCountEl.textContent = String(diffEasy);
 
   if (examRecommendationEl) {
-    var folder = (selectedPack && selectedPack.folder_id) ? folders.find(function (f) { return f.folder_id === selectedPack.folder_id; }) : null;
+    var folder = findSelectedPackFolder();
     var examDate = folder && folder.exam_date ? String(folder.exam_date) : '';
     if (!examDate) {
       examRecommendationEl.textContent = 'Set an exam date in Planning mode to get a daily target recommendation.';
     } else {
-      var parts = examDate.split('-');
-      var examLocal = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-      var todayParts = todayLocalDateString().split('-');
-      var todayLocal = new Date(parseInt(todayParts[0], 10), parseInt(todayParts[1], 10) - 1, parseInt(todayParts[2], 10));
-      var daysRemaining = Math.ceil((examLocal.getTime() - todayLocal.getTime()) / 86400000);
-      if (daysRemaining < 0) {
+      var recommendation = buildExamRecommendation(unmastered, examDate);
+      if (!recommendation || recommendation.days_remaining === null) {
+        examRecommendationEl.textContent = 'Set an exam date in Planning mode to get a daily target recommendation.';
+      } else if (recommendation.days_remaining < 0) {
         examRecommendationEl.textContent = 'Exam date has passed. Update the folder exam date to get a recommendation.';
+      } else if (recommendation.days_remaining === 0) {
+        setSafeInnerHtml(examRecommendationEl, '<strong>' + unmastered + '</strong> cards should be reviewed today.');
       } else {
-        var studyDays = Math.max(1, daysRemaining === 0 ? 1 : daysRemaining);
-        var dailyTarget = Math.max(0, Math.ceil(unmastered / studyDays));
-        setSafeInnerHtml(examRecommendationEl, 'Exam in <strong>' + Math.max(0, daysRemaining) + '</strong> day' + (daysRemaining === 1 ? '' : 's') + '. Recommended: <strong>' + dailyTarget + '</strong> unmastered cards/day.');
+        setSafeInnerHtml(examRecommendationEl, 'Exam in <strong>' + recommendation.days_remaining + '</strong> day' + (recommendation.days_remaining === 1 ? '' : 's') + '. Recommended: <strong>' + Math.max(0, parseInt(recommendation.daily_target, 10) || 0) + '</strong> unmastered cards/day.');
       }
     }
   }
@@ -2931,6 +3108,7 @@ function openPack(packId) {
     packBlock.value = selectedPack.block || '';
     packAdvancedMetadataOpen = !!String(selectedPack.semester || '').trim() || !!String(selectedPack.block || '').trim();
     syncPackAdvancedMetadataState();
+    renderGoalPanel();
     renderNotesForSelectedPackBase();
     reapplyHighlightsForPack();
     initAudioForSelectedPack();
@@ -2991,6 +3169,7 @@ function loadData(preferredPackId) {
       selectedPackId = learnPackFromUrl; renderPacks(); return openPack(learnPackFromUrl);
     } else {
       selectedPack = null; showPackEditor(false); updatePackSummary();
+      renderGoalPanel();
       closeAudioPlayer();
     }
   });
@@ -3073,9 +3252,15 @@ auth.onAuthStateChanged(function (user) {
     pinnedFolderIds = [];
     progressTimezone = getBrowserTimezone();
     progressHydrationDone = false;
+    progressSummaryCache = null;
+    masterDailyGoal = progressUtils.DEFAULT_DAILY_GOAL || 20;
     remoteProgressCardStates = {};
     if (progressSyncTimer) { clearTimeout(progressSyncTimer); progressSyncTimer = null; }
     progressSyncInFlight = false;
+    if (highlightSyncTimer) { clearTimeout(highlightSyncTimer); highlightSyncTimer = null; }
+    highlightSyncInFlight = false;
+    pendingHighlightPayload = undefined;
+    pendingHighlightPackId = '';
     if (builderOverlay.classList.contains('visible')) {
       markBuilderDirty(false);
       closeBuilderOverlay();
@@ -3110,6 +3295,7 @@ auth.onAuthStateChanged(function (user) {
     return loadRemoteProgress().then(function () {
       return loadData();
     }).then(function () {
+      renderGoalPanel();
       if (actionFromUrl === 'create-pack' && !autoCreateConsumed) {
         autoCreateConsumed = true;
         openBuilderOverlay('create', null);
@@ -3446,6 +3632,31 @@ if (savePackBtn) {
   savePackBtn.addEventListener('click', function () {
     if (!selectedPackId || !selectedPack) { showToast('Select a study pack first.', 'error'); return; }
     runInlineAutosaveNow();
+  });
+}
+
+if (overallDailyGoalSave) {
+  overallDailyGoalSave.addEventListener('click', function () {
+    persistOverallDailyGoal(true);
+  });
+}
+if (overallDailyGoalInput) {
+  overallDailyGoalInput.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    persistOverallDailyGoal(true);
+  });
+}
+if (packDailyGoalSave) {
+  packDailyGoalSave.addEventListener('click', function () {
+    persistSelectedPackDailyGoal(true);
+  });
+}
+if (packDailyGoalInput) {
+  packDailyGoalInput.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    persistSelectedPackDailyGoal(true);
   });
 }
 
@@ -3795,47 +4006,112 @@ function renderNotesForSelectedPackBase() {
   if (selectedPack.has_audio_sync && audioMap.length) {
     decorateNotesWithAudio(notesView);
   }
+  if (notesHighlightStatus) {
+    notesHighlightStatus.textContent = 'Highlights save to this study pack automatically.';
+  }
 }
 
-function hlStorageKey() { return selectedPackId ? ('hl_html_' + selectedPackId) : null; }
+function cloneHighlightPayload(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  return {
+    base_key: String(payload.base_key || ''),
+    ranges: Array.isArray(payload.ranges) ? payload.ranges.map(function (range) {
+      return {
+        start: Math.max(0, parseInt(range.start, 10) || 0),
+        end: Math.max(0, parseInt(range.end, 10) || 0),
+        color: String(range.color || '').trim().toLowerCase()
+      };
+    }) : [],
+    updated_at: Math.max(0, Number(payload.updated_at || 0))
+  };
+}
+
+function getHighlightCacheKey() {
+  return selectedPackId ? (NOTES_HIGHLIGHT_CACHE_PREFIX + selectedPackId) : null;
+}
+
+function getLegacyHighlightStorageKey() {
+  return selectedPackId ? (LEGACY_NOTES_HIGHLIGHT_CACHE_PREFIX + selectedPackId) : null;
+}
+
 function getHighlightBaseKey() {
   if (!selectedPack || !selectedPackId) return '';
   return selectedPackId + ':' + String(selectedPack.updated_at || 0) + ':' + String((selectedPack.notes_markdown || '').length);
 }
-function loadHighlightPayload() {
-  var key = hlStorageKey();
+
+function normalizeClientHighlightPayload(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  var baseKey = String(payload.base_key || '').trim();
+  if (!baseKey || baseKey !== getHighlightBaseKey()) return null;
+  if (!Array.isArray(payload.ranges)) return null;
+  var ranges = [];
+  payload.ranges.forEach(function (rawRange) {
+    if (!rawRange || typeof rawRange !== 'object') return;
+    var start = parseInt(rawRange.start, 10);
+    var end = parseInt(rawRange.end, 10);
+    var color = String(rawRange.color || '').trim().toLowerCase();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
+    if (['yellow', 'green', 'blue', 'pink'].indexOf(color) < 0) return;
+    ranges.push({ start: start, end: end, color: color });
+  });
+  if (!ranges.length) return null;
+  return {
+    base_key: baseKey,
+    ranges: ranges,
+    updated_at: Math.max(0, Number(payload.updated_at || 0))
+  };
+}
+
+function readStructuredHighlightCache() {
+  var key = getHighlightCacheKey();
+  if (!key) return null;
+  try {
+    return normalizeClientHighlightPayload(JSON.parse(localStorage.getItem(key) || 'null'));
+  } catch (e) {
+    return null;
+  }
+}
+
+function writeStructuredHighlightCache(payload) {
+  var key = getHighlightCacheKey();
+  if (!key) return;
+  if (!payload || !payload.ranges || !payload.ranges.length) {
+    try { localStorage.removeItem(key); } catch (e) { }
+    return;
+  }
+  try {
+    localStorage.setItem(key, JSON.stringify(payload));
+  } catch (e) { }
+}
+
+function clearStructuredHighlightCache() {
+  var key = getHighlightCacheKey();
+  if (key) {
+    try { localStorage.removeItem(key); } catch (e) { }
+  }
+}
+
+function readLegacyHighlightPayload() {
+  var key = getLegacyHighlightStorageKey();
   if (!key) return null;
   try {
     var parsed = JSON.parse(localStorage.getItem(key) || 'null');
     if (!parsed || typeof parsed !== 'object') return null;
     if (parsed.base_key !== getHighlightBaseKey()) return null;
-    if (typeof parsed.annotated_html !== 'string') return null;
+    if (typeof parsed.annotated_html !== 'string' || !parsed.annotated_html) return null;
     return parsed;
   } catch (e) {
     return null;
   }
 }
-function saveHighlightMarkup(annotatedHtml) {
-  var key = hlStorageKey();
-  if (!key) return;
-  try {
-    localStorage.setItem(key, JSON.stringify({
-      base_key: getHighlightBaseKey(),
-      annotated_html: String(annotatedHtml || ''),
-      saved_at: Date.now()
-    }));
-  } catch (e) { }
-}
-function clearHighlightMarkup() {
-  var key = hlStorageKey();
-  if (!key) return;
-  try { localStorage.removeItem(key); } catch (e) { }
+
+function clearLegacyHighlightCache() {
+  var key = getLegacyHighlightStorageKey();
+  if (key) {
+    try { localStorage.removeItem(key); } catch (e) { }
+  }
 }
 
-function getCurrentNotesHtml() {
-  if (!notesView) return '';
-  return String(notesView.innerHTML || '');
-}
 function setNotesHtml(html) {
   if (!notesView) return;
   notesView.innerHTML = String(html || '');
@@ -3844,36 +4120,217 @@ function updateHighlightHistoryButtons() {
   if (hlUndoBtn) hlUndoBtn.disabled = hlUndoStack.length === 0;
   if (hlRedoBtn) hlRedoBtn.disabled = hlRedoStack.length === 0;
 }
+
+function payloadFingerprint(payload) {
+  return JSON.stringify(payload || null);
+}
+
 function pushUndoSnapshot(snapshot) {
-  if (!snapshot) return;
-  if (hlUndoStack.length && hlUndoStack[hlUndoStack.length - 1] === snapshot) return;
-  hlUndoStack.push(snapshot);
+  var cloned = cloneHighlightPayload(snapshot);
+  if (hlUndoStack.length && payloadFingerprint(hlUndoStack[hlUndoStack.length - 1]) === payloadFingerprint(cloned)) return;
+  hlUndoStack.push(cloned);
   if (hlUndoStack.length > HL_HISTORY_LIMIT) {
     hlUndoStack.splice(0, hlUndoStack.length - HL_HISTORY_LIMIT);
   }
   updateHighlightHistoryButtons();
 }
+
 function resetHighlightHistory(initialSnapshot) {
   hlUndoStack = [];
   hlRedoStack = [];
-  // Baseline snapshot is represented by current DOM state; undo stack starts empty.
   void initialSnapshot;
   updateHighlightHistoryButtons();
 }
+
+function setHighlightStatus(message) {
+  if (!notesHighlightStatus) return;
+  notesHighlightStatus.textContent = String(message || 'Highlights save to this study pack automatically.');
+}
+
+function buildTextNodeIndex(root) {
+  var entries = [];
+  if (!root) return entries;
+  var offset = 0;
+  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+  var node;
+  while ((node = walker.nextNode())) {
+    var length = String(node.nodeValue || '').length;
+    entries.push({ node: node, start: offset, end: offset + length });
+    offset += length;
+  }
+  return entries;
+}
+
+function findTextPosition(entries, offset, preferEnd) {
+  if (!entries.length) return null;
+  var target = Math.max(0, parseInt(offset, 10) || 0);
+  for (var i = 0; i < entries.length; i++) {
+    var entry = entries[i];
+    if (target < entry.end) {
+      return { node: entry.node, offset: target - entry.start };
+    }
+    if (target === entry.end) {
+      if (preferEnd || i === entries.length - 1) {
+        return { node: entry.node, offset: entry.node.nodeValue.length };
+      }
+      return { node: entries[i + 1].node, offset: 0 };
+    }
+  }
+  var lastEntry = entries[entries.length - 1];
+  return { node: lastEntry.node, offset: lastEntry.node.nodeValue.length };
+}
+
+function createRangeFromOffsets(startOffset, endOffset) {
+  if (!notesView) return null;
+  var entries = buildTextNodeIndex(notesView);
+  if (!entries.length) return null;
+  var start = findTextPosition(entries, startOffset, false);
+  var end = findTextPosition(entries, endOffset, true);
+  if (!start || !end) return null;
+  try {
+    var range = document.createRange();
+    range.setStart(start.node, Math.max(0, start.offset));
+    range.setEnd(end.node, Math.max(0, end.offset));
+    if (range.collapsed) return null;
+    return range;
+  } catch (e) {
+    return null;
+  }
+}
+
+function collectHighlightRangesFromDom() {
+  if (!notesView) return [];
+  var index = buildTextNodeIndex(notesView);
+  var map = new Map();
+  index.forEach(function (entry) { map.set(entry.node, entry); });
+  var ranges = [];
+  notesView.querySelectorAll('mark[data-hl]').forEach(function (mark) {
+    var color = String(mark.getAttribute('data-hl') || '').trim().toLowerCase();
+    if (['yellow', 'green', 'blue', 'pink'].indexOf(color) < 0) return;
+    var walker = document.createTreeWalker(mark, NodeFilter.SHOW_TEXT, null, false);
+    var node;
+    var start = null;
+    var end = null;
+    while ((node = walker.nextNode())) {
+      var entry = map.get(node);
+      if (!entry) continue;
+      if (start === null) start = entry.start;
+      end = entry.end;
+    }
+    if (start !== null && end !== null && end > start) {
+      ranges.push({ start: start, end: end, color: color });
+    }
+  });
+  return ranges;
+}
+
+function collectCurrentHighlightPayload() {
+  var baseKey = getHighlightBaseKey();
+  if (!baseKey) return null;
+  var ranges = collectHighlightRangesFromDom();
+  if (!ranges.length) return null;
+  return {
+    base_key: baseKey,
+    ranges: ranges,
+    updated_at: Date.now() / 1000
+  };
+}
+
+function persistHighlightPayloadLocally(payload) {
+  if (payload && payload.ranges && payload.ranges.length) {
+    writeStructuredHighlightCache(payload);
+  } else {
+    clearStructuredHighlightCache();
+  }
+}
+
+function queueHighlightSync(payload) {
+  var safePackId = String(selectedPackId || '');
+  if (!safePackId) return;
+  var cloned = cloneHighlightPayload(payload);
+  pendingHighlightPayload = cloned;
+  pendingHighlightPackId = safePackId;
+  if (selectedPack && selectedPack.study_pack_id === safePackId) {
+    selectedPack.notes_highlights = cloned;
+  }
+  persistHighlightPayloadLocally(cloned);
+  if (highlightSyncTimer) { clearTimeout(highlightSyncTimer); }
+  highlightSyncTimer = setTimeout(function () {
+    highlightSyncTimer = null;
+    flushHighlightSync();
+  }, HIGHLIGHT_SYNC_DELAY_MS);
+}
+
+function flushHighlightSync() {
+  if (highlightSyncInFlight || !pendingHighlightPackId || !token) return;
+  highlightSyncInFlight = true;
+  var packId = pendingHighlightPackId;
+  var payload = cloneHighlightPayload(pendingHighlightPayload);
+  pendingHighlightPackId = '';
+  pendingHighlightPayload = undefined;
+
+  apiCall('/api/study-packs/' + encodeURIComponent(packId), {
+    method: 'PATCH',
+    body: JSON.stringify({ notes_highlights: payload || null })
+  }).then(function () {
+    if (selectedPack && selectedPack.study_pack_id === packId) {
+      selectedPack.notes_highlights = payload;
+    }
+    setHighlightStatus(payload && payload.ranges && payload.ranges.length
+      ? 'Highlights save to this study pack automatically.'
+      : 'Highlights cleared for this study pack.');
+  }).catch(function (e) {
+    console.warn('Could not sync note highlights:', e && e.message ? e.message : e);
+    pendingHighlightPackId = packId;
+    pendingHighlightPayload = payload;
+    setHighlightStatus('Highlights are saved locally and will retry syncing.');
+  }).finally(function () {
+    highlightSyncInFlight = false;
+    if (pendingHighlightPackId && !highlightSyncTimer) {
+      highlightSyncTimer = setTimeout(function () {
+        highlightSyncTimer = null;
+        flushHighlightSync();
+      }, HIGHLIGHT_SYNC_DELAY_MS * 2);
+    }
+  });
+}
+
+function applyHighlightPayloadToNotes(payload) {
+  renderNotesForSelectedPackBase();
+  var normalized = normalizeClientHighlightPayload(payload);
+  if (!normalized) return null;
+  normalized.ranges.slice().sort(function (left, right) {
+    if (left.start !== right.start) return left.start - right.start;
+    return left.end - right.end;
+  }).forEach(function (rangeData) {
+    var range = createRangeFromOffsets(rangeData.start, rangeData.end);
+    if (!range) return;
+    removeHighlightsInRange(range);
+    applyColorToRange(range, rangeData.color);
+  });
+  mergeAdjacentHighlightMarks(notesView);
+  return collectCurrentHighlightPayload();
+}
+
+function applyHighlightSnapshot(payload, shouldPersist) {
+  var appliedPayload = applyHighlightPayloadToNotes(payload);
+  if (shouldPersist !== false) {
+    queueHighlightSync(appliedPayload);
+  }
+  return appliedPayload;
+}
+
 function commitHighlightMutation(mutator, successMessage) {
   if (!notesView || !selectedPackId || typeof mutator !== 'function') return;
-  var before = getCurrentNotesHtml();
+  var before = collectCurrentHighlightPayload();
   mutator();
-  var after = getCurrentNotesHtml();
-  if (before === after) return;
+  mergeAdjacentHighlightMarks(notesView);
+  var after = collectCurrentHighlightPayload();
+  if (payloadFingerprint(before) === payloadFingerprint(after)) return;
   pushUndoSnapshot(before);
   hlRedoStack = [];
   updateHighlightHistoryButtons();
-  if (after && after.trim()) {
-    saveHighlightMarkup(after);
-  } else {
-    clearHighlightMarkup();
-  }
+  queueHighlightSync(after);
   if (successMessage) showToast(successMessage);
 }
 
@@ -3973,16 +4430,38 @@ function applyColorToRange(range, color) {
   mergeAdjacentHighlightMarks(notesView);
 }
 
+function migrateLegacyHighlightsForPack() {
+  var legacyPayload = readLegacyHighlightPayload();
+  if (!legacyPayload || !legacyPayload.annotated_html) return null;
+  setNotesHtml(legacyPayload.annotated_html);
+  var migratedPayload = collectCurrentHighlightPayload();
+  clearLegacyHighlightCache();
+  renderNotesForSelectedPackBase();
+  if (migratedPayload) {
+    queueHighlightSync(migratedPayload);
+  }
+  return migratedPayload;
+}
+
 function reapplyHighlightsForPack() {
   if (!notesView || !selectedPackId) return;
-  var payload = loadHighlightPayload();
-  if (!payload || !payload.annotated_html) {
-    clearHighlightMarkup();
-    resetHighlightHistory(getCurrentNotesHtml());
-    return;
+  var payload = normalizeClientHighlightPayload(selectedPack && selectedPack.notes_highlights);
+  if (!payload) {
+    payload = readStructuredHighlightCache();
   }
-  setNotesHtml(payload.annotated_html);
-  resetHighlightHistory(getCurrentNotesHtml());
+  if (!payload) {
+    payload = migrateLegacyHighlightsForPack();
+  }
+  var appliedPayload = applyHighlightPayloadToNotes(payload);
+  if (!appliedPayload) {
+    renderNotesForSelectedPackBase();
+    clearStructuredHighlightCache();
+    setHighlightStatus('Highlights save to this study pack automatically.');
+  } else {
+    persistHighlightPayloadLocally(appliedPayload);
+    setHighlightStatus('Highlights save to this study pack automatically.');
+  }
+  resetHighlightHistory(appliedPayload);
 }
 
 function applyHighlightToSelection() {
@@ -4002,31 +4481,21 @@ function applyHighlightToSelection() {
 
 function undoHighlightChange() {
   if (!hlUndoStack.length || !notesView) return;
-  var current = getCurrentNotesHtml();
-  var previous = hlUndoStack.pop();
-  if (!previous || previous === current) {
-    updateHighlightHistoryButtons();
-    return;
-  }
-  hlRedoStack.push(current);
+  var current = collectCurrentHighlightPayload();
+  var previous = cloneHighlightPayload(hlUndoStack.pop());
+  hlRedoStack.push(cloneHighlightPayload(current));
   if (hlRedoStack.length > HL_HISTORY_LIMIT) {
     hlRedoStack.splice(0, hlRedoStack.length - HL_HISTORY_LIMIT);
   }
-  setNotesHtml(previous);
-  saveHighlightMarkup(previous);
+  applyHighlightSnapshot(previous, true);
   updateHighlightHistoryButtons();
 }
 function redoHighlightChange() {
   if (!hlRedoStack.length || !notesView) return;
-  var current = getCurrentNotesHtml();
-  var next = hlRedoStack.pop();
-  if (!next || next === current) {
-    updateHighlightHistoryButtons();
-    return;
-  }
+  var current = collectCurrentHighlightPayload();
+  var next = cloneHighlightPayload(hlRedoStack.pop());
   pushUndoSnapshot(current);
-  setNotesHtml(next);
-  saveHighlightMarkup(next);
+  applyHighlightSnapshot(next, true);
   updateHighlightHistoryButtons();
 }
 

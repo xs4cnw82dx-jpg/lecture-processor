@@ -641,8 +641,9 @@
   }
 
   function setRowOverrideStudyFeature(rowNode, value) {
+    var overrideWrap = rowNode.querySelector('[data-override-wrap]');
     var panel = rowNode.querySelector('[data-override-panel]');
-    if (!panel) return;
+    if (!overrideWrap || !panel) return;
     var hidden = rowNode.querySelector('input[data-field="override-study"]');
     var next = ['none', 'flashcards', 'test', 'both'].indexOf(value) >= 0 ? value : 'both';
     if (hidden) hidden.value = next;
@@ -652,8 +653,11 @@
 
     var flashWrap = rowNode.querySelector('[data-override-flashcards-wrap]');
     var questionWrapNode = rowNode.querySelector('[data-override-questions-wrap]');
-    if (flashWrap) flashWrap.style.display = (next === 'none' || next === 'test') ? 'none' : '';
-    if (questionWrapNode) questionWrapNode.style.display = (next === 'none' || next === 'flashcards') ? 'none' : '';
+    var showFlashcards = next !== 'none' && next !== 'test';
+    var showQuestions = next !== 'none' && next !== 'flashcards';
+    if (flashWrap) flashWrap.hidden = !showFlashcards;
+    if (questionWrapNode) questionWrapNode.hidden = !showQuestions;
+    overrideWrap.classList.toggle('amounts-visible', !!(showFlashcards || showQuestions));
   }
 
   function setRowOverrideAmount(rowNode, kind, value) {
@@ -793,11 +797,23 @@
 
   function wireRowOverride(rowNode) {
     var enabledCheckbox = rowNode.querySelector('input[data-field="override-enabled"]');
+    var overrideWrap = rowNode.querySelector('[data-override-wrap]');
     var panel = rowNode.querySelector('[data-override-panel]');
-    if (!enabledCheckbox || !panel) return;
+    if (!enabledCheckbox || !panel || !overrideWrap) return;
 
     var syncOverrideVisible = function () {
-      panel.classList.toggle('enabled', !!enabledCheckbox.checked);
+      var enabled = !!enabledCheckbox.checked;
+      overrideWrap.classList.toggle('enabled', enabled);
+      panel.setAttribute('aria-hidden', enabled ? 'false' : 'true');
+      enabledCheckbox.setAttribute('aria-expanded', enabled ? 'true' : 'false');
+      if (!enabled) {
+        overrideWrap.classList.remove('amounts-visible');
+        return;
+      }
+      setRowOverrideStudyFeature(
+        rowNode,
+        String((rowNode.querySelector('input[data-field="override-study"]') || {}).value || 'both')
+      );
     };
 
     enabledCheckbox.addEventListener('change', syncOverrideVisible);
@@ -827,11 +843,23 @@
   }
 
   function wireInterviewExtras(rowNode) {
+    var note = rowNode.querySelector('[data-interview-extra-note]');
+    var syncInterviewExtrasNote = function () {
+      var count = rowNode.querySelectorAll('[data-interview-feature-chip].active').length;
+      if (!note) return;
+      if (count <= 0) {
+        note.textContent = 'No extras selected. Select one or both options (1 text extraction credit per option).';
+        return;
+      }
+      note.textContent = count + ' extra' + (count === 1 ? '' : 's') + ' selected (' + count + ' text extraction credit' + (count === 1 ? '' : 's') + ').';
+    };
     Array.prototype.slice.call(rowNode.querySelectorAll('[data-interview-feature-chip]')).forEach(function (chip) {
       chip.addEventListener('click', function () {
         chip.classList.toggle('active');
+        syncInterviewExtrasNote();
       });
     });
+    syncInterviewExtrasNote();
   }
 
   function removeRow(rowNode) {
@@ -853,44 +881,50 @@
     var rowId = makeRowId();
 
     var overrideBlockHtml = mode !== 'interview' ? (
-      '<div class="row-override">' +
+      '<div class="row-override" data-override-wrap>' +
       '  <div class="row-override-head">' +
       '    <label class="custom-check">' +
-      '      <input type="checkbox" data-field="override-enabled">' +
+      '      <input type="checkbox" data-field="override-enabled" aria-expanded="false">' +
       '      <span class="custom-check-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg></span>' +
       '      <span class="custom-check-label">Study tools override</span>' +
       '    </label>' +
       '    <div class="row-override-help"><span class="info-dot" aria-hidden="true">i</span><span>Change study tools for this row only. If disabled, this row uses the top Study tools settings.</span></div>' +
       '  </div>' +
-      '  <div class="row-override-panel" data-override-panel>' +
-      '    <input type="hidden" data-field="override-study" value="both">' +
-      '    <input type="hidden" data-field="override-flashcards" value="20">' +
-      '    <input type="hidden" data-field="override-questions" value="10">' +
-      '    <div>' +
-      '      <span class="control-label">Study tools</span>' +
-      '      <div class="tool-chip-grid">' +
-      '        <button type="button" class="tool-chip" data-override-study-chip="none">No study tools</button>' +
-      '        <button type="button" class="tool-chip" data-override-study-chip="flashcards">Flashcards only</button>' +
-      '        <button type="button" class="tool-chip" data-override-study-chip="test">Practice test only</button>' +
-      '        <button type="button" class="tool-chip active" data-override-study-chip="both">Flashcards + test</button>' +
+      '  <div class="row-override-shell">' +
+      '    <div class="row-override-panel" data-override-panel aria-hidden="true">' +
+      '      <input type="hidden" data-field="override-study" value="both">' +
+      '      <input type="hidden" data-field="override-flashcards" value="20">' +
+      '      <input type="hidden" data-field="override-questions" value="10">' +
+      '      <div>' +
+      '        <span class="control-label">Study tools</span>' +
+      '        <div class="tool-chip-grid">' +
+      '          <button type="button" class="tool-chip" data-override-study-chip="none">No study tools</button>' +
+      '          <button type="button" class="tool-chip" data-override-study-chip="flashcards">Flashcards only</button>' +
+      '          <button type="button" class="tool-chip" data-override-study-chip="test">Practice test only</button>' +
+      '          <button type="button" class="tool-chip active" data-override-study-chip="both">Flashcards + test</button>' +
+      '        </div>' +
       '      </div>' +
-      '    </div>' +
-      '    <div data-override-flashcards-wrap>' +
-      '      <span class="control-label">Flashcard amount</span>' +
-      '      <div class="amount-chips">' +
-      '        <button type="button" class="amount-chip" data-override-flashcards-chip="10">10</button>' +
-      '        <button type="button" class="amount-chip active" data-override-flashcards-chip="20">20</button>' +
-      '        <button type="button" class="amount-chip" data-override-flashcards-chip="30">30</button>' +
-      '        <button type="button" class="amount-chip" data-override-flashcards-chip="auto">Auto</button>' +
-      '      </div>' +
-      '    </div>' +
-      '    <div data-override-questions-wrap>' +
-      '      <span class="control-label">Practice questions</span>' +
-      '      <div class="amount-chips">' +
-      '        <button type="button" class="amount-chip" data-override-questions-chip="5">5</button>' +
-      '        <button type="button" class="amount-chip active" data-override-questions-chip="10">10</button>' +
-      '        <button type="button" class="amount-chip" data-override-questions-chip="15">15</button>' +
-      '        <button type="button" class="amount-chip" data-override-questions-chip="auto">Auto</button>' +
+      '      <div class="row-override-amounts">' +
+      '        <div class="row-override-amounts-inner">' +
+      '          <div data-override-flashcards-wrap>' +
+      '            <span class="control-label">Flashcard amount</span>' +
+      '            <div class="amount-chips">' +
+      '              <button type="button" class="amount-chip" data-override-flashcards-chip="10">10</button>' +
+      '              <button type="button" class="amount-chip active" data-override-flashcards-chip="20">20</button>' +
+      '              <button type="button" class="amount-chip" data-override-flashcards-chip="30">30</button>' +
+      '              <button type="button" class="amount-chip" data-override-flashcards-chip="auto">Auto</button>' +
+      '            </div>' +
+      '          </div>' +
+      '          <div data-override-questions-wrap>' +
+      '            <span class="control-label">Practice questions</span>' +
+      '            <div class="amount-chips">' +
+      '              <button type="button" class="amount-chip" data-override-questions-chip="5">5</button>' +
+      '              <button type="button" class="amount-chip active" data-override-questions-chip="10">10</button>' +
+      '              <button type="button" class="amount-chip" data-override-questions-chip="15">15</button>' +
+      '              <button type="button" class="amount-chip" data-override-questions-chip="auto">Auto</button>' +
+      '            </div>' +
+      '          </div>' +
+      '        </div>' +
       '      </div>' +
       '    </div>' +
       '  </div>' +
@@ -914,6 +948,11 @@
       '      </button>' +
       '    </div>' +
       '  </div>' +
+      (
+        mode === 'lecture-notes'
+          ? overrideBlockHtml
+          : ''
+      ) +
       '</div>'
     ) : '';
 
@@ -951,8 +990,7 @@
             '      <span>These links expire quickly. Importing stores audio immediately so the batch can still run even when processing takes longer.</span>' +
             '    </div>' +
             '    <div class="row-url-status" data-field="m3u8-status" aria-live="polite"></div>' +
-            '  </div>' +
-            overrideBlockHtml
+            '  </div>'
           )
           : ''
       ) +
@@ -963,10 +1001,10 @@
       '<div class="row-field">' +
       '  <span class="row-label">Interview extras</span>' +
       '  <div class="interview-extra-grid">' +
-      '    <button type="button" class="interview-extra-chip active" data-interview-feature-chip="summary">Summary (max 1 page)</button>' +
-      '    <button type="button" class="interview-extra-chip active" data-interview-feature-chip="sections">Structured transcript with headings</button>' +
+      '    <button type="button" class="interview-extra-chip" data-interview-feature-chip="summary">Summary (max 1 page)</button>' +
+      '    <button type="button" class="interview-extra-chip" data-interview-feature-chip="sections">Structured transcript with headings</button>' +
       '  </div>' +
-      '  <div class="control-note">Select one or both options (1 text extraction credit per option).</div>' +
+      '  <div class="control-note" data-interview-extra-note>No extras selected. Select one or both options (1 text extraction credit per option).</div>' +
       '</div>'
     ) : '';
 

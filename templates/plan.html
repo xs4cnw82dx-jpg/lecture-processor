@@ -48,10 +48,10 @@
 
         <section class="section">
           <h2>Goal Settings</h2>
-          <p>Set how many cards you want to review each day. This appears in your dashboard progress menu.</p>
+          <p>Set your overall daily card goal here. This is the single master goal used in dashboard and progress summaries.</p>
           <div class="goal-row">
             <div class="field">
-              <label for="goal-input">Daily Card Goal</label>
+              <label for="goal-input">Overall Daily Goal</label>
               <input class="input" type="number" min="1" max="500" id="goal-input">
             </div>
             <button type="button" class="btn primary" id="save-goal-btn">Save goal</button>
@@ -81,6 +81,32 @@
             <a href="/study" class="empty-link">Open Study Library</a>
           </div>
         </section>
+
+        <section class="section">
+          <h2>Pack Goals</h2>
+          <p>Set optional card goals per study pack. These never replace your overall daily goal.</p>
+          <div class="folders-wrap">
+            <table class="folders pack-goals-table" id="pack-goals-table">
+              <thead>
+                <tr>
+                  <th>Study pack</th>
+                  <th>Folder</th>
+                  <th>Due today</th>
+                  <th>Unmastered</th>
+                  <th>Saved pack goal</th>
+                  <th>Recommendation</th>
+                </tr>
+              </thead>
+              <tbody id="pack-goals-body"></tbody>
+            </table>
+          </div>
+          <div class="folders-cards pack-goals-cards" id="pack-goals-cards"></div>
+          <div class="empty" id="pack-goals-empty" style="display:none;">
+            <strong>No study packs yet</strong>
+            <span>Create a study pack to set per-pack goals and review targets.</span>
+            <a href="/study" class="empty-link">Open Study Library</a>
+          </div>
+        </section>
       </div>
     </div>
   </main>
@@ -98,6 +124,7 @@
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/study-progress-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
   <script src="{{ url_for('static', filename='js/plan.js') }}"></script>
 </body>

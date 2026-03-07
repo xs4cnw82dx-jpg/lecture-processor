@@ -220,6 +220,140 @@ def test_batch_create_slides_only_contract(client, monkeypatch):
     assert capture.rows[0].get('billing_mode') == 'batch'
 
 
+def test_batch_create_lecture_notes_preserves_row_study_override_contract(client, monkeypatch):
+    _patch_batch_auth(monkeypatch)
+    monkeypatch.setattr(core, 'client', object())
+    monkeypatch.setattr(upload_import_audio, 'cleanup_expired_audio_import_tokens', lambda runtime=None: None)
+    monkeypatch.setattr(core, 'threading', type('T', (), {'Thread': _DummyThread}))
+    monkeypatch.setattr(
+        core,
+        'get_or_create_user',
+        lambda uid, email: {
+            'uid': uid,
+            'email': email,
+            'preferred_output_language': 'english',
+            'preferred_output_language_custom': '',
+        },
+    )
+
+    monkeypatch.setattr(core, 'resolve_uploaded_slides_to_pdf', lambda uploaded_file, _job_id: ('lecture-slides.pdf', None))
+    monkeypatch.setattr(core, 'file_looks_like_audio', lambda _path: True)
+    monkeypatch.setattr(billing_credits, 'deduct_credit', lambda *args, **kwargs: 'lecture_credits_standard')
+
+    capture = _Capture()
+
+    def _fake_create_batch(batch_payload, rows, runtime=None):
+        capture.batch_payload = dict(batch_payload)
+        capture.rows = list(rows)
+
+    monkeypatch.setattr(batch_orchestrator, 'create_batch_job', _fake_create_batch)
+    monkeypatch.setattr(batch_orchestrator, 'process_batch_job', lambda _batch_id, runtime=None: None)
+
+    rows = [
+        {
+            'row_id': 'row-1',
+            'slides_file_field': 'row_1_slides',
+            'audio_file_field': 'row_1_audio',
+            'study_override': {
+                'study_features': 'flashcards',
+                'flashcard_amount': '30',
+                'question_amount': '15',
+            },
+        },
+        {
+            'row_id': 'row-2',
+            'slides_file_field': 'row_2_slides',
+            'audio_file_field': 'row_2_audio',
+        },
+    ]
+    response = client.post(
+        '/api/batch/jobs',
+        data={
+            'mode': 'lecture-notes',
+            'batch_title': 'Lecture override contract',
+            'study_features': 'both',
+            'flashcard_amount': '20',
+            'question_amount': '10',
+            'rows': json.dumps(rows),
+            'row_1_slides': (io.BytesIO(b'%PDF-1.4 lecture-1'), 'lecture-1.pdf'),
+            'row_1_audio': (io.BytesIO(b'RIFF0000WAVEfmt row-1'), 'lecture-1.wav', 'audio/wav'),
+            'row_2_slides': (io.BytesIO(b'%PDF-1.4 lecture-2'), 'lecture-2.pdf'),
+            'row_2_audio': (io.BytesIO(b'RIFF0000WAVEfmt row-2'), 'lecture-2.wav', 'audio/wav'),
+        },
+        content_type='multipart/form-data',
+    )
+
+    assert response.status_code == 200
+    assert capture.batch_payload is not None
+    assert capture.batch_payload.get('mode') == 'lecture-notes'
+    assert isinstance(capture.rows, list)
+    assert len(capture.rows) == 2
+    assert capture.rows[0].get('study_features') == 'flashcards'
+    assert capture.rows[0].get('flashcard_selection') == '30'
+    assert capture.rows[0].get('question_selection') == '15'
+    assert capture.rows[1].get('study_features') == 'both'
+    assert capture.rows[1].get('flashcard_selection') == '20'
+    assert capture.rows[1].get('question_selection') == '10'
+
+
+def test_batch_create_interview_accepts_empty_extras_by_default(client, monkeypatch):
+    _patch_batch_auth(monkeypatch)
+    monkeypatch.setattr(core, 'client', object())
+    monkeypatch.setattr(upload_import_audio, 'cleanup_expired_audio_import_tokens', lambda runtime=None: None)
+    monkeypatch.setattr(core, 'threading', type('T', (), {'Thread': _DummyThread}))
+    monkeypatch.setattr(
+        core,
+        'get_or_create_user',
+        lambda uid, email: {
+            'uid': uid,
+            'email': email,
+            'preferred_output_language': 'english',
+            'preferred_output_language_custom': '',
+        },
+    )
+    monkeypatch.setattr(billing_credits, 'deduct_interview_credit', lambda uid, runtime=None: 'interview_credits_short')
+    monkeypatch.setattr(
+        billing_credits,
+        'deduct_slides_credits',
+        lambda uid, amount, runtime=None: (_ for _ in ()).throw(AssertionError('No extra text credits should be charged for [] extras')),
+    )
+
+    capture = _Capture()
+
+    def _fake_create_batch(batch_payload, rows, runtime=None):
+        capture.batch_payload = dict(batch_payload)
+        capture.rows = list(rows)
+
+    monkeypatch.setattr(batch_orchestrator, 'create_batch_job', _fake_create_batch)
+    monkeypatch.setattr(batch_orchestrator, 'process_batch_job', lambda _batch_id, runtime=None: None)
+
+    rows = [
+        {'row_id': 'row-1', 'audio_file_field': 'row_1_audio', 'interview_features': []},
+        {'row_id': 'row-2', 'audio_file_field': 'row_2_audio', 'interview_features': []},
+    ]
+    response = client.post(
+        '/api/batch/jobs',
+        data={
+            'mode': 'interview',
+            'batch_title': 'Interview extras off',
+            'rows': json.dumps(rows),
+            'row_1_audio': (io.BytesIO(b'RIFF0000WAVEfmt row-1'), 'interview-1.wav', 'audio/wav'),
+            'row_2_audio': (io.BytesIO(b'RIFF0000WAVEfmt row-2'), 'interview-2.wav', 'audio/wav'),
+        },
+        content_type='multipart/form-data',
+    )
+
+    assert response.status_code == 200
+    assert capture.batch_payload is not None
+    assert capture.batch_payload.get('mode') == 'interview'
+    assert isinstance(capture.rows, list)
+    assert len(capture.rows) == 2
+    assert capture.rows[0].get('interview_features') == []
+    assert capture.rows[0].get('interview_features_cost') == 0
+    assert capture.rows[1].get('interview_features') == []
+    assert capture.rows[1].get('interview_features_cost') == 0
+
+
 def test_batch_jobs_list_contract(client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     monkeypatch.setattr(

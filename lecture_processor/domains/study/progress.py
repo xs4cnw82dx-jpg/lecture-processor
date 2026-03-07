@@ -25,6 +25,34 @@ def _max_progress_cards_per_pack(runtime):
     return int(getattr(resolved_runtime, 'MAX_PROGRESS_CARDS_PER_PACK', 2500) or 2500)
 
 
+def _max_notes_highlight_ranges(runtime):
+    resolved_runtime = _resolve_runtime(runtime)
+    return int(getattr(resolved_runtime, 'MAX_NOTES_HIGHLIGHT_RANGES', 2000) or 2000)
+
+
+def _max_notes_highlight_offset(runtime):
+    resolved_runtime = _resolve_runtime(runtime)
+    return int(getattr(resolved_runtime, 'MAX_NOTES_HIGHLIGHT_OFFSET', 1000000) or 1000000)
+
+
+def _max_notes_highlight_base_key_length(runtime):
+    resolved_runtime = _resolve_runtime(runtime)
+    return int(getattr(resolved_runtime, 'MAX_NOTES_HIGHLIGHT_BASE_KEY_LENGTH', 240) or 240)
+
+
+def _notes_highlight_colors(runtime):
+    resolved_runtime = _resolve_runtime(runtime)
+    raw_colors = getattr(resolved_runtime, 'NOTES_HIGHLIGHT_COLORS', ('yellow', 'green', 'blue', 'pink'))
+    if not isinstance(raw_colors, (list, tuple, set)):
+        return {'yellow', 'green', 'blue', 'pink'}
+    cleaned = set()
+    for value in raw_colors:
+        color = str(value or '').strip().lower()
+        if color:
+            cleaned.add(color)
+    return cleaned or {'yellow', 'green', 'blue', 'pink'}
+
+
 def default_streak_data(runtime=None):
     _ = runtime
     return {
@@ -111,6 +139,10 @@ def sanitize_daily_goal_value(value, runtime=None):
     return parsed
 
 
+def sanitize_daily_card_goal_value(value, runtime=None):
+    return sanitize_daily_goal_value(value, runtime=runtime)
+
+
 def sanitize_pack_id(value, runtime=None):
     _ = runtime
     pack_id = str(value or '').strip()
@@ -174,6 +206,69 @@ def sanitize_card_state_map(payload, runtime=None):
         if len(cleaned) >= max_cards:
             break
     return cleaned
+
+
+def sanitize_notes_highlight_range(payload, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    if not isinstance(payload, dict):
+        return None
+
+    color = str(payload.get('color', '')).strip().lower()
+    if color not in _notes_highlight_colors(resolved_runtime):
+        return None
+
+    try:
+        start = int(payload.get('start'))
+        end = int(payload.get('end'))
+    except (TypeError, ValueError):
+        return None
+
+    max_offset = _max_notes_highlight_offset(resolved_runtime)
+    if start < 0 or end <= start or start > max_offset or end > max_offset:
+        return None
+
+    return {
+        'start': start,
+        'end': end,
+        'color': color,
+    }
+
+
+def sanitize_notes_highlights_payload(payload, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    if not isinstance(payload, dict):
+        return None
+
+    base_key = str(payload.get('base_key', '')).strip()[:_max_notes_highlight_base_key_length(resolved_runtime)]
+    if not base_key:
+        return None
+
+    raw_ranges = payload.get('ranges')
+    if not isinstance(raw_ranges, list):
+        return None
+    if len(raw_ranges) > _max_notes_highlight_ranges(resolved_runtime):
+        return None
+
+    ranges = []
+    for raw_range in raw_ranges:
+        cleaned_range = sanitize_notes_highlight_range(raw_range, runtime=resolved_runtime)
+        if cleaned_range is None:
+            return None
+        ranges.append(cleaned_range)
+
+    updated_at = sanitize_float(
+        payload.get('updated_at', 0),
+        default=0.0,
+        min_value=0.0,
+        max_value=99999999999.0,
+        runtime=resolved_runtime,
+    )
+
+    return {
+        'base_key': base_key,
+        'ranges': ranges,
+        'updated_at': updated_at,
+    }
 
 
 def derive_card_level_from_stats(seen, interval_days, runtime=None):

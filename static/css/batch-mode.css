@@ -637,6 +637,8 @@
   background: #ffffff;
   display: grid;
   align-content: start;
+  gap: 0;
+  overflow: hidden;
 }
 
 .row-override-head {
@@ -653,32 +655,75 @@
   line-height: 1.42;
 }
 
+.row-override-shell {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 0.24s ease,
+    opacity 0.2s ease,
+    margin-top 0.24s ease;
+  margin-top: 0;
+}
+
+.row-override.enabled .row-override-shell {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  margin-top: 10px;
+}
+
 .row-override-panel {
   display: grid;
-  opacity: 0.45;
-  pointer-events: none;
-  margin-top: 10px;
+  min-height: 0;
+  overflow: hidden;
   border-top: 1px solid #e5ebf5;
   padding-top: 10px;
   gap: 10px;
-  transition: opacity 0.18s ease;
-}
-
-.row-override-panel.enabled {
   opacity: 1;
-  pointer-events: auto;
 }
 
 .row-field-override {
   grid-column: 2;
+  align-self: start;
 }
 
 .batch-row.mode-slides .row-field-override {
   margin-top: 22px;
 }
 
-.batch-row.mode-lecture .row-field--audio .row-override {
-  margin-top: 4px;
+.batch-row.mode-lecture .row-field--slides .row-override {
+  margin-top: 14px;
+}
+
+.row-override-amounts {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 0.22s ease,
+    opacity 0.18s ease,
+    margin-top 0.22s ease;
+  margin-top: 0;
+}
+
+.row-override.enabled.amounts-visible .row-override-amounts {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  margin-top: 2px;
+}
+
+.row-override-amounts-inner {
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  gap: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row-override-shell,
+  .row-override-amounts {
+    transition: none;
+  }
 }
 
 .rows-foot {
