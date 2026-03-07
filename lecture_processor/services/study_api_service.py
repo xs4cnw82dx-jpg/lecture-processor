@@ -1,9 +1,22 @@
 """Business logic handlers for study APIs."""
 
+from lecture_processor.domains.shared import sanitize_csv_row
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.study import progress as study_progress
 from lecture_processor.domains.ai import batch_orchestrator
+
+
+def _pack_item_count(pack, count_key, items_key):
+    if count_key in pack and pack.get(count_key) is not None:
+        try:
+            stored_count = int(pack.get(count_key, 0) or 0)
+        except Exception:
+            stored_count = None
+        if stored_count is not None and stored_count >= 0:
+            return stored_count
+    items = pack.get(items_key, [])
+    return len(items) if isinstance(items, list) else 0
 
 
 def get_study_progress(app_ctx, request):
@@ -166,7 +179,7 @@ def get_study_packs(app_ctx, request):
 
     uid = decoded_token['uid']
     try:
-        study_docs = app_ctx.study_repo.list_study_packs_by_uid(app_ctx.db, uid, 200)
+        study_docs = app_ctx.study_repo.list_study_pack_summaries_by_uid(app_ctx.db, uid, 50)
         packs = []
         for doc in study_docs:
             pack = doc.to_dict()
@@ -174,8 +187,8 @@ def get_study_packs(app_ctx, request):
                 'study_pack_id': doc.id,
                 'title': pack.get('title', ''),
                 'mode': pack.get('mode', ''),
-                'flashcards_count': len(pack.get('flashcards', [])),
-                'test_questions_count': len(pack.get('test_questions', [])),
+                'flashcards_count': _pack_item_count(pack, 'flashcards_count', 'flashcards'),
+                'test_questions_count': _pack_item_count(pack, 'test_questions_count', 'test_questions'),
                 'course': pack.get('course', ''),
                 'subject': pack.get('subject', ''),
                 'semester': pack.get('semester', ''),
@@ -184,8 +197,7 @@ def get_study_packs(app_ctx, request):
                 'folder_name': pack.get('folder_name', ''),
                 'created_at': pack.get('created_at', 0),
             })
-        packs.sort(key=lambda p: p.get('created_at', 0), reverse=True)
-        return app_ctx.jsonify({'study_packs': packs[:50]})
+        return app_ctx.jsonify({'study_packs': packs})
     except Exception as e:
         app_ctx.logger.error(f"Error fetching study packs: {e}")
         return app_ctx.jsonify({'error': 'Could not load study packs'}), 500
@@ -244,6 +256,8 @@ def create_study_pack(app_ctx, request):
             'has_audio_playback': False,
             'flashcards': flashcards,
             'test_questions': test_questions,
+            'flashcards_count': len(flashcards),
+            'test_questions_count': len(test_questions),
             'flashcard_selection': 'manual',
             'question_selection': 'manual',
             'study_features': 'both',
@@ -362,8 +376,10 @@ def update_study_pack(app_ctx, request, pack_id):
 
         if 'flashcards' in payload:
             updates['flashcards'] = app_ctx.sanitize_flashcards(payload.get('flashcards', []), 500)
+            updates['flashcards_count'] = len(updates['flashcards'])
         if 'test_questions' in payload:
             updates['test_questions'] = app_ctx.sanitize_questions(payload.get('test_questions', []), 500)
+            updates['test_questions_count'] = len(updates['test_questions'])
         if 'notes_markdown' in payload:
             updates['notes_markdown'] = str(payload.get('notes_markdown', ''))[:180000]
             notes_audio_map = (
@@ -652,7 +668,7 @@ def export_study_pack_flashcards_csv(app_ctx, request, pack_id):
             for q in test_questions:
                 options = q.get('options', [])
                 padded = (options + ['', '', '', ''])[:4]
-                writer.writerow([
+                writer.writerow(sanitize_csv_row([
                     q.get('question', ''),
                     padded[0],
                     padded[1],
@@ -660,7 +676,7 @@ def export_study_pack_flashcards_csv(app_ctx, request, pack_id):
                     padded[3],
                     q.get('answer', ''),
                     q.get('explanation', ''),
-                ])
+                ]))
             filename = f'study-pack-{pack_id}-practice-test.csv'
         else:
             flashcards = pack.get('flashcards', [])
@@ -668,7 +684,7 @@ def export_study_pack_flashcards_csv(app_ctx, request, pack_id):
                 return app_ctx.jsonify({'error': 'No flashcards available'}), 400
             writer.writerow(['question', 'answer'])
             for card in flashcards:
-                writer.writerow([card.get('front', ''), card.get('back', '')])
+                writer.writerow(sanitize_csv_row([card.get('front', ''), card.get('back', '')]))
             filename = f'study-pack-{pack_id}-flashcards.csv'
         csv_bytes = app_ctx.io.BytesIO(output.getvalue().encode('utf-8'))
         csv_bytes.seek(0)

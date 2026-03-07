@@ -28,20 +28,15 @@ def has_sufficient_upload_disk_space(required_bytes=0, runtime=None):
     return (free_bytes >= needed, free_bytes, needed)
 
 
-def reserve_daily_upload_bytes(uid, requested_bytes, runtime=None):
-    resolved_runtime = _resolve_runtime(runtime)
-    if resolved_runtime.db is None:
-        return (True, 0)
-    if not uid:
-        return (False, 0)
+def _normalize_requested_bytes(requested_bytes):
     try:
         requested = int(requested_bytes or 0)
     except Exception:
         requested = 0
-    requested = max(0, requested)
-    if requested <= 0:
-        return (True, 0)
+    return max(0, requested)
 
+
+def _daily_counter_context(resolved_runtime, uid):
     now_ts = resolved_runtime.time.time()
     day_key = datetime.fromtimestamp(now_ts, tz=timezone.utc).strftime('%Y-%m-%d')
     doc_id = f'{uid}:{day_key}'
@@ -55,6 +50,20 @@ def reserve_daily_upload_bytes(uid, requested_bytes, runtime=None):
         ),
     )
     counter_ref = resolved_runtime.db.collection(resolved_runtime.UPLOAD_DAILY_COUNTER_COLLECTION).document(doc_id)
+    return now_ts, day_key, retry_after, counter_ref
+
+
+def reserve_daily_upload_bytes(uid, requested_bytes, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    if resolved_runtime.db is None:
+        return (True, 0)
+    if not uid:
+        return (False, 0)
+    requested = _normalize_requested_bytes(requested_bytes)
+    if requested <= 0:
+        return (True, 0)
+
+    now_ts, day_key, retry_after, counter_ref = _daily_counter_context(resolved_runtime, uid)
     transaction = resolved_runtime.db.transaction()
 
     @resolved_runtime.firestore.transactional
@@ -83,3 +92,42 @@ def reserve_daily_upload_bytes(uid, requested_bytes, runtime=None):
     except Exception:
         resolved_runtime.logger.warning('Upload daily byte reservation failed for uid=%s', uid, exc_info=True)
         return (True, 0)
+
+
+def release_daily_upload_bytes(uid, requested_bytes, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    if resolved_runtime.db is None:
+        return True
+    if not uid:
+        return False
+    requested = _normalize_requested_bytes(requested_bytes)
+    if requested <= 0:
+        return True
+
+    now_ts, day_key, _retry_after, counter_ref = _daily_counter_context(resolved_runtime, uid)
+    transaction = resolved_runtime.db.transaction()
+
+    @resolved_runtime.firestore.transactional
+    def _txn(txn):
+        snapshot = counter_ref.get(transaction=txn)
+        used = 0
+        if snapshot.exists:
+            used = int((snapshot.to_dict() or {}).get('bytes_used', 0) or 0)
+        txn.set(
+            counter_ref,
+            {
+                'uid': uid,
+                'day': day_key,
+                'bytes_used': max(0, used - requested),
+                'updated_at': now_ts,
+                'expires_at': now_ts + 3 * 24 * 60 * 60,
+            },
+            merge=True,
+        )
+        return True
+
+    try:
+        return _txn(transaction)
+    except Exception:
+        resolved_runtime.logger.warning('Upload daily byte release failed for uid=%s', uid, exc_info=True)
+        return False

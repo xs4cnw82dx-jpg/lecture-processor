@@ -132,13 +132,56 @@
       const menu = selectRoot.querySelector('.app-select-menu');
       const label = selectRoot.querySelector('.app-select-label');
       const hidden = selectRoot.querySelector('input[type="hidden"]');
+      if (!button || !menu) return;
+
+      if (!selectRoot.id) {
+        selectRoot.id = 'app-select-' + Math.random().toString(36).slice(2, 8);
+      }
+      if (!button.id) button.id = selectRoot.id + '-button';
+      if (!menu.id) menu.id = selectRoot.id + '-menu';
+      button.setAttribute('aria-haspopup', 'listbox');
+      button.setAttribute('aria-controls', menu.id);
+      button.setAttribute('aria-expanded', 'false');
+      menu.setAttribute('role', 'listbox');
+      menu.setAttribute('aria-labelledby', button.id);
+
+      function getItems() {
+        return Array.from(menu.querySelectorAll('.app-select-item[data-value]'));
+      }
+
+      function focusItem(target) {
+        const items = getItems().filter((item) => !item.disabled);
+        if (!items.length) return;
+        const currentIndex = items.indexOf(document.activeElement);
+        const activeIndex = Math.max(0, items.findIndex((item) => item.classList.contains('active')));
+        let nextIndex = activeIndex;
+        if (target === 'first') nextIndex = 0;
+        if (target === 'last') nextIndex = items.length - 1;
+        if (target === 'next') nextIndex = currentIndex >= 0 ? (currentIndex + 1) % items.length : activeIndex;
+        if (target === 'prev') nextIndex = currentIndex >= 0 ? (currentIndex - 1 + items.length) % items.length : activeIndex;
+        items.forEach((item) => { item.tabIndex = -1; });
+        items[nextIndex].tabIndex = 0;
+        items[nextIndex].focus();
+      }
+
+      function setMenuOpen(open, focusTarget) {
+        menu.classList.toggle('visible', !!open);
+        button.classList.toggle('open', !!open);
+        button.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (open) {
+          focusItem(focusTarget || 'active');
+        }
+      }
 
       function setValue(value, silent) {
         if (hidden) hidden.value = value;
         let activeText = '';
-        menu.querySelectorAll('.app-select-item').forEach((item) => {
+        getItems().forEach((item) => {
+          item.setAttribute('role', 'option');
           const isActive = item.getAttribute('data-value') === value;
           item.classList.toggle('active', isActive);
+          item.setAttribute('aria-selected', isActive ? 'true' : 'false');
+          item.tabIndex = -1;
           if (isActive) activeText = item.textContent;
         });
         if (label) label.textContent = activeText || (menu.querySelector('.app-select-item') ? menu.querySelector('.app-select-item').textContent : '');
@@ -148,22 +191,65 @@
       button.addEventListener('click', (e) => {
         e.preventDefault();
         const open = !menu.classList.contains('visible');
-        document.querySelectorAll('.app-select-menu.visible').forEach((m) => {
-          if (m !== menu) m.classList.remove('visible');
-        });
-        document.querySelectorAll('.app-select-button.open').forEach((b) => {
-          if (b !== button) b.classList.remove('open');
-        });
-        menu.classList.toggle('visible', open);
-        button.classList.toggle('open', open);
+        closeAllSelectMenus();
+        if (open) setMenuOpen(true);
+      });
+
+      button.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          closeAllSelectMenus();
+          setMenuOpen(true, 'first');
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          closeAllSelectMenus();
+          setMenuOpen(true, 'last');
+        } else if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          const open = !menu.classList.contains('visible');
+          closeAllSelectMenus();
+          if (open) setMenuOpen(true);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          setMenuOpen(false);
+        }
       });
 
       menu.addEventListener('click', (e) => {
         const item = e.target.closest('.app-select-item[data-value]');
         if (!item) return;
         setValue(item.getAttribute('data-value'));
-        menu.classList.remove('visible');
-        button.classList.remove('open');
+        setMenuOpen(false);
+        button.focus();
+      });
+
+      menu.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          focusItem('next');
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          focusItem('prev');
+        } else if (e.key === 'Home') {
+          e.preventDefault();
+          focusItem('first');
+        } else if (e.key === 'End') {
+          e.preventDefault();
+          focusItem('last');
+        } else if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          const item = document.activeElement && document.activeElement.closest('.app-select-item[data-value]');
+          if (!item) return;
+          setValue(item.getAttribute('data-value'));
+          setMenuOpen(false);
+          button.focus();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          setMenuOpen(false);
+          button.focus();
+        } else if (e.key === 'Tab') {
+          setMenuOpen(false);
+        }
       });
 
       const initial = hidden ? hidden.value : ((menu.querySelector('.app-select-item.active') || menu.querySelector('.app-select-item')) && (menu.querySelector('.app-select-item.active') || menu.querySelector('.app-select-item')).getAttribute('data-value'));
@@ -171,6 +257,7 @@
 
       selectRoot._setValue = (value, silent) => setValue(String(value || ''), !!silent);
       selectRoot._getValue = () => (hidden ? String(hidden.value || '') : '');
+      selectRoot._setMenuOpen = (open, focusTarget) => setMenuOpen(!!open, focusTarget);
     }
 
     function buildDailyTimeOptions() {
@@ -191,8 +278,11 @@
     }
 
     function closeAllSelectMenus() {
-      document.querySelectorAll('.app-select-menu.visible').forEach((m) => m.classList.remove('visible'));
-      document.querySelectorAll('.app-select-button.open').forEach((b) => b.classList.remove('open'));
+      document.querySelectorAll('.app-select').forEach((selectRoot) => {
+        if (typeof selectRoot._setMenuOpen === 'function') {
+          selectRoot._setMenuOpen(false);
+        }
+      });
     }
 
     function loadSessions() {

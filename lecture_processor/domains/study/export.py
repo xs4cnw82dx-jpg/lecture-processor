@@ -6,6 +6,7 @@ from datetime import datetime
 from docx import Document
 from docx.shared import Pt
 
+from lecture_processor.domains.shared import sanitize_csv_row
 from lecture_processor.runtime.container import get_runtime
 
 REPORTLAB_AVAILABLE = True
@@ -207,7 +208,7 @@ def build_flashcards_csv_bytes(pack, runtime=None):
     writer = resolved_runtime.csv.writer(output)
     writer.writerow(['question', 'answer'])
     for card in flashcards:
-        writer.writerow([card.get('front', ''), card.get('back', '')])
+        writer.writerow(sanitize_csv_row([card.get('front', ''), card.get('back', '')]))
     return output.getvalue().encode('utf-8')
 
 
@@ -222,7 +223,7 @@ def build_practice_test_csv_bytes(pack, runtime=None):
     for question in questions:
         options = question.get('options', []) if isinstance(question.get('options', []), list) else []
         padded = (options + ['', '', '', ''])[:4]
-        writer.writerow([
+        writer.writerow(sanitize_csv_row([
             question.get('question', ''),
             padded[0],
             padded[1],
@@ -230,7 +231,7 @@ def build_practice_test_csv_bytes(pack, runtime=None):
             padded[3],
             question.get('answer', ''),
             question.get('explanation', ''),
-        ])
+        ]))
     return output.getvalue().encode('utf-8')
 
 

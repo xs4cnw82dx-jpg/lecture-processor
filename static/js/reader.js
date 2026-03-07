@@ -166,7 +166,13 @@
       var row = document.createElement('div');
       row.className = 'selected-file';
       var left = document.createElement('div');
-      left.innerHTML = '<strong>' + file.name + '</strong><div class="selected-file-meta">' + formatBytes(file.size) + '</div>';
+      var name = document.createElement('strong');
+      name.textContent = String(file.name || '');
+      var meta = document.createElement('div');
+      meta.className = 'selected-file-meta';
+      meta.textContent = formatBytes(file.size);
+      left.appendChild(name);
+      left.appendChild(meta);
       var remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'file-remove';

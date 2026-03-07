@@ -31,6 +31,8 @@ def save_study_pack(job_id, job_data, runtime=None):
         local_title_time = datetime.fromtimestamp(now_ts, tz=timezone.utc).astimezone(tzinfo)
         requested_title = str(job_data.get('study_pack_title', '') or '').strip()[:120]
         pack_title = requested_title or f"{job_data.get('mode', 'study-pack')} {local_title_time.strftime('%Y-%m-%d %H:%M')}"
+        flashcards = job_data.get('flashcards', []) if isinstance(job_data.get('flashcards', []), list) else []
+        test_questions = job_data.get('test_questions', []) if isinstance(job_data.get('test_questions', []), list) else []
 
         doc_ref.set(
             {
@@ -55,8 +57,10 @@ def save_study_pack(job_id, job_data, runtime=None):
                     and bool(job_data.get('notes_audio_map', []))
                 ),
                 'has_audio_playback': bool(job_data.get('audio_storage_key')),
-                'flashcards': job_data.get('flashcards', []),
-                'test_questions': job_data.get('test_questions', []),
+                'flashcards': flashcards,
+                'test_questions': test_questions,
+                'flashcards_count': len(flashcards),
+                'test_questions_count': len(test_questions),
                 'flashcard_selection': job_data.get('flashcard_selection', '20'),
                 'question_selection': job_data.get('question_selection', '10'),
                 'study_features': job_data.get('study_features', 'none'),

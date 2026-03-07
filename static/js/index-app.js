@@ -508,6 +508,9 @@ function getProgressSummaryForHeader(uid) {
     };
 }
 function refreshStudyHeaderMetrics() {
+    if (!progressMenu || !progressButton || !progressStreakCount || !progressDueCount || !progressGoalText) {
+        return;
+    }
     if (!currentUser) {
         progressMenu.style.display = 'none';
         return;
@@ -625,10 +628,12 @@ function focusMenuItem(menu, selector, mode = 'first') {
     items[0].focus();
 }
 function setUserDropdownVisible(visible) {
+    if (!userDropdown || !userButton) return;
     userDropdown.classList.toggle('visible', visible);
     userButton.setAttribute('aria-expanded', visible ? 'true' : 'false');
 }
 function setProgressDropdownVisible(visible) {
+    if (!progressDropdown || !progressButton) return;
     progressDropdown.classList.toggle('visible', visible);
     progressButton.classList.toggle('open', visible);
     progressButton.setAttribute('aria-expanded', visible ? 'true' : 'false');
@@ -820,7 +825,7 @@ async function fetchUserData() {
                 currentUserIsAdmin = false;
                 userPreferences = null;
                 closeLanguageOnboarding();
-                adminDashboardBtn.style.display = 'none';
+                if (adminDashboardBtn) adminDashboardBtn.style.display = 'none';
                 userProfileLoaded = false;
             }
             return;
@@ -832,7 +837,7 @@ async function fetchUserData() {
         userProfileLoaded = true;
         currentUserIsAdmin = Boolean(d.is_admin);
         userPreferences = (d.preferences && typeof d.preferences === 'object') ? d.preferences : null;
-        adminDashboardBtn.style.display = currentUserIsAdmin ? 'flex' : 'none';
+        if (adminDashboardBtn) adminDashboardBtn.style.display = currentUserIsAdmin ? 'flex' : 'none';
         if (userPreferences) {
             applyPreferencesToOutputLanguage(userPreferences, { forceOnboardingOpen: true });
         }
@@ -850,8 +855,10 @@ function updateCreditsDisplay() {
     const lecture = userCredits.lecture_standard + userCredits.lecture_extended;
     const interview = userCredits.interview_short + userCredits.interview_medium + userCredits.interview_long;
     const total = lecture + userCredits.slides + interview;
-    creditsCount.textContent = total;
-    creditsDisplay.setAttribute('data-tooltip', `Lecture ${lecture}, Text extraction ${userCredits.slides}, Interview ${interview}, Total ${total}`);
+    if (creditsCount) creditsCount.textContent = total;
+    if (creditsDisplay) {
+        creditsDisplay.setAttribute('data-tooltip', `Lecture ${lecture}, Text extraction ${userCredits.slides}, Interview ${interview}, Total ${total}`);
+    }
     if (creditsTooltip) {
         setSanitizedHtml(
             creditsTooltip,
@@ -861,9 +868,9 @@ function updateCreditsDisplay() {
              <div class="credit-tip-row total"><span>Total</span><strong>${total}</strong></div>`
         );
     }
-    dropdownLectureCredits.textContent = lecture;
-    dropdownSlidesCredits.textContent = userCredits.slides;
-    dropdownInterviewCredits.textContent = interview;
+    if (dropdownLectureCredits) dropdownLectureCredits.textContent = lecture;
+    if (dropdownSlidesCredits) dropdownSlidesCredits.textContent = userCredits.slides;
+    if (dropdownInterviewCredits) dropdownInterviewCredits.textContent = interview;
     updateInterviewOptionAvailability();
     updateModeCostSummary();
     updateProcessButton();
@@ -1190,16 +1197,16 @@ function updateUIForAuthState(user) {
         userProfileLoaded = false;
         userHasCreatedStudyPack = false;
         closeHeaderDropdowns('');
-        headerSignInBtn.style.display = 'none';
+        if (headerSignInBtn) headerSignInBtn.style.display = 'none';
         if (headerNavToggle) headerNavToggle.style.display = 'inline-flex';
-        creditsDisplay.style.display = 'flex';
-        headerStudyLibraryBtn.style.display = 'inline-flex';
+        if (creditsDisplay) creditsDisplay.style.display = 'flex';
+        if (headerStudyLibraryBtn) headerStudyLibraryBtn.style.display = 'inline-flex';
         if (headerFeaturesBtn) headerFeaturesBtn.style.display = 'inline-flex';
-        headerToolsBtn.style.display = 'inline-flex';
+        if (headerToolsBtn) headerToolsBtn.style.display = 'inline-flex';
         if (headerPlannerBtn) headerPlannerBtn.style.display = 'inline-flex';
-        progressMenu.style.display = 'block';
-        userMenu.style.display = 'block';
-        adminDashboardBtn.style.display = 'none';
+        if (progressMenu) progressMenu.style.display = 'block';
+        if (userMenu) userMenu.style.display = 'block';
+        if (adminDashboardBtn) adminDashboardBtn.style.display = 'none';
         signInRequired.classList.remove('visible');
         uploadSection.style.display = 'grid';
         uploadEstimate.style.display = '';
@@ -1209,25 +1216,27 @@ function updateUIForAuthState(user) {
         applyStoredStudyFeaturePreference(user);
         const displayName = user.displayName || user.email.split('@')[0];
         const initial = displayName.charAt(0).toUpperCase();
-        userAvatar.innerHTML = '';
-        if (user.photoURL) {
-            const img = document.createElement('img');
-            img.src = user.photoURL;
-            img.alt = displayName;
-            userAvatar.appendChild(img);
-        } else {
-            const span = document.createElement('span');
-            span.textContent = initial;
-            userAvatar.appendChild(span);
+        if (userAvatar) {
+            userAvatar.innerHTML = '';
+            if (user.photoURL) {
+                const img = document.createElement('img');
+                img.src = user.photoURL;
+                img.alt = displayName;
+                userAvatar.appendChild(img);
+            } else {
+                const span = document.createElement('span');
+                span.textContent = initial;
+                userAvatar.appendChild(span);
+            }
         }
-        userName.textContent = displayName;
-        if (topbarUtils.applyAuthState) {
+        if (userName) userName.textContent = displayName;
+        if (topbarUtils.applyAuthState && userEmail) {
             topbarUtils.applyAuthState({
                 user: user,
                 userTextEl: userEmail,
                 signedInText: function (activeUser) { return activeUser && activeUser.email ? activeUser.email : ''; },
             });
-        } else {
+        } else if (userEmail) {
             userEmail.textContent = user.email;
         }
         switchMode(currentMode);
@@ -1242,15 +1251,15 @@ function updateUIForAuthState(user) {
             processingEstimateDebounceTimer = null;
         }
         closeHeaderDropdowns('');
-        headerSignInBtn.style.display = 'flex';
+        if (headerSignInBtn) headerSignInBtn.style.display = 'flex';
         if (headerNavToggle) headerNavToggle.style.display = 'none';
-        creditsDisplay.style.display = 'none';
-        headerStudyLibraryBtn.style.display = 'none';
+        if (creditsDisplay) creditsDisplay.style.display = 'none';
+        if (headerStudyLibraryBtn) headerStudyLibraryBtn.style.display = 'none';
         if (headerFeaturesBtn) headerFeaturesBtn.style.display = 'none';
-        headerToolsBtn.style.display = 'none';
+        if (headerToolsBtn) headerToolsBtn.style.display = 'none';
         if (headerPlannerBtn) headerPlannerBtn.style.display = 'none';
-        progressMenu.style.display = 'none';
-        userMenu.style.display = 'none';
+        if (progressMenu) progressMenu.style.display = 'none';
+        if (userMenu) userMenu.style.display = 'none';
         signInRequired.classList.add('visible');
         uploadSection.style.display = 'grid';
         uploadEstimate.style.display = '';
@@ -1277,7 +1286,7 @@ function updateUIForAuthState(user) {
         clearUploadCooldownTimer();
         modalStateStack = [];
         activeModalOverlay = null;
-        adminDashboardBtn.style.display = 'none';
+        if (adminDashboardBtn) adminDashboardBtn.style.display = 'none';
         updateInterviewOptionAvailability();
         updateModeCostSummary();
         if (processButton) processButton.disabled = true;
@@ -2983,7 +2992,9 @@ function maybeOpenAuthModalFromQuery() {
     window.history.replaceState({}, '', nextUrl);
 }
 
-headerSignInBtn.addEventListener('click', () => showAuthModal('signin'));
+if (headerSignInBtn) {
+    headerSignInBtn.addEventListener('click', () => showAuthModal('signin'));
+}
 signInToProcessBtn.addEventListener('click', () => showAuthModal('signin'));
 authModalClose.addEventListener('click', hideAuthModal);
 authOverlay.addEventListener('click', (e) => { if (e.target === authOverlay) hideAuthModal(); });
@@ -3022,60 +3033,74 @@ if (headerSidebarClose) {
 if (headerSidebarBackdrop) {
     headerSidebarBackdrop.addEventListener('click', () => setHeaderSidebarVisible(false));
 }
-signOutBtn.addEventListener('click', signOut);
-userButton.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const nextVisible = !userDropdown.classList.contains('visible');
-    closeHeaderDropdowns(nextVisible ? 'user' : '');
-    setUserDropdownVisible(nextVisible);
-});
-userButton.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        closeHeaderDropdowns('user');
-        setUserDropdownVisible(true);
-        focusMenuItem(userDropdown, '.user-dropdown-item', 'first');
-    }
-    if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        closeHeaderDropdowns('user');
-        setUserDropdownVisible(true);
-        focusMenuItem(userDropdown, '.user-dropdown-item', 'last');
-    }
-    if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
+if (signOutBtn) {
+    signOutBtn.addEventListener('click', signOut);
+}
+if (userButton && userDropdown) {
+    userButton.addEventListener('click', (e) => {
+        e.stopPropagation();
         const nextVisible = !userDropdown.classList.contains('visible');
         closeHeaderDropdowns(nextVisible ? 'user' : '');
         setUserDropdownVisible(nextVisible);
-    }
-    if (e.key === 'Escape') {
-        e.preventDefault();
+    });
+    userButton.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            closeHeaderDropdowns('user');
+            setUserDropdownVisible(true);
+            focusMenuItem(userDropdown, '.user-dropdown-item', 'first');
+        }
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            closeHeaderDropdowns('user');
+            setUserDropdownVisible(true);
+            focusMenuItem(userDropdown, '.user-dropdown-item', 'last');
+        }
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            const nextVisible = !userDropdown.classList.contains('visible');
+            closeHeaderDropdowns(nextVisible ? 'user' : '');
+            setUserDropdownVisible(nextVisible);
+        }
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            setUserDropdownVisible(false);
+        }
+    });
+    userDropdown.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') { e.preventDefault(); focusMenuItem(userDropdown, '.user-dropdown-item', 'next'); }
+        if (e.key === 'ArrowUp') { e.preventDefault(); focusMenuItem(userDropdown, '.user-dropdown-item', 'prev'); }
+        if (e.key === 'Home') { e.preventDefault(); focusMenuItem(userDropdown, '.user-dropdown-item', 'first'); }
+        if (e.key === 'End') { e.preventDefault(); focusMenuItem(userDropdown, '.user-dropdown-item', 'last'); }
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            setUserDropdownVisible(false);
+            userButton.focus();
+        }
+        if (e.key === 'Tab') setUserDropdownVisible(false);
+    });
+}
+document.addEventListener('click', (e) => {
+    if (userMenu && !userMenu.contains(e.target)) setUserDropdownVisible(false);
+});
+if (buyCreditsBtn) {
+    buyCreditsBtn.addEventListener('click', () => { setUserDropdownVisible(false); showPricingModal(); });
+}
+if (purchaseHistoryBtn) {
+    purchaseHistoryBtn.addEventListener('click', () => { setUserDropdownVisible(false); showHistoryModal(); });
+}
+if (exportDataBtn) {
+    exportDataBtn.addEventListener('click', async () => {
         setUserDropdownVisible(false);
-    }
-});
-userDropdown.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); focusMenuItem(userDropdown, '.user-dropdown-item', 'next'); }
-    if (e.key === 'ArrowUp') { e.preventDefault(); focusMenuItem(userDropdown, '.user-dropdown-item', 'prev'); }
-    if (e.key === 'Home') { e.preventDefault(); focusMenuItem(userDropdown, '.user-dropdown-item', 'first'); }
-    if (e.key === 'End') { e.preventDefault(); focusMenuItem(userDropdown, '.user-dropdown-item', 'last'); }
-    if (e.key === 'Escape') {
-        e.preventDefault();
+        await exportMyAccountData();
+    });
+}
+if (deleteAccountBtn) {
+    deleteAccountBtn.addEventListener('click', async () => {
         setUserDropdownVisible(false);
-        userButton.focus();
-    }
-    if (e.key === 'Tab') setUserDropdownVisible(false);
-});
-document.addEventListener('click', (e) => { if (!userMenu.contains(e.target)) setUserDropdownVisible(false); });
-buyCreditsBtn.addEventListener('click', () => { setUserDropdownVisible(false); showPricingModal(); });
-purchaseHistoryBtn.addEventListener('click', () => { setUserDropdownVisible(false); showHistoryModal(); });
-exportDataBtn.addEventListener('click', async () => {
-    setUserDropdownVisible(false);
-    await exportMyAccountData();
-});
-deleteAccountBtn.addEventListener('click', async () => {
-    setUserDropdownVisible(false);
-    await deleteMyAccountData();
-});
+        await deleteMyAccountData();
+    });
+}
 if (deleteAccountClose) {
     deleteAccountClose.addEventListener('click', closeDeleteAccountModal);
 }
@@ -3106,22 +3131,26 @@ if (deleteAccountEmailInput) {
         }
     });
 }
-headerStudyLibraryBtn.addEventListener('click', () => {
-    setHeaderSidebarVisible(false);
-    trackEvent('study_mode_opened', { source: 'header_study_library' }, { preferBeacon: true });
-    window.location.href = '/study';
-});
+if (headerStudyLibraryBtn) {
+    headerStudyLibraryBtn.addEventListener('click', () => {
+        setHeaderSidebarVisible(false);
+        trackEvent('study_mode_opened', { source: 'header_study_library' }, { preferBeacon: true });
+        window.location.href = '/study';
+    });
+}
 if (headerFeaturesBtn) {
     headerFeaturesBtn.addEventListener('click', () => {
         setHeaderSidebarVisible(false);
         window.location.href = '/features';
     });
 }
-headerToolsBtn.addEventListener('click', () => {
-    setHeaderSidebarVisible(false);
-    trackEvent('tools_page_opened', { source: 'header_tools' }, { preferBeacon: true });
-    window.location.href = '/tools';
-});
+if (headerToolsBtn) {
+    headerToolsBtn.addEventListener('click', () => {
+        setHeaderSidebarVisible(false);
+        trackEvent('tools_page_opened', { source: 'header_tools' }, { preferBeacon: true });
+        window.location.href = '/tools';
+    });
+}
 if (headerPlannerBtn) {
     headerPlannerBtn.addEventListener('click', () => {
         const touchLike = window.matchMedia('(hover: none), (pointer: coarse)').matches;
@@ -3183,63 +3212,69 @@ async function saveGoalFromModal() {
     closeGoalModal();
     showToast('Daily goal updated.', 'success', 1800);
 }
-progressButton.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const visible = !progressDropdown.classList.contains('visible');
-    closeHeaderDropdowns(visible ? 'progress' : '');
-    setProgressDropdownVisible(visible);
-    if (visible) refreshStudyHeaderMetrics();
-});
-progressButton.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        closeHeaderDropdowns('progress');
-        setProgressDropdownVisible(true);
-        refreshStudyHeaderMetrics();
-        focusMenuItem(progressDropdown, '.progress-action-btn', 'first');
-    }
-    if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        closeHeaderDropdowns('progress');
-        setProgressDropdownVisible(true);
-        refreshStudyHeaderMetrics();
-        focusMenuItem(progressDropdown, '.progress-action-btn', 'last');
-    }
-    if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
+if (progressButton && progressDropdown) {
+    progressButton.addEventListener('click', (e) => {
+        e.stopPropagation();
         const visible = !progressDropdown.classList.contains('visible');
         closeHeaderDropdowns(visible ? 'progress' : '');
         setProgressDropdownVisible(visible);
         if (visible) refreshStudyHeaderMetrics();
-    }
-    if (e.key === 'Escape') {
-        e.preventDefault();
+    });
+    progressButton.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            closeHeaderDropdowns('progress');
+            setProgressDropdownVisible(true);
+            refreshStudyHeaderMetrics();
+            focusMenuItem(progressDropdown, '.progress-action-btn', 'first');
+        }
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            closeHeaderDropdowns('progress');
+            setProgressDropdownVisible(true);
+            refreshStudyHeaderMetrics();
+            focusMenuItem(progressDropdown, '.progress-action-btn', 'last');
+        }
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            const visible = !progressDropdown.classList.contains('visible');
+            closeHeaderDropdowns(visible ? 'progress' : '');
+            setProgressDropdownVisible(visible);
+            if (visible) refreshStudyHeaderMetrics();
+        }
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            setProgressDropdownVisible(false);
+        }
+    });
+    progressDropdown.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') { e.preventDefault(); focusMenuItem(progressDropdown, '.progress-action-btn', 'next'); }
+        if (e.key === 'ArrowUp') { e.preventDefault(); focusMenuItem(progressDropdown, '.progress-action-btn', 'prev'); }
+        if (e.key === 'Home') { e.preventDefault(); focusMenuItem(progressDropdown, '.progress-action-btn', 'first'); }
+        if (e.key === 'End') { e.preventDefault(); focusMenuItem(progressDropdown, '.progress-action-btn', 'last'); }
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            setProgressDropdownVisible(false);
+            progressButton.focus();
+        }
+        if (e.key === 'Tab') setProgressDropdownVisible(false);
+    });
+}
+if (progressSetGoalBtn) {
+    progressSetGoalBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setHeaderSidebarVisible(false);
         setProgressDropdownVisible(false);
-    }
-});
-progressDropdown.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); focusMenuItem(progressDropdown, '.progress-action-btn', 'next'); }
-    if (e.key === 'ArrowUp') { e.preventDefault(); focusMenuItem(progressDropdown, '.progress-action-btn', 'prev'); }
-    if (e.key === 'Home') { e.preventDefault(); focusMenuItem(progressDropdown, '.progress-action-btn', 'first'); }
-    if (e.key === 'End') { e.preventDefault(); focusMenuItem(progressDropdown, '.progress-action-btn', 'last'); }
-    if (e.key === 'Escape') {
-        e.preventDefault();
+        openGoalModal();
+    });
+}
+if (progressOpenPlanBtn) {
+    progressOpenPlanBtn.addEventListener('click', () => {
+        setHeaderSidebarVisible(false);
         setProgressDropdownVisible(false);
-        progressButton.focus();
-    }
-    if (e.key === 'Tab') setProgressDropdownVisible(false);
-});
-progressSetGoalBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    setHeaderSidebarVisible(false);
-    setProgressDropdownVisible(false);
-    openGoalModal();
-});
-progressOpenPlanBtn.addEventListener('click', () => {
-    setHeaderSidebarVisible(false);
-    setProgressDropdownVisible(false);
-    window.location.href = '/plan';
-});
+        window.location.href = '/plan';
+    });
+}
 if (progressOpenCalendarBtn) {
     progressOpenCalendarBtn.addEventListener('click', () => {
         setHeaderSidebarVisible(false);
@@ -3248,33 +3283,35 @@ if (progressOpenCalendarBtn) {
     });
 }
 let mobileCreditsTooltipTimer = null;
-creditsDisplay.addEventListener('click', (e) => {
-    const touchLike = window.matchMedia('(hover: none), (pointer: coarse)').matches;
-    if (!touchLike) {
-        showPricingModal();
-        return;
-    }
+if (creditsDisplay) {
+    creditsDisplay.addEventListener('click', (e) => {
+        const touchLike = window.matchMedia('(hover: none), (pointer: coarse)').matches;
+        if (!touchLike) {
+            showPricingModal();
+            return;
+        }
 
-    if (!creditsDisplay.classList.contains('tooltip-open')) {
-        e.preventDefault();
-        creditsDisplay.classList.add('tooltip-open');
+        if (!creditsDisplay.classList.contains('tooltip-open')) {
+            e.preventDefault();
+            creditsDisplay.classList.add('tooltip-open');
+            if (mobileCreditsTooltipTimer) clearTimeout(mobileCreditsTooltipTimer);
+            mobileCreditsTooltipTimer = setTimeout(() => {
+                creditsDisplay.classList.remove('tooltip-open');
+            }, 2600);
+            return;
+        }
+
+        creditsDisplay.classList.remove('tooltip-open');
         if (mobileCreditsTooltipTimer) clearTimeout(mobileCreditsTooltipTimer);
-        mobileCreditsTooltipTimer = setTimeout(() => {
-            creditsDisplay.classList.remove('tooltip-open');
-        }, 2600);
-        return;
-    }
-
-    creditsDisplay.classList.remove('tooltip-open');
-    if (mobileCreditsTooltipTimer) clearTimeout(mobileCreditsTooltipTimer);
-    showPricingModal();
-});
+        showPricingModal();
+    });
+}
 document.addEventListener('click', (e) => {
-    if (!creditsDisplay.contains(e.target)) {
+    if (creditsDisplay && !creditsDisplay.contains(e.target)) {
         creditsDisplay.classList.remove('tooltip-open');
         if (mobileCreditsTooltipTimer) clearTimeout(mobileCreditsTooltipTimer);
     }
-    if (!progressMenu.contains(e.target)) {
+    if (progressMenu && !progressMenu.contains(e.target)) {
         setProgressDropdownVisible(false);
     }
 });
@@ -3305,27 +3342,29 @@ document.addEventListener('visibilitychange', () => {
         else refreshStudyHeaderMetrics();
     }
 });
-adminDashboardBtn.addEventListener('click', async () => {
-    setUserDropdownVisible(false);
-    if (!currentUser || !currentUserIsAdmin) {
-        showToast('Admin access is only available for configured admin accounts.', 'error', 4200);
-        return;
-    }
-    try {
-        const sessionResponse = await authenticatedFetch('/api/session/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
-        });
-        if (!sessionResponse.ok) {
-            throw new Error('Could not start admin session.');
+if (adminDashboardBtn) {
+    adminDashboardBtn.addEventListener('click', async () => {
+        setUserDropdownVisible(false);
+        if (!currentUser || !currentUserIsAdmin) {
+            showToast('Admin access is only available for configured admin accounts.', 'error', 4200);
+            return;
         }
-        window.location.href = '/admin';
-    } catch (e) {
-        captureClientError(e, 'admin_session_login');
-        showToast('Could not open admin dashboard right now. Please retry.', 'error', 4500);
-    }
-});
+        try {
+            const sessionResponse = await authenticatedFetch('/api/session/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            if (!sessionResponse.ok) {
+                throw new Error('Could not start admin session.');
+            }
+            window.location.href = '/admin';
+        } catch (e) {
+            captureClientError(e, 'admin_session_login');
+            showToast('Could not open admin dashboard right now. Please retry.', 'error', 4500);
+        }
+    });
+}
 buyCreditsLink.addEventListener('click', (e) => { e.preventDefault(); showPricingModal(); });
 pricingModalClose.addEventListener('click', hidePricingModal);
 pricingOverlay.addEventListener('click', (e) => { if (e.target === pricingOverlay) hidePricingModal(); });
