@@ -719,6 +719,114 @@
       display: grid
     }
 
+    .pack-goals-panel {
+      margin-bottom: 14px;
+      padding: 16px;
+      border: 1px solid rgba(79, 70, 229, .14);
+      border-radius: var(--radius-lg);
+      background: linear-gradient(135deg, rgba(79, 70, 229, .05) 0%, rgba(14, 165, 233, .05) 100%);
+      box-shadow: var(--shadow-sm)
+    }
+
+    .pack-goals-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px
+    }
+
+    .pack-goals-title {
+      font-size: .92rem;
+      font-weight: 800;
+      color: var(--gray-900);
+      letter-spacing: -.01em
+    }
+
+    .pack-goals-sub {
+      margin-top: 3px;
+      font-size: .8rem;
+      color: var(--gray-500);
+      line-height: 1.45
+    }
+
+    .pack-goals-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(220px, .85fr);
+      gap: 12px;
+      align-items: end
+    }
+
+    .pack-goal-control {
+      display: grid;
+      gap: 7px
+    }
+
+    .pack-goal-control label {
+      font-size: .74rem;
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--gray-600)
+    }
+
+    .pack-goal-input-row {
+      display: flex;
+      gap: 8px;
+      align-items: center
+    }
+
+    .pack-goal-input-row input {
+      width: 100%;
+      min-width: 0
+    }
+
+    .pack-goal-input-row .btn {
+      flex-shrink: 0
+    }
+
+    .pack-goal-helper {
+      font-size: .76rem;
+      color: var(--gray-500);
+      line-height: 1.4
+    }
+
+    .pack-goal-stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px
+    }
+
+    .pack-goal-stat {
+      display: grid;
+      gap: 4px;
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--gray-200);
+      background: rgba(255, 255, 255, .86)
+    }
+
+    .pack-goal-stat span {
+      font-size: .74rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--gray-500)
+    }
+
+    .pack-goal-stat strong {
+      font-size: .94rem;
+      color: var(--gray-900)
+    }
+
+    .pack-goals-panel.is-disabled {
+      opacity: .72
+    }
+
+    .pack-goals-panel.is-disabled .pack-goal-stat {
+      background: rgba(249, 250, 251, .92)
+    }
+
     .editor-wrap {
       display: none
     }
@@ -813,7 +921,9 @@
     }
 
     .notes-pane-shell {
-      position: relative
+      position: relative;
+      overflow: visible;
+      isolation: isolate
     }
 
     .notes-view {
@@ -824,7 +934,9 @@
       max-height: 60vh;
       overflow-y: auto;
       font-size: .92rem;
-      line-height: 1.7
+      line-height: 1.7;
+      position: relative;
+      z-index: 1
     }
 
     .notes-view h1,
@@ -875,15 +987,21 @@
       align-items: start;
       gap: 10px;
       position: sticky;
-      top: 0;
-      z-index: 8;
+      top: 8px;
+      z-index: 12;
       margin-bottom: 8px;
+    }
+
+    .notes-controls-main {
+      display: grid;
+      gap: 8px;
+      min-width: 0
     }
 
     .notes-fullscreen-btn {
       position: relative;
       flex-shrink: 0;
-      z-index: 6;
+      z-index: 14;
       width: 42px;
       height: 42px;
       border-radius: 10px;
@@ -925,20 +1043,32 @@
       display: flex;
       gap: 6px;
       align-items: center;
-      padding: 8px 10px;
-      background: var(--gray-100);
+      padding: 7px 10px;
+      background: rgba(255, 255, 255, .94);
+      border: 1px solid rgba(203, 213, 225, .8);
       border-radius: var(--radius-md);
       flex-wrap: wrap;
       flex: 1;
       min-height: 42px;
       position: relative;
+      z-index: 13;
       overflow-x: auto;
       overflow-y: visible;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, .06);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .notes-highlight-status {
+      padding: 0 4px;
+      font-size: .78rem;
+      color: var(--gray-500);
+      line-height: 1.45
     }
 
     .notes-pane-shell:fullscreen .notes-controls,
     .notes-pane-shell:-webkit-full-screen .notes-controls {
-      top: -6px;
+      top: 0;
       padding-top: 4px;
     }
 
@@ -949,10 +1079,10 @@
     }
 
     .hl-btn {
-      width: 40px;
-      height: 40px;
+      width: 24px;
+      height: 24px;
       border-radius: 50%;
-      border: 2px solid transparent;
+      border: 1.5px solid transparent;
       cursor: pointer;
       transition: all .15s;
       font-size: 13px;
@@ -967,8 +1097,8 @@
     }
 
     .hl-btn.active {
-      border-color: var(--gray-900);
-      box-shadow: 0 0 0 2px rgba(79, 70, 229, .35)
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, .18)
     }
 
     .notes-pane-shell:fullscreen .hl-btn.active {
@@ -977,13 +1107,13 @@
 
     .hl-btn.hl-action {
       width: auto;
-      border-radius: var(--radius-sm);
-      min-height: 40px;
-      padding: 8px 12px;
+      border-radius: 999px;
+      min-height: 34px;
+      padding: 7px 12px;
       background: var(--white);
       border: 1px solid var(--gray-300);
       color: var(--gray-700);
-      font-size: .88rem;
+      font-size: .78rem;
       font-weight: 600;
       line-height: 1;
       transform: none;
@@ -1021,10 +1151,10 @@
     .hl-download-btn {
       margin-left: auto;
       gap: 8px;
-      min-height: 42px;
-      padding: 8px 16px;
-      border-radius: var(--radius-md);
-      font-size: .88rem;
+      min-height: 34px;
+      padding: 7px 14px;
+      border-radius: 999px;
+      font-size: .8rem;
       font-weight: 700;
       color: var(--gray-700);
       border: 1px solid var(--gray-300);
@@ -3547,6 +3677,27 @@
 
     .toast.error {
       background: var(--error)
+    }
+
+    @media(max-width:980px) {
+      .pack-goals-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media(max-width:760px) {
+      .pack-goal-input-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .pack-goal-input-row .btn {
+        width: 100%;
+      }
+
+      .pack-goal-stats {
+        grid-template-columns: 1fr;
+      }
     }
 
     @keyframes dropdownOpen {

@@ -31,6 +31,7 @@ const markdownUtils = window.LectureProcessorMarkdown || {};
 const uxUtils = window.LectureProcessorUx || {};
 const downloadUtils = window.LectureProcessorDownload || {};
 const topbarUtils = window.LectureProcessorTopbar || {};
+const progressUtils = window.LectureProcessorStudyProgressUtils || {};
 const pageConfig = window.LectureProcessorPageConfig || {};
 const forcedMode = ['lecture-notes', 'slides-only', 'interview'].includes(String(pageConfig.forcedMode || '').trim())
     ? String(pageConfig.forcedMode || '').trim()
@@ -539,18 +540,19 @@ function renderBillingReceipt(receipt) {
     billingReceiptPanel.classList.add('visible');
 }
 function getDailyGoalStorage(uid) {
+    if (progressUtils && typeof progressUtils.readDailyGoalCache === 'function') {
+        return progressUtils.readDailyGoalCache(uid, progressUtils.DEFAULT_DAILY_GOAL || 20);
+    }
     const parsed = parseInt(localStorage.getItem(`daily_goal_${uid}`) || '20', 10);
     return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 500) : 20;
 }
 function getProgressSummaryForHeader(uid) {
     const summary = (progressSummaryCache && typeof progressSummaryCache === 'object') ? progressSummaryCache : {};
+    if (progressUtils && typeof progressUtils.buildSummary === 'function') {
+        return progressUtils.buildSummary(summary, getDailyGoalStorage(uid));
+    }
     const goal = Number(summary.daily_goal || getDailyGoalStorage(uid) || 20);
-    return {
-        current_streak: Number(summary.current_streak || 0),
-        due_today: Number(summary.due_today || 0),
-        today_progress: Number(summary.today_progress || 0),
-        daily_goal: Number.isFinite(goal) && goal > 0 ? goal : 20,
-    };
+    return { current_streak: Number(summary.current_streak || 0), due_today: Number(summary.due_today || 0), today_progress: Number(summary.today_progress || 0), daily_goal: Number.isFinite(goal) && goal > 0 ? goal : 20 };
 }
 function refreshStudyHeaderMetrics() {
     if (!progressMenu || !progressButton || !progressStreakCount || !progressDueCount || !progressGoalText) {
@@ -564,12 +566,12 @@ function refreshStudyHeaderMetrics() {
     const summary = getProgressSummaryForHeader(uid);
     const streak = summary.current_streak;
     const due = summary.due_today;
-    const goal = summary.daily_goal;
-    const todayProgress = summary.today_progress;
     progressStreakCount.textContent = String(streak);
     progressDueCount.textContent = String(due);
-    progressGoalText.textContent = `${Math.min(todayProgress, goal)} / ${goal}`;
-    progressButton.title = `Streak ${streak} days · ${due} due today · Goal ${Math.min(todayProgress, goal)}/${goal}`;
+    progressGoalText.textContent = progressUtils && typeof progressUtils.goalProgressText === 'function'
+        ? progressUtils.goalProgressText(summary, getDailyGoalStorage(uid))
+        : `${Math.min(summary.today_progress, summary.daily_goal)} / ${summary.daily_goal}`;
+    progressButton.title = `Streak ${streak} days · ${due} due today · Goal ${progressGoalText.textContent}`;
     progressMenu.style.display = 'block';
 }
 async function fetchStudyProgressSummary() {
@@ -583,7 +585,11 @@ async function fetchStudyProgressSummary() {
         progressSummaryCache = summary;
         if (typeof summary.daily_goal === 'number' && summary.daily_goal > 0) {
             try {
-                localStorage.setItem(`daily_goal_${currentUser.uid}`, String(summary.daily_goal));
+                if (progressUtils && typeof progressUtils.writeDailyGoalCache === 'function') {
+                    progressUtils.writeDailyGoalCache(currentUser.uid, summary.daily_goal);
+                } else {
+                    localStorage.setItem(`daily_goal_${currentUser.uid}`, String(summary.daily_goal));
+                }
             } catch (_) { }
         }
         refreshStudyHeaderMetrics();
@@ -1257,7 +1263,7 @@ function updateUIForAuthState(user) {
         uploadEstimate.style.display = '';
         buttonSection.style.display = 'block';
         languageControls.style.display = 'grid';
-        setAdvancedSettingsVisible(false);
+        setAdvancedSettingsVisible(forcedMode === 'lecture-notes');
         applyStoredStudyFeaturePreference(user);
         const displayName = user.displayName || user.email.split('@')[0];
         const initial = displayName.charAt(0).toUpperCase();
@@ -1313,7 +1319,7 @@ function updateUIForAuthState(user) {
         generationControls.style.display = '';
         interviewControls.classList.add('hidden');
         languageControls.style.display = 'grid';
-        setAdvancedSettingsVisible(false);
+        setAdvancedSettingsVisible(forcedMode === 'lecture-notes');
         releaseImportedAudioToken({ clearStatus: true });
         currentUser = null;
         userCredits = null;
@@ -1866,6 +1872,9 @@ function switchMode(mode) {
     }
     if (audioUrlImport) {
         audioUrlImport.style.display = mode === 'lecture-notes' ? '' : 'none';
+    }
+    if (forcedMode === 'lecture-notes' && mode === 'lecture-notes') {
+        setAdvancedSettingsVisible(true);
     }
     setStudyFeature(selectedStudyFeatures);
     updateInterviewOptionsUI();
@@ -3238,7 +3247,7 @@ function openGoalModal() {
     if (!currentUser) return;
     goalModalError.classList.remove('visible');
     goalModalError.textContent = '';
-    goalModalInput.value = String(getDailyGoalStorage(currentUser.uid));
+    goalModalInput.value = String(getProgressSummaryForHeader(currentUser.uid).daily_goal);
     openOverlay(goalModalOverlay);
     setTimeout(() => goalModalInput.focus(), 30);
     setTimeout(() => goalModalInput.select(), 30);
@@ -3248,27 +3257,39 @@ function closeGoalModal() {
 }
 async function saveGoalFromModal() {
     if (!currentUser) return;
-    const parsed = parseInt(String(goalModalInput.value || '').trim(), 10);
+    const parsed = progressUtils && typeof progressUtils.parseGoalValue === 'function'
+        ? progressUtils.parseGoalValue(goalModalInput.value)
+        : parseInt(String(goalModalInput.value || '').trim(), 10);
     if (!Number.isFinite(parsed) || parsed < 1 || parsed > 500) {
         goalModalError.textContent = 'Use a number between 1 and 500.';
         goalModalError.classList.add('visible');
         return;
     }
-    localStorage.setItem(`daily_goal_${currentUser.uid}`, String(parsed));
-    progressSummaryCache = Object.assign({}, progressSummaryCache || {}, { daily_goal: parsed });
-    refreshStudyHeaderMetrics();
     try {
-        await authenticatedFetch('/api/study-progress', {
+        const response = await authenticatedFetch('/api/study-progress', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ daily_goal: parsed, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '' }),
         });
+        if (!response.ok) {
+            const payload = await response.json().catch(() => ({}));
+            throw new Error(payload.error || 'Could not sync daily goal.');
+        }
+        if (progressUtils && typeof progressUtils.writeDailyGoalCache === 'function') {
+            progressUtils.writeDailyGoalCache(currentUser.uid, parsed);
+        } else {
+            localStorage.setItem(`daily_goal_${currentUser.uid}`, String(parsed));
+        }
+        progressSummaryCache = Object.assign({}, progressSummaryCache || {}, { daily_goal: parsed });
         await fetchStudyProgressSummary();
+        closeGoalModal();
+        showToast('Daily goal updated.', 'success', 1800);
     } catch (e) {
         console.warn('Could not sync daily goal:', e);
+        goalModalError.textContent = e && e.message ? e.message : 'Could not sync daily goal.';
+        goalModalError.classList.add('visible');
+        return;
     }
-    closeGoalModal();
-    showToast('Daily goal updated.', 'success', 1800);
 }
 if (progressButton && progressDropdown) {
     progressButton.addEventListener('click', (e) => {

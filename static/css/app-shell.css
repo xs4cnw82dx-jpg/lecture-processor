@@ -182,7 +182,10 @@ select {
   .app-shell-group,
   .app-shell-group-trigger,
   .app-shell-group-chevron,
-  .app-shell-group-panel-wrap {
+  .app-shell-group-panel-wrap,
+  .app-shell-account-btn,
+  .app-shell-account-btn svg,
+  .app-shell-account-panel-wrap {
     transition: none;
   }
 }
@@ -329,6 +332,17 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  transition:
+    border-color var(--motion-fast, 140ms) var(--motion-ease, ease),
+    background-color var(--motion-fast, 140ms) var(--motion-ease, ease),
+    box-shadow var(--motion-fast, 140ms) var(--motion-ease, ease);
+}
+
+.app-shell-account.is-open .app-shell-account-btn,
+.app-shell-account-btn:hover {
+  border-color: #c4d0e5;
+  background: #f8fbff;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.1);
 }
 
 .app-shell-account-btn .avatar {
@@ -346,28 +360,44 @@ select {
 .app-shell-account-btn svg {
   width: 14px;
   height: 14px;
+  transition: transform var(--motion-fast, 140ms) var(--motion-ease, ease);
 }
 
-.app-shell-account-menu {
+.app-shell-account.is-open .app-shell-account-btn svg {
+  transform: rotate(180deg);
+}
+
+.app-shell-account-panel-wrap {
   position: absolute;
   right: 0;
   top: calc(100% + 8px);
   width: 220px;
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    grid-template-rows var(--motion-mid, 220ms) var(--motion-ease, ease),
+    opacity var(--motion-mid, 220ms) var(--motion-ease, ease);
+  z-index: 18;
+}
+
+.app-shell-account.is-open .app-shell-account-panel-wrap {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.app-shell-account-menu {
   background: #fff;
   border: 1px solid var(--shell-border);
   border-radius: 12px;
   box-shadow: 0 22px 40px rgba(15, 23, 42, 0.14);
-  display: none;
+  min-height: 0;
+  overflow: hidden;
   padding: 8px;
-  transform: translateY(8px);
-  opacity: 0;
-  transition: opacity var(--motion-fast, 140ms) var(--motion-ease, ease), transform var(--motion-fast, 140ms) var(--motion-ease, ease);
-}
-
-.app-shell-account-menu.visible {
-  display: block;
-  opacity: 1;
-  transform: translateY(0);
+  display: grid;
+  gap: 4px;
 }
 
 .app-shell-email {

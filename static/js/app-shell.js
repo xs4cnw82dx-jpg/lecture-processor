@@ -19,6 +19,7 @@
   var creditsTotalValue = document.getElementById('shell-credit-total');
   var accountWrap = document.getElementById('shell-account');
   var accountBtn = document.getElementById('shell-account-btn');
+  var accountMenuWrap = document.getElementById('shell-account-menu-wrap');
   var accountMenu = document.getElementById('shell-account-menu');
   var userEmail = document.getElementById('user-email');
   var userName = document.getElementById('shell-account-name');
@@ -116,10 +117,42 @@
     if (menuBtn) menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
-  function setAccountMenuOpen(open) {
+  function focusMenuItem(menu, direction) {
+    if (!menu) return;
+    var items = Array.prototype.slice.call(menu.querySelectorAll('[role="menuitem"]')).filter(function (item) {
+      return !item.hasAttribute('disabled') && item.offsetParent !== null;
+    });
+    if (!items.length) return;
+    if (direction === 'first') {
+      items[0].focus();
+      return;
+    }
+    if (direction === 'last') {
+      items[items.length - 1].focus();
+      return;
+    }
+    var currentIndex = items.indexOf(document.activeElement);
+    if (currentIndex < 0) {
+      items[0].focus();
+      return;
+    }
+    if (direction === 'prev') {
+      items[(currentIndex - 1 + items.length) % items.length].focus();
+      return;
+    }
+    items[(currentIndex + 1) % items.length].focus();
+  }
+
+  function setAccountMenuOpen(open, focusMode) {
     if (!accountMenu || !accountBtn) return;
-    accountMenu.classList.toggle('visible', !!open);
+    if (accountWrap) accountWrap.classList.toggle('is-open', !!open);
     accountBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (accountMenuWrap) {
+      accountMenuWrap.setAttribute('aria-hidden', open ? 'false' : 'true');
+    }
+    if (open && focusMode) {
+      focusMenuItem(accountMenu, focusMode);
+    }
   }
 
   function setAuthState(state) {
@@ -487,8 +520,53 @@
   if (accountBtn && accountMenu) {
     accountBtn.addEventListener('click', function (event) {
       event.stopPropagation();
-      var next = !accountMenu.classList.contains('visible');
+      var next = !(accountWrap && accountWrap.classList.contains('is-open'));
       setAccountMenuOpen(next);
+    });
+    accountBtn.addEventListener('keydown', function (event) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setAccountMenuOpen(true, 'first');
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setAccountMenuOpen(true, 'last');
+      }
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        var next = !(accountWrap && accountWrap.classList.contains('is-open'));
+        setAccountMenuOpen(next, next ? 'first' : '');
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setAccountMenuOpen(false);
+      }
+    });
+    accountMenu.addEventListener('keydown', function (event) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        focusMenuItem(accountMenu, 'next');
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        focusMenuItem(accountMenu, 'prev');
+      }
+      if (event.key === 'Home') {
+        event.preventDefault();
+        focusMenuItem(accountMenu, 'first');
+      }
+      if (event.key === 'End') {
+        event.preventDefault();
+        focusMenuItem(accountMenu, 'last');
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setAccountMenuOpen(false);
+        accountBtn.focus();
+      }
+      if (event.key === 'Tab') {
+        setAccountMenuOpen(false);
+      }
     });
   }
 

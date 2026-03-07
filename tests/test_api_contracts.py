@@ -104,6 +104,7 @@ def test_study_pack_list_uses_repo_order_and_count_fallback(client, monkeypatch)
                     "mode": "manual",
                     "flashcards_count": 9,
                     "test_questions_count": 4,
+                    "daily_card_goal": 32,
                     "created_at": 200,
                 },
             ),
@@ -127,8 +128,169 @@ def test_study_pack_list_uses_repo_order_and_count_fallback(client, monkeypatch)
     assert [pack["study_pack_id"] for pack in packs] == ["pack-new", "pack-old"]
     assert packs[0]["flashcards_count"] == 9
     assert packs[0]["test_questions_count"] == 4
+    assert packs[0]["daily_card_goal"] == 32
     assert packs[1]["flashcards_count"] == 2
     assert packs[1]["test_questions_count"] == 3
+    assert packs[1]["daily_card_goal"] is None
+
+
+def test_study_pack_get_returns_goal_and_notes_highlights(client, monkeypatch):
+    class _Doc:
+        exists = True
+
+        def to_dict(self):
+            return {
+                "uid": "study-u2",
+                "title": "Pack with highlights",
+                "mode": "manual",
+                "output_language": "English",
+                "notes_markdown": "# Notes",
+                "flashcards": [],
+                "test_questions": [],
+                "study_features": "both",
+                "interview_features": [],
+                "daily_card_goal": 24,
+                "notes_highlights": {
+                    "base_key": "pack-1:1:7",
+                    "ranges": [{"start": 0, "end": 5, "color": "yellow"}],
+                    "updated_at": 123.0,
+                },
+                "created_at": 10,
+            }
+
+        @property
+        def reference(self):
+            return object()
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u2", "email": "u@example.com"})
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _Doc())
+    monkeypatch.setattr("lecture_processor.services.study_api_service.study_audio.ensure_pack_audio_storage_key", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr("lecture_processor.services.study_api_service.study_audio.get_audio_storage_key_from_pack", lambda *_args, **_kwargs: "")
+
+    response = client.get("/api/study-packs/pack-1", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["daily_card_goal"] == 24
+    assert payload["notes_highlights"]["base_key"] == "pack-1:1:7"
+    assert payload["notes_highlights"]["ranges"] == [{"start": 0, "end": 5, "color": "yellow"}]
+
+
+def test_study_pack_create_accepts_daily_card_goal_and_notes_highlights(client, monkeypatch):
+    stored = {}
+
+    class _DocRef:
+        id = "pack-created"
+
+        def set(self, payload):
+            stored.update(dict(payload))
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u3", "email": "u@example.com"})
+    monkeypatch.setattr(core.study_repo, "create_study_pack_doc_ref", lambda _db: _DocRef())
+
+    response = client.post(
+        "/api/study-packs",
+        json={
+            "title": "Manual pack",
+            "daily_card_goal": 18,
+            "notes_markdown": "# Notes",
+            "notes_highlights": {
+                "base_key": "pack-created:1:7",
+                "ranges": [{"start": 0, "end": 5, "color": "yellow"}],
+                "updated_at": 456,
+            },
+        },
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["study_pack_id"] == "pack-created"
+    assert stored["daily_card_goal"] == 18
+    assert stored["notes_highlights"]["ranges"] == [{"start": 0, "end": 5, "color": "yellow"}]
+
+
+def test_study_pack_update_round_trips_daily_card_goal_and_notes_highlights(client, monkeypatch):
+    stored = {
+        "uid": "study-u4",
+        "title": "Existing pack",
+        "notes_markdown": "# Notes",
+        "daily_card_goal": 12,
+        "notes_highlights": None,
+    }
+
+    class _Doc:
+        exists = True
+
+        def to_dict(self):
+            return dict(stored)
+
+    class _DocRef:
+        def get(self):
+            return _Doc()
+
+        def update(self, updates):
+            stored.update(dict(updates))
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u4", "email": "u@example.com"})
+    monkeypatch.setattr(core.study_repo, "study_pack_doc_ref", lambda _db, _pack_id: _DocRef())
+    monkeypatch.setattr("lecture_processor.services.study_api_service.study_audio.ensure_pack_audio_storage_key", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr("lecture_processor.services.study_api_service.study_audio.get_audio_storage_key_from_pack", lambda *_args, **_kwargs: "")
+
+    response = client.patch(
+        "/api/study-packs/pack-1",
+        json={
+            "daily_card_goal": 40,
+            "notes_highlights": {
+                "base_key": "pack-1:2:7",
+                "ranges": [{"start": 1, "end": 4, "color": "blue"}],
+                "updated_at": 789,
+            },
+        },
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 200
+    assert stored["daily_card_goal"] == 40
+    assert stored["notes_highlights"] == {
+        "base_key": "pack-1:2:7",
+        "ranges": [{"start": 1, "end": 4, "color": "blue"}],
+        "updated_at": 789.0,
+    }
+
+
+def test_study_pack_update_rejects_invalid_notes_highlights(client, monkeypatch):
+    class _Doc:
+        exists = True
+
+        def to_dict(self):
+            return {"uid": "study-u5", "title": "Existing pack"}
+
+    class _DocRef:
+        def get(self):
+            return _Doc()
+
+        def update(self, _updates):
+            raise AssertionError("Should not update for invalid highlight payload")
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u5", "email": "u@example.com"})
+    monkeypatch.setattr(core.study_repo, "study_pack_doc_ref", lambda _db, _pack_id: _DocRef())
+    monkeypatch.setattr("lecture_processor.services.study_api_service.study_audio.ensure_pack_audio_storage_key", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr("lecture_processor.services.study_api_service.study_audio.get_audio_storage_key_from_pack", lambda *_args, **_kwargs: "")
+
+    response = client.patch(
+        "/api/study-packs/pack-1",
+        json={
+            "notes_highlights": {
+                "base_key": "pack-1:2:7",
+                "ranges": [{"start": 8, "end": 3, "color": "blue"}],
+                "updated_at": 789,
+            },
+        },
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 400
+    assert "notes_highlights" in response.get_json()["error"]
 
 
 def test_admin_overview_contract_fields(client, monkeypatch):
