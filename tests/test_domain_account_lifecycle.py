@@ -15,6 +15,39 @@ def test_count_active_jobs_for_user_uses_in_memory_job_store(app):
     assert lifecycle.count_active_jobs_for_user("u1", runtime=runtime) == 1
 
 
+def test_count_active_jobs_for_user_includes_runtime_and_batch_jobs(app, monkeypatch):
+    runtime = get_runtime(app)
+    with runtime.JOBS_LOCK:
+        runtime.jobs.clear()
+
+    monkeypatch.setattr(
+        runtime.runtime_jobs_repo,
+        "query_by_user_and_statuses",
+        lambda _db, _collection, _uid, _statuses, limit=200: [SimpleNamespace(id="r1"), SimpleNamespace(id="r2")],
+    )
+    monkeypatch.setattr(
+        runtime.batch_repo,
+        "list_batch_jobs_by_uid_and_statuses",
+        lambda _db, _uid, _statuses, limit=200: [SimpleNamespace(id="b1")],
+    )
+
+    assert lifecycle.count_active_jobs_for_user("u1", runtime=runtime) == 3
+
+
+def test_ensure_account_allows_writes_rejects_deleting_accounts(app, monkeypatch):
+    runtime = get_runtime(app)
+    monkeypatch.setattr(
+        runtime.users_repo,
+        "get_doc",
+        lambda _db, _uid: SimpleNamespace(exists=True, to_dict=lambda: {"account_status": "deleting"}),
+    )
+
+    allowed, message = lifecycle.ensure_account_allows_writes("u1", runtime=runtime)
+
+    assert allowed is False
+    assert "account deletion is in progress" in message.lower()
+
+
 def test_list_docs_by_uid_flattens_documents(app, monkeypatch):
     runtime = get_runtime(app)
 

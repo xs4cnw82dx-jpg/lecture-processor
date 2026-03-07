@@ -60,7 +60,7 @@
       <div class="app-shell-title">{{ shell_title or 'Lecture Processor' }}</div>
       <div class="app-shell-topbar-right">
         {% if shell_show_credits_pill %}
-        <a href="/buy_credits" class="app-shell-credits" id="shell-credits-link" aria-label="Buy credits">
+        <a href="/buy_credits" class="app-shell-credits" id="shell-credits-link" aria-label="Buy credits" hidden>
           <span class="app-shell-credits-total" id="shell-credits-total">&mdash; credits</span>
           <span class="app-shell-credits-tooltip" id="shell-credits-tooltip" role="tooltip">
             <span class="credit-tip-row"><span>Lectures</span><strong id="shell-credit-lecture">&mdash;</strong></span>

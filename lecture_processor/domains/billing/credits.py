@@ -7,7 +7,8 @@ def _resolve_runtime(runtime=None):
     return get_runtime()
 
 
-def _build_default_user_data(uid, email, runtime):
+def build_default_user_data(uid, email, runtime=None):
+    runtime = _resolve_runtime(runtime)
     return {
         'uid': uid,
         'email': email,
@@ -23,6 +24,8 @@ def _build_default_user_data(uid, email, runtime):
         'preferred_output_language': runtime.DEFAULT_OUTPUT_LANGUAGE_KEY,
         'preferred_output_language_custom': '',
         'onboarding_completed': False,
+        'account_status': 'active',
+        'delete_requested_at': 0,
     }
 
 
@@ -36,7 +39,7 @@ def grant_credits_to_user(uid, bundle_id, runtime=None):
     user_ref = resolved_runtime.users_repo.doc_ref(resolved_runtime.db, uid)
     user_doc = user_ref.get()
     if not user_doc.exists:
-        user_ref.set(_build_default_user_data(uid, '', resolved_runtime))
+        user_ref.set(build_default_user_data(uid, '', runtime=resolved_runtime))
 
     for credit_key, credit_amount in bundle['credits'].items():
         user_ref.update({credit_key: resolved_runtime.firestore.Increment(credit_amount)})

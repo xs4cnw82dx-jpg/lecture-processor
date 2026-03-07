@@ -1,5 +1,6 @@
 """Business logic handlers for study APIs."""
 
+from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.shared import sanitize_csv_row
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study import export as study_export
@@ -17,6 +18,13 @@ def _pack_item_count(pack, count_key, items_key):
             return stored_count
     items = pack.get(items_key, [])
     return len(items) if isinstance(items, list) else 0
+
+
+def _account_write_guard(app_ctx, uid):
+    allowed, message = account_lifecycle.ensure_account_allows_writes(uid, runtime=app_ctx)
+    if allowed:
+        return None
+    return app_ctx.jsonify({'error': message, 'status': 'account_deletion_in_progress'}), 409
 
 
 def get_study_progress(app_ctx, request):
@@ -62,16 +70,21 @@ def update_study_progress(app_ctx, request):
     if not decoded_token:
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
+    deletion_guard = _account_write_guard(app_ctx, uid)
+    if deletion_guard is not None:
+        return deletion_guard
     payload = request.get_json(silent=True) or {}
     if not isinstance(payload, dict):
         return app_ctx.jsonify({'error': 'Invalid payload'}), 400
 
     try:
-        existing_progress_doc = app_ctx.get_study_progress_doc(uid).get()
+        progress_ref = app_ctx.get_study_progress_doc(uid)
+        existing_progress_doc = progress_ref.get()
         existing_progress_data = existing_progress_doc.to_dict() if existing_progress_doc.exists else {}
+        now_ts = app_ctx.time.time()
         updates = {
             'uid': uid,
-            'updated_at': app_ctx.time.time(),
+            'updated_at': now_ts,
         }
 
         if 'daily_goal' in payload:
@@ -94,9 +107,19 @@ def update_study_progress(app_ctx, request):
                 runtime=app_ctx,
             )
 
-        app_ctx.get_study_progress_doc(uid).set(updates, merge=True)
+        remove_pack_ids = payload.get('remove_pack_ids')
+        sanitized_remove_pack_ids = []
+        if remove_pack_ids is not None:
+            if not isinstance(remove_pack_ids, list):
+                return app_ctx.jsonify({'error': 'remove_pack_ids must be a list'}), 400
+            for raw_pack_id in remove_pack_ids[:app_ctx.MAX_PROGRESS_PACKS_PER_SYNC]:
+                pack_id = study_progress.sanitize_pack_id(raw_pack_id, runtime=app_ctx)
+                if pack_id:
+                    sanitized_remove_pack_ids.append(pack_id)
+        remove_pack_id_set = set(sanitized_remove_pack_ids)
 
         card_states = payload.get('card_states')
+        validated_card_state_writes = []
         if card_states is not None:
             if not isinstance(card_states, dict):
                 return app_ctx.jsonify({'error': 'card_states must be an object'}), 400
@@ -108,41 +131,49 @@ def update_study_progress(app_ctx, request):
                 if not pack_id:
                     continue
                 cleaned_state = study_progress.sanitize_card_state_map(raw_state, runtime=app_ctx)
+                processed += 1
+                if not cleaned_state or pack_id in remove_pack_id_set:
+                    continue
                 doc_ref = app_ctx.get_study_card_state_doc(uid, pack_id)
-                if cleaned_state:
-                    existing_pack_doc = doc_ref.get()
-                    existing_pack_state = {}
-                    if existing_pack_doc.exists:
-                        existing_pack_data = existing_pack_doc.to_dict() or {}
-                        existing_pack_state = study_progress.sanitize_card_state_map(
-                            existing_pack_data.get('state', {}),
-                            runtime=app_ctx,
-                        )
-                    merged_state = study_progress.merge_card_state_maps(
-                        existing_pack_state,
-                        cleaned_state,
+                existing_pack_doc = doc_ref.get()
+                existing_pack_state = {}
+                if existing_pack_doc.exists:
+                    existing_pack_data = existing_pack_doc.to_dict() or {}
+                    existing_pack_state = study_progress.sanitize_card_state_map(
+                        existing_pack_data.get('state', {}),
                         runtime=app_ctx,
                     )
-                    doc_ref.set({
-                        'uid': uid,
-                        'pack_id': pack_id,
-                        'state': merged_state,
-                        'updated_at': app_ctx.time.time(),
-                    }, merge=True)
-                processed += 1
+                merged_state = study_progress.merge_card_state_maps(
+                    existing_pack_state,
+                    cleaned_state,
+                    runtime=app_ctx,
+                )
+                validated_card_state_writes.append(
+                    (
+                        doc_ref,
+                        {
+                            'uid': uid,
+                            'pack_id': pack_id,
+                            'state': merged_state,
+                            'updated_at': now_ts,
+                        },
+                    )
+                )
 
-        remove_pack_ids = payload.get('remove_pack_ids')
-        if remove_pack_ids is not None:
-            if not isinstance(remove_pack_ids, list):
-                return app_ctx.jsonify({'error': 'remove_pack_ids must be a list'}), 400
-            for raw_pack_id in remove_pack_ids[:app_ctx.MAX_PROGRESS_PACKS_PER_SYNC]:
-                pack_id = study_progress.sanitize_pack_id(raw_pack_id, runtime=app_ctx)
-                if not pack_id:
-                    continue
-                try:
-                    app_ctx.get_study_card_state_doc(uid, pack_id).delete()
-                except Exception as delete_error:
-                    app_ctx.logger.warning(f"Warning: failed deleting study progress state for {uid}/{pack_id}: {delete_error}")
+        if getattr(app_ctx.db, 'batch', None):
+            batch = app_ctx.db.batch()
+            batch.set(progress_ref, updates, merge=True)
+            for doc_ref, doc_payload in validated_card_state_writes:
+                batch.set(doc_ref, doc_payload, merge=True)
+            for pack_id in sanitized_remove_pack_ids:
+                batch.delete(app_ctx.get_study_card_state_doc(uid, pack_id))
+            batch.commit()
+        else:
+            progress_ref.set(updates, merge=True)
+            for doc_ref, doc_payload in validated_card_state_writes:
+                doc_ref.set(doc_payload, merge=True)
+            for pack_id in sanitized_remove_pack_ids:
+                app_ctx.get_study_card_state_doc(uid, pack_id).delete()
 
         return app_ctx.jsonify({'ok': True})
     except Exception as e:
@@ -209,6 +240,9 @@ def create_study_pack(app_ctx, request):
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
 
     uid = decoded_token['uid']
+    deletion_guard = _account_write_guard(app_ctx, uid)
+    if deletion_guard is not None:
+        return deletion_guard
     payload = request.get_json() or {}
 
     title = str(payload.get('title', '')).strip()[:120]
@@ -337,6 +371,9 @@ def update_study_pack(app_ctx, request, pack_id):
     if not decoded_token:
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
+    deletion_guard = _account_write_guard(app_ctx, uid)
+    if deletion_guard is not None:
+        return deletion_guard
     payload = request.get_json() or {}
 
     try:
@@ -551,6 +588,9 @@ def create_study_folder(app_ctx, request):
     if not decoded_token:
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
+    deletion_guard = _account_write_guard(app_ctx, uid)
+    if deletion_guard is not None:
+        return deletion_guard
     payload = request.get_json() or {}
     name = str(payload.get('name', '')).strip()[:120]
     if not name:
@@ -585,6 +625,9 @@ def update_study_folder(app_ctx, request, folder_id):
     if not decoded_token:
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
+    deletion_guard = _account_write_guard(app_ctx, uid)
+    if deletion_guard is not None:
+        return deletion_guard
     payload = request.get_json() or {}
     try:
         folder_ref = app_ctx.study_repo.study_folder_doc_ref(app_ctx.db, folder_id)

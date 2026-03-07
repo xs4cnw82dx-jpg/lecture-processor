@@ -281,6 +281,14 @@
     if (creditsTotalValue) creditsTotalValue.textContent = String(next.total);
   }
 
+  function setCreditsVisible(visible) {
+    if (!creditsLink) return;
+    creditsLink.hidden = !visible;
+    if (!visible) {
+      creditsLink.classList.remove('is-open');
+    }
+  }
+
   async function authFetch(path, options) {
     var user = auth.currentUser;
     if (!user) throw new Error('Please sign in');
@@ -328,7 +336,7 @@
   function applySignedOutState() {
     currentUserIsAdmin = false;
     if (adminBtn) adminBtn.style.display = 'none';
-    if (creditsLink) creditsLink.classList.remove('is-open');
+    setCreditsVisible(false);
     applyCreditBreakdown(null);
     writeCacheJson(CACHE_KEYS.credits, null);
     if (userEmail) userEmail.textContent = 'Not signed in';
@@ -345,6 +353,7 @@
       return;
     }
 
+    setCreditsVisible(true);
     var email = String(user.email || 'user').trim();
     if (userEmail) userEmail.textContent = email;
     if (userName) userName.textContent = email.split('@')[0] || 'Account';

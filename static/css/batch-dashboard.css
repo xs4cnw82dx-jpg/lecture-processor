@@ -164,8 +164,155 @@ th {
   color: #60708a;
 }
 
+.batch-dashboard-auth-gate {
+  text-align: center;
+}
+
+.batch-dashboard-auth-card {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  padding: 28px 20px;
+  border: 1px dashed #c9d7eb;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(42, 75, 191, 0.05), rgba(20, 85, 150, 0.08));
+}
+
+.batch-dashboard-auth-eyebrow {
+  margin: 0;
+  color: #49617f;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.batch-dashboard-auth-card h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  color: #162138;
+}
+
+.batch-dashboard-auth-card p {
+  margin: 0;
+  max-width: 560px;
+  color: #536985;
+}
+
+.batch-dashboard-auth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.btn-link.primary {
+  background: #1f4acc;
+  border-color: #1f4acc;
+  color: #fff;
+}
+
+.btn-link.primary:hover {
+  background: #183da9;
+  border-color: #183da9;
+}
+
+.batch-cards {
+  display: none;
+}
+
+.batch-card {
+  border: 1px solid #dde6f2;
+  border-radius: 16px;
+  padding: 14px;
+  background: #fff;
+  box-shadow: 0 8px 16px rgba(18, 39, 77, 0.05);
+}
+
+.batch-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.batch-card-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #162138;
+}
+
+.batch-card-head p {
+  margin: 6px 0 0;
+  color: #60708a;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.batch-card-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.batch-card-meta span {
+  display: grid;
+  gap: 2px;
+  font-size: 0.82rem;
+  color: #44556f;
+}
+
+.batch-card-meta strong {
+  color: #6a7b95;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.batch-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.batch-card-empty {
+  border: 1px dashed #d7e2f0;
+  border-radius: 14px;
+  padding: 14px;
+  color: #60708a;
+  background: #fbfdff;
+}
+
 @media (max-width: 800px) {
   .batch-dashboard-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .table-wrap {
+    display: none;
+  }
+
+  .batch-cards {
+    display: grid;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 560px) {
+  .batch-dashboard-auth-actions {
+    display: grid;
+    width: 100%;
+  }
+
+  .batch-dashboard-auth-actions .btn-link,
+  .batch-card-actions .btn-link {
+    width: 100%;
+  }
+
+  .batch-card-meta {
     grid-template-columns: 1fr;
   }
 }

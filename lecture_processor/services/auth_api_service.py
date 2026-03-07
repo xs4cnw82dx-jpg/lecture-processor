@@ -387,111 +387,218 @@ def delete_account_data(app_ctx, request):
     active_jobs = account_lifecycle.count_active_jobs_for_user(uid, runtime=app_ctx)
     if active_jobs > 0:
         return app_ctx.jsonify({
-            'error': f'Cannot delete account while {active_jobs} processing job(s) are still active. Please wait until processing finishes.'
+            'error': f'Cannot delete account while {active_jobs} queued or processing job(s) are still active. Please wait until all work finishes.'
         }), 409
 
     try:
+        page_size = max(100, int(app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION or 1000))
         deleted = {}
-        truncated = {}
         warnings_list = []
         job_ids = set()
+        batch_row_prefixes = set()
+        batch_ids_seen = set()
 
-        job_log_docs, job_logs_truncated = account_lifecycle.list_docs_by_uid(
-            'job_logs',
-            uid,
-            app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION,
-            runtime=app_ctx,
-        )
-        truncated['job_logs'] = job_logs_truncated
-        for item in job_log_docs:
-            jid = str(item.get('job_id', '') or item.get('_id', '')).strip()
-            if jid:
-                job_ids.add(jid)
+        account_lifecycle.mark_account_deletion_requested(uid, email=email, runtime=app_ctx)
 
-        deleted_job_logs, _ = account_lifecycle.delete_docs_by_uid(
-            'job_logs',
-            uid,
-            app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION,
-            runtime=app_ctx,
-        )
-        deleted['job_logs'] = deleted_job_logs
+        def _delete_uid_collection(collection_name):
+            deleted_count = 0
+            while True:
+                docs = account_lifecycle.query_docs_by_field(
+                    collection_name,
+                    'uid',
+                    uid,
+                    page_size,
+                    runtime=app_ctx,
+                )
+                if not docs:
+                    break
+                for doc in docs:
+                    if collection_name == 'job_logs':
+                        data = doc.to_dict() or {}
+                        job_id = str(data.get('job_id', '') or doc.id or '').strip()
+                        if job_id:
+                            job_ids.add(job_id)
+                    try:
+                        doc.reference.delete()
+                        deleted_count += 1
+                    except Exception as error:
+                        warnings_list.append(f"Could not delete {collection_name}/{doc.id}: {error}")
+                if len(docs) < page_size:
+                    break
+            deleted[collection_name] = deleted_count
 
-        anonymized_purchases, purchases_truncated = account_lifecycle.anonymize_purchase_docs_by_uid(
-            uid,
-            app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION,
-            runtime=app_ctx,
-        )
-        deleted_analytics, analytics_truncated = account_lifecycle.delete_docs_by_uid(
-            'analytics_events',
-            uid,
-            app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION,
-            runtime=app_ctx,
-        )
-        deleted_folders, folders_truncated = account_lifecycle.delete_docs_by_uid(
-            'study_folders',
-            uid,
-            app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION,
-            runtime=app_ctx,
-        )
-        deleted_card_states, card_states_truncated = account_lifecycle.delete_docs_by_uid(
-            'study_card_states',
-            uid,
-            app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION,
-            runtime=app_ctx,
-        )
-        truncated['purchases'] = purchases_truncated
-        truncated['analytics_events'] = analytics_truncated
-        truncated['study_folders'] = folders_truncated
-        truncated['study_card_states'] = card_states_truncated
-        deleted['purchases_anonymized'] = anonymized_purchases
-        deleted['analytics_events'] = deleted_analytics
-        deleted['study_folders'] = deleted_folders
-        deleted['study_card_states'] = deleted_card_states
+        def _anonymize_purchases():
+            anonymized = 0
+            while True:
+                docs = account_lifecycle.query_docs_by_field(
+                    'purchases',
+                    'uid',
+                    uid,
+                    page_size,
+                    runtime=app_ctx,
+                )
+                if not docs:
+                    break
+                for doc in docs:
+                    try:
+                        doc.reference.set(
+                            {
+                                'uid': '',
+                                'user_erased': True,
+                                'erased_at': app_ctx.time.time(),
+                            },
+                            merge=True,
+                        )
+                        anonymized += 1
+                    except Exception as error:
+                        warnings_list.append(f"Could not anonymize purchase {doc.id}: {error}")
+                if len(docs) < page_size:
+                    break
+            deleted['purchases_anonymized'] = anonymized
 
-        study_pack_docs = app_ctx.study_repo.list_study_packs_by_uid(app_ctx.db, uid, app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION + 1)
-        truncated['study_packs'] = len(study_pack_docs) > app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION
-        study_pack_docs = study_pack_docs[:app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION]
+        def _delete_study_packs():
+            deleted_packs = 0
+            deleted_audio = 0
+            deleted_progress = 0
+            while True:
+                docs = account_lifecycle.query_docs_by_field(
+                    'study_packs',
+                    'uid',
+                    uid,
+                    page_size,
+                    runtime=app_ctx,
+                )
+                if not docs:
+                    break
+                for doc in docs:
+                    pack = doc.to_dict() or {}
+                    pack_id = doc.id
+                    source_job_id = str(pack.get('source_job_id', '') or '').strip()
+                    if source_job_id:
+                        job_ids.add(source_job_id)
+                    if study_audio.remove_pack_audio_file(pack, runtime=app_ctx):
+                        deleted_audio += 1
+                    try:
+                        app_ctx.get_study_card_state_doc(uid, pack_id).delete()
+                        deleted_progress += 1
+                    except Exception:
+                        pass
+                    try:
+                        doc.reference.delete()
+                        deleted_packs += 1
+                    except Exception as error:
+                        warnings_list.append(f"Could not delete study pack {pack_id}: {error}")
+                if len(docs) < page_size:
+                    break
+            deleted['study_packs'] = deleted_packs
+            deleted['study_pack_audio_files'] = deleted_audio
+            deleted['study_pack_progress_states'] = deleted_progress
 
-        deleted_study_packs = 0
-        deleted_pack_audio_files = 0
-        deleted_pack_progress_states = 0
-        for doc in study_pack_docs:
-            pack = doc.to_dict() or {}
-            pack_id = doc.id
-            job_id = str(pack.get('source_job_id', '') or '').strip()
-            if job_id:
-                job_ids.add(job_id)
+        def _delete_runtime_job_docs():
+            deleted_count = 0
+            while True:
+                docs = account_lifecycle.query_docs_by_field(
+                    app_ctx.RUNTIME_JOBS_COLLECTION,
+                    'user_id',
+                    uid,
+                    page_size,
+                    runtime=app_ctx,
+                )
+                if not docs:
+                    break
+                for doc in docs:
+                    job_ids.add(doc.id)
+                    try:
+                        doc.reference.delete()
+                        deleted_count += 1
+                    except Exception as error:
+                        warnings_list.append(f"Could not delete runtime job {doc.id}: {error}")
+                if len(docs) < page_size:
+                    break
+            deleted['runtime_jobs'] = deleted_count
 
-            if study_audio.remove_pack_audio_file(pack, runtime=app_ctx):
-                deleted_pack_audio_files += 1
+        def _delete_batch_jobs():
+            deleted_batches = 0
+            deleted_rows = 0
+            while True:
+                docs = app_ctx.batch_repo.list_batch_jobs_by_uid(app_ctx.db, uid, page_size)
+                if not docs:
+                    break
+                for doc in docs:
+                    batch_id = doc.id
+                    batch_ids_seen.add(batch_id)
+                    try:
+                        row_docs = app_ctx.batch_repo.list_batch_rows(app_ctx.db, batch_id)
+                    except Exception as error:
+                        warnings_list.append(f"Could not list rows for batch {batch_id}: {error}")
+                        row_docs = []
+                    for row_doc in row_docs:
+                        batch_row_prefixes.add(f"{batch_id}_{row_doc.id}")
+                        try:
+                            row_doc.reference.delete()
+                            deleted_rows += 1
+                        except Exception as error:
+                            warnings_list.append(f"Could not delete batch row {batch_id}/{row_doc.id}: {error}")
+                    try:
+                        doc.reference.delete()
+                        deleted_batches += 1
+                    except Exception as error:
+                        warnings_list.append(f"Could not delete batch {batch_id}: {error}")
+                if len(docs) < page_size:
+                    break
+            deleted['batch_jobs'] = deleted_batches
+            deleted['batch_rows'] = deleted_rows
 
-            try:
-                app_ctx.get_study_card_state_doc(uid, pack_id).delete()
-                deleted_pack_progress_states += 1
-            except Exception:
-                pass
-
-            try:
-                doc.reference.delete()
-                deleted_study_packs += 1
-            except Exception as e:
-                warnings_list.append(f"Could not delete study pack {pack_id}: {e}")
-
-        deleted['study_packs'] = deleted_study_packs
-        deleted['study_pack_audio_files'] = deleted_pack_audio_files
-        deleted['study_pack_progress_states'] = deleted_pack_progress_states
+        _delete_uid_collection('job_logs')
+        _anonymize_purchases()
+        _delete_uid_collection('analytics_events')
+        _delete_uid_collection('study_folders')
+        _delete_uid_collection('study_card_states')
+        _delete_study_packs()
+        _delete_runtime_job_docs()
+        _delete_batch_jobs()
 
         try:
-            app_ctx.get_study_progress_doc(uid).delete()
-            deleted['study_progress_doc'] = 1
-        except Exception:
+            progress_ref = app_ctx.get_study_progress_doc(uid)
+            progress_snapshot = progress_ref.get()
+            if getattr(progress_snapshot, 'exists', False):
+                progress_ref.delete()
+                deleted['study_progress_doc'] = 1
+            else:
+                deleted['study_progress_doc'] = 0
+        except Exception as error:
+            warnings_list.append(f"Could not delete study progress document: {error}")
             deleted['study_progress_doc'] = 0
 
+        remaining = []
+        verification_targets = [
+            ('job_logs', 'uid', uid, 'job_logs'),
+            ('analytics_events', 'uid', uid, 'analytics_events'),
+            ('study_folders', 'uid', uid, 'study_folders'),
+            ('study_card_states', 'uid', uid, 'study_card_states'),
+            ('study_packs', 'uid', uid, 'study_packs'),
+            ('purchases', 'uid', uid, 'purchases'),
+            (app_ctx.RUNTIME_JOBS_COLLECTION, 'user_id', uid, 'runtime_jobs'),
+            ('batch_jobs', 'uid', uid, 'batch_jobs'),
+        ]
+        for collection_name, field_name, value, label in verification_targets:
+            if account_lifecycle.has_docs_by_field(collection_name, field_name, value, runtime=app_ctx):
+                remaining.append(label)
+        for batch_id in sorted(batch_ids_seen):
+            try:
+                if app_ctx.batch_repo.list_batch_rows(app_ctx.db, batch_id):
+                    remaining.append(f'batch_rows:{batch_id}')
+            except Exception as error:
+                warnings_list.append(f"Could not verify batch rows for {batch_id}: {error}")
+                remaining.append(f'batch_rows:{batch_id}')
         try:
-            app_ctx.users_repo.delete_doc(app_ctx.db, uid)
-            deleted['user_profile_doc'] = 1
-        except Exception:
-            deleted['user_profile_doc'] = 0
+            if getattr(app_ctx.get_study_progress_doc(uid).get(), 'exists', False):
+                remaining.append('study_progress')
+        except Exception as error:
+            warnings_list.append(f"Could not verify study progress deletion: {error}")
+            remaining.append('study_progress')
+        if remaining:
+            raise RuntimeError('Account data deletion incomplete: ' + ', '.join(sorted(set(remaining))))
 
         removed_in_memory_jobs = 0
         with app_ctx.JOBS_LOCK:
@@ -506,22 +613,26 @@ def delete_account_data(app_ctx, request):
                     pass
         deleted['in_memory_jobs'] = removed_in_memory_jobs
 
-        deleted['upload_artifacts'] = account_lifecycle.remove_upload_artifacts_for_job_ids(job_ids, runtime=app_ctx)
+        upload_prefixes = set(job_ids) | batch_row_prefixes
+        deleted['upload_artifacts'] = account_lifecycle.remove_upload_artifacts_for_job_ids(upload_prefixes, runtime=app_ctx)
 
-        auth_user_deleted = False
+        app_ctx.auth.delete_user(uid)
+
         try:
-            app_ctx.auth.delete_user(uid)
-            auth_user_deleted = True
-        except Exception as e:
-            warnings_list.append(f"Could not delete Firebase Auth user: {e}")
+            app_ctx.users_repo.delete_doc(app_ctx.db, uid)
+            deleted['user_profile_doc'] = 1
+        except Exception as error:
+            raise RuntimeError(f"Could not delete user profile document: {error}")
 
         return app_ctx.jsonify({
             'ok': True,
-            'auth_user_deleted': auth_user_deleted,
+            'auth_user_deleted': True,
             'deleted': deleted,
-            'truncated': truncated,
             'warnings': warnings_list,
         })
     except Exception as e:
         app_ctx.logger.error(f"Error deleting account data for {uid}: {e}")
-        return app_ctx.jsonify({'error': 'Could not delete account data'}), 500
+        return app_ctx.jsonify({
+            'error': 'Could not completely delete account data',
+            'details': str(e),
+        }), 500

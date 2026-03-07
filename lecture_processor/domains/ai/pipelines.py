@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai import study_generation
 from lecture_processor.domains.billing import credits as billing_credits
@@ -19,6 +20,16 @@ def _resolve_runtime(runtime=None):
 def save_study_pack(job_id, job_data, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     try:
+        uid = str(job_data.get('user_id', '') or '').strip()
+        allowed, message = account_lifecycle.ensure_account_allows_writes(uid, runtime=resolved_runtime)
+        if not allowed:
+            resolved_runtime.logger.info(
+                'Skipping study-pack save for job %s because account writes are blocked: %s',
+                job_id,
+                message,
+            )
+            return False
+
         notes_markdown = str(job_data.get('result', '') or '')
         max_notes_chars = 180000
         notes_truncated = len(notes_markdown) > max_notes_chars
@@ -38,7 +49,7 @@ def save_study_pack(job_id, job_data, runtime=None):
             {
                 'study_pack_id': doc_ref.id,
                 'source_job_id': job_id,
-                'uid': job_data.get('user_id', ''),
+                'uid': uid,
                 'mode': job_data.get('mode', ''),
                 'title': pack_title,
                 'title_timezone': timezone_name,
@@ -79,7 +90,6 @@ def save_study_pack(job_id, job_data, runtime=None):
                 'updated_at': now_ts,
             }
         )
-        uid = str(job_data.get('user_id', '') or '').strip()
         if uid:
             try:
                 resolved_runtime.users_repo.set_doc(
@@ -94,8 +104,10 @@ def save_study_pack(job_id, job_data, runtime=None):
             except Exception:
                 resolved_runtime.logger.warning('Could not mark has_created_study_pack for user %s', uid)
         job_data['study_pack_id'] = doc_ref.id
+        return True
     except Exception as error:
         resolved_runtime.logger.error('❌ Failed to save study pack for job %s: %s', job_id, error)
+        return False
 
 
 def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):

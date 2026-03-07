@@ -249,6 +249,13 @@ def _require_ai_processing_ready(app_ctx):
     return app_ctx.jsonify({'error': 'AI processing is temporarily unavailable right now. Please try again later.'}), 503
 
 
+def _account_write_guard_response(app_ctx, uid):
+    allowed, message = account_lifecycle.ensure_account_allows_writes(uid, runtime=app_ctx)
+    if allowed:
+        return None
+    return app_ctx.jsonify({'error': message, 'status': 'account_deletion_in_progress'}), 409
+
+
 def _attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None):
     if not uid or not credit_type:
         return False, ''
@@ -403,6 +410,9 @@ def import_audio_from_url(app_ctx, request):
     email = decoded_token.get('email', '')
     if not auth_policy.is_email_allowed(email, runtime=app_ctx):
         return app_ctx.jsonify({'error': 'Email not allowed'}), 403
+    deletion_guard = _account_write_guard_response(app_ctx, uid)
+    if deletion_guard is not None:
+        return deletion_guard
 
     allowed_import, retry_after = rate_limiter.check_rate_limit(
         key=f"audio_import:{rate_limiter.normalize_rate_limit_key_part(uid, fallback='anon_uid', runtime=app_ctx)}",
@@ -506,6 +516,9 @@ def create_batch_job(app_ctx, request):
     uid, decoded_token, error_response, status = _batch_user_guard(app_ctx, request)
     if error_response is not None:
         return error_response, status
+    deletion_guard = _account_write_guard_response(app_ctx, uid)
+    if deletion_guard is not None:
+        return deletion_guard
 
     mode = str(request.form.get('mode', 'lecture-notes') or '').strip()
     if mode not in {'lecture-notes', 'slides-only', 'interview'}:
@@ -1013,6 +1026,9 @@ def upload_files(app_ctx, request):
     email = decoded_token.get('email', '')
     if not auth_policy.is_email_allowed(email, runtime=app_ctx):
         return app_ctx.jsonify({'error': 'Email not allowed'}), 403
+    deletion_guard = _account_write_guard_response(app_ctx, uid)
+    if deletion_guard is not None:
+        return deletion_guard
     active_jobs = account_lifecycle.count_active_jobs_for_user(uid, runtime=app_ctx)
     if active_jobs >= app_ctx.MAX_ACTIVE_JOBS_PER_USER:
         analytics_events.log_rate_limit_hit('upload', 10, runtime=app_ctx)
@@ -1357,6 +1373,9 @@ def tools_extract(app_ctx, request):
     email = decoded_token.get('email', '')
     if not auth_policy.is_email_allowed(email, runtime=app_ctx):
         return app_ctx.jsonify({'error': 'Email not allowed'}), 403
+    deletion_guard = _account_write_guard_response(app_ctx, uid)
+    if deletion_guard is not None:
+        return deletion_guard
 
     allowed, retry_after = rate_limiter.check_rate_limit(
         key=f"tools_extract:{rate_limiter.normalize_rate_limit_key_part(uid, fallback='anon_uid', runtime=app_ctx)}",
