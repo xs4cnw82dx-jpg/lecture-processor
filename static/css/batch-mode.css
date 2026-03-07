@@ -773,18 +773,99 @@
   font-size: 0.8rem;
 }
 
+.btn.small.secondary {
+  background: #ffffff;
+  color: #233149;
+}
+
 .btn.tiny {
   padding: 6px 8px;
   font-size: 0.78rem;
   margin-right: 6px;
 }
 
+.batch-status-banner {
+  margin-top: 10px;
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid #d8e4f5;
+  background: linear-gradient(135deg, #f8fbff, #eef5ff);
+  display: grid;
+  gap: 12px;
+}
+
+.batch-status-banner.tone-success {
+  border-color: rgba(57, 168, 111, 0.26);
+  background: linear-gradient(135deg, rgba(57, 168, 111, 0.10), rgba(57, 168, 111, 0.04));
+}
+
+.batch-status-banner.tone-warning {
+  border-color: rgba(217, 119, 6, 0.26);
+  background: linear-gradient(135deg, rgba(217, 119, 6, 0.11), rgba(245, 158, 11, 0.05));
+}
+
+.batch-status-banner.tone-error {
+  border-color: rgba(185, 28, 28, 0.22);
+  background: linear-gradient(135deg, rgba(185, 28, 28, 0.10), rgba(248, 113, 113, 0.04));
+}
+
+.batch-status-banner-head {
+  display: grid;
+  gap: 4px;
+}
+
+.batch-status-banner-head strong {
+  font-size: 1rem;
+  color: #182338;
+}
+
+.batch-status-banner-head span {
+  color: #4d5e7a;
+  line-height: 1.45;
+  font-size: 0.92rem;
+}
+
+.batch-status-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .batch-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
   margin-top: 8px;
   margin-bottom: 12px;
+}
+
+.batch-summary-card {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid #dce6f5;
+  background: #fbfdff;
+}
+
+.batch-summary-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #607089;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.batch-summary-card strong {
+  font-size: 1rem;
+  color: #152035;
+}
+
+.batch-summary-sub {
+  color: #55667f;
+  line-height: 1.45;
+  font-size: 0.84rem;
 }
 
 .status-head {
@@ -829,6 +910,18 @@ th {
   color: #5a6577;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+
+.batch-row-status-line {
+  font-weight: 700;
+  color: #1d2940;
+}
+
+.batch-row-error-text {
+  margin-top: 4px;
+  color: #a43434;
+  line-height: 1.45;
+  font-size: 0.82rem;
 }
 
 @media (max-width: 1100px) {

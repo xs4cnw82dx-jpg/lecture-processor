@@ -1,6 +1,7 @@
 import ast
 from pathlib import Path
 
+from lecture_processor.runtime import hooks
 from tests.runtime_test_support import get_test_core
 
 core = get_test_core()
@@ -31,3 +32,14 @@ def test_startup_recovery_runs_once_on_first_request(client, monkeypatch):
     assert first.status_code == 200
     assert second.status_code == 200
     assert calls == ['run']
+
+
+def test_startup_hook_runs_batch_recovery_once(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr(core, 'run_startup_recovery_once', lambda: calls.append('runtime'))
+    monkeypatch.setattr(hooks.batch_orchestrator, 'run_startup_batch_recovery_once', lambda runtime=None: calls.append('batch'))
+
+    response = client.get('/healthz')
+
+    assert response.status_code == 200
+    assert calls == ['runtime', 'batch']

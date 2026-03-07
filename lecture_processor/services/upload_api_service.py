@@ -241,6 +241,13 @@ def _sum_retry_attempts(retry_tracker):
     return sum(int(v or 0) for v in (retry_tracker or {}).values())
 
 
+def _require_ai_processing_ready(app_ctx):
+    if getattr(app_ctx, 'client', None) is not None:
+        return None
+    app_ctx.logger.error('AI processing requested while Gemini client is not configured.')
+    return app_ctx.jsonify({'error': 'AI processing is temporarily unavailable right now. Please try again later.'}), 503
+
+
 def _attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None):
     if not uid or not credit_type:
         return False, ''
@@ -498,6 +505,9 @@ def create_batch_job(app_ctx, request):
     uid, decoded_token, error_response, status = _batch_user_guard(app_ctx, request)
     if error_response is not None:
         return error_response, status
+    ai_unavailable = _require_ai_processing_ready(app_ctx)
+    if ai_unavailable is not None:
+        return ai_unavailable
 
     mode = str(request.form.get('mode', 'lecture-notes') or '').strip()
     if mode not in {'lecture-notes', 'slides-only', 'interview'}:
@@ -999,6 +1009,9 @@ def upload_files(app_ctx, request):
     decoded_token = app_ctx.verify_firebase_token(request)
     if not decoded_token:
         return app_ctx.jsonify({'error': 'Please sign in to continue'}), 401
+    ai_unavailable = _require_ai_processing_ready(app_ctx)
+    if ai_unavailable is not None:
+        return ai_unavailable
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
     if not auth_policy.is_email_allowed(email, runtime=app_ctx):

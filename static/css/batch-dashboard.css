@@ -113,6 +113,22 @@
   color: #991b1b;
 }
 
+.batch-title-cell {
+  display: grid;
+  gap: 4px;
+}
+
+.batch-title-cell strong {
+  color: #162138;
+  font-size: 0.9rem;
+}
+
+.batch-title-cell span {
+  color: #62738f;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
