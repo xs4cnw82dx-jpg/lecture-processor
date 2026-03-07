@@ -172,7 +172,14 @@
             border: 1px solid var(--gray-200);
             padding: 8px;
             min-width: 0;
+            display: none;
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+            transform: none;
+            transition: none;
         }
+        .header-sidebar .progress-dropdown.visible { display: block; }
         body.sidebar-open { overflow: hidden; }
         .header-nav-link { display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 14px; background: var(--white); border: 1px solid var(--gray-300); border-radius: var(--radius); font-size: 0.875rem; font-weight: 600; color: var(--gray-700); text-decoration: none; transition: all 0.2s ease; }
         .header-nav-link:hover { background: var(--gray-50); border-color: var(--gray-400); color: var(--gray-900); }
@@ -200,7 +207,6 @@
         .progress-button .chevron { width: 14px; height: 14px; color: var(--gray-500); transition: transform 0.2s ease; }
         .progress-button.open .chevron { transform: rotate(180deg); }
         .progress-dropdown {
-            display: none;
             position: absolute;
             top: calc(100% + 8px);
             right: 0;
@@ -211,8 +217,14 @@
             background: var(--white);
             box-shadow: var(--shadow-lg);
             z-index: 60;
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transform: translateY(-8px) scale(0.98);
+            transform-origin: top right;
+            transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s linear 0.18s;
         }
-        .progress-dropdown.visible { display: block; animation: dropdownOpen 0.2s ease-out; }
+        .progress-dropdown.visible { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0) scale(1); transition-delay: 0s; }
         .progress-row {
             display: flex;
             align-items: center;
@@ -339,8 +351,8 @@
         .user-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
         .user-name { font-size: 0.82rem; font-weight: 500; color: var(--gray-700); max-width: 154px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         @media (max-width: 600px) { .user-name { display: none; } }
-        .user-dropdown { position: absolute; top: calc(100% + 8px); right: 0; background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); min-width: 220px; display: none; z-index: 50; overflow: hidden; }
-        .user-dropdown.visible { display: block; animation: dropdownOpen 0.2s ease-out; }
+        .user-dropdown { position: absolute; top: calc(100% + 8px); right: 0; background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); min-width: 220px; z-index: 50; overflow: hidden; opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(-8px) scale(0.98); transform-origin: top right; transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s linear 0.18s; }
+        .user-dropdown.visible { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0) scale(1); transition-delay: 0s; }
         .user-dropdown-header { padding: 16px; border-bottom: 1px solid var(--gray-100); }
         .user-dropdown-email { font-size: 0.8125rem; color: var(--gray-500); word-break: break-all; }
         .user-dropdown-credits { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
@@ -729,8 +741,8 @@
         .action-button.primary { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: var(--white); border: none; }
         .action-button.primary:hover { opacity: 0.9; }
         .dropdown { position: relative; }
-        .dropdown-content { display: none; position: absolute; right: 0; top: calc(100% + 8px); background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); min-width: 240px; z-index: 50; overflow: hidden; animation: dropdownOpen 0.2s ease-out; }
-        .dropdown-content.visible { display: block; }
+        .dropdown-content { position: absolute; right: 0; top: calc(100% + 8px); background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); min-width: 240px; z-index: 50; overflow: hidden; opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(-8px) scale(0.98); transform-origin: top right; transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s linear 0.18s; }
+        .dropdown-content.visible { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0) scale(1); transition-delay: 0s; }
         .dropdown-item { display: block; width: 100%; padding: 12px 16px; border: none; background: none; text-align: left; font-size: 0.875rem; color: var(--gray-700); cursor: pointer; transition: background 0.15s ease; }
         .dropdown-item:hover { background: var(--gray-50); }
         .dropdown-item span { display: block; font-size: 0.75rem; color: var(--gray-500); margin-top: 2px; }
@@ -787,8 +799,8 @@
         .app-select-button.open { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
         .app-select-button svg { width: 16px; height: 16px; color: var(--gray-500); transition: transform 0.2s ease; }
         .app-select-button.open svg { transform: rotate(180deg); }
-        .app-select-menu { display: none; position: absolute; left: 0; right: 0; top: calc(100% + 8px); background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); z-index: 60; overflow: hidden; max-height: 320px; overflow-y: auto; }
-        .app-select-menu.visible { display: block; animation: dropdownOpen 0.2s ease-out; }
+        .app-select-menu { position: absolute; left: 0; right: 0; top: calc(100% + 8px); background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); z-index: 60; overflow: hidden; max-height: 320px; overflow-y: auto; opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(-8px) scale(0.98); transform-origin: top center; transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s linear 0.18s; }
+        .app-select-menu.visible { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0) scale(1); transition-delay: 0s; }
         .app-select-item { width: 100%; border: none; background: var(--white); text-align: left; padding: 10px 12px; font-size: 0.9rem; color: var(--gray-700); cursor: pointer; transition: background 0.15s ease; }
         .app-select-item:hover { background: var(--gray-50); }
         .app-select-item.active { background: rgba(79,70,229,0.1); color: var(--primary-dark); font-weight: 600; }

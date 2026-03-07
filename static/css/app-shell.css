@@ -375,17 +375,25 @@ select {
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
+  transform: translateY(-8px) scale(.98);
+  transform-origin: top right;
   transition:
     grid-template-rows var(--motion-mid, 220ms) var(--motion-ease, ease),
-    opacity var(--motion-mid, 220ms) var(--motion-ease, ease);
+    opacity var(--motion-mid, 220ms) var(--motion-ease, ease),
+    transform var(--motion-mid, 220ms) var(--motion-ease, ease),
+    visibility 0s linear var(--motion-mid, 220ms);
   z-index: 18;
 }
 
 .app-shell-account.is-open .app-shell-account-panel-wrap {
   grid-template-rows: 1fr;
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
+  transform: translateY(0) scale(1);
+  transition-delay: 0s, 0s, 0s, 0s;
 }
 
 .app-shell-account-menu {
