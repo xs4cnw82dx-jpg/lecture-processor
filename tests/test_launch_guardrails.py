@@ -10,12 +10,14 @@ from werkzeug.datastructures import MultiDict
 from tests.runtime_test_support import get_test_core
 
 core = get_test_core()
+from lecture_processor.runtime.container import get_runtime
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai import pipelines as ai_pipelines
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import purchases as billing_purchases
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.rate_limit import quotas as rate_limit_quotas
 from lecture_processor.domains.study import audio as study_audio
@@ -230,6 +232,30 @@ def test_confirm_checkout_disallowed_email_returns_403(client, monkeypatch):
 
     assert response.status_code == 403
     assert response.get_json()["error"] == "Email not allowed"
+
+
+def test_confirm_checkout_pending_payment_returns_409(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u2", "email": "user@example.com"})
+    monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: True)
+    monkeypatch.setattr(
+        core.stripe.checkout.Session,
+        "retrieve",
+        lambda _session_id: {
+            "id": "sess_123",
+            "payment_status": "unpaid",
+            "metadata": {"uid": "u2", "bundle_id": "lecture_5"},
+        },
+    )
+    monkeypatch.setattr(
+        billing_purchases,
+        "process_checkout_session_credits",
+        lambda _session, runtime=None: (False, "pending_payment"),
+    )
+
+    response = client.get("/api/confirm-checkout-session?session_id=sess_123")
+
+    assert response.status_code == 409
+    assert response.get_json()["status"] == "pending_payment"
 
 
 def test_purchase_history_disallowed_email_returns_403(client, monkeypatch):
@@ -851,48 +877,31 @@ def test_account_delete_rejects_when_active_jobs_exist(client, monkeypatch):
     )
 
     assert response.status_code == 409
-    assert "cannot delete account while 1 processing job" in response.get_json()["error"].lower()
+    assert "cannot delete account while 1 queued or processing job" in response.get_json()["error"].lower()
 
 
 def test_account_delete_success_path_returns_ok(client, monkeypatch):
-    class _FakeDocRef:
-        def delete(self):
-            return None
-
-    class _FakeCollection:
-        def __init__(self, name):
-            self.name = name
-
-        def where(self, *_args, **_kwargs):
-            return self
-
-        def limit(self, *_args, **_kwargs):
-            return self
-
-        def stream(self):
-            return []
-
-        def document(self, _doc_id):
-            return _FakeDocRef()
-
-    class _FakeDB:
-        def collection(self, name):
-            return _FakeCollection(name)
+    class _FakeProgressSnapshot:
+        exists = False
 
     class _FakeProgressDoc:
+        def get(self):
+            return _FakeProgressSnapshot()
+
         def delete(self):
             return None
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u9", "email": "user@gmail.com"})
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
-    monkeypatch.setattr(account_lifecycle, "list_docs_by_uid", lambda *_args, **_kwargs: ([], False))
-    monkeypatch.setattr(account_lifecycle, "delete_docs_by_uid", lambda *_args, **_kwargs: (0, False))
-    monkeypatch.setattr(account_lifecycle, "anonymize_purchase_docs_by_uid", lambda *_args, **_kwargs: (0, False))
+    monkeypatch.setattr(account_lifecycle, "mark_account_deletion_requested", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(account_lifecycle, "query_docs_by_field", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(account_lifecycle, "has_docs_by_field", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(account_lifecycle, "remove_upload_artifacts_for_job_ids", lambda _job_ids, runtime=None: 0)
+    monkeypatch.setattr(core.batch_repo, "list_batch_jobs_by_uid", lambda _db, _uid, _limit: [])
+    monkeypatch.setattr(core.batch_repo, "list_batch_rows", lambda _db, _batch_id: [])
     monkeypatch.setattr(core, "get_study_progress_doc", lambda _uid: _FakeProgressDoc())
-    monkeypatch.setattr(core, "get_study_card_state_doc", lambda _uid, _pack_id: _FakeProgressDoc())
-    monkeypatch.setattr(core, "db", _FakeDB())
     monkeypatch.setattr(core.auth, "delete_user", lambda _uid: None)
+    monkeypatch.setattr(core.users_repo, "delete_doc", lambda _db, _uid: None)
 
     response = client.post(
         "/api/account/delete",
@@ -904,6 +913,103 @@ def test_account_delete_success_path_returns_ok(client, monkeypatch):
     body = response.get_json()
     assert body["ok"] is True
     assert body["auth_user_deleted"] is True
+
+
+def test_account_delete_exhaustively_deletes_paginated_docs(client, monkeypatch):
+    store = {
+        "job_logs": {
+            f"log-{idx}": {"uid": "u-delete", "job_id": f"job-{idx}"}
+            for idx in range(101)
+        },
+        "purchases": {},
+        "analytics_events": {},
+        "study_folders": {},
+        "study_card_states": {},
+        "study_packs": {},
+        core.RUNTIME_JOBS_COLLECTION: {},
+        "batch_jobs": {},
+    }
+    deleted_profiles = []
+    deleted_auth_users = []
+    removed_artifact_sets = []
+
+    class _DocReference:
+        def __init__(self, collection_name, doc_id):
+            self.collection_name = collection_name
+            self.doc_id = doc_id
+
+        def delete(self):
+            store[self.collection_name].pop(self.doc_id, None)
+            return None
+
+        def set(self, payload, merge=False):
+            existing = dict(store[self.collection_name].get(self.doc_id) or {})
+            store[self.collection_name][self.doc_id] = dict(existing, **payload) if merge else dict(payload)
+            return None
+
+    class _Doc:
+        def __init__(self, collection_name, doc_id):
+            self.id = doc_id
+            self.reference = _DocReference(collection_name, doc_id)
+            self._collection_name = collection_name
+
+        def to_dict(self):
+            return dict(store[self._collection_name].get(self.id) or {})
+
+    class _ProgressSnapshot:
+        exists = False
+
+    class _ProgressDoc:
+        def get(self):
+            return _ProgressSnapshot()
+
+        def delete(self):
+            return None
+
+    def _query_docs_by_field(collection_name, field_name, field_value, limit, runtime=None):
+        _ = runtime
+        matches = []
+        for doc_id, payload in list(store.get(collection_name, {}).items()):
+            if str(payload.get(field_name, "")) != str(field_value):
+                continue
+            matches.append(_Doc(collection_name, doc_id))
+            if len(matches) >= limit:
+                break
+        return matches
+
+    def _has_docs_by_field(collection_name, field_name, field_value, runtime=None):
+        _ = runtime
+        return any(str(payload.get(field_name, "")) == str(field_value) for payload in store.get(collection_name, {}).values())
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-delete", "email": "user@gmail.com"})
+    monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
+    monkeypatch.setattr(account_lifecycle, "mark_account_deletion_requested", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(account_lifecycle, "query_docs_by_field", _query_docs_by_field)
+    monkeypatch.setattr(account_lifecycle, "has_docs_by_field", _has_docs_by_field)
+    monkeypatch.setattr(
+        account_lifecycle,
+        "remove_upload_artifacts_for_job_ids",
+        lambda job_ids, runtime=None: removed_artifact_sets.append(set(job_ids)) or len(job_ids),
+    )
+    monkeypatch.setattr(core.batch_repo, "list_batch_jobs_by_uid", lambda _db, _uid, _limit: [])
+    monkeypatch.setattr(core.batch_repo, "list_batch_rows", lambda _db, _batch_id: [])
+    monkeypatch.setattr(core, "get_study_progress_doc", lambda _uid: _ProgressDoc())
+    monkeypatch.setattr(core.auth, "delete_user", lambda uid: deleted_auth_users.append(uid))
+    monkeypatch.setattr(core.users_repo, "delete_doc", lambda _db, uid: deleted_profiles.append(uid))
+
+    response = client.post(
+        "/api/account/delete",
+        json={"confirm_text": "DELETE MY ACCOUNT", "confirm_email": "user@gmail.com"},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["deleted"]["job_logs"] == 101
+    assert store["job_logs"] == {}
+    assert deleted_auth_users == ["u-delete"]
+    assert deleted_profiles == ["u-delete"]
+    assert removed_artifact_sets and len(removed_artifact_sets[0]) == 101
 
 
 def test_merge_streak_data_keeps_most_recent_progress_day():
@@ -1006,10 +1112,12 @@ def test_update_study_progress_empty_card_state_payload_does_not_delete_existing
 
     fake_progress_doc = _FakeProgressDoc()
     fake_card_doc = _FakeCardStateDoc()
+    runtime = get_runtime(client.application)
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u10", "email": "user@gmail.com"})
-    monkeypatch.setattr(core, "get_study_progress_doc", lambda _uid: fake_progress_doc)
-    monkeypatch.setattr(core, "get_study_card_state_doc", lambda _uid, _pack_id: fake_card_doc)
+    monkeypatch.setattr(runtime, "db", object(), raising=False)
+    monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: fake_progress_doc, raising=False)
+    monkeypatch.setattr(runtime, "get_study_card_state_doc", lambda _uid, _pack_id: fake_card_doc, raising=False)
 
     response = client.put(
         "/api/study-progress",
@@ -1021,6 +1129,110 @@ def test_update_study_progress_empty_card_state_payload_does_not_delete_existing
     assert fake_progress_doc.set_calls, "progress doc should still be updated"
     assert fake_card_doc.delete_calls == 0
     assert fake_card_doc.set_calls == []
+
+
+def test_update_study_progress_invalid_card_states_returns_400_without_writes(client, monkeypatch):
+    class _FakeSnapshot:
+        exists = False
+
+        def to_dict(self):
+            return {}
+
+    class _FakeProgressDoc:
+        def __init__(self):
+            self.set_calls = []
+
+        def get(self):
+            return _FakeSnapshot()
+
+        def set(self, payload, merge=False):
+            self.set_calls.append((payload, merge))
+
+    class _FakeCardDoc:
+        def __init__(self):
+            self.set_calls = []
+            self.delete_calls = 0
+
+        def get(self):
+            return _FakeSnapshot()
+
+        def set(self, payload, merge=False):
+            self.set_calls.append((payload, merge))
+
+        def delete(self):
+            self.delete_calls += 1
+
+    fake_progress_doc = _FakeProgressDoc()
+    fake_card_doc = _FakeCardDoc()
+    runtime = get_runtime(client.application)
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-invalid-cards", "email": "user@gmail.com"})
+    monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: fake_progress_doc, raising=False)
+    monkeypatch.setattr(runtime, "get_study_card_state_doc", lambda _uid, _pack_id: fake_card_doc, raising=False)
+
+    response = client.put(
+        "/api/study-progress",
+        json={"card_states": ["not", "an", "object"]},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 400
+    assert fake_progress_doc.set_calls == []
+    assert fake_card_doc.set_calls == []
+    assert fake_card_doc.delete_calls == 0
+
+
+def test_update_study_progress_invalid_remove_pack_ids_returns_400_without_writes(client, monkeypatch):
+    class _FakeSnapshot:
+        exists = False
+
+        def to_dict(self):
+            return {}
+
+    class _FakeProgressDoc:
+        def __init__(self):
+            self.set_calls = []
+
+        def get(self):
+            return _FakeSnapshot()
+
+        def set(self, payload, merge=False):
+            self.set_calls.append((payload, merge))
+
+    class _FakeCardDoc:
+        def __init__(self):
+            self.set_calls = []
+            self.delete_calls = 0
+
+        def get(self):
+            return _FakeSnapshot()
+
+        def set(self, payload, merge=False):
+            self.set_calls.append((payload, merge))
+
+        def delete(self):
+            self.delete_calls += 1
+
+    fake_progress_doc = _FakeProgressDoc()
+    fake_card_doc = _FakeCardDoc()
+    runtime = get_runtime(client.application)
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-invalid-remove", "email": "user@gmail.com"})
+    monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: fake_progress_doc, raising=False)
+    monkeypatch.setattr(runtime, "get_study_card_state_doc", lambda _uid, _pack_id: fake_card_doc, raising=False)
+
+    response = client.put(
+        "/api/study-progress",
+        json={"remove_pack_ids": "pack-1"},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 400
+    assert fake_progress_doc.set_calls == []
+    assert fake_card_doc.set_calls == []
+    assert fake_card_doc.delete_calls == 0
 
 
 def test_compute_study_progress_summary_uses_server_logic_for_overview():
@@ -1143,13 +1355,16 @@ def test_update_study_progress_merges_cross_browser_card_states(client, monkeypa
 
     progress_store = {}
     card_state_store = {}
+    runtime = get_runtime(client.application)
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u12", "email": "user@gmail.com"})
-    monkeypatch.setattr(core, "get_study_progress_doc", lambda uid: _FakeDocRef(progress_store, uid))
+    monkeypatch.setattr(runtime, "db", object(), raising=False)
+    monkeypatch.setattr(runtime, "get_study_progress_doc", lambda uid: _FakeDocRef(progress_store, uid), raising=False)
     monkeypatch.setattr(
-        core,
+        runtime,
         "get_study_card_state_doc",
         lambda uid, pack_id: _FakeDocRef(card_state_store, f"{uid}:{pack_id}"),
+        raising=False,
     )
 
     browser_a_payload = {

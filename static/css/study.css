@@ -83,6 +83,47 @@
       padding: 20px
     }
 
+    .study-auth-gate {
+      margin-bottom: 16px
+    }
+
+    .study-auth-gate-card {
+      display: grid;
+      gap: 12px;
+      justify-items: center;
+      padding: 32px 24px;
+      border: 1px dashed rgba(79, 70, 229, .28);
+      border-radius: var(--radius-xl);
+      background: linear-gradient(135deg, rgba(79, 70, 229, .07) 0%, rgba(14, 165, 233, .08) 100%);
+      box-shadow: var(--shadow-md);
+      text-align: center
+    }
+
+    .study-auth-eyebrow {
+      font-size: .74rem;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--gray-500)
+    }
+
+    .study-auth-gate-card h2 {
+      font-size: clamp(1.5rem, 3vw, 2rem);
+      color: var(--gray-900)
+    }
+
+    .study-auth-gate-card p {
+      max-width: 640px;
+      color: var(--gray-600)
+    }
+
+    .study-auth-gate-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px
+    }
+
     .topbar {
       display: flex;
       justify-content: space-between;
@@ -3582,6 +3623,28 @@
         padding: 12px 14px
       }
 
+      .panel-head,
+      .panel-head .actions {
+        align-items: stretch
+      }
+
+      .panel-head {
+        flex-direction: column
+      }
+
+      .panel-head .actions {
+        width: 100%;
+        flex-direction: column
+      }
+
+      .panel-head .actions .btn {
+        width: 100%
+      }
+
+      .panel-head .actions .btn.primary {
+        order: -1
+      }
+
       .panel-body {
         padding: 12px 14px
       }
@@ -3762,6 +3825,20 @@
 
       .lesson-card {
         padding: 14px
+      }
+
+      .study-auth-gate-card {
+        padding: 24px 18px;
+        border-radius: var(--radius-lg)
+      }
+
+      .study-auth-gate-actions {
+        width: 100%;
+        flex-direction: column
+      }
+
+      .study-auth-gate-actions .btn {
+        width: 100%
       }
 
       .setup-modal {

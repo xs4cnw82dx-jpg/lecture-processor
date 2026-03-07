@@ -2,6 +2,7 @@ import os
 
 from lecture_processor.runtime.container import get_runtime
 from lecture_processor.domains.study import audio as study_audio
+from lecture_processor.repositories.query_utils import apply_where
 
 
 def _resolve_runtime(runtime=None):
@@ -10,13 +11,118 @@ def _resolve_runtime(runtime=None):
     return get_runtime()
 
 
+ACTIVE_ACCOUNT_JOB_STATES = {'queued', 'starting', 'processing'}
+
+
+def account_write_block_message(runtime=None):
+    _ = _resolve_runtime(runtime)
+    return 'Account deletion is in progress. New work and credit changes are blocked until deletion finishes.'
+
+
+def get_user_account_state(uid, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    db = getattr(resolved_runtime, 'db', None)
+    if db is None or not uid:
+        return {}
+    try:
+        doc = resolved_runtime.users_repo.get_doc(db, uid)
+    except Exception:
+        return {}
+    if not getattr(doc, 'exists', False):
+        return {}
+    data = doc.to_dict() or {}
+    return data if isinstance(data, dict) else {}
+
+
+def ensure_account_allows_writes(uid, runtime=None):
+    account_state = get_user_account_state(uid, runtime=runtime)
+    status = str(account_state.get('account_status', '') or '').strip().lower()
+    if status == 'deleting':
+        return (False, account_write_block_message(runtime=runtime))
+    return (True, '')
+
+
+def mark_account_deletion_requested(uid, email='', runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    db = getattr(resolved_runtime, 'db', None)
+    if db is None or not uid:
+        return False
+    now_ts = float(resolved_runtime.time.time())
+    resolved_runtime.users_repo.set_doc(
+        db,
+        uid,
+        {
+            'uid': uid,
+            'email': str(email or '').strip(),
+            'account_status': 'deleting',
+            'delete_requested_at': now_ts,
+            'updated_at': now_ts,
+        },
+        merge=True,
+    )
+    return True
+
+
+def query_docs_by_field(collection_name, field_name, field_value, limit, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    db = getattr(resolved_runtime, 'db', None)
+    if db is None:
+        return []
+    query = apply_where(resolved_runtime.db.collection(collection_name), field_name, '==', field_value)
+    if isinstance(limit, int) and limit > 0:
+        query = query.limit(limit)
+    return list(query.stream())
+
+
+def has_docs_by_field(collection_name, field_name, field_value, runtime=None):
+    return bool(query_docs_by_field(collection_name, field_name, field_value, 1, runtime=runtime))
+
+
 def count_active_jobs_for_user(uid, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
-    return resolved_runtime.job_state_service.count_active_jobs_for_user(
-        uid,
-        jobs_store=resolved_runtime.jobs,
-        lock=resolved_runtime.JOBS_LOCK,
-    )
+    if not uid:
+        return 0
+
+    active_ids = set()
+    with resolved_runtime.JOBS_LOCK:
+        for job_id, job in (resolved_runtime.jobs or {}).items():
+            if not isinstance(job, dict):
+                continue
+            if str(job.get('user_id', '') or '').strip() != uid:
+                continue
+            if str(job.get('status', '') or '').strip().lower() in ACTIVE_ACCOUNT_JOB_STATES:
+                active_ids.add(f'in-memory:{job_id}')
+
+    db = getattr(resolved_runtime, 'db', None)
+    if db is None:
+        return len(active_ids)
+
+    try:
+        runtime_docs = resolved_runtime.runtime_jobs_repo.query_by_user_and_statuses(
+            db,
+            resolved_runtime.RUNTIME_JOBS_COLLECTION,
+            uid,
+            ACTIVE_ACCOUNT_JOB_STATES,
+            limit=500,
+        )
+        for doc in runtime_docs:
+            active_ids.add(f'runtime:{doc.id}')
+    except Exception as error:
+        resolved_runtime.logger.warning("Warning: could not inspect runtime jobs for user %s: %s", uid, error)
+
+    try:
+        batch_docs = resolved_runtime.batch_repo.list_batch_jobs_by_uid_and_statuses(
+            db,
+            uid,
+            list(ACTIVE_ACCOUNT_JOB_STATES),
+            limit=500,
+        )
+        for doc in batch_docs:
+            active_ids.add(f'batch:{doc.id}')
+    except Exception as error:
+        resolved_runtime.logger.warning("Warning: could not inspect batch jobs for user %s: %s", uid, error)
+
+    return len(active_ids)
 
 
 def list_docs_by_uid(collection_name, uid, max_docs, runtime=None):

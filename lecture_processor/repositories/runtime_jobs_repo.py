@@ -27,3 +27,15 @@ def query_statuses(db, collection_name, statuses, *, limit=200):
     if isinstance(limit, int) and limit > 0:
         query = query.limit(limit)
     return list(query.stream())
+
+
+def query_by_user_and_statuses(db, collection_name, user_id, statuses, *, limit=200):
+    safe_user_id = str(user_id or '').strip()
+    normalized = [str(status).strip().lower() for status in (statuses or []) if str(status).strip()]
+    if not safe_user_id or not normalized:
+        return []
+    query = apply_where(db.collection(collection_name), 'user_id', '==', safe_user_id)
+    query = apply_where(query, 'status', 'in', normalized)
+    if isinstance(limit, int) and limit > 0:
+        query = query.limit(limit)
+    return list(query.stream())

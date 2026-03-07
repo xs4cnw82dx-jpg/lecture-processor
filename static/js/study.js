@@ -725,6 +725,7 @@ function gradeAnswer(userAnswer, correctAnswer) {
 
 /* ── DOM refs ── */
 var userMeta = document.getElementById('user-meta'), backAppBtn = document.getElementById('back-app-btn'), fullscreenBtn = document.getElementById('fullscreen-btn'), topbarDueText = document.getElementById('topbar-due-text');
+var studyAuthGate = document.getElementById('study-auth-gate'), studyLibraryShell = document.getElementById('study-library-shell'), studyAuthSignInBtn = document.getElementById('study-auth-signin-btn');
 var searchInput = document.getElementById('search-input'), folderList = document.getElementById('folder-list'), packList = document.getElementById('pack-list'), newFolderBtn = document.getElementById('new-folder-btn'), deleteFolderBtn = document.getElementById('delete-folder-btn');
 var packEmpty = document.getElementById('pack-empty'), packEmptyDefault = document.getElementById('pack-empty-default'), packEmptyOnboarding = document.getElementById('pack-empty-onboarding'), packEmptyCreateBtn = document.getElementById('pack-empty-create-btn'), packEmptyDemoBtn = document.getElementById('pack-empty-demo-btn'), packEditorWrap = document.getElementById('pack-editor-wrap'), packTitle = document.getElementById('pack-title'), packFolderSelect = document.getElementById('pack-folder-select'), packFolderPicker = document.getElementById('pack-folder-picker'), packFolderButton = document.getElementById('pack-folder-button'), packFolderLabel = document.getElementById('pack-folder-label'), packFolderMenu = document.getElementById('pack-folder-menu');
 var packCourse = document.getElementById('pack-course'), packSubject = document.getElementById('pack-subject'), packSemester = document.getElementById('pack-semester'), packBlock = document.getElementById('pack-block'), notesView = document.getElementById('notes-view');
@@ -766,6 +767,42 @@ var STUDY_DUE_CACHE_USER_PREFIX = 'study_due_today:user:';
 
 /* ── Helpers ── */
 function showToast(msg, type) { toastEl.textContent = msg; toastEl.className = 'toast visible ' + (type || 'success'); setTimeout(function () { toastEl.classList.remove('visible'); }, 2800); }
+function setStudyLibraryVisibility(signedIn) {
+  if (studyAuthGate) { studyAuthGate.hidden = !!signedIn; }
+  if (studyLibraryShell) { studyLibraryShell.hidden = !signedIn; }
+}
+function openStudySignIn() {
+  var shellSignInBtn = document.getElementById('shell-sign-in-btn');
+  if (shellSignInBtn && typeof shellSignInBtn.click === 'function') {
+    shellSignInBtn.click();
+    return;
+  }
+  window.location.href = '/lecture-notes?auth=signin';
+}
+function applyStudySignedOutState() {
+  setStudyLibraryVisibility(false);
+  folders = [];
+  packs = [];
+  selectedFolderId = '';
+  selectedPackId = '';
+  selectedPack = null;
+  pendingOpenPackId = '';
+  draggedPackId = '';
+  orderedFlashcards = [];
+  remoteProgressCardStates = {};
+  flashcardPeekRevealed = {};
+  if (setupOverlay && setupOverlay.classList.contains('visible')) { closeSessionSetup(); }
+  if (learnStage && learnStage.classList.contains('visible')) { closeLearnStage(); }
+  if (folderModalOverlay && folderModalOverlay.classList.contains('visible')) { closeFolderModal(); }
+  if (confirmModalOverlay && confirmModalOverlay.classList.contains('visible')) { closeConfirmModal(false); }
+  renderFolderSelect();
+  renderFolders();
+  renderPacks();
+  showPackEditor(false);
+  updatePackSummary();
+  closeAudioPlayer();
+  setTopbarDueTextValue(null);
+}
 function readUiCacheJson(key, fallbackValue) {
   if (uiCache && typeof uiCache.getJson === 'function') {
     return uiCache.getJson(key, fallbackValue);
@@ -3053,8 +3090,10 @@ auth.onAuthStateChanged(function (user) {
       userMeta.textContent = 'Not signed in';
     }
     hydrateTopbarDueFromCache(null);
+    applyStudySignedOutState();
     return;
   }
+  setStudyLibraryVisibility(true);
   user.getIdToken().then(function (t) {
     token = t;
     if (authClient && typeof authClient.setToken === 'function') { authClient.setToken(t); }
@@ -3090,6 +3129,9 @@ setInterval(function () {
 }, 10 * 60 * 1000);
 
 /* ── Event listeners ── */
+if (studyAuthSignInBtn) {
+  studyAuthSignInBtn.addEventListener('click', openStudySignIn);
+}
 createPackBtn.addEventListener('click', function () {
   if (!auth.currentUser) {
     showToast('Please sign in first.', 'error');

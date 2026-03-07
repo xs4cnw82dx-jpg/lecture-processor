@@ -76,7 +76,7 @@
     <main class="app-shell-page">
         <section class="hero"><div class="container"><div class="hero-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>{% if forced_mode == 'interview' %}Transcription{% elif forced_mode %}Extraction{% else %}Processing{% endif %}</div><h1 class="hero-title">{% if forced_mode == 'lecture-notes' %}Create Complete<br><span>Lecture Notes</span>{% elif forced_mode == 'slides-only' %}Run Focused<br><span>Slides Extraction</span>{% elif forced_mode == 'interview' %}Generate Clean<br><span>Interview Transcription</span>{% else %}Create Study-Ready<br><span>Lecture Outputs</span>{% endif %}</h1><p class="hero-description">{% if forced_mode == 'lecture-notes' %}Upload lecture slides and audio to build complete notes for study sessions.{% elif forced_mode == 'slides-only' %}Upload slide decks to extract clean text and identify important visuals automatically, with optional study tools.{% elif forced_mode == 'interview' %}Upload interview recordings and generate a timestamped transcript.{% else %}Upload your lecture files and generate notes, flashcards, and tests in one flow.{% endif %}</p></div></section>
         {% if (forced_mode or '') in ['', 'lecture-notes'] %}
-        <section class="container"><h2 class="sr-only">Core features</h2><div class="features"><div class="feature-card"><div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></div><h3 class="feature-title">Smart Slide Extraction</h3><p class="feature-description">Extracts all text and identifies important visuals automatically</p></div><div class="feature-card"><div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg></div><h3 class="feature-title">Audio Transcription</h3><p class="feature-description">Converts spoken explanations into clean, readable text</p></div><div class="feature-card"><div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></div><h3 class="feature-title">Intelligent Merging</h3><p class="feature-description">Combines slides and audio into comprehensive study notes</p></div></div></section>
+        <section class="container desktop-feature-strip"><h2 class="sr-only">Core features</h2><div class="features"><div class="feature-card"><div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></div><h3 class="feature-title">Smart Slide Extraction</h3><p class="feature-description">Extracts all text and identifies important visuals automatically</p></div><div class="feature-card"><div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg></div><h3 class="feature-title">Audio Transcription</h3><p class="feature-description">Converts spoken explanations into clean, readable text</p></div><div class="feature-card"><div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></div><h3 class="feature-title">Intelligent Merging</h3><p class="feature-description">Combines slides and audio into comprehensive study notes</p></div></div></section>
         {% endif %}
         <section class="container"><div class="app-card">
             <div class="quickstart-card" id="quickstart-card" style="display:none;" aria-live="polite">
@@ -260,6 +260,30 @@
                 </div>
             </div>
         </div></section>
+        {% if (forced_mode or '') in ['', 'lecture-notes'] %}
+        <section class="container mobile-feature-strip">
+            <details class="mobile-features">
+                <summary>How lecture notes mode works</summary>
+                <div class="features">
+                    <div class="feature-card">
+                        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></div>
+                        <h3 class="feature-title">Smart Slide Extraction</h3>
+                        <p class="feature-description">Extracts all text and identifies important visuals automatically</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg></div>
+                        <h3 class="feature-title">Audio Transcription</h3>
+                        <p class="feature-description">Converts spoken explanations into clean, readable text</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></div>
+                        <h3 class="feature-title">Intelligent Merging</h3>
+                        <p class="feature-description">Combines slides and audio into comprehensive study notes</p>
+                    </div>
+                </div>
+            </details>
+        </section>
+        {% endif %}
     </main>
     {% include '_shell_footer.html' %}
     </div>

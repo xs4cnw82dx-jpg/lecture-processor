@@ -45,48 +45,63 @@
         </label>
       </div>
     </section>
-
-    <section class="shell-panel">
-      <h2>Active batches</h2>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Title</th>
-              <th>Mode</th>
-              <th>Submitted</th>
-              <th>Stage</th>
-              <th>Rows</th>
-              <th>Updated</th>
-              <th>Email</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="batch-dashboard-active-body"></tbody>
-        </table>
+    <section class="shell-panel batch-dashboard-auth-gate" id="batch-dashboard-auth-gate" hidden>
+      <div class="batch-dashboard-auth-card">
+        <p class="batch-dashboard-auth-eyebrow">Protected view</p>
+        <h2>Sign in to view your batches</h2>
+        <p>This dashboard tracks the work attached to your account, including live progress, completion emails, and ZIP exports.</p>
+        <div class="batch-dashboard-auth-actions">
+          <button type="button" class="btn-link primary" id="batch-dashboard-signin-btn">Sign in</button>
+          <a href="/batch_mode" class="btn-link">Open batch mode</a>
+        </div>
       </div>
     </section>
 
-    <section class="shell-panel">
-      <h2>Recent batches</h2>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Title</th>
-              <th>Mode</th>
-              <th>Status</th>
-              <th>Submitted</th>
-              <th>Rows</th>
-              <th>Updated</th>
-              <th>Email</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="batch-dashboard-recent-body"></tbody>
-        </table>
-      </div>
-    </section>
+    <div id="batch-dashboard-content">
+      <section class="shell-panel">
+        <h2>Active batches</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Mode</th>
+                <th>Submitted</th>
+                <th>Stage</th>
+                <th>Rows</th>
+                <th>Updated</th>
+                <th>Email</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="batch-dashboard-active-body"></tbody>
+          </table>
+        </div>
+        <div class="batch-cards" id="batch-dashboard-active-cards"></div>
+      </section>
+
+      <section class="shell-panel">
+        <h2>Recent batches</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Mode</th>
+                <th>Status</th>
+                <th>Submitted</th>
+                <th>Rows</th>
+                <th>Updated</th>
+                <th>Email</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="batch-dashboard-recent-body"></tbody>
+          </table>
+        </div>
+        <div class="batch-cards" id="batch-dashboard-recent-cards"></div>
+      </section>
+    </div>
   </main>
   {% include '_shell_footer.html' %}
   </div>
