@@ -3,7 +3,8 @@
   gap: 14px;
   opacity: 0;
   transform: translateY(10px);
-  transition: opacity .22s ease, transform .22s ease;
+  will-change: opacity, transform;
+  transition: opacity .3s cubic-bezier(.2,.8,.2,1), transform .3s cubic-bezier(.2,.8,.2,1);
 }
 
 .batch-page.is-ready {
@@ -13,7 +14,7 @@
 
 .batch-page.is-leaving {
   opacity: 0;
-  transform: translateY(8px);
+  transform: translateY(12px);
 }
 
 .batch-hero-head {
@@ -548,7 +549,7 @@
 }
 
 .row-url-status.success {
-  color: #0f7a4a;
+  color: #166534;
 }
 
 .row-url-status.info {

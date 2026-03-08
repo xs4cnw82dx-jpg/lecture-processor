@@ -4864,38 +4864,34 @@ function positionHighlightDownloadMenu() {
   resetHighlightDownloadMenuPosition();
   var viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
   var viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-  if (isNotesFullscreenActive() && hlDownloadBtn) {
-    hlDownloadMenu.classList.add('is-floating');
-    var buttonRect = hlDownloadBtn.getBoundingClientRect();
-    var floatingWidth = hlDownloadMenu.offsetWidth || 280;
-    var floatingHeight = hlDownloadMenu.offsetHeight || 108;
-    var left = Math.min(
-      Math.max(16, buttonRect.right - floatingWidth),
-      Math.max(16, viewportWidth - floatingWidth - 16)
-    );
-    if (buttonRect.left + floatingWidth <= viewportWidth - 16) {
-      left = Math.max(16, Math.min(left, buttonRect.left));
-    }
-    var top = buttonRect.bottom + 8;
-    if (top + floatingHeight > viewportHeight - 16) {
-      top = Math.max(16, buttonRect.top - floatingHeight - 8);
-    }
-    hlDownloadMenu.style.left = Math.round(left) + 'px';
-    hlDownloadMenu.style.top = Math.round(top) + 'px';
-    return;
+  if (!hlDownloadBtn) return;
+  hlDownloadMenu.classList.add('is-floating');
+  var buttonRect = hlDownloadBtn.getBoundingClientRect();
+  var menuWidth = hlDownloadMenu.offsetWidth || 280;
+  var menuHeight = hlDownloadMenu.offsetHeight || 108;
+  var left = buttonRect.right - menuWidth;
+  var alignLeft = false;
+  var upward = false;
+  if (left < 16) {
+    left = buttonRect.left;
+    alignLeft = true;
   }
-  var rect = hlDownloadMenu.getBoundingClientRect();
-  if (rect.right > viewportWidth - 16) {
-    hlDownloadMenu.classList.add('is-align-left');
-    rect = hlDownloadMenu.getBoundingClientRect();
+  if (left + menuWidth > viewportWidth - 16) {
+    left = Math.max(16, viewportWidth - menuWidth - 16);
   }
-  if (rect.bottom > viewportHeight - 16) {
-    hlDownloadMenu.classList.add('is-upward');
-    rect = hlDownloadMenu.getBoundingClientRect();
+  var top = buttonRect.bottom + 10;
+  if (top + menuHeight > viewportHeight - 16) {
+    top = buttonRect.top - menuHeight - 10;
+    upward = true;
   }
-  if (rect.top < 16) {
-    hlDownloadMenu.classList.remove('is-upward');
+  if (top < 16) {
+    top = Math.max(16, Math.min(buttonRect.bottom + 10, viewportHeight - menuHeight - 16));
+    upward = false;
   }
+  hlDownloadMenu.classList.toggle('is-upward', upward);
+  hlDownloadMenu.classList.toggle('is-align-left', alignLeft);
+  hlDownloadMenu.style.left = Math.round(left) + 'px';
+  hlDownloadMenu.style.top = Math.round(top) + 'px';
 }
 function ensureHighlightDownloadMenu() {
   if (hlDownloadMenu || !hlToolbar) return hlDownloadMenu;
@@ -4922,10 +4918,10 @@ function ensureHighlightDownloadMenu() {
   });
   hlDownloadMenu.appendChild(originalDocxBtn);
   hlDownloadMenu.appendChild(annotatedBtn);
-  (hlDownloadWrap || hlToolbar).appendChild(hlDownloadMenu);
+  (document.body || document.documentElement).appendChild(hlDownloadMenu);
   document.addEventListener('click', function (e) {
     if (!hlDownloadBtn || !hlDownloadMenu) return;
-    if (!((hlDownloadWrap || hlToolbar).contains(e.target))) {
+    if (!hlDownloadMenu.contains(e.target) && !hlDownloadBtn.contains(e.target)) {
       setHighlightDownloadMenuOpen(false);
     }
   });
@@ -4945,6 +4941,11 @@ window.addEventListener('resize', function () {
     positionHighlightDownloadMenu();
   }
 });
+window.addEventListener('scroll', function () {
+  if (hlDownloadMenu && hlDownloadMenu.classList.contains('visible')) {
+    positionHighlightDownloadMenu();
+  }
+}, true);
 document.addEventListener('fullscreenchange', function () {
   if (hlDownloadMenu && hlDownloadMenu.classList.contains('visible')) {
     positionHighlightDownloadMenu();

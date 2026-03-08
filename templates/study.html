@@ -40,7 +40,6 @@
               <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
             </svg></div>
           <div class="topbar-copy">
-            <div class="topbar-kicker">Library Hub</div>
             <h1>Study Library</h1>
             <div class="topbar-sub">Manage packs and keep your study material organized.</div>
           </div>
@@ -278,11 +277,11 @@
                 <div class="editor-pane active" id="editor-pane-notes">
                   <div class="notes-pane-shell" id="notes-pane-shell">
                     <div class="notes-controls">
-	                      <div class="notes-controls-main">
-	                        <div class="highlight-toolbar" id="highlight-toolbar">
+                      <div class="notes-controls-main">
+                        <div class="highlight-toolbar" id="highlight-toolbar">
                           <div class="hl-color-group">
-	                          <button type="button" class="hl-btn hl-yellow active" data-hl-color="yellow"
-	                            title="Yellow highlight"></button>
+                            <button type="button" class="hl-btn hl-yellow active" data-hl-color="yellow"
+                              title="Yellow highlight"></button>
                             <button type="button" class="hl-btn hl-green" data-hl-color="green"
                               title="Green highlight"></button>
                             <button type="button" class="hl-btn hl-blue" data-hl-color="blue" title="Blue highlight"></button>
@@ -307,24 +306,28 @@
                                   <line x1="12" y1="15" x2="12" y2="3"></line>
                                 </svg>
                                 <span>Download Notes</span>
-	                            </button>
+                              </button>
                             </div>
                           </div>
-	                        </div>
-	                        <div class="notes-highlight-status" id="notes-highlight-status">Highlights save to this study pack automatically.</div>
-	                      </div>
-	                      <button type="button" class="notes-fullscreen-btn" id="notes-fullscreen-btn"
-	                        title="Open notes fullscreen" aria-label="Open notes fullscreen">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                          stroke-linejoin="round">
-                          <polyline points="15 3 21 3 21 9"></polyline>
-                          <polyline points="9 21 3 21 3 15"></polyline>
-                          <line x1="21" y1="3" x2="14" y2="10"></line>
-                          <line x1="3" y1="21" x2="10" y2="14"></line>
-                        </svg>
-                      </button>
+                        </div>
+                        <div class="notes-highlight-status" id="notes-highlight-status">Highlights save to this study pack automatically.</div>
+                      </div>
                     </div>
-                    <div class="notes-view" id="notes-view"></div>
+                    <div class="notes-view-wrap">
+                      <div class="notes-view-surface">
+                        <button type="button" class="notes-fullscreen-btn" id="notes-fullscreen-btn"
+                          title="Open notes fullscreen" aria-label="Open notes fullscreen">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round">
+                            <polyline points="15 3 21 3 21 9"></polyline>
+                            <polyline points="9 21 3 21 3 15"></polyline>
+                            <line x1="21" y1="3" x2="14" y2="10"></line>
+                            <line x1="3" y1="21" x2="10" y2="14"></line>
+                          </svg>
+                        </button>
+                        <div class="notes-view" id="notes-view"></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div class="editor-pane" id="editor-pane-flashcards">

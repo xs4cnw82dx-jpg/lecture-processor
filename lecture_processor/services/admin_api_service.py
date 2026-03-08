@@ -129,6 +129,8 @@ def _build_cost_analysis_payload(app_ctx, normalized_filters):
         if not job_id:
             continue
         job['job_id'] = job_id
+        if not admin_metrics.is_admin_visible_job(job, runtime=app_ctx):
+            continue
         if _job_matches_filters(job, normalized_filters):
             filtered_jobs.append(job)
 
@@ -241,7 +243,11 @@ def admin_overview(app_ctx, request):
 
         total_users = admin_metrics.safe_count_collection('users', runtime=app_ctx)
         new_users = admin_metrics.safe_count_window('users', 'created_at', window_start, runtime=app_ctx)
-        total_processed = admin_metrics.safe_count_collection('job_logs', runtime=app_ctx)
+        total_processed = 0
+        for doc in admin_metrics.safe_stream_collection('job_logs', runtime=app_ctx):
+            job = doc.to_dict() or {}
+            if admin_metrics.is_admin_visible_job(job, runtime=app_ctx):
+                total_processed += 1
 
         filtered_purchases_docs = admin_metrics.safe_query_docs_in_window(
             collection_name='purchases',
@@ -289,6 +295,8 @@ def admin_overview(app_ctx, request):
         filtered_jobs = []
         for doc in filtered_jobs_docs:
             job = doc.to_dict() or {}
+            if not admin_metrics.is_admin_visible_job(job, runtime=app_ctx):
+                continue
             filtered_jobs.append(job)
             job_count += 1
             status = job.get('status', '')
@@ -522,6 +530,8 @@ def admin_export(app_ctx, request):
             )
             for doc in docs:
                 job = doc.to_dict() or {}
+                if not admin_metrics.is_admin_visible_job(job, runtime=app_ctx):
+                    continue
                 cost_info = admin_metrics.compute_job_stage_costs(job, pricing_payload, runtime=app_ctx)
                 token_input_total = _to_non_negative_int(cost_info.get('input_tokens', job.get('token_input_total', 0)))
                 token_output_total = _to_non_negative_int(cost_info.get('output_tokens', job.get('token_output_total', 0)))
@@ -871,11 +881,19 @@ def admin_batch_jobs(app_ctx, request):
     limit = max(1, min(500, limit))
 
     statuses = [part.strip() for part in status_filter.split(',') if part.strip()] if status_filter else []
+    upstream_limit = max(limit, min(500, limit * 4))
     batches = batch_orchestrator.list_batches_for_admin(
         statuses=statuses,
-        limit=limit,
+        limit=upstream_limit,
         runtime=app_ctx,
     )
-    if mode_filter:
-        batches = [item for item in batches if str(item.get('mode', '') or '') == mode_filter]
-    return app_ctx.jsonify({'batches': batches})
+    visible_batches = []
+    for item in batches:
+        if not admin_metrics.is_admin_visible_batch(item, runtime=app_ctx):
+            continue
+        if mode_filter and str(item.get('mode', '') or '') != mode_filter:
+            continue
+        visible_batches.append(item)
+        if len(visible_batches) >= limit:
+            break
+    return app_ctx.jsonify({'batches': visible_batches})

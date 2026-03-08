@@ -359,6 +359,39 @@ def test_admin_batch_jobs_contract_fields(client, monkeypatch):
     assert payload["batches"][0]["status"] == "processing"
 
 
+def test_admin_batch_jobs_hides_fixture_batches(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
+    monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)
+    monkeypatch.setattr(
+        batch_orchestrator,
+        "list_batches_for_admin",
+        lambda statuses=None, limit=200, runtime=None: [
+            {
+                "batch_id": "batch-hidden",
+                "uid": "fixture-u",
+                "email": "batch@example.com",
+                "mode": "lecture-notes",
+                "batch_title": "Batch Notify",
+                "status": "error",
+            },
+            {
+                "batch_id": "batch-real",
+                "uid": "u-1",
+                "email": "real@example.com",
+                "mode": "lecture-notes",
+                "batch_title": "Actual batch",
+                "status": "processing",
+            },
+        ],
+    )
+
+    response = client.get("/api/admin/batch-jobs?limit=50")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert [item["batch_id"] for item in payload["batches"]] == ["batch-real"]
+
+
 def test_user_batch_jobs_list_contract_fields(client, monkeypatch):
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-batch", "email": "batch@example.com"})
     monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: True)

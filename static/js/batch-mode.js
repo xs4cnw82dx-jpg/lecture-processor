@@ -1536,6 +1536,22 @@
     }
 
     modeLinks.forEach(function (link) {
+      var prefetchedHref = '';
+      function prefetchHref() {
+        var href = String(link.getAttribute('href') || '').trim();
+        if (!href || href === window.location.pathname || href === prefetchedHref) return;
+        prefetchedHref = href;
+        try {
+          var prefetch = document.createElement('link');
+          prefetch.rel = 'prefetch';
+          prefetch.href = href;
+          document.head.appendChild(prefetch);
+        } catch (_error) {
+          // Ignore prefetch failures.
+        }
+      }
+      link.addEventListener('mouseenter', prefetchHref);
+      link.addEventListener('focus', prefetchHref);
       link.addEventListener('click', function (event) {
         if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         if (event.button !== 0) return;
@@ -1547,12 +1563,13 @@
           return;
         }
         if (batchPage) {
+          batchPage.style.minHeight = batchPage.offsetHeight + 'px';
           batchPage.classList.remove('is-ready');
           batchPage.classList.add('is-leaving');
         }
         window.setTimeout(function () {
           window.location.href = href;
-        }, 170);
+        }, 220);
       });
     });
 

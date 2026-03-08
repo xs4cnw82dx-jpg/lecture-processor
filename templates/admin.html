@@ -217,6 +217,7 @@
                     <h2>Cost Calculator</h2>
                     <div class="calculator-meta" id="calc-pricing-version">Pricing version: -</div>
                 </div>
+                <p class="calculator-intro">Pick a default scenario, tweak the token assumptions, and read the live margin before you change bundle pricing.</p>
                 <div class="calculator-controls">
                     <label class="calculator-control">
                         <span>Scenario</span>
@@ -240,38 +241,30 @@
                         <input id="calc-eur-usd" class="calculator-input" type="number" value="1.08" step="0.01" min="0.1">
                     </label>
                 </div>
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Stage</th>
-                                <th>Model ID</th>
-                                <th>Modality</th>
-                                <th>Input tokens</th>
-                                <th>Output tokens</th>
-                                <th>Input cost ($)</th>
-                                <th>Output cost ($)</th>
-                                <th>Stage cost ($)</th>
-                            </tr>
-                        </thead>
-                        <tbody id="calc-body"></tbody>
-                        <tfoot>
-                            <tr class="calculator-total-row">
-                                <td colspan="5">Total API Cost</td>
-                                <td id="calc-total-input">$0.0000</td>
-                                <td id="calc-total-output">$0.0000</td>
-                                <td id="calc-total">$0.0000</td>
-                            </tr>
-                        </tfoot>
-                    </table>
+                <div class="calculator-story">
+                    <article class="calculator-story-card calculator-story-card-main">
+                        <span class="calculator-story-kicker">How to use it</span>
+                        <h3 id="calc-scenario-heading">Choose a scenario</h3>
+                        <p id="calc-scenario-copy">Costs update live as you edit bundle price, exchange rate, or stage token assumptions.</p>
+                        <div class="calculator-story-points" id="calc-scenario-points"></div>
+                    </article>
+                    <article class="calculator-total-card">
+                        <span class="calculator-total-label">Total API Cost</span>
+                        <strong class="calculator-total-amount" id="calc-total">$0.0000</strong>
+                        <div class="calculator-total-breakdown">
+                            <span>Input <strong id="calc-total-input">$0.0000</strong></span>
+                            <span>Output <strong id="calc-total-output">$0.0000</strong></span>
+                        </div>
+                    </article>
                 </div>
+                <div class="calc-stage-grid" id="calc-stage-grid"></div>
                 <div class="calculator-summary">
                     <div class="calculator-summary-item">
-                        <span>Revenue (USD)</span>
+                        <span>Bundle revenue (USD)</span>
                         <strong id="calc-revenue-usd">$0.0000</strong>
                     </div>
                     <div class="calculator-summary-item">
-                        <span>Margin Value</span>
+                        <span>Margin</span>
                         <strong id="calc-margin">$0.0000</strong>
                     </div>
                     <div class="calculator-summary-item">
@@ -287,12 +280,13 @@
 
             <section class="panel analyzer-panel">
                 <div class="analyzer-head">
-                    <h2>Actual Job Cost Analyzer</h2>
+                    <h2>Job Cost Analyzer</h2>
                     <div class="actions">
                         <button class="btn" id="analyzer-run-btn" type="button">Run analysis</button>
                         <button class="btn" id="analyzer-export-btn" type="button">Export XLSX</button>
                     </div>
                 </div>
+                <p class="analyzer-intro">Filter real jobs by period, mode, status, or user. Leave the user fields empty to analyze everything in the selected window.</p>
                 <div class="analyzer-controls">
                     <label class="calculator-control">
                         <span>Period</span>
@@ -341,6 +335,7 @@
                     <span id="analyzer-selection-meta">0 selected</span>
                 </div>
                 <div class="analyzer-summary" id="analyzer-summary">
+                    <div class="calculator-summary-item"><span>Jobs Filtered</span><strong id="analyzer-jobs-filtered">0</strong></div>
                     <div class="calculator-summary-item"><span>Jobs Selected</span><strong id="analyzer-jobs-selected">0</strong></div>
                     <div class="calculator-summary-item"><span>Input Tokens</span><strong id="analyzer-input-total">0</strong></div>
                     <div class="calculator-summary-item"><span>Output Tokens</span><strong id="analyzer-output-total">0</strong></div>
