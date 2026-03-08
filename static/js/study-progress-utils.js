@@ -1,4 +1,4 @@
-(function () {
+(function (root) {
   'use strict';
 
   var DEFAULT_DAILY_GOAL = 20;
@@ -21,11 +21,39 @@
     return parsed;
   }
 
+  function parseOptionalGoalValue(value) {
+    if (value == null) return null;
+    if (typeof value === 'string' && !String(value).trim()) return null;
+    return parseGoalValue(value);
+  }
+
   function clampGoalValue(value, fallbackValue) {
     var parsed = parseGoalValue(value);
     if (parsed !== null) return parsed;
     var fallback = parseGoalValue(fallbackValue);
     return fallback !== null ? fallback : DEFAULT_DAILY_GOAL;
+  }
+
+  function sameGoalValue(leftValue, rightValue) {
+    return parseOptionalGoalValue(leftValue) === parseOptionalGoalValue(rightValue);
+  }
+
+  function formatGoalTarget(value, options) {
+    var settings = options && typeof options === 'object' ? options : {};
+    var emptyLabel = String(settings.emptyLabel || 'Not set');
+    var unitLabel = String(settings.unitLabel || 'cards/day');
+    var parsed = parseOptionalGoalValue(value);
+    return parsed === null ? emptyLabel : parsed + ' ' + unitLabel;
+  }
+
+  function updatePackCollectionGoal(packs, packId, goalValue) {
+    var safePackId = String(packId || '').trim();
+    if (!safePackId) return Array.isArray(packs) ? packs.slice() : [];
+    var normalizedGoal = parseOptionalGoalValue(goalValue);
+    return (Array.isArray(packs) ? packs : []).map(function (pack) {
+      if (String(pack && pack.study_pack_id || '').trim() !== safePackId) return pack;
+      return Object.assign({}, pack, { daily_card_goal: normalizedGoal });
+    });
   }
 
   function getDailyGoalStorageKey(uid) {
@@ -34,7 +62,8 @@
 
   function readDailyGoalCache(uid, fallbackValue) {
     try {
-      return clampGoalValue(window.localStorage.getItem(getDailyGoalStorageKey(uid)), fallbackValue);
+      if (!root.localStorage) return clampGoalValue(fallbackValue, DEFAULT_DAILY_GOAL);
+      return clampGoalValue(root.localStorage.getItem(getDailyGoalStorageKey(uid)), fallbackValue);
     } catch (_error) {
       return clampGoalValue(fallbackValue, DEFAULT_DAILY_GOAL);
     }
@@ -43,7 +72,9 @@
   function writeDailyGoalCache(uid, value) {
     var goal = clampGoalValue(value, DEFAULT_DAILY_GOAL);
     try {
-      window.localStorage.setItem(getDailyGoalStorageKey(uid), String(goal));
+      if (root.localStorage) {
+        root.localStorage.setItem(getDailyGoalStorageKey(uid), String(goal));
+      }
     } catch (_error) {
       // Ignore cache failures.
     }
@@ -251,12 +282,16 @@
   function broadcastProgressEvent(payload) {
     var detail = Object.assign({ timestamp: Date.now() }, payload || {});
     try {
-      window.localStorage.setItem(PROGRESS_SYNC_STORAGE_KEY, JSON.stringify(detail));
+      if (root.localStorage) {
+        root.localStorage.setItem(PROGRESS_SYNC_STORAGE_KEY, JSON.stringify(detail));
+      }
     } catch (_error) {
       // Ignore storage failures.
     }
     try {
-      window.dispatchEvent(new CustomEvent(PROGRESS_SYNC_EVENT, { detail: detail }));
+      if (typeof root.dispatchEvent === 'function' && typeof root.CustomEvent === 'function') {
+        root.dispatchEvent(new root.CustomEvent(PROGRESS_SYNC_EVENT, { detail: detail }));
+      }
     } catch (_error) {
       // Ignore custom event failures.
     }
@@ -264,7 +299,9 @@
   }
 
   function subscribeProgressEvent(handler) {
-    if (typeof handler !== 'function') return function () { };
+    if (typeof handler !== 'function' || typeof root.addEventListener !== 'function') {
+      return function () { };
+    }
     var handleCustomEvent = function (event) {
       handler((event && event.detail) || {});
     };
@@ -276,22 +313,27 @@
         // Ignore malformed payloads.
       }
     };
-    window.addEventListener(PROGRESS_SYNC_EVENT, handleCustomEvent);
-    window.addEventListener('storage', handleStorageEvent);
+    root.addEventListener(PROGRESS_SYNC_EVENT, handleCustomEvent);
+    root.addEventListener('storage', handleStorageEvent);
     return function unsubscribe() {
-      window.removeEventListener(PROGRESS_SYNC_EVENT, handleCustomEvent);
-      window.removeEventListener('storage', handleStorageEvent);
+      if (typeof root.removeEventListener !== 'function') return;
+      root.removeEventListener(PROGRESS_SYNC_EVENT, handleCustomEvent);
+      root.removeEventListener('storage', handleStorageEvent);
     };
   }
 
-  window.LectureProcessorStudyProgressUtils = Object.assign({}, window.LectureProcessorStudyProgressUtils || {}, {
+  var exported = {
     DEFAULT_DAILY_GOAL: DEFAULT_DAILY_GOAL,
     MIN_DAILY_GOAL: MIN_DAILY_GOAL,
     MAX_DAILY_GOAL: MAX_DAILY_GOAL,
     PROGRESS_SYNC_EVENT: PROGRESS_SYNC_EVENT,
     PROGRESS_SYNC_STORAGE_KEY: PROGRESS_SYNC_STORAGE_KEY,
     parseGoalValue: parseGoalValue,
+    parseOptionalGoalValue: parseOptionalGoalValue,
     clampGoalValue: clampGoalValue,
+    sameGoalValue: sameGoalValue,
+    formatGoalTarget: formatGoalTarget,
+    updatePackCollectionGoal: updatePackCollectionGoal,
     getDailyGoalStorageKey: getDailyGoalStorageKey,
     readDailyGoalCache: readDailyGoalCache,
     writeDailyGoalCache: writeDailyGoalCache,
@@ -310,5 +352,11 @@
     buildPackStats: buildPackStats,
     broadcastProgressEvent: broadcastProgressEvent,
     subscribeProgressEvent: subscribeProgressEvent,
-  });
-})();
+  };
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = exported;
+  }
+
+  root.LectureProcessorStudyProgressUtils = Object.assign({}, root.LectureProcessorStudyProgressUtils || {}, exported);
+})(typeof window !== 'undefined' ? window : globalThis);

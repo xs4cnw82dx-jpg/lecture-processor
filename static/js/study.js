@@ -37,6 +37,7 @@ let difficultyFadeTimer = null, keyboardHintFadeTimer = null, notesFullscreenFad
 let highlightSyncTimer = null, highlightSyncInFlight = false, pendingHighlightPayload = undefined, pendingHighlightPackId = '';
 let overallGoalSaveInFlight = false, packGoalSaveInFlight = false;
 let overallGoalAutosaveTimer = null, packGoalAutosaveTimer = null;
+let goalPanelStatusText = 'Synced', goalPanelStatusTone = 'success';
 const HINT_FADE_DELAY_MS = 10000;
 const NOTES_ICON_IDLE_MS = 5000;
 const HIGHLIGHT_SYNC_DELAY_MS = 450;
@@ -658,6 +659,24 @@ function buildExamRecommendation(unmasteredCount, examDate) {
   return null;
 }
 
+function formatGoalTarget(value, emptyLabel) {
+  var parsed = parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return String(emptyLabel || 'Not set');
+  }
+  return parsed + ' cards/day';
+}
+
+function setGoalPanelStatus(text, tone) {
+  goalPanelStatusText = String(text || 'Synced').trim() || 'Synced';
+  goalPanelStatusTone = String(tone || 'success').trim().toLowerCase() || 'success';
+  if (!packGoalsStatus) return;
+  packGoalsStatus.textContent = goalPanelStatusText;
+  packGoalsStatus.classList.toggle('is-saving', goalPanelStatusTone === 'saving');
+  packGoalsStatus.classList.toggle('is-error', goalPanelStatusTone === 'error');
+  packGoalsStatus.classList.toggle('is-info', goalPanelStatusTone === 'info');
+}
+
 function renderGoalPanel() {
   var hasPack = !!selectedPack;
   var overallGoal = loadDailyGoal();
@@ -681,8 +700,19 @@ function renderGoalPanel() {
   }
 
   var stats = hasPack ? getPackStatsSnapshot(selectedPack) : { due: 0, unmastered: 0 };
+  var folder = hasPack ? findSelectedPackFolder() : null;
+  var recommendation = hasPack ? buildExamRecommendation(stats.unmastered, folder && folder.exam_date ? folder.exam_date : '') : null;
   if (packGoalDue) { packGoalDue.textContent = formatCardCount(stats.due); }
   if (packGoalUnmastered) { packGoalUnmastered.textContent = formatCardCount(stats.unmastered); }
+  if (packGoalRecommendation) {
+    if (!hasPack) {
+      packGoalRecommendation.textContent = 'Select a pack';
+    } else if (recommendation && recommendation.daily_target !== null && recommendation.daily_target !== undefined) {
+      packGoalRecommendation.textContent = formatGoalTarget(recommendation.daily_target, 'Set folder exam date');
+    } else {
+      packGoalRecommendation.textContent = 'Set folder exam date';
+    }
+  }
 
   if (packDailyGoalInput) {
     var savedPackGoal = hasPack && selectedPack.daily_card_goal !== null && selectedPack.daily_card_goal !== undefined
@@ -704,10 +734,15 @@ function renderGoalPanel() {
     packDailyGoalIncrease.disabled = !hasPack || packGoalSaveInFlight;
   }
   if (packGoalHelper) {
-    packGoalHelper.textContent = hasPack
-      ? 'Autosaves automatically. Clear removes the saved pack target.'
-      : 'Select a study pack to set an optional pack-specific goal.';
+    if (!hasPack) {
+      packGoalHelper.textContent = 'Select a study pack to set an optional Pack Goal. It syncs with Planning & Progress.';
+    } else if (recommendation && recommendation.daily_target !== null && recommendation.daily_target !== undefined) {
+      packGoalHelper.textContent = 'Applies to "' + String(selectedPack.title || 'Untitled pack') + '". Recommended pace is based on the folder exam date and remaining unmastered cards.';
+    } else {
+      packGoalHelper.textContent = 'Applies to "' + String(selectedPack.title || 'Untitled pack') + '". Set a folder exam date to calculate a recommended pace here and on Planning & Progress.';
+    }
   }
+  setGoalPanelStatus(goalPanelStatusText, goalPanelStatusTone);
 }
 
 function getGoalBounds() {
@@ -783,6 +818,7 @@ function persistOverallDailyGoal(showValidationError) {
   }
 
   overallGoalSaveInFlight = true;
+  setGoalPanelStatus('Saving...', 'saving');
   renderGoalPanel();
   apiCall('/api/study-progress', {
     method: 'PUT',
@@ -795,9 +831,11 @@ function persistOverallDailyGoal(showValidationError) {
     progressSummaryCache = Object.assign({}, progressSummaryCache || {}, { daily_goal: parsedGoal });
     persistSharedSummaryCaches(auth.currentUser, Object.assign({}, buildLiveProgressSummary(), { daily_goal: parsedGoal }));
     broadcastProgressState({ type: 'summary' });
+    setGoalPanelStatus('Synced', 'success');
     renderGoalPanel();
     showToast('Daily goal saved automatically.', 'success');
   }).catch(function (e) {
+    setGoalPanelStatus('Retry needed', 'error');
     renderGoalPanel();
     showToast(e.message || 'Could not save overall goal.', 'error');
   }).finally(function () {
@@ -827,16 +865,19 @@ function persistSelectedPackDailyGoal(showValidationError) {
   }
 
   packGoalSaveInFlight = true;
+  setGoalPanelStatus('Saving...', 'saving');
   renderGoalPanel();
   apiCall('/api/study-packs/' + encodeURIComponent(selectedPack.study_pack_id), {
     method: 'PATCH',
     body: JSON.stringify({ daily_card_goal: parsedGoal === null ? null : parsedGoal })
   }).then(function () {
     selectedPack.daily_card_goal = parsedGoal === null ? null : parsedGoal;
-    packs = packs.map(function (pack) {
-      if (pack.study_pack_id !== selectedPack.study_pack_id) return pack;
-      return Object.assign({}, pack, { daily_card_goal: parsedGoal === null ? null : parsedGoal });
-    });
+    packs = progressUtils && typeof progressUtils.updatePackCollectionGoal === 'function'
+      ? progressUtils.updatePackCollectionGoal(packs, selectedPack.study_pack_id, parsedGoal)
+      : packs.map(function (pack) {
+        if (pack.study_pack_id !== selectedPack.study_pack_id) return pack;
+        return Object.assign({}, pack, { daily_card_goal: parsedGoal === null ? null : parsedGoal });
+      });
     broadcastProgressState({
       type: 'pack-goal',
       pack_update: {
@@ -844,9 +885,11 @@ function persistSelectedPackDailyGoal(showValidationError) {
         daily_card_goal: parsedGoal === null ? null : parsedGoal
       }
     });
+    setGoalPanelStatus('Synced', 'success');
     renderGoalPanel();
     showToast(parsedGoal === null ? 'Pack goal cleared automatically.' : 'Pack goal saved automatically.', 'success');
   }).catch(function (e) {
+    setGoalPanelStatus('Retry needed', 'error');
     renderGoalPanel();
     showToast(e.message || 'Could not save pack goal.', 'error');
   }).finally(function () {
@@ -998,7 +1041,7 @@ var packEmpty = document.getElementById('pack-empty'), packEmptyDefault = docume
 var packCourse = document.getElementById('pack-course'), packSubject = document.getElementById('pack-subject'), packSemester = document.getElementById('pack-semester'), packBlock = document.getElementById('pack-block'), notesView = document.getElementById('notes-view');
 var packAdvancedMetaBtn = document.getElementById('pack-advanced-meta-btn'), packAdvancedMetaShell = document.getElementById('pack-advanced-meta-shell'), packAdvancedMetaPanel = document.getElementById('pack-advanced-meta-panel');
 var packSummary = document.getElementById('pack-summary'), packSummaryTitle = document.getElementById('pack-summary-title'), packSummaryMeta = document.getElementById('pack-summary-meta'), packStatNotes = document.getElementById('pack-stat-notes'), packStatCards = document.getElementById('pack-stat-cards'), packStatTest = document.getElementById('pack-stat-test');
-var packGoalsPanel = document.getElementById('pack-goals-panel'), packGoalCard = document.getElementById('pack-goal-card'), overallDailyGoalInput = document.getElementById('overall-daily-goal-input'), overallDailyGoalDecrease = document.getElementById('overall-daily-goal-decrease'), overallDailyGoalIncrease = document.getElementById('overall-daily-goal-increase'), packDailyGoalInput = document.getElementById('pack-daily-goal-input'), packDailyGoalClear = document.getElementById('pack-daily-goal-clear'), packDailyGoalDecrease = document.getElementById('pack-daily-goal-decrease'), packDailyGoalIncrease = document.getElementById('pack-daily-goal-increase'), packGoalDue = document.getElementById('pack-goal-due'), packGoalUnmastered = document.getElementById('pack-goal-unmastered'), packGoalHelper = document.getElementById('pack-goal-helper');
+var packGoalsPanel = document.getElementById('pack-goals-panel'), packGoalCard = document.getElementById('pack-goal-card'), packGoalsStatus = document.getElementById('pack-goals-status'), overallDailyGoalInput = document.getElementById('overall-daily-goal-input'), overallDailyGoalDecrease = document.getElementById('overall-daily-goal-decrease'), overallDailyGoalIncrease = document.getElementById('overall-daily-goal-increase'), packDailyGoalInput = document.getElementById('pack-daily-goal-input'), packDailyGoalClear = document.getElementById('pack-daily-goal-clear'), packDailyGoalDecrease = document.getElementById('pack-daily-goal-decrease'), packDailyGoalIncrease = document.getElementById('pack-daily-goal-increase'), packGoalDue = document.getElementById('pack-goal-due'), packGoalUnmastered = document.getElementById('pack-goal-unmastered'), packGoalRecommendation = document.getElementById('pack-goal-recommendation'), packGoalHelper = document.getElementById('pack-goal-helper');
 var createPackBtn = document.getElementById('create-pack-btn'), openBuilderBtn = document.getElementById('open-builder-btn'), savePackBtn = document.getElementById('save-pack-btn'), deletePackBtn = document.getElementById('delete-pack-btn'), exportPackNotesBtn = document.getElementById('export-pack-notes-btn'), openLearnBtn = document.getElementById('open-learn-btn');
 var exportMenu = document.getElementById('export-menu'), exportMenuBtn = document.getElementById('export-menu-btn'), exportMenuList = document.getElementById('export-menu-list'), exportPdfSubmenu = document.getElementById('export-pdf-submenu');
 var editorTabs = document.querySelectorAll('.editor-tab'), flashcardCount = document.getElementById('flashcard-count'), questionCount = document.getElementById('question-count'), addFlashcardBtn = document.getElementById('add-flashcard-btn'), addQuestionBtn = document.getElementById('add-question-btn'), flashcardEditorList = document.getElementById('flashcard-editor-list'), questionEditorList = document.getElementById('question-editor-list');
@@ -1184,12 +1227,15 @@ function applyExternalPackGoalUpdate(payload) {
   var nextGoal = safePayload.daily_card_goal === null || safePayload.daily_card_goal === undefined
     ? null
     : clampGoalNumber(safePayload.daily_card_goal);
-  packs = (packs || []).map(function (pack) {
-    if (String(pack.study_pack_id || '') !== packId) return pack;
-    return Object.assign({}, pack, { daily_card_goal: nextGoal });
-  });
+  packs = progressUtils && typeof progressUtils.updatePackCollectionGoal === 'function'
+    ? progressUtils.updatePackCollectionGoal(packs, packId, nextGoal)
+    : (packs || []).map(function (pack) {
+      if (String(pack.study_pack_id || '') !== packId) return pack;
+      return Object.assign({}, pack, { daily_card_goal: nextGoal });
+    });
   if (selectedPack && String(selectedPack.study_pack_id || '') === packId) {
     selectedPack.daily_card_goal = nextGoal;
+    setGoalPanelStatus('Synced', 'success');
     renderGoalPanel();
   }
 }
@@ -1203,6 +1249,7 @@ function handleExternalProgressEvent(payload) {
       saveDailyGoal(payload.summary.daily_goal);
     }
     persistSharedSummaryCaches(auth.currentUser, progressSummaryCache);
+    setGoalPanelStatus('Synced', 'success');
     renderGoalPanel();
     if (Object.prototype.hasOwnProperty.call(payload, 'topbar_due')) {
       setTopbarDueTextValue(payload.topbar_due);
@@ -3305,6 +3352,7 @@ function saveFolderFromModal() {
 function openPack(packId) {
   return apiCall('/api/study-packs/' + encodeURIComponent(packId)).then(function (data) {
     selectedPack = data;
+    setGoalPanelStatus('Synced', 'success');
     selectedPack.flashcards = Array.isArray(selectedPack.flashcards) ? selectedPack.flashcards : [];
     selectedPack.test_questions = Array.isArray(selectedPack.test_questions) ? selectedPack.test_questions.map(normalizeQuestion) : [];
     selectedPack.has_audio_playback = !!selectedPack.has_audio_playback;
@@ -3365,6 +3413,7 @@ function loadData(preferredPackId) {
   var prefId = preferredPackId || '';
   return Promise.all([apiCall('/api/study-folders'), apiCall('/api/study-packs')]).then(function (results) {
     folders = results[0].folders || []; packs = results[1].study_packs || [];
+    setGoalPanelStatus('Synced', 'success');
     loadPinnedFolderIds();
     syncPinnedFolderIds();
     if (selectedFolderId && selectedFolderId !== BUILTIN_INTERVIEWS_FOLDER_ID && selectedFolderId !== BUILTIN_ALL_FOLDER_ID && !folders.some(function (folder) { return folder.folder_id === selectedFolderId; })) {
@@ -3421,6 +3470,7 @@ function runInlineAutosaveNow() {
     if (selectedPack && selectedPack.study_pack_id === packId) {
       selectedPack.title = payload.title;
       selectedPack.folder_id = payload.folder_id;
+      selectedPack.folder_name = getFolderNameById(payload.folder_id || '');
       selectedPack.course = payload.course;
       selectedPack.subject = payload.subject;
       selectedPack.semester = payload.semester;
@@ -3428,6 +3478,19 @@ function runInlineAutosaveNow() {
       selectedPack.updated_at = Date.now() / 1000;
       updatePackSummary();
     }
+    packs = (packs || []).map(function (pack) {
+      if (String(pack.study_pack_id || '') !== packId) return pack;
+      return Object.assign({}, pack, {
+        title: payload.title,
+        folder_id: payload.folder_id,
+        folder_name: getFolderNameById(payload.folder_id || ''),
+        course: payload.course,
+        subject: payload.subject,
+        semester: payload.semester,
+        block: payload.block
+      });
+    });
+    renderPacks();
     showToast('Saved successfully.', 'success');
   }).catch(function (e) {
     showToast(e.message || 'Could not save study pack.', 'error');
@@ -3465,6 +3528,8 @@ auth.onAuthStateChanged(function (user) {
     progressHydrationDone = false;
     progressSummaryCache = null;
     masterDailyGoal = progressUtils.DEFAULT_DAILY_GOAL || 20;
+    goalPanelStatusText = 'Synced';
+    goalPanelStatusTone = 'success';
     remoteProgressCardStates = {};
     if (progressSyncTimer) { clearTimeout(progressSyncTimer); progressSyncTimer = null; }
     progressSyncInFlight = false;

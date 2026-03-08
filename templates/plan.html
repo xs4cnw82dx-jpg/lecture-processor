@@ -48,10 +48,10 @@
 
         <section class="section">
           <h2>Goal Settings</h2>
-          <p>Set your overall daily card goal here. This is the single master goal used in dashboard and progress summaries, and changes save automatically.</p>
+          <p>Set your Daily Goal here. This is your single account-wide target across Dashboard, Study Library, and Planning &amp; Progress, and changes save automatically.</p>
           <div class="goal-row">
             <div class="field">
-              <label for="goal-input">Overall Daily Goal</label>
+              <label for="goal-input">Daily Goal</label>
               <input class="input" type="number" min="1" max="500" id="goal-input">
             </div>
           </div>
@@ -83,7 +83,7 @@
 
         <section class="section pack-goals-section">
           <h2>Pack Goals</h2>
-          <p>Set optional card goals per study pack. These never replace your overall daily goal, and changes save automatically.</p>
+          <p>Pack Goals are optional per-pack daily targets. They sync with Study Library, never replace your Daily Goal, and the recommended pace is calculated from the folder exam date.</p>
           <div class="pack-goals-summary" id="pack-goals-summary"></div>
           <div class="folders-wrap pack-goals-table-wrap" aria-hidden="true">
             <table class="folders pack-goals-table" id="pack-goals-table">
@@ -93,8 +93,8 @@
                   <th>Folder</th>
                   <th>Due today</th>
                   <th>Unmastered</th>
-                  <th>Saved pack goal</th>
-                  <th>Recommendation</th>
+                  <th>Pack Goal</th>
+                  <th>Recommended pace</th>
                 </tr>
               </thead>
               <tbody id="pack-goals-body"></tbody>

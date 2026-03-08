@@ -41,6 +41,7 @@
   var folderSaveInFlight = new Set();
   var packGoalTimers = new Map();
   var packGoalSaveInFlight = new Set();
+  var packGoalDraftValues = new Map();
   var PLAN_CACHE_GLOBAL_KEY = 'plan_summary:last';
   var PLAN_CACHE_USER_PREFIX = 'plan_summary:user:';
   var PLAN_SYNC_SOURCE_ID = 'plan-' + Math.random().toString(36).slice(2, 10);
@@ -375,8 +376,8 @@
   }
 
   function formatSavedGoalValue(value) {
-    var parsed = parseGoalValue(value);
-    return parsed === null ? 'Optional' : formatCount(parsed, 'card');
+    var parsed = parseOptionalGoalValue(value);
+    return parsed === null ? 'Optional' : formatGoalTarget(parsed, 'Optional');
   }
 
   function createPackGoalsSummaryCard(label, value, note, tone) {
@@ -665,11 +666,108 @@
     bindFolderDateAutosave();
   }
 
+  function parseOptionalGoalValue(value) {
+    if (progressUtils && typeof progressUtils.parseOptionalGoalValue === 'function') {
+      return progressUtils.parseOptionalGoalValue(value);
+    }
+    var raw = String(value == null ? '' : value).trim();
+    return raw ? parseGoalValue(raw) : null;
+  }
+
+  function sameGoalValue(leftValue, rightValue) {
+    if (progressUtils && typeof progressUtils.sameGoalValue === 'function') {
+      return progressUtils.sameGoalValue(leftValue, rightValue);
+    }
+    return parseOptionalGoalValue(leftValue) === parseOptionalGoalValue(rightValue);
+  }
+
+  function formatGoalTarget(value, emptyLabel) {
+    if (progressUtils && typeof progressUtils.formatGoalTarget === 'function') {
+      return progressUtils.formatGoalTarget(value, { emptyLabel: emptyLabel || 'Not set' });
+    }
+    var parsed = parseOptionalGoalValue(value);
+    return parsed === null ? String(emptyLabel || 'Not set') : parsed + ' cards/day';
+  }
+
+  function updatePackCollectionGoal(packList, packId, goalValue) {
+    if (progressUtils && typeof progressUtils.updatePackCollectionGoal === 'function') {
+      return progressUtils.updatePackCollectionGoal(packList, packId, goalValue);
+    }
+    var safePackId = String(packId || '').trim();
+    var normalizedGoal = parseOptionalGoalValue(goalValue);
+    return (Array.isArray(packList) ? packList : []).map(function (pack) {
+      if (String(pack && pack.study_pack_id || '').trim() !== safePackId) return pack;
+      return Object.assign({}, pack, { daily_card_goal: normalizedGoal });
+    });
+  }
+
+  function buildPackGoalNoteText(goalValue) {
+    var parsed = parseOptionalGoalValue(goalValue);
+    if (parsed === null) {
+      return 'No Pack Goal saved. Leave empty to use only the Daily Goal.';
+    }
+    return 'Saved Pack Goal: ' + formatGoalTarget(parsed, 'Not set') + '. Syncs with Study Library.';
+  }
+
+  function getPackGoalInputs(packId) {
+    var safePackId = String(packId || '').trim();
+    if (!safePackId) return [];
+    return Array.prototype.slice.call(document.querySelectorAll('[data-pack-goal-input="' + safePackId + '"]'));
+  }
+
+  function getPackGoalNotes(packId) {
+    var safePackId = String(packId || '').trim();
+    if (!safePackId) return [];
+    return Array.prototype.slice.call(document.querySelectorAll('[data-pack-goal-note="' + safePackId + '"]'));
+  }
+
+  function setPackGoalInputsDisabled(packId, disabled) {
+    getPackGoalInputs(packId).forEach(function (input) {
+      input.disabled = !!disabled;
+    });
+  }
+
+  function mirrorPackGoalDraftValue(packId, rawValue, sourceInput) {
+    var safePackId = String(packId || '').trim();
+    if (!safePackId) return;
+    var normalizedRawValue = String(rawValue == null ? '' : rawValue);
+    packGoalDraftValues.set(safePackId, normalizedRawValue);
+    getPackGoalInputs(safePackId).forEach(function (input) {
+      if (sourceInput && input === sourceInput) return;
+      input.value = normalizedRawValue;
+    });
+  }
+
+  function readPackGoalDraftValue(packId) {
+    var safePackId = String(packId || '').trim();
+    if (!safePackId) return '';
+    if (packGoalDraftValues.has(safePackId)) {
+      return String(packGoalDraftValues.get(safePackId) || '');
+    }
+    var inputs = getPackGoalInputs(safePackId);
+    return inputs.length ? String(inputs[0].value || '') : '';
+  }
+
   function syncPackGoalInputState(input, value) {
     if (!input) return;
-    var normalized = parseGoalValue(value);
+    var normalized = parseOptionalGoalValue(value);
     input.value = normalized === null ? '' : String(normalized);
     input.dataset.savedGoal = normalized === null ? '' : String(normalized);
+  }
+
+  function syncPackGoalControls(packId, goalValue, options) {
+    var settings = options && typeof options === 'object' ? options : {};
+    var safePackId = String(packId || '').trim();
+    if (!safePackId) return;
+    getPackGoalInputs(safePackId).forEach(function (input) {
+      syncPackGoalInputState(input, goalValue);
+    });
+    getPackGoalNotes(safePackId).forEach(function (node) {
+      node.textContent = buildPackGoalNoteText(goalValue);
+    });
+    if (settings.clearDraft !== false) {
+      packGoalDraftValues.delete(safePackId);
+    }
   }
 
   function scheduleOverallGoalAutosave(immediate, showValidationError) {
@@ -710,6 +808,7 @@
   function createPackGoalControls(pack) {
     var wrap = document.createElement('div');
     wrap.className = 'pack-goal-row';
+    var safePackId = String(pack && pack.study_pack_id || '');
 
     var input = document.createElement('input');
     input.type = 'number';
@@ -717,8 +816,13 @@
     input.min = '1';
     input.max = '500';
     input.placeholder = 'Optional';
-    input.dataset.packGoalInput = String(pack.study_pack_id || '');
+    input.dataset.packGoalInput = safePackId;
+    input.setAttribute('aria-label', 'Pack Goal for ' + String(pack.title || 'Untitled pack'));
+    input.disabled = packGoalSaveInFlight.has(safePackId);
     syncPackGoalInputState(input, pack.daily_card_goal);
+    if (packGoalDraftValues.has(safePackId)) {
+      input.value = String(packGoalDraftValues.get(safePackId) || '');
+    }
     wrap.appendChild(input);
 
     return wrap;
@@ -728,17 +832,21 @@
     Array.prototype.slice.call(document.querySelectorAll('[data-pack-goal-input]')).forEach(function (input) {
       var packId = String(input.getAttribute('data-pack-goal-input') || '');
       input.addEventListener('input', function () {
+        mirrorPackGoalDraftValue(packId, input.value, input);
         schedulePackGoalAutosave(packId, false, false);
       });
       input.addEventListener('change', function () {
+        mirrorPackGoalDraftValue(packId, input.value, input);
         schedulePackGoalAutosave(packId, true, true);
       });
       input.addEventListener('blur', function () {
+        mirrorPackGoalDraftValue(packId, input.value, input);
         schedulePackGoalAutosave(packId, true, true);
       });
       input.addEventListener('keydown', function (event) {
         if (event.key !== 'Enter') return;
         event.preventDefault();
+        mirrorPackGoalDraftValue(packId, input.value, input);
         schedulePackGoalAutosave(packId, true, true);
       });
     });
@@ -749,6 +857,7 @@
     clearNode(packGoalsCardsEl);
 
     if (!currentPacks.length) {
+      packGoalDraftValues.clear();
       renderPackGoalsSummary([]);
       if (packGoalsEmptyEl) packGoalsEmptyEl.style.display = 'block';
       return;
@@ -817,7 +926,8 @@
         goalTd.appendChild(createPackGoalControls(pack));
         var goalNote = document.createElement('div');
         goalNote.className = 'pack-goal-note';
-        goalNote.textContent = 'Leave empty to clear this pack goal.';
+        goalNote.setAttribute('data-pack-goal-note', String(pack.study_pack_id || ''));
+        goalNote.textContent = buildPackGoalNoteText(pack.daily_card_goal);
         goalTd.appendChild(goalNote);
 
         var recommendationTd = document.createElement('td');
@@ -913,7 +1023,8 @@
 
       var editorNote = document.createElement('div');
       editorNote.className = 'pack-goal-note';
-      editorNote.textContent = 'Leave empty to clear. Changes save automatically.';
+      editorNote.setAttribute('data-pack-goal-note', String(pack.study_pack_id || ''));
+      editorNote.textContent = buildPackGoalNoteText(pack.daily_card_goal);
       editor.appendChild(editorNote);
       card.appendChild(editor);
 
@@ -971,6 +1082,7 @@
     currentFolders = [];
     currentPacks = [];
     remoteCardStates = {};
+    packGoalDraftValues.clear();
     clearNode(foldersBodyEl);
     clearNode(foldersCardsEl);
     clearNode(packGoalsBodyEl);
@@ -1023,10 +1135,7 @@
       renderPackGoals();
     }
     if (payload.pack_update && payload.pack_update.pack_id) {
-      currentPacks = currentPacks.map(function (pack) {
-        if (String(pack.study_pack_id || '') !== String(payload.pack_update.pack_id || '')) return pack;
-        return Object.assign({}, pack, { daily_card_goal: payload.pack_update.daily_card_goal === null ? null : payload.pack_update.daily_card_goal });
-      });
+      currentPacks = updatePackCollectionGoal(currentPacks, payload.pack_update.pack_id, payload.pack_update.daily_card_goal);
       renderPackGoals();
     }
   }
@@ -1157,24 +1266,24 @@
   function persistPackGoal(packId, showValidationError) {
     var safePackId = String(packId || '').trim();
     if (!safePackId || !currentUser || packGoalSaveInFlight.has(safePackId)) return;
-    var input = document.querySelector('[data-pack-goal-input="' + safePackId + '"]');
-    if (!input) return;
+    var inputs = getPackGoalInputs(safePackId);
+    if (!inputs.length) return;
 
-    var rawValue = String(input.value || '').trim();
+    var rawValue = String(readPackGoalDraftValue(safePackId) || '').trim();
     var parsedGoal = rawValue ? parseGoalValue(rawValue) : null;
     if (rawValue && parsedGoal === null) {
       if (showValidationError) showToast('Pack goals must be between 1 and 500.', 'error');
-      syncPackGoalInputState(input, input.dataset.savedGoal || '');
+      syncPackGoalControls(safePackId, inputs[0].dataset.savedGoal || '');
       return;
     }
-    var savedGoal = parseGoalValue(input.dataset.savedGoal || '');
-    if ((savedGoal || null) === (parsedGoal || null)) {
-      syncPackGoalInputState(input, parsedGoal);
+    var savedGoal = parseOptionalGoalValue(inputs[0].dataset.savedGoal || '');
+    if (sameGoalValue(savedGoal, parsedGoal)) {
+      syncPackGoalControls(safePackId, parsedGoal);
       return;
     }
 
     packGoalSaveInFlight.add(safePackId);
-    input.disabled = true;
+    setPackGoalInputsDisabled(safePackId, true);
     authFetch('/api/study-packs/' + encodeURIComponent(safePackId), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -1182,10 +1291,7 @@
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (body) {
         if (!response.ok) throw new Error(body.error || 'Could not save pack goal');
-        currentPacks = currentPacks.map(function (pack) {
-          if (String(pack.study_pack_id || '') !== safePackId) return pack;
-          return Object.assign({}, pack, { daily_card_goal: parsedGoal === null ? null : parsedGoal });
-        });
+        currentPacks = updatePackCollectionGoal(currentPacks, safePackId, parsedGoal);
         renderPackGoals();
         broadcastPlannerProgress(progressSummaryCache || {}, {
           type: 'pack-goal',
@@ -1197,12 +1303,11 @@
         showToast(parsedGoal === null ? 'Pack goal cleared automatically.' : 'Pack goal saved automatically.', 'success');
       });
     }).catch(function (error) {
-      syncPackGoalInputState(input, savedGoal);
+      syncPackGoalControls(safePackId, savedGoal);
       showToast((error && error.message) ? error.message : 'Could not save pack goal.', 'error');
     }).finally(function () {
       packGoalSaveInFlight.delete(safePackId);
-      var nextInput = document.querySelector('[data-pack-goal-input="' + safePackId + '"]');
-      if (nextInput) nextInput.disabled = false;
+      setPackGoalInputsDisabled(safePackId, false);
     });
   }
 
@@ -1248,6 +1353,7 @@
       currentFolders = [];
       currentPacks = [];
       remoteCardStates = {};
+      packGoalDraftValues.clear();
       setAuthView(null);
       clearNode(foldersBodyEl);
       clearNode(foldersCardsEl);

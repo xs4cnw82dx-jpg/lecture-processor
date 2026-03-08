@@ -840,6 +840,21 @@
       text-transform: uppercase
     }
 
+    .pack-goals-status.is-saving {
+      background: rgba(254, 243, 199, .92);
+      color: #92400e
+    }
+
+    .pack-goals-status.is-error {
+      background: rgba(254, 226, 226, .92);
+      color: #991b1b
+    }
+
+    .pack-goals-status.is-info {
+      background: rgba(219, 234, 254, .92);
+      color: #1d4ed8
+    }
+
     .pack-goals-sub {
       margin-top: 4px;
       max-width: 34rem;
@@ -1013,7 +1028,7 @@
     .pack-goal-helper {
       font-size: .72rem;
       color: var(--gray-500);
-      line-height: 1.35
+      line-height: 1.4
     }
 
     .pack-goal-helper-compact {
@@ -1051,7 +1066,8 @@
     .pack-goal-stat strong {
       font-size: .92rem;
       letter-spacing: -.03em;
-      color: var(--gray-900)
+      color: var(--gray-900);
+      line-height: 1.32
     }
 
     .pack-goals-panel.is-disabled {
