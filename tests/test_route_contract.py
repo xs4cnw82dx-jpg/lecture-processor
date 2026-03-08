@@ -56,6 +56,7 @@ EXPECTED_ROUTES = [
     ('PUT', '/api/user-preferences', 'auth_api.update_user_preferences'),
     ('POST', '/api/verify-email', 'auth_api.verify_email'),
     ('GET', '/buy_credits', 'pages.buy_credits_page'),
+    ('GET', '/batch_status', 'pages.batch_status_page'),
     ('GET', '/batch_dashboard', 'pages.batch_dashboard_page'),
     ('GET', '/batch_mode', 'pages.batch_mode_page'),
     ('GET', '/batch_mode_interview_transcription', 'pages.batch_mode_interview_page'),
