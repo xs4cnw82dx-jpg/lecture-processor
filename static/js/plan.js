@@ -35,17 +35,22 @@
   var progressSummaryCache = null;
   var timezoneName = '';
   var goalSaveInFlight = false;
+  var goalAutosaveTimer = null;
   var folderSaveTimers = new Map();
   var folderSaveInFlight = new Set();
+  var packGoalTimers = new Map();
   var packGoalSaveInFlight = new Set();
   var PLAN_CACHE_GLOBAL_KEY = 'plan_summary:last';
   var PLAN_CACHE_USER_PREFIX = 'plan_summary:user:';
+  var PLAN_SYNC_SOURCE_ID = 'plan-' + Math.random().toString(36).slice(2, 10);
+  var toastTimer = null;
 
   function showToast(message, type) {
     if (!toastEl || !message) return;
     toastEl.textContent = String(message);
     toastEl.className = 'toast visible' + (type ? ' ' + type : '');
-    window.setTimeout(function () {
+    if (toastTimer) window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(function () {
       toastEl.className = 'toast';
     }, 2200);
   }
@@ -86,6 +91,22 @@
     if (!summary || typeof summary !== 'object') return;
     writeCacheJson(PLAN_CACHE_GLOBAL_KEY, summary);
     writeCacheJson(getSummaryCacheKey(uid), summary);
+  }
+
+  function persistDashboardSnapshot(uid, summary) {
+    if (!summary) return;
+    var snapshot = summarySnapshot(summary);
+    writeCacheJson('dashboard_summary:last', snapshot);
+    writeCacheJson('dashboard_summary:user:' + String(uid || 'anon'), snapshot);
+  }
+
+  function broadcastPlannerProgress(summary, extraPayload) {
+    if (!currentUser || !summary || !progressUtils || typeof progressUtils.broadcastProgressEvent !== 'function') return;
+    progressUtils.broadcastProgressEvent(Object.assign({
+      source_id: PLAN_SYNC_SOURCE_ID,
+      user_id: currentUser.uid,
+      summary: Object.assign({}, summary)
+    }, extraPayload || {}));
   }
 
   function setAuthView(user) {
@@ -260,15 +281,20 @@
   function readPackState(packId) {
     var safePackId = String(packId || '').trim();
     if (!safePackId) return {};
+    if (currentUser) {
+      try {
+        var localState = JSON.parse(window.localStorage.getItem('card_state_' + currentUser.uid + '_' + safePackId) || '{}') || {};
+        if (localState && typeof localState === 'object' && Object.keys(localState).length) {
+          return localState;
+        }
+      } catch (_error) {
+        // Fall back to remote state below.
+      }
+    }
     if (remoteCardStates && remoteCardStates[safePackId] && typeof remoteCardStates[safePackId] === 'object') {
       return remoteCardStates[safePackId];
     }
-    if (!currentUser) return {};
-    try {
-      return JSON.parse(window.localStorage.getItem('card_state_' + currentUser.uid + '_' + safePackId) || '{}') || {};
-    } catch (_error) {
-      return {};
-    }
+    return {};
   }
 
   function getPackStats(pack) {
@@ -565,6 +591,41 @@
     input.dataset.savedGoal = normalized === null ? '' : String(normalized);
   }
 
+  function scheduleOverallGoalAutosave(immediate, showValidationError) {
+    if (!goalInputEl || goalInputEl.disabled) return;
+    if (goalAutosaveTimer) {
+      window.clearTimeout(goalAutosaveTimer);
+      goalAutosaveTimer = null;
+    }
+    if (immediate) {
+      persistOverallGoal(!!showValidationError);
+      return;
+    }
+    goalAutosaveTimer = window.setTimeout(function () {
+      goalAutosaveTimer = null;
+      persistOverallGoal(!!showValidationError);
+    }, 420);
+  }
+
+  function schedulePackGoalAutosave(packId, immediate, showValidationError) {
+    var safePackId = String(packId || '').trim();
+    if (!safePackId) return;
+    var existing = packGoalTimers.get(safePackId);
+    if (existing) {
+      window.clearTimeout(existing);
+      packGoalTimers.delete(safePackId);
+    }
+    if (immediate) {
+      persistPackGoal(safePackId, !!showValidationError);
+      return;
+    }
+    var timer = window.setTimeout(function () {
+      packGoalTimers.delete(safePackId);
+      persistPackGoal(safePackId, !!showValidationError);
+    }, 420);
+    packGoalTimers.set(safePackId, timer);
+  }
+
   function createPackGoalControls(pack) {
     var wrap = document.createElement('div');
     wrap.className = 'pack-goal-row';
@@ -582,7 +643,7 @@
     var saveBtn = document.createElement('button');
     saveBtn.type = 'button';
     saveBtn.className = 'btn primary pack-goal-save';
-    saveBtn.textContent = 'Save';
+    saveBtn.textContent = 'Save now';
     saveBtn.dataset.packGoalSave = String(pack.study_pack_id || '');
     wrap.appendChild(saveBtn);
 
@@ -597,10 +658,20 @@
     });
 
     Array.prototype.slice.call(document.querySelectorAll('[data-pack-goal-input]')).forEach(function (input) {
+      var packId = String(input.getAttribute('data-pack-goal-input') || '');
+      input.addEventListener('input', function () {
+        schedulePackGoalAutosave(packId, false, false);
+      });
+      input.addEventListener('change', function () {
+        schedulePackGoalAutosave(packId, true, true);
+      });
+      input.addEventListener('blur', function () {
+        schedulePackGoalAutosave(packId, true, true);
+      });
       input.addEventListener('keydown', function (event) {
         if (event.key !== 'Enter') return;
         event.preventDefault();
-        persistPackGoal(String(input.getAttribute('data-pack-goal-input') || ''), true);
+        schedulePackGoalAutosave(packId, true, true);
       });
     });
   }
@@ -727,6 +798,7 @@
         progressUtils.writeDailyGoalCache(currentUser.uid, progressSummaryCache.daily_goal);
       }
       persistSummaryCache(currentUser.uid, progressSummaryCache);
+      persistDashboardSnapshot(currentUser.uid, progressSummaryCache);
     }
     applyOverview(progressSummaryCache);
   }
@@ -774,6 +846,30 @@
     });
   }
 
+  function handleExternalProgressEvent(payload) {
+    if (!currentUser || !payload || payload.source_id === PLAN_SYNC_SOURCE_ID) return;
+    if (payload.user_id && payload.user_id !== currentUser.uid) return;
+    if (payload.summary && typeof payload.summary === 'object') {
+      progressSummaryCache = Object.assign({}, progressSummaryCache || {}, payload.summary);
+      persistSummaryCache(currentUser.uid, progressSummaryCache);
+      persistDashboardSnapshot(currentUser.uid, progressSummaryCache);
+      applyOverview(progressSummaryCache);
+      renderFolders();
+      renderPackGoals();
+    }
+    if (payload.pack_update && payload.pack_update.pack_id) {
+      currentPacks = currentPacks.map(function (pack) {
+        if (String(pack.study_pack_id || '') !== String(payload.pack_update.pack_id || '')) return pack;
+        return Object.assign({}, pack, { daily_card_goal: payload.pack_update.daily_card_goal === null ? null : payload.pack_update.daily_card_goal });
+      });
+      renderPackGoals();
+    }
+  }
+
+  if (progressUtils && typeof progressUtils.subscribeProgressEvent === 'function') {
+    progressUtils.subscribeProgressEvent(handleExternalProgressEvent);
+  }
+
   function persistOverallGoal(showValidationError) {
     if (!currentUser || goalSaveInFlight) return;
     var parsedGoal = parseGoalValue(goalInputEl ? goalInputEl.value : '');
@@ -789,7 +885,7 @@
     }
 
     goalSaveInFlight = true;
-    saveGoalBtn.disabled = true;
+    if (saveGoalBtn) saveGoalBtn.disabled = true;
     authFetch('/api/study-progress', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -805,15 +901,17 @@
           progressUtils.writeDailyGoalCache(currentUser.uid, parsedGoal);
         }
         persistSummaryCache(currentUser.uid, progressSummaryCache);
+        persistDashboardSnapshot(currentUser.uid, progressSummaryCache);
+        broadcastPlannerProgress(progressSummaryCache, { type: 'summary' });
         applyOverview(progressSummaryCache);
-        showToast('Daily goal saved.', 'success');
+        showToast('Daily goal saved automatically.', 'success');
       });
     }).catch(function (error) {
       applyOverview(progressSummaryCache);
       showToast((error && error.message) ? error.message : 'Could not save goal.', 'error');
     }).finally(function () {
       goalSaveInFlight = false;
-      saveGoalBtn.disabled = false;
+      if (saveGoalBtn) saveGoalBtn.disabled = false;
     });
   }
 
@@ -923,7 +1021,14 @@
           return Object.assign({}, pack, { daily_card_goal: parsedGoal === null ? null : parsedGoal });
         });
         renderPackGoals();
-        showToast(parsedGoal === null ? 'Pack goal cleared.' : 'Pack goal saved.', 'success');
+        broadcastPlannerProgress(progressSummaryCache || {}, {
+          type: 'pack-goal',
+          pack_update: {
+            pack_id: safePackId,
+            daily_card_goal: parsedGoal === null ? null : parsedGoal
+          }
+        });
+        showToast(parsedGoal === null ? 'Pack goal cleared automatically.' : 'Pack goal saved automatically.', 'success');
       });
     }).catch(function (error) {
       syncPackGoalInputState(input, savedGoal);
@@ -941,10 +1046,19 @@
     });
   }
   if (goalInputEl) {
+    goalInputEl.addEventListener('input', function () {
+      scheduleOverallGoalAutosave(false, false);
+    });
+    goalInputEl.addEventListener('change', function () {
+      scheduleOverallGoalAutosave(true, true);
+    });
+    goalInputEl.addEventListener('blur', function () {
+      scheduleOverallGoalAutosave(true, true);
+    });
     goalInputEl.addEventListener('keydown', function (event) {
       if (event.key !== 'Enter') return;
       event.preventDefault();
-      persistOverallGoal(true);
+      scheduleOverallGoalAutosave(true, true);
     });
   }
 

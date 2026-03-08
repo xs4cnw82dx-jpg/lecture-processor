@@ -99,8 +99,8 @@
 }
 
 .batch-status-pill.complete {
-  background: rgba(57, 168, 111, 0.14);
-  color: #0d6a41;
+  background: rgba(209, 250, 229, 0.84);
+  color: #166534;
 }
 
 .batch-status-pill.partial {

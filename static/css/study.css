@@ -3,7 +3,11 @@
       --primary-dark: #4338CA;
       --primary-light: #818CF8;
       --secondary: #0EA5E9;
-      --success: #10B981;
+      --success: #D1FAE5;
+      --success-border: #A7F3D0;
+      --success-ink: #166534;
+      --success-strong: #15803D;
+      --success-surface: rgba(209, 250, 229, .92);
       --warning: #F59E0B;
       --error: #EF4444;
       --gray-50: #F9FAFB;
@@ -151,6 +155,26 @@
       cursor: pointer
     }
 
+    .topbar-copy {
+      display: grid;
+      gap: 2px;
+      min-width: 0
+    }
+
+    .topbar-kicker {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, rgba(79, 70, 229, .09), rgba(14, 165, 233, .08));
+      color: var(--primary-dark);
+      font-size: .68rem;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase
+    }
+
     .topbar-logo-icon {
       width: 38px;
       height: 38px;
@@ -184,11 +208,12 @@
     .topbar-sub {
       font-size: .8125rem;
       color: var(--gray-500);
-      margin-top: 1px;
+      margin-top: 2px;
       white-space: normal;
       overflow: visible;
       text-overflow: initial;
-      max-width: 100%
+      max-width: 42rem;
+      line-height: 1.45
     }
 
     .actions {
@@ -429,8 +454,8 @@
     }
 
     .pack-stat-icon.test-icon {
-      background: rgba(16, 185, 129, .1);
-      color: var(--success)
+      background: rgba(209, 250, 229, .82);
+      color: var(--success-ink)
     }
 
     .field {
@@ -619,8 +644,8 @@
 
     .item.drop-target {
       border-color: var(--success);
-      background: linear-gradient(135deg, rgba(16, 185, 129, .12) 0%, rgba(14, 165, 233, .08) 100%);
-      box-shadow: 0 0 0 3px rgba(16, 185, 129, .15);
+      background: linear-gradient(135deg, rgba(209, 250, 229, .78) 0%, rgba(191, 219, 254, .2) 100%);
+      box-shadow: 0 0 0 3px rgba(209, 250, 229, .55);
       transform: translateY(-2px)
     }
 
@@ -647,9 +672,9 @@
     .folder-pending-badge {
       display: inline-flex;
       align-items: center;
-      border: 1px solid rgba(16, 185, 129, .35);
-      background: rgba(16, 185, 129, .12);
-      color: #0f766e;
+      border: 1px solid rgba(167, 243, 208, .92);
+      background: rgba(209, 250, 229, .82);
+      color: var(--success-ink);
       border-radius: 999px;
       padding: 2px 8px;
       font-size: .68rem;
@@ -743,11 +768,35 @@
       display: grid
     }
 
-    .pack-goals-panel {
+    .meta-advanced-shell {
+      display: grid;
+      grid-template-rows: 0fr;
+      opacity: 0;
       margin-bottom: 14px;
-      padding: 14px;
+      transition: grid-template-rows .26s ease, opacity .24s ease
+    }
+
+    .meta-advanced-shell.visible {
+      grid-template-rows: 1fr;
+      opacity: 1
+    }
+
+    .meta-advanced-shell-inner {
+      min-height: 0;
+      overflow: hidden;
+      display: grid;
+      gap: 12px;
+      padding: 0 1px
+    }
+
+    .meta-advanced-shell .meta-advanced-panel {
+      display: grid
+    }
+
+    .pack-goals-panel {
+      padding: 11px 12px 12px;
       border: 1px solid rgba(129, 140, 248, .22);
-      border-radius: 18px;
+      border-radius: 16px;
       background:
         radial-gradient(circle at top right, rgba(191, 219, 254, .55), transparent 42%),
         linear-gradient(135deg, rgba(79, 70, 229, .06) 0%, rgba(14, 165, 233, .04) 100%);
@@ -759,39 +808,61 @@
       align-items: flex-start;
       justify-content: space-between;
       gap: 12px;
-      margin-bottom: 10px
+      margin-bottom: 7px
+    }
+
+    .pack-goals-title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap
     }
 
     .pack-goals-title {
-      font-size: .9rem;
+      font-size: .88rem;
       font-weight: 800;
       color: var(--gray-900);
       letter-spacing: -.01em
     }
 
+    .pack-goals-status {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 20px;
+      padding: 0 8px;
+      border-radius: 999px;
+      background: rgba(209, 250, 229, .8);
+      color: var(--success-ink);
+      font-size: .62rem;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase
+    }
+
     .pack-goals-sub {
-      margin-top: 3px;
-      max-width: 42rem;
-      font-size: .77rem;
+      margin-top: 4px;
+      max-width: 34rem;
+      font-size: .75rem;
       color: var(--gray-500);
       line-height: 1.4
     }
 
     .pack-goals-grid {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 132px;
-      gap: 10px;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(138px, .72fr);
+      gap: 8px;
       align-items: stretch
     }
 
     .pack-goal-card {
       display: grid;
-      gap: 10px;
-      padding: 14px;
-      border-radius: 16px;
+      gap: 7px;
+      padding: 11px;
+      border-radius: 14px;
       border: 1px solid rgba(148, 163, 184, .22);
       background: rgba(255, 255, 255, .9);
-      box-shadow: 0 10px 22px rgba(15, 23, 42, .04);
+      box-shadow: 0 8px 20px rgba(15, 23, 42, .04);
       transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease
     }
 
@@ -802,17 +873,19 @@
     }
 
     .pack-goal-card-top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: start;
       gap: 8px
     }
 
     .pack-goal-card-title {
-      font-size: .76rem;
+      min-width: 0;
+      font-size: .68rem;
       font-weight: 800;
-      letter-spacing: .06em;
+      letter-spacing: .05em;
       text-transform: uppercase;
+      line-height: 1.34;
       color: var(--gray-600)
     }
 
@@ -820,46 +893,46 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-height: 24px;
-      padding: 0 9px;
+      min-height: 22px;
+      padding: 0 8px;
       border-radius: 999px;
       background: rgba(79, 70, 229, .09);
       color: var(--primary-dark);
-      font-size: .68rem;
+      font-size: .64rem;
       font-weight: 700;
       letter-spacing: .04em;
       text-transform: uppercase
     }
 
     .pack-goal-pill-pack {
-      background: rgba(14, 165, 233, .1);
+      background: rgba(191, 219, 254, .72);
       color: #0f5b7a
     }
 
     .pack-goal-copy {
-      font-size: .78rem;
+      font-size: .74rem;
       color: var(--gray-600);
-      line-height: 1.35
+      line-height: 1.34
     }
 
     .pack-goal-stepper {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 6px 8px;
-      border-radius: 14px;
+      gap: 4px;
+      padding: 4px 5px;
+      border-radius: 13px;
       border: 1px solid rgba(203, 213, 225, .9);
       background: linear-gradient(180deg, rgba(255, 255, 255, .96), rgba(248, 250, 252, .96))
     }
 
     .pack-goal-step {
-      width: 36px;
-      height: 36px;
+      width: 32px;
+      height: 32px;
       border: 1px solid rgba(203, 213, 225, .95);
-      border-radius: 11px;
+      border-radius: 10px;
       background: #fff;
       color: var(--gray-700);
-      font-size: 1.05rem;
+      font-size: 1rem;
       font-weight: 700;
       line-height: 1;
       cursor: pointer;
@@ -889,11 +962,18 @@
       background: transparent;
       text-align: center;
       padding: 0;
-      font-size: 1.2rem;
+      font-size: 1.02rem;
       font-weight: 800;
       letter-spacing: -.03em;
       color: var(--gray-900);
       box-shadow: none
+    }
+
+    .pack-goal-stepper input::placeholder {
+      font-size: .82rem;
+      font-weight: 700;
+      letter-spacing: 0;
+      color: var(--gray-400)
     }
 
     .pack-goal-stepper input:focus {
@@ -914,25 +994,29 @@
     .pack-goal-actions {
       display: flex;
       align-items: center;
-      gap: 8px;
-      flex-wrap: wrap
+      gap: 6px
     }
 
     .pack-goal-actions .btn {
-      min-height: 38px;
-      padding: 9px 14px
+      min-height: 32px;
+      padding: 7px 12px;
+      border-radius: 10px
     }
 
     .pack-goal-helper {
-      font-size: .74rem;
+      font-size: .72rem;
       color: var(--gray-500);
       line-height: 1.35
+    }
+
+    .pack-goal-helper-compact {
+      margin-top: 1px
     }
 
     .pack-goal-stats {
       display: grid;
       grid-template-columns: 1fr;
-      gap: 10px;
+      gap: 8px;
       align-content: stretch
     }
 
@@ -941,7 +1025,7 @@
       gap: 4px;
       align-content: start;
       min-height: 0;
-      padding: 12px 14px;
+      padding: 10px 12px;
       border-radius: 14px;
       border: 1px solid rgba(203, 213, 225, .85);
       background: linear-gradient(180deg, rgba(255, 255, 255, .96), rgba(248, 250, 252, .94))
@@ -956,7 +1040,7 @@
     }
 
     .pack-goal-stat strong {
-      font-size: 1.02rem;
+      font-size: .92rem;
       letter-spacing: -.03em;
       color: var(--gray-900)
     }
@@ -1195,16 +1279,16 @@
     /* Highlight toolbar */
     .highlight-toolbar {
       display: flex;
-      gap: 8px;
+      gap: 6px;
       align-items: center;
       justify-content: flex-start;
-      padding: 8px 10px;
+      padding: 6px 8px;
       background: rgba(255, 255, 255, .94);
       border: 1px solid rgba(203, 213, 225, .8);
       border-radius: var(--radius-md);
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       flex: 1;
-      min-height: 40px;
+      min-height: 36px;
       position: relative;
       z-index: 13;
       overflow: visible;
@@ -1217,23 +1301,35 @@
     .hl-action-group {
       display: flex;
       align-items: center;
-      gap: 8px;
-      flex-wrap: wrap
+      gap: 6px
     }
 
     .hl-color-group {
-      padding-right: 10px;
+      padding-right: 8px;
       border-right: 1px solid rgba(203, 213, 225, .9)
     }
 
     .hl-action-group {
       flex: 1 1 auto;
-      min-width: 0
+      min-width: 0;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      overflow-y: visible;
+      scrollbar-width: none;
+      padding-bottom: 1px
+    }
+
+    .hl-action-group>* {
+      flex: 0 0 auto
+    }
+
+    .hl-action-group::-webkit-scrollbar {
+      display: none
     }
 
     .hl-download-wrap {
       position: relative;
-      flex-shrink: 0
+      flex: 0 0 auto
     }
 
     .notes-highlight-status {
@@ -1256,8 +1352,8 @@
     }
 
     .hl-btn {
-      width: 24px;
-      height: 24px;
+      width: 22px;
+      height: 22px;
       border-radius: 50%;
       border: 1.5px solid transparent;
       cursor: pointer;
@@ -1285,12 +1381,12 @@
     .hl-btn.hl-action {
       width: auto;
       border-radius: 999px;
-      min-height: 34px;
-      padding: 7px 12px;
+      min-height: 32px;
+      padding: 6px 11px;
       background: var(--white);
       border: 1px solid var(--gray-300);
       color: var(--gray-700);
-      font-size: .78rem;
+      font-size: .75rem;
       font-weight: 600;
       line-height: 1;
       transform: none;
@@ -1327,10 +1423,10 @@
 
     .hl-download-btn {
       gap: 6px;
-      min-height: 34px;
-      padding: 7px 12px;
+      min-height: 32px;
+      padding: 6px 11px;
       border-radius: 999px;
-      font-size: .78rem;
+      font-size: .75rem;
       font-weight: 600;
       color: var(--gray-700);
       border: 1px solid var(--gray-300);
@@ -1368,7 +1464,33 @@
       transform: translateY(-6px) scale(.98);
       transform-origin: top right;
       transition: opacity .18s ease, transform .18s ease, visibility 0s linear .18s;
-      z-index: 24;
+      z-index: 40;
+    }
+
+    .hl-download-menu.is-floating {
+      position: fixed;
+      left: 0;
+      top: 0;
+      right: auto;
+      bottom: auto;
+      transform-origin: top left;
+      z-index: 420;
+    }
+
+    .hl-download-menu.is-upward {
+      top: auto;
+      bottom: calc(100% + 8px);
+      transform-origin: bottom right
+    }
+
+    .hl-download-menu.is-align-left {
+      right: auto;
+      left: 0;
+      transform-origin: top left
+    }
+
+    .hl-download-menu.is-upward.is-align-left {
+      transform-origin: bottom left
     }
 
     .hl-download-menu.visible {
@@ -1400,9 +1522,8 @@
     .notes-pane-shell:fullscreen .hl-download-menu,
     .notes-pane-shell:-webkit-full-screen .hl-download-menu {
       background: rgba(255, 255, 255, .98);
-      top: calc(100% + 10px);
-      bottom: auto;
       max-height: min(240px, calc(100vh - 120px));
+      z-index: 430;
     }
 
     .hl-clear-all:hover {
@@ -1517,7 +1638,7 @@
 
     .editor-card.newly-added {
       border-color: var(--success);
-      box-shadow: 0 0 0 3px rgba(16, 185, 129, .12);
+      box-shadow: 0 0 0 3px rgba(167, 243, 208, .44);
       animation: highlightPulse .6s ease-out
     }
 
@@ -1884,7 +2005,7 @@
     }
 
     .algo-slot[data-type="familiar"] {
-      background: linear-gradient(135deg, #34D399, #10B981)
+      background: linear-gradient(135deg, #bbf7d0, #86efac)
     }
 
     .algo-slot[data-type="retry"] {
@@ -2048,8 +2169,8 @@
     }
 
     .mastery-ring-circle.familiar-ring {
-      border-color: #34D399;
-      color: #10B981
+      border-color: #86efac;
+      color: var(--success-ink)
     }
 
     .mastery-ring-circle.mastered-ring {
@@ -2150,9 +2271,9 @@
     }
 
     .difficulty-chip.easy {
-      background: rgba(16, 185, 129, .12);
-      color: #065F46;
-      border-color: rgba(16, 185, 129, .34)
+      background: rgba(209, 250, 229, .82);
+      color: var(--success-ink);
+      border-color: rgba(167, 243, 208, .95)
     }
 
     .exam-recommendation {
@@ -2408,9 +2529,9 @@
     }
 
     .difficulty-btn.easy.active {
-      border-color: rgba(16, 185, 129, .45);
-      background: rgba(16, 185, 129, .12);
-      color: #065F46
+      border-color: rgba(167, 243, 208, .95);
+      background: rgba(209, 250, 229, .82);
+      color: var(--success-ink)
     }
 
     .difficulty-hint {
@@ -3120,8 +3241,8 @@
 
     .quiz-option.correct {
       border-color: var(--success);
-      background: rgba(16, 185, 129, .12);
-      color: #065F46;
+      background: rgba(209, 250, 229, .82);
+      color: var(--success-ink);
       transform: none
     }
 
@@ -3204,7 +3325,7 @@
 
     .write-input.correct-input {
       border-color: var(--success);
-      background: rgba(16, 185, 129, .06)
+      background: rgba(209, 250, 229, .55)
     }
 
     .write-input.wrong-input {
@@ -3228,9 +3349,9 @@
     }
 
     .write-feedback.correct-fb {
-      background: rgba(16, 185, 129, .1);
-      border: 1px solid rgba(16, 185, 129, .3);
-      color: #065F46
+      background: rgba(209, 250, 229, .82);
+      border: 1px solid rgba(167, 243, 208, .95);
+      color: var(--success-ink)
     }
 
     .write-feedback.wrong-fb {
@@ -3301,8 +3422,8 @@
 
     .match-cell.matched {
       border-color: var(--success);
-      background: rgba(16, 185, 129, .1);
-      color: #065F46;
+      background: rgba(209, 250, 229, .82);
+      color: var(--success-ink);
       cursor: default;
       opacity: .7
     }
@@ -3508,9 +3629,9 @@
     }
 
     .builder-status.saved {
-      border-color: rgba(16, 185, 129, .35);
-      background: rgba(16, 185, 129, .12);
-      color: #065F46;
+      border-color: var(--success-border);
+      background: var(--success-surface);
+      color: var(--success-ink);
     }
 
     .builder-status.pending {
@@ -3908,7 +4029,9 @@
     }
 
     .toast.success {
-      background: var(--success)
+      background: var(--success-surface);
+      color: var(--success-ink);
+      border: 1px solid var(--success-border)
     }
 
     .toast.error {
@@ -3987,11 +4110,11 @@
 
     @keyframes highlightPulse {
       0% {
-        box-shadow: 0 0 0 0 rgba(16, 185, 129, .35)
+        box-shadow: 0 0 0 0 rgba(167, 243, 208, .75)
       }
 
       100% {
-        box-shadow: 0 0 0 3px rgba(16, 185, 129, .12)
+        box-shadow: 0 0 0 3px rgba(167, 243, 208, .44)
       }
     }
 
@@ -4015,6 +4138,10 @@
 
       .topbar-sub {
         max-width: 100%
+      }
+
+      .topbar-kicker {
+        font-size: .64rem
       }
 
       .panel {
@@ -4055,6 +4182,7 @@
         gap: 8px;
         padding: 10px 12px;
         min-height: 48px;
+        flex-wrap: wrap;
       }
 
       .hl-color-group {
@@ -4065,7 +4193,9 @@
       }
 
       .hl-action-group {
-        width: 100%
+        width: 100%;
+        flex-wrap: wrap;
+        overflow-x: visible
       }
 
       .hl-download-wrap {

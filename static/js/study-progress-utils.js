@@ -4,6 +4,8 @@
   var DEFAULT_DAILY_GOAL = 20;
   var MIN_DAILY_GOAL = 1;
   var MAX_DAILY_GOAL = 500;
+  var PROGRESS_SYNC_EVENT = 'lp-study-progress-sync';
+  var PROGRESS_SYNC_STORAGE_KEY = 'lp_study_progress_sync';
 
   function safeInteger(value) {
     if (typeof value === 'boolean') return null;
@@ -246,10 +248,48 @@
     };
   }
 
+  function broadcastProgressEvent(payload) {
+    var detail = Object.assign({ timestamp: Date.now() }, payload || {});
+    try {
+      window.localStorage.setItem(PROGRESS_SYNC_STORAGE_KEY, JSON.stringify(detail));
+    } catch (_error) {
+      // Ignore storage failures.
+    }
+    try {
+      window.dispatchEvent(new CustomEvent(PROGRESS_SYNC_EVENT, { detail: detail }));
+    } catch (_error) {
+      // Ignore custom event failures.
+    }
+    return detail;
+  }
+
+  function subscribeProgressEvent(handler) {
+    if (typeof handler !== 'function') return function () { };
+    var handleCustomEvent = function (event) {
+      handler((event && event.detail) || {});
+    };
+    var handleStorageEvent = function (event) {
+      if (!event || event.key !== PROGRESS_SYNC_STORAGE_KEY || !event.newValue) return;
+      try {
+        handler(JSON.parse(event.newValue) || {});
+      } catch (_error) {
+        // Ignore malformed payloads.
+      }
+    };
+    window.addEventListener(PROGRESS_SYNC_EVENT, handleCustomEvent);
+    window.addEventListener('storage', handleStorageEvent);
+    return function unsubscribe() {
+      window.removeEventListener(PROGRESS_SYNC_EVENT, handleCustomEvent);
+      window.removeEventListener('storage', handleStorageEvent);
+    };
+  }
+
   window.LectureProcessorStudyProgressUtils = Object.assign({}, window.LectureProcessorStudyProgressUtils || {}, {
     DEFAULT_DAILY_GOAL: DEFAULT_DAILY_GOAL,
     MIN_DAILY_GOAL: MIN_DAILY_GOAL,
     MAX_DAILY_GOAL: MAX_DAILY_GOAL,
+    PROGRESS_SYNC_EVENT: PROGRESS_SYNC_EVENT,
+    PROGRESS_SYNC_STORAGE_KEY: PROGRESS_SYNC_STORAGE_KEY,
     parseGoalValue: parseGoalValue,
     clampGoalValue: clampGoalValue,
     getDailyGoalStorageKey: getDailyGoalStorageKey,
@@ -268,5 +308,7 @@
     daysUntil: daysUntil,
     buildRecommendation: buildRecommendation,
     buildPackStats: buildPackStats,
+    broadcastProgressEvent: broadcastProgressEvent,
+    subscribeProgressEvent: subscribeProgressEvent,
   });
 })();

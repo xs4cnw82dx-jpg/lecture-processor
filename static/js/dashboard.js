@@ -16,6 +16,7 @@
   var dashboardPage = document.getElementById('dashboard-page');
   var DASHBOARD_CACHE_GLOBAL_KEY = 'dashboard_summary:last';
   var DASHBOARD_CACHE_USER_PREFIX = 'dashboard_summary:user:';
+  var currentUser = null;
 
   function setDashboardLoading(isLoading) {
     if (!dashboardPage) return;
@@ -230,8 +231,23 @@
     }
   }
 
+  function handleExternalProgressEvent(user, payload) {
+    if (!user || !payload || (payload.user_id && payload.user_id !== user.uid)) return;
+    if (!payload.summary || typeof payload.summary !== 'object') return;
+    var snapshot = toSnapshot(payload.summary);
+    persistSnapshot(user, snapshot);
+    applySnapshot(snapshot);
+  }
+
+  if (progressUtils && typeof progressUtils.subscribeProgressEvent === 'function') {
+    progressUtils.subscribeProgressEvent(function (payload) {
+      handleExternalProgressEvent(currentUser, payload);
+    });
+  }
+
   auth.onAuthStateChanged(function (user) {
-    loadDashboard(user || null);
+    currentUser = user || null;
+    loadDashboard(currentUser);
   });
 
   setDashboardLoading(true);

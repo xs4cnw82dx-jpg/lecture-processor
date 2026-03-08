@@ -39,7 +39,8 @@
               <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
               <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
             </svg></div>
-          <div>
+          <div class="topbar-copy">
+            <div class="topbar-kicker">Library Hub</div>
             <h1>Study Library</h1>
             <div class="topbar-sub">Manage packs and keep your study material organized.</div>
           </div>
@@ -146,65 +147,68 @@
                 </div>
                 <div class="meta-advanced-toggle">
                   <button type="button" class="btn" id="pack-advanced-meta-btn" aria-expanded="false"
-                    aria-controls="pack-advanced-meta-panel">Show advanced metadata</button>
+                    aria-controls="pack-advanced-meta-shell">Show advanced metadata</button>
                 </div>
-                <div class="meta-grid meta-advanced-panel" id="pack-advanced-meta-panel" aria-hidden="true">
-                  <div class="field"><label>Semester</label><input id="pack-semester"></div>
-                  <div class="field"><label>Block</label><input id="pack-block"></div>
-                </div>
-                <section class="pack-goals-panel" id="pack-goals-panel" aria-label="Study goals">
-                  <div class="pack-goals-head">
-                    <div>
-                      <div class="pack-goals-title">Goals</div>
-                      <div class="pack-goals-sub">Your overall goal stays global. This pack goal is optional and never overrides it.</div>
+                <div class="meta-advanced-shell" id="pack-advanced-meta-shell" aria-hidden="true">
+                  <div class="meta-advanced-shell-inner">
+                    <div class="meta-grid meta-advanced-panel meta-advanced-panel-pack" id="pack-advanced-meta-panel">
+                      <div class="field"><label>Semester</label><input id="pack-semester"></div>
+                      <div class="field"><label>Block</label><input id="pack-block"></div>
                     </div>
-                  </div>
-                  <div class="pack-goals-grid">
-                    <section class="pack-goal-card pack-goal-card-overall">
-                      <div class="pack-goal-card-top">
-                        <div class="pack-goal-card-title">Overall Daily Goal</div>
-                        <span class="pack-goal-pill">Global</span>
+                    <section class="pack-goals-panel" id="pack-goals-panel" aria-label="Study goals">
+                      <div class="pack-goals-head">
+                        <div>
+                          <div class="pack-goals-title-row">
+                            <div class="pack-goals-title">Goals</div>
+                            <span class="pack-goals-status">Autosaves</span>
+                          </div>
+                          <div class="pack-goals-sub">Your overall goal stays global. This pack goal is optional and never overrides your daily goal.</div>
+                        </div>
                       </div>
-                      <div class="pack-goal-copy">Used across dashboard, topbar, and planning.</div>
-                      <div class="pack-goal-stepper">
-                        <button type="button" class="pack-goal-step" id="overall-daily-goal-decrease" aria-label="Decrease overall daily goal">-</button>
-                        <input type="number" min="1" max="500" id="overall-daily-goal-input" placeholder="20" inputmode="numeric">
-                        <button type="button" class="pack-goal-step" id="overall-daily-goal-increase" aria-label="Increase overall daily goal">+</button>
-                      </div>
-                      <div class="pack-goal-actions">
-                        <button type="button" class="btn primary" id="overall-daily-goal-save">Save overall goal</button>
-                        <div class="pack-goal-helper">Applies across your account.</div>
+                      <div class="pack-goals-grid">
+                        <section class="pack-goal-card pack-goal-card-overall">
+                          <div class="pack-goal-card-top">
+                            <div class="pack-goal-card-title">Overall Daily Goal</div>
+                            <span class="pack-goal-pill">Global</span>
+                          </div>
+                          <div class="pack-goal-copy">Used across dashboard, topbar, and planning.</div>
+                          <div class="pack-goal-stepper">
+                            <button type="button" class="pack-goal-step" id="overall-daily-goal-decrease" aria-label="Decrease overall daily goal">-</button>
+                            <input type="number" min="1" max="500" id="overall-daily-goal-input" placeholder="20" inputmode="numeric">
+                            <button type="button" class="pack-goal-step" id="overall-daily-goal-increase" aria-label="Increase overall daily goal">+</button>
+                          </div>
+                          <div class="pack-goal-helper pack-goal-helper-compact">Updates your account-wide daily goal and saves automatically.</div>
+                        </section>
+                        <section class="pack-goal-card pack-goal-card-pack" id="pack-goal-card">
+                          <div class="pack-goal-card-top">
+                            <div class="pack-goal-card-title">This Pack Goal</div>
+                            <span class="pack-goal-pill pack-goal-pill-pack">Optional</span>
+                          </div>
+                          <div class="pack-goal-copy">Set a focused target for this pack without changing your daily goal.</div>
+                          <div class="pack-goal-stepper">
+                            <button type="button" class="pack-goal-step" id="pack-daily-goal-decrease" aria-label="Decrease pack daily goal">-</button>
+                            <input type="number" min="1" max="500" id="pack-daily-goal-input" placeholder="Optional" inputmode="numeric">
+                            <button type="button" class="pack-goal-step" id="pack-daily-goal-increase" aria-label="Increase pack daily goal">+</button>
+                          </div>
+                          <div class="pack-goal-actions">
+                            <button type="button" class="btn" id="pack-daily-goal-clear">Clear</button>
+                          </div>
+                          <div class="pack-goal-helper" id="pack-goal-helper">Autosaves automatically. Clear removes the saved pack target.</div>
+                        </section>
+                        <div class="pack-goal-stats" id="pack-goal-stats">
+                          <div class="pack-goal-stat">
+                            <span>Due today</span>
+                            <strong id="pack-goal-due">0 cards</strong>
+                          </div>
+                          <div class="pack-goal-stat">
+                            <span>Unmastered</span>
+                            <strong id="pack-goal-unmastered">0 cards</strong>
+                          </div>
+                        </div>
                       </div>
                     </section>
-                    <section class="pack-goal-card pack-goal-card-pack" id="pack-goal-card">
-                      <div class="pack-goal-card-top">
-                        <div class="pack-goal-card-title">This Pack Goal</div>
-                        <span class="pack-goal-pill pack-goal-pill-pack">Optional</span>
-                      </div>
-                      <div class="pack-goal-copy">Focused target for this pack only.</div>
-                      <div class="pack-goal-stepper">
-                        <button type="button" class="pack-goal-step" id="pack-daily-goal-decrease" aria-label="Decrease pack daily goal">-</button>
-                        <input type="number" min="1" max="500" id="pack-daily-goal-input" placeholder="Optional" inputmode="numeric">
-                        <button type="button" class="pack-goal-step" id="pack-daily-goal-increase" aria-label="Increase pack daily goal">+</button>
-                      </div>
-                      <div class="pack-goal-actions">
-                        <button type="button" class="btn" id="pack-daily-goal-save">Save pack goal</button>
-                        <button type="button" class="btn" id="pack-daily-goal-clear">Clear</button>
-                      </div>
-                      <div class="pack-goal-helper" id="pack-goal-helper">Leave blank to clear this pack-specific goal.</div>
-                    </section>
-                    <div class="pack-goal-stats" id="pack-goal-stats">
-                      <div class="pack-goal-stat">
-                        <span>Due today</span>
-                        <strong id="pack-goal-due">0 cards</strong>
-                      </div>
-                      <div class="pack-goal-stat">
-                        <span>Unmastered</span>
-                        <strong id="pack-goal-unmastered">0 cards</strong>
-                      </div>
-                    </div>
                   </div>
-                </section>
+                </div>
                 <div class="actions editor-actions">
                   <button class="btn" id="open-builder-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                       stroke-width="2">
@@ -302,7 +306,7 @@
                                   <polyline points="7 10 12 15 17 10"></polyline>
                                   <line x1="12" y1="15" x2="12" y2="3"></line>
                                 </svg>
-	                              <span>Download Notes</span>
+                                <span>Download Notes</span>
 	                            </button>
                             </div>
                           </div>

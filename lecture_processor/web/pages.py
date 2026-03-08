@@ -160,14 +160,19 @@ def batch_mode_slides_page():
     return _render_batch_page('slides-only')
 
 
-@pages_bp.route('/batch_dashboard')
-def batch_dashboard_page():
+@pages_bp.route('/batch_status')
+def batch_status_page():
     runtime = get_runtime()
     return render_template(
         'batch_dashboard.html',
         batch_dashboard_js_asset=runtime.resolve_js_asset('js/batch-dashboard.js'),
-        **_shell_context(runtime=runtime, page_key='batch-dashboard', show_credits_pill=True),
+        **_shell_context(runtime=runtime, page_key='batch-status', show_credits_pill=True),
     )
+
+
+@pages_bp.route('/batch_dashboard')
+def batch_dashboard_page():
+    return redirect('/batch_status', code=302)
 
 
 @pages_bp.route('/document-reader')

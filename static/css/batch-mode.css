@@ -1,6 +1,31 @@
 .batch-page {
   display: grid;
   gap: 14px;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity .22s ease, transform .22s ease;
+}
+
+.batch-page.is-ready {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.batch-page.is-leaving {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.batch-hero-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.batch-status-link {
+  flex: 0 0 auto;
 }
 
 .batch-hero h1 {
@@ -251,13 +276,13 @@
 }
 
 .tool-chip:hover {
-  border-color: #54b884;
+  border-color: #a7f3d0;
 }
 
 .tool-chip.active {
-  border-color: #39a86f;
-  background: rgba(57, 168, 111, 0.13);
-  color: #0e6a41;
+  border-color: #86efac;
+  background: rgba(209, 250, 229, 0.78);
+  color: #166534;
 }
 
 .chip-badge {
@@ -621,13 +646,13 @@
 }
 
 .interview-extra-chip:hover {
-  border-color: #39a86f;
+  border-color: #a7f3d0;
 }
 
 .interview-extra-chip.active {
-  border-color: #39a86f;
-  background: rgba(57, 168, 111, 0.13);
-  color: #0e6a41;
+  border-color: #86efac;
+  background: rgba(209, 250, 229, 0.78);
+  color: #166534;
 }
 
 .row-override {
@@ -841,8 +866,8 @@
 }
 
 .batch-status-banner.tone-success {
-  border-color: rgba(57, 168, 111, 0.26);
-  background: linear-gradient(135deg, rgba(57, 168, 111, 0.10), rgba(57, 168, 111, 0.04));
+  border-color: rgba(167, 243, 208, 0.96);
+  background: linear-gradient(135deg, rgba(209, 250, 229, 0.82), rgba(240, 253, 244, 0.92));
 }
 
 .batch-status-banner.tone-warning {
