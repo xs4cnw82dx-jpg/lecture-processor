@@ -862,12 +862,190 @@ setActiveModeViewButton();
 setAdminTab('overview');
 
 /* ── Cost Calculator ── */
+const enhancedAdminSelects = [];
+
+function closeAdminSelectMenus(exceptionMenu) {
+    enhancedAdminSelects.forEach((instance) => {
+        if (!instance || !instance.menu || instance.menu === exceptionMenu) return;
+        instance.setOpen(false);
+    });
+}
+
+function enhanceAdminSelect(selectEl, onChange) {
+    if (!selectEl || selectEl.dataset.enhanced === 'true') return null;
+    const parent = selectEl.parentElement;
+    if (!parent) return null;
+    selectEl.dataset.enhanced = 'true';
+    selectEl.classList.add('calculator-native-select');
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'app-select calculator-select calculator-select-upgraded';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'app-select-button calculator-select-button';
+    button.setAttribute('aria-haspopup', 'listbox');
+    button.setAttribute('aria-expanded', 'false');
+
+    const label = document.createElement('span');
+    label.className = 'app-select-label';
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('viewBox', '0 0 24 24');
+    icon.setAttribute('fill', 'none');
+    icon.setAttribute('stroke', 'currentColor');
+    icon.setAttribute('stroke-width', '2');
+    icon.setAttribute('stroke-linecap', 'round');
+    icon.setAttribute('stroke-linejoin', 'round');
+    const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    polyline.setAttribute('points', '6 9 12 15 18 9');
+    icon.appendChild(polyline);
+    button.appendChild(label);
+    button.appendChild(icon);
+
+    const menu = document.createElement('div');
+    menu.className = 'app-select-menu calculator-select-menu';
+    menu.setAttribute('role', 'listbox');
+    wrapper.appendChild(button);
+    wrapper.appendChild(menu);
+    selectEl.insertAdjacentElement('afterend', wrapper);
+
+    function getItems() {
+        return Array.from(menu.querySelectorAll('.app-select-item[data-value]')).filter((item) => !item.disabled);
+    }
+
+    function focusItem(direction) {
+        const items = getItems();
+        if (!items.length) return;
+        const currentIndex = items.indexOf(document.activeElement);
+        const activeIndex = Math.max(0, items.findIndex((item) => item.classList.contains('active')));
+        let nextIndex = activeIndex;
+        if (direction === 'first') nextIndex = 0;
+        if (direction === 'last') nextIndex = items.length - 1;
+        if (direction === 'next') nextIndex = currentIndex >= 0 ? (currentIndex + 1) % items.length : activeIndex;
+        if (direction === 'prev') nextIndex = currentIndex >= 0 ? (currentIndex - 1 + items.length) % items.length : activeIndex;
+        items.forEach((item) => { item.tabIndex = -1; });
+        items[nextIndex].tabIndex = 0;
+        items[nextIndex].focus();
+    }
+
+    function setOpen(open, focusTarget) {
+        const shouldOpen = !!open;
+        if (shouldOpen) closeAdminSelectMenus(menu);
+        menu.classList.toggle('visible', shouldOpen);
+        button.classList.toggle('open', shouldOpen);
+        button.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+        if (shouldOpen) {
+            focusItem(focusTarget || 'first');
+        }
+    }
+
+    function sync() {
+        let activeText = '';
+        getItems().forEach((item) => {
+            const active = item.dataset.value === String(selectEl.value || '');
+            item.classList.toggle('active', active);
+            item.setAttribute('aria-selected', active ? 'true' : 'false');
+            item.tabIndex = -1;
+            if (active) activeText = item.textContent;
+        });
+        label.textContent = activeText || (selectEl.options[selectEl.selectedIndex] ? selectEl.options[selectEl.selectedIndex].textContent : 'Select');
+    }
+
+    function rebuild() {
+        clearChildren(menu);
+        Array.from(selectEl.options || []).forEach((option) => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'app-select-item calculator-select-item';
+            item.dataset.value = String(option.value);
+            item.textContent = String(option.textContent || option.value || '-');
+            item.setAttribute('role', 'option');
+            item.disabled = !!option.disabled;
+            item.addEventListener('click', () => {
+                if (selectEl.value !== option.value) {
+                    selectEl.value = option.value;
+                    selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+                    if (typeof onChange === 'function') onChange(option.value);
+                }
+                sync();
+                setOpen(false);
+                button.focus();
+            });
+            menu.appendChild(item);
+        });
+        sync();
+    }
+
+    button.addEventListener('click', (event) => {
+        event.preventDefault();
+        setOpen(!menu.classList.contains('visible'));
+    });
+
+    button.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            setOpen(true, 'first');
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            setOpen(true, 'last');
+        } else if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setOpen(!menu.classList.contains('visible'));
+        } else if (event.key === 'Escape') {
+            event.preventDefault();
+            setOpen(false);
+        }
+    });
+
+    menu.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            focusItem('next');
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            focusItem('prev');
+        } else if (event.key === 'Home') {
+            event.preventDefault();
+            focusItem('first');
+        } else if (event.key === 'End') {
+            event.preventDefault();
+            focusItem('last');
+        } else if (event.key === 'Escape') {
+            event.preventDefault();
+            setOpen(false);
+            button.focus();
+        } else if (event.key === 'Enter' || event.key === ' ') {
+            const item = document.activeElement && document.activeElement.closest('.app-select-item[data-value]');
+            if (!item) return;
+            event.preventDefault();
+            item.click();
+        }
+    });
+
+    selectEl.addEventListener('change', sync);
+
+    const instance = { menu, setOpen, rebuild, sync, button };
+    enhancedAdminSelects.push(instance);
+    rebuild();
+    return instance;
+}
+
+document.addEventListener('click', (event) => {
+    if (event.target && event.target.closest('.calculator-select-upgraded')) return;
+    closeAdminSelectMenus();
+});
+
+document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    closeAdminSelectMenus();
+});
+
 const calcScenario = document.getElementById('calc-scenario');
 const calcScenarioPicker = document.getElementById('calc-scenario-picker');
 const calcScenarioButton = document.getElementById('calc-scenario-button');
 const calcScenarioMenu = document.getElementById('calc-scenario-menu');
 const calcScenarioLabel = document.getElementById('calc-scenario-label');
-const calcBody = document.getElementById('calc-body');
+const calcStageGrid = document.getElementById('calc-stage-grid');
 const calcBundlePrice = document.getElementById('calc-bundle-price');
 const calcEurUsd = document.getElementById('calc-eur-usd');
 const calcPricingVersion = document.getElementById('calc-pricing-version');
@@ -875,6 +1053,9 @@ const calcRevenueUsd = document.getElementById('calc-revenue-usd');
 const calcMargin = document.getElementById('calc-margin');
 const calcMarginPct = document.getElementById('calc-margin-pct');
 const calcBreakEven = document.getElementById('calc-break-even');
+const calcScenarioHeading = document.getElementById('calc-scenario-heading');
+const calcScenarioCopy = document.getElementById('calc-scenario-copy');
+const calcScenarioPoints = document.getElementById('calc-scenario-points');
 let calculatorConfig = null;
 let calculatorBound = false;
 
@@ -960,10 +1141,52 @@ function getCalculatorScenarios() {
         : {};
 }
 
+function summarizeScenarioUsage(scenario) {
+    const stages = Array.isArray(scenario && scenario.stages) ? scenario.stages : [];
+    return stages.reduce((acc, stage) => {
+        acc.stageCount += 1;
+        acc.totalInput += Math.max(0, Math.round(numberOrZero(stage.input_tokens)));
+        acc.totalOutput += Math.max(0, Math.round(numberOrZero(stage.output_tokens)));
+        if (stage.audio) acc.audioStages += 1;
+        return acc;
+    }, { stageCount: 0, totalInput: 0, totalOutput: 0, audioStages: 0 });
+}
+
+function renderCalculatorStory(scenarioKey) {
+    const scenario = getCalculatorScenarios()[scenarioKey] || null;
+    const summary = summarizeScenarioUsage(scenario);
+    if (calcScenarioHeading) {
+        calcScenarioHeading.textContent = scenario && scenario.label ? String(scenario.label) : 'Choose a scenario';
+    }
+    if (calcScenarioCopy) {
+        if (!scenario) {
+            calcScenarioCopy.textContent = 'Pick a scenario to see the default token assumptions, stage costs, and bundle margin.';
+        } else if (summary.audioStages > 0) {
+            calcScenarioCopy.textContent = 'Use this when you want to understand the full lecture or interview pipeline. Audio usually drives the largest portion of the cost.';
+        } else {
+            calcScenarioCopy.textContent = 'Use this when you want a clean read on slide extraction plus study-tool generation without transcription costs.';
+        }
+    }
+    if (!calcScenarioPoints) return;
+    clearChildren(calcScenarioPoints);
+    if (!scenario) return;
+    [
+        summary.stageCount + ' stage' + (summary.stageCount === 1 ? '' : 's') + ' included',
+        formatInteger(summary.totalInput) + ' input tokens modeled',
+        formatInteger(summary.totalOutput) + ' output tokens modeled',
+        summary.audioStages ? (summary.audioStages + ' audio stage' + (summary.audioStages === 1 ? '' : 's')) : 'No audio stage'
+    ].forEach((text) => {
+        const item = document.createElement('span');
+        item.className = 'calculator-story-point';
+        item.textContent = text;
+        calcScenarioPoints.appendChild(item);
+    });
+}
+
 function recalcCalculatorCosts() {
-    if (!calcBody) return;
+    if (!calcStageGrid) return;
     const models = getCalculatorModels();
-    const rows = calcBody.querySelectorAll('tr[data-stage]');
+    const rows = calcStageGrid.querySelectorAll('.calc-stage-card[data-stage]');
     let totalInputCost = 0;
     let totalOutputCost = 0;
     let totalCost = 0;
@@ -984,21 +1207,23 @@ function recalcCalculatorCosts() {
         const outputCost = (outputTokens / 1_000_000) * outputRate;
         const stageCost = inputCost + outputCost;
 
-        const modelCell = row.querySelector('.calc-model-cell');
+        const modelCell = row.querySelector('.calc-stage-model');
         if (modelCell) {
             const label = String(pricing.label || baseModel || '-');
-            modelCell.innerHTML = `<div>${effectiveModel || baseModel || '-'}</div><div class=\"empty\">${label}</div>`;
+            modelCell.innerHTML = `<div class="calc-stage-model-id">${effectiveModel || baseModel || '-'}</div><div class="calc-stage-model-label">${label}</div>`;
         }
-        const modalityCell = row.querySelector('.calc-modality');
+        const modalityCell = row.querySelector('.calc-stage-badge');
         if (modalityCell) {
-            modalityCell.textContent = isAudio ? 'Audio input' : 'Text / vision input';
+            modalityCell.textContent = isAudio ? 'Audio input' : 'Text / vision';
         }
         const inCostCell = row.querySelector('.cost-in');
         const outCostCell = row.querySelector('.cost-out');
         const stageCostCell = row.querySelector('.cost-stage');
+        const shareCell = row.querySelector('.cost-share');
         if (inCostCell) inCostCell.textContent = formatUsd(inputCost);
         if (outCostCell) outCostCell.textContent = formatUsd(outputCost);
         if (stageCostCell) stageCostCell.textContent = formatUsd(stageCost);
+        if (shareCell) shareCell.textContent = '0.0%';
 
         totalInputCost += inputCost;
         totalOutputCost += outputCost;
@@ -1026,45 +1251,70 @@ function recalcCalculatorCosts() {
     if (calcRevenueUsd) calcRevenueUsd.textContent = formatUsd(revenueUsd);
     if (calcMargin) {
         calcMargin.textContent = formatUsd(marginValue);
-        calcMargin.style.color = marginValue >= 0 ? '#10B981' : '#EF4444';
+        calcMargin.style.color = marginValue >= 0 ? '#166534' : '#EF4444';
     }
     if (calcMarginPct) {
         calcMarginPct.textContent = formatPercent(marginPercent);
-        calcMarginPct.style.color = marginPercent >= 0 ? '#10B981' : '#EF4444';
+        calcMarginPct.style.color = marginPercent >= 0 ? '#166534' : '#EF4444';
     }
     if (calcBreakEven) calcBreakEven.textContent = formatEur(breakEvenEur);
+
+    rows.forEach((row) => {
+        const stageCostText = row.querySelector('.cost-stage');
+        const shareCell = row.querySelector('.cost-share');
+        if (!stageCostText || !shareCell) return;
+        const numeric = numberOrZero(String(stageCostText.textContent || '').replace(/[^0-9.-]/g, ''));
+        shareCell.textContent = totalCost > 0 ? formatPercent((numeric / totalCost) * 100) : '0.0%';
+    });
 }
 
 function loadCalculatorScenario(scenarioKey) {
     const scenarios = getCalculatorScenarios();
     const scenario = scenarios[scenarioKey];
-    if (!scenario || !Array.isArray(scenario.stages) || !calcBody) return;
-    clearChildren(calcBody);
+    if (!scenario || !Array.isArray(scenario.stages) || !calcStageGrid) return;
+    clearChildren(calcStageGrid);
+    renderCalculatorStory(scenarioKey);
     scenario.stages.forEach((stage) => {
-        const tr = document.createElement('tr');
-        tr.dataset.stage = String(stage.stage || '');
-        tr.dataset.model = String(stage.model || '');
-        tr.dataset.audio = String(Boolean(stage.audio));
-        tr.innerHTML = `
-            <td>${String(stage.stage || '-')}</td>
-            <td class=\"calc-model-cell\">${String(stage.model || '-')}</td>
-            <td class=\"calc-modality\">-</td>
-            <td><input class=\"calc-in calculator-input\" type=\"number\" min=\"0\" step=\"1000\" value=\"${Math.max(0, Math.round(numberOrZero(stage.input_tokens)))}\"></td>
-            <td><input class=\"calc-out calculator-input\" type=\"number\" min=\"0\" step=\"1000\" value=\"${Math.max(0, Math.round(numberOrZero(stage.output_tokens)))}\"></td>
-            <td class=\"cost-in\">$0.0000</td>
-            <td class=\"cost-out\">$0.0000</td>
-            <td class=\"cost-stage\">$0.0000</td>
+        const card = document.createElement('article');
+        card.className = 'calc-stage-card';
+        card.dataset.stage = String(stage.stage || '');
+        card.dataset.model = String(stage.model || '');
+        card.dataset.audio = String(Boolean(stage.audio));
+        card.innerHTML = `
+            <div class="calc-stage-head">
+              <div>
+                <div class="calc-stage-name">${String(stage.stage || '-')}</div>
+                <div class="calc-stage-model"></div>
+              </div>
+              <span class="calc-stage-badge">-</span>
+            </div>
+            <div class="calc-stage-inputs">
+              <label class="calc-stage-field">
+                <span>Input tokens</span>
+                <input class="calc-in calculator-input" type="number" min="0" step="1000" value="${Math.max(0, Math.round(numberOrZero(stage.input_tokens)))}">
+              </label>
+              <label class="calc-stage-field">
+                <span>Output tokens</span>
+                <input class="calc-out calculator-input" type="number" min="0" step="1000" value="${Math.max(0, Math.round(numberOrZero(stage.output_tokens)))}">
+              </label>
+            </div>
+            <div class="calc-stage-costs">
+              <div class="calc-stage-cost"><span>Input cost</span><strong class="cost-in">$0.0000</strong></div>
+              <div class="calc-stage-cost"><span>Output cost</span><strong class="cost-out">$0.0000</strong></div>
+              <div class="calc-stage-cost calc-stage-cost-total"><span>Stage cost</span><strong class="cost-stage">$0.0000</strong></div>
+              <div class="calc-stage-cost"><span>Share of total</span><strong class="cost-share">0.0%</strong></div>
+            </div>
         `;
-        calcBody.appendChild(tr);
+        calcStageGrid.appendChild(card);
     });
-    calcBody.querySelectorAll('input').forEach((input) => {
+    calcStageGrid.querySelectorAll('input').forEach((input) => {
         input.addEventListener('input', recalcCalculatorCosts);
     });
     recalcCalculatorCosts();
 }
 
 async function initCostCalculator() {
-    if (!calcScenario || !calcBody) return;
+    if (!calcScenario || !calcStageGrid) return;
     try {
         const response = await authFetch('/api/admin/model-pricing');
         if (!response.ok) return;
@@ -1140,6 +1390,9 @@ async function initCostCalculator() {
             }
             if (calcBundlePrice) calcBundlePrice.addEventListener('input', recalcCalculatorCosts);
             if (calcEurUsd) calcEurUsd.addEventListener('input', recalcCalculatorCosts);
+            [analyzerPeriod, analyzerMode, analyzerStatus, adminBatchMode, adminBatchStatus].forEach((selectEl) => {
+                enhanceAdminSelect(selectEl);
+            });
             calculatorBound = true;
         }
     } catch (error) {
@@ -1160,6 +1413,7 @@ const analyzerStatus = document.getElementById('analyzer-status');
 const analyzerUsdEur = document.getElementById('analyzer-usd-eur');
 const analyzerJobsBody = document.getElementById('analyzer-jobs-body');
 const analyzerSelectionMeta = document.getElementById('analyzer-selection-meta');
+const analyzerJobsFiltered = document.getElementById('analyzer-jobs-filtered');
 const analyzerJobsSelected = document.getElementById('analyzer-jobs-selected');
 const analyzerInputTotal = document.getElementById('analyzer-input-total');
 const analyzerOutputTotal = document.getElementById('analyzer-output-total');
@@ -1204,6 +1458,7 @@ function recomputeAnalyzerSummary() {
         return acc;
     }, { input: 0, output: 0, total: 0, usd: 0, eur: 0 });
 
+    if (analyzerJobsFiltered) analyzerJobsFiltered.textContent = String(jobs.length);
     if (analyzerJobsSelected) analyzerJobsSelected.textContent = String(selectedRows.length);
     if (analyzerInputTotal) analyzerInputTotal.textContent = formatInteger(totals.input);
     if (analyzerOutputTotal) analyzerOutputTotal.textContent = formatInteger(totals.output);
@@ -1299,8 +1554,8 @@ async function runActualCostAnalysis(preserveSelection = true) {
             body: JSON.stringify(payload),
         });
         if (!response.ok) {
-            setState('Could not run cost analysis.', 'error');
-            return;
+            const errorPayload = await response.json().catch(() => ({}));
+            throw new Error(errorPayload.error || 'Could not run cost analysis.');
         }
         const data = await response.json();
         if (!preserveSelection) {
@@ -1311,8 +1566,10 @@ async function runActualCostAnalysis(preserveSelection = true) {
         }
         analyzerPayload = data;
         renderActualCostJobs();
+        showAdminToast('Cost analysis updated.', 'success');
     } catch (error) {
         console.error(error);
+        showAdminToast((error && error.message) || 'Could not run cost analysis.', 'error');
     } finally {
         analyzerRunBtn.disabled = false;
         analyzerRunBtn.textContent = 'Run analysis';
@@ -1332,11 +1589,12 @@ async function exportActualCostAnalysis() {
             body: JSON.stringify(payload),
         });
         if (!response.ok) {
-            setState('Could not export XLSX right now.', 'error');
-            return;
+            const errorPayload = await response.json().catch(() => ({}));
+            throw new Error(errorPayload.error || 'Could not export XLSX right now.');
         }
         if (downloadUtils.downloadResponseBlob) {
             await downloadUtils.downloadResponseBlob(response, 'admin-cost-analysis.xlsx');
+            showAdminToast('XLSX export started.', 'success');
             return;
         }
         const blob = await response.blob();
@@ -1348,8 +1606,10 @@ async function exportActualCostAnalysis() {
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
+        showAdminToast('XLSX export started.', 'success');
     } catch (error) {
         console.error(error);
+        showAdminToast((error && error.message) || 'Could not export XLSX right now.', 'error');
     } finally {
         analyzerExportBtn.disabled = false;
         analyzerExportBtn.textContent = 'Export XLSX';

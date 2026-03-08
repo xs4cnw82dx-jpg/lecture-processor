@@ -211,3 +211,77 @@ def test_admin_jobs_export_includes_cost_columns(client, monkeypatch):
     assert 'token_total' in header
     assert 'cost_usd' in header
     assert 'cost_eur' in header
+
+
+def test_admin_cost_analysis_hides_fixture_jobs(client, monkeypatch):
+    _patch_admin_auth(monkeypatch)
+    now_ts = core.time.time()
+    monkeypatch.setattr(admin_metrics, 'get_model_pricing_config', lambda runtime=None: _pricing_fixture())
+    monkeypatch.setattr(
+        admin_metrics,
+        'safe_query_docs_in_window',
+        lambda **_kwargs: _job_docs_fixture(now_ts) + [
+            _Doc(
+                'job-hidden',
+                {
+                    'job_id': 'job-hidden',
+                    'uid': 'fixture-u',
+                    'email': 'user@gmail.com',
+                    'mode': 'slides-only',
+                    'status': 'error',
+                    'billing_mode': 'standard',
+                    'finished_at': now_ts,
+                    'token_usage_by_stage': {
+                        'slide_extraction': {
+                            'input_tokens': 1000,
+                            'output_tokens': 100,
+                            'total_tokens': 1100,
+                            'model': 'gemini-2.5-flash-lite',
+                            'billing_mode': 'standard',
+                            'input_modality': 'text',
+                        },
+                    },
+                },
+            )
+        ],
+    )
+
+    response = client.post('/api/admin/cost-analysis', json={'period': 'monthly'})
+
+    assert response.status_code == 200
+    body = response.get_json()
+    job_ids = [job.get('job_id') for job in body.get('jobs', [])]
+    assert body.get('summary', {}).get('jobs_selected') == 2
+    assert 'job-hidden' not in job_ids
+
+
+def test_admin_jobs_export_skips_hidden_fixture_jobs(client, monkeypatch):
+    _patch_admin_auth(monkeypatch)
+    now_ts = core.time.time()
+    monkeypatch.setattr(admin_metrics, 'get_model_pricing_config', lambda runtime=None: _pricing_fixture())
+    monkeypatch.setattr(
+        admin_metrics,
+        'safe_query_docs_in_window',
+        lambda **_kwargs: _job_docs_fixture(now_ts) + [
+            _Doc(
+                'job-hidden',
+                {
+                    'job_id': 'job-hidden',
+                    'uid': 'fixture-u',
+                    'email': 'batch@example.com',
+                    'mode': 'lecture-notes',
+                    'status': 'error',
+                    'billing_mode': 'standard',
+                    'finished_at': now_ts,
+                    'token_usage_by_stage': {},
+                },
+            )
+        ],
+    )
+
+    response = client.get('/api/admin/export?type=jobs&window=7d&usd_to_eur=1.0')
+
+    assert response.status_code == 200
+    csv_text = response.get_data(as_text=True)
+    assert 'job-hidden' not in csv_text
+    assert 'batch@example.com' not in csv_text

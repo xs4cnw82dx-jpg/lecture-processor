@@ -6,11 +6,24 @@ from flask import g
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.runtime.container import get_runtime
 
+_ADMIN_HIDDEN_JOB_EMAILS = {'user@gmail.com', 'batch@example.com'}
+_ADMIN_HIDDEN_BATCH_EMAILS = {'batch@example.com'}
+_ADMIN_HIDDEN_BATCH_TITLES = {
+    'broken batch',
+    'batch notify',
+    'batch missing email',
+    'batch disabled',
+}
+
 
 def _resolve_runtime(runtime=None):
     if runtime is not None:
         return runtime
     return get_runtime()
+
+
+def _normalize_text(value):
+    return str(value or '').strip()
 
 
 def infer_stripe_key_mode(key_value, runtime=None):
@@ -190,6 +203,22 @@ def safe_query_docs_in_window(collection_name, timestamp_field, window_start, wi
         return []
 
 
+def safe_stream_collection(collection_name, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    if resolved_runtime.db is None:
+        return []
+    try:
+        return resolved_runtime.admin_repo.stream_collection(resolved_runtime.db, collection_name)
+    except Exception:
+        resolved_runtime.logger.warning(
+            'Admin stream query failed for %s; returning empty partial dataset.',
+            collection_name,
+            exc_info=True,
+        )
+        mark_admin_data_warning(collection_name, 'stream_failed', runtime=resolved_runtime)
+        return []
+
+
 def safe_count_collection(collection_name, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     if resolved_runtime.db is None:
@@ -226,6 +255,31 @@ def safe_count_window(collection_name, timestamp_field, window_start, runtime=No
         )
         mark_admin_data_warning(collection_name, 'window_count_failed', runtime=resolved_runtime)
         return 0
+
+
+def is_admin_visible_job(job_payload, runtime=None):
+    _ = runtime
+    job = job_payload if isinstance(job_payload, dict) else {}
+    if bool(job.get('exclude_from_admin', False)) or bool(job.get('synthetic_job', False)):
+        return False
+    email = _normalize_text(job.get('email')).lower()
+    if email in _ADMIN_HIDDEN_JOB_EMAILS:
+        return False
+    return True
+
+
+def is_admin_visible_batch(batch_payload, runtime=None):
+    _ = runtime
+    batch = batch_payload if isinstance(batch_payload, dict) else {}
+    if bool(batch.get('exclude_from_admin', False)) or bool(batch.get('synthetic_batch', False)):
+        return False
+    email = _normalize_text(batch.get('email')).lower()
+    if email in _ADMIN_HIDDEN_BATCH_EMAILS:
+        return False
+    title = _normalize_text(batch.get('batch_title')).lower()
+    if title in _ADMIN_HIDDEN_BATCH_TITLES:
+        return False
+    return True
 
 
 def build_admin_funnel_steps(analytics_docs, window_start, runtime=None):

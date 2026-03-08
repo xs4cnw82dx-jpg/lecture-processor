@@ -73,3 +73,18 @@ def test_admin_status_helpers_expose_warning_and_runtime_metadata(app):
     assert 'video_import_available' in runtime_checks
     assert 'ffmpeg_available' in runtime_checks
     assert 'yt_dlp_available' in runtime_checks
+
+
+def test_admin_visibility_filters_hide_fixture_jobs_and_batches():
+    assert metrics.is_admin_visible_job({'email': 'real-user@example.com'}) is True
+    assert metrics.is_admin_visible_job({'email': 'user@gmail.com'}) is False
+    assert metrics.is_admin_visible_job({'email': 'batch@example.com'}) is False
+    assert metrics.is_admin_visible_job({'email': 'real-user@example.com', 'synthetic_job': True}) is False
+    assert metrics.is_admin_visible_job({'email': 'real-user@example.com', 'exclude_from_admin': True}) is False
+
+    assert metrics.is_admin_visible_batch({'email': 'real-user@example.com', 'batch_title': 'Real batch'}) is True
+    assert metrics.is_admin_visible_batch({'email': 'batch@example.com', 'batch_title': 'Real batch'}) is False
+    assert metrics.is_admin_visible_batch({'email': 'real-user@example.com', 'batch_title': 'Batch Notify'}) is False
+    assert metrics.is_admin_visible_batch({'email': 'real-user@example.com', 'batch_title': 'Broken batch'}) is False
+    assert metrics.is_admin_visible_batch({'email': 'real-user@example.com', 'batch_title': 'Real batch', 'synthetic_batch': True}) is False
+    assert metrics.is_admin_visible_batch({'email': 'real-user@example.com', 'batch_title': 'Real batch', 'exclude_from_admin': True}) is False

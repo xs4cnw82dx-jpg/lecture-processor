@@ -17,6 +17,7 @@
   var activeCards = document.getElementById('batch-dashboard-active-cards');
   var recentCards = document.getElementById('batch-dashboard-recent-cards');
   var pollTimer = null;
+  var enhancedSelects = [];
 
   function showShellToast(message, variant) {
     var shell = window.LectureProcessorShell || {};
@@ -254,6 +255,160 @@
     return '/api/batch/jobs?' + params.toString();
   }
 
+  function closeBatchDashboardSelectMenus(exceptionMenu) {
+    enhancedSelects.forEach(function (instance) {
+      if (!instance || !instance.menu || instance.menu === exceptionMenu) return;
+      instance.setOpen(false);
+    });
+  }
+
+  function enhanceDashboardSelect(selectEl) {
+    if (!selectEl || selectEl.dataset.enhanced === 'true') return;
+    selectEl.dataset.enhanced = 'true';
+    selectEl.classList.add('batch-dashboard-native-select');
+
+    var wrapper = document.createElement('div');
+    wrapper.className = 'app-select batch-dashboard-select';
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'app-select-button';
+    button.setAttribute('aria-haspopup', 'listbox');
+    button.setAttribute('aria-expanded', 'false');
+
+    var label = document.createElement('span');
+    label.className = 'app-select-label';
+    var icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('viewBox', '0 0 24 24');
+    icon.setAttribute('fill', 'none');
+    icon.setAttribute('stroke', 'currentColor');
+    icon.setAttribute('stroke-width', '2');
+    icon.setAttribute('stroke-linecap', 'round');
+    icon.setAttribute('stroke-linejoin', 'round');
+    var polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    polyline.setAttribute('points', '6 9 12 15 18 9');
+    icon.appendChild(polyline);
+    button.appendChild(label);
+    button.appendChild(icon);
+
+    var menu = document.createElement('div');
+    menu.className = 'app-select-menu';
+    menu.setAttribute('role', 'listbox');
+    wrapper.appendChild(button);
+    wrapper.appendChild(menu);
+    selectEl.insertAdjacentElement('afterend', wrapper);
+
+    function items() {
+      return Array.prototype.slice.call(menu.querySelectorAll('.app-select-item[data-value]')).filter(function (item) {
+        return !item.disabled;
+      });
+    }
+
+    function focusItem(direction) {
+      var allItems = items();
+      if (!allItems.length) return;
+      var currentIndex = allItems.indexOf(document.activeElement);
+      var activeIndex = Math.max(0, allItems.findIndex(function (item) { return item.classList.contains('active'); }));
+      var nextIndex = activeIndex;
+      if (direction === 'first') nextIndex = 0;
+      if (direction === 'last') nextIndex = allItems.length - 1;
+      if (direction === 'next') nextIndex = currentIndex >= 0 ? (currentIndex + 1) % allItems.length : activeIndex;
+      if (direction === 'prev') nextIndex = currentIndex >= 0 ? (currentIndex - 1 + allItems.length) % allItems.length : activeIndex;
+      allItems.forEach(function (item) { item.tabIndex = -1; });
+      allItems[nextIndex].tabIndex = 0;
+      allItems[nextIndex].focus();
+    }
+
+    function sync() {
+      var activeText = '';
+      items().forEach(function (item) {
+        var active = item.getAttribute('data-value') === String(selectEl.value || '');
+        item.classList.toggle('active', active);
+        item.setAttribute('aria-selected', active ? 'true' : 'false');
+        item.tabIndex = -1;
+        if (active) activeText = item.textContent;
+      });
+      label.textContent = activeText || (selectEl.options[selectEl.selectedIndex] ? selectEl.options[selectEl.selectedIndex].textContent : 'Select');
+    }
+
+    function setOpen(open, focusTarget) {
+      var shouldOpen = !!open;
+      if (shouldOpen) closeBatchDashboardSelectMenus(menu);
+      menu.classList.toggle('visible', shouldOpen);
+      button.classList.toggle('open', shouldOpen);
+      button.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+      if (shouldOpen) focusItem(focusTarget || 'first');
+    }
+
+    function rebuild() {
+      menu.innerHTML = '';
+      Array.prototype.slice.call(selectEl.options || []).forEach(function (option) {
+        var item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'app-select-item';
+        item.setAttribute('role', 'option');
+        item.setAttribute('data-value', String(option.value));
+        item.textContent = String(option.textContent || option.value || '-');
+        item.disabled = !!option.disabled;
+        item.addEventListener('click', function () {
+          if (selectEl.value !== option.value) {
+            selectEl.value = option.value;
+            selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          sync();
+          setOpen(false);
+          button.focus();
+        });
+        menu.appendChild(item);
+      });
+      sync();
+    }
+
+    button.addEventListener('click', function (event) {
+      event.preventDefault();
+      setOpen(!menu.classList.contains('visible'));
+    });
+
+    button.addEventListener('keydown', function (event) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setOpen(true, 'first');
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setOpen(true, 'last');
+      } else if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        setOpen(!menu.classList.contains('visible'));
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        setOpen(false);
+      }
+    });
+
+    menu.addEventListener('keydown', function (event) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        focusItem('next');
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        focusItem('prev');
+      } else if (event.key === 'Home') {
+        event.preventDefault();
+        focusItem('first');
+      } else if (event.key === 'End') {
+        event.preventDefault();
+        focusItem('last');
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        setOpen(false);
+        button.focus();
+      }
+    });
+
+    selectEl.addEventListener('change', sync);
+    enhancedSelects.push({ menu: menu, setOpen: setOpen });
+    rebuild();
+  }
+
   function loadBatches(showRefreshToast) {
     if (!auth || !auth.currentUser) {
       setSignedInView(false);
@@ -328,6 +483,16 @@
   }
 
   function boot() {
+    enhanceDashboardSelect(modeFilter);
+    enhanceDashboardSelect(statusFilter);
+    document.addEventListener('click', function (event) {
+      if (event.target && event.target.closest('.batch-dashboard-select')) return;
+      closeBatchDashboardSelectMenus();
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key !== 'Escape') return;
+      closeBatchDashboardSelectMenus();
+    });
     wireEvents();
     if (auth) {
       auth.onAuthStateChanged(function () {

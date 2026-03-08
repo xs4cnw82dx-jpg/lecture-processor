@@ -253,7 +253,11 @@ select {
   font-weight: 700;
   font-size: 0.85rem;
   border: none;
-  transition: transform var(--motion-fast, 140ms) var(--motion-ease, ease), box-shadow var(--motion-mid, 200ms) var(--motion-ease, ease);
+  transition:
+    transform 180ms var(--motion-ease, ease),
+    box-shadow 260ms var(--motion-ease, ease),
+    filter 260ms var(--motion-ease, ease),
+    opacity 220ms var(--motion-ease, ease);
 }
 
 .app-shell-credits:hover {
@@ -276,14 +280,26 @@ select {
   padding: 10px;
   box-shadow: 0 14px 30px rgba(15, 23, 42, 0.18);
   border: 1px solid #cfd9ea;
-  display: none;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-6px) scale(0.98);
+  transform-origin: top right;
+  transition:
+    opacity 260ms ease,
+    transform 260ms ease,
+    visibility 0s linear 260ms;
   z-index: 18;
 }
 
 .app-shell-credits:hover .app-shell-credits-tooltip,
 .app-shell-credits:focus-visible .app-shell-credits-tooltip,
 .app-shell-credits.is-open .app-shell-credits-tooltip {
-  display: block;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  transition-delay: 0s;
 }
 
 .credit-tip-row {
@@ -333,9 +349,10 @@ select {
   align-items: center;
   gap: 8px;
   transition:
-    border-color var(--motion-fast, 140ms) var(--motion-ease, ease),
-    background-color var(--motion-fast, 140ms) var(--motion-ease, ease),
-    box-shadow var(--motion-fast, 140ms) var(--motion-ease, ease);
+    border-color 220ms var(--motion-ease, ease),
+    background-color 220ms var(--motion-ease, ease),
+    box-shadow 260ms var(--motion-ease, ease),
+    transform 180ms var(--motion-ease, ease);
 }
 
 .app-shell-account.is-open .app-shell-account-btn,
@@ -380,10 +397,10 @@ select {
   transform: translateY(-8px) scale(.98);
   transform-origin: top right;
   transition:
-    grid-template-rows var(--motion-mid, 220ms) var(--motion-ease, ease),
-    opacity var(--motion-mid, 220ms) var(--motion-ease, ease),
-    transform var(--motion-mid, 220ms) var(--motion-ease, ease),
-    visibility 0s linear var(--motion-mid, 220ms);
+    grid-template-rows 340ms cubic-bezier(.16,.84,.24,1),
+    opacity 340ms cubic-bezier(.16,.84,.24,1),
+    transform 340ms cubic-bezier(.16,.84,.24,1),
+    visibility 0s linear 340ms;
   z-index: 18;
 }
 
