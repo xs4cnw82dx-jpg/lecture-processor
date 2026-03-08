@@ -611,7 +611,6 @@ function countDueCardsInState(state) {
   return due;
 }
 function updateTopbarDueCount() {
-  if (!topbarDueText) return;
   var totalDue = 0;
   if (Array.isArray(packs) && packs.length) {
     packs.forEach(function (pack) {
@@ -3056,7 +3055,9 @@ function renderFlashcardListView() {
     var revealed = flashcardPeekMode || Boolean(flashcardPeekRevealed[cardKey]);
     var rowClass = 'peek-row' + (idx === learnFlashcardIndex ? ' active' : '');
     var rightContent = revealed
-      ? ('<div class="peek-answer">' + backText + '</div>')
+      ? (flashcardPeekMode
+        ? ('<div class="peek-answer">' + backText + '</div>')
+        : ('<button type="button" class="peek-answer-btn" data-peek-hide="' + cardKey + '"><span class="peek-answer">' + backText + '</span></button>'))
       : ('<button type="button" class="peek-reveal-btn" data-peek-reveal="' + cardKey + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>Show definition</button>');
     return '<div class="' + rowClass + '" role="button" tabindex="0" data-peek-index="' + idx + '"><span class="peek-index">' + (idx + 1) + '</span><span class="peek-front">' + frontText + '</span><span class="peek-divider"></span><span class="peek-right">' + rightContent + '</span></div>';
   }).join('');
@@ -3084,6 +3085,15 @@ function renderFlashcardListView() {
       var key = String(button.dataset.peekReveal || '');
       if (!key) { return; }
       flashcardPeekRevealed[key] = true;
+      renderFlashcardListView();
+    });
+  });
+  learnFListView.querySelectorAll('[data-peek-hide]').forEach(function (button) {
+    button.addEventListener('click', function (event) {
+      event.stopPropagation();
+      var key = String(button.dataset.peekHide || '');
+      if (!key) { return; }
+      delete flashcardPeekRevealed[key];
       renderFlashcardListView();
     });
   });
@@ -3222,7 +3232,13 @@ function openLearnStageWithMode(mode, requestFullscreen) {
   }
 
   updateLearnProgressBar();
+  document.body.style.overflow = 'hidden';
   learnStage.classList.add('entering');
+  learnStage.scrollTop = 0;
+  var learnBody = learnStage.querySelector('.learn-body');
+  if (learnBody) { learnBody.scrollTop = 0; }
+  var learnCard = learnStage.querySelector('.learn-card');
+  if (learnCard) { learnCard.scrollTop = 0; }
   requestAnimationFrame(function () { requestAnimationFrame(function () { learnStage.classList.replace('entering', 'visible'); }); });
   resetLearnHintVisibility();
   if (requestFullscreen) {
@@ -3233,6 +3249,7 @@ function openLearnStageWithMode(mode, requestFullscreen) {
 function closeLearnStage() {
   recordLearnSessionCompletion();
   learnStage.classList.remove('visible');
+  setFlashcardListMode(false);
   orderedFlashcards = [];
   stopMatchTimer();
   activeLearnMode = '';
@@ -3240,6 +3257,7 @@ function closeLearnStage() {
   if (keyboardHints) keyboardHints.classList.remove('faded');
   setAudioHiddenForLearn(false);
   updateDifficultyToolbar();
+  document.body.style.overflow = '';
   if (document.fullscreenElement) { try { document.exitFullscreen(); } catch (e) { } }
 }
 
@@ -4838,6 +4856,20 @@ function downloadAnnotatedNotesPdf() {
 function isNotesFullscreenActive() {
   return document.fullscreenElement === notesPaneShell || document.webkitFullscreenElement === notesPaneShell;
 }
+function getHighlightDownloadMenuHost() {
+  if (isNotesFullscreenActive() && notesPaneShell) {
+    return notesPaneShell;
+  }
+  return document.body || document.documentElement;
+}
+function syncHighlightDownloadMenuHost() {
+  if (!hlDownloadMenu) return null;
+  var host = getHighlightDownloadMenuHost();
+  if (host && hlDownloadMenu.parentNode !== host) {
+    host.appendChild(hlDownloadMenu);
+  }
+  return host;
+}
 function resetHighlightDownloadMenuPosition() {
   if (!hlDownloadMenu) return;
   hlDownloadMenu.classList.remove('is-upward', 'is-align-left', 'is-floating');
@@ -4848,6 +4880,9 @@ function setHighlightDownloadMenuOpen(open) {
   var menu = ensureHighlightDownloadMenu();
   if (!menu) return;
   var shouldOpen = !!open;
+  if (shouldOpen) {
+    syncHighlightDownloadMenuHost();
+  }
   if (!shouldOpen) {
     resetHighlightDownloadMenuPosition();
   }
@@ -4861,6 +4896,7 @@ function setHighlightDownloadMenuOpen(open) {
 }
 function positionHighlightDownloadMenu() {
   if (!hlDownloadMenu || !hlDownloadMenu.classList.contains('visible')) return;
+  syncHighlightDownloadMenuHost();
   resetHighlightDownloadMenuPosition();
   var viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
   var viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
@@ -4918,7 +4954,7 @@ function ensureHighlightDownloadMenu() {
   });
   hlDownloadMenu.appendChild(originalDocxBtn);
   hlDownloadMenu.appendChild(annotatedBtn);
-  (document.body || document.documentElement).appendChild(hlDownloadMenu);
+  syncHighlightDownloadMenuHost();
   document.addEventListener('click', function (e) {
     if (!hlDownloadBtn || !hlDownloadMenu) return;
     if (!hlDownloadMenu.contains(e.target) && !hlDownloadBtn.contains(e.target)) {
@@ -4947,6 +4983,7 @@ window.addEventListener('scroll', function () {
   }
 }, true);
 document.addEventListener('fullscreenchange', function () {
+  syncHighlightDownloadMenuHost();
   if (hlDownloadMenu && hlDownloadMenu.classList.contains('visible')) {
     positionHighlightDownloadMenu();
   } else {
@@ -4954,6 +4991,7 @@ document.addEventListener('fullscreenchange', function () {
   }
 });
 document.addEventListener('webkitfullscreenchange', function () {
+  syncHighlightDownloadMenuHost();
   if (hlDownloadMenu && hlDownloadMenu.classList.contains('visible')) {
     positionHighlightDownloadMenu();
   } else {

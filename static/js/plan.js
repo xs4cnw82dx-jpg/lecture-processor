@@ -640,23 +640,10 @@
     syncPackGoalInputState(input, pack.daily_card_goal);
     wrap.appendChild(input);
 
-    var saveBtn = document.createElement('button');
-    saveBtn.type = 'button';
-    saveBtn.className = 'btn primary pack-goal-save';
-    saveBtn.textContent = 'Save now';
-    saveBtn.dataset.packGoalSave = String(pack.study_pack_id || '');
-    wrap.appendChild(saveBtn);
-
     return wrap;
   }
 
   function bindPackGoalEvents() {
-    Array.prototype.slice.call(document.querySelectorAll('[data-pack-goal-save]')).forEach(function (button) {
-      button.addEventListener('click', function () {
-        persistPackGoal(String(button.getAttribute('data-pack-goal-save') || ''), true);
-      });
-    });
-
     Array.prototype.slice.call(document.querySelectorAll('[data-pack-goal-input]')).forEach(function (input) {
       var packId = String(input.getAttribute('data-pack-goal-input') || '');
       input.addEventListener('input', function () {
@@ -886,6 +873,7 @@
 
     goalSaveInFlight = true;
     if (saveGoalBtn) saveGoalBtn.disabled = true;
+    if (goalInputEl) goalInputEl.disabled = true;
     authFetch('/api/study-progress', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -912,6 +900,7 @@
     }).finally(function () {
       goalSaveInFlight = false;
       if (saveGoalBtn) saveGoalBtn.disabled = false;
+      if (goalInputEl) goalInputEl.disabled = false;
     });
   }
 
@@ -991,8 +980,7 @@
     var safePackId = String(packId || '').trim();
     if (!safePackId || !currentUser || packGoalSaveInFlight.has(safePackId)) return;
     var input = document.querySelector('[data-pack-goal-input="' + safePackId + '"]');
-    var button = document.querySelector('[data-pack-goal-save="' + safePackId + '"]');
-    if (!input || !button) return;
+    if (!input) return;
 
     var rawValue = String(input.value || '').trim();
     var parsedGoal = rawValue ? parseGoalValue(rawValue) : null;
@@ -1008,7 +996,7 @@
     }
 
     packGoalSaveInFlight.add(safePackId);
-    button.disabled = true;
+    input.disabled = true;
     authFetch('/api/study-packs/' + encodeURIComponent(safePackId), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -1035,8 +1023,8 @@
       showToast((error && error.message) ? error.message : 'Could not save pack goal.', 'error');
     }).finally(function () {
       packGoalSaveInFlight.delete(safePackId);
-      var nextButton = document.querySelector('[data-pack-goal-save="' + safePackId + '"]');
-      if (nextButton) nextButton.disabled = false;
+      var nextInput = document.querySelector('[data-pack-goal-input="' + safePackId + '"]');
+      if (nextInput) nextInput.disabled = false;
     });
   }
 
