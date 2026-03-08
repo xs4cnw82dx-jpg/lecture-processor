@@ -35,9 +35,12 @@ let flashcardPeekRevealed = {};
 const audioSpeeds = [0.75, 1, 1.25, 1.5, 2];
 let difficultyFadeTimer = null, keyboardHintFadeTimer = null, notesFullscreenFadeTimer = null;
 let highlightSyncTimer = null, highlightSyncInFlight = false, pendingHighlightPayload = undefined, pendingHighlightPackId = '';
+let overallGoalSaveInFlight = false, packGoalSaveInFlight = false;
+let overallGoalAutosaveTimer = null, packGoalAutosaveTimer = null;
 const HINT_FADE_DELAY_MS = 10000;
 const NOTES_ICON_IDLE_MS = 5000;
 const HIGHLIGHT_SYNC_DELAY_MS = 450;
+const GOAL_AUTOSAVE_DELAY_MS = 420;
 const NOTES_HIGHLIGHT_CACHE_PREFIX = 'hl_ranges_';
 const LEGACY_NOTES_HIGHLIGHT_CACHE_PREFIX = 'hl_html_';
 const urlParams = new URLSearchParams(window.location.search);
@@ -48,6 +51,7 @@ const focusFromUrl = urlParams.get('focus') || '';
 const actionFromUrl = String(urlParams.get('action') || '').trim().toLowerCase();
 let autoLearnConsumed = false;
 let autoCreateConsumed = false;
+const progressSyncSourceId = 'study-' + Math.random().toString(36).slice(2, 10);
 
 /* Write mode state */
 let writeIndex = 0, writeRevealed = false, writeChecked = false, writePromptSwapped = false;
@@ -303,6 +307,7 @@ function loadStreakData() {
 }
 function saveStreakData(data) {
   try { localStorage.setItem(getStreakKey(), JSON.stringify(data || {})); } catch (e) { }
+  broadcastProgressState({ type: 'summary' });
   queueProgressSync(false);
 }
 function getDailyGoalKey() { return 'daily_goal_' + (auth.currentUser ? auth.currentUser.uid : 'anon'); }
@@ -412,6 +417,9 @@ function mergeProgressFromServer(remote) {
     }
   });
   renderGoalPanel();
+  if (auth.currentUser) {
+    persistSharedSummaryCaches(auth.currentUser, progressSummaryCache || buildLiveProgressSummary());
+  }
 }
 function loadRemoteProgress() {
   if (!auth.currentUser || !token) { return Promise.resolve(); }
@@ -614,6 +622,7 @@ function updateTopbarDueCount() {
   }
   setTopbarDueTextValue(totalDue);
   persistTopbarDueToCache(auth.currentUser, totalDue);
+  broadcastProgressState({ type: 'summary' });
 }
 
 function formatCardCount(value) {
@@ -657,16 +666,13 @@ function renderGoalPanel() {
     overallDailyGoalInput.value = String(overallGoal);
   }
   if (overallDailyGoalInput) {
-    overallDailyGoalInput.disabled = !auth.currentUser;
-  }
-  if (overallDailyGoalSave) {
-    overallDailyGoalSave.disabled = !auth.currentUser;
+    overallDailyGoalInput.disabled = !auth.currentUser || overallGoalSaveInFlight;
   }
   if (overallDailyGoalDecrease) {
-    overallDailyGoalDecrease.disabled = !auth.currentUser;
+    overallDailyGoalDecrease.disabled = !auth.currentUser || overallGoalSaveInFlight;
   }
   if (overallDailyGoalIncrease) {
-    overallDailyGoalIncrease.disabled = !auth.currentUser;
+    overallDailyGoalIncrease.disabled = !auth.currentUser || overallGoalSaveInFlight;
   }
   if (!packGoalsPanel) return;
 
@@ -683,27 +689,24 @@ function renderGoalPanel() {
     var savedPackGoal = hasPack && selectedPack.daily_card_goal !== null && selectedPack.daily_card_goal !== undefined
       ? String(selectedPack.daily_card_goal)
       : '';
-    packDailyGoalInput.disabled = !hasPack;
+    packDailyGoalInput.disabled = !hasPack || packGoalSaveInFlight;
     packDailyGoalInput.dataset.savedGoal = savedPackGoal;
     if (document.activeElement !== packDailyGoalInput) {
       packDailyGoalInput.value = savedPackGoal;
     }
   }
-  if (packDailyGoalSave) {
-    packDailyGoalSave.disabled = !hasPack;
-  }
   if (packDailyGoalClear) {
-    packDailyGoalClear.disabled = !hasPack;
+    packDailyGoalClear.disabled = !hasPack || packGoalSaveInFlight;
   }
   if (packDailyGoalDecrease) {
-    packDailyGoalDecrease.disabled = !hasPack;
+    packDailyGoalDecrease.disabled = !hasPack || packGoalSaveInFlight;
   }
   if (packDailyGoalIncrease) {
-    packDailyGoalIncrease.disabled = !hasPack;
+    packDailyGoalIncrease.disabled = !hasPack || packGoalSaveInFlight;
   }
   if (packGoalHelper) {
     packGoalHelper.textContent = hasPack
-      ? 'Optional and only used for this study pack. Clear removes the saved pack target.'
+      ? 'Autosaves automatically. Clear removes the saved pack target.'
       : 'Select a study pack to set an optional pack-specific goal.';
   }
 }
@@ -733,8 +736,40 @@ function nudgeGoalInput(input, delta, fallbackValue) {
   input.select();
 }
 
+function scheduleOverallGoalAutosave(immediate, showValidationError) {
+  if (!overallDailyGoalInput || overallDailyGoalInput.disabled) return;
+  if (overallGoalAutosaveTimer) {
+    clearTimeout(overallGoalAutosaveTimer);
+    overallGoalAutosaveTimer = null;
+  }
+  if (immediate) {
+    persistOverallDailyGoal(!!showValidationError);
+    return;
+  }
+  overallGoalAutosaveTimer = setTimeout(function () {
+    overallGoalAutosaveTimer = null;
+    persistOverallDailyGoal(!!showValidationError);
+  }, GOAL_AUTOSAVE_DELAY_MS);
+}
+
+function schedulePackGoalAutosave(immediate, showValidationError) {
+  if (!packDailyGoalInput || packDailyGoalInput.disabled) return;
+  if (packGoalAutosaveTimer) {
+    clearTimeout(packGoalAutosaveTimer);
+    packGoalAutosaveTimer = null;
+  }
+  if (immediate) {
+    persistSelectedPackDailyGoal(!!showValidationError);
+    return;
+  }
+  packGoalAutosaveTimer = setTimeout(function () {
+    packGoalAutosaveTimer = null;
+    persistSelectedPackDailyGoal(!!showValidationError);
+  }, GOAL_AUTOSAVE_DELAY_MS);
+}
+
 function persistOverallDailyGoal(showValidationError) {
-  if (!auth.currentUser || !overallDailyGoalInput || !overallDailyGoalSave || overallDailyGoalSave.disabled) return;
+  if (!auth.currentUser || !overallDailyGoalInput || overallGoalSaveInFlight) return;
   var parsedGoal = progressUtils && typeof progressUtils.parseGoalValue === 'function'
     ? progressUtils.parseGoalValue(overallDailyGoalInput.value)
     : parseInt(overallDailyGoalInput.value || '', 10);
@@ -748,7 +783,8 @@ function persistOverallDailyGoal(showValidationError) {
     return;
   }
 
-  overallDailyGoalSave.disabled = true;
+  overallGoalSaveInFlight = true;
+  renderGoalPanel();
   apiCall('/api/study-progress', {
     method: 'PUT',
     body: JSON.stringify({
@@ -758,18 +794,21 @@ function persistOverallDailyGoal(showValidationError) {
   }).then(function () {
     saveDailyGoal(parsedGoal);
     progressSummaryCache = Object.assign({}, progressSummaryCache || {}, { daily_goal: parsedGoal });
+    persistSharedSummaryCaches(auth.currentUser, Object.assign({}, buildLiveProgressSummary(), { daily_goal: parsedGoal }));
+    broadcastProgressState({ type: 'summary' });
     renderGoalPanel();
-    showToast('Overall daily goal saved.', 'success');
+    showToast('Daily goal saved automatically.', 'success');
   }).catch(function (e) {
     renderGoalPanel();
     showToast(e.message || 'Could not save overall goal.', 'error');
   }).finally(function () {
-    overallDailyGoalSave.disabled = false;
+    overallGoalSaveInFlight = false;
+    renderGoalPanel();
   });
 }
 
 function persistSelectedPackDailyGoal(showValidationError) {
-  if (!selectedPack || !packDailyGoalInput || !packDailyGoalSave || packDailyGoalSave.disabled) return;
+  if (!selectedPack || !packDailyGoalInput || packGoalSaveInFlight) return;
   var rawValue = String(packDailyGoalInput.value || '').trim();
   var parsedGoal = rawValue
     ? ((progressUtils && typeof progressUtils.parseGoalValue === 'function')
@@ -788,7 +827,8 @@ function persistSelectedPackDailyGoal(showValidationError) {
     return;
   }
 
-  packDailyGoalSave.disabled = true;
+  packGoalSaveInFlight = true;
+  renderGoalPanel();
   apiCall('/api/study-packs/' + encodeURIComponent(selectedPack.study_pack_id), {
     method: 'PATCH',
     body: JSON.stringify({ daily_card_goal: parsedGoal === null ? null : parsedGoal })
@@ -798,13 +838,21 @@ function persistSelectedPackDailyGoal(showValidationError) {
       if (pack.study_pack_id !== selectedPack.study_pack_id) return pack;
       return Object.assign({}, pack, { daily_card_goal: parsedGoal === null ? null : parsedGoal });
     });
+    broadcastProgressState({
+      type: 'pack-goal',
+      pack_update: {
+        pack_id: selectedPack.study_pack_id,
+        daily_card_goal: parsedGoal === null ? null : parsedGoal
+      }
+    });
     renderGoalPanel();
-    showToast(parsedGoal === null ? 'Pack goal cleared.' : 'Pack goal saved.', 'success');
+    showToast(parsedGoal === null ? 'Pack goal cleared automatically.' : 'Pack goal saved automatically.', 'success');
   }).catch(function (e) {
     renderGoalPanel();
     showToast(e.message || 'Could not save pack goal.', 'error');
   }).finally(function () {
-    packDailyGoalSave.disabled = false;
+    packGoalSaveInFlight = false;
+    renderGoalPanel();
   });
 }
 
@@ -949,9 +997,9 @@ var studyAuthGate = document.getElementById('study-auth-gate'), studyLibraryShel
 var searchInput = document.getElementById('search-input'), folderList = document.getElementById('folder-list'), packList = document.getElementById('pack-list'), newFolderBtn = document.getElementById('new-folder-btn'), deleteFolderBtn = document.getElementById('delete-folder-btn');
 var packEmpty = document.getElementById('pack-empty'), packEmptyDefault = document.getElementById('pack-empty-default'), packEmptyOnboarding = document.getElementById('pack-empty-onboarding'), packEmptyCreateBtn = document.getElementById('pack-empty-create-btn'), packEmptyDemoBtn = document.getElementById('pack-empty-demo-btn'), packEditorWrap = document.getElementById('pack-editor-wrap'), packTitle = document.getElementById('pack-title'), packFolderSelect = document.getElementById('pack-folder-select'), packFolderPicker = document.getElementById('pack-folder-picker'), packFolderButton = document.getElementById('pack-folder-button'), packFolderLabel = document.getElementById('pack-folder-label'), packFolderMenu = document.getElementById('pack-folder-menu');
 var packCourse = document.getElementById('pack-course'), packSubject = document.getElementById('pack-subject'), packSemester = document.getElementById('pack-semester'), packBlock = document.getElementById('pack-block'), notesView = document.getElementById('notes-view');
-var packAdvancedMetaBtn = document.getElementById('pack-advanced-meta-btn'), packAdvancedMetaPanel = document.getElementById('pack-advanced-meta-panel');
+var packAdvancedMetaBtn = document.getElementById('pack-advanced-meta-btn'), packAdvancedMetaShell = document.getElementById('pack-advanced-meta-shell'), packAdvancedMetaPanel = document.getElementById('pack-advanced-meta-panel');
 var packSummary = document.getElementById('pack-summary'), packSummaryTitle = document.getElementById('pack-summary-title'), packSummaryMeta = document.getElementById('pack-summary-meta'), packStatNotes = document.getElementById('pack-stat-notes'), packStatCards = document.getElementById('pack-stat-cards'), packStatTest = document.getElementById('pack-stat-test');
-var packGoalsPanel = document.getElementById('pack-goals-panel'), packGoalCard = document.getElementById('pack-goal-card'), overallDailyGoalInput = document.getElementById('overall-daily-goal-input'), overallDailyGoalSave = document.getElementById('overall-daily-goal-save'), overallDailyGoalDecrease = document.getElementById('overall-daily-goal-decrease'), overallDailyGoalIncrease = document.getElementById('overall-daily-goal-increase'), packDailyGoalInput = document.getElementById('pack-daily-goal-input'), packDailyGoalSave = document.getElementById('pack-daily-goal-save'), packDailyGoalClear = document.getElementById('pack-daily-goal-clear'), packDailyGoalDecrease = document.getElementById('pack-daily-goal-decrease'), packDailyGoalIncrease = document.getElementById('pack-daily-goal-increase'), packGoalDue = document.getElementById('pack-goal-due'), packGoalUnmastered = document.getElementById('pack-goal-unmastered'), packGoalHelper = document.getElementById('pack-goal-helper');
+var packGoalsPanel = document.getElementById('pack-goals-panel'), packGoalCard = document.getElementById('pack-goal-card'), overallDailyGoalInput = document.getElementById('overall-daily-goal-input'), overallDailyGoalDecrease = document.getElementById('overall-daily-goal-decrease'), overallDailyGoalIncrease = document.getElementById('overall-daily-goal-increase'), packDailyGoalInput = document.getElementById('pack-daily-goal-input'), packDailyGoalClear = document.getElementById('pack-daily-goal-clear'), packDailyGoalDecrease = document.getElementById('pack-daily-goal-decrease'), packDailyGoalIncrease = document.getElementById('pack-daily-goal-increase'), packGoalDue = document.getElementById('pack-goal-due'), packGoalUnmastered = document.getElementById('pack-goal-unmastered'), packGoalHelper = document.getElementById('pack-goal-helper');
 var createPackBtn = document.getElementById('create-pack-btn'), openBuilderBtn = document.getElementById('open-builder-btn'), savePackBtn = document.getElementById('save-pack-btn'), deletePackBtn = document.getElementById('delete-pack-btn'), exportPackNotesBtn = document.getElementById('export-pack-notes-btn'), openLearnBtn = document.getElementById('open-learn-btn');
 var exportMenu = document.getElementById('export-menu'), exportMenuBtn = document.getElementById('export-menu-btn'), exportMenuList = document.getElementById('export-menu-list'), exportPdfSubmenu = document.getElementById('export-pdf-submenu');
 var editorTabs = document.querySelectorAll('.editor-tab'), flashcardCount = document.getElementById('flashcard-count'), questionCount = document.getElementById('question-count'), addFlashcardBtn = document.getElementById('add-flashcard-btn'), addQuestionBtn = document.getElementById('add-question-btn'), flashcardEditorList = document.getElementById('flashcard-editor-list'), questionEditorList = document.getElementById('question-editor-list');
@@ -987,9 +1035,16 @@ var difficultyToolbar = document.getElementById('difficulty-toolbar'), difficult
 var keyboardHints = document.querySelector('.keyboard-hints');
 var STUDY_DUE_CACHE_GLOBAL_KEY = 'study_due_today:last';
 var STUDY_DUE_CACHE_USER_PREFIX = 'study_due_today:user:';
+var toastTimer = null;
 
 /* ── Helpers ── */
-function showToast(msg, type) { toastEl.textContent = msg; toastEl.className = 'toast visible ' + (type || 'success'); setTimeout(function () { toastEl.classList.remove('visible'); }, 2800); }
+function showToast(msg, type) {
+  if (!toastEl || !msg) return;
+  toastEl.textContent = msg;
+  toastEl.className = 'toast visible ' + (type || 'success');
+  if (toastTimer) { clearTimeout(toastTimer); }
+  toastTimer = setTimeout(function () { toastEl.classList.remove('visible'); }, 2800);
+}
 function setStudyLibraryVisibility(signedIn) {
   if (studyAuthGate) { studyAuthGate.hidden = !!signedIn; }
   if (studyLibraryShell) { studyLibraryShell.hidden = !signedIn; }
@@ -1077,6 +1132,94 @@ function persistTopbarDueToCache(user, countValue) {
   writeUiCacheJson(STUDY_DUE_CACHE_GLOBAL_KEY, payload);
   writeUiCacheJson(getStudyDueCacheKey(user), payload);
 }
+function persistSharedSummaryCaches(user, summary) {
+  if (!user || !summary) return;
+  var snapshot = progressUtils && typeof progressUtils.summarySnapshot === 'function'
+    ? progressUtils.summarySnapshot(summary, progressUtils.DEFAULT_DAILY_GOAL || 20)
+    : {
+      streak: Math.max(0, Number(summary.current_streak || 0)),
+      due: Math.max(0, Number(summary.due_today || 0)),
+      done: Math.max(0, Number(summary.today_progress || 0)),
+      goal: Math.max(1, Number(summary.daily_goal || 20))
+    };
+  writeUiCacheJson('plan_summary:last', summary);
+  writeUiCacheJson('plan_summary:user:' + String(user.uid || 'anon'), summary);
+  writeUiCacheJson('dashboard_summary:last', snapshot);
+  writeUiCacheJson('dashboard_summary:user:' + String(user.uid || 'anon'), snapshot);
+}
+function buildLiveProgressSummary() {
+  var snapshot = readLocalProgressSnapshot();
+  var streakData = snapshot.streak_data || {};
+  var today = todayLocalDateString();
+  var dueTotal = 0;
+  Object.keys(snapshot.card_states || {}).forEach(function (packId) {
+    dueTotal += countDueCardsInState(snapshot.card_states[packId] || {});
+  });
+  return {
+    current_streak: Math.max(0, parseInt(streakData.current_streak, 10) || 0),
+    due_today: dueTotal,
+    today_progress: String(streakData.daily_progress_date || '') === today
+      ? Math.max(0, parseInt(streakData.daily_progress_count, 10) || 0)
+      : 0,
+    daily_goal: loadDailyGoal()
+  };
+}
+function broadcastProgressState(extraPayload) {
+  if (!auth.currentUser) return;
+  var summary = buildLiveProgressSummary();
+  progressSummaryCache = Object.assign({}, progressSummaryCache || {}, summary);
+  persistSharedSummaryCaches(auth.currentUser, progressSummaryCache);
+  if (progressUtils && typeof progressUtils.broadcastProgressEvent === 'function') {
+    progressUtils.broadcastProgressEvent(Object.assign({
+      source_id: progressSyncSourceId,
+      user_id: auth.currentUser.uid,
+      summary: progressSummaryCache,
+      topbar_due: summary.due_today
+    }, extraPayload || {}));
+  }
+}
+function applyExternalPackGoalUpdate(payload) {
+  var safePayload = payload && typeof payload === 'object' ? payload : {};
+  var packId = String(safePayload.pack_id || '').trim();
+  if (!packId) return;
+  var nextGoal = safePayload.daily_card_goal === null || safePayload.daily_card_goal === undefined
+    ? null
+    : clampGoalNumber(safePayload.daily_card_goal);
+  packs = (packs || []).map(function (pack) {
+    if (String(pack.study_pack_id || '') !== packId) return pack;
+    return Object.assign({}, pack, { daily_card_goal: nextGoal });
+  });
+  if (selectedPack && String(selectedPack.study_pack_id || '') === packId) {
+    selectedPack.daily_card_goal = nextGoal;
+    renderGoalPanel();
+  }
+}
+function handleExternalProgressEvent(payload) {
+  if (!auth.currentUser || !payload || payload.source_id === progressSyncSourceId) return;
+  if (payload.user_id && payload.user_id !== auth.currentUser.uid) return;
+  if (payload.summary && typeof payload.summary === 'object') {
+    progressHydrationDone = true;
+    progressSummaryCache = Object.assign({}, progressSummaryCache || {}, payload.summary);
+    if (typeof payload.summary.daily_goal === 'number') {
+      saveDailyGoal(payload.summary.daily_goal);
+    }
+    persistSharedSummaryCaches(auth.currentUser, progressSummaryCache);
+    renderGoalPanel();
+    if (Object.prototype.hasOwnProperty.call(payload, 'topbar_due')) {
+      setTopbarDueTextValue(payload.topbar_due);
+      persistTopbarDueToCache(auth.currentUser, payload.topbar_due);
+    } else if (Object.prototype.hasOwnProperty.call(payload.summary, 'due_today')) {
+      setTopbarDueTextValue(payload.summary.due_today);
+      persistTopbarDueToCache(auth.currentUser, payload.summary.due_today);
+    }
+  }
+  if (payload.pack_update) {
+    applyExternalPackGoalUpdate(payload.pack_update);
+  }
+}
+if (progressUtils && typeof progressUtils.subscribeProgressEvent === 'function') {
+  progressUtils.subscribeProgressEvent(handleExternalProgressEvent);
+}
 function getVisibleMenuItems(menu, selector) {
   if (uxUtils.getVisibleMenuItems) { return uxUtils.getVisibleMenuItems(menu, selector || 'button:not([disabled])'); }
   if (!menu) return [];
@@ -1109,26 +1252,29 @@ function updatePackEmptyState() {
   if (packEmptyDefault) { packEmptyDefault.classList.toggle('visible', hasPacks); }
   if (packEmptyOnboarding) { packEmptyOnboarding.classList.toggle('visible', !hasPacks); }
 }
-function setAdvancedMetadataPanelState(button, panel, open) {
+function setAdvancedMetadataPanelState(button, panel, open, shell) {
   if (!button || !panel) { return; }
   var isOpen = !!open;
-  panel.classList.toggle('visible', isOpen);
-  panel.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+  if (shell) {
+    shell.classList.toggle('visible', isOpen);
+    shell.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+  } else {
+    panel.classList.toggle('visible', isOpen);
+    panel.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+  }
   button.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
   button.textContent = isOpen ? 'Hide advanced metadata' : 'Show advanced metadata';
 }
 function applyPackAdvancedMetadataState(open) {
   packAdvancedMetadataOpen = !!open;
-  setAdvancedMetadataPanelState(packAdvancedMetaBtn, packAdvancedMetaPanel, packAdvancedMetadataOpen);
+  setAdvancedMetadataPanelState(packAdvancedMetaBtn, packAdvancedMetaPanel, packAdvancedMetadataOpen, packAdvancedMetaShell);
 }
 function applyBuilderAdvancedMetadataState(open) {
   builderAdvancedMetadataOpen = !!open;
   setAdvancedMetadataPanelState(builderAdvancedMetaBtn, builderAdvancedMetaPanel, builderAdvancedMetadataOpen);
 }
 function syncPackAdvancedMetadataState() {
-  if (!packSemester || !packBlock) { return; }
-  var hasValue = !!String(packSemester.value || '').trim() || !!String(packBlock.value || '').trim();
-  applyPackAdvancedMetadataState(packAdvancedMetadataOpen || hasValue);
+  applyPackAdvancedMetadataState(packAdvancedMetadataOpen);
 }
 function syncBuilderAdvancedMetadataState() {
   if (!builderSemesterInput || !builderBlockInput) { return; }
@@ -3153,7 +3299,7 @@ function openPack(packId) {
     packSubject.value = selectedPack.subject || '';
     packSemester.value = selectedPack.semester || '';
     packBlock.value = selectedPack.block || '';
-    packAdvancedMetadataOpen = !!String(selectedPack.semester || '').trim() || !!String(selectedPack.block || '').trim();
+    packAdvancedMetadataOpen = false;
     syncPackAdvancedMetadataState();
     renderGoalPanel();
     renderNotesForSelectedPackBase();
@@ -3682,38 +3828,39 @@ if (savePackBtn) {
   });
 }
 
-if (overallDailyGoalSave) {
-  overallDailyGoalSave.addEventListener('click', function () {
-    persistOverallDailyGoal(true);
-  });
-}
 if (overallDailyGoalDecrease) {
   overallDailyGoalDecrease.addEventListener('click', function () {
     nudgeGoalInput(overallDailyGoalInput, -1, loadDailyGoal());
+    scheduleOverallGoalAutosave(false, true);
   });
 }
 if (overallDailyGoalIncrease) {
   overallDailyGoalIncrease.addEventListener('click', function () {
     nudgeGoalInput(overallDailyGoalInput, 1, loadDailyGoal());
+    scheduleOverallGoalAutosave(false, true);
   });
 }
 if (overallDailyGoalInput) {
+  overallDailyGoalInput.addEventListener('input', function () {
+    scheduleOverallGoalAutosave(false, false);
+  });
+  overallDailyGoalInput.addEventListener('change', function () {
+    scheduleOverallGoalAutosave(true, true);
+  });
+  overallDailyGoalInput.addEventListener('blur', function () {
+    scheduleOverallGoalAutosave(true, true);
+  });
   overallDailyGoalInput.addEventListener('keydown', function (e) {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    persistOverallDailyGoal(true);
-  });
-}
-if (packDailyGoalSave) {
-  packDailyGoalSave.addEventListener('click', function () {
-    persistSelectedPackDailyGoal(true);
+    scheduleOverallGoalAutosave(true, true);
   });
 }
 if (packDailyGoalClear) {
   packDailyGoalClear.addEventListener('click', function () {
     if (!packDailyGoalInput || packDailyGoalInput.disabled) return;
     packDailyGoalInput.value = '';
-    persistSelectedPackDailyGoal(false);
+    schedulePackGoalAutosave(true, false);
   });
 }
 if (packDailyGoalDecrease) {
@@ -3722,6 +3869,7 @@ if (packDailyGoalDecrease) {
       ? selectedPack.daily_card_goal
       : loadDailyGoal();
     nudgeGoalInput(packDailyGoalInput, -1, fallback);
+    schedulePackGoalAutosave(false, true);
   });
 }
 if (packDailyGoalIncrease) {
@@ -3730,13 +3878,23 @@ if (packDailyGoalIncrease) {
       ? selectedPack.daily_card_goal
       : loadDailyGoal();
     nudgeGoalInput(packDailyGoalInput, 1, fallback);
+    schedulePackGoalAutosave(false, true);
   });
 }
 if (packDailyGoalInput) {
+  packDailyGoalInput.addEventListener('input', function () {
+    schedulePackGoalAutosave(false, false);
+  });
+  packDailyGoalInput.addEventListener('change', function () {
+    schedulePackGoalAutosave(true, true);
+  });
+  packDailyGoalInput.addEventListener('blur', function () {
+    schedulePackGoalAutosave(true, true);
+  });
   packDailyGoalInput.addEventListener('keydown', function (e) {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    persistSelectedPackDailyGoal(true);
+    schedulePackGoalAutosave(true, true);
   });
 }
 
@@ -4677,13 +4835,66 @@ function downloadAnnotatedNotesPdf() {
   }
   showToast('Annotated PDF export is currently unavailable on this device.', 'error');
 }
+function isNotesFullscreenActive() {
+  return document.fullscreenElement === notesPaneShell || document.webkitFullscreenElement === notesPaneShell;
+}
+function resetHighlightDownloadMenuPosition() {
+  if (!hlDownloadMenu) return;
+  hlDownloadMenu.classList.remove('is-upward', 'is-align-left', 'is-floating');
+  hlDownloadMenu.style.left = '';
+  hlDownloadMenu.style.top = '';
+}
 function setHighlightDownloadMenuOpen(open) {
   var menu = ensureHighlightDownloadMenu();
   if (!menu) return;
   var shouldOpen = !!open;
+  if (!shouldOpen) {
+    resetHighlightDownloadMenuPosition();
+  }
   menu.classList.toggle('visible', shouldOpen);
   if (hlDownloadBtn) {
     hlDownloadBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+  }
+  if (shouldOpen) {
+    window.requestAnimationFrame(positionHighlightDownloadMenu);
+  }
+}
+function positionHighlightDownloadMenu() {
+  if (!hlDownloadMenu || !hlDownloadMenu.classList.contains('visible')) return;
+  resetHighlightDownloadMenuPosition();
+  var viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+  var viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  if (isNotesFullscreenActive() && hlDownloadBtn) {
+    hlDownloadMenu.classList.add('is-floating');
+    var buttonRect = hlDownloadBtn.getBoundingClientRect();
+    var floatingWidth = hlDownloadMenu.offsetWidth || 280;
+    var floatingHeight = hlDownloadMenu.offsetHeight || 108;
+    var left = Math.min(
+      Math.max(16, buttonRect.right - floatingWidth),
+      Math.max(16, viewportWidth - floatingWidth - 16)
+    );
+    if (buttonRect.left + floatingWidth <= viewportWidth - 16) {
+      left = Math.max(16, Math.min(left, buttonRect.left));
+    }
+    var top = buttonRect.bottom + 8;
+    if (top + floatingHeight > viewportHeight - 16) {
+      top = Math.max(16, buttonRect.top - floatingHeight - 8);
+    }
+    hlDownloadMenu.style.left = Math.round(left) + 'px';
+    hlDownloadMenu.style.top = Math.round(top) + 'px';
+    return;
+  }
+  var rect = hlDownloadMenu.getBoundingClientRect();
+  if (rect.right > viewportWidth - 16) {
+    hlDownloadMenu.classList.add('is-align-left');
+    rect = hlDownloadMenu.getBoundingClientRect();
+  }
+  if (rect.bottom > viewportHeight - 16) {
+    hlDownloadMenu.classList.add('is-upward');
+    rect = hlDownloadMenu.getBoundingClientRect();
+  }
+  if (rect.top < 16) {
+    hlDownloadMenu.classList.remove('is-upward');
   }
 }
 function ensureHighlightDownloadMenu() {
@@ -4729,6 +4940,25 @@ if (hlDownloadBtn) {
     setHighlightDownloadMenuOpen(!menu.classList.contains('visible'));
   });
 }
+window.addEventListener('resize', function () {
+  if (hlDownloadMenu && hlDownloadMenu.classList.contains('visible')) {
+    positionHighlightDownloadMenu();
+  }
+});
+document.addEventListener('fullscreenchange', function () {
+  if (hlDownloadMenu && hlDownloadMenu.classList.contains('visible')) {
+    positionHighlightDownloadMenu();
+  } else {
+    resetHighlightDownloadMenuPosition();
+  }
+});
+document.addEventListener('webkitfullscreenchange', function () {
+  if (hlDownloadMenu && hlDownloadMenu.classList.contains('visible')) {
+    positionHighlightDownloadMenu();
+  } else {
+    resetHighlightDownloadMenuPosition();
+  }
+});
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'Escape' || !hlDownloadMenu || !hlDownloadMenu.classList.contains('visible')) return;
   setHighlightDownloadMenuOpen(false);

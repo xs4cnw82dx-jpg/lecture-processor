@@ -18,12 +18,17 @@
   {% include '_app_shell.html' %}
   <main class="app-shell-page batch-page" id="batch-page">
     <section class="shell-panel batch-hero">
-      <h1>Batch processing</h1>
-      <p id="batch-hero-description">Create one batch request with multiple lectures. Each row produces its own outputs, and the batch can be downloaded as one ZIP.</p>
-      <p class="batch-hero-note">
-        Batch jobs are asynchronous and can take up to 24 hours to finish.<br>
-        You will receive an email when your batch reaches a final status.
-      </p>
+      <div class="batch-hero-head">
+        <div>
+          <h1>Batch processing</h1>
+          <p id="batch-hero-description">Create one batch request with multiple lectures. Each row produces its own outputs, and the batch can be downloaded as one ZIP.</p>
+          <p class="batch-hero-note">
+            Batch jobs are asynchronous and can take up to 24 hours to finish.<br>
+            You will receive an email when your batch reaches a final status.
+          </p>
+        </div>
+        <a href="/batch_status" class="btn batch-status-link">Batch status</a>
+      </div>
       <div class="mode-links">
         <a href="/batch_mode" class="mode-link{% if forced_mode == 'lecture-notes' %} active{% endif %}">Lectures</a>
         <a href="/batch_mode_slides_extraction" class="mode-link{% if forced_mode == 'slides-only' %} active{% endif %}">Slides</a>

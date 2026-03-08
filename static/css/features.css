@@ -1,6 +1,6 @@
     :root {
       --primary:#4F46E5;--primary-dark:#4338CA;--primary-light:#818CF8;--secondary:#0EA5E9;
-      --success:#10B981;--warning:#F59E0B;--error:#EF4444;
+      --success:#D1FAE5;--success-ink:#166534;--success-strong:#15803D;--warning:#F59E0B;--error:#EF4444;
       --gray-50:#F9FAFB;--gray-100:#F3F4F6;--gray-200:#E5E7EB;--gray-300:#D1D5DB;
       --gray-400:#9CA3AF;--gray-500:#6B7280;--gray-600:#4B5563;--gray-700:#374151;
       --gray-800:#1F2937;--gray-900:#111827;--white:#FFFFFF;
@@ -89,7 +89,7 @@
     .fg-card-icon svg{width:24px;height:24px}
     .fg-card-icon.purple{background:rgba(79,70,229,.1);color:var(--primary)}
     .fg-card-icon.blue{background:rgba(14,165,233,.1);color:var(--secondary)}
-    .fg-card-icon.green{background:rgba(16,185,129,.1);color:var(--success)}
+    .fg-card-icon.green{background:rgba(209,250,229,.82);color:var(--success-ink)}
     .fg-card-icon.amber{background:rgba(245,158,11,.1);color:var(--warning)}
     .fg-card h3{font-size:1.05rem;font-weight:700;color:var(--gray-900);margin-bottom:6px}
     .fg-card p{font-size:.88rem;color:var(--gray-500);line-height:1.6}
@@ -104,13 +104,13 @@
     .mode-card-icon svg{width:28px;height:28px;color:var(--white)}
     .mode-card-icon.mc-purple{background:linear-gradient(135deg,var(--primary),var(--primary-dark))}
     .mode-card-icon.mc-blue{background:linear-gradient(135deg,#38BDF8,#0EA5E9)}
-    .mode-card-icon.mc-green{background:linear-gradient(135deg,#34D399,#10B981)}
+    .mode-card-icon.mc-green{background:linear-gradient(135deg,#BBF7D0,#86EFAC)}
     .mode-card-icon.mc-amber{background:linear-gradient(135deg,#FBBF24,#F59E0B)}
     .mode-card h3{font-size:.95rem;font-weight:700;color:var(--gray-900);margin-bottom:4px}
     .mode-card p{font-size:.82rem;color:var(--gray-500);line-height:1.5}
     .mode-card-tag{display:inline-block;margin-top:10px;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:3px 10px;border-radius:20px}
     .mode-card-tag.tag-new{background:rgba(79,70,229,.1);color:var(--primary)}
-    .mode-card-tag.tag-popular{background:rgba(16,185,129,.1);color:var(--success)}
+    .mode-card-tag.tag-popular{background:rgba(209,250,229,.82);color:var(--success-ink)}
 
     /* -- Time calculator -- */
     .calc-wrap{max-width:680px;margin:0 auto;text-align:center}
@@ -140,8 +140,8 @@
     .comparison-table tbody td{color:var(--gray-700)}
     .comparison-table .col-task{font-weight:600;color:var(--gray-900)}
     .comparison-table .col-manual{color:var(--error);font-weight:600}
-    .comparison-table .col-lp{color:var(--success);font-weight:700}
-    .comparison-table .col-lp svg{width:16px;height:16px;vertical-align:middle;margin-right:4px;color:var(--success)}
+    .comparison-table .col-lp{color:var(--success-strong);font-weight:700}
+    .comparison-table .col-lp svg{width:16px;height:16px;vertical-align:middle;margin-right:4px;color:var(--success-strong)}
 
     /* -- CTA -- */
     .cta-section{text-align:center;padding:80px 24px 100px}

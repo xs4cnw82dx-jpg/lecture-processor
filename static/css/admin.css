@@ -1,7 +1,9 @@
         :root {
             --primary: #4F46E5;
             --secondary: #0EA5E9;
-            --success: #10B981;
+            --success: #D1FAE5;
+            --success-border: #A7F3D0;
+            --success-ink: #166534;
             --danger: #EF4444;
             --bg: #F8FAFC;
             --card: #FFFFFF;
@@ -516,7 +518,7 @@
             line-height: 1.35;
         }
         .status { font-weight: 700; font-size: 0.78rem; padding: 3px 8px; border-radius: 999px; display: inline-block; }
-        .status.complete { color: #065F46; background: #D1FAE5; }
+        .status.complete { color: var(--success-ink); background: var(--success); border: 1px solid var(--success-border); }
         .status.error { color: #991B1B; background: #FEE2E2; }
         .status.other { color: #1E40AF; background: #DBEAFE; }
         .status.queued, .status.processing { color: #1d4ed8; background: #dbeafe; }

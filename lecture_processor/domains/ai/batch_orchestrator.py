@@ -322,8 +322,8 @@ def _next_action(batch_id, batch, can_download_zip=False):
             'href': _batch_page_path(mode_name),
         }
     return {
-        'label': 'Open Batch Dashboard',
-        'href': '/batch_dashboard',
+        'label': 'Open batch status',
+        'href': '/batch_status',
     }
 
 

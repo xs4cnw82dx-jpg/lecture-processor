@@ -14,7 +14,9 @@
       --gray-800:#1F2937;
       --gray-900:#111827;
       --white:#fff;
-      --success:#10B981;
+      --success:#D1FAE5;
+      --success-border:#A7F3D0;
+      --success-ink:#166534;
       --warning:#F59E0B;
       --danger:#EF4444;
       --shadow-sm:0 1px 2px 0 rgb(0 0 0 / .05);

@@ -6,7 +6,8 @@
   --text: #0f172a;
   --muted: #64748b;
   --border: #dbe3ee;
-  --success: #10b981;
+  --success: #d1fae5;
+  --success-ink: #166534;
   --danger: #ef4444;
 }
 
@@ -357,7 +358,7 @@ textarea {
 }
 
 .status.success {
-  color: var(--success);
+  color: var(--success-ink);
 }
 
 .billing {

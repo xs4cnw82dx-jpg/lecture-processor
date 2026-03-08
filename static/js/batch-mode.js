@@ -9,6 +9,8 @@
   var body = document.body;
   var forcedMode = String((body && body.dataset && body.dataset.forcedMode) || 'lecture-notes').trim();
   var mode = ['lecture-notes', 'slides-only', 'interview'].indexOf(forcedMode) >= 0 ? forcedMode : 'lecture-notes';
+  var batchPage = document.getElementById('batch-page');
+  var modeLinks = Array.prototype.slice.call(document.querySelectorAll('.mode-link[href]'));
 
   var MODE_META = {
     'lecture-notes': {
@@ -283,7 +285,7 @@
       'Batch accepted at <strong>' + escapeHtml(submittedAt) + '</strong> (' + escapeHtml(status) + '). ' +
       'You can continue using the app while it runs. ' +
       'Study Library folder: <strong>' + escapeHtml(title) + '</strong>. ' +
-      '<a href="/batch_dashboard">Open Batch Dashboard</a>.';
+      '<a href="/batch_status">Open batch status</a>.';
     submitFeedback.style.display = '';
   }
 
@@ -1435,8 +1437,6 @@
     if (queryBatchId) {
       currentBatchId = queryBatchId;
       cacheCurrentBatchId(queryBatchId);
-    } else {
-      currentBatchId = readCachedBatchId();
     }
     if (!currentBatchId) return;
     setBatchIdInUrl(currentBatchId);
@@ -1535,6 +1535,27 @@
       });
     }
 
+    modeLinks.forEach(function (link) {
+      link.addEventListener('click', function (event) {
+        if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        if (event.button !== 0) return;
+        var href = String(link.getAttribute('href') || '').trim();
+        if (!href || href === window.location.pathname) return;
+        event.preventDefault();
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          window.location.href = href;
+          return;
+        }
+        if (batchPage) {
+          batchPage.classList.remove('is-ready');
+          batchPage.classList.add('is-leaving');
+        }
+        window.setTimeout(function () {
+          window.location.href = href;
+        }, 170);
+      });
+    });
+
     document.addEventListener('visibilitychange', function () {
       if (!currentBatchId) return;
       scheduleNextPoll();
@@ -1551,6 +1572,11 @@
     ensureMinimumRows();
     wireEvents();
     restoreBatchIdFromQuery();
+    if (batchPage) {
+      window.requestAnimationFrame(function () {
+        batchPage.classList.add('is-ready');
+      });
+    }
 
     if (auth) {
       auth.onAuthStateChanged(function (user) {
@@ -1558,13 +1584,6 @@
           currentBatchId = queryBatchId;
           startPollingForBatch();
           return;
-        }
-        if (user && !queryBatchId) {
-          var cachedBatchId = readCachedBatchId();
-          if (cachedBatchId) {
-            currentBatchId = cachedBatchId;
-            startPollingForBatch();
-          }
         }
         if (!user) {
           currentBatchId = '';
