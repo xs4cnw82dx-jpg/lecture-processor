@@ -22,6 +22,7 @@
   var foldersEmptyEl = document.getElementById('folders-empty');
   var packGoalsBodyEl = document.getElementById('pack-goals-body');
   var packGoalsCardsEl = document.getElementById('pack-goals-cards');
+  var packGoalsSummaryEl = document.getElementById('pack-goals-summary');
   var packGoalsEmptyEl = document.getElementById('pack-goals-empty');
   var toastEl = document.getElementById('toast');
 
@@ -355,6 +356,86 @@
     }
     chip.textContent = recommendation.days_remaining + ' day' + (recommendation.days_remaining === 1 ? '' : 's') + ' left';
     return chip;
+  }
+
+  function getRecommendationPriority(recommendation) {
+    var tone = String(recommendation && recommendation.tone || 'neutral');
+    if (tone === 'danger') return 5;
+    if (tone === 'today') return 4;
+    if (tone === 'urgent') return 3;
+    if (tone === 'warn') return 2;
+    if (tone === 'success') return 1;
+    return 0;
+  }
+
+  function getPackGoalTone(recommendation) {
+    var tone = String(recommendation && recommendation.tone || 'neutral');
+    return tone === 'success' || tone === 'warn' || tone === 'urgent' || tone === 'today' || tone === 'danger'
+      ? tone
+      : 'neutral';
+  }
+
+  function formatSavedGoalValue(value) {
+    var parsed = parseOptionalGoalValue(value);
+    return parsed === null ? 'Optional' : formatGoalTarget(parsed, 'Optional');
+  }
+
+  function createPackGoalsSummaryCard(label, value, note, tone) {
+    var card = document.createElement('article');
+    card.className = 'pack-goals-summary-card' + (tone ? ' ' + tone : '');
+
+    var labelEl = document.createElement('div');
+    labelEl.className = 'pack-goals-summary-card-label';
+    labelEl.textContent = label;
+
+    var valueEl = document.createElement('div');
+    valueEl.className = 'pack-goals-summary-card-value';
+    valueEl.textContent = value;
+
+    var noteEl = document.createElement('div');
+    noteEl.className = 'pack-goals-summary-card-note';
+    noteEl.textContent = note;
+
+    card.appendChild(labelEl);
+    card.appendChild(valueEl);
+    card.appendChild(noteEl);
+    return card;
+  }
+
+  function renderPackGoalsSummary(entries) {
+    if (!packGoalsSummaryEl) return;
+    clearNode(packGoalsSummaryEl);
+
+    if (!entries.length) {
+      packGoalsSummaryEl.style.display = 'none';
+      return;
+    }
+
+    packGoalsSummaryEl.style.display = 'grid';
+    var totalDue = 0;
+    var totalUnmastered = 0;
+    var savedGoals = 0;
+    var attentionPacks = 0;
+
+    entries.forEach(function (entry) {
+      totalDue += Math.max(0, Number(entry.stats && entry.stats.due || 0));
+      totalUnmastered += Math.max(0, Number(entry.stats && entry.stats.unmastered || 0));
+      if (parseGoalValue(entry.pack && entry.pack.daily_card_goal) !== null) {
+        savedGoals += 1;
+      }
+      if (getRecommendationPriority(entry.recommendation) >= 2) {
+        attentionPacks += 1;
+      }
+    });
+
+    [
+      ['Study packs', String(entries.length), 'Active packs available in this planner.', 'primary'],
+      ['Saved goals', String(savedGoals), savedGoals ? 'Pack-specific targets are already set.' : 'No pack-specific targets saved yet.', 'mint'],
+      ['Due today', formatCount(totalDue, 'card'), formatCount(totalUnmastered, 'card') + ' still unmastered across these packs.', 'sky'],
+      ['Needs attention', formatCount(attentionPacks, 'pack'), attentionPacks ? 'Urgent or exam-near packs float to the top.' : 'Nothing urgent right now.', 'amber']
+    ].forEach(function (item) {
+      packGoalsSummaryEl.appendChild(createPackGoalsSummaryCard(item[0], item[1], item[2], item[3]));
+    });
   }
 
   function createWorkloadNode(stats) {
@@ -727,6 +808,7 @@
   function createPackGoalControls(pack) {
     var wrap = document.createElement('div');
     wrap.className = 'pack-goal-row';
+    var safePackId = String(pack && pack.study_pack_id || '');
 
     var input = document.createElement('input');
     input.type = 'number';
@@ -734,9 +816,13 @@
     input.min = '1';
     input.max = '500';
     input.placeholder = 'Optional';
-    input.dataset.packGoalInput = String(pack.study_pack_id || '');
+    input.dataset.packGoalInput = safePackId;
     input.setAttribute('aria-label', 'Pack Goal for ' + String(pack.title || 'Untitled pack'));
+    input.disabled = packGoalSaveInFlight.has(safePackId);
     syncPackGoalInputState(input, pack.daily_card_goal);
+    if (packGoalDraftValues.has(safePackId)) {
+      input.value = String(packGoalDraftValues.get(safePackId) || '');
+    }
     wrap.appendChild(input);
 
     return wrap;
@@ -772,105 +858,197 @@
 
     if (!currentPacks.length) {
       packGoalDraftValues.clear();
+      renderPackGoalsSummary([]);
       if (packGoalsEmptyEl) packGoalsEmptyEl.style.display = 'block';
       return;
     }
     if (packGoalsEmptyEl) packGoalsEmptyEl.style.display = 'none';
 
-    currentPacks.forEach(function (pack) {
+    var packEntries = currentPacks.map(function (pack) {
       var folder = currentFolders.find(function (item) {
         return String(item.folder_id || '') === String(pack.folder_id || '');
       }) || null;
       var folderName = folder ? String(folder.name || 'No folder') : (pack.folder_name ? String(pack.folder_name) : 'No folder');
       var stats = getPackStats(pack);
       var recommendation = buildRecommendation(stats.unmastered, folder && folder.exam_date ? folder.exam_date : '');
+      return {
+        pack: pack,
+        folderName: folderName,
+        stats: stats,
+        recommendation: recommendation
+      };
+    }).sort(function (left, right) {
+      var priorityDelta = getRecommendationPriority(right.recommendation) - getRecommendationPriority(left.recommendation);
+      if (priorityDelta) return priorityDelta;
+      var rightSaved = parseGoalValue(right.pack && right.pack.daily_card_goal) === null ? 0 : 1;
+      var leftSaved = parseGoalValue(left.pack && left.pack.daily_card_goal) === null ? 0 : 1;
+      if (rightSaved !== leftSaved) return rightSaved - leftSaved;
+      if (Number(right.stats && right.stats.due || 0) !== Number(left.stats && left.stats.due || 0)) {
+        return Number(right.stats && right.stats.due || 0) - Number(left.stats && left.stats.due || 0);
+      }
+      if (Number(right.stats && right.stats.unmastered || 0) !== Number(left.stats && left.stats.unmastered || 0)) {
+        return Number(right.stats && right.stats.unmastered || 0) - Number(left.stats && left.stats.unmastered || 0);
+      }
+      return String(left.pack && left.pack.title || '').localeCompare(String(right.pack && right.pack.title || ''));
+    });
 
-      var tr = document.createElement('tr');
-      var nameTd = document.createElement('td');
-      var nameStrong = document.createElement('strong');
-      nameStrong.textContent = String(pack.title || 'Untitled pack');
-      nameTd.appendChild(nameStrong);
-      var nameMeta = document.createElement('div');
-      nameMeta.className = 'folder-meta';
-      nameMeta.textContent = String(pack.mode || '');
-      nameTd.appendChild(nameMeta);
+    renderPackGoalsSummary(packEntries);
 
-      var folderTd = document.createElement('td');
-      folderTd.textContent = folderName;
+    packEntries.forEach(function (entry) {
+      var pack = entry.pack;
+      var folderName = entry.folderName;
+      var stats = entry.stats;
+      var recommendation = entry.recommendation;
+      var tone = getPackGoalTone(recommendation);
+      var savedGoalValue = formatSavedGoalValue(pack.daily_card_goal);
 
-      var dueTd = document.createElement('td');
-      dueTd.textContent = formatCount(stats.due, 'card');
+      if (packGoalsBodyEl) {
+        var tr = document.createElement('tr');
+        var nameTd = document.createElement('td');
+        var nameStrong = document.createElement('strong');
+        nameStrong.textContent = String(pack.title || 'Untitled pack');
+        nameTd.appendChild(nameStrong);
+        var nameMeta = document.createElement('div');
+        nameMeta.className = 'folder-meta';
+        nameMeta.textContent = String(pack.mode || '');
+        nameTd.appendChild(nameMeta);
 
-      var unmasteredTd = document.createElement('td');
-      unmasteredTd.textContent = formatCount(stats.unmastered, 'card');
+        var folderTd = document.createElement('td');
+        folderTd.textContent = folderName;
 
-      var goalTd = document.createElement('td');
-      goalTd.appendChild(createPackGoalControls(pack));
-      var goalNote = document.createElement('div');
-      goalNote.className = 'pack-goal-note';
-      goalNote.setAttribute('data-pack-goal-note', String(pack.study_pack_id || ''));
-      goalNote.textContent = buildPackGoalNoteText(pack.daily_card_goal);
-      goalTd.appendChild(goalNote);
+        var dueTd = document.createElement('td');
+        dueTd.textContent = formatCount(stats.due, 'card');
 
-      var recommendationTd = document.createElement('td');
-      var recommendationNode = document.createElement('div');
-      recommendationNode.className = 'pack-recommendation';
-      recommendationNode.textContent = recommendation.text;
-      recommendationTd.appendChild(recommendationNode);
+        var unmasteredTd = document.createElement('td');
+        unmasteredTd.textContent = formatCount(stats.unmastered, 'card');
 
-      tr.appendChild(nameTd);
-      tr.appendChild(folderTd);
-      tr.appendChild(dueTd);
-      tr.appendChild(unmasteredTd);
-      tr.appendChild(goalTd);
-      tr.appendChild(recommendationTd);
-      packGoalsBodyEl.appendChild(tr);
+        var goalTd = document.createElement('td');
+        goalTd.appendChild(createPackGoalControls(pack));
+        var goalNote = document.createElement('div');
+        goalNote.className = 'pack-goal-note';
+        goalNote.setAttribute('data-pack-goal-note', String(pack.study_pack_id || ''));
+        goalNote.textContent = buildPackGoalNoteText(pack.daily_card_goal);
+        goalTd.appendChild(goalNote);
+
+        var recommendationTd = document.createElement('td');
+        var recommendationNode = document.createElement('div');
+        recommendationNode.className = 'pack-recommendation';
+        recommendationNode.textContent = recommendation.text;
+        recommendationTd.appendChild(recommendationNode);
+
+        tr.appendChild(nameTd);
+        tr.appendChild(folderTd);
+        tr.appendChild(dueTd);
+        tr.appendChild(unmasteredTd);
+        tr.appendChild(goalTd);
+        tr.appendChild(recommendationTd);
+        packGoalsBodyEl.appendChild(tr);
+      }
 
       var card = document.createElement('article');
-      card.className = 'pack-goal-card';
+      card.className = 'pack-goal-card tone-' + tone;
+
       var cardHead = document.createElement('div');
       cardHead.className = 'pack-goal-card-head';
-      var headText = document.createElement('div');
+
+      var titleWrap = document.createElement('div');
+      titleWrap.className = 'pack-goal-card-title-wrap';
+
+      var kicker = document.createElement('div');
+      kicker.className = 'pack-goal-card-kicker';
+
+      var modeChip = document.createElement('span');
+      modeChip.className = 'pack-goal-mode-chip';
+      modeChip.textContent = String(pack.mode || 'study pack').replace(/-/g, ' ');
+      kicker.appendChild(modeChip);
+
+      var folderChip = document.createElement('span');
+      folderChip.className = 'pack-goal-card-folder';
+      folderChip.textContent = folderName;
+      kicker.appendChild(folderChip);
+
       var cardTitle = document.createElement('div');
       cardTitle.className = 'pack-goal-card-title';
       cardTitle.textContent = String(pack.title || 'Untitled pack');
-      var cardFolder = document.createElement('div');
-      cardFolder.className = 'pack-goal-card-folder';
-      cardFolder.textContent = folderName;
-      headText.appendChild(cardTitle);
-      headText.appendChild(cardFolder);
-      cardHead.appendChild(headText);
+
+      titleWrap.appendChild(kicker);
+      titleWrap.appendChild(cardTitle);
+
+      cardHead.appendChild(titleWrap);
       cardHead.appendChild(createCountdownChip(recommendation));
       card.appendChild(cardHead);
 
       var statsGrid = document.createElement('div');
       statsGrid.className = 'pack-goal-card-stats';
-      [['Due today', stats.due], ['Unmastered', stats.unmastered]].forEach(function (entry) {
+      [
+        ['Due today', formatCount(stats.due, 'card')],
+        ['Unmastered', formatCount(stats.unmastered, 'card')],
+        ['Saved goal', savedGoalValue]
+      ].forEach(function (item) {
         var stat = document.createElement('div');
         stat.className = 'pack-goal-stat';
+
         var label = document.createElement('span');
         label.className = 'pack-goal-stat-label';
-        label.textContent = entry[0];
+        label.textContent = item[0];
+
         var value = document.createElement('div');
         value.className = 'pack-goal-stat-value';
-        value.textContent = formatCount(entry[1], 'card');
+        value.textContent = item[1];
+
         stat.appendChild(label);
         stat.appendChild(value);
         statsGrid.appendChild(stat);
       });
       card.appendChild(statsGrid);
 
-      var packGoalControls = createPackGoalControls(pack);
-      card.appendChild(packGoalControls);
-      var packGoalNote = document.createElement('div');
-      packGoalNote.className = 'pack-goal-note';
-      packGoalNote.setAttribute('data-pack-goal-note', String(pack.study_pack_id || ''));
-      packGoalNote.textContent = buildPackGoalNoteText(pack.daily_card_goal);
-      card.appendChild(packGoalNote);
-      var cardRecommendation = document.createElement('div');
-      cardRecommendation.className = 'pack-recommendation';
-      cardRecommendation.textContent = recommendation.text;
-      card.appendChild(cardRecommendation);
+      var editor = document.createElement('div');
+      editor.className = 'pack-goal-editor';
+
+      var editorHead = document.createElement('div');
+      editorHead.className = 'pack-goal-editor-head';
+
+      var editorLabel = document.createElement('span');
+      editorLabel.className = 'pack-goal-card-label';
+      editorLabel.textContent = 'Daily pack target';
+      editorHead.appendChild(editorLabel);
+
+      var statusChip = document.createElement('span');
+      statusChip.className = 'pack-goal-status-chip';
+      statusChip.textContent = savedGoalValue;
+      editorHead.appendChild(statusChip);
+
+      editor.appendChild(editorHead);
+      editor.appendChild(createPackGoalControls(pack));
+
+      var editorNote = document.createElement('div');
+      editorNote.className = 'pack-goal-note';
+      editorNote.setAttribute('data-pack-goal-note', String(pack.study_pack_id || ''));
+      editorNote.textContent = buildPackGoalNoteText(pack.daily_card_goal);
+      editor.appendChild(editorNote);
+      card.appendChild(editor);
+
+      var callout = document.createElement('div');
+      callout.className = 'pack-goal-callout tone-' + tone;
+
+      var calloutLabel = document.createElement('span');
+      calloutLabel.className = 'pack-goal-card-label';
+      calloutLabel.textContent = 'Recommendation';
+      callout.appendChild(calloutLabel);
+
+      var calloutText = document.createElement('div');
+      calloutText.className = 'pack-recommendation';
+      calloutText.textContent = recommendation.text;
+      callout.appendChild(calloutText);
+
+      if (recommendation && recommendation.daily_target) {
+        var targetChip = document.createElement('span');
+        targetChip.className = 'pack-goal-target-chip';
+        targetChip.textContent = recommendation.daily_target + '/day target';
+        callout.appendChild(targetChip);
+      }
+
+      card.appendChild(callout);
       packGoalsCardsEl.appendChild(card);
     });
 
@@ -909,6 +1087,7 @@
     clearNode(foldersCardsEl);
     clearNode(packGoalsBodyEl);
     clearNode(packGoalsCardsEl);
+    renderPackGoalsSummary([]);
     if (foldersEmptyEl) {
       foldersEmptyEl.style.display = 'block';
       foldersEmptyEl.innerHTML = '<strong>Could not load folders</strong><span>' + message + '</span>';
@@ -957,7 +1136,7 @@
     }
     if (payload.pack_update && payload.pack_update.pack_id) {
       currentPacks = updatePackCollectionGoal(currentPacks, payload.pack_update.pack_id, payload.pack_update.daily_card_goal);
-      syncPackGoalControls(payload.pack_update.pack_id, payload.pack_update.daily_card_goal);
+      renderPackGoals();
     }
   }
 
@@ -1113,7 +1292,7 @@
       return response.json().catch(function () { return {}; }).then(function (body) {
         if (!response.ok) throw new Error(body.error || 'Could not save pack goal');
         currentPacks = updatePackCollectionGoal(currentPacks, safePackId, parsedGoal);
-        syncPackGoalControls(safePackId, parsedGoal);
+        renderPackGoals();
         broadcastPlannerProgress(progressSummaryCache || {}, {
           type: 'pack-goal',
           pack_update: {
