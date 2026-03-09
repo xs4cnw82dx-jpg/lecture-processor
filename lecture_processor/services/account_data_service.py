@@ -308,6 +308,7 @@ def delete_account_data(app_ctx, request):
             deleted_packs = 0
             deleted_audio = 0
             deleted_progress = 0
+            deleted_sources = 0
             while True:
                 docs = account_lifecycle.query_docs_by_field(
                     'study_packs',
@@ -332,6 +333,13 @@ def delete_account_data(app_ctx, request):
                     except Exception:
                         pass
                     try:
+                        source_ref = app_ctx.study_repo.study_pack_source_doc_ref(app_ctx.db, pack_id)
+                        if getattr(source_ref.get(), 'exists', False):
+                            source_ref.delete()
+                            deleted_sources += 1
+                    except Exception as error:
+                        warnings_list.append(f"Could not delete study pack source {pack_id}: {error}")
+                    try:
                         doc.reference.delete()
                         deleted_packs += 1
                     except Exception as error:
@@ -341,6 +349,7 @@ def delete_account_data(app_ctx, request):
             deleted['study_packs'] = deleted_packs
             deleted['study_pack_audio_files'] = deleted_audio
             deleted['study_pack_progress_states'] = deleted_progress
+            deleted['study_pack_sources'] = deleted_sources
 
         def _delete_runtime_job_docs():
             deleted_count = 0
@@ -405,6 +414,9 @@ def delete_account_data(app_ctx, request):
         _delete_uid_collection('planner_sessions')
         _delete_uid_collection('planner_settings')
         _delete_study_packs()
+        deleted_sources_from_packs = int(deleted.get('study_pack_sources', 0) or 0)
+        _delete_uid_collection('study_pack_sources')
+        deleted['study_pack_sources'] = deleted_sources_from_packs + int(deleted.get('study_pack_sources', 0) or 0)
         _delete_runtime_job_docs()
         _delete_batch_jobs()
 
@@ -427,6 +439,7 @@ def delete_account_data(app_ctx, request):
             ('study_folders', 'uid', uid, 'study_folders'),
             ('study_card_states', 'uid', uid, 'study_card_states'),
             ('study_packs', 'uid', uid, 'study_packs'),
+            ('study_pack_sources', 'uid', uid, 'study_pack_sources'),
             ('planner_sessions', 'uid', uid, 'planner_sessions'),
             ('planner_settings', 'uid', uid, 'planner_settings'),
             ('purchases', 'uid', uid, 'purchases'),

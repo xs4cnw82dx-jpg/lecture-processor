@@ -78,6 +78,12 @@ def get_status(job_id):
     return upload_api_service.get_status(runtime, request, job_id)
 
 
+@upload_bp.route('/api/runtime-jobs/active', methods=['GET'])
+def get_active_runtime_jobs():
+    runtime = get_runtime()
+    return upload_api_service.get_active_runtime_jobs(runtime, request)
+
+
 @upload_bp.route('/download-docx/<job_id>')
 def download_docx(job_id):
     runtime = get_runtime()

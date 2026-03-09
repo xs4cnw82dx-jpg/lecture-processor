@@ -75,3 +75,28 @@ test('mergeStudyPackPage appends only unseen study packs', () => {
     { study_pack_id: 'pack-3', title: 'Three' },
   ]);
 });
+
+test('buildStudyPackExportItems shows source exports only when source outputs exist', () => {
+  const lectureItems = studyLibraryUtils.buildStudyPackExportItems({
+    mode: 'lecture-notes',
+    has_source_slides: true,
+    has_source_transcript: false,
+  });
+
+  const slideMd = lectureItems.find((item) => item.kind === 'source-slides-md');
+  const transcriptDocx = lectureItems.find((item) => item.kind === 'source-transcript-docx');
+
+  assert.equal(slideMd.visible, true);
+  assert.equal(slideMd.label, 'Slide Extract (.md)');
+  assert.equal(transcriptDocx.visible, false);
+
+  const interviewItems = studyLibraryUtils.buildStudyPackExportItems({
+    mode: 'interview',
+    has_source_slides: false,
+    has_source_transcript: true,
+  });
+
+  const interviewTranscriptMd = interviewItems.find((item) => item.kind === 'source-transcript-md');
+  assert.equal(interviewTranscriptMd.visible, true);
+  assert.equal(interviewTranscriptMd.label, 'Interview Transcript (.md)');
+});

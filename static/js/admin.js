@@ -202,6 +202,33 @@ function setState(message, type = 'loading') {
     dashboard.style.display = 'none';
 }
 
+async function parseAdminErrorResponse(res, fallbackMessage) {
+    const payload = await res.json().catch(() => ({}));
+    const backendMessage = String(payload.error || payload.message || '').trim();
+    if (res.status === 401) {
+        return {
+            type: 'blocked',
+            message: backendMessage || 'Your admin session expired. Please sign in again.',
+        };
+    }
+    if (res.status === 403) {
+        return {
+            type: 'blocked',
+            message: backendMessage || 'Your account is signed in but is not configured as an admin on the server.',
+        };
+    }
+    if (res.status >= 500) {
+        return {
+            type: 'error',
+            message: backendMessage || fallbackMessage || 'The server could not load admin data right now.',
+        };
+    }
+    return {
+        type: 'error',
+        message: backendMessage || fallbackMessage || 'Request failed.',
+    };
+}
+
 function clearChildren(node) {
     while (node.firstChild) node.removeChild(node.firstChild);
 }
@@ -662,13 +689,9 @@ async function loadAdminOverview(user) {
     setState('Loading admin dashboard...', 'loading');
     try {
         const res = await authFetch(`/api/admin/overview?window=${encodeURIComponent(currentWindow)}`);
-
-        if (res.status === 403) {
-            setState('Your account is signed in but not configured as admin. Set ADMIN_EMAILS or ADMIN_UIDS on the server.', 'blocked');
-            return;
-        }
         if (!res.ok) {
-            setState('Could not load dashboard data. Please refresh.', 'error');
+            const parsed = await parseAdminErrorResponse(res, 'Could not load dashboard data.');
+            setState(parsed.message, parsed.type);
             return;
         }
 
@@ -688,7 +711,8 @@ async function exportCsv(type) {
     try {
         const res = await authFetch(`/api/admin/export?type=${encodeURIComponent(type)}&window=${encodeURIComponent(currentWindow)}`);
         if (!res.ok) {
-            setState('Could not export CSV right now.', 'error');
+            const parsed = await parseAdminErrorResponse(res, 'Could not export CSV right now.');
+            setState(parsed.message, parsed.type);
             return;
         }
         if (downloadUtils.downloadResponseBlob) {

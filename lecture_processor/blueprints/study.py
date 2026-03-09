@@ -126,6 +126,12 @@ def export_study_pack_notes(pack_id):
     return study_api_service.export_study_pack_notes(runtime, request, pack_id)
 
 
+@study_bp.route('/api/study-packs/<pack_id>/export-source', methods=['GET'])
+def export_study_pack_source(pack_id):
+    runtime = get_runtime()
+    return study_api_service.export_study_pack_source(runtime, request, pack_id)
+
+
 @study_bp.route('/api/study-packs/<pack_id>/export-pdf', methods=['GET'])
 def export_study_pack_pdf(pack_id):
     runtime = get_runtime()

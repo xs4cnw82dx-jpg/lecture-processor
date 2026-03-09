@@ -228,6 +228,94 @@
       gap: 10px
     }
 
+    .processing-now-panel {
+      border: 1px solid rgba(79, 70, 229, .16);
+      border-radius: var(--radius-lg);
+      background: linear-gradient(135deg, rgba(79, 70, 229, .05), rgba(14, 165, 233, .06));
+      padding: 18px 20px;
+      display: grid;
+      gap: 14px
+    }
+
+    .processing-now-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px
+    }
+
+    .processing-now-eyebrow {
+      font-size: .72rem;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--primary)
+    }
+
+    .processing-now-head h2 {
+      margin: 4px 0 6px;
+      font-size: 1.05rem;
+      color: var(--gray-900)
+    }
+
+    .processing-now-head p {
+      margin: 0;
+      color: var(--gray-600);
+      font-size: .9rem;
+      line-height: 1.5
+    }
+
+    .processing-now-list {
+      display: grid;
+      gap: 10px
+    }
+
+    .processing-now-item {
+      display: grid;
+      gap: 8px;
+      padding: 14px 16px;
+      border: 1px solid rgba(255, 255, 255, .7);
+      border-radius: var(--radius-md);
+      background: rgba(255, 255, 255, .82)
+    }
+
+    .processing-now-item-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px
+    }
+
+    .processing-now-item-title {
+      font-size: .95rem;
+      font-weight: 700;
+      color: var(--gray-900)
+    }
+
+    .processing-now-item-mode {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 9px;
+      border-radius: 999px;
+      border: 1px solid rgba(79, 70, 229, .16);
+      background: rgba(79, 70, 229, .08);
+      color: var(--primary);
+      font-size: .74rem;
+      font-weight: 700
+    }
+
+    .processing-now-item-copy {
+      color: var(--gray-600);
+      font-size: .86rem;
+      line-height: 1.45
+    }
+
+    .processing-now-item-meta {
+      color: var(--gray-500);
+      font-size: .78rem
+    }
+
     .study-pill {
       display: inline-flex;
       align-items: center;
@@ -1106,7 +1194,15 @@
     }
 
     .editor-actions {
-      margin-bottom: 14px
+      margin-bottom: 14px;
+      position: relative;
+      z-index: 1
+    }
+
+    .editor-actions>.export-menu {
+      display: flex;
+      align-items: center;
+      align-self: flex-start
     }
 
     .editor-wrap {
@@ -2725,7 +2821,7 @@
 
     .export-menu {
       position: relative;
-      z-index: 150
+      z-index: 40
     }
 
     .export-menu-list {
@@ -2738,7 +2834,7 @@
       border: 1px solid var(--gray-200);
       border-radius: var(--radius-md);
       box-shadow: var(--shadow-lg);
-      z-index: 120;
+      z-index: 50;
       overflow: visible
     }
 

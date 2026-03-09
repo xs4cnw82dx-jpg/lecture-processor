@@ -15,6 +15,14 @@ def get_study_pack_doc(db, pack_id):
     return study_pack_doc_ref(db, pack_id).get()
 
 
+def study_pack_source_doc_ref(db, pack_id):
+    return db.collection('study_pack_sources').document(pack_id)
+
+
+def get_study_pack_source_doc(db, pack_id):
+    return study_pack_source_doc_ref(db, pack_id).get()
+
+
 def list_study_pack_summaries_by_uid(db, uid, limit, after_doc=None):
     query = apply_where(db.collection('study_packs'), 'uid', '==', uid).order_by('created_at', direction='DESCENDING').limit(limit)
     if after_doc is not None:

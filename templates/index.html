@@ -198,7 +198,7 @@
                     <div class="button-section" id="button-section"><button class="process-button" id="process-button" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg><span>Process Lecture</span></button><div class="no-credits-warning" id="no-credits-warning">You don't have enough credits. <a href="#" id="buy-credits-link">Buy more credits</a></div></div>
                 </div>
             </div>
-            <div class="progress-section" id="progress-section"><div class="progress-header"><h3 class="progress-title">Processing Your Files</h3><p class="progress-subtitle">This may take a few minutes depending on how long your lecture is</p></div><div class="progress-steps" id="progress-steps"></div><div class="progress-status" id="progress-status"><div class="spinner"></div><span id="status-text">Starting...</span></div><div class="progress-retry" id="progress-retry"><button type="button" class="progress-retry-btn" id="progress-retry-btn">Retry status check now</button></div></div>
+            <div class="progress-section" id="progress-section"><div class="progress-header"><h3 class="progress-title">Processing Your Files</h3><p class="progress-subtitle">This may take a few minutes depending on how long your lecture is</p></div><div class="progress-safe-banner" id="progress-safe-banner" hidden>Safe to leave: processing continues in the background and the finished result will appear in Study Library.</div><div class="progress-steps" id="progress-steps"></div><div class="progress-status" id="progress-status"><div class="spinner"></div><span id="status-text">Starting...</span></div><div class="progress-retry" id="progress-retry"><button type="button" class="progress-retry-btn" id="progress-retry-btn">Retry status check now</button></div></div>
             <div class="results-section" id="results-section">
                 <div class="focus-dashboard">
                     <aside class="focus-sidebar">
@@ -358,6 +358,7 @@
     <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/runtime-job-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/study-progress-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
     <script src="https://browser.sentry-cdn.com/7.120.3/bundle.min.js" integrity="sha384-QhNWP5Exx8ZPPgZF2s+nKw/cl8cah1/6MVdZfR8a22f2KO0OsBNonujHvYJlrWIP" crossorigin="anonymous"></script>

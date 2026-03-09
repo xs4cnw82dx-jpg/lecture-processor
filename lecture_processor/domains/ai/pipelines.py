@@ -44,13 +44,14 @@ def save_study_pack(job_id, job_data, runtime=None):
         pack_title = requested_title or f"{job_data.get('mode', 'study-pack')} {local_title_time.strftime('%Y-%m-%d %H:%M')}"
         flashcards = job_data.get('flashcards', []) if isinstance(job_data.get('flashcards', []), list) else []
         test_questions = job_data.get('test_questions', []) if isinstance(job_data.get('test_questions', []), list) else []
+        mode = str(job_data.get('mode', '') or '').strip()
 
         doc_ref.set(
             {
                 'study_pack_id': doc_ref.id,
                 'source_job_id': job_id,
                 'uid': uid,
-                'mode': job_data.get('mode', ''),
+                'mode': mode,
                 'title': pack_title,
                 'title_timezone': timezone_name,
                 'output_language': job_data.get('output_language', 'English'),
@@ -90,6 +91,32 @@ def save_study_pack(job_id, job_data, runtime=None):
                 'updated_at': now_ts,
             }
         )
+        source_payload = {
+            'study_pack_id': doc_ref.id,
+            'uid': uid,
+            'source_job_id': job_id,
+            'mode': mode,
+            'created_at': now_ts,
+            'updated_at': now_ts,
+        }
+        slide_text = ''
+        transcript = ''
+        if mode == 'lecture-notes':
+            slide_text = str(job_data.get('slide_text', '') or '')
+            transcript = str(job_data.get('transcript', '') or '')
+        elif mode == 'slides-only':
+            slide_text = str(job_data.get('result', '') or '')
+        elif mode == 'interview':
+            transcript = str(job_data.get('transcript', '') or '')
+        if slide_text:
+            source_payload['slide_text'] = slide_text
+        if transcript:
+            source_payload['transcript'] = transcript
+        if slide_text or transcript:
+            resolved_runtime.study_repo.study_pack_source_doc_ref(
+                resolved_runtime.db,
+                doc_ref.id,
+            ).set(source_payload)
         if uid:
             try:
                 resolved_runtime.users_repo.set_doc(

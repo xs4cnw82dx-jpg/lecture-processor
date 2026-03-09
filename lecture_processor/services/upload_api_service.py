@@ -2024,6 +2024,77 @@ def get_status(app_ctx, request, job_id):
     return app_ctx.jsonify(response)
 
 
+def _is_active_regular_runtime_job(job, uid):
+    if not isinstance(job, dict):
+        return False
+    if str(job.get('user_id', '') or '').strip() != uid:
+        return False
+    status = str(job.get('status', '') or '').strip().lower()
+    if status not in account_lifecycle.ACTIVE_ACCOUNT_JOB_STATES:
+        return False
+    return not bool(job.get('is_batch', False))
+
+
+def _serialize_active_runtime_job(job_id, job):
+    return {
+        'job_id': str(job_id or '').strip(),
+        'mode': str(job.get('mode', '') or '').strip(),
+        'status': str(job.get('status', '') or '').strip(),
+        'step': int(job.get('step', 0) or 0),
+        'step_description': str(job.get('step_description', '') or '').strip(),
+        'study_pack_title': str(job.get('study_pack_title', '') or '').strip(),
+        'started_at': float(job.get('started_at', 0) or 0),
+        'study_pack_id': str(job.get('study_pack_id', '') or '').strip(),
+        'error': str(job.get('error', '') or '').strip(),
+    }
+
+
+def get_active_runtime_jobs(app_ctx, request):
+    decoded_token = app_ctx.verify_firebase_token(request)
+    if not decoded_token:
+        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+
+    jobs_by_id = {}
+    with app_ctx.JOBS_LOCK:
+        for job_id, job in (app_ctx.jobs or {}).items():
+            if not _is_active_regular_runtime_job(job, uid):
+                continue
+            jobs_by_id[str(job_id)] = _serialize_active_runtime_job(job_id, job)
+
+    if getattr(app_ctx, 'db', None) is not None:
+        try:
+            runtime_docs = app_ctx.runtime_jobs_repo.query_by_user_and_statuses(
+                app_ctx.db,
+                app_ctx.RUNTIME_JOBS_COLLECTION,
+                uid,
+                account_lifecycle.ACTIVE_ACCOUNT_JOB_STATES,
+                limit=200,
+            )
+            for doc in runtime_docs:
+                job = doc.to_dict() or {}
+                if not _is_active_regular_runtime_job(job, uid):
+                    continue
+                serialized = _serialize_active_runtime_job(doc.id, job)
+                existing = jobs_by_id.get(serialized['job_id'])
+                if (
+                    existing is None
+                    or float(serialized.get('started_at', 0) or 0) >= float(existing.get('started_at', 0) or 0)
+                ):
+                    jobs_by_id[serialized['job_id']] = serialized
+        except Exception as error:
+            app_ctx.logger.warning('Could not load active runtime jobs for user %s: %s', uid, error)
+
+    jobs = sorted(
+        jobs_by_id.values(),
+        key=lambda row: (
+            -float(row.get('started_at', 0) or 0),
+            str(row.get('job_id', '') or ''),
+        ),
+    )
+    return app_ctx.jsonify({'jobs': jobs})
+
+
 def download_docx(app_ctx, request, job_id):
     decoded_token = app_ctx.verify_firebase_token(request)
     if not decoded_token:
