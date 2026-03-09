@@ -1,0 +1,73 @@
+{% macro render_pricing_icon(icon) -%}
+  {% if icon == 'notes' %}
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+      <polyline points="14 2 14 8 20 8"></polyline>
+    </svg>
+  {% elif icon == 'slides' %}
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+      <line x1="8" y1="21" x2="16" y2="21"></line>
+      <line x1="12" y1="17" x2="12" y2="21"></line>
+    </svg>
+  {% else %}
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+      <line x1="12" y1="19" x2="12" y2="23"></line>
+      <line x1="8" y1="23" x2="16" y2="23"></line>
+    </svg>
+  {% endif %}
+{%- endmacro %}
+
+{% macro render_pricing_catalog(pricing_catalog, variant='modal') -%}
+  {% for category in pricing_catalog %}
+    {% if variant == 'page' %}
+      <div class="shell-panel category">
+        <h2>{{ category.title }}</h2>
+        {% for bundle in category.bundles %}
+          <button
+            type="button"
+            class="bundle-buy-btn{% if bundle.featured %} featured{% endif %}"
+            data-bundle-id="{{ bundle.id }}"
+            aria-label="Buy {{ bundle.name }} for {{ bundle.price_display }}"
+          >
+            {% if bundle.featured %}
+              <span class="badge">Best value</span>
+            {% endif %}
+            <span class="credits">{{ bundle.credits_label }}</span>
+            <span class="price">{{ bundle.price_display }}</span>
+            <span class="meta">{{ bundle.description }}</span>
+            <span class="cta">Buy now</span>
+          </button>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="pricing-category">
+        <div class="pricing-category-header">
+          <div class="pricing-category-icon">{{ render_pricing_icon(category.icon) }}</div>
+          <span class="pricing-category-name">{{ category.title }}</span>
+        </div>
+        {% for bundle in category.bundles %}
+          <div class="bundle-card{% if bundle.featured %} best-value{% endif %}">
+            {% if bundle.featured %}
+              <div class="best-value-badge">Best Value</div>
+            {% endif %}
+            <div class="bundle-credits">{{ bundle.credits_label }}</div>
+            <div class="bundle-description">{{ bundle.description }}</div>
+            <div class="bundle-price">{{ bundle.price_display }}</div>
+            <div class="bundle-price-per">{{ bundle.price_per_display }}</div>
+            <button
+              type="button"
+              class="bundle-buy-btn"
+              data-bundle-id="{{ bundle.id }}"
+              aria-label="Buy {{ bundle.name }} for {{ bundle.price_display }}"
+            >
+              Buy now
+            </button>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endfor %}
+{%- endmacro %}

@@ -4,6 +4,7 @@
   var bootstrap = window.LectureProcessorBootstrap || {};
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
   var uiCache = window.LectureProcessorUiCache || null;
+  var uxUtils = window.LectureProcessorUx || {};
   if (!auth) return;
 
   var shell = document.getElementById('app-shell');
@@ -467,13 +468,32 @@
 
   function setExportModalOpen(open) {
     if (!exportOverlay) return;
-    exportOverlay.hidden = !open;
     if (open) {
       setAccountMenuOpen(false);
-      if (exportConfirmBtn) exportConfirmBtn.focus();
+      if (typeof uxUtils.openModalOverlay === 'function') {
+        uxUtils.openModalOverlay(exportOverlay, {
+          scopeRoot: shell,
+          initialFocus: exportConfirmBtn,
+          onRequestClose: function () {
+            setExportModalOpen(false);
+          }
+        });
+      } else {
+        exportOverlay.hidden = false;
+        exportOverlay.setAttribute('aria-hidden', 'false');
+        if (exportConfirmBtn) exportConfirmBtn.focus();
+      }
       return;
     }
-    if (exportDataBtn) exportDataBtn.focus();
+    if (typeof uxUtils.closeModalOverlay === 'function') {
+      uxUtils.closeModalOverlay(exportOverlay, {
+        returnFocus: exportDataBtn
+      });
+    } else {
+      exportOverlay.hidden = true;
+      exportOverlay.setAttribute('aria-hidden', 'true');
+      if (exportDataBtn) exportDataBtn.focus();
+    }
   }
 
   function readExportSelection() {
@@ -721,6 +741,7 @@
   }
 
   document.addEventListener('keydown', function (event) {
+    if (event.defaultPrevented) return;
     if (event.key === 'Escape') {
       if (exportOverlay && !exportOverlay.hidden) {
         event.preventDefault();
