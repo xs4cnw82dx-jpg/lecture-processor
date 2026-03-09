@@ -388,11 +388,6 @@ def _annotated_list_style_name(level):
     return f'annotatedList{safe_level + 1}'
 
 
-def _annotated_list_continue_style_name(level):
-    safe_level = max(0, min(int(level or 0), 2))
-    return f'annotatedListContinue{safe_level + 1}'
-
-
 def _iter_annotated_nested_lists(node):
     for child in node.children or []:
         if isinstance(child, _AnnotatedHtmlNode) and child.tag in {'ul', 'ol'}:
