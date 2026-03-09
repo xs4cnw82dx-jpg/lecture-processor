@@ -1,3 +1,4 @@
+import io
 import pytest
 from types import SimpleNamespace
 
@@ -8,6 +9,7 @@ from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
+from lecture_processor.domains.study import export as study_export
 from lecture_processor.services import upload_api_service
 from tests.runtime_test_support import get_test_core
 
@@ -355,6 +357,40 @@ def test_study_pack_update_rejects_invalid_notes_highlights(client, monkeypatch)
 
     assert response.status_code == 400
     assert "notes_highlights" in response.get_json()["error"]
+
+
+def test_study_pack_annotated_pdf_export_returns_generated_pdf(client, monkeypatch):
+    class _Doc:
+        exists = True
+
+        def to_dict(self):
+            return {"uid": "study-u6", "title": "Annotated Neuro Pack"}
+
+    captured = {}
+
+    def _fake_build_annotated_notes_pdf(title, annotated_html, runtime=None):
+        _ = runtime
+        captured["title"] = title
+        captured["annotated_html"] = annotated_html
+        buffer = io.BytesIO(b"%PDF-1.4\nannotated")
+        buffer.seek(0)
+        return buffer
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u6", "email": "u@example.com"})
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _Doc())
+    monkeypatch.setattr(study_export, "build_annotated_notes_pdf", _fake_build_annotated_notes_pdf)
+
+    response = client.post(
+        "/api/study-packs/pack-1/export-annotated-pdf",
+        json={"annotated_html": '<p><mark data-hl="yellow">Important</mark> note.</p>'},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 200
+    assert response.data.startswith(b"%PDF-")
+    assert captured["title"] == "Annotated Neuro Pack"
+    assert 'mark data-hl="yellow"' in captured["annotated_html"]
+    assert "annotated-neuro-pack-annotated.pdf" in (response.headers.get("Content-Disposition") or "")
 
 
 def test_admin_overview_contract_fields(client, monkeypatch):
