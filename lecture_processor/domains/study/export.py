@@ -2,6 +2,7 @@ import html
 import io
 import re
 from datetime import datetime
+from html.parser import HTMLParser
 
 from docx import Document
 from docx.shared import Pt
@@ -28,6 +29,56 @@ try:
     )
 except Exception:
     REPORTLAB_AVAILABLE = False
+
+
+ANNOTATED_NOTES_HIGHLIGHT_COLORS = {
+    'yellow': '#FEF08A',
+    'green': '#BBF7D0',
+    'blue': '#BFDBFE',
+    'pink': '#FBCFE8',
+}
+ANNOTATED_NOTES_CONTAINER_TAGS = {'div', 'section', 'article', 'main', 'aside'}
+ANNOTATED_NOTES_INLINE_TAGS = {'span', 'strong', 'b', 'em', 'i', 'u', 'mark', 'a', 'code', 'small', 'sup', 'sub'}
+ANNOTATED_NOTES_BLOCK_TAGS = {'p', 'ul', 'ol', 'li', 'blockquote', 'pre', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'}
+
+
+class _AnnotatedHtmlNode:
+    __slots__ = ('tag', 'attrs', 'children')
+
+    def __init__(self, tag, attrs=None):
+        self.tag = str(tag or '').lower()
+        self.attrs = dict(attrs or {})
+        self.children = []
+
+
+class _AnnotatedHtmlTreeParser(HTMLParser):
+    VOID_TAGS = {'br', 'hr'}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.root = _AnnotatedHtmlNode('root')
+        self.stack = [self.root]
+
+    def handle_starttag(self, tag, attrs):
+        node = _AnnotatedHtmlNode(tag, attrs)
+        self.stack[-1].children.append(node)
+        if node.tag not in self.VOID_TAGS:
+            self.stack.append(node)
+
+    def handle_startendtag(self, tag, attrs):
+        node = _AnnotatedHtmlNode(tag, attrs)
+        self.stack[-1].children.append(node)
+
+    def handle_endtag(self, tag):
+        target = str(tag or '').lower()
+        for index in range(len(self.stack) - 1, 0, -1):
+            if self.stack[index].tag == target:
+                del self.stack[index:]
+                break
+
+    def handle_data(self, data):
+        if data:
+            self.stack[-1].children.append(str(data))
 
 
 def _resolve_runtime(runtime=None):
@@ -254,6 +305,286 @@ def build_notes_pdf_bytes(pack, include_answers=True, runtime=None):
     pdf_buffer = build_study_pack_pdf(pack, include_answers=include_answers, runtime=runtime)
     pdf_buffer.seek(0)
     return pdf_buffer.read()
+
+
+def _parse_annotated_notes_html(raw_html):
+    parser = _AnnotatedHtmlTreeParser()
+    parser.feed(str(raw_html or ''))
+    parser.close()
+    return parser.root
+
+
+def _annotated_inline_has_text(html_value):
+    text_only = re.sub(r'<[^>]+>', '', str(html_value or ''))
+    return bool(text_only.replace('&nbsp;', ' ').strip())
+
+
+def _collapse_annotated_whitespace(text):
+    return re.sub(r'\s+', ' ', str(text or '').replace('\xa0', ' '))
+
+
+def _render_annotated_inline_html(nodes):
+    parts = []
+    for node in nodes or []:
+        if isinstance(node, str):
+            text_value = _collapse_annotated_whitespace(node)
+            if text_value:
+                parts.append(html.escape(text_value))
+            continue
+
+        tag = node.tag
+        if tag == 'br':
+            parts.append('<br/>')
+            continue
+
+        inner_html = _render_annotated_inline_html(node.children)
+        if tag in {'strong', 'b'} and inner_html:
+            parts.append(f'<b>{inner_html}</b>')
+            continue
+        if tag in {'em', 'i'} and inner_html:
+            parts.append(f'<i>{inner_html}</i>')
+            continue
+        if tag == 'u' and inner_html:
+            parts.append(f'<u>{inner_html}</u>')
+            continue
+        if tag == 'mark' and inner_html:
+            highlight_color = ANNOTATED_NOTES_HIGHLIGHT_COLORS.get(
+                str(node.attrs.get('data-hl', '') or '').strip().lower(),
+                ANNOTATED_NOTES_HIGHLIGHT_COLORS['yellow'],
+            )
+            parts.append(f'<font backColor="{highlight_color}">{inner_html}</font>')
+            continue
+        if tag == 'code' and inner_html:
+            parts.append(f'<font name="Courier">{inner_html}</font>')
+            continue
+        if tag == 'a' and inner_html:
+            parts.append(f'<font color="#4338CA"><u>{inner_html}</u></font>')
+            continue
+        parts.append(inner_html)
+
+    html_value = ''.join(parts)
+    html_value = re.sub(r'(?:\s*<br/>\s*){3,}', '<br/><br/>', html_value)
+    return html_value.strip()
+
+
+def _annotated_node_has_block_children(node):
+    return any(
+        isinstance(child, _AnnotatedHtmlNode)
+        and (child.tag in ANNOTATED_NOTES_CONTAINER_TAGS or child.tag in ANNOTATED_NOTES_BLOCK_TAGS)
+        for child in (node.children or [])
+    )
+
+
+def _annotated_heading_style_name(tag_name):
+    if tag_name in {'h1', 'h2'}:
+        return 'annotatedH1'
+    if tag_name in {'h3', 'h4'}:
+        return 'annotatedH2'
+    return 'annotatedH3'
+
+
+def _annotated_list_style_name(level):
+    safe_level = max(0, min(int(level or 0), 2))
+    return f'annotatedList{safe_level + 1}'
+
+
+def _iter_annotated_nested_lists(node):
+    for child in node.children or []:
+        if isinstance(child, _AnnotatedHtmlNode) and child.tag in {'ul', 'ol'}:
+            yield child
+
+
+def _render_annotated_list_item_html(node):
+    content_nodes = []
+    for child in node.children or []:
+        if isinstance(child, _AnnotatedHtmlNode) and child.tag in {'ul', 'ol'}:
+            continue
+        if isinstance(child, _AnnotatedHtmlNode) and child.tag in ANNOTATED_NOTES_BLOCK_TAGS.union(ANNOTATED_NOTES_CONTAINER_TAGS):
+            if content_nodes:
+                content_nodes.append(_AnnotatedHtmlNode('br'))
+            content_nodes.extend(child.children or [])
+            continue
+        content_nodes.append(child)
+    return _render_annotated_inline_html(content_nodes)
+
+
+def _append_annotated_html_blocks(story, nodes, styles, default_style_name='annotatedBody', list_level=0):
+    inline_buffer = []
+
+    def flush_inline_buffer():
+        nonlocal inline_buffer
+        html_value = _render_annotated_inline_html(inline_buffer)
+        inline_buffer = []
+        if _annotated_inline_has_text(html_value):
+            story.append(Paragraph(html_value, styles[default_style_name]))
+
+    for node in nodes or []:
+        if isinstance(node, str):
+            inline_buffer.append(node)
+            continue
+
+        tag = node.tag
+        if tag in ANNOTATED_NOTES_INLINE_TAGS or tag == 'br':
+            inline_buffer.append(node)
+            continue
+
+        if tag in ANNOTATED_NOTES_CONTAINER_TAGS:
+            if _annotated_node_has_block_children(node):
+                flush_inline_buffer()
+                _append_annotated_html_blocks(story, node.children, styles, default_style_name=default_style_name, list_level=list_level)
+            else:
+                inline_buffer.append(node)
+            continue
+
+        flush_inline_buffer()
+
+        if tag == 'p':
+            paragraph_html = _render_annotated_inline_html(node.children)
+            if _annotated_inline_has_text(paragraph_html):
+                story.append(Paragraph(paragraph_html, styles[default_style_name]))
+            continue
+
+        if tag in {'h1', 'h2', 'h3', 'h4', 'h5', 'h6'}:
+            heading_html = _render_annotated_inline_html(node.children)
+            if _annotated_inline_has_text(heading_html):
+                story.append(Paragraph(heading_html, styles[_annotated_heading_style_name(tag)]))
+            continue
+
+        if tag in {'ul', 'ol'}:
+            _append_annotated_html_list(story, node, styles, level=list_level, ordered=(tag == 'ol'))
+            continue
+
+        if tag == 'blockquote':
+            _append_annotated_html_blocks(story, node.children, styles, default_style_name='annotatedQuote', list_level=list_level)
+            continue
+
+        if tag == 'pre':
+            pre_text = html.escape(''.join(child if isinstance(child, str) else _render_annotated_inline_html(child.children) for child in node.children or []))
+            pre_text = pre_text.replace('\n', '<br/>')
+            if _annotated_inline_has_text(pre_text):
+                story.append(Paragraph(pre_text, styles['annotatedCode']))
+            continue
+
+        if tag == 'hr':
+            divider = Table([['']], colWidths=[160 * mm], rowHeights=[0.6 * mm], hAlign='LEFT')
+            divider.setStyle(
+                TableStyle(
+                    [
+                        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#E5E7EB')),
+                        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+                        ('TOPPADDING', (0, 0), (-1, -1), 0),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+                    ]
+                )
+            )
+            story.append(divider)
+            continue
+
+        _append_annotated_html_blocks(story, node.children, styles, default_style_name=default_style_name, list_level=list_level)
+
+    flush_inline_buffer()
+
+
+def _append_annotated_html_list(story, list_node, styles, level=0, ordered=False):
+    item_index = 1
+    for child in list_node.children or []:
+        if not isinstance(child, _AnnotatedHtmlNode):
+            continue
+        if child.tag != 'li':
+            _append_annotated_html_blocks(story, [child], styles, default_style_name='annotatedBody', list_level=level)
+            continue
+
+        item_html = _render_annotated_list_item_html(child)
+        if _annotated_inline_has_text(item_html):
+            story.append(
+                Paragraph(
+                    item_html,
+                    styles[_annotated_list_style_name(level)],
+                    bulletText=f'{item_index}.' if ordered else '•',
+                )
+            )
+
+        nested_lists = list(_iter_annotated_nested_lists(child))
+        if nested_lists:
+            for nested in nested_lists:
+                _append_annotated_html_list(story, nested, styles, level=level + 1, ordered=(nested.tag == 'ol'))
+        item_index += 1
+
+
+def build_annotated_notes_pdf(title, annotated_html, runtime=None):
+    _ = runtime
+    if not REPORTLAB_AVAILABLE:
+        raise RuntimeError("PDF export requires the optional 'reportlab' dependency. Install it with: pip install reportlab==4.2.5")
+
+    safe_title = str(title or 'Annotated Notes').strip() or 'Annotated Notes'
+    html_root = _parse_annotated_notes_html(annotated_html)
+
+    pdf_buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        pdf_buffer,
+        pagesize=A4,
+        leftMargin=18 * mm,
+        rightMargin=18 * mm,
+        topMargin=18 * mm,
+        bottomMargin=16 * mm,
+        title=safe_title,
+    )
+
+    base_styles = getSampleStyleSheet()
+    styles = {
+        'annotatedTitle': ParagraphStyle('AnnotatedPdfTitle', parent=base_styles['Heading1'], fontName='Helvetica-Bold', fontSize=18, leading=22, textColor=colors.HexColor('#0F172A'), spaceAfter=2),
+        'annotatedMeta': ParagraphStyle('AnnotatedPdfMeta', parent=base_styles['BodyText'], fontName='Helvetica', fontSize=9.5, leading=12, textColor=colors.HexColor('#6B7280'), spaceAfter=10),
+        'annotatedBody': ParagraphStyle('AnnotatedPdfBody', parent=base_styles['BodyText'], fontName='Helvetica', fontSize=11, leading=15.2, textColor=colors.HexColor('#111827'), spaceAfter=7),
+        'annotatedH1': ParagraphStyle('AnnotatedPdfH1', parent=base_styles['Heading2'], fontName='Helvetica-Bold', fontSize=14.5, leading=18, textColor=colors.HexColor('#111827'), spaceBefore=10, spaceAfter=5),
+        'annotatedH2': ParagraphStyle('AnnotatedPdfH2', parent=base_styles['Heading3'], fontName='Helvetica-Bold', fontSize=12.4, leading=16, textColor=colors.HexColor('#1F2937'), spaceBefore=8, spaceAfter=4),
+        'annotatedH3': ParagraphStyle('AnnotatedPdfH3', parent=base_styles['Heading4'], fontName='Helvetica-Bold', fontSize=11.4, leading=14.5, textColor=colors.HexColor('#334155'), spaceBefore=7, spaceAfter=3),
+        'annotatedQuote': ParagraphStyle('AnnotatedPdfQuote', parent=base_styles['BodyText'], fontName='Helvetica', fontSize=10.5, leading=14.5, textColor=colors.HexColor('#374151'), leftIndent=10, borderPadding=8, borderWidth=0, borderLeftWidth=2, borderColor=colors.HexColor('#CBD5E1'), spaceAfter=7),
+        'annotatedCode': ParagraphStyle('AnnotatedPdfCode', parent=base_styles['Code'], fontName='Courier', fontSize=9.5, leading=12.5, textColor=colors.HexColor('#111827'), backColor=colors.HexColor('#F8FAFC'), borderPadding=8, spaceAfter=7),
+        'annotatedList1': ParagraphStyle('AnnotatedPdfList1', parent=base_styles['BodyText'], fontName='Helvetica', fontSize=11, leading=15.2, textColor=colors.HexColor('#111827'), leftIndent=18, bulletIndent=4, spaceBefore=0, spaceAfter=4),
+        'annotatedList2': ParagraphStyle('AnnotatedPdfList2', parent=base_styles['BodyText'], fontName='Helvetica', fontSize=10.7, leading=14.7, textColor=colors.HexColor('#111827'), leftIndent=30, bulletIndent=16, spaceBefore=0, spaceAfter=3),
+        'annotatedList3': ParagraphStyle('AnnotatedPdfList3', parent=base_styles['BodyText'], fontName='Helvetica', fontSize=10.4, leading=14.2, textColor=colors.HexColor('#111827'), leftIndent=42, bulletIndent=28, spaceBefore=0, spaceAfter=3),
+    }
+
+    story = [
+        Paragraph(markdown_inline_to_pdf_html(safe_title), styles['annotatedTitle']),
+        Paragraph('Annotated notes export', styles['annotatedMeta']),
+    ]
+
+    header_divider = Table([['']], colWidths=[doc.width], rowHeights=[0.8 * mm], hAlign='LEFT')
+    header_divider.setStyle(
+        TableStyle(
+            [
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#4F46E5')),
+                ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+                ('TOPPADDING', (0, 0), (-1, -1), 0),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+    story.append(header_divider)
+    story.append(Spacer(1, 9))
+
+    _append_annotated_html_blocks(story, html_root.children, styles)
+    if len(story) <= 4:
+        story.append(Paragraph('No annotated notes available.', styles['annotatedBody']))
+
+    def _draw_page_chrome(canvas, pdf_doc):
+        canvas.saveState()
+        canvas.setStrokeColor(colors.HexColor('#E5E7EB'))
+        canvas.setLineWidth(0.5)
+        top_rule_y = pdf_doc.pagesize[1] - 11 * mm
+        canvas.line(pdf_doc.leftMargin, top_rule_y, pdf_doc.pagesize[0] - pdf_doc.rightMargin, top_rule_y)
+        canvas.setFont('Helvetica', 8.5)
+        canvas.setFillColor(colors.HexColor('#64748B'))
+        canvas.drawString(pdf_doc.leftMargin, 9 * mm, safe_title[:72])
+        canvas.drawRightString(pdf_doc.pagesize[0] - pdf_doc.rightMargin, 9 * mm, f'Page {pdf_doc.page}')
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=_draw_page_chrome, onLaterPages=_draw_page_chrome)
+    pdf_buffer.seek(0)
+    return pdf_buffer
 
 
 def normalize_exam_date(raw_value, runtime=None):

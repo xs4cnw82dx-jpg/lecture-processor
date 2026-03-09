@@ -832,7 +832,7 @@ def export_study_pack_pdf(app_ctx, request, pack_id):
     if not decoded_token:
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
 
-    if not app_ctx.REPORTLAB_AVAILABLE:
+    if not study_export.REPORTLAB_AVAILABLE:
         return app_ctx.jsonify({
             'error': "PDF export is currently unavailable on this server. Install dependency: pip install reportlab==4.2.5"
         }), 503
@@ -860,3 +860,45 @@ def export_study_pack_pdf(app_ctx, request, pack_id):
     except Exception as e:
         app_ctx.logger.error(f"Error exporting study pack PDF {pack_id}: {e}")
         return app_ctx.jsonify({'error': 'Could not export PDF'}), 500
+
+
+def export_study_pack_annotated_pdf(app_ctx, request, pack_id):
+    decoded_token = app_ctx.verify_firebase_token(request)
+    if not decoded_token:
+        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+
+    if not study_export.REPORTLAB_AVAILABLE:
+        return app_ctx.jsonify({
+            'error': "Annotated PDF export is currently unavailable on this server. Install dependency: pip install reportlab==4.2.5"
+        }), 503
+
+    uid = decoded_token['uid']
+    try:
+        doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
+        if not doc.exists:
+            return app_ctx.jsonify({'error': 'Study pack not found'}), 404
+
+        pack = doc.to_dict()
+        if pack.get('uid', '') != uid:
+            return app_ctx.jsonify({'error': 'Forbidden'}), 403
+
+        payload = request.get_json(silent=True) or {}
+        annotated_html = str(payload.get('annotated_html', '') or '').strip()
+        if not annotated_html:
+            return app_ctx.jsonify({'error': 'Annotated notes HTML is required'}), 400
+
+        if len(annotated_html) > 500000:
+            return app_ctx.jsonify({'error': 'Annotated notes export is too large'}), 400
+
+        pack_title = str(payload.get('title', '') or pack.get('title', 'Lecture Notes') or 'Lecture Notes').strip()
+        pdf_io = study_export.build_annotated_notes_pdf(pack_title, annotated_html, runtime=app_ctx)
+        safe_title = study_export.sanitize_export_filename(pack_title, fallback=f'study-pack-{pack_id}')
+        return app_ctx.send_file(
+            pdf_io,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f'{safe_title}-annotated.pdf'
+        )
+    except Exception as e:
+        app_ctx.logger.error(f"Error exporting annotated study pack PDF {pack_id}: {e}")
+        return app_ctx.jsonify({'error': 'Could not export annotated PDF'}), 500

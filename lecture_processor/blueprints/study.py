@@ -100,3 +100,9 @@ def export_study_pack_notes(pack_id):
 def export_study_pack_pdf(pack_id):
     runtime = get_runtime()
     return study_api_service.export_study_pack_pdf(runtime, request, pack_id)
+
+
+@study_bp.route('/api/study-packs/<pack_id>/export-annotated-pdf', methods=['POST'])
+def export_study_pack_annotated_pdf(pack_id):
+    runtime = get_runtime()
+    return study_api_service.export_study_pack_annotated_pdf(runtime, request, pack_id)

@@ -1631,53 +1631,6 @@
       background: #fbcfe8
     }
 
-    .notes-export-capture-host {
-      position: fixed;
-      left: 0;
-      top: 0;
-      opacity: 0;
-      pointer-events: none;
-      z-index: 1;
-      overflow: visible
-    }
-
-    .notes-export-root {
-      width: 794px;
-      padding: 30px 34px;
-      margin: 0;
-      background: #fff;
-      color: #111827;
-      box-sizing: border-box;
-      pointer-events: none
-    }
-
-    .notes-export-title {
-      margin: 0 0 16px;
-      font-size: 1.5rem;
-      line-height: 1.2;
-      font-weight: 800;
-      color: #111827;
-      letter-spacing: -.03em
-    }
-
-    .notes-export-view {
-      max-height: none;
-      overflow: visible;
-      border: none;
-      border-radius: 0;
-      background: transparent;
-      box-shadow: none;
-      padding: 0
-    }
-
-    .notes-export-view>*:first-child,
-    .notes-export-view h1:first-child,
-    .notes-export-view h2:first-child,
-    .notes-export-view h3:first-child,
-    .notes-export-view p:first-child {
-      margin-top: 0 !important
-    }
-
     .editor-toolbar {
       display: flex;
       justify-content: space-between;

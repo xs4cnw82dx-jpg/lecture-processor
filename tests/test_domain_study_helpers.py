@@ -93,3 +93,15 @@ def test_export_helpers_handle_dates_markdown_and_html():
 
     doc = export.markdown_to_docx('# Title\n\n- Item one')
     assert len(doc.paragraphs) >= 2
+
+
+def test_annotated_notes_html_exports_to_pdf():
+    pdf_buffer = export.build_annotated_notes_pdf(
+        'Neurology Notes',
+        '<h1>Overview</h1><p><mark data-hl="yellow">Migraine</mark> overview paragraph.</p><ul><li>Primary symptom</li><li><mark data-hl="blue">Secondary</mark> detail</li></ul>',
+    )
+
+    pdf_bytes = pdf_buffer.getvalue()
+
+    assert pdf_bytes.startswith(b'%PDF-')
+    assert len(pdf_bytes) > 800

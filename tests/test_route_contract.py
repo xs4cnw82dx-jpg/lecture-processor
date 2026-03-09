@@ -42,6 +42,7 @@ EXPECTED_ROUTES = [
     ('GET', '/api/study-packs/<pack_id>', 'study_api.get_study_pack'),
     ('PATCH', '/api/study-packs/<pack_id>', 'study_api.update_study_pack'),
     ('GET', '/api/study-packs/<pack_id>/audio', 'study_api.stream_study_pack_audio'),
+    ('POST', '/api/study-packs/<pack_id>/export-annotated-pdf', 'study_api.export_study_pack_annotated_pdf'),
     ('GET', '/api/study-packs/<pack_id>/export-flashcards-csv', 'study_api.export_study_pack_flashcards_csv'),
     ('GET', '/api/study-packs/<pack_id>/export-notes', 'study_api.export_study_pack_notes'),
     ('GET', '/api/study-packs/<pack_id>/export-pdf', 'study_api.export_study_pack_pdf'),
