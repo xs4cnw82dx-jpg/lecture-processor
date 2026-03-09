@@ -41,8 +41,16 @@
     moreToolsExpanded: 'more_tools_group_expanded',
     profile: 'shell_profile'
   };
+  var ACCOUNT_SCOPED_CACHE_KEYS = [
+    CACHE_KEYS.credits,
+    CACHE_KEYS.profile,
+    'dashboard_summary',
+    'plan_summary',
+    'study_due_today'
+  ];
 
   var currentUserIsAdmin = false;
+  var lastSignedInUid = auth.currentUser && auth.currentUser.uid ? String(auth.currentUser.uid) : '';
   var toastTimer = null;
 
   function normalizePath(pathname) {
@@ -96,6 +104,55 @@
     } catch (_) {
       return false;
     }
+  }
+
+  function readUserCacheJson(userOrUid, key, fallbackValue) {
+    var uid = userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid;
+    var safeUid = String(uid || '').trim();
+    if (!safeUid) return fallbackValue;
+    if (uiCache && typeof uiCache.getUserJson === 'function') {
+      return uiCache.getUserJson(safeUid, key, fallbackValue);
+    }
+    return readCacheJson('user:' + safeUid + ':' + key, fallbackValue);
+  }
+
+  function writeUserCacheJson(userOrUid, key, value) {
+    var uid = userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid;
+    var safeUid = String(uid || '').trim();
+    if (!safeUid) return false;
+    if (uiCache && typeof uiCache.setUserJson === 'function') {
+      return uiCache.setUserJson(safeUid, key, value);
+    }
+    return writeCacheJson('user:' + safeUid + ':' + key, value);
+  }
+
+  function removeCacheKey(key) {
+    if (uiCache && typeof uiCache.remove === 'function') {
+      return uiCache.remove(key);
+    }
+    try {
+      window.localStorage.removeItem('lp_ui_v2:' + String(key || ''));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function clearUserScopedCaches(userOrUid) {
+    var uid = userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid;
+    var safeUid = String(uid || '').trim();
+    if (!safeUid) return;
+    if (uiCache && typeof uiCache.clearUserScope === 'function') {
+      uiCache.clearUserScope(safeUid);
+      return;
+    }
+    ACCOUNT_SCOPED_CACHE_KEYS.forEach(function (key) {
+      removeCacheKey('user:' + safeUid + ':' + key);
+    });
+  }
+
+  function clearLegacyAccountCaches() {
+    ['credits_breakdown', 'shell_profile', 'dashboard_summary:last', 'plan_summary:last', 'study_due_today:last'].forEach(removeCacheKey);
   }
 
   function showToast(message, variant) {
@@ -338,8 +395,8 @@
       var breakdown = parseCreditBreakdown(payload);
       currentUserIsAdmin = !!payload.is_admin;
       applyCreditBreakdown(breakdown);
-      writeCacheJson(CACHE_KEYS.credits, breakdown);
-      writeCacheJson(CACHE_KEYS.profile, {
+      writeUserCacheJson(user, CACHE_KEYS.credits, breakdown);
+      writeUserCacheJson(user, CACHE_KEYS.profile, {
         email: String(user.email || payload.email || 'user'),
         name: String((payload.email || user.email || 'Account')).split('@')[0] || 'Account',
         initial: String((user.email || payload.email || '?').charAt(0) || '?').toUpperCase(),
@@ -349,14 +406,14 @@
     } catch (_) {}
   }
 
-  function applySignedOutState() {
+  function applySignedOutState(userOrUid) {
+    clearUserScopedCaches(userOrUid);
+    clearLegacyAccountCaches();
     currentUserIsAdmin = false;
     setAuthState('signed-out');
     if (adminBtn) adminBtn.style.display = 'none';
     setCreditsVisible(false);
     applyCreditBreakdown(null);
-    writeCacheJson(CACHE_KEYS.credits, null);
-    writeCacheJson(CACHE_KEYS.profile, null);
     if (userEmail) userEmail.textContent = 'Not signed in';
     if (userName) userName.textContent = 'Account';
     if (userInitial) userInitial.textContent = '?';
@@ -364,8 +421,8 @@
     if (accountWrap) accountWrap.hidden = true;
   }
 
-  function applyCachedProfile() {
-    var cachedProfile = readCacheJson(CACHE_KEYS.profile, null);
+  function applyCachedProfile(user) {
+    var cachedProfile = readUserCacheJson(user, CACHE_KEYS.profile, null);
     if (!cachedProfile || typeof cachedProfile !== 'object') return false;
     if (signInBtn) signInBtn.hidden = true;
     if (accountWrap) accountWrap.hidden = false;
@@ -384,18 +441,27 @@
     if (userInitial) userInitial.textContent = (email.charAt(0) || '?').toUpperCase();
   }
 
+  function hydrateCachedCredits(user) {
+    var cachedBreakdown = readUserCacheJson(user, CACHE_KEYS.credits, null);
+    applyCreditBreakdown(cachedBreakdown || null);
+  }
+
   function applyAuth(user) {
     var signedIn = !!user;
     setAuthState(signedIn ? 'signed-in' : 'signed-out');
     if (signInBtn) signInBtn.hidden = signedIn;
     if (accountWrap) accountWrap.hidden = !signedIn;
     if (!signedIn) {
-      applySignedOutState();
+      applySignedOutState(lastSignedInUid);
+      lastSignedInUid = '';
       return;
     }
 
+    lastSignedInUid = String(user.uid || lastSignedInUid || '');
     setCreditsVisible(true);
+    applyCachedProfile(user);
     applyUserIdentity(user);
+    hydrateCachedCredits(user);
     refreshUserProfile(user);
   }
 
@@ -678,20 +744,18 @@
     applyAuth(user || null);
   });
 
-  var cachedBreakdown = readCacheJson(CACHE_KEYS.credits, null);
   setAuthState('pending');
-  if (cachedBreakdown) {
-    applyCreditBreakdown(cachedBreakdown);
-  } else {
-    applyCreditBreakdown(null);
-  }
+  applyCreditBreakdown(null);
   if (auth.currentUser) {
+    lastSignedInUid = String(auth.currentUser.uid || lastSignedInUid || '');
+    applyCachedProfile(auth.currentUser);
     applyUserIdentity(auth.currentUser);
+    hydrateCachedCredits(auth.currentUser);
     if (signInBtn) signInBtn.hidden = true;
     if (accountWrap) accountWrap.hidden = false;
     setCreditsVisible(true);
   } else {
-    applyCachedProfile();
+    setCreditsVisible(false);
   }
   markActiveNav();
   maybeOpenAuthFromQuery();

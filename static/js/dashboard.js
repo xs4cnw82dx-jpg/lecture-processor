@@ -14,8 +14,7 @@
   var sessionsList = document.getElementById('dash-sessions-list');
   var packsList = document.getElementById('dash-packs-list');
   var dashboardPage = document.getElementById('dashboard-page');
-  var DASHBOARD_CACHE_GLOBAL_KEY = 'dashboard_summary:last';
-  var DASHBOARD_CACHE_USER_PREFIX = 'dashboard_summary:user:';
+  var DASHBOARD_CACHE_KEY = 'dashboard_summary';
   var currentUser = null;
 
   function setDashboardLoading(isLoading) {
@@ -61,6 +60,26 @@
     } catch (_) {
       return false;
     }
+  }
+
+  function readUserCacheJson(userOrUid, key, fallbackValue) {
+    var uid = userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid;
+    var safeUid = String(uid || '').trim();
+    if (!safeUid) return fallbackValue;
+    if (uiCache && typeof uiCache.getUserJson === 'function') {
+      return uiCache.getUserJson(safeUid, key, fallbackValue);
+    }
+    return readCacheJson('user:' + safeUid + ':' + key, fallbackValue);
+  }
+
+  function writeUserCacheJson(userOrUid, key, value) {
+    var uid = userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid;
+    var safeUid = String(uid || '').trim();
+    if (!safeUid) return false;
+    if (uiCache && typeof uiCache.setUserJson === 'function') {
+      return uiCache.setUserJson(safeUid, key, value);
+    }
+    return writeCacheJson('user:' + safeUid + ':' + key, value);
   }
 
   function toSnapshot(summary) {
@@ -111,16 +130,14 @@
   }
 
   function hydrateCachedSnapshot(user) {
-    var fromUser = user && user.uid ? readCacheJson(DASHBOARD_CACHE_USER_PREFIX + user.uid, null) : null;
-    var fromGlobal = readCacheJson(DASHBOARD_CACHE_GLOBAL_KEY, null);
-    applySnapshot(fromUser || fromGlobal || null);
+    var fromUser = user && user.uid ? readUserCacheJson(user, DASHBOARD_CACHE_KEY, null) : null;
+    applySnapshot(fromUser || null);
   }
 
   function persistSnapshot(user, snapshot) {
     if (!snapshot) return;
-    writeCacheJson(DASHBOARD_CACHE_GLOBAL_KEY, snapshot);
     if (user && user.uid) {
-      writeCacheJson(DASHBOARD_CACHE_USER_PREFIX + user.uid, snapshot);
+      writeUserCacheJson(user, DASHBOARD_CACHE_KEY, snapshot);
     }
   }
 
@@ -144,12 +161,12 @@
     if (!sessionsList) return;
     while (sessionsList.firstChild) sessionsList.removeChild(sessionsList.firstChild);
     if (!user) {
-      sessionsList.innerHTML = '<div class="empty-state-card"><h3>Sign in to plan study sessions</h3><p>Use your account to save sessions, track what is due, and keep your calendar connected to your packs.</p><div class="empty-state-actions"><a class="empty-state-link primary" href="/lecture-notes?auth=signin">Sign in</a><a class="empty-state-link" href="/helpcenter">Help Center</a></div></div>';
+      sessionsList.innerHTML = '<div class="empty-state-card"><h3>Sign in to plan study sessions</h3><p>Study sessions are currently saved only in this browser on this device. Sign in to see due counts and open the planner tools.</p><div class="empty-state-actions"><a class="empty-state-link primary" href="/lecture-notes?auth=signin">Sign in</a><a class="empty-state-link" href="/helpcenter">Help Center</a></div></div>';
       return;
     }
     var future = Array.isArray(sessions) ? sessions : [];
     if (!future.length) {
-      sessionsList.innerHTML = '<div class="empty-state-card"><h3>Plan your first study session</h3><p>Set up a session once, then use Calendar to see what is coming up and keep your semester visible.</p><div class="empty-state-actions"><a class="empty-state-link primary" href="/calendar">Open Calendar</a><a class="empty-state-link" href="/plan">Planning &amp; Progress</a></div></div>';
+      sessionsList.innerHTML = '<div class="empty-state-card"><h3>Plan your first study session</h3><p>Calendar sessions are saved only in this browser on this device right now.</p><div class="empty-state-actions"><a class="empty-state-link primary" href="/calendar">Open Calendar</a><a class="empty-state-link" href="/plan">Planning &amp; Progress</a></div></div>';
       return;
     }
     future.forEach(function (session) {

@@ -42,8 +42,8 @@
   var packGoalTimers = new Map();
   var packGoalSaveInFlight = new Set();
   var packGoalDraftValues = new Map();
-  var PLAN_CACHE_GLOBAL_KEY = 'plan_summary:last';
-  var PLAN_CACHE_USER_PREFIX = 'plan_summary:user:';
+  var PLAN_CACHE_KEY = 'plan_summary';
+  var DASHBOARD_CACHE_KEY = 'dashboard_summary';
   var PLAN_SYNC_SOURCE_ID = 'plan-' + Math.random().toString(36).slice(2, 10);
   var toastTimer = null;
 
@@ -81,25 +81,37 @@
     }
   }
 
-  function getSummaryCacheKey(uid) {
-    return PLAN_CACHE_USER_PREFIX + String(uid || 'anon');
+  function readUserCacheJson(uid, key, fallbackValue) {
+    var safeUid = String(uid || '').trim();
+    if (!safeUid) return fallbackValue;
+    if (uiCache && typeof uiCache.getUserJson === 'function') {
+      return uiCache.getUserJson(safeUid, key, fallbackValue);
+    }
+    return readCacheJson('user:' + safeUid + ':' + key, fallbackValue);
+  }
+
+  function writeUserCacheJson(uid, key, value) {
+    var safeUid = String(uid || '').trim();
+    if (!safeUid) return false;
+    if (uiCache && typeof uiCache.setUserJson === 'function') {
+      return uiCache.setUserJson(safeUid, key, value);
+    }
+    return writeCacheJson('user:' + safeUid + ':' + key, value);
   }
 
   function hydrateSummaryCache(uid) {
-    progressSummaryCache = readCacheJson(getSummaryCacheKey(uid), null) || readCacheJson(PLAN_CACHE_GLOBAL_KEY, null);
+    progressSummaryCache = readUserCacheJson(uid, PLAN_CACHE_KEY, null);
   }
 
   function persistSummaryCache(uid, summary) {
     if (!summary || typeof summary !== 'object') return;
-    writeCacheJson(PLAN_CACHE_GLOBAL_KEY, summary);
-    writeCacheJson(getSummaryCacheKey(uid), summary);
+    writeUserCacheJson(uid, PLAN_CACHE_KEY, summary);
   }
 
   function persistDashboardSnapshot(uid, summary) {
     if (!summary) return;
     var snapshot = summarySnapshot(summary);
-    writeCacheJson('dashboard_summary:last', snapshot);
-    writeCacheJson('dashboard_summary:user:' + String(uid || 'anon'), snapshot);
+    writeUserCacheJson(uid, DASHBOARD_CACHE_KEY, snapshot);
   }
 
   function broadcastPlannerProgress(summary, extraPayload) {

@@ -86,8 +86,33 @@
     }
   }
 
-  function hydrateCachedCredits() {
-    var cached = readCacheJson(CREDITS_CACHE_KEY, null);
+  function readUserCacheJson(userOrUid, key, fallbackValue) {
+    var uid = userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid;
+    var safeUid = String(uid || '').trim();
+    if (!safeUid) return fallbackValue;
+    if (uiCache && typeof uiCache.getUserJson === 'function') {
+      return uiCache.getUserJson(safeUid, key, fallbackValue);
+    }
+    return readCacheJson('user:' + safeUid + ':' + key, fallbackValue);
+  }
+
+  function writeUserCacheJson(userOrUid, key, value) {
+    var uid = userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid;
+    var safeUid = String(uid || '').trim();
+    if (!safeUid) return false;
+    if (uiCache && typeof uiCache.setUserJson === 'function') {
+      return uiCache.setUserJson(safeUid, key, value);
+    }
+    return writeCacheJson('user:' + safeUid + ':' + key, value);
+  }
+
+  function hydrateCachedCredits(user) {
+    if (!user || !user.uid) {
+      slidesCredits = null;
+      updateCreditNote();
+      return;
+    }
+    var cached = readUserCacheJson(user, CREDITS_CACHE_KEY, null);
     if (!cached || typeof cached !== 'object') {
       slidesCredits = null;
       updateCreditNote();
@@ -253,7 +278,8 @@
 
   async function refreshCredits() {
     if (!currentUser) {
-      hydrateCachedCredits();
+      slidesCredits = null;
+      updateCreditNote();
       return;
     }
     try {
@@ -264,7 +290,7 @@
       if (payload && payload.credits) {
         var lecture = Number(payload.credits.lecture_standard || 0) + Number(payload.credits.lecture_extended || 0);
         var interview = Number(payload.credits.interview_short || 0) + Number(payload.credits.interview_medium || 0) + Number(payload.credits.interview_long || 0);
-        writeCacheJson(CREDITS_CACHE_KEY, {
+        writeUserCacheJson(currentUser, CREDITS_CACHE_KEY, {
           lecture: lecture,
           textExtraction: slidesCredits,
           interview: interview,
@@ -273,7 +299,7 @@
       }
       updateCreditNote();
     } catch (_) {
-      hydrateCachedCredits();
+      hydrateCachedCredits(currentUser);
     }
   }
 
@@ -420,10 +446,11 @@
   }
 
   setupModeUI();
-  hydrateCachedCredits();
+  hydrateCachedCredits(auth.currentUser || null);
   auth.onAuthStateChanged(function (user) {
     currentUser = user || null;
     if (authClient && typeof authClient.clearToken === 'function' && !currentUser) authClient.clearToken();
+    hydrateCachedCredits(currentUser);
     refreshCredits();
     updateRunState();
   });

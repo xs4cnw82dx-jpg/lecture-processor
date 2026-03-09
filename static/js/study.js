@@ -1076,8 +1076,9 @@ var audioPlayerBar = document.getElementById('audio-player-bar'), audioPlayerEl 
 var audioBlobUrl = '';
 var difficultyToolbar = document.getElementById('difficulty-toolbar'), difficultyButtons = document.querySelectorAll('.difficulty-btn[data-review-action]');
 var keyboardHints = document.querySelector('.keyboard-hints');
-var STUDY_DUE_CACHE_GLOBAL_KEY = 'study_due_today:last';
-var STUDY_DUE_CACHE_USER_PREFIX = 'study_due_today:user:';
+var STUDY_DUE_CACHE_KEY = 'study_due_today';
+var PLAN_SUMMARY_CACHE_KEY = 'plan_summary';
+var DASHBOARD_SUMMARY_CACHE_KEY = 'dashboard_summary';
 var toastTimer = null;
 
 /* ── Helpers ── */
@@ -1147,8 +1148,23 @@ function writeUiCacheJson(key, value) {
     return false;
   }
 }
-function getStudyDueCacheKey(user) {
-  return STUDY_DUE_CACHE_USER_PREFIX + String((user && user.uid) || 'anon');
+function readUiCacheJsonForUser(userOrUid, key, fallbackValue) {
+  var uid = userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid;
+  var safeUid = String(uid || '').trim();
+  if (!safeUid) return fallbackValue;
+  if (uiCache && typeof uiCache.getUserJson === 'function') {
+    return uiCache.getUserJson(safeUid, key, fallbackValue);
+  }
+  return readUiCacheJson('user:' + safeUid + ':' + key, fallbackValue);
+}
+function writeUiCacheJsonForUser(userOrUid, key, value) {
+  var uid = userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid;
+  var safeUid = String(uid || '').trim();
+  if (!safeUid) return false;
+  if (uiCache && typeof uiCache.setUserJson === 'function') {
+    return uiCache.setUserJson(safeUid, key, value);
+  }
+  return writeUiCacheJson('user:' + safeUid + ':' + key, value);
 }
 function setTopbarDueTextValue(countValue) {
   if (!topbarDueText) return;
@@ -1160,10 +1176,7 @@ function setTopbarDueTextValue(countValue) {
   topbarDueText.textContent = total + ' due today';
 }
 function hydrateTopbarDueFromCache(user) {
-  var cached = readUiCacheJson(getStudyDueCacheKey(user), null);
-  if (!cached || typeof cached !== 'object') {
-    cached = readUiCacheJson(STUDY_DUE_CACHE_GLOBAL_KEY, null);
-  }
+  var cached = readUiCacheJsonForUser(user, STUDY_DUE_CACHE_KEY, null);
   if (!cached || typeof cached !== 'object' || !Object.prototype.hasOwnProperty.call(cached, 'count')) {
     setTopbarDueTextValue(null);
     return;
@@ -1172,8 +1185,7 @@ function hydrateTopbarDueFromCache(user) {
 }
 function persistTopbarDueToCache(user, countValue) {
   var payload = { count: Math.max(0, Number(countValue || 0)), updated_at: Date.now() };
-  writeUiCacheJson(STUDY_DUE_CACHE_GLOBAL_KEY, payload);
-  writeUiCacheJson(getStudyDueCacheKey(user), payload);
+  writeUiCacheJsonForUser(user, STUDY_DUE_CACHE_KEY, payload);
 }
 function persistSharedSummaryCaches(user, summary) {
   if (!user || !summary) return;
@@ -1185,10 +1197,8 @@ function persistSharedSummaryCaches(user, summary) {
       done: Math.max(0, Number(summary.today_progress || 0)),
       goal: Math.max(1, Number(summary.daily_goal || 20))
     };
-  writeUiCacheJson('plan_summary:last', summary);
-  writeUiCacheJson('plan_summary:user:' + String(user.uid || 'anon'), summary);
-  writeUiCacheJson('dashboard_summary:last', snapshot);
-  writeUiCacheJson('dashboard_summary:user:' + String(user.uid || 'anon'), snapshot);
+  writeUiCacheJsonForUser(user, PLAN_SUMMARY_CACHE_KEY, summary);
+  writeUiCacheJsonForUser(user, DASHBOARD_SUMMARY_CACHE_KEY, snapshot);
 }
 function buildLiveProgressSummary() {
   var snapshot = readLocalProgressSnapshot();
