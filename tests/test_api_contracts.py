@@ -1,11 +1,14 @@
 import pytest
 from types import SimpleNamespace
 
+from flask import request
+
 from lecture_processor.domains.admin import metrics as admin_metrics
 from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
+from lecture_processor.services import upload_api_service
 from tests.runtime_test_support import get_test_core
 
 core = get_test_core()
@@ -536,6 +539,44 @@ def test_processing_averages_error_returns_empty_fallback_without_raw_details(cl
     assert payload.get("averages") == {}
     assert payload.get("total_jobs") == 0
     assert "error" not in payload
+
+
+def test_processing_averages_success_uses_private_cache_header(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u", "email": "user@example.com"})
+
+    class _Doc:
+        def to_dict(self):
+            return {
+                "status": "complete",
+                "mode": "lecture-notes",
+                "duration_seconds": 123,
+                "finished_at": 1,
+            }
+
+    class _Query:
+        def where(self, *_args, **_kwargs):
+            return self
+
+        def order_by(self, *_args, **_kwargs):
+            return self
+
+        def limit(self, *_args, **_kwargs):
+            return self
+
+        def stream(self):
+            return [_Doc()]
+
+    class _DB:
+        def collection(self, _name):
+            return _Query()
+
+    monkeypatch.setattr(core, "db", _DB())
+
+    with client.application.test_request_context("/api/processing-averages"):
+        response = upload_api_service.processing_averages(core, request)
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "private, max-age=300"
 
 
 def test_processing_estimate_uses_sanitized_total_mb_and_percentiles(client, monkeypatch):

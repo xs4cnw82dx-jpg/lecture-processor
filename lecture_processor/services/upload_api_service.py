@@ -2188,7 +2188,7 @@ def processing_averages(app_ctx, request):
             }
 
         response = app_ctx.jsonify({'averages': averages, 'total_jobs': total_jobs})
-        response.headers['Cache-Control'] = 'public, max-age=300'
+        response.headers['Cache-Control'] = 'private, max-age=300'
         return response
     except Exception:
         app_ctx.logger.warning('Could not load processing averages; returning empty fallback', exc_info=True)

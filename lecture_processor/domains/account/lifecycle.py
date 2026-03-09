@@ -12,6 +12,8 @@ def _resolve_runtime(runtime=None):
 
 
 ACTIVE_ACCOUNT_JOB_STATES = {'queued', 'starting', 'processing'}
+DELETION_FAILURE_REASON_MAX_LENGTH = 300
+STUCK_DELETION_AFTER_SECONDS = 60 * 60
 
 
 def account_write_block_message(runtime=None):
@@ -42,6 +44,10 @@ def ensure_account_allows_writes(uid, runtime=None):
     return (True, '')
 
 
+def _normalize_failure_reason(reason):
+    return str(reason or '').strip()[:DELETION_FAILURE_REASON_MAX_LENGTH]
+
+
 def mark_account_deletion_requested(uid, email='', runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     db = getattr(resolved_runtime, 'db', None)
@@ -56,11 +62,70 @@ def mark_account_deletion_requested(uid, email='', runtime=None):
             'email': str(email or '').strip(),
             'account_status': 'deleting',
             'delete_requested_at': now_ts,
+            'delete_started_at': now_ts,
+            'last_delete_failure_at': 0,
+            'last_delete_failure_reason': '',
             'updated_at': now_ts,
         },
         merge=True,
     )
     return True
+
+
+def restore_account_after_failed_deletion(uid, email='', reason='', runtime=None, existing_state=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    db = getattr(resolved_runtime, 'db', None)
+    if db is None or not uid:
+        return False
+    now_ts = float(resolved_runtime.time.time())
+    payload = dict(existing_state or {})
+    payload.update({
+        'uid': uid,
+        'email': str(email or payload.get('email', '') or '').strip(),
+        'account_status': 'active',
+        'delete_requested_at': 0,
+        'delete_started_at': 0,
+        'last_delete_failure_at': now_ts,
+        'last_delete_failure_reason': _normalize_failure_reason(reason),
+        'updated_at': now_ts,
+    })
+    resolved_runtime.users_repo.set_doc(
+        db,
+        uid,
+        payload,
+        merge=not bool(existing_state),
+    )
+    return True
+
+
+def get_account_deletion_started_at(account_state):
+    state = account_state if isinstance(account_state, dict) else {}
+    started_at = state.get('delete_started_at')
+    if isinstance(started_at, (int, float)) and started_at > 0:
+        return float(started_at)
+    requested_at = state.get('delete_requested_at')
+    if isinstance(requested_at, (int, float)) and requested_at > 0:
+        return float(requested_at)
+    return 0.0
+
+
+def is_stuck_deletion_candidate(account_state, now_ts=None, stale_after_seconds=STUCK_DELETION_AFTER_SECONDS):
+    state = account_state if isinstance(account_state, dict) else {}
+    status = str(state.get('account_status', '') or '').strip().lower()
+    if status != 'deleting':
+        return False
+    started_at = get_account_deletion_started_at(state)
+    if started_at <= 0:
+        return False
+    try:
+        safe_now = float(now_ts if now_ts is not None else _resolve_runtime().time.time())
+    except Exception:
+        return False
+    try:
+        safe_stale_after = max(60.0, float(stale_after_seconds or STUCK_DELETION_AFTER_SECONDS))
+    except Exception:
+        safe_stale_after = float(STUCK_DELETION_AFTER_SECONDS)
+    return safe_now - started_at >= safe_stale_after
 
 
 def query_docs_by_field(collection_name, field_name, field_value, limit, runtime=None):

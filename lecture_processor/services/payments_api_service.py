@@ -233,4 +233,4 @@ def get_purchase_history(app_ctx, request):
         return app_ctx.jsonify({'purchases': purchases})
     except Exception as e:
         app_ctx.logger.error(f"Error fetching purchase history: {e}")
-        return app_ctx.jsonify({'purchases': []})
+        return app_ctx.jsonify({'error': 'Could not load purchase history'}), 500

@@ -60,22 +60,10 @@ def get_study_folders():
     return study_api_service.get_study_folders(runtime, request)
 
 
-@study_bp.route('/api/study-packs/<pack_id>/audio-url', methods=['GET'])
-def get_study_pack_audio_url(pack_id):
-    runtime = get_runtime()
-    return study_api_service.get_study_pack_audio_url(runtime, request, pack_id)
-
-
 @study_bp.route('/api/study-packs/<pack_id>/audio', methods=['GET'])
 def stream_study_pack_audio(pack_id):
     runtime = get_runtime()
     return study_api_service.stream_study_pack_audio(runtime, request, pack_id)
-
-
-@study_bp.route('/api/audio-stream/<token>', methods=['GET'])
-def stream_audio_token(token):
-    runtime = get_runtime()
-    return study_api_service.stream_audio_token(runtime, token)
 
 
 @study_bp.route('/api/study-folders', methods=['POST'])

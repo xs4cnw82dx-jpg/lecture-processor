@@ -258,6 +258,21 @@ def test_confirm_checkout_pending_payment_returns_409(client, monkeypatch):
     assert response.get_json()["status"] == "pending_payment"
 
 
+def test_purchase_history_errors_return_500(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-pay", "email": "user@example.com"})
+    monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: True)
+
+    def _raise(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(core.purchases_repo, "list_by_uid_recent", _raise)
+
+    response = client.get("/api/purchase-history")
+
+    assert response.status_code == 500
+    assert "could not load purchase history" in response.get_json()["error"].lower()
+
+
 def test_purchase_history_disallowed_email_returns_403(client, monkeypatch):
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u2-denied", "email": "blocked@example.invalid"})
     monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: False)
@@ -1010,6 +1025,46 @@ def test_account_delete_exhaustively_deletes_paginated_docs(client, monkeypatch)
     assert deleted_auth_users == ["u-delete"]
     assert deleted_profiles == ["u-delete"]
     assert removed_artifact_sets and len(removed_artifact_sets[0]) == 101
+
+
+def test_account_delete_failure_restores_account_status(client, monkeypatch):
+    class _FakeProgressSnapshot:
+        exists = False
+
+    class _FakeProgressDoc:
+        def get(self):
+            return _FakeProgressSnapshot()
+
+        def delete(self):
+            return None
+
+    set_doc_calls = []
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-restore", "email": "user@gmail.com"})
+    monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
+    monkeypatch.setattr(account_lifecycle, "query_docs_by_field", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(account_lifecycle, "has_docs_by_field", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(account_lifecycle, "remove_upload_artifacts_for_job_ids", lambda _job_ids, runtime=None: 0)
+    monkeypatch.setattr(core.batch_repo, "list_batch_jobs_by_uid", lambda _db, _uid, _limit: [])
+    monkeypatch.setattr(core.batch_repo, "list_batch_rows", lambda _db, _batch_id: [])
+    monkeypatch.setattr(core, "get_study_progress_doc", lambda _uid: _FakeProgressDoc())
+    monkeypatch.setattr(core.users_repo, "set_doc", lambda _db, _uid, payload, merge=False: set_doc_calls.append((payload, merge)))
+    monkeypatch.setattr(core.users_repo, "delete_doc", lambda _db, _uid: None)
+    monkeypatch.setattr(core.auth, "delete_user", lambda _uid: (_ for _ in ()).throw(RuntimeError("auth delete failed")))
+
+    response = client.post(
+        "/api/account/delete",
+        json={"confirm_text": "DELETE MY ACCOUNT", "confirm_email": "user@gmail.com"},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 500
+    assert set_doc_calls[0][0]["account_status"] == "deleting"
+    restored_payload = set_doc_calls[-1][0]
+    assert restored_payload["account_status"] == "active"
+    assert restored_payload["delete_requested_at"] == 0
+    assert restored_payload["delete_started_at"] == 0
+    assert "auth delete failed" in restored_payload["last_delete_failure_reason"]
 
 
 def test_merge_streak_data_keeps_most_recent_progress_day():

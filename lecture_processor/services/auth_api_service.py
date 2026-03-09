@@ -390,6 +390,9 @@ def delete_account_data(app_ctx, request):
             'error': f'Cannot delete account while {active_jobs} queued or processing job(s) are still active. Please wait until all work finishes.'
         }), 409
 
+    deletion_started = False
+    original_user_state = account_lifecycle.get_user_account_state(uid, runtime=app_ctx)
+
     try:
         page_size = max(100, int(app_ctx.ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION or 1000))
         deleted = {}
@@ -398,7 +401,9 @@ def delete_account_data(app_ctx, request):
         batch_row_prefixes = set()
         batch_ids_seen = set()
 
-        account_lifecycle.mark_account_deletion_requested(uid, email=email, runtime=app_ctx)
+        deletion_started = bool(account_lifecycle.mark_account_deletion_requested(uid, email=email, runtime=app_ctx))
+        if not deletion_started:
+            raise RuntimeError('Could not mark account deletion as started.')
 
         def _delete_uid_collection(collection_name):
             deleted_count = 0
@@ -616,13 +621,13 @@ def delete_account_data(app_ctx, request):
         upload_prefixes = set(job_ids) | batch_row_prefixes
         deleted['upload_artifacts'] = account_lifecycle.remove_upload_artifacts_for_job_ids(upload_prefixes, runtime=app_ctx)
 
-        app_ctx.auth.delete_user(uid)
-
         try:
             app_ctx.users_repo.delete_doc(app_ctx.db, uid)
             deleted['user_profile_doc'] = 1
         except Exception as error:
             raise RuntimeError(f"Could not delete user profile document: {error}")
+
+        app_ctx.auth.delete_user(uid)
 
         return app_ctx.jsonify({
             'ok': True,
@@ -632,6 +637,17 @@ def delete_account_data(app_ctx, request):
         })
     except Exception as e:
         app_ctx.logger.error(f"Error deleting account data for {uid}: {e}")
+        if deletion_started:
+            try:
+                account_lifecycle.restore_account_after_failed_deletion(
+                    uid,
+                    email=email,
+                    reason=str(e),
+                    runtime=app_ctx,
+                    existing_state=original_user_state,
+                )
+            except Exception:
+                app_ctx.logger.error("Could not restore account state after failed deletion for %s", uid, exc_info=True)
         return app_ctx.jsonify({
             'error': 'Could not completely delete account data',
             'details': str(e),
