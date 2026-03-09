@@ -658,7 +658,7 @@ _cleanup_thread = threading.Thread(target=_run_periodic_cleanup, daemon=True)
 
 def build_default_user_data(uid, email):
     """Return the canonical default user document structure."""
-    return {'uid': uid, 'email': email, 'lecture_credits_standard': FREE_LECTURE_CREDITS, 'lecture_credits_extended': 0, 'slides_credits': FREE_SLIDES_CREDITS, 'interview_credits_short': FREE_INTERVIEW_CREDITS, 'interview_credits_medium': 0, 'interview_credits_long': 0, 'total_processed': 0, 'has_created_study_pack': False, 'created_at': time.time(), 'preferred_output_language': DEFAULT_OUTPUT_LANGUAGE_KEY, 'preferred_output_language_custom': '', 'onboarding_completed': False, 'account_status': 'active', 'delete_requested_at': 0}
+    return {'uid': uid, 'email': email, 'lecture_credits_standard': FREE_LECTURE_CREDITS, 'lecture_credits_extended': 0, 'slides_credits': FREE_SLIDES_CREDITS, 'interview_credits_short': FREE_INTERVIEW_CREDITS, 'interview_credits_medium': 0, 'interview_credits_long': 0, 'total_processed': 0, 'has_created_study_pack': False, 'created_at': time.time(), 'preferred_output_language': DEFAULT_OUTPUT_LANGUAGE_KEY, 'preferred_output_language_custom': '', 'onboarding_completed': False, 'account_status': 'active', 'delete_requested_at': 0, 'delete_started_at': 0, 'last_delete_failure_at': 0, 'last_delete_failure_reason': ''}
 
 def get_or_create_user(uid, email):
     """Get a user from Firestore, or create them with free credits if they don't exist."""
@@ -685,6 +685,12 @@ def get_or_create_user(uid, email):
             updates['account_status'] = 'active'
         if 'delete_requested_at' not in user_data:
             updates['delete_requested_at'] = 0
+        if 'delete_started_at' not in user_data:
+            updates['delete_started_at'] = 0
+        if 'last_delete_failure_at' not in user_data:
+            updates['last_delete_failure_at'] = 0
+        if 'last_delete_failure_reason' not in user_data:
+            updates['last_delete_failure_reason'] = ''
         if updates:
             user_ref.update(updates)
             user_data.update(updates)

@@ -26,6 +26,9 @@ def build_default_user_data(uid, email, runtime=None):
         'onboarding_completed': False,
         'account_status': 'active',
         'delete_requested_at': 0,
+        'delete_started_at': 0,
+        'last_delete_failure_at': 0,
+        'last_delete_failure_reason': '',
     }
 
 

@@ -568,37 +568,6 @@ def get_study_folders(app_ctx, request):
         return app_ctx.jsonify({'error': 'Could not load study folders'}), 500
 
 
-def get_study_pack_audio_url(app_ctx, request, pack_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    try:
-        doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
-        if not doc.exists:
-            return app_ctx.jsonify({'error': 'Study pack not found'}), 404
-        pack = doc.to_dict() or {}
-        if pack.get('uid', '') != uid:
-            return app_ctx.jsonify({'error': 'Forbidden'}), 403
-        audio_storage_key = study_audio.ensure_pack_audio_storage_key(doc.reference, pack, runtime=app_ctx)
-        audio_storage_path = study_audio.resolve_audio_storage_path_from_key(audio_storage_key, runtime=app_ctx)
-        if not audio_storage_path:
-            return app_ctx.jsonify({'error': 'No audio file for this study pack'}), 404
-        if not app_ctx.os.path.exists(audio_storage_path):
-            return app_ctx.jsonify({'error': 'Audio file not found'}), 404
-        if not app_ctx.ALLOW_LEGACY_AUDIO_STREAM_TOKENS:
-            return app_ctx.jsonify({'error': 'Legacy token audio endpoint is disabled on this server'}), 410
-        stream_token = str(app_ctx.uuid.uuid4())
-        app_ctx.AUDIO_STREAM_TOKENS[stream_token] = {
-            'path': audio_storage_path,
-            'expires_at': app_ctx.time.time() + app_ctx.AUDIO_STREAM_TOKEN_TTL_SECONDS
-        }
-        return app_ctx.jsonify({'audio_url': f"/api/audio-stream/{stream_token}"})
-    except Exception as e:
-        app_ctx.logger.error(f"Error generating study-pack audio URL {pack_id}: {e}")
-        return app_ctx.jsonify({'error': 'Could not generate audio URL'}), 500
-
-
 def stream_study_pack_audio(app_ctx, request, pack_id):
     decoded_token = app_ctx.verify_firebase_token(request)
     if not decoded_token:
@@ -621,22 +590,6 @@ def stream_study_pack_audio(app_ctx, request, pack_id):
     except Exception as e:
         app_ctx.logger.error(f"Error streaming study-pack audio {pack_id}: {e}")
         return app_ctx.jsonify({'error': 'Could not stream audio'}), 500
-
-
-def stream_audio_token(app_ctx, token):
-    if not app_ctx.ALLOW_LEGACY_AUDIO_STREAM_TOKENS:
-        return app_ctx.jsonify({'error': 'Not found'}), 404
-    token_data = app_ctx.AUDIO_STREAM_TOKENS.get(token)
-    if not token_data:
-        return app_ctx.jsonify({'error': 'Invalid token'}), 404
-    if app_ctx.time.time() > token_data.get('expires_at', 0):
-        app_ctx.AUDIO_STREAM_TOKENS.pop(token, None)
-        return app_ctx.jsonify({'error': 'Token expired'}), 410
-    file_path = token_data.get('path', '')
-    if not file_path or not app_ctx.os.path.exists(file_path):
-        return app_ctx.jsonify({'error': 'Audio file not found'}), 404
-    mime_type = app_ctx.get_mime_type(file_path)
-    return app_ctx.send_file(file_path, mimetype=mime_type, conditional=True)
 
 
 def create_study_folder(app_ctx, request):

@@ -48,6 +48,39 @@ def test_ensure_account_allows_writes_rejects_deleting_accounts(app, monkeypatch
     assert "account deletion is in progress" in message.lower()
 
 
+def test_restore_account_after_failed_deletion_sets_account_active(app, monkeypatch):
+    runtime = get_runtime(app)
+    calls = []
+    monkeypatch.setattr(
+        runtime.users_repo,
+        "set_doc",
+        lambda _db, _uid, payload, merge=False: calls.append((payload, merge)),
+    )
+
+    restored = lifecycle.restore_account_after_failed_deletion(
+        "u1",
+        email="u1@example.com",
+        reason="Deletion step failed unexpectedly",
+        runtime=runtime,
+        existing_state={"uid": "u1", "lecture_credits_standard": 5, "account_status": "deleting"},
+    )
+
+    assert restored is True
+    assert calls
+    payload, merge = calls[-1]
+    assert merge is False
+    assert payload["account_status"] == "active"
+    assert payload["delete_requested_at"] == 0
+    assert payload["delete_started_at"] == 0
+    assert payload["last_delete_failure_reason"] == "Deletion step failed unexpectedly"
+
+
+def test_is_stuck_deletion_candidate_requires_old_deleting_state():
+    assert lifecycle.is_stuck_deletion_candidate({"account_status": "active"}, now_ts=7200) is False
+    assert lifecycle.is_stuck_deletion_candidate({"account_status": "deleting", "delete_started_at": 7190}, now_ts=7200) is False
+    assert lifecycle.is_stuck_deletion_candidate({"account_status": "deleting", "delete_started_at": 1}, now_ts=7200) is True
+
+
 def test_list_docs_by_uid_flattens_documents(app, monkeypatch):
     runtime = get_runtime(app)
 

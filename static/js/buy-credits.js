@@ -149,6 +149,47 @@
     }
   }
 
+  async function refreshUserCredits() {
+    if (!auth.currentUser) return false;
+    try {
+      if (typeof auth.currentUser.getIdToken === 'function') {
+        await auth.currentUser.getIdToken(true);
+      }
+      var response = await authFetch('/api/auth/user');
+      if (!response.ok) return false;
+      await response.json().catch(function () { return {}; });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function confirmCheckoutSession(sessionId) {
+    if (!sessionId) {
+      return { ok: false, status: 'missing_session' };
+    }
+    if (!auth.currentUser) {
+      return { ok: false, status: 'not_signed_in' };
+    }
+    try {
+      var response = await authFetch('/api/confirm-checkout-session?session_id=' + encodeURIComponent(sessionId));
+      var payload = await response.json().catch(function () { return {}; });
+      if (!response.ok) {
+        return {
+          ok: false,
+          status: String(payload.status || 'confirm_failed'),
+          error: String(payload.error || '')
+        };
+      }
+      return {
+        ok: true,
+        status: String(payload.status || 'granted')
+      };
+    } catch (_) {
+      return { ok: false, status: 'confirm_failed' };
+    }
+  }
+
   async function checkPaymentResult() {
     if (paymentResultChecked) return;
     paymentResultChecked = true;
@@ -157,12 +198,24 @@
     var sessionId = params.get('session_id');
     if (!status) return;
     if (status === 'success') {
-      if (auth.currentUser && sessionId) {
-        try {
-          await authFetch('/api/confirm-checkout-session?session_id=' + encodeURIComponent(sessionId));
-        } catch (_) {}
+      var confirmation = await confirmCheckoutSession(sessionId);
+      if (confirmation.ok) {
+        var refreshed = await refreshUserCredits();
+        await loadPurchaseHistory();
+        if (confirmation.status === 'already_processed') {
+          showToast(refreshed ? 'Payment already confirmed. Credits are available.' : 'Payment already confirmed. Credits may take a few seconds to appear.');
+        } else if (refreshed) {
+          showToast('Payment successful. Credits updated.');
+        } else {
+          showToast('Payment successful. Credits may take a few seconds to appear.');
+        }
+      } else if (confirmation.status === 'pending_payment') {
+        showToast('Payment received. Confirmation is still pending.');
+      } else if (confirmation.status === 'account_deletion_in_progress') {
+        showToast('Payment could not be applied because account deletion is in progress.');
+      } else {
+        showToast('Could not confirm payment yet. Please refresh and try again shortly.');
       }
-      showToast('Payment successful. Credits updated.');
     } else if (status === 'cancelled') {
       showToast('Payment cancelled.');
     }
