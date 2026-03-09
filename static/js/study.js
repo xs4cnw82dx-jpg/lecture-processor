@@ -3900,10 +3900,12 @@ if (backAppBtn) {
     backAppBtn.addEventListener('click', function () { window.location.href = '/dashboard'; });
   }
 }
-fullscreenBtn.addEventListener('click', function () {
-  if (!selectedPack) { showToast('Select a study pack first.', 'error'); return; }
-  openSessionSetup();
-});
+if (fullscreenBtn) {
+  fullscreenBtn.addEventListener('click', function () {
+    if (!selectedPack) { showToast('Select a study pack first.', 'error'); return; }
+    openSessionSetup();
+  });
+}
 searchInput.addEventListener('input', renderPacks);
 if (loadMorePacksBtn) {
   loadMorePacksBtn.addEventListener('click', function () {
@@ -4991,6 +4993,9 @@ function downloadAnnotatedNotesPdf() {
   var title = (selectedPack && selectedPack.title) ? selectedPack.title : 'Study Notes';
   var filename = title.replace(/[^a-zA-Z0-9 _-]/g, '').substring(0, 60).trim() || 'Study Notes';
   if (window.html2pdf) {
+    var captureHost = document.createElement('div');
+    captureHost.className = 'notes-export-capture-host';
+    captureHost.setAttribute('aria-hidden', 'true');
     var exportRoot = document.createElement('div');
     exportRoot.className = 'notes-export-root';
     var exportTitle = document.createElement('div');
@@ -5001,21 +5006,39 @@ function downloadAnnotatedNotesPdf() {
     exportView.innerHTML = notesView.innerHTML;
     exportRoot.appendChild(exportTitle);
     exportRoot.appendChild(exportView);
-    document.body.appendChild(exportRoot);
-    var options = {
-      margin: [10, 10, 10, 10],
-      filename: filename + ' - Annotated.pdf',
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      pagebreak: { mode: ['css', 'legacy'] }
+    captureHost.appendChild(exportRoot);
+    document.body.appendChild(captureHost);
+    var cleanupExportHost = function () {
+      if (document.body.contains(captureHost)) {
+        document.body.removeChild(captureHost);
+      }
     };
-    window.html2pdf().set(options).from(exportRoot).save().then(function () {
-      document.body.removeChild(exportRoot);
-      showToast('Annotated notes downloaded as PDF.');
-    }).catch(function () {
-      if (document.body.contains(exportRoot)) { document.body.removeChild(exportRoot); }
-      showToast('Could not export annotated PDF.', 'error');
+    window.requestAnimationFrame(function () {
+      var contentWidth = Math.max(794, Math.ceil(exportRoot.scrollWidth || exportRoot.offsetWidth || 794));
+      var contentHeight = Math.max(1123, Math.ceil(exportRoot.scrollHeight || exportRoot.offsetHeight || 1123));
+      var options = {
+        margin: [10, 10, 10, 10],
+        filename: filename + ' - Annotated.pdf',
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          scrollX: 0,
+          scrollY: 0,
+          windowWidth: contentWidth,
+          windowHeight: contentHeight
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'] }
+      };
+      window.html2pdf().set(options).from(exportRoot).save().then(function () {
+        cleanupExportHost();
+        showToast('Annotated notes downloaded as PDF.');
+      }).catch(function () {
+        cleanupExportHost();
+        showToast('Could not export annotated PDF.', 'error');
+      });
     });
     return;
   }
