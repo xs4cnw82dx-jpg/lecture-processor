@@ -112,3 +112,75 @@ def test_lowercase_faq_redirects_to_canonical_route(client):
 
     assert response.status_code == 302
     assert response.headers['Location'].endswith('/FAQ')
+
+
+def test_pricing_pages_render_runtime_bundle_catalog(client, runtime, monkeypatch):
+    monkeypatch.setattr(runtime, 'CREDIT_BUNDLES', {
+        'lecture_5': {
+            'name': 'Lecture Notes - 5 Pack',
+            'description': '5 audit lecture credits',
+            'credits': {'lecture_credits_standard': 5},
+            'price_cents': 1234,
+            'currency': 'eur',
+        },
+        'lecture_10': {
+            'name': 'Lecture Notes - 10 Pack',
+            'description': '10 audit lecture credits (best value)',
+            'credits': {'lecture_credits_standard': 10},
+            'price_cents': 1999,
+            'currency': 'eur',
+        },
+        'slides_10': {
+            'name': 'Slides - 10 Pack',
+            'description': '10 audit slides credits',
+            'credits': {'slides_credits': 10},
+            'price_cents': 555,
+            'currency': 'eur',
+        },
+        'slides_25': {
+            'name': 'Slides - 25 Pack',
+            'description': '25 audit slides credits (best value)',
+            'credits': {'slides_credits': 25},
+            'price_cents': 999,
+            'currency': 'eur',
+        },
+        'interview_3': {
+            'name': 'Interview - 3 Pack',
+            'description': '3 audit interview credits',
+            'credits': {'interview_credits_short': 3},
+            'price_cents': 789,
+            'currency': 'eur',
+        },
+        'interview_8': {
+            'name': 'Interview - 8 Pack',
+            'description': '8 audit interview credits (best value)',
+            'credits': {'interview_credits_short': 8},
+            'price_cents': 1799,
+            'currency': 'eur',
+        },
+    })
+
+    for path in ['/buy_credits', '/lecture-notes']:
+        response = client.get(path)
+        assert response.status_code == 200
+        html = response.get_data(as_text=True)
+        assert 'data-bundle-id="lecture_5"' in html
+        assert 'data-bundle-id="slides_10"' in html
+        assert 'data-bundle-id="interview_8"' in html
+        assert '5 audit lecture credits' in html
+        assert '10 audit slides credits' in html
+        assert '3 audit interview credits' in html
+        assert '\u20ac12.34' in html
+        assert 'best value' in html.lower()
+
+
+def test_shell_and_calendar_modal_overlays_start_hidden(client):
+    buy_response = client.get('/buy_credits')
+    assert buy_response.status_code == 200
+    buy_html = buy_response.get_data(as_text=True)
+    assert 'id="shell-export-overlay" hidden aria-hidden="true"' in buy_html
+
+    calendar_response = client.get('/calendar')
+    assert calendar_response.status_code == 200
+    calendar_html = calendar_response.get_data(as_text=True)
+    assert 'id="session-modal-overlay" hidden aria-hidden="true"' in calendar_html

@@ -32,27 +32,14 @@
     </section>
 
     <div id="study-library-shell">
-      <div class="topbar">
-        <a href="/dashboard" class="topbar-logo" aria-label="Back to dashboard">
-          <div class="topbar-logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-              stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-            </svg></div>
-          <div class="topbar-copy">
-            <h1>Study Library</h1>
-            <div class="topbar-sub">Manage packs and keep your study material organized.</div>
-          </div>
-        </a>
-        <div class="actions">
-          <button class="btn" id="fullscreen-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="15 3 21 3 21 9"></polyline>
-              <polyline points="9 21 3 21 3 15"></polyline>
-              <line x1="21" y1="3" x2="14" y2="10"></line>
-              <line x1="3" y1="21" x2="10" y2="14"></line>
-            </svg>Fullscreen Learn</button>
-        </div>
+      <div class="study-page-actions">
+        <button class="btn" id="fullscreen-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 3 21 3 21 9"></polyline>
+            <polyline points="9 21 3 21 3 15"></polyline>
+            <line x1="21" y1="3" x2="14" y2="10"></line>
+            <line x1="3" y1="21" x2="10" y2="14"></line>
+          </svg>Fullscreen Learn</button>
       </div>
 
       <div class="grid" id="library-grid">
@@ -62,8 +49,6 @@
               id="delete-folder-btn">Delete</button></div>
         </div>
         <div class="panel-body">
-          <div class="field search-box"><label>Search</label><input id="search-input"
-              placeholder="Filter packs by title, course or subject"></div>
           <div class="list" id="folder-list"></div>
         </div>
       </aside>
@@ -76,6 +61,10 @@
               </svg>Manually Create Study Pack</button><button class="btn danger" id="delete-pack-btn">Delete Pack</button></div>
         </div>
         <div class="panel-body">
+          <div class="field search-box pack-search-box">
+            <label for="search-input">Search study packs</label>
+            <input id="search-input" placeholder="Filter by title, course, or subject">
+          </div>
           <div class="pack-summary" id="pack-summary">
             <div class="pack-summary-title" id="pack-summary-title"></div>
             <div class="pack-summary-meta" id="pack-summary-meta"></div>

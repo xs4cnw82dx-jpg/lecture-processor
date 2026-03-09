@@ -216,6 +216,13 @@
       line-height: 1.45
     }
 
+    .study-page-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-bottom: 16px
+    }
+
     .actions {
       display: flex;
       gap: 8px;
@@ -602,6 +609,10 @@
 
     .search-box {
       margin-bottom: 12px
+    }
+
+    .pack-search-box {
+      margin-bottom: 16px
     }
 
     .list {
@@ -4227,6 +4238,14 @@
 
       .topbar-kicker {
         font-size: .64rem
+      }
+
+      .study-page-actions {
+        justify-content: stretch
+      }
+
+      .study-page-actions .btn {
+        width: 100%
       }
 
       .panel {

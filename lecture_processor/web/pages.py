@@ -9,6 +9,90 @@ from lecture_processor.runtime.container import get_runtime
 pages_bp = Blueprint('pages', __name__)
 
 
+PRICING_CATEGORY_SPECS = (
+    {
+        'key': 'lecture',
+        'title': 'Lecture Notes',
+        'icon': 'notes',
+        'bundle_ids': ('lecture_5', 'lecture_10'),
+    },
+    {
+        'key': 'slides',
+        'title': 'Text Extraction / Add-ons',
+        'icon': 'slides',
+        'bundle_ids': ('slides_10', 'slides_25'),
+    },
+    {
+        'key': 'interview',
+        'title': 'Interview',
+        'icon': 'interview',
+        'bundle_ids': ('interview_3', 'interview_8'),
+    },
+)
+
+
+def _format_money_display(cents: int, currency: str) -> str:
+    amount = max(0, int(cents or 0)) / 100
+    code = str(currency or 'EUR').strip().upper() or 'EUR'
+    if code == 'EUR':
+        return f'\u20ac{amount:.2f}'
+    if code == 'USD':
+        return f'${amount:.2f}'
+    return f'{code} {amount:.2f}'
+
+
+def _build_pricing_catalog(*, runtime) -> list[dict]:
+    catalog = []
+    bundles = getattr(runtime, 'CREDIT_BUNDLES', {}) or {}
+
+    for category in PRICING_CATEGORY_SPECS:
+        category_bundles = []
+        for bundle_id in category['bundle_ids']:
+            bundle = bundles.get(bundle_id)
+            if not isinstance(bundle, dict):
+                continue
+
+            credits_total = 0
+            for raw_value in (bundle.get('credits') or {}).values():
+                try:
+                    credits_total += int(raw_value or 0)
+                except (TypeError, ValueError):
+                    continue
+
+            description = str(bundle.get('description') or '').strip()
+            featured = 'best value' in description.lower()
+            description = description.replace('(best value)', '').replace('  ', ' ').strip()
+            price_cents = int(bundle.get('price_cents') or 0)
+            currency = str(bundle.get('currency') or 'EUR')
+            price_display = _format_money_display(price_cents, currency)
+            unit_price_display = (
+                _format_money_display(round(price_cents / credits_total), currency)
+                if credits_total > 0 else None
+            )
+            category_bundles.append({
+                'id': bundle_id,
+                'name': str(bundle.get('name') or bundle_id),
+                'description': description,
+                'credits_total': credits_total,
+                'credits_label': f'{credits_total} credit' + ('' if credits_total == 1 else 's'),
+                'price_display': price_display,
+                'price_per_display': (
+                    f'{unit_price_display} per credit' if unit_price_display else ''
+                ),
+                'featured': featured,
+            })
+
+        if category_bundles:
+            catalog.append({
+                'key': category['key'],
+                'title': category['title'],
+                'icon': category['icon'],
+                'bundles': category_bundles,
+            })
+
+    return catalog
+
+
 def _public_context(*, runtime) -> dict:
     return {
         'legal_contact_email': runtime.LEGAL_CONTACT_EMAIL,
@@ -55,6 +139,7 @@ def _render_processing_page(forced_mode: str):
     return render_template(
         'index.html',
         forced_mode=forced_mode,
+        pricing_catalog=_build_pricing_catalog(runtime=runtime),
         sentry_frontend_dsn=runtime.SENTRY_FRONTEND_DSN,
         sentry_environment=runtime.SENTRY_ENVIRONMENT,
         sentry_release=runtime.SENTRY_RELEASE,
@@ -219,6 +304,7 @@ def buy_credits_page():
     runtime = get_runtime()
     return render_template(
         'buy_credits.html',
+        pricing_catalog=_build_pricing_catalog(runtime=runtime),
         buy_credits_js_asset=runtime.resolve_js_asset('js/buy-credits.js'),
         **_shell_context(runtime=runtime, page_key='buy-credits', show_credits_pill=True),
     )

@@ -426,12 +426,31 @@
       if (sessionTimePicker) sessionTimePicker.setDate(timeValue, true, 'H:i');
       else sessionTimeEl.value = timeValue;
 
-      modalOverlay.classList.add('visible');
-      setTimeout(() => sessionTitleEl.focus(), 30);
+      if (typeof uxUtils.openModalOverlay === 'function') {
+        uxUtils.openModalOverlay(modalOverlay, {
+          openClass: 'visible',
+          initialFocus: sessionTitleEl,
+          onRequestClose: () => closeModal(),
+        });
+      } else {
+        modalOverlay.hidden = false;
+        modalOverlay.setAttribute('aria-hidden', 'false');
+        modalOverlay.classList.add('visible');
+        setTimeout(() => sessionTitleEl.focus(), 30);
+      }
     }
 
     function closeModal() {
-      modalOverlay.classList.remove('visible');
+      if (typeof uxUtils.closeModalOverlay === 'function') {
+        uxUtils.closeModalOverlay(modalOverlay, {
+          openClass: 'visible',
+        });
+      } else {
+        modalOverlay.classList.remove('visible');
+        modalOverlay.hidden = true;
+        modalOverlay.setAttribute('aria-hidden', 'true');
+        if (addSessionBtn) addSessionBtn.focus();
+      }
       editingSessionId = '';
       closeAllSelectMenus();
     }
@@ -774,6 +793,8 @@
     initAppSelect(dailyReminderTimeSelect, () => { queueReminderSettingsAutoSave(); });
     initAppSelect(sessionPackSelect, () => {});
     initPickers();
+    modalOverlay.hidden = true;
+    modalOverlay.setAttribute('aria-hidden', 'true');
     wireWeekActions();
 
     auth.onAuthStateChanged(async (user) => {

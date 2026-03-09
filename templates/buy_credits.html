@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/buy-credits.css') }}">
 </head>
 <body>
+  {% from '_pricing_catalog.html' import render_pricing_catalog %}
   {% set shell_title = 'Buy Credits' %}
   {% include '_app_shell.html' %}
     <main class="app-shell-page buy-credits-page">
@@ -19,56 +20,7 @@
         <h1>Buy Credits</h1>
         <p>Choose a credit pack and continue processing without interruptions.</p>
       </section>
-      <section class="pricing-grid">
-        <div class="shell-panel category">
-          <h2>Lecture Notes</h2>
-          <button type="button" class="bundle-buy-btn" data-bundle-id="lecture_5">
-            <span class="credits">5 credits</span>
-            <span class="price">&euro;9.99</span>
-            <span class="meta">Standard lecture processing</span>
-            <span class="cta">Buy now</span>
-          </button>
-          <button type="button" class="bundle-buy-btn featured" data-bundle-id="lecture_10">
-            <span class="badge">Best value</span>
-            <span class="credits">10 credits</span>
-            <span class="price">&euro;16.99</span>
-            <span class="meta">Standard lecture processing</span>
-            <span class="cta">Buy now</span>
-          </button>
-        </div>
-        <div class="shell-panel category">
-          <h2>Text Extraction / Add-ons</h2>
-          <button type="button" class="bundle-buy-btn" data-bundle-id="slides_10">
-            <span class="credits">10 credits</span>
-            <span class="price">&euro;4.99</span>
-            <span class="meta">Text extraction + interview extras</span>
-            <span class="cta">Buy now</span>
-          </button>
-          <button type="button" class="bundle-buy-btn featured" data-bundle-id="slides_25">
-            <span class="badge">Best value</span>
-            <span class="credits">25 credits</span>
-            <span class="price">&euro;9.99</span>
-            <span class="meta">Text extraction + interview extras</span>
-            <span class="cta">Buy now</span>
-          </button>
-        </div>
-        <div class="shell-panel category">
-          <h2>Interview</h2>
-          <button type="button" class="bundle-buy-btn" data-bundle-id="interview_3">
-            <span class="credits">3 credits</span>
-            <span class="price">&euro;7.99</span>
-            <span class="meta">Timestamped transcription</span>
-            <span class="cta">Buy now</span>
-          </button>
-          <button type="button" class="bundle-buy-btn featured" data-bundle-id="interview_8">
-            <span class="badge">Best value</span>
-            <span class="credits">8 credits</span>
-            <span class="price">&euro;17.99</span>
-            <span class="meta">Timestamped transcription</span>
-            <span class="cta">Buy now</span>
-          </button>
-        </div>
-      </section>
+      <section class="pricing-grid">{{ render_pricing_catalog(pricing_catalog, variant='page') }}</section>
       <section class="shell-panel purchase-history-panel" id="purchase-history">
         <div class="purchase-history-head">
           <h2>Purchase History</h2>
@@ -89,6 +41,7 @@
   <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
   <script src="{{ url_for('static', filename=buy_credits_js_asset or 'js/buy-credits.js') }}"></script>
 </body>
