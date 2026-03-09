@@ -3,7 +3,7 @@
   "private": true,
   "main": "index.js",
   "engines": {
-    "node": "18"
+    "node": "20"
   },
   "scripts": {
     "sync:allowlist": "node ../scripts/sync-allowed-email-domains.mjs"
