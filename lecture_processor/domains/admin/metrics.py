@@ -139,7 +139,46 @@ def get_bucket_key(timestamp, window_key, runtime=None):
     return dt.replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%d')
 
 
-def query_docs_in_window(collection_name, timestamp_field, window_start, window_end=None, order_desc=False, limit=None, runtime=None):
+def _normalize_filters(filters):
+    safe_filters = []
+    if not isinstance(filters, (list, tuple)):
+        return safe_filters
+    for entry in filters:
+        if not isinstance(entry, (list, tuple)) or len(entry) != 3:
+            continue
+        safe_filters.append((entry[0], entry[1], entry[2]))
+    return safe_filters
+
+
+def _matches_filters(payload, filters):
+    doc = payload if isinstance(payload, dict) else {}
+    for field_path, op_string, value in _normalize_filters(filters):
+        if op_string != '==':
+            return False
+        if doc.get(field_path) != value:
+            return False
+    return True
+
+
+def _fallback_filter_docs(docs, filters):
+    safe_filters = _normalize_filters(filters)
+    if not safe_filters:
+        return list(docs or [])
+    return [doc for doc in (docs or []) if _matches_filters(doc.to_dict() or {}, safe_filters)]
+
+
+def admin_job_filters(runtime=None):
+    _ = runtime
+    return [('admin_visible', '==', True)]
+
+
+def add_admin_visibility_flag(job_payload, runtime=None):
+    payload = dict(job_payload or {})
+    payload['admin_visible'] = is_admin_visible_job(payload, runtime=runtime)
+    return payload
+
+
+def query_docs_in_window(collection_name, timestamp_field, window_start, window_end=None, order_desc=False, limit=None, filters=None, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     return resolved_runtime.admin_repo.query_docs_in_window(
         resolved_runtime.db,
@@ -150,6 +189,7 @@ def query_docs_in_window(collection_name, timestamp_field, window_start, window_
         order_desc=order_desc,
         limit=limit,
         firestore_module=resolved_runtime.firestore,
+        filters=_normalize_filters(filters),
     )
 
 
@@ -178,7 +218,7 @@ def get_admin_data_warnings(runtime=None):
     return [str(entry) for entry in warnings_list if str(entry or '').strip()]
 
 
-def safe_query_docs_in_window(collection_name, timestamp_field, window_start, window_end=None, order_desc=False, limit=None, runtime=None):
+def safe_query_docs_in_window(collection_name, timestamp_field, window_start, window_end=None, order_desc=False, limit=None, filters=None, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     if resolved_runtime.db is None:
         return []
@@ -190,6 +230,7 @@ def safe_query_docs_in_window(collection_name, timestamp_field, window_start, wi
             window_end=window_end,
             order_desc=order_desc,
             limit=limit,
+            filters=filters,
             runtime=resolved_runtime,
         )
     except Exception:
@@ -200,6 +241,27 @@ def safe_query_docs_in_window(collection_name, timestamp_field, window_start, wi
             exc_info=True,
         )
         mark_admin_data_warning(collection_name, 'query_failed', runtime=resolved_runtime)
+        safe_filters = _normalize_filters(filters)
+        if safe_filters:
+            try:
+                fallback_docs = query_docs_in_window(
+                    collection_name=collection_name,
+                    timestamp_field=timestamp_field,
+                    window_start=window_start,
+                    window_end=window_end,
+                    order_desc=order_desc,
+                    limit=limit,
+                    filters=None,
+                    runtime=resolved_runtime,
+                )
+                return _fallback_filter_docs(fallback_docs, safe_filters)
+            except Exception:
+                resolved_runtime.logger.warning(
+                    'Admin fallback query failed for %s (%s); returning empty partial dataset.',
+                    collection_name,
+                    timestamp_field,
+                    exc_info=True,
+                )
         return []
 
 
@@ -219,12 +281,16 @@ def safe_stream_collection(collection_name, runtime=None):
         return []
 
 
-def safe_count_collection(collection_name, runtime=None):
+def safe_count_collection(collection_name, filters=None, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     if resolved_runtime.db is None:
         return 0
     try:
-        return resolved_runtime.admin_repo.count_collection(resolved_runtime.db, collection_name)
+        return resolved_runtime.admin_repo.count_collection(
+            resolved_runtime.db,
+            collection_name,
+            filters=_normalize_filters(filters),
+        )
     except Exception:
         resolved_runtime.logger.warning(
             'Admin count query failed for %s; returning 0 partial dataset.',
@@ -232,10 +298,23 @@ def safe_count_collection(collection_name, runtime=None):
             exc_info=True,
         )
         mark_admin_data_warning(collection_name, 'count_failed', runtime=resolved_runtime)
+        safe_filters = _normalize_filters(filters)
+        if safe_filters:
+            try:
+                return len(_fallback_filter_docs(
+                    resolved_runtime.admin_repo.stream_collection(resolved_runtime.db, collection_name),
+                    safe_filters,
+                ))
+            except Exception:
+                resolved_runtime.logger.warning(
+                    'Admin fallback count failed for %s; returning 0 partial dataset.',
+                    collection_name,
+                    exc_info=True,
+                )
         return 0
 
 
-def safe_count_window(collection_name, timestamp_field, window_start, runtime=None):
+def safe_count_window(collection_name, timestamp_field, window_start, filters=None, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     if resolved_runtime.db is None:
         return 0
@@ -245,6 +324,7 @@ def safe_count_window(collection_name, timestamp_field, window_start, runtime=No
             collection_name,
             timestamp_field,
             window_start,
+            filters=_normalize_filters(filters),
         )
     except Exception:
         resolved_runtime.logger.warning(

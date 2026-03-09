@@ -317,6 +317,14 @@ UPLOAD_DAILY_COUNTER_COLLECTION = 'upload_usage_daily'
 
 ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION = safe_int_env('ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION', 10000, minimum=100, maximum=50000)
 
+ACCOUNT_EXPORT_MAX_CSV_PACKS = safe_int_env('ACCOUNT_EXPORT_MAX_CSV_PACKS', 250, minimum=1, maximum=5000)
+
+ACCOUNT_EXPORT_MAX_DOCX_PACKS = safe_int_env('ACCOUNT_EXPORT_MAX_DOCX_PACKS', 40, minimum=1, maximum=1000)
+
+ACCOUNT_EXPORT_MAX_PDF_PACKS = safe_int_env('ACCOUNT_EXPORT_MAX_PDF_PACKS', 20, minimum=1, maximum=1000)
+
+ACCOUNT_EXPORT_ZIP_SPOOL_BYTES = safe_int_env('ACCOUNT_EXPORT_ZIP_SPOOL_BYTES', 5 * 1024 * 1024, minimum=1024 * 1024, maximum=250 * 1024 * 1024)
+
 ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION = safe_int_env('ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION', 10000, minimum=100, maximum=50000)
 
 RATE_LIMIT_EVENTS = {}
@@ -847,6 +855,8 @@ def log_rate_limit_hit(limit_name, retry_after=0):
 def save_job_log(job_id, job_data, finished_at):
     """Save a processing job log to Firestore for analytics."""
     try:
+        from lecture_processor.domains.admin import metrics as admin_metrics
+
         started_at = job_data.get('started_at', 0)
         duration = round(finished_at - started_at, 1) if started_at else 0
         payload = {
@@ -887,6 +897,7 @@ def save_job_log(job_id, job_data, finished_at):
             'finished_at': finished_at,
             'duration_seconds': duration,
         }
+        payload = admin_metrics.add_admin_visibility_flag(payload)
         job_logs_repo.set_job_log(db, job_id, payload)
         status = str(job_data.get('status', '') or '').lower()
         backend_event = 'processing_finished_backend'

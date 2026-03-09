@@ -3,6 +3,7 @@
 from datetime import datetime, timezone, timedelta
 import io
 import json
+import tempfile
 import time
 import zipfile
 
@@ -14,6 +15,17 @@ from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.shared import parsing as shared_parsing
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study import export as study_export
+
+
+def _export_warning_entry(pack, doc_id, reason, formats):
+    payload = pack if isinstance(pack, dict) else {}
+    safe_pack_id = str(payload.get('study_pack_id', '') or doc_id or '').strip() or str(doc_id or '')
+    return {
+        'pack_id': safe_pack_id,
+        'title': str(payload.get('title', '') or '').strip(),
+        'reason': str(reason or '').strip(),
+        'formats': [str(item or '').strip() for item in (formats or []) if str(item or '').strip()],
+    }
 
 
 def create_admin_session(app_ctx, request):
@@ -281,6 +293,7 @@ def export_account_bundle(app_ctx, request):
         return app_ctx.jsonify({'error': 'Select at least one export option.'}), 400
 
     packs = []
+    collection_truncated = False
     if any(
         include.get(key)
         for key in (
@@ -297,6 +310,7 @@ def export_account_bundle(app_ctx, request):
             app_ctx.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION + 1,
         )
         packs = docs[: app_ctx.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION]
+        collection_truncated = len(docs) > app_ctx.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION
 
     folder_map = {
         'flashcards_csv': 'flashcards_csv',
@@ -307,53 +321,111 @@ def export_account_bundle(app_ctx, request):
         'account_json': 'account_json',
     }
 
-    archive_bytes = io.BytesIO()
+    format_limits = {
+        'csv': max(1, int(app_ctx.ACCOUNT_EXPORT_MAX_CSV_PACKS or 250)),
+        'docx': max(1, int(app_ctx.ACCOUNT_EXPORT_MAX_DOCX_PACKS or 40)),
+        'pdf': max(1, int(app_ctx.ACCOUNT_EXPORT_MAX_PDF_PACKS or 20)),
+    }
+
+    archive_bytes = tempfile.SpooledTemporaryFile(
+        max_size=max(1024 * 1024, int(app_ctx.ACCOUNT_EXPORT_ZIP_SPOOL_BYTES or 5 * 1024 * 1024)),
+        mode='w+b',
+    )
     try:
         with zipfile.ZipFile(archive_bytes, mode='w', compression=zipfile.ZIP_DEFLATED) as archive:
+            warnings_payload = {
+                'generated_at': app_ctx.time.time(),
+                'limits': {
+                    'max_docs_per_collection': int(app_ctx.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION or 0),
+                    'csv_packs': format_limits['csv'],
+                    'docx_packs': format_limits['docx'],
+                    'pdf_packs': format_limits['pdf'],
+                },
+                'omitted_exports': [],
+            }
             for key, folder in folder_map.items():
                 if include.get(key):
                     archive.writestr(folder + '/', '')
 
-            for doc in packs:
+            for index, doc in enumerate(packs):
                 pack = doc.to_dict() or {}
                 pack_id = str(pack.get('study_pack_id', '') or doc.id or '').strip() or str(doc.id)
                 safe_title = study_export.sanitize_export_filename(
                     pack.get('title', '') or pack_id,
                     fallback=pack_id,
                 )
-
+                include_csv_formats = []
                 if include.get('flashcards_csv'):
-                    csv_bytes = study_export.build_flashcards_csv_bytes(pack, runtime=app_ctx)
-                    if csv_bytes:
-                        archive.writestr(f'flashcards_csv/{safe_title}-{pack_id}.csv', csv_bytes)
-
+                    include_csv_formats.append('flashcards_csv')
                 if include.get('practice_tests_csv'):
-                    test_bytes = study_export.build_practice_test_csv_bytes(pack, runtime=app_ctx)
-                    if test_bytes:
-                        archive.writestr(f'practice_tests_csv/{safe_title}-{pack_id}.csv', test_bytes)
+                    include_csv_formats.append('practice_tests_csv')
+                if include_csv_formats and index >= format_limits['csv']:
+                    warnings_payload['omitted_exports'].append(
+                        _export_warning_entry(pack, pack_id, 'csv_pack_limit_exceeded', include_csv_formats)
+                    )
+                else:
+                    if include.get('flashcards_csv'):
+                        csv_bytes = study_export.build_flashcards_csv_bytes(pack, runtime=app_ctx)
+                        if csv_bytes:
+                            archive.writestr(f'flashcards_csv/{safe_title}-{pack_id}.csv', csv_bytes)
+
+                    if include.get('practice_tests_csv'):
+                        test_bytes = study_export.build_practice_test_csv_bytes(pack, runtime=app_ctx)
+                        if test_bytes:
+                            archive.writestr(f'practice_tests_csv/{safe_title}-{pack_id}.csv', test_bytes)
 
                 if include.get('lecture_notes_docx'):
-                    docx_bytes = study_export.build_notes_docx_bytes(pack, runtime=app_ctx)
-                    if docx_bytes:
-                        archive.writestr(f'lecture_notes_docx/{safe_title}-{pack_id}.docx', docx_bytes)
+                    if index >= format_limits['docx']:
+                        warnings_payload['omitted_exports'].append(
+                            _export_warning_entry(pack, pack_id, 'docx_pack_limit_exceeded', ['lecture_notes_docx'])
+                        )
+                    else:
+                        docx_bytes = study_export.build_notes_docx_bytes(pack, runtime=app_ctx)
+                        if docx_bytes:
+                            archive.writestr(f'lecture_notes_docx/{safe_title}-{pack_id}.docx', docx_bytes)
 
+                include_pdf_formats = []
                 if include.get('lecture_notes_pdf_marked'):
-                    pdf_marked = study_export.build_notes_pdf_bytes(pack, include_answers=True, runtime=app_ctx)
-                    if pdf_marked:
-                        archive.writestr(f'lecture_notes_pdf_marked/{safe_title}-{pack_id}-marked.pdf', pdf_marked)
-
+                    include_pdf_formats.append('lecture_notes_pdf_marked')
                 if include.get('lecture_notes_pdf_unmarked'):
-                    pdf_unmarked = study_export.build_notes_pdf_bytes(pack, include_answers=False, runtime=app_ctx)
-                    if pdf_unmarked:
-                        archive.writestr(f'lecture_notes_pdf_unmarked/{safe_title}-{pack_id}-unmarked.pdf', pdf_unmarked)
+                    include_pdf_formats.append('lecture_notes_pdf_unmarked')
+                if include_pdf_formats:
+                    if index >= format_limits['pdf']:
+                        warnings_payload['omitted_exports'].append(
+                            _export_warning_entry(pack, pack_id, 'pdf_pack_limit_exceeded', include_pdf_formats)
+                        )
+                    else:
+                        if include.get('lecture_notes_pdf_marked'):
+                            pdf_marked = study_export.build_notes_pdf_bytes(pack, include_answers=True, runtime=app_ctx)
+                            if pdf_marked:
+                                archive.writestr(f'lecture_notes_pdf_marked/{safe_title}-{pack_id}-marked.pdf', pdf_marked)
+
+                        if include.get('lecture_notes_pdf_unmarked'):
+                            pdf_unmarked = study_export.build_notes_pdf_bytes(pack, include_answers=False, runtime=app_ctx)
+                            if pdf_unmarked:
+                                archive.writestr(f'lecture_notes_pdf_unmarked/{safe_title}-{pack_id}-unmarked.pdf', pdf_unmarked)
 
             if include.get('account_json'):
                 account_payload = account_lifecycle.collect_user_export_payload(uid, email, runtime=app_ctx)
                 account_bytes = json.dumps(account_payload, ensure_ascii=False, indent=2, default=str).encode('utf-8')
                 archive.writestr('account_json/account-export.json', account_bytes)
+            if collection_truncated:
+                warnings_payload['collection_truncated'] = {
+                    'study_packs': {
+                        'reason': 'max_docs_per_collection_reached',
+                        'limit': int(app_ctx.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION or 0),
+                    }
+                }
+            if warnings_payload['omitted_exports'] or warnings_payload.get('collection_truncated'):
+                archive.writestr(
+                    'export_warnings.json',
+                    json.dumps(warnings_payload, ensure_ascii=False, indent=2).encode('utf-8'),
+                )
     except RuntimeError as error:
+        archive_bytes.close()
         return app_ctx.jsonify({'error': str(error)}), 500
     except Exception as error:
+        archive_bytes.close()
         app_ctx.logger.error(f"Error building export bundle for {uid}: {error}")
         return app_ctx.jsonify({'error': 'Could not build export bundle'}), 500
 

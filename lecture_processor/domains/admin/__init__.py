@@ -1,4 +1,6 @@
 from .metrics import (
+    add_admin_visibility_flag,
+    admin_job_filters,
     build_admin_deployment_info,
     build_admin_funnel_daily_rows,
     build_admin_funnel_steps,
@@ -15,6 +17,8 @@ from .metrics import (
 )
 
 __all__ = [
+    'add_admin_visibility_flag',
+    'admin_job_filters',
     'build_admin_deployment_info',
     'build_admin_funnel_daily_rows',
     'build_admin_funnel_steps',

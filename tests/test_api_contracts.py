@@ -99,7 +99,7 @@ def test_study_pack_list_uses_repo_order_and_count_fallback(client, monkeypatch)
     monkeypatch.setattr(
         core.study_repo,
         "list_study_pack_summaries_by_uid",
-        lambda _db, _uid, _limit: [
+        lambda _db, _uid, _limit, after_doc=None: [
             _Doc(
                 "pack-new",
                 {
@@ -127,7 +127,8 @@ def test_study_pack_list_uses_repo_order_and_count_fallback(client, monkeypatch)
     response = client.get("/api/study-packs", headers={"Authorization": "Bearer dev"})
 
     assert response.status_code == 200
-    packs = response.get_json()["study_packs"]
+    payload = response.get_json()
+    packs = payload["study_packs"]
     assert [pack["study_pack_id"] for pack in packs] == ["pack-new", "pack-old"]
     assert packs[0]["flashcards_count"] == 9
     assert packs[0]["test_questions_count"] == 4
@@ -135,6 +136,66 @@ def test_study_pack_list_uses_repo_order_and_count_fallback(client, monkeypatch)
     assert packs[1]["flashcards_count"] == 2
     assert packs[1]["test_questions_count"] == 3
     assert packs[1]["daily_card_goal"] is None
+    assert payload["has_more"] is False
+    assert payload["next_cursor"] == ""
+
+
+def test_study_pack_list_supports_cursor_pagination_contract(client, monkeypatch):
+    class _Doc:
+        def __init__(self, doc_id, payload):
+            self.id = doc_id
+            self._payload = payload
+
+        def to_dict(self):
+            return dict(self._payload)
+
+    repo_calls = {}
+
+    def _get_doc(_db, pack_id):
+        repo_calls["cursor_id"] = pack_id
+
+        class _CursorDoc:
+            exists = True
+
+            def to_dict(self):
+                return {"uid": "study-u1"}
+
+        return _CursorDoc()
+
+    def _list_docs(_db, _uid, limit, after_doc=None):
+        repo_calls["limit"] = limit
+        repo_calls["after_doc"] = after_doc
+        return [
+            _Doc("pack-b", {"title": "Pack B", "created_at": 200}),
+            _Doc("pack-a", {"title": "Pack A", "created_at": 100}),
+        ]
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u1", "email": "u@example.com"})
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", _get_doc)
+    monkeypatch.setattr(core.study_repo, "list_study_pack_summaries_by_uid", _list_docs)
+
+    response = client.get("/api/study-packs?limit=1&after=pack-cursor", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["has_more"] is True
+    assert payload["next_cursor"] == "pack-b"
+    assert [item["study_pack_id"] for item in payload["study_packs"]] == ["pack-b"]
+    assert repo_calls["cursor_id"] == "pack-cursor"
+    assert repo_calls["limit"] == 2
+
+
+def test_study_pack_list_rejects_invalid_cursor(client, monkeypatch):
+    class _MissingDoc:
+        exists = False
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u1", "email": "u@example.com"})
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _MissingDoc())
+
+    response = client.get("/api/study-packs?after=missing-pack", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 400
+    assert "cursor" in response.get_json()["error"].lower()
 
 
 def test_study_pack_get_returns_goal_and_notes_highlights(client, monkeypatch):
@@ -309,6 +370,21 @@ def test_admin_overview_contract_fields(client, monkeypatch):
     assert "metrics" in data
     assert "recent_jobs" in data
     assert "recent_purchases" in data
+
+
+def test_admin_overview_uses_filtered_job_count(client, monkeypatch):
+    count_calls = []
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
+    monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)
+    monkeypatch.setattr(admin_metrics, "safe_count_collection", lambda collection_name, filters=None, runtime=None: count_calls.append((collection_name, filters)) or 0)
+    monkeypatch.setattr(admin_metrics, "safe_count_window", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(admin_metrics, "safe_query_docs_in_window", lambda *args, **kwargs: [])
+
+    response = client.get("/api/admin/overview?window=7d")
+
+    assert response.status_code == 200
+    assert ("job_logs", admin_metrics.admin_job_filters()) in count_calls
 
 
 def test_admin_prompts_markdown_contract(client, monkeypatch):

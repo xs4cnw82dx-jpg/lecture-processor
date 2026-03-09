@@ -613,6 +613,17 @@
       padding-right: 2px
     }
 
+    .pack-list-actions {
+      display: flex;
+      justify-content: center;
+      padding: 12px 0 4px
+    }
+
+    .pack-list-actions .btn[disabled] {
+      cursor: wait;
+      opacity: .7
+    }
+
     .item {
       border: 1px solid var(--gray-200);
       border-radius: var(--radius-md);
