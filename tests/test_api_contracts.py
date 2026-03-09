@@ -4,6 +4,8 @@ from types import SimpleNamespace
 
 from flask import request
 
+from lecture_processor.domains.account import lifecycle as account_lifecycle
+from lecture_processor.domains.admin import rollups as admin_rollups
 from lecture_processor.domains.admin import metrics as admin_metrics
 from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.auth import policy as auth_policy
@@ -29,6 +31,186 @@ def test_config_endpoint_shape(client, monkeypatch):
     assert isinstance(payload.get("bundles"), dict)
     assert "lecture_5" in payload["bundles"]
     assert "interview_3" in payload["bundles"]
+
+
+def test_security_headers_present_on_html_and_api_routes(client):
+    html_response = client.get("/dashboard")
+    api_response = client.get("/api/config")
+
+    for response in (html_response, api_response):
+        assert response.status_code == 200
+        assert "Content-Security-Policy" in response.headers
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+        assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+        assert response.headers["X-Frame-Options"] == "DENY"
+
+    assert "script-src" in html_response.headers["Content-Security-Policy"]
+
+
+def test_planner_api_requires_auth(client):
+    assert client.get("/api/planner/settings").status_code == 401
+    assert client.get("/api/planner/sessions").status_code == 401
+    assert client.put("/api/planner/settings", json={}).status_code == 401
+    assert client.put("/api/planner/sessions/session-one", json={}).status_code == 401
+    assert client.delete("/api/planner/sessions/session-one").status_code == 401
+
+
+def test_planner_api_crud_and_future_only_filter(client, monkeypatch):
+    monkeypatch.setattr(core, "db", None)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "planner-u1", "email": "u@example.com"})
+    monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    core.planner_repo.clear_memory_state()
+
+    settings_response = client.put(
+        "/api/planner/settings",
+        json={"enabled": "on", "offset": "15", "daily_enabled": "off", "daily_time": "08:30"},
+        headers={"Authorization": "Bearer dev"},
+    )
+    assert settings_response.status_code == 200
+    assert settings_response.get_json()["settings"]["offset"] == "15"
+
+    future_response = client.put(
+        "/api/planner/sessions/future-session",
+        json={
+            "title": "Future review",
+            "date": "2099-04-01",
+            "time": "09:30",
+            "duration": 45,
+            "notes": "Review chapter 4",
+            "pack_id": "pack-1",
+            "pack_title": "Biology",
+        },
+        headers={"Authorization": "Bearer dev"},
+    )
+    assert future_response.status_code == 200
+
+    past_response = client.put(
+        "/api/planner/sessions/past-session",
+        json={
+            "title": "Past review",
+            "date": "2000-04-01",
+            "time": "10:00",
+            "duration": 30,
+        },
+        headers={"Authorization": "Bearer dev"},
+    )
+    assert past_response.status_code == 200
+
+    all_sessions = client.get("/api/planner/sessions?limit=10", headers={"Authorization": "Bearer dev"})
+    assert all_sessions.status_code == 200
+    assert [item["id"] for item in all_sessions.get_json()["sessions"]] == ["past-session", "future-session"]
+
+    future_only = client.get("/api/planner/sessions?future_only=1&limit=10", headers={"Authorization": "Bearer dev"})
+    assert future_only.status_code == 200
+    assert [item["id"] for item in future_only.get_json()["sessions"]] == ["future-session"]
+
+    delete_response = client.delete("/api/planner/sessions/past-session", headers={"Authorization": "Bearer dev"})
+    assert delete_response.status_code == 200
+    remaining = client.get("/api/planner/sessions?limit=10", headers={"Authorization": "Bearer dev"})
+    assert [item["id"] for item in remaining.get_json()["sessions"]] == ["future-session"]
+
+    core.planner_repo.clear_memory_state()
+
+
+def test_planner_api_respects_account_write_guard(client, monkeypatch):
+    monkeypatch.setattr(core, "db", None)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "planner-u2", "email": "u@example.com"})
+    monkeypatch.setattr(
+        account_lifecycle,
+        "ensure_account_allows_writes",
+        lambda _uid, runtime=None: (False, "Account deletion is in progress."),
+    )
+
+    response = client.put(
+        "/api/planner/settings",
+        json={"enabled": "on"},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 409
+    assert response.get_json()["status"] == "account_deletion_in_progress"
+
+
+def test_admin_overview_uses_rollups_and_limited_recent_queries(client, monkeypatch):
+    class _Doc:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def to_dict(self):
+            return dict(self._payload)
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u1", "email": "admin@example.com"})
+    monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)
+    now_ts = 1_762_000_000.0
+    monkeypatch.setattr(core.time, "time", lambda: now_ts)
+    monkeypatch.setattr(admin_metrics, "safe_count_collection", lambda collection_name, filters=None, runtime=None: 12 if collection_name == "users" else 34)
+    monkeypatch.setattr(admin_metrics, "safe_count_window", lambda *_args, **_kwargs: 3)
+
+    _labels, bucket_keys, _granularity = admin_metrics.build_time_buckets("7d", now_ts, runtime=core)
+    rollups = []
+    for index, bucket_key in enumerate(bucket_keys, start=1):
+        funnel_counts = {stage["event"]: index for stage in core.ANALYTICS_FUNNEL_STAGES}
+        rollups.append({
+            "bucket_key": bucket_key,
+            "purchases": {"count": 1, "total_revenue_cents": index * 100},
+            "jobs": {
+                "total": 2,
+                "complete": 1,
+                "error": 1,
+                "refunded": 1 if index % 2 == 0 else 0,
+                "duration_sum_seconds": float(index * 30),
+                "duration_count": 1,
+                "by_mode": {
+                    "lecture-notes": {"total": 1, "complete": 1, "error": 0},
+                    "slides-only": {"total": 1, "complete": 0, "error": 1},
+                    "interview": {"total": 0, "complete": 0, "error": 0},
+                    "other": {"total": 0, "complete": 0, "error": 0},
+                },
+            },
+            "analytics": {
+                "event_count": 5,
+                "funnel_counts": funnel_counts,
+            },
+            "rate_limits": {"upload": 1, "checkout": 0, "analytics": 0, "tools": 0},
+        })
+    monkeypatch.setattr(admin_rollups, "load_window_rollups", lambda *_args, **_kwargs: rollups)
+
+    query_calls = []
+
+    def _safe_query_docs_in_window(collection_name, timestamp_field, window_start, window_end=None, order_desc=False, limit=None, filters=None, allow_unfiltered_fallback=True, runtime=None):
+        query_calls.append({
+            "collection_name": collection_name,
+            "order_desc": order_desc,
+            "limit": limit,
+            "allow_unfiltered_fallback": allow_unfiltered_fallback,
+        })
+        if collection_name == "job_logs":
+            return [_Doc({"job_id": "job-1", "email": "u@example.com", "mode": "lecture-notes", "status": "complete", "finished_at": now_ts, "duration_seconds": 42})]
+        if collection_name == "purchases":
+            return [_Doc({"uid": "admin-u1", "bundle_name": "Lecture 5", "price_cents": 999, "currency": "eur", "created_at": now_ts})]
+        if collection_name == "rate_limit_logs":
+            return [_Doc({"created_at": now_ts, "limit_name": "upload", "retry_after_seconds": 30})]
+        return []
+
+    monkeypatch.setattr(admin_metrics, "safe_query_docs_in_window", _safe_query_docs_in_window)
+
+    response = client.get("/api/admin/overview?window=7d", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["metrics"]["total_users"] == 12
+    assert payload["metrics"]["purchase_count"] == 7
+    assert payload["metrics"]["total_revenue_cents"] == 2800
+    assert payload["metrics"]["success_jobs"] == 7
+    assert payload["metrics"]["failed_jobs"] == 7
+    assert payload["metrics"]["rate_limit_429_total"] == 7
+    assert payload["trends"]["revenue_cents"][0] == 100
+    assert payload["recent_jobs"][0]["job_id"] == "job-1"
+    assert payload["recent_purchases"][0]["bundle_name"] == "Lecture 5"
+    assert payload["recent_rate_limits"][0]["limit_name"] == "upload"
+    assert all(call["limit"] == 20 for call in query_calls)
+    assert all(call["order_desc"] is True for call in query_calls)
+    assert all(call["allow_unfiltered_fallback"] is False for call in query_calls)
 
 
 def test_checkout_invalid_bundle_returns_400(client, monkeypatch):
@@ -413,6 +595,7 @@ def test_admin_overview_uses_filtered_job_count(client, monkeypatch):
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
     monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)
+    monkeypatch.setattr(admin_rollups, "load_window_rollups", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(admin_metrics, "safe_count_collection", lambda collection_name, filters=None, runtime=None: count_calls.append((collection_name, filters)) or 0)
     monkeypatch.setattr(admin_metrics, "safe_count_window", lambda *args, **kwargs: 0)
     monkeypatch.setattr(admin_metrics, "safe_query_docs_in_window", lambda *args, **kwargs: [])

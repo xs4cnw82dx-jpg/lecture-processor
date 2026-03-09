@@ -1,7 +1,7 @@
 from flask import Blueprint, request
 
 from lecture_processor.runtime.container import get_runtime
-from lecture_processor.services import study_api_service
+from lecture_processor.services import planner_api_service, study_api_service
 
 study_bp = Blueprint('study_api', __name__)
 
@@ -10,6 +10,36 @@ study_bp = Blueprint('study_api', __name__)
 def get_study_progress():
     runtime = get_runtime()
     return study_api_service.get_study_progress(runtime, request)
+
+
+@study_bp.route('/api/planner/settings', methods=['GET'])
+def get_planner_settings():
+    runtime = get_runtime()
+    return planner_api_service.get_planner_settings(runtime, request)
+
+
+@study_bp.route('/api/planner/settings', methods=['PUT'])
+def update_planner_settings():
+    runtime = get_runtime()
+    return planner_api_service.update_planner_settings(runtime, request)
+
+
+@study_bp.route('/api/planner/sessions', methods=['GET'])
+def list_planner_sessions():
+    runtime = get_runtime()
+    return planner_api_service.list_planner_sessions(runtime, request)
+
+
+@study_bp.route('/api/planner/sessions/<session_id>', methods=['PUT'])
+def upsert_planner_session(session_id):
+    runtime = get_runtime()
+    return planner_api_service.upsert_planner_session(runtime, request, session_id)
+
+
+@study_bp.route('/api/planner/sessions/<session_id>', methods=['DELETE'])
+def delete_planner_session(session_id):
+    runtime = get_runtime()
+    return planner_api_service.delete_planner_session(runtime, request, session_id)
 
 
 @study_bp.route('/api/study-progress', methods=['PUT'])

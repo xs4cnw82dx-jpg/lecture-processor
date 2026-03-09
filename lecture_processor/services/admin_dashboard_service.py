@@ -1,6 +1,7 @@
 """Admin dashboard, export, and batch-list flows extracted from admin API service."""
 
 from lecture_processor.domains.admin import metrics as admin_metrics
+from lecture_processor.domains.admin import rollups as admin_rollups
 from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.shared import sanitize_csv_row
 
@@ -53,126 +54,103 @@ def admin_overview(app_ctx, request):
         total_users = admin_metrics.safe_count_collection('users', runtime=app_ctx)
         new_users = admin_metrics.safe_count_window('users', 'created_at', window_start, runtime=app_ctx)
         total_processed = admin_metrics.safe_count_collection('job_logs', filters=job_filters, runtime=app_ctx)
+        trend_labels, trend_keys, trend_granularity = admin_metrics.build_time_buckets(
+            window_key,
+            now_ts,
+            runtime=app_ctx,
+        )
+        rollups = admin_rollups.load_window_rollups(window_key, now_ts, runtime=app_ctx)
+        rollups_by_key = {
+            str(rollup.get('bucket_key', '') or ''): rollup
+            for rollup in rollups
+            if isinstance(rollup, dict)
+        }
 
-        filtered_purchases_docs = admin_metrics.safe_query_docs_in_window(
-            collection_name='purchases',
-            timestamp_field='created_at',
-            window_start=window_start,
-            window_end=now_ts,
-            runtime=app_ctx,
-        )
-        filtered_jobs_docs = admin_metrics.safe_query_docs_in_window(
-            collection_name='job_logs',
-            timestamp_field='finished_at',
-            window_start=window_start,
-            window_end=now_ts,
-            filters=job_filters,
-            runtime=app_ctx,
-        )
-        filtered_analytics_docs = admin_metrics.safe_query_docs_in_window(
-            collection_name='analytics_events',
-            timestamp_field='created_at',
-            window_start=window_start,
-            window_end=now_ts,
-            runtime=app_ctx,
-        )
-        filtered_rate_limit_docs = admin_metrics.safe_query_docs_in_window(
-            collection_name='rate_limit_logs',
-            timestamp_field='created_at',
-            window_start=window_start,
-            window_end=now_ts,
-            runtime=app_ctx,
-        )
-
-        total_revenue_cents = 0
         purchase_count = 0
-        filtered_purchases = []
-        for doc in filtered_purchases_docs:
-            purchase = doc.to_dict() or {}
-            filtered_purchases.append(purchase)
-            purchase_count += 1
-            total_revenue_cents += purchase.get('price_cents', 0) or 0
-
+        total_revenue_cents = 0
         job_count = 0
         success_jobs = 0
         failed_jobs = 0
         refunded_jobs = 0
-        durations = []
-        filtered_jobs = []
-        for doc in filtered_jobs_docs:
-            job = doc.to_dict() or {}
-            if not admin_metrics.is_admin_visible_job(job, runtime=app_ctx):
-                continue
-            filtered_jobs.append(job)
-            job_count += 1
-            status = job.get('status', '')
-            if status == 'complete':
-                success_jobs += 1
-            elif status == 'error':
-                failed_jobs += 1
-            if job.get('credit_refunded'):
-                refunded_jobs += 1
-            duration = job.get('duration_seconds')
-            if isinstance(duration, (int, float)):
-                durations.append(duration)
-
-        avg_duration_seconds = round(sum(durations) / len(durations), 1) if durations else 0
-
-        funnel_steps, analytics_event_count = admin_metrics.build_admin_funnel_steps(
-            filtered_analytics_docs,
-            window_start,
-            runtime=app_ctx,
-        )
-        rate_limit_counts = {'upload': 0, 'checkout': 0, 'analytics': 0, 'tools': 0}
-        for doc in filtered_rate_limit_docs:
-            entry = doc.to_dict() or {}
-            limit_name = str(entry.get('limit_name', '') or '').strip().lower()
-            if limit_name in rate_limit_counts:
-                rate_limit_counts[limit_name] += 1
-
-        rate_limit_entries = []
-        for doc in filtered_rate_limit_docs:
-            entry = doc.to_dict() or {}
-            rate_limit_entries.append(entry)
-        recent_rate_limits_sorted = sorted(
-            rate_limit_entries,
-            key=lambda entry: admin_metrics.get_timestamp(entry.get('created_at'), runtime=app_ctx),
-            reverse=True,
-        )[:20]
-        recent_rate_limits = []
-        for entry in recent_rate_limits_sorted:
-            limit_name = str(entry.get('limit_name', '') or '').strip().lower()
-            if limit_name not in {'upload', 'checkout', 'analytics', 'tools'}:
-                continue
-            recent_rate_limits.append({
-                'created_at': entry.get('created_at', 0),
-                'limit_name': limit_name,
-                'retry_after_seconds': int(entry.get('retry_after_seconds', 0) or 0),
-            })
-
+        duration_sum_seconds = 0.0
+        duration_count = 0
+        analytics_event_count = 0
+        rate_limit_counts = {name: 0 for name in admin_rollups.KNOWN_RATE_LIMITS}
+        funnel_counts = {
+            str(stage.get('event', '') or '').strip(): 0
+            for stage in app_ctx.ANALYTICS_FUNNEL_STAGES
+            if str(stage.get('event', '') or '').strip()
+        }
         mode_breakdown = {
             'lecture-notes': {'label': 'Lecture Notes', 'total': 0, 'complete': 0, 'error': 0},
             'slides-only': {'label': 'Slide Extract', 'total': 0, 'complete': 0, 'error': 0},
             'interview': {'label': 'Interview Transcript', 'total': 0, 'complete': 0, 'error': 0},
             'other': {'label': 'Other', 'total': 0, 'complete': 0, 'error': 0},
         }
-        for job in filtered_jobs:
-            mode = job.get('mode', '')
-            key = mode if mode in mode_breakdown else 'other'
-            status = job.get('status', '')
-            mode_breakdown[key]['total'] += 1
-            if status == 'complete':
-                mode_breakdown[key]['complete'] += 1
-            elif status == 'error':
-                mode_breakdown[key]['error'] += 1
 
-        recent_jobs_sorted = sorted(
-            filtered_jobs,
-            key=lambda j: admin_metrics.get_timestamp(j.get('finished_at'), runtime=app_ctx),
-            reverse=True
-        )[:20]
+        for rollup in rollups:
+            purchases = rollup.get('purchases', {}) if isinstance(rollup.get('purchases'), dict) else {}
+            jobs = rollup.get('jobs', {}) if isinstance(rollup.get('jobs'), dict) else {}
+            analytics = rollup.get('analytics', {}) if isinstance(rollup.get('analytics'), dict) else {}
+            rate_limits = rollup.get('rate_limits', {}) if isinstance(rollup.get('rate_limits'), dict) else {}
+            purchase_count += _to_non_negative_int(purchases.get('count', 0))
+            total_revenue_cents += _to_non_negative_int(purchases.get('total_revenue_cents', 0))
+            job_count += _to_non_negative_int(jobs.get('total', 0))
+            success_jobs += _to_non_negative_int(jobs.get('complete', 0))
+            failed_jobs += _to_non_negative_int(jobs.get('error', 0))
+            refunded_jobs += _to_non_negative_int(jobs.get('refunded', 0))
+            duration_sum_seconds += _to_non_negative_float(jobs.get('duration_sum_seconds', 0.0))
+            duration_count += _to_non_negative_int(jobs.get('duration_count', 0))
+            analytics_event_count += _to_non_negative_int(analytics.get('event_count', 0))
+            funnel_counts_payload = analytics.get('funnel_counts', {}) if isinstance(analytics.get('funnel_counts'), dict) else {}
+            for event_name in funnel_counts:
+                funnel_counts[event_name] += _to_non_negative_int(funnel_counts_payload.get(event_name, 0))
+            for limit_name in rate_limit_counts:
+                rate_limit_counts[limit_name] += _to_non_negative_int(rate_limits.get(limit_name, 0))
+            by_mode = jobs.get('by_mode', {}) if isinstance(jobs.get('by_mode'), dict) else {}
+            for mode_name in mode_breakdown:
+                mode_payload = by_mode.get(mode_name, {}) if isinstance(by_mode.get(mode_name), dict) else {}
+                mode_breakdown[mode_name]['total'] += _to_non_negative_int(mode_payload.get('total', 0))
+                mode_breakdown[mode_name]['complete'] += _to_non_negative_int(mode_payload.get('complete', 0))
+                mode_breakdown[mode_name]['error'] += _to_non_negative_int(mode_payload.get('error', 0))
+
+        avg_duration_seconds = round(duration_sum_seconds / duration_count, 1) if duration_count > 0 else 0
+
+        funnel_steps = []
+        previous_count = 0
+        for idx, stage in enumerate(app_ctx.ANALYTICS_FUNNEL_STAGES):
+            event_name = str(stage.get('event', '') or '').strip()
+            count = _to_non_negative_int(funnel_counts.get(event_name, 0))
+            if idx == 0:
+                conversion = 100.0 if count > 0 else 0.0
+            elif previous_count > 0:
+                conversion = round(min(count / previous_count * 100.0, 100.0), 1)
+            else:
+                conversion = 0.0
+            funnel_steps.append({
+                'event': event_name,
+                'label': stage.get('label', event_name),
+                'count': count,
+                'conversion_from_prev': conversion,
+            })
+            previous_count = count
+
+        recent_job_docs = admin_metrics.safe_query_docs_in_window(
+            collection_name='job_logs',
+            timestamp_field='finished_at',
+            window_start=window_start,
+            window_end=now_ts,
+            order_desc=True,
+            limit=20,
+            filters=job_filters,
+            allow_unfiltered_fallback=False,
+            runtime=app_ctx,
+        )
         recent_jobs = []
-        for job in recent_jobs_sorted:
+        for doc in recent_job_docs:
+            job = doc.to_dict() or {}
+            if not admin_metrics.is_admin_visible_job(job, runtime=app_ctx):
+                continue
             recent_jobs.append({
                 'job_id': job.get('job_id', ''),
                 'email': job.get('email', ''),
@@ -192,13 +170,19 @@ def admin_overview(app_ctx, request):
                 'credit_refund_method': job.get('credit_refund_method', ''),
             })
 
-        recent_purchases_sorted = sorted(
-            filtered_purchases,
-            key=lambda p: admin_metrics.get_timestamp(p.get('created_at'), runtime=app_ctx),
-            reverse=True
-        )[:20]
+        recent_purchase_docs = admin_metrics.safe_query_docs_in_window(
+            collection_name='purchases',
+            timestamp_field='created_at',
+            window_start=window_start,
+            window_end=now_ts,
+            order_desc=True,
+            limit=20,
+            allow_unfiltered_fallback=False,
+            runtime=app_ctx,
+        )
         recent_purchases = []
-        for purchase in recent_purchases_sorted:
+        for doc in recent_purchase_docs:
+            purchase = doc.to_dict() or {}
             recent_purchases.append({
                 'uid': purchase.get('uid', ''),
                 'bundle_name': purchase.get('bundle_name', 'Unknown'),
@@ -207,41 +191,40 @@ def admin_overview(app_ctx, request):
                 'created_at': purchase.get('created_at', 0),
             })
 
-        trend_labels, trend_keys, trend_granularity = admin_metrics.build_time_buckets(
-            window_key,
-            now_ts,
+        recent_rate_limit_docs = admin_metrics.safe_query_docs_in_window(
+            collection_name='rate_limit_logs',
+            timestamp_field='created_at',
+            window_start=window_start,
+            window_end=now_ts,
+            order_desc=True,
+            limit=20,
+            allow_unfiltered_fallback=False,
             runtime=app_ctx,
         )
-        success_by_bucket = {key: {'complete': 0, 'error': 0} for key in trend_keys}
-        revenue_by_bucket = {key: 0 for key in trend_keys}
-
-        for job in filtered_jobs:
-            timestamp = admin_metrics.get_timestamp(job.get('finished_at'), runtime=app_ctx)
-            bucket_key = admin_metrics.get_bucket_key(timestamp, window_key, runtime=app_ctx)
-            if bucket_key not in success_by_bucket:
+        recent_rate_limits = []
+        for doc in recent_rate_limit_docs:
+            entry = doc.to_dict() or {}
+            limit_name = str(entry.get('limit_name', '') or '').strip().lower()
+            if limit_name not in rate_limit_counts:
                 continue
-            status = job.get('status', '')
-            if status == 'complete':
-                success_by_bucket[bucket_key]['complete'] += 1
-            elif status == 'error':
-                success_by_bucket[bucket_key]['error'] += 1
-
-        for purchase in filtered_purchases:
-            timestamp = admin_metrics.get_timestamp(purchase.get('created_at'), runtime=app_ctx)
-            bucket_key = admin_metrics.get_bucket_key(timestamp, window_key, runtime=app_ctx)
-            if bucket_key not in revenue_by_bucket:
-                continue
-            revenue_by_bucket[bucket_key] += purchase.get('price_cents', 0) or 0
+            recent_rate_limits.append({
+                'created_at': entry.get('created_at', 0),
+                'limit_name': limit_name,
+                'retry_after_seconds': int(entry.get('retry_after_seconds', 0) or 0),
+            })
 
         success_trend = []
         revenue_trend = []
         for key in trend_keys:
-            complete_count = success_by_bucket[key]['complete']
-            error_count = success_by_bucket[key]['error']
+            rollup = rollups_by_key.get(key, {})
+            jobs_payload = rollup.get('jobs', {}) if isinstance(rollup.get('jobs'), dict) else {}
+            purchases_payload = rollup.get('purchases', {}) if isinstance(rollup.get('purchases'), dict) else {}
+            complete_count = _to_non_negative_int(jobs_payload.get('complete', 0))
+            error_count = _to_non_negative_int(jobs_payload.get('error', 0))
             total_count = complete_count + error_count
             success_rate = round((complete_count / total_count) * 100, 1) if total_count > 0 else 0
             success_trend.append(success_rate)
-            revenue_trend.append(revenue_by_bucket[key])
+            revenue_trend.append(_to_non_negative_int(purchases_payload.get('total_revenue_cents', 0)))
 
         return app_ctx.jsonify({
             'window': {

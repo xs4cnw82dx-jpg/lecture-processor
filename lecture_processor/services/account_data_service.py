@@ -402,6 +402,8 @@ def delete_account_data(app_ctx, request):
         _delete_uid_collection('analytics_events')
         _delete_uid_collection('study_folders')
         _delete_uid_collection('study_card_states')
+        _delete_uid_collection('planner_sessions')
+        _delete_uid_collection('planner_settings')
         _delete_study_packs()
         _delete_runtime_job_docs()
         _delete_batch_jobs()
@@ -425,6 +427,8 @@ def delete_account_data(app_ctx, request):
             ('study_folders', 'uid', uid, 'study_folders'),
             ('study_card_states', 'uid', uid, 'study_card_states'),
             ('study_packs', 'uid', uid, 'study_packs'),
+            ('planner_sessions', 'uid', uid, 'planner_sessions'),
+            ('planner_settings', 'uid', uid, 'planner_settings'),
             ('purchases', 'uid', uid, 'purchases'),
             (app_ctx.RUNTIME_JOBS_COLLECTION, 'user_id', uid, 'runtime_jobs'),
             ('batch_jobs', 'uid', uid, 'batch_jobs'),

@@ -186,6 +186,38 @@
   align-items: center;
 }
 
+.reader-auth-panel {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #dbe7fb;
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 12px;
+}
+
+.reader-auth-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.reader-auth-copy strong {
+  font-size: 0.92rem;
+  color: #0f172a;
+}
+
+.reader-auth-copy p {
+  margin: 0;
+  font-size: 0.84rem;
+  color: #64748b;
+}
+
+.reader-auth-link {
+  white-space: nowrap;
+}
+
 .primary-btn,
 .ghost-btn {
   border-radius: 10px;
@@ -278,5 +310,10 @@
 @media (max-width: 980px) {
   .reader-grid {
     grid-template-columns: 1fr;
+  }
+
+  .reader-auth-panel {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

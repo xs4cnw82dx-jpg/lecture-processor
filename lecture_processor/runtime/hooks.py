@@ -65,6 +65,7 @@ def register_runtime_hooks(app, runtime) -> None:
         if request_id:
             response.headers['X-Request-ID'] = request_id
         _set_sentry_tags(runtime, {'route.status_code': str(response.status_code)})
+        runtime.apply_security_headers(response)
         return runtime.apply_cors_headers(response)
 
     @app.errorhandler(RequestEntityTooLarge)

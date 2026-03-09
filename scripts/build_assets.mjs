@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -39,6 +39,38 @@ async function isTargetCurrent(target) {
   }
 }
 
+async function listTemplateFiles() {
+  const templatesDir = path.join(projectRoot, 'templates');
+  const entries = await readdir(templatesDir, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.html'))
+    .map((entry) => path.join(templatesDir, entry.name));
+}
+
+async function getExternalScriptsMissingIntegrity() {
+  const templateFiles = await listTemplateFiles();
+  const missing = [];
+  const scriptPattern = /<script\b[^>]*\bsrc="https?:\/\/[^"]+"[^>]*>/gi;
+  for (const filePath of templateFiles) {
+    const content = await readFile(filePath, 'utf8');
+    const matches = content.match(scriptPattern) || [];
+    for (const tag of matches) {
+      if (!/\bintegrity="/i.test(tag)) {
+        missing.push(path.relative(projectRoot, filePath));
+        break;
+      }
+    }
+  }
+  return missing;
+}
+
+async function verifyTemplateScriptIntegrity() {
+  const missing = await getExternalScriptsMissingIntegrity();
+  if (!missing.length) return;
+  console.error('External script tags missing integrity:', missing.join(', '));
+  process.exit(1);
+}
+
 if (checkMode) {
   const staleTargets = [];
   for (const target of targets) {
@@ -51,6 +83,7 @@ if (checkMode) {
     console.error('Generated assets are stale:', staleTargets.join(', '));
     process.exit(1);
   }
+  await verifyTemplateScriptIntegrity();
   console.log('Generated assets are up to date:', targets.map((target) => target.out).join(', '));
   process.exit(0);
 }
@@ -59,4 +92,5 @@ for (const target of targets) {
   await buildTarget(target, true);
 }
 
+await verifyTemplateScriptIntegrity();
 console.log('Minified assets generated:', targets.map((t) => t.out).join(', '));

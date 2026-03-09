@@ -20,8 +20,8 @@
 	      <div class="headline">
 	        <div>
 	          <h1>Calendar</h1>
-	          <p>Week view planning with study sessions and browser reminders.</p>
-	          <div class="muted" style="margin-top:8px;max-width:720px;">Study sessions and reminder preferences are saved only in this browser on this device. They do not sync to your account yet.</div>
+	          <p>Week view planning with synced study sessions and browser reminders.</p>
+	          <div class="muted calendar-sync-note">Study sessions and reminder preferences sync with your account. Browser notifications still stay local to this device and browser session.</div>
 	        </div>
 	        <div class="headline-actions">
 	          <button class="btn primary" id="add-session-btn">+ Add Study Session</button>
@@ -79,15 +79,15 @@
                 <div class="app-select-menu" id="daily-reminder-time-menu"></div>
               </div>
             </div>
-            <div class="muted" style="margin-top:10px;">Browser-only reminders: alerts fire only while this tab is open in an active browser session. They do not run after closing the browser, logging out, or when your device is asleep.</div>
-            <div class="muted" style="margin-top:6px;">No email or push reminders are sent yet.</div>
+            <div class="muted calendar-reminder-note">Browser-only reminders: alerts fire only while this tab is open in an active browser session. They do not run after closing the browser, logging out, or when your device is asleep.</div>
+            <div class="muted calendar-reminder-followup">No email or push reminders are sent yet.</div>
           </div>
         </aside>
 
         <section class="panel">
           <div class="panel-body">
             <div class="week-controls">
-              <div style="display:flex;gap:8px;align-items:center;">
+              <div class="calendar-week-buttons">
                 <button class="btn" id="prev-week-btn">← Prev</button>
                 <button class="btn" id="today-week-btn">Today</button>
                 <button class="btn" id="next-week-btn">Next →</button>
@@ -103,7 +103,7 @@
       </div>
 
       <div class="panel" id="auth-required" style="display:none;">
-        <div class="panel-body">You need to sign in to use the calendar. <a href="/dashboard">Go to dashboard</a>.</div>
+        <div class="panel-body">You need to sign in to use the calendar. <a class="calendar-auth-link" href="/calendar?auth=signin">Sign in</a>.</div>
       </div>
     </div>
   </main>
@@ -147,7 +147,7 @@
 
         <div class="field"><label>Duration (minutes)</label><input id="session-duration" class="input" type="number" min="5" max="360" value="60"></div>
       </div>
-      <div class="field" style="margin-top:8px;"><label>Notes</label><textarea id="session-notes" class="textarea" placeholder="What will you focus on?"></textarea></div>
+      <div class="field calendar-modal-notes"><label>Notes</label><textarea id="session-notes" class="textarea" placeholder="What will you focus on?"></textarea></div>
       <div class="modal-actions">
         <button class="btn" id="session-cancel-btn">Cancel</button>
         <button class="btn primary" id="session-save-btn">Save Session</button>

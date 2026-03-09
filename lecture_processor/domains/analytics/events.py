@@ -48,6 +48,7 @@ def log_analytics_event(event_name, source='frontend', uid='', email='', session
         allowed_events=resolved_runtime.ANALYTICS_ALLOWED_EVENTS,
         logger=resolved_runtime.logger,
         time_module=resolved_runtime.time,
+        runtime=resolved_runtime,
     )
 
 
@@ -59,4 +60,5 @@ def log_rate_limit_hit(limit_name, retry_after=0, runtime=None):
         db=resolved_runtime.db,
         logger=resolved_runtime.logger,
         time_module=resolved_runtime.time,
+        runtime=resolved_runtime,
     )

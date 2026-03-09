@@ -57,7 +57,14 @@
             <button type="button" class="primary-btn" id="reader-run-btn" disabled>Extract</button>
             <span class="credit-note" id="reader-credit-note">Text extraction credits: &mdash;</span>
           </div>
-          <div class="status" id="reader-status"></div>
+          <div class="reader-auth-panel" id="reader-auth-panel" hidden>
+            <div class="reader-auth-copy">
+              <strong>Sign in required</strong>
+              <p id="reader-auth-help">Sign in to run extraction and use your account credits on this reader.</p>
+            </div>
+            <a class="ghost-btn reader-auth-link" id="reader-auth-link" href="/lecture-notes?auth=signin">Sign in</a>
+          </div>
+          <div class="status" id="reader-status" aria-live="polite"></div>
         </article>
 
         <article class="shell-panel reader-output-card">
@@ -77,8 +84,8 @@
   </div>
   <div class="reader-toast" id="reader-toast" aria-live="polite"></div>
 
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" crossorigin="anonymous"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" integrity="sha384-4gq9w/AGf72FXdNQ3Kn3EqWP7633NbCMjpYHt8YCZyXf23o2opcuAr4cif41tLrC" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js" integrity="sha384-xtdq4MQqPj1dB5DQsuw9O7dh4kHhMP/Wp5u8O1jiaWiou13ZfJIgiccjtVK2pBhL" crossorigin="anonymous"></script>
   <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
