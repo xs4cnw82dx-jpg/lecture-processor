@@ -53,6 +53,16 @@ def _parse_notes_highlights_input(raw_value, runtime=None):
     return ('set', payload)
 
 
+def _parse_study_pack_limit(raw_value):
+    if raw_value is None or (isinstance(raw_value, str) and not raw_value.strip()):
+        return 50
+    try:
+        value = int(raw_value)
+    except Exception:
+        return None
+    return max(1, min(value, 100))
+
+
 def get_study_progress(app_ctx, request):
     decoded_token = app_ctx.verify_firebase_token(request)
     if not decoded_token:
@@ -236,9 +246,29 @@ def get_study_packs(app_ctx, request):
 
     uid = decoded_token['uid']
     try:
-        study_docs = app_ctx.study_repo.list_study_pack_summaries_by_uid(app_ctx.db, uid, 50)
+        limit = _parse_study_pack_limit(request.args.get('limit'))
+        if limit is None:
+            return app_ctx.jsonify({'error': 'limit must be an integer between 1 and 100'}), 400
+
+        after_cursor = str(request.args.get('after', '') or '').strip()
+        after_doc = None
+        if after_cursor:
+            after_doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, after_cursor)
+            if not after_doc.exists:
+                return app_ctx.jsonify({'error': 'Invalid study pack cursor'}), 400
+            after_payload = after_doc.to_dict() or {}
+            if str(after_payload.get('uid', '') or '') != uid:
+                return app_ctx.jsonify({'error': 'Invalid study pack cursor'}), 400
+
+        study_docs = app_ctx.study_repo.list_study_pack_summaries_by_uid(
+            app_ctx.db,
+            uid,
+            limit + 1,
+            after_doc=after_doc,
+        )
+        has_more = len(study_docs) > limit
         packs = []
-        for doc in study_docs:
+        for doc in study_docs[:limit]:
             pack = doc.to_dict() or {}
             packs.append({
                 'study_pack_id': doc.id,
@@ -255,7 +285,8 @@ def get_study_packs(app_ctx, request):
                 'folder_name': pack.get('folder_name', ''),
                 'created_at': pack.get('created_at', 0),
             })
-        return app_ctx.jsonify({'study_packs': packs})
+        next_cursor = packs[-1]['study_pack_id'] if has_more and packs else ''
+        return app_ctx.jsonify({'study_packs': packs, 'has_more': has_more, 'next_cursor': next_cursor})
     except Exception as e:
         app_ctx.logger.error(f"Error fetching study packs: {e}")
         return app_ctx.jsonify({'error': 'Could not load study packs'}), 500

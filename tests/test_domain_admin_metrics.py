@@ -23,7 +23,8 @@ def test_window_and_bucket_helpers_are_stable():
 def test_safe_count_collection_returns_partial_zero_and_records_warning(app, monkeypatch):
     runtime = get_runtime(app)
 
-    def _boom(_db, _collection_name):
+    def _boom(_db, _collection_name, filters=None):
+        _ = filters
         raise RuntimeError('count failure')
 
     monkeypatch.setattr(runtime.core.admin_repo, 'count_collection', _boom)
@@ -31,6 +32,30 @@ def test_safe_count_collection_returns_partial_zero_and_records_warning(app, mon
     with app.test_request_context('/api/admin/data'):
         assert metrics.safe_count_collection('users', runtime=runtime) == 0
         assert 'users:count_failed' in metrics.get_admin_data_warnings(runtime=runtime)
+
+
+def test_safe_count_collection_falls_back_to_filtered_stream(app, monkeypatch):
+    runtime = get_runtime(app)
+
+    def _boom(_db, _collection_name, filters=None):
+        _ = filters
+        raise RuntimeError('count failure')
+
+    monkeypatch.setattr(runtime.core.admin_repo, 'count_collection', _boom)
+    monkeypatch.setattr(
+        runtime.core.admin_repo,
+        'stream_collection',
+        lambda _db, _collection_name: [
+            _Doc('job-1', {'admin_visible': True}),
+            _Doc('job-2', {'admin_visible': False}),
+            _Doc('job-3', {'admin_visible': True}),
+        ],
+    )
+
+    with app.test_request_context('/api/admin/data'):
+        count = metrics.safe_count_collection('job_logs', filters=metrics.admin_job_filters(), runtime=runtime)
+
+    assert count == 2
 
 
 def test_build_admin_funnel_steps_counts_unique_actors(app):
@@ -88,3 +113,11 @@ def test_admin_visibility_filters_hide_fixture_jobs_and_batches():
     assert metrics.is_admin_visible_batch({'email': 'real-user@example.com', 'batch_title': 'Broken batch'}) is False
     assert metrics.is_admin_visible_batch({'email': 'real-user@example.com', 'batch_title': 'Real batch', 'synthetic_batch': True}) is False
     assert metrics.is_admin_visible_batch({'email': 'real-user@example.com', 'batch_title': 'Real batch', 'exclude_from_admin': True}) is False
+
+
+def test_add_admin_visibility_flag_persists_filterable_boolean():
+    hidden = metrics.add_admin_visibility_flag({'email': 'user@gmail.com'})
+    visible = metrics.add_admin_visibility_flag({'email': 'real-user@example.com'})
+
+    assert hidden['admin_visible'] is False
+    assert visible['admin_visible'] is True

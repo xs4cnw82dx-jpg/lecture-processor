@@ -11,6 +11,7 @@ const progressUtils = window.LectureProcessorStudyProgressUtils || {};
 
 /* ── State ── */
 let token = null, folders = [], packs = [], selectedFolderId = '', selectedPackId = '', selectedPack = null;
+let packsHasMore = false, packsNextCursor = '', packsLoadingMore = false;
 let activeEditorPane = 'notes', exportType = 'flashcards', draggedPackId = '';
 let folderModalMode = 'create', editingFolderId = '', pendingOpenPackId = '', confirmModalResolver = null;
 let builderDraft = null, builderMode = 'edit', builderPane = 'info', builderDirty = false, builderPackId = '', builderExitResolver = null, builderImportParsed = null;
@@ -1036,7 +1037,7 @@ function gradeAnswer(userAnswer, correctAnswer) {
 /* ── DOM refs ── */
 var userMeta = document.getElementById('user-meta'), backAppBtn = document.getElementById('back-app-btn'), fullscreenBtn = document.getElementById('fullscreen-btn'), topbarDueText = document.getElementById('topbar-due-text');
 var studyAuthGate = document.getElementById('study-auth-gate'), studyLibraryShell = document.getElementById('study-library-shell'), studyAuthSignInBtn = document.getElementById('study-auth-signin-btn');
-var searchInput = document.getElementById('search-input'), folderList = document.getElementById('folder-list'), packList = document.getElementById('pack-list'), newFolderBtn = document.getElementById('new-folder-btn'), deleteFolderBtn = document.getElementById('delete-folder-btn');
+var searchInput = document.getElementById('search-input'), folderList = document.getElementById('folder-list'), packList = document.getElementById('pack-list'), packListActions = document.getElementById('pack-list-actions'), loadMorePacksBtn = document.getElementById('load-more-packs-btn'), newFolderBtn = document.getElementById('new-folder-btn'), deleteFolderBtn = document.getElementById('delete-folder-btn');
 var packEmpty = document.getElementById('pack-empty'), packEmptyDefault = document.getElementById('pack-empty-default'), packEmptyOnboarding = document.getElementById('pack-empty-onboarding'), packEmptyCreateBtn = document.getElementById('pack-empty-create-btn'), packEmptyDemoBtn = document.getElementById('pack-empty-demo-btn'), packEditorWrap = document.getElementById('pack-editor-wrap'), packTitle = document.getElementById('pack-title'), packFolderSelect = document.getElementById('pack-folder-select'), packFolderPicker = document.getElementById('pack-folder-picker'), packFolderButton = document.getElementById('pack-folder-button'), packFolderLabel = document.getElementById('pack-folder-label'), packFolderMenu = document.getElementById('pack-folder-menu');
 var packCourse = document.getElementById('pack-course'), packSubject = document.getElementById('pack-subject'), packSemester = document.getElementById('pack-semester'), packBlock = document.getElementById('pack-block'), notesView = document.getElementById('notes-view');
 var packAdvancedMetaBtn = document.getElementById('pack-advanced-meta-btn'), packAdvancedMetaShell = document.getElementById('pack-advanced-meta-shell'), packAdvancedMetaPanel = document.getElementById('pack-advanced-meta-panel');
@@ -2837,6 +2838,41 @@ function renderFolderSelect() {
   setPackFolderSelection(packFolderSelect.value || '');
 }
 
+function buildStudyPacksUrl(afterCursor) {
+  var params = ['limit=50'];
+  if (afterCursor) {
+    params.push('after=' + encodeURIComponent(afterCursor));
+  }
+  return '/api/study-packs?' + params.join('&');
+}
+
+function mergeStudyPackPage(currentPacks, incomingPacks) {
+  var existing = {};
+  var merged = [];
+  (currentPacks || []).forEach(function (pack) {
+    var packId = String((pack && pack.study_pack_id) || '');
+    if (!packId || existing[packId]) return;
+    existing[packId] = true;
+    merged.push(pack);
+  });
+  (incomingPacks || []).forEach(function (pack) {
+    var packId = String((pack && pack.study_pack_id) || '');
+    if (!packId || existing[packId]) return;
+    existing[packId] = true;
+    merged.push(pack);
+  });
+  return merged;
+}
+
+function renderPackListActions() {
+  if (!packListActions || !loadMorePacksBtn) return;
+  var showActions = !!packsHasMore || !!packsLoadingMore;
+  packListActions.hidden = !showActions;
+  loadMorePacksBtn.hidden = !showActions;
+  loadMorePacksBtn.disabled = !!packsLoadingMore || !packsHasMore;
+  loadMorePacksBtn.textContent = packsLoadingMore ? 'Loading more…' : 'Load more study packs';
+}
+
 function renderPacks() {
   var items = filteredPacks(); packList.innerHTML = '';
   updatePackEmptyState();
@@ -2851,6 +2887,7 @@ function renderPacks() {
         renderPacks();
       });
     }
+    renderPackListActions();
     return;
   }
   items.forEach(function (p) {
@@ -2868,6 +2905,7 @@ function renderPacks() {
     div.addEventListener('dragend', function () { div.classList.remove('dragging'); draggedPackId = ''; });
     packList.appendChild(div);
   });
+  renderPackListActions();
 }
 
 function showPackEditor(v) {
@@ -3411,8 +3449,12 @@ function hydratePackStatesForKnownPacks() {
 /* ── Load data ── */
 function loadData(preferredPackId) {
   var prefId = preferredPackId || '';
-  return Promise.all([apiCall('/api/study-folders'), apiCall('/api/study-packs')]).then(function (results) {
-    folders = results[0].folders || []; packs = results[1].study_packs || [];
+  packsLoadingMore = false;
+  return Promise.all([apiCall('/api/study-folders'), apiCall(buildStudyPacksUrl(''))]).then(function (results) {
+    folders = results[0].folders || [];
+    packs = results[1].study_packs || [];
+    packsHasMore = !!results[1].has_more;
+    packsNextCursor = String(results[1].next_cursor || '');
     setGoalPanelStatus('Synced', 'success');
     loadPinnedFolderIds();
     syncPinnedFolderIds();
@@ -3432,6 +3474,25 @@ function loadData(preferredPackId) {
       renderGoalPanel();
       closeAudioPlayer();
     }
+  });
+}
+
+function loadMorePacks() {
+  if (packsLoadingMore || !packsHasMore || !packsNextCursor) return Promise.resolve();
+  packsLoadingMore = true;
+  renderPackListActions();
+  return apiCall(buildStudyPacksUrl(packsNextCursor)).then(function (data) {
+    packs = mergeStudyPackPage(packs, data.study_packs || []);
+    packsHasMore = !!data.has_more;
+    packsNextCursor = String(data.next_cursor || '');
+    hydratePackStatesForKnownPacks();
+    updateTopbarDueCount();
+    renderPacks();
+  }).catch(function (e) {
+    showToast(e.message || 'Could not load more study packs.', 'error');
+  }).finally(function () {
+    packsLoadingMore = false;
+    renderPackListActions();
   });
 }
 
@@ -3807,6 +3868,11 @@ fullscreenBtn.addEventListener('click', function () {
   openSessionSetup();
 });
 searchInput.addEventListener('input', renderPacks);
+if (loadMorePacksBtn) {
+  loadMorePacksBtn.addEventListener('click', function () {
+    loadMorePacks();
+  });
+}
 if (packEmptyCreateBtn) {
   packEmptyCreateBtn.addEventListener('click', function () { openBuilderOverlay('create', null); });
 }

@@ -120,6 +120,7 @@ def _build_cost_analysis_payload(app_ctx, normalized_filters):
         window_start=window['start'],
         window_end=window['end'],
         order_desc=True,
+        filters=admin_metrics.admin_job_filters(runtime=app_ctx),
         runtime=app_ctx,
     )
     filtered_jobs = []
@@ -241,13 +242,10 @@ def admin_overview(app_ctx, request):
         now_ts = app_ctx.time.time()
         window_start = now_ts - window_seconds
 
+        job_filters = admin_metrics.admin_job_filters(runtime=app_ctx)
         total_users = admin_metrics.safe_count_collection('users', runtime=app_ctx)
         new_users = admin_metrics.safe_count_window('users', 'created_at', window_start, runtime=app_ctx)
-        total_processed = 0
-        for doc in admin_metrics.safe_stream_collection('job_logs', runtime=app_ctx):
-            job = doc.to_dict() or {}
-            if admin_metrics.is_admin_visible_job(job, runtime=app_ctx):
-                total_processed += 1
+        total_processed = admin_metrics.safe_count_collection('job_logs', filters=job_filters, runtime=app_ctx)
 
         filtered_purchases_docs = admin_metrics.safe_query_docs_in_window(
             collection_name='purchases',
@@ -261,6 +259,7 @@ def admin_overview(app_ctx, request):
             timestamp_field='finished_at',
             window_start=window_start,
             window_end=now_ts,
+            filters=job_filters,
             runtime=app_ctx,
         )
         filtered_analytics_docs = admin_metrics.safe_query_docs_in_window(
@@ -526,6 +525,7 @@ def admin_export(app_ctx, request):
                 window_start=window_start,
                 window_end=now_ts,
                 order_desc=True,
+                filters=admin_metrics.admin_job_filters(runtime=app_ctx),
                 runtime=app_ctx,
             )
             for doc in docs:

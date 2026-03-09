@@ -29,6 +29,20 @@
       ]
     },
     {
+      "collectionGroup": "job_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "admin_visible",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "finished_at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "study_packs",
       "queryScope": "COLLECTION",
       "fields": [

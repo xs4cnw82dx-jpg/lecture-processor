@@ -868,6 +868,58 @@ def test_account_export_bundle_marked_and_unmarked_pdf_flags_are_independent(cli
     assert not any(name.startswith("lecture_notes_pdf_marked/") and name.endswith("-marked.pdf") for name in unmarked_names)
 
 
+def test_account_export_bundle_limits_heavy_exports_and_writes_warning_manifest(client, monkeypatch):
+    class _PackDoc:
+        def __init__(self, pack_id, payload):
+            self.id = pack_id
+            self._payload = payload
+
+        def to_dict(self):
+            return dict(self._payload)
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "bundle-u4", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "ACCOUNT_EXPORT_MAX_CSV_PACKS", 1)
+    monkeypatch.setattr(core, "ACCOUNT_EXPORT_MAX_DOCX_PACKS", 1)
+    monkeypatch.setattr(core, "ACCOUNT_EXPORT_MAX_PDF_PACKS", 1)
+    monkeypatch.setattr(
+        core.study_repo,
+        "list_study_packs_by_uid",
+        lambda _db, _uid, _limit: [
+            _PackDoc("pack-1", {"study_pack_id": "pack-1", "title": "Pack One", "flashcards": [{"front": "Q1", "back": "A1"}], "test_questions": [], "notes_markdown": "# Notes"}),
+            _PackDoc("pack-2", {"study_pack_id": "pack-2", "title": "Pack Two", "flashcards": [{"front": "Q2", "back": "A2"}], "test_questions": [], "notes_markdown": "# Notes"}),
+        ],
+    )
+    monkeypatch.setattr(study_export, "build_notes_docx_bytes", lambda *_args, **_kwargs: b"docx-bytes")
+    monkeypatch.setattr(study_export, "build_notes_pdf_bytes", lambda *_args, **_kwargs: b"pdf-bytes")
+
+    response = client.post(
+        "/api/account/export-bundle",
+        json={
+            "scope": "account",
+            "include": {
+                "flashcards_csv": True,
+                "lecture_notes_docx": True,
+                "lecture_notes_pdf_marked": True,
+            },
+        },
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.data), "r") as archive:
+        names = set(archive.namelist())
+        warnings_payload = json.loads(archive.read("export_warnings.json").decode("utf-8"))
+    assert "export_warnings.json" in names
+    assert any(name.endswith("pack-1.csv") for name in names)
+    assert any(name.endswith("pack-1.docx") for name in names)
+    assert any(name.endswith("pack-1-marked.pdf") for name in names)
+    assert not any(name.endswith("pack-2.csv") for name in names)
+    omitted = {(entry["pack_id"], entry["reason"]) for entry in warnings_payload["omitted_exports"]}
+    assert ("pack-2", "csv_pack_limit_exceeded") in omitted
+    assert ("pack-2", "docx_pack_limit_exceeded") in omitted
+    assert ("pack-2", "pdf_pack_limit_exceeded") in omitted
+
+
 def test_account_delete_rejects_bad_confirmation_text(client, monkeypatch):
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u7", "email": "user@gmail.com"})
 
