@@ -60,3 +60,9 @@ def test_icon_only_buttons_have_accessible_labels():
                     f'{template_path}:{button["line"]} button id="{attrs.get("id", "")}" class="{attrs.get("class", "")}"'
                 )
     assert issues == []
+
+
+def test_study_template_no_longer_renders_top_fullscreen_button():
+    study_template = Path('templates/study.html').read_text(encoding='utf-8')
+
+    assert 'id="fullscreen-btn"' not in study_template

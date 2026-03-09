@@ -32,10 +32,38 @@ const uxUtils = window.LectureProcessorUx || {};
 const downloadUtils = window.LectureProcessorDownload || {};
 const topbarUtils = window.LectureProcessorTopbar || {};
 const progressUtils = window.LectureProcessorStudyProgressUtils || {};
+const audioImportUtils = window.LectureProcessorLectureAudioImportUtils || {};
 const pageConfig = window.LectureProcessorPageConfig || {};
 const forcedMode = ['lecture-notes', 'slides-only', 'interview'].includes(String(pageConfig.forcedMode || '').trim())
     ? String(pageConfig.forcedMode || '').trim()
     : '';
+
+function normalizeAudioImportUrl(value) {
+    if (typeof audioImportUtils.normalizeAudioImportUrl === 'function') {
+        return audioImportUtils.normalizeAudioImportUrl(value);
+    }
+    return String(value || '').trim();
+}
+
+function describeAudioImportRequest(options) {
+    if (typeof audioImportUtils.describeAudioImportRequest === 'function') {
+        return audioImportUtils.describeAudioImportRequest(options);
+    }
+    const settings = options && typeof options === 'object' ? options : {};
+    const mode = String(settings.mode || '').trim();
+    const url = normalizeAudioImportUrl(settings.url);
+    const hasLocalAudioFile = Boolean(settings.hasLocalAudioFile);
+    const importedToken = String(settings.importedAudioToken || '').trim();
+    const importedSourceUrl = normalizeAudioImportUrl(settings.importedAudioSourceUrl);
+    if (mode !== 'lecture-notes') return { shouldImport: false, reason: 'unsupported-mode' };
+    if (!url) return { shouldImport: false, reason: 'empty-url' };
+    if (hasLocalAudioFile) return { shouldImport: false, reason: 'local-audio-selected' };
+    if (importedToken && importedSourceUrl === url) return { shouldImport: false, reason: 'already-imported' };
+    if (importedToken && importedSourceUrl && importedSourceUrl !== url) {
+        return { shouldImport: true, reason: 'replace-imported-audio' };
+    }
+    return { shouldImport: true, reason: 'import' };
+}
 
 function formatDateLabel(value) {
     if (typeof uxUtils.formatDate === 'function') return uxUtils.formatDate(value);
@@ -92,6 +120,10 @@ let selectedInterviewFeatures = [];
 let importedAudioToken = '';
 let importedAudioSizeBytes = 0;
 let importedAudioName = '';
+let importedAudioSourceUrl = '';
+let pendingAutoImportUrl = '';
+let audioImportInFlight = false;
+let audioImportRequestUrl = '';
 let languageOnboardingOpen = false;
 let languageOnboardingSaving = false;
 let userPreferences = null;
@@ -1388,10 +1420,27 @@ function formatFileSize(bytes) {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
+function getCurrentAudioImportUrl() {
+    return normalizeAudioImportUrl(audioUrlInput ? audioUrlInput.value : '');
+}
+function hasReadyImportedAudioToken(urlValue) {
+    const safeUrl = normalizeAudioImportUrl(urlValue == null ? getCurrentAudioImportUrl() : urlValue);
+    if (typeof audioImportUtils.hasReadyImportedAudioToken === 'function') {
+        return audioImportUtils.hasReadyImportedAudioToken({
+            url: safeUrl,
+            importedAudioToken,
+            importedAudioSourceUrl,
+        });
+    }
+    return Boolean(importedAudioToken) && (!safeUrl || normalizeAudioImportUrl(importedAudioSourceUrl) === safeUrl);
+}
+function getReadyImportedAudioToken(urlValue) {
+    return hasReadyImportedAudioToken(urlValue) ? String(importedAudioToken || '').trim() : '';
+}
 function currentAudioBytes() {
     if (audioFile) return Number(audioFile.size || 0);
     if (currentMode !== 'lecture-notes') return 0;
-    return Number(importedAudioSizeBytes || 0);
+    return hasReadyImportedAudioToken() ? Number(importedAudioSizeBytes || 0) : 0;
 }
 function setAudioImportStatus(message = '', isError = false) {
     if (!audioUrlStatus) return;
@@ -1431,10 +1480,14 @@ function clearImportedAudioLocalState() {
     importedAudioToken = '';
     importedAudioSizeBytes = 0;
     importedAudioName = '';
+    importedAudioSourceUrl = '';
 }
 async function releaseImportedAudioToken(options = {}) {
     const token = String(importedAudioToken || '').trim();
     const shouldClearStatus = options.clearStatus !== false;
+    if (options.resetPendingUrl !== false) {
+        pendingAutoImportUrl = '';
+    }
     if (!token) {
         if (shouldClearStatus) setAudioImportStatus('');
         return;
@@ -1451,16 +1504,25 @@ async function releaseImportedAudioToken(options = {}) {
         });
     } catch (_) { }
 }
-async function applyImportedAudio(payload, previousToken = '') {
+async function applyImportedAudio(payload, previousToken = '', sourceUrl = '') {
     const token = String(payload && payload.audio_import_token ? payload.audio_import_token : '').trim();
     if (!token) return false;
+    if (audioFile) {
+        if (currentUser) {
+            try {
+                await authenticatedFetch('/api/import-audio-url/release', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ audio_import_token: token }),
+                });
+            } catch (_) { }
+        }
+        return false;
+    }
     importedAudioToken = token;
     importedAudioName = String(payload.file_name || 'Imported audio.mp3').trim();
     importedAudioSizeBytes = Math.max(0, Number(payload.size_bytes || 0));
-    if (audioFile) {
-        audioFile = null;
-        audioInput.value = '';
-    }
+    importedAudioSourceUrl = normalizeAudioImportUrl(sourceUrl);
     syncAudioInfoUI();
     updateProcessButton();
     const ttlSeconds = Math.max(0, Number(payload.expires_in_seconds || 0));
@@ -1481,22 +1543,81 @@ async function applyImportedAudio(payload, previousToken = '') {
     }
     return true;
 }
-async function importAudioFromUrl() {
-    if (!currentUser) {
-        showAuthModal('signin');
+function syncAudioImportStatusForUrlChange() {
+    if (currentMode !== 'lecture-notes' || audioFile || audioImportInFlight) {
+        updateProcessButton();
         return;
+    }
+    const currentUrl = getCurrentAudioImportUrl();
+    if (!currentUrl) {
+        setAudioImportStatus(importedAudioToken ? `Imported ${importedAudioName || 'audio'}.` : '');
+        updateProcessButton();
+        return;
+    }
+    const importedSourceUrl = normalizeAudioImportUrl(importedAudioSourceUrl);
+    if (importedAudioToken && importedSourceUrl !== currentUrl) {
+        setAudioImportStatus('URL changed. Paste again, press Enter, or click Import Audio to use this source.');
+    } else if (importedAudioToken && importedSourceUrl === currentUrl) {
+        setAudioImportStatus(`Imported ${importedAudioName || 'audio'} from this URL.`);
+    } else {
+        setAudioImportStatus('');
+    }
+    updateProcessButton();
+}
+async function importAudioFromUrl(options = {}) {
+    const importOptions = options && typeof options === 'object' ? options : {};
+    const importReason = String(importOptions.reason || 'manual').trim() || 'manual';
+    const url = normalizeAudioImportUrl(importOptions.url == null ? getCurrentAudioImportUrl() : importOptions.url);
+    if (!currentUser) {
+        if (importReason === 'manual') {
+            showAuthModal('signin');
+        } else {
+            setAudioImportStatus('Sign in to import audio from LMS video URL.', true);
+        }
+        updateProcessButton();
+        return false;
     }
     if (currentMode !== 'lecture-notes') {
         setAudioImportStatus('URL import is only available in Lecture Notes mode.', true);
-        return;
+        updateProcessButton();
+        return false;
     }
-    const url = String(audioUrlInput.value || '').trim();
     if (!url) {
         setAudioImportStatus('Paste the LMS video URL first.', true);
-        return;
+        updateProcessButton();
+        return false;
     }
+    if (audioImportInFlight) {
+        if (!audioFile && url && url !== audioImportRequestUrl) {
+            pendingAutoImportUrl = url;
+            setAudioImportStatus('Import in progress. The latest pasted LMS URL will import next.');
+        } else if (importReason === 'manual') {
+            setAudioImportStatus('Import already in progress. Please wait.');
+        }
+        updateProcessButton();
+        return false;
+    }
+    const request = describeAudioImportRequest({
+        mode: currentMode,
+        url,
+        hasLocalAudioFile: Boolean(audioFile),
+        importedAudioToken,
+        importedAudioSourceUrl,
+    });
+    if (!request.shouldImport) {
+        if (request.reason === 'already-imported' && importReason === 'manual') {
+            setAudioImportStatus(`Imported ${importedAudioName || 'audio'} from this URL.`);
+        } else if (request.reason === 'local-audio-selected' && importReason === 'manual') {
+            setAudioImportStatus('Using your uploaded audio file. Remove it to import from LMS URL.');
+        }
+        updateProcessButton();
+        return request.reason === 'already-imported';
+    }
+    audioImportInFlight = true;
+    audioImportRequestUrl = url;
     setAudioImportPending(true);
-    setAudioImportStatus('Importing audio from URL...');
+    updateProcessButton();
+    setAudioImportStatus(importReason === 'paste' ? 'Importing audio from pasted LMS URL...' : 'Importing audio from URL...');
     const previousToken = String(importedAudioToken || '').trim();
     try {
         const response = await authenticatedFetch('/api/import-audio-url', {
@@ -1513,15 +1634,45 @@ async function importAudioFromUrl() {
             } else {
                 setAudioImportStatus(errorText, true);
             }
-            return;
+            return false;
         }
-        const applied = await applyImportedAudio(data, previousToken);
-        if (applied) showToast('Audio imported from URL.', 'success');
+        const applied = await applyImportedAudio(data, previousToken, url);
+        const queuedUrl = normalizeAudioImportUrl(pendingAutoImportUrl);
+        if (applied) {
+            if (queuedUrl && queuedUrl !== url) {
+                setAudioImportStatus('Newest pasted LMS URL detected. Importing latest audio...');
+            } else {
+                showToast('Audio imported from URL.', 'success');
+            }
+        } else if (audioFile) {
+            setAudioImportStatus('Using your uploaded audio file. LMS import was ignored.');
+        }
+        return applied;
     } catch (e) {
         captureClientError(e, 'import_audio_url');
         setAudioImportStatus('Could not import audio from URL. Please try again.', true);
+        return false;
     } finally {
+        audioImportInFlight = false;
+        audioImportRequestUrl = '';
         setAudioImportPending(false);
+        updateProcessButton();
+        const nextUrl = normalizeAudioImportUrl(pendingAutoImportUrl);
+        pendingAutoImportUrl = '';
+        if (!audioFile && nextUrl) {
+            const nextRequest = describeAudioImportRequest({
+                mode: currentMode,
+                url: nextUrl,
+                hasLocalAudioFile: Boolean(audioFile),
+                importedAudioToken,
+                importedAudioSourceUrl,
+            });
+            if (nextRequest.shouldImport) {
+                window.setTimeout(() => {
+                    importAudioFromUrl({ url: nextUrl, reason: 'queued-auto' });
+                }, 0);
+            }
+        }
     }
 }
 function renderToastIcon(type) {
@@ -1680,7 +1831,7 @@ function buildProcessingEstimateContext() {
 function areRequiredFilesReadyForEstimate() {
     const config = modeConfig[currentMode];
     const pdfReady = !config.needsPdf || Boolean(pdfFile);
-    const audioReady = !config.needsAudio || Boolean(audioFile || (currentMode === 'lecture-notes' && importedAudioToken));
+    const audioReady = !config.needsAudio || Boolean(audioFile || (currentMode === 'lecture-notes' && hasReadyImportedAudioToken()));
     return pdfReady && audioReady;
 }
 async function fetchProcessingEstimateRange(context) {
@@ -1753,7 +1904,7 @@ function updateUploadEstimatePanel() {
     uploadEstimate.style.display = '';
     const config = modeConfig[currentMode];
     const pdfReady = !config.needsPdf || Boolean(pdfFile);
-    const audioReady = !config.needsAudio || Boolean(audioFile || (currentMode === 'lecture-notes' && importedAudioToken));
+    const audioReady = !config.needsAudio || Boolean(audioFile || (currentMode === 'lecture-notes' && hasReadyImportedAudioToken()));
     const context = buildProcessingEstimateContext();
     scheduleProcessingEstimateFetch();
     const fallbackEstimate = calculateHeuristicEstimateSeconds();
@@ -1785,13 +1936,19 @@ function updateUploadEstimatePanel() {
 function updateProcessButton() {
     const config = modeConfig[currentMode];
     const pdfReady = !config.needsPdf || pdfFile;
-    const audioReady = !config.needsAudio || audioFile || (currentMode === 'lecture-notes' && importedAudioToken);
+    const audioReady = !config.needsAudio || audioFile || (currentMode === 'lecture-notes' && hasReadyImportedAudioToken());
     const hasCredits = hasEnoughCredits();
     const uploadCooldown = getUploadCooldownSeconds();
     updateUploadEstimatePanel();
     if (uploadCooldown > 0) {
         processButton.disabled = true;
         processButton.querySelector('span').textContent = `Try again in ${formatRetryDelay(uploadCooldown)}`;
+        noCreditsWarning.classList.remove('visible');
+        return;
+    }
+    if (currentMode === 'lecture-notes' && audioImportInFlight && !audioFile) {
+        processButton.disabled = true;
+        processButton.querySelector('span').textContent = 'Importing LMS audio...';
         noCreditsWarning.classList.remove('visible');
         return;
     }
@@ -1935,6 +2092,7 @@ function handleAudioFile(file) {
     const valid = ['.mp3', '.m4a', '.wav', '.aac', '.ogg', '.flac'];
     if (!valid.some(ext => file.name.toLowerCase().endsWith(ext))) { showToast('Please select a valid audio file', 'error'); return; }
     if (file.size > 500 * 1024 * 1024) { showToast('Audio file must be under 500 MB', 'error'); return; }
+    pendingAutoImportUrl = '';
     if (importedAudioToken) {
         releaseImportedAudioToken({ clearStatus: true });
     }
@@ -1990,6 +2148,7 @@ audioRemove.addEventListener('click', (e) => {
     e.stopPropagation();
     audioFile = null;
     audioInput.value = '';
+    pendingAutoImportUrl = '';
     if (importedAudioToken) {
         releaseImportedAudioToken({ clearStatus: true });
     }
@@ -2359,8 +2518,9 @@ async function processFiles() {
     fd.append('study_pack_title', studyPackTitle);
     if (config.needsPdf && pdfFile) fd.append('pdf', pdfFile);
     if (config.needsAudio && audioFile) fd.append('audio', audioFile);
-    if (currentMode === 'lecture-notes' && config.needsAudio && importedAudioToken && !audioFile) {
-        fd.append('audio_import_token', importedAudioToken);
+    const readyImportedAudioToken = currentMode === 'lecture-notes' ? getReadyImportedAudioToken() : '';
+    if (currentMode === 'lecture-notes' && config.needsAudio && readyImportedAudioToken && !audioFile) {
+        fd.append('audio_import_token', readyImportedAudioToken);
     }
     const selectedLanguage = outputLanguageSelect.value || 'english';
     fd.append('output_language', selectedLanguage);
@@ -3754,10 +3914,18 @@ if (audioUrlFetchBtn) {
     audioUrlFetchBtn.addEventListener('click', importAudioFromUrl);
 }
 if (audioUrlInput) {
+    audioUrlInput.addEventListener('input', () => {
+        syncAudioImportStatusForUrlChange();
+    });
+    audioUrlInput.addEventListener('paste', () => {
+        window.setTimeout(() => {
+            importAudioFromUrl({ url: getCurrentAudioImportUrl(), reason: 'paste' });
+        }, 0);
+    });
     audioUrlInput.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter') return;
         e.preventDefault();
-        importAudioFromUrl();
+        importAudioFromUrl({ reason: 'manual' });
     });
 }
 languageOnboardingButtons.forEach((button) => {

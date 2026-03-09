@@ -372,6 +372,7 @@
             forcedMode: {{ forced_mode | tojson }}
         };
     </script>
+    <script src="{{ url_for('static', filename='js/lecture-audio-import-utils.js') }}"></script>
     <script src="{{ url_for('static', filename=index_js_asset or 'js/index-app.js') }}"></script>
 </body>
 </html>

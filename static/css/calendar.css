@@ -58,7 +58,8 @@
       text-decoration:none;font-size:.875rem;transition:all .2s ease;
     }
     .btn:hover{border-color:var(--gray-400);background:var(--gray-50);color:var(--gray-900)}
-    .btn.primary{border:none;background:linear-gradient(135deg,var(--primary),var(--secondary));color:var(--white);box-shadow:0 6px 20px rgba(79,70,229,.28)}
+    .btn.primary{border:1px solid var(--primary);background:var(--primary);color:var(--white);box-shadow:0 6px 20px rgba(79,70,229,.22)}
+    .btn.primary:hover{border-color:var(--primary-dark);background:var(--primary-dark);color:var(--white)}
     .btn.ghost{border-color:rgba(79,70,229,.36);background:rgba(79,70,229,.08);color:var(--primary-dark)}
     .btn.danger{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.07);color:#991B1B}
     .user-email{font-size:.82rem;color:var(--gray-500);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}

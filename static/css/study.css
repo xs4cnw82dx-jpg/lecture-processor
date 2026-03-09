@@ -84,7 +84,7 @@
     .container {
       max-width: 1360px;
       margin: 0 auto;
-      padding: 20px
+      padding: 16px 20px 20px
     }
 
     .study-auth-gate {
@@ -216,18 +216,16 @@
       line-height: 1.45
     }
 
-    .study-page-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-      margin-bottom: 16px
-    }
-
     .actions {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
       align-items: center
+    }
+
+    #study-library-shell {
+      display: grid;
+      gap: 10px
     }
 
     .study-pill {
@@ -1633,18 +1631,24 @@
       background: #fbcfe8
     }
 
-    .notes-export-root {
+    .notes-export-capture-host {
       position: fixed;
-      left: -10000px;
+      left: 0;
       top: 0;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 1;
+      overflow: visible
+    }
+
+    .notes-export-root {
       width: 794px;
       padding: 30px 34px;
       margin: 0;
       background: #fff;
       color: #111827;
       box-sizing: border-box;
-      pointer-events: none;
-      z-index: -1
+      pointer-events: none
     }
 
     .notes-export-title {
@@ -4238,14 +4242,6 @@
 
       .topbar-kicker {
         font-size: .64rem
-      }
-
-      .study-page-actions {
-        justify-content: stretch
-      }
-
-      .study-page-actions .btn {
-        width: 100%
       }
 
       .panel {
