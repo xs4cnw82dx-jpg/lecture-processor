@@ -8,6 +8,7 @@ const downloadUtils = window.LectureProcessorDownload || {};
 const topbarUtils = window.LectureProcessorTopbar || {};
 const uiCache = window.LectureProcessorUiCache || null;
 const progressUtils = window.LectureProcessorStudyProgressUtils || {};
+const studyLibraryUtils = window.LectureProcessorStudyLibraryUtils || {};
 
 /* ── State ── */
 let token = null, folders = [], packs = [], selectedFolderId = '', selectedPackId = '', selectedPack = null;
@@ -2715,6 +2716,15 @@ function togglePinnedFolder(folderId) {
   renderFolders();
 }
 function buildFolderItemsForSidebar() {
+  if (typeof studyLibraryUtils.buildFolderItemsForSidebar === 'function') {
+    return studyLibraryUtils.buildFolderItemsForSidebar({
+      folders: folders,
+      pinnedFolderIds: pinnedFolderIds,
+      allFolderId: BUILTIN_ALL_FOLDER_ID,
+      interviewFolderId: BUILTIN_INTERVIEWS_FOLDER_ID,
+    });
+  }
+
   var pinnedSet = new Set(pinnedFolderIds);
   var pinnedFolders = pinnedFolderIds.map(function (folderId) {
     return folders.find(function (folder) { return folder.folder_id === folderId; }) || null;
@@ -2732,6 +2742,15 @@ function buildFolderItemsForSidebar() {
   ].concat(pinnedFolders, remaining);
 }
 function filteredPacks() {
+  if (typeof studyLibraryUtils.filterStudyPacks === 'function') {
+    return studyLibraryUtils.filterStudyPacks(packs, {
+      searchQuery: searchInput.value,
+      selectedFolderId: selectedFolderId,
+      allFolderId: BUILTIN_ALL_FOLDER_ID,
+      interviewFolderId: BUILTIN_INTERVIEWS_FOLDER_ID,
+    });
+  }
+
   var q = searchInput.value.trim().toLowerCase();
   return packs.filter(function (p) {
     if (selectedFolderId === BUILTIN_INTERVIEWS_FOLDER_ID) {
@@ -2849,6 +2868,10 @@ function renderFolderSelect() {
 }
 
 function buildStudyPacksUrl(afterCursor) {
+  if (typeof studyLibraryUtils.buildStudyPacksUrl === 'function') {
+    return studyLibraryUtils.buildStudyPacksUrl(afterCursor, { limit: 50, basePath: '/api/study-packs' });
+  }
+
   var params = ['limit=50'];
   if (afterCursor) {
     params.push('after=' + encodeURIComponent(afterCursor));
@@ -2857,6 +2880,10 @@ function buildStudyPacksUrl(afterCursor) {
 }
 
 function mergeStudyPackPage(currentPacks, incomingPacks) {
+  if (typeof studyLibraryUtils.mergeStudyPackPage === 'function') {
+    return studyLibraryUtils.mergeStudyPackPage(currentPacks, incomingPacks);
+  }
+
   var existing = {};
   var merged = [];
   (currentPacks || []).forEach(function (pack) {
