@@ -276,6 +276,9 @@ def collect_user_export_payload(uid, email, runtime=None):
     study_folders, folders_truncated = list_docs_by_uid('study_folders', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     study_packs, packs_truncated = list_docs_by_uid('study_packs', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     card_states, card_states_truncated = list_docs_by_uid('study_card_states', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
+    planner_settings_docs, planner_settings_truncated = list_docs_by_uid('planner_settings', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
+    planner_sessions, planner_sessions_truncated = list_docs_by_uid('planner_sessions', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
+    planner_settings = planner_settings_docs[0] if planner_settings_docs else {}
 
     for pack in study_packs:
         audio_key = study_audio.get_audio_storage_key_from_pack(pack, runtime=resolved_runtime)
@@ -299,11 +302,14 @@ def collect_user_export_payload(uid, email, runtime=None):
                 'study_folders': folders_truncated,
                 'study_packs': packs_truncated,
                 'study_card_states': card_states_truncated,
+                'planner_settings': planner_settings_truncated,
+                'planner_sessions': planner_sessions_truncated,
             },
         },
         'account': {
             'profile': user_profile,
             'study_progress': study_progress,
+            'planner_settings': planner_settings,
         },
         'collections': {
             'purchases': purchases,
@@ -312,6 +318,7 @@ def collect_user_export_payload(uid, email, runtime=None):
             'study_folders': study_folders,
             'study_packs': study_packs,
             'study_card_states': card_states,
+            'planner_sessions': planner_sessions,
         },
     }
 

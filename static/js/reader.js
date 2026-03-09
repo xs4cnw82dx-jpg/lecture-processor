@@ -26,6 +26,8 @@
   var runBtn = document.getElementById('reader-run-btn');
   var statusEl = document.getElementById('reader-status');
   var creditNote = document.getElementById('reader-credit-note');
+  var authPanel = document.getElementById('reader-auth-panel');
+  var authLink = document.getElementById('reader-auth-link');
   var outputPre = document.getElementById('reader-output-pre');
   var copyBtn = document.getElementById('reader-copy-btn');
   var downloadBtn = document.getElementById('reader-download-docx-btn');
@@ -52,6 +54,25 @@
   function setStatus(message, type) {
     statusEl.textContent = String(message || '');
     statusEl.className = type ? ('status ' + type) : 'status';
+  }
+
+  function getSignInHref() {
+    var search = new URLSearchParams(window.location.search || '');
+    search.set('auth', 'signin');
+    return window.location.pathname + '?' + search.toString();
+  }
+
+  function updateAuthStateUI() {
+    var signedIn = !!currentUser;
+    if (authPanel) authPanel.hidden = signedIn;
+    if (authLink) authLink.href = getSignInHref();
+    if (!signedIn && !running) {
+      setStatus('Sign in to continue.', 'error');
+      return;
+    }
+    if (signedIn && statusEl && String(statusEl.textContent || '').trim() === 'Sign in to continue.') {
+      setStatus('', '');
+    }
   }
 
   function updateCreditNote() {
@@ -263,6 +284,7 @@
       : selectedFiles.length > 0;
     runBtn.disabled = !currentUser || !hasInput || running;
     runBtn.textContent = running ? 'Extracting...' : 'Extract';
+    updateAuthStateUI();
   }
 
   async function authFetch(path, options) {
@@ -311,7 +333,8 @@
 
   async function runExtraction() {
     if (!currentUser) {
-      setStatus('Please sign in to continue.', 'error');
+      setStatus('Sign in to continue.', 'error');
+      if (authLink) authLink.focus();
       return;
     }
     var urlValue = String(urlInput ? (urlInput.value || '') : '').trim();
@@ -447,6 +470,7 @@
 
   setupModeUI();
   hydrateCachedCredits(auth.currentUser || null);
+  updateAuthStateUI();
   auth.onAuthStateChanged(function (user) {
     currentUser = user || null;
     if (authClient && typeof authClient.clearToken === 'function' && !currentUser) authClient.clearToken();

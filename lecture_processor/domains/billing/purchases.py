@@ -1,5 +1,6 @@
 from lecture_processor.runtime.container import get_runtime
 from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.admin import rollups as admin_rollups
 from lecture_processor.domains.analytics import events as analytics_events
 
 
@@ -62,6 +63,7 @@ def save_purchase_record(uid, bundle_id, stripe_session_id, runtime=None, *, pay
             resolved_runtime.purchases_repo.set_doc(resolved_runtime.db, stripe_session_id, record, merge=True)
         else:
             resolved_runtime.purchases_repo.add_doc(resolved_runtime.db, record)
+        admin_rollups.increment_purchase_rollups(record, runtime=resolved_runtime)
         resolved_runtime.logger.info("📝 Saved purchase record for user %s: %s", uid, record.get('bundle_name', bundle_id))
     except Exception as error:
         resolved_runtime.logger.error("❌ Failed to save purchase record for user %s: %s", uid, error)

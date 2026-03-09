@@ -993,6 +993,12 @@ def test_account_delete_exhaustively_deletes_paginated_docs(client, monkeypatch)
         "study_folders": {},
         "study_card_states": {},
         "study_packs": {},
+        "planner_sessions": {
+            "planner-session-1": {"uid": "u-delete", "id": "planner-session-1", "title": "Review lecture"},
+        },
+        "planner_settings": {
+            "planner-settings": {"uid": "u-delete", "enabled": "on", "offset": "15"},
+        },
         core.RUNTIME_JOBS_COLLECTION: {},
         "batch_jobs": {},
     }
@@ -1073,7 +1079,11 @@ def test_account_delete_exhaustively_deletes_paginated_docs(client, monkeypatch)
     assert response.status_code == 200
     body = response.get_json()
     assert body["deleted"]["job_logs"] == 101
+    assert body["deleted"]["planner_sessions"] == 1
+    assert body["deleted"]["planner_settings"] == 1
     assert store["job_logs"] == {}
+    assert store["planner_sessions"] == {}
+    assert store["planner_settings"] == {}
     assert deleted_auth_users == ["u-delete"]
     assert deleted_profiles == ["u-delete"]
     assert removed_artifact_sets and len(removed_artifact_sets[0]) == 101

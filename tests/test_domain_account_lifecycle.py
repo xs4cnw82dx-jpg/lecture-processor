@@ -110,15 +110,21 @@ def test_collect_user_export_payload_returns_expected_shape(app, monkeypatch):
         "study_progress_doc_ref",
         lambda _db, _uid: SimpleNamespace(get=lambda: SimpleNamespace(exists=True, to_dict=lambda: {"daily_goal": 20})),
     )
-    monkeypatch.setattr(
-        lifecycle,
-        "list_docs_by_uid",
-        lambda _collection, _uid, _max_docs, runtime=None: ([], False),
-    )
+    def _list_docs(collection_name, _uid, _max_docs, runtime=None):
+        _ = runtime
+        if collection_name == "planner_settings":
+            return ([{"uid": "u1", "enabled": "on", "_id": "planner-settings"}], False)
+        if collection_name == "planner_sessions":
+            return ([{"id": "session-1", "title": "Review", "_id": "planner-session-1"}], False)
+        return ([], False)
+
+    monkeypatch.setattr(lifecycle, "list_docs_by_uid", _list_docs)
 
     payload = lifecycle.collect_user_export_payload("u1", "u@example.com", runtime=runtime)
     assert payload["meta"]["uid"] == "u1"
     assert payload["account"]["profile"] == {"uid": "u1"}
+    assert payload["account"]["planner_settings"]["enabled"] == "on"
+    assert payload["collections"]["planner_sessions"] == [{"id": "session-1", "title": "Review", "_id": "planner-session-1"}]
     assert "collections" in payload
 
 

@@ -218,7 +218,7 @@ def get_admin_data_warnings(runtime=None):
     return [str(entry) for entry in warnings_list if str(entry or '').strip()]
 
 
-def safe_query_docs_in_window(collection_name, timestamp_field, window_start, window_end=None, order_desc=False, limit=None, filters=None, runtime=None):
+def safe_query_docs_in_window(collection_name, timestamp_field, window_start, window_end=None, order_desc=False, limit=None, filters=None, allow_unfiltered_fallback=True, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     if resolved_runtime.db is None:
         return []
@@ -242,7 +242,7 @@ def safe_query_docs_in_window(collection_name, timestamp_field, window_start, wi
         )
         mark_admin_data_warning(collection_name, 'query_failed', runtime=resolved_runtime)
         safe_filters = _normalize_filters(filters)
-        if safe_filters:
+        if safe_filters and allow_unfiltered_fallback:
             try:
                 fallback_docs = query_docs_in_window(
                     collection_name=collection_name,

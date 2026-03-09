@@ -40,6 +40,8 @@
     let weekStart = startOfWeek(new Date());
     let sessions = [];
     let studyPacks = [];
+    let plannerSettings = defaultPlannerSettings();
+    let localReminderState = { notified: {} };
     let editingSessionId = '';
     let reminderTimer = null;
     let reminderSaveDebounceTimer = null;
@@ -108,12 +110,35 @@
       return Math.ceil((((target - yearStart) / 86400000) + 1) / 7);
     }
 
-    function getSessionStorageKey() {
+    function defaultPlannerSettings() {
+      return { enabled: 'off', offset: '30', daily_enabled: 'on', daily_time: '19:00', updated_at: 0 };
+    }
+
+    function normalizePlannerSettings(raw) {
+      const payload = raw && typeof raw === 'object' ? raw : {};
+      return {
+        enabled: payload.enabled === 'on' ? 'on' : 'off',
+        offset: ['5', '10', '15', '30', '60'].includes(String(payload.offset || '30')) ? String(payload.offset || '30') : '30',
+        daily_enabled: payload.daily_enabled === 'off' ? 'off' : 'on',
+        daily_time: /^\d{2}:\d{2}$/.test(String(payload.daily_time || '')) ? String(payload.daily_time) : '19:00',
+        updated_at: Number(payload.updated_at || 0) || 0
+      };
+    }
+
+    function getLegacySessionStorageKey() {
       return `study_sessions_${currentUser ? currentUser.uid : 'anon'}`;
     }
 
-    function getReminderStorageKey() {
+    function getLegacyReminderStorageKey() {
       return `study_reminders_${currentUser ? currentUser.uid : 'anon'}`;
+    }
+
+    function getLocalReminderStateKey() {
+      return `study_reminder_local_${currentUser ? currentUser.uid : 'anon'}`;
+    }
+
+    function getPlannerMigrationKey() {
+      return `planner_remote_migrated_${currentUser ? currentUser.uid : 'anon'}`;
     }
 
     function authFetch(path, options) {
@@ -124,6 +149,181 @@
       const opts = options || {};
       const headers = Object.assign({}, opts.headers || {}, { Authorization: 'Bearer ' + idToken });
       return fetch(path, Object.assign({}, opts, { headers }));
+    }
+
+    function loadLegacySessions() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(getLegacySessionStorageKey()) || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function loadLegacyReminderSettings() {
+      const fallback = Object.assign({}, defaultPlannerSettings(), { notified: {} });
+      try {
+        const parsed = JSON.parse(localStorage.getItem(getLegacyReminderStorageKey()) || '{}');
+        const settings = Object.assign({}, fallback, parsed || {});
+        settings.notified = settings.notified && typeof settings.notified === 'object' ? settings.notified : {};
+        return Object.assign({}, normalizePlannerSettings(settings), { notified: settings.notified });
+      } catch (_) {
+        return fallback;
+      }
+    }
+
+    function loadLocalReminderState() {
+      const fallback = { notified: {} };
+      try {
+        const parsed = JSON.parse(localStorage.getItem(getLocalReminderStateKey()) || '{}');
+        if (parsed && typeof parsed === 'object' && parsed.notified && typeof parsed.notified === 'object') {
+          return { notified: parsed.notified };
+        }
+      } catch (_) {}
+      const legacy = loadLegacyReminderSettings();
+      if (legacy.notified && typeof legacy.notified === 'object' && Object.keys(legacy.notified).length) {
+        const migrated = { notified: legacy.notified };
+        saveLocalReminderState(migrated);
+        return migrated;
+      }
+      return fallback;
+    }
+
+    function saveLocalReminderState(state) {
+      const safeState = state && typeof state === 'object' ? state : {};
+      localStorage.setItem(getLocalReminderStateKey(), JSON.stringify({
+        notified: safeState.notified && typeof safeState.notified === 'object' ? safeState.notified : {}
+      }));
+    }
+
+    function hasPlannerMigrationSentinel() {
+      try {
+        return localStorage.getItem(getPlannerMigrationKey()) === '1';
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function markPlannerMigrated() {
+      try {
+        localStorage.setItem(getPlannerMigrationKey(), '1');
+      } catch (_) {}
+    }
+
+    function hasPlannerSettingsData(settings) {
+      const safe = normalizePlannerSettings(settings);
+      return (
+        safe.enabled !== 'off' ||
+        safe.offset !== '30' ||
+        safe.daily_enabled !== 'on' ||
+        safe.daily_time !== '19:00' ||
+        Number(safe.updated_at || 0) > 0
+      );
+    }
+
+    async function fetchPlannerSettings() {
+      const response = await authFetch('/api/planner/settings');
+      if (!response.ok) throw new Error('Could not load planner settings');
+      const payload = await response.json();
+      return normalizePlannerSettings(payload);
+    }
+
+    async function savePlannerSettingsRemote(settings) {
+      const payload = normalizePlannerSettings(settings);
+      const response = await authFetch('/api/planner/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(String(data.error || 'Could not save reminder settings'));
+      }
+      return normalizePlannerSettings(Object.assign({}, payload, data.settings || {}, { updated_at: data.updated_at || payload.updated_at || Date.now() / 1000 }));
+    }
+
+    async function fetchPlannerSessions(limit) {
+      const safeLimit = Math.max(1, Math.min(200, parseInt(limit || '200', 10) || 200));
+      const response = await authFetch('/api/planner/sessions?limit=' + safeLimit);
+      if (!response.ok) throw new Error('Could not load planner sessions');
+      const payload = await response.json();
+      return Array.isArray(payload.sessions) ? payload.sessions : [];
+    }
+
+    async function savePlannerSessionRemote(payload) {
+      const safeId = encodeURIComponent(String(payload && payload.id ? payload.id : ''));
+      const response = await authFetch('/api/planner/sessions/' + safeId, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload || {})
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(String(data.error || 'Could not save study session'));
+      }
+      return data.session || payload;
+    }
+
+    async function deletePlannerSessionRemote(sessionId) {
+      const response = await authFetch('/api/planner/sessions/' + encodeURIComponent(String(sessionId || '')), {
+        method: 'DELETE'
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(String(data.error || 'Could not delete study session'));
+      }
+      return true;
+    }
+
+    function hasLegacyPlannerData(legacySessions, legacySettings) {
+      return (Array.isArray(legacySessions) && legacySessions.length > 0) || hasPlannerSettingsData(legacySettings);
+    }
+
+    async function migrateLegacyPlannerIfNeeded(remoteSessions, remoteSettings) {
+      const legacySessions = loadLegacySessions();
+      const legacySettings = loadLegacyReminderSettings();
+      const localState = loadLocalReminderState();
+      if (
+        hasPlannerMigrationSentinel() ||
+        remoteSessions.length > 0 ||
+        hasPlannerSettingsData(remoteSettings) ||
+        !hasLegacyPlannerData(legacySessions, legacySettings)
+      ) {
+        localReminderState = localState;
+        return { sessions: remoteSessions, settings: remoteSettings };
+      }
+
+      for (const session of legacySessions) {
+        await savePlannerSessionRemote(session);
+      }
+      plannerSettings = await savePlannerSettingsRemote(legacySettings);
+      localReminderState = { notified: localState.notified || legacySettings.notified || {} };
+      saveLocalReminderState(localReminderState);
+      markPlannerMigrated();
+      try {
+        localStorage.removeItem(getLegacySessionStorageKey());
+      } catch (_) {}
+      return {
+        sessions: await fetchPlannerSessions(200),
+        settings: plannerSettings
+      };
+    }
+
+    async function loadPlannerState() {
+      if (!currentUser) {
+        sessions = [];
+        plannerSettings = defaultPlannerSettings();
+        localReminderState = { notified: {} };
+        return;
+      }
+      const [settings, remoteSessions] = await Promise.all([
+        fetchPlannerSettings(),
+        fetchPlannerSessions(200)
+      ]);
+      localReminderState = loadLocalReminderState();
+      const migrated = await migrateLegacyPlannerIfNeeded(remoteSessions, settings);
+      plannerSettings = normalizePlannerSettings(migrated.settings);
+      sessions = Array.isArray(migrated.sessions) ? migrated.sessions.slice() : [];
     }
 
     function initAppSelect(selectRoot, onChange) {
@@ -285,37 +485,22 @@
       });
     }
 
-    function loadSessions() {
-      try {
-        const parsed = JSON.parse(localStorage.getItem(getSessionStorageKey()) || '[]');
-        sessions = Array.isArray(parsed) ? parsed : [];
-      } catch (_) {
-        sessions = [];
-      }
-    }
-
-    function saveSessions() {
-      localStorage.setItem(getSessionStorageKey(), JSON.stringify(sessions));
-    }
-
     function loadReminderSettings() {
-      const fallback = { enabled: 'off', offset: '30', daily_enabled: 'on', daily_time: '19:00', notified: {} };
-      try {
-        const parsed = JSON.parse(localStorage.getItem(getReminderStorageKey()) || '{}');
-        const settings = Object.assign({}, fallback, parsed || {});
-        settings.notified = settings.notified && typeof settings.notified === 'object' ? settings.notified : {};
-        settings.offset = String(settings.offset || '30');
-        settings.enabled = settings.enabled === 'on' ? 'on' : 'off';
-        settings.daily_enabled = settings.daily_enabled === 'off' ? 'off' : 'on';
-        settings.daily_time = /^\d{2}:\d{2}$/.test(String(settings.daily_time || '')) ? settings.daily_time : '19:00';
-        return settings;
-      } catch (_) {
-        return fallback;
-      }
+      return Object.assign({}, plannerSettings, {
+        notified: localReminderState && localReminderState.notified && typeof localReminderState.notified === 'object'
+          ? localReminderState.notified
+          : {}
+      });
     }
 
     function saveReminderSettings(settings) {
-      localStorage.setItem(getReminderStorageKey(), JSON.stringify(settings));
+      plannerSettings = normalizePlannerSettings(settings);
+      localReminderState = {
+        notified: settings && settings.notified && typeof settings.notified === 'object'
+          ? settings.notified
+          : {}
+      };
+      saveLocalReminderState(localReminderState);
     }
 
     function toggleDailyReminderTimeInput() {
@@ -567,7 +752,7 @@
       }
     }
 
-    function saveSessionFromModal() {
+    async function saveSessionFromModal() {
       const title = String(sessionTitleEl.value || '').trim();
       const date = String(sessionDateEl.value || '').trim();
       const time = String(sessionTimeEl.value || '').trim();
@@ -608,20 +793,30 @@
         pack_title: pack ? (pack.title || 'Untitled pack') : ''
       };
 
-      if (editingSessionId) sessions = sessions.map((s) => (s.id === editingSessionId ? payload : s));
-      else sessions.push(payload);
-
-      saveSessions();
-      closeModal();
-      renderWeek();
-      showToast(editingSessionId ? 'Session updated.' : 'Session added.', 'success');
+      modalSaveBtn.disabled = true;
+      try {
+        const saved = await savePlannerSessionRemote(payload);
+        if (editingSessionId) sessions = sessions.map((s) => (s.id === editingSessionId ? saved : s));
+        else sessions.push(saved);
+        closeModal();
+        renderWeek();
+        showToast(editingSessionId ? 'Session updated.' : 'Session added.', 'success');
+      } catch (error) {
+        showToast(error && error.message ? error.message : 'Could not save session.', 'error');
+      } finally {
+        modalSaveBtn.disabled = false;
+      }
     }
 
-    function deleteSession(sessionId) {
-      sessions = sessions.filter((s) => s.id !== sessionId);
-      saveSessions();
-      renderWeek();
-      showToast('Session removed.', 'success');
+    async function deleteSession(sessionId) {
+      try {
+        await deletePlannerSessionRemote(sessionId);
+        sessions = sessions.filter((s) => s.id !== sessionId);
+        renderWeek();
+        showToast('Session removed.', 'success');
+      } catch (error) {
+        showToast(error && error.message ? error.message : 'Could not delete session.', 'error');
+      }
     }
 
     function applyReminderSettingsToUI() {
@@ -640,35 +835,39 @@
 
     async function saveReminderSettingsFromUI(options = {}) {
       const settings = loadReminderSettings();
+      let suppressSuccessToast = !!options.silent;
       settings.enabled = notifyEnabledEl.value === 'on' ? 'on' : 'off';
       settings.offset = String(parseInt(notifyOffsetEl.value || '30', 10) || 30);
       settings.daily_enabled = dailyReminderEnabledEl.value === 'off' ? 'off' : 'on';
       settings.daily_time = settings.daily_enabled === 'on' ? String(dailyReminderTimeEl.value || '19:00') : '';
 
-      if (settings.enabled === 'on' && Notification && Notification.permission !== 'granted') {
+      if (settings.enabled === 'on' && typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
         try {
           const permission = await Notification.requestPermission();
           if (permission !== 'granted') {
             settings.enabled = 'off';
             if (notifyEnabledSelect && notifyEnabledSelect._setValue) notifyEnabledSelect._setValue('off', true);
             showToast('Notifications were not allowed. Reminders remain off.', 'error');
-            saveReminderSettings(settings);
-            return;
+            suppressSuccessToast = true;
           }
         } catch (_) {
           settings.enabled = 'off';
           if (notifyEnabledSelect && notifyEnabledSelect._setValue) notifyEnabledSelect._setValue('off', true);
           showToast('Could not request notification permission.', 'error');
-          saveReminderSettings(settings);
-          return;
+          suppressSuccessToast = true;
         }
       }
 
-      saveReminderSettings(settings);
-      if (!options.silent) {
-        showToast('Saved successfully.', 'success');
+      try {
+        plannerSettings = await savePlannerSettingsRemote(settings);
+        saveReminderSettings(Object.assign({}, plannerSettings, { notified: localReminderState.notified }));
+        if (!suppressSuccessToast) {
+          showToast('Saved successfully.', 'success');
+        }
+        startReminderLoop();
+      } catch (error) {
+        showToast(error && error.message ? error.message : 'Could not save reminder settings.', 'error');
       }
-      startReminderLoop();
     }
 
     function queueReminderSettingsAutoSave() {
@@ -681,7 +880,7 @@
     }
 
     function maybeNotify(title, body, session) {
-      if (Notification && Notification.permission === 'granted') {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
         const notification = new Notification(title, { body });
         notification.onclick = function () {
           window.focus();
@@ -765,7 +964,7 @@
     addSessionBtn.addEventListener('click', () => openModal(null));
     modalCloseBtn.addEventListener('click', closeModal);
     modalCancelBtn.addEventListener('click', closeModal);
-    modalSaveBtn.addEventListener('click', saveSessionFromModal);
+    modalSaveBtn.addEventListener('click', () => { saveSessionFromModal(); });
     modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
 
     modalCard.addEventListener('keydown', (e) => {
@@ -809,6 +1008,9 @@
           clearTimeout(reminderSaveDebounceTimer);
           reminderSaveDebounceTimer = null;
         }
+        sessions = [];
+        plannerSettings = defaultPlannerSettings();
+        localReminderState = { notified: {} };
         studyPacks = [];
         renderPackSelectOptions('');
         return;
@@ -819,7 +1021,14 @@
       authRequiredEl.style.display = 'none';
       calendarLayoutEl.style.display = '';
 
-      loadSessions();
+      try {
+        await loadPlannerState();
+      } catch (error) {
+        sessions = [];
+        plannerSettings = defaultPlannerSettings();
+        localReminderState = { notified: {} };
+        showToast(error && error.message ? error.message : 'Could not load planner data.', 'error');
+      }
       await loadStudyPacks();
       applyReminderSettingsToUI();
       renderWeek();

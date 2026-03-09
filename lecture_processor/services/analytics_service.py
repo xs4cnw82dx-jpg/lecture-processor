@@ -1,5 +1,6 @@
 """Analytics event sanitization and persistence helpers."""
 
+from lecture_processor.domains.admin import rollups as admin_rollups
 from lecture_processor.repositories import analytics_repo
 
 
@@ -52,6 +53,7 @@ def log_analytics_event(
     allowed_events,
     logger,
     time_module,
+    runtime=None,
 ):
     safe_name = sanitize_event_name(event_name, name_re=name_re, allowed_events=allowed_events)
     if not safe_name:
@@ -68,6 +70,7 @@ def log_analytics_event(
     }
     try:
         analytics_repo.add_event(db, payload)
+        admin_rollups.increment_analytics_rollups(payload, runtime=runtime)
         return True
     except Exception as exc:
         if logger is not None:
@@ -75,9 +78,9 @@ def log_analytics_event(
         return False
 
 
-def log_rate_limit_hit(limit_name, retry_after=0, *, db, logger, time_module):
+def log_rate_limit_hit(limit_name, retry_after=0, *, db, logger, time_module, runtime=None):
     safe_name = str(limit_name or '').strip().lower()
-    if safe_name not in {'upload', 'checkout', 'analytics'}:
+    if safe_name not in {'upload', 'checkout', 'analytics', 'tools'}:
         return False
     try:
         retry_after_seconds = int(float(retry_after))
@@ -85,11 +88,13 @@ def log_rate_limit_hit(limit_name, retry_after=0, *, db, logger, time_module):
         retry_after_seconds = 1
     retry_after_seconds = max(1, retry_after_seconds)
     try:
-        analytics_repo.add_rate_limit_log(db, {
+        payload = {
             'limit_name': safe_name,
             'retry_after_seconds': retry_after_seconds,
             'created_at': time_module.time(),
-        })
+        }
+        analytics_repo.add_rate_limit_log(db, payload)
+        admin_rollups.increment_rate_limit_rollups(payload, runtime=runtime)
         return True
     except Exception as exc:
         if logger is not None:

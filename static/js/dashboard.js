@@ -141,32 +141,26 @@
     }
   }
 
-  function readUpcomingSessions(user) {
-    if (!user) return [];
-    var key = 'study_sessions_' + user.uid;
-    var sessions = [];
-    try {
-      sessions = JSON.parse(localStorage.getItem(key) || '[]');
-      if (!Array.isArray(sessions)) sessions = [];
-    } catch (_) {
-      sessions = [];
-    }
-    var today = localDateString();
-    return sortSessions(sessions).filter(function (session) {
-      return String(session.date || '') >= today;
-    }).slice(0, 4);
+  async function fetchUpcomingSessions(token) {
+    if (!token) return [];
+    var response = await fetch('/api/planner/sessions?future_only=1&limit=4', {
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (!response.ok) throw new Error('Could not load planner sessions');
+    var payload = await response.json();
+    return sortSessions(Array.isArray(payload.sessions) ? payload.sessions : []).slice(0, 4);
   }
 
   function renderUpcomingSessions(user, sessions) {
     if (!sessionsList) return;
     while (sessionsList.firstChild) sessionsList.removeChild(sessionsList.firstChild);
     if (!user) {
-      sessionsList.innerHTML = '<div class="empty-state-card"><h3>Sign in to plan study sessions</h3><p>Study sessions are currently saved only in this browser on this device. Sign in to see due counts and open the planner tools.</p><div class="empty-state-actions"><a class="empty-state-link primary" href="/lecture-notes?auth=signin">Sign in</a><a class="empty-state-link" href="/helpcenter">Help Center</a></div></div>';
+      sessionsList.innerHTML = '<div class="empty-state-card"><h3>Sign in to see your planner</h3><p>Study sessions now sync with your account. Sign in to view your upcoming plan and open Calendar.</p><div class="empty-state-actions"><a class="empty-state-link primary" href="/lecture-notes?auth=signin">Sign in</a><a class="empty-state-link" href="/helpcenter">Help Center</a></div></div>';
       return;
     }
     var future = Array.isArray(sessions) ? sessions : [];
     if (!future.length) {
-      sessionsList.innerHTML = '<div class="empty-state-card"><h3>Plan your first study session</h3><p>Calendar sessions are saved only in this browser on this device right now.</p><div class="empty-state-actions"><a class="empty-state-link primary" href="/calendar">Open Calendar</a><a class="empty-state-link" href="/plan">Planning &amp; Progress</a></div></div>';
+      sessionsList.innerHTML = '<div class="empty-state-card"><h3>Plan your first study session</h3><p>Study sessions sync with your account. Browser reminders still only fire while an active calendar tab is open.</p><div class="empty-state-actions"><a class="empty-state-link primary" href="/calendar">Open Calendar</a><a class="empty-state-link" href="/plan">Planning &amp; Progress</a></div></div>';
       return;
     }
     future.forEach(function (session) {
@@ -215,14 +209,16 @@
       setDashboardLoading(false);
       return;
     }
-    var sessions = readUpcomingSessions(user);
+    var sessions = [];
     try {
       var token = await user.getIdToken();
       var headers = { Authorization: 'Bearer ' + token };
       var result = await Promise.all([
         fetch('/api/study-progress', { headers: headers }),
-        fetch('/api/study-packs', { headers: headers })
+        fetch('/api/study-packs', { headers: headers }),
+        fetchUpcomingSessions(token).catch(function () { return []; })
       ]);
+      sessions = Array.isArray(result[2]) ? result[2] : [];
       var snapshot = null;
       if (result[0].ok) {
         var progressPayload = await result[0].json();

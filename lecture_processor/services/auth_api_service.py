@@ -59,7 +59,7 @@ def clear_admin_session(app_ctx, request):
 
 
 def verify_email(app_ctx, request):
-    client_ip = request.remote_addr or 'unknown'
+    client_ip = app_ctx.get_client_ip(request)
     allowed_rl, retry_after_rl = rate_limiter.check_rate_limit(
         key=f"verify_email:{client_ip}",
         limit=20,
@@ -118,7 +118,7 @@ def ingest_analytics_event(app_ctx, request):
     if not session_id and uid:
         session_id = uid[:80]
 
-    actor_token = uid or session_id or request.headers.get('X-Forwarded-For', request.remote_addr or '')
+    actor_token = uid or session_id or app_ctx.get_client_ip(request)
     actor_key = rate_limiter.normalize_rate_limit_key_part(actor_token, fallback='anon', runtime=app_ctx)
     allowed_analytics, retry_after = rate_limiter.check_rate_limit(
         key=f"analytics:{actor_key}",

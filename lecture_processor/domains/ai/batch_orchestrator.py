@@ -1325,6 +1325,34 @@ def _mark_incomplete_rows_failed(batch_id, batch, rows, error_message, runtime=N
         )
 
 
+def mark_batch_submission_error(batch_id, error_message, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    safe_batch_id = str(batch_id or '').strip()
+    if not safe_batch_id:
+        return None
+    batch = _get_batch(safe_batch_id, runtime=resolved_runtime)
+    if not batch:
+        return None
+    rows = _list_rows(safe_batch_id, runtime=resolved_runtime)
+    message = str(error_message or '').strip() or 'The server is busy right now. Please try again shortly.'
+    _mark_incomplete_rows_failed(
+        safe_batch_id,
+        batch,
+        rows,
+        message,
+        runtime=resolved_runtime,
+    )
+    return _finalize_batch_record(
+        safe_batch_id,
+        batch,
+        stage_error=message,
+        status_override='error',
+        provider_state_override='QUEUE_FULL',
+        current_stage_state_override='failed',
+        runtime=resolved_runtime,
+    )
+
+
 def _repair_batch_state_if_needed(batch_id, batch=None, rows=None, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     safe_batch_id = str(batch_id or '').strip()

@@ -20,6 +20,7 @@ from lecture_processor.domains.shared import sanitize_csv_row
 from lecture_processor.domains.shared import parsing as shared_parsing
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.upload import import_audio as upload_import_audio
+from lecture_processor.runtime.job_dispatcher import JobQueueFullError
 
 
 def _sanitize_tools_custom_prompt(raw_prompt, max_chars=6000):
@@ -313,6 +314,90 @@ def _attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None):
                     app_ctx.time.sleep(0.08 * fallback_attempt)
 
     return False, ''
+
+
+def _queue_full_message():
+    return 'The server is busy right now. Please try again in a minute.'
+
+
+def _queue_full_response(app_ctx, *, job_id='', batch_id=''):
+    retry_after_seconds = 15
+    payload = {
+        'error': _queue_full_message(),
+        'status': 'queue_full',
+        'retry_after_seconds': retry_after_seconds,
+    }
+    if job_id:
+        payload['job_id'] = str(job_id)
+    if batch_id:
+        payload['batch_id'] = str(batch_id)
+    try:
+        queue_stats = app_ctx.get_background_queue_stats()
+    except Exception:
+        queue_stats = {}
+    if isinstance(queue_stats, dict) and queue_stats:
+        payload['queue'] = {
+            'running': int(queue_stats.get('running', 0) or 0),
+            'queued': int(queue_stats.get('queued', 0) or 0),
+            'capacity': int(queue_stats.get('capacity', 0) or 0),
+        }
+    response = app_ctx.jsonify(payload)
+    response.status_code = 503
+    response.headers['Retry-After'] = str(retry_after_seconds)
+    return response
+
+
+def _handle_runtime_job_queue_full(
+    app_ctx,
+    *,
+    job_id,
+    uid,
+    cleanup_paths,
+    credit_type='',
+    expected_credit_floor=None,
+    extra_slides_credits=0,
+):
+    message = _queue_full_message()
+    refund_methods = []
+    credit_refunded = False
+    if credit_type:
+        refunded, method = _attempt_credit_refund(
+            app_ctx,
+            uid,
+            credit_type,
+            expected_floor=expected_credit_floor,
+        )
+        if refunded:
+            credit_refunded = True
+            if method:
+                refund_methods.append(method)
+    if int(extra_slides_credits or 0) > 0:
+        try:
+            extras_refunded = bool(
+                billing_credits.refund_slides_credits(
+                    uid,
+                    int(extra_slides_credits or 0),
+                    runtime=app_ctx,
+                )
+            )
+        except Exception:
+            extras_refunded = False
+        if extras_refunded:
+            credit_refunded = True
+            refund_methods.append('refund_slides_credits')
+    runtime_jobs_store.update_job_fields(
+        job_id,
+        runtime=app_ctx,
+        status='error',
+        error=message,
+        failed_stage='queued',
+        provider_error_code='queue_full',
+        step_description='Queue full',
+        credit_refunded=credit_refunded,
+        credit_refund_method=', '.join(refund_methods),
+    )
+    app_ctx.cleanup_files(list(cleanup_paths or []), [])
+    return _queue_full_response(app_ctx, job_id=job_id)
 
 
 def _normalize_tools_markdown_for_export(markdown_text):
@@ -820,12 +905,27 @@ def create_batch_job(app_ctx, request):
         }
         batch_orchestrator.create_batch_job(batch_payload, prepared_rows, runtime=app_ctx)
 
-        thread = app_ctx.threading.Thread(
-            target=batch_orchestrator.process_batch_job,
-            args=(batch_id,),
-            kwargs={'runtime': app_ctx},
-        )
-        thread.start()
+        try:
+            app_ctx.submit_background_job(
+                batch_orchestrator.process_batch_job,
+                batch_id,
+                runtime=app_ctx,
+            )
+        except JobQueueFullError:
+            batch_orchestrator.mark_batch_submission_error(
+                batch_id,
+                _queue_full_message(),
+                runtime=app_ctx,
+            )
+            for charged in charged_rows:
+                credit_type = str(charged.get('credit_type', '') or '').strip()
+                if credit_type:
+                    billing_credits.refund_credit(uid, credit_type, runtime=app_ctx)
+                extras = int(charged.get('interview_features_cost', 0) or 0)
+                if extras > 0:
+                    billing_credits.refund_slides_credits(uid, extras, runtime=app_ctx)
+            app_ctx.cleanup_files(cleanup_paths, [])
+            return _queue_full_response(app_ctx, batch_id=batch_id)
         return app_ctx.jsonify({'batch_id': batch_id})
     except Exception as error:
         if created_folder_ref is not None:
@@ -1192,12 +1292,22 @@ def upload_files(app_ctx, request):
                     return app_ctx.jsonify({'error': token_error}), 400
             total_steps = 4 if study_features != 'none' else 3
             runtime_jobs_store.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'study_pack_title': study_pack_title, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round(((pdf_size if pdf_size > 0 else 0) + audio_size) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
-            thread = app_ctx.threading.Thread(
-                target=ai_pipelines.process_lecture_notes,
-                args=(job_id, pdf_path, audio_path),
-                kwargs={'runtime': app_ctx},
-            )
-            thread.start()
+            try:
+                app_ctx.submit_background_job(
+                    ai_pipelines.process_lecture_notes,
+                    job_id,
+                    pdf_path,
+                    audio_path,
+                    runtime=app_ctx,
+                )
+            except JobQueueFullError:
+                return _handle_runtime_job_queue_full(
+                    app_ctx,
+                    job_id=job_id,
+                    uid=uid,
+                    cleanup_paths=[pdf_path, audio_path],
+                    credit_type=deducted,
+                )
 
         elif mode == 'slides-only':
             if user.get('slides_credits', 0) <= 0:
@@ -1222,12 +1332,22 @@ def upload_files(app_ctx, request):
                 return app_ctx.jsonify({'error': 'No text extraction credits remaining.'}), 402
             total_steps = 2 if study_features != 'none' else 1
             runtime_jobs_store.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'study_pack_title': study_pack_title, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round((pdf_size if pdf_size > 0 else 0) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
-            thread = app_ctx.threading.Thread(
-                target=ai_pipelines.process_slides_only,
-                args=(job_id, pdf_path),
-                kwargs={'runtime': app_ctx},
-            )
-            thread.start()
+            try:
+                app_ctx.submit_background_job(
+                    ai_pipelines.process_slides_only,
+                    job_id,
+                    pdf_path,
+                    runtime=app_ctx,
+                )
+            except JobQueueFullError:
+                return _handle_runtime_job_queue_full(
+                    app_ctx,
+                    job_id=job_id,
+                    uid=uid,
+                    cleanup_paths=[pdf_path],
+                    credit_type=deducted,
+                    expected_credit_floor=int(user.get('slides_credits', 0) or 0),
+                )
 
         elif mode == 'interview':
             total_interview = user.get('interview_credits_short', 0) + user.get('interview_credits_medium', 0) + user.get('interview_credits_long', 0)
@@ -1332,12 +1452,22 @@ def upload_files(app_ctx, request):
                 'file_size_mb': round(audio_size / (1024 * 1024), 2),
                 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1, 'slides_credits': interview_features_cost}, runtime=app_ctx),
             }, runtime=app_ctx)
-            thread = app_ctx.threading.Thread(
-                target=ai_pipelines.process_interview_transcription,
-                args=(job_id, audio_path),
-                kwargs={'runtime': app_ctx},
-            )
-            thread.start()
+            try:
+                app_ctx.submit_background_job(
+                    ai_pipelines.process_interview_transcription,
+                    job_id,
+                    audio_path,
+                    runtime=app_ctx,
+                )
+            except JobQueueFullError:
+                return _handle_runtime_job_queue_full(
+                    app_ctx,
+                    job_id=job_id,
+                    uid=uid,
+                    cleanup_paths=[audio_path],
+                    credit_type=deducted,
+                    extra_slides_credits=interview_features_cost,
+                )
         else:
             return app_ctx.jsonify({'error': 'Invalid mode selected'}), 400
 

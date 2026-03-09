@@ -4,6 +4,7 @@ from .extensions import init_extensions
 from .logging_config import configure_logging
 from .runtime.container import build_runtime
 from .runtime.hooks import register_runtime_hooks
+from .runtime.proxy import apply_proxy_fix
 from .runtime.settings import load_runtime_settings
 from .web import health_bp, pages_bp
 
@@ -17,6 +18,7 @@ def create_app():
     from .runtime import core
 
     app = core.app
+    apply_proxy_fix(app, getattr(core, 'TRUSTED_PROXY_HOPS', 1))
     init_extensions(app)
 
     settings = load_runtime_settings(config=config)

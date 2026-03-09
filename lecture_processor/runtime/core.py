@@ -78,7 +78,10 @@ from firebase_admin import credentials, auth, firestore
 
 from lecture_processor.services import analytics_service, auth_service, file_service, job_state_service, prompt_registry, rate_limit_service, url_security
 
-from lecture_processor.repositories import admin_repo, batch_repo, job_logs_repo, purchases_repo, runtime_jobs_repo, study_repo, users_repo
+from lecture_processor.repositories import admin_repo, batch_repo, job_logs_repo, planner_repo, purchases_repo, runtime_jobs_repo, study_repo, users_repo
+from lecture_processor.runtime.http_security import apply_security_headers as runtime_apply_security_headers
+from lecture_processor.runtime.job_dispatcher import BoundedJobDispatcher, JobQueueFullError
+from lecture_processor.runtime.proxy import client_ip_from_request
 
 LEGACY_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT_DIR = os.path.dirname(os.path.dirname(LEGACY_MODULE_DIR))
@@ -105,6 +108,14 @@ LOG_LEVEL = (os.getenv('LOG_LEVEL', 'INFO') or 'INFO').strip().upper()
 logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO), format='%(asctime)s %(levelname)s %(name)s %(message)s')
 
 logger = logging.getLogger('lecture_processor')
+
+JOB_WORKERS = int(os.getenv('JOB_WORKERS', '2') or 2)
+
+JOB_QUEUE_MAX_PENDING = int(os.getenv('JOB_QUEUE_MAX_PENDING', '8') or 8)
+
+TRUSTED_PROXY_HOPS = int(os.getenv('TRUSTED_PROXY_HOPS', '1') or 1)
+
+job_dispatcher = BoundedJobDispatcher(JOB_WORKERS, JOB_QUEUE_MAX_PENDING, logger=logger)
 
 def log_event(level, event, **fields):
     payload = {'event': event}
@@ -486,10 +497,18 @@ def apply_cors_headers(response):
     if origin.lower() not in CORS_ALLOWED_ORIGINS:
         return response
     response.headers['Access-Control-Allow-Origin'] = origin
-    response.headers['Vary'] = 'Origin'
+    existing_vary = str(response.headers.get('Vary', '') or '').strip()
+    response.headers['Vary'] = 'Origin' if not existing_vary else f'{existing_vary}, Origin'
     response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
     return response
+
+
+def apply_security_headers(response):
+    return runtime_apply_security_headers(
+        response,
+        request_is_secure=bool(request.is_secure or os.getenv('RENDER')),
+    )
 
 CREDIT_BUNDLES = {'lecture_5': {'name': 'Lecture Notes — 5 Pack', 'description': '5 standard lecture credits', 'credits': {'lecture_credits_standard': 5}, 'price_cents': 999, 'currency': 'eur'}, 'lecture_10': {'name': 'Lecture Notes — 10 Pack', 'description': '10 standard lecture credits (best value)', 'credits': {'lecture_credits_standard': 10}, 'price_cents': 1699, 'currency': 'eur'}, 'slides_10': {'name': 'Slides Extraction — 10 Pack', 'description': '10 slides extraction credits', 'credits': {'slides_credits': 10}, 'price_cents': 499, 'currency': 'eur'}, 'slides_25': {'name': 'Slides Extraction — 25 Pack', 'description': '25 slides extraction credits (best value)', 'credits': {'slides_credits': 25}, 'price_cents': 999, 'currency': 'eur'}, 'interview_3': {'name': 'Interview Transcription — 3 Pack', 'description': '3 interview transcription credits', 'credits': {'interview_credits_short': 3}, 'price_cents': 799, 'currency': 'eur'}, 'interview_8': {'name': 'Interview Transcription — 8 Pack', 'description': '8 interview transcription credits (best value)', 'credits': {'interview_credits_short': 8}, 'price_cents': 1799, 'currency': 'eur'}}
 
@@ -777,6 +796,9 @@ def save_purchase_record(uid, bundle_id, stripe_session_id):
             purchases_repo.set_doc(db, stripe_session_id, record, merge=True)
         else:
             purchases_repo.add_doc(db, record)
+        from lecture_processor.domains.admin import rollups as admin_rollups
+        runtime = app.extensions.get('lecture_processor', {}).get('runtime')
+        admin_rollups.increment_purchase_rollups(record, runtime=runtime)
         logger.info(f"📝 Saved purchase record for user {uid}: {bundle['name']}")
     except Exception as e:
         logger.error(f'❌ Failed to save purchase record for user {uid}: {e}')
@@ -828,15 +850,18 @@ def sanitize_analytics_properties(raw_props):
     return analytics_service.sanitize_properties(raw_props, name_re=ANALYTICS_NAME_RE)
 
 def log_analytics_event(event_name, source='frontend', uid='', email='', session_id='', properties=None, created_at=None):
-    return analytics_service.log_analytics_event(event_name, source=source, uid=uid, email=email, session_id=session_id, properties=properties, created_at=created_at, db=db, name_re=ANALYTICS_NAME_RE, session_id_re=ANALYTICS_SESSION_ID_RE, allowed_events=ANALYTICS_ALLOWED_EVENTS, logger=logger, time_module=time)
+    runtime = app.extensions.get('lecture_processor', {}).get('runtime')
+    return analytics_service.log_analytics_event(event_name, source=source, uid=uid, email=email, session_id=session_id, properties=properties, created_at=created_at, db=db, name_re=ANALYTICS_NAME_RE, session_id_re=ANALYTICS_SESSION_ID_RE, allowed_events=ANALYTICS_ALLOWED_EVENTS, logger=logger, time_module=time, runtime=runtime)
 
 def log_rate_limit_hit(limit_name, retry_after=0):
-    return analytics_service.log_rate_limit_hit(limit_name, retry_after=retry_after, db=db, logger=logger, time_module=time)
+    runtime = app.extensions.get('lecture_processor', {}).get('runtime')
+    return analytics_service.log_rate_limit_hit(limit_name, retry_after=retry_after, db=db, logger=logger, time_module=time, runtime=runtime)
 
 def save_job_log(job_id, job_data, finished_at):
     """Save a processing job log to Firestore for analytics."""
     try:
         from lecture_processor.domains.admin import metrics as admin_metrics
+        from lecture_processor.domains.admin import rollups as admin_rollups
 
         started_at = job_data.get('started_at', 0)
         duration = round(finished_at - started_at, 1) if started_at else 0
@@ -880,6 +905,7 @@ def save_job_log(job_id, job_data, finished_at):
         }
         payload = admin_metrics.add_admin_visibility_flag(payload)
         job_logs_repo.set_job_log(db, job_id, payload)
+        admin_rollups.increment_job_rollups(payload, runtime=app.extensions.get('lecture_processor', {}).get('runtime'))
         status = str(job_data.get('status', '') or '').lower()
         backend_event = 'processing_finished_backend'
         if status == 'complete':
@@ -1275,6 +1301,18 @@ def normalize_rate_limit_key_part(value, fallback='anon', max_len=120):
         return fallback
     safe = re.sub('[^a-z0-9_.:@-]+', '_', raw)
     return safe[:max_len] if safe else fallback
+
+
+def get_client_ip(req=None):
+    return client_ip_from_request(req or request)
+
+
+def submit_background_job(target, *args, **kwargs):
+    return job_dispatcher.submit(target, *args, **kwargs)
+
+
+def get_background_queue_stats():
+    return job_dispatcher.stats()
 
 def has_sufficient_upload_disk_space(required_bytes=0):
     """Return (ok, free_bytes, threshold_bytes) for upload safety checks."""
@@ -2131,6 +2169,30 @@ def get_study_progress_doc(uid):
 def get_study_card_state_doc(uid, pack_id):
     safe_pack_id = str(pack_id or '').replace('/', '_')
     return study_repo.study_card_state_doc_ref(db, uid, safe_pack_id)
+
+
+def get_planner_settings(uid):
+    return planner_repo.get_planner_settings(db, uid)
+
+
+def set_planner_settings(uid, payload, merge=True):
+    return planner_repo.set_planner_settings(db, uid, payload, merge=merge)
+
+
+def get_planner_session(uid, session_id):
+    return planner_repo.get_planner_session(db, uid, session_id)
+
+
+def set_planner_session(uid, session_id, payload, merge=True):
+    return planner_repo.set_planner_session(db, uid, session_id, payload, merge=merge)
+
+
+def delete_planner_session(uid, session_id):
+    return planner_repo.delete_planner_session(db, uid, session_id)
+
+
+def list_planner_sessions(uid, limit=200):
+    return planner_repo.list_planner_sessions_by_uid(db, uid, limit)
 
 def generate_study_materials(source_text, flashcard_selection, question_selection, study_features='both', output_language='English', retry_tracker=None):
     if study_features == 'none':
