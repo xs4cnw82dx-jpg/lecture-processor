@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import pytest
 
 from lecture_processor.config import load_config
@@ -58,3 +61,14 @@ def test_load_config_normalizes_public_base_url(monkeypatch):
 
     cfg = load_config()
     assert cfg.public_base_url == "https://example.com"
+
+
+def test_functions_allowlist_config_stays_in_sync_with_canonical_file():
+    project_root = Path(__file__).resolve().parents[1]
+    canonical_path = project_root / "config" / "allowed_email_domains.json"
+    functions_path = project_root / "functions" / "allowed_email_domains.json"
+
+    canonical = json.loads(canonical_path.read_text(encoding="utf-8"))
+    functions_copy = json.loads(functions_path.read_text(encoding="utf-8"))
+
+    assert functions_copy == canonical

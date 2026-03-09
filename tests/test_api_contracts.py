@@ -237,6 +237,92 @@ def test_status_not_found_contract(client, monkeypatch):
     assert "temporarily unavailable" in body.get("error", "").lower()
 
 
+def test_active_runtime_jobs_contract_returns_only_active_regular_jobs(client, monkeypatch):
+    class _Doc:
+        def __init__(self, doc_id, payload):
+            self.id = doc_id
+            self._payload = payload
+
+        def to_dict(self):
+            return dict(self._payload)
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "contract-active", "email": "u@example.com"})
+    monkeypatch.setattr(
+        core,
+        "jobs",
+        {
+            "job-local-active": {
+                "user_id": "contract-active",
+                "mode": "lecture-notes",
+                "status": "processing",
+                "step": 2,
+                "step_description": "Transcribing audio...",
+                "study_pack_title": "Biology",
+                "started_at": 200.0,
+                "study_pack_id": "",
+                "error": "",
+                "is_batch": False,
+            },
+            "job-local-batch": {
+                "user_id": "contract-active",
+                "mode": "lecture-notes",
+                "status": "processing",
+                "step": 1,
+                "step_description": "Queued",
+                "started_at": 250.0,
+                "is_batch": True,
+            },
+            "job-local-complete": {
+                "user_id": "contract-active",
+                "mode": "slides-only",
+                "status": "complete",
+                "step": 2,
+                "step_description": "Complete!",
+                "started_at": 150.0,
+                "is_batch": False,
+            },
+            "job-other-user": {
+                "user_id": "someone-else",
+                "mode": "interview",
+                "status": "processing",
+                "step": 1,
+                "step_description": "Transcribing",
+                "started_at": 300.0,
+                "is_batch": False,
+            },
+        },
+    )
+    monkeypatch.setattr(
+        core.runtime_jobs_repo,
+        "query_by_user_and_statuses",
+        lambda *_args, **_kwargs: [
+            _Doc(
+                "job-persisted-active",
+                {
+                    "user_id": "contract-active",
+                    "mode": "interview",
+                    "status": "starting",
+                    "step": 0,
+                    "step_description": "Starting...",
+                    "study_pack_title": "Hiring panel",
+                    "started_at": 400.0,
+                    "study_pack_id": "",
+                    "error": "",
+                    "is_batch": False,
+                },
+            )
+        ],
+    )
+
+    response = client.get("/api/runtime-jobs/active", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert [job["job_id"] for job in payload["jobs"]] == ["job-persisted-active", "job-local-active"]
+    assert payload["jobs"][0]["study_pack_title"] == "Hiring panel"
+    assert payload["jobs"][1]["step_description"] == "Transcribing audio..."
+
+
 def test_stripe_webhook_requires_secret(client, monkeypatch):
     monkeypatch.setattr(core, "STRIPE_WEBHOOK_SECRET", "")
 
@@ -268,6 +354,48 @@ def test_study_pack_get_missing_returns_404(client, monkeypatch):
 
     assert response.status_code == 404
     assert "not found" in response.get_json().get("error", "").lower()
+
+
+def test_study_pack_get_returns_source_export_flags(client, monkeypatch):
+    class _Doc:
+        exists = True
+
+        def to_dict(self):
+            return {
+                "uid": "study-u-flags",
+                "title": "Pack with sources",
+                "mode": "lecture-notes",
+                "notes_markdown": "# Notes",
+                "flashcards": [],
+                "test_questions": [],
+                "created_at": 10,
+            }
+
+        @property
+        def reference(self):
+            return object()
+
+    class _SourceDoc:
+        exists = True
+
+        def to_dict(self):
+            return {
+                "slide_text": "Slides",
+                "transcript": "Transcript",
+            }
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u-flags", "email": "u@example.com"})
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _Doc())
+    monkeypatch.setattr(core.study_repo, "get_study_pack_source_doc", lambda _db, _pack_id: _SourceDoc())
+    monkeypatch.setattr("lecture_processor.services.study_api_service.study_audio.ensure_pack_audio_storage_key", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr("lecture_processor.services.study_api_service.study_audio.get_audio_storage_key_from_pack", lambda *_args, **_kwargs: "")
+
+    response = client.get("/api/study-packs/pack-with-sources", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["has_source_slides"] is True
+    assert payload["has_source_transcript"] is True
 
 
 def test_study_pack_list_uses_repo_order_and_count_fallback(client, monkeypatch):
@@ -422,6 +550,97 @@ def test_study_pack_get_returns_goal_and_notes_highlights(client, monkeypatch):
     assert payload["daily_card_goal"] == 24
     assert payload["notes_highlights"]["base_key"] == "pack-1:1:7"
     assert payload["notes_highlights"]["ranges"] == [{"start": 0, "end": 5, "color": "yellow"}]
+
+
+def test_study_pack_export_source_returns_markdown_download(client, monkeypatch):
+    class _PackDoc:
+        exists = True
+
+        def to_dict(self):
+            return {
+                "uid": "study-export-u1",
+                "title": "Biology Week 1",
+                "mode": "lecture-notes",
+            }
+
+    class _SourceDoc:
+        exists = True
+
+        def to_dict(self):
+            return {
+                "slide_text": "# Slide Extract\n\nCell respiration",
+                "transcript": "Transcript text",
+            }
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-export-u1", "email": "u@example.com"})
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _PackDoc())
+    monkeypatch.setattr(core.study_repo, "get_study_pack_source_doc", lambda _db, _pack_id: _SourceDoc())
+
+    response = client.get(
+        "/api/study-packs/pack-1/export-source?type=slides&format=md",
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/markdown"
+    assert "biology-week-1-slide-extract.md" in response.headers["Content-Disposition"]
+    assert response.get_data(as_text=True) == "# Slide Extract\n\nCell respiration"
+
+
+def test_study_pack_export_source_returns_404_when_requested_source_missing(client, monkeypatch):
+    class _PackDoc:
+        exists = True
+
+        def to_dict(self):
+            return {
+                "uid": "study-export-u2",
+                "title": "Interview pack",
+                "mode": "interview",
+            }
+
+    class _SourceDoc:
+        exists = True
+
+        def to_dict(self):
+            return {
+                "slide_text": "",
+                "transcript": "",
+            }
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-export-u2", "email": "u@example.com"})
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _PackDoc())
+    monkeypatch.setattr(core.study_repo, "get_study_pack_source_doc", lambda _db, _pack_id: _SourceDoc())
+
+    response = client.get(
+        "/api/study-packs/pack-2/export-source?type=transcript&format=md",
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 404
+    assert "no transcript source export" in response.get_json()["error"].lower()
+
+
+def test_study_pack_export_source_rejects_non_owner(client, monkeypatch):
+    class _PackDoc:
+        exists = True
+
+        def to_dict(self):
+            return {
+                "uid": "different-user",
+                "title": "Other pack",
+                "mode": "lecture-notes",
+            }
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-export-u3", "email": "u@example.com"})
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _PackDoc())
+
+    response = client.get(
+        "/api/study-packs/pack-3/export-source?type=slides&format=md",
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 403
+    assert response.get_json()["error"] == "Forbidden"
 
 
 def test_study_pack_create_accepts_daily_card_goal_and_notes_highlights(client, monkeypatch):

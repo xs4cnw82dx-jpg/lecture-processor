@@ -32,6 +32,16 @@
     </section>
 
     <div id="study-library-shell">
+      <section class="processing-now-panel" id="processing-now-panel" hidden aria-live="polite">
+        <div class="processing-now-head">
+          <div>
+            <div class="processing-now-eyebrow">Processing now</div>
+            <h2>Safe to leave</h2>
+            <p>Regular lecture jobs keep running on the server after upload. Finished packs will appear here automatically.</p>
+          </div>
+        </div>
+        <div class="processing-now-list" id="processing-now-list"></div>
+      </section>
       <div class="grid" id="library-grid">
       <aside class="panel">
         <div class="panel-head"><span class="panel-title">Folders</span>
@@ -219,6 +229,18 @@
                       <button type="button" class="export-menu-item" role="menuitem"
                         data-export-kind="test"><strong>Practice Test CSV</strong><span>Questions with
                           options/explanations</span></button>
+                      <button type="button" class="export-menu-item" role="menuitem" data-export-kind="source-slides-md"
+                        id="export-source-slides-md" hidden><strong>Slide Extract (.md)</strong><span>Original slide
+                          extraction output</span></button>
+                      <button type="button" class="export-menu-item" role="menuitem" data-export-kind="source-slides-docx"
+                        id="export-source-slides-docx" hidden><strong>Slide Extract (.docx)</strong><span>Original slide
+                          extraction output</span></button>
+                      <button type="button" class="export-menu-item" role="menuitem" data-export-kind="source-transcript-md"
+                        id="export-source-transcript-md" hidden><strong>Lecture Transcript (.md)</strong><span>Original
+                          transcript output</span></button>
+                      <button type="button" class="export-menu-item" role="menuitem"
+                        data-export-kind="source-transcript-docx" id="export-source-transcript-docx" hidden><strong>Lecture
+                          Transcript (.docx)</strong><span>Original transcript output</span></button>
                       <button type="button" class="export-menu-item has-submenu" role="menuitem" aria-haspopup="menu"
                         aria-expanded="false" data-export-kind="pdf-menu"><strong>Lecture Notes Pack
                           PDF</strong><span>Notes, flashcards, and practice test</span><span
@@ -889,6 +911,7 @@
   <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/runtime-job-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/study-progress-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/study-library-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>

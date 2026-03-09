@@ -9,6 +9,7 @@ const topbarUtils = window.LectureProcessorTopbar || {};
 const uiCache = window.LectureProcessorUiCache || null;
 const progressUtils = window.LectureProcessorStudyProgressUtils || {};
 const studyLibraryUtils = window.LectureProcessorStudyLibraryUtils || {};
+const runtimeJobUtils = window.LectureProcessorRuntimeJobUtils || {};
 
 /* ── State ── */
 let token = null, folders = [], packs = [], selectedFolderId = '', selectedPackId = '', selectedPack = null;
@@ -40,10 +41,15 @@ let highlightSyncTimer = null, highlightSyncInFlight = false, pendingHighlightPa
 let overallGoalSaveInFlight = false, packGoalSaveInFlight = false;
 let overallGoalAutosaveTimer = null, packGoalAutosaveTimer = null;
 let goalPanelStatusText = 'Synced', goalPanelStatusTone = 'success';
+let activeRuntimeJobs = [];
+let runtimeJobsRefreshTimer = null;
+let runtimeJobsRefreshInFlight = false;
 const HINT_FADE_DELAY_MS = 10000;
 const NOTES_ICON_IDLE_MS = 5000;
 const HIGHLIGHT_SYNC_DELAY_MS = 450;
 const GOAL_AUTOSAVE_DELAY_MS = 420;
+const ACTIVE_RUNTIME_JOBS_CACHE_KEY = 'active_runtime_jobs';
+const RUNTIME_JOBS_REFRESH_MS = 12000;
 const NOTES_HIGHLIGHT_CACHE_PREFIX = 'hl_ranges_';
 const LEGACY_NOTES_HIGHLIGHT_CACHE_PREFIX = 'hl_html_';
 const urlParams = new URLSearchParams(window.location.search);
@@ -1038,6 +1044,7 @@ function gradeAnswer(userAnswer, correctAnswer) {
 /* ── DOM refs ── */
 var userMeta = document.getElementById('user-meta'), backAppBtn = document.getElementById('back-app-btn'), fullscreenBtn = document.getElementById('fullscreen-btn'), topbarDueText = document.getElementById('topbar-due-text');
 var studyAuthGate = document.getElementById('study-auth-gate'), studyLibraryShell = document.getElementById('study-library-shell'), studyAuthSignInBtn = document.getElementById('study-auth-signin-btn');
+var processingNowPanel = document.getElementById('processing-now-panel'), processingNowList = document.getElementById('processing-now-list');
 var searchInput = document.getElementById('search-input'), folderList = document.getElementById('folder-list'), packList = document.getElementById('pack-list'), packListActions = document.getElementById('pack-list-actions'), loadMorePacksBtn = document.getElementById('load-more-packs-btn'), newFolderBtn = document.getElementById('new-folder-btn'), deleteFolderBtn = document.getElementById('delete-folder-btn');
 var packEmpty = document.getElementById('pack-empty'), packEmptyDefault = document.getElementById('pack-empty-default'), packEmptyOnboarding = document.getElementById('pack-empty-onboarding'), packEmptyCreateBtn = document.getElementById('pack-empty-create-btn'), packEmptyDemoBtn = document.getElementById('pack-empty-demo-btn'), packEditorWrap = document.getElementById('pack-editor-wrap'), packTitle = document.getElementById('pack-title'), packFolderSelect = document.getElementById('pack-folder-select'), packFolderPicker = document.getElementById('pack-folder-picker'), packFolderButton = document.getElementById('pack-folder-button'), packFolderLabel = document.getElementById('pack-folder-label'), packFolderMenu = document.getElementById('pack-folder-menu');
 var packCourse = document.getElementById('pack-course'), packSubject = document.getElementById('pack-subject'), packSemester = document.getElementById('pack-semester'), packBlock = document.getElementById('pack-block'), notesView = document.getElementById('notes-view');
@@ -1123,8 +1130,10 @@ function applyStudySignedOutState() {
   renderPacks();
   showPackEditor(false);
   updatePackSummary();
+  syncStudyPackExportMenu();
   renderGoalPanel();
   closeAudioPlayer();
+  setActiveRuntimeJobs([]);
   setTopbarDueTextValue(null);
 }
 function readUiCacheJson(key, fallbackValue) {
@@ -1166,6 +1175,99 @@ function writeUiCacheJsonForUser(userOrUid, key, value) {
     return uiCache.setUserJson(safeUid, key, value);
   }
   return writeUiCacheJson('user:' + safeUid + ':' + key, value);
+}
+function mergeRuntimeJobs(currentJobs, incomingJobs) {
+  if (runtimeJobUtils && typeof runtimeJobUtils.mergeActiveRuntimeJobs === 'function') {
+    return runtimeJobUtils.mergeActiveRuntimeJobs(currentJobs, incomingJobs);
+  }
+  return Array.isArray(incomingJobs) ? incomingJobs.slice() : [];
+}
+function removeRuntimeJobFromList(currentJobs, jobId) {
+  if (runtimeJobUtils && typeof runtimeJobUtils.removeRuntimeJob === 'function') {
+    return runtimeJobUtils.removeRuntimeJob(currentJobs, jobId);
+  }
+  var safeJobId = String(jobId || '').trim();
+  return (Array.isArray(currentJobs) ? currentJobs : []).filter(function (job) {
+    return String(job && job.job_id || '').trim() !== safeJobId;
+  });
+}
+function getLatestRuntimeJob(jobs) {
+  if (runtimeJobUtils && typeof runtimeJobUtils.findLatestRuntimeJob === 'function') {
+    return runtimeJobUtils.findLatestRuntimeJob(jobs);
+  }
+  return Array.isArray(jobs) && jobs.length ? jobs[0] : null;
+}
+function readActiveRuntimeJobsCache(userOrUid) {
+  return mergeRuntimeJobs([], readUiCacheJsonForUser(userOrUid, ACTIVE_RUNTIME_JOBS_CACHE_KEY, []));
+}
+function writeActiveRuntimeJobsCache(userOrUid, jobs) {
+  return writeUiCacheJsonForUser(userOrUid, ACTIVE_RUNTIME_JOBS_CACHE_KEY, mergeRuntimeJobs([], jobs));
+}
+function setActiveRuntimeJobs(jobs) {
+  activeRuntimeJobs = mergeRuntimeJobs([], jobs);
+  if (auth.currentUser) {
+    writeActiveRuntimeJobsCache(auth.currentUser, activeRuntimeJobs);
+  }
+  renderProcessingNowPanel();
+}
+function removeActiveRuntimeJob(jobId) {
+  activeRuntimeJobs = removeRuntimeJobFromList(activeRuntimeJobs, jobId);
+  if (auth.currentUser) {
+    writeActiveRuntimeJobsCache(auth.currentUser, activeRuntimeJobs);
+  }
+  renderProcessingNowPanel();
+}
+function clearRuntimeJobsRefreshTimer() {
+  if (!runtimeJobsRefreshTimer) return;
+  clearTimeout(runtimeJobsRefreshTimer);
+  runtimeJobsRefreshTimer = null;
+}
+function scheduleRuntimeJobsRefresh(delayMs) {
+  clearRuntimeJobsRefreshTimer();
+  if (!auth.currentUser) return;
+  runtimeJobsRefreshTimer = setTimeout(function () {
+    runtimeJobsRefreshTimer = null;
+    refreshActiveRuntimeJobs(false);
+  }, Math.max(1000, delayMs || RUNTIME_JOBS_REFRESH_MS));
+}
+function formatRuntimeJobMode(mode) {
+  var safeMode = String(mode || '').trim().toLowerCase();
+  if (safeMode === 'lecture-notes') return 'Lecture Notes';
+  if (safeMode === 'slides-only') return 'Slides Extraction';
+  if (safeMode === 'interview') return 'Interview Transcription';
+  return 'Processing';
+}
+function formatRuntimeJobStartedAt(seconds) {
+  var safeSeconds = Number(seconds || 0);
+  if (!safeSeconds) return '';
+  var date = new Date(safeSeconds * 1000);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString(navigator.language || 'en-US', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+function renderProcessingNowPanel() {
+  if (!processingNowPanel || !processingNowList) return;
+  processingNowList.innerHTML = '';
+  var jobs = Array.isArray(activeRuntimeJobs) ? activeRuntimeJobs : [];
+  processingNowPanel.hidden = jobs.length === 0;
+  if (!jobs.length) return;
+  jobs.forEach(function (job) {
+    var item = document.createElement('article');
+    item.className = 'processing-now-item';
+    var title = String(job.study_pack_title || '').trim() || formatRuntimeJobMode(job.mode);
+    var startedAt = formatRuntimeJobStartedAt(job.started_at);
+    setSafeInnerHtml(
+      item,
+      '<div class="processing-now-item-head"><div class="processing-now-item-title">' + escapeHtml(title) + '</div><span class="processing-now-item-mode">' + escapeHtml(formatRuntimeJobMode(job.mode)) + '</span></div>'
+        + '<div class="processing-now-item-copy">' + escapeHtml(job.step_description || 'Still processing on the server.') + '</div>'
+        + '<div class="processing-now-item-meta">Job ' + escapeHtml(job.job_id || '') + (startedAt ? ' · Started ' + escapeHtml(startedAt) : '') + '</div>'
+    );
+    processingNowList.appendChild(item);
+  });
 }
 function setTopbarDueTextValue(countValue) {
   if (!topbarDueText) return;
@@ -1601,6 +1703,129 @@ function apiCall(path, options) {
 }
 function authenticatedFetch(path, options, allowRefresh) {
   return performAuthenticatedFetch(path, options, allowRefresh !== false);
+}
+function downloadStudyPackSource(packId, type, format) {
+  var safeType = type === 'transcript' ? 'transcript' : 'slides';
+  var safeFormat = format === 'docx' ? 'docx' : 'md';
+  var fallback = 'study-pack-' + packId + '-' + safeType + '.' + safeFormat;
+  return authenticatedFetch(
+    '/api/study-packs/' + encodeURIComponent(packId) + '/export-source?type=' + encodeURIComponent(safeType) + '&format=' + encodeURIComponent(safeFormat)
+  ).then(function (response) {
+    if (!response.ok) {
+      return response.json().catch(function () { return {}; }).then(function (payload) {
+        throw new Error(payload.error || 'Could not export source output');
+      });
+    }
+    if (downloadUtils.downloadResponseBlob) {
+      return downloadUtils.downloadResponseBlob(response, fallback);
+    }
+    return response.blob().then(function (blob) {
+      var url = URL.createObjectURL(blob);
+      var anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = fallback;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    });
+  });
+}
+function syncStudyPackExportMenu() {
+  var itemConfig = studyLibraryUtils && typeof studyLibraryUtils.buildStudyPackExportItems === 'function'
+    ? studyLibraryUtils.buildStudyPackExportItems(selectedPack || {})
+    : [];
+  itemConfig.forEach(function (entry) {
+    var item = exportMenuList ? exportMenuList.querySelector('[data-export-kind="' + String(entry.kind || '') + '"]') : null;
+    if (!item) return;
+    item.hidden = !entry.visible;
+    var title = item.querySelector('strong');
+    if (title && entry.label) {
+      title.textContent = String(entry.label);
+    }
+  });
+}
+function reconcileCachedRuntimeJobs(serverJobs) {
+  if (!auth.currentUser) return Promise.resolve({ jobs: mergeRuntimeJobs([], serverJobs), shouldReload: false });
+  var currentServerJobs = mergeRuntimeJobs([], serverJobs);
+  var cachedJobs = readActiveRuntimeJobsCache(auth.currentUser);
+  var missingJobs = cachedJobs.filter(function (job) {
+    var jobId = String(job && job.job_id || '').trim();
+    return jobId && !currentServerJobs.some(function (serverJob) {
+      return String(serverJob && serverJob.job_id || '').trim() === jobId;
+    });
+  });
+  if (!missingJobs.length) {
+    return Promise.resolve({ jobs: currentServerJobs, shouldReload: false });
+  }
+  return Promise.all(missingJobs.map(function (job) {
+    var jobId = String(job && job.job_id || '').trim();
+    if (!jobId) return Promise.resolve(null);
+    return authenticatedFetch('/status/' + encodeURIComponent(jobId)).then(function (response) {
+      if (!response.ok) {
+        if (response.status === 404) {
+          return null;
+        }
+        return response.json().catch(function () { return {}; }).then(function (payload) {
+          throw new Error(payload.error || 'Could not resume processing status');
+        });
+      }
+      return response.json().then(function (payload) {
+        return { cached: job, payload: payload };
+      });
+    }).catch(function () {
+      return null;
+    });
+  })).then(function (results) {
+    var shouldReload = false;
+    var mergedJobs = currentServerJobs.slice();
+    results.forEach(function (result) {
+      if (!result || !result.payload) return;
+      var payload = result.payload;
+      var cached = result.cached || {};
+      var status = String(payload.status || '').trim().toLowerCase();
+      if (runtimeJobUtils && typeof runtimeJobUtils.isActiveStatus === 'function' && runtimeJobUtils.isActiveStatus(status)) {
+        mergedJobs = mergeRuntimeJobs(mergedJobs, [Object.assign({}, cached, payload)]);
+        return;
+      }
+      removeActiveRuntimeJob(cached.job_id);
+      if (status === 'complete') {
+        shouldReload = true;
+        showToast((cached.study_pack_title || 'A study pack') + ' is ready in your library.');
+        return;
+      }
+      if (status === 'error') {
+        showToast(payload.error || 'A background job failed to finish.', 'error');
+      }
+    });
+    return { jobs: mergedJobs, shouldReload: shouldReload };
+  });
+}
+function refreshActiveRuntimeJobs(force) {
+  if (!auth.currentUser || !token) {
+    setActiveRuntimeJobs([]);
+    clearRuntimeJobsRefreshTimer();
+    return Promise.resolve();
+  }
+  if (runtimeJobsRefreshInFlight && !force) {
+    return Promise.resolve();
+  }
+  runtimeJobsRefreshInFlight = true;
+  return apiCall('/api/runtime-jobs/active').then(function (payload) {
+    return reconcileCachedRuntimeJobs(payload && payload.jobs ? payload.jobs : []);
+  }).then(function (result) {
+    setActiveRuntimeJobs(result && result.jobs ? result.jobs : []);
+    if (result && result.shouldReload) {
+      return loadData(selectedPackId || '').catch(function () { });
+    }
+  }).catch(function (error) {
+    if (force) {
+      showToast(error.message || 'Could not refresh processing jobs.', 'error');
+    }
+  }).finally(function () {
+    runtimeJobsRefreshInFlight = false;
+    scheduleRuntimeJobsRefresh(RUNTIME_JOBS_REFRESH_MS);
+  });
 }
 function downloadStudyPackCsv(packId, type) {
   var fallback = type === 'test' ? 'study-pack-' + packId + '-practice-test.csv' : 'study-pack-' + packId + '-flashcards.csv';
@@ -3432,8 +3657,11 @@ function openPack(packId) {
     selectedPack.test_questions = Array.isArray(selectedPack.test_questions) ? selectedPack.test_questions.map(normalizeQuestion) : [];
     selectedPack.has_audio_playback = !!selectedPack.has_audio_playback;
     selectedPack.has_audio_sync = !!selectedPack.has_audio_sync;
+    selectedPack.has_source_slides = !!selectedPack.has_source_slides;
+    selectedPack.has_source_transcript = !!selectedPack.has_source_transcript;
     selectedPack.notes_audio_map = Array.isArray(selectedPack.notes_audio_map) ? selectedPack.notes_audio_map : [];
     showPackEditor(true); updatePackSummary();
+    syncStudyPackExportMenu();
     packTitle.value = selectedPack.title || '';
     setPackFolderSelection(selectedPack.folder_id || '');
     packCourse.value = selectedPack.course || '';
@@ -3508,6 +3736,7 @@ function loadData(preferredPackId) {
       selectedPackId = learnPackFromUrl; renderPacks(); return openPack(learnPackFromUrl);
     } else {
       selectedPack = null; showPackEditor(false); updatePackSummary();
+      syncStudyPackExportMenu();
       renderGoalPanel();
       closeAudioPlayer();
     }
@@ -3629,6 +3858,8 @@ auth.onAuthStateChanged(function (user) {
     goalPanelStatusText = 'Synced';
     goalPanelStatusTone = 'success';
     remoteProgressCardStates = {};
+    clearRuntimeJobsRefreshTimer();
+    runtimeJobsRefreshInFlight = false;
     if (progressSyncTimer) { clearTimeout(progressSyncTimer); progressSyncTimer = null; }
     progressSyncInFlight = false;
     if (highlightSyncTimer) { clearTimeout(highlightSyncTimer); highlightSyncTimer = null; }
@@ -3656,6 +3887,7 @@ auth.onAuthStateChanged(function (user) {
   user.getIdToken().then(function (t) {
     token = t;
     if (authClient && typeof authClient.setToken === 'function') { authClient.setToken(t); }
+    setActiveRuntimeJobs(readActiveRuntimeJobsCache(user));
     if (topbarUtils.applyAuthState && userMeta) {
       topbarUtils.applyAuthState({
         user: user,
@@ -3675,6 +3907,7 @@ auth.onAuthStateChanged(function (user) {
         openBuilderOverlay('create', null);
       }
       queueProgressSync(false);
+      return refreshActiveRuntimeJobs(true);
     });
   }).catch(function (e) {
     showToast(e.message || 'Could not load study library.', 'error');
@@ -4145,6 +4378,18 @@ if (exportMenuBtn && exportMenuList) {
     }
     if (kind === 'pdf-no-answers') {
       downloadStudyPackPdf(selectedPackId, false).then(function () { showToast('Practice PDF export started.'); }).catch(function (e3) { showToast(e3.message || 'Could not export PDF.', 'error'); });
+      return;
+    }
+    if (kind === 'source-slides-md' || kind === 'source-slides-docx') {
+      downloadStudyPackSource(selectedPackId, 'slides', kind === 'source-slides-docx' ? 'docx' : 'md').then(function () {
+        showToast('Slide extract export started.');
+      }).catch(function (e5) { showToast(e5.message || 'Could not export slide extract.', 'error'); });
+      return;
+    }
+    if (kind === 'source-transcript-md' || kind === 'source-transcript-docx') {
+      downloadStudyPackSource(selectedPackId, 'transcript', kind === 'source-transcript-docx' ? 'docx' : 'md').then(function () {
+        showToast('Transcript export started.');
+      }).catch(function (e6) { showToast(e6.message || 'Could not export transcript.', 'error'); });
       return;
     }
     var csvType = (kind === 'test') ? 'test' : 'flashcards';

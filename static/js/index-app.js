@@ -32,6 +32,7 @@ const uxUtils = window.LectureProcessorUx || {};
 const downloadUtils = window.LectureProcessorDownload || {};
 const topbarUtils = window.LectureProcessorTopbar || {};
 const progressUtils = window.LectureProcessorStudyProgressUtils || {};
+const runtimeJobUtils = window.LectureProcessorRuntimeJobUtils || {};
 const audioImportUtils = window.LectureProcessorLectureAudioImportUtils || {};
 const pageConfig = window.LectureProcessorPageConfig || {};
 const forcedMode = ['lecture-notes', 'slides-only', 'interview'].includes(String(pageConfig.forcedMode || '').trim())
@@ -101,11 +102,11 @@ let testQuestions = [];
 let activeResultsTab = 'notes';
 let flashcardIndex = 0;
 let flashcardFlipped = false;
-
-let processingEstimateRange = null;
-let processingEstimateContextKey = '';
-let processingEstimateRequestSeq = 0;
-let processingEstimateDebounceTimer = null;
+let activeRuntimeJobs = [];
+let runtimeJobsRefreshTimer = null;
+let runtimeJobsRefreshInFlight = false;
+let notificationPermissionRequested = false;
+let notifiedTerminalJobIds = new Set();
 
 let quizIndex = 0;
 let quizScore = 0;
@@ -143,6 +144,8 @@ const analyticsEndpoint = '/api/lp-event';
 const POLL_BASE_MS = 2000;
 const POLL_MAX_MS = 30000;
 const POLL_MAX_RUNTIME_MS = 30 * 60 * 1000;
+const ACTIVE_RUNTIME_JOBS_CACHE_KEY = 'active_runtime_jobs';
+const RUNTIME_JOBS_REFRESH_MS = 12000;
 const DOWNLOAD_LABELS = Object.freeze({
     lectureNotes: 'Lecture Notes',
     slideExtract: 'Slide Extract',
@@ -282,6 +285,12 @@ const modeConfig = {
         steps: [{ num: 1, label: 'Transcribe' }]
     }
 };
+
+const UPLOAD_ESTIMATE_COPY = Object.freeze({
+    'lecture-notes': 'A 60-minute lecture usually finishes in about 5 minutes. Longer or noisy recordings can take longer.',
+    'slides-only': 'Most slide extractions finish within a couple of minutes. Large or image-heavy decks can take longer.',
+    'interview': 'Most interview transcripts finish within a few minutes. Summary and structured transcript extras add more time.',
+});
 
 const allowedSlideExtensions = ['.pdf', '.pptx'];
 const allowedSlideMimeTypes = [
@@ -446,6 +455,7 @@ const progressSection = document.getElementById('progress-section');
 const progressSteps = document.getElementById('progress-steps');
 const progressStatus = document.getElementById('progress-status');
 const statusText = document.getElementById('status-text');
+const progressSafeBanner = document.getElementById('progress-safe-banner');
 const progressRetry = document.getElementById('progress-retry');
 const progressRetryBtn = document.getElementById('progress-retry-btn');
 const resultsSection = document.getElementById('results-section');
@@ -524,6 +534,33 @@ const setSanitizedHtml = htmlUtils.setSanitizedHtml || function (element, rawHtm
     }
     element.textContent = html;
 };
+function buildUserScopedCacheKey(baseKey, userOrUid) {
+    const uid = typeof userOrUid === 'string'
+        ? userOrUid
+        : (userOrUid && userOrUid.uid ? String(userOrUid.uid) : '');
+    const safeUid = String(uid || '').trim();
+    return safeUid ? `${baseKey}:${safeUid}` : '';
+}
+function readUiCacheJsonForUser(userOrUid, baseKey, fallbackValue) {
+    const storageKey = buildUserScopedCacheKey(baseKey, userOrUid);
+    if (!storageKey) return fallbackValue;
+    try {
+        const raw = localStorage.getItem(storageKey);
+        if (!raw) return fallbackValue;
+        const parsed = JSON.parse(raw);
+        return parsed == null ? fallbackValue : parsed;
+    } catch (_) {
+        return fallbackValue;
+    }
+}
+function writeUiCacheJsonForUser(userOrUid, baseKey, value) {
+    const storageKey = buildUserScopedCacheKey(baseKey, userOrUid);
+    if (!storageKey) return value;
+    try {
+        localStorage.setItem(storageKey, JSON.stringify(value));
+    } catch (_) { }
+    return value;
+}
 function formatCreditTypeLabel(creditType) {
     const value = String(creditType || '').trim();
     const map = {
@@ -800,7 +837,8 @@ function getFirebaseErrorMessage(e) {
         'auth/wrong-password': 'Incorrect password. Please try again.',
         'auth/invalid-credential': 'Invalid email or password. Please try again.',
         'auth/too-many-requests': 'Too many failed attempts. Please try again later.',
-        'auth/network-request-failed': 'Network error. Please check your connection.'
+        'auth/network-request-failed': 'Network error. Please check your connection.',
+        'auth/internal-error': 'Sign-in is temporarily unavailable right now. Please try again in a minute. If this keeps happening, contact support because the Firebase sign-in configuration likely needs to be redeployed.',
     };
     return m[e.code] || e.message || 'An error occurred. Please try again.';
 }
@@ -1273,10 +1311,65 @@ function updateQuickstartVisibility() {
     } catch (_) { }
     setQuickstartVisible(isNewUser && !dismissed && !resultsLocked);
 }
+function mergeRuntimeJobs(currentJobs, incomingJobs) {
+    if (runtimeJobUtils && typeof runtimeJobUtils.mergeActiveRuntimeJobs === 'function') {
+        return runtimeJobUtils.mergeActiveRuntimeJobs(currentJobs, incomingJobs);
+    }
+    return Array.isArray(incomingJobs) ? incomingJobs.slice() : [];
+}
+function getLatestRuntimeJob(jobs) {
+    if (runtimeJobUtils && typeof runtimeJobUtils.findLatestRuntimeJob === 'function') {
+        return runtimeJobUtils.findLatestRuntimeJob(jobs);
+    }
+    return Array.isArray(jobs) && jobs.length ? jobs[0] : null;
+}
+function readActiveRuntimeJobsCache(userOrUid) {
+    return mergeRuntimeJobs([], readUiCacheJsonForUser(userOrUid, ACTIVE_RUNTIME_JOBS_CACHE_KEY, []));
+}
+function writeActiveRuntimeJobsCache(userOrUid, jobs) {
+    return writeUiCacheJsonForUser(userOrUid, ACTIVE_RUNTIME_JOBS_CACHE_KEY, mergeRuntimeJobs([], jobs));
+}
+function setActiveRuntimeJobs(jobs) {
+    activeRuntimeJobs = mergeRuntimeJobs([], jobs);
+    if (currentUser) {
+        writeActiveRuntimeJobsCache(currentUser, activeRuntimeJobs);
+    }
+}
+function cacheActiveRuntimeJob(job) {
+    if (!job) return;
+    setActiveRuntimeJobs(mergeRuntimeJobs(activeRuntimeJobs, [job]));
+}
+function removeActiveRuntimeJob(jobId) {
+    const safeJobId = String(jobId || '').trim();
+    if (!safeJobId) return;
+    if (runtimeJobUtils && typeof runtimeJobUtils.removeRuntimeJob === 'function') {
+        activeRuntimeJobs = runtimeJobUtils.removeRuntimeJob(activeRuntimeJobs, safeJobId);
+    } else {
+        activeRuntimeJobs = (Array.isArray(activeRuntimeJobs) ? activeRuntimeJobs : []).filter((job) => String(job && job.job_id || '').trim() !== safeJobId);
+    }
+    if (currentUser) {
+        writeActiveRuntimeJobsCache(currentUser, activeRuntimeJobs);
+    }
+}
+function clearRuntimeJobsRefreshTimer() {
+    if (!runtimeJobsRefreshTimer) return;
+    clearTimeout(runtimeJobsRefreshTimer);
+    runtimeJobsRefreshTimer = null;
+}
+function scheduleRuntimeJobsRefresh(delayMs = RUNTIME_JOBS_REFRESH_MS) {
+    clearRuntimeJobsRefreshTimer();
+    if (!currentUser) return;
+    runtimeJobsRefreshTimer = setTimeout(() => {
+        runtimeJobsRefreshTimer = null;
+        refreshActiveRuntimeJobs(false);
+    }, Math.max(1000, Number(delayMs || RUNTIME_JOBS_REFRESH_MS)));
+}
+function showProgressSafeBanner(visible) {
+    if (!progressSafeBanner) return;
+    progressSafeBanner.hidden = !visible;
+}
 function updateUIForAuthState(user) {
     if (user) {
-        processingEstimateRange = null;
-        processingEstimateContextKey = '';
         userProfileLoaded = false;
         userHasCreatedStudyPack = false;
         closeHeaderDropdowns('');
@@ -1327,12 +1420,6 @@ function updateUIForAuthState(user) {
         refreshStudyHeaderMetrics();
         updateQuickstartVisibility();
     } else {
-        processingEstimateRange = null;
-        processingEstimateContextKey = '';
-        if (processingEstimateDebounceTimer) {
-            clearTimeout(processingEstimateDebounceTimer);
-            processingEstimateDebounceTimer = null;
-        }
         closeHeaderDropdowns('');
         if (headerSignInBtn) headerSignInBtn.style.display = 'flex';
         if (headerNavToggle) headerNavToggle.style.display = 'none';
@@ -1365,6 +1452,13 @@ function updateUIForAuthState(user) {
         userPreferences = null;
         clearLanguagePreferenceSaveTimer();
         closeLanguageOnboarding();
+        stopPolling();
+        currentJobId = null;
+        setActiveRuntimeJobs([]);
+        clearRuntimeJobsRefreshTimer();
+        runtimeJobsRefreshInFlight = false;
+        notificationPermissionRequested = false;
+        notifiedTerminalJobIds = new Set();
         uploadCooldownUntilMs = 0;
         clearUploadCooldownTimer();
         modalStateStack = [];
@@ -1373,6 +1467,7 @@ function updateUIForAuthState(user) {
         updateInterviewOptionAvailability();
         updateModeCostSummary();
         if (processButton) processButton.disabled = true;
+        showProgressSafeBanner(false);
         setQuickstartVisible(false);
     }
 }
@@ -1401,8 +1496,11 @@ auth.onAuthStateChanged(async (user) => {
         idToken = await user.getIdToken();
         if (authClient && typeof authClient.setToken === 'function') authClient.setToken(idToken);
         updateUIForAuthState(user);
+        setActiveRuntimeJobs(readActiveRuntimeJobsCache(user));
+        resumeLatestRuntimeJob(activeRuntimeJobs, { startPolling: true });
         await fetchUserData();
         await checkPaymentResult();
+        await refreshActiveRuntimeJobs(true);
     } else {
         updateUIForAuthState(null);
     }
@@ -1799,101 +1897,104 @@ function hasEnoughCredits() {
     }
     return false;
 }
-function formatEstimateDuration(seconds) {
-    const safe = Math.max(20, Math.round(Number(seconds) || 0));
-    if (safe < 60) return `${safe}s`;
-    const mins = Math.round(safe / 60);
-    return `${mins} min`;
-}
-function calculateHeuristicEstimateSeconds() {
-    const pdfMb = pdfFile ? (pdfFile.size / (1024 * 1024)) : 0;
-    const audioMb = currentAudioBytes() / (1024 * 1024);
-    if (currentMode === 'lecture-notes') {
-        return 55 + (pdfMb * 0.6) + (audioMb * 1.0);
+function getProgressStepsForMode(mode, totalSteps) {
+    const safeMode = String(mode || '').trim();
+    const requestedTotal = Math.max(0, Number(totalSteps || 0));
+    if (safeMode === 'interview') {
+        if (requestedTotal > 1) {
+            return [{ num: 1, label: 'Transcribe' }, { num: 2, label: 'Create Extras' }];
+        }
+        return modeConfig.interview.steps.slice();
     }
-    if (currentMode === 'slides-only') {
-        return 20 + (pdfMb * 0.55);
+    const baseSteps = safeMode === 'slides-only'
+        ? modeConfig['slides-only'].steps.slice()
+        : modeConfig['lecture-notes'].steps.slice();
+    if (requestedTotal > 0 && requestedTotal < baseSteps.length) {
+        return baseSteps.slice(0, requestedTotal);
     }
-    const extrasCost = getInterviewExtraCost();
-    return 35 + (audioMb * 1.15) + (extrasCost * 18);
+    return baseSteps;
 }
-function buildProcessingEstimateContext() {
-    const totalBytes = (pdfFile ? Number(pdfFile.size || 0) : 0) + currentAudioBytes();
-    const totalMb = totalBytes / (1024 * 1024);
-    return {
-        mode: currentMode,
-        studyFeatures: selectedStudyFeatures,
-        interviewFeaturesCount: selectedInterviewFeatures.length,
-        totalMb,
-        key: `${currentMode}|${selectedStudyFeatures}|${selectedInterviewFeatures.length}|${totalMb.toFixed(2)}`,
-    };
+function updateProgressStepsForStatus(payload) {
+    const totalSteps = Math.max(0, Number(payload && payload.total_steps || 0));
+    const mode = String(payload && payload.mode || currentMode || '').trim() || currentMode;
+    const steps = getProgressStepsForMode(mode, totalSteps);
+    if (progressSteps.childElementCount !== steps.length) {
+        buildProgressSteps(steps);
+    }
 }
-function areRequiredFilesReadyForEstimate() {
-    const config = modeConfig[currentMode];
-    const pdfReady = !config.needsPdf || Boolean(pdfFile);
-    const audioReady = !config.needsAudio || Boolean(audioFile || (currentMode === 'lecture-notes' && hasReadyImportedAudioToken()));
-    return pdfReady && audioReady;
+function buildRuntimeJobSnapshot(job, fallback = {}) {
+    const payload = Object.assign({}, fallback || {}, job || {});
+    if (runtimeJobUtils && typeof runtimeJobUtils.normalizeRuntimeJob === 'function') {
+        return runtimeJobUtils.normalizeRuntimeJob(payload);
+    }
+    return payload;
 }
-async function fetchProcessingEstimateRange(context) {
-    if (!currentUser || !context) return;
-    const requestSeq = ++processingEstimateRequestSeq;
-    const params = new URLSearchParams({
-        mode: context.mode,
-        total_mb: context.totalMb.toFixed(2),
-        study_features: context.mode === 'interview' ? 'none' : selectedStudyFeatures,
-        interview_features_count: String(context.mode === 'interview' ? selectedInterviewFeatures.length : 0),
-    });
+function applyRuntimeJobProgress(job, options = {}) {
+    const snapshot = buildRuntimeJobSnapshot(job);
+    if (!snapshot.job_id) return false;
+    if (snapshot.mode && snapshot.mode !== currentMode) {
+        switchMode(snapshot.mode);
+    }
+    if (studyPackTitleInput && !String(studyPackTitleInput.value || '').trim() && snapshot.study_pack_title) {
+        studyPackTitleInput.value = snapshot.study_pack_title;
+    }
+    const steps = getProgressStepsForMode(snapshot.mode || currentMode, options.totalSteps || snapshot.total_steps);
+    buildProgressSteps(steps);
+    progressSection.classList.add('visible');
+    resultsSection.classList.remove('visible');
+    progressStatus.classList.remove('error');
+    progressStatus.querySelector('.spinner').style.display = 'block';
+    showProgressSafeBanner(true);
+    updateProgressUI(Math.max(0, Number(snapshot.step || 0)), snapshot.step_description || 'Processing continues in the background...', steps.length);
+    currentJobId = snapshot.job_id;
+    trackedTerminalJobId = '';
+    cacheActiveRuntimeJob(snapshot);
+    updateProcessButton();
+    return true;
+}
+function shouldPromptForNotificationsAfterJobStart() {
+    if (runtimeJobUtils && typeof runtimeJobUtils.shouldPromptForNotifications === 'function') {
+        return runtimeJobUtils.shouldPromptForNotifications({
+            jobStarted: true,
+            notificationSupported: 'Notification' in window,
+            permission: 'Notification' in window ? Notification.permission : 'denied',
+        });
+    }
+    return 'Notification' in window && Notification.permission === 'default';
+}
+function maybeRequestNotificationPermissionAfterJobStart() {
+    if (notificationPermissionRequested || !shouldPromptForNotificationsAfterJobStart()) return;
+    notificationPermissionRequested = true;
     try {
-        const response = await authenticatedFetch(`/api/processing-estimate?${params.toString()}`);
-        if (requestSeq !== processingEstimateRequestSeq) return;
-        if (!response.ok) {
-            processingEstimateRange = null;
-            processingEstimateContextKey = '';
-            updateUploadEstimatePanel();
-            return;
-        }
-        const payload = await response.json();
-        const range = payload && payload.range ? payload.range : null;
-        if (!range || !Number.isFinite(Number(range.low_seconds)) || !Number.isFinite(Number(range.high_seconds))) {
-            processingEstimateRange = null;
-            processingEstimateContextKey = '';
-            updateUploadEstimatePanel();
-            return;
-        }
-        processingEstimateRange = {
-            low: Math.max(15, Math.round(Number(range.low_seconds || 0))),
-            high: Math.max(20, Math.round(Number(range.high_seconds || 0))),
-            typical: Math.max(15, Math.round(Number(range.typical_seconds || 0))),
-            sampleCount: Number(payload.sample_count || 0),
-            source: String(payload.source || 'heuristic'),
-        };
-        processingEstimateContextKey = context.key;
-        updateUploadEstimatePanel();
-    } catch (_) {
-        if (requestSeq !== processingEstimateRequestSeq) return;
-        processingEstimateRange = null;
-        processingEstimateContextKey = '';
-        updateUploadEstimatePanel();
-    }
+        Notification.requestPermission().catch(() => { });
+    } catch (_) { }
 }
-function scheduleProcessingEstimateFetch() {
-    if (processingEstimateDebounceTimer) {
-        clearTimeout(processingEstimateDebounceTimer);
-        processingEstimateDebounceTimer = null;
-    }
-    if (!currentUser || resultsLocked || !areRequiredFilesReadyForEstimate()) {
-        processingEstimateRange = null;
-        processingEstimateContextKey = '';
+function maybeSendCompletionNotification(job, payload) {
+    const snapshot = buildRuntimeJobSnapshot(job, payload);
+    if (!snapshot.job_id || notifiedTerminalJobIds.has(snapshot.job_id)) return;
+    const isHidden = document.visibilityState !== 'visible' || !document.hasFocus();
+    if (!isHidden) return;
+    if (!(runtimeJobUtils && typeof runtimeJobUtils.shouldSendCompletionNotification === 'function')) return;
+    if (!runtimeJobUtils.shouldSendCompletionNotification({
+        notificationSupported: 'Notification' in window,
+        permission: 'Notification' in window ? Notification.permission : 'denied',
+        status: payload && payload.status,
+    })) {
         return;
     }
-    const context = buildProcessingEstimateContext();
-    if (processingEstimateContextKey === context.key && processingEstimateRange) {
-        return;
-    }
-    processingEstimateDebounceTimer = setTimeout(() => {
-        processingEstimateDebounceTimer = null;
-        fetchProcessingEstimateRange(context);
-    }, 320);
+    const notification = runtimeJobUtils.buildCompletionNotification(snapshot, payload || {});
+    if (!notification || !notification.title) return;
+    notifiedTerminalJobIds.add(snapshot.job_id);
+    try {
+        const nativeNotification = new Notification(notification.title, {
+            body: notification.body || '',
+            silent: false,
+        });
+        nativeNotification.onclick = () => {
+            try { window.focus(); } catch (_) { }
+            window.location.href = '/study';
+        };
+    } catch (_) { }
 }
 function updateUploadEstimatePanel() {
     if (!uploadEstimate || !uploadEstimateTime || !uploadEstimateMeta) return;
@@ -1902,25 +2003,7 @@ function updateUploadEstimatePanel() {
         return;
     }
     uploadEstimate.style.display = '';
-    const config = modeConfig[currentMode];
-    const pdfReady = !config.needsPdf || Boolean(pdfFile);
-    const audioReady = !config.needsAudio || Boolean(audioFile || (currentMode === 'lecture-notes' && hasReadyImportedAudioToken()));
-    const context = buildProcessingEstimateContext();
-    scheduleProcessingEstimateFetch();
-    const fallbackEstimate = calculateHeuristicEstimateSeconds();
-    const fallbackLow = Math.max(20, Math.round(fallbackEstimate * 0.7));
-    const fallbackHigh = Math.max(fallbackLow + 10, Math.round(fallbackEstimate * 1.35));
-    const hasFreshServerEstimate = processingEstimateRange && processingEstimateContextKey === context.key;
-    const low = hasFreshServerEstimate ? processingEstimateRange.low : fallbackLow;
-    const high = hasFreshServerEstimate ? processingEstimateRange.high : fallbackHigh;
-    let readyText = (pdfReady && audioReady)
-        ? `Estimated processing time: ${formatEstimateDuration(low)} - ${formatEstimateDuration(high)}`
-        : 'Upload required files to get a better estimate.';
-    if (pdfReady && audioReady && hasFreshServerEstimate && Number(processingEstimateRange.sampleCount || 0) > 0) {
-        readyText += ` (Based on ${Math.round(processingEstimateRange.sampleCount)} similar jobs)`;
-    }
-
-    uploadEstimateTime.textContent = readyText;
+    uploadEstimateTime.textContent = UPLOAD_ESTIMATE_COPY[currentMode] || 'Processing time depends on the upload.';
 
     const totalBytes = (pdfFile ? Number(pdfFile.size || 0) : 0) + currentAudioBytes();
     const totalMb = totalBytes / (1024 * 1024);
@@ -1949,6 +2032,12 @@ function updateProcessButton() {
     if (currentMode === 'lecture-notes' && audioImportInFlight && !audioFile) {
         processButton.disabled = true;
         processButton.querySelector('span').textContent = 'Importing LMS audio...';
+        noCreditsWarning.classList.remove('visible');
+        return;
+    }
+    if (currentJobId && !resultsLocked) {
+        processButton.disabled = true;
+        processButton.querySelector('span').textContent = 'Processing in background...';
         noCreditsWarning.classList.remove('visible');
         return;
     }
@@ -2243,6 +2332,7 @@ function resetProcessingSession(options = {}) {
     if (hideRetry) setProgressRetryVisible(false);
     currentJobId = null;
     trackedTerminalJobId = '';
+    showProgressSafeBanner(false);
     if (!keepStatusMessage) {
         statusText.textContent = 'Starting...';
     }
@@ -2295,6 +2385,91 @@ async function downloadAuthenticatedFile(path, fallbackName) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+}
+function reconcileCachedRuntimeJobs(serverJobs) {
+    if (!currentUser) {
+        return Promise.resolve({ jobs: mergeRuntimeJobs([], serverJobs), latestJob: null });
+    }
+    const serverActiveJobs = mergeRuntimeJobs([], serverJobs);
+    const cachedJobs = readActiveRuntimeJobsCache(currentUser);
+    const missingJobs = cachedJobs.filter((job) => {
+        const jobId = String(job && job.job_id || '').trim();
+        return jobId && !serverActiveJobs.some((serverJob) => String(serverJob && serverJob.job_id || '').trim() === jobId);
+    });
+    if (!missingJobs.length) {
+        return Promise.resolve({ jobs: serverActiveJobs, latestJob: getLatestRuntimeJob(serverActiveJobs) });
+    }
+    return Promise.all(missingJobs.map(async (job) => {
+        const jobId = String(job && job.job_id || '').trim();
+        if (!jobId) return null;
+        try {
+            const response = await authenticatedFetch(`/status/${encodeURIComponent(jobId)}`);
+            if (!response.ok) {
+                if (response.status === 404) {
+                    removeActiveRuntimeJob(jobId);
+                    return null;
+                }
+                return null;
+            }
+            const payload = await response.json();
+            return { cached: job, payload };
+        } catch (_) {
+            return null;
+        }
+    })).then((results) => {
+        let mergedJobs = serverActiveJobs.slice();
+        results.forEach((result) => {
+            if (!result || !result.payload) return;
+            const status = String(result.payload.status || '').trim().toLowerCase();
+            if (runtimeJobUtils && typeof runtimeJobUtils.isActiveStatus === 'function' && runtimeJobUtils.isActiveStatus(status)) {
+                mergedJobs = mergeRuntimeJobs(mergedJobs, [Object.assign({}, result.cached || {}, result.payload || {})]);
+                return;
+            }
+            removeActiveRuntimeJob(result.cached && result.cached.job_id);
+        });
+        return { jobs: mergedJobs, latestJob: getLatestRuntimeJob(mergedJobs) };
+    });
+}
+function resumeLatestRuntimeJob(jobs, options = {}) {
+    if (resultsLocked) return false;
+    const latestJob = getLatestRuntimeJob(jobs);
+    if (!latestJob || !latestJob.job_id) return false;
+    if (currentJobId && currentJobId === latestJob.job_id && options.force !== true) {
+        return true;
+    }
+    applyRuntimeJobProgress(latestJob);
+    if (options.startPolling !== false) {
+        startPolling();
+    }
+    return true;
+}
+async function refreshActiveRuntimeJobs(force) {
+    if (!currentUser || !idToken) {
+        setActiveRuntimeJobs([]);
+        clearRuntimeJobsRefreshTimer();
+        return;
+    }
+    if (runtimeJobsRefreshInFlight && !force) return;
+    runtimeJobsRefreshInFlight = true;
+    try {
+        const response = await authenticatedFetch('/api/runtime-jobs/active');
+        if (!response.ok) {
+            throw new Error('Could not refresh active jobs.');
+        }
+        const payload = await response.json();
+        const reconciled = await reconcileCachedRuntimeJobs(payload && payload.jobs ? payload.jobs : []);
+        setActiveRuntimeJobs(reconciled.jobs || []);
+        if (!resultsLocked) {
+            resumeLatestRuntimeJob(reconciled.jobs || [], { startPolling: true, force });
+        }
+    } catch (error) {
+        if (force) {
+            showToast(error.message || 'Could not refresh processing jobs.', 'error');
+        }
+    } finally {
+        runtimeJobsRefreshInFlight = false;
+        scheduleRuntimeJobsRefresh(RUNTIME_JOBS_REFRESH_MS);
+    }
 }
 async function exportMyAccountData() {
     if (!currentUser) {
@@ -2443,11 +2618,30 @@ async function pollStatus() {
             showToast(d.error || 'Error: Job not found', 'error');
             return;
         }
+        updateProgressStepsForStatus(d);
         updateProgressUI(d.step, d.step_description, d.total_steps);
+        cacheActiveRuntimeJob({
+            job_id: currentJobId,
+            mode: d.mode || currentMode,
+            status: d.status,
+            step: d.step,
+            step_description: d.step_description,
+            study_pack_title: getStudyPackTitleValue(),
+            started_at: Math.floor((pollStartedAt || Date.now()) / 1000),
+            study_pack_id: d.study_pack_id || '',
+            error: d.error || '',
+        });
         if (d.status === 'complete') {
             stopPolling();
             setProgressRetryVisible(false);
             pollMissingResponses = 0;
+            maybeSendCompletionNotification({
+                job_id: currentJobId,
+                mode: d.mode || currentMode,
+                study_pack_title: getStudyPackTitleValue(),
+                study_pack_id: d.study_pack_id || '',
+            }, d);
+            removeActiveRuntimeJob(currentJobId);
             if (currentJobId && trackedTerminalJobId !== currentJobId) {
                 trackedTerminalJobId = currentJobId;
                 trackEvent('processing_completed', { job_id: currentJobId });
@@ -2470,6 +2664,14 @@ async function pollStatus() {
             fetchUserData();
         } else if (d.status === 'error') {
             const activeJobId = currentJobId;
+            maybeSendCompletionNotification({
+                job_id: activeJobId,
+                mode: d.mode || currentMode,
+                study_pack_title: getStudyPackTitleValue(),
+                study_pack_id: d.study_pack_id || '',
+                error: d.error || '',
+            }, d);
+            removeActiveRuntimeJob(activeJobId);
             resetProcessingSession({ keepProgressVisible: true });
             pollMissingResponses = 0;
             if (activeJobId && trackedTerminalJobId !== activeJobId) {
@@ -2478,6 +2680,7 @@ async function pollStatus() {
             }
             showError(d.error, d.credit_refunded, d.billing_receipt || null);
         } else {
+            showProgressSafeBanner(true);
             setProgressRetryVisible(false);
             pollFailures = 0;
             pollMissingResponses = 0;
@@ -2496,6 +2699,10 @@ async function processFiles() {
     if (!currentUser) { showAuthModal('signin'); return; }
     if (resultsLocked) {
         showToast('Click "Process Another File" to start a new generation.', 'info');
+        return;
+    }
+    if (currentJobId) {
+        showToast('A job is already processing. You can safely leave and find the result in Study Library.', 'info', 4200);
         return;
     }
     const cooldown = getUploadCooldownSeconds();
@@ -2547,6 +2754,7 @@ async function processFiles() {
     resultsSection.classList.remove('visible');
     progressStatus.classList.remove('error');
     progressStatus.querySelector('.spinner').style.display = 'block';
+    showProgressSafeBanner(false);
     try {
         progressSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (_) { }
@@ -2580,6 +2788,19 @@ async function processFiles() {
         }
         currentJobId = d.job_id;
         trackedTerminalJobId = '';
+        cacheActiveRuntimeJob({
+            job_id: currentJobId,
+            mode: currentMode,
+            status: 'starting',
+            step: 0,
+            step_description: 'Starting...',
+            study_pack_title: studyPackTitle,
+            started_at: Math.floor(Date.now() / 1000),
+            study_pack_id: '',
+            error: '',
+        });
+        showProgressSafeBanner(true);
+        maybeRequestNotificationPermissionAfterJobStart();
         trackEvent('processing_started', {
             job_id: currentJobId,
             study_features: selectedStudyFeatures,
@@ -2890,6 +3111,7 @@ quizNextBtn.addEventListener('click', () => {
 });
 
 function showResults(md, slides, trans, generatedFlashcards, generatedQuestions, generationError, studyPackId, studyFeatures, summaryText, sectionsText, combinedText, successfulInterviewFeatures, billingReceipt) {
+    const completedJobId = currentJobId;
     const config = modeConfig[currentMode];
     resultMarkdown = md || '';
     slideText = slides || '';
@@ -2956,18 +3178,24 @@ function showResults(md, slides, trans, generatedFlashcards, generatedQuestions,
     document.getElementById('tab-test').disabled = currentMode === 'interview' || !testQuestions.length;
 
     progressSection.classList.remove('visible');
+    showProgressSafeBanner(false);
     setProgressRetryVisible(false);
     resultsSection.classList.add('visible');
     buildDownloadDropdown();
     updateExportCsvButton();
+    if (completedJobId) {
+        removeActiveRuntimeJob(completedJobId);
+    }
     updateProcessButton();
     showToast('Processing complete!', 'success');
 }
 function showError(msg, creditRefunded, billingReceipt) {
+    const failedJobId = currentJobId;
     setProgressRetryVisible(false);
     renderBillingReceipt(null);
     progressStatus.classList.add('error');
     progressStatus.querySelector('.spinner').style.display = 'none';
+    showProgressSafeBanner(false);
     const billingReceiptText = buildBillingReceiptText(billingReceipt);
     if (creditRefunded) {
         statusText.textContent = `Error: ${msg} — Your credit has been refunded.`;
@@ -2978,6 +3206,9 @@ function showError(msg, creditRefunded, billingReceipt) {
     }
     if (billingReceiptText) {
         showToast(billingReceiptText, 'info', 5500);
+    }
+    if (failedJobId) {
+        removeActiveRuntimeJob(failedJobId);
     }
     updateProcessButton();
 }
@@ -2999,6 +3230,7 @@ function resetResultsState() {
     studyWarning.style.display = 'none';
     renderBillingReceipt(null);
     exportStudyCsvBtn.style.display = 'none';
+    showProgressSafeBanner(false);
     document.getElementById('tab-flashcards').style.display = 'flex';
     document.getElementById('tab-test').style.display = 'flex';
     document.getElementById('tab-flashcards').disabled = false;
@@ -3776,6 +4008,7 @@ newLectureButton.addEventListener('click', () => {
     pdfZone.classList.remove('has-file');
     syncAudioInfoUI();
     progressSection.classList.remove('visible');
+    showProgressSafeBanner(false);
     setProgressRetryVisible(false);
     resultsSection.classList.remove('visible');
     progressStatus.classList.remove('error');
@@ -3966,7 +4199,6 @@ window.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowRight') { e.preventDefault(); goFlashcard(1); }
     if (e.code === 'Space') { e.preventDefault(); flipFlashcard(); }
 });
-window.addEventListener('beforeunload', (e) => { if (currentJobId && pollInterval) { e.preventDefault(); e.returnValue = ''; } });
 
 function updateHeaderNavActiveState() {
     const currentPath = window.location.pathname.replace(/\/+$/, '') || '/';

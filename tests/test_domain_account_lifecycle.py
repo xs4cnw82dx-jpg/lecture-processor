@@ -124,7 +124,9 @@ def test_collect_user_export_payload_returns_expected_shape(app, monkeypatch):
     assert payload["meta"]["uid"] == "u1"
     assert payload["account"]["profile"] == {"uid": "u1"}
     assert payload["account"]["planner_settings"]["enabled"] == "on"
+    assert payload["meta"]["truncated"]["study_pack_sources"] is False
     assert payload["collections"]["planner_sessions"] == [{"id": "session-1", "title": "Review", "_id": "planner-session-1"}]
+    assert payload["collections"]["study_pack_sources"] == []
     assert "collections" in payload
 
 

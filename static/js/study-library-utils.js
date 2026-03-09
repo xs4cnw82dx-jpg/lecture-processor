@@ -115,11 +115,28 @@
     return merged;
   }
 
+  function buildStudyPackExportItems(pack) {
+    var safePack = pack && typeof pack === 'object' ? pack : {};
+    var mode = String(safePack.mode || '').trim().toLowerCase();
+    var transcriptLabel = mode === 'interview' ? 'Interview Transcript' : 'Lecture Transcript';
+    var items = [
+      { kind: 'flashcards', visible: true, label: 'Flashcards CSV' },
+      { kind: 'test', visible: true, label: 'Practice Test CSV' },
+      { kind: 'source-slides-md', visible: !!safePack.has_source_slides, label: 'Slide Extract (.md)' },
+      { kind: 'source-slides-docx', visible: !!safePack.has_source_slides, label: 'Slide Extract (.docx)' },
+      { kind: 'source-transcript-md', visible: !!safePack.has_source_transcript, label: transcriptLabel + ' (.md)' },
+      { kind: 'source-transcript-docx', visible: !!safePack.has_source_transcript, label: transcriptLabel + ' (.docx)' },
+      { kind: 'pdf-menu', visible: true, label: 'Lecture Notes Pack PDF' },
+    ];
+    return items;
+  }
+
   var exported = {
     buildFolderItemsForSidebar: buildFolderItemsForSidebar,
     filterStudyPacks: filterStudyPacks,
     buildStudyPacksUrl: buildStudyPacksUrl,
     mergeStudyPackPage: mergeStudyPackPage,
+    buildStudyPackExportItems: buildStudyPackExportItems,
   };
 
   if (typeof module !== 'undefined' && module.exports) {

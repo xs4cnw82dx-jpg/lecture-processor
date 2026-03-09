@@ -63,6 +63,28 @@ def _parse_study_pack_limit(raw_value):
     return max(1, min(value, 100))
 
 
+def _get_owned_study_pack(app_ctx, uid, pack_id):
+    doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
+    if not doc.exists:
+        return None, app_ctx.jsonify({'error': 'Study pack not found'}), 404
+    pack = doc.to_dict() or {}
+    if pack.get('uid', '') != uid:
+        return None, app_ctx.jsonify({'error': 'Forbidden'}), 403
+    return (doc, pack), None, None
+
+
+def _get_study_pack_source_payload(app_ctx, pack_id):
+    try:
+        doc = app_ctx.study_repo.get_study_pack_source_doc(app_ctx.db, pack_id)
+    except Exception as error:
+        app_ctx.logger.warning('Could not load source outputs for study pack %s: %s', pack_id, error)
+        return {}
+    if not getattr(doc, 'exists', False):
+        return {}
+    payload = doc.to_dict() or {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def get_study_progress(app_ctx, request):
     decoded_token = app_ctx.verify_firebase_token(request)
     if not decoded_token:
@@ -394,12 +416,10 @@ def get_study_pack(app_ctx, request, pack_id):
 
     uid = decoded_token['uid']
     try:
-        doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
-        if not doc.exists:
-            return app_ctx.jsonify({'error': 'Study pack not found'}), 404
-        pack = doc.to_dict() or {}
-        if pack.get('uid', '') != uid:
-            return app_ctx.jsonify({'error': 'Forbidden'}), 403
+        pack_result, error_response, status = _get_owned_study_pack(app_ctx, uid, pack_id)
+        if error_response is not None:
+            return error_response, status
+        doc, pack = pack_result
         study_audio.ensure_pack_audio_storage_key(doc.reference, pack, runtime=app_ctx)
         has_audio_playback = bool(
             pack.get('has_audio_playback', False)
@@ -409,6 +429,7 @@ def get_study_pack(app_ctx, request, pack_id):
         notes_audio_map = pack.get('notes_audio_map', []) if has_audio_sync else []
         daily_card_goal = study_progress.sanitize_daily_card_goal_value(pack.get('daily_card_goal'), runtime=app_ctx)
         notes_highlights = study_progress.sanitize_notes_highlights_payload(pack.get('notes_highlights'), runtime=app_ctx)
+        source_payload = _get_study_pack_source_payload(app_ctx, pack_id)
         return app_ctx.jsonify({
             'study_pack_id': pack_id,
             'title': pack.get('title', ''),
@@ -419,6 +440,8 @@ def get_study_pack(app_ctx, request, pack_id):
             'notes_audio_map': notes_audio_map,
             'has_audio_sync': has_audio_sync,
             'has_audio_playback': has_audio_playback,
+            'has_source_slides': bool(str(source_payload.get('slide_text', '') or '').strip()),
+            'has_source_transcript': bool(str(source_payload.get('transcript', '') or '').strip()),
             'flashcards': pack.get('flashcards', []),
             'test_questions': pack.get('test_questions', []),
             'interview_summary': pack.get('interview_summary'),
@@ -532,14 +555,16 @@ def delete_study_pack(app_ctx, request, pack_id):
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
     try:
-        pack_ref = app_ctx.study_repo.study_pack_doc_ref(app_ctx.db, pack_id)
-        doc = pack_ref.get()
-        if not doc.exists:
-            return app_ctx.jsonify({'error': 'Study pack not found'}), 404
-        pack = doc.to_dict()
-        if pack.get('uid', '') != uid:
-            return app_ctx.jsonify({'error': 'Forbidden'}), 403
+        pack_result, error_response, status = _get_owned_study_pack(app_ctx, uid, pack_id)
+        if error_response is not None:
+            return error_response, status
+        doc, pack = pack_result
+        pack_ref = doc.reference
         study_audio.remove_pack_audio_file(pack, runtime=app_ctx)
+        try:
+            app_ctx.study_repo.study_pack_source_doc_ref(app_ctx.db, pack_id).delete()
+        except Exception as error:
+            app_ctx.logger.warning('Warning: could not delete study pack source outputs for %s: %s', pack_id, error)
         pack_ref.delete()
         try:
             app_ctx.get_study_card_state_doc(uid, pack_id).delete()
@@ -825,6 +850,75 @@ def export_study_pack_notes(app_ctx, request, pack_id):
     except Exception as e:
         app_ctx.logger.error(f"Error exporting study pack notes {pack_id}: {e}")
         return app_ctx.jsonify({'error': 'Could not export notes'}), 500
+
+
+def export_study_pack_source(app_ctx, request, pack_id):
+    decoded_token = app_ctx.verify_firebase_token(request)
+    if not decoded_token:
+        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+
+    uid = decoded_token['uid']
+    try:
+        pack_result, error_response, status = _get_owned_study_pack(app_ctx, uid, pack_id)
+        if error_response is not None:
+            return error_response, status
+        _doc, pack = pack_result
+
+        export_type = str(request.args.get('type', 'slides') or '').strip().lower()
+        if export_type not in {'slides', 'transcript'}:
+            return app_ctx.jsonify({'error': 'Invalid source export type'}), 400
+
+        export_format = str(request.args.get('format', 'md') or '').strip().lower()
+        if export_format not in {'md', 'docx'}:
+            return app_ctx.jsonify({'error': 'Invalid format'}), 400
+
+        source_payload = _get_study_pack_source_payload(app_ctx, pack_id)
+        if not source_payload:
+            return app_ctx.jsonify({'error': 'No source export is available for this study pack'}), 404
+
+        if export_type == 'slides':
+            content = str(source_payload.get('slide_text', '') or '').strip()
+            label = 'Slide Extract'
+            suffix = 'slide-extract'
+        else:
+            content = str(source_payload.get('transcript', '') or '').strip()
+            if str(pack.get('mode', '') or '').strip() == 'interview':
+                label = 'Interview Transcript'
+                suffix = 'interview-transcript'
+            else:
+                label = 'Lecture Transcript'
+                suffix = 'lecture-transcript'
+
+        if not content:
+            return app_ctx.jsonify({'error': f'No {export_type} source export is available for this study pack'}), 404
+
+        pack_title = str(pack.get('title', '') or '').strip() or 'Study Pack'
+        safe_title = study_export.sanitize_export_filename(pack_title, fallback=f'study-pack-{pack_id}')
+        base_name = f'{safe_title}-{suffix}'
+
+        if export_format == 'md':
+            md_bytes = app_ctx.io.BytesIO(content.encode('utf-8'))
+            md_bytes.seek(0)
+            return app_ctx.send_file(
+                md_bytes,
+                mimetype='text/markdown',
+                as_attachment=True,
+                download_name=f'{base_name}.md',
+            )
+
+        docx = study_export.markdown_to_docx(content, f'{pack_title} - {label}', runtime=app_ctx)
+        docx_bytes = app_ctx.io.BytesIO()
+        docx.save(docx_bytes)
+        docx_bytes.seek(0)
+        return app_ctx.send_file(
+            docx_bytes,
+            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            as_attachment=True,
+            download_name=f'{base_name}.docx',
+        )
+    except Exception as error:
+        app_ctx.logger.error(f"Error exporting study pack source {pack_id}: {error}")
+        return app_ctx.jsonify({'error': 'Could not export source output'}), 500
 
 
 def export_study_pack_pdf(app_ctx, request, pack_id):
