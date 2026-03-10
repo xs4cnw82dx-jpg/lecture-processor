@@ -280,6 +280,16 @@ function formatStatusValue(value, key = '') {
     if (key === 'host_matches_render') {
         return value ? 'Matches' : 'Mismatch';
     }
+    if (key === 'host_status') {
+        const labels = {
+            'custom-domain': 'Custom domain',
+            'configured-public-host': 'Configured host',
+            'render-default': 'Render default',
+            'mismatch': 'Mismatch',
+            'unknown': 'Unknown',
+        };
+        return labels[String(value || '')] || String(value);
+    }
     if (typeof value === 'boolean') return value ? 'Ready' : 'Not ready';
     if (key === 'app_uptime_seconds') {
         const totalSeconds = Math.max(0, Number(value || 0));
@@ -468,7 +478,9 @@ function renderAdminSystemStatus(data) {
     renderStatusPairs('admin-deployment', [
         { key: 'runtime', label: 'Runtime', value: data.deployment && data.deployment.runtime },
         { key: 'request_host', label: 'Request host', value: data.deployment && data.deployment.request_host },
-        { key: 'host_matches_render', label: 'Render host match', value: data.deployment && data.deployment.host_matches_render },
+        { key: 'configured_public_hostname', label: 'Public host', value: data.deployment && data.deployment.configured_public_hostname },
+        { key: 'render_external_hostname', label: 'Render host', value: data.deployment && data.deployment.render_external_hostname },
+        { key: 'host_status', label: 'Host routing', value: data.deployment && data.deployment.host_status },
         { key: 'service_name', label: 'Service', value: data.deployment && data.deployment.service_name },
         { key: 'git_branch', label: 'Git branch', value: data.deployment && data.deployment.git_branch },
         { key: 'git_commit_short', label: 'Git commit', value: data.deployment && data.deployment.git_commit_short },

@@ -27,7 +27,11 @@ def test_safe_count_collection_returns_partial_zero_and_records_warning(app, mon
         _ = filters
         raise RuntimeError('count failure')
 
+    def _stream_boom(_db, _collection_name):
+        raise RuntimeError('stream failure')
+
     monkeypatch.setattr(runtime.core.admin_repo, 'count_collection', _boom)
+    monkeypatch.setattr(runtime.core.admin_repo, 'stream_collection', _stream_boom)
 
     with app.test_request_context('/api/admin/data'):
         assert metrics.safe_count_collection('users', runtime=runtime) == 0
@@ -56,6 +60,40 @@ def test_safe_count_collection_falls_back_to_filtered_stream(app, monkeypatch):
         count = metrics.safe_count_collection('job_logs', filters=metrics.admin_job_filters(), runtime=runtime)
 
     assert count == 2
+    assert metrics.get_admin_data_warnings(runtime=runtime) == []
+
+
+def test_safe_query_docs_in_window_falls_back_without_partial_warning(app, monkeypatch):
+    runtime = get_runtime(app)
+    now_ts = runtime.time.time()
+
+    def _query(_db, collection_name, timestamp_field, window_start, window_end=None, order_desc=False, limit=None, firestore_module=None, filters=None):
+        _ = (_db, timestamp_field, window_start, window_end, order_desc, limit, firestore_module)
+        if collection_name == 'job_logs' and filters:
+            raise RuntimeError('missing firestore index')
+        return [
+            _Doc('job-1', {'admin_visible': True, 'finished_at': now_ts}),
+            _Doc('job-2', {'admin_visible': False, 'finished_at': now_ts}),
+            _Doc('job-3', {'admin_visible': True, 'finished_at': now_ts}),
+        ]
+
+    monkeypatch.setattr(runtime.core.admin_repo, 'query_docs_in_window', _query)
+
+    with app.test_request_context('/api/admin/data'):
+        docs = metrics.safe_query_docs_in_window(
+            'job_logs',
+            'finished_at',
+            now_ts - 60,
+            window_end=now_ts,
+            order_desc=True,
+            limit=2,
+            filters=metrics.admin_job_filters(),
+            runtime=runtime,
+        )
+        warnings = metrics.get_admin_data_warnings(runtime=runtime)
+
+    assert [doc.id for doc in docs] == ['job-1', 'job-3']
+    assert warnings == []
 
 
 def test_build_admin_funnel_steps_counts_unique_actors(app):
@@ -80,13 +118,14 @@ def test_build_admin_funnel_steps_counts_unique_actors(app):
     assert by_event['auth_modal_opened']['conversion_from_prev'] == 100.0
 
 
-def test_admin_status_helpers_expose_warning_and_runtime_metadata(app):
+def test_admin_status_helpers_expose_warning_and_runtime_metadata(app, monkeypatch):
     runtime = get_runtime(app)
 
     with app.test_request_context('/api/admin/data'):
         metrics.mark_admin_data_warning('job_logs', 'query_failed', runtime=runtime)
         warnings = metrics.get_admin_data_warnings(runtime=runtime)
 
+    monkeypatch.setattr(runtime.core, 'PUBLIC_BASE_URL', 'https://lectureprocessor.com')
     deployment = metrics.build_admin_deployment_info('lectureprocessor.com', runtime=runtime)
     runtime_checks = metrics.build_admin_runtime_checks(runtime=runtime)
 
@@ -94,10 +133,24 @@ def test_admin_status_helpers_expose_warning_and_runtime_metadata(app):
     assert 'runtime' in deployment
     assert 'request_host' in deployment
     assert 'app_uptime_seconds' in deployment
+    assert deployment['configured_public_hostname'] == 'lectureprocessor.com'
+    assert deployment['host_status'] == 'configured-public-host'
     assert 'firebase_ready' in runtime_checks
     assert 'video_import_available' in runtime_checks
     assert 'ffmpeg_available' in runtime_checks
     assert 'yt_dlp_available' in runtime_checks
+
+
+def test_build_admin_deployment_info_marks_custom_domain_on_render(app, monkeypatch):
+    runtime = get_runtime(app)
+    monkeypatch.setenv('RENDER', 'true')
+    monkeypatch.setenv('RENDER_EXTERNAL_HOSTNAME', 'lecture-processor-1.onrender.com')
+    monkeypatch.setattr(runtime.core, 'PUBLIC_BASE_URL', 'https://lectureprocessor.com')
+
+    deployment = metrics.build_admin_deployment_info('lectureprocessor.com', runtime=runtime)
+
+    assert deployment['host_matches_render'] is False
+    assert deployment['host_status'] == 'custom-domain'
 
 
 def test_admin_visibility_filters_hide_fixture_jobs_and_batches():

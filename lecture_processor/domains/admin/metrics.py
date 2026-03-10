@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 
 from flask import g
 
@@ -26,6 +27,40 @@ def _normalize_text(value):
     return str(value or '').strip()
 
 
+def _extract_hostname(value):
+    candidate = str(value or '').strip()
+    if not candidate:
+        return ''
+    if '://' in candidate:
+        try:
+            return str(urlparse(candidate).hostname or '').strip().lower()
+        except Exception:
+            return ''
+    return candidate.split('/', 1)[0].split(':', 1)[0].strip().lower()
+
+
+def _resolve_public_hostname(runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    return _extract_hostname(getattr(resolved_runtime, 'PUBLIC_BASE_URL', ''))
+
+
+def _resolve_host_status(request_hostname, *, render_hostname='', public_hostname=''):
+    safe_request = _extract_hostname(request_hostname)
+    safe_render = _extract_hostname(render_hostname)
+    safe_public = _extract_hostname(public_hostname)
+    if not safe_request:
+        return 'unknown'
+    if safe_public and safe_request == safe_public:
+        if safe_render and safe_public != safe_render:
+            return 'custom-domain'
+        return 'configured-public-host'
+    if safe_render and safe_request == safe_render:
+        return 'render-default'
+    if safe_public or safe_render:
+        return 'mismatch'
+    return 'unknown'
+
+
 def infer_stripe_key_mode(key_value, runtime=None):
     key = str(key_value or '').strip()
     if not key:
@@ -40,8 +75,9 @@ def infer_stripe_key_mode(key_value, runtime=None):
 def build_admin_deployment_info(request_host='', runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     request_host = str(request_host or '').strip()
-    request_hostname = request_host.split(':', 1)[0].strip().lower()
+    request_hostname = _extract_hostname(request_host)
     render_hostname = str(resolved_runtime.os.getenv('RENDER_EXTERNAL_HOSTNAME', '') or '').strip().lower()
+    public_hostname = _resolve_public_hostname(runtime=resolved_runtime)
     render_external_url = str(resolved_runtime.os.getenv('RENDER_EXTERNAL_URL', '') or '').strip()
     render_service_id = str(resolved_runtime.os.getenv('RENDER_SERVICE_ID', '') or '').strip()
     render_deploy_id = str(resolved_runtime.os.getenv('RENDER_DEPLOY_ID', '') or '').strip()
@@ -53,13 +89,20 @@ def build_admin_deployment_info(request_host='', runtime=None):
     host_matches_render = None
     if render_hostname and request_hostname:
         host_matches_render = request_hostname == render_hostname
+    host_status = _resolve_host_status(
+        request_hostname,
+        render_hostname=render_hostname,
+        public_hostname=public_hostname,
+    )
     return {
         'runtime': 'render' if render_detected else 'local',
         'request_host': request_host,
         'request_hostname': request_hostname,
+        'configured_public_hostname': public_hostname,
         'render_external_hostname': render_hostname,
         'render_external_url': render_external_url,
         'host_matches_render': host_matches_render,
+        'host_status': host_status,
         'service_id': render_service_id,
         'service_name': render_service_name,
         'deploy_id': render_deploy_id,
@@ -234,14 +277,13 @@ def safe_query_docs_in_window(collection_name, timestamp_field, window_start, wi
             runtime=resolved_runtime,
         )
     except Exception:
+        safe_filters = _normalize_filters(filters)
         resolved_runtime.logger.warning(
-            'Admin query failed for %s (%s); returning empty partial dataset.',
+            'Admin query failed for %s (%s); attempting compatibility fallback.',
             collection_name,
             timestamp_field,
             exc_info=True,
         )
-        mark_admin_data_warning(collection_name, 'query_failed', runtime=resolved_runtime)
-        safe_filters = _normalize_filters(filters)
         if safe_filters and allow_unfiltered_fallback:
             try:
                 fallback_docs = query_docs_in_window(
@@ -250,11 +292,14 @@ def safe_query_docs_in_window(collection_name, timestamp_field, window_start, wi
                     window_start=window_start,
                     window_end=window_end,
                     order_desc=order_desc,
-                    limit=limit,
+                    limit=None,
                     filters=None,
                     runtime=resolved_runtime,
                 )
-                return _fallback_filter_docs(fallback_docs, safe_filters)
+                filtered_docs = _fallback_filter_docs(fallback_docs, safe_filters)
+                if isinstance(limit, int) and limit > 0:
+                    return filtered_docs[:limit]
+                return filtered_docs
             except Exception:
                 resolved_runtime.logger.warning(
                     'Admin fallback query failed for %s (%s); returning empty partial dataset.',
@@ -262,6 +307,7 @@ def safe_query_docs_in_window(collection_name, timestamp_field, window_start, wi
                     timestamp_field,
                     exc_info=True,
                 )
+        mark_admin_data_warning(collection_name, 'query_failed', runtime=resolved_runtime)
         return []
 
 
@@ -292,25 +338,24 @@ def safe_count_collection(collection_name, filters=None, runtime=None):
             filters=_normalize_filters(filters),
         )
     except Exception:
+        safe_filters = _normalize_filters(filters)
         resolved_runtime.logger.warning(
-            'Admin count query failed for %s; returning 0 partial dataset.',
+            'Admin count query failed for %s; attempting compatibility fallback.',
             collection_name,
             exc_info=True,
         )
+        try:
+            fallback_docs = resolved_runtime.admin_repo.stream_collection(resolved_runtime.db, collection_name)
+            if safe_filters:
+                return len(_fallback_filter_docs(fallback_docs, safe_filters))
+            return sum(1 for _ in fallback_docs)
+        except Exception:
+            resolved_runtime.logger.warning(
+                'Admin fallback count failed for %s; returning 0 partial dataset.',
+                collection_name,
+                exc_info=True,
+            )
         mark_admin_data_warning(collection_name, 'count_failed', runtime=resolved_runtime)
-        safe_filters = _normalize_filters(filters)
-        if safe_filters:
-            try:
-                return len(_fallback_filter_docs(
-                    resolved_runtime.admin_repo.stream_collection(resolved_runtime.db, collection_name),
-                    safe_filters,
-                ))
-            except Exception:
-                resolved_runtime.logger.warning(
-                    'Admin fallback count failed for %s; returning 0 partial dataset.',
-                    collection_name,
-                    exc_info=True,
-                )
         return 0
 
 
@@ -327,12 +372,41 @@ def safe_count_window(collection_name, timestamp_field, window_start, filters=No
             filters=_normalize_filters(filters),
         )
     except Exception:
+        safe_filters = _normalize_filters(filters)
         resolved_runtime.logger.warning(
-            'Admin window count query failed for %s (%s); returning 0 partial dataset.',
+            'Admin window count query failed for %s (%s); attempting compatibility fallback.',
             collection_name,
             timestamp_field,
             exc_info=True,
         )
+        try:
+            fallback_docs = query_docs_in_window(
+                collection_name=collection_name,
+                timestamp_field=timestamp_field,
+                window_start=window_start,
+                window_end=None,
+                order_desc=False,
+                limit=None,
+                filters=safe_filters,
+                runtime=resolved_runtime,
+            )
+            return len(fallback_docs)
+        except Exception:
+            if safe_filters:
+                try:
+                    fallback_docs = query_docs_in_window(
+                        collection_name=collection_name,
+                        timestamp_field=timestamp_field,
+                        window_start=window_start,
+                        window_end=None,
+                        order_desc=False,
+                        limit=None,
+                        filters=None,
+                        runtime=resolved_runtime,
+                    )
+                    return len(_fallback_filter_docs(fallback_docs, safe_filters))
+                except Exception:
+                    pass
         mark_admin_data_warning(collection_name, 'window_count_failed', runtime=resolved_runtime)
         return 0
 

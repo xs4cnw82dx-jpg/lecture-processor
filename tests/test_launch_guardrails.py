@@ -50,15 +50,22 @@ def test_build_admin_deployment_info_detects_render_host(monkeypatch):
     monkeypatch.setenv("RENDER_EXTERNAL_HOSTNAME", "lecture-processor-1.onrender.com")
     monkeypatch.setenv("RENDER_GIT_BRANCH", "main")
     monkeypatch.setenv("RENDER_GIT_COMMIT", "abcdef1234567890")
+    monkeypatch.setattr(core, "PUBLIC_BASE_URL", "https://lectureprocessor.com")
 
     info = core.build_admin_deployment_info("lecture-processor-1.onrender.com")
     assert info["runtime"] == "render"
     assert info["service_name"] == "lecture-processor"
     assert info["git_commit_short"] == "abcdef123456"
     assert info["host_matches_render"] is True
+    assert info["host_status"] == "render-default"
+
+    custom = core.build_admin_deployment_info("lectureprocessor.com")
+    assert custom["host_matches_render"] is False
+    assert custom["host_status"] == "custom-domain"
 
     mismatch = core.build_admin_deployment_info("other-host.onrender.com")
     assert mismatch["host_matches_render"] is False
+    assert mismatch["host_status"] == "mismatch"
 
 
 def test_build_admin_runtime_checks_reports_tool_and_stripe_state(monkeypatch):

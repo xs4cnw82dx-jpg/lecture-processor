@@ -143,7 +143,6 @@ def admin_overview(app_ctx, request):
             order_desc=True,
             limit=20,
             filters=job_filters,
-            allow_unfiltered_fallback=False,
             runtime=app_ctx,
         )
         recent_jobs = []
