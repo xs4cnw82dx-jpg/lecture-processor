@@ -508,6 +508,7 @@ def apply_security_headers(response):
     return runtime_apply_security_headers(
         response,
         request_is_secure=bool(request.is_secure or os.getenv('RENDER')),
+        sentry_frontend_dsn=SENTRY_FRONTEND_DSN,
     )
 
 CREDIT_BUNDLES = {'lecture_5': {'name': 'Lecture Notes — 5 Pack', 'description': '5 standard lecture credits', 'credits': {'lecture_credits_standard': 5}, 'price_cents': 999, 'currency': 'eur'}, 'lecture_10': {'name': 'Lecture Notes — 10 Pack', 'description': '10 standard lecture credits (best value)', 'credits': {'lecture_credits_standard': 10}, 'price_cents': 1699, 'currency': 'eur'}, 'slides_10': {'name': 'Slides Extraction — 10 Pack', 'description': '10 slides extraction credits', 'credits': {'slides_credits': 10}, 'price_cents': 499, 'currency': 'eur'}, 'slides_25': {'name': 'Slides Extraction — 25 Pack', 'description': '25 slides extraction credits (best value)', 'credits': {'slides_credits': 25}, 'price_cents': 999, 'currency': 'eur'}, 'interview_3': {'name': 'Interview Transcription — 3 Pack', 'description': '3 interview transcription credits', 'credits': {'interview_credits_short': 3}, 'price_cents': 799, 'currency': 'eur'}, 'interview_8': {'name': 'Interview Transcription — 8 Pack', 'description': '8 interview transcription credits (best value)', 'credits': {'interview_credits_short': 8}, 'price_cents': 1799, 'currency': 'eur'}}

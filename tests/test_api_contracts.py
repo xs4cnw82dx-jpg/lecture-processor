@@ -44,7 +44,13 @@ def test_security_headers_present_on_html_and_api_routes(client):
         assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
         assert response.headers["X-Frame-Options"] == "DENY"
 
-    assert "script-src" in html_response.headers["Content-Security-Policy"]
+    csp = html_response.headers["Content-Security-Policy"]
+    assert "script-src" in csp
+    assert "https://apis.google.com" in csp
+    assert "https://identitytoolkit.googleapis.com" in csp
+    assert "https://securetoken.googleapis.com" in csp
+    assert "https://lecture-processor-cdff6.firebaseapp.com" in csp
+    assert "https://accounts.google.com" in csp
 
 
 def test_planner_api_requires_auth(client):
