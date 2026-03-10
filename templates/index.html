@@ -346,11 +346,11 @@
     </div>
     <div class="toast" id="toast"><svg id="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span id="toast-text"></span></div>
 
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" integrity="sha384-4gq9w/AGf72FXdNQ3Kn3EqWP7633NbCMjpYHt8YCZyXf23o2opcuAr4cif41tLrC" crossorigin="anonymous"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js" integrity="sha384-xtdq4MQqPj1dB5DQsuw9O7dh4kHhMP/Wp5u8O1jiaWiou13ZfJIgiccjtVK2pBhL" crossorigin="anonymous"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
     <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js" integrity="sha384-948ahk4ZmxYVYOc+rxN1H2gM1EJ2Duhp7uHtZ4WSLkV4Vtx5MUqnV+l7u9B+jFv+" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js" integrity="sha384-XQqX/4yiUGu+oyr87jvWzRuqBUK/adrY0DunhL+tID9m/9dwSpV8h9Fk/Sg6ifVQ" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@17.0.4/lib/marked.umd.js" integrity="sha384-aLjW8wZKyOuTOcURHHubORbxQvuyZMLWE2b70jrYAHM0r11vW/KII2EqaifKahR4" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.3.2/dist/purify.min.js" integrity="sha384-8hAfZQ5Oqos5HLTHfR0sLvvwpcVI4fGhV+0Dj/HCcpkKaacivQs82XHmvLOnAhXn" crossorigin="anonymous"></script>
     <script src="{{ url_for('static', filename='js/html-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/markdown-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
@@ -361,7 +361,7 @@
     <script src="{{ url_for('static', filename='js/runtime-job-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/study-progress-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
-    <script src="https://browser.sentry-cdn.com/7.120.3/bundle.min.js" integrity="sha384-QhNWP5Exx8ZPPgZF2s+nKw/cl8cah1/6MVdZfR8a22f2KO0OsBNonujHvYJlrWIP" crossorigin="anonymous"></script>
+    <script src="https://browser.sentry-cdn.com/10.42.0/bundle.min.js" integrity="sha384-L/HYBH2QCeLyXhcZ0hPTxWMnyMJburPJyVoBmRk4OoilqrOWq5kU4PNTLFYrCYPr" crossorigin="anonymous"></script>
     <script>
         window.LectureProcessorRuntime = {
             sentryFrontendDsn: {{ sentry_frontend_dsn | tojson }},

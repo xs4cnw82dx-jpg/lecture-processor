@@ -1,8 +1,12 @@
 // Optional E2E suite. Kept out of required CI checks.
 const { defineConfig } = require('@playwright/test');
+const { existsSync } = require('fs');
 
 const testPort = Number(process.env.PLAYWRIGHT_PORT || process.env.PORT || 5113);
 const baseUrl = `http://127.0.0.1:${testPort}`;
+const pythonCommand = existsSync('.venv/bin/python')
+  ? '.venv/bin/python'
+  : (existsSync('venv/bin/python') ? 'venv/bin/python' : 'python3');
 
 module.exports = defineConfig({
   testDir: './e2e',
@@ -15,7 +19,7 @@ module.exports = defineConfig({
     screenshot: 'only-on-failure'
   },
   webServer: {
-    command: 'venv/bin/python app.py',
+    command: `${pythonCommand} app.py`,
     url: baseUrl,
     reuseExistingServer: false,
     timeout: 90_000,
