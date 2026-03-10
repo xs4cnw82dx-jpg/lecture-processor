@@ -203,33 +203,30 @@ def increment_rate_limit_rollups(entry_payload, runtime=None):
 
 
 def _aggregate_bucket_from_source(bucket_key, period, runtime=None):
+    from lecture_processor.domains.admin import metrics as admin_metrics
+
     resolved_runtime = _resolve_runtime(runtime)
     start_ts, end_ts = _bucket_bounds(bucket_key, period)
     aggregate = _empty_rollup(bucket_key, period, runtime=resolved_runtime)
-    db = getattr(resolved_runtime, 'db', None)
-    if db is None:
-        return aggregate
-    purchases_docs = resolved_runtime.admin_repo.query_docs_in_window(
-        db,
+    purchases_docs = admin_metrics.safe_query_docs_in_window(
         collection_name='purchases',
         timestamp_field='created_at',
         window_start=start_ts,
         window_end=end_ts,
-        firestore_module=resolved_runtime.firestore,
+        runtime=resolved_runtime,
     )
     for doc in purchases_docs:
         purchase = doc.to_dict() or {}
         aggregate['purchases']['count'] += 1
         aggregate['purchases']['total_revenue_cents'] += int(purchase.get('price_cents', 0) or 0)
 
-    jobs_docs = resolved_runtime.admin_repo.query_docs_in_window(
-        db,
+    jobs_docs = admin_metrics.safe_query_docs_in_window(
         collection_name='job_logs',
         timestamp_field='finished_at',
         window_start=start_ts,
         window_end=end_ts,
-        firestore_module=resolved_runtime.firestore,
-        filters=[('admin_visible', '==', True)],
+        filters=admin_metrics.admin_job_filters(runtime=resolved_runtime),
+        runtime=resolved_runtime,
     )
     for doc in jobs_docs:
         job = doc.to_dict() or {}
@@ -250,13 +247,12 @@ def _aggregate_bucket_from_source(bucket_key, period, runtime=None):
             aggregate['jobs']['duration_sum_seconds'] += float(duration)
             aggregate['jobs']['duration_count'] += 1
 
-    analytics_docs = resolved_runtime.admin_repo.query_docs_in_window(
-        db,
+    analytics_docs = admin_metrics.safe_query_docs_in_window(
         collection_name='analytics_events',
         timestamp_field='created_at',
         window_start=start_ts,
         window_end=end_ts,
-        firestore_module=resolved_runtime.firestore,
+        runtime=resolved_runtime,
     )
     funnel_counts = aggregate['analytics']['funnel_counts']
     for doc in analytics_docs:
@@ -266,13 +262,12 @@ def _aggregate_bucket_from_source(bucket_key, period, runtime=None):
         if event_name in funnel_counts:
             funnel_counts[event_name] += 1
 
-    rate_limit_docs = resolved_runtime.admin_repo.query_docs_in_window(
-        db,
+    rate_limit_docs = admin_metrics.safe_query_docs_in_window(
         collection_name='rate_limit_logs',
         timestamp_field='created_at',
         window_start=start_ts,
         window_end=end_ts,
-        firestore_module=resolved_runtime.firestore,
+        runtime=resolved_runtime,
     )
     for doc in rate_limit_docs:
         entry = doc.to_dict() or {}
@@ -283,18 +278,39 @@ def _aggregate_bucket_from_source(bucket_key, period, runtime=None):
 
 
 def get_or_build_rollup(bucket_key, period, runtime=None):
+    from lecture_processor.domains.admin import metrics as admin_metrics
+
     resolved_runtime = _resolve_runtime(runtime)
     db = getattr(resolved_runtime, 'db', None)
     if db is None:
         return _empty_rollup(bucket_key, period, runtime=resolved_runtime)
-    doc = _rollup_doc_ref(db, period, bucket_key).get()
+    try:
+        doc = _rollup_doc_ref(db, period, bucket_key).get()
+    except Exception:
+        resolved_runtime.logger.warning(
+            'Admin rollup read failed for %s/%s; rebuilding from source without cache.',
+            period,
+            bucket_key,
+            exc_info=True,
+        )
+        admin_metrics.mark_admin_data_warning(_collection_for_period(period), 'read_failed', runtime=resolved_runtime)
+        return _aggregate_bucket_from_source(bucket_key, period, runtime=resolved_runtime)
     if getattr(doc, 'exists', False):
         payload = doc.to_dict() or {}
         payload.setdefault('bucket_key', bucket_key)
         payload.setdefault('period', period)
         return payload
     payload = _aggregate_bucket_from_source(bucket_key, period, runtime=resolved_runtime)
-    _rollup_doc_ref(db, period, bucket_key).set(payload, merge=False)
+    try:
+        _rollup_doc_ref(db, period, bucket_key).set(payload, merge=False)
+    except Exception:
+        resolved_runtime.logger.warning(
+            'Admin rollup write failed for %s/%s; serving uncached payload.',
+            period,
+            bucket_key,
+            exc_info=True,
+        )
+        admin_metrics.mark_admin_data_warning(_collection_for_period(period), 'write_failed', runtime=resolved_runtime)
     return payload
 
 
@@ -304,4 +320,17 @@ def load_window_rollups(window_key, now_ts, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     _labels, bucket_keys, _granularity = admin_metrics.build_time_buckets(window_key, now_ts, runtime=resolved_runtime)
     period = _bucket_period_for_window(window_key)
-    return [get_or_build_rollup(bucket_key, period, runtime=resolved_runtime) for bucket_key in bucket_keys]
+    rollups = []
+    for bucket_key in bucket_keys:
+        try:
+            rollups.append(get_or_build_rollup(bucket_key, period, runtime=resolved_runtime))
+        except Exception:
+            resolved_runtime.logger.warning(
+                'Admin rollup load failed for %s/%s; serving empty bucket.',
+                period,
+                bucket_key,
+                exc_info=True,
+            )
+            admin_metrics.mark_admin_data_warning(_collection_for_period(period), 'load_failed', runtime=resolved_runtime)
+            rollups.append(_empty_rollup(bucket_key, period, runtime=resolved_runtime))
+    return rollups

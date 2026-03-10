@@ -831,6 +831,50 @@ def test_admin_overview_uses_filtered_job_count(client, monkeypatch):
     assert ("job_logs", admin_metrics.admin_job_filters()) in count_calls
 
 
+def test_admin_overview_returns_partial_payload_when_rollup_backfill_queries_fail(client, monkeypatch):
+    class _RollupDoc:
+        exists = False
+
+        def to_dict(self):
+            return {}
+
+    class _RollupRef:
+        def get(self):
+            return _RollupDoc()
+
+        def set(self, _payload, merge=False):
+            _ = merge
+            return None
+
+    class _Collection:
+        def __init__(self, name):
+            self.name = name
+
+        def document(self, _doc_id):
+            return _RollupRef()
+
+    class _DB:
+        def collection(self, name):
+            return _Collection(name)
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
+    monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)
+    monkeypatch.setattr(core, "db", _DB())
+    monkeypatch.setattr(
+        core.admin_repo,
+        "query_docs_in_window",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("missing firestore index")),
+    )
+
+    response = client.get("/api/admin/overview?window=7d", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["metrics"]["job_count"] == 0
+    assert payload["recent_jobs"] == []
+    assert "job_logs:query_failed" in payload["data_warnings"]
+
+
 def test_admin_prompts_markdown_contract(client, monkeypatch):
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
     monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)
