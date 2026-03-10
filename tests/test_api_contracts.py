@@ -214,9 +214,10 @@ def test_admin_overview_uses_rollups_and_limited_recent_queries(client, monkeypa
     assert payload["recent_jobs"][0]["job_id"] == "job-1"
     assert payload["recent_purchases"][0]["bundle_name"] == "Lecture 5"
     assert payload["recent_rate_limits"][0]["limit_name"] == "upload"
+    assert len(query_calls) == 3
     assert all(call["limit"] == 20 for call in query_calls)
     assert all(call["order_desc"] is True for call in query_calls)
-    assert all(call["allow_unfiltered_fallback"] is False for call in query_calls)
+    assert any(call["collection_name"] == "job_logs" and call["allow_unfiltered_fallback"] is True for call in query_calls)
 
 
 def test_checkout_invalid_bundle_returns_400(client, monkeypatch):
@@ -873,6 +874,73 @@ def test_admin_overview_returns_partial_payload_when_rollup_backfill_queries_fai
     assert payload["metrics"]["job_count"] == 0
     assert payload["recent_jobs"] == []
     assert "job_logs:query_failed" in payload["data_warnings"]
+
+
+def test_admin_overview_uses_filtered_query_fallback_without_partial_warning(client, monkeypatch):
+    class _Doc:
+        def __init__(self, doc_id, payload):
+            self.id = doc_id
+            self._payload = payload
+
+        def to_dict(self):
+            return dict(self._payload)
+
+    class _RollupDoc:
+        exists = True
+
+        def __init__(self, payload=None):
+            self._payload = payload or {}
+
+        def to_dict(self):
+            return dict(self._payload)
+
+    class _RollupRef:
+        def get(self):
+            return _RollupDoc()
+
+        def set(self, _payload, merge=False):
+            _ = merge
+            return None
+
+    class _Collection:
+        def __init__(self, name):
+            self.name = name
+
+        def document(self, _doc_id):
+            return _RollupRef()
+
+    class _DB:
+        def collection(self, name):
+            return _Collection(name)
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
+    monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)
+    monkeypatch.setattr(core, "db", _DB())
+    monkeypatch.setattr(admin_rollups, "load_window_rollups", lambda *_args, **_kwargs: [])
+
+    def _query_docs_in_window(_db, collection_name, timestamp_field, window_start, window_end=None, order_desc=False, limit=None, firestore_module=None, filters=None):
+        _ = (_db, timestamp_field, window_start, window_end, order_desc, limit, firestore_module)
+        if collection_name == "job_logs" and filters:
+            raise RuntimeError("missing firestore index")
+        if collection_name != "job_logs":
+            return []
+        return [
+            _Doc("job-1", {"job_id": "job-1", "email": "u1@example.com", "mode": "lecture-notes", "status": "complete", "finished_at": 1, "admin_visible": True}),
+            _Doc("job-2", {"job_id": "job-2", "email": "batch@example.com", "mode": "lecture-notes", "status": "complete", "finished_at": 1, "admin_visible": False}),
+            _Doc("job-3", {"job_id": "job-3", "email": "u3@example.com", "mode": "interview", "status": "error", "finished_at": 1, "admin_visible": True}),
+        ]
+
+    monkeypatch.setattr(core.admin_repo, "query_docs_in_window", _query_docs_in_window)
+    monkeypatch.setattr(core.admin_repo, "count_collection", lambda _db, collection_name, filters=None: 2 if collection_name == "job_logs" and filters else 0)
+    monkeypatch.setattr(core.admin_repo, "count_window", lambda *_args, **_kwargs: 0)
+
+    response = client.get("/api/admin/overview?window=7d", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["data_warnings"] == []
+    assert payload["metrics"]["total_processed"] == 2
+    assert [job["job_id"] for job in payload["recent_jobs"]] == ["job-1", "job-3"]
 
 
 def test_admin_prompts_markdown_contract(client, monkeypatch):

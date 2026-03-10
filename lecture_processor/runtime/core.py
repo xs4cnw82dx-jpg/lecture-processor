@@ -461,10 +461,41 @@ def infer_stripe_key_mode(key_value):
         return 'test'
     return 'unknown'
 
+
+def _extract_hostname(value):
+    candidate = str(value or '').strip()
+    if not candidate:
+        return ''
+    if '://' in candidate:
+        try:
+            return str(urlparse(candidate).hostname or '').strip().lower()
+        except Exception:
+            return ''
+    return candidate.split('/', 1)[0].split(':', 1)[0].strip().lower()
+
+
+def _resolve_host_status(request_hostname, *, render_hostname='', public_hostname=''):
+    safe_request = _extract_hostname(request_hostname)
+    safe_render = _extract_hostname(render_hostname)
+    safe_public = _extract_hostname(public_hostname)
+    if not safe_request:
+        return 'unknown'
+    if safe_public and safe_request == safe_public:
+        if safe_render and safe_public != safe_render:
+            return 'custom-domain'
+        return 'configured-public-host'
+    if safe_render and safe_request == safe_render:
+        return 'render-default'
+    if safe_public or safe_render:
+        return 'mismatch'
+    return 'unknown'
+
+
 def build_admin_deployment_info(request_host=''):
     request_host = str(request_host or '').strip()
-    request_hostname = request_host.split(':', 1)[0].strip().lower()
+    request_hostname = _extract_hostname(request_host)
     render_hostname = str(os.getenv('RENDER_EXTERNAL_HOSTNAME', '') or '').strip().lower()
+    public_hostname = _extract_hostname(PUBLIC_BASE_URL)
     render_external_url = str(os.getenv('RENDER_EXTERNAL_URL', '') or '').strip()
     render_service_id = str(os.getenv('RENDER_SERVICE_ID', '') or '').strip()
     render_deploy_id = str(os.getenv('RENDER_DEPLOY_ID', '') or '').strip()
@@ -476,7 +507,12 @@ def build_admin_deployment_info(request_host=''):
     host_matches_render = None
     if render_hostname and request_hostname:
         host_matches_render = request_hostname == render_hostname
-    return {'runtime': 'render' if render_detected else 'local', 'request_host': request_host, 'request_hostname': request_hostname, 'render_external_hostname': render_hostname, 'render_external_url': render_external_url, 'host_matches_render': host_matches_render, 'service_id': render_service_id, 'service_name': render_service_name, 'deploy_id': render_deploy_id, 'instance_id': render_instance_id, 'git_branch': render_git_branch, 'git_commit': render_git_commit, 'git_commit_short': render_git_commit[:12] if render_git_commit else '', 'app_boot_ts': APP_BOOT_TS, 'app_uptime_seconds': max(0, round(time.time() - APP_BOOT_TS, 1))}
+    host_status = _resolve_host_status(
+        request_hostname,
+        render_hostname=render_hostname,
+        public_hostname=public_hostname,
+    )
+    return {'runtime': 'render' if render_detected else 'local', 'request_host': request_host, 'request_hostname': request_hostname, 'configured_public_hostname': public_hostname, 'render_external_hostname': render_hostname, 'render_external_url': render_external_url, 'host_matches_render': host_matches_render, 'host_status': host_status, 'service_id': render_service_id, 'service_name': render_service_name, 'deploy_id': render_deploy_id, 'instance_id': render_instance_id, 'git_branch': render_git_branch, 'git_commit': render_git_commit, 'git_commit_short': render_git_commit[:12] if render_git_commit else '', 'app_boot_ts': APP_BOOT_TS, 'app_uptime_seconds': max(0, round(time.time() - APP_BOOT_TS, 1))}
 
 def build_admin_runtime_checks():
     secret_key_mode = infer_stripe_key_mode(stripe.api_key)
