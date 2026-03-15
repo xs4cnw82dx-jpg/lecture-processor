@@ -72,8 +72,18 @@ def test_query_knowledge_index_returns_ranked_citations(monkeypatch, tmp_path):
         ),
         encoding="utf-8",
     )
+    seen = {}
+
+    def fake_embed_text(text, task_type="RETRIEVAL_QUERY", runtime=None, output_dimensionality=None):
+        seen["dimension"] = output_dimensionality
+        return [1.0, 0.0]
+
     monkeypatch.setattr(physio_knowledge, "PHYSIO_LIBRARY_INDEX_PATH", manifest_path)
-    monkeypatch.setattr(physio_knowledge, "embed_text", lambda text, task_type="RETRIEVAL_QUERY", runtime=None: [1.0, 0.0])
+    monkeypatch.setattr(
+        physio_knowledge,
+        "embed_text",
+        fake_embed_text,
+    )
     monkeypatch.setattr(
         ai_provider,
         "generate_with_optional_thinking",
@@ -88,6 +98,77 @@ def test_query_knowledge_index_returns_ranked_citations(monkeypatch, tmp_path):
     assert response["citations"][0]["label"] == "KNGF Richtlijn (pagina 4)"
     assert response["retrieved_sources"][0]["source_title"] == "KNGF Richtlijn"
     assert "Oefentherapie" in response["answer_markdown"]
+    assert seen["dimension"] == 2
+
+
+def test_query_knowledge_index_reads_shards_incrementally(monkeypatch, tmp_path):
+    manifest_path = tmp_path / "manifest.json"
+    shard_name = "manifest.documents-001.json.gz"
+    with gzip.open(tmp_path / shard_name, "wt", encoding="utf-8") as handle:
+        json.dump(
+            [
+                {
+                    "id": "doc-1",
+                    "text": "Rechts hemisferisch CVA geeft vaak linkszijdige neglect.",
+                    "source_name": "beroerte.pdf",
+                    "source_title": "Beroerte Richtlijn",
+                    "page_label": "pagina 3",
+                    "embedding": [1.0, 0.0],
+                },
+                {
+                    "id": "doc-2",
+                    "text": "Linker hemisferisch CVA gaat vaker samen met afasie.",
+                    "source_name": "beroerte.pdf",
+                    "source_title": "Beroerte Richtlijn",
+                    "page_label": "pagina 4",
+                    "embedding": [0.0, 1.0],
+                },
+            ],
+            handle,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "meta": {
+                    "source_count": 1,
+                    "document_count": 2,
+                    "embedding_dimension": 2,
+                    "format": physio_knowledge.SHARDED_INDEX_FORMAT,
+                    "document_shards": [shard_name],
+                },
+                "documents": [],
+                "errors": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(physio_knowledge, "PHYSIO_LIBRARY_INDEX_PATH", manifest_path)
+    monkeypatch.setattr(
+        physio_knowledge,
+        "load_knowledge_index",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("full index load should not be used for sharded queries")),
+    )
+    monkeypatch.setattr(
+        physio_knowledge,
+        "embed_text",
+        lambda text, task_type="RETRIEVAL_QUERY", runtime=None, output_dimensionality=None: [1.0, 0.0],
+    )
+    monkeypatch.setattr(
+        ai_provider,
+        "generate_with_optional_thinking",
+        lambda model, prompt, max_output_tokens=4096, operation_name="", runtime=None: SimpleNamespace(text="## Antwoord\n- Rechts CVA geeft vaak linkszijdige uitval."),
+    )
+
+    response = physio_knowledge.query_knowledge_index(
+        "Wat hoort bij een CVA rechts?",
+        runtime=SimpleNamespace(MODEL_TOOLS="gemini-test"),
+    )
+
+    assert response["citations"][0]["label"] == "Beroerte Richtlijn (pagina 3)"
+    assert response["retrieved_sources"][0]["source_name"] == "beroerte.pdf"
 
 
 def test_knowledge_index_status_reports_counts_and_staleness(tmp_path):
@@ -100,15 +181,15 @@ def test_knowledge_index_status_reports_counts_and_staleness(tmp_path):
     manifest_path.write_text(
         json.dumps(
             {
-                "meta": {"generated_at": 123.0, "source_count": 1, "document_count": 1},
-                "documents": [
-                    {
-                        "source_path": str(source_path.relative_to(tmp_path)),
-                        "source_name": "beroerte.pdf",
-                        "text": "lateralisatie",
-                        "embedding": [1.0],
-                    }
-                ],
+                "meta": {
+                    "generated_at": 123.0,
+                    "source_count": 1,
+                    "document_count": 1,
+                    "format": physio_knowledge.SHARDED_INDEX_FORMAT,
+                    "document_shards": ["missing.documents-001.json.gz"],
+                    "indexed_source_paths": [str(source_path)],
+                },
+                "documents": [],
                 "errors": [],
             }
         ),
@@ -120,6 +201,7 @@ def test_knowledge_index_status_reports_counts_and_staleness(tmp_path):
     assert status["source_count_on_disk"] == 1
     assert status["indexed_source_count"] == 1
     assert status["document_count"] == 1
+    assert status["error_count"] == 0
     assert status["stale"] is False
 
 
@@ -147,6 +229,7 @@ def test_load_knowledge_index_reads_gzip_shards(tmp_path):
                 "meta": {
                     "source_count": 1,
                     "document_count": 1,
+                    "embedding_dimension": 1,
                     "format": physio_knowledge.SHARDED_INDEX_FORMAT,
                     "document_shards": [shard_name],
                 },
@@ -162,6 +245,8 @@ def test_load_knowledge_index_reads_gzip_shards(tmp_path):
     assert payload["meta"]["format"] == physio_knowledge.SHARDED_INDEX_FORMAT
     assert len(payload["documents"]) == 1
     assert payload["documents"][0]["source_title"] == "Beroerte"
+
+
 def test_knowledge_query_endpoint_uses_manifest(client, monkeypatch, core, tmp_path):
     _allow_physio(monkeypatch, core)
     monkeypatch.setattr(core, "client", object())
@@ -185,7 +270,11 @@ def test_knowledge_query_endpoint_uses_manifest(client, monkeypatch, core, tmp_p
         encoding="utf-8",
     )
     monkeypatch.setattr(physio_knowledge, "PHYSIO_LIBRARY_INDEX_PATH", manifest_path)
-    monkeypatch.setattr(physio_knowledge, "embed_text", lambda text, task_type="RETRIEVAL_QUERY", runtime=None: [1.0, 0.0])
+    monkeypatch.setattr(
+        physio_knowledge,
+        "embed_text",
+        lambda text, task_type="RETRIEVAL_QUERY", runtime=None, output_dimensionality=None: [1.0, 0.0],
+    )
     monkeypatch.setattr(
         ai_provider,
         "generate_with_optional_thinking",
@@ -244,7 +333,9 @@ def test_build_physio_library_script_writes_manifest_from_text_source(tmp_path):
     loaded = physio_knowledge.load_knowledge_index(index_path=index_path)
     assert written["meta"]["source_count"] == 1
     assert written["meta"]["document_count"] >= 1
+    assert written["meta"]["embedding_dimension"] == 2
     assert written["meta"]["format"] == physio_knowledge.SHARDED_INDEX_FORMAT
+    assert written["meta"]["indexed_source_paths"] == [str(forms_dir / "notes.md")]
     assert written["meta"]["document_shards"]
     assert manifest["documents"][0]["source_kind"] == "forms"
     assert loaded["documents"][0]["embedding"][1] == 1.0
