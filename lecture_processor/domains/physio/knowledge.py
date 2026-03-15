@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import heapq
 import json
 import math
 import os
@@ -19,6 +20,7 @@ PHYSIO_LIBRARY_ROOT = PROJECT_ROOT / "physio_library"
 PHYSIO_LIBRARY_SOURCES_PATH = PHYSIO_LIBRARY_ROOT / "sources"
 PHYSIO_LIBRARY_INDEX_PATH = PHYSIO_LIBRARY_ROOT / "index" / "manifest.json"
 DEFAULT_EMBED_MODEL = "gemini-embedding-001"
+DEFAULT_EMBED_DIMENSION = 256
 DEFAULT_CHUNK_SIZE = 1100
 DEFAULT_CHUNK_OVERLAP = 180
 SUPPORTED_SOURCE_SUFFIXES = {".pdf", ".docx", ".pptx", ".txt", ".md"}
@@ -30,6 +32,29 @@ def _resolve_runtime(runtime=None):
     if runtime is not None:
         return runtime
     return get_runtime()
+
+
+def _coerce_positive_int(value):
+    try:
+        parsed = int(value or 0)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def resolve_embed_dimension(*, runtime=None, output_dimensionality=None):
+    explicit = _coerce_positive_int(output_dimensionality)
+    if explicit is not None:
+        return explicit
+    resolved_runtime = runtime if runtime is not None else None
+    runtime_value = _coerce_positive_int(getattr(resolved_runtime, "PHYSIO_EMBED_DIMENSION", None))
+    if runtime_value is not None:
+        return runtime_value
+    env = getattr(resolved_runtime, "os", os) if resolved_runtime is not None else os
+    env_value = _coerce_positive_int(getattr(env, "getenv", os.getenv)("PHYSIO_EMBED_DIMENSION", ""))
+    if env_value is not None:
+        return env_value
+    return DEFAULT_EMBED_DIMENSION
 
 
 def chunk_text(text, *, chunk_size=DEFAULT_CHUNK_SIZE, chunk_overlap=DEFAULT_CHUNK_OVERLAP):
@@ -126,13 +151,17 @@ def _normalize_embeddings_response(response):
     return [single] if single else []
 
 
-def _embed_config(types_module, task_type):
+def _embed_config(types_module, task_type, *, output_dimensionality=None):
     if types_module is not None and hasattr(types_module, "EmbedContentConfig"):
-        return types_module.EmbedContentConfig(task_type=task_type)
+        payload = {"task_type": task_type}
+        dimension = _coerce_positive_int(output_dimensionality)
+        if dimension is not None:
+            payload["output_dimensionality"] = dimension
+        return types_module.EmbedContentConfig(**payload)
     return None
 
 
-def embed_texts(texts, *, task_type="RETRIEVAL_DOCUMENT", runtime=None):
+def embed_texts(texts, *, task_type="RETRIEVAL_DOCUMENT", runtime=None, output_dimensionality=None):
     resolved_runtime = _resolve_runtime(runtime)
     client = getattr(resolved_runtime, "client", None)
     if client is None:
@@ -140,7 +169,14 @@ def embed_texts(texts, *, task_type="RETRIEVAL_DOCUMENT", runtime=None):
     safe_texts = [str(text or "") for text in (texts or [])]
     if not safe_texts:
         return []
-    config = _embed_config(getattr(resolved_runtime, "types", None), task_type)
+    config = _embed_config(
+        getattr(resolved_runtime, "types", None),
+        task_type,
+        output_dimensionality=resolve_embed_dimension(
+            runtime=resolved_runtime,
+            output_dimensionality=output_dimensionality,
+        ),
+    )
     response = client.models.embed_content(
         model=str(getattr(resolved_runtime, "PHYSIO_EMBED_MODEL", DEFAULT_EMBED_MODEL) or DEFAULT_EMBED_MODEL),
         contents=safe_texts,
@@ -152,11 +188,32 @@ def embed_texts(texts, *, task_type="RETRIEVAL_DOCUMENT", runtime=None):
     return vectors
 
 
-def embed_text(text, *, task_type="RETRIEVAL_DOCUMENT", runtime=None):
-    vectors = embed_texts([text], task_type=task_type, runtime=runtime)
+def embed_text(text, *, task_type="RETRIEVAL_DOCUMENT", runtime=None, output_dimensionality=None):
+    vectors = embed_texts(
+        [text],
+        task_type=task_type,
+        runtime=runtime,
+        output_dimensionality=output_dimensionality,
+    )
     if not vectors:
         raise RuntimeError("Embedding response did not contain vector values.")
     return vectors[0]
+
+
+def load_knowledge_manifest(*, index_path=None):
+    candidate = Path(index_path or PHYSIO_LIBRARY_INDEX_PATH)
+    cache_key = str(candidate.resolve()) if candidate.exists() else str(candidate)
+    try:
+        with open(candidate, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        return {"documents": [], "errors": [], "meta": {"path": cache_key, "missing": True}}
+    if not isinstance(payload, dict):
+        payload = {"documents": []}
+    payload.setdefault("documents", [])
+    payload.setdefault("errors", [])
+    payload.setdefault("meta", {})
+    return payload
 
 
 def _index_cache_signature(candidate: Path, payload: dict):
@@ -209,11 +266,7 @@ def load_knowledge_index(*, index_path=None):
         mtime = float(candidate.stat().st_mtime)
     except Exception:
         return {"documents": [], "meta": {"path": cache_key, "missing": True}}
-    with open(candidate, "r", encoding="utf-8") as handle:
-        payload = json.load(handle)
-    if not isinstance(payload, dict):
-        payload = {"documents": []}
-    payload.setdefault("meta", {})
+    payload = load_knowledge_manifest(index_path=candidate)
     signature = _index_cache_signature(candidate, payload)
     if _INDEX_CACHE["payload"] is not None and _INDEX_CACHE["path"] == cache_key and _INDEX_CACHE.get("signature") == signature:
         return _INDEX_CACHE["payload"]
@@ -228,15 +281,28 @@ def load_knowledge_index(*, index_path=None):
 
 def knowledge_index_status(*, index_path=None, source_root=None):
     candidate = Path(index_path or PHYSIO_LIBRARY_INDEX_PATH)
-    payload = load_knowledge_index(index_path=candidate)
-    documents = payload.get("documents", [])
+    payload = load_knowledge_manifest(index_path=candidate)
+    meta = payload.get("meta", {}) or {}
     errors = payload.get("errors", [])
     on_disk_sources = list_supported_source_paths(source_root=source_root)
-    indexed_sources = {
-        str(item.get("source_path", "") or item.get("source_name", "")).strip()
-        for item in documents
-        if isinstance(item, dict)
-    }
+    indexed_source_paths = meta.get("indexed_source_paths") or []
+    if indexed_source_paths:
+        indexed_sources = {
+            str(item or "").strip()
+            for item in indexed_source_paths
+            if str(item or "").strip()
+        }
+    else:
+        documents = payload.get("documents", []) or []
+        if not documents and (meta.get("document_shards") or []):
+            loaded_payload = load_knowledge_index(index_path=candidate)
+            documents = loaded_payload.get("documents", [])
+            errors = list(loaded_payload.get("errors", []) or [])
+        indexed_sources = {
+            str(item.get("source_path", "") or item.get("source_name", "")).strip()
+            for item in documents
+            if isinstance(item, dict)
+        }
     indexed_sources.discard("")
     try:
         manifest_mtime = float(candidate.stat().st_mtime)
@@ -252,14 +318,14 @@ def knowledge_index_status(*, index_path=None, source_root=None):
     missing_sources = [path for path in on_disk_sources if path not in indexed_sources]
     return {
         "index_path": str(candidate),
-        "generated_at": float((payload.get("meta", {}) or {}).get("generated_at", 0) or 0),
+        "generated_at": float(meta.get("generated_at", 0) or 0),
         "manifest_mtime": manifest_mtime,
         "latest_source_mtime": latest_source_mtime,
         "stale": bool(manifest_mtime and latest_source_mtime and manifest_mtime < latest_source_mtime),
-        "source_count": int((payload.get("meta", {}) or {}).get("source_count", len(on_disk_sources)) or 0),
+        "source_count": int(meta.get("source_count", len(on_disk_sources)) or 0),
         "source_count_on_disk": len(on_disk_sources),
         "indexed_source_count": len(indexed_sources),
-        "document_count": int((payload.get("meta", {}) or {}).get("document_count", len(documents)) or 0),
+        "document_count": int(meta.get("document_count", len(payload.get("documents", []) or [])) or 0),
         "error_count": len(errors),
         "error_samples": errors[:5] if isinstance(errors, list) else [],
         "missing_source_paths": missing_sources[:10],
@@ -290,16 +356,52 @@ def format_citation_label(record):
 
 
 def rank_index_documents(query_vector, documents, *, limit=5):
-    scored = []
-    for record in documents or []:
+    safe_limit = max(1, int(limit or 1))
+    top_matches = []
+    for index, record in enumerate(documents or []):
         if not isinstance(record, dict):
             continue
         score = cosine_similarity(query_vector, record.get("embedding", []))
+        sortable = (float(score), -index, record)
+        if len(top_matches) < safe_limit:
+            heapq.heappush(top_matches, sortable)
+            continue
+        if sortable > top_matches[0]:
+            heapq.heapreplace(top_matches, sortable)
+    ranked = []
+    for score, _neg_index, record in sorted(top_matches, reverse=True):
         item = dict(record)
         item["score"] = round(float(score), 6)
-        scored.append(item)
-    scored.sort(key=lambda item: float(item.get("score", 0) or 0), reverse=True)
-    return scored[: max(1, int(limit or 1))]
+        ranked.append(item)
+    return ranked
+
+
+def rank_sharded_index_documents(query_vector, payload, *, index_path=None, limit=5):
+    candidate = Path(index_path or PHYSIO_LIBRARY_INDEX_PATH)
+    safe_limit = max(1, int(limit or 1))
+    shard_names = ((payload.get("meta", {}) or {}).get("document_shards") or [])
+    top_matches = []
+    record_index = 0
+    for name in shard_names:
+        shard_path = candidate.parent / str(name)
+        with gzip.open(shard_path, "rt", encoding="utf-8") as handle:
+            shard_documents = json.load(handle)
+        for record in shard_documents or []:
+            if not isinstance(record, dict):
+                continue
+            score = cosine_similarity(query_vector, record.get("embedding", []))
+            sortable = (float(score), -record_index, record)
+            if len(top_matches) < safe_limit:
+                heapq.heappush(top_matches, sortable)
+            elif sortable > top_matches[0]:
+                heapq.heapreplace(top_matches, sortable)
+            record_index += 1
+    ranked = []
+    for score, _neg_index, record in sorted(top_matches, reverse=True):
+        item = dict(record)
+        item["score"] = round(float(score), 6)
+        ranked.append(item)
+    return ranked
 
 
 def query_knowledge_index(question, *, body_region="", context_text="", case_context=None, limit=5, runtime=None):
@@ -307,17 +409,31 @@ def query_knowledge_index(question, *, body_region="", context_text="", case_con
     safe_question = str(question or "").strip()
     if not safe_question:
         raise ValueError("Vraag is verplicht.")
-    index_payload = load_knowledge_index()
-    documents = index_payload.get("documents", [])
-    if not documents:
+    index_payload = load_knowledge_manifest()
+    meta = index_payload.get("meta", {}) or {}
+    shard_names = meta.get("document_shards") or []
+    documents = index_payload.get("documents", []) or []
+    if not documents and not shard_names:
         return {
             "answer_markdown": "De kennisbank is nog leeg. Voeg documenten toe aan `physio_library/sources/` en draai daarna `python3 scripts/build_physio_library.py`.",
             "citations": [],
             "retrieved_sources": [],
         }
 
-    query_vector = embed_text(safe_question, task_type="RETRIEVAL_QUERY", runtime=resolved_runtime)
-    ranked = rank_index_documents(query_vector, documents, limit=limit)
+    embedding_dimension = _coerce_positive_int(meta.get("embedding_dimension"))
+    if embedding_dimension is None and documents:
+        first_embedding = documents[0].get("embedding", []) if documents else []
+        embedding_dimension = len(first_embedding) if isinstance(first_embedding, list) and first_embedding else None
+    query_vector = embed_text(
+        safe_question,
+        task_type="RETRIEVAL_QUERY",
+        runtime=resolved_runtime,
+        output_dimensionality=embedding_dimension,
+    )
+    if shard_names:
+        ranked = rank_sharded_index_documents(query_vector, index_payload, limit=limit)
+    else:
+        ranked = rank_index_documents(query_vector, documents, limit=limit)
     context_blocks = []
     citations = []
     for item in ranked:

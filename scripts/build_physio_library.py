@@ -25,7 +25,7 @@ DEFAULT_SOURCE_ROOT = PROJECT_ROOT / "physio_library" / "sources"
 DEFAULT_INDEX_PATH = PROJECT_ROOT / "physio_library" / "index" / "manifest.json"
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".txt", ".md"}
 EMBED_BATCH_SIZE = 24
-MAX_INDEX_SHARD_BYTES = 90 * 1024 * 1024
+MAX_INDEX_SHARD_BYTES = 4 * 1024 * 1024
 
 
 def _relative_path(path: Path) -> str:
@@ -138,12 +138,15 @@ def build_manifest(
     embed_many = embed_texts_fn
     documents = []
     errors = []
+    indexed_source_paths = []
+    embedding_dimension = 0
     source_files = list(iter_source_files(source_root))
 
     for path in source_files:
         source_path = _relative_path(path)
         source_kind = path.parent.name
         source_title = _title_from_path(path)
+        source_indexed = False
         try:
             pages = extract_source_pages(path)
             if not pages:
@@ -169,12 +172,22 @@ def build_manifest(
                         task_type="RETRIEVAL_DOCUMENT",
                     )
                     for record, vector in zip(batch, vectors):
-                        record["embedding"] = _compact_vector(vector)
+                        compact_vector = _compact_vector(vector)
+                        if compact_vector and not embedding_dimension:
+                            embedding_dimension = len(compact_vector)
+                        record["embedding"] = compact_vector
                         documents.append(record)
+                        source_indexed = True
             else:
                 for record in source_records:
-                    record["embedding"] = _compact_vector(embed(record["text"], task_type="RETRIEVAL_DOCUMENT"))
+                    compact_vector = _compact_vector(embed(record["text"], task_type="RETRIEVAL_DOCUMENT"))
+                    if compact_vector and not embedding_dimension:
+                        embedding_dimension = len(compact_vector)
+                    record["embedding"] = compact_vector
                     documents.append(record)
+                    source_indexed = True
+            if source_indexed:
+                indexed_source_paths.append(source_path)
         except Exception as exc:
             errors.append({"source_path": source_path, "error": str(exc)[:300]})
 
@@ -183,8 +196,10 @@ def build_manifest(
             "generated_at": time.time(),
             "source_root": _relative_path(source_root),
             "source_count": len(source_files),
+            "indexed_source_paths": indexed_source_paths,
             "document_count": len(documents),
             "embedding_model": physio_knowledge.DEFAULT_EMBED_MODEL,
+            "embedding_dimension": int(embedding_dimension or physio_knowledge.DEFAULT_EMBED_DIMENSION),
             "chunk_size": int(chunk_size),
             "chunk_overlap": int(chunk_overlap),
         },
