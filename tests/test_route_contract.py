@@ -28,6 +28,18 @@ EXPECTED_ROUTES = [
     ('POST', '/api/lp-event', 'auth_api.ingest_analytics_event'),
     ('GET', '/api/processing-averages', 'upload_api.processing_averages'),
     ('GET', '/api/processing-estimate', 'upload_api.processing_estimate'),
+    ('GET', '/api/physio/cases', 'physio_api.list_physio_cases'),
+    ('POST', '/api/physio/cases', 'physio_api.create_physio_case'),
+    ('PATCH', '/api/physio/cases/<case_id>', 'physio_api.update_physio_case'),
+    ('GET', '/api/physio/cases/<case_id>/sessions', 'physio_api.list_physio_case_sessions'),
+    ('POST', '/api/physio/cases/<case_id>/sessions', 'physio_api.create_physio_case_session'),
+    ('PATCH', '/api/physio/cases/<case_id>/sessions', 'physio_api.update_physio_case_session'),
+    ('POST', '/api/physio/export', 'physio_api.export_physio_payload'),
+    ('POST', '/api/physio/knowledge/query', 'physio_api.query_physio_knowledge'),
+    ('POST', '/api/physio/reasoning', 'physio_api.generate_physio_reasoning'),
+    ('POST', '/api/physio/rps', 'physio_api.generate_physio_rps'),
+    ('POST', '/api/physio/soap', 'physio_api.generate_physio_soap'),
+    ('POST', '/api/physio/transcriptions', 'physio_api.create_physio_transcription'),
     ('GET', '/api/purchase-history', 'payments_api.purchase_history'),
     ('GET', '/api/runtime-jobs/active', 'upload_api.get_active_runtime_jobs'),
     ('DELETE', '/api/planner/sessions/<session_id>', 'study_api.delete_planner_session'),
@@ -88,6 +100,11 @@ EXPECTED_ROUTES = [
     ('GET', '/plan', 'pages.plan_dashboard'),
     ('GET', '/privacy', 'pages.privacy_policy'),
     ('GET', '/faq', 'pages.faq_page_lowercase'),
+    ('GET', '/physio/cases', 'pages.physio_cases_page'),
+    ('GET', '/physio/knowledge', 'pages.physio_knowledge_page'),
+    ('GET', '/physio/reasoning', 'pages.physio_reasoning_page'),
+    ('GET', '/physio/rps', 'pages.physio_rps_page'),
+    ('GET', '/physio/soap', 'pages.physio_soap_page'),
     ('GET', '/slides-extraction', 'pages.slides_extraction_page'),
     ('GET', '/stats', 'pages.plan_dashboard'),
     ('GET', '/status/<job_id>', 'upload_api.get_status'),
@@ -208,3 +225,14 @@ def test_shell_and_calendar_modal_overlays_start_hidden(client):
     assert calendar_response.status_code == 200
     calendar_html = calendar_response.get_data(as_text=True)
     assert 'id="session-modal-overlay" hidden aria-hidden="true"' in calendar_html
+
+
+def test_physio_pages_render_open_physio_sidebar_group(client):
+    response = client.get('/physio/soap')
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'data-physio-page="soap"' in html
+    assert '<div class="app-shell-group is-open" id="shell-physio-group"' in html
+    assert 'aria-controls="shell-physio-panel"' in html
+    assert '/physio/cases' in html

@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ physio_page_title }} · Lecture Processor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/physio.css') }}">
+</head>
+<body>
+  {% set shell_title = physio_page_title %}
+  {% include '_app_shell.html' %}
+    <main class="app-shell-page physio-page" data-physio-page="{{ physio_page_mode }}">
+      <section class="shell-panel physio-hero">
+        <div>
+          <span class="physio-kicker">Physio Assistant</span>
+          <h1>{{ physio_page_title }}</h1>
+          <p>{{ physio_page_subtitle }}</p>
+        </div>
+        <div class="physio-hero-badge">
+          <strong>Privé modus</strong>
+          <span>Alleen voor jouw account. Ruwe audio wordt na transcriptie verwijderd.</span>
+        </div>
+      </section>
+
+      <div class="physio-auth-banner" id="physio-auth-banner" hidden></div>
+
+      {% if physio_page_mode in ['soap', 'rps', 'reasoning'] %}
+      <section class="physio-grid">
+        <article class="shell-panel physio-card">
+          <div class="physio-card-head">
+            <h2>Invoer</h2>
+            <span class="physio-chip">{{ 'SOAP' if physio_page_mode == 'soap' else 'RPS' if physio_page_mode == 'rps' else '7-stappenplan' }}</span>
+          </div>
+
+          <div class="physio-field-grid">
+            <label class="physio-field">
+              <span>Casus</span>
+              <select id="physio-case-select">
+                <option value="">Kies een casus...</option>
+              </select>
+            </label>
+            <label class="physio-field">
+              <span>Consultdatum</span>
+              <input type="date" id="physio-session-date">
+            </label>
+            <label class="physio-field">
+              <span>Lichaamsregio</span>
+              <select id="physio-body-region">
+                <option value="algemeen">Algemeen</option>
+                <option value="nek">Nek / CWK</option>
+                <option value="schouder">Schouder</option>
+                <option value="elleboog_pols_hand">Elleboog / Pols / Hand</option>
+                <option value="thoracaal">Thoracaal / BWK</option>
+                <option value="lumbaal">Lumbaal / LWK</option>
+                <option value="heup">Heup</option>
+                <option value="knie">Knie</option>
+                <option value="enkel_voet">Enkel / Voet</option>
+                <option value="neurologisch">Neurologisch</option>
+                <option value="overig">Overig</option>
+              </select>
+            </label>
+            <label class="physio-field">
+              <span>Type consult</span>
+              <select id="physio-session-type">
+                <option value="intake">Intake / anamnese</option>
+                <option value="vervolgconsult">Vervolgconsult</option>
+                <option value="evaluatie">Evaluatie</option>
+                <option value="afsluiting">Afsluiting</option>
+              </select>
+            </label>
+            <label class="physio-field">
+              <span>NPRS vóór</span>
+              <input type="number" id="physio-nprs-before" min="0" max="10" step="1" placeholder="0-10">
+            </label>
+            <label class="physio-field">
+              <span>NPRS na</span>
+              <input type="number" id="physio-nprs-after" min="0" max="10" step="1" placeholder="0-10">
+            </label>
+          </div>
+
+          <div class="physio-recorder">
+            <div class="physio-recorder-copy">
+              <h3>Audio opnemen of uploaden</h3>
+              <p>Neem direct op in de browser of upload een bestaand audiobestand om een transcript te maken.</p>
+            </div>
+            <div class="physio-recorder-actions">
+              <button type="button" class="physio-btn" id="physio-record-start">Start opname</button>
+              <button type="button" class="physio-btn ghost" id="physio-record-stop" disabled>Stop</button>
+              <label class="physio-upload-btn">
+                <input type="file" id="physio-audio-input" accept=".mp3,.m4a,.wav,.aac,.ogg,.flac,.webm,audio/*">
+                Upload audio
+              </label>
+            </div>
+            <div class="physio-inline-note" id="physio-audio-note">Nog geen audio geselecteerd.</div>
+            <button type="button" class="physio-btn secondary" id="physio-transcribe-btn" disabled>Transcript maken</button>
+          </div>
+
+          <label class="physio-field full">
+            <span>Transcript</span>
+            <textarea id="physio-transcript" rows="15" placeholder="Plak hier een transcript of maak er eerst een via audio."></textarea>
+          </label>
+
+          <label class="physio-field full">
+            <span>Sessienotities</span>
+            <textarea id="physio-session-notes" rows="3" placeholder="Korte notities voor deze sessie of export."></textarea>
+          </label>
+
+          <div class="physio-actions">
+            <button type="button" class="physio-btn primary" id="physio-generate-btn">
+              {{ 'Genereer SOAP' if physio_page_mode == 'soap' else 'Genereer RPS' if physio_page_mode == 'rps' else 'Genereer analyse' }}
+            </button>
+            <button type="button" class="physio-btn secondary" id="physio-save-btn">Opslaan in casus</button>
+            <button type="button" class="physio-btn ghost" id="physio-export-docx-btn">Exporteer DOCX</button>
+            <button type="button" class="physio-btn ghost" id="physio-export-pdf-btn">Exporteer PDF</button>
+          </div>
+          <div class="physio-status" id="physio-status" aria-live="polite"></div>
+        </article>
+
+        <article class="shell-panel physio-card">
+          <div class="physio-card-head">
+            <h2>Uitvoer</h2>
+            <span class="physio-inline-note" id="physio-output-label">Nog niets gegenereerd.</span>
+          </div>
+          <div class="physio-alerts" id="physio-alerts"></div>
+          <div class="physio-output" id="physio-output"></div>
+        </article>
+      </section>
+      {% elif physio_page_mode == 'knowledge' %}
+      <section class="physio-grid knowledge">
+        <article class="shell-panel physio-card">
+          <div class="physio-card-head">
+            <h2>Vraag stellen</h2>
+            <span class="physio-chip">Kennisbank</span>
+          </div>
+          <div class="physio-field-grid">
+            <label class="physio-field">
+              <span>Casuscontext</span>
+              <select id="physio-case-select">
+                <option value="">Geen casus geselecteerd</option>
+              </select>
+            </label>
+            <label class="physio-field">
+              <span>Lichaamsregio</span>
+              <select id="physio-body-region">
+                <option value="algemeen">Algemeen</option>
+                <option value="nek">Nek / CWK</option>
+                <option value="schouder">Schouder</option>
+                <option value="elleboog_pols_hand">Elleboog / Pols / Hand</option>
+                <option value="thoracaal">Thoracaal / BWK</option>
+                <option value="lumbaal">Lumbaal / LWK</option>
+                <option value="heup">Heup</option>
+                <option value="knie">Knie</option>
+                <option value="enkel_voet">Enkel / Voet</option>
+                <option value="neurologisch">Neurologisch</option>
+                <option value="overig">Overig</option>
+              </select>
+            </label>
+          </div>
+          <label class="physio-field full">
+            <span>Extra context</span>
+            <textarea id="physio-context-text" rows="4" placeholder="Plak hier extra context uit een casus, verwijsbrief of voorlopige hypothese."></textarea>
+          </label>
+          <label class="physio-field full">
+            <span>Vraag</span>
+            <textarea id="physio-knowledge-question" rows="7" placeholder="Bijvoorbeeld: Welke oefentherapie adviseert de richtlijn bij heupartrose in de conservatieve fase?"></textarea>
+          </label>
+          <div class="physio-actions">
+            <button type="button" class="physio-btn primary" id="physio-knowledge-ask-btn">Vraag aan kennisbank</button>
+          </div>
+          <div class="physio-status" id="physio-status" aria-live="polite"></div>
+        </article>
+
+        <article class="shell-panel physio-card">
+          <div class="physio-card-head">
+            <h2>Antwoord</h2>
+            <span class="physio-inline-note">Met bronverwijzingen</span>
+          </div>
+          <div class="physio-answer" id="physio-knowledge-answer"></div>
+          <div class="physio-citations" id="physio-citations"></div>
+          <div class="physio-source-list" id="physio-source-list"></div>
+        </article>
+      </section>
+      {% else %}
+      <section class="physio-cases-grid">
+        <article class="shell-panel physio-card physio-case-list-card">
+          <div class="physio-card-head">
+            <h2>Casussen</h2>
+            <button type="button" class="physio-btn ghost" id="physio-case-new-btn">Nieuwe casus</button>
+          </div>
+          <div class="physio-case-list" id="physio-case-list"></div>
+        </article>
+
+        <article class="shell-panel physio-card">
+          <div class="physio-card-head">
+            <h2>Casusdetails</h2>
+            <span class="physio-inline-note" id="physio-case-meta">Nog geen casus geselecteerd.</span>
+          </div>
+          <div class="physio-field-grid">
+            <label class="physio-field">
+              <span>Label</span>
+              <input type="text" id="physio-case-display-label" placeholder="Casus 1 - Knie">
+            </label>
+            <label class="physio-field">
+              <span>Patiëntnaam</span>
+              <input type="text" id="physio-case-patient-name" placeholder="Naam patiënt">
+            </label>
+            <label class="physio-field">
+              <span>Leeftijd</span>
+              <input type="text" id="physio-case-age" placeholder="Bijv. 67">
+            </label>
+            <label class="physio-field">
+              <span>Geslacht</span>
+              <input type="text" id="physio-case-sex" placeholder="Bijv. V">
+            </label>
+            <label class="physio-field">
+              <span>Verwijzer</span>
+              <input type="text" id="physio-case-referral-source" placeholder="Bijv. huisarts">
+            </label>
+            <label class="physio-field">
+              <span>Lichaamsregio</span>
+              <select id="physio-case-body-region">
+                <option value="algemeen">Algemeen</option>
+                <option value="nek">Nek / CWK</option>
+                <option value="schouder">Schouder</option>
+                <option value="elleboog_pols_hand">Elleboog / Pols / Hand</option>
+                <option value="thoracaal">Thoracaal / BWK</option>
+                <option value="lumbaal">Lumbaal / LWK</option>
+                <option value="heup">Heup</option>
+                <option value="knie">Knie</option>
+                <option value="enkel_voet">Enkel / Voet</option>
+                <option value="neurologisch">Neurologisch</option>
+                <option value="overig">Overig</option>
+              </select>
+            </label>
+          </div>
+          <label class="physio-field full">
+            <span>Hoofdklacht</span>
+            <textarea id="physio-case-primary-complaint" rows="3"></textarea>
+          </label>
+          <label class="physio-field full">
+            <span>Tags</span>
+            <input type="text" id="physio-case-tags" placeholder="artrose, heup, conservatief">
+          </label>
+          <label class="physio-field full">
+            <span>Opmerkingen</span>
+            <textarea id="physio-case-notes" rows="5"></textarea>
+          </label>
+          <div class="physio-actions">
+            <button type="button" class="physio-btn primary" id="physio-case-save-btn">Casus opslaan</button>
+          </div>
+          <div class="physio-status" id="physio-status" aria-live="polite"></div>
+        </article>
+
+        <article class="shell-panel physio-card">
+          <div class="physio-card-head">
+            <h2>Sessies en voortgang</h2>
+            <span class="physio-inline-note">Klik een sessie om details te bekijken.</span>
+          </div>
+          <div class="physio-progress-chart" id="physio-progress-chart"></div>
+          <div class="physio-session-list" id="physio-session-list"></div>
+          <div class="physio-session-preview" id="physio-session-preview"></div>
+        </article>
+      </section>
+      {% endif %}
+    </main>
+  {% include '_shell_footer.html' %}
+  </div>
+  </div>
+  <div class="physio-toast" id="physio-toast" aria-live="polite"></div>
+
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+  <script>
+    window.PhysioConfig = {
+      page: {{ physio_page_mode|tojson }},
+      title: {{ physio_page_title|tojson }}
+    };
+  </script>
+  <script src="{{ url_for('static', filename=physio_js_asset or 'js/physio.js') }}"></script>
+</body>
+</html>

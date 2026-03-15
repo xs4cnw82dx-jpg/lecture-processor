@@ -116,6 +116,10 @@ def test_collect_user_export_payload_returns_expected_shape(app, monkeypatch):
             return ([{"uid": "u1", "enabled": "on", "_id": "planner-settings"}], False)
         if collection_name == "planner_sessions":
             return ([{"id": "session-1", "title": "Review", "_id": "planner-session-1"}], False)
+        if collection_name == "physio_cases":
+            return ([{"display_label": "Casus 1", "body_region": "knie", "_id": "physio-case-1"}], False)
+        if collection_name == "physio_case_sessions":
+            return ([{"case_id": "physio-case-1", "session_date": "2026-03-15", "_id": "physio-session-1"}], False)
         return ([], False)
 
     class _ShareDoc:
@@ -141,9 +145,12 @@ def test_collect_user_export_payload_returns_expected_shape(app, monkeypatch):
     assert payload["account"]["planner_settings"]["enabled"] == "on"
     assert payload["meta"]["truncated"]["study_pack_sources"] is False
     assert payload["meta"]["truncated"]["study_shares"] is False
+    assert payload["meta"]["truncated"]["physio_cases"] is False
     assert payload["collections"]["planner_sessions"] == [{"id": "session-1", "title": "Review", "_id": "planner-session-1"}]
     assert payload["collections"]["study_pack_sources"] == []
     assert payload["collections"]["study_shares"] == [{"owner_uid": "u1", "entity_type": "pack", "entity_id": "pack-1", "access_scope": "public", "_id": "share-1"}]
+    assert payload["collections"]["physio_cases"] == [{"display_label": "Casus 1", "body_region": "knie", "_id": "physio-case-1"}]
+    assert payload["collections"]["physio_case_sessions"] == [{"case_id": "physio-case-1", "session_date": "2026-03-15", "_id": "physio-session-1"}]
     assert "collections" in payload
 
 

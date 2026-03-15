@@ -1,6 +1,6 @@
 # Data Retention and Backup Policy (Operational Baseline)
 
-Last updated: 2026-02-26
+Last updated: 2026-03-15
 
 This document defines the current operational policy for data retention, deletion, backup, and restore in Lecture Processor.  
 It is a technical baseline for private beta operations and must be reviewed by qualified legal counsel before public/commercial launch.
@@ -10,6 +10,7 @@ It is a technical baseline for private beta operations and must be reviewed by q
 This policy covers:
 - User account records and credit balances
 - Study packs, folders, planner entries, and study progress data
+- Physio Assistant cases, session notes, and generated clinical outputs
 - Upload/job metadata and analytics/security logs
 - Purchase records
 - Temporary processing artifacts
@@ -20,7 +21,7 @@ This policy covers:
 - Retention: until user deletes account, or administrative deletion.
 - Legal hold exception: may be retained longer if required by law or fraud/security investigations.
 
-2. Study content (`study_packs`, `study_folders`, `study_progress`, `study_card_states`, planner/session data)
+2. Study content (`study_packs`, `study_folders`, `study_progress`, `study_card_states`, planner/session data, `physio_cases`, `physio_case_sessions`)
 - Retention: until user deletes account or explicitly deletes content.
 - Deletion propagation: delete endpoint removes these records and associated per-pack progress state.
 
@@ -35,6 +36,7 @@ This policy covers:
 5. Temporary processing files (`uploads/` and transient processing artifacts)
 - Retention target: deleted after job completes or fails.
 - Failure fallback: periodic manual/automated cleanup required to remove orphaned artifacts.
+- Physio audio rule: raw Physio Assistant audio uploads are treated as temporary processing artifacts and should be deleted after transcription succeeds or fails.
 
 ## 3) Backup Policy
 
@@ -78,7 +80,7 @@ This policy covers:
 2. Delete account and data
 - `POST /api/account/delete` requires explicit confirmation phrase and email match.
 - Active-job guard prevents deletion while processing is running.
-- Deletes user data collections and attempts auth user removal.
+- Deletes user data collections, including Physio Assistant case/session collections, and attempts auth user removal.
 - Purchase records are anonymized where deletion is not legally appropriate.
 
 ## 6) Operational Controls

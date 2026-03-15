@@ -1,4 +1,4 @@
-from .blueprints import account_bp, admin_bp, auth_bp, payments_bp, study_bp, upload_bp
+from .blueprints import account_bp, admin_bp, auth_bp, payments_bp, physio_bp, study_bp, upload_bp
 from .config import load_config
 from .extensions import init_extensions
 from .logging_config import configure_logging
@@ -26,7 +26,7 @@ def create_app():
     state = app.extensions.setdefault('lecture_processor', {})
 
     if not state.get('blueprints_registered'):
-        for blueprint in (pages_bp, health_bp, auth_bp, account_bp, study_bp, upload_bp, admin_bp, payments_bp):
+        for blueprint in (pages_bp, health_bp, auth_bp, account_bp, study_bp, upload_bp, admin_bp, payments_bp, physio_bp):
             if blueprint.name not in app.blueprints:
                 app.register_blueprint(blueprint)
         state['blueprints_registered'] = True

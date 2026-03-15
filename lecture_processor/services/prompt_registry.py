@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List
 
+from lecture_processor.domains.physio import prompts as physio_prompts
 
 PROMPT_REGISTRY_VERSION = "2026-03-05"
 
@@ -203,6 +204,12 @@ PROMPT_RECORDS: List[PromptRecord] = [
     PromptRecord("merge_template", "Lecture merge template", PROMPT_MERGE_TEMPLATE),
     PromptRecord("merge_with_audio_markers", "Lecture merge with audio markers", PROMPT_MERGE_WITH_AUDIO_MARKERS),
     PromptRecord("study_template", "Study tools generation", PROMPT_STUDY_TEMPLATE),
+    PromptRecord("physio_transcription", "Physio transcription", physio_prompts.PHYSIO_TRANSCRIPTION_PROMPT),
+    PromptRecord("physio_soap", "Physio SOAP", physio_prompts.soap_prompt("{transcript}")),
+    PromptRecord("physio_rps", "Physio RPS", physio_prompts.rps_prompt("{transcript}")),
+    PromptRecord("physio_reasoning", "Physio reasoning", physio_prompts.reasoning_prompt("{transcript}")),
+    PromptRecord("physio_differential", "Physio differential diagnosis", physio_prompts.differential_prompt("{transcript}")),
+    PromptRecord("physio_red_flags", "Physio red flags", physio_prompts.red_flags_prompt("{transcript}")),
 ]
 
 

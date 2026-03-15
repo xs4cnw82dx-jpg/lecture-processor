@@ -164,6 +164,19 @@ def _render_batch_page(forced_mode: str):
     )
 
 
+def _render_physio_page(page_key: str, title: str, subtitle: str, page_mode: str):
+    runtime = get_runtime()
+    return render_template(
+        'physio.html',
+        physio_page_key=page_key,
+        physio_page_title=title,
+        physio_page_subtitle=subtitle,
+        physio_page_mode=page_mode,
+        physio_js_asset=runtime.resolve_js_asset('js/physio.js'),
+        **_shell_context(runtime=runtime, page_key=page_key),
+    )
+
+
 @pages_bp.route('/plan')
 @pages_bp.route('/stats')
 def plan_dashboard():
@@ -328,6 +341,56 @@ def study_dashboard():
         'study.html',
         study_js_asset=runtime.resolve_js_asset('js/study.js'),
         **_shell_context(runtime=runtime, page_key='study'),
+    )
+
+
+@pages_bp.route('/physio/soap')
+def physio_soap_page():
+    return _render_physio_page(
+        'physio-soap',
+        'SOAP Notities',
+        'Transcribeer consulten, genereer een SOAP-structuur en sla sessies op per casus.',
+        'soap',
+    )
+
+
+@pages_bp.route('/physio/rps')
+def physio_rps_page():
+    return _render_physio_page(
+        'physio-rps',
+        'RPS Formulier',
+        'Maak een gestructureerd RPS-overzicht vanuit je transcript of intake-notities.',
+        'rps',
+    )
+
+
+@pages_bp.route('/physio/reasoning')
+def physio_reasoning_page():
+    return _render_physio_page(
+        'physio-reasoning',
+        'Klinisch Redeneren',
+        'Werk de 7-stappenanalyse, differentiaaldiagnose en red flags uit in een bewerkbaar scherm.',
+        'reasoning',
+    )
+
+
+@pages_bp.route('/physio/knowledge')
+def physio_knowledge_page():
+    return _render_physio_page(
+        'physio-knowledge',
+        'Kennisbank',
+        'Doorzoek je eigen richtlijnen en samenvattingen met bronverwijzingen.',
+        'knowledge',
+    )
+
+
+@pages_bp.route('/physio/cases')
+def physio_cases_page():
+    return _render_physio_page(
+        'physio-cases',
+        'Casussen',
+        'Beheer casussen, sessies en simpele voortgangsmetingen op één plek.',
+        'cases',
     )
 
 

@@ -417,6 +417,8 @@ def delete_account_data(app_ctx, request):
         _delete_field_collection('study_shares', 'owner_uid', uid, deleted_key='study_shares')
         _delete_uid_collection('planner_sessions')
         _delete_uid_collection('planner_settings')
+        _delete_uid_collection('physio_case_sessions')
+        _delete_uid_collection('physio_cases')
         _delete_study_packs()
         deleted_sources_from_packs = int(deleted.get('study_pack_sources', 0) or 0)
         _delete_uid_collection('study_pack_sources')
@@ -447,6 +449,8 @@ def delete_account_data(app_ctx, request):
             ('study_pack_sources', 'uid', uid, 'study_pack_sources'),
             ('planner_sessions', 'uid', uid, 'planner_sessions'),
             ('planner_settings', 'uid', uid, 'planner_settings'),
+            ('physio_cases', 'uid', uid, 'physio_cases'),
+            ('physio_case_sessions', 'uid', uid, 'physio_case_sessions'),
             ('purchases', 'uid', uid, 'purchases'),
             (app_ctx.RUNTIME_JOBS_COLLECTION, 'user_id', uid, 'runtime_jobs'),
             ('batch_jobs', 'uid', uid, 'batch_jobs'),
