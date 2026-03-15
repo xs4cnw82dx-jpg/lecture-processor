@@ -307,6 +307,20 @@
   line-height: 1.6;
 }
 
+.physio-knowledge-meta {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--physio-border);
+  background: #f8fbff;
+}
+
+.physio-knowledge-meta.stale {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(255, 251, 235, 0.95);
+}
+
 .physio-answer h1,
 .physio-answer h2,
 .physio-answer h3,

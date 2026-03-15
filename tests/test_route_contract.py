@@ -36,6 +36,7 @@ EXPECTED_ROUTES = [
     ('PATCH', '/api/physio/cases/<case_id>/sessions', 'physio_api.update_physio_case_session'),
     ('POST', '/api/physio/export', 'physio_api.export_physio_payload'),
     ('POST', '/api/physio/knowledge/query', 'physio_api.query_physio_knowledge'),
+    ('GET', '/api/physio/knowledge/status', 'physio_api.get_physio_knowledge_status'),
     ('POST', '/api/physio/reasoning', 'physio_api.generate_physio_reasoning'),
     ('POST', '/api/physio/rps', 'physio_api.generate_physio_rps'),
     ('POST', '/api/physio/soap', 'physio_api.generate_physio_soap'),

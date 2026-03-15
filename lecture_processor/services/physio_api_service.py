@@ -468,6 +468,13 @@ def knowledge_query(app_ctx, request):
     return app_ctx.jsonify(response_payload)
 
 
+def knowledge_status(app_ctx, request):
+    _decoded_token, error_response, status_code = physio_access.ensure_physio_access(request, runtime=app_ctx)
+    if error_response is not None:
+        return error_response, status_code
+    return app_ctx.jsonify(physio_knowledge.knowledge_index_status())
+
+
 def list_cases(app_ctx, request):
     decoded_token, error_response, status_code = physio_access.ensure_physio_access(request, runtime=app_ctx)
     if error_response is not None:
