@@ -78,6 +78,7 @@
   var questionWrap = document.getElementById('question-wrap');
   var questionInput = document.getElementById('question-amount');
   var questionAmountChips = Array.prototype.slice.call(document.querySelectorAll('#question-amount-chips .amount-chip[data-value]'));
+  var combinedDocxCheckbox = document.getElementById('include-combined-docx');
 
   var statusPanel = document.getElementById('batch-status-panel');
   var refreshStatusBtn = document.getElementById('refresh-status-btn');
@@ -1066,6 +1067,7 @@
     var formData = new FormData(form);
     formData.append('mode', mode);
     formData.append('client_submission_id', String(clientSubmissionId || '').trim());
+    formData.set('include_combined_docx', combinedDocxCheckbox && combinedDocxCheckbox.checked ? '1' : '0');
 
     var meta = modeMeta();
     var rowNodes = Array.prototype.slice.call(rowsWrap.querySelectorAll('.batch-row'));
@@ -1199,6 +1201,11 @@
       '  <span class="batch-summary-label">Email</span>' +
       '  <strong>' + escapeHtml(String(summary.email_status_label || summary.completion_email_status || 'pending')) + '</strong>' +
       '  <span class="batch-summary-sub">' + escapeHtml(truncateText(String(summary.completion_email_error || ''), 120) || 'Notification state saved for this batch.') + '</span>' +
+      '</div>' +
+      '<div class="batch-summary-card">' +
+      '  <span class="batch-summary-label">ZIP extras</span>' +
+      '  <strong>' + escapeHtml(summary.export_options && summary.export_options.include_combined_docx ? 'Combined DOCX on' : 'Combined DOCX off') + '</strong>' +
+      '  <span class="batch-summary-sub">' + escapeHtml(summary.export_options && summary.export_options.include_combined_docx ? 'Includes one combined Word document in addition to row files.' : 'Downloads contain the individual row files only.') + '</span>' +
       '</div>';
 
     if (downloadZipBtn) {

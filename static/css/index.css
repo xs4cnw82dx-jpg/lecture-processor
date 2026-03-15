@@ -660,6 +660,21 @@
         .upload-helper { max-width: 290px; margin: 0 auto 10px; font-size: 0.78rem; line-height: 1.45; color: var(--gray-600); }
         .upload-subtitle { font-size: 0.8125rem; color: var(--gray-500); }
         .upload-formats { margin-top: 12px; font-size: 0.75rem; color: var(--gray-600); }
+        .audio-recorder-panel { margin-top: 14px; padding: 14px; border: 1px solid rgba(79,70,229,0.16); border-radius: var(--radius); background: linear-gradient(135deg, rgba(79,70,229,0.06) 0%, rgba(14,165,233,0.06) 100%); text-align: left; }
+        .audio-recorder-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+        .audio-recorder-title { font-size: 0.82rem; font-weight: 700; color: var(--gray-800); text-transform: uppercase; letter-spacing: 0.04em; }
+        .audio-recorder-timer { display: inline-flex; align-items: center; justify-content: center; min-width: 68px; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,0.92); border: 1px solid rgba(79,70,229,0.18); color: var(--gray-800); font-size: 0.8rem; font-weight: 700; }
+        .audio-recorder-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+        .audio-recording-status { margin-top: 10px; font-size: 0.78rem; line-height: 1.45; color: var(--gray-600); }
+        .audio-recording-status[data-tone="recording"] { color: #991b1b; }
+        .audio-recording-status[data-tone="success"] { color: #166534; }
+        .audio-recording-status[data-tone="error"] { color: #991b1b; }
+        .audio-recording-warning { margin-top: 10px; padding: 11px 12px; border-radius: var(--radius-sm); background: rgba(254, 249, 195, 0.92); border: 1px solid rgba(202, 138, 4, 0.26); color: #854d0e; font-size: 0.79rem; line-height: 1.45; text-align: left; }
+        @media (max-width: 640px) {
+            .audio-recorder-head { align-items: flex-start; flex-direction: column; }
+            .audio-recorder-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            .audio-recorder-actions .btn { width: 100%; justify-content: center; }
+        }
         .upload-estimate { margin: 0 auto 20px; padding: 14px 16px; border: 1px solid var(--gray-200); border-radius: var(--radius); background: linear-gradient(135deg, rgba(79,70,229,0.06) 0%, rgba(14,165,233,0.06) 100%); }
         .upload-estimate-title { font-size: 0.8rem; font-weight: 700; color: var(--gray-700); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
         .upload-estimate-time { font-size: 0.95rem; font-weight: 700; color: var(--gray-900); margin-bottom: 6px; }

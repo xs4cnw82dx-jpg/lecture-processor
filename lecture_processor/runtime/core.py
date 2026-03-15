@@ -585,7 +585,7 @@ def is_email_allowed(email):
             return True
     return False
 
-MODEL_SLIDES = 'gemini-2.5-flash-lite'
+MODEL_SLIDES = 'gemini-3.1-flash-lite-preview'
 
 MODEL_AUDIO = 'gemini-3-flash-preview'
 
@@ -593,9 +593,9 @@ MODEL_INTEGRATION = 'gemini-2.5-pro'
 
 MODEL_INTERVIEW = 'gemini-2.5-pro'
 
-MODEL_STUDY = 'gemini-2.5-flash-lite'
+MODEL_STUDY = 'gemini-3.1-flash-lite-preview'
 
-MODEL_TOOLS = 'gemini-2.5-flash-lite'
+MODEL_TOOLS = 'gemini-3.1-flash-lite-preview'
 
 ALLOWED_TOOLS_DOC_EXTENSIONS = {'pdf', 'pptx', 'docx'}
 
@@ -1725,7 +1725,7 @@ def get_billing_receipt_snapshot(job_data):
         snapshot['updated_at'] = updated_at
     return snapshot
 
-MODEL_THINKING_POLICY = {'gemini-2.5-flash-lite': {'thinking_budget': 24576}, 'gemini-2.5-pro': {'thinking_budget': 32768}, 'gemini-3-flash-preview': {'thinking_level': 'high'}}
+MODEL_THINKING_POLICY = {'gemini-3.1-flash-lite-preview': {'thinking_level': 'high'}, 'gemini-2.5-pro': {'thinking_budget': 32768}, 'gemini-3-flash-preview': {'thinking_level': 'high'}}
 
 PROVIDER_RETRY_MAX_ATTEMPTS = safe_int_env('PROVIDER_RETRY_MAX_ATTEMPTS', 3, minimum=1, maximum=6)
 
@@ -1910,7 +1910,7 @@ def sanitize_flashcards(items, max_items):
     for item in items:
         if not isinstance(item, dict):
             continue
-        front = str(item.get('front', '')).strip()[:MAX_TEXT_LEN]
+        front = normalize_flashcard_front(item.get('front', ''))[:MAX_TEXT_LEN]
         back = str(item.get('back', '')).strip()[:MAX_TEXT_LEN]
         if not front or not back:
             continue
@@ -1922,6 +1922,48 @@ def sanitize_flashcards(items, max_items):
         if len(cleaned) >= max_items:
             break
     return cleaned
+
+def normalize_flashcard_front(raw_front):
+    front = str(raw_front or '').strip()
+    if not front:
+        return ''
+    if front.endswith('?'):
+        return front
+
+    compact = re.sub(r'\s+', ' ', front).strip()
+    if not compact:
+        return ''
+
+    lower = compact.lower()
+    question_starts = (
+        'what ',
+        'which ',
+        'who ',
+        'when ',
+        'where ',
+        'why ',
+        'how ',
+        'list ',
+        'name ',
+        'identify ',
+        'describe ',
+        'define ',
+        'explain ',
+        'give ',
+    )
+    if any(lower.startswith(prefix) for prefix in question_starts):
+        return compact.rstrip('.!') + '?'
+
+    article_match = re.match(r'^(?:the|a|an)\s+(.+)$', compact, flags=re.IGNORECASE)
+    if article_match:
+        compact = article_match.group(1).strip()
+
+    if not compact:
+        return ''
+
+    if re.search(r'\b(?:components|parts|steps|stages|types|examples|causes|effects|symptoms|features)\b', lower):
+        return f'List all {compact.rstrip(".!")}?'
+    return f'What is {compact.rstrip(".!")}?' 
 
 def sanitize_questions(items, max_items):
     MAX_TEXT_LEN = 2000

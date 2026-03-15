@@ -55,6 +55,38 @@ def list_study_folders_by_uid(db, uid):
     return list(apply_where(db.collection('study_folders'), 'uid', '==', uid).stream())
 
 
+def study_share_doc_ref(db, share_token):
+    return db.collection('study_shares').document(share_token)
+
+
+def create_study_share_doc_ref(db, share_token):
+    return study_share_doc_ref(db, share_token)
+
+
+def get_study_share_doc(db, share_token):
+    return study_share_doc_ref(db, share_token).get()
+
+
+def list_study_shares_by_uid(db, uid, limit=200):
+    query = apply_where(db.collection('study_shares'), 'owner_uid', '==', uid).order_by('updated_at', direction='DESCENDING')
+    if isinstance(limit, int) and limit > 0:
+        query = query.limit(limit)
+    return list(query.stream())
+
+
+def find_study_share_by_owner_and_entity(db, owner_uid, entity_type, entity_id):
+    safe_owner_uid = str(owner_uid or '').strip()
+    safe_entity_type = str(entity_type or '').strip()
+    safe_entity_id = str(entity_id or '').strip()
+    if not safe_owner_uid or not safe_entity_type or not safe_entity_id:
+        return None
+    query = apply_where(db.collection('study_shares'), 'owner_uid', '==', safe_owner_uid)
+    query = apply_where(query, 'entity_type', '==', safe_entity_type)
+    query = apply_where(query, 'entity_id', '==', safe_entity_id).limit(1)
+    docs = list(query.stream())
+    return docs[0] if docs else None
+
+
 def study_progress_doc_ref(db, uid):
     return db.collection('study_progress').document(uid)
 

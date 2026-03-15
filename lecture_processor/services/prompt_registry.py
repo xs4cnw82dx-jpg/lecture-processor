@@ -163,7 +163,9 @@ Your task is to generate {flashcard_amount} flashcards and {question_amount} mul
 Write all generated output fully in this language: {output_language}.
 
 RULES FOR FLASHCARDS:
-- The 'front' should be a clear term or concept.
+- The 'front' must always be a direct study question ending with a question mark.
+- Prefer formats like "What is [Term]?", "What is the definition of [Concept]?", "List all [key components of Concept].", or "Name all [examples of Category]."
+- Choose the question style that best matches the underlying source text. Do not use vague prompts like "Explain this concept".
 - The 'back' should be a concise, accurate definition/explanation.
 
 RULES FOR TEST QUESTIONS:

@@ -999,6 +999,9 @@ def test_account_delete_exhaustively_deletes_paginated_docs(client, monkeypatch)
         "analytics_events": {},
         "study_folders": {},
         "study_card_states": {},
+        "study_shares": {
+            "share-1": {"owner_uid": "u-delete", "entity_type": "pack", "entity_id": "pack-1", "access_scope": "public"},
+        },
         "study_packs": {},
         "planner_sessions": {
             "planner-session-1": {"uid": "u-delete", "id": "planner-session-1", "title": "Review lecture"},
@@ -1088,9 +1091,11 @@ def test_account_delete_exhaustively_deletes_paginated_docs(client, monkeypatch)
     assert body["deleted"]["job_logs"] == 101
     assert body["deleted"]["planner_sessions"] == 1
     assert body["deleted"]["planner_settings"] == 1
+    assert body["deleted"]["study_shares"] == 1
     assert store["job_logs"] == {}
     assert store["planner_sessions"] == {}
     assert store["planner_settings"] == {}
+    assert store["study_shares"] == {}
     assert deleted_auth_users == ["u-delete"]
     assert deleted_profiles == ["u-delete"]
     assert removed_artifact_sets and len(removed_artifact_sets[0]) == 101

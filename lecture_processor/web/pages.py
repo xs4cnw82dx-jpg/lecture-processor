@@ -331,6 +331,20 @@ def study_dashboard():
     )
 
 
+@pages_bp.route('/shared/<share_token>')
+def shared_study_page(share_token):
+    runtime = get_runtime()
+    safe_token = str(share_token or '').strip()
+    if not safe_token:
+        abort(404)
+    return render_template(
+        'shared_study.html',
+        share_token=safe_token,
+        shared_study_js_asset=runtime.resolve_js_asset('js/shared-study.js'),
+        **_shell_context(runtime=runtime, page_key='shared-study'),
+    )
+
+
 @pages_bp.route('/privacy')
 def privacy_policy():
     runtime = get_runtime()

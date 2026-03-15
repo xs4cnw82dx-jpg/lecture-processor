@@ -1,4 +1,5 @@
 import json
+import re
 
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.runtime.container import get_runtime
@@ -86,7 +87,7 @@ def sanitize_flashcards(items, max_items, runtime=None):
     for item in items:
         if not isinstance(item, dict):
             continue
-        front = str(item.get('front', '')).strip()[:max_text_len]
+        front = normalize_flashcard_front(item.get('front', ''))[:max_text_len]
         back = str(item.get('back', '')).strip()[:max_text_len]
         if not front or not back:
             continue
@@ -98,6 +99,49 @@ def sanitize_flashcards(items, max_items, runtime=None):
         if len(cleaned) >= max_items:
             break
     return cleaned
+
+
+def normalize_flashcard_front(raw_front):
+    front = str(raw_front or '').strip()
+    if not front:
+        return ''
+    if front.endswith('?'):
+        return front
+
+    compact = re.sub(r'\s+', ' ', front).strip()
+    if not compact:
+        return ''
+
+    lower = compact.lower()
+    question_starts = (
+        'what ',
+        'which ',
+        'who ',
+        'when ',
+        'where ',
+        'why ',
+        'how ',
+        'list ',
+        'name ',
+        'identify ',
+        'describe ',
+        'define ',
+        'explain ',
+        'give ',
+    )
+    if any(lower.startswith(prefix) for prefix in question_starts):
+        return compact.rstrip('.!') + '?'
+
+    article_match = re.match(r'^(?:the|a|an)\s+(.+)$', compact, flags=re.IGNORECASE)
+    if article_match:
+        compact = article_match.group(1).strip()
+
+    if not compact:
+        return ''
+
+    if re.search(r'\b(?:components|parts|steps|stages|types|examples|causes|effects|symptoms|features)\b', lower):
+        return f'List all {compact.rstrip(".!")}?'
+    return f'What is {compact.rstrip(".!")}?' 
 
 
 def sanitize_questions(items, max_items, runtime=None):

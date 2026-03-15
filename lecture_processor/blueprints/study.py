@@ -96,6 +96,18 @@ def stream_study_pack_audio(pack_id):
     return study_api_service.stream_study_pack_audio(runtime, request, pack_id)
 
 
+@study_bp.route('/api/study-packs/<pack_id>/share', methods=['GET'])
+def get_study_pack_share(pack_id):
+    runtime = get_runtime()
+    return study_api_service.get_study_pack_share(runtime, request, pack_id)
+
+
+@study_bp.route('/api/study-packs/<pack_id>/share', methods=['PUT'])
+def update_study_pack_share(pack_id):
+    runtime = get_runtime()
+    return study_api_service.update_study_pack_share(runtime, request, pack_id)
+
+
 @study_bp.route('/api/study-folders', methods=['POST'])
 def create_study_folder():
     runtime = get_runtime()
@@ -112,6 +124,30 @@ def update_study_folder(folder_id):
 def delete_study_folder(folder_id):
     runtime = get_runtime()
     return study_api_service.delete_study_folder(runtime, request, folder_id)
+
+
+@study_bp.route('/api/study-folders/<folder_id>/share', methods=['GET'])
+def get_study_folder_share(folder_id):
+    runtime = get_runtime()
+    return study_api_service.get_study_folder_share(runtime, request, folder_id)
+
+
+@study_bp.route('/api/study-folders/<folder_id>/share', methods=['PUT'])
+def update_study_folder_share(folder_id):
+    runtime = get_runtime()
+    return study_api_service.update_study_folder_share(runtime, request, folder_id)
+
+
+@study_bp.route('/api/shared/<share_token>', methods=['GET'])
+def get_public_study_share(share_token):
+    runtime = get_runtime()
+    return study_api_service.get_public_study_share(runtime, request, share_token)
+
+
+@study_bp.route('/api/shared/<share_token>/packs/<pack_id>', methods=['GET'])
+def get_public_shared_folder_pack(share_token, pack_id):
+    runtime = get_runtime()
+    return study_api_service.get_public_shared_folder_pack(runtime, request, share_token, pack_id)
 
 
 @study_bp.route('/api/study-packs/<pack_id>/export-flashcards-csv', methods=['GET'])

@@ -36,7 +36,7 @@ Each prompt has a unique constant name (e.g. `PROMPT_SLIDE_EXTRACTION`, `PROMPT_
 
 | Constant | Used In | Model | Purpose |
 |----------|---------|-------|---------|
-| `PROMPT_SLIDE_EXTRACTION` | lecture-notes, slides-only | `gemini-2.5-flash-lite` | Extracts text from slide images |
+| `PROMPT_SLIDE_EXTRACTION` | lecture-notes, slides-only | `gemini-3.1-flash-lite-preview` | Extracts text from slide images |
 | `PROMPT_AUDIO_TRANSCRIPTION` | lecture-notes | `gemini-3-flash-preview` | Transcribes plain audio |
 | `PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED` | lecture-notes | `gemini-3-flash-preview` | Transcribes audio with timestamps |
 | `PROMPT_INTERVIEW_TRANSCRIPTION` | interview | `gemini-2.5-pro` | Transcribes interview audio |
@@ -44,4 +44,4 @@ Each prompt has a unique constant name (e.g. `PROMPT_SLIDE_EXTRACTION`, `PROMPT_
 | `PROMPT_INTERVIEW_SECTIONED` | interview | `gemini-2.5-pro` | Creates sectioned interview output |
 | `PROMPT_MERGE_TEMPLATE` | lecture-notes | `gemini-2.5-pro` | Merges slides + audio into notes |
 | `PROMPT_MERGE_WITH_AUDIO_MARKERS` | lecture-notes | `gemini-2.5-pro` | Merges with audio timestamp markers |
-| `PROMPT_STUDY_TEMPLATE` | lecture-notes, slides-only | `gemini-2.5-flash-lite` | Generates flashcards + test questions |
+| `PROMPT_STUDY_TEMPLATE` | lecture-notes, slides-only | `gemini-3.1-flash-lite-preview` | Generates flashcards + test questions |

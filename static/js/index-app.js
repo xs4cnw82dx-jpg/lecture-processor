@@ -88,6 +88,8 @@ let idToken = null;
 let currentUserIsAdmin = false;
 let pdfFile = null;
 let audioFile = null;
+let audioFileOrigin = 'upload';
+let recordedAudioNeedsDownload = false;
 let currentJobId = null;
 let pollInterval = null;
 let pollFailures = 0;
@@ -125,6 +127,18 @@ let importedAudioSourceUrl = '';
 let pendingAutoImportUrl = '';
 let audioImportInFlight = false;
 let audioImportRequestUrl = '';
+let recordingState = 'idle';
+let recordingStream = null;
+let mediaRecorder = null;
+let recordingChunks = [];
+let recordingMimeType = '';
+let recordingExtension = '';
+let recordingStartedAtMs = 0;
+let recordingElapsedMs = 0;
+let recordingTimer = null;
+let recorderStatusMessage = '';
+let recorderStatusTone = 'info';
+let discardNextRecordingResult = false;
 let languageOnboardingOpen = false;
 let languageOnboardingSaving = false;
 let userPreferences = null;
@@ -441,6 +455,13 @@ const audioUrlImportHint = document.getElementById('audio-url-import-hint');
 const audioUrlInput = document.getElementById('audio-url-input');
 const audioUrlFetchBtn = document.getElementById('audio-url-fetch-btn');
 const audioUrlStatus = document.getElementById('audio-url-status');
+const audioRecorderPanel = document.getElementById('audio-recorder-panel');
+const audioRecordStartBtn = document.getElementById('audio-record-start');
+const audioRecordPauseBtn = document.getElementById('audio-record-pause');
+const audioRecordStopBtn = document.getElementById('audio-record-stop');
+const audioRecorderTimer = document.getElementById('audio-recorder-timer');
+const audioRecordingStatus = document.getElementById('audio-recording-status');
+const audioRecordingWarning = document.getElementById('audio-recording-warning');
 const languageOnboardingOverlay = document.getElementById('language-onboarding-overlay');
 const languageOnboardingGrid = document.getElementById('language-onboarding-grid');
 const languageOnboardingButtons = document.querySelectorAll('#language-onboarding-grid .onboarding-language-btn');
@@ -1554,31 +1575,292 @@ function setAudioImportPending(inFlight) {
     audioUrlFetchBtn.disabled = Boolean(inFlight);
     audioUrlFetchBtn.textContent = inFlight ? 'Importing...' : (audioUrlFetchBtn.dataset.defaultLabel || 'Import Audio');
 }
+function setRecorderStatus(message = '', tone = 'info') {
+    recorderStatusMessage = String(message || '').trim();
+    recorderStatusTone = String(tone || 'info').trim() || 'info';
+    if (!audioRecordingStatus) return;
+    audioRecordingStatus.textContent = recorderStatusMessage;
+    audioRecordingStatus.dataset.tone = recorderStatusTone;
+}
+function formatRecordingElapsed(ms) {
+    const totalSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+    const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
+    const seconds = String(totalSeconds % 60).padStart(2, '0');
+    return `${minutes}:${seconds}`;
+}
+function stopRecordingTimer() {
+    if (recordingTimer) {
+        window.clearInterval(recordingTimer);
+        recordingTimer = null;
+    }
+}
+function currentRecordingElapsedMs() {
+    if (recordingState === 'recording' && recordingStartedAtMs > 0) {
+        return recordingElapsedMs + Math.max(0, Date.now() - recordingStartedAtMs);
+    }
+    return recordingElapsedMs;
+}
+function updateRecordingTimer() {
+    if (!audioRecorderTimer) return;
+    audioRecorderTimer.textContent = formatRecordingElapsed(currentRecordingElapsedMs());
+}
+function cleanupRecordingStream() {
+    if (!recordingStream) return;
+    try {
+        recordingStream.getTracks().forEach((track) => track.stop());
+    } catch (_) { }
+    recordingStream = null;
+}
+function getPreferredRecordingConfig() {
+    if (!window.MediaRecorder || !navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+        return null;
+    }
+    const candidates = [
+        { mimeType: 'audio/ogg;codecs=opus', extension: 'ogg' },
+        { mimeType: 'audio/ogg', extension: 'ogg' },
+        { mimeType: 'audio/mp4;codecs=mp4a.40.2', extension: 'm4a' },
+        { mimeType: 'audio/mp4', extension: 'm4a' },
+    ];
+    const canCheck = typeof window.MediaRecorder.isTypeSupported === 'function';
+    for (const candidate of candidates) {
+        if (!canCheck || window.MediaRecorder.isTypeSupported(candidate.mimeType)) {
+            return candidate;
+        }
+    }
+    return null;
+}
+function syncRecorderUI() {
+    const visible = currentMode === 'lecture-notes';
+    const supportedConfig = getPreferredRecordingConfig();
+    if (audioRecorderPanel) {
+        audioRecorderPanel.style.display = visible ? '' : 'none';
+    }
+    if (!visible) return;
+    if (audioRecordStartBtn) {
+        audioRecordStartBtn.disabled = recordingState !== 'idle' || !supportedConfig;
+    }
+    if (audioRecordPauseBtn) {
+        audioRecordPauseBtn.disabled = !(
+            (recordingState === 'recording' && mediaRecorder && typeof mediaRecorder.pause === 'function') ||
+            (recordingState === 'paused' && mediaRecorder && typeof mediaRecorder.resume === 'function')
+        );
+        audioRecordPauseBtn.textContent = recordingState === 'paused' ? 'Resume' : 'Pause';
+    }
+    if (audioRecordStopBtn) {
+        audioRecordStopBtn.disabled = !(recordingState === 'recording' || recordingState === 'paused');
+    }
+    updateRecordingTimer();
+    if (recordingState === 'recording') {
+        setRecorderStatus('Recording in progress. Stop to attach it to this lecture.', 'recording');
+        return;
+    }
+    if (recordingState === 'paused') {
+        setRecorderStatus('Recording paused. Resume or stop to attach it to this lecture.', 'info');
+        return;
+    }
+    if (recordingState === 'stopping') {
+        setRecorderStatus('Saving recording...', 'info');
+        return;
+    }
+    if (!supportedConfig) {
+        setRecorderStatus('Browser recording is not available here. Upload or import audio instead.', 'error');
+        return;
+    }
+    if (!recorderStatusMessage) {
+        setRecorderStatus('Record directly here if you do not have an audio file yet.', 'info');
+    } else {
+        setRecorderStatus(recorderStatusMessage, recorderStatusTone);
+    }
+}
 function syncAudioInfoUI() {
     if (audioFile) {
         audioName.textContent = audioFile.name;
-        audioSize.textContent = formatFileSize(audioFile.size);
+        audioSize.textContent = audioFileOrigin === 'recording'
+            ? `${formatFileSize(audioFile.size)} · Recorded in browser`
+            : formatFileSize(audioFile.size);
         audioInfo.style.display = 'flex';
         audioZone.classList.add('has-file');
-        return;
-    }
-    if (importedAudioToken) {
+    } else if (importedAudioToken) {
         audioName.textContent = importedAudioName || 'Imported audio';
         audioSize.textContent = importedAudioSizeBytes > 0
             ? `${formatFileSize(importedAudioSizeBytes)} · Imported from URL`
             : 'Imported from URL';
         audioInfo.style.display = 'flex';
         audioZone.classList.add('has-file');
-        return;
+    } else {
+        audioInfo.style.display = 'none';
+        audioZone.classList.remove('has-file');
     }
-    audioInfo.style.display = 'none';
-    audioZone.classList.remove('has-file');
+    if (audioRecordingWarning) {
+        if (audioFile && audioFileOrigin === 'recording') {
+            audioRecordingWarning.style.display = 'block';
+            audioRecordingWarning.textContent = recordedAudioNeedsDownload
+                ? 'This recording only exists in this browser tab. Download it now if you want to keep it, or it will be lost forever when you leave this page.'
+                : 'This recording was downloaded. Keep the saved file somewhere safe, because the in-browser copy still disappears when you leave this page.';
+        } else {
+            audioRecordingWarning.style.display = 'none';
+            audioRecordingWarning.textContent = '';
+        }
+    }
+    syncRecorderUI();
 }
 function clearImportedAudioLocalState() {
     importedAudioToken = '';
     importedAudioSizeBytes = 0;
     importedAudioName = '';
     importedAudioSourceUrl = '';
+}
+function buildRecordedAudioFileName(extension) {
+    const now = new Date();
+    const stamp = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, '0'),
+        String(now.getDate()).padStart(2, '0'),
+    ].join('') + '-' + [
+        String(now.getHours()).padStart(2, '0'),
+        String(now.getMinutes()).padStart(2, '0'),
+        String(now.getSeconds()).padStart(2, '0'),
+    ].join('');
+    return `lecture-recording-${stamp}.${String(extension || 'ogg').trim() || 'ogg'}`;
+}
+function finalizeRecordedAudio(blob) {
+    cleanupRecordingStream();
+    stopRecordingTimer();
+    recordingState = 'idle';
+    recordingStartedAtMs = 0;
+    const safeBlob = blob instanceof Blob ? blob : null;
+    if (!safeBlob || !safeBlob.size) {
+        recordingChunks = [];
+        recordingMimeType = '';
+        recordingExtension = '';
+        setRecorderStatus('No audio was captured. Please try again.', 'error');
+        showToast('No audio was captured. Please try again.', 'error');
+        syncRecorderUI();
+        return;
+    }
+    const mimeType = String(recordingMimeType || safeBlob.type || 'audio/ogg').trim() || 'audio/ogg';
+    const fileName = buildRecordedAudioFileName(recordingExtension || (mimeType.indexOf('mp4') >= 0 ? 'm4a' : 'ogg'));
+    const recordedFile = new File([safeBlob], fileName, { type: mimeType, lastModified: Date.now() });
+    recordingChunks = [];
+    recordingMimeType = '';
+    recordingExtension = '';
+    if (discardNextRecordingResult) {
+        discardNextRecordingResult = false;
+        setRecorderStatus('Recording discarded.', 'info');
+        syncRecorderUI();
+        return;
+    }
+    handleAudioFile(recordedFile, { origin: 'recording' });
+    setRecorderStatus('Recording attached. Download it from the audio card now if you want to keep it.', 'success');
+    showToast('Recording attached as your audio file. Download it now if you want to keep it.', 'success', 4200);
+    syncRecorderUI();
+}
+async function startAudioRecording() {
+    if (currentMode !== 'lecture-notes') {
+        setRecorderStatus('Recording is only available in Lecture Notes mode.', 'error');
+        return;
+    }
+    if (recordingState !== 'idle') return;
+    const config = getPreferredRecordingConfig();
+    if (!config) {
+        setRecorderStatus('Browser recording is not available here. Upload or import audio instead.', 'error');
+        return;
+    }
+    try {
+        cleanupRecordingStream();
+        recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        recordingChunks = [];
+        recordingMimeType = config.mimeType;
+        recordingExtension = config.extension;
+        mediaRecorder = new window.MediaRecorder(recordingStream, { mimeType: config.mimeType });
+        mediaRecorder.addEventListener('dataavailable', (event) => {
+            if (event.data && event.data.size > 0) {
+                recordingChunks.push(event.data);
+            }
+        });
+        mediaRecorder.addEventListener('stop', () => {
+            const blob = new Blob(recordingChunks, { type: recordingMimeType || (mediaRecorder && mediaRecorder.mimeType) || config.mimeType });
+            mediaRecorder = null;
+            finalizeRecordedAudio(blob);
+        });
+        mediaRecorder.addEventListener('error', () => {
+            mediaRecorder = null;
+            cleanupRecordingStream();
+            stopRecordingTimer();
+            recordingState = 'idle';
+            recordingChunks = [];
+            recordingMimeType = '';
+            recordingExtension = '';
+            setRecorderStatus('Recording failed. Please try again.', 'error');
+            showToast('Recording failed. Please try again.', 'error');
+            syncRecorderUI();
+        });
+        recordingElapsedMs = 0;
+        recordingStartedAtMs = Date.now();
+        recordingState = 'recording';
+        recorderStatusMessage = '';
+        mediaRecorder.start();
+        updateRecordingTimer();
+        recordingTimer = window.setInterval(updateRecordingTimer, 500);
+        syncRecorderUI();
+    } catch (error) {
+        cleanupRecordingStream();
+        stopRecordingTimer();
+        recordingState = 'idle';
+        recordingChunks = [];
+        recordingMimeType = '';
+        recordingExtension = '';
+        const message = error && error.name === 'NotAllowedError'
+            ? 'Microphone access was blocked. Allow microphone access and try again.'
+            : 'Could not start recording in this browser.';
+        setRecorderStatus(message, 'error');
+        showToast(message, 'error', 3600);
+        syncRecorderUI();
+    }
+}
+function toggleAudioRecordingPause() {
+    if (!mediaRecorder) return;
+    if (recordingState === 'recording' && typeof mediaRecorder.pause === 'function') {
+        try {
+            recordingElapsedMs = currentRecordingElapsedMs();
+            recordingStartedAtMs = 0;
+            mediaRecorder.pause();
+            stopRecordingTimer();
+            recordingState = 'paused';
+            syncRecorderUI();
+        } catch (_) { }
+        return;
+    }
+    if (recordingState === 'paused' && typeof mediaRecorder.resume === 'function') {
+        try {
+            recordingStartedAtMs = Date.now();
+            mediaRecorder.resume();
+            recordingState = 'recording';
+            updateRecordingTimer();
+            recordingTimer = window.setInterval(updateRecordingTimer, 500);
+            syncRecorderUI();
+        } catch (_) { }
+    }
+}
+function stopAudioRecording() {
+    if (!mediaRecorder || !(recordingState === 'recording' || recordingState === 'paused')) return;
+    recordingElapsedMs = currentRecordingElapsedMs();
+    recordingStartedAtMs = 0;
+    recordingState = 'stopping';
+    stopRecordingTimer();
+    syncRecorderUI();
+    try {
+        mediaRecorder.stop();
+    } catch (_) {
+        mediaRecorder = null;
+        cleanupRecordingStream();
+        recordingState = 'idle';
+        recordingChunks = [];
+        recordingMimeType = '';
+        recordingExtension = '';
+        setRecorderStatus('Recording could not be saved. Please try again.', 'error');
+        syncRecorderUI();
+    }
 }
 async function releaseImportedAudioToken(options = {}) {
     const token = String(importedAudioToken || '').trim();
@@ -2065,6 +2347,9 @@ function switchMode(mode) {
     if (forcedMode && mode !== forcedMode) {
         mode = forcedMode;
     }
+    if (mode !== 'lecture-notes' && (recordingState === 'recording' || recordingState === 'paused')) {
+        stopAudioRecording();
+    }
     currentMode = mode;
     const config = modeConfig[mode];
     modeTabs.forEach(tab => {
@@ -2124,6 +2409,7 @@ function switchMode(mode) {
     }
     setStudyFeature(selectedStudyFeatures);
     updateInterviewOptionsUI();
+    syncRecorderUI();
     updateProcessButton();
 }
 modeTabs.forEach(tab => tab.addEventListener('click', () => switchMode(tab.dataset.mode)));
@@ -2176,7 +2462,7 @@ function handlePdfFile(file) {
     pdfZone.classList.add('has-file');
     updateProcessButton();
 }
-function handleAudioFile(file) {
+function handleAudioFile(file, options = {}) {
     if (!file) return;
     const valid = ['.mp3', '.m4a', '.wav', '.aac', '.ogg', '.flac'];
     if (!valid.some(ext => file.name.toLowerCase().endsWith(ext))) { showToast('Please select a valid audio file', 'error'); return; }
@@ -2186,11 +2472,20 @@ function handleAudioFile(file) {
         releaseImportedAudioToken({ clearStatus: true });
     }
     audioFile = file;
+    audioFileOrigin = options.origin === 'recording' ? 'recording' : 'upload';
+    recordedAudioNeedsDownload = audioFileOrigin === 'recording';
+    if (audioFileOrigin !== 'recording') {
+        recorderStatusMessage = '';
+        recorderStatusTone = 'info';
+    }
     syncAudioInfoUI();
     updateProcessButton();
 }
 function setupDropZone(zone, input, handler) {
-    zone.addEventListener('click', (e) => { if (!e.target.closest('.file-remove')) input.click(); });
+    zone.addEventListener('click', (e) => {
+        if (e.target.closest('.file-remove') || e.target.closest('.file-info') || e.target.closest('.audio-recorder-panel')) return;
+        input.click();
+    });
     input.addEventListener('change', (e) => { if (e.target.files.length) handler(e.target.files[0]); });
     zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('drag-over'); });
     zone.addEventListener('dragleave', (e) => { e.preventDefault(); zone.classList.remove('drag-over'); });
@@ -2210,6 +2505,24 @@ function downloadLocalPreviewFile(file) {
 }
 setupDropZone(pdfZone, pdfInput, handlePdfFile);
 setupDropZone(audioZone, audioInput, handleAudioFile);
+if (audioRecordStartBtn) {
+    audioRecordStartBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        startAudioRecording();
+    });
+}
+if (audioRecordPauseBtn) {
+    audioRecordPauseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleAudioRecordingPause();
+    });
+}
+if (audioRecordStopBtn) {
+    audioRecordStopBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        stopAudioRecording();
+    });
+}
 if (pdfInfo) {
     pdfInfo.title = 'Click to download this selected file';
     pdfInfo.addEventListener('click', (e) => {
@@ -2224,7 +2537,13 @@ if (audioInfo) {
     audioInfo.addEventListener('click', (e) => {
         if (e.target.closest('.file-remove')) return;
         if (downloadLocalPreviewFile(audioFile)) {
-            showToast('Audio file download started.', 'success', 1600);
+            if (audioFileOrigin === 'recording') {
+                recordedAudioNeedsDownload = false;
+                syncAudioInfoUI();
+                showToast('Recording download started. Keep that file safe because the in-browser copy will disappear when you leave this page.', 'success', 4200);
+            } else {
+                showToast('Audio file download started.', 'success', 1600);
+            }
             return;
         }
         if (importedAudioToken) {
@@ -2236,6 +2555,10 @@ pdfRemove.addEventListener('click', (e) => { e.stopPropagation(); pdfFile = null
 audioRemove.addEventListener('click', (e) => {
     e.stopPropagation();
     audioFile = null;
+    audioFileOrigin = 'upload';
+    recordedAudioNeedsDownload = false;
+    recorderStatusMessage = '';
+    recorderStatusTone = 'info';
     audioInput.value = '';
     pendingAutoImportUrl = '';
     if (importedAudioToken) {
@@ -3997,8 +4320,16 @@ studyNowBtn.addEventListener('click', () => {
 });
 newLectureButton.addEventListener('click', () => {
     setMoreActionsDropdownVisible(false);
+    if (recordingState === 'recording' || recordingState === 'paused') {
+        discardNextRecordingResult = true;
+        stopAudioRecording();
+    }
     pdfFile = null;
     audioFile = null;
+    audioFileOrigin = 'upload';
+    recordedAudioNeedsDownload = false;
+    recorderStatusMessage = '';
+    recorderStatusTone = 'info';
     releaseImportedAudioToken({ clearStatus: true });
     currentJobId = null;
     trackedTerminalJobId = '';
@@ -4198,6 +4529,12 @@ window.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowLeft') { e.preventDefault(); goFlashcard(-1); }
     if (e.key === 'ArrowRight') { e.preventDefault(); goFlashcard(1); }
     if (e.code === 'Space') { e.preventDefault(); flipFlashcard(); }
+});
+window.addEventListener('beforeunload', (e) => {
+    if ((audioFile && audioFileOrigin === 'recording' && recordedAudioNeedsDownload) || recordingState === 'recording' || recordingState === 'paused') {
+        e.preventDefault();
+        e.returnValue = '';
+    }
 });
 
 function updateHeaderNavActiveState() {
