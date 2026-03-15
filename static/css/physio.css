@@ -1,0 +1,462 @@
+:root {
+  --physio-ink: #12324a;
+  --physio-muted: #587085;
+  --physio-border: #d7e5ef;
+  --physio-soft: #f4f8fb;
+  --physio-primary: #136f63;
+  --physio-primary-soft: #def5ef;
+  --physio-accent: #f59e0b;
+  --physio-danger: #b91c1c;
+}
+
+.physio-page {
+  display: grid;
+  gap: 18px;
+}
+
+.physio-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+  background:
+    radial-gradient(circle at top right, rgba(19, 111, 99, 0.12), transparent 42%),
+    linear-gradient(135deg, #fdfefe, #eef7fb);
+}
+
+.physio-hero h1 {
+  margin: 4px 0 8px;
+  font-size: clamp(1.8rem, 2.6vw, 2.6rem);
+  line-height: 1.05;
+}
+
+.physio-hero p {
+  margin: 0;
+  color: var(--physio-muted);
+  max-width: 60ch;
+}
+
+.physio-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--physio-primary-soft);
+  color: var(--physio-primary);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.physio-hero-badge {
+  min-width: 220px;
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(19, 111, 99, 0.18);
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.physio-hero-badge strong {
+  color: var(--physio-primary);
+}
+
+.physio-grid,
+.physio-cases-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.physio-grid {
+  grid-template-columns: minmax(320px, 1.05fr) minmax(360px, 1fr);
+}
+
+.physio-grid.knowledge {
+  grid-template-columns: minmax(320px, 0.92fr) minmax(360px, 1.08fr);
+}
+
+.physio-cases-grid {
+  grid-template-columns: minmax(240px, 0.7fr) minmax(320px, 1fr) minmax(360px, 1.15fr);
+}
+
+.physio-card {
+  display: grid;
+  gap: 16px;
+}
+
+.physio-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.physio-card-head h2 {
+  margin: 0;
+  font-size: 1.12rem;
+}
+
+.physio-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #e6eefc;
+  color: #234782;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.physio-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.physio-field {
+  display: grid;
+  gap: 6px;
+}
+
+.physio-field.full {
+  grid-column: 1 / -1;
+}
+
+.physio-field span {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--physio-ink);
+}
+
+.physio-field input,
+.physio-field textarea,
+.physio-field select {
+  width: 100%;
+  border: 1px solid var(--physio-border);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--physio-ink);
+  padding: 11px 12px;
+  font-size: 0.95rem;
+}
+
+.physio-field textarea {
+  resize: vertical;
+  min-height: 90px;
+}
+
+.physio-recorder {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #f6fcfb, #eff6fb);
+  border: 1px solid var(--physio-border);
+}
+
+.physio-recorder-copy h3 {
+  margin: 0 0 6px;
+}
+
+.physio-recorder-copy p {
+  margin: 0;
+  color: var(--physio-muted);
+}
+
+.physio-recorder-actions,
+.physio-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.physio-btn,
+.physio-upload-btn {
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 11px 14px;
+  font-size: 0.94rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease, background-color 150ms ease;
+}
+
+.physio-btn:hover,
+.physio-upload-btn:hover {
+  transform: translateY(-1px);
+}
+
+.physio-btn.primary,
+.physio-btn,
+.physio-upload-btn {
+  background: var(--physio-primary);
+  color: #fff;
+  box-shadow: 0 12px 26px rgba(19, 111, 99, 0.18);
+}
+
+.physio-btn.secondary {
+  background: #0f766e;
+  color: #fff;
+}
+
+.physio-btn.ghost,
+.physio-upload-btn {
+  background: #fff;
+  color: var(--physio-ink);
+  border-color: var(--physio-border);
+  box-shadow: none;
+}
+
+.physio-btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.physio-upload-btn input {
+  display: none;
+}
+
+.physio-inline-note {
+  color: var(--physio-muted);
+  font-size: 0.85rem;
+}
+
+.physio-status,
+.physio-auth-banner {
+  min-height: 24px;
+  color: var(--physio-muted);
+  font-size: 0.92rem;
+}
+
+.physio-status.error,
+.physio-auth-banner.error {
+  color: var(--physio-danger);
+}
+
+.physio-status.success {
+  color: var(--physio-primary);
+}
+
+.physio-output {
+  display: grid;
+  gap: 14px;
+}
+
+.physio-output-empty {
+  padding: 22px;
+  border: 1px dashed var(--physio-border);
+  border-radius: 16px;
+  color: var(--physio-muted);
+  background: var(--physio-soft);
+}
+
+.physio-section-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--physio-border);
+  background: #fbfdfe;
+}
+
+.physio-section-card > h3,
+.physio-section-card > h4 {
+  margin: 0;
+}
+
+.physio-list-block {
+  display: grid;
+  gap: 10px;
+}
+
+.physio-list-item {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--physio-border);
+  background: #fff;
+}
+
+.physio-alerts {
+  display: grid;
+  gap: 10px;
+}
+
+.physio-alert {
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(185, 28, 28, 0.18);
+  background: rgba(254, 242, 242, 0.9);
+  color: #7f1d1d;
+}
+
+.physio-alert strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.physio-answer {
+  display: grid;
+  gap: 12px;
+  line-height: 1.6;
+}
+
+.physio-answer h1,
+.physio-answer h2,
+.physio-answer h3,
+.physio-answer p,
+.physio-answer ul {
+  margin: 0;
+}
+
+.physio-answer ul {
+  padding-left: 20px;
+}
+
+.physio-citations,
+.physio-source-list,
+.physio-case-list,
+.physio-session-list,
+.physio-session-preview {
+  display: grid;
+  gap: 12px;
+}
+
+.physio-citation-chip,
+.physio-case-item,
+.physio-session-item,
+.physio-source-card {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--physio-border);
+  background: #fff;
+}
+
+.physio-citation-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  background: #f8fbff;
+}
+
+.physio-case-item,
+.physio-session-item {
+  cursor: pointer;
+}
+
+.physio-case-item.active,
+.physio-session-item.active {
+  border-color: rgba(19, 111, 99, 0.36);
+  background: rgba(19, 111, 99, 0.06);
+}
+
+.physio-case-item strong,
+.physio-session-item strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.physio-case-list-card {
+  align-self: start;
+}
+
+.physio-progress-chart {
+  min-height: 200px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #f9fcfe, #eef5f9);
+  border: 1px solid var(--physio-border);
+  padding: 14px;
+}
+
+.physio-progress-chart svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.physio-session-preview {
+  border-top: 1px solid var(--physio-border);
+  padding-top: 14px;
+}
+
+.physio-session-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.physio-session-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--physio-border);
+  text-decoration: none;
+  color: var(--physio-ink);
+  background: #fff;
+  font-weight: 600;
+  font-size: 0.86rem;
+}
+
+.physio-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  min-width: 220px;
+  max-width: min(360px, calc(100vw - 24px));
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.94);
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity 180ms ease, transform 180ms ease;
+  z-index: 420;
+}
+
+.physio-toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (max-width: 1180px) {
+  .physio-cases-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 980px) {
+  .physio-grid,
+  .physio-grid.knowledge {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .physio-hero {
+    flex-direction: column;
+  }
+
+  .physio-field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .physio-actions,
+  .physio-recorder-actions {
+    flex-direction: column;
+  }
+
+  .physio-btn,
+  .physio-upload-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}

@@ -279,6 +279,8 @@ def collect_user_export_payload(uid, email, runtime=None):
     card_states, card_states_truncated = list_docs_by_uid('study_card_states', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     planner_settings_docs, planner_settings_truncated = list_docs_by_uid('planner_settings', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     planner_sessions, planner_sessions_truncated = list_docs_by_uid('planner_sessions', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
+    physio_cases, physio_cases_truncated = list_docs_by_uid('physio_cases', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
+    physio_case_sessions, physio_case_sessions_truncated = list_docs_by_uid('physio_case_sessions', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     share_docs = query_docs_by_field('study_shares', 'owner_uid', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION + 1, runtime=resolved_runtime)
     shares_truncated = len(share_docs) > resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION
     study_shares = []
@@ -314,6 +316,8 @@ def collect_user_export_payload(uid, email, runtime=None):
                 'study_shares': shares_truncated,
                 'planner_settings': planner_settings_truncated,
                 'planner_sessions': planner_sessions_truncated,
+                'physio_cases': physio_cases_truncated,
+                'physio_case_sessions': physio_case_sessions_truncated,
             },
         },
         'account': {
@@ -331,6 +335,8 @@ def collect_user_export_payload(uid, email, runtime=None):
             'study_card_states': card_states,
             'study_shares': study_shares,
             'planner_sessions': planner_sessions,
+            'physio_cases': physio_cases,
+            'physio_case_sessions': physio_case_sessions,
         },
     }
 

@@ -1009,6 +1009,12 @@ def test_account_delete_exhaustively_deletes_paginated_docs(client, monkeypatch)
         "planner_settings": {
             "planner-settings": {"uid": "u-delete", "enabled": "on", "offset": "15"},
         },
+        "physio_cases": {
+            "physio-case-1": {"uid": "u-delete", "case_id": "physio-case-1", "display_label": "Casus 1"},
+        },
+        "physio_case_sessions": {
+            "physio-session-1": {"uid": "u-delete", "case_id": "physio-case-1", "session_id": "physio-session-1"},
+        },
         core.RUNTIME_JOBS_COLLECTION: {},
         "batch_jobs": {},
     }
@@ -1091,10 +1097,14 @@ def test_account_delete_exhaustively_deletes_paginated_docs(client, monkeypatch)
     assert body["deleted"]["job_logs"] == 101
     assert body["deleted"]["planner_sessions"] == 1
     assert body["deleted"]["planner_settings"] == 1
+    assert body["deleted"]["physio_cases"] == 1
+    assert body["deleted"]["physio_case_sessions"] == 1
     assert body["deleted"]["study_shares"] == 1
     assert store["job_logs"] == {}
     assert store["planner_sessions"] == {}
     assert store["planner_settings"] == {}
+    assert store["physio_cases"] == {}
+    assert store["physio_case_sessions"] == {}
     assert store["study_shares"] == {}
     assert deleted_auth_users == ["u-delete"]
     assert deleted_profiles == ["u-delete"]

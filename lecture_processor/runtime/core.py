@@ -133,7 +133,7 @@ ALLOWED_SLIDE_EXTENSIONS = {'pdf', 'pptx'}
 
 ALLOWED_PDF_EXTENSIONS = ALLOWED_SLIDE_EXTENSIONS
 
-ALLOWED_AUDIO_EXTENSIONS = {'mp3', 'm4a', 'wav', 'aac', 'ogg', 'flac'}
+ALLOWED_AUDIO_EXTENSIONS = {'mp3', 'm4a', 'wav', 'aac', 'ogg', 'flac', 'webm'}
 
 MAX_PDF_UPLOAD_BYTES = 50 * 1024 * 1024
 
@@ -145,7 +145,7 @@ ALLOWED_SLIDE_MIME_TYPES = {'application/pdf', 'application/x-pdf', 'application
 
 ALLOWED_PDF_MIME_TYPES = ALLOWED_SLIDE_MIME_TYPES
 
-ALLOWED_AUDIO_MIME_TYPES = {'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/x-wav', 'audio/aac', 'audio/ogg', 'audio/flac'}
+ALLOWED_AUDIO_MIME_TYPES = {'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/x-wav', 'audio/aac', 'audio/ogg', 'audio/flac', 'audio/webm', 'video/webm'}
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 

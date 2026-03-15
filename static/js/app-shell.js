@@ -29,8 +29,16 @@
   var adminBtn = document.getElementById('shell-admin-btn');
   var exportDataBtn = document.getElementById('shell-export-data-btn');
   var signOutBtn = document.getElementById('signout-btn');
-  var moreToolsGroup = document.getElementById('shell-more-tools-group');
-  var moreToolsTrigger = document.getElementById('shell-more-tools-trigger');
+  var physioGroup = document.getElementById('shell-physio-group');
+  var shellGroups = Array.prototype.slice.call(document.querySelectorAll('.app-shell-group[data-shell-group]')).map(function (group) {
+    var key = String(group.getAttribute('data-shell-group') || '').trim();
+    var trigger = group.querySelector('[data-shell-group-trigger]');
+    return {
+      key: key,
+      node: group,
+      trigger: trigger
+    };
+  }).filter(function (group) { return !!group.key; });
   var exportOverlay = document.getElementById('shell-export-overlay');
   var exportCloseBtn = document.getElementById('shell-export-close');
   var exportCancelBtn = document.getElementById('shell-export-cancel');
@@ -218,10 +226,48 @@
     shell.setAttribute('data-auth-state', String(state || 'pending'));
   }
 
-  function setMoreToolsOpen(open) {
-    if (!moreToolsGroup || !moreToolsTrigger) return;
-    moreToolsGroup.classList.toggle('is-open', !!open);
-    moreToolsTrigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+  function groupCacheKey(groupKey) {
+    var safeKey = String(groupKey || '').trim();
+    if (!safeKey) return '';
+    if (safeKey === 'more-tools') return CACHE_KEYS.moreToolsExpanded;
+    return 'shell_group_open:' + safeKey;
+  }
+
+  function findShellGroup(groupKey) {
+    var safeKey = String(groupKey || '').trim();
+    for (var index = 0; index < shellGroups.length; index += 1) {
+      if (shellGroups[index].key === safeKey) return shellGroups[index];
+    }
+    return null;
+  }
+
+  function setShellGroupOpen(groupKey, open) {
+    var group = findShellGroup(groupKey);
+    if (!group || !group.node || !group.trigger) return;
+    group.node.classList.toggle('is-open', !!open);
+    group.trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    group.trigger.classList.toggle('active', !!open);
+  }
+
+  function hydrateShellGroupState(groupKey, hasActiveChild) {
+    var stored = readCacheString(groupCacheKey(groupKey), '');
+    if (stored === '1') {
+      setShellGroupOpen(groupKey, true);
+      return;
+    }
+    if (stored === '0') {
+      setShellGroupOpen(groupKey, false);
+      return;
+    }
+    setShellGroupOpen(groupKey, !!hasActiveChild);
+  }
+
+  function setPhysioGroupVisible(visible) {
+    if (!physioGroup) return;
+    physioGroup.hidden = !visible;
+    if (!visible) {
+      setShellGroupOpen('physio', false);
+    }
   }
 
   function setAuthView(view) {
@@ -285,32 +331,29 @@
   function markActiveNav() {
     var currentPath = normalizePath(window.location.pathname || '/');
     var navLinks = Array.prototype.slice.call(document.querySelectorAll('.app-shell-link[href]'));
-    var hasActiveMoreToolsChild = false;
+    var activeByGroup = {};
 
     navLinks.forEach(function (link) {
       var href = normalizePath(link.getAttribute('href') || '/');
       var active = href === currentPath || (href === '/plan' && currentPath === '/stats');
       link.classList.toggle('active', !!active);
-      if (active && link.classList.contains('sub')) hasActiveMoreToolsChild = true;
+      if (active && link.classList.contains('sub')) {
+        var groupNode = link.closest ? link.closest('.app-shell-group[data-shell-group]') : null;
+        if (groupNode) {
+          activeByGroup[String(groupNode.getAttribute('data-shell-group') || '').trim()] = true;
+        }
+      }
     });
 
-    hydrateMoreToolsState(hasActiveMoreToolsChild);
-    if (moreToolsTrigger) {
-      moreToolsTrigger.classList.toggle('active', hasActiveMoreToolsChild || !!(moreToolsGroup && moreToolsGroup.classList.contains('is-open')));
-    }
-  }
-
-  function hydrateMoreToolsState(hasActiveChild) {
-    var stored = readCacheString(CACHE_KEYS.moreToolsExpanded, '');
-    if (stored === '1') {
-      setMoreToolsOpen(true);
-      return;
-    }
-    if (stored === '0') {
-      setMoreToolsOpen(false);
-      return;
-    }
-    setMoreToolsOpen(!!hasActiveChild);
+    shellGroups.forEach(function (group) {
+      hydrateShellGroupState(group.key, !!activeByGroup[group.key]);
+      if (group.trigger) {
+        group.trigger.classList.toggle(
+          'active',
+          !!activeByGroup[group.key] || !!(group.node && group.node.classList.contains('is-open'))
+        );
+      }
+    });
   }
 
   function parseCreditBreakdown(payload) {
@@ -401,9 +444,12 @@
         email: String(user.email || payload.email || 'user'),
         name: String((payload.email || user.email || 'Account')).split('@')[0] || 'Account',
         initial: String((user.email || payload.email || '?').charAt(0) || '?').toUpperCase(),
-        isAdmin: currentUserIsAdmin
+        isAdmin: currentUserIsAdmin,
+        isPhysioAllowed: !!payload.is_physio_allowed
       });
       if (adminBtn) adminBtn.style.display = currentUserIsAdmin ? '' : 'none';
+      setPhysioGroupVisible(!!payload.is_physio_allowed);
+      markActiveNav();
     } catch (_) {}
   }
 
@@ -420,6 +466,7 @@
     if (userInitial) userInitial.textContent = '?';
     if (signInBtn) signInBtn.hidden = false;
     if (accountWrap) accountWrap.hidden = true;
+    setPhysioGroupVisible(false);
   }
 
   function applyCachedProfile(user) {
@@ -432,6 +479,7 @@
     if (userInitial) userInitial.textContent = String(cachedProfile.initial || '?').slice(0, 1).toUpperCase();
     currentUserIsAdmin = !!cachedProfile.isAdmin;
     if (adminBtn) adminBtn.style.display = currentUserIsAdmin ? '' : 'none';
+    setPhysioGroupVisible(!!cachedProfile.isPhysioAllowed);
     return true;
   }
 
@@ -575,14 +623,15 @@
     }
   }
 
-  if (moreToolsTrigger) {
-    moreToolsTrigger.addEventListener('click', function () {
-      var next = !(moreToolsGroup && moreToolsGroup.classList.contains('is-open'));
-      setMoreToolsOpen(next);
-      writeCacheString(CACHE_KEYS.moreToolsExpanded, next ? '1' : '0');
-      moreToolsTrigger.classList.toggle('active', next);
+  shellGroups.forEach(function (group) {
+    if (!group.trigger) return;
+    group.trigger.addEventListener('click', function () {
+      var next = !(group.node && group.node.classList.contains('is-open'));
+      setShellGroupOpen(group.key, next);
+      writeCacheString(groupCacheKey(group.key), next ? '1' : '0');
+      group.trigger.classList.toggle('active', next);
     });
-  }
+  });
 
   if (menuBtn) {
     menuBtn.addEventListener('click', function () {

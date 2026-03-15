@@ -7,6 +7,7 @@ from lecture_processor.services import account_data_service
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.auth import session as auth_session
 from lecture_processor.domains.analytics import events as analytics_events
+from lecture_processor.domains.physio import access as physio_access
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.shared import parsing as shared_parsing
 
@@ -179,6 +180,7 @@ def get_user(app_ctx, request):
         'total_processed': user.get('total_processed', 0),
         'has_created_study_pack': bool(user.get('has_created_study_pack', bool(user.get('total_processed', 0)))),
         'is_admin': app_ctx.is_admin_user(decoded_token),
+        'is_physio_allowed': bool(physio_access.build_physio_access_payload(decoded_token, runtime=app_ctx).get('allowed')),
         'preferences': preferences,
     })
 
