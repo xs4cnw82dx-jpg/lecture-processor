@@ -162,8 +162,6 @@ def test_load_knowledge_index_reads_gzip_shards(tmp_path):
     assert payload["meta"]["format"] == physio_knowledge.SHARDED_INDEX_FORMAT
     assert len(payload["documents"]) == 1
     assert payload["documents"][0]["source_title"] == "Beroerte"
-
-
 def test_knowledge_query_endpoint_uses_manifest(client, monkeypatch, core, tmp_path):
     _allow_physio(monkeypatch, core)
     monkeypatch.setattr(core, "client", object())
