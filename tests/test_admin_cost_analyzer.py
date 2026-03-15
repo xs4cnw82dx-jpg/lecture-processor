@@ -29,16 +29,16 @@ def _pricing_fixture():
     return {
         'version': 'test-pricing',
         'pricing_table': {
-            'gemini-2.5-flash-lite': {
+            'gemini-3.1-flash-lite-preview': {
                 'standard': {
-                    'input_text_per_M': 0.10,
-                    'input_audio_per_M': 0.30,
-                    'output_per_M': 0.40,
+                    'input_text_per_M': 0.25,
+                    'input_audio_per_M': 0.50,
+                    'output_per_M': 1.50,
                 },
                 'batch': {
-                    'input_text_per_M': 0.05,
-                    'input_audio_per_M': 0.15,
-                    'output_per_M': 0.20,
+                    'input_text_per_M': 0.125,
+                    'input_audio_per_M': 0.25,
+                    'output_per_M': 0.75,
                 },
             },
             'gemini-2.5-pro': {
@@ -76,7 +76,7 @@ def _job_docs_fixture(now_ts):
                         'input_tokens': 100000,
                         'output_tokens': 20000,
                         'total_tokens': 120000,
-                        'model': 'gemini-2.5-flash-lite',
+                        'model': 'gemini-3.1-flash-lite-preview',
                         'billing_mode': 'standard',
                         'input_modality': 'text',
                     },
@@ -236,7 +236,7 @@ def test_admin_cost_analysis_hides_fixture_jobs(client, monkeypatch):
                             'input_tokens': 1000,
                             'output_tokens': 100,
                             'total_tokens': 1100,
-                            'model': 'gemini-2.5-flash-lite',
+                            'model': 'gemini-3.1-flash-lite-preview',
                             'billing_mode': 'standard',
                             'input_modality': 'text',
                         },

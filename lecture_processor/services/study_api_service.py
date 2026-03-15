@@ -85,6 +85,161 @@ def _get_study_pack_source_payload(app_ctx, pack_id):
     return payload if isinstance(payload, dict) else {}
 
 
+def _get_owned_study_folder(app_ctx, uid, folder_id):
+    doc = app_ctx.study_repo.get_study_folder_doc(app_ctx.db, folder_id)
+    if not doc.exists:
+        return None, app_ctx.jsonify({'error': 'Folder not found'}), 404
+    folder = doc.to_dict() or {}
+    if folder.get('uid', '') != uid:
+        return None, app_ctx.jsonify({'error': 'Forbidden'}), 403
+    return (doc, folder), None, None
+
+
+def _public_share_origin(app_ctx, request):
+    configured = str(getattr(app_ctx, 'PUBLIC_BASE_URL', '') or '').strip().rstrip('/')
+    if configured:
+        return configured
+    if request is not None:
+        return str(getattr(request, 'host_url', '') or '').strip().rstrip('/')
+    return ''
+
+
+def _build_share_url(app_ctx, request, share_token):
+    origin = _public_share_origin(app_ctx, request)
+    safe_token = str(share_token or '').strip()
+    if not origin or not safe_token:
+        return ''
+    return f'{origin}/shared/{safe_token}'
+
+
+def _serialize_share_state(app_ctx, request, entity_type, entity_id, share_doc=None):
+    share_payload = {}
+    if share_doc is not None and getattr(share_doc, 'exists', False):
+        share_payload = share_doc.to_dict() or {}
+    share_token = str(share_payload.get('share_token', '') or '')
+    return {
+        'entity_type': entity_type,
+        'entity_id': entity_id,
+        'access_scope': str(share_payload.get('access_scope', 'private') or 'private'),
+        'share_url': _build_share_url(app_ctx, request, share_token) if share_token else '',
+        'updated_at': float(share_payload.get('updated_at', 0) or 0),
+    }
+
+
+def _serialize_public_pack(app_ctx, pack_id, pack, *, include_folder=True):
+    has_audio_playback = bool(pack.get('has_audio_playback', False))
+    has_audio_sync = app_ctx.FEATURE_AUDIO_SECTION_SYNC and bool(pack.get('has_audio_sync', False))
+    return {
+        'study_pack_id': pack_id,
+        'title': pack.get('title', ''),
+        'mode': pack.get('mode', ''),
+        'output_language': pack.get('output_language', 'English'),
+        'notes_markdown': pack.get('notes_markdown', ''),
+        'transcript_segments': pack.get('transcript_segments', []),
+        'notes_audio_map': pack.get('notes_audio_map', []) if has_audio_sync else [],
+        'has_audio_sync': has_audio_sync,
+        'has_audio_playback': has_audio_playback,
+        'flashcards': pack.get('flashcards', []),
+        'test_questions': pack.get('test_questions', []),
+        'interview_summary': pack.get('interview_summary'),
+        'interview_sections': pack.get('interview_sections'),
+        'interview_combined': pack.get('interview_combined'),
+        'study_features': pack.get('study_features', 'none'),
+        'interview_features': pack.get('interview_features', []),
+        'course': pack.get('course', ''),
+        'subject': pack.get('subject', ''),
+        'semester': pack.get('semester', ''),
+        'block': pack.get('block', ''),
+        'folder_id': pack.get('folder_id', '') if include_folder else '',
+        'folder_name': pack.get('folder_name', '') if include_folder else '',
+        'created_at': pack.get('created_at', 0),
+    }
+
+
+def _serialize_public_folder(folder_id, folder):
+    return {
+        'folder_id': folder_id,
+        'name': folder.get('name', ''),
+        'course': folder.get('course', ''),
+        'subject': folder.get('subject', ''),
+        'semester': folder.get('semester', ''),
+        'block': folder.get('block', ''),
+        'exam_date': folder.get('exam_date', ''),
+        'created_at': folder.get('created_at', 0),
+        'updated_at': folder.get('updated_at', 0),
+    }
+
+
+def _serialize_public_pack_summary(pack_id, pack):
+    return {
+        'study_pack_id': pack_id,
+        'title': pack.get('title', ''),
+        'mode': pack.get('mode', ''),
+        'flashcards_count': _pack_item_count(pack, 'flashcards_count', 'flashcards'),
+        'test_questions_count': _pack_item_count(pack, 'test_questions_count', 'test_questions'),
+        'course': pack.get('course', ''),
+        'subject': pack.get('subject', ''),
+        'semester': pack.get('semester', ''),
+        'block': pack.get('block', ''),
+        'folder_id': pack.get('folder_id', ''),
+        'folder_name': pack.get('folder_name', ''),
+        'created_at': pack.get('created_at', 0),
+    }
+
+
+def _get_public_share(app_ctx, share_token):
+    if app_ctx.db is None:
+        return None, app_ctx.jsonify({'error': 'Sharing is unavailable'}), 503
+    doc = app_ctx.study_repo.get_study_share_doc(app_ctx.db, share_token)
+    if not doc.exists:
+        return None, app_ctx.jsonify({'error': 'Shared content not found'}), 404
+    share = doc.to_dict() or {}
+    if str(share.get('access_scope', 'private') or 'private') != 'public':
+        return None, app_ctx.jsonify({'error': 'Shared content not found'}), 404
+    return (doc, share), None, None
+
+
+def _ensure_share_record(app_ctx, owner_uid, entity_type, entity_id):
+    share_doc = app_ctx.study_repo.find_study_share_by_owner_and_entity(
+        app_ctx.db,
+        owner_uid,
+        entity_type,
+        entity_id,
+    )
+    now_ts = app_ctx.time.time()
+    if share_doc is not None and getattr(share_doc, 'exists', False):
+        share_ref = share_doc.reference
+        share_payload = share_doc.to_dict() or {}
+        share_token = str(share_payload.get('share_token', '') or share_ref.id)
+        created_at = float(share_payload.get('created_at', now_ts) or now_ts)
+        return share_ref, share_token, now_ts, created_at
+    share_token = str(app_ctx.uuid.uuid4()).replace('-', '')
+    share_ref = app_ctx.study_repo.create_study_share_doc_ref(app_ctx.db, share_token)
+    return share_ref, share_token, now_ts, now_ts
+
+
+def _delete_share_for_entity(app_ctx, owner_uid, entity_type, entity_id):
+    if app_ctx.db is None:
+        return
+    try:
+        share_doc = app_ctx.study_repo.find_study_share_by_owner_and_entity(
+            app_ctx.db,
+            owner_uid,
+            entity_type,
+            entity_id,
+        )
+        if share_doc is not None and getattr(share_doc, 'exists', False):
+            share_doc.reference.delete()
+    except Exception as error:
+        app_ctx.logger.warning(
+            'Could not delete share for %s %s owned by %s: %s',
+            entity_type,
+            entity_id,
+            owner_uid,
+            error,
+        )
+
+
 def get_study_progress(app_ctx, request):
     decoded_token = app_ctx.verify_firebase_token(request)
     if not decoded_token:
@@ -565,6 +720,7 @@ def delete_study_pack(app_ctx, request, pack_id):
             app_ctx.study_repo.study_pack_source_doc_ref(app_ctx.db, pack_id).delete()
         except Exception as error:
             app_ctx.logger.warning('Warning: could not delete study pack source outputs for %s: %s', pack_id, error)
+        _delete_share_for_entity(app_ctx, uid, 'pack', pack_id)
         pack_ref.delete()
         try:
             app_ctx.get_study_card_state_doc(uid, pack_id).delete()
@@ -743,6 +899,7 @@ def delete_study_folder(app_ctx, request, folder_id):
         folder = doc.to_dict()
         if folder.get('uid', '') != uid:
             return app_ctx.jsonify({'error': 'Forbidden'}), 403
+        _delete_share_for_entity(app_ctx, uid, 'folder', folder_id)
         folder_ref.delete()
         packs = app_ctx.study_repo.list_study_packs_by_uid_and_folder(app_ctx.db, uid, folder_id)
         for pack_doc in packs:
@@ -751,6 +908,202 @@ def delete_study_folder(app_ctx, request, folder_id):
     except Exception as e:
         app_ctx.logger.error(f"Error deleting folder {folder_id}: {e}")
         return app_ctx.jsonify({'error': 'Could not delete folder'}), 500
+
+
+def get_study_pack_share(app_ctx, request, pack_id):
+    decoded_token = app_ctx.verify_firebase_token(request)
+    if not decoded_token:
+        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+    if app_ctx.db is None:
+        return app_ctx.jsonify({'error': 'Sharing is unavailable'}), 503
+    try:
+        pack_result, error_response, status = _get_owned_study_pack(app_ctx, uid, pack_id)
+        if error_response is not None:
+            return error_response, status
+        _doc, _pack = pack_result
+        share_doc = app_ctx.study_repo.find_study_share_by_owner_and_entity(app_ctx.db, uid, 'pack', pack_id)
+        return app_ctx.jsonify(_serialize_share_state(app_ctx, request, 'pack', pack_id, share_doc=share_doc))
+    except Exception as error:
+        app_ctx.logger.error('Error loading share state for pack %s: %s', pack_id, error)
+        return app_ctx.jsonify({'error': 'Could not load sharing settings'}), 500
+
+
+def update_study_pack_share(app_ctx, request, pack_id):
+    decoded_token = app_ctx.verify_firebase_token(request)
+    if not decoded_token:
+        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+    deletion_guard = _account_write_guard(app_ctx, uid)
+    if deletion_guard is not None:
+        return deletion_guard
+    if app_ctx.db is None:
+        return app_ctx.jsonify({'error': 'Sharing is unavailable'}), 503
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return app_ctx.jsonify({'error': 'Invalid payload'}), 400
+    access_scope = str(payload.get('access_scope', 'private') or 'private').strip().lower()
+    if access_scope not in {'public', 'private'}:
+        return app_ctx.jsonify({'error': 'access_scope must be public or private'}), 400
+    try:
+        pack_result, error_response, status = _get_owned_study_pack(app_ctx, uid, pack_id)
+        if error_response is not None:
+            return error_response, status
+        _doc, _pack = pack_result
+        share_ref, share_token, now_ts, created_at = _ensure_share_record(app_ctx, uid, 'pack', pack_id)
+        share_ref.set(
+            {
+                'share_token': share_token,
+                'entity_type': 'pack',
+                'entity_id': pack_id,
+                'owner_uid': uid,
+                'access_scope': access_scope,
+                'allowed_uids': [],
+                'updated_at': now_ts,
+                'created_at': created_at,
+            },
+            merge=True,
+        )
+        share_doc = share_ref.get()
+        return app_ctx.jsonify(_serialize_share_state(app_ctx, request, 'pack', pack_id, share_doc=share_doc))
+    except Exception as error:
+        app_ctx.logger.error('Error updating share state for pack %s: %s', pack_id, error)
+        return app_ctx.jsonify({'error': 'Could not save sharing settings'}), 500
+
+
+def get_study_folder_share(app_ctx, request, folder_id):
+    decoded_token = app_ctx.verify_firebase_token(request)
+    if not decoded_token:
+        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+    if app_ctx.db is None:
+        return app_ctx.jsonify({'error': 'Sharing is unavailable'}), 503
+    try:
+        folder_result, error_response, status = _get_owned_study_folder(app_ctx, uid, folder_id)
+        if error_response is not None:
+            return error_response, status
+        _doc, _folder = folder_result
+        share_doc = app_ctx.study_repo.find_study_share_by_owner_and_entity(app_ctx.db, uid, 'folder', folder_id)
+        return app_ctx.jsonify(_serialize_share_state(app_ctx, request, 'folder', folder_id, share_doc=share_doc))
+    except Exception as error:
+        app_ctx.logger.error('Error loading share state for folder %s: %s', folder_id, error)
+        return app_ctx.jsonify({'error': 'Could not load sharing settings'}), 500
+
+
+def update_study_folder_share(app_ctx, request, folder_id):
+    decoded_token = app_ctx.verify_firebase_token(request)
+    if not decoded_token:
+        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+    deletion_guard = _account_write_guard(app_ctx, uid)
+    if deletion_guard is not None:
+        return deletion_guard
+    if app_ctx.db is None:
+        return app_ctx.jsonify({'error': 'Sharing is unavailable'}), 503
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return app_ctx.jsonify({'error': 'Invalid payload'}), 400
+    access_scope = str(payload.get('access_scope', 'private') or 'private').strip().lower()
+    if access_scope not in {'public', 'private'}:
+        return app_ctx.jsonify({'error': 'access_scope must be public or private'}), 400
+    try:
+        folder_result, error_response, status = _get_owned_study_folder(app_ctx, uid, folder_id)
+        if error_response is not None:
+            return error_response, status
+        _doc, _folder = folder_result
+        share_ref, share_token, now_ts, created_at = _ensure_share_record(app_ctx, uid, 'folder', folder_id)
+        share_ref.set(
+            {
+                'share_token': share_token,
+                'entity_type': 'folder',
+                'entity_id': folder_id,
+                'owner_uid': uid,
+                'access_scope': access_scope,
+                'allowed_uids': [],
+                'updated_at': now_ts,
+                'created_at': created_at,
+            },
+            merge=True,
+        )
+        share_doc = share_ref.get()
+        return app_ctx.jsonify(_serialize_share_state(app_ctx, request, 'folder', folder_id, share_doc=share_doc))
+    except Exception as error:
+        app_ctx.logger.error('Error updating share state for folder %s: %s', folder_id, error)
+        return app_ctx.jsonify({'error': 'Could not save sharing settings'}), 500
+
+
+def get_public_study_share(app_ctx, request, share_token):
+    try:
+        share_result, error_response, status = _get_public_share(app_ctx, share_token)
+        if error_response is not None:
+            return error_response, status
+        _share_doc, share = share_result
+        entity_type = str(share.get('entity_type', '') or '').strip().lower()
+        entity_id = str(share.get('entity_id', '') or '').strip()
+        owner_uid = str(share.get('owner_uid', '') or '').strip()
+        if entity_type == 'pack':
+            pack_doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, entity_id)
+            if not pack_doc.exists:
+                return app_ctx.jsonify({'error': 'Shared content not found'}), 404
+            pack = pack_doc.to_dict() or {}
+            if str(pack.get('uid', '') or '').strip() != owner_uid:
+                return app_ctx.jsonify({'error': 'Shared content not found'}), 404
+            return app_ctx.jsonify(
+                {
+                    'entity_type': 'pack',
+                    'share_token': share_token,
+                    'access_scope': 'public',
+                    'study_pack': _serialize_public_pack(app_ctx, entity_id, pack),
+                }
+            )
+        if entity_type == 'folder':
+            folder_doc = app_ctx.study_repo.get_study_folder_doc(app_ctx.db, entity_id)
+            if not folder_doc.exists:
+                return app_ctx.jsonify({'error': 'Shared content not found'}), 404
+            folder = folder_doc.to_dict() or {}
+            if str(folder.get('uid', '') or '').strip() != owner_uid:
+                return app_ctx.jsonify({'error': 'Shared content not found'}), 404
+            packs = app_ctx.study_repo.list_study_packs_by_uid_and_folder(app_ctx.db, owner_uid, entity_id)
+            pack_summaries = []
+            for pack_doc in packs:
+                pack = pack_doc.to_dict() or {}
+                pack_summaries.append(_serialize_public_pack_summary(pack_doc.id, pack))
+            pack_summaries.sort(key=lambda item: item.get('created_at', 0), reverse=True)
+            return app_ctx.jsonify(
+                {
+                    'entity_type': 'folder',
+                    'share_token': share_token,
+                    'access_scope': 'public',
+                    'folder': _serialize_public_folder(entity_id, folder),
+                    'study_packs': pack_summaries,
+                }
+            )
+        return app_ctx.jsonify({'error': 'Shared content not found'}), 404
+    except Exception as error:
+        app_ctx.logger.error('Error loading public share %s: %s', share_token, error)
+        return app_ctx.jsonify({'error': 'Could not load shared content'}), 500
+
+
+def get_public_shared_folder_pack(app_ctx, request, share_token, pack_id):
+    try:
+        share_result, error_response, status = _get_public_share(app_ctx, share_token)
+        if error_response is not None:
+            return error_response, status
+        _share_doc, share = share_result
+        if str(share.get('entity_type', '') or '').strip().lower() != 'folder':
+            return app_ctx.jsonify({'error': 'Shared content not found'}), 404
+        folder_id = str(share.get('entity_id', '') or '').strip()
+        owner_uid = str(share.get('owner_uid', '') or '').strip()
+        pack_doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
+        if not pack_doc.exists:
+            return app_ctx.jsonify({'error': 'Shared content not found'}), 404
+        pack = pack_doc.to_dict() or {}
+        if str(pack.get('uid', '') or '').strip() != owner_uid or str(pack.get('folder_id', '') or '').strip() != folder_id:
+            return app_ctx.jsonify({'error': 'Shared content not found'}), 404
+        return app_ctx.jsonify(_serialize_public_pack(app_ctx, pack_id, pack))
+    except Exception as error:
+        app_ctx.logger.error('Error loading shared pack %s from share %s: %s', pack_id, share_token, error)
+        return app_ctx.jsonify({'error': 'Could not load shared content'}), 500
 
 
 def export_study_pack_flashcards_csv(app_ctx, request, pack_id):

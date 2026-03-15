@@ -1,17 +1,17 @@
 {
-  "version": "2026-03-05",
+  "version": "2026-03-15",
   "models": {
-    "gemini-2.5-flash-lite": {
-      "label": "Gemini 2.5 Flash Lite (Standard)",
-      "input_text_per_M": 0.10,
-      "input_audio_per_M": 0.30,
-      "output_per_M": 0.40
+    "gemini-3.1-flash-lite-preview": {
+      "label": "Gemini 3.1 Flash Lite (Standard)",
+      "input_text_per_M": 0.25,
+      "input_audio_per_M": 0.50,
+      "output_per_M": 1.50
     },
-    "gemini-2.5-flash-lite-batch": {
-      "label": "Gemini 2.5 Flash Lite (Batch)",
-      "input_text_per_M": 0.05,
-      "input_audio_per_M": 0.15,
-      "output_per_M": 0.20
+    "gemini-3.1-flash-lite-preview-batch": {
+      "label": "Gemini 3.1 Flash Lite (Batch)",
+      "input_text_per_M": 0.125,
+      "input_audio_per_M": 0.25,
+      "output_per_M": 0.75
     },
     "gemini-2.5-pro": {
       "label": "Gemini 2.5 Pro (Standard <=200k)",
@@ -39,16 +39,16 @@
     }
   },
   "pricing_table": {
-    "gemini-2.5-flash-lite": {
+    "gemini-3.1-flash-lite-preview": {
       "standard": {
-        "input_text_per_M": 0.10,
-        "input_audio_per_M": 0.30,
-        "output_per_M": 0.40
+        "input_text_per_M": 0.25,
+        "input_audio_per_M": 0.50,
+        "output_per_M": 1.50
       },
       "batch": {
-        "input_text_per_M": 0.05,
-        "input_audio_per_M": 0.15,
-        "output_per_M": 0.20
+        "input_text_per_M": 0.125,
+        "input_audio_per_M": 0.25,
+        "output_per_M": 0.75
       }
     },
     "gemini-3-flash-preview": {
@@ -108,7 +108,7 @@
       "stages": [
         {
           "stage": "Slide extraction",
-          "model": "gemini-2.5-flash-lite",
+          "model": "gemini-3.1-flash-lite-preview",
           "input_tokens": 80000,
           "output_tokens": 15000
         },
@@ -127,7 +127,7 @@
         },
         {
           "stage": "Study tools",
-          "model": "gemini-2.5-flash-lite",
+          "model": "gemini-3.1-flash-lite-preview",
           "input_tokens": 30000,
           "output_tokens": 20000
         }
@@ -138,13 +138,13 @@
       "stages": [
         {
           "stage": "Slide extraction",
-          "model": "gemini-2.5-flash-lite",
+          "model": "gemini-3.1-flash-lite-preview",
           "input_tokens": 80000,
           "output_tokens": 15000
         },
         {
           "stage": "Study tools",
-          "model": "gemini-2.5-flash-lite",
+          "model": "gemini-3.1-flash-lite-preview",
           "input_tokens": 20000,
           "output_tokens": 15000
         }

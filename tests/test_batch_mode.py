@@ -1,5 +1,6 @@
 import io
 import json
+import zipfile
 
 import pytest
 
@@ -7,6 +8,7 @@ from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import receipts as billing_receipts
+from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 from tests.runtime_test_support import get_test_core
 
@@ -33,7 +35,11 @@ class _Capture:
 
 
 class _SimpleDocx:
-    pass
+    def __init__(self, content=''):
+        self.content = content
+
+    def save(self, target):
+        target.write(str(self.content).encode('utf-8'))
 
 
 class _FakeProviderFile:
@@ -199,6 +205,7 @@ def test_batch_create_slides_only_contract(client, monkeypatch):
         data={
             'mode': 'slides-only',
             'batch_title': 'Batch test',
+            'include_combined_docx': '1',
             'rows': json.dumps(rows),
             'row_1_slides': (io.BytesIO(b'%PDF-1.4 row-1'), 'row-1.pdf'),
             'row_2_slides': (io.BytesIO(b'%PDF-1.4 row-2'), 'row-2.pdf'),
@@ -215,6 +222,7 @@ def test_batch_create_slides_only_contract(client, monkeypatch):
     assert capture.batch_payload.get('completion_email_status') == 'pending'
     assert capture.batch_payload.get('completion_email_sent_at') == 0
     assert capture.batch_payload.get('completion_email_error') == ''
+    assert capture.batch_payload.get('export_options') == {'include_combined_docx': True}
     assert isinstance(capture.rows, list)
     assert len(capture.rows) == 2
     assert capture.rows[0].get('billing_mode') == 'batch'
@@ -365,6 +373,7 @@ def test_batch_jobs_list_contract(client, monkeypatch):
                 'mode': 'lecture-notes',
                 'status': 'queued',
                 'batch_title': 'Batch contract',
+                'export_options': {'include_combined_docx': True},
             }
         ],
     )
@@ -376,6 +385,7 @@ def test_batch_jobs_list_contract(client, monkeypatch):
     assert isinstance(body.get('batches'), list)
     assert body['batches'][0]['batch_id'] == 'batch-1'
     assert body['batches'][0]['status'] == 'queued'
+    assert body['batches'][0]['export_options'] == {'include_combined_docx': True}
 
 
 def test_batch_status_contract(client, monkeypatch):
@@ -404,6 +414,7 @@ def test_batch_status_contract(client, monkeypatch):
             'token_input_total': 123,
             'token_output_total': 45,
             'token_total': 168,
+            'export_options': {'include_combined_docx': True},
             'completion_email_status': 'pending',
             'completion_email_sent_at': 0,
             'completion_email_error': '',
@@ -427,7 +438,153 @@ def test_batch_status_contract(client, monkeypatch):
     assert body.get('batch_id') == 'batch-123'
     assert body.get('mode') == 'lecture-notes'
     assert isinstance(body.get('rows'), list)
+    assert body.get('export_options') == {'include_combined_docx': True}
     assert body.get('completion_email_status') == 'pending'
+
+
+def test_batch_download_zip_includes_combined_docx_when_enabled(client, monkeypatch):
+    _patch_batch_auth(monkeypatch)
+    monkeypatch.setattr(
+        batch_orchestrator,
+        'get_batch',
+        lambda batch_id, runtime=None: {
+            'batch_id': batch_id,
+            'uid': 'u-batch',
+            'mode': 'lecture-notes',
+            'status': 'partial',
+            'batch_title': 'Exam Batch',
+            'total_rows': 2,
+            'completed_rows': 1,
+            'failed_rows': 1,
+            'token_input_total': 100,
+            'token_output_total': 40,
+            'token_total': 140,
+            'export_options': {'include_combined_docx': True},
+        },
+    )
+    monkeypatch.setattr(
+        batch_orchestrator,
+        'get_batch_status',
+        lambda batch_id, runtime=None: {
+            'batch_id': batch_id,
+            'can_download_zip': True,
+        },
+    )
+    monkeypatch.setattr(
+        batch_orchestrator,
+        'list_batch_rows',
+        lambda batch_id, runtime=None: [
+            {
+                'row_id': 'row-1',
+                'ordinal': 1,
+                'status': 'complete',
+                'source_name': 'Lecture 1',
+                'result': 'Merged lecture notes',
+                'slide_text': 'Slides text',
+                'transcript': 'Transcript text',
+                'flashcards': [{'front': 'What is ATP?', 'back': 'Energy currency'}],
+                'test_questions': [{'question': 'What is ATP?', 'options': ['A', 'B'], 'answer': 'A', 'explanation': 'It stores energy'}],
+            },
+            {
+                'row_id': 'row-2',
+                'ordinal': 2,
+                'status': 'processing',
+                'source_name': 'Lecture 2',
+                'error': 'Still running',
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        study_export,
+        'markdown_to_docx',
+        lambda markdown_text, title='Document', runtime=None: _SimpleDocx(f'{title}\n{markdown_text}'),
+    )
+
+    response = client.get('/api/batch/jobs/batch-123/download.zip')
+
+    assert response.status_code == 200
+    archive = zipfile.ZipFile(io.BytesIO(response.data), 'r')
+    names = archive.namelist()
+    assert 'summary.json' in names
+    assert 'rows/row-1/result.docx' in names
+    assert 'rows/row-1/slides.docx' in names
+    assert 'rows/row-1/transcript.docx' in names
+    assert 'rows/row-1/flashcards.csv' in names
+    assert 'rows/row-1/test_questions.csv' in names
+    assert any(name.endswith('_Combined.docx') for name in names)
+
+    summary = json.loads(archive.read('summary.json').decode('utf-8'))
+    assert summary['export_options'] == {'include_combined_docx': True}
+
+    combined_name = next(name for name in names if name.endswith('_Combined.docx'))
+    combined_text = archive.read(combined_name).decode('utf-8')
+    assert 'Lecture 1' in combined_text
+    assert 'Lecture Notes' in combined_text
+    assert 'Flashcards' in combined_text
+    assert 'Practice Questions' in combined_text
+    assert 'Lecture 2' in combined_text
+    assert 'Status: processing' in combined_text
+    assert 'Output was unavailable when this ZIP was created.' in combined_text
+
+
+def test_batch_download_zip_omits_combined_docx_when_disabled(client, monkeypatch):
+    _patch_batch_auth(monkeypatch)
+    monkeypatch.setattr(
+        batch_orchestrator,
+        'get_batch',
+        lambda batch_id, runtime=None: {
+            'batch_id': batch_id,
+            'uid': 'u-batch',
+            'mode': 'slides-only',
+            'status': 'complete',
+            'batch_title': 'Slides Batch',
+            'total_rows': 1,
+            'completed_rows': 1,
+            'failed_rows': 0,
+            'token_input_total': 10,
+            'token_output_total': 5,
+            'token_total': 15,
+            'export_options': {'include_combined_docx': False},
+        },
+    )
+    monkeypatch.setattr(
+        batch_orchestrator,
+        'get_batch_status',
+        lambda batch_id, runtime=None: {
+            'batch_id': batch_id,
+            'can_download_zip': True,
+        },
+    )
+    monkeypatch.setattr(
+        batch_orchestrator,
+        'list_batch_rows',
+        lambda batch_id, runtime=None: [
+            {
+                'row_id': 'row-1',
+                'ordinal': 1,
+                'status': 'complete',
+                'source_name': 'Slides 1',
+                'slide_text': 'Only slides',
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        study_export,
+        'markdown_to_docx',
+        lambda markdown_text, title='Document', runtime=None: _SimpleDocx(f'{title}\n{markdown_text}'),
+    )
+
+    response = client.get('/api/batch/jobs/batch-456/download.zip')
+
+    assert response.status_code == 200
+    archive = zipfile.ZipFile(io.BytesIO(response.data), 'r')
+    names = archive.namelist()
+    assert 'summary.json' in names
+    assert 'rows/row-1/result.docx' in names
+    assert not any(name.endswith('_Combined.docx') for name in names)
+
+    summary = json.loads(archive.read('summary.json').decode('utf-8'))
+    assert summary['export_options'] == {'include_combined_docx': False}
 
 
 def test_batch_status_repairs_terminal_batch_with_incomplete_rows(monkeypatch):

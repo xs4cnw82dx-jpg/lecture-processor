@@ -477,6 +477,7 @@ def create_batch_job(batch_payload, row_payloads, runtime=None):
     now_ts = resolved_runtime.time.time()
     batch_id = str(batch_payload.get('batch_id', '') or resolved_runtime.uuid.uuid4())
     payload = dict(batch_payload)
+    export_options = payload.get('export_options', {}) if isinstance(payload.get('export_options', {}), dict) else {}
     payload.update(
         {
             'batch_id': batch_id,
@@ -504,6 +505,9 @@ def create_batch_job(batch_payload, row_payloads, runtime=None):
             'credits_refund_pending': int(payload.get('credits_refund_pending', 0) or 0),
             'last_heartbeat_at': float(payload.get('last_heartbeat_at', now_ts) or now_ts),
             'client_submission_id': str(payload.get('client_submission_id', '') or ''),
+            'export_options': {
+                'include_combined_docx': bool(export_options.get('include_combined_docx', False)),
+            },
         }
     )
     _upsert_batch(batch_id, payload, runtime=resolved_runtime, merge=False)
@@ -2038,6 +2042,7 @@ def get_batch_status(batch_id, runtime=None):
         'credits_refund_pending': int(batch.get('credits_refund_pending', 0) or 0),
         'can_download_zip': bool(can_download_zip),
         'last_heartbeat_at': batch.get('last_heartbeat_at', 0),
+        'export_options': batch.get('export_options', {}),
         'rows': response_rows,
         'external_batch_refs': batch.get('external_batch_refs', {}),
         'error_summary': batch.get('error_summary', ''),
@@ -2166,6 +2171,7 @@ def list_batches_for_uid(uid, statuses=None, limit=100, runtime=None):
             'stage_started_at': float(batch.get('stage_started_at', 0) or 0),
             'last_heartbeat_at': float(batch.get('last_heartbeat_at', 0) or 0),
             'can_download_zip': bool(can_download_zip),
+            'export_options': batch.get('export_options', {}),
             'completion_email_status': str(batch.get('completion_email_status', 'pending') or 'pending'),
             'completion_email_sent_at': float(batch.get('completion_email_sent_at', 0) or 0),
             'credits_charged': int(batch.get('credits_charged', 0) or 0),
@@ -2237,6 +2243,7 @@ def list_batches_for_admin(statuses=None, limit=200, runtime=None):
             'stage_started_at': float(batch.get('stage_started_at', 0) or 0),
             'last_heartbeat_at': float(batch.get('last_heartbeat_at', 0) or 0),
             'can_download_zip': bool(can_download_zip),
+            'export_options': batch.get('export_options', {}),
             'completion_email_status': str(batch.get('completion_email_status', 'pending') or 'pending'),
             'completion_email_sent_at': float(batch.get('completion_email_sent_at', 0) or 0),
             'credits_charged': int(batch.get('credits_charged', 0) or 0),

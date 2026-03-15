@@ -1,4 +1,6 @@
 import io
+import json
+import zipfile
 import pytest
 from types import SimpleNamespace
 
@@ -18,6 +20,73 @@ from tests.runtime_test_support import get_test_core
 core = get_test_core()
 
 pytestmark = pytest.mark.usefixtures("disable_sentry")
+
+
+class _StoredDoc:
+    def __init__(self, doc_id, store):
+        self.id = doc_id
+        self._store = store
+        self.reference = _StoredRef(store, doc_id)
+
+    @property
+    def exists(self):
+        return self.id in self._store
+
+    def to_dict(self):
+        return dict(self._store.get(self.id, {}))
+
+
+class _StoredRef:
+    def __init__(self, store, doc_id):
+        self.id = doc_id
+        self._store = store
+
+    def get(self):
+        return _StoredDoc(self.id, self._store)
+
+    def set(self, payload, merge=False):
+        if merge and self.id in self._store:
+            existing = dict(self._store[self.id])
+            existing.update(dict(payload))
+            self._store[self.id] = existing
+            return None
+        self._store[self.id] = dict(payload)
+        return None
+
+    def delete(self):
+        self._store.pop(self.id, None)
+
+
+class _StaticDoc:
+    def __init__(self, doc_id, payload):
+        self.id = doc_id
+        self._payload = dict(payload)
+        self.reference = SimpleNamespace(id=doc_id)
+
+    @property
+    def exists(self):
+        return True
+
+    def to_dict(self):
+        return dict(self._payload)
+
+
+class _MissingDoc:
+    id = ""
+    reference = SimpleNamespace(id="")
+    exists = False
+
+    def to_dict(self):
+        return {}
+
+
+class _FakeUuidValue:
+    def __init__(self, value):
+        self.hex = value
+        self._value = value
+
+    def __str__(self):
+        return self._value
 
 
 def test_config_endpoint_shape(client, monkeypatch):
@@ -1048,6 +1117,7 @@ def test_user_batch_jobs_list_contract_fields(client, monkeypatch):
                 "current_stage_state": "running",
                 "provider_state": "FILE_UPLOAD",
                 "can_download_zip": False,
+                "export_options": {"include_combined_docx": True},
                 "completion_email_status": "pending",
                 "credits_charged": 2,
                 "credits_refunded": 0,
@@ -1064,6 +1134,212 @@ def test_user_batch_jobs_list_contract_fields(client, monkeypatch):
     assert payload["batches"][0]["batch_id"] == "batch-1"
     assert payload["batches"][0]["status"] == "queued"
     assert payload["batches"][0]["can_download_zip"] is False
+    assert payload["batches"][0]["export_options"] == {"include_combined_docx": True}
+
+
+def test_study_pack_share_contract_and_public_visibility(client, monkeypatch):
+    share_store = {}
+
+    def _find_share(_db, owner_uid, entity_type, entity_id):
+        for share_token, payload in share_store.items():
+            if (
+                payload.get("owner_uid") == owner_uid
+                and payload.get("entity_type") == entity_type
+                and payload.get("entity_id") == entity_id
+            ):
+                return _StoredDoc(share_token, share_store)
+        return None
+
+    monkeypatch.setattr(core, "db", object())
+    monkeypatch.setattr(core, "PUBLIC_BASE_URL", "https://share.example")
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "user-1", "email": "owner@example.com"})
+    monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(core.time, "time", lambda: 123.0)
+    monkeypatch.setattr(core.uuid, "uuid4", lambda: _FakeUuidValue("sharetoken123"))
+    monkeypatch.setattr(
+        core.study_repo,
+        "get_study_pack_doc",
+        lambda _db, pack_id: _StaticDoc(
+            pack_id,
+            {
+                "uid": "user-1",
+                "title": "Biology Pack",
+                "notes_markdown": "Notes",
+                "flashcards": [{"front": "What is ATP?", "back": "Energy currency"}],
+                "test_questions": [],
+                "folder_id": "",
+                "folder_name": "",
+                "created_at": 10,
+            },
+        ),
+    )
+    monkeypatch.setattr(core.study_repo, "find_study_share_by_owner_and_entity", _find_share)
+    monkeypatch.setattr(core.study_repo, "create_study_share_doc_ref", lambda _db, share_token: _StoredRef(share_store, share_token))
+    monkeypatch.setattr(core.study_repo, "get_study_share_doc", lambda _db, share_token: _StoredDoc(share_token, share_store))
+
+    initial_response = client.get("/api/study-packs/pack-1/share", headers={"Authorization": "Bearer dev"})
+    assert initial_response.status_code == 200
+    assert initial_response.get_json() == {
+        "entity_type": "pack",
+        "entity_id": "pack-1",
+        "access_scope": "private",
+        "share_url": "",
+        "updated_at": 0.0,
+    }
+
+    update_response = client.put(
+        "/api/study-packs/pack-1/share",
+        json={"access_scope": "public"},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert update_response.status_code == 200
+    share_payload = update_response.get_json()
+    assert share_payload["entity_type"] == "pack"
+    assert share_payload["entity_id"] == "pack-1"
+    assert share_payload["access_scope"] == "public"
+    assert share_payload["share_url"] == "https://share.example/shared/sharetoken123"
+    assert share_payload["updated_at"] == 123.0
+
+    pack_share_response = client.get("/api/shared/sharetoken123")
+    assert pack_share_response.status_code == 200
+    pack_payload = pack_share_response.get_json()
+    assert pack_payload["entity_type"] == "pack"
+    assert pack_payload["access_scope"] == "public"
+    assert pack_payload["study_pack"]["study_pack_id"] == "pack-1"
+    assert pack_payload["study_pack"]["title"] == "Biology Pack"
+
+    private_response = client.put(
+        "/api/study-packs/pack-1/share",
+        json={"access_scope": "private"},
+        headers={"Authorization": "Bearer dev"},
+    )
+    assert private_response.status_code == 200
+    assert private_response.get_json()["access_scope"] == "private"
+
+    hidden_response = client.get("/api/shared/sharetoken123")
+    assert hidden_response.status_code == 404
+    assert "not found" in hidden_response.get_json()["error"].lower()
+
+
+def test_study_pack_share_requires_ownership(client, monkeypatch):
+    monkeypatch.setattr(core, "db", object())
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "user-2", "email": "viewer@example.com"})
+    monkeypatch.setattr(
+        core.study_repo,
+        "get_study_pack_doc",
+        lambda _db, pack_id: _StaticDoc(pack_id, {"uid": "user-1", "title": "Private pack"}),
+    )
+
+    response = client.get("/api/study-packs/pack-1/share", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 403
+    assert response.get_json()["error"] == "Forbidden"
+
+
+def test_study_folder_public_share_contract_and_membership_guard(client, monkeypatch):
+    share_store = {}
+    pack_docs = {
+        "pack-1": {
+            "uid": "user-1",
+            "title": "Earlier Pack",
+            "folder_id": "folder-1",
+            "folder_name": "Folder A",
+            "flashcards": [],
+            "test_questions": [],
+            "created_at": 5,
+        },
+        "pack-2": {
+            "uid": "user-1",
+            "title": "Latest Pack",
+            "folder_id": "folder-1",
+            "folder_name": "Folder A",
+            "notes_markdown": "Readable notes",
+            "flashcards": [{"front": "What is DNA?", "back": "Genetic material"}],
+            "test_questions": [{"question": "What is DNA?", "options": ["A", "B"], "answer": "A"}],
+            "created_at": 20,
+        },
+        "pack-outside": {
+            "uid": "user-1",
+            "title": "Outside Pack",
+            "folder_id": "folder-2",
+            "folder_name": "Folder B",
+            "created_at": 1,
+        },
+    }
+
+    def _find_share(_db, owner_uid, entity_type, entity_id):
+        for share_token, payload in share_store.items():
+            if (
+                payload.get("owner_uid") == owner_uid
+                and payload.get("entity_type") == entity_type
+                and payload.get("entity_id") == entity_id
+            ):
+                return _StoredDoc(share_token, share_store)
+        return None
+
+    monkeypatch.setattr(core, "db", object())
+    monkeypatch.setattr(core, "PUBLIC_BASE_URL", "https://share.example")
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "user-1", "email": "owner@example.com"})
+    monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(core.time, "time", lambda: 456.0)
+    monkeypatch.setattr(core.uuid, "uuid4", lambda: _FakeUuidValue("foldershare456"))
+    monkeypatch.setattr(
+        core.study_repo,
+        "get_study_folder_doc",
+        lambda _db, folder_id: _StaticDoc(
+            folder_id,
+            {
+                "uid": "user-1",
+                "name": "Folder A",
+                "course": "Biology",
+                "created_at": 2,
+                "updated_at": 9,
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        core.study_repo,
+        "list_study_packs_by_uid_and_folder",
+        lambda _db, uid, folder_id: [
+            _StaticDoc("pack-1", pack_docs["pack-1"]),
+            _StaticDoc("pack-2", pack_docs["pack-2"]),
+        ],
+    )
+    monkeypatch.setattr(
+        core.study_repo,
+        "get_study_pack_doc",
+        lambda _db, pack_id: _StaticDoc(pack_id, pack_docs[pack_id]) if pack_id in pack_docs else _MissingDoc(),
+    )
+    monkeypatch.setattr(core.study_repo, "find_study_share_by_owner_and_entity", _find_share)
+    monkeypatch.setattr(core.study_repo, "create_study_share_doc_ref", lambda _db, share_token: _StoredRef(share_store, share_token))
+    monkeypatch.setattr(core.study_repo, "get_study_share_doc", lambda _db, share_token: _StoredDoc(share_token, share_store))
+
+    update_response = client.put(
+        "/api/study-folders/folder-1/share",
+        json={"access_scope": "public"},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.get_json()["share_url"] == "https://share.example/shared/foldershare456"
+
+    folder_response = client.get("/api/shared/foldershare456")
+    assert folder_response.status_code == 200
+    folder_payload = folder_response.get_json()
+    assert folder_payload["entity_type"] == "folder"
+    assert folder_payload["folder"]["folder_id"] == "folder-1"
+    assert [item["study_pack_id"] for item in folder_payload["study_packs"]] == ["pack-2", "pack-1"]
+
+    nested_pack_response = client.get("/api/shared/foldershare456/packs/pack-2")
+    assert nested_pack_response.status_code == 200
+    nested_pack_payload = nested_pack_response.get_json()
+    assert nested_pack_payload["study_pack_id"] == "pack-2"
+    assert nested_pack_payload["folder_id"] == "folder-1"
+
+    outside_pack_response = client.get("/api/shared/foldershare456/packs/pack-outside")
+    assert outside_pack_response.status_code == 404
+    assert "not found" in outside_pack_response.get_json()["error"].lower()
 
 
 def test_admin_cost_analysis_contract_fields(client, monkeypatch):

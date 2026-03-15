@@ -175,7 +175,7 @@ def _build_tools_prompt(source_type, custom_prompt=''):
             "3. # Key Terms (term: concise definition)\n"
             "4. # Open Questions (uncertain or ambiguous parts)\n"
             "Do not fabricate details. If text is unreadable, say so explicitly.\n"
-            "Use maximum available reasoning depth for Gemini 2.5 Flash Lite.\n"
+            "Use maximum available reasoning depth for Gemini 3.1 Flash-Lite Preview.\n"
             "Use clean markdown with valid headings and bullet lists only.\n"
             "Do not use malformed list markers like '- 1. item'."
         )
@@ -189,7 +189,7 @@ def _build_tools_prompt(source_type, custom_prompt=''):
             "3. # Key Terms (term: concise definition)\n"
             "4. # Review Questions\n"
             "Use only facts present in the source text.\n"
-            "Use maximum available reasoning depth for Gemini 2.5 Flash Lite.\n"
+            "Use maximum available reasoning depth for Gemini 3.1 Flash-Lite Preview.\n"
             "Use clean markdown with valid headings and bullet lists only.\n"
             "Do not use malformed list markers like '- 1. item'."
         )
@@ -203,7 +203,7 @@ def _build_tools_prompt(source_type, custom_prompt=''):
             "3. # Key Terms (term: concise definition)\n"
             "4. # Review Questions\n"
             "Preserve important formulas, lists, and headings. Do not invent missing content.\n"
-            "Use maximum available reasoning depth for Gemini 2.5 Flash Lite.\n"
+            "Use maximum available reasoning depth for Gemini 3.1 Flash-Lite Preview.\n"
             "Use clean markdown with valid headings and bullet lists only.\n"
             "Prefer '-' for bullet points and avoid malformed nested list markers.\n"
             "Do not use malformed list markers like '- 1. item'."
@@ -573,6 +573,10 @@ def _parse_batch_rows_payload(request):
     return rows
 
 
+def _parse_checkbox_value(raw_value):
+    return str(raw_value or '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
 def _batch_user_guard(app_ctx, request):
     decoded_token = app_ctx.verify_firebase_token(request)
     if not decoded_token:
@@ -667,6 +671,7 @@ def create_batch_job(app_ctx, request):
         '10',
         runtime=app_ctx,
     )
+    include_combined_docx = _parse_checkbox_value(request.form.get('include_combined_docx', '0'))
 
     batch_id = str(app_ctx.uuid.uuid4())
     prepared_rows = []
@@ -874,6 +879,9 @@ def create_batch_job(app_ctx, request):
                 'flashcard_amount': default_flashcards,
                 'question_amount': default_questions,
             },
+            'export_options': {
+                'include_combined_docx': include_combined_docx,
+            },
             'folder_id': folder_id,
             'folder_name': folder_name,
             'total_rows': len(prepared_rows),
@@ -1024,6 +1032,118 @@ def _batch_row_csv_bytes(app_ctx, row, export_type='flashcards'):
     return output.getvalue().encode('utf-8')
 
 
+def _append_combined_markdown_section(parts, title, content):
+    text = str(content or '').strip()
+    if not text:
+        return
+    parts.append(f'## {title}')
+    parts.append('')
+    parts.append(text)
+    parts.append('')
+
+
+def _batch_row_flashcards_markdown(row):
+    cards = row.get('flashcards', []) if isinstance(row.get('flashcards', []), list) else []
+    if not cards:
+        return ''
+    lines = []
+    for index, card in enumerate(cards, start=1):
+        front = str((card or {}).get('front', '') or '').strip() or f'Flashcard {index}'
+        back = str((card or {}).get('back', '') or '').strip()
+        lines.append(f'{index}. **{front}**')
+        if back:
+            lines.append(f'   - {back}')
+    return '\n'.join(lines).strip()
+
+
+def _batch_row_questions_markdown(row):
+    questions = row.get('test_questions', []) if isinstance(row.get('test_questions', []), list) else []
+    if not questions:
+        return ''
+    lines = []
+    letters = ['A', 'B', 'C', 'D']
+    for index, question in enumerate(questions, start=1):
+        question_text = str((question or {}).get('question', '') or '').strip() or f'Question {index}'
+        lines.append(f'{index}. **{question_text}**')
+        options = (question or {}).get('options', []) if isinstance((question or {}).get('options', []), list) else []
+        for option_index, option in enumerate(options[:4]):
+            option_text = str(option or '').strip()
+            if option_text:
+                lines.append(f'   - {letters[option_index]}: {option_text}')
+        answer = str((question or {}).get('answer', '') or '').strip()
+        if answer:
+            lines.append(f'   - Correct answer: {answer}')
+        explanation = str((question or {}).get('explanation', '') or '').strip()
+        if explanation:
+            lines.append(f'   - Explanation: {explanation}')
+    return '\n'.join(lines).strip()
+
+
+def _batch_row_combined_markdown(batch, row):
+    mode = str((batch or {}).get('mode', '') or '').strip().lower()
+    row_label = str(row.get('source_name', '') or '').strip() or f'Row {int(row.get("ordinal", 0) or 0)}'
+    status = str(row.get('status', 'queued') or 'queued').strip().lower()
+    parts = [f'# {row_label}', '']
+
+    if status != 'complete':
+        parts.append(f'Status: {status}')
+        parts.append('')
+        parts.append('Output was unavailable when this ZIP was created.')
+        error_text = str(row.get('error', '') or '').strip()
+        if error_text:
+            parts.append('')
+            parts.append(f'Reason: {error_text}')
+        parts.append('')
+        return '\n'.join(parts).strip()
+
+    result_text = str(row.get('result', '') or row.get('merged_notes', '') or '').strip()
+    slide_text = str(row.get('slide_text', '') or '').strip()
+    transcript_text = str(row.get('transcript', '') or '').strip()
+    interview_summary = str(row.get('interview_summary', '') or '').strip()
+    interview_sections = str(row.get('interview_sections', '') or '').strip()
+    interview_combined = str(row.get('interview_combined', '') or '').strip()
+
+    if mode == 'lecture-notes':
+        _append_combined_markdown_section(parts, 'Lecture Notes', result_text)
+        _append_combined_markdown_section(parts, 'Slide Extract', slide_text)
+        _append_combined_markdown_section(parts, 'Transcript', transcript_text)
+    elif mode == 'slides-only':
+        _append_combined_markdown_section(parts, 'Slide Extract', slide_text or result_text)
+    elif mode == 'interview':
+        _append_combined_markdown_section(parts, 'Transcript', transcript_text or result_text)
+        _append_combined_markdown_section(parts, 'Interview Summary', interview_summary)
+        _append_combined_markdown_section(parts, 'Structured Transcript', interview_sections)
+        if interview_combined and not interview_summary and not interview_sections:
+            _append_combined_markdown_section(parts, 'Combined Output', interview_combined)
+    else:
+        _append_combined_markdown_section(parts, 'Output', result_text)
+
+    flashcards_markdown = _batch_row_flashcards_markdown(row)
+    if flashcards_markdown:
+        _append_combined_markdown_section(parts, 'Flashcards', flashcards_markdown)
+
+    questions_markdown = _batch_row_questions_markdown(row)
+    if questions_markdown:
+        _append_combined_markdown_section(parts, 'Practice Questions', questions_markdown)
+
+    return '\n'.join(part for part in parts if part is not None).strip()
+
+
+def _batch_combined_docx_bytes(app_ctx, batch, rows):
+    batch_title = str((batch or {}).get('batch_title', '') or (batch or {}).get('batch_id', '') or 'Batch Combined').strip()
+    sections = []
+    for row in rows:
+        sections.append(_batch_row_combined_markdown(batch, row))
+    markdown_text = '\n\n'.join(section for section in sections if str(section or '').strip()).strip()
+    if not markdown_text:
+        markdown_text = '# Batch Output\n\nNo row output was available when this ZIP was created.'
+    doc = study_export.markdown_to_docx(markdown_text, title=batch_title + ' Combined', runtime=app_ctx)
+    output = app_ctx.io.BytesIO()
+    doc.save(output)
+    output.seek(0)
+    return output.read()
+
+
 def download_batch_row_docx(app_ctx, request, batch_id, row_id):
     _batch, _decoded, error_response, status = _get_batch_with_permission(app_ctx, request, batch_id)
     if error_response is not None:
@@ -1072,6 +1192,8 @@ def download_batch_zip(app_ctx, request, batch_id):
     if not bool(batch_status.get('can_download_zip', False)):
         return app_ctx.jsonify({'error': 'Batch ZIP is available after at least one row completes.'}), 400
     rows = batch_orchestrator.list_batch_rows(batch_id, runtime=app_ctx)
+    export_options = batch.get('export_options', {}) if isinstance(batch.get('export_options', {}), dict) else {}
+    include_combined_docx = bool(export_options.get('include_combined_docx', False))
     archive_bytes = app_ctx.io.BytesIO()
     with zipfile.ZipFile(archive_bytes, mode='w', compression=zipfile.ZIP_DEFLATED) as archive:
         summary = {
@@ -1084,8 +1206,15 @@ def download_batch_zip(app_ctx, request, batch_id):
             'token_input_total': batch.get('token_input_total', 0),
             'token_output_total': batch.get('token_output_total', 0),
             'token_total': batch.get('token_total', 0),
+            'export_options': export_options,
         }
         archive.writestr('summary.json', json.dumps(summary, ensure_ascii=False, indent=2))
+        if include_combined_docx:
+            combined_name = study_export.sanitize_export_filename(
+                batch.get('batch_title', '') or f'batch-{batch_id}',
+                fallback=f'batch-{batch_id}',
+            ) + '_Combined.docx'
+            archive.writestr(combined_name, _batch_combined_docx_bytes(app_ctx, batch, rows))
         for row in rows:
             row_id = str(row.get('row_id', '') or '')
             folder = f'rows/{row_id}'

@@ -42,6 +42,8 @@ EXPECTED_ROUTES = [
     ('POST', '/api/study-folders', 'study_api.create_study_folder'),
     ('DELETE', '/api/study-folders/<folder_id>', 'study_api.delete_study_folder'),
     ('PATCH', '/api/study-folders/<folder_id>', 'study_api.update_study_folder'),
+    ('GET', '/api/study-folders/<folder_id>/share', 'study_api.get_study_folder_share'),
+    ('PUT', '/api/study-folders/<folder_id>/share', 'study_api.update_study_folder_share'),
     ('GET', '/api/study-packs', 'study_api.get_study_packs'),
     ('POST', '/api/study-packs', 'study_api.create_study_pack'),
     ('DELETE', '/api/study-packs/<pack_id>', 'study_api.delete_study_pack'),
@@ -53,9 +55,13 @@ EXPECTED_ROUTES = [
     ('GET', '/api/study-packs/<pack_id>/export-notes', 'study_api.export_study_pack_notes'),
     ('GET', '/api/study-packs/<pack_id>/export-pdf', 'study_api.export_study_pack_pdf'),
     ('GET', '/api/study-packs/<pack_id>/export-source', 'study_api.export_study_pack_source'),
+    ('GET', '/api/study-packs/<pack_id>/share', 'study_api.get_study_pack_share'),
+    ('PUT', '/api/study-packs/<pack_id>/share', 'study_api.update_study_pack_share'),
     ('GET', '/api/study-progress', 'study_api.get_study_progress'),
     ('PUT', '/api/study-progress', 'study_api.update_study_progress'),
     ('GET', '/api/study-progress/summary', 'study_api.get_study_progress_summary'),
+    ('GET', '/api/shared/<share_token>', 'study_api.get_public_study_share'),
+    ('GET', '/api/shared/<share_token>/packs/<pack_id>', 'study_api.get_public_shared_folder_pack'),
     ('POST', '/api/tools/export', 'upload_api.tools_export'),
     ('POST', '/api/tools/extract', 'upload_api.tools_extract'),
     ('GET', '/api/user-preferences', 'auth_api.get_user_preferences'),
@@ -86,6 +92,7 @@ EXPECTED_ROUTES = [
     ('GET', '/stats', 'pages.plan_dashboard'),
     ('GET', '/status/<job_id>', 'upload_api.get_status'),
     ('GET', '/study', 'pages.study_dashboard'),
+    ('GET', '/shared/<share_token>', 'pages.shared_study_page'),
     ('GET', '/terms', 'pages.terms_of_service'),
     ('GET', '/tools', 'pages.tools_page'),
     ('GET', '/url-reader', 'pages.url_reader_page'),
@@ -120,6 +127,15 @@ def test_lowercase_faq_redirects_to_canonical_route(client):
 
     assert response.status_code == 302
     assert response.headers['Location'].endswith('/FAQ')
+
+
+def test_shared_study_page_renders_public_shell(client):
+    response = client.get('/shared/demo-token')
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'SharedStudyConfig' in html
+    assert 'demo-token' in html
 
 
 def test_pricing_pages_render_runtime_bundle_catalog(client, runtime, monkeypatch):

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shared Study Content</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/study.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-study.css') }}">
+</head>
+<body>
+  {% set shell_title = 'Shared Study' %}
+  {% include '_app_shell.html' %}
+  <main class="app-shell-page shared-study-page">
+    <div class="container">
+      <section class="shell-panel shared-study-hero">
+        <div>
+          <p class="shared-study-eyebrow">Shared study content</p>
+          <h1 id="shared-study-title">Loading shared content...</h1>
+          <p class="shared-study-subtitle" id="shared-study-subtitle">This view is read-only.</p>
+        </div>
+        <a href="/study" class="btn">Open your Study Library</a>
+      </section>
+
+      <section class="shell-panel shared-study-state" id="shared-study-loading">
+        <div class="shared-study-state-title">Preparing shared content</div>
+        <div class="shared-study-state-copy">Loading notes, flashcards, and practice material...</div>
+      </section>
+
+      <section class="shell-panel shared-study-state shared-study-state-error" id="shared-study-error" hidden>
+        <div class="shared-study-state-title">This shared link is unavailable</div>
+        <div class="shared-study-state-copy" id="shared-study-error-text">The link may be private, expired, or no longer exists.</div>
+      </section>
+
+      <section class="shared-pack-shell" id="shared-pack-shell" hidden>
+        <div class="shared-pack-summary">
+          <div class="shared-pack-pill" id="shared-pack-mode">Study Pack</div>
+          <div class="shared-pack-meta" id="shared-pack-meta"></div>
+        </div>
+        <div class="shared-pack-sections">
+          <section class="panel">
+            <div class="panel-head"><span class="panel-title">Notes</span></div>
+            <div class="panel-body">
+              <div class="shared-notes-view" id="shared-notes-view"></div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><span class="panel-title">Flashcards</span></div>
+            <div class="panel-body">
+              <div class="shared-stack" id="shared-flashcards-list"></div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><span class="panel-title">Practice Test</span></div>
+            <div class="panel-body">
+              <div class="shared-stack" id="shared-questions-list"></div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="shared-folder-shell" id="shared-folder-shell" hidden>
+        <div class="grid shared-folder-grid">
+          <aside class="panel">
+            <div class="panel-head"><span class="panel-title">Shared Packs</span></div>
+            <div class="panel-body">
+              <div class="list" id="shared-folder-pack-list"></div>
+            </div>
+          </aside>
+          <section class="panel">
+            <div class="panel-head"><span class="panel-title">Pack Preview</span></div>
+            <div class="panel-body">
+              <div class="shared-folder-empty" id="shared-folder-empty">Select a pack to preview its study content.</div>
+              <div id="shared-folder-pack-preview" hidden>
+                <div class="shared-pack-summary">
+                  <div class="shared-pack-pill" id="shared-folder-pack-mode">Study Pack</div>
+                  <div class="shared-pack-meta" id="shared-folder-pack-meta"></div>
+                </div>
+                <div class="shared-pack-sections">
+                  <section class="panel shared-inner-panel">
+                    <div class="panel-head"><span class="panel-title">Notes</span></div>
+                    <div class="panel-body"><div class="shared-notes-view" id="shared-folder-notes-view"></div></div>
+                  </section>
+                  <section class="panel shared-inner-panel">
+                    <div class="panel-head"><span class="panel-title">Flashcards</span></div>
+                    <div class="panel-body"><div class="shared-stack" id="shared-folder-flashcards-list"></div></div>
+                  </section>
+                  <section class="panel shared-inner-panel">
+                    <div class="panel-head"><span class="panel-title">Practice Test</span></div>
+                    <div class="panel-body"><div class="shared-stack" id="shared-folder-questions-list"></div></div>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+    </div>
+  </main>
+  {% include '_shell_footer.html' %}
+  </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@17.0.4/lib/marked.umd.js" integrity="sha384-aLjW8wZKyOuTOcURHHubORbxQvuyZMLWE2b70jrYAHM0r11vW/KII2EqaifKahR4" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.3.2/dist/purify.min.js" integrity="sha384-8hAfZQ5Oqos5HLTHfR0sLvvwpcVI4fGhV+0Dj/HCcpkKaacivQs82XHmvLOnAhXn" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/markdown-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+  <script>
+    window.SharedStudyConfig = { shareToken: {{ share_token | tojson }} };
+  </script>
+  <script src="{{ url_for('static', filename=shared_study_js_asset or 'js/shared-study.js') }}"></script>
+</body>
+</html>

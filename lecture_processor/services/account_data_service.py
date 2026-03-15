@@ -248,13 +248,13 @@ def delete_account_data(app_ctx, request):
         if not deletion_started:
             raise RuntimeError('Could not mark account deletion as started.')
 
-        def _delete_uid_collection(collection_name):
+        def _delete_field_collection(collection_name, field_name, field_value, deleted_key=None):
             deleted_count = 0
             while True:
                 docs = account_lifecycle.query_docs_by_field(
                     collection_name,
-                    'uid',
-                    uid,
+                    field_name,
+                    field_value,
                     page_size,
                     runtime=app_ctx,
                 )
@@ -273,7 +273,10 @@ def delete_account_data(app_ctx, request):
                         warnings_list.append(f"Could not delete {collection_name}/{doc.id}: {error}")
                 if len(docs) < page_size:
                     break
-            deleted[collection_name] = deleted_count
+            deleted[deleted_key or collection_name] = deleted_count
+
+        def _delete_uid_collection(collection_name):
+            _delete_field_collection(collection_name, 'uid', uid)
 
         def _anonymize_purchases():
             anonymized = 0
@@ -411,6 +414,7 @@ def delete_account_data(app_ctx, request):
         _delete_uid_collection('analytics_events')
         _delete_uid_collection('study_folders')
         _delete_uid_collection('study_card_states')
+        _delete_field_collection('study_shares', 'owner_uid', uid, deleted_key='study_shares')
         _delete_uid_collection('planner_sessions')
         _delete_uid_collection('planner_settings')
         _delete_study_packs()
@@ -438,6 +442,7 @@ def delete_account_data(app_ctx, request):
             ('analytics_events', 'uid', uid, 'analytics_events'),
             ('study_folders', 'uid', uid, 'study_folders'),
             ('study_card_states', 'uid', uid, 'study_card_states'),
+            ('study_shares', 'owner_uid', uid, 'study_shares'),
             ('study_packs', 'uid', uid, 'study_packs'),
             ('study_pack_sources', 'uid', uid, 'study_pack_sources'),
             ('planner_sessions', 'uid', uid, 'planner_sessions'),

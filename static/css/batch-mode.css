@@ -245,6 +245,27 @@
   grid-column: 1 / -1;
 }
 
+.batch-export-option {
+  cursor: pointer;
+}
+
+.batch-export-option-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.95rem;
+  color: #243047;
+  line-height: 1.45;
+}
+
+.batch-export-option-row input {
+  margin-top: 2px;
+  width: 18px;
+  height: 18px;
+  accent-color: #5a7cff;
+  flex: 0 0 auto;
+}
+
 .control-label {
   font-size: 0.79rem;
   color: #4f5f78;

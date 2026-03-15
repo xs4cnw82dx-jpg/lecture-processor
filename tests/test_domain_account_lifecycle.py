@@ -118,15 +118,32 @@ def test_collect_user_export_payload_returns_expected_shape(app, monkeypatch):
             return ([{"id": "session-1", "title": "Review", "_id": "planner-session-1"}], False)
         return ([], False)
 
+    class _ShareDoc:
+        def __init__(self, doc_id, payload):
+            self.id = doc_id
+            self._payload = payload
+
+        def to_dict(self):
+            return dict(self._payload)
+
     monkeypatch.setattr(lifecycle, "list_docs_by_uid", _list_docs)
+    monkeypatch.setattr(
+        lifecycle,
+        "query_docs_by_field",
+        lambda collection_name, field_name, field_value, limit, runtime=None: [
+            _ShareDoc("share-1", {"owner_uid": "u1", "entity_type": "pack", "entity_id": "pack-1", "access_scope": "public"})
+        ] if collection_name == "study_shares" and field_name == "owner_uid" and field_value == "u1" else [],
+    )
 
     payload = lifecycle.collect_user_export_payload("u1", "u@example.com", runtime=runtime)
     assert payload["meta"]["uid"] == "u1"
     assert payload["account"]["profile"] == {"uid": "u1"}
     assert payload["account"]["planner_settings"]["enabled"] == "on"
     assert payload["meta"]["truncated"]["study_pack_sources"] is False
+    assert payload["meta"]["truncated"]["study_shares"] is False
     assert payload["collections"]["planner_sessions"] == [{"id": "session-1", "title": "Review", "_id": "planner-session-1"}]
     assert payload["collections"]["study_pack_sources"] == []
+    assert payload["collections"]["study_shares"] == [{"owner_uid": "u1", "entity_type": "pack", "entity_id": "pack-1", "access_scope": "public", "_id": "share-1"}]
     assert "collections" in payload
 
 

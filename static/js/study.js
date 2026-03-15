@@ -44,6 +44,7 @@ let goalPanelStatusText = 'Synced', goalPanelStatusTone = 'success';
 let activeRuntimeJobs = [];
 let runtimeJobsRefreshTimer = null;
 let runtimeJobsRefreshInFlight = false;
+let shareModalEntityType = '', shareModalEntityId = '', shareModalScope = 'private', shareModalLoadedLink = '', shareModalSaving = false;
 const HINT_FADE_DELAY_MS = 10000;
 const NOTES_ICON_IDLE_MS = 5000;
 const HIGHLIGHT_SYNC_DELAY_MS = 450;
@@ -1051,7 +1052,7 @@ var packCourse = document.getElementById('pack-course'), packSubject = document.
 var packAdvancedMetaBtn = document.getElementById('pack-advanced-meta-btn'), packAdvancedMetaShell = document.getElementById('pack-advanced-meta-shell'), packAdvancedMetaPanel = document.getElementById('pack-advanced-meta-panel');
 var packSummary = document.getElementById('pack-summary'), packSummaryTitle = document.getElementById('pack-summary-title'), packSummaryMeta = document.getElementById('pack-summary-meta'), packStatNotes = document.getElementById('pack-stat-notes'), packStatCards = document.getElementById('pack-stat-cards'), packStatTest = document.getElementById('pack-stat-test');
 var packGoalsPanel = document.getElementById('pack-goals-panel'), packGoalCard = document.getElementById('pack-goal-card'), packGoalsStatus = document.getElementById('pack-goals-status'), overallDailyGoalInput = document.getElementById('overall-daily-goal-input'), overallDailyGoalDecrease = document.getElementById('overall-daily-goal-decrease'), overallDailyGoalIncrease = document.getElementById('overall-daily-goal-increase'), packDailyGoalInput = document.getElementById('pack-daily-goal-input'), packDailyGoalClear = document.getElementById('pack-daily-goal-clear'), packDailyGoalDecrease = document.getElementById('pack-daily-goal-decrease'), packDailyGoalIncrease = document.getElementById('pack-daily-goal-increase'), packGoalDue = document.getElementById('pack-goal-due'), packGoalUnmastered = document.getElementById('pack-goal-unmastered'), packGoalRecommendation = document.getElementById('pack-goal-recommendation'), packGoalHelper = document.getElementById('pack-goal-helper');
-var createPackBtn = document.getElementById('create-pack-btn'), openBuilderBtn = document.getElementById('open-builder-btn'), savePackBtn = document.getElementById('save-pack-btn'), deletePackBtn = document.getElementById('delete-pack-btn'), exportPackNotesBtn = document.getElementById('export-pack-notes-btn'), openLearnBtn = document.getElementById('open-learn-btn');
+var createPackBtn = document.getElementById('create-pack-btn'), openBuilderBtn = document.getElementById('open-builder-btn'), savePackBtn = document.getElementById('save-pack-btn'), deletePackBtn = document.getElementById('delete-pack-btn'), exportPackNotesBtn = document.getElementById('export-pack-notes-btn'), packShareBtn = document.getElementById('pack-share-btn'), openLearnBtn = document.getElementById('open-learn-btn');
 var exportMenu = document.getElementById('export-menu'), exportMenuBtn = document.getElementById('export-menu-btn'), exportMenuList = document.getElementById('export-menu-list'), exportPdfSubmenu = document.getElementById('export-pdf-submenu');
 var editorTabs = document.querySelectorAll('.editor-tab'), flashcardCount = document.getElementById('flashcard-count'), questionCount = document.getElementById('question-count'), addFlashcardBtn = document.getElementById('add-flashcard-btn'), addQuestionBtn = document.getElementById('add-question-btn'), flashcardEditorList = document.getElementById('flashcard-editor-list'), questionEditorList = document.getElementById('question-editor-list');
 var learnStage = document.getElementById('learn-stage'), learnTitle = document.getElementById('learn-title'), learnSub = document.getElementById('learn-sub'), learnBackAppBtn = document.getElementById('learn-back-app-btn'), learnBackLibraryBtn = document.getElementById('learn-back-library-btn'), learnFullscreenBtn = document.getElementById('learn-fullscreen-btn');
@@ -1079,6 +1080,7 @@ var builderExitOverlay = document.getElementById('builder-exit-overlay'), builde
 var learnNotesContent = document.getElementById('learn-notes-content');
 var folderModalOverlay = document.getElementById('folder-modal-overlay'), folderModalTitle = document.getElementById('folder-modal-title'), folderModalClose = document.getElementById('folder-modal-close'), folderModalCancel = document.getElementById('folder-modal-cancel'), folderModalSave = document.getElementById('folder-modal-save'), folderNameInput = document.getElementById('folder-name-input'), folderCourseInput = document.getElementById('folder-course-input'), folderSubjectInput = document.getElementById('folder-subject-input'), folderSemesterInput = document.getElementById('folder-semester-input'), folderBlockInput = document.getElementById('folder-block-input'), folderExamDateInput = document.getElementById('folder-exam-date-input');
 var confirmModalOverlay = document.getElementById('confirm-modal-overlay'), confirmModalTitle = document.getElementById('confirm-modal-title'), confirmModalMessage = document.getElementById('confirm-modal-message'), confirmModalClose = document.getElementById('confirm-modal-close'), confirmModalCancel = document.getElementById('confirm-modal-cancel'), confirmModalConfirm = document.getElementById('confirm-modal-confirm');
+var shareModalOverlay = document.getElementById('share-modal-overlay'), shareModalTitle = document.getElementById('share-modal-title'), shareModalMessage = document.getElementById('share-modal-message'), shareModalClose = document.getElementById('share-modal-close'), shareModalCancel = document.getElementById('share-modal-cancel'), shareModalSave = document.getElementById('share-modal-save'), shareModalStatus = document.getElementById('share-modal-status'), shareScopePrivate = document.getElementById('share-scope-private'), shareScopePublic = document.getElementById('share-scope-public'), shareLinkInput = document.getElementById('share-link-input'), shareCopyBtn = document.getElementById('share-copy-btn');
 var toastEl = document.getElementById('toast');
 var audioPlayerBar = document.getElementById('audio-player-bar'), audioPlayerEl = document.getElementById('audio-player-el'), audioPlayBtn = document.getElementById('audio-play-btn'), audioPlayIcon = document.getElementById('audio-play-icon'), audioPauseIcon = document.getElementById('audio-pause-icon'), audioTime = document.getElementById('audio-time'), audioProgressWrap = document.getElementById('audio-progress-wrap'), audioProgressFill = document.getElementById('audio-progress-fill'), audioSpeedBtn = document.getElementById('audio-speed-btn'), audioPackTitle = document.getElementById('audio-pack-title'), audioCloseBtn = document.getElementById('audio-close-btn');
 var audioBlobUrl = '';
@@ -1896,6 +1898,7 @@ function closeActiveModalFromEscape() {
   if (activeModalOverlay === folderModalOverlay) { closeFolderModal(); return; }
   if (activeModalOverlay === confirmModalOverlay) { closeConfirmModal(false); return; }
   if (activeModalOverlay === builderExitOverlay) { closeBuilderExitModal('cancel'); return; }
+  if (activeModalOverlay === shareModalOverlay) { closeShareModal(); return; }
   closeModal(activeModalOverlay);
 }
 function openModal(ov) {
@@ -1932,6 +1935,187 @@ function closeModal(ov) {
 }
 function openConfirmModal(title, message, confirmLabel) { confirmModalTitle.textContent = title; confirmModalMessage.textContent = message; confirmModalConfirm.textContent = confirmLabel || 'Delete'; openModal(confirmModalOverlay); return new Promise(function (r) { confirmModalResolver = r; }); }
 function closeConfirmModal(c) { closeModal(confirmModalOverlay); if (confirmModalResolver) { confirmModalResolver(Boolean(c)); confirmModalResolver = null; } }
+function getShareEndpoint(entityType, entityId) {
+  var safeType = String(entityType || '').trim().toLowerCase();
+  var safeId = String(entityId || '').trim();
+  if (!safeId) return '';
+  if (safeType === 'folder') {
+    return '/api/study-folders/' + encodeURIComponent(safeId) + '/share';
+  }
+  return '/api/study-packs/' + encodeURIComponent(safeId) + '/share';
+}
+function setShareScopeUi(scope) {
+  shareModalScope = scope === 'public' ? 'public' : 'private';
+  if (shareScopePrivate) {
+    shareScopePrivate.classList.toggle('primary', shareModalScope === 'private');
+  }
+  if (shareScopePublic) {
+    shareScopePublic.classList.toggle('primary', shareModalScope === 'public');
+  }
+  if (shareLinkInput) {
+    shareLinkInput.value = shareModalScope === 'public' ? shareModalLoadedLink : '';
+    shareLinkInput.placeholder = shareModalScope === 'public'
+      ? 'Share link will appear here once saved.'
+      : 'Enable public sharing to generate a link.';
+  }
+  if (shareModalStatus) {
+    shareModalStatus.textContent = shareModalScope === 'public'
+      ? 'Anyone with this link can view this content in a read-only page.'
+      : 'Private links are disabled for everyone except you inside the app.';
+  }
+  if (shareCopyBtn) {
+    shareCopyBtn.disabled = shareModalScope !== 'public' || !String(shareModalLoadedLink || '').trim();
+  }
+}
+function setShareModalSaving(saving) {
+  shareModalSaving = !!saving;
+  if (shareModalSave) {
+    shareModalSave.disabled = shareModalSaving || !shareModalEntityId;
+    shareModalSave.textContent = shareModalSaving ? 'Saving...' : 'Save settings';
+  }
+  if (shareModalCancel) shareModalCancel.disabled = shareModalSaving;
+  if (shareModalClose) shareModalClose.disabled = shareModalSaving;
+  if (shareScopePrivate) shareScopePrivate.disabled = shareModalSaving;
+  if (shareScopePublic) shareScopePublic.disabled = shareModalSaving;
+  if (shareCopyBtn) {
+    shareCopyBtn.disabled = shareModalSaving || shareModalScope !== 'public' || !String(shareModalLoadedLink || '').trim();
+  }
+}
+function populateShareModal(payload) {
+  var data = payload || {};
+  var scope = String(data.access_scope || 'private').trim().toLowerCase();
+  var shareUrl = String(data.share_url || '').trim();
+  shareModalLoadedLink = shareUrl;
+  setShareScopeUi(scope);
+}
+function loadShareState(entityType, entityId) {
+  var endpoint = getShareEndpoint(entityType, entityId);
+  if (!endpoint) {
+    return Promise.reject(new Error('Share target is unavailable.'));
+  }
+  return apiCall(endpoint);
+}
+function openShareModal(entityType, entityId, label) {
+  shareModalEntityType = String(entityType || '').trim().toLowerCase();
+  shareModalEntityId = String(entityId || '').trim();
+  if (!shareModalEntityId) {
+    showToast('Save this item before sharing it.', 'error');
+    return;
+  }
+  if (shareModalTitle) {
+    shareModalTitle.textContent = shareModalEntityType === 'folder' ? 'Share Folder' : 'Share Study Pack';
+  }
+  if (shareModalMessage) {
+    var safeLabel = String(label || '').trim();
+    if (safeLabel) {
+      shareModalMessage.textContent = 'Choose whether "' + safeLabel + '" can be opened with a share link.';
+    } else {
+      shareModalMessage.textContent = 'Choose whether this content can be opened with a share link.';
+    }
+  }
+  populateShareModal({ access_scope: 'private', share_url: '' });
+  setShareModalSaving(true);
+  openModal(shareModalOverlay);
+  loadShareState(shareModalEntityType, shareModalEntityId).then(function (payload) {
+    if (shareModalEntityType !== String(entityType || '').trim().toLowerCase() || shareModalEntityId !== String(entityId || '').trim()) {
+      return;
+    }
+    populateShareModal(payload || {});
+  }).catch(function (error) {
+    showToast(error.message || 'Could not load sharing settings.', 'error');
+  }).finally(function () {
+    if (shareModalEntityType === String(entityType || '').trim().toLowerCase() && shareModalEntityId === String(entityId || '').trim()) {
+      setShareModalSaving(false);
+    }
+  });
+}
+function closeShareModal() {
+  setShareModalSaving(false);
+  closeModal(shareModalOverlay);
+  shareModalEntityType = '';
+  shareModalEntityId = '';
+  shareModalLoadedLink = '';
+  setShareScopeUi('private');
+  if (shareLinkInput) {
+    shareLinkInput.value = '';
+    shareLinkInput.placeholder = 'Enable public sharing to generate a link.';
+  }
+  if (shareModalStatus) {
+    shareModalStatus.textContent = 'Private links are disabled for everyone except you inside the app.';
+  }
+}
+function copyShareLink() {
+  var link = String(shareLinkInput && shareLinkInput.value || '').trim();
+  if (!link) {
+    showToast('No share link available yet.', 'error');
+    return;
+  }
+  var fallbackCopy = function () {
+    if (!shareLinkInput) return false;
+    try {
+      shareLinkInput.focus();
+      shareLinkInput.select();
+      shareLinkInput.setSelectionRange(0, link.length);
+      return document.execCommand('copy');
+    } catch (error) {
+      return false;
+    }
+  };
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    navigator.clipboard.writeText(link).then(function () {
+      showToast('Share link copied.');
+    }).catch(function () {
+      if (fallbackCopy()) {
+        showToast('Share link copied.');
+      } else {
+        showToast('Could not copy the share link.', 'error');
+      }
+    });
+    return;
+  }
+  if (fallbackCopy()) {
+    showToast('Share link copied.');
+  } else {
+    showToast('Could not copy the share link.', 'error');
+  }
+}
+function saveShareSettings() {
+  if (shareModalSaving || !shareModalEntityId) return;
+  var endpoint = getShareEndpoint(shareModalEntityType, shareModalEntityId);
+  if (!endpoint) {
+    showToast('Share target is unavailable.', 'error');
+    return;
+  }
+  setShareModalSaving(true);
+  apiCall(endpoint, {
+    method: 'PUT',
+    body: JSON.stringify({ access_scope: shareModalScope }),
+  }).then(function (payload) {
+    populateShareModal(payload || {});
+    if (shareModalScope === 'public') {
+      showToast('Share link updated.');
+    } else {
+      showToast('Sharing disabled.');
+    }
+  }).catch(function (error) {
+    showToast(error.message || 'Could not save sharing settings.', 'error');
+  }).finally(function () {
+    setShareModalSaving(false);
+  });
+}
+function updateShareActionAvailability() {
+  var hasSelectedPack = !!String(selectedPackId || '').trim();
+  if (packShareBtn) {
+    packShareBtn.disabled = !hasSelectedPack;
+  }
+  var activeBuilderPackId = '';
+  if (builderMode === 'edit') {
+    activeBuilderPackId = String(builderPackId || selectedPackId || '').trim();
+  }
+  if (builderShareBtn) {
+    builderShareBtn.disabled = !activeBuilderPackId;
+  }
+}
 
 /* ── Fullscreen Pack Builder ── */
 var htmlUtils = window.LectureProcessorHtml || {};
@@ -2155,6 +2339,7 @@ function openBuilderOverlay(mode, pack) {
   setBuilderPane('info');
   markBuilderDirty(false);
   updateBuilderStats();
+  updateShareActionAvailability();
   openModal(builderOverlay);
   document.body.style.overflow = 'hidden';
 }
@@ -2167,6 +2352,7 @@ function closeBuilderOverlay() {
   builderDraft = null;
   builderPackId = '';
   builderImportParsed = null;
+  updateShareActionAvailability();
 }
 function openBuilderExitModal() {
   openModal(builderExitOverlay);
@@ -2287,6 +2473,7 @@ function saveBuilderPack(closeAfter, options) {
     return loadData(builderPackId || selectedPackId);
   }).then(function () {
     markBuilderDirty(false, { skipAutoSave: true });
+    updateShareActionAvailability();
     if (!opts.silent) {
       showToast('Study pack saved.');
     } else if (opts.autoSavedToast) {
@@ -3030,18 +3217,20 @@ function renderFolders() {
     var actions = '';
     if (!f.is_builtin) {
       var pinLabel = f.is_pinned ? 'Unpin' : 'Pin';
-      actions = '<span class="folder-head-actions"><button class="btn folder-mini-btn" data-toggle-pin="1">' + pinLabel + '</button><button class="btn folder-mini-btn" data-edit-folder="1">Edit</button></span>';
+      actions = '<span class="folder-head-actions"><button class="btn folder-mini-btn" data-toggle-pin="1">' + pinLabel + '</button><button class="btn folder-mini-btn" data-share-folder="1">Share</button><button class="btn folder-mini-btn" data-edit-folder="1">Edit</button></span>';
     }
     setSafeInnerHtml(
       div,
       '<div class="item-head"><span class="item-title-wrap"><span class="item-title">' + escapeHtml(f.name) + '</span>' + pendingBadge + '</span>' + actions + '</div><div class="item-sub">' + metaLine + '</div>' + pendingHint + pinLine + examLine
     );
-    div.addEventListener('click', function (e) { if (e.target.closest('[data-edit-folder]') || e.target.closest('[data-toggle-pin]')) return; selectedFolderId = f.folder_id; renderFolders(); renderPacks(); });
+    div.addEventListener('click', function (e) { if (e.target.closest('[data-edit-folder]') || e.target.closest('[data-toggle-pin]') || e.target.closest('[data-share-folder]')) return; selectedFolderId = f.folder_id; renderFolders(); renderPacks(); });
     if (!f.is_builtin) {
       var eb = div.querySelector('[data-edit-folder]');
       if (eb) { eb.addEventListener('click', function (e) { e.stopPropagation(); openFolderModal('edit', f); }); }
       var pb = div.querySelector('[data-toggle-pin]');
       if (pb) { pb.addEventListener('click', function (e) { e.stopPropagation(); togglePinnedFolder(f.folder_id); }); }
+      var sb = div.querySelector('[data-share-folder]');
+      if (sb) { sb.addEventListener('click', function (e) { e.stopPropagation(); openShareModal('folder', f.folder_id, f.name || 'Folder'); }); }
     }
     var canReceiveDrop = Boolean(f.folder_id && !f.is_builtin);
     div.addEventListener('dragover', function (e) { e.preventDefault(); if (draggedPackId && canReceiveDrop) div.classList.add('drop-target'); });
@@ -3174,6 +3363,7 @@ function showPackEditor(v) {
   packEmpty.style.display = v ? 'none' : 'block';
   packEditorWrap.classList.toggle('visible', v);
   if (!v) { updatePackEmptyState(); }
+  updateShareActionAvailability();
 }
 function updatePackSummary() {
   if (!selectedPack) { packSummary.classList.remove('visible'); return; }
@@ -3676,6 +3866,7 @@ function openPack(packId) {
     initAudioForSelectedPack();
     renderFlashcardEditor(); renderQuestionEditor();
     setEditorPane(activeEditorPane);
+    updateShareActionAvailability();
     // Deep link: auto-open learn mode if URL says so
     if (openLearnFromUrl && !autoLearnConsumed && selectedPack.study_pack_id === learnPackFromUrl) {
       autoLearnConsumed = true;
@@ -3739,6 +3930,7 @@ function loadData(preferredPackId) {
       syncStudyPackExportMenu();
       renderGoalPanel();
       closeAudioPlayer();
+      updateShareActionAvailability();
     }
   });
 }
@@ -3956,6 +4148,16 @@ builderSaveBtn.addEventListener('click', function () {
 builderExitBtn.addEventListener('click', function () {
   handleBuilderExitRequest();
 });
+if (builderShareBtn) {
+  builderShareBtn.addEventListener('click', function () {
+    var sharePackId = String(builderPackId || selectedPackId || '').trim();
+    if (!sharePackId) {
+      showToast('Save this pack before sharing it.', 'error');
+      return;
+    }
+    openShareModal('pack', sharePackId, (builderDraft && builderDraft.title) || (selectedPack && selectedPack.title) || 'Study Pack');
+  });
+}
 builderPaneButtons.forEach(function (button) {
   button.addEventListener('click', function () {
     setBuilderPane(button.dataset.builderPane);
@@ -4338,6 +4540,12 @@ exportPackNotesBtn.addEventListener('click', function () {
   if (!selectedPackId) { showToast('Select a study pack first.', 'error'); return; }
   downloadStudyPackNotes(selectedPackId, 'docx').then(function () { showToast('Lecture notes export started.'); }).catch(function (e) { showToast(e.message || 'Could not export notes.', 'error'); });
 });
+if (packShareBtn) {
+  packShareBtn.addEventListener('click', function () {
+    if (!selectedPackId || !selectedPack) { showToast('Select a study pack first.', 'error'); return; }
+    openShareModal('pack', selectedPackId, selectedPack.title || 'Study Pack');
+  });
+}
 if (exportMenuBtn && exportMenuList) {
   exportMenuBtn.addEventListener('click', function (e) {
     e.stopPropagation();
@@ -4639,6 +4847,25 @@ folderModalClose.addEventListener('click', closeFolderModal);
 folderModalCancel.addEventListener('click', closeFolderModal);
 folderModalSave.addEventListener('click', saveFolderFromModal);
 folderModalOverlay.addEventListener('click', function (e) { if (e.target === folderModalOverlay) { closeFolderModal(); } });
+
+/* Share modal events */
+if (shareModalClose) shareModalClose.addEventListener('click', closeShareModal);
+if (shareModalCancel) shareModalCancel.addEventListener('click', closeShareModal);
+if (shareModalSave) shareModalSave.addEventListener('click', saveShareSettings);
+if (shareModalOverlay) {
+  shareModalOverlay.addEventListener('click', function (e) {
+    if (e.target === shareModalOverlay && !shareModalSaving) { closeShareModal(); }
+  });
+}
+if (shareScopePrivate) {
+  shareScopePrivate.addEventListener('click', function () { setShareScopeUi('private'); });
+}
+if (shareScopePublic) {
+  shareScopePublic.addEventListener('click', function () { setShareScopeUi('public'); });
+}
+if (shareCopyBtn) {
+  shareCopyBtn.addEventListener('click', copyShareLink);
+}
 
 /* Close dropdowns on outside click */
 document.addEventListener('click', function (e) {
@@ -5472,3 +5699,4 @@ document.addEventListener('keydown', function (e) {
 });
 initFolderExamDatePicker();
 updateHighlightHistoryButtons();
+updateShareActionAvailability();
