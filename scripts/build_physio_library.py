@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import sys
 import time
@@ -24,6 +25,7 @@ DEFAULT_SOURCE_ROOT = PROJECT_ROOT / "physio_library" / "sources"
 DEFAULT_INDEX_PATH = PROJECT_ROOT / "physio_library" / "index" / "manifest.json"
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".txt", ".md"}
 EMBED_BATCH_SIZE = 24
+MAX_INDEX_SHARD_BYTES = 90 * 1024 * 1024
 
 
 def _relative_path(path: Path) -> str:
@@ -56,6 +58,10 @@ def _batched(items, size):
 
 def _compact_vector(values):
     return [round(float(value or 0.0), 6) for value in (values or [])]
+
+
+def _serialized_json_bytes(payload) -> bytes:
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
 def extract_docx_pages(path: Path):
@@ -192,8 +198,53 @@ def build_manifest(
 
 def write_manifest(manifest: dict, index_path: Path):
     index_path.parent.mkdir(parents=True, exist_ok=True)
+    for stale_path in index_path.parent.glob(f"{index_path.stem}.documents-*.json.gz"):
+        stale_path.unlink(missing_ok=True)
+
+    document_shards = []
+    current_records = []
+    current_size = 2  # []
+    shard_index = 0
+
+    def flush_shard():
+        nonlocal current_records, current_size, shard_index
+        if not current_records:
+            return
+        shard_index += 1
+        shard_name = f"{index_path.stem}.documents-{shard_index:03d}.json.gz"
+        shard_path = index_path.parent / shard_name
+        with gzip.open(shard_path, "wb", compresslevel=6) as handle:
+            handle.write(b"[")
+            for index, payload in enumerate(current_records):
+                if index:
+                    handle.write(b",")
+                handle.write(payload)
+            handle.write(b"]\n")
+        document_shards.append(shard_name)
+        current_records = []
+        current_size = 2
+
+    for record in manifest.get("documents", []) or []:
+        payload = _serialized_json_bytes(record)
+        separator_size = 1 if current_records else 0
+        if current_records and current_size + separator_size + len(payload) > MAX_INDEX_SHARD_BYTES:
+            flush_shard()
+        current_records.append(payload)
+        current_size += len(payload) + (1 if len(current_records) > 1 else 0)
+    flush_shard()
+
+    index_payload = {
+        "meta": {
+            **(manifest.get("meta", {}) or {}),
+            "format": physio_knowledge.SHARDED_INDEX_FORMAT,
+            "document_shards": document_shards,
+            "document_shard_count": len(document_shards),
+        },
+        "documents": [],
+        "errors": list(manifest.get("errors", []) or []),
+    }
     index_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, separators=(",", ":")) + "\n",
+        json.dumps(index_payload, ensure_ascii=False, separators=(",", ":")) + "\n",
         encoding="utf-8",
     )
 

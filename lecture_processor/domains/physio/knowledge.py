@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 import math
 import os
@@ -21,7 +22,8 @@ DEFAULT_EMBED_MODEL = "gemini-embedding-001"
 DEFAULT_CHUNK_SIZE = 1100
 DEFAULT_CHUNK_OVERLAP = 180
 SUPPORTED_SOURCE_SUFFIXES = {".pdf", ".docx", ".pptx", ".txt", ".md"}
-_INDEX_CACHE = {"path": "", "mtime": 0.0, "payload": None}
+SHARDED_INDEX_FORMAT = "sharded-gzip-v1"
+_INDEX_CACHE = {"path": "", "mtime": 0.0, "signature": "", "payload": None}
 
 
 def _resolve_runtime(runtime=None):
@@ -157,6 +159,49 @@ def embed_text(text, *, task_type="RETRIEVAL_DOCUMENT", runtime=None):
     return vectors[0]
 
 
+def _index_cache_signature(candidate: Path, payload: dict):
+    parts = []
+    try:
+        stat = candidate.stat()
+        parts.append(f"{candidate.resolve()}:{stat.st_mtime_ns}:{stat.st_size}")
+    except Exception:
+        parts.append(str(candidate))
+    shard_names = ((payload.get("meta", {}) or {}).get("document_shards") or [])
+    for name in shard_names:
+        shard_path = candidate.parent / str(name)
+        try:
+            stat = shard_path.stat()
+            parts.append(f"{shard_path.resolve()}:{stat.st_mtime_ns}:{stat.st_size}")
+        except Exception:
+            parts.append(f"{shard_path}:missing")
+    return "|".join(parts)
+
+
+def _load_sharded_documents(candidate: Path, payload: dict):
+    shard_names = ((payload.get("meta", {}) or {}).get("document_shards") or [])
+    if not shard_names:
+        return list(payload.get("documents", []) or []), []
+    documents = []
+    errors = []
+    for name in shard_names:
+        shard_path = candidate.parent / str(name)
+        try:
+            with gzip.open(shard_path, "rt", encoding="utf-8") as handle:
+                shard_documents = json.load(handle)
+            if not isinstance(shard_documents, list):
+                raise RuntimeError("Shard payload is not a document list.")
+            documents.extend(item for item in shard_documents if isinstance(item, dict))
+        except Exception as exc:
+            errors.append(
+                {
+                    "source_path": str(shard_path),
+                    "error": f"Failed to load index shard: {str(exc)[:240]}",
+                }
+            )
+            return [], errors
+    return documents, errors
+
+
 def load_knowledge_index(*, index_path=None):
     candidate = Path(index_path or PHYSIO_LIBRARY_INDEX_PATH)
     cache_key = str(candidate.resolve()) if candidate.exists() else str(candidate)
@@ -164,15 +209,20 @@ def load_knowledge_index(*, index_path=None):
         mtime = float(candidate.stat().st_mtime)
     except Exception:
         return {"documents": [], "meta": {"path": cache_key, "missing": True}}
-    if _INDEX_CACHE["payload"] is not None and _INDEX_CACHE["path"] == cache_key and _INDEX_CACHE["mtime"] == mtime:
-        return _INDEX_CACHE["payload"]
     with open(candidate, "r", encoding="utf-8") as handle:
         payload = json.load(handle)
     if not isinstance(payload, dict):
         payload = {"documents": []}
-    payload.setdefault("documents", [])
     payload.setdefault("meta", {})
-    _INDEX_CACHE.update({"path": cache_key, "mtime": mtime, "payload": payload})
+    signature = _index_cache_signature(candidate, payload)
+    if _INDEX_CACHE["payload"] is not None and _INDEX_CACHE["path"] == cache_key and _INDEX_CACHE.get("signature") == signature:
+        return _INDEX_CACHE["payload"]
+    documents, shard_errors = _load_sharded_documents(candidate, payload)
+    payload["documents"] = documents
+    payload.setdefault("errors", [])
+    if shard_errors:
+        payload["errors"] = list(payload.get("errors", []) or []) + shard_errors
+    _INDEX_CACHE.update({"path": cache_key, "mtime": mtime, "signature": signature, "payload": payload})
     return payload
 
 
