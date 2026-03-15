@@ -1,4 +1,5 @@
 import importlib.util
+import gzip
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,9 +25,9 @@ def _allow_physio(monkeypatch, core, *, uid="physio-u1", email="owner@example.co
 
 @pytest.fixture(autouse=True)
 def clear_knowledge_cache():
-    physio_knowledge._INDEX_CACHE.update({"path": "", "mtime": 0.0, "payload": None})
+    physio_knowledge._INDEX_CACHE.update({"path": "", "mtime": 0.0, "signature": "", "payload": None})
     yield
-    physio_knowledge._INDEX_CACHE.update({"path": "", "mtime": 0.0, "payload": None})
+    physio_knowledge._INDEX_CACHE.update({"path": "", "mtime": 0.0, "signature": "", "payload": None})
 
 
 def test_rank_index_documents_orders_by_similarity():
@@ -89,6 +90,80 @@ def test_query_knowledge_index_returns_ranked_citations(monkeypatch, tmp_path):
     assert "Oefentherapie" in response["answer_markdown"]
 
 
+def test_knowledge_index_status_reports_counts_and_staleness(tmp_path):
+    source_root = tmp_path / "sources"
+    guides_dir = source_root / "guidelines"
+    guides_dir.mkdir(parents=True)
+    source_path = guides_dir / "beroerte.pdf"
+    source_path.write_text("dummy", encoding="utf-8")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "meta": {"generated_at": 123.0, "source_count": 1, "document_count": 1},
+                "documents": [
+                    {
+                        "source_path": str(source_path.relative_to(tmp_path)),
+                        "source_name": "beroerte.pdf",
+                        "text": "lateralisatie",
+                        "embedding": [1.0],
+                    }
+                ],
+                "errors": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = physio_knowledge.knowledge_index_status(index_path=manifest_path, source_root=source_root)
+
+    assert status["source_count_on_disk"] == 1
+    assert status["indexed_source_count"] == 1
+    assert status["document_count"] == 1
+    assert status["stale"] is False
+
+
+def test_load_knowledge_index_reads_gzip_shards(tmp_path):
+    manifest_path = tmp_path / "manifest.json"
+    shard_name = "manifest.documents-001.json.gz"
+    with gzip.open(tmp_path / shard_name, "wt", encoding="utf-8") as handle:
+        json.dump(
+            [
+                {
+                    "id": "doc-1",
+                    "text": "Lateralisatie bij CVA.",
+                    "source_name": "beroerte.pdf",
+                    "source_title": "Beroerte",
+                    "embedding": [1.0],
+                }
+            ],
+            handle,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "meta": {
+                    "source_count": 1,
+                    "document_count": 1,
+                    "format": physio_knowledge.SHARDED_INDEX_FORMAT,
+                    "document_shards": [shard_name],
+                },
+                "documents": [],
+                "errors": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = physio_knowledge.load_knowledge_index(index_path=manifest_path)
+
+    assert payload["meta"]["format"] == physio_knowledge.SHARDED_INDEX_FORMAT
+    assert len(payload["documents"]) == 1
+    assert payload["documents"][0]["source_title"] == "Beroerte"
+
+
 def test_knowledge_query_endpoint_uses_manifest(client, monkeypatch, core, tmp_path):
     _allow_physio(monkeypatch, core)
     monkeypatch.setattr(core, "client", object())
@@ -131,6 +206,22 @@ def test_knowledge_query_endpoint_uses_manifest(client, monkeypatch, core, tmp_p
     assert body["retrieved_sources"][0]["source_name"] == "heup.pdf"
 
 
+def test_knowledge_status_endpoint_returns_index_metadata(client, monkeypatch, core):
+    _allow_physio(monkeypatch, core)
+    monkeypatch.setattr(
+        physio_knowledge,
+        "knowledge_index_status",
+        lambda: {"source_count_on_disk": 171, "indexed_source_count": 162, "document_count": 23321, "stale": False},
+    )
+
+    response = client.get("/api/physio/knowledge/status", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["source_count_on_disk"] == 171
+    assert body["document_count"] == 23321
+
+
 def test_build_physio_library_script_writes_manifest_from_text_source(tmp_path):
     script_path = Path(__file__).resolve().parents[1] / "scripts" / "build_physio_library.py"
     spec = importlib.util.spec_from_file_location("build_physio_library", script_path)
@@ -152,7 +243,10 @@ def test_build_physio_library_script_writes_manifest_from_text_source(tmp_path):
 
     assert index_path.exists()
     written = json.loads(index_path.read_text(encoding="utf-8"))
+    loaded = physio_knowledge.load_knowledge_index(index_path=index_path)
     assert written["meta"]["source_count"] == 1
     assert written["meta"]["document_count"] >= 1
+    assert written["meta"]["format"] == physio_knowledge.SHARDED_INDEX_FORMAT
+    assert written["meta"]["document_shards"]
     assert manifest["documents"][0]["source_kind"] == "forms"
-    assert manifest["documents"][0]["embedding"][1] == 1.0
+    assert loaded["documents"][0]["embedding"][1] == 1.0

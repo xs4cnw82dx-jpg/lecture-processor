@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 import math
 import os
@@ -15,11 +16,14 @@ from . import prompts as physio_prompts
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PHYSIO_LIBRARY_ROOT = PROJECT_ROOT / "physio_library"
+PHYSIO_LIBRARY_SOURCES_PATH = PHYSIO_LIBRARY_ROOT / "sources"
 PHYSIO_LIBRARY_INDEX_PATH = PHYSIO_LIBRARY_ROOT / "index" / "manifest.json"
 DEFAULT_EMBED_MODEL = "gemini-embedding-001"
 DEFAULT_CHUNK_SIZE = 1100
 DEFAULT_CHUNK_OVERLAP = 180
-_INDEX_CACHE = {"path": "", "mtime": 0.0, "payload": None}
+SUPPORTED_SOURCE_SUFFIXES = {".pdf", ".docx", ".pptx", ".txt", ".md"}
+SHARDED_INDEX_FORMAT = "sharded-gzip-v1"
+_INDEX_CACHE = {"path": "", "mtime": 0.0, "signature": "", "payload": None}
 
 
 def _resolve_runtime(runtime=None):
@@ -52,6 +56,24 @@ def chunk_text(text, *, chunk_size=DEFAULT_CHUNK_SIZE, chunk_overlap=DEFAULT_CHU
             break
         start = max(end - safe_overlap, start + 1)
     return chunks
+
+
+def list_supported_source_paths(*, source_root=None):
+    root = Path(source_root or PHYSIO_LIBRARY_SOURCES_PATH)
+    if not root.exists():
+        return []
+    paths = []
+    for path in sorted(root.rglob("*")):
+        if path.is_dir() or path.name.startswith("."):
+            continue
+        if path.suffix.lower() not in SUPPORTED_SOURCE_SUFFIXES:
+            continue
+        try:
+            relative = str(path.resolve().relative_to(PROJECT_ROOT.resolve()))
+        except Exception:
+            relative = str(path)
+        paths.append(relative)
+    return paths
 
 
 def build_chunk_records(text, *, source_name, source_path, source_kind="", page_label="", title="", chunk_size=DEFAULT_CHUNK_SIZE, chunk_overlap=DEFAULT_CHUNK_OVERLAP):
@@ -137,6 +159,49 @@ def embed_text(text, *, task_type="RETRIEVAL_DOCUMENT", runtime=None):
     return vectors[0]
 
 
+def _index_cache_signature(candidate: Path, payload: dict):
+    parts = []
+    try:
+        stat = candidate.stat()
+        parts.append(f"{candidate.resolve()}:{stat.st_mtime_ns}:{stat.st_size}")
+    except Exception:
+        parts.append(str(candidate))
+    shard_names = ((payload.get("meta", {}) or {}).get("document_shards") or [])
+    for name in shard_names:
+        shard_path = candidate.parent / str(name)
+        try:
+            stat = shard_path.stat()
+            parts.append(f"{shard_path.resolve()}:{stat.st_mtime_ns}:{stat.st_size}")
+        except Exception:
+            parts.append(f"{shard_path}:missing")
+    return "|".join(parts)
+
+
+def _load_sharded_documents(candidate: Path, payload: dict):
+    shard_names = ((payload.get("meta", {}) or {}).get("document_shards") or [])
+    if not shard_names:
+        return list(payload.get("documents", []) or []), []
+    documents = []
+    errors = []
+    for name in shard_names:
+        shard_path = candidate.parent / str(name)
+        try:
+            with gzip.open(shard_path, "rt", encoding="utf-8") as handle:
+                shard_documents = json.load(handle)
+            if not isinstance(shard_documents, list):
+                raise RuntimeError("Shard payload is not a document list.")
+            documents.extend(item for item in shard_documents if isinstance(item, dict))
+        except Exception as exc:
+            errors.append(
+                {
+                    "source_path": str(shard_path),
+                    "error": f"Failed to load index shard: {str(exc)[:240]}",
+                }
+            )
+            return [], errors
+    return documents, errors
+
+
 def load_knowledge_index(*, index_path=None):
     candidate = Path(index_path or PHYSIO_LIBRARY_INDEX_PATH)
     cache_key = str(candidate.resolve()) if candidate.exists() else str(candidate)
@@ -144,16 +209,61 @@ def load_knowledge_index(*, index_path=None):
         mtime = float(candidate.stat().st_mtime)
     except Exception:
         return {"documents": [], "meta": {"path": cache_key, "missing": True}}
-    if _INDEX_CACHE["payload"] is not None and _INDEX_CACHE["path"] == cache_key and _INDEX_CACHE["mtime"] == mtime:
-        return _INDEX_CACHE["payload"]
     with open(candidate, "r", encoding="utf-8") as handle:
         payload = json.load(handle)
     if not isinstance(payload, dict):
         payload = {"documents": []}
-    payload.setdefault("documents", [])
     payload.setdefault("meta", {})
-    _INDEX_CACHE.update({"path": cache_key, "mtime": mtime, "payload": payload})
+    signature = _index_cache_signature(candidate, payload)
+    if _INDEX_CACHE["payload"] is not None and _INDEX_CACHE["path"] == cache_key and _INDEX_CACHE.get("signature") == signature:
+        return _INDEX_CACHE["payload"]
+    documents, shard_errors = _load_sharded_documents(candidate, payload)
+    payload["documents"] = documents
+    payload.setdefault("errors", [])
+    if shard_errors:
+        payload["errors"] = list(payload.get("errors", []) or []) + shard_errors
+    _INDEX_CACHE.update({"path": cache_key, "mtime": mtime, "signature": signature, "payload": payload})
     return payload
+
+
+def knowledge_index_status(*, index_path=None, source_root=None):
+    candidate = Path(index_path or PHYSIO_LIBRARY_INDEX_PATH)
+    payload = load_knowledge_index(index_path=candidate)
+    documents = payload.get("documents", [])
+    errors = payload.get("errors", [])
+    on_disk_sources = list_supported_source_paths(source_root=source_root)
+    indexed_sources = {
+        str(item.get("source_path", "") or item.get("source_name", "")).strip()
+        for item in documents
+        if isinstance(item, dict)
+    }
+    indexed_sources.discard("")
+    try:
+        manifest_mtime = float(candidate.stat().st_mtime)
+    except Exception:
+        manifest_mtime = 0.0
+    source_mtimes = []
+    for relative_path in on_disk_sources:
+        try:
+            source_mtimes.append(float((PROJECT_ROOT / relative_path).stat().st_mtime))
+        except Exception:
+            continue
+    latest_source_mtime = max(source_mtimes) if source_mtimes else 0.0
+    missing_sources = [path for path in on_disk_sources if path not in indexed_sources]
+    return {
+        "index_path": str(candidate),
+        "generated_at": float((payload.get("meta", {}) or {}).get("generated_at", 0) or 0),
+        "manifest_mtime": manifest_mtime,
+        "latest_source_mtime": latest_source_mtime,
+        "stale": bool(manifest_mtime and latest_source_mtime and manifest_mtime < latest_source_mtime),
+        "source_count": int((payload.get("meta", {}) or {}).get("source_count", len(on_disk_sources)) or 0),
+        "source_count_on_disk": len(on_disk_sources),
+        "indexed_source_count": len(indexed_sources),
+        "document_count": int((payload.get("meta", {}) or {}).get("document_count", len(documents)) or 0),
+        "error_count": len(errors),
+        "error_samples": errors[:5] if isinstance(errors, list) else [],
+        "missing_source_paths": missing_sources[:10],
+    }
 
 
 def cosine_similarity(left, right):

@@ -40,6 +40,7 @@
   var knowledgeQuestionInput = document.getElementById('physio-knowledge-question');
   var knowledgeContextInput = document.getElementById('physio-context-text');
   var knowledgeAskBtn = document.getElementById('physio-knowledge-ask-btn');
+  var knowledgeMetaEl = document.getElementById('physio-knowledge-meta');
   var knowledgeAnswerEl = document.getElementById('physio-knowledge-answer');
   var citationsEl = document.getElementById('physio-citations');
   var sourceListEl = document.getElementById('physio-source-list');
@@ -440,6 +441,61 @@
     });
     if (inList) html.push('</ul>');
     return html.join('');
+  }
+
+  function formatTimestamp(ts) {
+    var parsed = Number(ts);
+    if (!Number.isFinite(parsed) || parsed <= 0) return 'onbekend';
+    try {
+      return new Date(parsed * 1000).toLocaleString('nl-NL');
+    } catch (_error) {
+      return 'onbekend';
+    }
+  }
+
+  function renderKnowledgeStatus(payload) {
+    if (!knowledgeMetaEl) return;
+    var data = payload || {};
+    var parts = [
+      '<strong>Kennisbankstatus</strong>',
+      '<div class="physio-inline-note">Gebouwd: ' + escapeHtml(formatTimestamp(data.generated_at)) + '</div>',
+      '<div class="physio-inline-note">Bronbestanden op schijf: ' + escapeHtml(String(data.source_count_on_disk || 0)) + '</div>',
+      '<div class="physio-inline-note">Geindexeerde bronnen: ' + escapeHtml(String(data.indexed_source_count || 0)) + '</div>',
+      '<div class="physio-inline-note">Chunks in index: ' + escapeHtml(String(data.document_count || 0)) + '</div>'
+    ];
+    if (data.stale) {
+      parts.push('<div class="physio-inline-note">De index is ouder dan een of meer bronbestanden. Bouw de kennisbank opnieuw en deploy daarna opnieuw.</div>');
+    }
+    if (data.error_count) {
+      parts.push('<div class="physio-inline-note">Bestanden zonder indexeerbare tekst/fouten: ' + escapeHtml(String(data.error_count)) + '</div>');
+    }
+    if (Array.isArray(data.missing_source_paths) && data.missing_source_paths.length) {
+      parts.push('<div class="physio-inline-note">Niet in index opgenomen: ' + escapeHtml(data.missing_source_paths.slice(0, 3).join(', ')) + (data.missing_source_paths.length > 3 ? ' ...' : '') + '</div>');
+    }
+    knowledgeMetaEl.className = 'physio-knowledge-meta' + (data.stale ? ' stale' : '');
+    knowledgeMetaEl.innerHTML = parts.join('');
+  }
+
+  function loadKnowledgeStatus() {
+    if (page !== 'knowledge') return Promise.resolve(null);
+    return authFetch('/api/physio/knowledge/status')
+      .then(function (response) {
+        return response.json().then(function (body) {
+          if (!response.ok) throw body;
+          return body;
+        });
+      })
+      .then(function (body) {
+        renderKnowledgeStatus(body);
+        return body;
+      })
+      .catch(function (error) {
+        if (knowledgeMetaEl) {
+          knowledgeMetaEl.className = 'physio-knowledge-meta stale';
+          knowledgeMetaEl.textContent = (error && error.error) || 'Kennisbankstatus laden mislukt.';
+        }
+        return null;
+      });
   }
 
   function sessionSummaryHtml(session) {
@@ -1081,6 +1137,7 @@
       setAuthBanner('', '');
       setControlsDisabled(false);
       loadCases().then(function () {
+        loadKnowledgeStatus();
         if ((page === 'soap' || page === 'rps' || page === 'reasoning' || page === 'knowledge') && state.selectedCaseId) {
           return selectCase(state.selectedCaseId || queryCaseId, { syncForm: page === 'cases' });
         }

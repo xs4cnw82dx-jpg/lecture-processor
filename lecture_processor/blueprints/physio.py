@@ -36,6 +36,12 @@ def query_physio_knowledge():
     return physio_api_service.knowledge_query(runtime, request)
 
 
+@physio_bp.route("/api/physio/knowledge/status", methods=["GET"])
+def get_physio_knowledge_status():
+    runtime = get_runtime()
+    return physio_api_service.knowledge_status(runtime, request)
+
+
 @physio_bp.route("/api/physio/cases", methods=["GET"])
 def list_physio_cases():
     runtime = get_runtime()
