@@ -15,10 +15,12 @@ from . import prompts as physio_prompts
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PHYSIO_LIBRARY_ROOT = PROJECT_ROOT / "physio_library"
+PHYSIO_LIBRARY_SOURCES_PATH = PHYSIO_LIBRARY_ROOT / "sources"
 PHYSIO_LIBRARY_INDEX_PATH = PHYSIO_LIBRARY_ROOT / "index" / "manifest.json"
 DEFAULT_EMBED_MODEL = "gemini-embedding-001"
 DEFAULT_CHUNK_SIZE = 1100
 DEFAULT_CHUNK_OVERLAP = 180
+SUPPORTED_SOURCE_SUFFIXES = {".pdf", ".docx", ".pptx", ".txt", ".md"}
 _INDEX_CACHE = {"path": "", "mtime": 0.0, "payload": None}
 
 
@@ -52,6 +54,24 @@ def chunk_text(text, *, chunk_size=DEFAULT_CHUNK_SIZE, chunk_overlap=DEFAULT_CHU
             break
         start = max(end - safe_overlap, start + 1)
     return chunks
+
+
+def list_supported_source_paths(*, source_root=None):
+    root = Path(source_root or PHYSIO_LIBRARY_SOURCES_PATH)
+    if not root.exists():
+        return []
+    paths = []
+    for path in sorted(root.rglob("*")):
+        if path.is_dir() or path.name.startswith("."):
+            continue
+        if path.suffix.lower() not in SUPPORTED_SOURCE_SUFFIXES:
+            continue
+        try:
+            relative = str(path.resolve().relative_to(PROJECT_ROOT.resolve()))
+        except Exception:
+            relative = str(path)
+        paths.append(relative)
+    return paths
 
 
 def build_chunk_records(text, *, source_name, source_path, source_kind="", page_label="", title="", chunk_size=DEFAULT_CHUNK_SIZE, chunk_overlap=DEFAULT_CHUNK_OVERLAP):
@@ -154,6 +174,46 @@ def load_knowledge_index(*, index_path=None):
     payload.setdefault("meta", {})
     _INDEX_CACHE.update({"path": cache_key, "mtime": mtime, "payload": payload})
     return payload
+
+
+def knowledge_index_status(*, index_path=None, source_root=None):
+    candidate = Path(index_path or PHYSIO_LIBRARY_INDEX_PATH)
+    payload = load_knowledge_index(index_path=candidate)
+    documents = payload.get("documents", [])
+    errors = payload.get("errors", [])
+    on_disk_sources = list_supported_source_paths(source_root=source_root)
+    indexed_sources = {
+        str(item.get("source_path", "") or item.get("source_name", "")).strip()
+        for item in documents
+        if isinstance(item, dict)
+    }
+    indexed_sources.discard("")
+    try:
+        manifest_mtime = float(candidate.stat().st_mtime)
+    except Exception:
+        manifest_mtime = 0.0
+    source_mtimes = []
+    for relative_path in on_disk_sources:
+        try:
+            source_mtimes.append(float((PROJECT_ROOT / relative_path).stat().st_mtime))
+        except Exception:
+            continue
+    latest_source_mtime = max(source_mtimes) if source_mtimes else 0.0
+    missing_sources = [path for path in on_disk_sources if path not in indexed_sources]
+    return {
+        "index_path": str(candidate),
+        "generated_at": float((payload.get("meta", {}) or {}).get("generated_at", 0) or 0),
+        "manifest_mtime": manifest_mtime,
+        "latest_source_mtime": latest_source_mtime,
+        "stale": bool(manifest_mtime and latest_source_mtime and manifest_mtime < latest_source_mtime),
+        "source_count": int((payload.get("meta", {}) or {}).get("source_count", len(on_disk_sources)) or 0),
+        "source_count_on_disk": len(on_disk_sources),
+        "indexed_source_count": len(indexed_sources),
+        "document_count": int((payload.get("meta", {}) or {}).get("document_count", len(documents)) or 0),
+        "error_count": len(errors),
+        "error_samples": errors[:5] if isinstance(errors, list) else [],
+        "missing_source_paths": missing_sources[:10],
+    }
 
 
 def cosine_similarity(left, right):

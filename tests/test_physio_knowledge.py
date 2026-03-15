@@ -89,6 +89,39 @@ def test_query_knowledge_index_returns_ranked_citations(monkeypatch, tmp_path):
     assert "Oefentherapie" in response["answer_markdown"]
 
 
+def test_knowledge_index_status_reports_counts_and_staleness(tmp_path):
+    source_root = tmp_path / "sources"
+    guides_dir = source_root / "guidelines"
+    guides_dir.mkdir(parents=True)
+    source_path = guides_dir / "beroerte.pdf"
+    source_path.write_text("dummy", encoding="utf-8")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "meta": {"generated_at": 123.0, "source_count": 1, "document_count": 1},
+                "documents": [
+                    {
+                        "source_path": str(source_path.relative_to(tmp_path)),
+                        "source_name": "beroerte.pdf",
+                        "text": "lateralisatie",
+                        "embedding": [1.0],
+                    }
+                ],
+                "errors": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = physio_knowledge.knowledge_index_status(index_path=manifest_path, source_root=source_root)
+
+    assert status["source_count_on_disk"] == 1
+    assert status["indexed_source_count"] == 1
+    assert status["document_count"] == 1
+    assert status["stale"] is False
+
+
 def test_knowledge_query_endpoint_uses_manifest(client, monkeypatch, core, tmp_path):
     _allow_physio(monkeypatch, core)
     monkeypatch.setattr(core, "client", object())
@@ -129,6 +162,22 @@ def test_knowledge_query_endpoint_uses_manifest(client, monkeypatch, core, tmp_p
     body = response.get_json()
     assert body["citations"][0]["label"] == "Heupartrose Richtlijn (pagina 8)"
     assert body["retrieved_sources"][0]["source_name"] == "heup.pdf"
+
+
+def test_knowledge_status_endpoint_returns_index_metadata(client, monkeypatch, core):
+    _allow_physio(monkeypatch, core)
+    monkeypatch.setattr(
+        physio_knowledge,
+        "knowledge_index_status",
+        lambda: {"source_count_on_disk": 171, "indexed_source_count": 162, "document_count": 23321, "stale": False},
+    )
+
+    response = client.get("/api/physio/knowledge/status", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["source_count_on_disk"] == 171
+    assert body["document_count"] == 23321
 
 
 def test_build_physio_library_script_writes_manifest_from_text_source(tmp_path):
