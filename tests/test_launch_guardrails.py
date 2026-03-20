@@ -1129,13 +1129,39 @@ def test_account_delete_failure_restores_account_status(client, monkeypatch):
     monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
     monkeypatch.setattr("lecture_processor.runtime.hooks.batch_orchestrator.run_startup_batch_recovery_once", lambda runtime=None: None)
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
+    monkeypatch.setattr(
+        account_lifecycle,
+        "mark_account_deletion_requested",
+        lambda _uid, email="", runtime=None: set_doc_calls.append((
+            {
+                "account_status": "deleting",
+                "delete_requested_at": 1,
+                "delete_started_at": 1,
+                "email": email,
+            },
+            True,
+        )) or True,
+    )
+    monkeypatch.setattr(
+        account_lifecycle,
+        "restore_account_after_failed_deletion",
+        lambda _uid, email="", reason="", runtime=None, existing_state=None: set_doc_calls.append((
+            {
+                "account_status": "active",
+                "delete_requested_at": 0,
+                "delete_started_at": 0,
+                "last_delete_failure_reason": str(reason),
+                "email": email,
+            },
+            False,
+        )) or True,
+    )
     monkeypatch.setattr(account_lifecycle, "query_docs_by_field", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(account_lifecycle, "has_docs_by_field", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(account_lifecycle, "remove_upload_artifacts_for_job_ids", lambda _job_ids, runtime=None: 0)
     monkeypatch.setattr(core.batch_repo, "list_batch_jobs_by_uid", lambda _db, _uid, _limit: [])
     monkeypatch.setattr(core.batch_repo, "list_batch_rows", lambda _db, _batch_id: [])
     monkeypatch.setattr(core, "get_study_progress_doc", lambda _uid: _FakeProgressDoc())
-    monkeypatch.setattr(core.users_repo, "set_doc", lambda _db, _uid, payload, merge=False: set_doc_calls.append((payload, merge)))
     monkeypatch.setattr(core.users_repo, "delete_doc", lambda _db, _uid: None)
     monkeypatch.setattr(core.auth, "delete_user", lambda _uid: (_ for _ in ()).throw(RuntimeError("auth delete failed")))
 
