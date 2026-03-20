@@ -698,6 +698,34 @@ def test_batch_row_persistence_sanitizes_transient_provider_objects(monkeypatch)
     assert repaired.get('status') == 'queued'
 
 
+def test_batch_job_persistence_sanitizes_nonserializable_batch_objects(monkeypatch):
+    _clear_batch_memory()
+    _patch_batch_refunds(monkeypatch)
+
+    fake_file = _FakeProviderFile()
+    batch_id = batch_orchestrator.create_batch_job(
+        {
+            'batch_id': 'batch-sanitized-job',
+            'uid': 'u-batch',
+            'email': 'batch@example.com',
+            'mode': 'lecture-notes',
+            'status': 'queued',
+            'batch_title': 'Sanitized batch job',
+            'total_rows': 1,
+            'external_batch_refs': {'provider_file': fake_file},
+            'provider_file': fake_file,
+        },
+        [],
+        runtime=core,
+    )
+
+    stored_batch = batch_orchestrator.get_batch(batch_id, runtime=core)
+
+    assert stored_batch is not None
+    assert stored_batch.get('provider_file') is None
+    assert stored_batch.get('external_batch_refs', {}).get('provider_file') is None
+
+
 def test_batch_completion_email_status_sent_is_persisted(monkeypatch):
     _clear_batch_memory()
     batch_id = 'batch-notify-sent'

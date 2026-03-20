@@ -116,6 +116,10 @@ def _sanitize_row_payload(payload):
     return cleaned
 
 
+def _sanitize_batch_payload(payload):
+    return _sanitize_row_payload(payload)
+
+
 def _batch_model(stage_name, runtime):
     if stage_name == 'slide_extraction':
         return runtime.MODEL_SLIDES
@@ -386,20 +390,21 @@ def _send_batch_completion_email_if_needed(batch_id, status, runtime=None):
 
 def _upsert_batch(batch_id, payload, runtime=None, merge=True):
     resolved_runtime = _resolve_runtime(runtime)
+    safe_payload = _sanitize_batch_payload(payload)
     db = getattr(resolved_runtime, 'db', None)
     if db is not None:
         if merge:
-            resolved_runtime.batch_repo.set_batch_job(db, batch_id, payload, merge=True)
+            resolved_runtime.batch_repo.set_batch_job(db, batch_id, safe_payload, merge=True)
         else:
-            resolved_runtime.batch_repo.set_batch_job(db, batch_id, payload, merge=False)
+            resolved_runtime.batch_repo.set_batch_job(db, batch_id, safe_payload, merge=False)
         return
     batch_jobs, _rows = _memory_store(resolved_runtime)
     existing = dict(batch_jobs.get(batch_id, {}))
     if merge:
-        existing.update(payload)
+        existing.update(safe_payload)
         batch_jobs[batch_id] = existing
     else:
-        batch_jobs[batch_id] = dict(payload)
+        batch_jobs[batch_id] = dict(safe_payload)
 
 
 def _get_batch(batch_id, runtime=None):

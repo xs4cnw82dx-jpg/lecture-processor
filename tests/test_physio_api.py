@@ -6,6 +6,7 @@ import pytest
 
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.physio import access as physio_access
+from lecture_processor.domains.physio import knowledge as physio_knowledge
 from lecture_processor.repositories import physio_repo
 
 
@@ -213,6 +214,21 @@ def test_physio_reasoning_endpoint_handles_malformed_model_output(client, monkey
     assert body["seven_step"]["stap_5_diagnostisch_proces"]["screening"]["rode_vlaggen"] is None
     assert body["differential_diagnosis"]["hypothesen"][0]["titel"] == "Artrose"
     assert body["red_flags"] == []
+
+
+def test_physio_knowledge_endpoint_handles_unexpected_system_exit(client, monkeypatch, core):
+    _allow_physio(monkeypatch, core)
+    monkeypatch.setattr(core, "client", object())
+    monkeypatch.setattr(physio_knowledge, "query_knowledge_index", lambda *args, **kwargs: (_ for _ in ()).throw(SystemExit("boom")))
+
+    response = client.post(
+        "/api/physio/knowledge/query",
+        json={"question": "Wat is het beleid bij heupartrose?", "body_region": "heup"},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 502
+    assert response.get_json()["error"] == "Kennisbank antwoord genereren mislukt."
 
 
 @pytest.mark.parametrize(
