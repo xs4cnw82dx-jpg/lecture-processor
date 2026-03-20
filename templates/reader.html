@@ -72,8 +72,8 @@
           <div class="result-head">
             <h2>Output</h2>
             <div class="actions">
-              <button type="button" class="ghost-btn" id="reader-copy-btn">Copy</button>
-              <button type="button" class="ghost-btn" id="reader-download-docx-btn">Download .docx</button>
+              <button type="button" class="ghost-btn" id="reader-copy-btn" disabled>Copy</button>
+              <button type="button" class="ghost-btn" id="reader-download-docx-btn" disabled>Download .docx</button>
             </div>
           </div>
           <pre class="output-pre" id="reader-output-pre"></pre>
@@ -90,6 +90,7 @@
   <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/user-cache-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
   <script nonce="{{ csp_nonce }}">

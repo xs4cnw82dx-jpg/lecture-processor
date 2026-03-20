@@ -90,6 +90,7 @@ from lecture_processor.domains.upload import import_audio as upload_import_audio
 from lecture_processor.services import analytics_service, auth_service, file_service, job_state_service, prompt_registry, rate_limit_service, url_security
 
 from lecture_processor.repositories import admin_repo, batch_repo, job_logs_repo, planner_repo, purchases_repo, runtime_jobs_repo, study_repo, users_repo
+from lecture_processor.runtime import media_runtime
 from lecture_processor.runtime import environment as runtime_environment
 from lecture_processor.runtime.http_security import apply_security_headers as runtime_apply_security_headers
 from lecture_processor.runtime.job_dispatcher import BoundedJobDispatcher, JobQueueFullError
@@ -1405,13 +1406,23 @@ def release_audio_import_token(uid, token):
     return upload_import_audio.release_audio_import_token(uid, token, runtime=_self_runtime())
 
 def get_ffmpeg_binary():
-    return file_service.get_ffmpeg_binary(which_func=shutil.which, imageio_ffmpeg_module=imageio_ffmpeg)
+    return media_runtime.get_ffmpeg_binary(which_func=shutil.which, imageio_ffmpeg_module=imageio_ffmpeg)
 
 def get_ffprobe_binary():
-    return file_service.get_ffprobe_binary(ffmpeg_binary_getter=get_ffmpeg_binary)
+    return media_runtime.get_ffprobe_binary(ffmpeg_binary_getter=get_ffmpeg_binary)
 
 def download_audio_from_video_url(source_url, file_prefix):
-    return file_service.download_audio_from_video_url(source_url, file_prefix, upload_folder=UPLOAD_FOLDER, max_audio_upload_bytes=MAX_AUDIO_UPLOAD_BYTES, ffmpeg_binary_getter=get_ffmpeg_binary, file_looks_like_audio_fn=file_looks_like_audio, get_saved_file_size_fn=get_saved_file_size, which_func=shutil.which, subprocess_module=subprocess)
+    return media_runtime.download_audio_from_video_url(
+        source_url,
+        file_prefix,
+        upload_folder=UPLOAD_FOLDER,
+        max_audio_upload_bytes=MAX_AUDIO_UPLOAD_BYTES,
+        ffmpeg_binary_getter=get_ffmpeg_binary,
+        file_looks_like_audio_fn=file_looks_like_audio,
+        get_saved_file_size_fn=get_saved_file_size,
+        which_func=shutil.which,
+        subprocess_module=subprocess,
+    )
 
 def deduct_slides_credits(uid, amount):
     return billing_credits.deduct_slides_credits(uid, amount, runtime=_self_runtime())
@@ -1715,250 +1726,84 @@ def sanitize_questions(items, max_items):
     return cleaned
 
 def default_streak_data():
-    return {'last_study_date': '', 'current_streak': 0, 'daily_progress_date': '', 'daily_progress_count': 0}
+    return study_progress.default_streak_data(runtime=_self_runtime())
 
 def sanitize_progress_date(value):
-    text = str(value or '').strip()
-    return text if PROGRESS_DATE_RE.match(text) else ''
+    return study_progress.sanitize_progress_date(value, runtime=_self_runtime())
 
 def sanitize_int(value, default=0, min_value=0, max_value=10000000):
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return default
-    if parsed < min_value:
-        return min_value
-    if parsed > max_value:
-        return max_value
-    return parsed
+    return study_progress.sanitize_int(
+        value,
+        default=default,
+        min_value=min_value,
+        max_value=max_value,
+        runtime=_self_runtime(),
+    )
 
 def sanitize_float(value, default=0.0, min_value=0.0, max_value=10000000.0):
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return default
-    if parsed < min_value:
-        return min_value
-    if parsed > max_value:
-        return max_value
-    return parsed
+    return study_progress.sanitize_float(
+        value,
+        default=default,
+        min_value=min_value,
+        max_value=max_value,
+        runtime=_self_runtime(),
+    )
 
 def sanitize_streak_data(payload):
-    base = default_streak_data()
-    if not isinstance(payload, dict):
-        return base
-    base['last_study_date'] = sanitize_progress_date(payload.get('last_study_date', ''))
-    base['current_streak'] = sanitize_int(payload.get('current_streak', 0), default=0, min_value=0, max_value=36500)
-    base['daily_progress_date'] = sanitize_progress_date(payload.get('daily_progress_date', ''))
-    base['daily_progress_count'] = sanitize_int(payload.get('daily_progress_count', 0), default=0, min_value=0, max_value=100000)
-    return base
+    return study_progress.sanitize_streak_data(payload, runtime=_self_runtime())
 
 def sanitize_daily_goal_value(value):
-    parsed = sanitize_int(value, default=-1, min_value=-1, max_value=500)
-    if parsed < 1:
-        return None
-    return parsed
+    return study_progress.sanitize_daily_goal_value(value, runtime=_self_runtime())
 
 def sanitize_pack_id(value):
-    pack_id = str(value or '').strip()
-    if not pack_id or len(pack_id) > 160:
-        return ''
-    return pack_id
+    return study_progress.sanitize_pack_id(value, runtime=_self_runtime())
 
 def sanitize_card_state_entry(payload):
-    if not isinstance(payload, dict):
-        return None
-    seen = sanitize_int(payload.get('seen', 0), default=0, min_value=0, max_value=100000)
-    correct = sanitize_int(payload.get('correct', 0), default=0, min_value=0, max_value=100000)
-    wrong = sanitize_int(payload.get('wrong', 0), default=0, min_value=0, max_value=100000)
-    interval_days = sanitize_int(payload.get('interval_days', 0), default=0, min_value=0, max_value=3650)
-    level = str(payload.get('level', '')).strip().lower()
-    if level not in {'new', 'familiar', 'mastered'}:
-        if interval_days >= 14:
-            level = 'mastered'
-        elif seen > 0:
-            level = 'familiar'
-        else:
-            level = 'new'
-    difficulty = str(payload.get('difficulty', 'medium')).strip().lower()
-    if difficulty not in {'easy', 'medium', 'hard'}:
-        difficulty = 'medium'
-    return {'seen': seen, 'correct': correct, 'wrong': wrong, 'level': level, 'interval_days': interval_days, 'next_review_date': sanitize_progress_date(payload.get('next_review_date', '')), 'last_review_date': sanitize_progress_date(payload.get('last_review_date', '')), 'difficulty': difficulty}
+    return study_progress.sanitize_card_state_entry(payload, runtime=_self_runtime())
 
 def sanitize_card_state_map(payload):
-    if not isinstance(payload, dict):
-        return {}
-    cleaned = {}
-    for raw_card_id, raw_entry in payload.items():
-        card_id = str(raw_card_id or '').strip()
-        if not card_id or len(card_id) > 64:
-            continue
-        if not re.match('^(fc|q)_\\d{1,6}$', card_id):
-            continue
-        entry = sanitize_card_state_entry(raw_entry)
-        if entry is None:
-            continue
-        cleaned[card_id] = entry
-        if len(cleaned) >= MAX_PROGRESS_CARDS_PER_PACK:
-            break
-    return cleaned
+    return study_progress.sanitize_card_state_map(payload, runtime=_self_runtime())
 
 def derive_card_level_from_stats(seen, interval_days):
-    if interval_days >= 14:
-        return 'mastered'
-    if seen > 0:
-        return 'familiar'
-    return 'new'
+    return study_progress.derive_card_level_from_stats(seen, interval_days, runtime=_self_runtime())
 
 def merge_streak_data(server_payload, incoming_payload):
-    server = sanitize_streak_data(server_payload)
-    incoming = sanitize_streak_data(incoming_payload)
-    merged_last_study_date = max(server.get('last_study_date', ''), incoming.get('last_study_date', ''))
-    if merged_last_study_date == server.get('last_study_date', '') and merged_last_study_date != incoming.get('last_study_date', ''):
-        merged_current_streak = sanitize_int(server.get('current_streak', 0), default=0, min_value=0, max_value=36500)
-    elif merged_last_study_date == incoming.get('last_study_date', '') and merged_last_study_date != server.get('last_study_date', ''):
-        merged_current_streak = sanitize_int(incoming.get('current_streak', 0), default=0, min_value=0, max_value=36500)
-    else:
-        merged_current_streak = max(sanitize_int(server.get('current_streak', 0), default=0, min_value=0, max_value=36500), sanitize_int(incoming.get('current_streak', 0), default=0, min_value=0, max_value=36500))
-    merged_daily_progress_date = max(server.get('daily_progress_date', ''), incoming.get('daily_progress_date', ''))
-    if merged_daily_progress_date == server.get('daily_progress_date', '') and merged_daily_progress_date != incoming.get('daily_progress_date', ''):
-        merged_daily_progress_count = sanitize_int(server.get('daily_progress_count', 0), default=0, min_value=0, max_value=100000)
-    elif merged_daily_progress_date == incoming.get('daily_progress_date', '') and merged_daily_progress_date != server.get('daily_progress_date', ''):
-        merged_daily_progress_count = sanitize_int(incoming.get('daily_progress_count', 0), default=0, min_value=0, max_value=100000)
-    else:
-        merged_daily_progress_count = max(sanitize_int(server.get('daily_progress_count', 0), default=0, min_value=0, max_value=100000), sanitize_int(incoming.get('daily_progress_count', 0), default=0, min_value=0, max_value=100000))
-    if not merged_daily_progress_date:
-        merged_daily_progress_count = 0
-    return sanitize_streak_data({'last_study_date': merged_last_study_date, 'current_streak': merged_current_streak, 'daily_progress_date': merged_daily_progress_date, 'daily_progress_count': merged_daily_progress_count})
+    return study_progress.merge_streak_data(server_payload, incoming_payload, runtime=_self_runtime())
 
 def merge_timezone_value(server_timezone, incoming_timezone):
-    server_value = sanitize_timezone_name(server_timezone)
-    incoming_value = sanitize_timezone_name(incoming_timezone)
-    return incoming_value or server_value
+    return study_progress.merge_timezone_value(server_timezone, incoming_timezone, runtime=_self_runtime())
 
 def sanitize_timezone_name(value):
-    timezone_name = str(value or '').strip()[:80]
-    if not timezone_name:
-        return ''
-    if ZoneInfo:
-        try:
-            ZoneInfo(timezone_name)
-            return timezone_name
-        except Exception:
-            return ''
-    return timezone_name
+    return study_progress.sanitize_timezone_name(value, runtime=_self_runtime())
 
 def resolve_progress_timezone(progress_data):
-    timezone_name = sanitize_timezone_name((progress_data or {}).get('timezone', ''))
-    if timezone_name and ZoneInfo:
-        try:
-            return (ZoneInfo(timezone_name), timezone_name)
-        except Exception:
-            pass
-    return (timezone.utc, 'UTC')
+    return study_progress.resolve_progress_timezone(progress_data, runtime=_self_runtime())
 
 def resolve_user_timezone(uid):
-    safe_uid = str(uid or '').strip()
-    if not safe_uid or not db:
-        return (timezone.utc, 'UTC')
-    try:
-        progress_doc = get_study_progress_doc(safe_uid).get()
-        progress_data = progress_doc.to_dict() if progress_doc.exists else {}
-        return resolve_progress_timezone(progress_data)
-    except Exception:
-        return (timezone.utc, 'UTC')
+    return study_progress.resolve_user_timezone(uid, runtime=_self_runtime())
 
 def to_timezone_now(base_now, tzinfo):
-    base = base_now
-    if base is None:
-        return datetime.now(tzinfo)
-    if base.tzinfo is None:
-        base = base.replace(tzinfo=timezone.utc)
-    return base.astimezone(tzinfo)
+    return study_progress.to_timezone_now(base_now, tzinfo, runtime=_self_runtime())
 
 def card_state_entry_rank(entry):
-    if not isinstance(entry, dict):
-        return ('', 0, 0, 0, 0, '')
-    return (sanitize_progress_date(entry.get('last_review_date', '')), sanitize_int(entry.get('seen', 0), default=0, min_value=0, max_value=100000), sanitize_int(entry.get('correct', 0), default=0, min_value=0, max_value=100000), sanitize_int(entry.get('wrong', 0), default=0, min_value=0, max_value=100000), sanitize_int(entry.get('interval_days', 0), default=0, min_value=0, max_value=3650), sanitize_progress_date(entry.get('next_review_date', '')))
+    return study_progress.card_state_entry_rank(entry, runtime=_self_runtime())
 
 def merge_card_state_entries(server_entry, incoming_entry):
-    cleaned_server = sanitize_card_state_entry(server_entry)
-    cleaned_incoming = sanitize_card_state_entry(incoming_entry)
-    if cleaned_server is None:
-        return cleaned_incoming
-    if cleaned_incoming is None:
-        return cleaned_server
-    server_last = sanitize_progress_date(cleaned_server.get('last_review_date', ''))
-    incoming_last = sanitize_progress_date(cleaned_incoming.get('last_review_date', ''))
-    merged_last = max(server_last, incoming_last)
-    if merged_last == server_last and merged_last != incoming_last:
-        source_for_schedule = cleaned_server
-    elif merged_last == incoming_last and merged_last != server_last:
-        source_for_schedule = cleaned_incoming
-    else:
-        source_for_schedule = cleaned_server if card_state_entry_rank(cleaned_server) >= card_state_entry_rank(cleaned_incoming) else cleaned_incoming
-    merged_seen = max(cleaned_server.get('seen', 0), cleaned_incoming.get('seen', 0))
-    merged_correct = max(cleaned_server.get('correct', 0), cleaned_incoming.get('correct', 0))
-    merged_wrong = max(cleaned_server.get('wrong', 0), cleaned_incoming.get('wrong', 0))
-    minimum_seen = merged_correct + merged_wrong
-    if merged_seen < minimum_seen:
-        merged_seen = minimum_seen
-    merged_interval_days = sanitize_int(source_for_schedule.get('interval_days', 0), default=0, min_value=0, max_value=3650)
-    merged_next_review_date = sanitize_progress_date(source_for_schedule.get('next_review_date', ''))
-    if not merged_next_review_date:
-        merged_next_review_date = max(sanitize_progress_date(cleaned_server.get('next_review_date', '')), sanitize_progress_date(cleaned_incoming.get('next_review_date', '')))
-    merged_difficulty = str(source_for_schedule.get('difficulty', 'medium')).strip().lower()
-    if merged_difficulty not in {'easy', 'medium', 'hard'}:
-        merged_difficulty = 'medium'
-    merged_entry = {'seen': merged_seen, 'correct': merged_correct, 'wrong': merged_wrong, 'interval_days': merged_interval_days, 'last_review_date': merged_last, 'next_review_date': merged_next_review_date, 'difficulty': merged_difficulty, 'level': derive_card_level_from_stats(merged_seen, merged_interval_days)}
-    return sanitize_card_state_entry(merged_entry)
+    return study_progress.merge_card_state_entries(server_entry, incoming_entry, runtime=_self_runtime())
 
 def merge_card_state_maps(server_state, incoming_state):
-    cleaned_server = sanitize_card_state_map(server_state)
-    cleaned_incoming = sanitize_card_state_map(incoming_state)
-    merged = {}
-    for card_id in sorted(set(cleaned_server.keys()) | set(cleaned_incoming.keys())):
-        merged_entry = merge_card_state_entries(cleaned_server.get(card_id), cleaned_incoming.get(card_id))
-        if merged_entry is None:
-            continue
-        merged[card_id] = merged_entry
-        if len(merged) >= MAX_PROGRESS_CARDS_PER_PACK:
-            break
-    return merged
+    return study_progress.merge_card_state_maps(server_state, incoming_state, runtime=_self_runtime())
 
 def count_due_cards_in_state(state, today_local):
-    due = 0
-    for card_id, entry in (state or {}).items():
-        if not str(card_id).startswith('fc_'):
-            continue
-        seen = sanitize_int((entry or {}).get('seen', 0), default=0, min_value=0, max_value=100000)
-        if seen <= 0:
-            continue
-        next_date = str((entry or {}).get('next_review_date', '') or '').strip()
-        if not next_date or next_date <= today_local:
-            due += 1
-    return due
+    return study_progress.count_due_cards_in_state(state, today_local, runtime=_self_runtime())
 
 def compute_study_progress_summary(progress_data, card_state_maps, base_now=None):
-    progress = progress_data or {}
-    streak_data = sanitize_streak_data(progress.get('streak_data', {}))
-    daily_goal = sanitize_daily_goal_value(progress.get('daily_goal'))
-    if daily_goal is None:
-        daily_goal = 20
-    tzinfo, _timezone_name = resolve_progress_timezone(progress)
-    now_local = to_timezone_now(base_now, tzinfo)
-    today_local = now_local.strftime('%Y-%m-%d')
-    yesterday_local = (now_local - timedelta(days=1)).strftime('%Y-%m-%d')
-    current_streak = 0
-    if streak_data.get('last_study_date') in {today_local, yesterday_local}:
-        current_streak = sanitize_int(streak_data.get('current_streak', 0), default=0, min_value=0, max_value=36500)
-    today_progress = 0
-    if streak_data.get('daily_progress_date') == today_local:
-        today_progress = sanitize_int(streak_data.get('daily_progress_count', 0), default=0, min_value=0, max_value=100000)
-    due_today = 0
-    for raw_state in card_state_maps or []:
-        due_today += count_due_cards_in_state(sanitize_card_state_map(raw_state), today_local)
-    return {'daily_goal': daily_goal, 'current_streak': current_streak, 'today_progress': today_progress, 'due_today': due_today}
+    return study_progress.compute_study_progress_summary(
+        progress_data,
+        card_state_maps,
+        base_now=base_now,
+        runtime=_self_runtime(),
+    )
 
 def get_study_progress_doc(uid):
     return study_repo.study_progress_doc_ref(db, uid)
@@ -2021,19 +1866,42 @@ def file_has_pptx_signature(path):
     return file_service.file_has_pptx_signature(path)
 
 def get_soffice_binary():
-    return file_service.get_soffice_binary(env_getter=os.getenv, which_func=shutil.which)
+    return media_runtime.get_soffice_binary(env_getter=os.getenv, which_func=shutil.which)
 
 def convert_pptx_to_pdf(source_path, target_pdf_path):
-    return file_service.convert_pptx_to_pdf(source_path, target_pdf_path, soffice_binary_getter=get_soffice_binary, subprocess_module=subprocess)
+    return media_runtime.convert_pptx_to_pdf(
+        source_path,
+        target_pdf_path,
+        soffice_binary_getter=get_soffice_binary,
+        subprocess_module=subprocess,
+    )
 
 def resolve_uploaded_slides_to_pdf(uploaded_file, job_id):
-    return file_service.resolve_uploaded_slides_to_pdf(uploaded_file, job_id, upload_folder=UPLOAD_FOLDER, allowed_slide_extensions=ALLOWED_SLIDE_EXTENSIONS, allowed_slide_mime_types=ALLOWED_SLIDE_MIME_TYPES, max_pdf_upload_bytes=MAX_PDF_UPLOAD_BYTES, cleanup_files_fn=cleanup_files, secure_filename_fn=secure_filename, allowed_file_fn=allowed_file, file_has_pdf_signature_fn=file_has_pdf_signature, file_has_pptx_signature_fn=file_has_pptx_signature, convert_pptx_to_pdf_fn=convert_pptx_to_pdf, get_saved_file_size_fn=get_saved_file_size)
+    return media_runtime.resolve_uploaded_slides_to_pdf(
+        uploaded_file,
+        job_id,
+        upload_folder=UPLOAD_FOLDER,
+        allowed_slide_extensions=ALLOWED_SLIDE_EXTENSIONS,
+        allowed_slide_mime_types=ALLOWED_SLIDE_MIME_TYPES,
+        max_pdf_upload_bytes=MAX_PDF_UPLOAD_BYTES,
+        cleanup_files_fn=cleanup_files,
+        secure_filename_fn=secure_filename,
+        allowed_file_fn=allowed_file,
+        file_has_pdf_signature_fn=file_has_pdf_signature,
+        file_has_pptx_signature_fn=file_has_pptx_signature,
+        convert_pptx_to_pdf_fn=convert_pptx_to_pdf,
+        get_saved_file_size_fn=get_saved_file_size,
+    )
 
 def file_has_audio_signature(path):
     return file_service.file_has_audio_signature(path)
 
 def file_looks_like_audio(path):
-    return file_service.file_looks_like_audio(path, ffprobe_binary_getter=get_ffprobe_binary, subprocess_module=subprocess)
+    return media_runtime.file_looks_like_audio(
+        path,
+        ffprobe_binary_getter=get_ffprobe_binary,
+        subprocess_module=subprocess,
+    )
 
 def get_saved_file_size(path):
     return file_service.get_saved_file_size(path)
@@ -2042,39 +1910,17 @@ def get_mime_type(filename):
     return file_service.get_mime_type(filename)
 
 def wait_for_file_processing(uploaded_file):
-    max_wait_time = 300
-    wait_interval = 5
-    total_waited = 0
-    while total_waited < max_wait_time:
-        try:
-            file_info = client.files.get(name=uploaded_file.name)
-        except Exception as error:
-            if not is_transient_provider_error(error):
-                raise
-            logger.warning('Transient error while checking file status for %s (code=%s): %s', getattr(uploaded_file, 'name', '<unknown>'), classify_provider_error_code(error), error)
-            time.sleep(wait_interval)
-            total_waited += wait_interval
-            continue
-        if file_info.state.name == 'ACTIVE':
-            return True
-        elif file_info.state.name == 'FAILED':
-            raise Exception(f'File processing failed: {uploaded_file.name}')
-        time.sleep(wait_interval)
-        total_waited += wait_interval
-    raise Exception(f'File processing timed out after {max_wait_time} seconds')
+    return media_runtime.wait_for_file_processing(
+        uploaded_file,
+        client=client,
+        logger=logger,
+        time_module=time,
+        is_transient_provider_error_fn=is_transient_provider_error,
+        classify_provider_error_code_fn=classify_provider_error_code,
+    )
 
 def cleanup_files(local_paths, gemini_files):
-    for path in local_paths:
-        try:
-            if os.path.exists(path):
-                os.remove(path)
-        except Exception as e:
-            logger.warning('Could not delete local file %s: %s', path, e)
-    for gemini_file in gemini_files:
-        try:
-            client.files.delete(name=gemini_file.name)
-        except Exception as e:
-            logger.warning('Could not delete Gemini file %s: %s', getattr(gemini_file, 'name', '<unknown>'), e)
+    return media_runtime.cleanup_files(local_paths, gemini_files, client=client, logger=logger)
 
 def parse_audio_markers_from_notes(notes_markdown):
     if not notes_markdown:

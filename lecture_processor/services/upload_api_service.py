@@ -80,8 +80,8 @@ def _extract_text_from_html_document(raw_html, max_chars=180000):
     text = str(raw_html or '')
     if not text:
         return ''
-    text = re.sub(r'(?is)<(script|style|noscript|svg|canvas|iframe).*?>.*?</\\1>', ' ', text)
-    text = re.sub(r'(?i)<br\\s*/?>', '\n', text)
+    text = re.sub(r'(?is)<(script|style|noscript|svg|canvas|iframe).*?>.*?</\1>', ' ', text)
+    text = re.sub(r'(?i)<br\s*/?>', '\n', text)
     text = re.sub(r'(?i)</(p|div|li|section|article|h1|h2|h3|h4|h5|h6|tr|td|th)>', '\n', text)
     text = re.sub(r'(?is)<[^>]+>', ' ', text)
     text = html_lib.unescape(text)
@@ -94,8 +94,19 @@ def _extract_text_from_html_document(raw_html, max_chars=180000):
     return merged[:max_chars]
 
 
-def _fetch_tools_url_text(source_url, max_bytes=1_500_000, max_chars=180000):
+def _extract_content_charset(content_type):
     import re
+
+    header = str(content_type or '').strip().lower()
+    if not header:
+        return 'utf-8'
+    match = re.search(r'charset=([\w\-]+)', header)
+    if not match:
+        return 'utf-8'
+    return match.group(1).strip().lower() or 'utf-8'
+
+
+def _fetch_tools_url_text(source_url, max_bytes=1_500_000, max_chars=180000):
     import urllib.error
     import urllib.request
     from lecture_processor.services import url_security
@@ -145,10 +156,7 @@ def _fetch_tools_url_text(source_url, max_bytes=1_500_000, max_chars=180000):
     if len(raw_bytes) > max_bytes:
         return '', 'URL content is too large to process.', content_type
 
-    charset = 'utf-8'
-    match = re.search(r'charset=([\\w\\-]+)', content_type)
-    if match:
-        charset = match.group(1).strip().lower() or 'utf-8'
+    charset = _extract_content_charset(content_type)
     try:
         decoded = raw_bytes.decode(charset, errors='replace')
     except Exception:

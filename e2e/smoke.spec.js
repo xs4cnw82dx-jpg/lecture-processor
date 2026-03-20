@@ -51,7 +51,27 @@ test('lecture and batch pages show updated labels', async ({ page }) => {
 
 test('dashboard shell loads for unauthenticated user', async ({ page }) => {
   await page.goto('/dashboard');
-  await expect(page.locator('body')).toContainText(/Sign in|Lecture Processor|Welcome/i);
+  await expect(page.locator('#dash-streak')).toContainText('Sign in to track');
+  await expect(page.locator('#dash-due')).toContainText('Sign in to review');
+  await expect(page.locator('#dash-goal')).toContainText('Sign in to set goals');
+  await expect(page.locator('#dash-goal-fill')).toBeHidden();
+});
+
+test('calendar signed-out CTA redirects to a working sign-in entry point', async ({ page }) => {
+  await page.goto('/calendar');
+  await expect(page.locator('#auth-required')).toBeVisible();
+  await expect(page.locator('#add-session-btn')).toContainText('Sign in to add sessions');
+
+  await page.locator('#add-session-btn').click();
+
+  await page.waitForURL(/\/lecture-notes(?:\?auth=signin)?/);
+  await expect(page.locator('body')).toContainText(/Lecture Notes|Sign in/i);
+});
+
+test('reader actions stay disabled until output exists', async ({ page }) => {
+  await page.goto('/document-reader');
+  await expect(page.locator('#reader-copy-btn')).toBeDisabled();
+  await expect(page.locator('#reader-download-docx-btn')).toBeDisabled();
 });
 
 test('lecture notes audio disclosures toggle open and closed', async ({ page }) => {

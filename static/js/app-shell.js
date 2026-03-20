@@ -4,6 +4,7 @@
   var bootstrap = window.LectureProcessorBootstrap || {};
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
   var uiCache = window.LectureProcessorUiCache || null;
+  var userCache = window.LectureProcessorUserCache || {};
   var uxUtils = window.LectureProcessorUx || {};
   if (!auth) return;
 
@@ -68,96 +69,50 @@
   }
 
   function readCacheJson(key, fallbackValue) {
-    if (uiCache && typeof uiCache.getJson === 'function') {
-      return uiCache.getJson(key, fallbackValue);
-    }
-    try {
-      var raw = window.localStorage.getItem('lp_ui_v2:' + key);
-      return raw ? JSON.parse(raw) : fallbackValue;
-    } catch (_) {
-      return fallbackValue;
-    }
+    return typeof userCache.getJson === 'function'
+      ? userCache.getJson(key, fallbackValue, uiCache)
+      : fallbackValue;
   }
 
   function writeCacheJson(key, value) {
-    if (uiCache && typeof uiCache.setJson === 'function') {
-      return uiCache.setJson(key, value);
-    }
-    try {
-      window.localStorage.setItem('lp_ui_v2:' + key, JSON.stringify(value));
-      return true;
-    } catch (_) {
-      return false;
-    }
+    return typeof userCache.setJson === 'function'
+      ? userCache.setJson(key, value, uiCache)
+      : false;
   }
 
   function readCacheString(key, fallbackValue) {
-    if (uiCache && typeof uiCache.getString === 'function') {
-      return uiCache.getString(key, fallbackValue);
-    }
-    try {
-      var raw = window.localStorage.getItem('lp_ui_v2:' + key);
-      return raw === null ? fallbackValue : raw;
-    } catch (_) {
-      return fallbackValue;
-    }
+    return typeof userCache.getString === 'function'
+      ? userCache.getString(key, fallbackValue, uiCache)
+      : fallbackValue;
   }
 
   function writeCacheString(key, value) {
-    if (uiCache && typeof uiCache.setString === 'function') {
-      return uiCache.setString(key, value);
-    }
-    try {
-      window.localStorage.setItem('lp_ui_v2:' + key, String(value));
-      return true;
-    } catch (_) {
-      return false;
-    }
+    return typeof userCache.setString === 'function'
+      ? userCache.setString(key, value, uiCache)
+      : false;
   }
 
   function readUserCacheJson(userOrUid, key, fallbackValue) {
-    var uid = userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid;
-    var safeUid = String(uid || '').trim();
-    if (!safeUid) return fallbackValue;
-    if (uiCache && typeof uiCache.getUserJson === 'function') {
-      return uiCache.getUserJson(safeUid, key, fallbackValue);
-    }
-    return readCacheJson('user:' + safeUid + ':' + key, fallbackValue);
+    return typeof userCache.getUserJson === 'function'
+      ? userCache.getUserJson(userOrUid, key, fallbackValue, uiCache)
+      : fallbackValue;
   }
 
   function writeUserCacheJson(userOrUid, key, value) {
-    var uid = userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid;
-    var safeUid = String(uid || '').trim();
-    if (!safeUid) return false;
-    if (uiCache && typeof uiCache.setUserJson === 'function') {
-      return uiCache.setUserJson(safeUid, key, value);
-    }
-    return writeCacheJson('user:' + safeUid + ':' + key, value);
+    return typeof userCache.setUserJson === 'function'
+      ? userCache.setUserJson(userOrUid, key, value, uiCache)
+      : false;
   }
 
   function removeCacheKey(key) {
-    if (uiCache && typeof uiCache.remove === 'function') {
-      return uiCache.remove(key);
-    }
-    try {
-      window.localStorage.removeItem('lp_ui_v2:' + String(key || ''));
-      return true;
-    } catch (_) {
-      return false;
-    }
+    return typeof userCache.remove === 'function'
+      ? userCache.remove(key, uiCache)
+      : false;
   }
 
   function clearUserScopedCaches(userOrUid) {
-    var uid = userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid;
-    var safeUid = String(uid || '').trim();
-    if (!safeUid) return;
-    if (uiCache && typeof uiCache.clearUserScope === 'function') {
-      uiCache.clearUserScope(safeUid);
-      return;
-    }
-    ACCOUNT_SCOPED_CACHE_KEYS.forEach(function (key) {
-      removeCacheKey('user:' + safeUid + ':' + key);
-    });
+    if (typeof userCache.clearUserScope !== 'function') return;
+    userCache.clearUserScope(userOrUid, ACCOUNT_SCOPED_CACHE_KEYS, uiCache);
   }
 
   function clearLegacyAccountCaches() {

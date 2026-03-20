@@ -4,6 +4,7 @@
   var bootstrap = window.LectureProcessorBootstrap || {};
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
   var uiCache = window.LectureProcessorUiCache || null;
+  var userCache = window.LectureProcessorUserCache || {};
   var progressUtils = window.LectureProcessorStudyProgressUtils || {};
   var displayFormatUtils = window.LectureProcessorDisplayFormatUtils || {};
   if (!auth) return;
@@ -40,47 +41,27 @@
   }
 
   function readCacheJson(key, fallbackValue) {
-    if (uiCache && typeof uiCache.getJson === 'function') {
-      return uiCache.getJson(key, fallbackValue);
-    }
-    try {
-      var raw = window.localStorage.getItem('lp_ui_v2:' + key);
-      return raw ? JSON.parse(raw) : fallbackValue;
-    } catch (_) {
-      return fallbackValue;
-    }
+    return typeof userCache.getJson === 'function'
+      ? userCache.getJson(key, fallbackValue, uiCache)
+      : fallbackValue;
   }
 
   function writeCacheJson(key, value) {
-    if (uiCache && typeof uiCache.setJson === 'function') {
-      return uiCache.setJson(key, value);
-    }
-    try {
-      window.localStorage.setItem('lp_ui_v2:' + key, JSON.stringify(value));
-      return true;
-    } catch (_) {
-      return false;
-    }
+    return typeof userCache.setJson === 'function'
+      ? userCache.setJson(key, value, uiCache)
+      : false;
   }
 
   function readUserCacheJson(userOrUid, key, fallbackValue) {
-    var uid = userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid;
-    var safeUid = String(uid || '').trim();
-    if (!safeUid) return fallbackValue;
-    if (uiCache && typeof uiCache.getUserJson === 'function') {
-      return uiCache.getUserJson(safeUid, key, fallbackValue);
-    }
-    return readCacheJson('user:' + safeUid + ':' + key, fallbackValue);
+    return typeof userCache.getUserJson === 'function'
+      ? userCache.getUserJson(userOrUid, key, fallbackValue, uiCache)
+      : fallbackValue;
   }
 
   function writeUserCacheJson(userOrUid, key, value) {
-    var uid = userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid;
-    var safeUid = String(uid || '').trim();
-    if (!safeUid) return false;
-    if (uiCache && typeof uiCache.setUserJson === 'function') {
-      return uiCache.setUserJson(safeUid, key, value);
-    }
-    return writeCacheJson('user:' + safeUid + ':' + key, value);
+    return typeof userCache.setUserJson === 'function'
+      ? userCache.setUserJson(userOrUid, key, value, uiCache)
+      : false;
   }
 
   function toSnapshot(summary) {
@@ -122,6 +103,8 @@
         : (Math.min(done, goal) + ' / ' + goal);
     }
     if (goalFillEl) {
+      goalFillEl.hidden = false;
+      goalFillEl.setAttribute('aria-hidden', 'false');
       goalFillEl.value = Number(
         progressUtils && typeof progressUtils.goalCompletionPercent === 'function'
           ? progressUtils.goalCompletionPercent({ today_progress: done, daily_goal: goal }, goal)
@@ -130,8 +113,23 @@
     }
   }
 
+  function applySignedOutSnapshot() {
+    if (streakEl) streakEl.textContent = 'Sign in to track';
+    if (dueEl) dueEl.textContent = 'Sign in to review';
+    if (goalEl) goalEl.textContent = 'Sign in to set goals';
+    if (goalFillEl) {
+      goalFillEl.value = 0;
+      goalFillEl.hidden = true;
+      goalFillEl.setAttribute('aria-hidden', 'true');
+    }
+  }
+
   function hydrateCachedSnapshot(user) {
-    var fromUser = user && user.uid ? readUserCacheJson(user, DASHBOARD_CACHE_KEY, null) : null;
+    if (!user || !user.uid) {
+      applySignedOutSnapshot();
+      return;
+    }
+    var fromUser = readUserCacheJson(user, DASHBOARD_CACHE_KEY, null);
     applySnapshot(fromUser || null);
   }
 
@@ -205,7 +203,7 @@
   async function loadDashboard(user) {
     setDashboardLoading(true);
     if (!user) {
-      applySnapshot(null);
+      applySignedOutSnapshot();
       renderUpcomingSessions(null, []);
       renderRecentPacks([]);
       setDashboardLoading(false);

@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from lecture_processor.domains.account import lifecycle as account_lifecycle
+from lecture_processor.domains.study import progress as study_progress
 from lecture_processor.domains import planner as planner_models
+from lecture_processor.services import access_service
 
 
 def _require_user(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return (None, app_ctx.jsonify({'error': 'Unauthorized'}), 401)
-    return (decoded_token, None, None)
+    return access_service.require_allowed_user(app_ctx, request)
 
 
 def _account_write_guard(app_ctx, uid):
@@ -65,7 +64,8 @@ def list_planner_sessions(app_ctx, request):
         limit = 200
     limit = max(1, min(200, limit))
     future_only = str(request.args.get('future_only', '0') or '0').strip().lower() in {'1', 'true', 'yes', 'on'}
-    today = app_ctx.time.strftime('%Y-%m-%d', app_ctx.time.localtime())
+    tzinfo, _timezone_name = study_progress.resolve_user_timezone(uid, runtime=app_ctx)
+    today = study_progress.to_timezone_now(None, tzinfo, runtime=app_ctx).strftime('%Y-%m-%d')
     records = app_ctx.planner_repo.list_planner_sessions_by_uid(app_ctx.db, uid, 400)
     sessions = []
     for record in records:

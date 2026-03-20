@@ -10,6 +10,7 @@ from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.physio import access as physio_access
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.shared import parsing as shared_parsing
+from lecture_processor.services import access_service
 
 
 def create_admin_session(app_ctx, request):
@@ -158,13 +159,11 @@ def ingest_analytics_event(app_ctx, request):
 
 
 def get_user(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = access_service.require_allowed_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
-    if not auth_policy.is_email_allowed(email, runtime=app_ctx):
-        return app_ctx.jsonify({'error': 'Email not allowed', 'message': 'Please use your university email.'}), 403
     user = app_ctx.get_or_create_user(uid, email)
     preferences = shared_parsing.build_user_preferences_payload(user, runtime=app_ctx)
     return app_ctx.jsonify({
@@ -186,25 +185,21 @@ def get_user(app_ctx, request):
 
 
 def get_user_preferences(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = access_service.require_allowed_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
-    if not auth_policy.is_email_allowed(email, runtime=app_ctx):
-        return app_ctx.jsonify({'error': 'Email not allowed'}), 403
     user = app_ctx.get_or_create_user(uid, email)
     return app_ctx.jsonify({'preferences': shared_parsing.build_user_preferences_payload(user, runtime=app_ctx)})
 
 
 def update_user_preferences(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = access_service.require_allowed_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
-    if not auth_policy.is_email_allowed(email, runtime=app_ctx):
-        return app_ctx.jsonify({'error': 'Email not allowed'}), 403
 
     payload = request.get_json(silent=True) or {}
     user = app_ctx.get_or_create_user(uid, email)

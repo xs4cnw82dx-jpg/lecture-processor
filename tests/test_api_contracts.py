@@ -3,6 +3,7 @@ import json
 import re
 import zipfile
 import pytest
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from flask import request
@@ -14,6 +15,7 @@ from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
+from lecture_processor.domains.study import progress as study_progress
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.services import upload_api_service
 from tests.runtime_test_support import get_test_core
@@ -21,6 +23,13 @@ from tests.runtime_test_support import get_test_core
 core = get_test_core()
 
 pytestmark = pytest.mark.usefixtures("disable_sentry")
+
+
+@pytest.fixture(autouse=True)
+def _allow_authenticated_contract_test_emails(monkeypatch, request):
+    if str(getattr(request.node, "name", "")).startswith("test_verify_email"):
+        return
+    monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: True)
 
 
 class _StoredDoc:
@@ -195,6 +204,40 @@ def test_planner_api_crud_and_future_only_filter(client, monkeypatch):
     core.planner_repo.clear_memory_state()
 
 
+def test_planner_api_future_only_uses_user_timezone(client, monkeypatch):
+    monkeypatch.setattr(core, "db", None)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "planner-tz-u1", "email": "user@gmail.com"})
+    monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(
+        study_progress,
+        "resolve_user_timezone",
+        lambda _uid, runtime=None: (timezone(timedelta(hours=1)), "Europe/Amsterdam"),
+    )
+    monkeypatch.setattr(
+        study_progress,
+        "to_timezone_now",
+        lambda _base_now, tzinfo, runtime=None: datetime(2026, 2, 26, 0, 30, tzinfo=tzinfo),
+    )
+    core.planner_repo.clear_memory_state()
+
+    client.put(
+        "/api/planner/sessions/late-utc-session",
+        json={"title": "Late UTC session", "date": "2026-02-25", "time": "23:45", "duration": 45},
+        headers={"Authorization": "Bearer dev"},
+    )
+    client.put(
+        "/api/planner/sessions/local-today-session",
+        json={"title": "Local today session", "date": "2026-02-26", "time": "09:00", "duration": 45},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    response = client.get("/api/planner/sessions?future_only=1&limit=10", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.get_json()["sessions"]] == ["local-today-session"]
+    core.planner_repo.clear_memory_state()
+
+
 def test_planner_api_respects_account_write_guard(client, monkeypatch):
     monkeypatch.setattr(core, "db", None)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "planner-u2", "email": "u@example.com"})
@@ -212,6 +255,33 @@ def test_planner_api_respects_account_write_guard(client, monkeypatch):
 
     assert response.status_code == 409
     assert response.get_json()["status"] == "account_deletion_in_progress"
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "json_payload"),
+    [
+        ("get", "/api/planner/settings", None),
+        ("get", "/api/study-packs", None),
+        ("get", "/api/account/export", None),
+        (
+            "post",
+            "/api/account/export-bundle",
+            {"scope": "account", "include": {"account_json": True}},
+        ),
+    ],
+)
+def test_allowed_user_guard_blocks_disallowed_authenticated_users(client, monkeypatch, method, path, json_payload):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "blocked-u1", "email": "blocked@example.invalid"})
+    monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: False)
+
+    request_fn = getattr(client, method)
+    kwargs = {"headers": {"Authorization": "Bearer dev"}}
+    if json_payload is not None:
+        kwargs["json"] = json_payload
+    response = request_fn(path, **kwargs)
+
+    assert response.status_code == 403
+    assert response.get_json()["error"] == "Email not allowed"
 
 
 def test_admin_overview_uses_rollups_and_limited_recent_queries(client, monkeypatch):

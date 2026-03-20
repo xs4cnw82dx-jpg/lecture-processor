@@ -25,7 +25,7 @@
 	          <div class="muted calendar-sync-note">Study sessions and reminder preferences sync with your account. Browser notifications still stay local to this device and browser session.</div>
 	        </div>
 	        <div class="headline-actions">
-	          <button class="btn primary" id="add-session-btn">+ Add Study Session</button>
+	          <button class="btn primary" id="add-session-btn">Sign in to add sessions</button>
 	        </div>
 	      </div>
 
@@ -119,7 +119,7 @@
       </div>
 
       <div class="panel" id="auth-required" hidden>
-        <div class="panel-body">You need to sign in to use the calendar. <a class="calendar-auth-link" href="/calendar?auth=signin">Sign in</a>.</div>
+        <div class="panel-body">You need to sign in to use the calendar. <a class="calendar-auth-link" href="/lecture-notes?auth=signin">Sign in</a>.</div>
       </div>
     </div>
   </main>
@@ -182,6 +182,7 @@
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/user-cache-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
   <script src="{{ url_for('static', filename='js/calendar.js') }}"></script>
 </body>

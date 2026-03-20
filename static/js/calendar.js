@@ -37,6 +37,7 @@
     const dailyReminderTimeRow = document.getElementById('daily-reminder-time-row');
 
     let currentUser = null;
+    let authStateResolved = !!(auth && auth.currentUser);
     let idToken = '';
     let weekStart = startOfWeek(new Date());
     let sessions = [];
@@ -53,6 +54,34 @@
       toastEl.textContent = msg;
       toastEl.className = 'toast visible' + (type ? ' ' + type : '');
       setTimeout(() => toastEl.className = 'toast', 2400);
+    }
+
+    function getSignInHref() {
+      return '/lecture-notes?auth=signin';
+    }
+
+    function updateAddSessionButton() {
+      if (!addSessionBtn) return;
+      const signedIn = !!currentUser;
+      addSessionBtn.dataset.authState = signedIn ? 'signed-in' : 'signed-out';
+      addSessionBtn.textContent = signedIn ? '+ Add Study Session' : 'Sign in to add sessions';
+      addSessionBtn.setAttribute('aria-label', signedIn ? 'Add Study Session' : 'Sign in to use the study calendar');
+    }
+
+    function redirectToSignIn() {
+      window.location.href = getSignInHref();
+    }
+
+    function handleAddSessionAction() {
+      if (!authStateResolved && !currentUser) {
+        showToast('Checking your sign-in status...', '');
+        return;
+      }
+      if (!currentUser) {
+        redirectToSignIn();
+        return;
+      }
+      openModal(null);
     }
 
     function localDateString(d) {
@@ -596,6 +625,10 @@
     }
 
     function openModal(editSession) {
+      if (!currentUser) {
+        redirectToSignIn();
+        return;
+      }
       editingSessionId = editSession ? editSession.id : '';
       modalTitleEl.textContent = editingSessionId ? 'Edit Study Session' : 'Add Study Session';
       sessionTitleEl.value = editSession ? (editSession.title || '') : '';
@@ -974,10 +1007,12 @@
       });
     }
 
+    updateAddSessionButton();
+
     prevWeekBtn.addEventListener('click', () => { weekStart = addDays(weekStart, -7); renderWeek(); });
     nextWeekBtn.addEventListener('click', () => { weekStart = addDays(weekStart, 7); renderWeek(); });
     todayWeekBtn.addEventListener('click', () => { weekStart = startOfWeek(new Date()); renderWeek(); });
-    addSessionBtn.addEventListener('click', () => openModal(null));
+    addSessionBtn.addEventListener('click', () => handleAddSessionAction());
     modalCloseBtn.addEventListener('click', closeModal);
     modalCancelBtn.addEventListener('click', closeModal);
     modalSaveBtn.addEventListener('click', () => { saveSessionFromModal(); });
@@ -1013,13 +1048,16 @@
     wireWeekActions();
 
     auth.onAuthStateChanged(async (user) => {
+      authStateResolved = true;
       currentUser = user;
+      updateAddSessionButton();
       if (!user) {
         idToken = '';
         if (authClient && typeof authClient.clearToken === 'function') authClient.clearToken();
         if (authRequiredEl) authRequiredEl.hidden = false;
         if (calendarLayoutEl) calendarLayoutEl.hidden = true;
         if (emptyWeekEl) emptyWeekEl.hidden = true;
+        if (!modalOverlay.hidden) closeModal();
         if (reminderTimer) clearInterval(reminderTimer);
         if (reminderSaveDebounceTimer) {
           clearTimeout(reminderSaveDebounceTimer);

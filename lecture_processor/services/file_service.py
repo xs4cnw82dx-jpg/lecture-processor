@@ -1,6 +1,7 @@
 """File validation and conversion helpers."""
 
 import glob
+import json
 import os
 import re
 import shutil
@@ -232,6 +233,138 @@ def resolve_uploaded_slides_to_pdf(
     return converted_pdf_path, ''
 
 
+def _cleanup_audio_import_candidates(base_path):
+    for candidate in sorted(glob.glob(f"{base_path}.*")):
+        try:
+            if os.path.exists(candidate):
+                os.remove(candidate)
+        except Exception:
+            pass
+
+
+def _coerce_positive_float(value):
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if parsed <= 0:
+        return 0.0
+    return parsed
+
+
+def _coerce_positive_int(value):
+    parsed = _coerce_positive_float(value)
+    if parsed <= 0:
+        return 0
+    return int(parsed)
+
+
+def _collect_metadata_candidates(metadata, key):
+    candidates = []
+    if not isinstance(metadata, dict):
+        return candidates
+    candidates.append(metadata.get(key))
+    requested = metadata.get('requested_downloads')
+    if isinstance(requested, list):
+        for item in requested:
+            if isinstance(item, dict):
+                candidates.append(item.get(key))
+    return candidates
+
+
+def _metadata_duration_seconds(metadata):
+    for value in _collect_metadata_candidates(metadata, 'duration'):
+        parsed = _coerce_positive_float(value)
+        if parsed > 0:
+            return parsed
+    return 0.0
+
+
+def _metadata_filesize_bytes(metadata):
+    for key in ('filesize', 'filesize_approx'):
+        for value in _collect_metadata_candidates(metadata, key):
+            parsed = _coerce_positive_int(value)
+            if parsed > 0:
+                return parsed
+    return 0
+
+
+def _metadata_is_audio_only(metadata):
+    if not isinstance(metadata, dict):
+        return False
+    requested = metadata.get('requested_downloads')
+    if isinstance(requested, list) and requested:
+        audio_only = False
+        for item in requested:
+            if not isinstance(item, dict):
+                continue
+            vcodec = str(item.get('vcodec', '') or '').strip().lower()
+            if vcodec == 'none':
+                audio_only = True
+                continue
+            return False
+        if audio_only:
+            return True
+    return str(metadata.get('vcodec', '') or '').strip().lower() == 'none'
+
+
+def _estimate_audio_output_size_bytes(metadata, *, bitrate_kbps=192):
+    duration_seconds = _metadata_duration_seconds(metadata)
+    if duration_seconds <= 0:
+        return 0
+    safe_bitrate = max(32, int(bitrate_kbps or 192))
+    return int((duration_seconds * safe_bitrate * 1000) / 8)
+
+
+def _parse_ytdlp_json_output(raw_output):
+    text = str(raw_output or '').strip()
+    if not text:
+        return {}
+    for line in reversed(text.splitlines()):
+        candidate = line.strip()
+        if not candidate:
+            continue
+        try:
+            payload = json.loads(candidate)
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return {}
+
+
+def _fetch_video_import_metadata(
+    ytdlp_bin,
+    source_url,
+    *,
+    subprocess_module=subprocess,
+    timeout_seconds=60,
+):
+    command = [
+        ytdlp_bin,
+        '--no-playlist',
+        '--skip-download',
+        '--dump-single-json',
+        '--no-warnings',
+        '--restrict-filenames',
+        '--',
+        source_url,
+    ]
+    try:
+        result = subprocess_module.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=max(5, int(timeout_seconds or 60)),
+        )
+    except Exception:
+        return {}
+    if getattr(result, 'returncode', 1) != 0:
+        return {}
+    return _parse_ytdlp_json_output(getattr(result, 'stdout', '') or '')
+
+
 def download_audio_from_video_url(
     source_url,
     file_prefix,
@@ -256,6 +389,23 @@ def download_audio_from_video_url(
     safe_prefix = re.sub(r'[^a-zA-Z0-9_-]+', '_', str(file_prefix or 'import')).strip('_') or 'import'
     base = os.path.join(import_dir, safe_prefix)
     output_template = f"{base}.%(ext)s"
+    _cleanup_audio_import_candidates(base)
+
+    metadata = _fetch_video_import_metadata(
+        ytdlp_bin,
+        source_url,
+        subprocess_module=subprocess_module,
+        timeout_seconds=60,
+    )
+    estimated_output_size = _estimate_audio_output_size_bytes(metadata)
+    if estimated_output_size > max_audio_upload_bytes:
+        raise RuntimeError('Imported audio is too long to fit within the server limit (max 500MB).')
+    if _metadata_is_audio_only(metadata):
+        source_size_bytes = _metadata_filesize_bytes(metadata)
+        if source_size_bytes > max_audio_upload_bytes:
+            raise RuntimeError('Imported audio exceeds server limit (max 500MB).')
+    else:
+        source_size_bytes = 0
 
     cmd = [
         ytdlp_bin,
@@ -267,11 +417,23 @@ def download_audio_from_video_url(
         '--restrict-filenames',
         '--ffmpeg-location', ffmpeg_bin,
         '--output', output_template,
-        '--',
-        source_url,
     ]
-    result = subprocess_module.run(cmd, check=False, capture_output=True, text=True, timeout=15 * 60)
+    if source_size_bytes > 0:
+        cmd.extend(['--max-filesize', str(max_audio_upload_bytes)])
+    cmd.extend(['--', source_url])
+    try:
+        result = subprocess_module.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15 * 60,
+        )
+    except subprocess.TimeoutExpired:
+        _cleanup_audio_import_candidates(base)
+        raise RuntimeError('Could not fetch audio from the provided URL (download timed out).')
     if result.returncode != 0:
+        _cleanup_audio_import_candidates(base)
         stderr = (result.stderr or result.stdout or '').strip().splitlines()
         reason = stderr[-1] if stderr else 'unknown import error'
         raise RuntimeError(f'Could not fetch audio from the provided URL ({reason[:220]}).')
@@ -284,18 +446,10 @@ def download_audio_from_video_url(
 
     size_bytes = get_saved_file_size_fn(output_path)
     if size_bytes <= 0 or size_bytes > max_audio_upload_bytes:
-        try:
-            if os.path.exists(output_path):
-                os.remove(output_path)
-        except Exception:
-            pass
+        _cleanup_audio_import_candidates(base)
         raise RuntimeError('Imported audio exceeds server limit (max 500MB) or is empty.')
     if not file_looks_like_audio_fn(output_path):
-        try:
-            if os.path.exists(output_path):
-                os.remove(output_path)
-        except Exception:
-            pass
+        _cleanup_audio_import_candidates(base)
         raise RuntimeError('Imported audio is invalid or unsupported.')
     return output_path, os.path.basename(output_path), size_bytes
 
