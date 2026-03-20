@@ -6,6 +6,7 @@
   var authUtils = window.LectureProcessorAuth || {};
   var authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
   var uiCache = window.LectureProcessorUiCache || null;
+  var userCache = window.LectureProcessorUserCache || {};
   var config = window.ReaderConfig || {};
   var sourceType = String(config.source || 'document');
 
@@ -71,9 +72,7 @@
   }
 
   function getSignInHref() {
-    var search = new URLSearchParams(window.location.search || '');
-    search.set('auth', 'signin');
-    return window.location.pathname + '?' + search.toString();
+    return '/lecture-notes?auth=signin';
   }
 
   function updateAuthStateUI() {
@@ -105,47 +104,27 @@
   }
 
   function readCacheJson(key, fallbackValue) {
-    if (uiCache && typeof uiCache.getJson === 'function') {
-      return uiCache.getJson(key, fallbackValue);
-    }
-    try {
-      var raw = window.localStorage.getItem('lp_ui_v2:' + key);
-      return raw ? JSON.parse(raw) : fallbackValue;
-    } catch (_) {
-      return fallbackValue;
-    }
+    return typeof userCache.getJson === 'function'
+      ? userCache.getJson(key, fallbackValue, uiCache)
+      : fallbackValue;
   }
 
   function writeCacheJson(key, value) {
-    if (uiCache && typeof uiCache.setJson === 'function') {
-      return uiCache.setJson(key, value);
-    }
-    try {
-      window.localStorage.setItem('lp_ui_v2:' + key, JSON.stringify(value));
-      return true;
-    } catch (_) {
-      return false;
-    }
+    return typeof userCache.setJson === 'function'
+      ? userCache.setJson(key, value, uiCache)
+      : false;
   }
 
   function readUserCacheJson(userOrUid, key, fallbackValue) {
-    var uid = userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid;
-    var safeUid = String(uid || '').trim();
-    if (!safeUid) return fallbackValue;
-    if (uiCache && typeof uiCache.getUserJson === 'function') {
-      return uiCache.getUserJson(safeUid, key, fallbackValue);
-    }
-    return readCacheJson('user:' + safeUid + ':' + key, fallbackValue);
+    return typeof userCache.getUserJson === 'function'
+      ? userCache.getUserJson(userOrUid, key, fallbackValue, uiCache)
+      : fallbackValue;
   }
 
   function writeUserCacheJson(userOrUid, key, value) {
-    var uid = userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid;
-    var safeUid = String(uid || '').trim();
-    if (!safeUid) return false;
-    if (uiCache && typeof uiCache.setUserJson === 'function') {
-      return uiCache.setUserJson(safeUid, key, value);
-    }
-    return writeCacheJson('user:' + safeUid + ':' + key, value);
+    return typeof userCache.setUserJson === 'function'
+      ? userCache.setUserJson(userOrUid, key, value, uiCache)
+      : false;
   }
 
   function hydrateCachedCredits(user) {
@@ -356,6 +335,16 @@
     return 'Document Reader Output';
   }
 
+  function hasOutput() {
+    return Boolean(String(lastOutput || '').trim());
+  }
+
+  function updateOutputActionState() {
+    var outputReady = hasOutput();
+    if (copyBtn) copyBtn.disabled = !outputReady;
+    if (downloadBtn) downloadBtn.disabled = !outputReady || !hasSignedInSession();
+  }
+
   async function runExtraction() {
     if (!hasSignedInSession()) {
       setStatus('Sign in to continue.', 'error');
@@ -401,6 +390,7 @@
       }
       lastOutput = String(payload.output_text || payload.content_markdown || '').trim();
       outputPre.textContent = lastOutput;
+      updateOutputActionState();
       setStatus('Extraction complete.', 'success');
       await refreshCredits();
     } catch (error) {
@@ -496,6 +486,7 @@
   setupModeUI();
   hydrateCachedCredits(getSignedInUser());
   updateAuthStateUI();
+  updateOutputActionState();
   auth.onAuthStateChanged(function (user) {
     authStateResolved = true;
     currentUser = user || null;
@@ -503,5 +494,6 @@
     hydrateCachedCredits(currentUser);
     refreshCredits();
     updateRunState();
+    updateOutputActionState();
   });
 })();

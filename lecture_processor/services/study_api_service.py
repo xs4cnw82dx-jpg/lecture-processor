@@ -6,6 +6,7 @@ from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.study import progress as study_progress
 from lecture_processor.domains.ai import batch_orchestrator
+from lecture_processor.services import access_service
 
 
 def _pack_item_count(pack, count_key, items_key):
@@ -25,6 +26,10 @@ def _account_write_guard(app_ctx, uid):
     if allowed:
         return None
     return app_ctx.jsonify({'error': message, 'status': 'account_deletion_in_progress'}), 409
+
+
+def _require_user(app_ctx, request):
+    return access_service.require_allowed_user(app_ctx, request)
 
 
 def _parse_daily_card_goal_input(raw_value, runtime=None):
@@ -241,9 +246,9 @@ def _delete_share_for_entity(app_ctx, owner_uid, entity_type, entity_id):
 
 
 def get_study_progress(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     try:
         progress_doc = app_ctx.get_study_progress_doc(uid).get()
@@ -279,9 +284,9 @@ def get_study_progress(app_ctx, request):
 
 
 def update_study_progress(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     deletion_guard = _account_write_guard(app_ctx, uid)
     if deletion_guard is not None:
@@ -395,9 +400,9 @@ def update_study_progress(app_ctx, request):
 
 
 def get_study_progress_summary(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     try:
         progress_doc = app_ctx.get_study_progress_doc(uid).get()
@@ -417,10 +422,9 @@ def get_study_progress_summary(app_ctx, request):
 
 
 def get_study_packs(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
-
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     try:
         limit = _parse_study_pack_limit(request.args.get('limit'))
@@ -470,10 +474,9 @@ def get_study_packs(app_ctx, request):
 
 
 def create_study_pack(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
-
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     deletion_guard = _account_write_guard(app_ctx, uid)
     if deletion_guard is not None:
@@ -565,10 +568,9 @@ def create_study_pack(app_ctx, request):
 
 
 def get_study_pack(app_ctx, request, pack_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
-
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     try:
         pack_result, error_response, status = _get_owned_study_pack(app_ctx, uid, pack_id)
@@ -620,9 +622,9 @@ def get_study_pack(app_ctx, request, pack_id):
 
 
 def update_study_pack(app_ctx, request, pack_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     deletion_guard = _account_write_guard(app_ctx, uid)
     if deletion_guard is not None:
@@ -705,9 +707,9 @@ def update_study_pack(app_ctx, request, pack_id):
 
 
 def delete_study_pack(app_ctx, request, pack_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     deletion_guard = _account_write_guard(app_ctx, uid)
     if deletion_guard is not None:
@@ -736,9 +738,9 @@ def delete_study_pack(app_ctx, request, pack_id):
 
 
 def get_study_folders(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     try:
         pending_batches = batch_orchestrator.list_batches_for_uid(
@@ -784,9 +786,9 @@ def get_study_folders(app_ctx, request):
 
 
 def stream_study_pack_audio(app_ctx, request, pack_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     try:
         doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
@@ -808,9 +810,9 @@ def stream_study_pack_audio(app_ctx, request, pack_id):
 
 
 def create_study_folder(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     deletion_guard = _account_write_guard(app_ctx, uid)
     if deletion_guard is not None:
@@ -845,9 +847,9 @@ def create_study_folder(app_ctx, request):
 
 
 def update_study_folder(app_ctx, request, folder_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     deletion_guard = _account_write_guard(app_ctx, uid)
     if deletion_guard is not None:
@@ -890,9 +892,9 @@ def update_study_folder(app_ctx, request, folder_id):
 
 
 def delete_study_folder(app_ctx, request, folder_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     deletion_guard = _account_write_guard(app_ctx, uid)
     if deletion_guard is not None:
@@ -917,9 +919,9 @@ def delete_study_folder(app_ctx, request, folder_id):
 
 
 def get_study_pack_share(app_ctx, request, pack_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     if app_ctx.db is None:
         return app_ctx.jsonify({'error': 'Sharing is unavailable'}), 503
@@ -936,9 +938,9 @@ def get_study_pack_share(app_ctx, request, pack_id):
 
 
 def update_study_pack_share(app_ctx, request, pack_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     deletion_guard = _account_write_guard(app_ctx, uid)
     if deletion_guard is not None:
@@ -978,9 +980,9 @@ def update_study_pack_share(app_ctx, request, pack_id):
 
 
 def get_study_folder_share(app_ctx, request, folder_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     if app_ctx.db is None:
         return app_ctx.jsonify({'error': 'Sharing is unavailable'}), 503
@@ -997,9 +999,9 @@ def get_study_folder_share(app_ctx, request, folder_id):
 
 
 def update_study_folder_share(app_ctx, request, folder_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     deletion_guard = _account_write_guard(app_ctx, uid)
     if deletion_guard is not None:
@@ -1113,9 +1115,9 @@ def get_public_shared_folder_pack(app_ctx, request, share_token, pack_id):
 
 
 def export_study_pack_flashcards_csv(app_ctx, request, pack_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     try:
         doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
@@ -1162,10 +1164,9 @@ def export_study_pack_flashcards_csv(app_ctx, request, pack_id):
 
 
 def export_study_pack_notes(app_ctx, request, pack_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
-
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     try:
         doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
@@ -1212,10 +1213,9 @@ def export_study_pack_notes(app_ctx, request, pack_id):
 
 
 def export_study_pack_source(app_ctx, request, pack_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
-
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     uid = decoded_token['uid']
     try:
         pack_result, error_response, status = _get_owned_study_pack(app_ctx, uid, pack_id)
@@ -1281,10 +1281,9 @@ def export_study_pack_source(app_ctx, request, pack_id):
 
 
 def export_study_pack_pdf(app_ctx, request, pack_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
-
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     if not study_export.REPORTLAB_AVAILABLE:
         return app_ctx.jsonify({
             'error': "PDF export is currently unavailable on this server. Install dependency: pip install reportlab==4.2.5"
@@ -1316,10 +1315,9 @@ def export_study_pack_pdf(app_ctx, request, pack_id):
 
 
 def export_study_pack_annotated_pdf(app_ctx, request, pack_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
-
+    decoded_token, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
     if not study_export.REPORTLAB_AVAILABLE:
         return app_ctx.jsonify({
             'error': "Annotated PDF export is currently unavailable on this server. Install dependency: pip install reportlab==4.2.5"

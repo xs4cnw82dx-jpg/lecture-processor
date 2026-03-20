@@ -9,6 +9,7 @@ import zipfile
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study import export as study_export
+from lecture_processor.services import access_service
 
 
 def _export_warning_entry(pack, doc_id, reason, formats):
@@ -23,9 +24,9 @@ def _export_warning_entry(pack, doc_id, reason, formats):
 
 
 def export_account_data(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = access_service.require_allowed_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
 
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
@@ -48,9 +49,9 @@ def export_account_data(app_ctx, request):
 
 
 def export_account_bundle(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = access_service.require_allowed_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
 
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
@@ -211,9 +212,9 @@ def export_account_bundle(app_ctx, request):
 
 
 def delete_account_data(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error_response, status = access_service.require_allowed_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
 
     uid = decoded_token['uid']
     email = str(decoded_token.get('email', '') or '').strip().lower()

@@ -27,6 +27,7 @@ const bootstrap = window.LectureProcessorBootstrap || {};
 const auth = bootstrap.getAuth ? bootstrap.getAuth() : firebase.auth();
 const authUtils = window.LectureProcessorAuth || {};
 const authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
+const analyticsUtils = window.LectureProcessorIndexAnalytics || {};
 const markdownUtils = window.LectureProcessorMarkdown || {};
 const uxUtils = window.LectureProcessorUx || {};
 const downloadUtils = window.LectureProcessorDownload || {};
@@ -41,6 +42,14 @@ const pageConfig = window.LectureProcessorPageConfig || {};
 const forcedMode = ['lecture-notes', 'slides-only', 'interview'].includes(String(pageConfig.forcedMode || '').trim())
     ? String(pageConfig.forcedMode || '').trim()
     : '';
+const appShell = document.getElementById('app-shell');
+const analyticsPage = typeof analyticsUtils.resolveProcessingAnalyticsPage === 'function'
+    ? analyticsUtils.resolveProcessingAnalyticsPage({
+        forcedMode,
+        pathname: window.location.pathname,
+        shellPageKey: appShell ? appShell.getAttribute('data-page-key') : '',
+    })
+    : 'processing';
 const setHidden = typeof uxUtils.setHidden === 'function'
     ? uxUtils.setHidden
     : function (element, hidden) {
@@ -226,7 +235,7 @@ function trackEvent(eventName, properties = {}, options = {}) {
     const payload = {
         event: name,
         session_id: analyticsSessionId,
-        page: 'dashboard',
+        page: analyticsPage,
         path: window.location.pathname,
         properties: Object.assign({}, properties || {}, { mode: currentMode }),
     };

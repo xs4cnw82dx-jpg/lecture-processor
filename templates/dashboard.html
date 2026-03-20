@@ -28,18 +28,18 @@
       <section class="dashboard-grid">
         <article class="shell-panel stat-card">
           <div class="stat-label">Current streak</div>
-          <div class="stat-value" id="dash-streak">Loading streak</div>
+          <div class="stat-value" id="dash-streak">Sign in to track</div>
           <div class="stat-sub">Keep momentum by reviewing every day.</div>
         </article>
         <article class="shell-panel stat-card">
           <div class="stat-label">Due today</div>
-          <div class="stat-value" id="dash-due">Loading due cards</div>
+          <div class="stat-value" id="dash-due">Sign in to review</div>
           <div class="stat-sub">Cards ready for active recall now.</div>
         </article>
         <article class="shell-panel stat-card">
           <div class="stat-label">Daily goal</div>
-          <div class="stat-value" id="dash-goal">Loading goal</div>
-          <progress class="goal-track goal-track-bar" id="dash-goal-fill" max="100" value="0">0%</progress>
+          <div class="stat-value" id="dash-goal">Sign in to set goals</div>
+          <progress class="goal-track goal-track-bar" id="dash-goal-fill" max="100" value="0" hidden aria-hidden="true">0%</progress>
         </article>
       </section>
 
@@ -97,6 +97,7 @@
   <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/user-cache-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/study-progress-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/display-format-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
