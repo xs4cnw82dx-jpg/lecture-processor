@@ -30,3 +30,17 @@ def test_load_runtime_settings_falls_back_to_env_without_config(monkeypatch):
     assert settings.environment == "staging"
     assert settings.flask_secret_key == "env-secret"
     assert settings.public_base_url == "https://env.example"
+
+
+def test_load_runtime_settings_treats_render_as_production_without_explicit_override(monkeypatch):
+    monkeypatch.setenv("RENDER", "true")
+    monkeypatch.setenv("FLASK_ENV", "development")
+    monkeypatch.delenv("SENTRY_ENVIRONMENT", raising=False)
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("ENV", raising=False)
+    monkeypatch.setenv("FLASK_SECRET_KEY", "env-secret")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://env.example")
+
+    settings = load_runtime_settings()
+
+    assert settings.environment == "production"

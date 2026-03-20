@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from lecture_processor.config import AppConfig
+from lecture_processor.config import AppConfig, resolve_runtime_environment
 
 
 @dataclass(frozen=True)
@@ -25,12 +25,7 @@ def load_runtime_settings(config: AppConfig | None = None) -> AppSettings:
             public_base_url=(str(config.public_base_url or '') or '').strip(),
         )
 
-    environment = (
-        os.getenv('SENTRY_ENVIRONMENT')
-        or os.getenv('FLASK_ENV')
-        or os.getenv('ENV')
-        or ('production' if os.getenv('RENDER') else 'development')
-    ).strip().lower()
+    environment = resolve_runtime_environment(default_local='development').strip().lower()
     return AppSettings(
         log_level=(os.getenv('LOG_LEVEL', 'INFO') or 'INFO').strip().upper(),
         environment=environment,
