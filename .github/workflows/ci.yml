@@ -64,6 +64,8 @@ jobs:
     env:
       SENTRY_DSN_BACKEND: ""
       SENTRY_DSN_FRONTEND: ""
+      SMOKE_BASE_URL: "http://127.0.0.1:5000"
+      SMOKE_ALLOW_LOCALHOST: "1"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
