@@ -54,14 +54,21 @@ const ACTIVE_RUNTIME_JOBS_CACHE_KEY = 'active_runtime_jobs';
 const RUNTIME_JOBS_REFRESH_MS = 12000;
 const NOTES_HIGHLIGHT_CACHE_PREFIX = 'hl_ranges_';
 const LEGACY_NOTES_HIGHLIGHT_CACHE_PREFIX = 'hl_html_';
+const STUDY_LIBRARY_PATH = '/study';
+const STUDY_LIBRARY_TITLE = 'Study Library';
 const urlParams = new URLSearchParams(window.location.search);
 const learnPackFromUrl = urlParams.get('pack_id') || '';
 const openLearnFromUrl = urlParams.get('mode') === 'learn';
 const fullscreenFromUrl = urlParams.get('fullscreen') === '1';
 const focusFromUrl = urlParams.get('focus') || '';
 const actionFromUrl = String(urlParams.get('action') || '').trim().toLowerCase();
+const bodyEntryMode = String((document.body && document.body.dataset && document.body.dataset.studyEntryMode) || '').trim().toLowerCase();
+const initialStudyEntryMode = bodyEntryMode || actionFromUrl;
 let autoLearnConsumed = false;
 let autoCreateConsumed = false;
+let resetStudyEntryAfterBuilderClose = initialStudyEntryMode === 'create-pack' && (
+  normalizeUrlPath(window.location.pathname) !== STUDY_LIBRARY_PATH || actionFromUrl === 'create-pack'
+);
 const progressSyncSourceId = 'study-' + Math.random().toString(36).slice(2, 10);
 
 /* Write mode state */
@@ -76,6 +83,11 @@ const BUILTIN_ALL_FOLDER_ID = '';
 const BUILTIN_INTERVIEWS_FOLDER_ID = '__interviews__';
 const MAX_PINNED_FOLDERS = 5;
 let pinnedFolderIds = [];
+
+function normalizeUrlPath(pathname) {
+  var normalized = String(pathname || '/').replace(/\/+$/, '');
+  return normalized || '/';
+}
 
 /* ── Session state ── */
 const ALGO_PRESETS = { balanced: ['new', 'new', 'familiar', 'retry', 'remaster'], random: ['random', 'random', 'random', 'random', 'random'], lastminute: ['new', 'new', 'new', 'new', 'retry'], fixmistakes: ['new', 'retry', 'new', 'retry', 'retry'], hardfirst: ['hard', 'hard', 'retry', 'new', 'familiar'] };
@@ -1126,6 +1138,35 @@ function showToast(msg, type) {
 function setStudyLibraryVisibility(signedIn) {
   if (studyAuthGate) { studyAuthGate.hidden = !!signedIn; }
   if (studyLibraryShell) { studyLibraryShell.hidden = !signedIn; }
+}
+function revealDeferredStudyLibraryShell() {
+  if (studyLibraryShell) {
+    studyLibraryShell.classList.remove('study-library-shell--deferred');
+  }
+}
+function syncStudyShellNav(pathname) {
+  var normalizedPath = normalizeUrlPath(pathname);
+  Array.prototype.slice.call(document.querySelectorAll('.app-shell-link[href]')).forEach(function (link) {
+    var href = normalizeUrlPath(link.getAttribute('href') || '/');
+    var active = href === normalizedPath || (href === '/plan' && normalizedPath === '/stats');
+    link.classList.toggle('active', !!active);
+  });
+}
+function updateStudyShellTitle(nextTitle) {
+  var safeTitle = String(nextTitle || '').trim();
+  if (!safeTitle) { return; }
+  var shellTitleEl = document.querySelector('.app-shell-title');
+  if (shellTitleEl) { shellTitleEl.textContent = safeTitle; }
+  document.title = safeTitle;
+}
+function resetStudyBuilderEntryState() {
+  if (!resetStudyEntryAfterBuilderClose) { return; }
+  resetStudyEntryAfterBuilderClose = false;
+  try {
+    window.history.replaceState(window.history.state || {}, '', STUDY_LIBRARY_PATH);
+  } catch (e) { }
+  syncStudyShellNav(STUDY_LIBRARY_PATH);
+  updateStudyShellTitle(STUDY_LIBRARY_TITLE);
 }
 function openStudySignIn() {
   var shellSignInBtn = document.getElementById('shell-sign-in-btn');
@@ -2353,6 +2394,7 @@ function clearBuilderImportState() {
 }
 function openBuilderOverlay(mode, pack) {
   var openingCreate = (mode === 'create');
+  revealDeferredStudyLibraryShell();
   builderMode = openingCreate ? 'create' : 'edit';
   builderAutoSaving = false;
   builderAutoSaveQueued = false;
@@ -2392,6 +2434,7 @@ function closeBuilderOverlay() {
   builderPackId = '';
   builderImportParsed = null;
   updateShareActionAvailability();
+  resetStudyBuilderEntryState();
 }
 function openBuilderExitModal() {
   openModal(builderExitOverlay);
@@ -4156,7 +4199,7 @@ auth.onAuthStateChanged(function (user) {
       return loadData();
     }).then(function () {
       renderGoalPanel();
-      if (actionFromUrl === 'create-pack' && !autoCreateConsumed) {
+      if (initialStudyEntryMode === 'create-pack' && !autoCreateConsumed) {
         autoCreateConsumed = true;
         openBuilderOverlay('create', null);
       }
@@ -4164,6 +4207,7 @@ auth.onAuthStateChanged(function (user) {
       return refreshActiveRuntimeJobs(true);
     });
   }).catch(function (e) {
+    revealDeferredStudyLibraryShell();
     showToast(e.message || 'Could not load study library.', 'error');
   });
 });

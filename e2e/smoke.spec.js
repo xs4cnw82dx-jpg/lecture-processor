@@ -53,3 +53,26 @@ test('dashboard shell loads for unauthenticated user', async ({ page }) => {
   await page.goto('/dashboard');
   await expect(page.locator('body')).toContainText(/Sign in|Lecture Processor|Welcome/i);
 });
+
+test('lecture notes advanced import panel toggles open and closed', async ({ page }) => {
+  await page.goto('/lecture-notes');
+
+  const toggle = page.getByRole('button', { name: /Advanced import: Import audio by finding the video's URL manually/i });
+  const panel = page.locator('#audio-url-advanced-panel');
+  const advancedWrap = page.locator('#audio-url-advanced');
+
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(panel).toHaveAttribute('aria-hidden', 'true');
+
+  await toggle.click();
+
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(panel).toHaveAttribute('aria-hidden', 'false');
+  await expect(advancedWrap).toHaveClass(/is-open/);
+
+  await toggle.click();
+
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(panel).toHaveAttribute('aria-hidden', 'true');
+  await expect(advancedWrap).not.toHaveClass(/is-open/);
+});

@@ -110,6 +110,7 @@ EXPECTED_ROUTES = [
     ('GET', '/stats', 'pages.plan_dashboard'),
     ('GET', '/status/<job_id>', 'upload_api.get_status'),
     ('GET', '/study', 'pages.study_dashboard'),
+    ('GET', '/study-pack-builder', 'pages.study_pack_builder_page'),
     ('GET', '/shared/<share_token>', 'pages.shared_study_page'),
     ('GET', '/terms', 'pages.terms_of_service'),
     ('GET', '/tools', 'pages.tools_page'),
@@ -242,8 +243,17 @@ def test_processing_pages_render_updated_shell_labels(client):
     batch_response = client.get('/batch_mode')
     assert batch_response.status_code == 200
     batch_html = batch_response.get_data(as_text=True)
-    assert '>Batch Processing<' in batch_html
+    assert 'Batch Processing · Lecture Notes' in batch_html
     assert 'Batch Mode Lectures' not in batch_html
+
+
+def test_study_pack_builder_page_primes_direct_builder_entry(client):
+    response = client.get('/study-pack-builder')
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert '<title>Study Pack Builder</title>' in html
+    assert 'data-study-entry-mode="create-pack"' in html
+    assert 'href="/study-pack-builder"' in html
 
 
 def test_shell_and_calendar_modal_overlays_start_hidden(client):

@@ -1,20 +1,20 @@
+{% if forced_mode == 'lecture-notes' %}
+  {% set shell_title = 'Batch Processing · Lecture Notes' %}
+{% elif forced_mode == 'slides-only' %}
+  {% set shell_title = 'Batch Processing · Slides Extraction' %}
+{% else %}
+  {% set shell_title = 'Batch Processing · Interview Transcription' %}
+{% endif %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Batch Mode · Lecture Processor</title>
+  <title>{{ shell_title }} · Lecture Processor</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/batch-mode.css') }}">
 </head>
 <body data-forced-mode="{{ forced_mode or '' }}">
-  {% if forced_mode == 'lecture-notes' %}
-    {% set shell_title = 'Batch Processing' %}
-  {% elif forced_mode == 'slides-only' %}
-    {% set shell_title = 'Batch Processing · Slides Extraction' %}
-  {% else %}
-    {% set shell_title = 'Batch Processing · Interview Transcription' %}
-  {% endif %}
   {% include '_app_shell.html' %}
   <main class="app-shell-page batch-page" id="batch-page">
     <section class="shell-panel batch-hero">

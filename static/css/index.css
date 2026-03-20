@@ -701,15 +701,16 @@
         .upload-url-help-link:hover { text-decoration: underline; color: var(--primary); }
         .upload-url-status { margin-top: 8px; min-height: 1.2em; color: var(--gray-600); font-size: 0.8rem; }
         .upload-url-status.error { color: #991B1B; }
-        .upload-url-advanced { margin-top: 10px; border: 1px solid var(--gray-200); border-radius: var(--radius); background: rgba(249,250,251,0.9); }
-        .upload-url-advanced summary { cursor: pointer; list-style: none; padding: 10px 12px; font-size: 0.78rem; font-weight: 700; color: var(--gray-700); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-        .upload-url-advanced summary::-webkit-details-marker { display: none; }
-        .upload-url-advanced summary span { flex: 1; }
+        .upload-url-advanced { margin-top: 10px; border: 1px solid var(--gray-200); border-radius: var(--radius); background: rgba(249,250,251,0.9); overflow: hidden; }
+        .upload-url-advanced-toggle { width: 100%; cursor: pointer; border: none; background: transparent; padding: 10px 12px; font-size: 0.78rem; font-weight: 700; color: var(--gray-700); display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; }
+        .upload-url-advanced-toggle span { flex: 1; }
         .upload-url-advanced-chevron { width: 16px; height: 16px; flex-shrink: 0; color: var(--gray-500); transition: transform 0.2s ease, color 0.2s ease; }
-        .upload-url-advanced[open] summary { border-bottom: 1px solid var(--gray-200); color: var(--gray-800); }
-        .upload-url-advanced[open] .upload-url-advanced-chevron { transform: rotate(180deg); color: var(--primary-dark); }
+        .upload-url-advanced-panel { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 0.22s ease, opacity 0.18s ease; }
+        .upload-url-advanced-panel-inner { min-height: 0; overflow: hidden; }
+        .upload-url-advanced.is-open .upload-url-advanced-toggle { border-bottom: 1px solid var(--gray-200); color: var(--gray-800); }
+        .upload-url-advanced.is-open .upload-url-advanced-chevron { transform: rotate(180deg); color: var(--primary-dark); }
+        .upload-url-advanced.is-open .upload-url-advanced-panel { grid-template-rows: 1fr; opacity: 1; }
         .upload-url-advanced .upload-url-help { margin: 0; padding: 12px; }
-        .upload-url-advanced[open] .upload-url-help { animation: dropdownOpen 0.2s ease-out; }
         @media (max-width: 640px) {
             .upload-url-import-row { flex-direction: column; }
             .upload-url-button { width: 100%; min-height: 40px; }
