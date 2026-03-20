@@ -5,6 +5,7 @@
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
   if (!auth) return;
 
+  var uxUtils = window.LectureProcessorUx || {};
   var config = window.PhysioConfig || {};
   var page = String(config.page || '').trim();
   if (!page) return;
@@ -35,6 +36,7 @@
   var exportPdfBtn = document.getElementById('physio-export-pdf-btn');
   var outputEl = document.getElementById('physio-output');
   var outputLabelEl = document.getElementById('physio-output-label');
+  var outputCardEl = document.getElementById('physio-output-card');
   var alertsEl = document.getElementById('physio-alerts');
 
   var knowledgeQuestionInput = document.getElementById('physio-knowledge-question');
@@ -42,6 +44,7 @@
   var knowledgeAskBtn = document.getElementById('physio-knowledge-ask-btn');
   var knowledgeMetaEl = document.getElementById('physio-knowledge-meta');
   var knowledgeAnswerEl = document.getElementById('physio-knowledge-answer');
+  var knowledgeOutputCardEl = document.getElementById('physio-knowledge-output-card');
   var citationsEl = document.getElementById('physio-citations');
   var sourceListEl = document.getElementById('physio-source-list');
 
@@ -61,6 +64,159 @@
   var sessionListEl = document.getElementById('physio-session-list');
   var sessionPreviewEl = document.getElementById('physio-session-preview');
   var progressChartEl = document.getElementById('physio-progress-chart');
+  var sessionPanelNoteEl = document.getElementById('physio-session-panel-note');
+
+  var BODY_REGION_LABELS = {
+    algemeen: 'Algemeen',
+    nek: 'Nek / CWK',
+    schouder: 'Schouder',
+    elleboog_pols_hand: 'Elleboog / Pols / Hand',
+    thoracaal: 'Thoracaal / BWK',
+    lumbaal: 'Lumbaal / LWK',
+    heup: 'Heup',
+    knie: 'Knie',
+    enkel_voet: 'Enkel / Voet',
+    neurologisch: 'Neurologisch',
+    overig: 'Overig'
+  };
+
+  var SOURCE_KIND_LABELS = {
+    guidelines: 'Richtlijn',
+    forms: 'Formulier',
+    lectures: 'Hoorcollege',
+    articles: 'Artikel',
+    books: 'Boek',
+    cases: 'Casus',
+    overig: 'Bron'
+  };
+
+  var FIELD_LABELS = {
+    hulpvraag: 'Hulpvraag',
+    hoofdklacht: 'Hoofdklacht',
+    pijn_beschrijving: 'Pijnbeschrijving',
+    functionele_beperkingen: 'Functionele beperkingen',
+    voorgeschiedenis: 'Voorgeschiedenis',
+    medicatie: 'Medicatie',
+    beloop: 'Beloop',
+    verwachtingen_patient: 'Verwachtingen patiënt',
+    overig_subjectief: 'Overig subjectief',
+    inspectie: 'Inspectie',
+    palpatie: 'Palpatie',
+    actief_bewegingsonderzoek: 'Actief bewegingsonderzoek',
+    passief_bewegingsonderzoek: 'Passief bewegingsonderzoek',
+    spierkracht: 'Spierkracht',
+    speciale_testen: 'Speciale testen',
+    neurologisch_onderzoek: 'Neurologisch onderzoek',
+    functionele_testen: 'Functionele testen',
+    meetinstrumenten: 'Meetinstrumenten',
+    overig_objectief: 'Overig objectief',
+    fysiotherapeutische_diagnose: 'Fysiotherapeutische diagnose',
+    betrokken_structuren: 'Betrokken structuren',
+    fase_herstel: 'Fase herstel',
+    belemmerende_factoren: 'Belemmerende factoren',
+    bevorderende_factoren: 'Bevorderende factoren',
+    prognose: 'Prognose',
+    behandeldoelen: 'Behandeldoelen',
+    behandelplan: 'Behandelplan',
+    frequentie: 'Frequentie',
+    thuisoefeningen: 'Thuisoefeningen',
+    adviezen: 'Adviezen',
+    evaluatie: 'Evaluatie',
+    verwijzing: 'Verwijzing',
+    naam_patient: 'Naam patiënt',
+    leeftijd: 'Leeftijd',
+    geslacht: 'Geslacht',
+    datum: 'Datum',
+    pathologie: 'Pathologie',
+    volgens_patient: 'Volgens patiënt',
+    volgens_therapeut: 'Volgens therapeut',
+    functies_stoornissen: 'Functies en stoornissen',
+    activiteiten: 'Activiteiten',
+    participatie: 'Participatie',
+    persoonlijke_factoren: 'Persoonlijke factoren',
+    omgevingsfactoren: 'Omgevingsfactoren',
+    differentiaal_diagnostiek: 'Differentiaaldiagnostiek',
+    cognitief: 'Cognitief',
+    emotioneel: 'Emotioneel',
+    sociaal: 'Sociaal',
+    beschrijving: 'Beschrijving',
+    hypothese_1: 'Hypothese 1',
+    hypothese_2: 'Hypothese 2',
+    hypothese_3: 'Hypothese 3',
+    pijn: 'Pijn',
+    type: 'Type',
+    nprs_score: 'NPRS-score',
+    locatie: 'Locatie',
+    provocatie: 'Provocatie',
+    mobiliteit: 'Mobiliteit',
+    arom: 'AROM',
+    prom: 'PROM',
+    spierfunctie: 'Spierfunctie',
+    kracht: 'Kracht',
+    uithoudingsvermogen: 'Uithoudingsvermogen',
+    snelheid: 'Snelheid',
+    coordinatie: 'Coördinatie',
+    lenigheid: 'Lenigheid',
+    sensibiliteit_proprioceptie: 'Sensibiliteit / proprioceptie',
+    tonus: 'Tonus',
+    stabiliteit: 'Stabiliteit',
+    passief: 'Passief',
+    actief: 'Actief',
+    reiken: 'Reiken',
+    grijpen: 'Grijpen',
+    schrijven: 'Schrijven',
+    dragen: 'Dragen',
+    tillen: 'Tillen',
+    haarkammen: 'Haarkammen',
+    aankleden: 'Aankleden',
+    wassen: 'Wassen',
+    deur_open_maken: 'Deur openen',
+    lopen: 'Lopen',
+    overige_activiteiten: 'Overige activiteiten',
+    deelname_verkeer: 'Deelname verkeer',
+    deelname_werk: 'Deelname werk',
+    deelname_hobbys: 'Deelname hobby\'s',
+    sport: 'Sport',
+    stap_1_onduidelijke_termen: 'Stap 1 · Onduidelijke termen',
+    stap_2_3_probleemdefinitie: 'Stap 2/3 · Probleemdefinitie',
+    stap_4_gezondheidsprobleem: 'Stap 4 · Gezondheidsprobleem',
+    stap_5_diagnostisch_proces: 'Stap 5 · Diagnostisch proces',
+    stap_6_therapeutisch_proces: 'Stap 6 · Therapeutisch proces',
+    stap_7_effect_therapie: 'Stap 7 · Effect therapie',
+    persoonsgegevens: 'Persoonsgegevens',
+    patientencategorie: 'Patiëntencategorie',
+    additioneel_onderzoek: 'Additioneel onderzoek',
+    icf_classificatie: 'ICF-classificatie',
+    horizontale_relaties: 'Horizontale relaties',
+    persoonlijke_factor_invloed: 'Invloed persoonlijke factoren',
+    externe_factor_invloed: 'Invloed externe factoren',
+    medisch_biologische_processen: 'Medisch-biologische processen',
+    screening: 'Screening',
+    rode_vlaggen: 'Rode vlaggen',
+    gele_vlaggen: 'Gele vlaggen',
+    medische_diagnose_type: 'Medische diagnose / type',
+    indicatie_fysiotherapie: 'Indicatie fysiotherapie',
+    voorgesteld_onderzoek: 'Voorgesteld onderzoek',
+    anamnese_vragen: 'Anamnesevragen',
+    functieonderzoek: 'Functieonderzoek',
+    fysiotherapeutische_conclusie: 'Fysiotherapeutische conclusie',
+    hoofddoel: 'Hoofddoel',
+    subdoelen: 'Subdoelen',
+    evaluatieve_meetinstrumenten: 'Evaluatieve meetinstrumenten',
+    behandelmethoden: 'Behandelmethoden',
+    informeren_adviseren: 'Informeren en adviseren',
+    interventies: 'Interventies',
+    hulpmiddelen: 'Hulpmiddelen',
+    multidisciplinair: 'Multidisciplinair',
+    verwacht_effect_informeren: 'Verwacht effect informeren',
+    verwacht_effect_interventies: 'Verwacht effect interventies',
+    externe_factoren: 'Externe factoren',
+    onderbouwing: 'Onderbouwing',
+    hypothesen: 'Hypothesen',
+    vlag: 'Vlag',
+    actie: 'Aanbevolen actie',
+    ernst: 'Ernst'
+  };
 
   var state = {
     user: null,
@@ -74,12 +230,21 @@
     recorderChunks: [],
     currentOutput: {},
     currentEditorData: {},
-    loading: false
+    loading: false,
+    lastOutputLabel: '',
+    hasKnowledgeResult: false
   };
+
   var toastTimer = null;
+  var sessionDatePicker = null;
+  var defaultKnowledgeButtonLabel = knowledgeAskBtn ? String(knowledgeAskBtn.textContent || '').trim() : 'Vraag aan kennisbank';
 
   function todayIso() {
-    return new Date().toISOString().slice(0, 10);
+    var now = new Date();
+    var year = now.getFullYear();
+    var month = String(now.getMonth() + 1).padStart(2, '0');
+    var day = String(now.getDate()).padStart(2, '0');
+    return year + '-' + month + '-' + day;
   }
 
   function setStatus(message, tone) {
@@ -112,19 +277,12 @@
   }
 
   function setControlsDisabled(disabled) {
-    var ids = [
-      'physio-generate-btn',
-      'physio-save-btn',
-      'physio-export-docx-btn',
-      'physio-export-pdf-btn',
-      'physio-transcribe-btn',
-      'physio-knowledge-ask-btn',
-      'physio-case-save-btn'
-    ];
-    ids.forEach(function (id) {
-      var node = document.getElementById(id);
+    [generateBtn, saveBtn, exportDocxBtn, exportPdfBtn, knowledgeAskBtn, caseSaveBtn].forEach(function (node) {
       if (node) node.disabled = !!disabled;
     });
+    if (transcribeBtn) {
+      transcribeBtn.disabled = !!disabled || !state.selectedAudioFile;
+    }
   }
 
   function authFetch(path, options) {
@@ -140,243 +298,6 @@
 
   function deepClone(value) {
     return JSON.parse(JSON.stringify(value == null ? null : value));
-  }
-
-  function setValueAtPath(target, path, value) {
-    if (!target || !Array.isArray(path) || !path.length) return;
-    var cursor = target;
-    for (var index = 0; index < path.length - 1; index += 1) {
-      var key = path[index];
-      if (cursor[key] === undefined) {
-        cursor[key] = typeof path[index + 1] === 'number' ? [] : {};
-      }
-      cursor = cursor[key];
-    }
-    cursor[path[path.length - 1]] = value;
-  }
-
-  function renderEmptyOutput(message) {
-    if (!outputEl) return;
-    outputEl.innerHTML = '';
-    var empty = document.createElement('div');
-    empty.className = 'physio-output-empty';
-    empty.textContent = message || 'Nog geen output beschikbaar.';
-    outputEl.appendChild(empty);
-  }
-
-  function normalizeEditorValue(type, rawValue) {
-    if (type === 'number') {
-      var parsed = Number(rawValue);
-      return Number.isFinite(parsed) ? parsed : null;
-    }
-    if (type === 'boolean') {
-      return String(rawValue || '').trim().toLowerCase() === 'true';
-    }
-    if (String(rawValue || '').trim() === 'null') {
-      return null;
-    }
-    return String(rawValue || '');
-  }
-
-  function createField(label, path, value) {
-    var wrap = document.createElement('label');
-    wrap.className = 'physio-field full';
-    var title = document.createElement('span');
-    title.textContent = String(label || '');
-    var textarea = document.createElement('textarea');
-    textarea.rows = 3;
-    textarea.value = value === null || value === undefined ? '' : String(value);
-    var valueType = typeof value === 'number' ? 'number' : typeof value === 'boolean' ? 'boolean' : 'string';
-    textarea.addEventListener('input', function () {
-      setValueAtPath(state.currentEditorData, path, normalizeEditorValue(valueType, textarea.value));
-    });
-    wrap.appendChild(title);
-    wrap.appendChild(textarea);
-    return wrap;
-  }
-
-  function renderStructuredNode(container, label, value, path) {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      var card = document.createElement('section');
-      card.className = 'physio-section-card';
-      var heading = document.createElement(path.length ? 'h4' : 'h3');
-      heading.textContent = String(label || 'Sectie');
-      card.appendChild(heading);
-      Object.keys(value).forEach(function (key) {
-        renderStructuredNode(card, key.replace(/_/g, ' '), value[key], path.concat([key]));
-      });
-      container.appendChild(card);
-      return;
-    }
-    if (Array.isArray(value)) {
-      var listCard = document.createElement('section');
-      listCard.className = 'physio-section-card';
-      var listHeading = document.createElement(path.length ? 'h4' : 'h3');
-      listHeading.textContent = String(label || 'Lijst');
-      listCard.appendChild(listHeading);
-      if (!value.length) {
-        var note = document.createElement('div');
-        note.className = 'physio-inline-note';
-        note.textContent = 'Geen items';
-        listCard.appendChild(note);
-      } else {
-        var listBlock = document.createElement('div');
-        listBlock.className = 'physio-list-block';
-        value.forEach(function (item, index) {
-          var listItem = document.createElement('div');
-          listItem.className = 'physio-list-item';
-          renderStructuredNode(listItem, (label || 'Item') + ' ' + (index + 1), item, path.concat([index]));
-          listBlock.appendChild(listItem);
-        });
-        listCard.appendChild(listBlock);
-      }
-      container.appendChild(listCard);
-      return;
-    }
-    container.appendChild(createField(label, path, value));
-  }
-
-  function renderOutputEditor(payload, label) {
-    if (!outputEl) return;
-    state.currentEditorData = deepClone(payload || {});
-    outputEl.innerHTML = '';
-    Object.keys(state.currentEditorData || {}).forEach(function (key) {
-      renderStructuredNode(outputEl, key.replace(/_/g, ' '), state.currentEditorData[key], [key]);
-    });
-    if (outputLabelEl) {
-      outputLabelEl.textContent = label || 'Bewerkbare uitvoer';
-    }
-  }
-
-  function renderAlerts(items) {
-    if (!alertsEl) return;
-    alertsEl.innerHTML = '';
-    var list = Array.isArray(items) ? items : [];
-    list.forEach(function (item) {
-      var alert = document.createElement('div');
-      alert.className = 'physio-alert';
-      var title = document.createElement('strong');
-      title.textContent = String(item.vlag || 'Rode vlag');
-      alert.appendChild(title);
-      var body = document.createElement('div');
-      body.textContent = String(item.actie || item.ernst || '');
-      alert.appendChild(body);
-      alertsEl.appendChild(alert);
-    });
-  }
-
-  function loadOutputForPage(session) {
-    if (!session || typeof session !== 'object') {
-      renderEmptyOutput('Genereer een nieuwe uitvoer of laad een opgeslagen sessie.');
-      renderAlerts([]);
-      state.currentOutput = {};
-      return;
-    }
-    if (page === 'soap' && session.soap) {
-      state.currentOutput = {
-        soap: deepClone(session.soap),
-        rps: deepClone(session.rps || {}),
-        reasoning: deepClone(session.reasoning || {}),
-        differential_diagnosis: deepClone(session.differential_diagnosis || {}),
-        red_flags: deepClone(session.red_flags || [])
-      };
-      renderAlerts(session.red_flags || []);
-      renderOutputEditor({ soap: session.soap }, 'SOAP-notitie');
-      return;
-    }
-    if (page === 'rps' && session.rps) {
-      state.currentOutput = {
-        soap: deepClone(session.soap || {}),
-        rps: deepClone(session.rps),
-        reasoning: deepClone(session.reasoning || {}),
-        differential_diagnosis: deepClone(session.differential_diagnosis || {}),
-        red_flags: deepClone(session.red_flags || [])
-      };
-      renderAlerts(session.red_flags || []);
-      renderOutputEditor({ rps: session.rps }, 'RPS-formulier');
-      return;
-    }
-    if (page === 'reasoning' && (session.reasoning || session.differential_diagnosis)) {
-      state.currentOutput = {
-        soap: deepClone(session.soap || {}),
-        rps: deepClone(session.rps || {}),
-        reasoning: deepClone(session.reasoning || {}),
-        differential_diagnosis: deepClone(session.differential_diagnosis || {}),
-        red_flags: deepClone(session.red_flags || [])
-      };
-      renderAlerts(session.red_flags || []);
-      renderOutputEditor({
-        reasoning: session.reasoning || {},
-        differential_diagnosis: session.differential_diagnosis || {},
-        red_flags: session.red_flags || []
-      }, 'Klinisch redeneren');
-      return;
-    }
-    renderEmptyOutput('Voor deze sessie is nog geen output opgeslagen voor deze pagina.');
-    renderAlerts(session.red_flags || []);
-  }
-
-  function fillSessionForm(session) {
-    if (!session || typeof session !== 'object') return;
-    state.selectedSessionId = String(session.session_id || '');
-    if (sessionDateInput) sessionDateInput.value = String(session.session_date || '');
-    if (sessionTypeSelect) sessionTypeSelect.value = String(session.session_type || 'intake');
-    if (bodyRegionSelect) bodyRegionSelect.value = String(session.body_region || 'algemeen');
-    if (transcriptInput) transcriptInput.value = String(session.transcript || '');
-    if (sessionNotesInput) sessionNotesInput.value = String((session.metrics || {}).notes || '');
-    if (nprsBeforeInput) nprsBeforeInput.value = String((session.metrics || {}).nprs_before || '');
-    if (nprsAfterInput) nprsAfterInput.value = String((session.metrics || {}).nprs_after || '');
-    loadOutputForPage(session);
-  }
-
-  function getSelectedCase() {
-    var currentCaseId = caseSelect ? String(caseSelect.value || state.selectedCaseId || '') : String(state.selectedCaseId || '');
-    for (var index = 0; index < state.cases.length; index += 1) {
-      if (String(state.cases[index].case_id || '') === currentCaseId) return state.cases[index];
-    }
-    return null;
-  }
-
-  function populateCaseSelect() {
-    if (!caseSelect) return;
-    var previousValue = caseSelect.value || state.selectedCaseId || '';
-    caseSelect.innerHTML = '<option value="">Kies een casus...</option>';
-    state.cases.forEach(function (item) {
-      var option = document.createElement('option');
-      option.value = String(item.case_id || '');
-      option.textContent = String(item.display_label || item.patient_name || item.case_id || 'Casus');
-      caseSelect.appendChild(option);
-    });
-    if (previousValue) {
-      caseSelect.value = previousValue;
-    } else if (queryCaseId) {
-      caseSelect.value = queryCaseId;
-    }
-    state.selectedCaseId = String(caseSelect.value || '');
-  }
-
-  function renderCasesList() {
-    if (!caseListEl) return;
-    caseListEl.innerHTML = '';
-    if (!state.cases.length) {
-      var empty = document.createElement('div');
-      empty.className = 'physio-output-empty';
-      empty.textContent = 'Nog geen casussen opgeslagen.';
-      caseListEl.appendChild(empty);
-      return;
-    }
-    state.cases.forEach(function (item) {
-      var button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'physio-case-item' + (String(item.case_id || '') === state.selectedCaseId ? ' active' : '');
-      button.innerHTML = '<strong>' + escapeHtml(item.display_label || item.patient_name || 'Casus') + '</strong>'
-        + '<div>' + escapeHtml(item.primary_complaint || item.body_region || '') + '</div>'
-        + '<div class="physio-inline-note">' + escapeHtml(item.patient_name || '') + '</div>';
-      button.addEventListener('click', function () {
-        selectCase(String(item.case_id || ''), { syncForm: true });
-      });
-      caseListEl.appendChild(button);
-    });
   }
 
   function escapeHtml(text) {
@@ -443,6 +364,850 @@
     return html.join('');
   }
 
+  function humanizeKey(key) {
+    var safeKey = String(key || '').trim();
+    if (FIELD_LABELS[safeKey]) return FIELD_LABELS[safeKey];
+    return safeKey
+      .replace(/^stap_(\d+)_/, 'Stap $1 ')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, function (match) { return match.toUpperCase(); });
+  }
+
+  function bodyRegionLabel(value) {
+    var safe = String(value || '').trim().toLowerCase();
+    return BODY_REGION_LABELS[safe] || humanizeKey(safe);
+  }
+
+  function sourceKindLabel(value) {
+    var safe = String(value || '').trim().toLowerCase();
+    return SOURCE_KIND_LABELS[safe] || humanizeKey(safe || 'bron');
+  }
+
+  function getValueAtPath(target, path) {
+    var cursor = target;
+    for (var index = 0; index < path.length; index += 1) {
+      if (!cursor || typeof cursor !== 'object') return undefined;
+      cursor = cursor[path[index]];
+    }
+    return cursor;
+  }
+
+  function setValueAtPath(target, path, value) {
+    if (!target || !Array.isArray(path) || !path.length) return;
+    var cursor = target;
+    for (var index = 0; index < path.length - 1; index += 1) {
+      var key = path[index];
+      if (cursor[key] === undefined) {
+        cursor[key] = typeof path[index + 1] === 'number' ? [] : {};
+      }
+      cursor = cursor[key];
+    }
+    cursor[path[path.length - 1]] = value;
+  }
+
+  function deleteArrayIndexAtPath(target, path, indexToRemove) {
+    var list = getValueAtPath(target, path);
+    if (!Array.isArray(list)) return;
+    list.splice(indexToRemove, 1);
+  }
+
+  function ensureArrayAtPath(target, path) {
+    var existing = getValueAtPath(target, path);
+    if (Array.isArray(existing)) return existing;
+    setValueAtPath(target, path, []);
+    return getValueAtPath(target, path);
+  }
+
+  function normalizeEditorValue(currentValue, rawValue) {
+    if (typeof currentValue === 'number') {
+      if (String(rawValue || '').trim() === '') return null;
+      var parsed = Number(rawValue);
+      return Number.isFinite(parsed) ? parsed : currentValue;
+    }
+    if (typeof currentValue === 'boolean') {
+      return String(rawValue || '').trim().toLowerCase() === 'true';
+    }
+    return String(rawValue || '');
+  }
+
+  function createNode(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+  }
+
+  function autoResizeTextarea(textarea) {
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.max(textarea.scrollHeight, 88) + 'px';
+  }
+
+  function buildInputField(label, path, value, options) {
+    var opts = options || {};
+    var wrap = createNode('label', 'physio-field editor-field' + (opts.full ? ' full' : ''));
+    var title = createNode('span', '', label);
+    var useTextarea = !!opts.multiline;
+    var control = document.createElement(useTextarea ? 'textarea' : 'input');
+    if (useTextarea) {
+      control.rows = opts.rows || 4;
+      control.value = value === null || value === undefined ? '' : String(value);
+      autoResizeTextarea(control);
+      control.addEventListener('input', function () {
+        setValueAtPath(state.currentEditorData, path, normalizeEditorValue(value, control.value));
+        autoResizeTextarea(control);
+      });
+    } else {
+      control.type = opts.type || 'text';
+      control.value = value === null || value === undefined ? '' : String(value);
+      control.addEventListener('input', function () {
+        setValueAtPath(state.currentEditorData, path, normalizeEditorValue(value, control.value));
+      });
+    }
+    if (opts.placeholder) control.placeholder = opts.placeholder;
+    wrap.appendChild(title);
+    wrap.appendChild(control);
+    return wrap;
+  }
+
+  function buildSectionCard(title, description) {
+    var card = createNode('section', 'physio-section-card');
+    card.appendChild(createNode('h3', '', title));
+    if (description) card.appendChild(createNode('p', '', description));
+    return card;
+  }
+
+  function buildSubsectionCard(title) {
+    var card = createNode('div', 'physio-subsection-card');
+    card.appendChild(createNode('h4', '', title));
+    return card;
+  }
+
+  function buildFieldGrid() {
+    return createNode('div', 'physio-section-grid');
+  }
+
+  function buildSubsectionGrid() {
+    return createNode('div', 'physio-subsection-grid');
+  }
+
+  function appendConfiguredFields(grid, source, basePath, fieldConfigs) {
+    (fieldConfigs || []).forEach(function (config) {
+      var key = config.key;
+      var value = source ? source[key] : null;
+      grid.appendChild(
+        buildInputField(
+          config.label || humanizeKey(key),
+          basePath.concat([key]),
+          value,
+          {
+            multiline: !!config.multiline,
+            full: !!config.full,
+            rows: config.rows || 4
+          }
+        )
+      );
+    });
+  }
+
+  function buildStringRepeaterCard(title, path, values, options) {
+    var opts = options || {};
+    var card = buildSectionCard(title, opts.description || '');
+    var actions = createNode('div', 'physio-inline-actions');
+    var addBtn = createNode('button', 'physio-mini-btn primary', opts.addLabel || 'Item toevoegen');
+    addBtn.type = 'button';
+    addBtn.addEventListener('click', function () {
+      var list = ensureArrayAtPath(state.currentEditorData, path);
+      list.push('');
+      renderCurrentOutputEditor();
+    });
+    actions.appendChild(addBtn);
+    card.appendChild(actions);
+
+    var listWrap = createNode('div', 'physio-array-list');
+    if (!values.length) {
+      listWrap.appendChild(createNode('div', 'physio-output-empty compact', opts.emptyMessage || 'Nog geen items toegevoegd.'));
+    } else {
+      values.forEach(function (item, index) {
+        var itemCard = createNode('div', 'physio-array-item');
+        var head = createNode('div', 'physio-array-item-head');
+        head.appendChild(createNode('strong', '', (opts.itemLabel || 'Item') + ' ' + (index + 1)));
+        var removeBtn = createNode('button', 'physio-mini-btn danger', 'Verwijderen');
+        removeBtn.type = 'button';
+        removeBtn.addEventListener('click', function () {
+          deleteArrayIndexAtPath(state.currentEditorData, path, index);
+          renderCurrentOutputEditor();
+        });
+        head.appendChild(removeBtn);
+        itemCard.appendChild(head);
+        itemCard.appendChild(
+          buildInputField(
+            opts.itemFieldLabel || humanizeKey(title),
+            path.concat([index]),
+            item,
+            {
+              multiline: opts.multiline !== false,
+              full: true,
+              rows: opts.rows || 3
+            }
+          )
+        );
+        listWrap.appendChild(itemCard);
+      });
+    }
+    card.appendChild(listWrap);
+    return card;
+  }
+
+  function buildObjectRepeaterCard(title, path, items, fieldConfigs, options) {
+    var opts = options || {};
+    var card = buildSectionCard(title, opts.description || '');
+    var actions = createNode('div', 'physio-inline-actions');
+    var addBtn = createNode('button', 'physio-mini-btn primary', opts.addLabel || 'Toevoegen');
+    addBtn.type = 'button';
+    addBtn.addEventListener('click', function () {
+      var list = ensureArrayAtPath(state.currentEditorData, path);
+      list.push(typeof opts.createItem === 'function' ? opts.createItem() : {});
+      renderCurrentOutputEditor();
+    });
+    actions.appendChild(addBtn);
+    card.appendChild(actions);
+
+    var listWrap = createNode('div', 'physio-array-list');
+    if (!items.length) {
+      listWrap.appendChild(createNode('div', 'physio-output-empty compact', opts.emptyMessage || 'Nog geen items.'));
+    } else {
+      items.forEach(function (item, index) {
+        var itemCard = createNode('div', 'physio-array-item');
+        var head = createNode('div', 'physio-array-item-head');
+        head.appendChild(createNode('strong', '', (opts.itemLabel || 'Item') + ' ' + (index + 1)));
+        var removeBtn = createNode('button', 'physio-mini-btn danger', 'Verwijderen');
+        removeBtn.type = 'button';
+        removeBtn.addEventListener('click', function () {
+          deleteArrayIndexAtPath(state.currentEditorData, path, index);
+          renderCurrentOutputEditor();
+        });
+        head.appendChild(removeBtn);
+        itemCard.appendChild(head);
+        var grid = buildFieldGrid();
+        appendConfiguredFields(grid, item || {}, path.concat([index]), fieldConfigs);
+        itemCard.appendChild(grid);
+        listWrap.appendChild(itemCard);
+      });
+    }
+    card.appendChild(listWrap);
+    return card;
+  }
+
+  function setOutputEmptyState(isEmpty) {
+    if (outputEl) outputEl.classList.toggle('is-empty', !!isEmpty);
+    if (outputCardEl) outputCardEl.classList.toggle('is-empty', !!isEmpty);
+  }
+
+  function setKnowledgeEmptyState(isEmpty) {
+    if (knowledgeAnswerEl) knowledgeAnswerEl.classList.toggle('is-empty', !!isEmpty);
+    if (sourceListEl) sourceListEl.classList.toggle('is-empty', !!isEmpty);
+    if (knowledgeOutputCardEl) knowledgeOutputCardEl.classList.toggle('is-empty', !!isEmpty);
+  }
+
+  function renderEmptyOutput(message) {
+    state.currentEditorData = {};
+    state.lastOutputLabel = '';
+    if (outputLabelEl) outputLabelEl.textContent = 'Nog niets gegenereerd.';
+    if (!outputEl) return;
+    outputEl.innerHTML = '';
+    outputEl.appendChild(createNode('div', 'physio-output-empty', message || 'Nog geen output beschikbaar.'));
+    setOutputEmptyState(true);
+  }
+
+  function renderAlerts(items) {
+    if (!alertsEl) return;
+    alertsEl.innerHTML = '';
+    var list = Array.isArray(items) ? items : [];
+    list.forEach(function (item, index) {
+      var alert = createNode('div', 'physio-alert');
+      alert.appendChild(createNode('strong', '', String((item && item.vlag) || ('Rode vlag ' + (index + 1)))));
+      if (item && item.ernst) {
+        alert.appendChild(createNode('div', '', 'Ernst: ' + String(item.ernst)));
+      }
+      if (item && item.actie) {
+        alert.appendChild(createNode('div', '', String(item.actie)));
+      }
+      alertsEl.appendChild(alert);
+    });
+  }
+
+  function renderSoapEditor() {
+    var soap = ((state.currentEditorData || {}).soap || {});
+    var container = createNode('div', 'physio-structured-stack');
+    [
+      {
+        title: 'S · Subjectief',
+        key: 'subjective',
+        description: 'De hulpvraag, klachten en voorgeschiedenis van de patiënt.',
+        fields: [
+          { key: 'hulpvraag' },
+          { key: 'hoofdklacht' },
+          { key: 'medicatie' },
+          { key: 'verwachtingen_patient' },
+          { key: 'pijn_beschrijving', multiline: true, full: true },
+          { key: 'functionele_beperkingen', multiline: true, full: true },
+          { key: 'voorgeschiedenis', multiline: true, full: true },
+          { key: 'beloop', multiline: true, full: true },
+          { key: 'overig_subjectief', multiline: true, full: true }
+        ]
+      },
+      {
+        title: 'O · Objectief',
+        key: 'objective',
+        description: 'Onderzoeksbevindingen en relevante metingen.',
+        fields: [
+          { key: 'spierkracht' },
+          { key: 'meetinstrumenten' },
+          { key: 'inspectie', multiline: true, full: true },
+          { key: 'palpatie', multiline: true, full: true },
+          { key: 'actief_bewegingsonderzoek', multiline: true, full: true },
+          { key: 'passief_bewegingsonderzoek', multiline: true, full: true },
+          { key: 'speciale_testen', multiline: true, full: true },
+          { key: 'neurologisch_onderzoek', multiline: true, full: true },
+          { key: 'functionele_testen', multiline: true, full: true },
+          { key: 'overig_objectief', multiline: true, full: true }
+        ]
+      },
+      {
+        title: 'A · Analyse',
+        key: 'assessment',
+        description: 'Fysiotherapeutische interpretatie en prognose.',
+        fields: [
+          { key: 'fysiotherapeutische_diagnose', full: true, multiline: true },
+          { key: 'betrokken_structuren', full: true, multiline: true },
+          { key: 'fase_herstel' },
+          { key: 'prognose' },
+          { key: 'belemmerende_factoren', full: true, multiline: true },
+          { key: 'bevorderende_factoren', full: true, multiline: true }
+        ]
+      },
+      {
+        title: 'P · Plan',
+        key: 'plan',
+        description: 'Doelen, aanpak en vervolgafspraken.',
+        fields: [
+          { key: 'frequentie' },
+          { key: 'evaluatie' },
+          { key: 'behandeldoelen', full: true, multiline: true },
+          { key: 'behandelplan', full: true, multiline: true },
+          { key: 'thuisoefeningen', full: true, multiline: true },
+          { key: 'adviezen', full: true, multiline: true },
+          { key: 'verwijzing', full: true, multiline: true }
+        ]
+      }
+    ].forEach(function (section) {
+      var card = buildSectionCard(section.title, section.description);
+      var grid = buildFieldGrid();
+      appendConfiguredFields(grid, soap[section.key] || {}, ['soap', section.key], section.fields);
+      card.appendChild(grid);
+      container.appendChild(card);
+    });
+    outputEl.appendChild(container);
+  }
+
+  function renderRpsEditor() {
+    var rps = ((state.currentEditorData || {}).rps || {});
+    var container = createNode('div', 'physio-structured-stack');
+
+    var headerCard = buildSectionCard('Header', 'Basisgegevens van patiënt en consult.');
+    var headerGrid = buildFieldGrid();
+    appendConfiguredFields(headerGrid, rps.header || {}, ['rps', 'header'], [
+      { key: 'naam_patient' },
+      { key: 'leeftijd' },
+      { key: 'geslacht' },
+      { key: 'datum' },
+      { key: 'pathologie' },
+      { key: 'medicatie' }
+    ]);
+    headerCard.appendChild(headerGrid);
+    container.appendChild(headerCard);
+
+    var patientCard = buildSectionCard('Volgens patiënt', 'Wat de patiënt ervaart in functies, activiteiten en participatie.');
+    var patientGrid = buildFieldGrid();
+    appendConfiguredFields(patientGrid, rps.volgens_patient || {}, ['rps', 'volgens_patient'], [
+      { key: 'functies_stoornissen', multiline: true, full: true },
+      { key: 'activiteiten', multiline: true, full: true },
+      { key: 'participatie', multiline: true, full: true }
+    ]);
+    patientCard.appendChild(patientGrid);
+    container.appendChild(patientCard);
+
+    var therapistCard = buildSectionCard('Volgens therapeut', 'Observaties en bevindingen vanuit het fysiotherapeutisch onderzoek.');
+    var therapistGrid = buildSubsectionGrid();
+    var functies = ((rps.volgens_therapeut || {}).functies_stoornissen || {});
+    var functiesCard = buildSubsectionCard('Functies en stoornissen');
+    var functiesGrid = buildSubsectionGrid();
+
+    var pijnCard = buildSubsectionCard('Pijn');
+    var pijnGrid = buildFieldGrid();
+    appendConfiguredFields(pijnGrid, functies.pijn || {}, ['rps', 'volgens_therapeut', 'functies_stoornissen', 'pijn'], [
+      { key: 'type' },
+      { key: 'nprs_score' },
+      { key: 'locatie' },
+      { key: 'provocatie' }
+    ]);
+    pijnCard.appendChild(pijnGrid);
+    functiesGrid.appendChild(pijnCard);
+
+    var mobiliteitCard = buildSubsectionCard('Mobiliteit');
+    var mobiliteitGrid = buildFieldGrid();
+    appendConfiguredFields(mobiliteitGrid, functies.mobiliteit || {}, ['rps', 'volgens_therapeut', 'functies_stoornissen', 'mobiliteit'], [
+      { key: 'arom' },
+      { key: 'prom' }
+    ]);
+    mobiliteitCard.appendChild(mobiliteitGrid);
+    functiesGrid.appendChild(mobiliteitCard);
+
+    var spierfunctieCard = buildSubsectionCard('Spierfunctie');
+    var spierfunctieGrid = buildFieldGrid();
+    appendConfiguredFields(spierfunctieGrid, functies.spierfunctie || {}, ['rps', 'volgens_therapeut', 'functies_stoornissen', 'spierfunctie'], [
+      { key: 'kracht' },
+      { key: 'uithoudingsvermogen' },
+      { key: 'snelheid' },
+      { key: 'coordinatie' },
+      { key: 'lenigheid' }
+    ]);
+    spierfunctieCard.appendChild(spierfunctieGrid);
+    functiesGrid.appendChild(spierfunctieCard);
+
+    var stabiliteitCard = buildSubsectionCard('Stabiliteit');
+    var stabiliteitGrid = buildFieldGrid();
+    appendConfiguredFields(stabiliteitGrid, functies.stabiliteit || {}, ['rps', 'volgens_therapeut', 'functies_stoornissen', 'stabiliteit'], [
+      { key: 'passief' },
+      { key: 'actief' }
+    ]);
+    stabiliteitCard.appendChild(stabiliteitGrid);
+    functiesGrid.appendChild(stabiliteitCard);
+
+    var overigeFunctiesCard = buildSubsectionCard('Overige functies');
+    var overigeFunctiesGrid = buildFieldGrid();
+    appendConfiguredFields(overigeFunctiesGrid, functies, ['rps', 'volgens_therapeut', 'functies_stoornissen'], [
+      { key: 'sensibiliteit_proprioceptie', multiline: true, full: true },
+      { key: 'tonus', multiline: true, full: true }
+    ]);
+    overigeFunctiesCard.appendChild(overigeFunctiesGrid);
+    functiesGrid.appendChild(overigeFunctiesCard);
+
+    functiesCard.appendChild(functiesGrid);
+    therapistGrid.appendChild(functiesCard);
+
+    var activiteitenCard = buildSubsectionCard('Activiteiten');
+    var activiteitenGrid = buildFieldGrid();
+    appendConfiguredFields(activiteitenGrid, ((rps.volgens_therapeut || {}).activiteiten || {}), ['rps', 'volgens_therapeut', 'activiteiten'], [
+      { key: 'reiken' },
+      { key: 'grijpen' },
+      { key: 'schrijven' },
+      { key: 'dragen' },
+      { key: 'tillen' },
+      { key: 'haarkammen' },
+      { key: 'aankleden' },
+      { key: 'wassen' },
+      { key: 'deur_open_maken' },
+      { key: 'lopen' },
+      { key: 'overige_activiteiten', full: true, multiline: true }
+    ]);
+    activiteitenCard.appendChild(activiteitenGrid);
+    therapistGrid.appendChild(activiteitenCard);
+
+    var participatieCard = buildSubsectionCard('Participatie');
+    var participatieGrid = buildFieldGrid();
+    appendConfiguredFields(participatieGrid, ((rps.volgens_therapeut || {}).participatie || {}), ['rps', 'volgens_therapeut', 'participatie'], [
+      { key: 'deelname_verkeer' },
+      { key: 'deelname_werk' },
+      { key: 'deelname_hobbys' },
+      { key: 'sport' }
+    ]);
+    participatieCard.appendChild(participatieGrid);
+    therapistGrid.appendChild(participatieCard);
+
+    therapistCard.appendChild(therapistGrid);
+    container.appendChild(therapistCard);
+
+    var factorsCard = buildSectionCard('Persoonlijke en omgevingsfactoren', 'Factoren die herstel en belastbaarheid mee bepalen.');
+    var factorsGrid = buildSubsectionGrid();
+    var personalCard = buildSubsectionCard('Persoonlijke factoren');
+    var personalGrid = buildFieldGrid();
+    appendConfiguredFields(personalGrid, rps.persoonlijke_factoren || {}, ['rps', 'persoonlijke_factoren'], [
+      { key: 'cognitief', multiline: true, full: true },
+      { key: 'emotioneel', multiline: true, full: true },
+      { key: 'sociaal', multiline: true, full: true }
+    ]);
+    personalCard.appendChild(personalGrid);
+    factorsGrid.appendChild(personalCard);
+
+    var environmentCard = buildSubsectionCard('Omgevingsfactoren');
+    var environmentGrid = buildFieldGrid();
+    appendConfiguredFields(environmentGrid, rps.omgevingsfactoren || {}, ['rps', 'omgevingsfactoren'], [
+      { key: 'beschrijving', multiline: true, full: true }
+    ]);
+    environmentCard.appendChild(environmentGrid);
+    factorsGrid.appendChild(environmentCard);
+    factorsCard.appendChild(factorsGrid);
+    container.appendChild(factorsCard);
+
+    var differentialCard = buildSectionCard('Differentiaaldiagnostiek', 'Werkhypothesen en de centrale hulpvraag.');
+    var differentialGrid = buildFieldGrid();
+    appendConfiguredFields(differentialGrid, rps.differentiaal_diagnostiek || {}, ['rps', 'differentiaal_diagnostiek'], [
+      { key: 'hypothese_1', full: true, multiline: true },
+      { key: 'hypothese_2', full: true, multiline: true },
+      { key: 'hypothese_3', full: true, multiline: true },
+      { key: 'hulpvraag', full: true, multiline: true }
+    ]);
+    differentialCard.appendChild(differentialGrid);
+    container.appendChild(differentialCard);
+
+    outputEl.appendChild(container);
+  }
+
+  function renderReasoningEditor() {
+    var reasoning = ((state.currentEditorData || {}).reasoning || {});
+    var differential = ((state.currentEditorData || {}).differential_diagnosis || {});
+    var redFlags = Array.isArray((state.currentEditorData || {}).red_flags) ? state.currentEditorData.red_flags : [];
+    var container = createNode('div', 'physio-structured-stack');
+
+    container.appendChild(
+      buildStringRepeaterCard(
+        humanizeKey('stap_1_onduidelijke_termen'),
+        ['reasoning', 'stap_1_onduidelijke_termen'],
+        Array.isArray(reasoning.stap_1_onduidelijke_termen) ? reasoning.stap_1_onduidelijke_termen : [],
+        {
+          description: 'Losse termen of begrippen die eerst verduidelijkt moeten worden.',
+          addLabel: 'Term toevoegen',
+          itemLabel: 'Term',
+          itemFieldLabel: 'Onbegrepen term',
+          multiline: false,
+          emptyMessage: 'Nog geen onduidelijke termen genoteerd.'
+        }
+      )
+    );
+
+    var probleemCard = buildSectionCard(humanizeKey('stap_2_3_probleemdefinitie'), 'Persoonsgegevens, verwijzing en ICF-ordening van het probleem.');
+    var probleemGrid = buildFieldGrid();
+    appendConfiguredFields(probleemGrid, reasoning.stap_2_3_probleemdefinitie || {}, ['reasoning', 'stap_2_3_probleemdefinitie'], [
+      { key: 'persoonsgegevens', full: true, multiline: true },
+      { key: 'verwijzing', full: true, multiline: true },
+      { key: 'patientencategorie', full: true, multiline: true },
+      { key: 'additioneel_onderzoek', full: true, multiline: true }
+    ]);
+    probleemCard.appendChild(probleemGrid);
+    var icfGrid = buildSubsectionGrid();
+    var icf = ((reasoning.stap_2_3_probleemdefinitie || {}).icf_classificatie || {});
+    [
+      { key: 'volgens_patient', fields: ['functies_stoornissen', 'activiteiten', 'participatie'] },
+      { key: 'volgens_therapeut', fields: ['functies_stoornissen', 'activiteiten', 'participatie'] }
+    ].forEach(function (section) {
+      var card = buildSubsectionCard(humanizeKey(section.key));
+      var grid = buildFieldGrid();
+      section.fields.forEach(function (fieldKey) {
+        grid.appendChild(buildInputField(humanizeKey(fieldKey), ['reasoning', 'stap_2_3_probleemdefinitie', 'icf_classificatie', section.key, fieldKey], ((icf[section.key] || {})[fieldKey]), { multiline: true, full: true }));
+      });
+      card.appendChild(grid);
+      icfGrid.appendChild(card);
+    });
+    var overigeIcfCard = buildSubsectionCard('Factoren');
+    var overigeIcfGrid = buildFieldGrid();
+    appendConfiguredFields(overigeIcfGrid, icf, ['reasoning', 'stap_2_3_probleemdefinitie', 'icf_classificatie'], [
+      { key: 'persoonlijke_factoren', full: true, multiline: true },
+      { key: 'externe_factoren', full: true, multiline: true }
+    ]);
+    overigeIcfCard.appendChild(overigeIcfGrid);
+    icfGrid.appendChild(overigeIcfCard);
+    probleemCard.appendChild(icfGrid);
+    container.appendChild(probleemCard);
+
+    var gezondheidCard = buildSectionCard(humanizeKey('stap_4_gezondheidsprobleem'), 'Hypothesen over samenhang, beïnvloedende factoren en medisch-biologische processen.');
+    var gezondheidGrid = buildFieldGrid();
+    appendConfiguredFields(gezondheidGrid, reasoning.stap_4_gezondheidsprobleem || {}, ['reasoning', 'stap_4_gezondheidsprobleem'], [
+      { key: 'persoonlijke_factor_invloed', full: true, multiline: true },
+      { key: 'externe_factor_invloed', full: true, multiline: true },
+      { key: 'medisch_biologische_processen', full: true, multiline: true }
+    ]);
+    gezondheidCard.appendChild(gezondheidGrid);
+    gezondheidCard.appendChild(
+      buildStringRepeaterCard(
+        humanizeKey('horizontale_relaties'),
+        ['reasoning', 'stap_4_gezondheidsprobleem', 'horizontale_relaties'],
+        Array.isArray((reasoning.stap_4_gezondheidsprobleem || {}).horizontale_relaties) ? reasoning.stap_4_gezondheidsprobleem.horizontale_relaties : [],
+        {
+          addLabel: 'Relatie toevoegen',
+          itemLabel: 'Relatie',
+          itemFieldLabel: 'Relatie',
+          emptyMessage: 'Nog geen horizontale relaties toegevoegd.'
+        }
+      )
+    );
+    container.appendChild(gezondheidCard);
+
+    var diagnostiekCard = buildSectionCard(humanizeKey('stap_5_diagnostisch_proces'), 'Screening, diagnostiek en het voorgestelde onderzoek.');
+    var screeningCard = buildSubsectionCard('Screening');
+    var screeningGrid = buildFieldGrid();
+    appendConfiguredFields(screeningGrid, ((reasoning.stap_5_diagnostisch_proces || {}).screening || {}), ['reasoning', 'stap_5_diagnostisch_proces', 'screening'], [
+      { key: 'rode_vlaggen', full: true, multiline: true },
+      { key: 'gele_vlaggen', full: true, multiline: true }
+    ]);
+    screeningCard.appendChild(screeningGrid);
+    diagnostiekCard.appendChild(screeningCard);
+    var diagnostiekGrid = buildFieldGrid();
+    appendConfiguredFields(diagnostiekGrid, reasoning.stap_5_diagnostisch_proces || {}, ['reasoning', 'stap_5_diagnostisch_proces'], [
+      { key: 'medische_diagnose_type', full: true, multiline: true },
+      { key: 'indicatie_fysiotherapie', full: true, multiline: true },
+      { key: 'fysiotherapeutische_conclusie', full: true, multiline: true }
+    ]);
+    diagnostiekCard.appendChild(diagnostiekGrid);
+    var onderzoekCard = buildSubsectionCard('Voorgesteld onderzoek');
+    var onderzoekGrid = buildFieldGrid();
+    appendConfiguredFields(onderzoekGrid, ((reasoning.stap_5_diagnostisch_proces || {}).voorgesteld_onderzoek || {}), ['reasoning', 'stap_5_diagnostisch_proces', 'voorgesteld_onderzoek'], [
+      { key: 'inspectie', full: true, multiline: true },
+      { key: 'palpatie', full: true, multiline: true },
+      { key: 'functieonderzoek', full: true, multiline: true }
+    ]);
+    onderzoekCard.appendChild(onderzoekGrid);
+    onderzoekCard.appendChild(
+      buildStringRepeaterCard(
+        humanizeKey('anamnese_vragen'),
+        ['reasoning', 'stap_5_diagnostisch_proces', 'voorgesteld_onderzoek', 'anamnese_vragen'],
+        Array.isArray((((reasoning.stap_5_diagnostisch_proces || {}).voorgesteld_onderzoek || {}).anamnese_vragen)) ? reasoning.stap_5_diagnostisch_proces.voorgesteld_onderzoek.anamnese_vragen : [],
+        {
+          addLabel: 'Vraag toevoegen',
+          itemLabel: 'Vraag',
+          itemFieldLabel: 'Anamnesevraag',
+          emptyMessage: 'Nog geen anamnesevragen toegevoegd.'
+        }
+      )
+    );
+    onderzoekCard.appendChild(
+      buildStringRepeaterCard(
+        humanizeKey('speciale_testen'),
+        ['reasoning', 'stap_5_diagnostisch_proces', 'voorgesteld_onderzoek', 'speciale_testen'],
+        Array.isArray((((reasoning.stap_5_diagnostisch_proces || {}).voorgesteld_onderzoek || {}).speciale_testen)) ? reasoning.stap_5_diagnostisch_proces.voorgesteld_onderzoek.speciale_testen : [],
+        {
+          addLabel: 'Test toevoegen',
+          itemLabel: 'Test',
+          itemFieldLabel: 'Speciale test',
+          emptyMessage: 'Nog geen speciale testen toegevoegd.'
+        }
+      )
+    );
+    onderzoekCard.appendChild(
+      buildStringRepeaterCard(
+        humanizeKey('meetinstrumenten'),
+        ['reasoning', 'stap_5_diagnostisch_proces', 'voorgesteld_onderzoek', 'meetinstrumenten'],
+        Array.isArray((((reasoning.stap_5_diagnostisch_proces || {}).voorgesteld_onderzoek || {}).meetinstrumenten)) ? reasoning.stap_5_diagnostisch_proces.voorgesteld_onderzoek.meetinstrumenten : [],
+        {
+          addLabel: 'Instrument toevoegen',
+          itemLabel: 'Instrument',
+          itemFieldLabel: 'Meetinstrument',
+          emptyMessage: 'Nog geen meetinstrumenten toegevoegd.'
+        }
+      )
+    );
+    diagnostiekCard.appendChild(onderzoekCard);
+    container.appendChild(diagnostiekCard);
+
+    var therapieCard = buildSectionCard(humanizeKey('stap_6_therapeutisch_proces'), 'Doelen, meetmomenten en behandelkeuzes.');
+    var therapieGrid = buildFieldGrid();
+    appendConfiguredFields(therapieGrid, reasoning.stap_6_therapeutisch_proces || {}, ['reasoning', 'stap_6_therapeutisch_proces'], [
+      { key: 'hoofddoel', full: true, multiline: true },
+      { key: 'hulpmiddelen', full: true, multiline: true },
+      { key: 'multidisciplinair', full: true, multiline: true }
+    ]);
+    therapieCard.appendChild(therapieGrid);
+    therapieCard.appendChild(
+      buildStringRepeaterCard(
+        humanizeKey('subdoelen'),
+        ['reasoning', 'stap_6_therapeutisch_proces', 'subdoelen'],
+        Array.isArray((reasoning.stap_6_therapeutisch_proces || {}).subdoelen) ? reasoning.stap_6_therapeutisch_proces.subdoelen : [],
+        {
+          addLabel: 'Subdoel toevoegen',
+          itemLabel: 'Subdoel',
+          itemFieldLabel: 'Subdoel',
+          emptyMessage: 'Nog geen subdoelen toegevoegd.'
+        }
+      )
+    );
+    therapieCard.appendChild(
+      buildStringRepeaterCard(
+        humanizeKey('evaluatieve_meetinstrumenten'),
+        ['reasoning', 'stap_6_therapeutisch_proces', 'evaluatieve_meetinstrumenten'],
+        Array.isArray((reasoning.stap_6_therapeutisch_proces || {}).evaluatieve_meetinstrumenten) ? reasoning.stap_6_therapeutisch_proces.evaluatieve_meetinstrumenten : [],
+        {
+          addLabel: 'Meetinstrument toevoegen',
+          itemLabel: 'Instrument',
+          itemFieldLabel: 'Evaluatief meetinstrument',
+          emptyMessage: 'Nog geen evaluatieve meetinstrumenten toegevoegd.'
+        }
+      )
+    );
+    var methodenCard = buildSubsectionCard('Behandelmethoden');
+    var methodenGrid = buildFieldGrid();
+    appendConfiguredFields(methodenGrid, ((reasoning.stap_6_therapeutisch_proces || {}).behandelmethoden || {}), ['reasoning', 'stap_6_therapeutisch_proces', 'behandelmethoden'], [
+      { key: 'informeren_adviseren', full: true, multiline: true }
+    ]);
+    methodenCard.appendChild(methodenGrid);
+    methodenCard.appendChild(
+      buildStringRepeaterCard(
+        humanizeKey('interventies'),
+        ['reasoning', 'stap_6_therapeutisch_proces', 'behandelmethoden', 'interventies'],
+        Array.isArray((((reasoning.stap_6_therapeutisch_proces || {}).behandelmethoden || {}).interventies)) ? reasoning.stap_6_therapeutisch_proces.behandelmethoden.interventies : [],
+        {
+          addLabel: 'Interventie toevoegen',
+          itemLabel: 'Interventie',
+          itemFieldLabel: 'Interventie',
+          emptyMessage: 'Nog geen interventies toegevoegd.'
+        }
+      )
+    );
+    therapieCard.appendChild(methodenCard);
+    container.appendChild(therapieCard);
+
+    var effectCard = buildSectionCard(humanizeKey('stap_7_effect_therapie'), 'Verwachtingen over het effect van informatie en interventies.');
+    var effectGrid = buildFieldGrid();
+    appendConfiguredFields(effectGrid, reasoning.stap_7_effect_therapie || {}, ['reasoning', 'stap_7_effect_therapie'], [
+      { key: 'verwacht_effect_informeren', full: true, multiline: true }
+    ]);
+    effectCard.appendChild(effectGrid);
+    effectCard.appendChild(
+      buildStringRepeaterCard(
+        humanizeKey('verwacht_effect_interventies'),
+        ['reasoning', 'stap_7_effect_therapie', 'verwacht_effect_interventies'],
+        Array.isArray((reasoning.stap_7_effect_therapie || {}).verwacht_effect_interventies) ? reasoning.stap_7_effect_therapie.verwacht_effect_interventies : [],
+        {
+          addLabel: 'Effect toevoegen',
+          itemLabel: 'Effect',
+          itemFieldLabel: 'Verwacht effect',
+          emptyMessage: 'Nog geen verwachte effecten toegevoegd.'
+        }
+      )
+    );
+    container.appendChild(effectCard);
+
+    container.appendChild(
+      buildObjectRepeaterCard(
+        'Differentiaaldiagnose',
+        ['differential_diagnosis', 'hypothesen'],
+        Array.isArray(differential.hypothesen) ? differential.hypothesen : [],
+        [
+          { key: 'titel' },
+          { key: 'onderbouwing', multiline: true, full: true }
+        ],
+        {
+          addLabel: 'Hypothese toevoegen',
+          itemLabel: 'Hypothese',
+          createItem: function () { return { titel: '', onderbouwing: '' }; },
+          emptyMessage: 'Nog geen hypotheses toegevoegd.'
+        }
+      )
+    );
+
+    var hulpvraagCard = buildSectionCard('Centrale hulpvraag', 'Welke hulpvraag staat centraal in de differentiaaldiagnose?');
+    var hulpvraagGrid = buildFieldGrid();
+    appendConfiguredFields(hulpvraagGrid, differential, ['differential_diagnosis'], [
+      { key: 'hulpvraag', full: true, multiline: true }
+    ]);
+    hulpvraagCard.appendChild(hulpvraagGrid);
+    container.appendChild(hulpvraagCard);
+
+    container.appendChild(
+      buildObjectRepeaterCard(
+        'Rode vlaggen',
+        ['red_flags'],
+        redFlags,
+        [
+          { key: 'vlag' },
+          { key: 'ernst' },
+          { key: 'actie', full: true, multiline: true }
+        ],
+        {
+          addLabel: 'Rode vlag toevoegen',
+          itemLabel: 'Vlag',
+          createItem: function () { return { vlag: '', ernst: '', actie: '' }; },
+          emptyMessage: 'Nog geen losse rode vlaggen toegevoegd.'
+        }
+      )
+    );
+
+    outputEl.appendChild(container);
+  }
+
+  function renderCurrentOutputEditor() {
+    if (!outputEl) return;
+    outputEl.innerHTML = '';
+    setOutputEmptyState(false);
+    if (outputLabelEl) outputLabelEl.textContent = state.lastOutputLabel || 'Bewerkbare uitvoer';
+    if (page === 'soap') {
+      renderSoapEditor();
+      return;
+    }
+    if (page === 'rps') {
+      renderRpsEditor();
+      return;
+    }
+    renderReasoningEditor();
+  }
+
+  function renderOutputEditor(payload, label) {
+    state.currentEditorData = deepClone(payload || {});
+    state.lastOutputLabel = String(label || 'Bewerkbare uitvoer');
+    renderCurrentOutputEditor();
+  }
+
+  function loadOutputForPage(session) {
+    if (!session || typeof session !== 'object') {
+      renderEmptyOutput('Genereer een nieuwe uitvoer of laad een opgeslagen sessie.');
+      renderAlerts([]);
+      state.currentOutput = {};
+      return;
+    }
+    if (page === 'soap' && session.soap) {
+      state.currentOutput = {
+        soap: deepClone(session.soap),
+        rps: deepClone(session.rps || {}),
+        reasoning: deepClone(session.reasoning || {}),
+        differential_diagnosis: deepClone(session.differential_diagnosis || {}),
+        red_flags: deepClone(session.red_flags || [])
+      };
+      renderAlerts(session.red_flags || []);
+      renderOutputEditor({ soap: session.soap }, 'SOAP-notitie');
+      return;
+    }
+    if (page === 'rps' && session.rps) {
+      state.currentOutput = {
+        soap: deepClone(session.soap || {}),
+        rps: deepClone(session.rps),
+        reasoning: deepClone(session.reasoning || {}),
+        differential_diagnosis: deepClone(session.differential_diagnosis || {}),
+        red_flags: deepClone(session.red_flags || [])
+      };
+      renderAlerts(session.red_flags || []);
+      renderOutputEditor({ rps: session.rps }, 'RPS-formulier');
+      return;
+    }
+    if (page === 'reasoning' && (session.reasoning || session.differential_diagnosis)) {
+      state.currentOutput = {
+        soap: deepClone(session.soap || {}),
+        rps: deepClone(session.rps || {}),
+        reasoning: deepClone(session.reasoning || {}),
+        differential_diagnosis: deepClone(session.differential_diagnosis || {}),
+        red_flags: deepClone(session.red_flags || [])
+      };
+      renderAlerts(session.red_flags || []);
+      renderOutputEditor({
+        reasoning: session.reasoning || {},
+        differential_diagnosis: session.differential_diagnosis || {},
+        red_flags: session.red_flags || []
+      }, 'Klinisch redeneren');
+      return;
+    }
+    renderEmptyOutput('Voor deze sessie is nog geen output opgeslagen voor deze pagina.');
+    renderAlerts(session.red_flags || []);
+  }
+
   function formatTimestamp(ts) {
     var parsed = Number(ts);
     if (!Number.isFinite(parsed) || parsed <= 0) return 'onbekend';
@@ -460,7 +1225,7 @@
       '<strong>Kennisbankstatus</strong>',
       '<div class="physio-inline-note">Gebouwd: ' + escapeHtml(formatTimestamp(data.generated_at)) + '</div>',
       '<div class="physio-inline-note">Bronbestanden op schijf: ' + escapeHtml(String(data.source_count_on_disk || 0)) + '</div>',
-      '<div class="physio-inline-note">Geindexeerde bronnen: ' + escapeHtml(String(data.indexed_source_count || 0)) + '</div>',
+      '<div class="physio-inline-note">Geïndexeerde bronnen: ' + escapeHtml(String(data.indexed_source_count || 0)) + '</div>',
       '<div class="physio-inline-note">Chunks in index: ' + escapeHtml(String(data.document_count || 0)) + '</div>'
     ];
     if (data.stale) {
@@ -501,7 +1266,7 @@
   function sessionSummaryHtml(session) {
     var transcript = String(session.transcript || '').slice(0, 260);
     return '<strong>' + escapeHtml(session.session_date || 'Onbekende datum') + ' · ' + escapeHtml(session.session_type || '') + '</strong>'
-      + '<div>' + escapeHtml(session.body_region || '') + '</div>'
+      + '<div>' + escapeHtml(bodyRegionLabel(session.body_region || '')) + '</div>'
       + '<div class="physio-inline-note">' + escapeHtml(transcript) + (transcript.length >= 260 ? '...' : '') + '</div>';
   }
 
@@ -515,19 +1280,19 @@
       points.push({ x: index, y: value, label: String(session.session_date || '') });
     });
     if (!points.length) {
-      progressChartEl.innerHTML = '<div class="physio-output-empty">Nog geen NPRS-gegevens om te tonen.</div>';
+      progressChartEl.innerHTML = '';
+      progressChartEl.hidden = true;
       return;
     }
+    progressChartEl.hidden = false;
     var width = 520;
     var height = 180;
     var padding = 28;
     var innerWidth = width - padding * 2;
     var innerHeight = height - padding * 2;
-    var maxY = 10;
-    var minY = 0;
     var path = points.map(function (point, index) {
       var x = padding + (points.length === 1 ? innerWidth / 2 : (innerWidth * index / (points.length - 1)));
-      var y = padding + innerHeight - ((point.y - minY) / (maxY - minY)) * innerHeight;
+      var y = padding + innerHeight - ((point.y - 0) / 10) * innerHeight;
       point.svgX = x;
       point.svgY = y;
       return (index === 0 ? 'M' : 'L') + x + ' ' + y;
@@ -545,10 +1310,12 @@
       + '</svg>';
   }
 
-  function renderSessionPreview(session) {
+  function renderSessionPreview(session, emptyMessage) {
     if (!sessionPreviewEl) return;
+    sessionPreviewEl.innerHTML = '';
+    sessionPreviewEl.classList.toggle('compact-empty', !session);
     if (!session) {
-      sessionPreviewEl.innerHTML = '';
+      sessionPreviewEl.appendChild(createNode('div', 'physio-output-empty', emptyMessage || 'Sla eerst een sessie op om hier een overzicht te zien.'));
       return;
     }
     var links = ''
@@ -574,11 +1341,18 @@
     var sessions = state.sessionsByCase[caseId] || [];
     sessionListEl.innerHTML = '';
     if (!sessions.length) {
-      sessionListEl.innerHTML = '<div class="physio-output-empty">Nog geen sessies in deze casus.</div>';
+      if (sessionPanelNoteEl) {
+        sessionPanelNoteEl.textContent = caseId ? 'Sla eerst een sessie op om voortgang te bekijken.' : 'Kies of maak eerst een casus.';
+      }
+      sessionListEl.hidden = true;
       renderProgressChart([]);
-      renderSessionPreview(null);
+      renderSessionPreview(null, caseId ? 'Nog geen sessies in deze casus.' : 'Nog geen casus geselecteerd.');
       return;
     }
+    if (sessionPanelNoteEl) {
+      sessionPanelNoteEl.textContent = 'Klik een sessie om details te bekijken.';
+    }
+    sessionListEl.hidden = false;
     sessions.forEach(function (session) {
       var button = document.createElement('button');
       button.type = 'button';
@@ -599,18 +1373,99 @@
     }
   }
 
+  function getSelectedCase() {
+    var currentCaseId = caseSelect ? String(caseSelect.value || state.selectedCaseId || '') : String(state.selectedCaseId || '');
+    for (var index = 0; index < state.cases.length; index += 1) {
+      if (String(state.cases[index].case_id || '') === currentCaseId) return state.cases[index];
+    }
+    return null;
+  }
+
+  function refreshSelectControl(select) {
+    if (!select || !uxUtils || typeof uxUtils.refreshEnhancedSelect !== 'function') return;
+    uxUtils.refreshEnhancedSelect(select);
+  }
+
+  function setSelectValue(select, value) {
+    if (!select) return;
+    select.value = value;
+    refreshSelectControl(select);
+  }
+
+  function syncSessionDate(value) {
+    var safeValue = String(value || '');
+    if (sessionDatePicker && typeof sessionDatePicker.setDate === 'function') {
+      sessionDatePicker.setDate(safeValue || todayIso(), false, 'Y-m-d');
+    }
+    if (sessionDateInput) sessionDateInput.value = safeValue || todayIso();
+  }
+
+  function populateCaseSelect() {
+    if (!caseSelect) return;
+    var previousValue = caseSelect.value || state.selectedCaseId || '';
+    var placeholder = page === 'knowledge' ? 'Geen casus geselecteerd' : 'Kies een casus...';
+    caseSelect.innerHTML = '<option value="">' + placeholder + '</option>';
+    state.cases.forEach(function (item) {
+      var option = document.createElement('option');
+      option.value = String(item.case_id || '');
+      option.textContent = String(item.display_label || item.patient_name || item.case_id || 'Casus');
+      caseSelect.appendChild(option);
+    });
+    if (previousValue) {
+      caseSelect.value = previousValue;
+    } else if (queryCaseId) {
+      caseSelect.value = queryCaseId;
+    }
+    state.selectedCaseId = String(caseSelect.value || '');
+    refreshSelectControl(caseSelect);
+  }
+
+  function renderCasesList() {
+    if (!caseListEl) return;
+    caseListEl.innerHTML = '';
+    if (!state.cases.length) {
+      caseListEl.appendChild(createNode('div', 'physio-output-empty', 'Nog geen casussen opgeslagen.'));
+      return;
+    }
+    state.cases.forEach(function (item) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'physio-case-item' + (String(item.case_id || '') === state.selectedCaseId ? ' active' : '');
+      button.innerHTML = '<strong>' + escapeHtml(item.display_label || item.patient_name || 'Casus') + '</strong>'
+        + '<div>' + escapeHtml(item.primary_complaint || bodyRegionLabel(item.body_region || '')) + '</div>'
+        + '<div class="physio-inline-note">' + escapeHtml(item.patient_name || '') + '</div>';
+      button.addEventListener('click', function () {
+        selectCase(String(item.case_id || ''), { syncForm: true });
+      });
+      caseListEl.appendChild(button);
+    });
+  }
+
+  function fillSessionForm(session) {
+    if (!session || typeof session !== 'object') return;
+    state.selectedSessionId = String(session.session_id || '');
+    syncSessionDate(session.session_date || '');
+    setSelectValue(sessionTypeSelect, String(session.session_type || 'intake'));
+    setSelectValue(bodyRegionSelect, String(session.body_region || 'algemeen'));
+    if (transcriptInput) transcriptInput.value = String(session.transcript || '');
+    if (sessionNotesInput) sessionNotesInput.value = String((session.metrics || {}).notes || '');
+    if (nprsBeforeInput) nprsBeforeInput.value = String((session.metrics || {}).nprs_before || '');
+    if (nprsAfterInput) nprsAfterInput.value = String((session.metrics || {}).nprs_after || '');
+    loadOutputForPage(session);
+  }
+
   function fillCaseForm(casePayload) {
     if (!casePayload) return;
     state.selectedCaseId = String(casePayload.case_id || '');
     if (caseMetaEl) {
-      caseMetaEl.textContent = (casePayload.display_label || casePayload.patient_name || 'Casus') + ' · ' + (casePayload.body_region || '');
+      caseMetaEl.textContent = (casePayload.display_label || casePayload.patient_name || 'Casus') + ' · ' + bodyRegionLabel(casePayload.body_region || '');
     }
     if (caseDisplayLabelInput) caseDisplayLabelInput.value = String(casePayload.display_label || '');
     if (casePatientNameInput) casePatientNameInput.value = String(casePayload.patient_name || '');
     if (caseAgeInput) caseAgeInput.value = String(casePayload.age || '');
     if (caseSexInput) caseSexInput.value = String(casePayload.sex || '');
     if (caseReferralInput) caseReferralInput.value = String(casePayload.referral_source || '');
-    if (caseBodyRegionSelect) caseBodyRegionSelect.value = String(casePayload.body_region || 'algemeen');
+    setSelectValue(caseBodyRegionSelect, String(casePayload.body_region || 'algemeen'));
     if (caseComplaintInput) caseComplaintInput.value = String(casePayload.primary_complaint || '');
     if (caseTagsInput) caseTagsInput.value = Array.isArray(casePayload.tags) ? casePayload.tags.join(', ') : String(casePayload.tags || '');
     if (caseNotesInput) caseNotesInput.value = String(casePayload.notes || '');
@@ -687,7 +1542,11 @@
     function tick() {
       attempts += 1;
       return authFetch('/status/' + encodeURIComponent(jobId))
-        .then(function (response) { return response.json().then(function (body) { return { ok: response.ok, body: body }; }); })
+        .then(function (response) {
+          return response.json().then(function (body) {
+            return { ok: response.ok, body: body };
+          });
+        })
         .then(function (result) {
           if (!result.ok) {
             throw new Error((result.body || {}).error || 'Transcript ophalen mislukt.');
@@ -732,8 +1591,9 @@
         renderCasesList();
         if (page === 'cases' && state.cases.length) {
           var nextCaseId = state.selectedCaseId || queryCaseId || String(state.cases[0].case_id || '');
-          selectCase(nextCaseId, { syncForm: true });
+          return selectCase(nextCaseId, { syncForm: true });
         }
+        return null;
       })
       .catch(function (error) {
         if (error && error.error) {
@@ -743,6 +1603,7 @@
         } else {
           setStatus('Casussen laden mislukt.', 'error');
         }
+        return null;
       });
   }
 
@@ -769,26 +1630,60 @@
       });
   }
 
+  function applyCaseContextToPage(selectedCase) {
+    if (!selectedCase) return;
+    if (page === 'soap' || page === 'rps' || page === 'reasoning' || page === 'knowledge') {
+      if (bodyRegionSelect && !state.selectedSessionId) {
+        setSelectValue(bodyRegionSelect, String(selectedCase.body_region || bodyRegionSelect.value || 'algemeen'));
+      }
+      if (page === 'knowledge' && knowledgeContextInput) {
+        var contextValue = String(knowledgeContextInput.value || '').trim();
+        if (!contextValue) {
+          var caseSummary = [];
+          if (selectedCase.primary_complaint) caseSummary.push('Hoofdklacht: ' + selectedCase.primary_complaint);
+          if (selectedCase.notes) caseSummary.push('Notities: ' + selectedCase.notes);
+          if (caseSummary.length) knowledgeContextInput.value = caseSummary.join('\n');
+        }
+      }
+    }
+  }
+
   function selectCase(caseId, options) {
     var opts = options || {};
     state.selectedCaseId = String(caseId || '');
-    if (caseSelect) caseSelect.value = state.selectedCaseId;
+    if (caseSelect) setSelectValue(caseSelect, state.selectedCaseId);
     renderCasesList();
     var selectedCase = getSelectedCase();
+    applyCaseContextToPage(selectedCase);
     if (selectedCase && opts.syncForm) {
       fillCaseForm(selectedCase);
     }
     if (!state.selectedCaseId) {
+      state.selectedSessionId = '';
       if (page === 'cases') {
         renderSessionList('');
+      }
+      if (page === 'soap' || page === 'rps' || page === 'reasoning') {
+        renderEmptyOutput('Genereer een nieuwe uitvoer of laad een opgeslagen sessie.');
       }
       return Promise.resolve(null);
     }
     return loadSessionsForCase(state.selectedCaseId).then(function (sessions) {
-      if ((page === 'soap' || page === 'rps' || page === 'reasoning') && querySessionId) {
-        var existing = sessions.find(function (item) { return String(item.session_id || '') === querySessionId; });
-        if (existing) {
-          fillSessionForm(existing);
+      if (page === 'soap' || page === 'rps' || page === 'reasoning') {
+        var preferred = sessions.find(function (item) {
+          return String(item.session_id || '') === (querySessionId || state.selectedSessionId);
+        }) || sessions[0];
+        if (preferred) {
+          fillSessionForm(preferred);
+        } else {
+          state.selectedSessionId = '';
+          syncSessionDate(todayIso());
+          if (transcriptInput) transcriptInput.value = '';
+          if (sessionNotesInput) sessionNotesInput.value = '';
+          if (nprsBeforeInput) nprsBeforeInput.value = '';
+          if (nprsAfterInput) nprsAfterInput.value = '';
+          renderEmptyOutput('Voor deze casus is nog geen sessie opgeslagen. Genereer eerst output of sla een sessie op.');
+          renderAlerts([]);
         }
       }
       return selectedCase;
@@ -926,10 +1821,10 @@
         return loadSessionsForCase(state.selectedCaseId);
       })
       .then(function (sessions) {
-        if (querySessionId || state.selectedSessionId) {
-          var existing = (sessions || []).find(function (item) { return String(item.session_id || '') === state.selectedSessionId; });
-          if (existing) fillSessionForm(existing);
-        }
+        var existing = (sessions || []).find(function (item) {
+          return String(item.session_id || '') === state.selectedSessionId;
+        });
+        if (existing) fillSessionForm(existing);
       })
       .catch(function (error) {
         setStatus((error && error.error) || error.message || 'Opslaan mislukt.', 'error');
@@ -939,12 +1834,76 @@
       });
   }
 
+  function buildSourceGroups(sources) {
+    var groupsByKey = {};
+    var orderedGroups = [];
+    (sources || []).forEach(function (source, index) {
+      var key = String(source.source_path || source.source_name || source.source_title || ('source-' + index));
+      if (!groupsByKey[key]) {
+        groupsByKey[key] = {
+          key: key,
+          source_name: String(source.source_name || '').trim(),
+          source_title: String(source.source_title || source.source_name || 'Bron').trim(),
+          source_kind: String(source.source_kind || '').trim(),
+          hits: []
+        };
+        orderedGroups.push(groupsByKey[key]);
+      }
+      groupsByKey[key].hits.push({
+        page_label: String(source.page_label || '').trim(),
+        excerpt: String(source.excerpt || '').trim(),
+        score: Number(source.score || 0) || 0
+      });
+    });
+    return orderedGroups;
+  }
+
+  function renderKnowledgeResults(body) {
+    setKnowledgeEmptyState(false);
+    if (knowledgeAnswerEl) {
+      knowledgeAnswerEl.innerHTML = renderMarkdown(body.answer_markdown || '');
+    }
+    if (citationsEl) {
+      citationsEl.innerHTML = '';
+      (body.citations || []).forEach(function (citation, index) {
+        var chip = createNode('div', 'physio-citation-chip');
+        chip.innerHTML = '<strong>[' + (index + 1) + ']</strong><span>' + escapeHtml(String(citation.label || citation.source_name || 'Bron')) + '</span>';
+        citationsEl.appendChild(chip);
+      });
+    }
+    if (sourceListEl) {
+      sourceListEl.innerHTML = '';
+      var groups = buildSourceGroups(body.retrieved_sources || []);
+      if (!groups.length) {
+        sourceListEl.appendChild(createNode('div', 'physio-output-empty', 'Geen bronfragmenten beschikbaar.'));
+      } else {
+        groups.forEach(function (group) {
+          var card = createNode('div', 'physio-source-card');
+          var head = createNode('div', 'physio-source-card-head');
+          head.innerHTML = '<div><strong>' + escapeHtml(group.source_title) + '</strong><div class="physio-inline-note">' + escapeHtml(group.source_name) + '</div></div>'
+            + '<span class="physio-source-kind">' + escapeHtml(sourceKindLabel(group.source_kind || 'overig')) + '</span>';
+          card.appendChild(head);
+          var list = createNode('div', 'physio-source-hit-list');
+          group.hits.forEach(function (hit, hitIndex) {
+            var item = createNode('div', 'physio-source-hit');
+            item.innerHTML = '<div class="physio-source-hit-topline"><span class="physio-source-page">' + escapeHtml(hit.page_label || ('Fragment ' + (hitIndex + 1))) + '</span><span class="physio-source-score">Relevantie ' + escapeHtml(hit.score.toFixed(3)) + '</span></div>'
+              + '<div>' + escapeHtml(hit.excerpt || '') + '</div>';
+            list.appendChild(item);
+          });
+          card.appendChild(list);
+          sourceListEl.appendChild(card);
+        });
+      }
+    }
+  }
+
   function handleAskKnowledge() {
     if (!knowledgeQuestionInput || !knowledgeQuestionInput.value.trim()) {
       setStatus('Typ eerst een vraag.', 'error');
       return;
     }
     setControlsDisabled(true);
+    if (knowledgeAskBtn) knowledgeAskBtn.textContent = 'Bezig...';
     setStatus('Kennisbank doorzoeken...', '');
     authFetch('/api/physio/knowledge/query', {
       method: 'POST',
@@ -963,30 +1922,13 @@
         });
       })
       .then(function (body) {
-        if (knowledgeAnswerEl) knowledgeAnswerEl.innerHTML = renderMarkdown(body.answer_markdown || '');
-        if (citationsEl) {
-          citationsEl.innerHTML = '';
-          (body.citations || []).forEach(function (citation) {
-            var chip = document.createElement('div');
-            chip.className = 'physio-citation-chip';
-            chip.textContent = String(citation.label || citation.source_name || 'Bron');
-            citationsEl.appendChild(chip);
-          });
-        }
-        if (sourceListEl) {
-          sourceListEl.innerHTML = '';
-          (body.retrieved_sources || []).forEach(function (source) {
-            var card = document.createElement('div');
-            card.className = 'physio-source-card';
-            card.innerHTML = '<strong>' + escapeHtml(source.source_title || source.source_name || 'Bron') + '</strong>'
-              + '<div class="physio-inline-note">' + escapeHtml(source.page_label || '') + '</div>'
-              + '<div>' + escapeHtml(source.excerpt || '') + '</div>';
-            sourceListEl.appendChild(card);
-          });
-        }
+        state.hasKnowledgeResult = true;
+        renderKnowledgeResults(body);
+        if (knowledgeAskBtn) knowledgeAskBtn.textContent = 'Vraag opnieuw';
         setStatus('Antwoord klaar.', 'success');
       })
       .catch(function (error) {
+        if (knowledgeAskBtn) knowledgeAskBtn.textContent = state.hasKnowledgeResult ? 'Vraag opnieuw' : defaultKnowledgeButtonLabel;
         setStatus((error && error.error) || error.message || 'Kennisbankquery mislukt.', 'error');
       })
       .finally(function () {
@@ -1033,11 +1975,21 @@
 
   function resetCaseForm() {
     state.selectedCaseId = '';
+    state.selectedSessionId = '';
     if (caseMetaEl) caseMetaEl.textContent = 'Nieuwe casus';
-    [caseDisplayLabelInput, casePatientNameInput, caseAgeInput, caseSexInput, caseReferralInput, caseComplaintInput, caseTagsInput, caseNotesInput].forEach(function (node) {
+    [
+      caseDisplayLabelInput,
+      casePatientNameInput,
+      caseAgeInput,
+      caseSexInput,
+      caseReferralInput,
+      caseComplaintInput,
+      caseTagsInput,
+      caseNotesInput
+    ].forEach(function (node) {
       if (node) node.value = '';
     });
-    if (caseBodyRegionSelect) caseBodyRegionSelect.value = 'algemeen';
+    setSelectValue(caseBodyRegionSelect, 'algemeen');
     renderCasesList();
     renderSessionList('');
   }
@@ -1053,35 +2005,58 @@
     if (transcribeBtn) transcribeBtn.disabled = true;
   }
 
+  function getMicrophonePermissionState() {
+    if (!navigator.permissions || typeof navigator.permissions.query !== 'function') {
+      return Promise.resolve('prompt');
+    }
+    return navigator.permissions.query({ name: 'microphone' })
+      .then(function (status) {
+        return status && status.state ? String(status.state) : 'prompt';
+      })
+      .catch(function () {
+        return 'prompt';
+      });
+  }
+
   function startRecorder() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
       setStatus('Opnemen wordt niet ondersteund in deze browser.', 'error');
       return;
     }
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
-      state.recorderChunks = [];
-      state.recorder = new window.MediaRecorder(stream);
-      state.recorder.addEventListener('dataavailable', function (event) {
-        if (event.data && event.data.size > 0) {
-          state.recorderChunks.push(event.data);
+    getMicrophonePermissionState()
+      .then(function (permissionState) {
+        if (permissionState === 'denied') {
+          throw new Error('Microfoontoegang is geblokkeerd. Sta microfoontoegang toe in je browser en probeer opnieuw.');
         }
+        return navigator.mediaDevices.getUserMedia({ audio: true });
+      })
+      .then(function (stream) {
+        state.recorderChunks = [];
+        state.recorder = new window.MediaRecorder(stream);
+        state.recorder.addEventListener('dataavailable', function (event) {
+          if (event.data && event.data.size > 0) {
+            state.recorderChunks.push(event.data);
+          }
+        });
+        state.recorder.addEventListener('stop', function () {
+          stream.getTracks().forEach(function (track) { track.stop(); });
+          var blob = new Blob(state.recorderChunks, { type: state.recorder.mimeType || 'audio/webm' });
+          state.selectedAudioFile = new File([blob], 'physio-opname.webm', { type: blob.type || 'audio/webm' });
+          updateAudioNote();
+          if (recordStartBtn) recordStartBtn.disabled = false;
+          if (recordStopBtn) recordStopBtn.disabled = true;
+          setStatus('Opname klaar. Je kunt nu een transcript maken.', 'success');
+          showToast('Opname klaar');
+        });
+        state.recorder.start();
+        if (recordStartBtn) recordStartBtn.disabled = true;
+        if (recordStopBtn) recordStopBtn.disabled = false;
+        setStatus('Opname loopt...', '');
+      })
+      .catch(function (error) {
+        var message = (error && error.message) || 'Microfoontoegang is geweigerd.';
+        setStatus(message, 'error');
       });
-      state.recorder.addEventListener('stop', function () {
-        stream.getTracks().forEach(function (track) { track.stop(); });
-        var blob = new Blob(state.recorderChunks, { type: state.recorder.mimeType || 'audio/webm' });
-        state.selectedAudioFile = new File([blob], 'physio-opname.webm', { type: blob.type || 'audio/webm' });
-        updateAudioNote();
-        if (recordStartBtn) recordStartBtn.disabled = false;
-        if (recordStopBtn) recordStopBtn.disabled = true;
-        showToast('Opname klaar');
-      });
-      state.recorder.start();
-      if (recordStartBtn) recordStartBtn.disabled = true;
-      if (recordStopBtn) recordStopBtn.disabled = false;
-      setStatus('Opname loopt...', '');
-    }).catch(function () {
-      setStatus('Microfoontoegang geweigerd.', 'error');
-    });
   }
 
   function stopRecorder() {
@@ -1123,8 +2098,24 @@
       });
   }
 
+  function initializeEnhancedControls() {
+    [caseSelect, bodyRegionSelect, sessionTypeSelect, caseBodyRegionSelect].forEach(function (select) {
+      if (!select || typeof uxUtils.enhanceNativeSelect !== 'function') return;
+      uxUtils.enhanceNativeSelect(select);
+      refreshSelectControl(select);
+    });
+    if (sessionDateInput && typeof flatpickr !== 'undefined') {
+      sessionDatePicker = flatpickr(sessionDateInput, {
+        dateFormat: 'Y-m-d',
+        allowInput: true,
+        defaultDate: sessionDateInput.value || todayIso()
+      });
+    }
+  }
+
   function initializePage() {
     if (sessionDateInput && !sessionDateInput.value) sessionDateInput.value = todayIso();
+    initializeEnhancedControls();
 
     auth.onAuthStateChanged(function (user) {
       state.user = user;
@@ -1137,7 +2128,8 @@
       setAuthBanner('', '');
       setControlsDisabled(false);
       loadCases().then(function () {
-        loadKnowledgeStatus();
+        return loadKnowledgeStatus();
+      }).then(function () {
         if ((page === 'soap' || page === 'rps' || page === 'reasoning' || page === 'knowledge') && state.selectedCaseId) {
           return selectCase(state.selectedCaseId || queryCaseId, { syncForm: page === 'cases' });
         }
@@ -1171,7 +2163,12 @@
       renderCasesList();
       renderSessionList('');
     } else if (page === 'knowledge') {
-      if (knowledgeAnswerEl) knowledgeAnswerEl.innerHTML = '<div class="physio-output-empty">Stel een vraag om een antwoord uit je kennisbank te krijgen.</div>';
+      setKnowledgeEmptyState(true);
+      if (knowledgeAnswerEl) {
+        knowledgeAnswerEl.innerHTML = '<div class="physio-output-empty">Stel een vraag om een antwoord uit je kennisbank te krijgen.</div>';
+      }
+      if (citationsEl) citationsEl.innerHTML = '';
+      if (sourceListEl) sourceListEl.innerHTML = '';
     } else {
       renderEmptyOutput('Genereer een nieuwe uitvoer of laad een opgeslagen sessie.');
     }

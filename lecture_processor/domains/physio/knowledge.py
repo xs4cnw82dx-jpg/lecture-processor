@@ -7,6 +7,8 @@ import heapq
 import json
 import math
 import os
+import re
+import unicodedata
 from pathlib import Path
 
 from lecture_processor.domains.ai import provider as ai_provider
@@ -26,6 +28,19 @@ DEFAULT_CHUNK_OVERLAP = 180
 SUPPORTED_SOURCE_SUFFIXES = {".pdf", ".docx", ".pptx", ".txt", ".md"}
 SHARDED_INDEX_FORMAT = "sharded-gzip-v1"
 _INDEX_CACHE = {"path": "", "mtime": 0.0, "signature": "", "payload": None}
+BODY_REGION_TERMS = {
+    "algemeen": ["algemeen"],
+    "nek": ["nek", "cervicaal", "cwk"],
+    "schouder": ["schouder"],
+    "elleboog_pols_hand": ["elleboog", "pols", "hand"],
+    "thoracaal": ["thoracaal", "borstwervel", "bwk"],
+    "lumbaal": ["lumbaal", "lage rug", "lumbaal", "lwk", "rug"],
+    "heup": ["heup", "heupartrose", "coxartrose"],
+    "knie": ["knie", "gonartrose"],
+    "enkel_voet": ["enkel", "voet"],
+    "neurologisch": ["neurologisch", "neurologie", "neuro"],
+    "overig": ["overig"],
+}
 
 
 def _resolve_runtime(runtime=None):
@@ -40,6 +55,162 @@ def _coerce_positive_int(value):
     except (TypeError, ValueError):
         return None
     return parsed if parsed > 0 else None
+
+
+def _normalize_match_text(value):
+    normalized = unicodedata.normalize("NFKD", str(value or "").lower())
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    compact = re.sub(r"[^a-z0-9]+", " ", ascii_text)
+    return re.sub(r"\s+", " ", compact).strip()
+
+
+def _tokenize_terms(value):
+    normalized = _normalize_match_text(value)
+    if not normalized:
+        return []
+    seen = []
+    for token in normalized.split(" "):
+        if len(token) < 3 or token in {"een", "het", "van", "met", "naar", "voor", "bij", "and", "the"}:
+            continue
+        if token not in seen:
+            seen.append(token)
+    return seen
+
+
+def _body_region_terms(value):
+    safe = str(value or "").strip().lower()
+    terms = list(BODY_REGION_TERMS.get(safe, []))
+    for token in _tokenize_terms(safe.replace("/", " ").replace("_", " ")):
+        if token not in terms:
+            terms.append(token)
+    return terms
+
+
+def _build_retrieval_query(question, *, body_region="", context_text="", case_context=None):
+    parts = [f"Vraag: {str(question or '').strip()}"]
+    if body_region:
+        parts.append(f"Lichaamsregio: {body_region}")
+    if context_text:
+        parts.append(f"Extra context: {str(context_text).strip()}")
+    if isinstance(case_context, dict) and case_context:
+        for key in ("display_label", "patient_name", "primary_complaint", "referral_source", "notes", "tags", "body_region"):
+            raw_value = case_context.get(key)
+            if isinstance(raw_value, list):
+                value = ", ".join(str(item or "").strip() for item in raw_value if str(item or "").strip())
+            else:
+                value = str(raw_value or "").strip()
+            if value:
+                parts.append(f"{key}: {value}")
+    return "\n".join(parts).strip()
+
+
+def _build_query_context(question, *, body_region="", context_text="", case_context=None):
+    complaint_text = ""
+    if isinstance(case_context, dict):
+        complaint_text = " ".join(
+            [
+                str(case_context.get("primary_complaint", "") or "").strip(),
+                str(case_context.get("notes", "") or "").strip(),
+                ", ".join(str(item or "").strip() for item in (case_context.get("tags") or []) if str(item or "").strip())
+                if isinstance(case_context.get("tags"), list)
+                else str(case_context.get("tags", "") or "").strip(),
+            ]
+        ).strip()
+    body_terms = _body_region_terms(body_region)
+    complaint_terms = _tokenize_terms(complaint_text)[:8]
+    question_terms = _tokenize_terms(question)[:10]
+    context_terms = _tokenize_terms(context_text)[:8]
+    focus_terms = []
+    for bucket in (body_terms, complaint_terms, question_terms, context_terms):
+        for term in bucket:
+            if term not in focus_terms:
+                focus_terms.append(term)
+    return {
+        "body_terms": body_terms,
+        "complaint_terms": complaint_terms,
+        "question_terms": question_terms,
+        "context_terms": context_terms,
+        "focus_terms": focus_terms,
+    }
+
+
+def _count_term_hits(text, terms):
+    safe_text = _normalize_match_text(text)
+    if not safe_text:
+        return 0
+    count = 0
+    for term in terms or []:
+        if term and term in safe_text:
+            count += 1
+    return count
+
+
+def _source_key(record):
+    payload = record if isinstance(record, dict) else {}
+    for key in ("source_path", "source_name", "source_title", "id"):
+        candidate = str(payload.get(key, "") or "").strip()
+        if candidate:
+            return candidate
+    return "unknown-source"
+
+
+def score_index_record(query_vector, record, *, query_context=None):
+    payload = record if isinstance(record, dict) else {}
+    base_score = cosine_similarity(query_vector, payload.get("embedding", []))
+    if not query_context:
+        return float(base_score)
+
+    title_blob = " ".join(
+        [
+            str(payload.get("source_title", "") or ""),
+            str(payload.get("source_name", "") or ""),
+            str(payload.get("source_path", "") or ""),
+            str(payload.get("page_label", "") or ""),
+        ]
+    )
+    text_blob = str(payload.get("text", "") or "")
+    source_kind = str(payload.get("source_kind", "") or "").strip().lower()
+
+    bonus = 0.0
+    if source_kind == "guidelines":
+        bonus += 0.08
+
+    title_body_hits = _count_term_hits(title_blob, query_context.get("body_terms"))
+    title_focus_hits = _count_term_hits(title_blob, query_context.get("focus_terms"))
+    text_body_hits = _count_term_hits(text_blob, query_context.get("body_terms"))
+    text_complaint_hits = _count_term_hits(text_blob, query_context.get("complaint_terms"))
+
+    if title_body_hits:
+        bonus += min(0.08, 0.05 + 0.015 * max(title_body_hits - 1, 0))
+    if title_focus_hits:
+        bonus += min(0.06, 0.02 + 0.01 * max(title_focus_hits - 1, 0))
+    if text_body_hits:
+        bonus += min(0.04, 0.015 * text_body_hits)
+    if text_complaint_hits:
+        bonus += min(0.04, 0.012 * text_complaint_hits)
+    return float(base_score) + float(bonus)
+
+
+def _diversify_ranked_records(records, *, limit=5):
+    safe_limit = max(1, int(limit or 1))
+    selected = []
+    counts = {}
+    selected_ids = set()
+    for pass_limit in (1, 2, 9999):
+        for record in records:
+            record_id = str(record.get("id", "") or "")
+            source_key = _source_key(record)
+            if record_id and record_id in selected_ids:
+                continue
+            if counts.get(source_key, 0) >= pass_limit:
+                continue
+            selected.append(record)
+            counts[source_key] = counts.get(source_key, 0) + 1
+            if record_id:
+                selected_ids.add(record_id)
+            if len(selected) >= safe_limit:
+                return selected
+    return selected[:safe_limit]
 
 
 def resolve_embed_dimension(*, runtime=None, output_dimensionality=None):
@@ -357,13 +528,14 @@ def format_citation_label(record):
 
 def rank_index_documents(query_vector, documents, *, limit=5):
     safe_limit = max(1, int(limit or 1))
+    candidate_limit = max(safe_limit, safe_limit * 6)
     top_matches = []
     for index, record in enumerate(documents or []):
         if not isinstance(record, dict):
             continue
         score = cosine_similarity(query_vector, record.get("embedding", []))
         sortable = (float(score), -index, record)
-        if len(top_matches) < safe_limit:
+        if len(top_matches) < candidate_limit:
             heapq.heappush(top_matches, sortable)
             continue
         if sortable > top_matches[0]:
@@ -373,12 +545,13 @@ def rank_index_documents(query_vector, documents, *, limit=5):
         item = dict(record)
         item["score"] = round(float(score), 6)
         ranked.append(item)
-    return ranked
+    return ranked[:safe_limit]
 
 
-def rank_sharded_index_documents(query_vector, payload, *, index_path=None, limit=5):
+def rank_sharded_index_documents(query_vector, payload, *, index_path=None, limit=5, query_context=None):
     candidate = Path(index_path or PHYSIO_LIBRARY_INDEX_PATH)
     safe_limit = max(1, int(limit or 1))
+    candidate_limit = max(safe_limit, safe_limit * 6)
     shard_names = ((payload.get("meta", {}) or {}).get("document_shards") or [])
     top_matches = []
     record_index = 0
@@ -389,9 +562,9 @@ def rank_sharded_index_documents(query_vector, payload, *, index_path=None, limi
         for record in shard_documents or []:
             if not isinstance(record, dict):
                 continue
-            score = cosine_similarity(query_vector, record.get("embedding", []))
+            score = score_index_record(query_vector, record, query_context=query_context)
             sortable = (float(score), -record_index, record)
-            if len(top_matches) < safe_limit:
+            if len(top_matches) < candidate_limit:
                 heapq.heappush(top_matches, sortable)
             elif sortable > top_matches[0]:
                 heapq.heapreplace(top_matches, sortable)
@@ -401,7 +574,7 @@ def rank_sharded_index_documents(query_vector, payload, *, index_path=None, limi
         item = dict(record)
         item["score"] = round(float(score), 6)
         ranked.append(item)
-    return ranked
+    return _diversify_ranked_records(ranked, limit=safe_limit)
 
 
 def query_knowledge_index(question, *, body_region="", context_text="", case_context=None, limit=5, runtime=None):
@@ -424,16 +597,45 @@ def query_knowledge_index(question, *, body_region="", context_text="", case_con
     if embedding_dimension is None and documents:
         first_embedding = documents[0].get("embedding", []) if documents else []
         embedding_dimension = len(first_embedding) if isinstance(first_embedding, list) and first_embedding else None
-    query_vector = embed_text(
+    retrieval_query = _build_retrieval_query(
         safe_question,
+        body_region=body_region,
+        context_text=context_text,
+        case_context=case_context,
+    )
+    query_context = _build_query_context(
+        safe_question,
+        body_region=body_region,
+        context_text=context_text,
+        case_context=case_context,
+    )
+    query_vector = embed_text(
+        retrieval_query,
         task_type="RETRIEVAL_QUERY",
         runtime=resolved_runtime,
         output_dimensionality=embedding_dimension,
     )
     if shard_names:
-        ranked = rank_sharded_index_documents(query_vector, index_payload, limit=limit)
+        ranked = rank_sharded_index_documents(query_vector, index_payload, limit=limit, query_context=query_context)
     else:
-        ranked = rank_index_documents(query_vector, documents, limit=limit)
+        raw_ranked = []
+        candidate_limit = max(1, int(limit or 1)) * 6
+        top_matches = []
+        for index, record in enumerate(documents or []):
+            if not isinstance(record, dict):
+                continue
+            score = score_index_record(query_vector, record, query_context=query_context)
+            sortable = (float(score), -index, record)
+            if len(top_matches) < candidate_limit:
+                heapq.heappush(top_matches, sortable)
+                continue
+            if sortable > top_matches[0]:
+                heapq.heapreplace(top_matches, sortable)
+        for score, _neg_index, record in sorted(top_matches, reverse=True):
+            item = dict(record)
+            item["score"] = round(float(score), 6)
+            raw_ranked.append(item)
+        ranked = _diversify_ranked_records(raw_ranked, limit=limit)
     context_blocks = []
     citations = []
     for item in ranked:
@@ -445,6 +647,7 @@ def query_knowledge_index(question, *, body_region="", context_text="", case_con
                 "label": label,
                 "source_name": str(item.get("source_name", "") or "").strip(),
                 "page_label": str(item.get("page_label", "") or "").strip(),
+                "source_kind": str(item.get("source_kind", "") or "").strip(),
                 "score": float(item.get("score", 0) or 0),
             }
         )
@@ -474,6 +677,8 @@ def query_knowledge_index(question, *, body_region="", context_text="", case_con
                 "source_name": str(item.get("source_name", "") or "").strip(),
                 "source_title": str(item.get("source_title", "") or "").strip(),
                 "page_label": str(item.get("page_label", "") or "").strip(),
+                "source_kind": str(item.get("source_kind", "") or "").strip(),
+                "source_path": str(item.get("source_path", "") or "").strip(),
                 "score": float(item.get("score", 0) or 0),
                 "excerpt": str(item.get("text", "") or "").strip(),
             }

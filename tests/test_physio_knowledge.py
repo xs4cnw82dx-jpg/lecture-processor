@@ -56,6 +56,7 @@ def test_query_knowledge_index_returns_ranked_citations(monkeypatch, tmp_path):
                         "text": "Richtlijn adviseert oefentherapie bij knieartrose.",
                         "source_name": "kngf.pdf",
                         "source_title": "KNGF Richtlijn",
+                        "source_kind": "guidelines",
                         "page_label": "pagina 4",
                         "embedding": [1.0, 0.0],
                     },
@@ -64,6 +65,7 @@ def test_query_knowledge_index_returns_ranked_citations(monkeypatch, tmp_path):
                         "text": "Casusdocument noemt klinisch redeneren.",
                         "source_name": "casus.pdf",
                         "source_title": "Casus 3",
+                        "source_kind": "cases",
                         "page_label": "pagina 2",
                         "embedding": [0.0, 1.0],
                     },
@@ -96,7 +98,9 @@ def test_query_knowledge_index_returns_ranked_citations(monkeypatch, tmp_path):
     )
 
     assert response["citations"][0]["label"] == "KNGF Richtlijn (pagina 4)"
+    assert response["citations"][0]["source_kind"] == "guidelines"
     assert response["retrieved_sources"][0]["source_title"] == "KNGF Richtlijn"
+    assert response["retrieved_sources"][0]["source_kind"] == "guidelines"
     assert "Oefentherapie" in response["answer_markdown"]
     assert seen["dimension"] == 2
 
@@ -112,6 +116,7 @@ def test_query_knowledge_index_reads_shards_incrementally(monkeypatch, tmp_path)
                     "text": "Rechts hemisferisch CVA geeft vaak linkszijdige neglect.",
                     "source_name": "beroerte.pdf",
                     "source_title": "Beroerte Richtlijn",
+                    "source_kind": "guidelines",
                     "page_label": "pagina 3",
                     "embedding": [1.0, 0.0],
                 },
@@ -120,6 +125,7 @@ def test_query_knowledge_index_reads_shards_incrementally(monkeypatch, tmp_path)
                     "text": "Linker hemisferisch CVA gaat vaker samen met afasie.",
                     "source_name": "beroerte.pdf",
                     "source_title": "Beroerte Richtlijn",
+                    "source_kind": "guidelines",
                     "page_label": "pagina 4",
                     "embedding": [0.0, 1.0],
                 },
@@ -168,7 +174,159 @@ def test_query_knowledge_index_reads_shards_incrementally(monkeypatch, tmp_path)
     )
 
     assert response["citations"][0]["label"] == "Beroerte Richtlijn (pagina 3)"
+    assert response["citations"][0]["source_kind"] == "guidelines"
     assert response["retrieved_sources"][0]["source_name"] == "beroerte.pdf"
+    assert response["retrieved_sources"][0]["source_kind"] == "guidelines"
+
+
+def test_query_knowledge_index_boosts_matching_guidelines_from_body_region_and_case_context(monkeypatch, tmp_path):
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "meta": {"source_count": 3, "document_count": 3},
+                "documents": [
+                    {
+                        "id": "guide-heup",
+                        "text": "De heuprichtlijn adviseert actieve oefentherapie en educatie bij artrose.",
+                        "source_name": "heup-richtlijn.pdf",
+                        "source_title": "KNGF Richtlijn Heupartrose",
+                        "source_kind": "guidelines",
+                        "source_path": "physio_library/sources/guidelines/heup-richtlijn.pdf",
+                        "page_label": "pagina 12",
+                        "embedding": [1.0, 0.0],
+                    },
+                    {
+                        "id": "form-heup",
+                        "text": "Een intakeformulier noemt alleen dat er pijn is bij lopen.",
+                        "source_name": "rps-heup.docx",
+                        "source_title": "RPS intakeformulier",
+                        "source_kind": "forms",
+                        "source_path": "physio_library/sources/forms/rps-heup.docx",
+                        "page_label": "pagina 1",
+                        "embedding": [1.0, 0.0],
+                    },
+                    {
+                        "id": "guide-schouder",
+                        "text": "Deze schouderrichtlijn gaat over cuffproblematiek.",
+                        "source_name": "schouder-richtlijn.pdf",
+                        "source_title": "KNGF Richtlijn Schouder",
+                        "source_kind": "guidelines",
+                        "source_path": "physio_library/sources/guidelines/schouder-richtlijn.pdf",
+                        "page_label": "pagina 7",
+                        "embedding": [1.0, 0.0],
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    seen = {}
+
+    def fake_embed_text(text, task_type="RETRIEVAL_QUERY", runtime=None, output_dimensionality=None):
+        seen["query_text"] = text
+        return [1.0, 0.0]
+
+    monkeypatch.setattr(physio_knowledge, "PHYSIO_LIBRARY_INDEX_PATH", manifest_path)
+    monkeypatch.setattr(physio_knowledge, "embed_text", fake_embed_text)
+    monkeypatch.setattr(
+        ai_provider,
+        "generate_with_optional_thinking",
+        lambda model, prompt, max_output_tokens=4096, operation_name="", runtime=None: SimpleNamespace(text="## Advies\n- Start met educatie en oefentherapie."),
+    )
+
+    response = physio_knowledge.query_knowledge_index(
+        "Welke oefentherapie adviseert de richtlijn?",
+        body_region="heup",
+        context_text="Conservatief beleid en belastingsopbouw.",
+        case_context={
+            "primary_complaint": "heupartrose met startpijn",
+            "notes": "Traplopen en lang wandelen provoceren de klachten.",
+        },
+        runtime=SimpleNamespace(MODEL_TOOLS="gemini-test"),
+    )
+
+    assert "Lichaamsregio: heup" in seen["query_text"]
+    assert "primary_complaint: heupartrose met startpijn" in seen["query_text"]
+    assert response["retrieved_sources"][0]["source_title"] == "KNGF Richtlijn Heupartrose"
+    assert response["retrieved_sources"][0]["source_kind"] == "guidelines"
+
+
+def test_query_knowledge_index_diversifies_top_hits_across_sources(monkeypatch, tmp_path):
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "meta": {"source_count": 2, "document_count": 4},
+                "documents": [
+                    {
+                        "id": "a-1",
+                        "text": "Knierichtlijn hoofdstuk 1 over educatie.",
+                        "source_name": "knie-a.pdf",
+                        "source_title": "Knierichtlijn A",
+                        "source_kind": "guidelines",
+                        "source_path": "physio_library/sources/guidelines/knie-a.pdf",
+                        "page_label": "pagina 1",
+                        "embedding": [1.0, 0.0],
+                    },
+                    {
+                        "id": "a-2",
+                        "text": "Knierichtlijn hoofdstuk 2 over dosering.",
+                        "source_name": "knie-a.pdf",
+                        "source_title": "Knierichtlijn A",
+                        "source_kind": "guidelines",
+                        "source_path": "physio_library/sources/guidelines/knie-a.pdf",
+                        "page_label": "pagina 2",
+                        "embedding": [1.0, 0.0],
+                    },
+                    {
+                        "id": "a-3",
+                        "text": "Knierichtlijn hoofdstuk 3 over follow-up.",
+                        "source_name": "knie-a.pdf",
+                        "source_title": "Knierichtlijn A",
+                        "source_kind": "guidelines",
+                        "source_path": "physio_library/sources/guidelines/knie-a.pdf",
+                        "page_label": "pagina 3",
+                        "embedding": [1.0, 0.0],
+                    },
+                    {
+                        "id": "b-1",
+                        "text": "Andere knierichtlijn noemt oefentherapie en educatie.",
+                        "source_name": "knie-b.pdf",
+                        "source_title": "Knierichtlijn B",
+                        "source_kind": "guidelines",
+                        "source_path": "physio_library/sources/guidelines/knie-b.pdf",
+                        "page_label": "pagina 4",
+                        "embedding": [1.0, 0.0],
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(physio_knowledge, "PHYSIO_LIBRARY_INDEX_PATH", manifest_path)
+    monkeypatch.setattr(
+        physio_knowledge,
+        "embed_text",
+        lambda text, task_type="RETRIEVAL_QUERY", runtime=None, output_dimensionality=None: [1.0, 0.0],
+    )
+    monkeypatch.setattr(
+        ai_provider,
+        "generate_with_optional_thinking",
+        lambda model, prompt, max_output_tokens=4096, operation_name="", runtime=None: SimpleNamespace(text="## Advies\n- Vergelijk meerdere richtlijnen."),
+    )
+
+    response = physio_knowledge.query_knowledge_index(
+        "Wat adviseert de richtlijn bij knieklachten?",
+        body_region="knie",
+        runtime=SimpleNamespace(MODEL_TOOLS="gemini-test"),
+        limit=3,
+    )
+
+    top_sources = [item["source_name"] for item in response["retrieved_sources"][:3]]
+    assert len(set(top_sources)) >= 2
+    assert top_sources.count("knie-a.pdf") <= 2
 
 
 def test_knowledge_index_status_reports_counts_and_staleness(tmp_path):
@@ -261,6 +419,7 @@ def test_knowledge_query_endpoint_uses_manifest(client, monkeypatch, core, tmp_p
                         "text": "Gebruik actieve oefentherapie bij heupartrose.",
                         "source_name": "heup.pdf",
                         "source_title": "Heupartrose Richtlijn",
+                        "source_kind": "guidelines",
                         "page_label": "pagina 8",
                         "embedding": [1.0, 0.0],
                     }
@@ -290,7 +449,9 @@ def test_knowledge_query_endpoint_uses_manifest(client, monkeypatch, core, tmp_p
     assert response.status_code == 200
     body = response.get_json()
     assert body["citations"][0]["label"] == "Heupartrose Richtlijn (pagina 8)"
+    assert body["citations"][0]["source_kind"] == "guidelines"
     assert body["retrieved_sources"][0]["source_name"] == "heup.pdf"
+    assert body["retrieved_sources"][0]["source_kind"] == "guidelines"
 
 
 def test_knowledge_status_endpoint_returns_index_metadata(client, monkeypatch, core):

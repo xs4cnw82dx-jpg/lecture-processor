@@ -109,6 +109,7 @@ def test_security_headers_present_on_html_and_api_routes(client):
     for response in (html_response, api_response):
         assert response.status_code == 200
         assert "Content-Security-Policy" in response.headers
+        assert response.headers["Permissions-Policy"] == "camera=(), microphone=(self), geolocation=()"
         assert response.headers["X-Content-Type-Options"] == "nosniff"
         assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
         assert response.headers["X-Frame-Options"] == "DENY"

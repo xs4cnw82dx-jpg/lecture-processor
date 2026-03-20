@@ -1944,6 +1944,13 @@ function getShareEndpoint(entityType, entityId) {
   }
   return '/api/study-packs/' + encodeURIComponent(safeId) + '/share';
 }
+function getSharePrimaryActionLabel() {
+  var hasLink = !!String(shareModalLoadedLink || '').trim();
+  if (shareModalScope === 'public') {
+    return hasLink ? 'Update Link' : 'Create Link';
+  }
+  return hasLink ? 'Disable Link' : 'Keep Private';
+}
 function setShareScopeUi(scope) {
   shareModalScope = scope === 'public' ? 'public' : 'private';
   if (shareScopePrivate) {
@@ -1955,23 +1962,28 @@ function setShareScopeUi(scope) {
   if (shareLinkInput) {
     shareLinkInput.value = shareModalScope === 'public' ? shareModalLoadedLink : '';
     shareLinkInput.placeholder = shareModalScope === 'public'
-      ? 'Share link will appear here once saved.'
-      : 'Enable public sharing to generate a link.';
+      ? (String(shareModalLoadedLink || '').trim()
+        ? 'Share link is ready to copy.'
+        : 'Share link will appear here after you create it.')
+      : 'Switch to Public to create a share link.';
   }
   if (shareModalStatus) {
     shareModalStatus.textContent = shareModalScope === 'public'
       ? 'Anyone with this link can view this content in a read-only page.'
-      : 'Private links are disabled for everyone except you inside the app.';
+      : 'Only you can open this content inside the app while sharing stays private.';
   }
   if (shareCopyBtn) {
     shareCopyBtn.disabled = shareModalScope !== 'public' || !String(shareModalLoadedLink || '').trim();
+  }
+  if (shareModalSave && !shareModalSaving) {
+    shareModalSave.textContent = getSharePrimaryActionLabel();
   }
 }
 function setShareModalSaving(saving) {
   shareModalSaving = !!saving;
   if (shareModalSave) {
     shareModalSave.disabled = shareModalSaving || !shareModalEntityId;
-    shareModalSave.textContent = shareModalSaving ? 'Saving...' : 'Save settings';
+    shareModalSave.textContent = shareModalSaving ? 'Saving...' : getSharePrimaryActionLabel();
   }
   if (shareModalCancel) shareModalCancel.disabled = shareModalSaving;
   if (shareModalClose) shareModalClose.disabled = shareModalSaving;
@@ -2038,10 +2050,10 @@ function closeShareModal() {
   setShareScopeUi('private');
   if (shareLinkInput) {
     shareLinkInput.value = '';
-    shareLinkInput.placeholder = 'Enable public sharing to generate a link.';
+    shareLinkInput.placeholder = 'Switch to Public to create a share link.';
   }
   if (shareModalStatus) {
-    shareModalStatus.textContent = 'Private links are disabled for everyone except you inside the app.';
+    shareModalStatus.textContent = 'Only you can open this content inside the app while sharing stays private.';
   }
 }
 function copyShareLink() {
@@ -2093,9 +2105,9 @@ function saveShareSettings() {
   }).then(function (payload) {
     populateShareModal(payload || {});
     if (shareModalScope === 'public') {
-      showToast('Share link updated.');
+      showToast(String(shareModalLoadedLink || '').trim() ? 'Share link ready.' : 'Share link created.');
     } else {
-      showToast('Sharing disabled.');
+      showToast('Sharing kept private.');
     }
   }).catch(function (error) {
     showToast(error.message || 'Could not save sharing settings.', 'error');

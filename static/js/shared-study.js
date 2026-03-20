@@ -62,9 +62,23 @@
     return '<p>' + escapeHtml(markdown || '').replace(/\n/g, '<br>') + '</p>';
   }
 
+  function formatModeLabel(mode) {
+    const safeMode = String(mode || '').trim().toLowerCase();
+    if (!safeMode) return 'Study Pack';
+    if (safeMode === 'lecture-notes') return 'Lecture Notes';
+    if (safeMode === 'slides-only') return 'Slides Extraction';
+    if (safeMode === 'interview') return 'Interview Transcription';
+    return safeMode
+      .split(/[-_\s]+/)
+      .filter(Boolean)
+      .map(function (part) {
+        return part.charAt(0).toUpperCase() + part.slice(1);
+      })
+      .join(' ');
+  }
+
   function buildMetaLine(pack) {
     const parts = [
-      pack.mode,
       pack.course,
       pack.subject,
       pack.semester,
@@ -115,7 +129,7 @@
 
   function renderPackPreview(pack, targets) {
     const resolvedTargets = targets || {};
-    if (resolvedTargets.modeEl) resolvedTargets.modeEl.textContent = pack.mode || 'Study Pack';
+    if (resolvedTargets.modeEl) resolvedTargets.modeEl.textContent = formatModeLabel(pack.mode);
     if (resolvedTargets.metaEl) resolvedTargets.metaEl.textContent = buildMetaLine(pack);
     if (resolvedTargets.notesEl) {
       const notes = String(pack.notes_markdown || '').trim();
