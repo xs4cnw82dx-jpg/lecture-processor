@@ -8,7 +8,7 @@ on:
 
 jobs:
   backend-tests:
-    name: Backend Tests (pytest)
+    name: Guardrail Tests (pytest)
     runs-on: ubuntu-latest
     env:
       SENTRY_DSN_BACKEND: ""
