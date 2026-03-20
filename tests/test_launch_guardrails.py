@@ -1126,6 +1126,8 @@ def test_account_delete_failure_restores_account_status(client, monkeypatch):
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-restore", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "db", object())
+    monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
+    monkeypatch.setattr("lecture_processor.runtime.hooks.batch_orchestrator.run_startup_batch_recovery_once", lambda runtime=None: None)
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
     monkeypatch.setattr(account_lifecycle, "query_docs_by_field", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(account_lifecycle, "has_docs_by_field", lambda *_args, **_kwargs: False)

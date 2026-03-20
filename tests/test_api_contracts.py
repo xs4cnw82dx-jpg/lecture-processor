@@ -330,6 +330,9 @@ def test_active_runtime_jobs_contract_returns_only_active_regular_jobs(client, m
         def to_dict(self):
             return dict(self._payload)
 
+    monkeypatch.setattr(core, "db", object())
+    monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
+    monkeypatch.setattr(batch_orchestrator, "run_startup_batch_recovery_once", lambda runtime=None: None)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "contract-active", "email": "u@example.com"})
     monkeypatch.setattr(
         core,
