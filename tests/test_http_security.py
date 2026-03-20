@@ -25,4 +25,4 @@ def test_build_content_security_policy_uses_nonce_for_inline_scripts():
     assert "'nonce-nonce123'" in policy
     assert "script-src 'self' 'unsafe-inline'" not in policy
     assert "style-src 'self' 'unsafe-inline'" not in policy
-    assert "style-src-attr 'unsafe-inline'" in policy
+    assert "style-src-attr" not in policy

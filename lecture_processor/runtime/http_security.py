@@ -43,9 +43,6 @@ def _security_policy_sources(*, sentry_frontend_dsn: str = '', script_nonce: str
             'https://fonts.googleapis.com',
             'https://cdn.jsdelivr.net',
         ],
-        'style-src-attr': [
-            "'unsafe-inline'",
-        ],
         'font-src': [
             "'self'",
             'https://fonts.gstatic.com',

@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/reader.css') }}">
@@ -37,7 +38,7 @@
             </div>
           </div>
 
-          <label class="reader-url-wrap" id="reader-url-wrap" for="reader-url-input" style="display:none;">
+          <label class="reader-url-wrap" id="reader-url-wrap" for="reader-url-input" hidden>
             <span>Source URL</span>
             <input type="url" id="reader-url-input" placeholder="https://example.com/article" autocomplete="off">
           </label>
@@ -49,7 +50,7 @@
               <div class="dropzone-sub" id="reader-dropzone-sub"></div>
               <div class="dropzone-sub-extra" id="reader-dropzone-sub-extra"></div>
             </label>
-            <button type="button" class="add-image-btn" id="reader-add-image-btn" style="display:none;">+ Add image</button>
+            <button type="button" class="add-image-btn" id="reader-add-image-btn" hidden>+ Add image</button>
             <div class="selected-files" id="reader-selected-files"></div>
           </div>
 

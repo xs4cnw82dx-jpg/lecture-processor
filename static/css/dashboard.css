@@ -121,10 +121,26 @@
   overflow: hidden;
 }
 
-.goal-fill {
-  height: 100%;
+.goal-track.goal-track-bar {
+  display: block;
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+}
+
+.goal-track.goal-track-bar::-webkit-progress-bar {
+  background: #e8edf8;
+  border-radius: 999px;
+}
+
+.goal-track.goal-track-bar::-webkit-progress-value {
   background: linear-gradient(135deg, #0ea5e9, #2563eb);
-  width: 0;
+  border-radius: 999px;
+}
+
+.goal-track.goal-track-bar::-moz-progress-bar {
+  background: linear-gradient(135deg, #0ea5e9, #2563eb);
+  border-radius: 999px;
 }
 
 .section-head {

@@ -76,10 +76,21 @@ import firebase_admin
 
 from firebase_admin import credentials, auth, firestore
 
-from lecture_processor.config import resolve_runtime_environment, resolve_sentry_environment
+from lecture_processor.config import resolve_sentry_environment
+from lecture_processor.domains.admin import metrics as admin_metrics
+from lecture_processor.domains.ai import pipelines as ai_pipelines
+from lecture_processor.domains.ai import study_generation
+from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import receipts as billing_receipts
+from lecture_processor.domains.shared import parsing as shared_parsing
+from lecture_processor.domains.study import audio as study_audio
+from lecture_processor.domains.study import export as study_export
+from lecture_processor.domains.study import progress as study_progress
+from lecture_processor.domains.upload import import_audio as upload_import_audio
 from lecture_processor.services import analytics_service, auth_service, file_service, job_state_service, prompt_registry, rate_limit_service, url_security
 
 from lecture_processor.repositories import admin_repo, batch_repo, job_logs_repo, planner_repo, purchases_repo, runtime_jobs_repo, study_repo, users_repo
+from lecture_processor.runtime import environment as runtime_environment
 from lecture_processor.runtime.http_security import apply_security_headers as runtime_apply_security_headers
 from lecture_processor.runtime.job_dispatcher import BoundedJobDispatcher, JobQueueFullError
 from lecture_processor.runtime.proxy import client_ip_from_request
@@ -344,6 +355,10 @@ DEV_ENV_NAMES = {'development', 'dev', 'local', 'test'}
 
 APP_BOOT_TS = time.time()
 
+
+def _self_runtime():
+    return sys.modules[__name__]
+
 def parse_cors_allowed_origins():
     raw = (os.getenv('CORS_ALLOWED_ORIGINS', '') or '').strip()
     if raw:
@@ -392,25 +407,13 @@ if should_init_backend_sentry():
     sentry_sdk.init(dsn=SENTRY_BACKEND_DSN, integrations=[FlaskIntegration()], traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE, send_default_pii=False, environment=SENTRY_ENVIRONMENT, release=SENTRY_RELEASE)
 
 def is_dev_environment():
-    if str(os.getenv('RENDER', '') or '').strip():
-        return False
-    env_value = str(os.getenv('APP_ENV', os.getenv('FLASK_ENV', SENTRY_ENVIRONMENT)) or '').strip().lower()
-    flask_debug = str(os.getenv('FLASK_DEBUG', '0')).strip().lower() in {'1', 'true', 'yes', 'on'}
-    return env_value in DEV_ENV_NAMES or flask_debug
+    return runtime_environment.is_dev_environment(
+        environ=os.environ,
+        sentry_environment=SENTRY_ENVIRONMENT,
+    )
 
 def get_public_base_url():
-    raw = str(os.getenv('PUBLIC_BASE_URL', '') or '').strip()
-    if raw:
-        parsed = urlparse(raw)
-        scheme = str(parsed.scheme or '').strip().lower()
-        netloc = str(parsed.netloc or '').strip().lower()
-        if scheme in {'http', 'https'} and netloc and (not parsed.username) and (not parsed.password):
-            return f'{scheme}://{netloc}'.rstrip('/')
-        logger.warning('Ignoring invalid PUBLIC_BASE_URL value: %s', raw[:120])
-    runtime_env = resolve_runtime_environment(default_local='development').strip().lower()
-    if runtime_env in DEV_ENV_NAMES:
-        return 'http://127.0.0.1:5000'
-    return ''
+    return runtime_environment.get_public_base_url(environ=os.environ, logger=logger)
 
 PUBLIC_BASE_URL = get_public_base_url()
 
@@ -462,66 +465,28 @@ def infer_stripe_key_mode(key_value):
 
 
 def _extract_hostname(value):
-    candidate = str(value or '').strip()
-    if not candidate:
-        return ''
-    if '://' in candidate:
-        try:
-            return str(urlparse(candidate).hostname or '').strip().lower()
-        except Exception:
-            return ''
-    return candidate.split('/', 1)[0].split(':', 1)[0].strip().lower()
+    return runtime_environment.extract_hostname(value)
 
 
 def _resolve_host_status(request_hostname, *, render_hostname='', public_hostname=''):
-    safe_request = _extract_hostname(request_hostname)
-    safe_render = _extract_hostname(render_hostname)
-    safe_public = _extract_hostname(public_hostname)
-    if not safe_request:
-        return 'unknown'
-    if safe_public and safe_request == safe_public:
-        if safe_render and safe_public != safe_render:
-            return 'custom-domain'
-        return 'configured-public-host'
-    if safe_render and safe_request == safe_render:
-        return 'render-default'
-    if safe_public or safe_render:
-        return 'mismatch'
-    return 'unknown'
-
-
-def build_admin_deployment_info(request_host=''):
-    request_host = str(request_host or '').strip()
-    request_hostname = _extract_hostname(request_host)
-    render_hostname = str(os.getenv('RENDER_EXTERNAL_HOSTNAME', '') or '').strip().lower()
-    public_hostname = _extract_hostname(PUBLIC_BASE_URL)
-    render_external_url = str(os.getenv('RENDER_EXTERNAL_URL', '') or '').strip()
-    render_service_id = str(os.getenv('RENDER_SERVICE_ID', '') or '').strip()
-    render_deploy_id = str(os.getenv('RENDER_DEPLOY_ID', '') or '').strip()
-    render_instance_id = str(os.getenv('RENDER_INSTANCE_ID', '') or '').strip()
-    render_service_name = str(os.getenv('RENDER_SERVICE_NAME', '') or '').strip()
-    render_git_commit = str(os.getenv('RENDER_GIT_COMMIT', '') or '').strip()
-    render_git_branch = str(os.getenv('RENDER_GIT_BRANCH', '') or '').strip()
-    render_detected = bool(str(os.getenv('RENDER', '') or '').strip() or render_service_id or render_deploy_id)
-    host_matches_render = None
-    if render_hostname and request_hostname:
-        host_matches_render = request_hostname == render_hostname
-    host_status = _resolve_host_status(
+    return runtime_environment.resolve_host_status(
         request_hostname,
         render_hostname=render_hostname,
         public_hostname=public_hostname,
     )
-    return {'runtime': 'render' if render_detected else 'local', 'request_host': request_host, 'request_hostname': request_hostname, 'configured_public_hostname': public_hostname, 'render_external_hostname': render_hostname, 'render_external_url': render_external_url, 'host_matches_render': host_matches_render, 'host_status': host_status, 'service_id': render_service_id, 'service_name': render_service_name, 'deploy_id': render_deploy_id, 'instance_id': render_instance_id, 'git_branch': render_git_branch, 'git_commit': render_git_commit, 'git_commit_short': render_git_commit[:12] if render_git_commit else '', 'app_boot_ts': APP_BOOT_TS, 'app_uptime_seconds': max(0, round(time.time() - APP_BOOT_TS, 1))}
+
+
+def build_admin_deployment_info(request_host=''):
+    return runtime_environment.build_admin_deployment_info(
+        request_host,
+        environ=os.environ,
+        public_base_url=PUBLIC_BASE_URL,
+        app_boot_ts=APP_BOOT_TS,
+        now_ts=time.time(),
+    )
 
 def build_admin_runtime_checks():
-    secret_key_mode = infer_stripe_key_mode(stripe.api_key)
-    publishable_key_mode = infer_stripe_key_mode(STRIPE_PUBLISHABLE_KEY)
-    webhook_configured = bool(str(STRIPE_WEBHOOK_SECRET or '').strip())
-    stripe_keys_match = secret_key_mode in {'live', 'test'} and publishable_key_mode in {'live', 'test'} and (secret_key_mode == publishable_key_mode)
-    soffice_available = bool(get_soffice_binary())
-    ffmpeg_available = bool(get_ffmpeg_binary())
-    ytdlp_available = bool(shutil.which('yt-dlp'))
-    return {'firebase_ready': bool(db), 'gemini_ready': bool(client), 'stripe_secret_mode': secret_key_mode, 'stripe_publishable_mode': publishable_key_mode, 'stripe_keys_match': stripe_keys_match, 'stripe_webhook_configured': webhook_configured, 'pptx_conversion_available': soffice_available, 'video_import_available': ffmpeg_available and ytdlp_available, 'ffmpeg_available': ffmpeg_available, 'yt_dlp_available': ytdlp_available}
+    return admin_metrics.build_admin_runtime_checks(runtime=_self_runtime())
 
 def apply_cors_headers(response):
     origin = str(request.headers.get('Origin', '') or '').strip()
@@ -1063,167 +1028,63 @@ def verify_admin_session_cookie(req):
     return auth_session.verify_admin_session_cookie(req)
 
 def get_admin_window(window_key):
-    windows = {'24h': 24 * 60 * 60, '7d': 7 * 24 * 60 * 60, '30d': 30 * 24 * 60 * 60}
-    safe_key = window_key if window_key in windows else '7d'
-    return (safe_key, windows[safe_key])
+    return admin_metrics.get_admin_window(window_key, runtime=_self_runtime())
 
 def get_timestamp(value):
-    return value if isinstance(value, (int, float)) else 0
+    return admin_metrics.get_timestamp(value, runtime=_self_runtime())
 
 def build_time_buckets(window_key, now_ts):
-    labels = []
-    keys = []
-    if window_key == '24h':
-        now_dt = datetime.fromtimestamp(now_ts, tz=timezone.utc).replace(minute=0, second=0, microsecond=0)
-        start_dt = now_dt - timedelta(hours=23)
-        for i in range(24):
-            current = start_dt + timedelta(hours=i)
-            labels.append(current.strftime('%H:%M'))
-            keys.append(current.strftime('%Y-%m-%d %H:00'))
-        granularity = 'hour'
-    else:
-        days = 7 if window_key == '7d' else 30
-        now_dt = datetime.fromtimestamp(now_ts, tz=timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        start_dt = now_dt - timedelta(days=days - 1)
-        for i in range(days):
-            current = start_dt + timedelta(days=i)
-            labels.append(current.strftime('%d %b'))
-            keys.append(current.strftime('%Y-%m-%d'))
-        granularity = 'day'
-    return (labels, keys, granularity)
+    return admin_metrics.build_time_buckets(window_key, now_ts, runtime=_self_runtime())
 
 def get_bucket_key(timestamp, window_key):
-    dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
-    if window_key == '24h':
-        return dt.replace(minute=0, second=0, microsecond=0).strftime('%Y-%m-%d %H:00')
-    return dt.replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%d')
+    return admin_metrics.get_bucket_key(timestamp, window_key, runtime=_self_runtime())
 
 def query_docs_in_window(collection_name, timestamp_field, window_start, window_end=None, order_desc=False, limit=None):
     return admin_repo.query_docs_in_window(db, collection_name=collection_name, timestamp_field=timestamp_field, window_start=window_start, window_end=window_end, order_desc=order_desc, limit=limit, firestore_module=firestore)
 
 def mark_admin_data_warning(collection_name, reason):
-    safe_collection = str(collection_name or '').strip().lower() or 'unknown'
-    safe_reason = str(reason or '').strip().lower() or 'unknown'
-    try:
-        existing = getattr(g, 'admin_data_warnings', [])
-        if not isinstance(existing, list):
-            existing = []
-        warning_key = f'{safe_collection}:{safe_reason}'
-        if warning_key not in existing:
-            existing.append(warning_key)
-        g.admin_data_warnings = existing
-    except RuntimeError:
-        return
+    return admin_metrics.mark_admin_data_warning(collection_name, reason, runtime=_self_runtime())
 
 def get_admin_data_warnings():
-    try:
-        warnings_list = getattr(g, 'admin_data_warnings', [])
-    except RuntimeError:
-        return []
-    if not isinstance(warnings_list, list):
-        return []
-    return [str(entry) for entry in warnings_list if str(entry or '').strip()]
+    return admin_metrics.get_admin_data_warnings(runtime=_self_runtime())
 
 def safe_query_docs_in_window(collection_name, timestamp_field, window_start, window_end=None, order_desc=False, limit=None):
-    if db is None:
-        return []
-    try:
-        return query_docs_in_window(collection_name=collection_name, timestamp_field=timestamp_field, window_start=window_start, window_end=window_end, order_desc=order_desc, limit=limit)
-    except Exception:
-        logger.warning('Admin query failed for %s (%s); returning empty partial dataset.', collection_name, timestamp_field, exc_info=True)
-        mark_admin_data_warning(collection_name, 'query_failed')
-        return []
+    return admin_metrics.safe_query_docs_in_window(
+        collection_name,
+        timestamp_field,
+        window_start,
+        window_end=window_end,
+        order_desc=order_desc,
+        limit=limit,
+        runtime=_self_runtime(),
+    )
 
 def safe_count_collection(collection_name):
-    if db is None:
-        return 0
-    try:
-        return admin_repo.count_collection(db, collection_name)
-    except Exception:
-        logger.warning('Admin count query failed for %s; returning 0 partial dataset.', collection_name, exc_info=True)
-        mark_admin_data_warning(collection_name, 'count_failed')
-        return 0
+    return admin_metrics.safe_count_collection(collection_name, runtime=_self_runtime())
 
 def safe_count_window(collection_name, timestamp_field, window_start):
-    if db is None:
-        return 0
-    try:
-        return admin_repo.count_window(db, collection_name, timestamp_field, window_start)
-    except Exception:
-        logger.warning('Admin window count query failed for %s (%s); returning 0 partial dataset.', collection_name, timestamp_field, exc_info=True)
-        mark_admin_data_warning(collection_name, 'window_count_failed')
-        return 0
+    return admin_metrics.safe_count_window(
+        collection_name,
+        timestamp_field,
+        window_start,
+        runtime=_self_runtime(),
+    )
 
 def build_admin_funnel_steps(analytics_docs, window_start):
-    funnel_actor_sets = {stage['event']: set() for stage in ANALYTICS_FUNNEL_STAGES}
-    analytics_event_count = 0
-    for doc in analytics_docs:
-        event = doc.to_dict() or {}
-        created_at = get_timestamp(event.get('created_at'))
-        if created_at < window_start:
-            continue
-        event_name = sanitize_analytics_event_name(event.get('event', ''))
-        if not event_name:
-            continue
-        analytics_event_count += 1
-        if event_name not in funnel_actor_sets:
-            continue
-        uid = str(event.get('uid', '') or '').strip()
-        session_id = sanitize_analytics_session_id(event.get('session_id', ''))
-        actor_id = uid or session_id or f'doc:{doc.id}'
-        funnel_actor_sets[event_name].add(actor_id)
-    funnel_steps = []
-    previous_count = 0
-    for idx, stage in enumerate(ANALYTICS_FUNNEL_STAGES):
-        count = len(funnel_actor_sets.get(stage['event'], set()))
-        if idx == 0:
-            conversion = 100.0 if count > 0 else 0.0
-        elif previous_count > 0:
-            conversion = round(min(count / previous_count * 100.0, 100.0), 1)
-        else:
-            conversion = 0.0
-        funnel_steps.append({'event': stage['event'], 'label': stage['label'], 'count': count, 'conversion_from_prev': conversion})
-        previous_count = count
-    return (funnel_steps, analytics_event_count)
+    return admin_metrics.build_admin_funnel_steps(
+        analytics_docs,
+        window_start,
+        runtime=_self_runtime(),
+    )
 
 def build_admin_funnel_daily_rows(analytics_docs, window_start, window_key, now_ts):
-    _labels, bucket_keys, granularity = build_time_buckets(window_key, now_ts)
-    counts_by_bucket = {}
-    for doc in analytics_docs:
-        event = doc.to_dict() or {}
-        created_at = get_timestamp(event.get('created_at'))
-        if created_at < window_start or created_at > now_ts:
-            continue
-        event_name = sanitize_analytics_event_name(event.get('event', ''))
-        if event_name not in ANALYTICS_FUNNEL_EVENT_NAMES:
-            continue
-        bucket_key = get_bucket_key(created_at, window_key)
-        if bucket_key not in counts_by_bucket:
-            counts_by_bucket[bucket_key] = {}
-        if event_name not in counts_by_bucket[bucket_key]:
-            counts_by_bucket[bucket_key][event_name] = {'event_count': 0, 'actors': set()}
-        uid = str(event.get('uid', '') or '').strip()
-        session_id = sanitize_analytics_session_id(event.get('session_id', ''))
-        actor_id = uid or session_id or f'doc:{doc.id}'
-        counts_by_bucket[bucket_key][event_name]['event_count'] += 1
-        counts_by_bucket[bucket_key][event_name]['actors'].add(actor_id)
-    rows = []
-    for bucket_key in bucket_keys:
-        stage_counts = counts_by_bucket.get(bucket_key, {})
-        prev_unique = 0
-        for idx, stage in enumerate(ANALYTICS_FUNNEL_STAGES):
-            stage_data = stage_counts.get(stage['event'], {'event_count': 0, 'actors': set()})
-            unique_actor_count = len(stage_data.get('actors', set()))
-            event_count = int(stage_data.get('event_count', 0) or 0)
-            if idx == 0:
-                conversion = 100.0 if unique_actor_count > 0 else 0.0
-            elif prev_unique > 0:
-                conversion = round(min(unique_actor_count / prev_unique * 100.0, 100.0), 1)
-            else:
-                conversion = 0.0
-            rows.append({'bucket_key': bucket_key, 'granularity': granularity, 'event': stage['event'], 'label': stage['label'], 'unique_actor_count': unique_actor_count, 'event_count': event_count, 'conversion_from_prev': conversion})
-            prev_unique = unique_actor_count
-    return (rows, granularity)
+    return admin_metrics.build_admin_funnel_daily_rows(
+        analytics_docs,
+        window_start,
+        window_key,
+        now_ts,
+        runtime=_self_runtime(),
+    )
 
 def _runtime_job_storage_enabled():
     return db is not None
@@ -1484,51 +1345,32 @@ def collect_user_export_payload(uid, email):
     return {'meta': {'exported_at': time.time(), 'version': 1, 'uid': uid, 'email': email, 'source': 'lecture-processor', 'limits': {'max_docs_per_collection': ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION}, 'truncated': {'purchases': purchases_truncated, 'job_logs': job_logs_truncated, 'analytics_events': analytics_truncated, 'study_folders': folders_truncated, 'study_packs': packs_truncated, 'study_card_states': card_states_truncated}}, 'account': {'profile': user_profile, 'study_progress': study_progress}, 'collections': {'purchases': purchases, 'job_logs': job_logs, 'analytics_events': analytics_events, 'study_folders': study_folders, 'study_packs': study_packs, 'study_card_states': card_states}}
 
 def parse_requested_amount(raw_value, allowed, default):
-    value = str(raw_value or default).strip().lower()
-    return value if value in allowed else default
+    return shared_parsing.parse_requested_amount(raw_value, allowed, default, runtime=_self_runtime())
 
 def parse_study_features(raw_value):
-    value = str(raw_value or 'none').strip().lower()
-    return value if value in {'none', 'flashcards', 'test', 'both'} else 'none'
+    return shared_parsing.parse_study_features(raw_value, runtime=_self_runtime())
 
 def normalize_output_language_choice(raw_value, custom_value=''):
-    key = str(raw_value or DEFAULT_OUTPUT_LANGUAGE_KEY).strip().lower()
-    custom = str(custom_value or '').strip()[:MAX_OUTPUT_LANGUAGE_CUSTOM_LENGTH]
-    if key in OUTPUT_LANGUAGE_MAP:
-        return (key, '', OUTPUT_LANGUAGE_MAP[key])
-    if key == 'other':
-        if custom:
-            return ('other', custom, custom)
-        return (DEFAULT_OUTPUT_LANGUAGE_KEY, '', OUTPUT_LANGUAGE_MAP[DEFAULT_OUTPUT_LANGUAGE_KEY])
-    return (DEFAULT_OUTPUT_LANGUAGE_KEY, '', OUTPUT_LANGUAGE_MAP[DEFAULT_OUTPUT_LANGUAGE_KEY])
+    return shared_parsing.normalize_output_language_choice(
+        raw_value,
+        custom_value,
+        runtime=_self_runtime(),
+    )
 
 def parse_output_language(raw_value, custom_value=''):
-    _key, _custom, resolved = normalize_output_language_choice(raw_value, custom_value)
-    return resolved
+    return shared_parsing.parse_output_language(raw_value, custom_value, runtime=_self_runtime())
 
 def sanitize_output_language_pref_key(raw_value):
-    key = str(raw_value or DEFAULT_OUTPUT_LANGUAGE_KEY).strip().lower()
-    return key if key in OUTPUT_LANGUAGE_KEYS else DEFAULT_OUTPUT_LANGUAGE_KEY
+    return shared_parsing.sanitize_output_language_pref_key(raw_value, runtime=_self_runtime())
 
 def sanitize_output_language_pref_custom(raw_value):
-    return str(raw_value or '').strip()[:MAX_OUTPUT_LANGUAGE_CUSTOM_LENGTH]
+    return shared_parsing.sanitize_output_language_pref_custom(raw_value, runtime=_self_runtime())
 
 def build_user_preferences_payload(user_data):
-    key, custom, resolved = normalize_output_language_choice(user_data.get('preferred_output_language', DEFAULT_OUTPUT_LANGUAGE_KEY), user_data.get('preferred_output_language_custom', ''))
-    return {'output_language': key, 'output_language_custom': custom, 'output_language_label': resolved, 'onboarding_completed': bool(user_data.get('onboarding_completed', False))}
+    return shared_parsing.build_user_preferences_payload(user_data, runtime=_self_runtime())
 
 def parse_interview_features(raw_value):
-    value = str(raw_value or 'none').strip().lower()
-    if value in {'none', ''}:
-        return []
-    if value == 'both':
-        return ['summary', 'sections']
-    parts = [part.strip() for part in value.split(',') if part.strip()]
-    features = []
-    for part in parts:
-        if part in {'summary', 'sections'} and part not in features:
-            features.append(part)
-    return features
+    return shared_parsing.parse_interview_features(raw_value, runtime=_self_runtime())
 
 def host_matches_allowed_suffix(hostname):
     if not hostname:
@@ -1537,83 +1379,30 @@ def host_matches_allowed_suffix(hostname):
     return any((host == suffix or host.endswith('.' + suffix) for suffix in VIDEO_IMPORT_ALLOWED_HOST_SUFFIXES))
 
 def validate_video_import_url(raw_url):
-    url = str(raw_url or '').strip()
-    if not url:
-        return ('', 'Please paste a video URL.')
-    if len(url) > VIDEO_IMPORT_MAX_URL_LENGTH:
-        return ('', 'Video URL is too long.')
-    safe_url, validation_error = url_security.validate_external_url_for_fetch(url, allowed_schemes=('https',), allow_credentials=False, allow_non_standard_ports=False, resolve_dns=True)
-    if validation_error:
-        if 'resolves to a restricted network address' in validation_error:
-            return ('', 'This video host resolves to a restricted network address.')
-        if 'not allowed' in validation_error:
-            return ('', 'This video host is not allowed.')
-        return ('', validation_error)
-    host = (urlparse(safe_url).hostname or '').strip().lower()
-    if not host:
-        return ('', 'Video URL host is missing.')
-    if VIDEO_IMPORT_ALLOWED_HOST_SUFFIXES and (not host_matches_allowed_suffix(host)):
-        return ('', 'Only supported LMS/Kaltura video hosts are allowed for automatic import.')
-    return (safe_url, '')
+    return upload_import_audio.validate_video_import_url(raw_url, runtime=_self_runtime())
 
 def cleanup_expired_audio_import_tokens():
-    now_ts = time.time()
-    expired = []
-    with AUDIO_IMPORT_LOCK:
-        for token, data in list(AUDIO_IMPORT_TOKENS.items()):
-            if now_ts > float(data.get('expires_at', 0) or 0):
-                expired.append(data.get('path', ''))
-                AUDIO_IMPORT_TOKENS.pop(token, None)
-    for path in expired:
-        try:
-            if path and os.path.exists(path):
-                os.remove(path)
-        except Exception:
-            pass
+    return upload_import_audio.cleanup_expired_audio_import_tokens(runtime=_self_runtime())
 
 def register_audio_import_token(uid, file_path, source_url='', original_name=''):
-    token = str(uuid.uuid4())
-    with AUDIO_IMPORT_LOCK:
-        AUDIO_IMPORT_TOKENS[token] = {'uid': str(uid or ''), 'path': str(file_path or ''), 'source_url': str(source_url or '')[:VIDEO_IMPORT_MAX_URL_LENGTH], 'original_name': str(original_name or '')[:240], 'created_at': time.time(), 'expires_at': time.time() + AUDIO_IMPORT_TOKEN_TTL_SECONDS}
-    return token
+    return upload_import_audio.register_audio_import_token(
+        uid,
+        file_path,
+        source_url=source_url,
+        original_name=original_name,
+        runtime=_self_runtime(),
+    )
 
 def get_audio_import_token_path(uid, token, consume=False):
-    cleanup_expired_audio_import_tokens()
-    safe_uid = str(uid or '')
-    safe_token = str(token or '').strip()
-    if not safe_token:
-        return ('', 'Missing imported audio token.')
-    with AUDIO_IMPORT_LOCK:
-        entry = AUDIO_IMPORT_TOKENS.get(safe_token)
-        if not entry:
-            return ('', 'Imported audio token expired or invalid. Please import again.')
-        if entry.get('uid', '') != safe_uid:
-            return ('', 'Imported audio token does not belong to this account.')
-        file_path = str(entry.get('path', '') or '').strip()
-        if consume:
-            AUDIO_IMPORT_TOKENS.pop(safe_token, None)
-    if not file_path or not os.path.exists(file_path):
-        return ('', 'Imported audio file is no longer available. Please import again.')
-    return (file_path, '')
+    return upload_import_audio.get_audio_import_token_path(
+        uid,
+        token,
+        consume=consume,
+        runtime=_self_runtime(),
+    )
 
 def release_audio_import_token(uid, token):
-    safe_uid = str(uid or '')
-    safe_token = str(token or '').strip()
-    if not safe_token:
-        return False
-    file_path = ''
-    with AUDIO_IMPORT_LOCK:
-        entry = AUDIO_IMPORT_TOKENS.get(safe_token)
-        if not entry or entry.get('uid', '') != safe_uid:
-            return False
-        file_path = str(entry.get('path', '') or '').strip()
-        AUDIO_IMPORT_TOKENS.pop(safe_token, None)
-    try:
-        if file_path and os.path.exists(file_path):
-            os.remove(file_path)
-    except Exception:
-        pass
-    return True
+    return upload_import_audio.release_audio_import_token(uid, token, runtime=_self_runtime())
 
 def get_ffmpeg_binary():
     return file_service.get_ffmpeg_binary(which_func=shutil.which, imageio_ffmpeg_module=imageio_ffmpeg)
@@ -1625,105 +1414,34 @@ def download_audio_from_video_url(source_url, file_prefix):
     return file_service.download_audio_from_video_url(source_url, file_prefix, upload_folder=UPLOAD_FOLDER, max_audio_upload_bytes=MAX_AUDIO_UPLOAD_BYTES, ffmpeg_binary_getter=get_ffmpeg_binary, file_looks_like_audio_fn=file_looks_like_audio, get_saved_file_size_fn=get_saved_file_size, which_func=shutil.which, subprocess_module=subprocess)
 
 def deduct_slides_credits(uid, amount):
-    """Deduct slides credits atomically using a Firestore transaction."""
-    if amount <= 0:
-        return True
-
-    @firestore.transactional
-    def _deduct_in_transaction(transaction, user_ref):
-        snapshot = user_ref.get(transaction=transaction)
-        if not snapshot.exists:
-            return False
-        data = snapshot.to_dict()
-        current = data.get('slides_credits', 0)
-        if current < amount:
-            return False
-        transaction.update(user_ref, {'slides_credits': firestore.Increment(-amount)})
-        return True
-    user_ref = users_repo.doc_ref(db, uid)
-    transaction = db.transaction()
-    return _deduct_in_transaction(transaction, user_ref)
+    return billing_credits.deduct_slides_credits(uid, amount, runtime=_self_runtime())
 
 def refund_slides_credits(uid, amount):
-    if not uid or amount <= 0:
-        return False
-    try:
-        user_doc = users_repo.get_doc(db, uid)
-    except Exception:
-        user_doc = None
-    if user_doc is not None and (not getattr(user_doc, 'exists', False)):
-        logger.warning('Skipping slides credit refund for missing user document: %s (amount=%s)', uid, amount)
-        return False
-    try:
-        users_repo.update_doc(db, uid, {'slides_credits': firestore.Increment(amount)})
-        logger.info(f'✅ Refunded {amount} slides credits to user {uid}.')
-        return True
-    except Exception as e:
-        if 'No document to update' in str(e or ''):
-            logger.warning('Skipping slides credit refund for missing user document: %s (amount=%s)', uid, amount)
-            return False
-        logger.error(f'❌ Failed to refund {amount} slides credits to user {uid}: {e}')
-        return False
+    return billing_credits.refund_slides_credits(uid, amount, runtime=_self_runtime())
 
 def normalize_credit_ledger(credit_map):
-    normalized = {}
-    if not isinstance(credit_map, dict):
-        return normalized
-    for credit_type, raw_amount in credit_map.items():
-        key = str(credit_type or '').strip()
-        if not key:
-            continue
-        try:
-            amount = int(raw_amount)
-        except Exception:
-            continue
-        if amount > 0:
-            normalized[key] = amount
-    return normalized
+    return billing_receipts.normalize_credit_ledger(credit_map, runtime=_self_runtime())
 
 def initialize_billing_receipt(charged_map=None):
-    return {'charged': normalize_credit_ledger(charged_map or {}), 'refunded': {}, 'updated_at': time.time()}
+    return billing_receipts.initialize_billing_receipt(charged_map, runtime=_self_runtime())
 
 def ensure_job_billing_receipt(job_data, charged_map=None):
-    receipt = job_data.get('billing_receipt')
-    if not isinstance(receipt, dict):
-        receipt = initialize_billing_receipt(charged_map or {})
-        job_data['billing_receipt'] = receipt
-        return receipt
-    charged = receipt.get('charged', {})
-    if not isinstance(charged, dict):
-        charged = {}
-    for credit_type, amount in normalize_credit_ledger(charged_map or {}).items():
-        charged[credit_type] = max(int(charged.get(credit_type, 0) or 0), amount)
-    receipt['charged'] = charged
-    if not isinstance(receipt.get('refunded'), dict):
-        receipt['refunded'] = {}
-    receipt['updated_at'] = time.time()
-    return receipt
+    return billing_receipts.ensure_job_billing_receipt(
+        job_data,
+        charged_map=charged_map,
+        runtime=_self_runtime(),
+    )
 
 def add_job_credit_refund(job_data, credit_type, amount=1):
-    if not credit_type:
-        return
-    try:
-        amount_int = int(amount)
-    except Exception:
-        return
-    if amount_int <= 0:
-        return
-    receipt = ensure_job_billing_receipt(job_data)
-    refunded = receipt.setdefault('refunded', {})
-    refunded[credit_type] = int(refunded.get(credit_type, 0) or 0) + amount_int
-    receipt['updated_at'] = time.time()
+    return billing_receipts.add_job_credit_refund(
+        job_data,
+        credit_type,
+        amount=amount,
+        runtime=_self_runtime(),
+    )
 
 def get_billing_receipt_snapshot(job_data):
-    receipt = job_data.get('billing_receipt')
-    if not isinstance(receipt, dict):
-        return {'charged': {}, 'refunded': {}}
-    snapshot = {'charged': normalize_credit_ledger(receipt.get('charged', {})), 'refunded': normalize_credit_ledger(receipt.get('refunded', {}))}
-    updated_at = receipt.get('updated_at')
-    if updated_at:
-        snapshot['updated_at'] = updated_at
-    return snapshot
+    return billing_receipts.get_billing_receipt_snapshot(job_data, runtime=_self_runtime())
 
 MODEL_THINKING_POLICY = {'gemini-3.1-flash-lite-preview': {'thinking_level': 'high'}, 'gemini-2.5-pro': {'thinking_budget': 32768}, 'gemini-3-flash-preview': {'thinking_level': 'high'}}
 
@@ -2274,64 +1992,24 @@ def list_planner_sessions(uid, limit=200):
     return planner_repo.list_planner_sessions_by_uid(db, uid, limit)
 
 def generate_study_materials(source_text, flashcard_selection, question_selection, study_features='both', output_language='English', retry_tracker=None):
-    if study_features == 'none':
-        return ([], [], None)
-    flashcard_amount, question_amount = resolve_study_amounts(flashcard_selection, question_selection, source_text)
-    if study_features == 'flashcards':
-        question_amount = 0
-    elif study_features == 'test':
-        flashcard_amount = 0
-    MAX_SOURCE_TEXT_LEN = 120000
-    was_truncated = len(source_text) > MAX_SOURCE_TEXT_LEN
-    try:
-        prompt = PROMPT_STUDY_TEMPLATE.format(flashcard_amount=flashcard_amount, question_amount=question_amount, output_language=output_language, source_text=source_text[:MAX_SOURCE_TEXT_LEN])
-        response = generate_with_policy(MODEL_STUDY, [types.Content(role='user', parts=[types.Part.from_text(text=prompt)])], max_output_tokens=32768, retry_tracker=retry_tracker, operation_name='study_materials_generation')
-        parsed = extract_json_payload(response.text)
-        if not isinstance(parsed, dict):
-            return ([], [], 'Study materials JSON parsing failed.')
-        flashcards = sanitize_flashcards(parsed.get('flashcards', []), flashcard_amount)
-        test_questions = sanitize_questions(parsed.get('test_questions', []), question_amount)
-        if not flashcards and (not test_questions) and (study_features != 'none'):
-            return ([], [], 'Study materials were empty after validation.')
-        error_msg = None
-        if was_truncated:
-            error_msg = 'Note: source text was very long and was truncated before study material generation.'
-        return (flashcards, test_questions, error_msg)
-    except (KeyError, ValueError) as e:
-        return ([], [], f'Study prompt template formatting failed: {e}')
-    except Exception as e:
-        return ([], [], f'Study materials generation failed: {e}')
+    return study_generation.generate_study_materials(
+        source_text,
+        flashcard_selection,
+        question_selection,
+        study_features=study_features,
+        output_language=output_language,
+        retry_tracker=retry_tracker,
+        runtime=_self_runtime(),
+    )[:3]
 
 def generate_interview_enhancements(transcript_text, selected_features, output_language='English', retry_tracker=None):
-    summary_text = None
-    sectioned_text = None
-    errors = []
-    for feature in selected_features:
-        try:
-            if feature == 'summary':
-                prompt = PROMPT_INTERVIEW_SUMMARY.format(transcript=transcript_text[:120000], output_language=output_language)
-                response = generate_with_optional_thinking(MODEL_STUDY, prompt, max_output_tokens=8192, thinking_budget=384, retry_tracker=retry_tracker, operation_name='interview_summary_generation')
-                summary_text = (response.text or '').strip()
-                if not summary_text:
-                    errors.append('Summary generation returned empty output.')
-            elif feature == 'sections':
-                prompt = PROMPT_INTERVIEW_SECTIONED.format(transcript=transcript_text[:120000], output_language=output_language)
-                response = generate_with_optional_thinking(MODEL_STUDY, prompt, max_output_tokens=32768, thinking_budget=384, retry_tracker=retry_tracker, operation_name='interview_sections_generation')
-                sectioned_text = (response.text or '').strip()
-                if not sectioned_text:
-                    errors.append('Sectioned transcript generation returned empty output.')
-        except Exception as e:
-            errors.append(f'{feature} generation failed: {e}')
-    successful = []
-    if summary_text:
-        successful.append('summary')
-    if sectioned_text:
-        successful.append('sections')
-    combined_text = None
-    if summary_text and sectioned_text:
-        combined_text = f'# Interview Summary\n\n{summary_text}\n\n# Structured Interview Transcript\n\n{sectioned_text}'
-    failed_count = max(0, len(selected_features) - len(successful))
-    return {'summary': summary_text, 'sections': sectioned_text, 'combined': combined_text, 'successful_features': successful, 'failed_count': failed_count, 'error': '; '.join(errors) if errors else None}
+    return study_generation.generate_interview_enhancements(
+        transcript_text,
+        selected_features,
+        output_language=output_language,
+        retry_tracker=retry_tracker,
+        runtime=_self_runtime(),
+    )
 
 def allowed_file(filename, allowed_extensions):
     return file_service.allowed_file(filename, allowed_extensions)
@@ -2579,261 +2257,22 @@ def markdown_to_docx(markdown_text, title='Document'):
     return study_export.markdown_to_docx(markdown_text, title=title)
 
 def normalize_exam_date(raw_value):
-    from lecture_processor.domains.study import export as study_export
-
-    return study_export.normalize_exam_date(raw_value)
+    return study_export.normalize_exam_date(raw_value, runtime=_self_runtime())
 
 def build_study_pack_pdf(pack, include_answers=True):
-    from lecture_processor.domains.study import export as study_export
-
-    return study_export.build_study_pack_pdf(pack, include_answers=include_answers)
+    return study_export.build_study_pack_pdf(pack, include_answers=include_answers, runtime=_self_runtime())
 
 def save_study_pack(job_id, job_data):
-    try:
-        notes_markdown = str(job_data.get('result', '') or '')
-        max_notes_chars = 180000
-        notes_truncated = len(notes_markdown) > max_notes_chars
-        if notes_truncated:
-            notes_markdown = notes_markdown[:max_notes_chars]
-        doc_ref = study_repo.create_study_pack_doc_ref(db)
-        now_ts = time.time()
-        tzinfo, timezone_name = resolve_user_timezone(job_data.get('user_id', ''))
-        local_title_time = datetime.fromtimestamp(now_ts, tz=timezone.utc).astimezone(tzinfo)
-        requested_title = str(job_data.get('study_pack_title', '') or '').strip()[:120]
-        pack_title = requested_title or f"{job_data.get('mode', 'study-pack')} {local_title_time.strftime('%Y-%m-%d %H:%M')}"
-        flashcards = job_data.get('flashcards', []) if isinstance(job_data.get('flashcards', []), list) else []
-        test_questions = job_data.get('test_questions', []) if isinstance(job_data.get('test_questions', []), list) else []
-        mode = str(job_data.get('mode', '') or '').strip()
-        doc_ref.set({'study_pack_id': doc_ref.id, 'source_job_id': job_id, 'uid': job_data.get('user_id', ''), 'mode': mode, 'title': pack_title, 'title_timezone': timezone_name, 'output_language': job_data.get('output_language', 'English'), 'notes_markdown': notes_markdown, 'notes_truncated': notes_truncated, 'transcript_segments': job_data.get('transcript_segments', []), 'notes_audio_map': job_data.get('notes_audio_map', []), 'audio_storage_key': normalize_audio_storage_key(job_data.get('audio_storage_key', '')), 'has_audio_sync': FEATURE_AUDIO_SECTION_SYNC and bool(job_data.get('audio_storage_key')) and bool(job_data.get('notes_audio_map', [])), 'has_audio_playback': bool(job_data.get('audio_storage_key')), 'flashcards': flashcards, 'test_questions': test_questions, 'flashcards_count': len(flashcards), 'test_questions_count': len(test_questions), 'flashcard_selection': job_data.get('flashcard_selection', '20'), 'question_selection': job_data.get('question_selection', '10'), 'study_features': job_data.get('study_features', 'none'), 'interview_features': job_data.get('interview_features', []), 'interview_summary': job_data.get('interview_summary'), 'interview_sections': job_data.get('interview_sections'), 'interview_combined': job_data.get('interview_combined'), 'study_generation_error': job_data.get('study_generation_error'), 'course': '', 'subject': '', 'semester': '', 'block': '', 'folder_id': '', 'folder_name': '', 'created_at': now_ts, 'updated_at': now_ts})
-        source_payload = {'study_pack_id': doc_ref.id, 'uid': job_data.get('user_id', ''), 'source_job_id': job_id, 'mode': mode, 'created_at': now_ts, 'updated_at': now_ts}
-        slide_text = ''
-        transcript = ''
-        if mode == 'lecture-notes':
-            slide_text = str(job_data.get('slide_text', '') or '')
-            transcript = str(job_data.get('transcript', '') or '')
-        elif mode == 'slides-only':
-            slide_text = str(job_data.get('result', '') or '')
-        elif mode == 'interview':
-            transcript = str(job_data.get('transcript', '') or '')
-        if slide_text:
-            source_payload['slide_text'] = slide_text
-        if transcript:
-            source_payload['transcript'] = transcript
-        if slide_text or transcript:
-            study_repo.study_pack_source_doc_ref(db, doc_ref.id).set(source_payload)
-        job_data['study_pack_id'] = doc_ref.id
-    except Exception as e:
-        logger.error(f'❌ Failed to save study pack for job {job_id}: {e}')
+    return ai_pipelines.save_study_pack(job_id, job_data, runtime=_self_runtime())
 
 def process_lecture_notes(job_id, pdf_path, audio_path):
-    gemini_files = []
-    local_paths = [pdf_path, audio_path]
-    set_fields = lambda **fields: update_job_fields(job_id, **fields)
-    get_fields = lambda: get_job_snapshot(job_id) or {}
-    tokens = TokenAccumulator()
-    retry_tracker = {}
-    failed_stage = 'initialization'
-    try:
-        set_fields(status='processing', step=1, step_description='Extracting text from slides...')
-        failed_stage = 'slide_upload'
-        pdf_file = run_with_provider_retry('slide_upload', lambda: client.files.upload(file=pdf_path, config={'mime_type': 'application/pdf'}), retry_tracker=retry_tracker)
-        gemini_files.append(pdf_file)
-        failed_stage = 'slide_file_processing'
-        run_with_provider_retry('slide_file_processing', lambda: wait_for_file_processing(pdf_file), retry_tracker=retry_tracker)
-        failed_stage = 'slide_extraction'
-        response = generate_with_policy(MODEL_SLIDES, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=pdf_file.uri, mime_type='application/pdf'), types.Part.from_text(text=PROMPT_SLIDE_EXTRACTION)])], retry_tracker=retry_tracker, operation_name='slide_extraction')
-        tokens.record('slide_extraction', response)
-        slide_text = response.text
-        set_fields(slide_text=slide_text, step=2, step_description='Transcribing audio...')
-        output_language = get_fields().get('output_language', 'English')
-        converted_audio_path, converted = convert_audio_to_mp3_with_ytdlp(audio_path)
-        if converted and converted_audio_path not in local_paths:
-            local_paths.append(converted_audio_path)
-        set_fields(step_description='Optimizing audio for faster processing...')
-        audio_mime_type = get_mime_type(converted_audio_path)
-        failed_stage = 'audio_upload'
-        audio_file = run_with_provider_retry('audio_upload', lambda: client.files.upload(file=converted_audio_path, config={'mime_type': audio_mime_type}), retry_tracker=retry_tracker)
-        gemini_files.append(audio_file)
-        set_fields(step_description='Processing audio file (this may take a few minutes)...')
-        failed_stage = 'audio_file_processing'
-        run_with_provider_retry('audio_file_processing', lambda: wait_for_file_processing(audio_file), retry_tracker=retry_tracker)
-        set_fields(step_description='Generating transcript...')
-        failed_stage = 'audio_transcription'
-        if FEATURE_AUDIO_SECTION_SYNC:
-            transcript, transcript_segments = transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_language, retry_tracker=retry_tracker)
-        else:
-            transcript = transcribe_audio_plain(audio_file, audio_mime_type, output_language, retry_tracker=retry_tracker)
-            transcript_segments = []
-        set_fields(transcript=transcript, transcript_segments=transcript_segments, audio_storage_key=persist_audio_for_study_pack(job_id, converted_audio_path), step=3, step_description='Creating complete lecture notes...')
-        merge_transcript = format_transcript_with_timestamps(transcript_segments) if transcript_segments else transcript
-        if FEATURE_AUDIO_SECTION_SYNC and transcript_segments:
-            merge_prompt = PROMPT_MERGE_WITH_AUDIO_MARKERS.format(slide_text=slide_text, transcript=merge_transcript, output_language=output_language)
-        else:
-            merge_prompt = PROMPT_MERGE_TEMPLATE.format(slide_text=slide_text, transcript=transcript, output_language=output_language)
-        failed_stage = 'notes_merge'
-        response = generate_with_policy(MODEL_INTEGRATION, [types.Content(role='user', parts=[types.Part.from_text(text=merge_prompt)])], retry_tracker=retry_tracker, operation_name='notes_merge')
-        tokens.record('merge', response)
-        merged_notes = response.text
-        set_fields(result=merged_notes, notes_audio_map=parse_audio_markers_from_notes(merged_notes) if FEATURE_AUDIO_SECTION_SYNC else [])
-        job_data = get_fields()
-        if job_data.get('study_features', 'none') != 'none':
-            set_fields(step=4, step_description='Generating flashcards and practice test...')
-            failed_stage = 'study_tools_generation'
-            flashcards, test_questions, study_error = generate_study_materials(merged_notes, job_data.get('flashcard_selection', '20'), job_data.get('question_selection', '10'), job_data.get('study_features', 'none'), output_language, retry_tracker=retry_tracker)
-            set_fields(flashcards=flashcards, test_questions=test_questions, study_generation_error=study_error)
-        else:
-            set_fields(flashcards=[], test_questions=[], study_generation_error=None)
-        job_data = get_fields()
-        save_study_pack(job_id, job_data)
-        final_snapshot = get_fields()
-        set_fields(status='complete', step=final_snapshot.get('total_steps', 3), step_description='Complete!')
-    except Exception as e:
-        logger.exception('Lecture-notes processing failed for job %s', job_id)
-        set_fields(status='error', error=PROCESSING_PUBLIC_ERROR_MESSAGE, failed_stage=failed_stage, retry_attempts=sum((int(v or 0) for v in retry_tracker.values())), provider_error_code=classify_provider_error_code(e))
-        failed_job = get_fields()
-        uid = failed_job.get('user_id')
-        credit_type = failed_job.get('credit_deducted')
-        refund_credit(uid, credit_type)
-        failed_job = get_fields()
-        add_job_credit_refund(failed_job, credit_type, 1)
-        set_job(job_id, failed_job)
-        set_fields(credit_refunded=True)
-    finally:
-        cleanup_files(local_paths, gemini_files)
-        finished_at = time.time()
-        set_fields(finished_at=finished_at, retry_attempts=sum((int(v or 0) for v in retry_tracker.values())), **tokens.as_dict())
-        final_job = get_fields()
-        save_job_log(job_id, final_job, finished_at)
+    return ai_pipelines.process_lecture_notes(job_id, pdf_path, audio_path, runtime=_self_runtime())
 
 def process_slides_only(job_id, pdf_path):
-    gemini_files = []
-    local_paths = [pdf_path]
-    set_fields = lambda **fields: update_job_fields(job_id, **fields)
-    get_fields = lambda: get_job_snapshot(job_id) or {}
-    tokens = TokenAccumulator()
-    retry_tracker = {}
-    failed_stage = 'initialization'
-    try:
-        set_fields(status='processing', step=1, step_description='Extracting text from slides...')
-        failed_stage = 'slide_upload'
-        pdf_file = run_with_provider_retry('slide_upload', lambda: client.files.upload(file=pdf_path, config={'mime_type': 'application/pdf'}), retry_tracker=retry_tracker)
-        gemini_files.append(pdf_file)
-        failed_stage = 'slide_file_processing'
-        run_with_provider_retry('slide_file_processing', lambda: wait_for_file_processing(pdf_file), retry_tracker=retry_tracker)
-        failed_stage = 'slide_extraction'
-        response = generate_with_policy(MODEL_SLIDES, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=pdf_file.uri, mime_type='application/pdf'), types.Part.from_text(text=PROMPT_SLIDE_EXTRACTION)])], retry_tracker=retry_tracker, operation_name='slide_extraction')
-        tokens.record('slide_extraction', response)
-        extracted_text = response.text
-        set_fields(result=extracted_text)
-        job_data = get_fields()
-        if job_data.get('study_features', 'none') != 'none':
-            set_fields(step=2, step_description='Generating flashcards and practice test...')
-            failed_stage = 'study_tools_generation'
-            flashcards, test_questions, study_error = generate_study_materials(extracted_text, job_data.get('flashcard_selection', '20'), job_data.get('question_selection', '10'), job_data.get('study_features', 'none'), job_data.get('output_language', 'English'), retry_tracker=retry_tracker)
-            set_fields(flashcards=flashcards, test_questions=test_questions, study_generation_error=study_error)
-        else:
-            set_fields(flashcards=[], test_questions=[], study_generation_error=None)
-        job_data = get_fields()
-        save_study_pack(job_id, job_data)
-        final_snapshot = get_fields()
-        set_fields(status='complete', step=final_snapshot.get('total_steps', 1), step_description='Complete!')
-    except Exception as e:
-        logger.exception('Slides-only processing failed for job %s', job_id)
-        set_fields(status='error', error=PROCESSING_PUBLIC_ERROR_MESSAGE, failed_stage=failed_stage, retry_attempts=sum((int(v or 0) for v in retry_tracker.values())), provider_error_code=classify_provider_error_code(e))
-        failed_job = get_fields()
-        uid = failed_job.get('user_id')
-        credit_type = failed_job.get('credit_deducted')
-        refund_credit(uid, credit_type)
-        failed_job = get_fields()
-        add_job_credit_refund(failed_job, credit_type, 1)
-        set_job(job_id, failed_job)
-        set_fields(credit_refunded=True)
-    finally:
-        cleanup_files(local_paths, gemini_files)
-        finished_at = time.time()
-        set_fields(finished_at=finished_at, retry_attempts=sum((int(v or 0) for v in retry_tracker.values())), **tokens.as_dict())
-        final_job = get_fields()
-        save_job_log(job_id, final_job, finished_at)
+    return ai_pipelines.process_slides_only(job_id, pdf_path, runtime=_self_runtime())
 
 def process_interview_transcription(job_id, audio_path):
-    gemini_files = []
-    local_paths = [audio_path]
-    set_fields = lambda **fields: update_job_fields(job_id, **fields)
-    get_fields = lambda: get_job_snapshot(job_id) or {}
-    tokens = TokenAccumulator()
-    retry_tracker = {}
-    failed_stage = 'initialization'
-    try:
-        set_fields(status='processing', step=1, step_description='Optimizing audio for faster processing...')
-        output_language = get_fields().get('output_language', 'English')
-        converted_audio_path, converted = convert_audio_to_mp3_with_ytdlp(audio_path)
-        if converted and converted_audio_path not in local_paths:
-            local_paths.append(converted_audio_path)
-        set_fields(audio_storage_key=persist_audio_for_study_pack(job_id, converted_audio_path))
-        audio_mime_type = get_mime_type(converted_audio_path)
-        failed_stage = 'audio_upload'
-        audio_file = run_with_provider_retry('audio_upload', lambda: client.files.upload(file=converted_audio_path, config={'mime_type': audio_mime_type}), retry_tracker=retry_tracker)
-        gemini_files.append(audio_file)
-        set_fields(step_description='Processing audio file (this may take a few minutes)...')
-        failed_stage = 'audio_file_processing'
-        run_with_provider_retry('audio_file_processing', lambda: wait_for_file_processing(audio_file), retry_tracker=retry_tracker)
-        set_fields(step_description='Generating transcript with timestamps...')
-        interview_prompt = PROMPT_INTERVIEW_TRANSCRIPTION.format(output_language=output_language)
-        failed_stage = 'interview_transcription'
-        response = generate_with_policy(MODEL_INTERVIEW, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=interview_prompt)])], retry_tracker=retry_tracker, operation_name='interview_transcription')
-        tokens.record('interview_transcription', response)
-        transcript_text = response.text or ''
-        set_fields(transcript=transcript_text, result=transcript_text)
-        job_data = get_fields()
-        selected_features = job_data.get('interview_features', [])
-        if selected_features:
-            set_fields(step=2, step_description='Creating interview summary and sections...')
-            failed_stage = 'interview_enhancements'
-            enhancement = generate_interview_enhancements(transcript_text, selected_features, output_language, retry_tracker=retry_tracker)
-            set_fields(interview_summary=enhancement.get('summary'), interview_sections=enhancement.get('sections'), interview_combined=enhancement.get('combined'), interview_features_successful=enhancement.get('successful_features', []), study_generation_error=enhancement.get('error'))
-            failed_count = enhancement.get('failed_count', 0)
-            if failed_count > 0:
-                current_job = get_fields()
-                uid = current_job.get('user_id')
-                refund_slides_credits(uid, failed_count)
-                current_job = get_fields()
-                current_job['extra_slides_refunded'] = current_job.get('extra_slides_refunded', 0) + failed_count
-                add_job_credit_refund(current_job, 'slides_credits', failed_count)
-                set_job(job_id, current_job)
-            if enhancement.get('summary') and enhancement.get('sections'):
-                set_fields(result=enhancement.get('combined', transcript_text))
-            elif enhancement.get('summary'):
-                set_fields(result=enhancement.get('summary'))
-            elif enhancement.get('sections'):
-                set_fields(result=enhancement.get('sections'))
-        job_data = get_fields()
-        save_study_pack(job_id, job_data)
-        final_snapshot = get_fields()
-        set_fields(status='complete', step=final_snapshot.get('total_steps', 1), step_description='Complete!')
-    except Exception as e:
-        logger.exception('Interview processing failed for job %s', job_id)
-        set_fields(status='error', error=PROCESSING_PUBLIC_ERROR_MESSAGE, failed_stage=failed_stage, retry_attempts=sum((int(v or 0) for v in retry_tracker.values())), provider_error_code=classify_provider_error_code(e))
-        failed_job = get_fields()
-        uid = failed_job.get('user_id')
-        credit_type = failed_job.get('credit_deducted')
-        refund_credit(uid, credit_type)
-        failed_job = get_fields()
-        add_job_credit_refund(failed_job, credit_type, 1)
-        extra_spent = failed_job.get('interview_features_cost', 0)
-        already_refunded = failed_job.get('extra_slides_refunded', 0)
-        to_refund = max(0, extra_spent - already_refunded)
-        if to_refund > 0:
-            refund_slides_credits(uid, to_refund)
-            failed_job['extra_slides_refunded'] = already_refunded + to_refund
-            add_job_credit_refund(failed_job, 'slides_credits', to_refund)
-        failed_job['credit_refunded'] = True
-        set_job(job_id, failed_job)
-    finally:
-        cleanup_files(local_paths, gemini_files)
-        finished_at = time.time()
-        set_fields(finished_at=finished_at, retry_attempts=sum((int(v or 0) for v in retry_tracker.values())), **tokens.as_dict())
-        final_job = get_fields()
-        save_job_log(job_id, final_job, finished_at)
+    return ai_pipelines.process_interview_transcription(job_id, audio_path, runtime=_self_runtime())
 
 def get_model_pricing_config(force_reload=False):
     now_ts = time.time()

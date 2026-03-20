@@ -74,3 +74,11 @@ def test_processing_upload_zones_are_keyboard_accessible():
 
     assert re.search(r'<div class="upload-zone" id="pdf-zone"[^>]*role="button"[^>]*tabindex="0"', index_template)
     assert re.search(r'<div class="upload-zone" id="audio-zone"[^>]*role="button"[^>]*tabindex="0"', index_template)
+
+
+def test_processing_template_defaults_optional_sections_to_collapsed_state():
+    index_template = Path('templates/index.html').read_text(encoding='utf-8')
+
+    assert 'id="other-audio-toggle" aria-expanded="false"' in index_template
+    assert 'id="other-audio-body" aria-hidden="true"' in index_template
+    assert 'id="advanced-settings-toggle" aria-expanded="false"' in index_template

@@ -2527,10 +2527,28 @@
     }
 
     .learn-progress-fill {
+      width: 100%;
       height: 100%;
-      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+      border: none;
+      appearance: none;
+      -webkit-appearance: none;
+      background: transparent;
       border-radius: 2px;
-      transition: width .3s ease
+      overflow: hidden
+    }
+
+    .learn-progress-fill::-webkit-progress-bar {
+      background: transparent
+    }
+
+    .learn-progress-fill::-webkit-progress-value {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+      border-radius: 2px
+    }
+
+    .learn-progress-fill::-moz-progress-bar {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+      border-radius: 2px
     }
 
     .learn-progress-text {
@@ -2830,9 +2848,27 @@
     }
 
     .audio-progress-fill {
+      width: 100%;
       height: 100%;
-      width: 0;
-      background: linear-gradient(135deg, var(--primary), var(--secondary))
+      border: none;
+      appearance: none;
+      -webkit-appearance: none;
+      background: transparent;
+      overflow: hidden
+    }
+
+    .audio-progress-fill::-webkit-progress-bar {
+      background: transparent
+    }
+
+    .audio-progress-fill::-webkit-progress-value {
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      border-radius: 99px
+    }
+
+    .audio-progress-fill::-moz-progress-bar {
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      border-radius: 99px
     }
 
     .audio-speed-btn {

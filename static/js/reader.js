@@ -185,25 +185,25 @@
         : 'Provide the URL and ask your question in simple terms.';
 
     if (sourceType === 'url') {
-      urlWrap.style.display = '';
-      dropzoneWrap.style.display = 'none';
+      if (urlWrap) urlWrap.hidden = false;
+      if (dropzoneWrap) dropzoneWrap.hidden = true;
       setAdvancedOpen(true);
       return;
     }
 
     setAdvancedOpen(sourceType === 'document');
-    urlWrap.style.display = 'none';
-    dropzoneWrap.style.display = '';
+    if (urlWrap) urlWrap.hidden = true;
+    if (dropzoneWrap) dropzoneWrap.hidden = false;
     if (sourceType === 'image') {
       fileInput.accept = '.png,.jpg,.jpeg,.webp,.heic,.heif';
       fileInput.multiple = true;
-      addImageBtn.style.display = '';
+      if (addImageBtn) addImageBtn.hidden = false;
       dropzoneSub.textContent = 'PNG, JPG, WEBP, HEIC, HEIF';
       if (dropzoneSubExtra) dropzoneSubExtra.textContent = 'up to 20 MB each · max 5 images';
     } else {
       fileInput.accept = '.pdf,.pptx,.docx';
       fileInput.multiple = false;
-      addImageBtn.style.display = 'none';
+      if (addImageBtn) addImageBtn.hidden = true;
       dropzoneSub.textContent = 'PDF, PPTX, DOCX · up to 50 MB';
       if (dropzoneSubExtra) dropzoneSubExtra.textContent = '';
     }

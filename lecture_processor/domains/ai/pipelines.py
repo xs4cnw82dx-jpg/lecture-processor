@@ -17,6 +17,14 @@ def _resolve_runtime(runtime=None):
     return get_runtime()
 
 
+def _save_study_pack(job_id, job_data, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    runtime_save = getattr(resolved_runtime, 'save_study_pack', None)
+    if callable(runtime_save) and runtime_save is not save_study_pack:
+        return runtime_save(job_id, job_data)
+    return save_study_pack(job_id, job_data, runtime=resolved_runtime)
+
+
 def save_study_pack(job_id, job_data, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     try:
@@ -316,7 +324,7 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
             set_fields(flashcards=[], test_questions=[], study_generation_error=None)
 
         job_data = get_fields()
-        save_study_pack(job_id, job_data, runtime=resolved_runtime)
+        _save_study_pack(job_id, job_data, runtime=resolved_runtime)
         final_snapshot = get_fields()
         set_fields(status='complete', step=final_snapshot.get('total_steps', 3), step_description='Complete!')
     except Exception as error:
@@ -430,7 +438,7 @@ def process_slides_only(job_id, pdf_path, runtime=None):
             set_fields(flashcards=[], test_questions=[], study_generation_error=None)
 
         job_data = get_fields()
-        save_study_pack(job_id, job_data, runtime=resolved_runtime)
+        _save_study_pack(job_id, job_data, runtime=resolved_runtime)
         final_snapshot = get_fields()
         set_fields(status='complete', step=final_snapshot.get('total_steps', 1), step_description='Complete!')
     except Exception as error:
@@ -571,7 +579,7 @@ def process_interview_transcription(job_id, audio_path, runtime=None):
                 set_fields(result=enhancement.get('sections'))
 
         job_data = get_fields()
-        save_study_pack(job_id, job_data, runtime=resolved_runtime)
+        _save_study_pack(job_id, job_data, runtime=resolved_runtime)
         final_snapshot = get_fields()
         set_fields(status='complete', step=final_snapshot.get('total_steps', 1), step_description='Complete!')
     except Exception as error:

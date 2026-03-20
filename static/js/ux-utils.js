@@ -4,6 +4,25 @@
   var modalStateMap = typeof WeakMap === 'function' ? new WeakMap() : null;
   var enhancedSelectInstances = [];
   var enhancedSelectListenersBound = false;
+  var bodyScrollLockCount = 0;
+
+  function setHidden(element, hidden) {
+    if (!element) return;
+    element.hidden = !!hidden;
+  }
+
+  function setBodyScrollLocked(locked) {
+    if (!document.body) return;
+    if (locked) {
+      bodyScrollLockCount += 1;
+      document.body.classList.add('body-scroll-locked');
+      return;
+    }
+    bodyScrollLockCount = Math.max(0, bodyScrollLockCount - 1);
+    if (!bodyScrollLockCount) {
+      document.body.classList.remove('body-scroll-locked');
+    }
+  }
 
   function createChevronIcon() {
     var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -67,7 +86,7 @@
     var placeholder = String(opts.placeholder || 'Select').trim() || 'Select';
 
     ensureEnhancedSelectListeners();
-    selectEl.style.display = 'none';
+    selectEl.hidden = true;
     selectEl.dataset.enhanced = 'true';
 
     var wrapper = document.createElement('div');
@@ -404,18 +423,19 @@
     }
     var scopeRoot = resolveElement(opts.scopeRoot, overlay) || document.body;
     var previousActive = document.activeElement;
-    var previousOverflow = document.body.style.overflow;
     var state = {
       backgroundState: applyBackgroundInertness(collectBackgroundNodes(overlay, scopeRoot)),
       previousActive: previousActive,
-      previousOverflow: previousOverflow,
+      hadBodyScrollLock: document.body && document.body.classList.contains('body-scroll-locked'),
       onKeyDown: null,
     };
 
     overlay.hidden = false;
     if (opts.openClass) overlay.classList.add(opts.openClass);
     overlay.setAttribute('aria-hidden', 'false');
-    document.body.style.overflow = 'hidden';
+    if (!state.hadBodyScrollLock) {
+      setBodyScrollLocked(true);
+    }
 
     state.onKeyDown = function (event) {
       if (overlay.hidden) return;
@@ -466,14 +486,15 @@
     if (opts.openClass) overlay.classList.remove(opts.openClass);
     overlay.hidden = true;
     if (!state) {
-      document.body.style.overflow = '';
       return null;
     }
     if (state.onKeyDown) {
       document.removeEventListener('keydown', state.onKeyDown, true);
     }
     restoreBackgroundInertness(state.backgroundState);
-    document.body.style.overflow = state.previousOverflow || '';
+    if (!state.hadBodyScrollLock) {
+      setBodyScrollLocked(false);
+    }
     if (opts.restoreFocus !== false) {
       var focusTarget = resolveElement(opts.returnFocus, overlay) || state.previousActive;
       if (focusTarget && typeof focusTarget.focus === 'function') {
@@ -553,6 +574,8 @@
   }
 
   global.LectureProcessorUx = {
+    setHidden: setHidden,
+    setBodyScrollLocked: setBodyScrollLocked,
     closeEnhancedSelectMenus: closeEnhancedSelectMenus,
     enhanceNativeSelect: enhanceNativeSelect,
     refreshEnhancedSelect: refreshEnhancedSelect,

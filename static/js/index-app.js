@@ -35,10 +35,18 @@ const progressUtils = window.LectureProcessorStudyProgressUtils || {};
 const displayFormatUtils = window.LectureProcessorDisplayFormatUtils || {};
 const runtimeJobUtils = window.LectureProcessorRuntimeJobUtils || {};
 const audioImportUtils = window.LectureProcessorLectureAudioImportUtils || {};
+const processingUi = window.LectureProcessorProcessingUi || {};
+const progressFlowUtils = window.LectureProcessorIndexProgress || {};
 const pageConfig = window.LectureProcessorPageConfig || {};
 const forcedMode = ['lecture-notes', 'slides-only', 'interview'].includes(String(pageConfig.forcedMode || '').trim())
     ? String(pageConfig.forcedMode || '').trim()
     : '';
+const setHidden = typeof uxUtils.setHidden === 'function'
+    ? uxUtils.setHidden
+    : function (element, hidden) {
+        if (!element) return;
+        element.hidden = Boolean(hidden);
+    };
 
 function normalizeAudioImportUrl(value) {
     if (typeof audioImportUtils.normalizeAudioImportUrl === 'function') {
@@ -57,7 +65,7 @@ function describeAudioImportRequest(options) {
     const hasLocalAudioFile = Boolean(settings.hasLocalAudioFile);
     const importedToken = String(settings.importedAudioToken || '').trim();
     const importedSourceUrl = normalizeAudioImportUrl(settings.importedAudioSourceUrl);
-    if (mode !== 'lecture-notes') return { shouldImport: false, reason: 'unsupported-mode' };
+    if (mode !== 'lecture-notes' && mode !== 'interview') return { shouldImport: false, reason: 'unsupported-mode' };
     if (!url) return { shouldImport: false, reason: 'empty-url' };
     if (hasLocalAudioFile) return { shouldImport: false, reason: 'local-audio-selected' };
     if (importedToken && importedSourceUrl === url) return { shouldImport: false, reason: 'already-imported' };
@@ -155,6 +163,7 @@ let userTotalProcessed = 0;
 let userHasCreatedStudyPack = false;
 let userProfileLoaded = false;
 let trackedTerminalJobId = '';
+let otherAudioOpen = false;
 const analyticsEndpoint = '/api/lp-event';
 const POLL_BASE_MS = 2000;
 const POLL_MAX_MS = 30000;
@@ -413,6 +422,7 @@ const quickstartApplyBtn = document.getElementById('quickstart-apply-btn');
 const quickstartDismissBtn = document.getElementById('quickstart-dismiss-btn');
 const advancedSettingsToggle = document.getElementById('advanced-settings-toggle');
 const advancedSettingsBody = document.getElementById('advanced-settings-body');
+const advancedSettingsSummary = document.getElementById('advanced-settings-summary');
 const studyToolsToggle = document.getElementById('study-tools-toggle');
 const studyToolsToggleText = document.getElementById('study-tools-toggle-text');
 const studyToolsPanel = document.getElementById('study-tools-panel');
@@ -456,6 +466,10 @@ const audioUrlImportHint = document.getElementById('audio-url-import-hint');
 const audioUrlAdvanced = document.getElementById('audio-url-advanced');
 const audioUrlAdvancedToggle = document.getElementById('audio-url-advanced-toggle');
 const audioUrlAdvancedPanel = document.getElementById('audio-url-advanced-panel');
+const otherAudioDisclosure = document.getElementById('other-audio-disclosure');
+const otherAudioToggle = document.getElementById('other-audio-toggle');
+const otherAudioBody = document.getElementById('other-audio-body');
+const otherAudioSummary = document.getElementById('other-audio-summary');
 const audioUrlInput = document.getElementById('audio-url-input');
 const audioUrlFetchBtn = document.getElementById('audio-url-fetch-btn');
 const audioUrlStatus = document.getElementById('audio-url-status');
@@ -480,6 +494,7 @@ const progressSection = document.getElementById('progress-section');
 const progressSteps = document.getElementById('progress-steps');
 const progressStatus = document.getElementById('progress-status');
 const statusText = document.getElementById('status-text');
+const progressSpinner = progressStatus ? progressStatus.querySelector('.spinner') : null;
 const progressSafeBanner = document.getElementById('progress-safe-banner');
 const progressRetry = document.getElementById('progress-retry');
 const progressRetryBtn = document.getElementById('progress-retry-btn');
@@ -503,6 +518,8 @@ const studyLibraryBtn = document.getElementById('study-library-btn');
 const newLectureButton = document.getElementById('new-lecture-button');
 
 const tabButtons = document.querySelectorAll('.focus-tab');
+const tabFlashcards = document.getElementById('tab-flashcards');
+const tabTest = document.getElementById('tab-test');
 const paneNotes = document.getElementById('pane-notes');
 const paneFlashcards = document.getElementById('pane-flashcards');
 const paneTest = document.getElementById('pane-test');
@@ -626,11 +643,11 @@ function renderBillingReceipt(receipt) {
     if (!text) {
         billingReceiptPanel.textContent = '';
         billingReceiptPanel.classList.remove('visible');
-        billingReceiptPanel.style.display = 'none';
+        setHidden(billingReceiptPanel, true);
         return;
     }
     billingReceiptPanel.textContent = text;
-    billingReceiptPanel.style.display = 'block';
+    setHidden(billingReceiptPanel, false);
     billingReceiptPanel.classList.add('visible');
 }
 function getDailyGoalStorage(uid) {
@@ -653,7 +670,7 @@ function refreshStudyHeaderMetrics() {
         return;
     }
     if (!currentUser) {
-        progressMenu.style.display = 'none';
+        setHidden(progressMenu, true);
         return;
     }
     const uid = currentUser.uid;
@@ -666,7 +683,7 @@ function refreshStudyHeaderMetrics() {
         ? progressUtils.goalProgressText(summary, getDailyGoalStorage(uid))
         : `${Math.min(summary.today_progress, summary.daily_goal)} / ${summary.daily_goal}`;
     progressButton.title = `Streak ${streak} days · ${due} due today · Goal ${progressGoalText.textContent}`;
-    progressMenu.style.display = 'block';
+    setHidden(progressMenu, false);
 }
 async function fetchStudyProgressSummary() {
     if (!currentUser) return;
@@ -979,7 +996,7 @@ async function fetchUserData() {
                 currentUserIsAdmin = false;
                 userPreferences = null;
                 closeLanguageOnboarding();
-                if (adminDashboardBtn) adminDashboardBtn.style.display = 'none';
+                if (adminDashboardBtn) setHidden(adminDashboardBtn, true);
                 userProfileLoaded = false;
             }
             return;
@@ -991,7 +1008,7 @@ async function fetchUserData() {
         userProfileLoaded = true;
         currentUserIsAdmin = Boolean(d.is_admin);
         userPreferences = (d.preferences && typeof d.preferences === 'object') ? d.preferences : null;
-        if (adminDashboardBtn) adminDashboardBtn.style.display = currentUserIsAdmin ? 'flex' : 'none';
+        if (adminDashboardBtn) setHidden(adminDashboardBtn, !currentUserIsAdmin);
         if (userPreferences) {
             applyPreferencesToOutputLanguage(userPreferences, { forceOnboardingOpen: true });
         }
@@ -1052,7 +1069,7 @@ function getStudyPackTitleValue() {
 function updateModeCostSummary() {
     if (!modeCostSummary) return;
     modeCostSummary.textContent = '';
-    modeCostSummary.style.display = 'none';
+    setHidden(modeCostSummary, true);
 }
 function updateInterviewOptionAvailability() {
     const slidesCredits = userCredits ? Number(userCredits.slides || 0) : Number.POSITIVE_INFINITY;
@@ -1112,8 +1129,9 @@ function setStudyFeature(value) {
     const disableQuestions = currentMode === 'interview' || selectedStudyFeatures === 'none' || selectedStudyFeatures === 'flashcards';
     flashcardAmountChips.forEach(chip => { chip.disabled = disableFlashcards; });
     questionAmountChips.forEach(chip => { chip.disabled = disableQuestions; });
-    flashcardAmountControl.style.display = disableFlashcards ? 'none' : '';
-    questionAmountControl.style.display = disableQuestions ? 'none' : '';
+    setHidden(flashcardAmountControl, disableFlashcards);
+    setHidden(questionAmountControl, disableQuestions);
+    syncProcessingLayout();
     updateProcessButton();
 }
 function setAmountSelection(kind, value) {
@@ -1146,13 +1164,15 @@ function updateInterviewOptionsUI() {
     } else {
         interviewExtraNote.textContent = 'Selected both extra options. This adds 2 text extraction credits.';
     }
+    syncProcessingLayout();
     updateModeCreditDisplay();
     updateProcessButton();
 }
 function updateOutputLanguageInput() {
     const isOther = outputLanguageSelect.value === 'other';
-    outputLanguageCustom.style.display = isOther ? 'block' : 'none';
+    setHidden(outputLanguageCustom, !isOther);
     if (!isOther) outputLanguageCustom.value = '';
+    syncProcessingLayout();
 }
 function getLanguageLabel(value, customValue = '') {
     const key = String(value || 'english').trim().toLowerCase();
@@ -1211,7 +1231,7 @@ function setOnboardingLanguageSelection(value) {
         btn.classList.toggle('active', btn.dataset.value === target);
     });
     const showCustom = target === 'other';
-    languageOnboardingCustom.style.display = showCustom ? 'block' : 'none';
+    setHidden(languageOnboardingCustom, !showCustom);
     if (!showCustom) languageOnboardingCustom.value = '';
 }
 function getOnboardingLanguageSelection() {
@@ -1235,7 +1255,7 @@ function openLanguageOnboarding(preferences = null) {
     const custom = String(prefs.output_language_custom || outputLanguageCustom.value || '').trim();
     setOnboardingLanguageSelection(key);
     languageOnboardingCustom.value = custom;
-    if (key === 'other') languageOnboardingCustom.style.display = 'block';
+    if (key === 'other') setHidden(languageOnboardingCustom, false);
     languageOnboardingSaveBtn.disabled = false;
     setOnboardingError('');
     languageOnboardingOpen = true;
@@ -1312,7 +1332,44 @@ function applyPreferencesToOutputLanguage(preferences, options = {}) {
 }
 function setQuickstartVisible(visible) {
     if (!quickstartCard) return;
-    quickstartCard.style.display = visible ? '' : 'none';
+    setHidden(quickstartCard, !visible);
+}
+function syncProcessingLayout() {
+    if (processingUi && typeof processingUi.syncProcessingLayout === 'function') {
+        processingUi.syncProcessingLayout(
+            {
+                uploadSection,
+                pdfZone,
+                audioZone,
+                uploadEstimate,
+                otherAudioDisclosure,
+                otherAudioToggle,
+                otherAudioBody,
+                otherAudioSummary,
+                generationControls,
+                interviewControls,
+                advancedSettingsSummary,
+            },
+            {
+                signedIn: Boolean(currentUser),
+                currentMode,
+                modeConfig,
+                hasAnySourceFile: Boolean(pdfFile || audioFile || hasReadyImportedAudioToken()),
+                audioImportInFlight,
+                importedAudioReady: hasReadyImportedAudioToken(),
+                recordingState,
+                audioStatusText: audioUrlStatus ? String(audioUrlStatus.textContent || '').trim() : '',
+                outputLanguageValue: outputLanguageSelect ? outputLanguageSelect.value : 'english',
+                outputLanguageCustomValue: outputLanguageCustom ? outputLanguageCustom.value : '',
+                selectedStudyFeatures,
+                selectedInterviewFeatures,
+                otherAudioOpen,
+                getLanguageLabel,
+            },
+        );
+        return;
+    }
+    setHidden(uploadEstimate, !(currentUser && (pdfFile || audioFile || hasReadyImportedAudioToken())));
 }
 function applyStoredStudyFeaturePreference(user) {
     if (!user || !user.uid) return;
@@ -1326,7 +1383,7 @@ function applyStoredStudyFeaturePreference(user) {
 function applyRecommendedSetup() {
     switchMode('lecture-notes');
     setStudyFeature('both');
-    setAdvancedSettingsVisible(true);
+    setAdvancedSettingsVisible(false);
     showToast('Recommended setup applied: Lecture Notes + Flashcards + Test.', 'success');
     try {
         uploadSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1406,22 +1463,20 @@ function updateUIForAuthState(user) {
         userProfileLoaded = false;
         userHasCreatedStudyPack = false;
         closeHeaderDropdowns('');
-        if (headerSignInBtn) headerSignInBtn.style.display = 'none';
-        if (headerNavToggle) headerNavToggle.style.display = 'inline-flex';
-        if (creditsDisplay) creditsDisplay.style.display = 'flex';
-        if (headerStudyLibraryBtn) headerStudyLibraryBtn.style.display = 'inline-flex';
-        if (headerFeaturesBtn) headerFeaturesBtn.style.display = 'inline-flex';
-        if (headerToolsBtn) headerToolsBtn.style.display = 'inline-flex';
-        if (headerPlannerBtn) headerPlannerBtn.style.display = 'inline-flex';
-        if (progressMenu) progressMenu.style.display = 'block';
-        if (userMenu) userMenu.style.display = 'block';
-        if (adminDashboardBtn) adminDashboardBtn.style.display = 'none';
+        if (headerSignInBtn) setHidden(headerSignInBtn, true);
+        if (headerNavToggle) setHidden(headerNavToggle, false);
+        if (creditsDisplay) setHidden(creditsDisplay, false);
+        if (headerStudyLibraryBtn) setHidden(headerStudyLibraryBtn, false);
+        if (headerFeaturesBtn) setHidden(headerFeaturesBtn, false);
+        if (headerToolsBtn) setHidden(headerToolsBtn, false);
+        if (headerPlannerBtn) setHidden(headerPlannerBtn, false);
+        if (progressMenu) setHidden(progressMenu, false);
+        if (userMenu) setHidden(userMenu, false);
+        if (adminDashboardBtn) setHidden(adminDashboardBtn, true);
         signInRequired.classList.remove('visible');
-        uploadSection.style.display = 'grid';
-        uploadEstimate.style.display = '';
-        buttonSection.style.display = 'block';
-        languageControls.style.display = 'grid';
-        setAdvancedSettingsVisible(forcedMode === 'lecture-notes');
+        setHidden(buttonSection, false);
+        setHidden(languageControls, false);
+        setAdvancedSettingsVisible(false);
         applyStoredStudyFeaturePreference(user);
         const displayName = user.displayName || user.email.split('@')[0];
         const initial = displayName.charAt(0).toUpperCase();
@@ -1452,26 +1507,24 @@ function updateUIForAuthState(user) {
         updateModeCostSummary();
         refreshStudyHeaderMetrics();
         updateQuickstartVisibility();
+        syncProcessingLayout();
     } else {
         closeHeaderDropdowns('');
-        if (headerSignInBtn) headerSignInBtn.style.display = 'flex';
-        if (headerNavToggle) headerNavToggle.style.display = 'none';
-        if (creditsDisplay) creditsDisplay.style.display = 'none';
-        if (headerStudyLibraryBtn) headerStudyLibraryBtn.style.display = 'none';
-        if (headerFeaturesBtn) headerFeaturesBtn.style.display = 'none';
-        if (headerToolsBtn) headerToolsBtn.style.display = 'none';
-        if (headerPlannerBtn) headerPlannerBtn.style.display = 'none';
-        if (progressMenu) progressMenu.style.display = 'none';
-        if (userMenu) userMenu.style.display = 'none';
+        if (headerSignInBtn) setHidden(headerSignInBtn, false);
+        if (headerNavToggle) setHidden(headerNavToggle, true);
+        if (creditsDisplay) setHidden(creditsDisplay, true);
+        if (headerStudyLibraryBtn) setHidden(headerStudyLibraryBtn, true);
+        if (headerFeaturesBtn) setHidden(headerFeaturesBtn, true);
+        if (headerToolsBtn) setHidden(headerToolsBtn, true);
+        if (headerPlannerBtn) setHidden(headerPlannerBtn, true);
+        if (progressMenu) setHidden(progressMenu, true);
+        if (userMenu) setHidden(userMenu, true);
         signInRequired.classList.add('visible');
-        uploadSection.style.display = 'grid';
-        uploadEstimate.style.display = '';
-        buttonSection.style.display = 'block';
+        setHidden(buttonSection, false);
         generationControls.classList.add('hidden');
-        generationControls.style.display = '';
         interviewControls.classList.add('hidden');
-        languageControls.style.display = 'grid';
-        setAdvancedSettingsVisible(forcedMode === 'lecture-notes');
+        setHidden(languageControls, false);
+        setAdvancedSettingsVisible(false);
         releaseImportedAudioToken({ clearStatus: true });
         currentUser = null;
         userCredits = null;
@@ -1492,16 +1545,18 @@ function updateUIForAuthState(user) {
         runtimeJobsRefreshInFlight = false;
         notificationPermissionRequested = false;
         notifiedTerminalJobIds = new Set();
+        otherAudioOpen = false;
         uploadCooldownUntilMs = 0;
         clearUploadCooldownTimer();
         modalStateStack = [];
         activeModalOverlay = null;
-        if (adminDashboardBtn) adminDashboardBtn.style.display = 'none';
+        if (adminDashboardBtn) setHidden(adminDashboardBtn, true);
         updateInterviewOptionAvailability();
         updateModeCostSummary();
         if (processButton) processButton.disabled = true;
         showProgressSafeBanner(false);
         setQuickstartVisible(false);
+        syncProcessingLayout();
     }
 }
 let handlingDisallowedAuthState = false;
@@ -1570,7 +1625,6 @@ function getReadyImportedAudioToken(urlValue) {
 }
 function currentAudioBytes() {
     if (audioFile) return Number(audioFile.size || 0);
-    if (currentMode !== 'lecture-notes') return 0;
     return hasReadyImportedAudioToken() ? Number(importedAudioSizeBytes || 0) : 0;
 }
 function setAudioImportStatus(message = '', isError = false) {
@@ -1578,6 +1632,7 @@ function setAudioImportStatus(message = '', isError = false) {
     const text = String(message || '').trim();
     audioUrlStatus.textContent = text;
     audioUrlStatus.classList.toggle('error', Boolean(isError && text));
+    syncProcessingLayout();
 }
 function setAudioImportPending(inFlight) {
     if (!audioUrlFetchBtn) return;
@@ -1586,6 +1641,7 @@ function setAudioImportPending(inFlight) {
     }
     audioUrlFetchBtn.disabled = Boolean(inFlight);
     audioUrlFetchBtn.textContent = inFlight ? 'Importing...' : (audioUrlFetchBtn.dataset.defaultLabel || 'Import Audio');
+    syncProcessingLayout();
 }
 function setRecorderStatus(message = '', tone = 'info') {
     recorderStatusMessage = String(message || '').trim();
@@ -1653,11 +1709,9 @@ function getPreferredRecordingConfig() {
     return null;
 }
 function syncRecorderUI() {
-    const visible = currentMode === 'lecture-notes';
+    const visible = Boolean((modeConfig[currentMode] || {}).needsAudio);
     const supportedConfig = getPreferredRecordingConfig();
-    if (audioRecorderPanel) {
-        audioRecorderPanel.style.display = visible ? '' : 'none';
-    }
+    setHidden(audioRecorderPanel, !visible);
     if (!visible) return;
     if (audioRecordStartBtn) {
         audioRecordStartBtn.disabled = recordingState !== 'idle' || !supportedConfig;
@@ -1701,31 +1755,32 @@ function syncAudioInfoUI() {
         audioSize.textContent = audioFileOrigin === 'recording'
             ? `${formatFileSize(audioFile.size)} · Recorded in browser`
             : formatFileSize(audioFile.size);
-        audioInfo.style.display = 'flex';
+        setHidden(audioInfo, false);
         audioZone.classList.add('has-file');
     } else if (importedAudioToken) {
         audioName.textContent = importedAudioName || 'Imported audio';
         audioSize.textContent = importedAudioSizeBytes > 0
             ? `${formatFileSize(importedAudioSizeBytes)} · Imported from URL`
             : 'Imported from URL';
-        audioInfo.style.display = 'flex';
+        setHidden(audioInfo, false);
         audioZone.classList.add('has-file');
     } else {
-        audioInfo.style.display = 'none';
+        setHidden(audioInfo, true);
         audioZone.classList.remove('has-file');
     }
     if (audioRecordingWarning) {
         if (audioFile && audioFileOrigin === 'recording') {
-            audioRecordingWarning.style.display = 'block';
+            setHidden(audioRecordingWarning, false);
             audioRecordingWarning.textContent = recordedAudioNeedsDownload
                 ? 'This recording only exists in this browser tab. Download it now if you want to keep it, or it will be lost forever when you leave this page.'
                 : 'This recording was downloaded. Keep the saved file somewhere safe, because the in-browser copy still disappears when you leave this page.';
         } else {
-            audioRecordingWarning.style.display = 'none';
+            setHidden(audioRecordingWarning, true);
             audioRecordingWarning.textContent = '';
         }
     }
     syncRecorderUI();
+    syncProcessingLayout();
 }
 function clearImportedAudioLocalState() {
     importedAudioToken = '';
@@ -1955,7 +2010,7 @@ async function applyImportedAudio(payload, previousToken = '', sourceUrl = '') {
     return true;
 }
 function syncAudioImportStatusForUrlChange() {
-    if (currentMode !== 'lecture-notes' || audioFile || audioImportInFlight) {
+    if (!((modeConfig[currentMode] || {}).needsAudio) || audioFile || audioImportInFlight) {
         updateProcessButton();
         return;
     }
@@ -1988,8 +2043,8 @@ async function importAudioFromUrl(options = {}) {
         updateProcessButton();
         return false;
     }
-    if (currentMode !== 'lecture-notes') {
-        setAudioImportStatus('URL import is only available in Lecture Notes mode.', true);
+    if (!((modeConfig[currentMode] || {}).needsAudio)) {
+        setAudioImportStatus('URL import is only available when this mode accepts audio.', true);
         updateProcessButton();
         return false;
     }
@@ -2211,21 +2266,13 @@ function hasEnoughCredits() {
     return false;
 }
 function getProgressStepsForMode(mode, totalSteps) {
-    const safeMode = String(mode || '').trim();
-    const requestedTotal = Math.max(0, Number(totalSteps || 0));
-    if (safeMode === 'interview') {
-        if (requestedTotal > 1) {
-            return [{ num: 1, label: 'Transcribe' }, { num: 2, label: 'Create Extras' }];
-        }
-        return modeConfig.interview.steps.slice();
+    if (progressFlowUtils && typeof progressFlowUtils.getProgressStepsForMode === 'function') {
+        return progressFlowUtils.getProgressStepsForMode(mode, totalSteps, modeConfig);
     }
-    const baseSteps = safeMode === 'slides-only'
+    const safeMode = String(mode || '').trim();
+    return safeMode === 'slides-only'
         ? modeConfig['slides-only'].steps.slice()
         : modeConfig['lecture-notes'].steps.slice();
-    if (requestedTotal > 0 && requestedTotal < baseSteps.length) {
-        return baseSteps.slice(0, requestedTotal);
-    }
-    return baseSteps;
 }
 function updateProgressStepsForStatus(payload) {
     const totalSteps = Math.max(0, Number(payload && payload.total_steps || 0));
@@ -2236,11 +2283,10 @@ function updateProgressStepsForStatus(payload) {
     }
 }
 function buildRuntimeJobSnapshot(job, fallback = {}) {
-    const payload = Object.assign({}, fallback || {}, job || {});
-    if (runtimeJobUtils && typeof runtimeJobUtils.normalizeRuntimeJob === 'function') {
-        return runtimeJobUtils.normalizeRuntimeJob(payload);
+    if (progressFlowUtils && typeof progressFlowUtils.buildRuntimeJobSnapshot === 'function') {
+        return progressFlowUtils.buildRuntimeJobSnapshot(job, fallback, runtimeJobUtils);
     }
-    return payload;
+    return Object.assign({}, fallback || {}, job || {});
 }
 function applyRuntimeJobProgress(job, options = {}) {
     const snapshot = buildRuntimeJobSnapshot(job);
@@ -2256,7 +2302,7 @@ function applyRuntimeJobProgress(job, options = {}) {
     progressSection.classList.add('visible');
     resultsSection.classList.remove('visible');
     progressStatus.classList.remove('error');
-    progressStatus.querySelector('.spinner').style.display = 'block';
+    setHidden(progressSpinner, false);
     showProgressSafeBanner(true);
     updateProgressUI(Math.max(0, Number(snapshot.step || 0)), snapshot.step_description || 'Processing continues in the background...', steps.length);
     currentJobId = snapshot.job_id;
@@ -2312,10 +2358,10 @@ function maybeSendCompletionNotification(job, payload) {
 function updateUploadEstimatePanel() {
     if (!uploadEstimate || !uploadEstimateTime || !uploadEstimateMeta) return;
     if (!currentUser || resultsLocked) {
-        uploadEstimate.style.display = 'none';
+        setHidden(uploadEstimate, true);
         return;
     }
-    uploadEstimate.style.display = '';
+    setHidden(uploadEstimate, false);
     uploadEstimateTime.textContent = UPLOAD_ESTIMATE_COPY[currentMode] || 'Processing time depends on the upload.';
 
     const totalBytes = (pdfFile ? Number(pdfFile.size || 0) : 0) + currentAudioBytes();
@@ -2332,7 +2378,7 @@ function updateUploadEstimatePanel() {
 function updateProcessButton() {
     const config = modeConfig[currentMode];
     const pdfReady = !config.needsPdf || pdfFile;
-    const audioReady = !config.needsAudio || audioFile || (currentMode === 'lecture-notes' && hasReadyImportedAudioToken());
+    const audioReady = !config.needsAudio || audioFile || hasReadyImportedAudioToken();
     const hasCredits = hasEnoughCredits();
     const uploadCooldown = getUploadCooldownSeconds();
     updateUploadEstimatePanel();
@@ -2342,7 +2388,7 @@ function updateProcessButton() {
         noCreditsWarning.classList.remove('visible');
         return;
     }
-    if (currentMode === 'lecture-notes' && audioImportInFlight && !audioFile) {
+    if (config.needsAudio && audioImportInFlight && !audioFile) {
         processButton.disabled = true;
         processButton.querySelector('span').textContent = 'Importing LMS audio...';
         noCreditsWarning.classList.remove('visible');
@@ -2378,7 +2424,7 @@ function switchMode(mode) {
     if (forcedMode && mode !== forcedMode) {
         mode = forcedMode;
     }
-    if (mode !== 'lecture-notes' && (recordingState === 'recording' || recordingState === 'paused')) {
+    if (!((modeConfig[mode] || {}).needsAudio) && (recordingState === 'recording' || recordingState === 'paused')) {
         stopAudioRecording();
     }
     currentMode = mode;
@@ -2405,42 +2451,19 @@ function switchMode(mode) {
     if (audioUrlImportTitle) audioUrlImportTitle.textContent = config.lmsImportTitle || 'Import from LMS video URL';
     if (audioUrlImportHint) audioUrlImportHint.textContent = config.lmsImportHint || '';
     generationControls.classList.toggle('hidden', mode === 'interview');
-    generationControls.style.display = mode === 'interview' ? 'none' : 'grid';
     interviewControls.classList.toggle('hidden', mode !== 'interview');
     if (mode === 'interview') {
         studyToolsPanel.classList.remove('visible');
         studyToolsToggle.classList.remove('open');
     }
     updateModeCreditDisplay();
-    if (config.needsPdf && config.needsAudio) {
-        uploadSection.classList.remove('single-upload');
-        pdfZone.classList.remove('hidden');
-        audioZone.classList.remove('hidden');
-    } else if (config.needsPdf) {
-        uploadSection.classList.add('single-upload');
-        pdfZone.classList.remove('hidden');
-        audioZone.classList.add('hidden');
-    } else {
-        uploadSection.classList.add('single-upload');
-        pdfZone.classList.add('hidden');
-        audioZone.classList.remove('hidden');
-    }
-    if (!config.needsPdf) {
-        pdfInfo.style.display = pdfFile ? 'flex' : 'none';
-        pdfZone.classList.toggle('has-file', Boolean(pdfFile));
-    }
-    if (!config.needsAudio) {
-        syncAudioInfoUI();
-    }
-    if (audioUrlImport) {
-        audioUrlImport.style.display = mode === 'lecture-notes' ? '' : 'none';
-    }
-    if (forcedMode === 'lecture-notes' && mode === 'lecture-notes') {
-        setAdvancedSettingsVisible(true);
-    }
+    setHidden(pdfInfo, !pdfFile);
+    pdfZone.classList.toggle('has-file', Boolean(pdfFile));
+    if (!config.needsAudio) syncAudioInfoUI();
     setStudyFeature(selectedStudyFeatures);
     updateInterviewOptionsUI();
     syncRecorderUI();
+    syncProcessingLayout();
     updateProcessButton();
 }
 modeTabs.forEach(tab => tab.addEventListener('click', () => switchMode(tab.dataset.mode)));
@@ -2489,8 +2512,9 @@ function handlePdfFile(file) {
     pdfFile = file;
     pdfName.textContent = file.name;
     pdfSize.textContent = formatFileSize(file.size);
-    pdfInfo.style.display = 'flex';
+    setHidden(pdfInfo, false);
     pdfZone.classList.add('has-file');
+    syncProcessingLayout();
     updateProcessButton();
 }
 function handleAudioFile(file, options = {}) {
@@ -2601,7 +2625,15 @@ if (audioInfo) {
         }
     });
 }
-pdfRemove.addEventListener('click', (e) => { e.stopPropagation(); pdfFile = null; pdfInput.value = ''; pdfInfo.style.display = 'none'; pdfZone.classList.remove('has-file'); updateProcessButton(); });
+pdfRemove.addEventListener('click', (e) => {
+    e.stopPropagation();
+    pdfFile = null;
+    pdfInput.value = '';
+    setHidden(pdfInfo, true);
+    pdfZone.classList.remove('has-file');
+    syncProcessingLayout();
+    updateProcessButton();
+});
 audioRemove.addEventListener('click', (e) => {
     e.stopPropagation();
     audioFile = null;
@@ -2666,7 +2698,7 @@ function scheduleNextPoll(delayMs) {
 }
 function setProgressRetryVisible(visible) {
     if (!progressRetry || !progressRetryBtn) return;
-    progressRetry.style.display = visible ? 'flex' : 'none';
+    progressRetry.classList.toggle('visible', Boolean(visible));
     if (visible) progressRetryBtn.disabled = false;
 }
 function retryStatusCheckNow() {
@@ -2677,7 +2709,7 @@ function retryStatusCheckNow() {
     }
     setProgressRetryVisible(false);
     progressStatus.classList.remove('error');
-    progressStatus.querySelector('.spinner').style.display = 'block';
+    setHidden(progressSpinner, false);
     statusText.textContent = 'Re-checking job status...';
     trackEvent('processing_retry_requested', { job_id: currentJobId });
     startPolling();
@@ -2712,7 +2744,7 @@ function resetProcessingSession(options = {}) {
     if (!keepProgressVisible && !resultsLocked) {
         progressSection.classList.remove('visible');
         progressStatus.classList.remove('error');
-        progressStatus.querySelector('.spinner').style.display = 'block';
+        setHidden(progressSpinner, false);
     }
     updateProcessButton();
 }
@@ -2954,7 +2986,7 @@ async function pollStatus() {
         const activeJobId = currentJobId;
         resetProcessingSession({ keepProgressVisible: true, keepStatusMessage: true });
         progressStatus.classList.add('error');
-        progressStatus.querySelector('.spinner').style.display = 'none';
+        setHidden(progressSpinner, true);
         statusText.textContent = 'Still processing on the server. Start a new run or retry later from Study Library.';
         showToast('Processing is taking longer than expected. Please check again shortly.', 'info', 6000);
         trackEvent('processing_timeout', activeJobId ? { job_id: activeJobId } : {});
@@ -3098,8 +3130,8 @@ async function processFiles() {
     fd.append('study_pack_title', studyPackTitle);
     if (config.needsPdf && pdfFile) fd.append('pdf', pdfFile);
     if (config.needsAudio && audioFile) fd.append('audio', audioFile);
-    const readyImportedAudioToken = currentMode === 'lecture-notes' ? getReadyImportedAudioToken() : '';
-    if (currentMode === 'lecture-notes' && config.needsAudio && readyImportedAudioToken && !audioFile) {
+    const readyImportedAudioToken = config.needsAudio ? getReadyImportedAudioToken() : '';
+    if (config.needsAudio && readyImportedAudioToken && !audioFile) {
         fd.append('audio_import_token', readyImportedAudioToken);
     }
     const selectedLanguage = outputLanguageSelect.value || 'english';
@@ -3126,7 +3158,7 @@ async function processFiles() {
     progressSection.classList.add('visible');
     resultsSection.classList.remove('visible');
     progressStatus.classList.remove('error');
-    progressStatus.querySelector('.spinner').style.display = 'block';
+    setHidden(progressSpinner, false);
     showProgressSafeBanner(false);
     try {
         progressSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -3324,28 +3356,28 @@ async function downloadFile(type, format) {
 
 function updateExportCsvButton() {
     if (currentMode === 'interview') {
-        exportStudyCsvBtn.style.display = 'none';
+        setHidden(exportStudyCsvBtn, true);
         return;
     }
     if (activeResultsTab === 'test' && testQuestions.length) {
         exportCsvType = 'test';
         exportStudyCsvText.textContent = 'Export Practice Test CSV';
-        exportStudyCsvBtn.style.display = 'flex';
+        setHidden(exportStudyCsvBtn, false);
         return;
     }
     if (flashcards.length) {
         exportCsvType = 'flashcards';
         exportStudyCsvText.textContent = 'Export Flashcards CSV';
-        exportStudyCsvBtn.style.display = 'flex';
+        setHidden(exportStudyCsvBtn, false);
         return;
     }
     if (testQuestions.length) {
         exportCsvType = 'test';
         exportStudyCsvText.textContent = 'Export Practice Test CSV';
-        exportStudyCsvBtn.style.display = 'flex';
+        setHidden(exportStudyCsvBtn, false);
         return;
     }
-    exportStudyCsvBtn.style.display = 'none';
+    setHidden(exportStudyCsvBtn, true);
 }
 function setActiveResultsTab(tab) {
     activeResultsTab = tab;
@@ -3391,16 +3423,16 @@ tabButtons.forEach((btn, index) => btn.addEventListener('keydown', (e) => {
 
 function renderFlashcard() {
     if (!flashcards.length) {
-        flashcardEmpty.style.display = 'block';
-        flashcardCard.style.display = 'none';
+        setHidden(flashcardEmpty, false);
+        setHidden(flashcardCard, true);
         flashcardProgress.textContent = 'Card 0 of 0';
         flashcardPrevBtn.disabled = true;
         flashcardNextBtn.disabled = true;
         flashcardFlipBtn.disabled = true;
         return;
     }
-    flashcardEmpty.style.display = 'none';
-    flashcardCard.style.display = 'block';
+    setHidden(flashcardEmpty, true);
+    setHidden(flashcardCard, false);
     const card = flashcards[flashcardIndex];
     flashcardFrontText.textContent = card.front;
     flashcardBackText.textContent = card.back;
@@ -3428,16 +3460,16 @@ flashcardFlipBtn.addEventListener('click', flipFlashcard);
 
 function renderQuizQuestion() {
     if (!testQuestions.length) {
-        quizEmpty.style.display = 'block';
+        setHidden(quizEmpty, false);
         quizQuestionText.textContent = '';
         quizOptions.innerHTML = '';
         quizExplanation.classList.remove('visible');
-        quizNextBtn.style.display = 'none';
+        setHidden(quizNextBtn, true);
         quizProgress.textContent = 'Question 0 of 0';
         quizScoreEl.textContent = 'Score: 0/0';
         return;
     }
-    quizEmpty.style.display = 'none';
+    setHidden(quizEmpty, true);
     const q = testQuestions[quizIndex];
     quizAnswered = false;
     quizProgress.textContent = `Question ${quizIndex + 1} of ${testQuestions.length}`;
@@ -3454,7 +3486,7 @@ function renderQuizQuestion() {
         btn.addEventListener('click', () => answerQuizOption(btn, option));
         quizOptions.appendChild(btn);
     });
-    quizNextBtn.style.display = 'none';
+    setHidden(quizNextBtn, true);
 }
 function answerQuizOption(clickedBtn, selectedOption) {
     if (quizAnswered) return;
@@ -3474,7 +3506,7 @@ function answerQuizOption(clickedBtn, selectedOption) {
     quizScoreEl.textContent = `Score: ${quizScore}/${testQuestions.length}`;
     quizExplanation.textContent = q.explanation;
     quizExplanation.classList.add('visible');
-    quizNextBtn.style.display = (quizIndex < testQuestions.length - 1) ? 'inline-flex' : 'none';
+    setHidden(quizNextBtn, !(quizIndex < testQuestions.length - 1));
 }
 quizNextBtn.addEventListener('click', () => {
     if (quizIndex < testQuestions.length - 1) {
@@ -3513,27 +3545,27 @@ function showResults(md, slides, trans, generatedFlashcards, generatedQuestions,
     const successfulSet = new Set(Array.isArray(successfulInterviewFeatures) ? successfulInterviewFeatures : []);
     if (currentMode === 'interview') {
         if (studyGenerationError) {
-            studyWarning.style.display = 'block';
+            setHidden(studyWarning, false);
             studyWarning.textContent = studyGenerationError;
         } else if (!selectedInterviewFeatures.length) {
-            studyWarning.style.display = 'block';
+            setHidden(studyWarning, false);
             studyWarning.textContent = 'No interview extras selected. Showing the transcript only.';
         } else if (successfulSet.size < selectedInterviewFeatures.length) {
             const failed = selectedInterviewFeatures.length - successfulSet.size;
-            studyWarning.style.display = 'block';
+            setHidden(studyWarning, false);
             studyWarning.textContent = `Some interview extras could not be generated (${failed} failed). Failed extras were refunded as text extraction credits.`;
         } else {
-            studyWarning.style.display = 'none';
+            setHidden(studyWarning, true);
             studyWarning.textContent = '';
         }
     } else if (studyGenerationError) {
-        studyWarning.style.display = 'block';
+        setHidden(studyWarning, false);
         studyWarning.textContent = studyGenerationError;
     } else if (studyFeatures === 'none') {
-        studyWarning.style.display = 'block';
+        setHidden(studyWarning, false);
         studyWarning.textContent = 'Study tools were disabled for this generation (Notes-only mode).';
     } else {
-        studyWarning.style.display = 'none';
+        setHidden(studyWarning, true);
         studyWarning.textContent = '';
     }
     renderBillingReceipt(currentMode === 'interview' ? currentBillingReceipt : null);
@@ -3544,11 +3576,11 @@ function showResults(md, slides, trans, generatedFlashcards, generatedQuestions,
     quizScore = 0;
     renderFlashcard();
     renderQuizQuestion();
-    document.getElementById('tab-flashcards').style.display = currentMode === 'interview' ? 'none' : 'flex';
-    document.getElementById('tab-test').style.display = currentMode === 'interview' ? 'none' : 'flex';
+    setHidden(tabFlashcards, currentMode === 'interview');
+    setHidden(tabTest, currentMode === 'interview');
     setActiveResultsTab('notes');
-    document.getElementById('tab-flashcards').disabled = currentMode === 'interview' || !flashcards.length;
-    document.getElementById('tab-test').disabled = currentMode === 'interview' || !testQuestions.length;
+    tabFlashcards.disabled = currentMode === 'interview' || !flashcards.length;
+    tabTest.disabled = currentMode === 'interview' || !testQuestions.length;
 
     progressSection.classList.remove('visible');
     showProgressSafeBanner(false);
@@ -3567,7 +3599,7 @@ function showError(msg, creditRefunded, billingReceipt) {
     setProgressRetryVisible(false);
     renderBillingReceipt(null);
     progressStatus.classList.add('error');
-    progressStatus.querySelector('.spinner').style.display = 'none';
+    setHidden(progressSpinner, true);
     showProgressSafeBanner(false);
     const billingReceiptText = buildBillingReceiptText(billingReceipt);
     if (creditRefunded) {
@@ -3600,14 +3632,14 @@ function resetResultsState() {
     updateQuickstartVisibility();
     flashcardCountBadge.textContent = '0';
     testCountBadge.textContent = '0';
-    studyWarning.style.display = 'none';
+    setHidden(studyWarning, true);
     renderBillingReceipt(null);
-    exportStudyCsvBtn.style.display = 'none';
+    setHidden(exportStudyCsvBtn, true);
     showProgressSafeBanner(false);
-    document.getElementById('tab-flashcards').style.display = 'flex';
-    document.getElementById('tab-test').style.display = 'flex';
-    document.getElementById('tab-flashcards').disabled = false;
-    document.getElementById('tab-test').disabled = false;
+    setHidden(tabFlashcards, false);
+    setHidden(tabTest, false);
+    tabFlashcards.disabled = false;
+    tabTest.disabled = false;
     setActiveResultsTab('notes');
 }
 
@@ -3859,8 +3891,16 @@ document.querySelectorAll('.password-toggle').forEach(btn => {
         const input = document.getElementById(btn.dataset.target);
         const open = btn.querySelector('.eye-open');
         const closed = btn.querySelector('.eye-closed');
-        if (input.type === 'password') { input.type = 'text'; open.style.display = 'none'; closed.style.display = 'block'; }
-        else { input.type = 'password'; open.style.display = 'block'; closed.style.display = 'none'; }
+        if (input.type === 'password') {
+            input.type = 'text';
+            setHidden(open, true);
+            setHidden(closed, false);
+        }
+        else {
+            input.type = 'password';
+            setHidden(open, false);
+            setHidden(closed, true);
+        }
     });
 });
 if (headerNavToggle) {
@@ -4396,7 +4436,7 @@ newLectureButton.addEventListener('click', () => {
     trackedTerminalJobId = '';
     pdfInput.value = '';
     audioInput.value = '';
-    pdfInfo.style.display = 'none';
+    setHidden(pdfInfo, true);
     pdfZone.classList.remove('has-file');
     syncAudioInfoUI();
     progressSection.classList.remove('visible');
@@ -4404,7 +4444,7 @@ newLectureButton.addEventListener('click', () => {
     setProgressRetryVisible(false);
     resultsSection.classList.remove('visible');
     progressStatus.classList.remove('error');
-    progressStatus.querySelector('.spinner').style.display = 'block';
+    setHidden(progressSpinner, false);
     resetResultsState();
     switchMode(currentMode);
     updateProcessButton();
@@ -4537,6 +4577,12 @@ outputLanguageCustom.addEventListener('blur', () => {
 });
 if (audioUrlFetchBtn) {
     audioUrlFetchBtn.addEventListener('click', importAudioFromUrl);
+}
+if (otherAudioToggle) {
+    otherAudioToggle.addEventListener('click', () => {
+        otherAudioOpen = !otherAudioOpen;
+        syncProcessingLayout();
+    });
 }
 if (audioUrlAdvancedToggle) {
     audioUrlAdvancedToggle.addEventListener('click', () => {

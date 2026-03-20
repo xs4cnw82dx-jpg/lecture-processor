@@ -509,7 +509,6 @@
       const selectButton = dailyReminderTimeRow ? dailyReminderTimeRow.querySelector('.app-select-button') : null;
       if (selectButton) {
         selectButton.disabled = !enabled;
-        selectButton.style.pointerEvents = enabled ? '' : 'none';
       }
       dailyReminderTimeRow.classList.toggle('disabled-row', !enabled);
     }
@@ -1018,8 +1017,8 @@
       if (!user) {
         idToken = '';
         if (authClient && typeof authClient.clearToken === 'function') authClient.clearToken();
-        authRequiredEl.style.display = '';
-        calendarLayoutEl.style.display = 'none';
+        if (authRequiredEl) authRequiredEl.hidden = false;
+        if (calendarLayoutEl) calendarLayoutEl.hidden = true;
         if (emptyWeekEl) emptyWeekEl.hidden = true;
         if (reminderTimer) clearInterval(reminderTimer);
         if (reminderSaveDebounceTimer) {
@@ -1036,8 +1035,8 @@
 
       idToken = await user.getIdToken();
       if (authClient && typeof authClient.setToken === 'function') authClient.setToken(idToken);
-      authRequiredEl.style.display = 'none';
-      calendarLayoutEl.style.display = '';
+      if (authRequiredEl) authRequiredEl.hidden = true;
+      if (calendarLayoutEl) calendarLayoutEl.hidden = false;
 
       try {
         await loadPlannerState();

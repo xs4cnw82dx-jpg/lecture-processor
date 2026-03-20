@@ -184,7 +184,7 @@
     var details = errorMessage && errorMessage !== message ? errorMessage : '';
     var actionHtml = batchActionHtml(summary);
     if (!message && !details && !actionHtml) {
-      statusBanner.style.display = 'none';
+      statusBanner.hidden = true;
       statusBanner.innerHTML = '';
       statusBanner.className = 'batch-status-banner';
       return;
@@ -196,7 +196,7 @@
       (details ? '<span>' + escapeHtml(details) + '</span>' : '') +
       '</div>' +
       (actionHtml ? '<div class="batch-status-banner-actions">' + actionHtml + '</div>' : '');
-    statusBanner.style.display = '';
+    statusBanner.hidden = false;
     Array.prototype.slice.call(statusBanner.querySelectorAll('[data-batch-action-href]')).forEach(function (button) {
       button.addEventListener('click', function () {
         var href = String(button.getAttribute('data-batch-action-href') || '').trim();
@@ -287,7 +287,7 @@
       'You can continue using the app while it runs. ' +
       'Study Library folder: <strong>' + escapeHtml(title) + '</strong>. ' +
       '<a href="/batch_status">Open batch status</a>.';
-    submitFeedback.style.display = '';
+    submitFeedback.hidden = false;
   }
 
   function makeRowId() {
@@ -323,7 +323,7 @@
       item.setAttribute('aria-selected', active ? 'true' : 'false');
     });
     if (outputLanguageCustom) {
-      outputLanguageCustom.style.display = key === 'other' ? '' : 'none';
+      outputLanguageCustom.hidden = key !== 'other';
       if (key !== 'other') outputLanguageCustom.value = '';
     }
   }
@@ -337,8 +337,8 @@
 
     var hideFlashcards = mode === 'interview' || next === 'none' || next === 'test';
     var hideQuestions = mode === 'interview' || next === 'none' || next === 'flashcards';
-    if (flashcardWrap) flashcardWrap.style.display = hideFlashcards ? 'none' : '';
-    if (questionWrap) questionWrap.style.display = hideQuestions ? 'none' : '';
+    if (flashcardWrap) flashcardWrap.hidden = hideFlashcards;
+    if (questionWrap) questionWrap.hidden = hideQuestions;
   }
 
   function setAmountSelection(kind, value) {
@@ -371,7 +371,7 @@
 
   function updateTopControls() {
     var showStudyDefaults = mode !== 'interview';
-    if (studyDefaultsWrap) studyDefaultsWrap.style.display = showStudyDefaults ? '' : 'none';
+    if (studyDefaultsWrap) studyDefaultsWrap.hidden = !showStudyDefaults;
     if (!showStudyDefaults) {
       if (studyFeaturesInput) studyFeaturesInput.value = 'none';
     } else {
@@ -449,7 +449,7 @@
       if (file) {
         nameEl.textContent = file.name;
         metaEl.textContent = formatFileSize(file.size);
-        info.style.display = 'flex';
+        info.hidden = false;
         zone.classList.add('has-file');
         syncRowAudioSourceVisual(rowNode);
         return;
@@ -457,7 +457,7 @@
       if (state.importedAudioToken) {
         nameEl.textContent = state.importedAudioName || 'Imported audio';
         metaEl.textContent = (state.importedAudioSizeBytes > 0 ? formatFileSize(state.importedAudioSizeBytes) + ' · ' : '') + 'Imported from URL';
-        info.style.display = 'flex';
+        info.hidden = false;
         zone.classList.add('has-file');
         syncRowAudioSourceVisual(rowNode);
         return;
@@ -467,10 +467,10 @@
     if (file) {
       nameEl.textContent = file.name;
       metaEl.textContent = formatFileSize(file.size);
-      info.style.display = 'flex';
+      info.hidden = false;
       zone.classList.add('has-file');
     } else {
-      info.style.display = 'none';
+      info.hidden = true;
       zone.classList.remove('has-file');
     }
     syncRowAudioSourceVisual(rowNode);
@@ -941,7 +941,7 @@
       '    <div class="row-upload-title">Upload slides</div>' +
       '    <div class="row-upload-subtitle">Drag & drop or click to browse</div>' +
       '    <input type="file" data-field="slides" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation">' +
-      '    <div class="row-file-info" data-file-info="slides" style="display:none;">' +
+      '    <div class="row-file-info" data-file-info="slides" hidden>' +
       '      <div>' +
       '        <div class="row-file-name" data-file-name="slides"></div>' +
       '        <div class="row-file-meta" data-file-meta="slides"></div>' +
@@ -966,7 +966,7 @@
       '    <div class="row-upload-title">Upload audio</div>' +
       '    <div class="row-upload-subtitle">Drag & drop or click to browse</div>' +
       '    <input type="file" data-field="audio" accept=".mp3,.m4a,.wav,.aac,.ogg,.flac,audio/*">' +
-      '    <div class="row-file-info" data-file-info="audio" style="display:none;">' +
+      '    <div class="row-file-info" data-file-info="audio" hidden>' +
       '      <div>' +
       '        <div class="row-file-name" data-file-name="audio"></div>' +
       '        <div class="row-file-meta" data-file-meta="audio"></div>' +
@@ -1209,7 +1209,7 @@
       '</div>';
 
     if (downloadZipBtn) {
-      downloadZipBtn.style.display = summary.can_download_zip ? '' : 'none';
+      downloadZipBtn.hidden = !summary.can_download_zip;
     }
 
     rowsBody.innerHTML = '';
@@ -1408,7 +1408,7 @@
       if (payload.deduplicated) {
         showShellToast('This submission was already accepted. Showing the existing batch.', 'success');
       }
-      if (statusPanel) statusPanel.style.display = 'block';
+      if (statusPanel) statusPanel.hidden = false;
       await refreshBatchStatus({ silent: true });
       scheduleNextPoll();
       activeSubmissionId = '';
@@ -1427,7 +1427,7 @@
 
   function startPollingForBatch() {
     if (!currentBatchId) return;
-    if (statusPanel) statusPanel.style.display = 'block';
+    if (statusPanel) statusPanel.hidden = false;
     if (!auth || !auth.currentUser) return;
     refreshBatchStatus({ silent: true });
     scheduleNextPoll();
@@ -1570,7 +1570,6 @@
           return;
         }
         if (batchPage) {
-          batchPage.style.minHeight = batchPage.offsetHeight + 'px';
           batchPage.classList.remove('is-ready');
           batchPage.classList.add('is-leaving');
         }

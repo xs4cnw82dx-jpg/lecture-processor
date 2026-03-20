@@ -124,8 +124,8 @@
   }
 
   function setAuthView(user) {
-    if (authRequiredEl) authRequiredEl.style.display = user ? 'none' : 'block';
-    if (plannerContentEl) plannerContentEl.style.display = user ? 'block' : 'none';
+    if (authRequiredEl) authRequiredEl.hidden = !!user;
+    if (plannerContentEl) plannerContentEl.hidden = !user;
   }
 
   function ensureToken(forceRefresh) {
@@ -251,10 +251,10 @@
       }, snapshot.goal);
     }
     if (goalFillEl) {
-      goalFillEl.style.width = String(goalCompletionPercent({
+      goalFillEl.value = Number(goalCompletionPercent({
         today_progress: snapshot.done,
         daily_goal: snapshot.goal,
-      }, snapshot.goal)) + '%';
+      }, snapshot.goal)) || 0;
     }
     if (goalInputEl && document.activeElement !== goalInputEl) {
       goalInputEl.value = String(snapshot.goal);
@@ -419,11 +419,11 @@
     clearNode(packGoalsSummaryEl);
 
     if (!entries.length) {
-      packGoalsSummaryEl.style.display = 'none';
+      packGoalsSummaryEl.hidden = true;
       return;
     }
 
-    packGoalsSummaryEl.style.display = 'grid';
+    packGoalsSummaryEl.hidden = false;
     var totalDue = 0;
     var totalUnmastered = 0;
     var savedGoals = 0;
@@ -573,11 +573,11 @@
     clearNode(foldersCardsEl);
 
     if (!currentFolders.length) {
-      if (foldersEmptyEl) foldersEmptyEl.style.display = 'block';
+      if (foldersEmptyEl) foldersEmptyEl.hidden = false;
       return;
     }
 
-    if (foldersEmptyEl) foldersEmptyEl.style.display = 'none';
+    if (foldersEmptyEl) foldersEmptyEl.hidden = true;
     var folderStatsById = buildFolderStatsMap();
 
     currentFolders.forEach(function (folder) {
@@ -607,7 +607,7 @@
       var tdWorkload = document.createElement('td');
       tdWorkload.appendChild(createWorkloadNode(stats));
       var countdownRow = document.createElement('div');
-      countdownRow.style.marginTop = '6px';
+      countdownRow.className = 'countdown-row';
       countdownRow.appendChild(countdownChip.cloneNode(true));
       tdWorkload.appendChild(countdownRow);
 
@@ -871,10 +871,10 @@
     if (!currentPacks.length) {
       packGoalDraftValues.clear();
       renderPackGoalsSummary([]);
-      if (packGoalsEmptyEl) packGoalsEmptyEl.style.display = 'block';
+      if (packGoalsEmptyEl) packGoalsEmptyEl.hidden = false;
       return;
     }
-    if (packGoalsEmptyEl) packGoalsEmptyEl.style.display = 'none';
+    if (packGoalsEmptyEl) packGoalsEmptyEl.hidden = true;
 
     var packEntries = currentPacks.map(function (pack) {
       var folder = currentFolders.find(function (item) {
@@ -1101,11 +1101,11 @@
     clearNode(packGoalsCardsEl);
     renderPackGoalsSummary([]);
     if (foldersEmptyEl) {
-      foldersEmptyEl.style.display = 'block';
+      foldersEmptyEl.hidden = false;
       foldersEmptyEl.innerHTML = '<strong>Could not load folders</strong><span>' + message + '</span>';
     }
     if (packGoalsEmptyEl) {
-      packGoalsEmptyEl.style.display = 'block';
+      packGoalsEmptyEl.hidden = false;
       packGoalsEmptyEl.innerHTML = '<strong>Could not load study packs</strong><span>' + message + '</span>';
     }
   }

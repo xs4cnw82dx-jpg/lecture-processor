@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" integrity="sha384-RkASv+6KfBMW9eknReJIJ6b3UnjKOKC5bOUaNgIY778NFbQ8MtWq9Lr/khUgqtTt" crossorigin="anonymous">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/study.css') }}">
@@ -432,7 +433,7 @@
           </div>
         </div>
         <div class="setup-pane" id="setup-pane-lessons">
-          <p style="text-align:center;color:var(--gray-600);font-size:.9rem;margin-bottom:16px;">Choose which lesson
+          <p class="u-text-center u-color-muted u-font-sm u-mb-16">Choose which lesson
             types to include:</p>
           <div class="lesson-grid" id="lesson-grid">
             <div class="lesson-card selected" data-lesson="flashcards" id="lesson-card-flashcards">
@@ -488,7 +489,7 @@
                 </svg></div>
               <div class="lesson-card-title">Match</div>
               <div class="lesson-card-desc">Pair terms with definitions</div>
-              <div class="lesson-card-badge" id="match-min-badge" style="display:none">Needs 6+ cards</div>
+              <div class="lesson-card-badge" id="match-min-badge" hidden>Needs 6+ cards</div>
             </div>
           </div>
         </div>
@@ -527,7 +528,7 @@
           </div>
         </div>
         <div class="setup-pane" id="setup-pane-algorithm">
-          <p style="text-align:center;color:var(--gray-600);font-size:.9rem;margin-bottom:16px;">Adjust how cards are
+          <p class="u-text-center u-color-muted u-font-sm u-mb-16">Adjust how cards are
             selected for review:</p>
           <div class="algo-lane" id="algo-lane"></div>
           <div class="algo-presets" id="algo-presets"><button class="algo-preset active"
@@ -536,7 +537,7 @@
               class="algo-preset" data-preset="fixmistakes">Fix Mistakes</button><button class="algo-preset"
               data-preset="hardfirst">Hard First</button></div>
         </div>
-        <button class="btn cta" id="setup-start-btn" style="margin-top:8px;"><svg viewBox="0 0 24 24" fill="none"
+        <button class="btn cta u-mt-8" id="setup-start-btn"><svg viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="5 3 19 12 5 21 5 3"></polygon>
           </svg>Start Session</button>
@@ -546,7 +547,7 @@
       <div class="mode-picker" id="mode-picker">
         <div class="mode-picker-title">Choose your study mode</div>
         <div class="mode-picker-grid" id="mode-picker-grid"></div>
-        <div class="actions" style="justify-content:center;margin-top:16px;">
+        <div class="actions u-justify-center u-mt-16">
           <button class="btn" id="mode-picker-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="19" y1="12" x2="5" y2="12"></line>
@@ -569,7 +570,7 @@
         </div>
         <div class="learn-progress-center">
           <div class="learn-progress-bar">
-            <div class="learn-progress-fill" id="learn-progress-fill" style="width:0%"></div>
+            <progress class="learn-progress-fill" id="learn-progress-fill" max="100" value="0"></progress>
           </div><span class="learn-progress-text" id="learn-progress-text">0/0</span>
         </div>
         <div class="actions">
@@ -601,7 +602,7 @@
             <div class="flashcard-stage">
               <div class="flashcard-view-tools">
                 <button class="btn" id="learn-f-list-btn" type="button" aria-pressed="false">Card List</button>
-                <label class="peek-switch" id="learn-f-peek-wrap" for="learn-f-peek-toggle" style="display:none;"><span>Peek</span>
+                <label class="peek-switch" id="learn-f-peek-wrap" for="learn-f-peek-toggle" hidden><span>Peek</span>
                   <input type="checkbox" id="learn-f-peek-toggle">
                   <span class="peek-switch-track"></span>
                 </label>
@@ -632,7 +633,7 @@
             <div class="quiz-question" id="learn-q-text"></div>
             <div class="quiz-options" id="learn-q-options"></div>
             <div class="quiz-expl" id="learn-q-expl"></div>
-            <div class="actions" style="margin-top:12px;"><button class="btn primary" id="learn-q-next">Next
+            <div class="actions u-mt-12"><button class="btn primary" id="learn-q-next">Next
                 question</button></div>
           </div>
 
@@ -654,11 +655,11 @@
             <div class="match-stage">
               <div class="match-timer" id="match-timer">0.0s</div>
               <div class="match-grid" id="match-grid"></div>
-              <div class="match-results" id="match-results" style="display:none">
+              <div class="match-results" id="match-results" hidden>
                 <div class="match-results-time" id="match-results-time"></div>
                 <div class="match-results-badge" id="match-results-badge"></div>
                 <div class="match-results-history" id="match-results-history"></div>
-                <div class="actions" style="justify-content:center;margin-top:16px;"><button class="btn primary"
+                <div class="actions u-justify-center u-mt-16"><button class="btn primary"
                     id="match-play-again">Play Again</button></div>
               </div>
             </div>
@@ -761,8 +762,8 @@
                 <div class="field"><label>Semester</label><input id="builder-semester-input"></div>
                 <div class="field"><label>Block</label><input id="builder-block-input"></div>
               </div>
-              <div class="field" style="margin-top:12px;"><label>Notes (Markdown)</label><textarea
-                  id="builder-notes-input" style="min-height:180px"
+              <div class="field u-mt-12"><label>Notes (Markdown)</label><textarea
+                  id="builder-notes-input" class="u-min-h-180"
                   placeholder="# Key Concepts&#10;&#10;- Add summary notes here"></textarea></div>
             </div>
           </section>
@@ -785,7 +786,7 @@
 
           <section class="builder-pane" id="builder-pane-import">
             <div class="builder-card">
-              <div class="builder-helper" style="margin-bottom:8px">Import data directly into this pack and preview
+              <div class="builder-helper u-mb-8">Import data directly into this pack and preview
                 before applying.</div>
               <div class="builder-import-tools">
                 <div class="field"><label>Import Type</label><select class="builder-select" id="builder-import-type">
@@ -799,19 +800,19 @@
               </div>
               <div class="builder-drop" id="builder-csv-drop"><strong>Drag a CSV file here</strong>
                 <div class="builder-helper">or click to browse</div><input type="file" id="builder-csv-input"
-                  accept=".csv,text/csv" style="display:none">
+                  accept=".csv,text/csv" hidden>
               </div>
-              <div class="builder-cta-strip" style="margin-top:12px"><button class="btn"
+              <div class="builder-cta-strip u-mt-12"><button class="btn"
                   id="builder-template-btn">Download CSV Template</button><button class="btn primary"
                   id="builder-apply-import-btn" disabled>Apply Import</button></div>
               <div class="builder-helper" id="builder-import-summary">No file loaded.</div>
-              <div class="builder-preview" id="builder-preview" style="display:none">
+              <div class="builder-preview" id="builder-preview" hidden>
                 <div class="builder-preview-head">Preview (first 10 valid rows)</div>
-                <div style="overflow:auto">
+                <div class="u-overflow-auto">
                   <table class="builder-preview-table" id="builder-preview-table"></table>
                 </div>
               </div>
-              <div class="builder-errors" id="builder-import-errors" style="display:none"></div>
+              <div class="builder-errors" id="builder-import-errors" hidden></div>
             </div>
           </section>
         </div>
@@ -827,10 +828,10 @@
           <path d="M9.09 9a3 3 0 0 1 5.82 1c0 2-3 3-3 3"></path>
           <line x1="12" y1="17" x2="12.01" y2="17"></line>
         </svg></div>
-      <div class="modal-title" id="builder-exit-title" style="text-align:center;margin-bottom:6px">Save Changes?</div>
-      <p class="modal-message" style="text-align:center">You have unsaved builder changes. Do you want to save before
+      <div class="modal-title u-text-center u-mb-6" id="builder-exit-title">Save Changes?</div>
+      <p class="modal-message u-text-center">You have unsaved builder changes. Do you want to save before
         leaving?</p>
-      <div class="actions" style="justify-content:center">
+      <div class="actions u-justify-center">
         <button class="btn primary" id="builder-exit-save">Save</button>
         <button class="btn danger" id="builder-exit-discard">Don't Save</button>
         <button class="btn" id="builder-exit-cancel">Cancel</button>
@@ -847,7 +848,7 @@
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg></button></div>
-      <div class="modal-grid" style="margin-bottom:14px;">
+      <div class="modal-grid u-mb-14">
         <div class="field"><label>Folder Name *</label><input id="folder-name-input"></div>
         <div class="field"><label>Course</label><input id="folder-course-input"></div>
         <div class="field"><label>Subject</label><input id="folder-subject-input"></div>
@@ -855,7 +856,7 @@
         <div class="field"><label>Block</label><input id="folder-block-input"></div>
         <div class="field"><label>Exam Date</label><input type="text" id="folder-exam-date-input" placeholder="dd-mm-yyyy" inputmode="numeric"></div>
       </div>
-      <div class="actions" style="justify-content:flex-end;"><button class="btn" id="folder-modal-cancel"
+      <div class="actions u-justify-end"><button class="btn" id="folder-modal-cancel"
           type="button">Cancel</button><button class="btn primary" id="folder-modal-save" type="button">Save
           Folder</button></div>
     </div>
@@ -871,7 +872,7 @@
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg></button></div>
       <p class="modal-message" id="confirm-modal-message"></p>
-      <div class="actions" style="justify-content:flex-end;"><button class="btn" id="confirm-modal-cancel"
+      <div class="actions u-justify-end"><button class="btn" id="confirm-modal-cancel"
           type="button">Cancel</button><button class="btn danger" id="confirm-modal-confirm"
           type="button">Delete</button></div>
     </div>
@@ -887,19 +888,19 @@
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg></button></div>
       <p class="modal-message" id="share-modal-message">Choose whether this content can be opened with a share link.</p>
-      <div class="actions" style="justify-content:flex-start;margin-bottom:12px;">
+      <div class="actions u-justify-start u-mb-12">
         <button class="btn" id="share-scope-private" type="button">Private</button>
         <button class="btn primary" id="share-scope-public" type="button">Public</button>
       </div>
       <div class="field">
         <label for="share-link-input">Share link</label>
-        <div class="actions" style="justify-content:flex-start;gap:10px;align-items:center;">
-          <input id="share-link-input" readonly style="flex:1;" placeholder="Enable public sharing to generate a link.">
+        <div class="actions u-justify-start u-gap-10 u-align-center">
+          <input id="share-link-input" readonly class="u-flex-1" placeholder="Enable public sharing to generate a link.">
           <button class="btn" id="share-copy-btn" type="button">Copy</button>
         </div>
       </div>
-      <p class="modal-message" id="share-modal-status" style="margin-top:12px;">Private links are disabled for everyone except you inside the app.</p>
-      <div class="actions" style="justify-content:flex-end;"><button class="btn" id="share-modal-cancel"
+      <p class="modal-message u-mt-12" id="share-modal-status">Private links are disabled for everyone except you inside the app.</p>
+      <div class="actions u-justify-end"><button class="btn" id="share-modal-cancel"
           type="button">Cancel</button><button class="btn primary" id="share-modal-save"
           type="button">Create Link</button></div>
     </div>
@@ -912,13 +913,13 @@
       <svg id="audio-play-icon" viewBox="0 0 24 24" fill="currentColor">
         <path d="M8 5v14l11-7z"></path>
       </svg>
-      <svg id="audio-pause-icon" viewBox="0 0 24 24" fill="currentColor" style="display:none">
+      <svg id="audio-pause-icon" viewBox="0 0 24 24" fill="currentColor" hidden>
         <path d="M6 19h4V5H6zm8-14v14h4V5z"></path>
       </svg>
     </button>
     <span class="audio-time" id="audio-time">0:00 / 0:00</span>
     <div class="audio-progress-wrap" id="audio-progress-wrap">
-      <div class="audio-progress-fill" id="audio-progress-fill"></div>
+      <progress class="audio-progress-fill" id="audio-progress-fill" max="100" value="0">0%</progress>
     </div>
     <button class="audio-speed-btn" id="audio-speed-btn">1x</button>
     <span class="audio-pack-title" id="audio-pack-title"></span>
@@ -948,6 +949,7 @@
   <script src="{{ url_for('static', filename='js/study-progress-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/display-format-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/study-library-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/study-session-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
   <script src="{{ url_for('static', filename=study_js_asset or 'js/study.js') }}"></script>
 </body>

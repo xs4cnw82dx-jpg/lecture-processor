@@ -99,7 +99,7 @@
       if (streakEl) streakEl.textContent = '\u2014 days';
       if (dueEl) dueEl.textContent = '\u2014 cards';
       if (goalEl) goalEl.textContent = '\u2014 / \u2014';
-      if (goalFillEl) goalFillEl.style.width = '0%';
+      if (goalFillEl) goalFillEl.value = 0;
       return;
     }
     var streak = Math.max(0, Number(snapshot.streak || 0));
@@ -122,11 +122,11 @@
         : (Math.min(done, goal) + ' / ' + goal);
     }
     if (goalFillEl) {
-      goalFillEl.style.width = String(
+      goalFillEl.value = Number(
         progressUtils && typeof progressUtils.goalCompletionPercent === 'function'
           ? progressUtils.goalCompletionPercent({ today_progress: done, daily_goal: goal }, goal)
           : Math.max(0, Math.min(100, Math.round((Math.min(done, goal) / goal) * 100)))
-      ) + '%';
+      ) || 0;
     }
   }
 
@@ -187,10 +187,8 @@
     }
     packs.slice(0, 5).forEach(function (pack) {
       var row = document.createElement('a');
-      row.className = 'list-item';
+      row.className = 'list-item plain-link-reset';
       row.href = '/study?pack_id=' + encodeURIComponent(String(pack.study_pack_id || ''));
-      row.style.textDecoration = 'none';
-      row.style.color = 'inherit';
       var title = document.createElement('h3');
       title.textContent = String(pack.title || 'Untitled pack');
       var meta = document.createElement('p');

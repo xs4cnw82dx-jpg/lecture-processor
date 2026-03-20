@@ -1,6 +1,17 @@
 (function (global) {
   'use strict';
 
+  var uxUtils = global.LectureProcessorUx || {};
+
+  function setHidden(element, hidden) {
+    if (!element) return;
+    if (uxUtils && typeof uxUtils.setHidden === 'function') {
+      uxUtils.setHidden(element, hidden);
+      return;
+    }
+    element.hidden = !!hidden;
+  }
+
   function hasOption(options, key) {
     return Object.prototype.hasOwnProperty.call(options || {}, key);
   }
@@ -31,23 +42,9 @@
 
     safeSetText(opts.userTextEl, user ? signedInText : signedOutText);
 
-    if (opts.signOutBtn) {
-      opts.signOutBtn.style.display = user
-        ? (opts.signOutSignedInDisplay || 'inline-flex')
-        : (opts.signOutSignedOutDisplay || 'none');
-    }
-
-    if (opts.authRequiredEl) {
-      opts.authRequiredEl.style.display = user
-        ? (opts.authRequiredSignedInDisplay || 'none')
-        : (opts.authRequiredSignedOutDisplay || 'block');
-    }
-
-    if (opts.mainContentEl) {
-      opts.mainContentEl.style.display = user
-        ? (opts.mainContentSignedInDisplay || 'block')
-        : (opts.mainContentSignedOutDisplay || 'none');
-    }
+    if (opts.signOutBtn) setHidden(opts.signOutBtn, !user);
+    if (opts.authRequiredEl) setHidden(opts.authRequiredEl, !!user);
+    if (opts.mainContentEl) setHidden(opts.mainContentEl, !user);
   }
 
   function bindSignOutButton(button, auth, redirectPath) {

@@ -54,25 +54,25 @@ test('dashboard shell loads for unauthenticated user', async ({ page }) => {
   await expect(page.locator('body')).toContainText(/Sign in|Lecture Processor|Welcome/i);
 });
 
-test('lecture notes advanced import panel toggles open and closed', async ({ page }) => {
+test('lecture notes audio disclosures toggle open and closed', async ({ page }) => {
   await page.goto('/lecture-notes');
 
-  const toggle = page.getByRole('button', { name: /Advanced import: Import audio by finding the video's URL manually/i });
-  const panel = page.locator('#audio-url-advanced-panel');
-  const advancedWrap = page.locator('#audio-url-advanced');
+  const otherAudioDisclosure = page.locator('#other-audio-disclosure');
+  const advancedToggle = page.getByRole('button', { name: /Advanced settings/i });
+  const advancedBody = page.locator('#advanced-settings-body');
+  await expect(otherAudioDisclosure).toBeHidden();
+  await expect(advancedToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(advancedBody).toHaveAttribute('aria-hidden', 'true');
 
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(panel).toHaveAttribute('aria-hidden', 'true');
+  await advancedToggle.click();
 
-  await toggle.click();
+  await expect(advancedToggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(advancedBody).toHaveAttribute('aria-hidden', 'false');
+  await expect(advancedToggle).toHaveClass(/open/);
 
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  await expect(panel).toHaveAttribute('aria-hidden', 'false');
-  await expect(advancedWrap).toHaveClass(/is-open/);
+  await advancedToggle.click();
 
-  await toggle.click();
-
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(panel).toHaveAttribute('aria-hidden', 'true');
-  await expect(advancedWrap).not.toHaveClass(/is-open/);
+  await expect(advancedToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(advancedBody).toHaveAttribute('aria-hidden', 'true');
+  await expect(advancedToggle).not.toHaveClass(/open/);
 });

@@ -99,8 +99,8 @@ function setAdminTab(tabKey) {
     adminTabButtons.forEach((btn) => {
         btn.classList.toggle('active', btn.dataset.adminTab === next);
     });
-    if (adminOverviewContent) adminOverviewContent.style.display = next === 'overview' ? '' : 'none';
-    if (adminBatchContent) adminBatchContent.style.display = next === 'batch-jobs' ? '' : 'none';
+    if (adminOverviewContent) adminOverviewContent.hidden = next !== 'overview';
+    if (adminBatchContent) adminBatchContent.hidden = next !== 'batch-jobs';
 }
 
 function renderAdminBatchJobs(rows) {
@@ -198,8 +198,8 @@ function formatPromptSummary(job) {
 function setState(message, type = 'loading') {
     stateArea.textContent = message;
     stateArea.className = type;
-    stateArea.style.display = 'block';
-    dashboard.style.display = 'none';
+    stateArea.hidden = false;
+    dashboard.hidden = true;
 }
 
 async function parseAdminErrorResponse(res, fallbackMessage) {
@@ -520,12 +520,10 @@ function renderModeBreakdown() {
         const label = document.createElement('div');
         label.className = 'mode-label';
         label.textContent = String(entry.label || '-');
-        const track = document.createElement('div');
-        track.className = 'mode-track';
-        const fill = document.createElement('div');
-        fill.className = 'mode-fill';
-        fill.style.width = `${width}%`;
-        track.appendChild(fill);
+        const track = document.createElement('progress');
+        track.className = 'mode-track mode-track-bar';
+        track.max = 100;
+        track.value = width;
         const valueEl = document.createElement('div');
         valueEl.className = 'mode-value';
         valueEl.textContent = String(value);
@@ -561,12 +559,10 @@ function renderFunnel(funnel) {
         const label = document.createElement('div');
         label.className = 'funnel-label';
         label.textContent = String(step.label || step.event || '-');
-        const track = document.createElement('div');
-        track.className = 'funnel-track';
-        const fill = document.createElement('div');
-        fill.className = 'funnel-fill';
-        fill.style.width = `${width}%`;
-        track.appendChild(fill);
+        const track = document.createElement('progress');
+        track.className = 'funnel-track funnel-track-bar';
+        track.max = 100;
+        track.value = width;
         const countEl = document.createElement('div');
         countEl.className = 'funnel-count';
         countEl.textContent = String(count);
@@ -689,8 +685,8 @@ function renderDashboard(data) {
     });
     renderRows('rate-limit-body', rateLimitRows, 'No rate-limit hits found in selected window.', 3);
 
-    stateArea.style.display = 'none';
-    dashboard.style.display = 'block';
+    stateArea.hidden = true;
+    dashboard.hidden = false;
 }
 
 async function loadAdminOverview(user) {
@@ -883,10 +879,10 @@ if (loadPromptsBtn && promptsOutput) {
                 const data = await res.json();
                 promptsOutput.textContent = data.markdown || JSON.stringify(data, null, 2);
             }
-            promptsOutput.style.display = 'block';
+            promptsOutput.hidden = false;
         } catch (e) {
             promptsOutput.textContent = 'Network error loading prompts.';
-            promptsOutput.style.display = 'block';
+            promptsOutput.hidden = false;
         }
         loadPromptsBtn.textContent = 'Reload prompts';
         loadPromptsBtn.disabled = false;
@@ -1287,11 +1283,13 @@ function recalcCalculatorCosts() {
     if (calcRevenueUsd) calcRevenueUsd.textContent = formatUsd(revenueUsd);
     if (calcMargin) {
         calcMargin.textContent = formatUsd(marginValue);
-        calcMargin.style.color = marginValue >= 0 ? '#166534' : '#EF4444';
+        calcMargin.classList.toggle('tone-positive', marginValue >= 0);
+        calcMargin.classList.toggle('tone-negative', marginValue < 0);
     }
     if (calcMarginPct) {
         calcMarginPct.textContent = formatPercent(marginPercent);
-        calcMarginPct.style.color = marginPercent >= 0 ? '#166534' : '#EF4444';
+        calcMarginPct.classList.toggle('tone-positive', marginPercent >= 0);
+        calcMarginPct.classList.toggle('tone-negative', marginPercent < 0);
     }
     if (calcBreakEven) calcBreakEven.textContent = formatEur(breakEvenEur);
 
