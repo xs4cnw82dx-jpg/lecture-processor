@@ -544,8 +544,8 @@ def test_study_pack_get_returns_source_export_flags(client, monkeypatch):
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u-flags", "email": "u@example.com"})
     monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _Doc())
     monkeypatch.setattr(core.study_repo, "get_study_pack_source_doc", lambda _db, _pack_id: _SourceDoc())
-    monkeypatch.setattr("lecture_processor.services.study_api_service.study_audio.ensure_pack_audio_storage_key", lambda *_args, **_kwargs: "")
-    monkeypatch.setattr("lecture_processor.services.study_api_service.study_audio.get_audio_storage_key_from_pack", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr("lecture_processor.services.study_library_service.study_audio.ensure_pack_audio_storage_key", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr("lecture_processor.services.study_library_service.study_audio.get_audio_storage_key_from_pack", lambda *_args, **_kwargs: "")
 
     response = client.get("/api/study-packs/pack-with-sources", headers={"Authorization": "Bearer dev"})
 
@@ -697,8 +697,8 @@ def test_study_pack_get_returns_goal_and_notes_highlights(client, monkeypatch):
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u2", "email": "u@example.com"})
     monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _Doc())
-    monkeypatch.setattr("lecture_processor.services.study_api_service.study_audio.ensure_pack_audio_storage_key", lambda *_args, **_kwargs: "")
-    monkeypatch.setattr("lecture_processor.services.study_api_service.study_audio.get_audio_storage_key_from_pack", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr("lecture_processor.services.study_library_service.study_audio.ensure_pack_audio_storage_key", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr("lecture_processor.services.study_library_service.study_audio.get_audio_storage_key_from_pack", lambda *_args, **_kwargs: "")
 
     response = client.get("/api/study-packs/pack-1", headers={"Authorization": "Bearer dev"})
 
@@ -857,8 +857,8 @@ def test_study_pack_update_round_trips_daily_card_goal_and_notes_highlights(clie
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u4", "email": "u@example.com"})
     monkeypatch.setattr(core.study_repo, "study_pack_doc_ref", lambda _db, _pack_id: _DocRef())
-    monkeypatch.setattr("lecture_processor.services.study_api_service.study_audio.ensure_pack_audio_storage_key", lambda *_args, **_kwargs: "")
-    monkeypatch.setattr("lecture_processor.services.study_api_service.study_audio.get_audio_storage_key_from_pack", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr("lecture_processor.services.study_library_service.study_audio.ensure_pack_audio_storage_key", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr("lecture_processor.services.study_library_service.study_audio.get_audio_storage_key_from_pack", lambda *_args, **_kwargs: "")
 
     response = client.patch(
         "/api/study-packs/pack-1",
@@ -898,8 +898,8 @@ def test_study_pack_update_rejects_invalid_notes_highlights(client, monkeypatch)
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u5", "email": "u@example.com"})
     monkeypatch.setattr(core.study_repo, "study_pack_doc_ref", lambda _db, _pack_id: _DocRef())
-    monkeypatch.setattr("lecture_processor.services.study_api_service.study_audio.ensure_pack_audio_storage_key", lambda *_args, **_kwargs: "")
-    monkeypatch.setattr("lecture_processor.services.study_api_service.study_audio.get_audio_storage_key_from_pack", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr("lecture_processor.services.study_library_service.study_audio.ensure_pack_audio_storage_key", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr("lecture_processor.services.study_library_service.study_audio.get_audio_storage_key_from_pack", lambda *_args, **_kwargs: "")
 
     response = client.patch(
         "/api/study-packs/pack-1",

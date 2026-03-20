@@ -588,7 +588,7 @@
     }
     var url = getRowM3u8Url(rowNode);
     if (!url) {
-      setRowAudioImportStatus(rowNode, 'Paste the LMS video URL first.', 'error');
+      setRowAudioImportStatus(rowNode, 'Paste the lecture video page URL or direct playlist URL first.', 'error');
       return Promise.resolve({ ok: false, reason: 'empty-url' });
     }
 
@@ -630,7 +630,7 @@
         return { ok: true, reason: 'imported' };
       });
     }).catch(function () {
-      setRowAudioImportStatus(rowNode, 'Import failed: Could not import audio from the LMS video URL. Please try again.', 'error');
+      setRowAudioImportStatus(rowNode, 'Import failed: Could not import audio from the lecture video URL. Please try again.', 'error');
       return { ok: false, reason: 'network-error' };
     }).finally(function () {
       setRowAudioImportPending(rowNode, false);
@@ -981,16 +981,16 @@
           ? (
             '  <div class="row-url-import" data-audio-url-wrap>' +
             '    <div class="row-url-head">' +
-            '      <strong>Import from LMS video URL</strong>' +
-            '      <span>Paste the LMS video playlist URL (usually contains <code>index.m3u8</code>). Audio can be auto-imported for this lecture row.</span>' +
+            '      <strong>Import from lecture video URL</strong>' +
+            '      <span>Paste the normal lecture video page first. Direct playlist links also work and audio can be auto-imported for this lecture row.</span>' +
             '    </div>' +
             '    <div class="row-url-row">' +
-            '      <input type="url" class="row-url-input" data-field="m3u8" placeholder="https://.../index.m3u8?..." autocomplete="off">' +
+            '      <input type="url" class="row-url-input" data-field="m3u8" placeholder="https://.../lecture-video-or-index.m3u8" autocomplete="off">' +
             '      <button type="button" class="btn small" data-action="import-audio-url">Import audio</button>' +
             '    </div>' +
             '    <div class="row-url-help">' +
             '      <span class="info-dot" aria-hidden="true">i</span>' +
-            '      <span>These links expire quickly. Importing stores audio immediately so the batch can still run even when processing takes longer.</span>' +
+            '      <span>These links expire quickly. Importing stores audio immediately so the batch can still run even when processing takes longer. If the page URL fails, retry with the direct playlist URL.</span>' +
             '    </div>' +
             '    <div class="row-url-status" data-field="m3u8-status" aria-live="polite"></div>' +
             '  </div>'
@@ -1097,7 +1097,7 @@
 
         if (!audioFile && !importedToken && !m3u8Url) {
           if (mode === 'lecture-notes') {
-            throw new Error(meta.singular + ' ' + rowOrdinal + ': provide an audio file or import from an LMS video URL.');
+            throw new Error(meta.singular + ' ' + rowOrdinal + ': provide an audio file or import from a lecture video URL.');
           }
           throw new Error(meta.singular + ' ' + rowOrdinal + ': provide an audio file.');
         }
@@ -1351,7 +1351,7 @@
           silentIfAlreadyImported: true,
         }).then(function (result) {
           if (!result || !result.ok) {
-            throw new Error('Lecture ' + String(index + 1) + ': could not auto-import the LMS video URL. Please import it manually or upload audio.');
+            throw new Error('Lecture ' + String(index + 1) + ': could not auto-import the lecture video URL. Please import it manually or upload audio.');
           }
           if (result.reason === 'imported') importedCount += 1;
           return true;

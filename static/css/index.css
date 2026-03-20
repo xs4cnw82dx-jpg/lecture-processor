@@ -751,6 +751,7 @@
         .file-remove:hover { background: var(--error); color: var(--white); }
         .file-remove svg { width: 16px; height: 16px; }
         .button-section { text-align: center; }
+        .mobile-process-summary { display: none; font-size: 0.82rem; color: var(--gray-600); margin-bottom: 8px; line-height: 1.45; }
         .process-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: var(--white); border: none; padding: 16px 32px; font-size: 1rem; font-weight: 600; border-radius: var(--radius-md); cursor: pointer; transition: all 0.3s ease; min-width: 200px; box-shadow: 0 4px 14px 0 rgba(79,70,229,0.4); }
         .process-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 20px 0 rgba(79,70,229,0.5); }
         .process-button:disabled { background: var(--gray-300); cursor: not-allowed; box-shadow: none; }
@@ -1086,7 +1087,17 @@
         }
         body[data-forced-mode="lecture-notes"] .button-section {
             text-align: left;
+            position: sticky;
+            bottom: 12px;
+            z-index: 24;
+            padding: 12px;
+            border: 1px solid var(--gray-200);
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.94);
+            backdrop-filter: blur(12px);
+            box-shadow: 0 16px 30px rgba(15, 23, 42, 0.08);
         }
+        body[data-forced-mode="lecture-notes"] .mobile-process-summary { display: block; }
         body[data-forced-mode="lecture-notes"] .process-button {
             width: 100%;
             min-width: 0;

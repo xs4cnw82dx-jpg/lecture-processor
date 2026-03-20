@@ -43,6 +43,11 @@ def get_status(app_ctx, request, job_id):
         response['billing_receipt'] = billing_receipt
     if job['status'] == 'complete':
         response['result'] = job['result']
+        if str(job.get('job_scope', '') or '').strip().lower() == 'tools':
+            response['output_text'] = job.get('result') or ''
+            response['content_markdown'] = job.get('result') or ''
+            response['source_type'] = job.get('tool_source_type', '')
+            response['file_name'] = job.get('tool_input_name', '')
         response['flashcards'] = job.get('flashcards', [])
         response['test_questions'] = job.get('test_questions', [])
         response['study_generation_error'] = job.get('study_generation_error')
@@ -78,6 +83,8 @@ def _is_active_regular_runtime_job(job, uid):
         return False
     status = str(job.get('status', '') or '').strip().lower()
     if status not in account_lifecycle.ACTIVE_ACCOUNT_JOB_STATES:
+        return False
+    if str(job.get('job_scope', '') or '').strip().lower() == 'tools':
         return False
     return not bool(job.get('is_batch', False))
 

@@ -1,0 +1,65 @@
+<div class="goal-modal-overlay" id="goal-modal-overlay" aria-hidden="true">
+    <div class="goal-modal" role="dialog" aria-modal="true" aria-labelledby="goal-modal-title">
+        <div class="goal-modal-title" id="goal-modal-title">Set Daily Card Goal</div>
+        <div class="goal-modal-subtitle">Choose how many cards you want to review each day (1–500).</div>
+        <label class="form-label" for="goal-modal-input">Daily goal</label>
+        <input id="goal-modal-input" class="form-input" type="number" min="1" max="500" inputmode="numeric">
+        <div class="goal-modal-error" id="goal-modal-error"></div>
+        <div class="goal-modal-actions">
+            <button type="button" class="progress-action-btn" id="goal-modal-cancel-btn">Cancel</button>
+            <button type="button" class="progress-action-btn primary" id="goal-modal-save-btn">Save goal</button>
+        </div>
+    </div>
+</div>
+
+<div class="delete-account-overlay" id="delete-account-overlay" aria-hidden="true">
+    <div class="delete-account-modal" role="dialog" aria-modal="true" aria-labelledby="delete-account-title">
+        <div class="delete-account-head">
+            <div class="delete-account-title" id="delete-account-title">Delete Account & Data</div>
+            <button type="button" class="delete-account-close" id="delete-account-close" aria-label="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <p class="delete-account-subtitle">This permanently deletes your account and stored data.</p>
+        <label class="form-label" for="delete-account-text-input">Type DELETE MY ACCOUNT</label>
+        <input class="form-input" id="delete-account-text-input" autocomplete="off" spellcheck="false">
+        <label class="form-label" for="delete-account-email-input">Confirm your email</label>
+        <input class="form-input" id="delete-account-email-input" autocomplete="off" spellcheck="false">
+        <div class="delete-account-error" id="delete-account-error"></div>
+        <div class="delete-account-actions">
+            <button type="button" class="progress-action-btn" id="delete-account-cancel-btn">Cancel</button>
+            <button type="button" class="progress-action-btn danger" id="delete-account-confirm-btn">Delete permanently</button>
+        </div>
+    </div>
+</div>
+
+<div class="onboarding-overlay" id="language-onboarding-overlay" aria-hidden="true">
+    <div class="onboarding-modal" role="dialog" aria-modal="true" aria-labelledby="language-onboarding-title">
+        <div class="onboarding-title" id="language-onboarding-title">Choose your default language</div>
+        <div class="onboarding-subtitle">This will be used as the default output language for processing. You can change it later in Advanced settings.</div>
+        <div class="onboarding-language-grid" id="language-onboarding-grid">
+            <button type="button" class="onboarding-language-btn active" data-value="english">🇬🇧 English</button>
+            <button type="button" class="onboarding-language-btn" data-value="dutch">🇳🇱 Dutch</button>
+            <button type="button" class="onboarding-language-btn" data-value="spanish">🇪🇸 Spanish</button>
+            <button type="button" class="onboarding-language-btn" data-value="french">🇫🇷 French</button>
+            <button type="button" class="onboarding-language-btn" data-value="german">🇩🇪 German</button>
+            <button type="button" class="onboarding-language-btn" data-value="chinese">🇨🇳 Chinese</button>
+            <button type="button" class="onboarding-language-btn" data-value="other">🌐 Other</button>
+        </div>
+        <input class="language-custom-input onboarding-custom-input" id="language-onboarding-custom" placeholder="Type your preferred language (for example: Italian)" hidden>
+        <div class="onboarding-error" id="language-onboarding-error"></div>
+        <div class="onboarding-actions">
+            <button type="button" class="progress-action-btn primary" id="language-onboarding-save-btn">Save preference</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast">
+    <svg id="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="20 6 9 17 4 12"></polyline>
+    </svg>
+    <span id="toast-text"></span>
+</div>

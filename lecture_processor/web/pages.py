@@ -130,6 +130,7 @@ def _render_processing_page(forced_mode: str):
         sentry_environment=runtime.SENTRY_ENVIRONMENT,
         sentry_release=runtime.SENTRY_RELEASE,
         sentry_capture_local=runtime.SENTRY_CAPTURE_LOCAL,
+        index_results_js_asset=runtime.resolve_js_asset('js/index-results-utils.js'),
         index_js_asset=runtime.resolve_js_asset('js/index-app.js'),
         **_shell_context(runtime=runtime, page_key=page_key),
     )
@@ -164,6 +165,7 @@ def _render_study_page(*, entry_mode: str = '', page_key: str = 'study', shell_t
         study_entry_mode=_normalize_study_entry_mode(entry_mode),
         study_document_title=document_title,
         study_shell_title=shell_title,
+        study_api_js_asset=runtime.resolve_js_asset('js/study-api-utils.js'),
         study_js_asset=runtime.resolve_js_asset('js/study.js'),
         **_shell_context(runtime=runtime, page_key=page_key),
     )

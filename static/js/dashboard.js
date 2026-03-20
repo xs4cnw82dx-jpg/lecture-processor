@@ -16,12 +16,18 @@
   var sessionsList = document.getElementById('dash-sessions-list');
   var packsList = document.getElementById('dash-packs-list');
   var dashboardPage = document.getElementById('dashboard-page');
+  var authBanner = document.getElementById('dashboard-auth-banner');
   var DASHBOARD_CACHE_KEY = 'dashboard_summary';
   var currentUser = null;
 
   function setDashboardLoading(isLoading) {
     if (!dashboardPage) return;
     dashboardPage.setAttribute('data-load-state', isLoading ? 'loading' : 'ready');
+  }
+
+  function setSignedOutHero(visible) {
+    if (!authBanner) return;
+    authBanner.hidden = !visible;
   }
 
   function localDateString(value) {
@@ -203,12 +209,14 @@
   async function loadDashboard(user) {
     setDashboardLoading(true);
     if (!user) {
+      setSignedOutHero(true);
       applySignedOutSnapshot();
       renderUpcomingSessions(null, []);
       renderRecentPacks([]);
       setDashboardLoading(false);
       return;
     }
+    setSignedOutHero(false);
     var sessions = [];
     try {
       var token = await user.getIdToken();

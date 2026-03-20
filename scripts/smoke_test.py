@@ -14,6 +14,7 @@ import os
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 from typing import Any, Dict, Optional, Tuple
 
 
@@ -164,16 +165,41 @@ class SmokeRunner:
         return 0
 
 
+def _validate_base_url(base_url: str) -> str:
+    value = str(base_url or "").strip()
+    if not value:
+        raise ValueError("Base URL is required.")
+    parsed = urlparse(value)
+    scheme = str(parsed.scheme or "").lower()
+    host = str(parsed.hostname or "").strip().lower()
+    if scheme not in {"http", "https"} or not host:
+        raise ValueError("Base URL must include http:// or https:// and a hostname.")
+    if host in {"127.0.0.1", "localhost", "::1"}:
+        allow_local = os.getenv("SMOKE_ALLOW_LOCALHOST", "").strip().lower()
+        if allow_local not in {"1", "true", "yes"}:
+            raise ValueError(
+                "Refusing to run smoke tests against localhost by default. "
+                "Pass an explicit non-local --base-url or set SMOKE_ALLOW_LOCALHOST=1."
+            )
+    return value.rstrip("/")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run launch smoke tests.")
-    parser.add_argument("--base-url", default="http://127.0.0.1:5000", help="Base URL for the app (default: http://127.0.0.1:5000)")
+    parser.add_argument("--base-url", default="", help="Base URL for the app (required unless SMOKE_BASE_URL is set)")
     parser.add_argument("--timeout", default=10.0, type=float, help="Request timeout in seconds")
     parser.add_argument("--bearer-token", default="", help="Optional Firebase bearer token for authenticated checks")
     args = parser.parse_args()
 
     token = args.bearer_token.strip() or os.getenv("FIREBASE_TEST_BEARER", "").strip()
+    base_url = args.base_url.strip() or os.getenv("SMOKE_BASE_URL", "").strip()
+    try:
+        validated_base_url = _validate_base_url(base_url)
+    except ValueError as exc:
+        print(f"Error: {exc}")
+        return 2
 
-    runner = SmokeRunner(base_url=args.base_url, timeout=args.timeout, bearer_token=token)
+    runner = SmokeRunner(base_url=validated_base_url, timeout=args.timeout, bearer_token=token)
     return runner.run()
 
 

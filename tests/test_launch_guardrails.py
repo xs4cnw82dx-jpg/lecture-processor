@@ -675,6 +675,7 @@ def test_tools_extract_image_accepts_five_files_bills_once_and_returns_output_te
     monkeypatch.setattr(core, "types", SimpleNamespace(Part=_Part, Content=_Content))
     monkeypatch.setattr(core, "client", SimpleNamespace(files=_UploadApi()))
     monkeypatch.setattr(core, "wait_for_file_processing", lambda _uploaded: None)
+    monkeypatch.setattr(core, "submit_background_job", lambda target, *args, **kwargs: target(*args, **kwargs))
 
     response = client.post(
         "/api/tools/extract",
@@ -691,11 +692,25 @@ def test_tools_extract_image_accepts_five_files_bills_once_and_returns_output_te
         headers={"Authorization": "Bearer dev"},
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     payload = response.get_json()
     assert payload["ok"] is True
-    assert payload["output_text"] == "Combined image extraction output"
-    assert payload["content_markdown"] == "Combined image extraction output"
+    assert payload["status"] == "queued"
+    job_id = payload["job_id"]
+
+    status_response = client.get(
+        f"/status/{job_id}",
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert status_response.status_code == 200
+    status_payload = status_response.get_json()
+    assert status_payload["status"] == "complete"
+    assert status_payload["source_type"] == "image"
+    assert status_payload["output_text"] == "Combined image extraction output"
+    assert status_payload["content_markdown"] == "Combined image extraction output"
+    assert status_payload["result"] == "Combined image extraction output"
+    assert payload["ok"] is True
     assert len(deduct_calls) == 1
     assert deduct_calls[0][1] == "slides_credits"
     assert log_calls
