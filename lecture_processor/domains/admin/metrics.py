@@ -1,11 +1,11 @@
 import json
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlparse
 
 from flask import g
 
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.runtime.container import get_runtime
+from lecture_processor.runtime import environment as runtime_environment
 
 _ADMIN_HIDDEN_JOB_EMAILS = {'user@gmail.com', 'batch@example.com'}
 _ADMIN_HIDDEN_BATCH_EMAILS = {'batch@example.com'}
@@ -28,15 +28,7 @@ def _normalize_text(value):
 
 
 def _extract_hostname(value):
-    candidate = str(value or '').strip()
-    if not candidate:
-        return ''
-    if '://' in candidate:
-        try:
-            return str(urlparse(candidate).hostname or '').strip().lower()
-        except Exception:
-            return ''
-    return candidate.split('/', 1)[0].split(':', 1)[0].strip().lower()
+    return runtime_environment.extract_hostname(value)
 
 
 def _resolve_public_hostname(runtime=None):
@@ -45,20 +37,11 @@ def _resolve_public_hostname(runtime=None):
 
 
 def _resolve_host_status(request_hostname, *, render_hostname='', public_hostname=''):
-    safe_request = _extract_hostname(request_hostname)
-    safe_render = _extract_hostname(render_hostname)
-    safe_public = _extract_hostname(public_hostname)
-    if not safe_request:
-        return 'unknown'
-    if safe_public and safe_request == safe_public:
-        if safe_render and safe_public != safe_render:
-            return 'custom-domain'
-        return 'configured-public-host'
-    if safe_render and safe_request == safe_render:
-        return 'render-default'
-    if safe_public or safe_render:
-        return 'mismatch'
-    return 'unknown'
+    return runtime_environment.resolve_host_status(
+        request_hostname,
+        render_hostname=render_hostname,
+        public_hostname=public_hostname,
+    )
 
 
 def infer_stripe_key_mode(key_value, runtime=None):
@@ -74,45 +57,13 @@ def infer_stripe_key_mode(key_value, runtime=None):
 
 def build_admin_deployment_info(request_host='', runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
-    request_host = str(request_host or '').strip()
-    request_hostname = _extract_hostname(request_host)
-    render_hostname = str(resolved_runtime.os.getenv('RENDER_EXTERNAL_HOSTNAME', '') or '').strip().lower()
-    public_hostname = _resolve_public_hostname(runtime=resolved_runtime)
-    render_external_url = str(resolved_runtime.os.getenv('RENDER_EXTERNAL_URL', '') or '').strip()
-    render_service_id = str(resolved_runtime.os.getenv('RENDER_SERVICE_ID', '') or '').strip()
-    render_deploy_id = str(resolved_runtime.os.getenv('RENDER_DEPLOY_ID', '') or '').strip()
-    render_instance_id = str(resolved_runtime.os.getenv('RENDER_INSTANCE_ID', '') or '').strip()
-    render_service_name = str(resolved_runtime.os.getenv('RENDER_SERVICE_NAME', '') or '').strip()
-    render_git_commit = str(resolved_runtime.os.getenv('RENDER_GIT_COMMIT', '') or '').strip()
-    render_git_branch = str(resolved_runtime.os.getenv('RENDER_GIT_BRANCH', '') or '').strip()
-    render_detected = bool(str(resolved_runtime.os.getenv('RENDER', '') or '').strip() or render_service_id or render_deploy_id)
-    host_matches_render = None
-    if render_hostname and request_hostname:
-        host_matches_render = request_hostname == render_hostname
-    host_status = _resolve_host_status(
-        request_hostname,
-        render_hostname=render_hostname,
-        public_hostname=public_hostname,
+    return runtime_environment.build_admin_deployment_info(
+        request_host,
+        environ=resolved_runtime.os.environ,
+        public_base_url=getattr(resolved_runtime, 'PUBLIC_BASE_URL', ''),
+        app_boot_ts=getattr(resolved_runtime, 'APP_BOOT_TS', 0.0),
+        now_ts=resolved_runtime.time.time(),
     )
-    return {
-        'runtime': 'render' if render_detected else 'local',
-        'request_host': request_host,
-        'request_hostname': request_hostname,
-        'configured_public_hostname': public_hostname,
-        'render_external_hostname': render_hostname,
-        'render_external_url': render_external_url,
-        'host_matches_render': host_matches_render,
-        'host_status': host_status,
-        'service_id': render_service_id,
-        'service_name': render_service_name,
-        'deploy_id': render_deploy_id,
-        'instance_id': render_instance_id,
-        'git_branch': render_git_branch,
-        'git_commit': render_git_commit,
-        'git_commit_short': render_git_commit[:12] if render_git_commit else '',
-        'app_boot_ts': resolved_runtime.APP_BOOT_TS,
-        'app_uptime_seconds': max(0, round(resolved_runtime.time.time() - resolved_runtime.APP_BOOT_TS, 1)),
-    }
 
 
 def build_admin_runtime_checks(runtime=None):

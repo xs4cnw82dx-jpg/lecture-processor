@@ -447,7 +447,7 @@
         isAdmin: currentUserIsAdmin,
         isPhysioAllowed: !!payload.is_physio_allowed
       });
-      if (adminBtn) adminBtn.style.display = currentUserIsAdmin ? '' : 'none';
+      if (adminBtn) adminBtn.hidden = !currentUserIsAdmin;
       setPhysioGroupVisible(!!payload.is_physio_allowed);
       markActiveNav();
     } catch (_) {}
@@ -458,7 +458,7 @@
     clearLegacyAccountCaches();
     currentUserIsAdmin = false;
     setAuthState('signed-out');
-    if (adminBtn) adminBtn.style.display = 'none';
+    if (adminBtn) adminBtn.hidden = true;
     setCreditsVisible(false);
     applyCreditBreakdown(null);
     if (userEmail) userEmail.textContent = 'Not signed in';
@@ -478,7 +478,7 @@
     if (userName) userName.textContent = String(cachedProfile.name || 'Account');
     if (userInitial) userInitial.textContent = String(cachedProfile.initial || '?').slice(0, 1).toUpperCase();
     currentUserIsAdmin = !!cachedProfile.isAdmin;
-    if (adminBtn) adminBtn.style.display = currentUserIsAdmin ? '' : 'none';
+    if (adminBtn) adminBtn.hidden = !currentUserIsAdmin;
     setPhysioGroupVisible(!!cachedProfile.isPhysioAllowed);
     return true;
   }

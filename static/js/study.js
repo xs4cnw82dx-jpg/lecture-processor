@@ -9,8 +9,20 @@ const topbarUtils = window.LectureProcessorTopbar || {};
 const uiCache = window.LectureProcessorUiCache || null;
 const progressUtils = window.LectureProcessorStudyProgressUtils || {};
 const studyLibraryUtils = window.LectureProcessorStudyLibraryUtils || {};
+const studySessionUtils = window.LectureProcessorStudySessionUtils || {};
 const runtimeJobUtils = window.LectureProcessorRuntimeJobUtils || {};
 const displayFormatUtils = window.LectureProcessorDisplayFormatUtils || {};
+const setHidden = typeof uxUtils.setHidden === 'function'
+  ? uxUtils.setHidden
+  : function (element, hidden) {
+    if (!element) return;
+    element.hidden = Boolean(hidden);
+  };
+const setBodyScrollLocked = typeof uxUtils.setBodyScrollLocked === 'function'
+  ? uxUtils.setBodyScrollLocked
+  : function (locked) {
+    document.body.classList.toggle('body-scroll-locked', !!locked);
+  };
 
 /* ── State ── */
 let token = null, folders = [], packs = [], selectedFolderId = '', selectedPackId = '', selectedPack = null;
@@ -979,45 +991,20 @@ function saveSessionState() {
 
 /* ── Algorithm ordering ── */
 function orderCardsByAlgo(cards) {
-  if (!cards || !cards.length) return [];
-  var state = loadCardState();
-  var buckets = { new: [], familiar: [], retry: [], remaster: [], hard: [], random: [] };
-  var deferred = [];
-  cards.forEach(function (c, i) {
-    var id = 'fc_' + i; var cs = state[id];
-    var entry = { card: c, idx: i };
-    var due = !cs || !cs.seen || isDueDate(cs.next_review_date);
-    if (due) {
-      if (!cs || cs.level === 'new') { buckets.new.push(entry); }
-      else if (cs.level === 'familiar') { buckets.familiar.push(entry); }
-      else if (cs.level === 'mastered') { buckets.remaster.push(entry); }
-      var wrongCount = Number(cs && cs.wrong || 0);
-      var correctCount = Number(cs && cs.correct || 0);
-      if (cs && (cs.level === 'retry' || cs.last_action === 'retry' || wrongCount > correctCount)) {
-        buckets.retry.push(entry);
-      }
-      if (cs && (cs.difficulty === 'hard' || cs.last_action === 'hard')) { buckets.hard.push(entry); }
-    } else {
-      deferred.push(entry);
-    }
-    buckets.random.push({ card: c, idx: i });
-  });
-  Object.keys(buckets).forEach(function (k) { buckets[k].sort(function () { return Math.random() - 0.5; }); });
-  var result = [], used = {};
-  sessionAlgo.forEach(function (type) {
-    var pool = buckets[type] || buckets.random;
-    for (var j = 0; j < pool.length; j++) {
-      if (!used[pool[j].idx]) { result.push(pool[j]); used[pool[j].idx] = true; break; }
-    }
-  });
-  cards.forEach(function (c, i) { if (!used[i] && !deferred.find(function (d) { return d.idx === i; })) result.push({ card: c, idx: i }); });
-  deferred.forEach(function (entry) { if (!used[entry.idx]) result.push(entry); });
-  return result;
+  if (studySessionUtils && typeof studySessionUtils.orderCardsByAlgo === 'function') {
+    return studySessionUtils.orderCardsByAlgo(cards, {
+      cardState: loadCardState(),
+      isDueDate: isDueDate,
+      sessionAlgo: sessionAlgo
+    });
+  }
+  return [];
 }
 function getFlashcardQueue() {
-  if (orderedFlashcards.length) return orderedFlashcards;
-  var base = selectedPack && Array.isArray(selectedPack.flashcards) ? selectedPack.flashcards : [];
-  return base.map(function (card, idx) { return { card: card, idx: idx }; });
+  if (studySessionUtils && typeof studySessionUtils.getFlashcardQueue === 'function') {
+    return studySessionUtils.getFlashcardQueue(orderedFlashcards, selectedPack);
+  }
+  return [];
 }
 function getCurrentDifficultyCardId() {
   if (!selectedPack) return '';
@@ -1063,19 +1050,16 @@ function updateDifficultyToolbar() {
 
 /* ── Answer grading (for write mode) ── */
 function normalizeAnswer(str) {
-  var s = str.trim();
-  if (!sessionSettings.caseSensitive) { s = s.toLowerCase(); }
-  if (sessionSettings.ignoreBrackets) { s = s.replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, ''); }
-  if (sessionSettings.ignoreArticles) { s = s.replace(/\b(a|an|the)\b/gi, ''); }
-  if (sessionSettings.ignoreDeterminers) { s = s.replace(/[;,\/]/g, ''); }
-  s = s.replace(/\s+/g, ' ').trim();
-  return s;
+  if (studySessionUtils && typeof studySessionUtils.normalizeAnswer === 'function') {
+    return studySessionUtils.normalizeAnswer(str, sessionSettings);
+  }
+  return String(str || '').trim();
 }
 function gradeAnswer(userAnswer, correctAnswer) {
-  var ua = normalizeAnswer(userAnswer);
-  var ca = normalizeAnswer(correctAnswer);
-  if (sessionSettings.forceExactMatch) { return ua === ca; }
-  return ua === ca;
+  if (studySessionUtils && typeof studySessionUtils.gradeAnswer === 'function') {
+    return studySessionUtils.gradeAnswer(userAnswer, correctAnswer, sessionSettings);
+  }
+  return normalizeAnswer(userAnswer) === normalizeAnswer(correctAnswer);
 }
 
 /* ── DOM refs ── */
@@ -1581,13 +1565,13 @@ function setAudioHiddenForLearn(hidden) {
 }
 function updateAudioControls() {
   var paused = !audioPlayerEl || audioPlayerEl.paused;
-  if (audioPlayIcon) audioPlayIcon.style.display = paused ? '' : 'none';
-  if (audioPauseIcon) audioPauseIcon.style.display = paused ? 'none' : '';
+  setHidden(audioPlayIcon, !paused);
+  setHidden(audioPauseIcon, paused);
   var dur = audioPlayerEl && isFinite(audioPlayerEl.duration) ? audioPlayerEl.duration : 0;
   var cur = audioPlayerEl ? audioPlayerEl.currentTime : 0;
   if (audioTime) audioTime.textContent = fmtAudioTime(cur) + ' / ' + fmtAudioTime(dur);
   var pct = dur > 0 ? (cur / dur) * 100 : 0;
-  if (audioProgressFill) audioProgressFill.style.width = pct + '%';
+  if (audioProgressFill) audioProgressFill.value = pct;
 }
 function clearAudioActiveSections() {
   audioSections.forEach(function (entry) { entry.el.classList.remove('audio-active'); });
@@ -2337,9 +2321,9 @@ function renderBuilderFlashcards() {
   }
   setSafeInnerHtml(builderFlashcardList, cards.map(function (card, index) {
     return '<div class="builder-row" data-fc-row="' + index + '">'
-      + '<div class="builder-row-head"><span class="builder-row-title">Flashcard ' + (index + 1) + '</span><button class="btn danger" data-delete-fc="' + index + '" style="padding:5px 8px;font-size:.75rem">Delete</button></div>'
-      + '<div class="builder-split"><div class="field"><label>Front</label><textarea data-fc-field="front" data-fc-index="' + index + '" style="min-height:92px">' + escapeHtml(card.front || '') + '</textarea></div>'
-      + '<div class="field"><label>Back</label><textarea data-fc-field="back" data-fc-index="' + index + '" style="min-height:92px">' + escapeHtml(card.back || '') + '</textarea></div></div></div>';
+      + '<div class="builder-row-head"><span class="builder-row-title">Flashcard ' + (index + 1) + '</span><button class="btn danger u-btn-compact" data-delete-fc="' + index + '">Delete</button></div>'
+      + '<div class="builder-split"><div class="field"><label>Front</label><textarea class="u-min-h-92" data-fc-field="front" data-fc-index="' + index + '">' + escapeHtml(card.front || '') + '</textarea></div>'
+      + '<div class="field"><label>Back</label><textarea class="u-min-h-92" data-fc-field="back" data-fc-index="' + index + '">' + escapeHtml(card.back || '') + '</textarea></div></div></div>';
   }).join(''));
   updateBuilderStats();
 }
@@ -2362,16 +2346,16 @@ function renderBuilderQuestions() {
       return '<option value="' + escapeHtml(option) + '" ' + (question.answer === option ? 'selected' : '') + '>' + letter + ': ' + escapeHtml(option || '(empty)') + '</option>';
     }).join('');
     return '<div class="builder-row" data-q-row="' + index + '">'
-      + '<div class="builder-row-head"><span class="builder-row-title">Question ' + (index + 1) + '</span><button class="btn danger" data-delete-q="' + index + '" style="padding:5px 8px;font-size:.75rem">Delete</button></div>'
-      + '<div class="field"><label>Question</label><textarea data-q-field="question" data-q-index="' + index + '" style="min-height:86px">' + escapeHtml(question.question || '') + '</textarea></div>'
-      + '<div class="builder-grid-3" style="margin-top:8px">'
+      + '<div class="builder-row-head"><span class="builder-row-title">Question ' + (index + 1) + '</span><button class="btn danger u-btn-compact" data-delete-q="' + index + '">Delete</button></div>'
+      + '<div class="field"><label>Question</label><textarea class="u-min-h-86" data-q-field="question" data-q-index="' + index + '">' + escapeHtml(question.question || '') + '</textarea></div>'
+      + '<div class="builder-grid-3 u-mt-8">'
       + '<div class="field"><label>Option A</label><input data-q-option="0" data-q-index="' + index + '" value="' + escapeHtml(question.options[0] || '') + '"></div>'
       + '<div class="field"><label>Option B</label><input data-q-option="1" data-q-index="' + index + '" value="' + escapeHtml(question.options[1] || '') + '"></div>'
       + '<div class="field"><label>Option C</label><input data-q-option="2" data-q-index="' + index + '" value="' + escapeHtml(question.options[2] || '') + '"></div>'
-      + '</div><div class="builder-grid" style="margin-top:8px">'
+      + '</div><div class="builder-grid u-mt-8">'
       + '<div class="field"><label>Option D</label><input data-q-option="3" data-q-index="' + index + '" value="' + escapeHtml(question.options[3] || '') + '"></div>'
       + '<div class="field"><label>Correct Answer</label><select class="builder-select" data-q-answer="' + index + '">' + answerOptions + '</select></div>'
-      + '</div><div class="field" style="margin-top:8px"><label>Explanation (optional)</label><textarea data-q-field="explanation" data-q-index="' + index + '" style="min-height:72px">' + escapeHtml(question.explanation || '') + '</textarea></div></div>';
+      + '</div><div class="field u-mt-8"><label>Explanation (optional)</label><textarea class="u-min-h-72" data-q-field="explanation" data-q-index="' + index + '">' + escapeHtml(question.explanation || '') + '</textarea></div></div>';
   }).join(''));
   updateBuilderStats();
 }
@@ -2387,8 +2371,8 @@ function setBuilderPane(nextPane) {
 function clearBuilderImportState() {
   builderImportParsed = null;
   builderApplyImportBtn.disabled = true;
-  builderPreview.style.display = 'none';
-  builderImportErrors.style.display = 'none';
+  setHidden(builderPreview, true);
+  setHidden(builderImportErrors, true);
   builderImportErrors.textContent = '';
   builderImportSummary.textContent = 'No file loaded.';
 }
@@ -2422,14 +2406,14 @@ function openBuilderOverlay(mode, pack) {
   updateBuilderStats();
   updateShareActionAvailability();
   openModal(builderOverlay);
-  document.body.style.overflow = 'hidden';
+  setBodyScrollLocked(true);
 }
 function closeBuilderOverlay() {
   builderAutoSaving = false;
   builderAutoSaveQueued = false;
   clearBuilderAutoSaveTimer();
   closeModal(builderOverlay);
-  document.body.style.overflow = '';
+  setBodyScrollLocked(false);
   builderDraft = null;
   builderPackId = '';
   builderImportParsed = null;
@@ -2679,7 +2663,7 @@ function parseBuilderCsvContent(rawText, type) {
 }
 function renderBuilderImportPreview() {
   if (!builderImportParsed || !builderImportParsed.items.length) {
-    builderPreview.style.display = 'none';
+    setHidden(builderPreview, true);
     return;
   }
   var parsed = builderImportParsed;
@@ -2691,7 +2675,7 @@ function renderBuilderImportPreview() {
     return '<tr><td>' + escapeHtml(item.question) + '</td><td>' + escapeHtml(item.answer) + '</td><td>' + escapeHtml(item.explanation || '') + '</td></tr>';
   }).join('');
   setSafeInnerHtml(builderPreviewTable, '<thead><tr>' + headers.map(function (header) { return '<th>' + escapeHtml(header) + '</th>'; }).join('') + '</tr></thead><tbody>' + rowsHtml + '</tbody>');
-  builderPreview.style.display = '';
+  setHidden(builderPreview, false);
 }
 function handleBuilderCsvFile(file) {
   if (!file) { return; }
@@ -2702,10 +2686,10 @@ function handleBuilderCsvFile(file) {
     builderApplyImportBtn.disabled = !parsed.items.length;
     builderImportSummary.textContent = 'Loaded ' + parsed.items.length + ' valid row(s).';
     if (parsed.errors.length) {
-      builderImportErrors.style.display = '';
+      setHidden(builderImportErrors, false);
       setSafeInnerHtml(builderImportErrors, parsed.errors.map(function (err) { return '<div>' + escapeHtml(err) + '</div>'; }).join(''));
     } else {
-      builderImportErrors.style.display = 'none';
+      setHidden(builderImportErrors, true);
       builderImportErrors.textContent = '';
     }
     renderBuilderImportPreview();
@@ -2782,17 +2766,17 @@ function renderLessonCards() {
   var mc = document.getElementById('lesson-card-match');
   var mb = document.getElementById('match-min-badge');
   // Show/hide based on data availability
-  fc.style.display = hf ? '' : 'none';
-  tc.style.display = ht ? '' : 'none';
-  wc.style.display = hf ? '' : 'none'; // write uses flashcards
-  mc.style.display = hf ? '' : 'none'; // match uses flashcards
+  setHidden(fc, !hf);
+  setHidden(tc, !ht);
+  setHidden(wc, !hf); // write uses flashcards
+  setHidden(mc, !hf); // match uses flashcards
   // Match needs minimum cards
   if (hf && !hasEnoughForMatch) {
     mc.classList.add('unavailable'); mc.classList.remove('selected');
     sessionLessons.match = false;
-    mb.style.display = ''; mb.textContent = 'Needs ' + MATCH_MIN_CARDS + '+ cards';
+    setHidden(mb, false); mb.textContent = 'Needs ' + MATCH_MIN_CARDS + '+ cards';
   } else {
-    mc.classList.remove('unavailable'); mb.style.display = 'none';
+    mc.classList.remove('unavailable'); setHidden(mb, true);
   }
   if (!hf) { sessionLessons.flashcards = false; sessionLessons.write = false; sessionLessons.match = false; }
   if (!ht) { sessionLessons.test = false; }
@@ -2864,12 +2848,10 @@ function setSetupPane(p) {
 }
 
 function getEnabledModes() {
-  var modes = [];
-  if (sessionLessons.flashcards) { modes.push('flashcards'); }
-  if (sessionLessons.test) { modes.push('test'); }
-  if (sessionLessons.write) { modes.push('write'); }
-  if (sessionLessons.match) { modes.push('match'); }
-  return modes;
+  if (studySessionUtils && typeof studySessionUtils.getEnabledModes === 'function') {
+    return studySessionUtils.getEnabledModes(sessionLessons);
+  }
+  return [];
 }
 
 function bindKeyboardActivation(element, callback) {
@@ -2883,7 +2865,7 @@ function bindKeyboardActivation(element, callback) {
 }
 
 function showModePicker(modes) {
-  setupMainContent.style.display = 'none';
+  setHidden(setupMainContent, true);
   modePicker.classList.add('active');
   modePickerGrid.innerHTML = '';
   modes.forEach(function (m) {
@@ -2901,7 +2883,7 @@ function showModePicker(modes) {
 
 function hideModePicker() {
   modePicker.classList.remove('active');
-  setupMainContent.style.display = '';
+  setHidden(setupMainContent, false);
 }
 
 function openSessionSetup() {
@@ -2967,17 +2949,24 @@ function getWriteCards() {
 }
 function renderWriteCard() {
   var cards = getWriteCards();
-  if (!cards.length) { writePromptEl.textContent = 'No flashcards available.'; writeInputEl.style.display = 'none'; writeCheckBtn.style.display = 'none'; writeRevealBtn.style.display = 'none'; writeNextBtn.style.display = 'none'; return; }
+  if (!cards.length) {
+    writePromptEl.textContent = 'No flashcards available.';
+    setHidden(writeInputEl, true);
+    setHidden(writeCheckBtn, true);
+    setHidden(writeRevealBtn, true);
+    setHidden(writeNextBtn, true);
+    return;
+  }
   var entry = cards[writeIndex];
   var c = entry.card || {};
   writePromptSwapped = sessionSettings.swapAnswerQuestion || (sessionSettings.randomSwap && Math.random() > 0.5);
   writePromptEl.textContent = writePromptSwapped ? (c.back || '') : (c.front || '');
   writeInputEl.value = ''; writeInputEl.disabled = false; writeInputEl.className = 'write-input';
-  writeInputEl.style.display = ''; writeCheckBtn.style.display = ''; writeRevealBtn.style.display = '';
-  writeFeedbackEl.className = 'write-feedback'; writeFeedbackEl.style.display = ''; writeFeedbackEl.classList.remove('visible');
+  setHidden(writeInputEl, false); setHidden(writeCheckBtn, false); setHidden(writeRevealBtn, false);
+  writeFeedbackEl.className = 'write-feedback'; setHidden(writeFeedbackEl, false); writeFeedbackEl.classList.remove('visible');
   writeChecked = false; writeRevealed = false;
   writeProgressEl.textContent = (writeIndex + 1) + ' / ' + cards.length;
-  writeNextBtn.style.display = '';
+  setHidden(writeNextBtn, false);
   writeInputEl.focus();
   updateLearnProgressBar();
   updateDifficultyToolbar();
@@ -3028,8 +3017,8 @@ writeInputEl.addEventListener('keydown', function (e) {
 /* ── Match mode ── */
 function initMatchMode() {
   stopMatchTimer();
-  matchResultsEl.style.display = 'none';
-  matchGridEl.style.display = '';
+  setHidden(matchResultsEl, true);
+  setHidden(matchGridEl, false);
   matchSelected = null; matchMatched = 0;
   var cards = selectedPack && selectedPack.flashcards ? selectedPack.flashcards : [];
   // Pick 6 random cards for 4x3 grid (6 pairs = 12 cells)
@@ -3119,8 +3108,8 @@ function stopMatchTimer() {
   if (matchTimerInterval) { clearInterval(matchTimerInterval); matchTimerInterval = null; }
 }
 function showMatchResults() {
-  matchGridEl.style.display = 'none';
-  matchResultsEl.style.display = '';
+  setHidden(matchGridEl, true);
+  setHidden(matchResultsEl, false);
   var timeMs = matchElapsed;
   var timeSec = (timeMs / 1000).toFixed(2);
   matchResultsTime.textContent = timeSec + 's';
@@ -3485,7 +3474,7 @@ function renderPacks() {
 }
 
 function showPackEditor(v) {
-  packEmpty.style.display = v ? 'none' : 'block';
+  setHidden(packEmpty, !!v);
   packEditorWrap.classList.toggle('visible', v);
   if (!v) { updatePackEmptyState(); }
   updateShareActionAvailability();
@@ -3520,7 +3509,7 @@ function renderFlashcardEditor(hi) {
     var row = document.createElement('div'); row.className = 'editor-card' + (ci === idx ? ' newly-added' : ''); row.dataset.rowIndex = String(ci);
     var safeFront = escapeHtml(card.front || '');
     var safeBack = escapeHtml(card.back || '');
-    setSafeInnerHtml(row, '<div class="editor-card-head"><span class="editor-card-title">Flashcard ' + (ci + 1) + '</span><button class="btn danger" data-delete-card="' + ci + '" style="padding:5px 8px;font-size:0.75rem;">Delete</button></div><div class="field"><label>Front</label><input data-card-field="front" data-card-index="' + ci + '" value="' + safeFront + '"></div><div class="field" style="margin-top:8px;"><label>Back</label><textarea data-card-field="back" data-card-index="' + ci + '">' + safeBack + '</textarea></div>');
+    setSafeInnerHtml(row, '<div class="editor-card-head"><span class="editor-card-title">Flashcard ' + (ci + 1) + '</span><button class="btn danger u-btn-compact" data-delete-card="' + ci + '">Delete</button></div><div class="field"><label>Front</label><input data-card-field="front" data-card-index="' + ci + '" value="' + safeFront + '"></div><div class="field u-mt-8"><label>Back</label><textarea data-card-field="back" data-card-index="' + ci + '">' + safeBack + '</textarea></div>');
     flashcardEditorList.appendChild(row);
   });
   flashcardEditorList.querySelectorAll('[data-card-field]').forEach(function (el) {
@@ -3548,7 +3537,12 @@ function normalizeQuestion(q) {
   if (b.options.indexOf(b.answer) < 0) { b.answer = b.options[0] || ''; }
   return b;
 }
-function getAnswerDisplay(q) { var o = Array.isArray(q.options) ? q.options : []; var fi = o.indexOf(q.answer); var i = fi >= 0 ? fi : 0; return (['A', 'B', 'C', 'D'][i] || 'A') + ': ' + (o[i] || '(empty)'); }
+function getAnswerDisplay(q) {
+  if (studySessionUtils && typeof studySessionUtils.getAnswerDisplay === 'function') {
+    return studySessionUtils.getAnswerDisplay(q);
+  }
+  return 'A: (empty)';
+}
 
 function renderQuestionEditor(hi) {
   var idx = typeof hi === 'number' ? hi : -1;
@@ -3566,20 +3560,20 @@ function renderQuestionEditor(hi) {
     var safeOptC = escapeHtml(q.options[2] || '');
     var safeOptD = escapeHtml(q.options[3] || '');
     var safeExplanation = escapeHtml(q.explanation || '');
-    setSafeInnerHtml(row, '<div class="editor-card-head"><span class="editor-card-title">Question ' + (qi + 1) + '</span><button class="btn danger" data-delete-question="' + qi + '" style="padding:5px 8px;font-size:0.75rem;">Delete</button></div>'
+    setSafeInnerHtml(row, '<div class="editor-card-head"><span class="editor-card-title">Question ' + (qi + 1) + '</span><button class="btn danger u-btn-compact" data-delete-question="' + qi + '">Delete</button></div>'
       + '<div class="field"><label>Question</label><textarea data-question-field="question" data-question-index="' + qi + '">' + safeQuestion + '</textarea></div>'
-      + '<div class="q-options-grid" style="margin-top:8px;">'
+      + '<div class="q-options-grid u-mt-8">'
       + '<div class="field"><label>Option A</label><input data-option-index="0" data-question-index="' + qi + '" value="' + safeOptA + '"></div>'
       + '<div class="field"><label>Option B</label><input data-option-index="1" data-question-index="' + qi + '" value="' + safeOptB + '"></div>'
       + '<div class="field"><label>Option C</label><input data-option-index="2" data-question-index="' + qi + '" value="' + safeOptC + '"></div>'
       + '<div class="field"><label>Option D</label><input data-option-index="3" data-question-index="' + qi + '" value="' + safeOptD + '"></div></div>'
-      + '<div class="field" style="margin-top:8px;"><label>Correct Answer</label>'
+      + '<div class="field u-mt-8"><label>Correct Answer</label>'
       + '<div class="app-select q-answer-picker" data-question-index="' + qi + '">'
       + '<button type="button" class="app-select-button" data-answer-button data-question-index="' + qi + '" aria-haspopup="listbox" aria-expanded="false" aria-controls="' + answerMenuId + '"><span class="app-select-label">' + adStr + '</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>'
       + '<div class="app-select-menu" id="' + answerMenuId + '" role="listbox" data-answer-menu data-question-index="' + qi + '">'
       + q.options.map(function (o, oi) { var isActive = q.answer === o; return '<button type="button" role="option" aria-selected="' + (isActive ? 'true' : 'false') + '" class="app-select-item' + (isActive ? ' active' : '') + '" data-answer-item data-question-index="' + qi + '" data-option-index="' + oi + '">' + (['A', 'B', 'C', 'D'][oi]) + ': ' + escapeHtml(o || '(empty)') + '</button>'; }).join('')
       + '</div></div></div>'
-      + '<div class="field" style="margin-top:8px;"><label>Explanation</label><textarea data-question-field="explanation" data-question-index="' + qi + '">' + safeExplanation + '</textarea></div>');
+      + '<div class="field u-mt-8"><label>Explanation</label><textarea data-question-field="explanation" data-question-index="' + qi + '">' + safeExplanation + '</textarea></div>');
     questionEditorList.appendChild(row);
   });
   questionEditorList.querySelectorAll('[data-question-field="question"],[data-question-field="explanation"]').forEach(function (el) {
@@ -3669,7 +3663,9 @@ function updateLearnProgressBar() {
   } else if (activeLearnMode === 'match') {
     c = matchMatched; t = matchTotal;
   } else { c = 1; t = 1; }
-  learnProgressFill.style.width = t > 0 ? ((c / t) * 100) + '%' : '0%';
+  if (learnProgressFill) {
+    learnProgressFill.value = t > 0 ? ((c / t) * 100) : 0;
+  }
   learnProgressText.textContent = t > 0 ? c + '/' + t : '';
 }
 
@@ -3688,7 +3684,7 @@ function setFlashcardListMode(enabled) {
     learnFListView.hidden = !flashcardListMode;
   }
   if (learnFPeekWrap) {
-    learnFPeekWrap.style.display = flashcardListMode ? 'inline-flex' : 'none';
+    setHidden(learnFPeekWrap, !flashcardListMode);
   }
   if (!flashcardListMode) {
     flashcardPeekMode = false;
@@ -3897,7 +3893,7 @@ function openLearnStageWithMode(mode, requestFullscreen) {
   }
 
   updateLearnProgressBar();
-  document.body.style.overflow = 'hidden';
+  setBodyScrollLocked(true);
   learnStage.classList.add('entering');
   learnStage.scrollTop = 0;
   var learnBody = learnStage.querySelector('.learn-body');
@@ -3922,7 +3918,7 @@ function closeLearnStage() {
   if (keyboardHints) keyboardHints.classList.remove('faded');
   setAudioHiddenForLearn(false);
   updateDifficultyToolbar();
-  document.body.style.overflow = '';
+  setBodyScrollLocked(false);
   if (document.fullscreenElement) { try { document.exitFullscreen(); } catch (e) { } }
 }
 
@@ -5673,10 +5669,13 @@ function isNotesFullscreenActive() {
   return document.fullscreenElement === notesPaneShell || document.webkitFullscreenElement === notesPaneShell;
 }
 function getHighlightDownloadMenuHost() {
-  if (isNotesFullscreenActive() && notesPaneShell) {
-    return notesPaneShell;
+  if (hlDownloadWrap) {
+    return hlDownloadWrap;
   }
-  return document.body || document.documentElement;
+  if (hlToolbar) {
+    return hlToolbar;
+  }
+  return notesPaneShell || document.body || document.documentElement;
 }
 function syncHighlightDownloadMenuHost() {
   if (!hlDownloadMenu) return null;
@@ -5688,9 +5687,7 @@ function syncHighlightDownloadMenuHost() {
 }
 function resetHighlightDownloadMenuPosition() {
   if (!hlDownloadMenu) return;
-  hlDownloadMenu.classList.remove('is-upward', 'is-align-left', 'is-floating');
-  hlDownloadMenu.style.left = '';
-  hlDownloadMenu.style.top = '';
+  hlDownloadMenu.classList.remove('is-upward', 'is-align-left');
 }
 function setHighlightDownloadMenuOpen(open) {
   var menu = ensureHighlightDownloadMenu();
@@ -5717,33 +5714,25 @@ function positionHighlightDownloadMenu() {
   var viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
   var viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
   if (!hlDownloadBtn) return;
-  hlDownloadMenu.classList.add('is-floating');
   var buttonRect = hlDownloadBtn.getBoundingClientRect();
   var menuWidth = hlDownloadMenu.offsetWidth || 280;
   var menuHeight = hlDownloadMenu.offsetHeight || 108;
-  var left = buttonRect.right - menuWidth;
   var alignLeft = false;
   var upward = false;
-  if (left < 16) {
-    left = buttonRect.left;
+  if ((buttonRect.right - menuWidth) < 16) {
     alignLeft = true;
   }
-  if (left + menuWidth > viewportWidth - 16) {
-    left = Math.max(16, viewportWidth - menuWidth - 16);
-  }
-  var top = buttonRect.bottom + 10;
-  if (top + menuHeight > viewportHeight - 16) {
-    top = buttonRect.top - menuHeight - 10;
+  if (buttonRect.bottom + 10 + menuHeight > viewportHeight - 16) {
     upward = true;
   }
-  if (top < 16) {
-    top = Math.max(16, Math.min(buttonRect.bottom + 10, viewportHeight - menuHeight - 16));
+  if (alignLeft && buttonRect.left + menuWidth > viewportWidth - 16) {
+    alignLeft = false;
+  }
+  if (upward && buttonRect.top - menuHeight - 10 < 16) {
     upward = false;
   }
   hlDownloadMenu.classList.toggle('is-upward', upward);
   hlDownloadMenu.classList.toggle('is-align-left', alignLeft);
-  hlDownloadMenu.style.left = Math.round(left) + 'px';
-  hlDownloadMenu.style.top = Math.round(top) + 'px';
 }
 function ensureHighlightDownloadMenu() {
   if (hlDownloadMenu || !hlToolbar) return hlDownloadMenu;

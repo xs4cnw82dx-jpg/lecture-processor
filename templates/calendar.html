@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Study Calendar - Lecture Processor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/calendar.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
@@ -43,7 +44,7 @@
           </div>
       </div>
 
-      <div class="layout" id="calendar-layout" style="display:none;">
+      <div class="layout" id="calendar-layout" hidden>
         <aside class="panel" id="reminder-settings-panel">
           <div class="panel-head"><div class="panel-title">Reminder Settings</div></div>
           <div class="panel-body">
@@ -117,7 +118,7 @@
         </section>
       </div>
 
-      <div class="panel" id="auth-required" style="display:none;">
+      <div class="panel" id="auth-required" hidden>
         <div class="panel-body">You need to sign in to use the calendar. <a class="calendar-auth-link" href="/calendar?auth=signin">Sign in</a>.</div>
       </div>
     </div>

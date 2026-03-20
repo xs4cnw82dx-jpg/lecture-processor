@@ -124,7 +124,7 @@ def test_security_headers_present_on_html_and_api_routes(client):
     assert "https://accounts.google.com" in csp
     assert "script-src 'self' 'unsafe-inline'" not in csp
     assert "style-src 'self' 'unsafe-inline'" not in csp
-    assert "style-src-attr 'unsafe-inline'" in csp
+    assert "style-src-attr" not in csp
 
     html_body = html_response.get_data(as_text=True)
     assert re.search(r'<script nonce="[^"]+">\s*window\.LectureProcessorRuntime', html_body, re.S)

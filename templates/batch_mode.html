@@ -11,6 +11,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ shell_title }} · Lecture Processor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/batch-mode.css') }}">
 </head>
@@ -76,7 +77,7 @@
                 <button type="button" role="option" class="app-select-item" data-value="other" aria-selected="false">🌐 Other</button>
               </div>
             </div>
-            <input id="output-language-custom" name="output_language_custom" class="language-custom-input" placeholder="Type custom output language" style="display:none;">
+            <input id="output-language-custom" name="output_language_custom" class="language-custom-input" placeholder="Type custom output language" hidden>
           </div>
         </div>
 
@@ -139,20 +140,20 @@
           <small id="rows-minimum-note">Minimum 2 lectures required for batch mode.</small>
           <button type="submit" id="submit-batch-btn" class="btn primary">Start batch</button>
         </div>
-        <div class="batch-submit-feedback" id="batch-submit-feedback" style="display:none;"></div>
+        <div class="batch-submit-feedback" id="batch-submit-feedback" hidden></div>
       </form>
     </section>
 
-    <section class="shell-panel" id="batch-status-panel" style="display:none;">
+    <section class="shell-panel" id="batch-status-panel" hidden>
       <div class="status-head">
         <h2>Batch status</h2>
         <div>
           <button type="button" id="refresh-status-btn" class="btn">Refresh</button>
-          <button type="button" id="download-zip-btn" class="btn" style="display:none;">Download ZIP</button>
+          <button type="button" id="download-zip-btn" class="btn" hidden>Download ZIP</button>
         </div>
       </div>
       <p class="status-note">You can safely leave this page. API usage includes status polling requests.</p>
-      <div id="batch-status-banner" class="batch-status-banner" style="display:none;"></div>
+      <div id="batch-status-banner" class="batch-status-banner" hidden></div>
       <div id="batch-summary" class="batch-summary"></div>
       <div class="table-wrap">
         <table>

@@ -8,37 +8,21 @@ except Exception:
     Workbook = None
 
 from lecture_processor.services import admin_dashboard_service
+from lecture_processor.services import admin_support
 from lecture_processor.domains.admin import metrics as admin_metrics
 from lecture_processor.domains.shared import sanitize_excel_cell
 
 
 def _require_admin(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return None, app_ctx.jsonify({'error': 'Unauthorized'}), 401
-    if not app_ctx.is_admin_user(decoded_token):
-        return None, app_ctx.jsonify({'error': 'Forbidden'}), 403
-    return decoded_token, None, None
+    return admin_support.require_admin(app_ctx, request)
 
 
 def _to_non_negative_float(value, default=0.0):
-    try:
-        parsed = float(value)
-    except Exception:
-        parsed = float(default)
-    if parsed < 0:
-        return 0.0
-    return parsed
+    return admin_support.to_non_negative_float(value, default=default)
 
 
 def _to_non_negative_int(value, default=0):
-    try:
-        parsed = int(value)
-    except Exception:
-        parsed = int(default)
-    if parsed < 0:
-        return 0
-    return parsed
+    return admin_support.to_non_negative_int(value, default=default)
 
 
 def _coerce_usd_to_eur(payload):

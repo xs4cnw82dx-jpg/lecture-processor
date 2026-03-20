@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lecture Processor Admin</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
 </head>
 
@@ -34,7 +35,7 @@
 
         <div id="state-area" class="loading">Loading admin dashboard...</div>
 
-        <div id="dashboard" style="display:none;">
+        <div id="dashboard" hidden>
             <section class="panel admin-tabs-panel">
                 <div class="admin-tabs">
                     <button class="btn admin-tab active" data-admin-tab="overview" type="button">Overview</button>
@@ -187,7 +188,7 @@
                 </div>
             </section>
 
-            <section class="panel" style="margin-top:12px;">
+            <section class="panel u-mt-12">
                 <h2>Recent Rate-limit Hits</h2>
                 <div class="table-wrap">
                     <table>
@@ -203,13 +204,12 @@
                 </div>
             </section>
 
-            <section class="panel" style="margin-top:12px;">
-                <div style="display:flex;align-items:center;gap:8px;">
+            <section class="panel u-mt-12">
+                <div class="u-flex u-align-center u-gap-8">
                     <h2>Prompt Inventory</h2>
                     <button class="btn" id="load-prompts-btn" type="button">Load prompts</button>
                 </div>
-                <pre id="prompts-output"
-                    style="display:none;white-space:pre-wrap;max-height:600px;overflow:auto;background:#1a1a2e;color:#e0e0e0;padding:12px;border-radius:8px;font-size:13px;margin-top:8px;"></pre>
+                <pre id="prompts-output" class="log-panel-output" hidden></pre>
             </section>
 
             <section class="panel calculator-panel">
@@ -366,7 +366,7 @@
             </section>
             </div>
 
-            <div id="admin-tab-batch-content" style="display:none;">
+            <div id="admin-tab-batch-content" hidden>
                 <section class="panel">
                     <div class="analyzer-head">
                         <h2>Batch Jobs</h2>

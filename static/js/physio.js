@@ -439,8 +439,16 @@
 
   function autoResizeTextarea(textarea) {
     if (!textarea) return;
-    textarea.style.height = 'auto';
-    textarea.style.height = Math.max(textarea.scrollHeight, 88) + 'px';
+    var minRows = Math.max(4, parseInt(textarea.getAttribute('rows') || textarea.rows || 4, 10) || 4);
+    textarea.rows = minRows;
+    var computed = window.getComputedStyle ? window.getComputedStyle(textarea) : null;
+    var lineHeight = computed ? parseFloat(computed.lineHeight || 0) : 0;
+    var paddingTop = computed ? parseFloat(computed.paddingTop || 0) : 0;
+    var paddingBottom = computed ? parseFloat(computed.paddingBottom || 0) : 0;
+    var effectiveLineHeight = Number.isFinite(lineHeight) && lineHeight > 0 ? lineHeight : 22;
+    var contentHeight = Math.max(0, textarea.scrollHeight - paddingTop - paddingBottom);
+    var targetRows = Math.max(minRows, Math.ceil(contentHeight / effectiveLineHeight));
+    textarea.rows = targetRows;
   }
 
   function buildInputField(label, path, value, options) {

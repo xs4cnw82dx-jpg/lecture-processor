@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Study Planner - Lecture Processor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/plan.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
@@ -22,11 +23,11 @@
         <p>One place to manage your daily goal, review load, and exam dates.</p>
       </div>
 
-      <div class="auth-required" id="auth-required" style="display:none;">
+      <div class="auth-required" id="auth-required" hidden>
         You need to sign in to use the planner. <a href="/dashboard">Go to dashboard</a>.
       </div>
 
-      <div id="planner-content" style="display:none;">
+      <div id="planner-content" hidden>
         <section class="grid">
           <article class="card streak">
             <div class="metric-label">Current Streak</div>
@@ -42,7 +43,7 @@
             <div class="metric-label">Daily Goal</div>
             <div class="metric-value" id="goal-value">Loading goal</div>
             <div class="metric-note">Progress today</div>
-            <div class="progress-track"><div class="progress-fill" id="goal-fill"></div></div>
+            <progress class="progress-track progress-track-bar" id="goal-fill" max="100" value="0">0%</progress>
           </article>
         </section>
 
@@ -74,7 +75,7 @@
             </table>
           </div>
           <div class="folders-cards" id="folders-cards"></div>
-          <div class="empty" id="folders-empty" style="display:none;">
+          <div class="empty" id="folders-empty" hidden>
             <strong>Create a folder in Study Library</strong>
             <span>Folders power exam-date planning and workload recommendations.</span>
             <a href="/study" class="empty-link">Open Study Library</a>
@@ -101,7 +102,7 @@
             </table>
           </div>
           <div class="folders-cards pack-goals-cards" id="pack-goals-cards"></div>
-          <div class="empty" id="pack-goals-empty" style="display:none;">
+          <div class="empty" id="pack-goals-empty" hidden>
             <strong>No study packs yet</strong>
             <span>Create a study pack to set per-pack goals and review targets.</span>
             <a href="/study" class="empty-link">Open Study Library</a>
