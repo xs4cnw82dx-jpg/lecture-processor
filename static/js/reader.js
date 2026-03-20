@@ -33,13 +33,22 @@
   var downloadBtn = document.getElementById('reader-download-docx-btn');
   var readerToast = document.getElementById('reader-toast');
 
-  var currentUser = null;
+  var currentUser = auth && auth.currentUser ? auth.currentUser : null;
   var selectedFiles = [];
   var running = false;
   var lastOutput = '';
   var slidesCredits = null;
   var toastTimer = null;
   var CREDITS_CACHE_KEY = 'credits_breakdown';
+
+  function getSignedInUser() {
+    return currentUser || (auth && auth.currentUser) || null;
+  }
+
+  function hasSignedInSession() {
+    if (getSignedInUser()) return true;
+    return !!(authClient && typeof authClient.getToken === 'function' && authClient.getToken());
+  }
 
   function showReaderToast(message, type) {
     if (!readerToast || !message) return;
@@ -63,7 +72,7 @@
   }
 
   function updateAuthStateUI() {
-    var signedIn = !!currentUser;
+    var signedIn = hasSignedInSession();
     if (authPanel) authPanel.hidden = signedIn;
     if (authLink) authLink.href = getSignInHref();
     if (!signedIn && !running) {
@@ -279,10 +288,11 @@
   }
 
   function updateRunState() {
+    var signedIn = hasSignedInSession();
     var hasInput = sourceType === 'url'
       ? Boolean(urlInput && String(urlInput.value || '').trim())
       : selectedFiles.length > 0;
-    runBtn.disabled = !currentUser || !hasInput || running;
+    runBtn.disabled = !signedIn || !hasInput || running;
     runBtn.textContent = running ? 'Extracting...' : 'Extract';
     updateAuthStateUI();
   }
@@ -299,7 +309,8 @@
   }
 
   async function refreshCredits() {
-    if (!currentUser) {
+    var signedInUser = getSignedInUser();
+    if (!signedInUser) {
       slidesCredits = null;
       updateCreditNote();
       return;
@@ -312,7 +323,7 @@
       if (payload && payload.credits) {
         var lecture = Number(payload.credits.lecture_standard || 0) + Number(payload.credits.lecture_extended || 0);
         var interview = Number(payload.credits.interview_short || 0) + Number(payload.credits.interview_medium || 0) + Number(payload.credits.interview_long || 0);
-        writeUserCacheJson(currentUser, CREDITS_CACHE_KEY, {
+        writeUserCacheJson(signedInUser, CREDITS_CACHE_KEY, {
           lecture: lecture,
           textExtraction: slidesCredits,
           interview: interview,
@@ -321,7 +332,7 @@
       }
       updateCreditNote();
     } catch (_) {
-      hydrateCachedCredits(currentUser);
+      hydrateCachedCredits(signedInUser);
     }
   }
 
@@ -332,7 +343,7 @@
   }
 
   async function runExtraction() {
-    if (!currentUser) {
+    if (!hasSignedInSession()) {
       setStatus('Sign in to continue.', 'error');
       if (authLink) authLink.focus();
       return;
@@ -348,7 +359,7 @@
     }
     running = true;
     updateRunState();
-    setStatus('Extracting...', '');
+    setStatus('', '');
 
     var formData = new FormData();
     formData.append('source_type', sourceType);
@@ -469,7 +480,7 @@
   }
 
   setupModeUI();
-  hydrateCachedCredits(auth.currentUser || null);
+  hydrateCachedCredits(getSignedInUser());
   updateAuthStateUI();
   auth.onAuthStateChanged(function (user) {
     currentUser = user || null;

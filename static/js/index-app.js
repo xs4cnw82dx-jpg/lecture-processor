@@ -1611,6 +1611,17 @@ function cleanupRecordingStream() {
     } catch (_) { }
     recordingStream = null;
 }
+async function getMicrophonePermissionState() {
+    if (!navigator.permissions || typeof navigator.permissions.query !== 'function') {
+        return 'unknown';
+    }
+    try {
+        const status = await navigator.permissions.query({ name: 'microphone' });
+        return String(status && status.state || 'unknown').trim().toLowerCase() || 'unknown';
+    } catch (_) {
+        return 'unknown';
+    }
+}
 function getPreferredRecordingConfig() {
     if (!window.MediaRecorder || !navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
         return null;
@@ -1767,6 +1778,14 @@ async function startAudioRecording() {
         return;
     }
     try {
+        const permissionState = await getMicrophonePermissionState();
+        if (permissionState === 'denied') {
+            const blockedMessage = 'Microphone access is blocked in your browser. Allow microphone access in the site settings, then try again.';
+            setRecorderStatus(blockedMessage, 'error');
+            showToast(blockedMessage, 'error', 4200);
+            syncRecorderUI();
+            return;
+        }
         cleanupRecordingStream();
         recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         recordingChunks = [];
@@ -1811,7 +1830,7 @@ async function startAudioRecording() {
         recordingMimeType = '';
         recordingExtension = '';
         const message = error && error.name === 'NotAllowedError'
-            ? 'Microphone access was blocked. Allow microphone access and try again.'
+            ? 'Microphone access was blocked. Allow microphone access in your browser and try again.'
             : 'Could not start recording in this browser.';
         setRecorderStatus(message, 'error');
         showToast(message, 'error', 3600);

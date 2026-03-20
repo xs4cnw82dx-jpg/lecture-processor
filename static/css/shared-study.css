@@ -10,6 +10,11 @@
   margin-bottom: 24px;
 }
 
+.shared-study-library-btn {
+  flex-shrink: 0;
+  text-decoration: none;
+}
+
 .shared-study-eyebrow {
   margin: 0 0 10px;
   font-size: 0.78rem;
