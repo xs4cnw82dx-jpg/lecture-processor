@@ -49,11 +49,24 @@
   transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease;
 }
 
+.hero-btn.secondary {
+  border-color: #dbe5f6;
+  background: #fff;
+  color: #0f172a;
+  box-shadow: none;
+}
+
 .hero-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 12px 26px rgba(79, 70, 229, 0.28);
   background: #4338ca;
   border-color: #4338ca;
+}
+
+.hero-btn.secondary:hover {
+  background: #f8fbff;
+  border-color: #b7c7e4;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
 }
 
 .dashboard-grid {

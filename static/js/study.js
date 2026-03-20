@@ -10,6 +10,7 @@ const uiCache = window.LectureProcessorUiCache || null;
 const progressUtils = window.LectureProcessorStudyProgressUtils || {};
 const studyLibraryUtils = window.LectureProcessorStudyLibraryUtils || {};
 const runtimeJobUtils = window.LectureProcessorRuntimeJobUtils || {};
+const displayFormatUtils = window.LectureProcessorDisplayFormatUtils || {};
 
 /* ── State ── */
 let token = null, folders = [], packs = [], selectedFolderId = '', selectedPackId = '', selectedPack = null;
@@ -640,6 +641,29 @@ function formatCardCount(value) {
   }
   var count = Math.max(0, parseInt(value, 10) || 0);
   return count + ' card' + (count === 1 ? '' : 's');
+}
+function formatItemCount(value, singular, plural) {
+  if (displayFormatUtils && typeof displayFormatUtils.formatCount === 'function') {
+    return displayFormatUtils.formatCount(value, singular, plural);
+  }
+  var count = Math.max(0, parseInt(value, 10) || 0);
+  var singularLabel = String(singular || 'item');
+  var pluralLabel = String(plural || (singularLabel + 's'));
+  return count + ' ' + (count === 1 ? singularLabel : pluralLabel);
+}
+function formatPackCountSummary(flashcardsCount, questionCount) {
+  if (displayFormatUtils && typeof displayFormatUtils.formatPackCounts === 'function') {
+    return displayFormatUtils.formatPackCounts(flashcardsCount, questionCount);
+  }
+  return [
+    formatItemCount(flashcardsCount, 'card'),
+    formatItemCount(questionCount, 'question')
+  ].join(' · ');
+}
+function buildMetadataText(parts, fallbackText) {
+  var metadata = (parts || []).filter(Boolean).join(' · ');
+  if (metadata) return metadata;
+  return String(fallbackText || '').trim();
 }
 
 function getPackStatsSnapshot(pack) {
@@ -2233,7 +2257,10 @@ function updateBuilderStats() {
   if (!builderDraft) { return; }
   builderStatCards.textContent = String((builderDraft.flashcards || []).length);
   builderStatQuestions.textContent = String((builderDraft.test_questions || []).length);
-  builderSummary.textContent = (builderDraft.flashcards || []).length + ' cards · ' + (builderDraft.test_questions || []).length + ' questions';
+  builderSummary.textContent = formatPackCountSummary(
+    (builderDraft.flashcards || []).length,
+    (builderDraft.test_questions || []).length
+  );
 }
 function renderBuilderFolderSelect() {
   var options = [{ folder_id: '', name: 'No folder' }].concat(folders.map(function (folder) {
@@ -3202,7 +3229,10 @@ function renderFolders() {
     div.className = 'item' + (selectedFolderId === f.folder_id ? ' active' : '');
     div.dataset.folderId = f.folder_id;
     var metaParts = [f.course, f.subject, f.semester, f.block].filter(Boolean).map(escapeHtml);
-    var metaLine = (metaParts.join(' &middot; ') || (f.meta_default || 'No metadata'));
+    var metaLine = buildMetadataText(
+      metaParts,
+      f.meta_default || 'Add course details to organize this folder.'
+    );
     var pendingCount = Math.max(0, parseInt(f.pending_batch_count, 10) || 0);
     var pendingBadge = pendingCount > 0
       ? '<span class="folder-pending-badge">Batch pending' + (pendingCount > 1 ? ' (' + pendingCount + ')' : '') + '</span>'
@@ -3358,11 +3388,16 @@ function renderPacks() {
     div.className = 'item' + (selectedPackId === p.study_pack_id ? ' active' : '');
     div.draggable = true; div.dataset.packId = p.study_pack_id;
     var titleText = escapeHtml(p.title || 'Untitled pack');
-    var modeText = escapeHtml(p.mode || '');
+    var modeText = escapeHtml(formatRuntimeJobMode(p.mode || ''));
     var metaParts = [p.course, p.subject, p.semester, p.block].filter(Boolean).map(escapeHtml);
-    var defaultFolderText = (p.mode === 'interview') ? 'Folder: Interviews' : 'No metadata';
-    var metaText = metaParts.join(' &middot; ') || (p.folder_name ? 'Folder: ' + escapeHtml(p.folder_name) : defaultFolderText);
-    setSafeInnerHtml(div, '<div class="item-head"><span class="item-title">' + titleText + '</span></div><div class="item-sub">' + modeText + ' &middot; ' + p.flashcards_count + ' cards &middot; ' + p.test_questions_count + ' questions</div><div class="item-sub">' + metaText + '</div>');
+    var defaultFolderText = (p.mode === 'interview')
+      ? 'Folder: Interviews'
+      : 'Add course details to organize this pack.';
+    var metaText = buildMetadataText(
+      metaParts,
+      p.folder_name ? 'Folder: ' + escapeHtml(p.folder_name) : defaultFolderText
+    );
+    setSafeInnerHtml(div, '<div class="item-head"><span class="item-title">' + titleText + '</span></div><div class="item-sub">' + modeText + ' · ' + formatPackCountSummary(p.flashcards_count, p.test_questions_count) + '</div><div class="item-sub">' + metaText + '</div>');
     div.addEventListener('click', function () { selectedPackId = p.study_pack_id; renderPacks(); openPack(p.study_pack_id); });
     div.addEventListener('dragstart', function (e) { draggedPackId = p.study_pack_id; div.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', p.study_pack_id); });
     div.addEventListener('dragend', function () { div.classList.remove('dragging'); draggedPackId = ''; });
@@ -3381,10 +3416,13 @@ function updatePackSummary() {
   if (!selectedPack) { packSummary.classList.remove('visible'); return; }
   packSummary.classList.add('visible');
   packSummaryTitle.textContent = selectedPack.title || 'Untitled pack';
-  packSummaryMeta.textContent = [selectedPack.course, selectedPack.subject, selectedPack.semester, selectedPack.block].filter(Boolean).join(' · ') || (selectedPack.mode || '');
+  packSummaryMeta.textContent = buildMetadataText(
+    [selectedPack.course, selectedPack.subject, selectedPack.semester, selectedPack.block].filter(Boolean),
+    formatRuntimeJobMode(selectedPack.mode || '')
+  );
   packStatNotes.textContent = selectedPack.notes_markdown ? 'Has notes' : 'No notes';
-  packStatCards.textContent = (selectedPack.flashcards || []).length + ' flashcards';
-  packStatTest.textContent = (selectedPack.test_questions || []).length + ' questions';
+  packStatCards.textContent = formatItemCount((selectedPack.flashcards || []).length, 'flashcard');
+  packStatTest.textContent = formatItemCount((selectedPack.test_questions || []).length, 'question');
   /* Informative images tip */
   var imagesTipEl = document.getElementById('pack-images-tip');
   if (imagesTipEl) {

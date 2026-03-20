@@ -13,6 +13,7 @@
     const addSessionBtn = document.getElementById('add-session-btn');
     const authRequiredEl = document.getElementById('auth-required');
     const calendarLayoutEl = document.getElementById('calendar-layout');
+    const emptyWeekEl = document.getElementById('calendar-empty-week');
     const toastEl = document.getElementById('toast');
 
     const modalOverlay = document.getElementById('session-modal-overlay');
@@ -644,6 +645,21 @@
       return new Date(`${session.date}T${session.time}:00`).getTime();
     }
 
+    function visibleWeekSessionCount() {
+      let total = 0;
+      for (let i = 0; i < 7; i++) {
+        const dayKey = localDateString(addDays(weekStart, i));
+        total += sessions.filter((session) => session.date === dayKey).length;
+      }
+      return total;
+    }
+
+    function updateEmptyWeekState() {
+      if (!emptyWeekEl) return;
+      const shouldShow = !!currentUser && visibleWeekSessionCount() === 0;
+      emptyWeekEl.hidden = !shouldShow;
+    }
+
     function renderWeek() {
       const end = addDays(weekStart, 6);
       weekTitle.textContent = `${formatLongDate(weekStart)} - ${formatLongDate(end)}`;
@@ -750,6 +766,7 @@
         col.appendChild(dayEvents);
         weekGrid.appendChild(col);
       }
+      updateEmptyWeekState();
     }
 
     async function saveSessionFromModal() {
@@ -1003,6 +1020,7 @@
         if (authClient && typeof authClient.clearToken === 'function') authClient.clearToken();
         authRequiredEl.style.display = '';
         calendarLayoutEl.style.display = 'none';
+        if (emptyWeekEl) emptyWeekEl.hidden = true;
         if (reminderTimer) clearInterval(reminderTimer);
         if (reminderSaveDebounceTimer) {
           clearTimeout(reminderSaveDebounceTimer);

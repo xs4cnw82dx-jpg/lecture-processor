@@ -582,7 +582,7 @@
 
     currentFolders.forEach(function (folder) {
       var folderName = String(folder.name || 'Untitled folder');
-      var metadata = [folder.course, folder.subject, folder.semester, folder.block].filter(Boolean).join(' · ') || 'No metadata';
+      var metadata = [folder.course, folder.subject, folder.semester, folder.block].filter(Boolean).join(' · ') || 'Course details not added yet';
       var stats = folderStatsById[String(folder.folder_id || '')] || { total: 0, due: 0, unmastered: 0 };
       var recommendation = buildRecommendation(stats.unmastered, folder.exam_date || '');
       var countdownChip = createCountdownChip(recommendation);

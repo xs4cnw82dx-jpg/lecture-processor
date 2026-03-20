@@ -30,13 +30,16 @@
             type="button"
             class="bundle-buy-btn{% if bundle.featured %} featured{% endif %}"
             data-bundle-id="{{ bundle.id }}"
-            aria-label="Buy {{ bundle.name }} for {{ bundle.price_display }}"
+            data-bundle-name="{{ bundle.name }}"
+            data-price-cents="{{ bundle.price_cents }}"
+            data-currency="{{ bundle.currency }}"
+            aria-label="Buy {{ bundle.name }}"
           >
             {% if bundle.featured %}
               <span class="badge">Best value</span>
             {% endif %}
             <span class="credits">{{ bundle.credits_label }}</span>
-            <span class="price">{{ bundle.price_display }}</span>
+            <span class="price" data-price-cents="{{ bundle.price_cents }}" data-currency="{{ bundle.currency }}"></span>
             <span class="meta">{{ bundle.description }}</span>
             <span class="cta">Buy now</span>
           </button>
@@ -55,13 +58,16 @@
             {% endif %}
             <div class="bundle-credits">{{ bundle.credits_label }}</div>
             <div class="bundle-description">{{ bundle.description }}</div>
-            <div class="bundle-price">{{ bundle.price_display }}</div>
-            <div class="bundle-price-per">{{ bundle.price_per_display }}</div>
+            <div class="bundle-price" data-price-cents="{{ bundle.price_cents }}" data-currency="{{ bundle.currency }}"></div>
+            <div class="bundle-price-per"{% if bundle.price_per_credit_cents is not none %} data-price-per-cents="{{ bundle.price_per_credit_cents }}" data-currency="{{ bundle.currency }}"{% endif %}></div>
             <button
               type="button"
               class="bundle-buy-btn"
               data-bundle-id="{{ bundle.id }}"
-              aria-label="Buy {{ bundle.name }} for {{ bundle.price_display }}"
+              data-bundle-name="{{ bundle.name }}"
+              data-price-cents="{{ bundle.price_cents }}"
+              data-currency="{{ bundle.currency }}"
+              aria-label="Buy {{ bundle.name }}"
             >
               Buy now
             </button>

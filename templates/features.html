@@ -3,37 +3,29 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Features - LectureProcessor</title>
+  <title>Features - Lecture Processor</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/public-header.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/features.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
 </head>
 <body>
-  <!-- Navigation -->
-  <nav class="nav">
-    <div class="nav-inner">
-      <a href="/" class="nav-logo">
-        <div class="nav-logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
-        <span class="nav-logo-text">LectureProcessor</span>
-      </a>
-      <div class="nav-links">
-        <a href="/" class="nav-link">Home</a>
-        <a href="/features" class="nav-link active">Features</a>
-        <a href="/lecture-notes?auth=signin" class="nav-cta" id="nav-auth-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg><span id="nav-auth-label">Sign In</span></a>
-      </div>
-    </div>
-  </nav>
+  {% set public_page = 'features' %}
+  {% include '_public_header.html' %}
 
   <!-- Hero -->
   <section class="section hero">
     <div class="section-inner">
-      <div class="hero-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> AI-Powered Study Platform</div>
+      <div class="hero-kicker-row">
+        <div class="hero-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> AI-Powered Study Platform</div>
+        <div class="hero-meta-pill">Tools beta available</div>
+      </div>
       <h1>From Lecture to <span class="gradient">Mastery</span><br>in Minutes</h1>
-      <p class="hero-sub">Stop wasting hours creating flashcards and study guides manually. Upload lecture slides + audio (or interview audio) and get AI-generated notes, flashcards, practice tests, and interactive study modes. For standalone document/image extraction, use the Tools beta.</p>
+      <p class="hero-sub">Upload your lecture files once and get notes, flashcards, and practice tests ready for focused study in minutes.</p>
       <div class="hero-actions">
-        <a href="/dashboard" class="hero-btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Start for Free</a>
+        <a href="/dashboard" class="hero-btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Start Studying</a>
         <a href="#workflow" class="hero-btn secondary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg> See How It Works</a>
       </div>
       <div class="hero-stat-row reveal">
@@ -255,7 +247,7 @@
             </div>
             <div class="calc-result-item">
               <div class="calc-result-num highlight" id="calc-lp">12h</div>
-              <div class="calc-result-label">With LectureProcessor</div>
+              <div class="calc-result-label">With Lecture Processor</div>
             </div>
             <div class="calc-result-item">
               <div class="calc-result-num highlight" id="calc-saved">48h</div>
@@ -271,7 +263,7 @@
   <section class="section section-alt" id="compare">
     <div class="section-inner">
       <div class="fg-header reveal">
-        <h2>Manual Study Prep vs. LectureProcessor</h2>
+        <h2>Manual Study Prep vs. Lecture Processor</h2>
         <p>A side-by-side look at the old way versus the smart way.</p>
       </div>
       <div class="comparison reveal">
@@ -280,7 +272,7 @@
             <tr>
               <th>Task</th>
               <th>Manual</th>
-              <th>LectureProcessor</th>
+              <th>Lecture Processor</th>
             </tr>
           </thead>
           <tbody>
@@ -339,10 +331,11 @@
     <p>{% include '_footer_links.html' %}</p>
   </footer>
 
-<script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
   <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
   <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
   <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/public-header.js') }}"></script>
   <script src="{{ url_for('static', filename='js/features.js') }}"></script>
 </body>
 </html>

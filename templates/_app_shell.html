@@ -13,14 +13,18 @@
       <span>Lecture Processor</span>
     </a>
     <nav class="app-shell-nav">
+      <div class="app-shell-section-label">Overview</div>
       <a href="/dashboard" class="app-shell-link">Dashboard</a>
-      <a href="/lecture-notes" class="app-shell-link">New Lecture</a>
+      <div class="app-shell-section-label">Create</div>
+      <a href="/lecture-notes" class="app-shell-link">Lecture Notes</a>
       <a href="/batch_mode" class="app-shell-link">Batch Processing</a>
+      <div class="app-shell-section-label">Study</div>
       <a href="/study" class="app-shell-link">Study Library</a>
       <a href="/plan" class="app-shell-link">Planning &amp; Progress</a>
       <a href="/calendar" class="app-shell-link">Calendar</a>
       <a href="/buy_credits" class="app-shell-link">Buy Credits</a>
-      <div class="app-shell-group {% if shell_physio_open %}is-open{% endif %}" id="shell-physio-group" data-shell-group="physio" {% if not shell_physio_open %}hidden{% endif %}>
+      <div class="app-shell-section-label app-shell-section-label-secondary">Extra Tools</div>
+      <div class="app-shell-group app-shell-group-secondary {% if shell_physio_open %}is-open{% endif %}" id="shell-physio-group" data-shell-group="physio" {% if not shell_physio_open %}hidden{% endif %}>
         <button
           type="button"
           class="app-shell-group-trigger"
@@ -36,15 +40,15 @@
         </button>
         <div class="app-shell-group-panel-wrap">
           <div class="app-shell-group-panel" id="shell-physio-panel">
-            <a href="/physio/soap" class="app-shell-link sub">SOAP Notities</a>
-            <a href="/physio/rps" class="app-shell-link sub">RPS Formulier</a>
-            <a href="/physio/reasoning" class="app-shell-link sub">Klinisch Redeneren</a>
-            <a href="/physio/knowledge" class="app-shell-link sub">Kennisbank</a>
-            <a href="/physio/cases" class="app-shell-link sub">Casussen</a>
+            <a href="/physio/soap" class="app-shell-link sub">SOAP Notes</a>
+            <a href="/physio/rps" class="app-shell-link sub">RPS Form</a>
+            <a href="/physio/reasoning" class="app-shell-link sub">Clinical Reasoning</a>
+            <a href="/physio/knowledge" class="app-shell-link sub">Knowledge Base</a>
+            <a href="/physio/cases" class="app-shell-link sub">Cases</a>
           </div>
         </div>
       </div>
-      <div class="app-shell-group {% if shell_more_tools_open %}is-open{% endif %}" id="shell-more-tools-group" data-shell-group="more-tools">
+      <div class="app-shell-group app-shell-group-secondary {% if shell_more_tools_open %}is-open{% endif %}" id="shell-more-tools-group" data-shell-group="more-tools">
         <button
           type="button"
           class="app-shell-group-trigger"

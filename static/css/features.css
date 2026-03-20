@@ -33,15 +33,17 @@
 
     /* -- Sections -- */
     .section{padding:100px 24px}
-    .section:first-of-type{padding-top:140px}
+    .section:first-of-type{padding-top:108px}
     .section-inner{max-width:1100px;margin:0 auto}
     .section-alt{background:linear-gradient(180deg,var(--gray-50),var(--white))}
     .section-dark{background:linear-gradient(135deg,var(--gray-900),#1a1a2e);color:var(--white)}
 
     /* -- Hero -- */
     .hero{text-align:center;padding-top:140px;padding-bottom:80px}
-    .hero-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(79,70,229,.08);border:1px solid rgba(79,70,229,.2);color:var(--primary);padding:6px 16px;border-radius:30px;font-size:.8rem;font-weight:700;margin-bottom:24px}
+    .hero-kicker-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:24px}
+    .hero-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(79,70,229,.08);border:1px solid rgba(79,70,229,.2);color:var(--primary);padding:6px 16px;border-radius:30px;font-size:.8rem;font-weight:700}
     .hero-badge svg{width:14px;height:14px}
+    .hero-meta-pill{display:inline-flex;align-items:center;justify-content:center;padding:6px 14px;border-radius:30px;font-size:.76rem;font-weight:700;color:var(--gray-600);background:rgba(15,23,42,.04);border:1px solid var(--gray-200)}
     .hero h1{font-size:clamp(2.2rem,5.5vw,3.8rem);font-weight:800;line-height:1.1;letter-spacing:-.04em;color:var(--gray-900);margin-bottom:20px}
     .hero h1 .gradient{background:linear-gradient(135deg,var(--primary),var(--secondary));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
     .hero-sub{font-size:clamp(1rem,2vw,1.25rem);color:var(--gray-500);max-width:640px;margin:0 auto 36px;line-height:1.65}

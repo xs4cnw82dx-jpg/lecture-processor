@@ -7,17 +7,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/public-header.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/support-pages.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
 </head>
 <body>
-  <header class="support-topbar">
-    <a href="/" class="support-brand">Lecture Processor</a>
-    <div class="support-topbar-actions">
-      <a href="/FAQ" class="support-link-btn">FAQ</a>
-      <a href="/dashboard" class="support-link-btn primary">Dashboard</a>
-    </div>
-  </header>
+  {% set public_page = 'helpcenter' %}
+  {% include '_public_header.html' %}
 
   <main class="support-shell">
     <section class="support-hero">
@@ -108,5 +104,11 @@
   <footer class="support-footer">
     <p>{% include '_footer_links.html' %}</p>
   </footer>
+
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/public-header.js') }}"></script>
 </body>
 </html>

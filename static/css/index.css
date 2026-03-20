@@ -622,7 +622,7 @@
         .feature-description { font-size: 0.875rem; color: var(--gray-500); }
         .app-card { background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius-xl); padding: 32px; box-shadow: var(--shadow-lg); margin-bottom: 40px; }
         .processing-layout { display: grid; gap: 18px; }
-        .processing-main-column, .processing-side-column { display: grid; gap: 18px; align-content: start; }
+        .processing-main-column { display: grid; gap: 18px; align-content: start; }
         @media (max-width: 768px) {
             .desktop-feature-strip { display: none; }
             .mobile-feature-strip { display: block; }
@@ -679,7 +679,7 @@
             .audio-recorder-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
             .audio-recorder-btn { width: 100%; justify-content: center; }
         }
-        .upload-estimate { margin: 0 auto 20px; padding: 14px 16px; border: 1px solid var(--gray-200); border-radius: var(--radius); background: linear-gradient(135deg, rgba(79,70,229,0.06) 0%, rgba(14,165,233,0.06) 100%); }
+        .upload-estimate { margin: 0; padding: 14px 16px; border: 1px solid var(--gray-200); border-radius: var(--radius); background: linear-gradient(135deg, rgba(79,70,229,0.06) 0%, rgba(14,165,233,0.06) 100%); }
         .upload-estimate-title { font-size: 0.8rem; font-weight: 700; color: var(--gray-700); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
         .upload-estimate-time { font-size: 0.95rem; font-weight: 700; color: var(--gray-900); margin-bottom: 6px; }
         .upload-estimate-meta { font-size: 0.78rem; color: var(--gray-600); line-height: 1.45; }
@@ -699,6 +699,11 @@
         .upload-url-help-link:hover { text-decoration: underline; color: var(--primary); }
         .upload-url-status { margin-top: 8px; min-height: 1.2em; color: var(--gray-600); font-size: 0.8rem; }
         .upload-url-status.error { color: #991B1B; }
+        .upload-url-advanced { margin-top: 10px; border: 1px solid var(--gray-200); border-radius: var(--radius); background: rgba(249,250,251,0.9); }
+        .upload-url-advanced summary { cursor: pointer; list-style: none; padding: 10px 12px; font-size: 0.78rem; font-weight: 700; color: var(--gray-700); }
+        .upload-url-advanced summary::-webkit-details-marker { display: none; }
+        .upload-url-advanced[open] summary { border-bottom: 1px solid var(--gray-200); }
+        .upload-url-advanced .upload-url-help { margin: 0; padding: 12px; }
         @media (max-width: 640px) {
             .upload-url-import-row { flex-direction: column; }
             .upload-url-button { width: 100%; min-height: 40px; }
@@ -1015,11 +1020,7 @@
             margin-top: 12px;
             padding: 14px;
         }
-        body[data-forced-mode="lecture-notes"] .processing-layout {
-            grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.95fr);
-            gap: 16px 18px;
-            align-items: start;
-        }
+        body[data-forced-mode="lecture-notes"] .processing-layout { grid-template-columns: 1fr; }
         body[data-forced-mode="lecture-notes"] .upload-section {
             margin-bottom: 0;
             gap: 14px;
@@ -1041,10 +1042,6 @@
         body[data-forced-mode="lecture-notes"] .upload-subtitle,
         body[data-forced-mode="lecture-notes"] .upload-formats {
             text-align: left;
-        }
-        body[data-forced-mode="lecture-notes"] .upload-estimate,
-        body[data-forced-mode="lecture-notes"] .advanced-settings {
-            margin: 0;
         }
         body[data-forced-mode="lecture-notes"] .advanced-settings-toggle {
             min-height: 44px;
@@ -1068,11 +1065,6 @@
         }
         body[data-forced-mode="lecture-notes"] .no-credits-warning {
             text-align: left;
-        }
-        @media (max-width: 980px) {
-            body[data-forced-mode="lecture-notes"] .processing-layout {
-                grid-template-columns: 1fr;
-            }
         }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(79,70,229,0.4); } 50% { box-shadow: 0 0 0 8px rgba(79,70,229,0); } }

@@ -1,6 +1,7 @@
 (function () {
   const config = window.SharedStudyConfig || {};
   const markdownUtils = window.LectureProcessorMarkdown || {};
+  const displayFormatUtils = window.LectureProcessorDisplayFormatUtils || {};
 
   const shareToken = String(config.shareToken || '').trim();
   const titleEl = document.getElementById('shared-study-title');
@@ -85,6 +86,15 @@
       pack.block,
     ].filter(Boolean);
     return parts.join(' · ') || 'Read-only shared pack';
+  }
+
+  function formatPackCountSummary(flashcardsCount, questionCount) {
+    if (displayFormatUtils && typeof displayFormatUtils.formatPackCounts === 'function') {
+      return displayFormatUtils.formatPackCounts(flashcardsCount, questionCount);
+    }
+    const cards = parseInt(flashcardsCount || '0', 10) || 0;
+    const questions = parseInt(questionCount || '0', 10) || 0;
+    return cards + ' card' + (cards === 1 ? '' : 's') + ' · ' + questions + ' question' + (questions === 1 ? '' : 's');
   }
 
   function renderFlashcards(target, cards) {
@@ -181,7 +191,7 @@
       item.innerHTML = ''
         + '<div class="item-head"><span class="item-title">' + escapeHtml(pack.title || 'Untitled pack') + '</span></div>'
         + '<div class="item-sub">' + escapeHtml(buildMetaLine(pack)) + '</div>'
-        + '<div class="item-sub">' + escapeHtml(String(pack.flashcards_count || 0) + ' cards · ' + String(pack.test_questions_count || 0) + ' questions') + '</div>';
+        + '<div class="item-sub">' + escapeHtml(formatPackCountSummary(pack.flashcards_count, pack.test_questions_count)) + '</div>';
       item.addEventListener('click', function () {
         loadFolderPack(pack.study_pack_id).catch(function (error) {
           showError(error && error.message ? error.message : 'Could not load shared pack.');

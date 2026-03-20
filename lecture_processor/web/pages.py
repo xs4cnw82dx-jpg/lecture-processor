@@ -31,16 +31,6 @@ PRICING_CATEGORY_SPECS = (
 )
 
 
-def _format_money_display(cents: int, currency: str) -> str:
-    amount = max(0, int(cents or 0)) / 100
-    code = str(currency or 'EUR').strip().upper() or 'EUR'
-    if code == 'EUR':
-        return f'\u20ac{amount:.2f}'
-    if code == 'USD':
-        return f'${amount:.2f}'
-    return f'{code} {amount:.2f}'
-
-
 def _build_pricing_catalog(*, runtime) -> list[dict]:
     catalog = []
     bundles = getattr(runtime, 'CREDIT_BUNDLES', {}) or {}
@@ -63,22 +53,18 @@ def _build_pricing_catalog(*, runtime) -> list[dict]:
             featured = 'best value' in description.lower()
             description = description.replace('(best value)', '').replace('  ', ' ').strip()
             price_cents = int(bundle.get('price_cents') or 0)
-            currency = str(bundle.get('currency') or 'EUR')
-            price_display = _format_money_display(price_cents, currency)
-            unit_price_display = (
-                _format_money_display(round(price_cents / credits_total), currency)
-                if credits_total > 0 else None
-            )
+            currency = str(bundle.get('currency') or 'EUR').strip().upper() or 'EUR'
             category_bundles.append({
                 'id': bundle_id,
                 'name': str(bundle.get('name') or bundle_id),
                 'description': description,
                 'credits_total': credits_total,
                 'credits_label': f'{credits_total} credit' + ('' if credits_total == 1 else 's'),
-                'price_display': price_display,
-                'price_per_display': (
-                    f'{unit_price_display} per credit' if unit_price_display else ''
+                'price_cents': price_cents,
+                'price_per_credit_cents': (
+                    round(price_cents / credits_total) if credits_total > 0 else None
                 ),
+                'currency': currency,
                 'featured': featured,
             })
 
@@ -348,8 +334,8 @@ def study_dashboard():
 def physio_soap_page():
     return _render_physio_page(
         'physio-soap',
-        'SOAP Notities',
-        'Transcribeer consulten, genereer een SOAP-structuur en sla sessies op per casus.',
+        'SOAP Notes',
+        'Transcribe consultations, generate a SOAP structure, and save sessions inside each case.',
         'soap',
     )
 
@@ -358,8 +344,8 @@ def physio_soap_page():
 def physio_rps_page():
     return _render_physio_page(
         'physio-rps',
-        'RPS Formulier',
-        'Maak een gestructureerd RPS-overzicht vanuit je transcript of intake-notities.',
+        'RPS Form',
+        'Create a structured RPS overview from your transcript or intake notes.',
         'rps',
     )
 
@@ -368,8 +354,8 @@ def physio_rps_page():
 def physio_reasoning_page():
     return _render_physio_page(
         'physio-reasoning',
-        'Klinisch Redeneren',
-        'Werk de 7-stappenanalyse, differentiaaldiagnose en red flags uit in een bewerkbaar scherm.',
+        'Clinical Reasoning',
+        'Work through the 7-step analysis, differential diagnosis, and red flags in an editable workspace.',
         'reasoning',
     )
 
@@ -378,8 +364,8 @@ def physio_reasoning_page():
 def physio_knowledge_page():
     return _render_physio_page(
         'physio-knowledge',
-        'Kennisbank',
-        'Doorzoek je eigen richtlijnen en samenvattingen met bronverwijzingen.',
+        'Knowledge Base',
+        'Search your own guidelines and summaries with source-backed answers.',
         'knowledge',
     )
 
@@ -388,8 +374,8 @@ def physio_knowledge_page():
 def physio_cases_page():
     return _render_physio_page(
         'physio-cases',
-        'Casussen',
-        'Beheer casussen, sessies en simpele voortgangsmetingen op één plek.',
+        'Cases',
+        'Manage cases, sessions, and simple progress tracking in one place.',
         'cases',
     )
 

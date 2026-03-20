@@ -5,6 +5,7 @@
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
   var uiCache = window.LectureProcessorUiCache || null;
   var progressUtils = window.LectureProcessorStudyProgressUtils || {};
+  var displayFormatUtils = window.LectureProcessorDisplayFormatUtils || {};
   if (!auth) return;
 
   var streakEl = document.getElementById('dash-streak');
@@ -193,7 +194,10 @@
       var title = document.createElement('h3');
       title.textContent = String(pack.title || 'Untitled pack');
       var meta = document.createElement('p');
-      meta.textContent = (pack.mode || '-') + ' · ' + (pack.flashcards_count || 0) + ' cards · ' + (pack.test_questions_count || 0) + ' questions';
+      var countSummary = displayFormatUtils && typeof displayFormatUtils.formatPackCounts === 'function'
+        ? displayFormatUtils.formatPackCounts(pack.flashcards_count || 0, pack.test_questions_count || 0)
+        : ((pack.flashcards_count || 0) + ' cards · ' + (pack.test_questions_count || 0) + ' questions');
+      meta.textContent = (pack.mode || '-') + ' · ' + countSummary;
       row.appendChild(title);
       row.appendChild(meta);
       packsList.appendChild(row);

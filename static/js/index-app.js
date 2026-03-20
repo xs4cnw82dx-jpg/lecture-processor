@@ -32,6 +32,7 @@ const uxUtils = window.LectureProcessorUx || {};
 const downloadUtils = window.LectureProcessorDownload || {};
 const topbarUtils = window.LectureProcessorTopbar || {};
 const progressUtils = window.LectureProcessorStudyProgressUtils || {};
+const displayFormatUtils = window.LectureProcessorDisplayFormatUtils || {};
 const runtimeJobUtils = window.LectureProcessorRuntimeJobUtils || {};
 const audioImportUtils = window.LectureProcessorLectureAudioImportUtils || {};
 const pageConfig = window.LectureProcessorPageConfig || {};
@@ -253,7 +254,7 @@ const modeConfig = {
         audioRequirementTone: 'required',
         audioHelper: 'Required for lecture notes. LMS import counts as your audio source.',
         lmsImportTitle: 'Import from LMS video URL',
-        lmsImportHint: 'Paste the direct video playlist URL from Brightspace, Canvas, Moodle, or Blackboard browser network tools.',
+        lmsImportHint: 'Paste the direct media playlist URL from your LMS. If you only see the video page, open the advanced steps below.',
         buttonText: 'Process Lecture',
         resultTitle: 'Study Dashboard',
         steps: [{ num: 1, label: 'Extract Slides' }, { num: 2, label: 'Transcribe Audio' }, { num: 3, label: 'Merge Notes' }, { num: 4, label: 'Build Study Tools' }]
@@ -3586,7 +3587,13 @@ function showPricingModal() {
 function hidePricingModal() {}
 function showHistoryModal() { window.location.href = '/buy_credits'; }
 function hideHistoryModal() {}
-function formatPrice(cents, currency) { const amount = (cents / 100).toFixed(2); return currency === 'eur' ? `€${amount}` : `${amount} ${currency.toUpperCase()}`; }
+function formatPrice(cents, currency) {
+    if (displayFormatUtils && typeof displayFormatUtils.formatCurrencyFromCents === 'function') {
+        return displayFormatUtils.formatCurrencyFromCents(cents, currency);
+    }
+    const amount = (Number(cents || 0) / 100).toFixed(2);
+    return String(currency || 'eur').toLowerCase() === 'eur' ? `€${amount}` : `${amount} ${String(currency || 'EUR').toUpperCase()}`;
+}
 function formatCreditsText(credits) { return Object.entries(credits).map(([k, v]) => `${v} ${k.replace(/_/g, ' ').replace('credits ', '').replace('credits', '').trim()}`).join(', '); }
 function setHistoryMessage(message, loading = false) {
     while (historyList.firstChild) historyList.removeChild(historyList.firstChild);
@@ -3665,7 +3672,6 @@ async function loadPurchaseHistory() {
         }
         while (historyList.firstChild) historyList.removeChild(historyList.firstChild);
         d.purchases.forEach(p => {
-            const date = new Date(p.created_at * 1000);
             const row = document.createElement('div');
             row.className = 'history-item';
 
@@ -3676,7 +3682,9 @@ async function loadPurchaseHistory() {
             name.textContent = p.bundle_name || '-';
             const dateEl = document.createElement('div');
             dateEl.className = 'history-item-date';
-            dateEl.textContent = `${formatDateLabel(date)} at ${formatTimeLabel(date)}`;
+            dateEl.textContent = displayFormatUtils && typeof displayFormatUtils.formatDateTimeFromEpochSeconds === 'function'
+                ? displayFormatUtils.formatDateTimeFromEpochSeconds(p.created_at)
+                : '-';
             const credits = document.createElement('div');
             credits.className = 'history-item-credits';
             credits.textContent = formatCreditsText(p.credits || {});
@@ -3739,6 +3747,10 @@ async function purchaseBundle(bundleId) {
         checkoutRequestInFlight = false;
         applyCheckoutButtonsState();
     }
+}
+
+if (displayFormatUtils && typeof displayFormatUtils.applyPricingCatalog === 'function') {
+    displayFormatUtils.applyPricingCatalog(document);
 }
 async function confirmCheckoutSession(sessionId) {
     if (!sessionId) return { ok: false, status: 'missing_session' };
