@@ -76,6 +76,7 @@ import firebase_admin
 
 from firebase_admin import credentials, auth, firestore
 
+from lecture_processor.config import resolve_runtime_environment, resolve_sentry_environment
 from lecture_processor.services import analytics_service, auth_service, file_service, job_state_service, prompt_registry, rate_limit_service, url_security
 
 from lecture_processor.repositories import admin_repo, batch_repo, job_logs_repo, planner_repo, purchases_repo, runtime_jobs_repo, study_repo, users_repo
@@ -331,7 +332,7 @@ SENTRY_BACKEND_DSN = os.getenv('SENTRY_DSN_BACKEND', '').strip()
 
 SENTRY_FRONTEND_DSN = os.getenv('SENTRY_DSN_FRONTEND', '').strip()
 
-SENTRY_ENVIRONMENT = (os.getenv('SENTRY_ENVIRONMENT', os.getenv('FLASK_ENV', 'production')) or 'production').strip()
+SENTRY_ENVIRONMENT = resolve_sentry_environment()
 
 SENTRY_RELEASE = (os.getenv('SENTRY_RELEASE', 'lecture-processor') or 'lecture-processor').strip()
 
@@ -406,7 +407,7 @@ def get_public_base_url():
         if scheme in {'http', 'https'} and netloc and (not parsed.username) and (not parsed.password):
             return f'{scheme}://{netloc}'.rstrip('/')
         logger.warning('Ignoring invalid PUBLIC_BASE_URL value: %s', raw[:120])
-    runtime_env = (os.getenv('SENTRY_ENVIRONMENT') or os.getenv('FLASK_ENV') or os.getenv('ENV') or ('production' if os.getenv('RENDER') else 'development')).strip().lower()
+    runtime_env = resolve_runtime_environment(default_local='development').strip().lower()
     if runtime_env in DEV_ENV_NAMES:
         return 'http://127.0.0.1:5000'
     return ''
