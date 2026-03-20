@@ -42,8 +42,8 @@
           <p>Yes. Lecture Notes uses slides plus audio together. If you only have slides, use Slides Extraction. If you only have audio, use Interview Transcription.</p>
         </details>
         <details class="faq-item">
-          <summary>What does “Import from LMS video URL” mean?</summary>
-          <p>It means you can import audio from a learning platform video source. Brightspace is one example, but Canvas, Moodle, and Blackboard-style flows are also covered by the wording.</p>
+          <summary>What does “Import from lecture video URL” mean?</summary>
+          <p>It means you can paste the normal lecture video page from your LMS and let Lecture Processor fetch the audio for you. Direct playlist links also work, and Brightspace is one example of a supported flow.</p>
         </details>
       </div>
 
@@ -89,10 +89,5 @@
     <p>{% include '_footer_links.html' %}</p>
   </footer>
 
-  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
-  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
-  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/public-header.js') }}"></script>
 </body>
 </html>

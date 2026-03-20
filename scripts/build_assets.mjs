@@ -13,10 +13,12 @@ const targets = [
   { entry: 'static/js/batch-mode.js', out: 'static/js/batch-mode.min.js' },
   { entry: 'static/js/buy-credits.js', out: 'static/js/buy-credits.min.js' },
   { entry: 'static/js/index-app.js', out: 'static/js/index-app.min.js' },
+  { entry: 'static/js/index-results-utils.js', out: 'static/js/index-results-utils.min.js' },
   { entry: 'static/js/admin.js', out: 'static/js/admin.min.js' },
   { entry: 'static/js/physio.js', out: 'static/js/physio.min.js' },
   { entry: 'static/js/reader.js', out: 'static/js/reader.min.js' },
   { entry: 'static/js/shared-study.js', out: 'static/js/shared-study.min.js' },
+  { entry: 'static/js/study-api-utils.js', out: 'static/js/study-api-utils.min.js' },
   { entry: 'static/js/study.js', out: 'static/js/study.min.js' },
 ];
 

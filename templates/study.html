@@ -820,117 +820,7 @@
     </div>
   </div>
 
-  <!-- Builder unsaved exit modal -->
-  <div class="modal-overlay builder-exit-modal" id="builder-exit-overlay" aria-hidden="true">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="builder-exit-title">
-      <div class="builder-exit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <path d="M9.09 9a3 3 0 0 1 5.82 1c0 2-3 3-3 3"></path>
-          <line x1="12" y1="17" x2="12.01" y2="17"></line>
-        </svg></div>
-      <div class="modal-title u-text-center u-mb-6" id="builder-exit-title">Save Changes?</div>
-      <p class="modal-message u-text-center">You have unsaved builder changes. Do you want to save before
-        leaving?</p>
-      <div class="actions u-justify-center">
-        <button class="btn primary" id="builder-exit-save">Save</button>
-        <button class="btn danger" id="builder-exit-discard">Don't Save</button>
-        <button class="btn" id="builder-exit-cancel">Cancel</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Folder Modal -->
-  <div class="modal-overlay" id="folder-modal-overlay" aria-hidden="true">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="folder-modal-title">
-      <div class="modal-head"><span class="modal-title" id="folder-modal-title">New Folder</span><button class="btn"
-          id="folder-modal-close" type="button" aria-label="Close folder dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg></button></div>
-      <div class="modal-grid u-mb-14">
-        <div class="field"><label>Folder Name *</label><input id="folder-name-input"></div>
-        <div class="field"><label>Course</label><input id="folder-course-input"></div>
-        <div class="field"><label>Subject</label><input id="folder-subject-input"></div>
-        <div class="field"><label>Semester</label><input id="folder-semester-input"></div>
-        <div class="field"><label>Block</label><input id="folder-block-input"></div>
-        <div class="field"><label>Exam Date</label><input type="text" id="folder-exam-date-input" placeholder="dd-mm-yyyy" inputmode="numeric"></div>
-      </div>
-      <div class="actions u-justify-end"><button class="btn" id="folder-modal-cancel"
-          type="button">Cancel</button><button class="btn primary" id="folder-modal-save" type="button">Save
-          Folder</button></div>
-    </div>
-  </div>
-
-  <!-- Confirm Modal -->
-  <div class="modal-overlay" id="confirm-modal-overlay" aria-hidden="true">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
-      <div class="modal-head"><span class="modal-title" id="confirm-modal-title">Confirm Action</span><button
-          class="btn" id="confirm-modal-close" type="button" aria-label="Close confirmation dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg></button></div>
-      <p class="modal-message" id="confirm-modal-message"></p>
-      <div class="actions u-justify-end"><button class="btn" id="confirm-modal-cancel"
-          type="button">Cancel</button><button class="btn danger" id="confirm-modal-confirm"
-          type="button">Delete</button></div>
-    </div>
-  </div>
-
-  <!-- Share Modal -->
-  <div class="modal-overlay" id="share-modal-overlay" aria-hidden="true">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
-      <div class="modal-head"><span class="modal-title" id="share-modal-title">Share</span><button
-          class="btn" id="share-modal-close" type="button" aria-label="Close share dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg></button></div>
-      <p class="modal-message" id="share-modal-message">Choose whether this content can be opened with a share link.</p>
-      <div class="actions u-justify-start u-mb-12">
-        <button class="btn" id="share-scope-private" type="button">Private</button>
-        <button class="btn primary" id="share-scope-public" type="button">Public</button>
-      </div>
-      <div class="field">
-        <label for="share-link-input">Share link</label>
-        <div class="actions u-justify-start u-gap-10 u-align-center">
-          <input id="share-link-input" readonly class="u-flex-1" placeholder="Enable public sharing to generate a link.">
-          <button class="btn" id="share-copy-btn" type="button">Copy</button>
-        </div>
-      </div>
-      <p class="modal-message u-mt-12" id="share-modal-status">Private links are disabled for everyone except you inside the app.</p>
-      <div class="actions u-justify-end"><button class="btn" id="share-modal-cancel"
-          type="button">Cancel</button><button class="btn primary" id="share-modal-save"
-          type="button">Create Link</button></div>
-    </div>
-  </div>
-
-  <!-- Audio Player -->
-  <div class="audio-player-bar" id="audio-player-bar">
-    <audio id="audio-player-el" preload="metadata"></audio>
-    <button class="audio-play-btn" id="audio-play-btn" aria-label="Play/Pause">
-      <svg id="audio-play-icon" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M8 5v14l11-7z"></path>
-      </svg>
-      <svg id="audio-pause-icon" viewBox="0 0 24 24" fill="currentColor" hidden>
-        <path d="M6 19h4V5H6zm8-14v14h4V5z"></path>
-      </svg>
-    </button>
-    <span class="audio-time" id="audio-time">0:00 / 0:00</span>
-    <div class="audio-progress-wrap" id="audio-progress-wrap">
-      <progress class="audio-progress-fill" id="audio-progress-fill" max="100" value="0">0%</progress>
-    </div>
-    <button class="audio-speed-btn" id="audio-speed-btn">1x</button>
-    <span class="audio-pack-title" id="audio-pack-title"></span>
-    <button class="audio-close-btn" id="audio-close-btn" aria-label="Close audio player"><svg viewBox="0 0 24 24"
-        fill="none" stroke="currentColor" stroke-width="2">
-        <line x1="18" y1="6" x2="6" y2="18"></line>
-        <line x1="6" y1="6" x2="18" y2="18"></line>
-      </svg></button>
-  </div>
-
-  <div class="toast" id="toast"></div>
+  {% include '_study_dialogs.html' %}
   <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
   <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
   <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
@@ -950,6 +840,7 @@
   <script src="{{ url_for('static', filename='js/study-progress-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/display-format-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/study-library-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename=study_api_js_asset or 'js/study-api-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/study-session-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
   <script src="{{ url_for('static', filename=study_js_asset or 'js/study.js') }}"></script>

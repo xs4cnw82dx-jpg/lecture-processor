@@ -17,7 +17,7 @@ def create_app():
 
     from .runtime import core
 
-    app = core.app
+    app = core.create_flask_app(flask_secret_key=config.flask_secret_key)
     apply_proxy_fix(app, getattr(core, 'TRUSTED_PROXY_HOPS', 1))
     init_extensions(app)
 

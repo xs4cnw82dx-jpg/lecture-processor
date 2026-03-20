@@ -88,7 +88,7 @@
         <ul>
           <li>If a button looks disabled, check that you are signed in and have the required files uploaded.</li>
           <li>If credits look wrong, refresh once, then open the account menu or Buy Credits page to verify the balance.</li>
-          <li>If an LMS import fails, retry with the direct media playlist URL and confirm it still plays in your browser session.</li>
+          <li>If a lecture video import fails, retry with the normal lecture page first, then try the direct media playlist URL and confirm it still plays in your browser session.</li>
           <li>If study pages look empty, upload a first lecture or create a folder in Study Library to unlock the next steps.</li>
         </ul>
       </article>
@@ -105,10 +105,5 @@
     <p>{% include '_footer_links.html' %}</p>
   </footer>
 
-  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
-  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
-  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/public-header.js') }}"></script>
 </body>
 </html>

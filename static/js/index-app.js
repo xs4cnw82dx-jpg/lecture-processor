@@ -38,6 +38,7 @@ const runtimeJobUtils = window.LectureProcessorRuntimeJobUtils || {};
 const audioImportUtils = window.LectureProcessorLectureAudioImportUtils || {};
 const processingUi = window.LectureProcessorProcessingUi || {};
 const progressFlowUtils = window.LectureProcessorIndexProgress || {};
+const indexResultsUtils = window.LectureProcessorIndexResults || {};
 const pageConfig = window.LectureProcessorPageConfig || {};
 const forcedMode = ['lecture-notes', 'slides-only', 'interview'].includes(String(pageConfig.forcedMode || '').trim())
     ? String(pageConfig.forcedMode || '').trim()
@@ -271,8 +272,8 @@ const modeConfig = {
         audioRequirement: 'Required',
         audioRequirementTone: 'required',
         audioHelper: 'Required for lecture notes. LMS import counts as your audio source.',
-        lmsImportTitle: 'Import from LMS video URL',
-        lmsImportHint: 'Paste the direct media playlist URL from your LMS. If you only see the video page, open the advanced steps below.',
+        lmsImportTitle: 'Import from lecture video URL',
+        lmsImportHint: 'Paste the normal lecture video page from your LMS first. Direct playlist links also work.',
         buttonText: 'Process Lecture',
         resultTitle: 'Study Dashboard',
         steps: [{ num: 1, label: 'Extract Slides' }, { num: 2, label: 'Transcribe Audio' }, { num: 3, label: 'Merge Notes' }, { num: 4, label: 'Build Study Tools' }]
@@ -291,7 +292,7 @@ const modeConfig = {
         audioRequirement: 'Optional',
         audioRequirementTone: 'optional',
         audioHelper: 'Not used in this mode. Switch to Lecture Notes if you want slides and audio merged together.',
-        lmsImportTitle: 'Import from LMS video URL',
+        lmsImportTitle: 'Import from lecture video URL',
         lmsImportHint: 'Only needed in Lecture Notes mode.',
         buttonText: 'Extract Slides',
         resultTitle: 'Study Dashboard',
@@ -311,8 +312,8 @@ const modeConfig = {
         audioRequirement: 'Required',
         audioRequirementTone: 'required',
         audioHelper: 'Required in this mode. Upload the source audio you want transcribed.',
-        lmsImportTitle: 'Import from LMS video URL',
-        lmsImportHint: 'Use this only when the interview audio is hosted in an LMS video player.',
+        lmsImportTitle: 'Import from lecture video URL',
+        lmsImportHint: 'Use this only when the interview audio is hosted on a supported lecture video page or direct playlist URL.',
         buttonText: 'Run Interview Transcription',
         resultTitle: 'Interview Transcription',
         steps: [{ num: 1, label: 'Transcribe' }]
@@ -423,6 +424,7 @@ const uploadEstimateTime = document.getElementById('upload-estimate-time');
 const uploadEstimateMeta = document.getElementById('upload-estimate-meta');
 const uploadSection = document.getElementById('upload-section');
 const buttonSection = document.getElementById('button-section');
+const mobileProcessSummary = document.getElementById('mobile-process-summary');
 const generationControls = document.getElementById('generation-controls');
 const interviewControls = document.getElementById('interview-controls');
 const languageControls = document.getElementById('language-controls');
@@ -2047,7 +2049,7 @@ async function importAudioFromUrl(options = {}) {
         if (importReason === 'manual') {
             showAuthModal('signin');
         } else {
-            setAudioImportStatus('Sign in to import audio from LMS video URL.', true);
+            setAudioImportStatus('Sign in to import audio from a lecture video URL.', true);
         }
         updateProcessButton();
         return false;
@@ -2058,14 +2060,14 @@ async function importAudioFromUrl(options = {}) {
         return false;
     }
     if (!url) {
-        setAudioImportStatus('Paste the LMS video URL first.', true);
+        setAudioImportStatus('Paste the lecture video page URL or direct playlist URL first.', true);
         updateProcessButton();
         return false;
     }
     if (audioImportInFlight) {
         if (!audioFile && url && url !== audioImportRequestUrl) {
             pendingAutoImportUrl = url;
-            setAudioImportStatus('Import in progress. The latest pasted LMS URL will import next.');
+            setAudioImportStatus('Import in progress. The latest pasted lecture video URL will import next.');
         } else if (importReason === 'manual') {
             setAudioImportStatus('Import already in progress. Please wait.');
         }
@@ -2092,7 +2094,7 @@ async function importAudioFromUrl(options = {}) {
     audioImportRequestUrl = url;
     setAudioImportPending(true);
     updateProcessButton();
-    setAudioImportStatus(importReason === 'paste' ? 'Importing audio from pasted LMS URL...' : 'Importing audio from URL...');
+    setAudioImportStatus(importReason === 'paste' ? 'Importing audio from the pasted lecture video URL...' : 'Importing audio from URL...');
     const previousToken = String(importedAudioToken || '').trim();
     try {
         const response = await authenticatedFetch('/api/import-audio-url', {
@@ -2115,7 +2117,7 @@ async function importAudioFromUrl(options = {}) {
         const queuedUrl = normalizeAudioImportUrl(pendingAutoImportUrl);
         if (applied) {
             if (queuedUrl && queuedUrl !== url) {
-                setAudioImportStatus('Newest pasted LMS URL detected. Importing latest audio...');
+                setAudioImportStatus('Newest pasted lecture video URL detected. Importing latest audio...');
             } else {
                 showToast('Audio imported from URL.', 'success');
             }
@@ -2313,6 +2315,7 @@ function applyRuntimeJobProgress(job, options = {}) {
     progressStatus.classList.remove('error');
     setHidden(progressSpinner, false);
     showProgressSafeBanner(true);
+    focusProgressSection();
     updateProgressUI(Math.max(0, Number(snapshot.step || 0)), snapshot.step_description || 'Processing continues in the background...', steps.length);
     currentJobId = snapshot.job_id;
     trackedTerminalJobId = '';
@@ -2384,6 +2387,45 @@ function updateUploadEstimatePanel() {
         uploadEstimateMeta.textContent = `Requires audio only (max 500 MB). Selected extras: ${extras} (${extras} text extraction credits). Current upload: ${totalMb.toFixed(1)} MB.`;
     }
 }
+function updateMobileProcessSummary(options = {}) {
+    if (!mobileProcessSummary) return;
+    const config = modeConfig[currentMode] || {};
+    const parts = [];
+    const statusParts = [];
+    const uploadCooldown = Math.max(0, Number(options.uploadCooldown || 0));
+    const hasCredits = options.hasCredits !== false;
+    const pdfReady = !config.needsPdf || Boolean(pdfFile);
+    const audioReady = !config.needsAudio || Boolean(audioFile) || hasReadyImportedAudioToken();
+
+    if (config.needsPdf) {
+        parts.push(pdfReady ? 'Slides ready' : 'Add slides');
+    }
+    if (config.needsAudio) {
+        if (audioFile) {
+            parts.push('Audio file ready');
+        } else if (hasReadyImportedAudioToken()) {
+            parts.push('Imported audio ready');
+        } else if (audioImportInFlight) {
+            parts.push('Importing audio');
+        } else {
+            parts.push('Add audio');
+        }
+    }
+    if (currentUser) {
+        statusParts.push(hasCredits ? 'Credits ready' : 'Need credits');
+    } else {
+        statusParts.push('Sign in to continue');
+    }
+    if (currentJobId && !resultsLocked) {
+        statusParts.push('Processing in background');
+    } else if (uploadCooldown > 0) {
+        statusParts.push(`Try again in ${formatRetryDelay(uploadCooldown)}`);
+    } else if (!resultsLocked) {
+        statusParts.push(pdfReady && audioReady && hasCredits ? 'Ready to process' : 'Complete the missing items');
+    }
+
+    mobileProcessSummary.textContent = `${parts.join(' • ')}${parts.length && statusParts.length ? ' • ' : ''}${statusParts.join(' • ')}`;
+}
 function updateProcessButton() {
     const config = modeConfig[currentMode];
     const pdfReady = !config.needsPdf || pdfFile;
@@ -2391,6 +2433,7 @@ function updateProcessButton() {
     const hasCredits = hasEnoughCredits();
     const uploadCooldown = getUploadCooldownSeconds();
     updateUploadEstimatePanel();
+    updateMobileProcessSummary({ pdfReady, audioReady, hasCredits, uploadCooldown });
     if (uploadCooldown > 0) {
         processButton.disabled = true;
         processButton.querySelector('span').textContent = `Try again in ${formatRetryDelay(uploadCooldown)}`;
@@ -2399,7 +2442,7 @@ function updateProcessButton() {
     }
     if (config.needsAudio && audioImportInFlight && !audioFile) {
         processButton.disabled = true;
-        processButton.querySelector('span').textContent = 'Importing LMS audio...';
+        processButton.querySelector('span').textContent = 'Importing lecture audio...';
         noCreditsWarning.classList.remove('visible');
         return;
     }
@@ -2457,7 +2500,7 @@ function switchMode(mode) {
         audioZoneBadge.className = `upload-badge ${config.audioRequirementTone || 'required'}`;
     }
     if (audioZoneHelper) audioZoneHelper.textContent = config.audioHelper || '';
-    if (audioUrlImportTitle) audioUrlImportTitle.textContent = config.lmsImportTitle || 'Import from LMS video URL';
+    if (audioUrlImportTitle) audioUrlImportTitle.textContent = config.lmsImportTitle || 'Import from lecture video URL';
     if (audioUrlImportHint) audioUrlImportHint.textContent = config.lmsImportHint || '';
     generationControls.classList.toggle('hidden', mode === 'interview');
     interviewControls.classList.toggle('hidden', mode !== 'interview');
@@ -2685,7 +2728,27 @@ function updateProgressUI(step, desc, total) {
         if (i < step) el.classList.add('complete');
         else if (i === step) el.classList.add('active');
     }
+    if (progressStatus) {
+        progressStatus.setAttribute('role', 'status');
+        progressStatus.setAttribute('aria-live', 'polite');
+        progressStatus.setAttribute('aria-atomic', 'true');
+    }
     statusText.textContent = desc || 'Processing...';
+}
+function announceProgressError(message) {
+    if (!progressStatus || !statusText) return;
+    progressStatus.setAttribute('role', 'alert');
+    progressStatus.setAttribute('aria-live', 'assertive');
+    progressStatus.setAttribute('aria-atomic', 'true');
+    statusText.textContent = message || 'Error while processing.';
+}
+function focusProgressSection() {
+    if (!progressSection) return;
+    try {
+        progressSection.focus({ preventScroll: true });
+    } catch (_) {
+        try { progressSection.focus(); } catch (_) { }
+    }
 }
 function getCurrentModeSteps() {
     if (currentMode === 'lecture-notes') {
@@ -3172,6 +3235,7 @@ async function processFiles() {
     try {
         progressSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (_) { }
+    focusProgressSection();
     updateProgressUI(0, 'Uploading files...', steps.length);
     trackEvent('process_clicked', {
         study_features: selectedStudyFeatures,
@@ -3236,44 +3300,17 @@ function simpleMarkdownToHtml(md) {
     return escapeHtml(String(md || '')).replace(/\n/g, '<br>');
 }
 function buildDownloadDropdown() {
-    const options = [];
-    const addPair = (type, label) => {
-        options.push({ type, format: 'md', label, detail: 'Markdown (.md)' });
-        options.push({ type, format: 'docx', label, detail: 'Word Document (.docx)' });
-    };
-    if (currentMode === 'lecture-notes') {
-        addPair('result', DOWNLOAD_LABELS.lectureNotes);
-        options.push({ divider: true });
-        addPair('slides', DOWNLOAD_LABELS.slideExtract);
-        options.push({ divider: true });
-        addPair('transcript', DOWNLOAD_LABELS.lectureTranscript);
-    } else if (currentMode === 'slides-only') {
-        addPair('result', DOWNLOAD_LABELS.slideExtract);
-    } else {
-        addPair('result', DOWNLOAD_LABELS.interviewTranscript);
-        if (interviewSummaryText && interviewSectionsText && interviewCombinedText) {
-            options.push({ divider: true });
-            addPair('combined', 'Summary + Structured Transcript');
-        } else {
-            if (interviewSummaryText) {
-                options.push({ divider: true });
-                addPair('summary', 'Interview Summary');
-            }
-            if (interviewSectionsText) {
-                options.push({ divider: true });
-                addPair('sections', 'Structured Transcript');
-            }
-        }
-        if (transcript) {
-            options.push({ divider: true });
-            addPair('transcript', 'Raw Transcript');
-        }
-    }
-    if (currentStudyPackId) {
-        options.push({ divider: true });
-        options.push({ type: 'pdf-answers', format: 'pdf', label: 'PDF (with answers)', detail: 'Portable Document (.pdf)' });
-        options.push({ type: 'pdf-no-answers', format: 'pdf', label: 'PDF (without answers)', detail: 'Portable Document (.pdf)' });
-    }
+    const options = typeof indexResultsUtils.buildDownloadOptions === 'function'
+        ? indexResultsUtils.buildDownloadOptions({
+            currentMode,
+            currentStudyPackId,
+            downloadLabels: DOWNLOAD_LABELS,
+            interviewCombinedText,
+            interviewSectionsText,
+            interviewSummaryText,
+            transcript,
+        })
+        : [];
     while (downloadDropdownContent.firstChild) downloadDropdownContent.removeChild(downloadDropdownContent.firstChild);
     options.forEach((option) => {
         if (option.divider) {
@@ -3327,16 +3364,21 @@ async function downloadFile(type, format) {
         }
         return;
     }
-    let content = resultMarkdown;
-    let filename = 'output.md';
-    if (type === 'slides') { content = slideText; filename = format === 'md' ? 'slide-extract.md' : 'slide-extract.docx'; }
-    else if (type === 'transcript') { content = transcript; filename = format === 'md' ? 'lecture-transcript.md' : 'lecture-transcript.docx'; }
-    else if (type === 'summary') { content = interviewSummaryText || resultMarkdown; filename = format === 'md' ? 'interview-summary.md' : 'interview-summary.docx'; }
-    else if (type === 'sections') { content = interviewSectionsText || resultMarkdown; filename = format === 'md' ? 'interview-structured.md' : 'interview-structured.docx'; }
-    else if (type === 'combined') { content = interviewCombinedText || resultMarkdown; filename = format === 'md' ? 'interview-summary-structured.md' : 'interview-summary-structured.docx'; }
-    else if (currentMode === 'lecture-notes') filename = format === 'md' ? 'lecture-notes.md' : 'lecture-notes.docx';
-    else if (currentMode === 'slides-only') filename = format === 'md' ? 'slide-extract.md' : 'slide-extract.docx';
-    else filename = format === 'md' ? 'interview-transcript.md' : 'interview-transcript.docx';
+    const textDownload = typeof indexResultsUtils.resolveTextDownload === 'function'
+        ? indexResultsUtils.resolveTextDownload({
+            currentMode,
+            format,
+            interviewCombinedText,
+            interviewSectionsText,
+            interviewSummaryText,
+            resultMarkdown,
+            slideText,
+            transcript,
+            type,
+        })
+        : { content: resultMarkdown, filename: 'output.md' };
+    const content = textDownload.content;
+    const filename = textDownload.filename;
     if (format === 'md') {
         const blob = new Blob([content], { type: 'text/markdown' });
         if (downloadUtils.saveBlobAsFile) {
@@ -3364,29 +3406,19 @@ async function downloadFile(type, format) {
 }
 
 function updateExportCsvButton() {
-    if (currentMode === 'interview') {
-        setHidden(exportStudyCsvBtn, true);
-        return;
+    const exportState = typeof indexResultsUtils.getExportCsvState === 'function'
+        ? indexResultsUtils.getExportCsvState({
+            activeResultsTab,
+            currentMode,
+            flashcards,
+            testQuestions,
+        })
+        : { visible: false, type: '', text: '' };
+    exportCsvType = exportState.type || exportCsvType;
+    if (exportState.text) {
+        exportStudyCsvText.textContent = exportState.text;
     }
-    if (activeResultsTab === 'test' && testQuestions.length) {
-        exportCsvType = 'test';
-        exportStudyCsvText.textContent = 'Export Practice Test CSV';
-        setHidden(exportStudyCsvBtn, false);
-        return;
-    }
-    if (flashcards.length) {
-        exportCsvType = 'flashcards';
-        exportStudyCsvText.textContent = 'Export Flashcards CSV';
-        setHidden(exportStudyCsvBtn, false);
-        return;
-    }
-    if (testQuestions.length) {
-        exportCsvType = 'test';
-        exportStudyCsvText.textContent = 'Export Practice Test CSV';
-        setHidden(exportStudyCsvBtn, false);
-        return;
-    }
-    setHidden(exportStudyCsvBtn, true);
+    setHidden(exportStudyCsvBtn, !exportState.visible);
 }
 function setActiveResultsTab(tab) {
     activeResultsTab = tab;
@@ -3431,10 +3463,13 @@ tabButtons.forEach((btn, index) => btn.addEventListener('keydown', (e) => {
 }));
 
 function renderFlashcard() {
-    if (!flashcards.length) {
+    const viewModel = typeof indexResultsUtils.buildFlashcardViewModel === 'function'
+        ? indexResultsUtils.buildFlashcardViewModel(flashcards, flashcardIndex, flashcardFlipped)
+        : { hasCards: false, progressText: 'Card 0 of 0', canGoPrev: false, canGoNext: false };
+    if (!viewModel.hasCards) {
         setHidden(flashcardEmpty, false);
         setHidden(flashcardCard, true);
-        flashcardProgress.textContent = 'Card 0 of 0';
+        flashcardProgress.textContent = viewModel.progressText;
         flashcardPrevBtn.disabled = true;
         flashcardNextBtn.disabled = true;
         flashcardFlipBtn.disabled = true;
@@ -3442,13 +3477,12 @@ function renderFlashcard() {
     }
     setHidden(flashcardEmpty, true);
     setHidden(flashcardCard, false);
-    const card = flashcards[flashcardIndex];
-    flashcardFrontText.textContent = card.front;
-    flashcardBackText.textContent = card.back;
-    flashcardInner.classList.toggle('flipped', flashcardFlipped);
-    flashcardProgress.textContent = `Card ${flashcardIndex + 1} of ${flashcards.length}`;
-    flashcardPrevBtn.disabled = flashcardIndex === 0;
-    flashcardNextBtn.disabled = flashcardIndex === flashcards.length - 1;
+    flashcardFrontText.textContent = viewModel.front;
+    flashcardBackText.textContent = viewModel.back;
+    flashcardInner.classList.toggle('flipped', viewModel.flipped);
+    flashcardProgress.textContent = viewModel.progressText;
+    flashcardPrevBtn.disabled = !viewModel.canGoPrev;
+    flashcardNextBtn.disabled = !viewModel.canGoNext;
     flashcardFlipBtn.disabled = false;
 }
 function goFlashcard(offset) {
@@ -3468,26 +3502,28 @@ flashcardNextBtn.addEventListener('click', () => goFlashcard(1));
 flashcardFlipBtn.addEventListener('click', flipFlashcard);
 
 function renderQuizQuestion() {
-    if (!testQuestions.length) {
+    const viewModel = typeof indexResultsUtils.buildQuizViewModel === 'function'
+        ? indexResultsUtils.buildQuizViewModel(testQuestions, quizIndex, quizScore)
+        : { hasQuestions: false, progressText: 'Question 0 of 0', scoreText: 'Score: 0/0', options: [] };
+    if (!viewModel.hasQuestions) {
         setHidden(quizEmpty, false);
         quizQuestionText.textContent = '';
         quizOptions.innerHTML = '';
         quizExplanation.classList.remove('visible');
         setHidden(quizNextBtn, true);
-        quizProgress.textContent = 'Question 0 of 0';
-        quizScoreEl.textContent = 'Score: 0/0';
+        quizProgress.textContent = viewModel.progressText;
+        quizScoreEl.textContent = viewModel.scoreText;
         return;
     }
     setHidden(quizEmpty, true);
-    const q = testQuestions[quizIndex];
     quizAnswered = false;
-    quizProgress.textContent = `Question ${quizIndex + 1} of ${testQuestions.length}`;
-    quizScoreEl.textContent = `Score: ${quizScore}/${testQuestions.length}`;
-    quizQuestionText.textContent = q.question;
+    quizProgress.textContent = viewModel.progressText;
+    quizScoreEl.textContent = viewModel.scoreText;
+    quizQuestionText.textContent = viewModel.questionText;
     quizOptions.innerHTML = '';
     quizExplanation.classList.remove('visible');
     quizExplanation.textContent = '';
-    q.options.forEach(option => {
+    viewModel.options.forEach(option => {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'quiz-option';
@@ -3500,22 +3536,24 @@ function renderQuizQuestion() {
 function answerQuizOption(clickedBtn, selectedOption) {
     if (quizAnswered) return;
     quizAnswered = true;
-    const q = testQuestions[quizIndex];
+    const evaluation = typeof indexResultsUtils.evaluateQuizAnswer === 'function'
+        ? indexResultsUtils.evaluateQuizAnswer(testQuestions, quizIndex, quizScore, selectedOption)
+        : { correctAnswer: '', explanation: '', hasNext: false, nextScore: quizScore, selectedCorrect: false };
     const optionButtons = [...quizOptions.querySelectorAll('.quiz-option')];
     optionButtons.forEach(btn => {
         btn.disabled = true;
-        if (btn.textContent === q.answer) btn.classList.add('correct');
+        if (btn.textContent === evaluation.correctAnswer) btn.classList.add('correct');
     });
-    if (selectedOption === q.answer) {
+    if (evaluation.selectedCorrect) {
         clickedBtn.classList.add('correct');
-        quizScore += 1;
+        quizScore = evaluation.nextScore;
     } else {
         clickedBtn.classList.add('wrong');
     }
     quizScoreEl.textContent = `Score: ${quizScore}/${testQuestions.length}`;
-    quizExplanation.textContent = q.explanation;
+    quizExplanation.textContent = evaluation.explanation;
     quizExplanation.classList.add('visible');
-    setHidden(quizNextBtn, !(quizIndex < testQuestions.length - 1));
+    setHidden(quizNextBtn, !evaluation.hasNext);
 }
 quizNextBtn.addEventListener('click', () => {
     if (quizIndex < testQuestions.length - 1) {
@@ -3551,32 +3589,17 @@ function showResults(md, slides, trans, generatedFlashcards, generatedQuestions,
     });
     flashcardCountBadge.textContent = String(flashcards.length);
     testCountBadge.textContent = String(testQuestions.length);
-    const successfulSet = new Set(Array.isArray(successfulInterviewFeatures) ? successfulInterviewFeatures : []);
-    if (currentMode === 'interview') {
-        if (studyGenerationError) {
-            setHidden(studyWarning, false);
-            studyWarning.textContent = studyGenerationError;
-        } else if (!selectedInterviewFeatures.length) {
-            setHidden(studyWarning, false);
-            studyWarning.textContent = 'No interview extras selected. Showing the transcript only.';
-        } else if (successfulSet.size < selectedInterviewFeatures.length) {
-            const failed = selectedInterviewFeatures.length - successfulSet.size;
-            setHidden(studyWarning, false);
-            studyWarning.textContent = `Some interview extras could not be generated (${failed} failed). Failed extras were refunded as text extraction credits.`;
-        } else {
-            setHidden(studyWarning, true);
-            studyWarning.textContent = '';
-        }
-    } else if (studyGenerationError) {
-        setHidden(studyWarning, false);
-        studyWarning.textContent = studyGenerationError;
-    } else if (studyFeatures === 'none') {
-        setHidden(studyWarning, false);
-        studyWarning.textContent = 'Study tools were disabled for this generation (Notes-only mode).';
-    } else {
-        setHidden(studyWarning, true);
-        studyWarning.textContent = '';
-    }
+    const warningText = typeof indexResultsUtils.buildStudyWarning === 'function'
+        ? indexResultsUtils.buildStudyWarning({
+            currentMode,
+            selectedInterviewFeatures,
+            studyFeatures,
+            studyGenerationError,
+            successfulInterviewFeatures,
+        })
+        : '';
+    setHidden(studyWarning, !warningText);
+    studyWarning.textContent = warningText;
     renderBillingReceipt(currentMode === 'interview' ? currentBillingReceipt : null);
 
     flashcardIndex = 0;
@@ -3612,11 +3635,11 @@ function showError(msg, creditRefunded, billingReceipt) {
     showProgressSafeBanner(false);
     const billingReceiptText = buildBillingReceiptText(billingReceipt);
     if (creditRefunded) {
-        statusText.textContent = `Error: ${msg} — Your credit has been refunded.`;
+        announceProgressError(`Error: ${msg} - Your credit has been refunded.`);
         showToast('Processing failed. Your credit has been refunded.', 'info', 5000);
         fetchUserData();
     } else {
-        statusText.textContent = `Error: ${msg}`;
+        announceProgressError(`Error: ${msg}`);
     }
     if (billingReceiptText) {
         showToast(billingReceiptText, 'info', 5500);

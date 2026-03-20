@@ -22,8 +22,6 @@ import subprocess
 
 import sys
 
-import warnings
-
 import logging
 
 import statistics
@@ -39,8 +37,6 @@ try:
 except Exception:
     ZoneInfo = None
 
-warnings.filterwarnings('ignore', message='urllib3 v2 only supports OpenSSL 1\\.1\\.1\\+.*')
-
 import stripe
 
 from flask import Flask, request, jsonify, render_template, send_file, Response, stream_with_context, g, redirect, abort
@@ -48,8 +44,6 @@ from flask import Flask, request, jsonify, render_template, send_file, Response,
 from google import genai
 
 from google.genai import types
-
-from dotenv import load_dotenv
 
 from werkzeug.utils import secure_filename
 
@@ -80,7 +74,9 @@ from lecture_processor.config import resolve_sentry_environment
 from lecture_processor.domains.admin import metrics as admin_metrics
 from lecture_processor.domains.ai import pipelines as ai_pipelines
 from lecture_processor.domains.ai import study_generation
+from lecture_processor.domains.account import users as account_users
 from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import purchases as billing_purchases
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.shared import parsing as shared_parsing
 from lecture_processor.domains.study import audio as study_audio
@@ -90,6 +86,7 @@ from lecture_processor.domains.upload import import_audio as upload_import_audio
 from lecture_processor.services import analytics_service, auth_service, file_service, job_state_service, prompt_registry, rate_limit_service, url_security
 
 from lecture_processor.repositories import admin_repo, batch_repo, job_logs_repo, planner_repo, purchases_repo, runtime_jobs_repo, study_repo, users_repo
+from lecture_processor.runtime import bootstrap as runtime_bootstrap
 from lecture_processor.runtime import media_runtime
 from lecture_processor.runtime import environment as runtime_environment
 from lecture_processor.runtime.http_security import apply_security_headers as runtime_apply_security_headers
@@ -99,28 +96,32 @@ from lecture_processor.runtime.proxy import client_ip_from_request
 LEGACY_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT_DIR = os.path.dirname(os.path.dirname(LEGACY_MODULE_DIR))
 
-if not os.getenv('RENDER'):
-    load_dotenv()
+runtime_bootstrap.load_local_environment()
 
-app = Flask(__name__, template_folder=os.path.join(PROJECT_ROOT_DIR, 'templates'), static_folder=os.path.join(PROJECT_ROOT_DIR, 'static'))
+app = None
 
-_flask_secret_key = (os.getenv('FLASK_SECRET_KEY', '') or '').strip()
 
-if _flask_secret_key:
-    app.secret_key = _flask_secret_key
-elif os.getenv('RENDER'):
-    raise RuntimeError('FLASK_SECRET_KEY must be set in deployed environments.')
-else:
-    app.secret_key = 'dev-only-secret-key-change-me'
-
-if Compress is not None:
-    Compress(app)
+def create_flask_app(*, flask_secret_key=''):
+    app_obj = Flask(
+        __name__,
+        template_folder=os.path.join(PROJECT_ROOT_DIR, 'templates'),
+        static_folder=os.path.join(PROJECT_ROOT_DIR, 'static'),
+    )
+    safe_secret_key = str(flask_secret_key or os.getenv('FLASK_SECRET_KEY', '') or '').strip()
+    if safe_secret_key:
+        app_obj.secret_key = safe_secret_key
+    elif os.getenv('RENDER'):
+        raise RuntimeError('FLASK_SECRET_KEY must be set in deployed environments.')
+    else:
+        app_obj.secret_key = 'dev-only-secret-key-change-me'
+    if Compress is not None:
+        Compress(app_obj)
+    app_obj.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
+    return app_obj
 
 LOG_LEVEL = (os.getenv('LOG_LEVEL', 'INFO') or 'INFO').strip().upper()
 
-logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO), format='%(asctime)s %(levelname)s %(name)s %(message)s')
-
-logger = logging.getLogger('lecture_processor')
+logger = runtime_bootstrap.configure_logging(LOG_LEVEL)
 
 JOB_WORKERS = int(os.getenv('JOB_WORKERS', '2') or 2)
 
@@ -160,45 +161,26 @@ ALLOWED_PDF_MIME_TYPES = ALLOWED_SLIDE_MIME_TYPES
 
 ALLOWED_AUDIO_MIME_TYPES = {'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/x-wav', 'audio/aac', 'audio/ogg', 'audio/flac', 'audio/webm', 'video/webm'}
 
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+runtime_bootstrap.ensure_directory(UPLOAD_FOLDER)
 
 GEMINI_API_KEY = (os.getenv('GEMINI_API_KEY', '') or '').strip()
 
-if GEMINI_API_KEY:
-    try:
-        client = genai.Client(api_key=GEMINI_API_KEY)
-    except Exception as e:
-        client = None
-        logger.warning(f'⚠️ Gemini client disabled: {e}')
-else:
-    client = None
-    logger.warning('⚠️ GEMINI_API_KEY not set; AI processing features are disabled.')
+client = runtime_bootstrap.initialize_gemini_client(
+    GEMINI_API_KEY,
+    genai_module=genai,
+    logger=logger,
+)
 
-app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
+firebase_runtime = runtime_bootstrap.initialize_firebase(
+    logger=logger,
+    credentials_module=credentials,
+    firestore_module=firestore,
+    firebase_admin_module=firebase_admin,
+)
+db = firebase_runtime.db
+firebase_init_error = firebase_runtime.init_error
 
-db = None
-
-firebase_init_error = ''
-
-try:
-    firebase_creds_raw = (os.getenv('FIREBASE_CREDENTIALS', '') or '').strip()
-    local_creds_file_exists = os.path.exists('firebase-credentials.json')
-    if local_creds_file_exists:
-        logger.warning('Local firebase-credentials.json detected. Prefer FIREBASE_CREDENTIALS environment variable for safer deployments.')
-    if firebase_creds_raw:
-        cred = credentials.Certificate(json.loads(firebase_creds_raw))
-    elif local_creds_file_exists:
-        cred = credentials.Certificate('firebase-credentials.json')
-    else:
-        raise ValueError('FIREBASE_CREDENTIALS is not set and firebase-credentials.json was not found.')
-    if not firebase_admin._apps:
-        firebase_admin.initialize_app(cred)
-    db = firestore.client()
-except Exception as e:
-    firebase_init_error = str(e)
-    logger.warning(f'⚠️ Firebase initialization skipped: {firebase_init_error}')
-
-stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
+runtime_bootstrap.configure_stripe(stripe, os.getenv('STRIPE_SECRET_KEY'))
 
 STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY', '')
 
@@ -250,7 +232,7 @@ BATCH_JOB_RECOVERY_LOCK = threading.Lock()
 
 BATCH_JOB_RECOVERY_DONE = False
 
-RUNTIME_JOB_PERSISTED_FIELDS = {'status', 'step', 'step_description', 'total_steps', 'mode', 'user_id', 'user_email', 'credit_deducted', 'credit_refunded', 'started_at', 'finished_at', 'result', 'slide_text', 'transcript', 'flashcards', 'test_questions', 'flashcard_selection', 'question_selection', 'study_features', 'output_language', 'study_generation_error', 'study_pack_id', 'study_pack_title', 'error', 'billing_receipt', 'interview_features', 'interview_features_successful', 'interview_summary', 'interview_sections', 'interview_combined', 'interview_features_cost', 'extra_slides_refunded', 'audio_storage_key', 'notes_audio_map', 'transcript_segments', 'token_usage_by_stage', 'token_input_total', 'token_output_total', 'token_total', 'export_manifest', 'is_batch', 'batch_parent_id', 'batch_row_id', 'billing_mode', 'billing_multiplier', 'stage_costs'}
+RUNTIME_JOB_PERSISTED_FIELDS = {'status', 'step', 'step_description', 'total_steps', 'mode', 'job_scope', 'tool_source_type', 'tool_input_name', 'user_id', 'user_email', 'credit_deducted', 'credit_refunded', 'started_at', 'finished_at', 'result', 'slide_text', 'transcript', 'flashcards', 'test_questions', 'flashcard_selection', 'question_selection', 'study_features', 'output_language', 'study_generation_error', 'study_pack_id', 'study_pack_title', 'error', 'billing_receipt', 'interview_features', 'interview_features_successful', 'interview_summary', 'interview_sections', 'interview_combined', 'interview_features_cost', 'extra_slides_refunded', 'audio_storage_key', 'notes_audio_map', 'transcript_segments', 'token_usage_by_stage', 'token_input_total', 'token_output_total', 'token_total', 'export_manifest', 'is_batch', 'batch_parent_id', 'batch_row_id', 'billing_mode', 'billing_multiplier', 'stage_costs'}
 
 RUNTIME_JOB_MAX_STRING_LENGTH = 200000
 
@@ -379,33 +361,30 @@ def parse_cors_allowed_origins():
 CORS_ALLOWED_ORIGINS = parse_cors_allowed_origins()
 
 def safe_float_env(name, default=0.0):
-    raw = os.getenv(name, str(default)).strip()
-    try:
-        value = float(raw)
-    except Exception:
-        return default
-    return min(max(value, 0.0), 1.0)
+    return runtime_bootstrap.safe_float_env(name, default, environ=os.environ)
 
 SENTRY_TRACES_SAMPLE_RATE = safe_float_env('SENTRY_TRACES_SAMPLE_RATE', 0.0)
 
 def should_init_backend_sentry():
-    if not (SENTRY_BACKEND_DSN and sentry_sdk and FlaskIntegration):
-        return False
-    if SENTRY_CAPTURE_LOCAL:
-        return True
-    if str(os.getenv('TESTING', os.getenv('FLASK_TESTING', '0'))).strip().lower() in {'1', 'true', 'yes', 'on'}:
-        return False
-    if os.getenv('PYTEST_CURRENT_TEST'):
-        return False
-    if any('pytest' in str(arg or '').lower() for arg in sys.argv):
-        return False
-    if not os.getenv('RENDER'):
-        return False
-    return True
+    return runtime_bootstrap.should_init_backend_sentry(
+        backend_dsn=SENTRY_BACKEND_DSN,
+        sentry_sdk_module=sentry_sdk,
+        flask_integration=FlaskIntegration,
+        capture_local=SENTRY_CAPTURE_LOCAL,
+        environ=os.environ,
+        argv=sys.argv,
+    )
 
 
 if should_init_backend_sentry():
-    sentry_sdk.init(dsn=SENTRY_BACKEND_DSN, integrations=[FlaskIntegration()], traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE, send_default_pii=False, environment=SENTRY_ENVIRONMENT, release=SENTRY_RELEASE)
+    runtime_bootstrap.initialize_backend_sentry(
+        backend_dsn=SENTRY_BACKEND_DSN,
+        sentry_sdk_module=sentry_sdk,
+        flask_integration=FlaskIntegration,
+        traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
+        environment=SENTRY_ENVIRONMENT,
+        release=SENTRY_RELEASE,
+    )
 
 def is_dev_environment():
     return runtime_environment.is_dev_environment(
@@ -420,7 +399,7 @@ PUBLIC_BASE_URL = get_public_base_url()
 
 
 def _env_truthy(name, default='0'):
-    return str(os.getenv(name, default) or default).strip().lower() in {'1', 'true', 'yes', 'on'}
+    return runtime_bootstrap.env_truthy(name, default, environ=os.environ)
 
 
 BATCH_EMAIL_NOTIFICATIONS_ENABLED = _env_truthy('BATCH_EMAIL_NOTIFICATIONS_ENABLED', '1')
@@ -669,179 +648,48 @@ _cleanup_thread = threading.Thread(target=_run_periodic_cleanup, daemon=True)
 
 def build_default_user_data(uid, email):
     """Return the canonical default user document structure."""
-    return {'uid': uid, 'email': email, 'lecture_credits_standard': FREE_LECTURE_CREDITS, 'lecture_credits_extended': 0, 'slides_credits': FREE_SLIDES_CREDITS, 'interview_credits_short': FREE_INTERVIEW_CREDITS, 'interview_credits_medium': 0, 'interview_credits_long': 0, 'total_processed': 0, 'has_created_study_pack': False, 'created_at': time.time(), 'preferred_output_language': DEFAULT_OUTPUT_LANGUAGE_KEY, 'preferred_output_language_custom': '', 'onboarding_completed': False, 'account_status': 'active', 'delete_requested_at': 0, 'delete_started_at': 0, 'last_delete_failure_at': 0, 'last_delete_failure_reason': ''}
+    return account_users.build_default_user_data(uid, email, runtime=_self_runtime())
 
 def get_or_create_user(uid, email):
     """Get a user from Firestore, or create them with free credits if they don't exist."""
-    user_ref = users_repo.doc_ref(db, uid)
-    user_doc = user_ref.get()
-    if user_doc.exists:
-        user_data = user_doc.to_dict()
-        updates = {}
-        if user_data.get('email') != email and email:
-            updates['email'] = email
-        pref_key = sanitize_output_language_pref_key(user_data.get('preferred_output_language', DEFAULT_OUTPUT_LANGUAGE_KEY))
-        pref_custom = sanitize_output_language_pref_custom(user_data.get('preferred_output_language_custom', ''))
-        if pref_key != str(user_data.get('preferred_output_language', '') or '').strip().lower():
-            updates['preferred_output_language'] = pref_key
-        if pref_key != 'other':
-            pref_custom = ''
-        if pref_custom != str(user_data.get('preferred_output_language_custom', '') or '').strip():
-            updates['preferred_output_language_custom'] = pref_custom
-        if not isinstance(user_data.get('onboarding_completed'), bool):
-            updates['onboarding_completed'] = False
-        if not isinstance(user_data.get('has_created_study_pack'), bool):
-            updates['has_created_study_pack'] = bool(user_data.get('total_processed', 0))
-        if str(user_data.get('account_status', '') or '').strip().lower() not in {'active', 'deleting'}:
-            updates['account_status'] = 'active'
-        if 'delete_requested_at' not in user_data:
-            updates['delete_requested_at'] = 0
-        if 'delete_started_at' not in user_data:
-            updates['delete_started_at'] = 0
-        if 'last_delete_failure_at' not in user_data:
-            updates['last_delete_failure_at'] = 0
-        if 'last_delete_failure_reason' not in user_data:
-            updates['last_delete_failure_reason'] = ''
-        if updates:
-            user_ref.update(updates)
-            user_data.update(updates)
-        return user_data
-    else:
-        user_data = build_default_user_data(uid, email)
-        user_ref.set(user_data)
-        logger.info(f'New user created: {uid} ({email})')
-        return user_data
+    return account_users.get_or_create_user(uid, email, runtime=_self_runtime())
 
 def grant_credits_to_user(uid, bundle_id):
     """Grant credits from a purchased bundle to a user in Firestore."""
-    bundle = CREDIT_BUNDLES.get(bundle_id)
-    if not bundle:
-        logger.warning(f"Warning: Unknown bundle_id '{bundle_id}' in grant_credits_to_user")
-        return False
-    user_ref = users_repo.doc_ref(db, uid)
-    user_doc = user_ref.get()
-    if not user_doc.exists:
-        user_data = build_default_user_data(uid, '')
-        user_ref.set(user_data)
-    for credit_key, credit_amount in bundle['credits'].items():
-        user_ref.update({credit_key: firestore.Increment(credit_amount)})
-        logger.info(f"Granted {credit_amount} '{credit_key}' credits to user {uid}.")
-    return True
+    return billing_credits.grant_credits_to_user(uid, bundle_id, runtime=_self_runtime())
 
 def deduct_credit(uid, credit_type_primary, credit_type_fallback=None):
     """Deduct one credit atomically using a Firestore transaction. Returns the credit type deducted, or None."""
-
-    @firestore.transactional
-    def _deduct_in_transaction(transaction, user_ref):
-        snapshot = user_ref.get(transaction=transaction)
-        if not snapshot.exists:
-            return None
-        data = snapshot.to_dict()
-        if data.get(credit_type_primary, 0) > 0:
-            transaction.update(user_ref, {credit_type_primary: firestore.Increment(-1), 'total_processed': firestore.Increment(1)})
-            return credit_type_primary
-        elif credit_type_fallback and data.get(credit_type_fallback, 0) > 0:
-            transaction.update(user_ref, {credit_type_fallback: firestore.Increment(-1), 'total_processed': firestore.Increment(1)})
-            return credit_type_fallback
-        return None
-    user_ref = users_repo.doc_ref(db, uid)
-    transaction = db.transaction()
-    return _deduct_in_transaction(transaction, user_ref)
+    return billing_credits.deduct_credit(
+        uid,
+        credit_type_primary,
+        credit_type_fallback,
+        runtime=_self_runtime(),
+    )
 
 def deduct_interview_credit(uid):
     """Deduct one interview credit atomically, checking short -> medium -> long. Returns the credit type deducted, or None."""
-
-    @firestore.transactional
-    def _deduct_in_transaction(transaction, user_ref):
-        snapshot = user_ref.get(transaction=transaction)
-        if not snapshot.exists:
-            return None
-        data = snapshot.to_dict()
-        for credit_type in ('interview_credits_short', 'interview_credits_medium', 'interview_credits_long'):
-            if data.get(credit_type, 0) > 0:
-                transaction.update(user_ref, {credit_type: firestore.Increment(-1), 'total_processed': firestore.Increment(1)})
-                return credit_type
-        return None
-    user_ref = users_repo.doc_ref(db, uid)
-    transaction = db.transaction()
-    return _deduct_in_transaction(transaction, user_ref)
+    return billing_credits.deduct_interview_credit(uid, runtime=_self_runtime())
 
 def refund_credit(uid, credit_type):
     """Refund one credit back to the user after a failed processing job."""
-    if not uid or not credit_type:
-        return False
-    try:
-        user_doc = users_repo.get_doc(db, uid)
-    except Exception:
-        user_doc = None
-    if user_doc is not None and (not getattr(user_doc, 'exists', False)):
-        logger.warning("Skipping refund for credit '%s' on missing user document: %s", credit_type, uid)
-        return False
-    try:
-        users_repo.update_doc(db, uid, {credit_type: firestore.Increment(1), 'total_processed': firestore.Increment(-1)})
-        logger.info(f"✅ Refunded 1 '{credit_type}' credit to user {uid} due to processing failure.")
-        return True
-    except Exception as e:
-        if 'No document to update' in str(e or ''):
-            logger.warning("Skipping refund for credit '%s' on missing user document: %s", credit_type, uid)
-            return False
-        logger.error(f"❌ Failed to refund credit '{credit_type}' to user {uid}: {e}")
-        return False
+    return billing_credits.refund_credit(uid, credit_type, runtime=_self_runtime())
 
 def save_purchase_record(uid, bundle_id, stripe_session_id):
     """Save a purchase record to Firestore for purchase history."""
-    bundle = CREDIT_BUNDLES.get(bundle_id)
-    if not bundle:
-        return
-    try:
-        record = {'uid': uid, 'bundle_id': bundle_id, 'bundle_name': bundle['name'], 'price_cents': bundle['price_cents'], 'currency': bundle['currency'], 'credits': bundle['credits'], 'stripe_session_id': stripe_session_id, 'created_at': time.time()}
-        if stripe_session_id:
-            purchases_repo.set_doc(db, stripe_session_id, record, merge=True)
-        else:
-            purchases_repo.add_doc(db, record)
-        from lecture_processor.domains.admin import rollups as admin_rollups
-        runtime = app.extensions.get('lecture_processor', {}).get('runtime')
-        admin_rollups.increment_purchase_rollups(record, runtime=runtime)
-        logger.info(f"📝 Saved purchase record for user {uid}: {bundle['name']}")
-    except Exception as e:
-        logger.error(f'❌ Failed to save purchase record for user {uid}: {e}')
+    billing_purchases.save_purchase_record(uid, bundle_id, stripe_session_id, runtime=_self_runtime())
 
 def purchase_record_exists_for_session(stripe_session_id):
-    if not stripe_session_id:
-        return False
-    try:
-        doc = purchases_repo.get_doc(db, stripe_session_id)
-        if doc.exists:
-            return True
-        for _ in purchases_repo.query_by_session_id(db, stripe_session_id, limit=1):
-            return True
-        return False
-    except Exception as e:
-        logger.warning(f'⚠️ Could not check purchase record for session {stripe_session_id}: {e}')
-        return False
+    return billing_purchases.purchase_record_exists_for_session(
+        stripe_session_id,
+        runtime=_self_runtime(),
+    )
 
 def process_checkout_session_credits(stripe_session):
-    metadata = stripe_session.get('metadata', {}) or {}
-    uid = metadata.get('uid', '')
-    bundle_id = metadata.get('bundle_id', '')
-    stripe_session_id = stripe_session.get('id', '')
-    payment_status = (stripe_session.get('payment_status') or '').lower()
-    session_status = (stripe_session.get('status') or '').lower()
-    if not uid or not bundle_id:
-        return (False, 'Missing checkout metadata.')
-    if bundle_id not in CREDIT_BUNDLES:
-        return (False, 'Unknown credit bundle.')
-    if payment_status != 'paid' and session_status != 'complete':
-        return (False, 'Checkout session is not paid yet.')
-    if purchase_record_exists_for_session(stripe_session_id):
-        return (True, 'already_processed')
-    success = grant_credits_to_user(uid, bundle_id)
-    if not success:
-        return (False, 'Could not grant credits.')
-    save_purchase_record(uid, bundle_id, stripe_session_id)
-    bundle = CREDIT_BUNDLES.get(bundle_id, {})
-    log_analytics_event('payment_confirmed_backend', source='backend', uid=uid, session_id=stripe_session_id, properties={'bundle_id': bundle_id, 'price_cents': int(bundle.get('price_cents', 0) or 0)})
-    return (True, 'granted')
+    return billing_purchases.process_checkout_session_credits(
+        stripe_session,
+        runtime=_self_runtime(),
+    )
 
 def sanitize_analytics_event_name(raw_name):
     return analytics_service.sanitize_event_name(raw_name, name_re=ANALYTICS_NAME_RE, allowed_events=ANALYTICS_ALLOWED_EVENTS)

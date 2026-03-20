@@ -9,6 +9,7 @@ const topbarUtils = window.LectureProcessorTopbar || {};
 const uiCache = window.LectureProcessorUiCache || null;
 const progressUtils = window.LectureProcessorStudyProgressUtils || {};
 const studyLibraryUtils = window.LectureProcessorStudyLibraryUtils || {};
+const studyApiUtils = window.LectureProcessorStudyApi || {};
 const studySessionUtils = window.LectureProcessorStudySessionUtils || {};
 const runtimeJobUtils = window.LectureProcessorRuntimeJobUtils || {};
 const displayFormatUtils = window.LectureProcessorDisplayFormatUtils || {};
@@ -1704,83 +1705,57 @@ function openNotesFullscreen() {
   } catch (e) { showToast('Fullscreen not available.', 'error'); }
 }
 
+var studyApiClient = studyApiUtils && typeof studyApiUtils.createStudyApiClient === 'function'
+  ? studyApiUtils.createStudyApiClient({
+    auth: auth,
+    authClient: authClient,
+    getToken: function () { return token; },
+    setToken: function (nextToken) { token = nextToken; },
+  })
+  : null;
+
 function ensureAuthToken(forceRefresh) {
-  if (authClient && typeof authClient.ensureToken === 'function') {
-    return authClient.ensureToken(!!forceRefresh).then(function (t) { token = t; return t; });
+  if (studyApiClient && typeof studyApiClient.ensureAuthToken === 'function') {
+    return studyApiClient.ensureAuthToken(forceRefresh);
   }
   if (!auth.currentUser) { return Promise.reject(new Error('Please sign in')); }
   if (token && !forceRefresh) { return Promise.resolve(token); }
   return auth.currentUser.getIdToken(!!forceRefresh).then(function (t) { token = t; return t; });
 }
 function withAuthHeaders(opts, activeToken) {
-  var requestOptions = opts || {};
-  var headers = Object.assign({}, requestOptions.headers || {}, { Authorization: 'Bearer ' + (activeToken || token || '') });
-  var isFormData = typeof FormData !== 'undefined' && requestOptions.body instanceof FormData;
-  if (requestOptions.body && !isFormData && !headers['Content-Type']) { headers['Content-Type'] = 'application/json'; }
-  return Object.assign({}, requestOptions, { headers: headers });
+  if (studyApiUtils && typeof studyApiUtils.withAuthHeaders === 'function') {
+    return studyApiUtils.withAuthHeaders(opts, activeToken || token || '');
+  }
+  return Object.assign({}, opts || {});
 }
 function performAuthenticatedFetch(path, options, allowRefresh) {
-  if (authClient && typeof authClient.authFetch === 'function') {
-    return authClient.authFetch(path, options, { retryOn401: allowRefresh !== false, ensureJsonContentType: true }).then(function (response) {
-      if (typeof authClient.getToken === 'function') {
-        var latestToken = authClient.getToken();
-        if (latestToken) { token = latestToken; }
-      }
-      return response;
-    });
+  if (studyApiClient && typeof studyApiClient.performAuthenticatedFetch === 'function') {
+    return studyApiClient.performAuthenticatedFetch(path, options, allowRefresh);
   }
-  return ensureAuthToken(false).then(function () {
-    return fetch(path, withAuthHeaders(options, token));
-  }).then(function (response) {
-    if (response.status === 401 && allowRefresh !== false) {
-      return ensureAuthToken(true).then(function () {
-        return fetch(path, withAuthHeaders(options, token));
-      });
-    }
-    return response;
-  });
+  return fetch(path, withAuthHeaders(options, token));
 }
 function apiCall(path, options) {
-  return performAuthenticatedFetch(path, options, true).then(function (res) {
-    var isJson = (res.headers.get('content-type') || '').indexOf('application/json') >= 0;
-    return (isJson ? res.json() : Promise.resolve(null)).then(function (data) {
-      if (!res.ok) {
-        if (res.status === 401) { throw new Error('Session expired. Please sign in again.'); }
-        throw new Error((data && data.error) || 'Request failed');
-      }
-      return data;
-    });
+  if (studyApiClient && typeof studyApiClient.apiCall === 'function') {
+    return studyApiClient.apiCall(path, options);
+  }
+  return performAuthenticatedFetch(path, options, true).then(function (response) {
+    return response.json();
   });
 }
 function authenticatedFetch(path, options, allowRefresh) {
+  if (studyApiClient && typeof studyApiClient.authenticatedFetch === 'function') {
+    return studyApiClient.authenticatedFetch(path, options, allowRefresh !== false);
+  }
   return performAuthenticatedFetch(path, options, allowRefresh !== false);
 }
 function downloadStudyPackSource(packId, type, format) {
-  var safeType = type === 'transcript' ? 'transcript' : 'slides';
-  var safeFormat = format === 'docx' ? 'docx' : 'md';
-  var fallback = 'study-pack-' + packId + '-' + safeType + '.' + safeFormat;
-  return authenticatedFetch(
-    '/api/study-packs/' + encodeURIComponent(packId) + '/export-source?type=' + encodeURIComponent(safeType) + '&format=' + encodeURIComponent(safeFormat)
-  ).then(function (response) {
-    if (!response.ok) {
-      return response.json().catch(function () { return {}; }).then(function (payload) {
-        throw new Error(payload.error || 'Could not export source output');
-      });
-    }
-    if (downloadUtils.downloadResponseBlob) {
-      return downloadUtils.downloadResponseBlob(response, fallback);
-    }
-    return response.blob().then(function (blob) {
-      var url = URL.createObjectURL(blob);
-      var anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = fallback;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(url);
+  if (studyApiUtils && typeof studyApiUtils.downloadStudyPackSource === 'function') {
+    return studyApiUtils.downloadStudyPackSource(packId, type, format, {
+      authenticatedFetch: authenticatedFetch,
+      downloadUtils: downloadUtils,
     });
-  });
+  }
+  return Promise.reject(new Error('Could not export source output'));
 }
 function syncStudyPackExportMenu() {
   var itemConfig = studyLibraryUtils && typeof studyLibraryUtils.buildStudyPackExportItems === 'function'

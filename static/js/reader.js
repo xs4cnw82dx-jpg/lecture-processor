@@ -39,6 +39,8 @@
   var selectedFiles = [];
   var running = false;
   var lastOutput = '';
+  var currentJobId = '';
+  var pollTimer = null;
   var slidesCredits = null;
   var toastTimer = null;
   var CREDITS_CACHE_KEY = 'credits_breakdown';
@@ -345,6 +347,88 @@
     if (downloadBtn) downloadBtn.disabled = !outputReady || !hasSignedInSession();
   }
 
+  function clearJobPolling() {
+    currentJobId = '';
+    if (pollTimer) {
+      window.clearTimeout(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function finishExtractionRun() {
+    running = false;
+    clearJobPolling();
+    updateRunState();
+  }
+
+  function startExtractionRun() {
+    clearJobPolling();
+    running = true;
+    lastOutput = '';
+    if (outputPre) outputPre.textContent = '';
+    updateOutputActionState();
+    updateRunState();
+  }
+
+  function applyCompletedExtraction(payload) {
+    lastOutput = String(
+      (payload && (payload.output_text || payload.content_markdown || payload.result)) || ''
+    ).trim();
+    if (outputPre) outputPre.textContent = lastOutput;
+    updateOutputActionState();
+    setStatus(
+      String((payload && payload.step_description) || 'Extraction complete.'),
+      'success'
+    );
+  }
+
+  function schedulePoll(jobId, delayMs) {
+    if (!jobId) return;
+    if (pollTimer) window.clearTimeout(pollTimer);
+    pollTimer = window.setTimeout(function () {
+      pollExtractionJob(jobId);
+    }, Math.max(600, Number(delayMs || 1200)));
+  }
+
+  async function pollExtractionJob(jobId) {
+    if (!jobId || !running) return;
+    try {
+      var response = await authFetch('/status/' + encodeURIComponent(jobId));
+      var payload = await response.json().catch(function () { return {}; });
+      if (!response.ok) {
+        if (response.status === 404 && payload && payload.retryable) {
+          setStatus('Reconnecting to extraction job…', '');
+          schedulePoll(jobId, 1500);
+          return;
+        }
+        setStatus(String(payload.error || 'Extraction failed.'), 'error');
+        finishExtractionRun();
+        await refreshCredits();
+        return;
+      }
+
+      var status = String(payload.status || '').trim().toLowerCase();
+      if (status === 'complete') {
+        applyCompletedExtraction(payload);
+        finishExtractionRun();
+        await refreshCredits();
+        return;
+      }
+      if (status === 'error') {
+        setStatus(String(payload.error || payload.step_description || 'Extraction failed.'), 'error');
+        finishExtractionRun();
+        await refreshCredits();
+        return;
+      }
+
+      setStatus(String(payload.step_description || 'Extraction in progress…'), '');
+      schedulePoll(jobId, 1200);
+    } catch (error) {
+      setStatus(error && error.message ? error.message : 'Could not refresh extraction status.', 'error');
+      finishExtractionRun();
+    }
+  }
+
   async function runExtraction() {
     if (!hasSignedInSession()) {
       setStatus('Sign in to continue.', 'error');
@@ -360,8 +444,7 @@
       setStatus('Select at least one file first.', 'error');
       return;
     }
-    running = true;
-    updateRunState();
+    startExtractionRun();
     setStatus('', '');
 
     var formData = new FormData();
@@ -385,19 +468,22 @@
       var payload = await response.json().catch(function () { return {}; });
       if (!response.ok) {
         setStatus(String(payload.error || 'Extraction failed.'), 'error');
+        finishExtractionRun();
         await refreshCredits();
         return;
       }
-      lastOutput = String(payload.output_text || payload.content_markdown || '').trim();
-      outputPre.textContent = lastOutput;
-      updateOutputActionState();
-      setStatus('Extraction complete.', 'success');
+      if (response.status === 202 && payload && payload.job_id) {
+        currentJobId = String(payload.job_id || '').trim();
+        setStatus('Queued…', '');
+        schedulePoll(currentJobId, 500);
+        return;
+      }
+      applyCompletedExtraction(payload);
+      finishExtractionRun();
       await refreshCredits();
     } catch (error) {
       setStatus(error && error.message ? error.message : 'Extraction failed.', 'error');
-    } finally {
-      running = false;
-      updateRunState();
+      finishExtractionRun();
     }
   }
 
@@ -491,6 +577,7 @@
     authStateResolved = true;
     currentUser = user || null;
     if (authClient && typeof authClient.clearToken === 'function' && !currentUser) authClient.clearToken();
+    if (!currentUser) finishExtractionRun();
     hydrateCachedCredits(currentUser);
     refreshCredits();
     updateRunState();

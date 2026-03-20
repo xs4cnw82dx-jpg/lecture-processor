@@ -21,7 +21,12 @@ from lecture_processor.domains.shared import parsing as shared_parsing
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 from lecture_processor.runtime.job_dispatcher import JobQueueFullError
-from lecture_processor.services import upload_runtime_service
+from lecture_processor.services import (
+    upload_audio_import_service,
+    upload_batch_service,
+    upload_batch_support,
+    upload_runtime_service,
+)
 
 
 def _sanitize_tools_custom_prompt(raw_prompt, max_chars=6000):
@@ -46,11 +51,7 @@ def _sanitize_tools_template_key(raw_key, max_chars=80):
 
 
 def _sanitize_study_pack_title(raw_title, max_chars=120):
-    text = str(raw_title or '').strip()
-    if not text:
-        return ''
-    collapsed = ' '.join(text.split())
-    return collapsed[:max_chars].strip()
+    return upload_batch_support.sanitize_study_pack_title(raw_title, max_chars=max_chars)
 
 
 def _sanitize_tools_source_url(raw_url, max_chars=2000):
@@ -253,107 +254,28 @@ def _sum_retry_attempts(retry_tracker):
 
 
 def _require_ai_processing_ready(app_ctx):
-    if getattr(app_ctx, 'client', None) is not None:
-        return None
-    app_ctx.logger.error('AI processing requested while Gemini client is not configured.')
-    return app_ctx.jsonify({'error': 'AI processing is temporarily unavailable right now. Please try again later.'}), 503
+    return upload_batch_support.require_ai_processing_ready(app_ctx)
 
 
 def _account_write_guard_response(app_ctx, uid):
-    allowed, message = account_lifecycle.ensure_account_allows_writes(uid, runtime=app_ctx)
-    if allowed:
-        return None
-    return app_ctx.jsonify({'error': message, 'status': 'account_deletion_in_progress'}), 409
+    return upload_batch_support.account_write_guard_response(app_ctx, uid)
 
 
 def _attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None):
-    if not uid or not credit_type:
-        return False, ''
-
-    expected_floor_value = None
-    if expected_floor is not None:
-        try:
-            expected_floor_value = max(0, int(expected_floor))
-        except Exception:
-            expected_floor_value = None
-
-    for attempt in range(1, 4):
-        try:
-            refunded = bool(billing_credits.refund_credit(uid, credit_type, runtime=app_ctx))
-        except Exception:
-            refunded = False
-        if refunded:
-            if credit_type == 'slides_credits' and expected_floor_value is not None:
-                try:
-                    latest_user = app_ctx.get_or_create_user(uid, '')
-                    latest_balance = int(latest_user.get('slides_credits', 0) or 0)
-                    if latest_balance < expected_floor_value:
-                        app_ctx.logger.warning(
-                            "Refund reported success but balance verification failed for %s (balance=%s expected>=%s)",
-                            uid,
-                            latest_balance,
-                            expected_floor_value,
-                        )
-                        if attempt < 3:
-                            app_ctx.time.sleep(0.08 * attempt)
-                            continue
-                except Exception:
-                    pass
-            return True, 'refund_credit'
-        if attempt < 3:
-            app_ctx.time.sleep(0.08 * attempt)
-
-    if credit_type == 'slides_credits':
-        for fallback_attempt in range(1, 3):
-            try:
-                refunded = bool(billing_credits.refund_slides_credits(uid, 1, runtime=app_ctx))
-                if not refunded:
-                    if fallback_attempt < 2:
-                        app_ctx.time.sleep(0.08 * fallback_attempt)
-                    continue
-                try:
-                    user_ref = app_ctx.users_repo.doc_ref(app_ctx.db, uid)
-                    user_ref.update({'total_processed': app_ctx.firestore.Increment(-1)})
-                except Exception:
-                    # Keep the refund even when total_processed adjustment fails.
-                    pass
-                return True, 'fallback_slides_refund'
-            except Exception:
-                if fallback_attempt < 2:
-                    app_ctx.time.sleep(0.08 * fallback_attempt)
-
-    return False, ''
+    return upload_batch_support.attempt_credit_refund(
+        app_ctx,
+        uid,
+        credit_type,
+        expected_floor=expected_floor,
+    )
 
 
 def _queue_full_message():
-    return 'The server is busy right now. Please try again in a minute.'
+    return upload_batch_support.queue_full_message()
 
 
 def _queue_full_response(app_ctx, *, job_id='', batch_id=''):
-    retry_after_seconds = 15
-    payload = {
-        'error': _queue_full_message(),
-        'status': 'queue_full',
-        'retry_after_seconds': retry_after_seconds,
-    }
-    if job_id:
-        payload['job_id'] = str(job_id)
-    if batch_id:
-        payload['batch_id'] = str(batch_id)
-    try:
-        queue_stats = app_ctx.get_background_queue_stats()
-    except Exception:
-        queue_stats = {}
-    if isinstance(queue_stats, dict) and queue_stats:
-        payload['queue'] = {
-            'running': int(queue_stats.get('running', 0) or 0),
-            'queued': int(queue_stats.get('queued', 0) or 0),
-            'capacity': int(queue_stats.get('capacity', 0) or 0),
-        }
-    response = app_ctx.jsonify(payload)
-    response.status_code = 503
-    response.headers['Retry-After'] = str(retry_after_seconds)
-    return response
+    return upload_batch_support.queue_full_response(app_ctx, job_id=job_id, batch_id=batch_id)
 
 
 def _handle_runtime_job_queue_full(
@@ -366,47 +288,15 @@ def _handle_runtime_job_queue_full(
     expected_credit_floor=None,
     extra_slides_credits=0,
 ):
-    message = _queue_full_message()
-    refund_methods = []
-    credit_refunded = False
-    if credit_type:
-        refunded, method = _attempt_credit_refund(
-            app_ctx,
-            uid,
-            credit_type,
-            expected_floor=expected_credit_floor,
-        )
-        if refunded:
-            credit_refunded = True
-            if method:
-                refund_methods.append(method)
-    if int(extra_slides_credits or 0) > 0:
-        try:
-            extras_refunded = bool(
-                billing_credits.refund_slides_credits(
-                    uid,
-                    int(extra_slides_credits or 0),
-                    runtime=app_ctx,
-                )
-            )
-        except Exception:
-            extras_refunded = False
-        if extras_refunded:
-            credit_refunded = True
-            refund_methods.append('refund_slides_credits')
-    runtime_jobs_store.update_job_fields(
-        job_id,
-        runtime=app_ctx,
-        status='error',
-        error=message,
-        failed_stage='queued',
-        provider_error_code='queue_full',
-        step_description='Queue full',
-        credit_refunded=credit_refunded,
-        credit_refund_method=', '.join(refund_methods),
+    return upload_batch_support.handle_runtime_job_queue_full(
+        app_ctx,
+        job_id=job_id,
+        uid=uid,
+        cleanup_paths=cleanup_paths,
+        credit_type=credit_type,
+        expected_credit_floor=expected_credit_floor,
+        extra_slides_credits=extra_slides_credits,
     )
-    app_ctx.cleanup_files(list(cleanup_paths or []), [])
-    return _queue_full_response(app_ctx, job_id=job_id)
 
 
 def _normalize_tools_markdown_for_export(markdown_text):
@@ -497,763 +387,84 @@ def _detect_tools_source_type(app_ctx, uploaded_file, requested_source):
 
 
 def import_audio_from_url(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Please sign in to continue'}), 401
-    uid = decoded_token['uid']
-    email = decoded_token.get('email', '')
-    if not auth_policy.is_email_allowed(email, runtime=app_ctx):
-        return app_ctx.jsonify({'error': 'Email not allowed'}), 403
-    deletion_guard = _account_write_guard_response(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
-
-    allowed_import, retry_after = rate_limiter.check_rate_limit(
-        key=f"audio_import:{rate_limiter.normalize_rate_limit_key_part(uid, fallback='anon_uid', runtime=app_ctx)}",
-        limit=app_ctx.VIDEO_IMPORT_RATE_LIMIT_MAX_REQUESTS,
-        window_seconds=app_ctx.VIDEO_IMPORT_RATE_LIMIT_WINDOW_SECONDS,
-        runtime=app_ctx,
-    )
-    if not allowed_import:
-        return rate_limiter.build_rate_limited_response(
-            'Too many video import attempts right now. Please wait and try again.',
-            retry_after,
-            runtime=app_ctx,
-        )
-
-    data = request.get_json(silent=True) or {}
-    safe_url, error_message = upload_import_audio.validate_video_import_url(
-        data.get('url', ''),
-        runtime=app_ctx,
-    )
-    if not safe_url:
-        return app_ctx.jsonify({'error': error_message}), 400
-
-    upload_import_audio.cleanup_expired_audio_import_tokens(runtime=app_ctx)
-    prefix = f"urlimport_{app_ctx.uuid.uuid4().hex}"
-    try:
-        audio_path, output_name, size_bytes = app_ctx.download_audio_from_video_url(safe_url, prefix)
-        token = upload_import_audio.register_audio_import_token(
-            uid,
-            audio_path,
-            safe_url,
-            output_name,
-            runtime=app_ctx,
-        )
-        return app_ctx.jsonify({
-            'ok': True,
-            'audio_import_token': token,
-            'file_name': output_name,
-            'size_bytes': int(size_bytes),
-            'expires_in_seconds': app_ctx.AUDIO_IMPORT_TOKEN_TTL_SECONDS,
-        })
-    except Exception as e:
-        app_ctx.logger.error(f"Error importing audio from URL for user {uid}: {e}")
-        return app_ctx.jsonify({'error': 'Could not import audio from URL. Please check that the URL is accessible and try again.'}), 400
+    return upload_audio_import_service.import_audio_from_url(app_ctx, request)
 
 
 def release_imported_audio(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
-    uid = decoded_token['uid']
-    payload = request.get_json(silent=True) or {}
-    token = str(payload.get('audio_import_token', '') or '').strip()
-    if token:
-        upload_import_audio.release_audio_import_token(uid, token, runtime=app_ctx)
-    return app_ctx.jsonify({'ok': True})
+    return upload_audio_import_service.release_imported_audio(app_ctx, request)
 
 
 def _parse_batch_rows_payload(request):
-    rows_raw = str(request.form.get('rows', '') or '').strip()
-    if not rows_raw:
-        return []
-    try:
-        parsed = json.loads(rows_raw)
-    except Exception:
-        return None
-    if not isinstance(parsed, list):
-        return None
-    rows = []
-    for item in parsed:
-        if not isinstance(item, dict):
-            continue
-        rows.append(dict(item))
-    return rows
+    return upload_batch_support.parse_batch_rows_payload(request)
 
 
 def _parse_checkbox_value(raw_value):
-    return str(raw_value or '').strip().lower() in {'1', 'true', 'yes', 'on'}
+    return upload_batch_support.parse_checkbox_value(raw_value)
 
 
 def _batch_user_guard(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return None, None, app_ctx.jsonify({'error': 'Please sign in to continue'}), 401
-    uid = decoded_token['uid']
-    email = decoded_token.get('email', '')
-    if not auth_policy.is_email_allowed(email, runtime=app_ctx):
-        return None, None, app_ctx.jsonify({'error': 'Email not allowed'}), 403
-    return uid, decoded_token, None, None
+    return upload_batch_support.batch_user_guard(app_ctx, request)
 
 
 def _get_batch_with_permission(app_ctx, request, batch_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return None, None, app_ctx.jsonify({'error': 'Unauthorized'}), 401
-    batch = batch_orchestrator.get_batch(batch_id, runtime=app_ctx)
-    if not batch:
-        return None, None, app_ctx.jsonify({'error': 'Batch not found'}), 404
-    uid = decoded_token.get('uid', '')
-    if batch.get('uid', '') != uid and not app_ctx.is_admin_user(decoded_token):
-        return None, None, app_ctx.jsonify({'error': 'Forbidden'}), 403
-    return batch, decoded_token, None, None
+    return upload_batch_support.get_batch_with_permission(
+        app_ctx,
+        request,
+        batch_id,
+        batch_orchestrator_module=batch_orchestrator,
+    )
 
 
 def create_batch_job(app_ctx, request):
-    uid, decoded_token, error_response, status = _batch_user_guard(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
-    deletion_guard = _account_write_guard_response(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
-
-    mode = str(request.form.get('mode', 'lecture-notes') or '').strip()
-    if mode not in {'lecture-notes', 'slides-only', 'interview'}:
-        return app_ctx.jsonify({'error': 'Invalid mode selected'}), 400
-
-    rows = _parse_batch_rows_payload(request)
-    if rows is None:
-        return app_ctx.jsonify({'error': 'Invalid rows payload'}), 400
-    if len(rows) < 2:
-        return app_ctx.jsonify({'error': 'Batch mode requires at least 2 rows.'}), 400
-    client_submission_id = str(request.form.get('client_submission_id', '') or '').strip()[:120]
-    if client_submission_id:
-        existing = batch_orchestrator.find_batch_by_submission_id(
-            uid,
-            client_submission_id,
-            runtime=app_ctx,
-        )
-        existing_batch_id = str((existing or {}).get('batch_id', '') or '').strip()
-        if existing_batch_id:
-            return app_ctx.jsonify(
-                {
-                    'batch_id': existing_batch_id,
-                    'deduplicated': True,
-                    'status': str((existing or {}).get('status', 'queued') or 'queued'),
-                }
-            )
-
-    batch_title = _sanitize_study_pack_title(request.form.get('batch_title', ''))
-    if not batch_title:
-        return app_ctx.jsonify({'error': 'Batch title is required.'}), 400
-
-    ai_unavailable = _require_ai_processing_ready(app_ctx)
-    if ai_unavailable is not None:
-        return ai_unavailable
-
-    decoded_email = str((decoded_token or {}).get('email', '') or '').strip()
-    user = app_ctx.get_or_create_user(uid, decoded_email)
-    preferred_language_key = shared_parsing.sanitize_output_language_pref_key(
-        user.get('preferred_output_language', app_ctx.DEFAULT_OUTPUT_LANGUAGE_KEY),
-        runtime=app_ctx,
-    )
-    preferred_language_custom = shared_parsing.sanitize_output_language_pref_custom(
-        user.get('preferred_output_language_custom', ''),
-        runtime=app_ctx,
-    )
-    output_language = shared_parsing.parse_output_language(
-        request.form.get('output_language', preferred_language_key),
-        request.form.get('output_language_custom', preferred_language_custom),
-        runtime=app_ctx,
-    )
-    default_study_features = shared_parsing.parse_study_features(request.form.get('study_features', 'none'), runtime=app_ctx)
-    default_flashcards = shared_parsing.parse_requested_amount(
-        request.form.get('flashcard_amount', '20'),
-        {'10', '20', '30', 'auto'},
-        '20',
-        runtime=app_ctx,
-    )
-    default_questions = shared_parsing.parse_requested_amount(
-        request.form.get('question_amount', '10'),
-        {'5', '10', '15', 'auto'},
-        '10',
-        runtime=app_ctx,
-    )
-    include_combined_docx = _parse_checkbox_value(request.form.get('include_combined_docx', '0'))
-
-    batch_id = str(app_ctx.uuid.uuid4())
-    prepared_rows = []
-    cleanup_paths = []
-    charged_rows = []
-    created_folder_ref = None
-    now_ts = app_ctx.time.time()
-
-    try:
-        for idx, row_cfg in enumerate(rows, start=1):
-            row_id = str(row_cfg.get('row_id', '') or app_ctx.uuid.uuid4())
-            slides_required = mode in {'lecture-notes', 'slides-only'}
-            audio_required = mode in {'lecture-notes', 'interview'}
-
-            slides_local_path = ''
-            slides_field = str(row_cfg.get('slides_file_field', f'row_{idx}_slides') or '').strip()
-            if slides_required:
-                slides_file = request.files.get(slides_field)
-                if not slides_file or slides_file.filename == '':
-                    raise ValueError(f'Row {idx}: slides file is required.')
-                slides_local_path, slides_error = app_ctx.resolve_uploaded_slides_to_pdf(slides_file, f'{batch_id}_{row_id}')
-                if slides_error:
-                    raise ValueError(f'Row {idx}: {slides_error}')
-                cleanup_paths.append(slides_local_path)
-
-            audio_local_path = ''
-            audio_source_type = ''
-            audio_source_url = ''
-            audio_import_token = str(row_cfg.get('audio_import_token', '') or '').strip()
-            audio_url = str(row_cfg.get('audio_m3u8_url', '') or '').strip()
-            audio_field = str(row_cfg.get('audio_file_field', f'row_{idx}_audio') or '').strip()
-            if audio_required:
-                if audio_import_token:
-                    audio_local_path, token_error = upload_import_audio.get_audio_import_token_path(
-                        uid,
-                        audio_import_token,
-                        consume=False,
-                        runtime=app_ctx,
-                    )
-                    if token_error:
-                        raise ValueError(f'Row {idx}: {token_error}')
-                    audio_source_type = 'import_token'
-                elif audio_url:
-                    safe_url, url_error = upload_import_audio.validate_video_import_url(audio_url, runtime=app_ctx)
-                    if not safe_url:
-                        raise ValueError(f'Row {idx}: {url_error}')
-                    prefix = f'batch_{batch_id}_{row_id}'
-                    audio_local_path, _output_name, _size_bytes = app_ctx.download_audio_from_video_url(safe_url, prefix)
-                    cleanup_paths.append(audio_local_path)
-                    audio_source_type = 'm3u8_url'
-                    audio_source_url = safe_url
-                else:
-                    audio_file = request.files.get(audio_field)
-                    if not audio_file or audio_file.filename == '':
-                        raise ValueError(f'Row {idx}: audio file is required.')
-                    if not app_ctx.allowed_file(audio_file.filename, app_ctx.ALLOWED_AUDIO_EXTENSIONS):
-                        raise ValueError(f'Row {idx}: invalid audio file extension.')
-                    if (audio_file.mimetype or '').lower() not in app_ctx.ALLOWED_AUDIO_MIME_TYPES:
-                        raise ValueError(f'Row {idx}: invalid audio content type.')
-                    audio_local_path = app_ctx.os.path.join(app_ctx.UPLOAD_FOLDER, f'{batch_id}_{row_id}_{app_ctx.secure_filename(audio_file.filename)}')
-                    audio_file.save(audio_local_path)
-                    cleanup_paths.append(audio_local_path)
-                    audio_source_type = 'upload'
-
-                audio_size = app_ctx.get_saved_file_size(audio_local_path)
-                if audio_size <= 0 or audio_size > app_ctx.MAX_AUDIO_UPLOAD_BYTES:
-                    raise ValueError(f'Row {idx}: audio exceeds server limit or is empty.')
-                if not app_ctx.file_looks_like_audio(audio_local_path):
-                    raise ValueError(f'Row {idx}: uploaded audio is invalid or unsupported.')
-
-            row_study_features = default_study_features
-            row_flashcards = default_flashcards
-            row_questions = default_questions
-            override = row_cfg.get('study_override', {})
-            if isinstance(override, dict):
-                if 'study_features' in override:
-                    row_study_features = shared_parsing.parse_study_features(override.get('study_features', default_study_features), runtime=app_ctx)
-                if 'flashcard_amount' in override:
-                    row_flashcards = shared_parsing.parse_requested_amount(
-                        override.get('flashcard_amount', default_flashcards),
-                        {'10', '20', '30', 'auto'},
-                        default_flashcards,
-                        runtime=app_ctx,
-                    )
-                if 'question_amount' in override:
-                    row_questions = shared_parsing.parse_requested_amount(
-                        override.get('question_amount', default_questions),
-                        {'5', '10', '15', 'auto'},
-                        default_questions,
-                        runtime=app_ctx,
-                    )
-
-            row_interview_features = []
-            interview_features_cost = 0
-            if mode == 'interview':
-                raw_features = row_cfg.get('interview_features', [])
-                if isinstance(raw_features, list):
-                    raw_features_text = ','.join(str(item) for item in raw_features)
-                else:
-                    raw_features_text = str(raw_features or 'none')
-                row_interview_features = shared_parsing.parse_interview_features(raw_features_text, runtime=app_ctx)
-                interview_features_cost = len(row_interview_features)
-
-            charged_credit = ''
-            if mode == 'lecture-notes':
-                charged_credit = billing_credits.deduct_credit(
-                    uid,
-                    'lecture_credits_standard',
-                    'lecture_credits_extended',
-                    runtime=app_ctx,
-                )
-                if not charged_credit:
-                    raise ValueError('Not enough lecture credits to start this batch.')
-            elif mode == 'slides-only':
-                charged_credit = billing_credits.deduct_credit(uid, 'slides_credits', runtime=app_ctx)
-                if not charged_credit:
-                    raise ValueError('Not enough text extraction credits to start this batch.')
-            elif mode == 'interview':
-                charged_credit = billing_credits.deduct_interview_credit(uid, runtime=app_ctx)
-                if not charged_credit:
-                    raise ValueError('Not enough interview credits to start this batch.')
-                if interview_features_cost > 0:
-                    if not billing_credits.deduct_slides_credits(uid, interview_features_cost, runtime=app_ctx):
-                        billing_credits.refund_credit(uid, charged_credit, runtime=app_ctx)
-                        raise ValueError('Not enough text extraction credits for interview extras in this batch row.')
-
-            charged_rows.append(
-                {
-                    'credit_type': charged_credit,
-                    'interview_features_cost': interview_features_cost,
-                }
-            )
-
-            if audio_import_token:
-                _consumed_path, token_error = upload_import_audio.get_audio_import_token_path(
-                    uid,
-                    audio_import_token,
-                    consume=True,
-                    runtime=app_ctx,
-                )
-                if token_error:
-                    raise ValueError(f'Row {idx}: {token_error}')
-
-            billing_receipt = billing_receipts.initialize_billing_receipt(
-                {charged_credit: 1, 'slides_credits': interview_features_cost},
-                runtime=app_ctx,
-            )
-            prepared_rows.append(
-                {
-                    'row_id': row_id,
-                    'ordinal': idx,
-                    'status': 'queued',
-                    'source_type': audio_source_type if audio_source_type else ('upload' if slides_required else 'audio'),
-                    'source_url': audio_source_url,
-                    'source_name': f'row-{idx}',
-                    'slides_local_path': slides_local_path,
-                    'audio_local_path': audio_local_path,
-                    'output_language': output_language,
-                    'study_features': row_study_features if mode != 'interview' else 'none',
-                    'flashcard_selection': row_flashcards,
-                    'question_selection': row_questions,
-                    'interview_features': row_interview_features,
-                    'interview_features_cost': interview_features_cost,
-                    'credit_deducted': charged_credit,
-                    'credit_refunded': False,
-                    'billing_receipt': billing_receipt,
-                    'billing_mode': 'batch',
-                    'billing_multiplier': 0.5,
-                    'token_usage_by_stage': {},
-                    'token_input_total': 0,
-                    'token_output_total': 0,
-                    'token_total': 0,
-                    'started_at': now_ts,
-                    'created_at': now_ts,
-                }
-            )
-        folder_name = batch_title
-        folder_id = ''
-        if app_ctx.db is not None:
-            created_folder_ref = app_ctx.study_repo.create_study_folder_doc_ref(app_ctx.db)
-            created_folder_ref.set({
-                'folder_id': created_folder_ref.id,
-                'uid': uid,
-                'name': folder_name,
-                'course': '',
-                'subject': '',
-                'semester': '',
-                'block': '',
-                'exam_date': '',
-                'created_at': now_ts,
-                'updated_at': now_ts,
-            })
-            folder_id = created_folder_ref.id
-
-        batch_payload = {
-            'batch_id': batch_id,
-            'uid': uid,
-            'email': decoded_email or str(user.get('email', '') or '').strip(),
-            'mode': mode,
-            'status': 'queued',
-            'batch_title': batch_title,
-            'output_language': output_language,
-            'study_defaults': {
-                'study_features': default_study_features,
-                'flashcard_amount': default_flashcards,
-                'question_amount': default_questions,
-            },
-            'export_options': {
-                'include_combined_docx': include_combined_docx,
-            },
-            'folder_id': folder_id,
-            'folder_name': folder_name,
-            'total_rows': len(prepared_rows),
-            'completed_rows': 0,
-            'failed_rows': 0,
-            'token_input_total': 0,
-            'token_output_total': 0,
-            'token_total': 0,
-            'external_batch_refs': {},
-            'error_summary': '',
-            'created_at': now_ts,
-            'updated_at': now_ts,
-            'finished_at': 0,
-            'billing_mode': 'batch',
-            'billing_multiplier': 0.5,
-            'completion_email_status': 'pending',
-            'completion_email_sent_at': 0,
-            'completion_email_error': '',
-            'current_stage': 'queued',
-            'current_stage_state': 'queued',
-            'stage_started_at': 0,
-            'provider_state': 'JOB_STATE_PENDING',
-            'submission_locked': True,
-            'client_submission_id': client_submission_id,
-            'last_heartbeat_at': now_ts,
-            'credits_charged': sum(1 + int(item.get('interview_features_cost', 0) or 0) for item in charged_rows),
-            'credits_refunded': 0,
-            'credits_refund_pending': 0,
-        }
-        batch_orchestrator.create_batch_job(batch_payload, prepared_rows, runtime=app_ctx)
-
-        try:
-            app_ctx.submit_background_job(
-                batch_orchestrator.process_batch_job,
-                batch_id,
-                runtime=app_ctx,
-            )
-        except JobQueueFullError:
-            batch_orchestrator.mark_batch_submission_error(
-                batch_id,
-                _queue_full_message(),
-                runtime=app_ctx,
-            )
-            for charged in charged_rows:
-                credit_type = str(charged.get('credit_type', '') or '').strip()
-                if credit_type:
-                    billing_credits.refund_credit(uid, credit_type, runtime=app_ctx)
-                extras = int(charged.get('interview_features_cost', 0) or 0)
-                if extras > 0:
-                    billing_credits.refund_slides_credits(uid, extras, runtime=app_ctx)
-            app_ctx.cleanup_files(cleanup_paths, [])
-            return _queue_full_response(app_ctx, batch_id=batch_id)
-        return app_ctx.jsonify({'batch_id': batch_id})
-    except Exception as error:
-        if created_folder_ref is not None:
-            try:
-                created_folder_ref.delete()
-            except Exception:
-                pass
-        for charged in charged_rows:
-            credit_type = str(charged.get('credit_type', '') or '').strip()
-            if credit_type:
-                billing_credits.refund_credit(uid, credit_type, runtime=app_ctx)
-            extras = int(charged.get('interview_features_cost', 0) or 0)
-            if extras > 0:
-                billing_credits.refund_slides_credits(uid, extras, runtime=app_ctx)
-        app_ctx.cleanup_files(cleanup_paths, [])
-        return app_ctx.jsonify({'error': str(error)}), 400
+    return upload_batch_service.create_batch_job(app_ctx, request)
 
 
 def list_batch_jobs(app_ctx, request):
-    uid, _decoded_token, error_response, status = _batch_user_guard(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
-
-    mode = str(request.args.get('mode', '') or '').strip()
-    status_filter = str(request.args.get('status', '') or '').strip()
-    limit = 100
-    try:
-        limit = int(request.args.get('limit', 100) or 100)
-    except Exception:
-        limit = 100
-    limit = max(1, min(200, limit))
-
-    statuses = []
-    if status_filter:
-        statuses = [part.strip() for part in status_filter.split(',') if part.strip()]
-
-    batches = batch_orchestrator.list_batches_for_uid(uid, statuses=statuses, limit=limit, runtime=app_ctx)
-    if mode:
-        batches = [item for item in batches if str(item.get('mode', '') or '') == mode]
-    return app_ctx.jsonify({'batches': batches})
+    return upload_batch_service.list_batch_jobs(app_ctx, request)
 
 
 def get_batch_job_status(app_ctx, request, batch_id):
-    batch, _decoded, error_response, status = _get_batch_with_permission(app_ctx, request, batch_id)
-    if error_response is not None:
-        return error_response, status
-    status_payload = batch_orchestrator.get_batch_status(batch_id, runtime=app_ctx)
-    if not status_payload:
-        return app_ctx.jsonify({'error': 'Batch not found'}), 404
-    return app_ctx.jsonify(status_payload)
+    return upload_batch_service.get_batch_job_status(app_ctx, request, batch_id)
 
 
 def _batch_row_docx_bytes(app_ctx, row, content_type='result'):
-    if content_type == 'slides' and row.get('slide_text'):
-        content, title = row.get('slide_text', ''), 'Slides Extracted'
-    elif content_type == 'transcript' and row.get('transcript'):
-        content, title = row.get('transcript', ''), 'Transcript'
-    elif content_type == 'summary' and row.get('interview_summary'):
-        content, title = row.get('interview_summary', ''), 'Interview Summary'
-    elif content_type == 'sections' and row.get('interview_sections'):
-        content, title = row.get('interview_sections', ''), 'Interview Sections'
-    elif content_type == 'combined' and row.get('interview_combined'):
-        content, title = row.get('interview_combined', ''), 'Interview Combined'
-    else:
-        content = row.get('result', '') or row.get('merged_notes', '') or row.get('transcript', '') or row.get('slide_text', '')
-        title = 'Batch Output'
-    doc = study_export.markdown_to_docx(content, title, runtime=app_ctx)
-    docx_io = app_ctx.io.BytesIO()
-    doc.save(docx_io)
-    docx_io.seek(0)
-    return docx_io.read()
+    return upload_batch_service.batch_row_docx_bytes(app_ctx, row, content_type=content_type)
 
 
 def _batch_row_csv_bytes(app_ctx, row, export_type='flashcards'):
-    output = app_ctx.io.StringIO()
-    writer = app_ctx.csv.writer(output)
-    if export_type == 'test':
-        writer.writerow(['Question', 'Option A', 'Option B', 'Option C', 'Option D', 'Correct Answer', 'Explanation'])
-        for question in row.get('test_questions', []):
-            options = question.get('options', ['', '', '', ''])
-            while len(options) < 4:
-                options.append('')
-            writer.writerow(sanitize_csv_row([
-                question.get('question', ''),
-                options[0],
-                options[1],
-                options[2],
-                options[3],
-                question.get('answer', ''),
-                question.get('explanation', ''),
-            ]))
-    else:
-        writer.writerow(['Front', 'Back'])
-        for card in row.get('flashcards', []):
-            writer.writerow(sanitize_csv_row([card.get('front', ''), card.get('back', '')]))
-    return output.getvalue().encode('utf-8')
+    return upload_batch_service.batch_row_csv_bytes(app_ctx, row, export_type=export_type)
 
 
 def _append_combined_markdown_section(parts, title, content):
-    text = str(content or '').strip()
-    if not text:
-        return
-    parts.append(f'## {title}')
-    parts.append('')
-    parts.append(text)
-    parts.append('')
+    return upload_batch_service.append_combined_markdown_section(parts, title, content)
 
 
 def _batch_row_flashcards_markdown(row):
-    cards = row.get('flashcards', []) if isinstance(row.get('flashcards', []), list) else []
-    if not cards:
-        return ''
-    lines = []
-    for index, card in enumerate(cards, start=1):
-        front = str((card or {}).get('front', '') or '').strip() or f'Flashcard {index}'
-        back = str((card or {}).get('back', '') or '').strip()
-        lines.append(f'{index}. **{front}**')
-        if back:
-            lines.append(f'   - {back}')
-    return '\n'.join(lines).strip()
+    return upload_batch_service.batch_row_flashcards_markdown(row)
 
 
 def _batch_row_questions_markdown(row):
-    questions = row.get('test_questions', []) if isinstance(row.get('test_questions', []), list) else []
-    if not questions:
-        return ''
-    lines = []
-    letters = ['A', 'B', 'C', 'D']
-    for index, question in enumerate(questions, start=1):
-        question_text = str((question or {}).get('question', '') or '').strip() or f'Question {index}'
-        lines.append(f'{index}. **{question_text}**')
-        options = (question or {}).get('options', []) if isinstance((question or {}).get('options', []), list) else []
-        for option_index, option in enumerate(options[:4]):
-            option_text = str(option or '').strip()
-            if option_text:
-                lines.append(f'   - {letters[option_index]}: {option_text}')
-        answer = str((question or {}).get('answer', '') or '').strip()
-        if answer:
-            lines.append(f'   - Correct answer: {answer}')
-        explanation = str((question or {}).get('explanation', '') or '').strip()
-        if explanation:
-            lines.append(f'   - Explanation: {explanation}')
-    return '\n'.join(lines).strip()
+    return upload_batch_service.batch_row_questions_markdown(row)
 
 
 def _batch_row_combined_markdown(batch, row):
-    mode = str((batch or {}).get('mode', '') or '').strip().lower()
-    row_label = str(row.get('source_name', '') or '').strip() or f'Row {int(row.get("ordinal", 0) or 0)}'
-    status = str(row.get('status', 'queued') or 'queued').strip().lower()
-    parts = [f'# {row_label}', '']
-
-    if status != 'complete':
-        parts.append(f'Status: {status}')
-        parts.append('')
-        parts.append('Output was unavailable when this ZIP was created.')
-        error_text = str(row.get('error', '') or '').strip()
-        if error_text:
-            parts.append('')
-            parts.append(f'Reason: {error_text}')
-        parts.append('')
-        return '\n'.join(parts).strip()
-
-    result_text = str(row.get('result', '') or row.get('merged_notes', '') or '').strip()
-    slide_text = str(row.get('slide_text', '') or '').strip()
-    transcript_text = str(row.get('transcript', '') or '').strip()
-    interview_summary = str(row.get('interview_summary', '') or '').strip()
-    interview_sections = str(row.get('interview_sections', '') or '').strip()
-    interview_combined = str(row.get('interview_combined', '') or '').strip()
-
-    if mode == 'lecture-notes':
-        _append_combined_markdown_section(parts, 'Lecture Notes', result_text)
-        _append_combined_markdown_section(parts, 'Slide Extract', slide_text)
-        _append_combined_markdown_section(parts, 'Transcript', transcript_text)
-    elif mode == 'slides-only':
-        _append_combined_markdown_section(parts, 'Slide Extract', slide_text or result_text)
-    elif mode == 'interview':
-        _append_combined_markdown_section(parts, 'Transcript', transcript_text or result_text)
-        _append_combined_markdown_section(parts, 'Interview Summary', interview_summary)
-        _append_combined_markdown_section(parts, 'Structured Transcript', interview_sections)
-        if interview_combined and not interview_summary and not interview_sections:
-            _append_combined_markdown_section(parts, 'Combined Output', interview_combined)
-    else:
-        _append_combined_markdown_section(parts, 'Output', result_text)
-
-    flashcards_markdown = _batch_row_flashcards_markdown(row)
-    if flashcards_markdown:
-        _append_combined_markdown_section(parts, 'Flashcards', flashcards_markdown)
-
-    questions_markdown = _batch_row_questions_markdown(row)
-    if questions_markdown:
-        _append_combined_markdown_section(parts, 'Practice Questions', questions_markdown)
-
-    return '\n'.join(part for part in parts if part is not None).strip()
+    return upload_batch_service.batch_row_combined_markdown(batch, row)
 
 
 def _batch_combined_docx_bytes(app_ctx, batch, rows):
-    batch_title = str((batch or {}).get('batch_title', '') or (batch or {}).get('batch_id', '') or 'Batch Combined').strip()
-    sections = []
-    for row in rows:
-        sections.append(_batch_row_combined_markdown(batch, row))
-    markdown_text = '\n\n'.join(section for section in sections if str(section or '').strip()).strip()
-    if not markdown_text:
-        markdown_text = '# Batch Output\n\nNo row output was available when this ZIP was created.'
-    doc = study_export.markdown_to_docx(markdown_text, title=batch_title + ' Combined', runtime=app_ctx)
-    output = app_ctx.io.BytesIO()
-    doc.save(output)
-    output.seek(0)
-    return output.read()
+    return upload_batch_service.batch_combined_docx_bytes(app_ctx, batch, rows)
 
 
 def download_batch_row_docx(app_ctx, request, batch_id, row_id):
-    _batch, _decoded, error_response, status = _get_batch_with_permission(app_ctx, request, batch_id)
-    if error_response is not None:
-        return error_response, status
-    row = batch_orchestrator.get_batch_row(batch_id, row_id, runtime=app_ctx)
-    if not row:
-        return app_ctx.jsonify({'error': 'Row not found'}), 404
-    if row.get('status') != 'complete':
-        return app_ctx.jsonify({'error': 'Row is not complete'}), 400
-    content_type = request.args.get('type', 'result')
-    docx_bytes = _batch_row_docx_bytes(app_ctx, row, content_type=content_type)
-    return app_ctx.send_file(
-        app_ctx.io.BytesIO(docx_bytes),
-        mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        as_attachment=True,
-        download_name=f'batch-{batch_id}-{row_id}-{content_type}.docx',
-    )
+    return upload_batch_service.download_batch_row_docx(app_ctx, request, batch_id, row_id)
 
 
 def download_batch_row_flashcards_csv(app_ctx, request, batch_id, row_id):
-    _batch, _decoded, error_response, status = _get_batch_with_permission(app_ctx, request, batch_id)
-    if error_response is not None:
-        return error_response, status
-    row = batch_orchestrator.get_batch_row(batch_id, row_id, runtime=app_ctx)
-    if not row:
-        return app_ctx.jsonify({'error': 'Row not found'}), 404
-    if row.get('status') != 'complete':
-        return app_ctx.jsonify({'error': 'Row is not complete'}), 400
-    export_type = request.args.get('type', 'flashcards').strip().lower()
-    if export_type not in {'flashcards', 'test'}:
-        export_type = 'flashcards'
-    csv_bytes = _batch_row_csv_bytes(app_ctx, row, export_type=export_type)
-    return app_ctx.send_file(
-        app_ctx.io.BytesIO(csv_bytes),
-        mimetype='text/csv',
-        as_attachment=True,
-        download_name=f'batch-{batch_id}-{row_id}-{export_type}.csv',
-    )
+    return upload_batch_service.download_batch_row_flashcards_csv(app_ctx, request, batch_id, row_id)
 
 
 def download_batch_zip(app_ctx, request, batch_id):
-    batch, _decoded, error_response, status = _get_batch_with_permission(app_ctx, request, batch_id)
-    if error_response is not None:
-        return error_response, status
-    batch_status = batch_orchestrator.get_batch_status(batch_id, runtime=app_ctx) or {}
-    if not bool(batch_status.get('can_download_zip', False)):
-        return app_ctx.jsonify({'error': 'Batch ZIP is available after at least one row completes.'}), 400
-    rows = batch_orchestrator.list_batch_rows(batch_id, runtime=app_ctx)
-    export_options = batch.get('export_options', {}) if isinstance(batch.get('export_options', {}), dict) else {}
-    include_combined_docx = bool(export_options.get('include_combined_docx', False))
-    archive_bytes = app_ctx.io.BytesIO()
-    with zipfile.ZipFile(archive_bytes, mode='w', compression=zipfile.ZIP_DEFLATED) as archive:
-        summary = {
-            'batch_id': batch.get('batch_id', batch_id),
-            'mode': batch.get('mode', ''),
-            'status': batch.get('status', ''),
-            'total_rows': batch.get('total_rows', len(rows)),
-            'completed_rows': batch.get('completed_rows', 0),
-            'failed_rows': batch.get('failed_rows', 0),
-            'token_input_total': batch.get('token_input_total', 0),
-            'token_output_total': batch.get('token_output_total', 0),
-            'token_total': batch.get('token_total', 0),
-            'export_options': export_options,
-        }
-        archive.writestr('summary.json', json.dumps(summary, ensure_ascii=False, indent=2))
-        if include_combined_docx:
-            combined_name = study_export.sanitize_export_filename(
-                batch.get('batch_title', '') or f'batch-{batch_id}',
-                fallback=f'batch-{batch_id}',
-            ) + '_Combined.docx'
-            archive.writestr(combined_name, _batch_combined_docx_bytes(app_ctx, batch, rows))
-        for row in rows:
-            row_id = str(row.get('row_id', '') or '')
-            folder = f'rows/{row_id}'
-            archive.writestr(f'{folder}/meta.json', json.dumps(row, ensure_ascii=False, indent=2, default=str))
-            if row.get('status') != 'complete':
-                continue
-            try:
-                archive.writestr(f'{folder}/result.docx', _batch_row_docx_bytes(app_ctx, row, content_type='result'))
-                if row.get('slide_text'):
-                    archive.writestr(f'{folder}/slides.docx', _batch_row_docx_bytes(app_ctx, row, content_type='slides'))
-                if row.get('transcript'):
-                    archive.writestr(f'{folder}/transcript.docx', _batch_row_docx_bytes(app_ctx, row, content_type='transcript'))
-                if row.get('interview_summary'):
-                    archive.writestr(f'{folder}/summary.docx', _batch_row_docx_bytes(app_ctx, row, content_type='summary'))
-                if row.get('interview_sections'):
-                    archive.writestr(f'{folder}/sections.docx', _batch_row_docx_bytes(app_ctx, row, content_type='sections'))
-                if row.get('flashcards'):
-                    archive.writestr(f'{folder}/flashcards.csv', _batch_row_csv_bytes(app_ctx, row, export_type='flashcards'))
-                if row.get('test_questions'):
-                    archive.writestr(f'{folder}/test_questions.csv', _batch_row_csv_bytes(app_ctx, row, export_type='test'))
-            except Exception as error:
-                archive.writestr(f'{folder}/error.txt', str(error))
-    archive_bytes.seek(0)
-    filename = f'batch-{batch_id}.zip'
-    return app_ctx.send_file(
-        archive_bytes,
-        mimetype='application/zip',
-        as_attachment=True,
-        download_name=filename,
-    )
+    return upload_batch_service.download_batch_zip(app_ctx, request, batch_id)
 
 
 def upload_files(app_ctx, request):
@@ -1633,429 +844,9 @@ def upload_files(app_ctx, request):
 
 
 def tools_extract(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Please sign in to continue'}), 401
+    from lecture_processor.services import tools_extraction_service
 
-    uid = decoded_token['uid']
-    email = decoded_token.get('email', '')
-    if not auth_policy.is_email_allowed(email, runtime=app_ctx):
-        return app_ctx.jsonify({'error': 'Email not allowed'}), 403
-    deletion_guard = _account_write_guard_response(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
-
-    allowed, retry_after = rate_limiter.check_rate_limit(
-        key=f"tools_extract:{rate_limiter.normalize_rate_limit_key_part(uid, fallback='anon_uid', runtime=app_ctx)}",
-        limit=app_ctx.TOOLS_RATE_LIMIT_MAX_REQUESTS,
-        window_seconds=app_ctx.TOOLS_RATE_LIMIT_WINDOW_SECONDS,
-        runtime=app_ctx,
-    )
-    if not allowed:
-        analytics_events.log_rate_limit_hit('tools', retry_after, runtime=app_ctx)
-        return rate_limiter.build_rate_limited_response(
-            'Too many tools extraction attempts right now. Please wait and try again.',
-            retry_after,
-            runtime=app_ctx,
-        )
-
-    user = app_ctx.get_or_create_user(uid, email)
-    if int(user.get('slides_credits', 0) or 0) <= 0:
-        return app_ctx.jsonify({'error': 'No text extraction credits remaining. Please purchase more credits.'}), 402
-    user_text_credits_before = int(user.get('slides_credits', 0) or 0)
-
-    requested_source = request.form.get('source_type', request.form.get('source', 'auto'))
-    custom_prompt = _sanitize_tools_custom_prompt(request.form.get('custom_prompt', ''))
-    prompt_template_key = _sanitize_tools_template_key(request.form.get('prompt_template_key', ''))
-    prompt_source = 'default'
-    if prompt_template_key:
-        prompt_source = 'template'
-    elif custom_prompt:
-        prompt_source = 'custom'
-    source_url = ''
-    uploaded_file = None
-    uploaded_image_files = []
-    source_type = ''
-    extension = ''
-    mime_type = ''
-
-    if str(requested_source or '').strip().lower() == 'url':
-        source_url, url_error = _sanitize_tools_source_url(request.form.get('source_url', ''))
-        if url_error:
-            return app_ctx.jsonify({'error': url_error}), 400
-        source_type = 'url'
-        mime_type = 'text/html'
-    else:
-        requested_source_key = str(requested_source or '').strip().lower()
-        if requested_source_key == 'image':
-            uploaded_image_files = [f for f in (request.files.getlist('files') or []) if f and str(f.filename or '').strip()]
-            if not uploaded_image_files:
-                single_image = request.files.get('file')
-                if single_image and str(single_image.filename or '').strip():
-                    uploaded_image_files = [single_image]
-            if not uploaded_image_files:
-                return app_ctx.jsonify({'error': 'Please choose at least one image before running extraction.'}), 400
-            if len(uploaded_image_files) > 5:
-                return app_ctx.jsonify({'error': 'You can upload up to 5 images per run.'}), 400
-            uploaded_file = uploaded_image_files[0]
-            source_type, extension, mime_type, detect_error = _detect_tools_source_type(
-                app_ctx,
-                uploaded_file,
-                'image',
-            )
-        else:
-            uploaded_file = request.files.get('file')
-            if not uploaded_file or not str(uploaded_file.filename or '').strip():
-                return app_ctx.jsonify({'error': 'Please choose a file before running extraction.'}), 400
-            source_type, extension, mime_type, detect_error = _detect_tools_source_type(
-                app_ctx,
-                uploaded_file,
-                requested_source,
-            )
-        if detect_error:
-            return app_ctx.jsonify({'error': detect_error}), 400
-
-    job_id = str(app_ctx.uuid.uuid4())
-    local_paths = []
-    gemini_files = []
-    retry_tracker = {}
-    deducted_credit = ''
-    refunded_credit = False
-    provider_error_code = ''
-    extracted_markdown = ''
-    effective_prompt_preview = ''
-    credit_refund_method = ''
-    normalized_input_name = ''
-    normalized_input_names = []
-    docx_text = ''
-    upload_mime_type = ''
-    upload_path = ''
-    uploaded_provider_file = None
-    source_size_mb = 0.0
-    started_at_ts = app_ctx.time.time()
-
-    try:
-        if source_type == 'url':
-            normalized_input_name = source_url
-            docx_text, source_error, upload_mime_type = _fetch_tools_url_text(source_url)
-            if source_error:
-                return app_ctx.jsonify({'error': source_error}), 400
-            source_size_mb = round(len(docx_text.encode('utf-8')) / (1024 * 1024), 4)
-        elif source_type == 'document':
-            if mime_type and mime_type not in app_ctx.ALLOWED_TOOLS_DOC_MIME_TYPES:
-                return app_ctx.jsonify({'error': 'Unsupported document content type for tools extraction.'}), 400
-            if extension == 'docx':
-                safe_name = app_ctx.secure_filename(uploaded_file.filename)
-                source_docx_path = app_ctx.os.path.join(app_ctx.UPLOAD_FOLDER, f"tools_{job_id}_{safe_name}")
-                uploaded_file.save(source_docx_path)
-                local_paths.append(source_docx_path)
-                normalized_input_name = app_ctx.os.path.basename(source_docx_path)
-                saved_size = app_ctx.get_saved_file_size(source_docx_path)
-                if saved_size <= 0 or saved_size > app_ctx.MAX_TOOLS_DOCUMENT_BYTES:
-                    app_ctx.cleanup_files(local_paths, gemini_files)
-                    local_paths = []
-                    return app_ctx.jsonify({
-                        'error': f'Document exceeds size limit ({int(app_ctx.MAX_TOOLS_DOCUMENT_BYTES / (1024 * 1024))} MB max) or is empty.'
-                    }), 400
-                docx_text, docx_error = _extract_docx_text(app_ctx, source_docx_path)
-                if docx_error:
-                    app_ctx.cleanup_files(local_paths, gemini_files)
-                    local_paths = []
-                    return app_ctx.jsonify({'error': docx_error}), 400
-                source_size_mb = round(saved_size / (1024 * 1024), 4)
-            else:
-                pdf_path, slides_error = app_ctx.resolve_uploaded_slides_to_pdf(uploaded_file, f"tools_{job_id}")
-                if slides_error:
-                    return app_ctx.jsonify({'error': slides_error}), 400
-                local_paths.append(pdf_path)
-                normalized_input_name = app_ctx.os.path.basename(pdf_path)
-                saved_size = app_ctx.get_saved_file_size(pdf_path)
-                if saved_size <= 0 or saved_size > app_ctx.MAX_TOOLS_DOCUMENT_BYTES:
-                    app_ctx.cleanup_files(local_paths, gemini_files)
-                    local_paths = []
-                    return app_ctx.jsonify({
-                        'error': f'Document exceeds size limit ({int(app_ctx.MAX_TOOLS_DOCUMENT_BYTES / (1024 * 1024))} MB max) or is empty.'
-                    }), 400
-                upload_mime_type = 'application/pdf'
-                upload_path = pdf_path
-                source_size_mb = round(saved_size / (1024 * 1024), 4)
-        else:
-            image_inputs = uploaded_image_files if uploaded_image_files else [uploaded_file]
-            if len(image_inputs) > 5:
-                return app_ctx.jsonify({'error': 'You can upload up to 5 images per run.'}), 400
-            total_image_bytes = 0
-            for idx, image_file in enumerate(image_inputs):
-                image_mime_type = str(getattr(image_file, 'mimetype', '') or '').strip().lower()
-                if image_mime_type and image_mime_type not in app_ctx.ALLOWED_TOOLS_IMAGE_MIME_TYPES:
-                    app_ctx.cleanup_files(local_paths, gemini_files)
-                    local_paths = []
-                    return app_ctx.jsonify({'error': 'Unsupported image content type for tools extraction.'}), 400
-                if not app_ctx.allowed_file(image_file.filename, app_ctx.ALLOWED_TOOLS_IMAGE_EXTENSIONS):
-                    app_ctx.cleanup_files(local_paths, gemini_files)
-                    local_paths = []
-                    return app_ctx.jsonify({'error': 'Unsupported image file extension.'}), 400
-                safe_name = app_ctx.secure_filename(image_file.filename)
-                image_path = app_ctx.os.path.join(app_ctx.UPLOAD_FOLDER, f"tools_{job_id}_{idx + 1}_{safe_name}")
-                image_file.save(image_path)
-                local_paths.append(image_path)
-                normalized_input_names.append(app_ctx.os.path.basename(image_path))
-                saved_size = app_ctx.get_saved_file_size(image_path)
-                if saved_size <= 0 or saved_size > app_ctx.MAX_TOOLS_IMAGE_BYTES:
-                    app_ctx.cleanup_files(local_paths, gemini_files)
-                    local_paths = []
-                    return app_ctx.jsonify({
-                        'error': f'Image exceeds size limit ({int(app_ctx.MAX_TOOLS_IMAGE_BYTES / (1024 * 1024))} MB max) or is empty.'
-                    }), 400
-                total_image_bytes += saved_size
-
-            normalized_input_name = ', '.join(normalized_input_names)
-            source_size_mb = round(total_image_bytes / (1024 * 1024), 4)
-
-        deducted_credit = billing_credits.deduct_credit(uid, 'slides_credits', runtime=app_ctx)
-        if not deducted_credit:
-            return app_ctx.jsonify({'error': 'No text extraction credits remaining.'}), 402
-
-        prompt = _build_tools_prompt(source_type, custom_prompt)
-        effective_prompt_preview = prompt[:1400]
-        if docx_text:
-            if source_type == 'url':
-                source_block_title = f"Source content extracted from URL ({source_url}):"
-                operation_name = 'tools_extract_url'
-            else:
-                source_block_title = 'Source content extracted from DOCX:'
-                operation_name = 'tools_extract_document_docx'
-            response = ai_provider.generate_with_policy(
-                app_ctx.MODEL_TOOLS,
-                [app_ctx.types.Content(role='user', parts=[
-                    app_ctx.types.Part.from_text(text=prompt),
-                    app_ctx.types.Part.from_text(text=f"{source_block_title}\n\n{docx_text}"),
-                ])],
-                max_output_tokens=32768,
-                retry_tracker=retry_tracker,
-                operation_name=operation_name,
-                runtime=app_ctx,
-            )
-        else:
-            if source_type == 'image':
-                image_parts = []
-                for index, image_path in enumerate(local_paths):
-                    image_mime_type = app_ctx.get_mime_type(image_path) or 'image/jpeg'
-                    uploaded_provider_file = ai_provider.run_with_provider_retry(
-                        f'tools_image_upload_{index + 1}',
-                        lambda p=image_path, m=image_mime_type: app_ctx.client.files.upload(file=p, config={'mime_type': m}),
-                        retry_tracker=retry_tracker,
-                        runtime=app_ctx,
-                    )
-                    gemini_files.append(uploaded_provider_file)
-                    ai_provider.run_with_provider_retry(
-                        f'tools_image_processing_{index + 1}',
-                        lambda uploaded=uploaded_provider_file: app_ctx.wait_for_file_processing(uploaded),
-                        retry_tracker=retry_tracker,
-                        runtime=app_ctx,
-                    )
-                    image_parts.append(app_ctx.types.Part.from_uri(file_uri=uploaded_provider_file.uri, mime_type=image_mime_type))
-
-                image_parts.append(app_ctx.types.Part.from_text(text=prompt))
-                response = ai_provider.generate_with_policy(
-                    app_ctx.MODEL_TOOLS,
-                    [app_ctx.types.Content(role='user', parts=image_parts)],
-                    max_output_tokens=32768,
-                    retry_tracker=retry_tracker,
-                    operation_name='tools_extract_image',
-                    runtime=app_ctx,
-                )
-            else:
-                uploaded_provider_file = ai_provider.run_with_provider_retry(
-                    'tools_file_upload',
-                    lambda: app_ctx.client.files.upload(file=upload_path, config={'mime_type': upload_mime_type}),
-                    retry_tracker=retry_tracker,
-                    runtime=app_ctx,
-                )
-                gemini_files.append(uploaded_provider_file)
-
-                ai_provider.run_with_provider_retry(
-                    'tools_file_processing',
-                    lambda: app_ctx.wait_for_file_processing(uploaded_provider_file),
-                    retry_tracker=retry_tracker,
-                    runtime=app_ctx,
-                )
-
-                response = ai_provider.generate_with_policy(
-                    app_ctx.MODEL_TOOLS,
-                    [app_ctx.types.Content(role='user', parts=[
-                        app_ctx.types.Part.from_uri(file_uri=uploaded_provider_file.uri, mime_type=upload_mime_type),
-                        app_ctx.types.Part.from_text(text=prompt),
-                    ])],
-                    max_output_tokens=32768,
-                    retry_tracker=retry_tracker,
-                    operation_name=f'tools_extract_{source_type}',
-                    runtime=app_ctx,
-                )
-        extracted_markdown = str(getattr(response, 'text', '') or '').strip()
-        if not extracted_markdown:
-            raise ValueError('Extraction returned empty output')
-
-        usage = ai_provider.extract_token_usage(response, runtime=app_ctx)
-        stage_usage = {
-            **usage,
-            'model': app_ctx.MODEL_TOOLS,
-            'billing_mode': 'standard',
-            'input_modality': 'text' if source_type in {'document', 'url'} else 'image',
-        }
-        retry_attempts_total = _sum_retry_attempts(retry_tracker)
-        analytics_events.log_analytics_event(
-            'tools_extract_completed',
-            source='backend',
-            uid=uid,
-            email=email,
-            session_id=job_id,
-            properties={
-                'source_type': source_type,
-                'file_name': normalized_input_name,
-                'custom_prompt': custom_prompt,
-                'prompt_template_key': prompt_template_key,
-                'prompt_source': prompt_source,
-                'custom_prompt_length': len(custom_prompt),
-                'source_url': source_url,
-                'retry_attempts': retry_attempts_total,
-                'input_tokens': int(usage.get('input_tokens', 0) or 0),
-                'output_tokens': int(usage.get('output_tokens', 0) or 0),
-            },
-            runtime=app_ctx,
-        )
-
-        app_ctx.save_job_log(
-            job_id,
-            {
-                'user_id': uid,
-                'user_email': email,
-                'mode': 'tools',
-                'source_type': source_type,
-                'source_url': source_url,
-                'source_name': normalized_input_name,
-                'status': 'complete',
-                'credit_deducted': deducted_credit,
-                'credit_refunded': False,
-                'error': '',
-                'failed_stage': '',
-                'provider_error_code': '',
-                'retry_attempts': retry_attempts_total,
-                'token_usage_by_stage': {f'tools_extract_{source_type}': stage_usage},
-                'billing_mode': 'standard',
-                'token_input_total': int(usage.get('input_tokens', 0) or 0),
-                'token_output_total': int(usage.get('output_tokens', 0) or 0),
-                'token_total': int(usage.get('total_tokens', 0) or 0),
-                'file_size_mb': source_size_mb,
-                'custom_prompt': custom_prompt,
-                'prompt_template_key': prompt_template_key,
-                'prompt_source': prompt_source,
-                'custom_prompt_length': len(custom_prompt),
-                'effective_prompt_preview': effective_prompt_preview,
-                'started_at': started_at_ts,
-            },
-            app_ctx.time.time(),
-        )
-
-        return app_ctx.jsonify({
-            'ok': True,
-            'source_type': source_type,
-            'file_name': normalized_input_name,
-            'model': app_ctx.MODEL_TOOLS,
-            'output_text': extracted_markdown,
-            'content_markdown': extracted_markdown,
-            'custom_prompt': custom_prompt,
-            'prompt_template_key': prompt_template_key,
-            'prompt_source': prompt_source,
-            'source_url': source_url,
-            'retry_attempts': retry_attempts_total,
-            'provider_error_code': '',
-            'billing_receipt': {
-                'charged': {deducted_credit: 1},
-                'refunded': {},
-            },
-        })
-    except Exception as error:
-        provider_error_code = ai_provider.classify_provider_error_code(error, runtime=app_ctx)
-        app_ctx.logger.exception("Tools extraction failed for user %s source=%s", uid, source_type)
-        if deducted_credit and not refunded_credit:
-            expected_floor = user_text_credits_before if deducted_credit == 'slides_credits' else None
-            refunded_credit, credit_refund_method = _attempt_credit_refund(
-                app_ctx,
-                uid,
-                deducted_credit,
-                expected_floor=expected_floor,
-            )
-        retry_attempts_total = _sum_retry_attempts(retry_tracker)
-        analytics_events.log_analytics_event(
-            'tools_extract_failed',
-            source='backend',
-            uid=uid,
-            email=email,
-            session_id=job_id,
-            properties={
-                'source_type': source_type or 'unknown',
-                'provider_error_code': provider_error_code,
-                'custom_prompt': custom_prompt,
-                'prompt_template_key': prompt_template_key,
-                'prompt_source': prompt_source,
-                'custom_prompt_length': len(custom_prompt),
-                'source_url': source_url,
-                'retry_attempts': retry_attempts_total,
-                'credit_refund_method': credit_refund_method,
-            },
-            runtime=app_ctx,
-        )
-        app_ctx.save_job_log(
-            job_id,
-            {
-                'user_id': uid,
-                'user_email': email,
-                'mode': 'tools',
-                'source_type': source_type or 'unknown',
-                'source_url': source_url,
-                'source_name': normalized_input_name,
-                'status': 'error',
-                'credit_deducted': deducted_credit,
-                'credit_refunded': bool(refunded_credit),
-                'error': str(error)[:1200],
-                'failed_stage': 'tools_extract',
-                'provider_error_code': provider_error_code,
-                'retry_attempts': retry_attempts_total,
-                'token_usage_by_stage': {},
-                'billing_mode': 'standard',
-                'token_input_total': 0,
-                'token_output_total': 0,
-                'token_total': 0,
-                'file_size_mb': source_size_mb,
-                'custom_prompt': custom_prompt,
-                'prompt_template_key': prompt_template_key,
-                'prompt_source': prompt_source,
-                'custom_prompt_length': len(custom_prompt),
-                'effective_prompt_preview': effective_prompt_preview,
-                'credit_refund_method': credit_refund_method,
-                'started_at': started_at_ts,
-            },
-            app_ctx.time.time(),
-        )
-        if refunded_credit:
-            error_message = 'Tools extraction failed. Your text extraction credit has been refunded.'
-        else:
-            error_message = 'Tools extraction failed. Refund could not be confirmed automatically, so support has been notified.'
-        return app_ctx.jsonify({
-            'error': error_message,
-            'error_code': 'TOOLS_EXTRACTION_FAILED',
-            'provider_error_code': provider_error_code,
-            'retry_attempts': retry_attempts_total,
-            'refund_confirmed': bool(refunded_credit),
-            'credit_refund_method': credit_refund_method,
-            'billing_receipt': {
-                'charged': {deducted_credit: 1} if deducted_credit else {},
-                'refunded': {deducted_credit: 1} if (deducted_credit and refunded_credit) else {},
-            },
-        }), 502
-    finally:
-        if local_paths or gemini_files:
-            app_ctx.cleanup_files(local_paths, gemini_files)
+    return tools_extraction_service.tools_extract(app_ctx, request)
 
 
 def tools_export(app_ctx, request):
