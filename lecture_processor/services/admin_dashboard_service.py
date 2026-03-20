@@ -59,7 +59,16 @@ def admin_overview(app_ctx, request):
             now_ts,
             runtime=app_ctx,
         )
-        rollups = admin_rollups.load_window_rollups(window_key, now_ts, runtime=app_ctx)
+        try:
+            rollups = admin_rollups.load_window_rollups(window_key, now_ts, runtime=app_ctx)
+        except Exception:
+            app_ctx.logger.warning(
+                "Admin rollup load failed for window %s; serving empty rollups.",
+                window_key,
+                exc_info=True,
+            )
+            admin_metrics.mark_admin_data_warning("admin_rollups", "load_failed", runtime=app_ctx)
+            rollups = []
         rollups_by_key = {
             str(rollup.get('bucket_key', '') or ''): rollup
             for rollup in rollups

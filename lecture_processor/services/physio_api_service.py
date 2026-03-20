@@ -458,13 +458,20 @@ def knowledge_query(app_ctx, request):
                 case_lines.append(f"{key}: {value}")
         if case_lines:
             context_text = (context_text + "\n" + "\n".join(case_lines)).strip()
-    response_payload = physio_knowledge.query_knowledge_index(
-        question,
-        body_region=_normalize_string(payload.get("body_region"), 80),
-        context_text=context_text,
-        case_context=case_context,
-        runtime=app_ctx,
-    )
+    try:
+        response_payload = physio_knowledge.query_knowledge_index(
+            question,
+            body_region=_normalize_string(payload.get("body_region"), 80),
+            context_text=context_text,
+            case_context=case_context,
+            runtime=app_ctx,
+        )
+    except SystemExit as error:
+        app_ctx.logger.error("Physio knowledge query exited unexpectedly: %s", error)
+        return app_ctx.jsonify({"error": "Kennisbank antwoord genereren mislukt."}), 502
+    except Exception as error:
+        app_ctx.logger.error("Physio knowledge query failed: %s", error)
+        return app_ctx.jsonify({"error": "Kennisbank antwoord genereren mislukt."}), 500
     return app_ctx.jsonify(response_payload)
 
 

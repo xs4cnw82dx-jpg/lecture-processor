@@ -886,6 +886,23 @@ def test_admin_overview_contract_fields(client, monkeypatch):
     assert "recent_purchases" in data
 
 
+def test_admin_overview_returns_partial_payload_when_rollup_loader_crashes(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
+    monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)
+    monkeypatch.setattr(admin_rollups, "load_window_rollups", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("missing firestore index")))
+    monkeypatch.setattr(admin_metrics, "safe_count_collection", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(admin_metrics, "safe_count_window", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(admin_metrics, "safe_query_docs_in_window", lambda *args, **kwargs: [])
+
+    response = client.get("/api/admin/overview?window=7d", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["recent_jobs"] == []
+    assert payload["recent_purchases"] == []
+    assert "admin_rollups:load_failed" in payload["data_warnings"]
+
+
 def test_admin_overview_uses_filtered_job_count(client, monkeypatch):
     count_calls = []
 

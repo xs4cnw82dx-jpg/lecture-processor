@@ -219,6 +219,19 @@
   border-radius: 16px;
   background: #fff;
   box-shadow: 0 20px 40px rgba(18, 50, 74, 0.16);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-8px) scale(0.98);
+  transform-origin: top center;
+  transition: opacity 160ms ease, transform 160ms ease, visibility 160ms ease;
+}
+
+.physio-field .app-select-menu.visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
 }
 
 .physio-field .app-select-item {
@@ -790,8 +803,26 @@
 }
 
 .flatpickr-day.today {
-  border-color: rgba(19, 111, 99, 0.38) !important;
-  background: rgba(19, 111, 99, 0.07) !important;
+  border-color: rgba(19, 111, 99, 0.42) !important;
+  background: rgba(19, 111, 99, 0.16) !important;
+  color: var(--physio-primary-dark) !important;
+}
+
+.flatpickr-day.today:hover,
+.flatpickr-day.today:focus {
+  border-color: rgba(19, 111, 99, 0.5) !important;
+  background: rgba(19, 111, 99, 0.2) !important;
+}
+
+.flatpickr-day.today.selected,
+.flatpickr-day.today.startRange,
+.flatpickr-day.today.endRange,
+.flatpickr-day.today.selected:hover,
+.flatpickr-day.today.startRange:hover,
+.flatpickr-day.today.endRange:hover {
+  border-color: transparent !important;
+  background: linear-gradient(135deg, var(--physio-primary), #1095a0) !important;
+  color: #fff !important;
 }
 
 .flatpickr-day:hover {

@@ -34,6 +34,7 @@
   var readerToast = document.getElementById('reader-toast');
 
   var currentUser = auth && auth.currentUser ? auth.currentUser : null;
+  var authStateResolved = !!currentUser;
   var selectedFiles = [];
   var running = false;
   var lastOutput = '';
@@ -48,6 +49,10 @@
   function hasSignedInSession() {
     if (getSignedInUser()) return true;
     return !!(authClient && typeof authClient.getToken === 'function' && authClient.getToken());
+  }
+
+  function authStateIsPending() {
+    return !authStateResolved && !hasSignedInSession();
   }
 
   function showReaderToast(message, type) {
@@ -73,8 +78,15 @@
 
   function updateAuthStateUI() {
     var signedIn = hasSignedInSession();
-    if (authPanel) authPanel.hidden = signedIn;
+    var pending = authStateIsPending();
+    if (authPanel) authPanel.hidden = signedIn || pending;
     if (authLink) authLink.href = getSignInHref();
+    if (pending) {
+      if (statusEl && String(statusEl.textContent || '').trim() === 'Sign in to continue.') {
+        setStatus('', '');
+      }
+      return;
+    }
     if (!signedIn && !running) {
       setStatus('Sign in to continue.', 'error');
       return;
@@ -289,10 +301,11 @@
 
   function updateRunState() {
     var signedIn = hasSignedInSession();
+    var pending = authStateIsPending();
     var hasInput = sourceType === 'url'
       ? Boolean(urlInput && String(urlInput.value || '').trim())
       : selectedFiles.length > 0;
-    runBtn.disabled = !signedIn || !hasInput || running;
+    runBtn.disabled = pending || !signedIn || !hasInput || running;
     runBtn.textContent = running ? 'Extracting...' : 'Extract';
     updateAuthStateUI();
   }
@@ -301,8 +314,9 @@
     if (authClient && typeof authClient.authFetch === 'function') {
       return authClient.authFetch(path, options, { retryOn401: true });
     }
-    if (!currentUser) throw new Error('Please sign in');
-    var token = await currentUser.getIdToken();
+    var signedInUser = getSignedInUser();
+    if (!signedInUser) throw new Error('Please sign in');
+    var token = await signedInUser.getIdToken();
     var opts = options || {};
     var headers = Object.assign({}, opts.headers || {}, { Authorization: 'Bearer ' + token });
     return fetch(path, Object.assign({}, opts, { headers: headers }));
@@ -483,6 +497,7 @@
   hydrateCachedCredits(getSignedInUser());
   updateAuthStateUI();
   auth.onAuthStateChanged(function (user) {
+    authStateResolved = true;
     currentUser = user || null;
     if (authClient && typeof authClient.clearToken === 'function' && !currentUser) authClient.clearToken();
     hydrateCachedCredits(currentUser);
