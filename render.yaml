@@ -9,3 +9,5 @@ services:
         sync: false
       - key: USE_MINIFIED_JS_ASSETS
         value: "1"
+      - key: SENTRY_ENVIRONMENT
+        value: "production"
