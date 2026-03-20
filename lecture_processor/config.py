@@ -15,6 +15,8 @@ class AppConfig:
 
 
 def resolve_sentry_environment() -> str:
+    if str(os.getenv('RENDER', '') or '').strip():
+        return 'production'
     explicit = str(
         os.getenv('SENTRY_ENVIRONMENT')
         or os.getenv('APP_ENV')
@@ -30,7 +32,7 @@ def resolve_sentry_environment() -> str:
 
 def resolve_runtime_environment(*, default_local: str = 'development') -> str:
     if str(os.getenv('RENDER', '') or '').strip():
-        return resolve_sentry_environment()
+        return 'production'
     return str(
         os.getenv('SENTRY_ENVIRONMENT')
         or os.getenv('APP_ENV')

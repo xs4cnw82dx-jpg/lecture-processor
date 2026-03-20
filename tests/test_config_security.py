@@ -30,9 +30,9 @@ def test_load_config_allows_missing_secret_in_dev(monkeypatch):
 def test_load_config_treats_render_as_production_even_when_flask_env_is_development(monkeypatch):
     monkeypatch.setenv("RENDER", "true")
     monkeypatch.setenv("FLASK_ENV", "development")
-    monkeypatch.delenv("SENTRY_ENVIRONMENT", raising=False)
-    monkeypatch.delenv("APP_ENV", raising=False)
-    monkeypatch.delenv("ENV", raising=False)
+    monkeypatch.setenv("SENTRY_ENVIRONMENT", "development")
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("ENV", "development")
     monkeypatch.setenv("FLASK_SECRET_KEY", "test-secret")
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://example.com")
 
