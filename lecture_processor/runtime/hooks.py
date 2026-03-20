@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import secrets
 import uuid
 
 from flask import g, jsonify, request
@@ -39,6 +41,10 @@ def register_runtime_hooks(app, runtime) -> None:
         batch_orchestrator.run_startup_batch_recovery_once(runtime=runtime)
 
     @app.before_request
+    def _attach_csp_nonce():
+        g.csp_nonce = base64.b64encode(secrets.token_bytes(16)).decode('ascii').rstrip('=')
+
+    @app.before_request
     def _handle_api_options_preflight():
         if request.method == 'OPTIONS' and request.path.startswith('/api/'):
             return runtime.apply_cors_headers(app.make_default_options_response())
@@ -71,5 +77,9 @@ def register_runtime_hooks(app, runtime) -> None:
     @app.errorhandler(RequestEntityTooLarge)
     def _handle_request_entity_too_large(_error):
         return jsonify({'error': 'Upload too large. Maximum total upload size is 560MB (up to 50MB PDF and 500MB audio).'}), 413
+
+    @app.context_processor
+    def _inject_template_security_context():
+        return {'csp_nonce': getattr(g, 'csp_nonce', '')}
 
     state['hooks_registered'] = True

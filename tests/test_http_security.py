@@ -17,3 +17,12 @@ def test_build_content_security_policy_adds_frontend_sentry_ingest_host():
     )
 
     assert "https://example.ingest.sentry.io" in policy
+
+
+def test_build_content_security_policy_uses_nonce_for_inline_scripts():
+    policy = build_content_security_policy(script_nonce='nonce123')
+
+    assert "'nonce-nonce123'" in policy
+    assert "script-src 'self' 'unsafe-inline'" not in policy
+    assert "style-src 'self' 'unsafe-inline'" not in policy
+    assert "style-src-attr 'unsafe-inline'" in policy

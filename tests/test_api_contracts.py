@@ -1,5 +1,6 @@
 import io
 import json
+import re
 import zipfile
 import pytest
 from types import SimpleNamespace
@@ -103,7 +104,7 @@ def test_config_endpoint_shape(client, monkeypatch):
 
 
 def test_security_headers_present_on_html_and_api_routes(client):
-    html_response = client.get("/dashboard")
+    html_response = client.get("/lecture-notes")
     api_response = client.get("/api/config")
 
     for response in (html_response, api_response):
@@ -121,6 +122,12 @@ def test_security_headers_present_on_html_and_api_routes(client):
     assert "https://securetoken.googleapis.com" in csp
     assert "https://lecture-processor-cdff6.firebaseapp.com" in csp
     assert "https://accounts.google.com" in csp
+    assert "script-src 'self' 'unsafe-inline'" not in csp
+    assert "style-src 'self' 'unsafe-inline'" not in csp
+    assert "style-src-attr 'unsafe-inline'" in csp
+
+    html_body = html_response.get_data(as_text=True)
+    assert re.search(r'<script nonce="[^"]+">\s*window\.LectureProcessorRuntime', html_body, re.S)
 
 
 def test_planner_api_requires_auth(client):
@@ -835,6 +842,34 @@ def test_study_pack_update_rejects_invalid_notes_highlights(client, monkeypatch)
 
     assert response.status_code == 400
     assert "notes_highlights" in response.get_json()["error"]
+
+
+def test_study_pack_delete_respects_account_write_guard(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u-delete", "email": "u@example.com"})
+    monkeypatch.setattr(
+        account_lifecycle,
+        "ensure_account_allows_writes",
+        lambda _uid, runtime=None: (False, "Account deletion is in progress."),
+    )
+
+    response = client.delete("/api/study-packs/pack-1", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 409
+    assert response.get_json()["status"] == "account_deletion_in_progress"
+
+
+def test_study_folder_delete_respects_account_write_guard(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u-folder-delete", "email": "u@example.com"})
+    monkeypatch.setattr(
+        account_lifecycle,
+        "ensure_account_allows_writes",
+        lambda _uid, runtime=None: (False, "Account deletion is in progress."),
+    )
+
+    response = client.delete("/api/study-folders/folder-1", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 409
+    assert response.get_json()["status"] == "account_deletion_in_progress"
 
 
 def test_study_pack_annotated_pdf_export_returns_generated_pdf(client, monkeypatch):

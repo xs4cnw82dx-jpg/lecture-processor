@@ -1,4 +1,4 @@
-// Optional E2E suite. Kept out of required CI checks.
+// E2E smoke suite for pull requests and local verification.
 const { defineConfig } = require('@playwright/test');
 const { existsSync } = require('fs');
 

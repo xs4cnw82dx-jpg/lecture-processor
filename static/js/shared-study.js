@@ -36,6 +36,16 @@
       .replace(/'/g, '&#39;');
   }
 
+  function bindKeyboardActivation(element, callback) {
+    if (!element || typeof callback !== 'function') return;
+    element.addEventListener('keydown', function (event) {
+      if (event.target !== element) return;
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      callback(event);
+    });
+  }
+
   function setLoadingState(visible) {
     if (loadingEl) loadingEl.hidden = !visible;
   }
@@ -172,7 +182,13 @@
       questionsEl: folderQuestionsListEl,
     });
     Array.from(folderPackListEl.querySelectorAll('.item')).forEach(function (item) {
-      item.classList.toggle('active', item.dataset.packId === packId);
+      const isActive = item.dataset.packId === packId;
+      item.classList.toggle('active', isActive);
+      if (isActive) {
+        item.setAttribute('aria-current', 'true');
+      } else {
+        item.removeAttribute('aria-current');
+      }
     });
   }
 
@@ -188,15 +204,19 @@
       const item = document.createElement('div');
       item.className = 'item';
       item.dataset.packId = pack.study_pack_id;
+      item.setAttribute('role', 'button');
+      item.setAttribute('tabindex', '0');
       item.innerHTML = ''
         + '<div class="item-head"><span class="item-title">' + escapeHtml(pack.title || 'Untitled pack') + '</span></div>'
         + '<div class="item-sub">' + escapeHtml(buildMetaLine(pack)) + '</div>'
         + '<div class="item-sub">' + escapeHtml(formatPackCountSummary(pack.flashcards_count, pack.test_questions_count)) + '</div>';
-      item.addEventListener('click', function () {
+      const activatePack = function () {
         loadFolderPack(pack.study_pack_id).catch(function (error) {
           showError(error && error.message ? error.message : 'Could not load shared pack.');
         });
-      });
+      };
+      item.addEventListener('click', activatePack);
+      bindKeyboardActivation(item, activatePack);
       folderPackListEl.appendChild(item);
     });
     if (packs.length) {

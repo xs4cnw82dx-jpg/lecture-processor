@@ -17,7 +17,17 @@ def _sentry_connect_source(sentry_frontend_dsn: str = '') -> str:
     return f'{scheme}://{hostname}'
 
 
-def _security_policy_sources(*, sentry_frontend_dsn: str = ''):
+def _security_policy_sources(*, sentry_frontend_dsn: str = '', script_nonce: str = ''):
+    script_sources = [
+        "'self'",
+        'https://www.gstatic.com',
+        'https://apis.google.com',
+        'https://cdn.jsdelivr.net',
+        'https://browser.sentry-cdn.com',
+    ]
+    safe_nonce = str(script_nonce or '').strip()
+    if safe_nonce:
+        script_sources.insert(1, f"'nonce-{safe_nonce}'")
     sources = {
         'default-src': ["'self'"],
         'base-uri': ["'self'"],
@@ -27,19 +37,14 @@ def _security_policy_sources(*, sentry_frontend_dsn: str = ''):
             'https://accounts.google.com',
         ],
         'form-action': ["'self'"],
-        'script-src': [
-            "'self'",
-            "'unsafe-inline'",
-            'https://www.gstatic.com',
-            'https://apis.google.com',
-            'https://cdn.jsdelivr.net',
-            'https://browser.sentry-cdn.com',
-        ],
+        'script-src': script_sources,
         'style-src': [
             "'self'",
-            "'unsafe-inline'",
             'https://fonts.googleapis.com',
             'https://cdn.jsdelivr.net',
+        ],
+        'style-src-attr': [
+            "'unsafe-inline'",
         ],
         'font-src': [
             "'self'",
@@ -72,9 +77,12 @@ def _security_policy_sources(*, sentry_frontend_dsn: str = ''):
     return sources
 
 
-def build_content_security_policy(*, sentry_frontend_dsn: str = ''):
+def build_content_security_policy(*, sentry_frontend_dsn: str = '', script_nonce: str = ''):
     parts = []
-    for directive, values in _security_policy_sources(sentry_frontend_dsn=sentry_frontend_dsn).items():
+    for directive, values in _security_policy_sources(
+        sentry_frontend_dsn=sentry_frontend_dsn,
+        script_nonce=script_nonce,
+    ).items():
         unique_values = []
         for value in values:
             if value not in unique_values:
@@ -83,10 +91,13 @@ def build_content_security_policy(*, sentry_frontend_dsn: str = ''):
     return '; '.join(parts)
 
 
-def apply_security_headers(response, *, request_is_secure=False, sentry_frontend_dsn: str = ''):
+def apply_security_headers(response, *, request_is_secure=False, sentry_frontend_dsn: str = '', script_nonce: str = ''):
     response.headers.setdefault(
         'Content-Security-Policy',
-        build_content_security_policy(sentry_frontend_dsn=sentry_frontend_dsn),
+        build_content_security_policy(
+            sentry_frontend_dsn=sentry_frontend_dsn,
+            script_nonce=script_nonce,
+        ),
     )
     response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
     response.headers.setdefault('X-Content-Type-Options', 'nosniff')

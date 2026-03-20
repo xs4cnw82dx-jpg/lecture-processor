@@ -2512,9 +2512,28 @@ function handleAudioFile(file, options = {}) {
     syncAudioInfoUI();
     updateProcessButton();
 }
+function shouldIgnoreDropZoneActivation(target) {
+    if (!target || typeof target.closest !== 'function') return false;
+    return Boolean(
+        target.closest('.file-remove')
+        || target.closest('.file-info')
+        || target.closest('.audio-recorder-panel')
+        || target.closest('button')
+        || target.closest('a')
+        || target.closest('input')
+        || target.closest('select')
+        || target.closest('textarea')
+    );
+}
 function setupDropZone(zone, input, handler) {
     zone.addEventListener('click', (e) => {
-        if (e.target.closest('.file-remove') || e.target.closest('.file-info') || e.target.closest('.audio-recorder-panel')) return;
+        if (shouldIgnoreDropZoneActivation(e.target)) return;
+        input.click();
+    });
+    zone.addEventListener('keydown', (e) => {
+        if (e.target !== zone) return;
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
         input.click();
     });
     input.addEventListener('change', (e) => { if (e.target.files.length) handler(e.target.files[0]); });

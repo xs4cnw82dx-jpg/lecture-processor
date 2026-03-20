@@ -645,12 +645,14 @@
         @media (max-width: 640px) { .upload-section { grid-template-columns: 1fr; } }
         .upload-zone { position: relative; background: var(--gray-50); border: 2px dashed var(--gray-300); border-radius: var(--radius-lg); padding: 32px 24px; text-align: center; cursor: pointer; transition: all 0.3s ease; }
         .upload-zone:hover { border-color: var(--primary); background: var(--white); }
+        .upload-zone:focus-visible { outline: none; border-color: var(--primary); background: var(--white); box-shadow: 0 0 0 4px rgba(79,70,229,0.12); }
         .upload-zone.drag-over { border-color: var(--primary); background: linear-gradient(135deg, rgba(79,70,229,0.08) 0%, rgba(14,165,233,0.08) 100%); transform: translateY(-2px) scale(1.01); box-shadow: 0 0 0 4px rgba(79,70,229,0.12); }
         .upload-zone.has-file { border-color: var(--success-border); border-style: solid; background: rgba(209,250,229,0.45); }
         .upload-zone.hidden { display: none; }
         .upload-zone input[type="file"] { display: none; }
         .upload-icon { width: 48px; height: 48px; margin: 0 auto 16px; color: var(--gray-400); transition: all 0.3s ease; }
         .upload-zone:hover .upload-icon { color: var(--primary); }
+        .upload-zone:focus-visible .upload-icon { color: var(--primary); }
         .upload-zone.has-file .upload-icon { color: var(--success-ink); }
         .upload-title-row { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
         .upload-title { font-size: 0.9375rem; font-weight: 600; color: var(--gray-800); margin-bottom: 4px; }

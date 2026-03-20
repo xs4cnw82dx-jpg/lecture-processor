@@ -430,24 +430,20 @@ SMTP_TIMEOUT_SECONDS = safe_int_env('SMTP_TIMEOUT_SECONDS', 12, minimum=1, maxim
 
 def should_use_minified_js_assets():
     raw = str(os.getenv('USE_MINIFIED_JS_ASSETS', '') or '').strip().lower()
-    return raw in {'1', 'true', 'yes', 'on'}
+    if raw:
+        return raw in {'1', 'true', 'yes', 'on'}
+    return not is_dev_environment()
 
 def resolve_js_asset(filename):
-    """Use source JS by default; allow minified bundles only when explicitly enabled."""
+    """Use minified JS outside development when a built bundle exists."""
     safe_name = str(filename or '').strip()
     if not safe_name.endswith('.js'):
         return safe_name
-    if is_dev_environment() or not should_use_minified_js_assets():
+    if not should_use_minified_js_assets():
         return safe_name
     min_name = safe_name[:-3] + '.min.js'
     min_path = os.path.join(PROJECT_ROOT_DIR, 'static', min_name)
-    source_path = os.path.join(PROJECT_ROOT_DIR, 'static', safe_name)
     if os.path.exists(min_path):
-        try:
-            if os.path.exists(source_path) and os.path.getmtime(source_path) > os.path.getmtime(min_path):
-                return safe_name
-        except Exception:
-            return safe_name
         return min_name
     return safe_name
 
@@ -545,6 +541,7 @@ def apply_security_headers(response):
         response,
         request_is_secure=bool(request.is_secure or os.getenv('RENDER')),
         sentry_frontend_dsn=SENTRY_FRONTEND_DSN,
+        script_nonce=getattr(g, 'csp_nonce', ''),
     )
 
 CREDIT_BUNDLES = {'lecture_5': {'name': 'Lecture Notes — 5 Pack', 'description': '5 standard lecture credits', 'credits': {'lecture_credits_standard': 5}, 'price_cents': 999, 'currency': 'eur'}, 'lecture_10': {'name': 'Lecture Notes — 10 Pack', 'description': '10 standard lecture credits (best value)', 'credits': {'lecture_credits_standard': 10}, 'price_cents': 1699, 'currency': 'eur'}, 'slides_10': {'name': 'Slides Extraction — 10 Pack', 'description': '10 slides extraction credits', 'credits': {'slides_credits': 10}, 'price_cents': 499, 'currency': 'eur'}, 'slides_25': {'name': 'Slides Extraction — 25 Pack', 'description': '25 slides extraction credits (best value)', 'credits': {'slides_credits': 25}, 'price_cents': 999, 'currency': 'eur'}, 'interview_3': {'name': 'Interview Transcription — 3 Pack', 'description': '3 interview transcription credits', 'credits': {'interview_credits_short': 3}, 'price_cents': 799, 'currency': 'eur'}, 'interview_8': {'name': 'Interview Transcription — 8 Pack', 'description': '8 interview transcription credits (best value)', 'credits': {'interview_credits_short': 8}, 'price_cents': 1799, 'currency': 'eur'}}

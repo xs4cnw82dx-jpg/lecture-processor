@@ -2872,12 +2872,23 @@ function getEnabledModes() {
   return modes;
 }
 
+function bindKeyboardActivation(element, callback) {
+  if (!element || typeof callback !== 'function') { return; }
+  element.addEventListener('keydown', function (event) {
+    if (event.target !== element) { return; }
+    if (event.key !== 'Enter' && event.key !== ' ') { return; }
+    event.preventDefault();
+    callback(event);
+  });
+}
+
 function showModePicker(modes) {
   setupMainContent.style.display = 'none';
   modePicker.classList.add('active');
   modePickerGrid.innerHTML = '';
   modes.forEach(function (m) {
-    var card = document.createElement('div');
+    var card = document.createElement('button');
+    card.type = 'button';
     card.className = 'mode-picker-card';
     card.innerHTML = (MODE_ICONS[m] || '') + '<div class="mode-picker-card-title">' + (MODE_NAMES[m] || m) + '</div><div class="mode-picker-card-desc">' + (MODE_DESCS[m] || '') + '</div>';
     card.addEventListener('click', function () {
@@ -3271,6 +3282,13 @@ function renderFolders() {
     var div = document.createElement('div');
     div.className = 'item' + (selectedFolderId === f.folder_id ? ' active' : '');
     div.dataset.folderId = f.folder_id;
+    div.setAttribute('role', 'button');
+    div.setAttribute('tabindex', '0');
+    if (selectedFolderId === f.folder_id) {
+      div.setAttribute('aria-current', 'true');
+    } else {
+      div.removeAttribute('aria-current');
+    }
     var metaParts = [f.course, f.subject, f.semester, f.block].filter(Boolean).map(escapeHtml);
     var metaLine = buildMetadataText(
       metaParts,
@@ -3308,7 +3326,13 @@ function renderFolders() {
       div,
       '<div class="item-head"><span class="item-title-wrap"><span class="item-title">' + escapeHtml(f.name) + '</span>' + pendingBadge + '</span>' + actions + '</div><div class="item-sub">' + metaLine + '</div>' + pendingHint + pinLine + examLine
     );
-    div.addEventListener('click', function (e) { if (e.target.closest('[data-edit-folder]') || e.target.closest('[data-toggle-pin]') || e.target.closest('[data-share-folder]')) return; selectedFolderId = f.folder_id; renderFolders(); renderPacks(); });
+    var activateFolder = function () {
+      selectedFolderId = f.folder_id;
+      renderFolders();
+      renderPacks();
+    };
+    div.addEventListener('click', function (e) { if (e.target.closest('[data-edit-folder]') || e.target.closest('[data-toggle-pin]') || e.target.closest('[data-share-folder]')) return; activateFolder(); });
+    bindKeyboardActivation(div, function () { activateFolder(); });
     if (!f.is_builtin) {
       var eb = div.querySelector('[data-edit-folder]');
       if (eb) { eb.addEventListener('click', function (e) { e.stopPropagation(); openFolderModal('edit', f); }); }
@@ -3428,6 +3452,13 @@ function renderPacks() {
     var div = document.createElement('div');
     div.className = 'item' + (selectedPackId === p.study_pack_id ? ' active' : '');
     div.draggable = true; div.dataset.packId = p.study_pack_id;
+    div.setAttribute('role', 'button');
+    div.setAttribute('tabindex', '0');
+    if (selectedPackId === p.study_pack_id) {
+      div.setAttribute('aria-current', 'true');
+    } else {
+      div.removeAttribute('aria-current');
+    }
     var titleText = escapeHtml(p.title || 'Untitled pack');
     var modeText = escapeHtml(formatRuntimeJobMode(p.mode || ''));
     var metaParts = [p.course, p.subject, p.semester, p.block].filter(Boolean).map(escapeHtml);
@@ -3439,7 +3470,13 @@ function renderPacks() {
       p.folder_name ? 'Folder: ' + escapeHtml(p.folder_name) : defaultFolderText
     );
     setSafeInnerHtml(div, '<div class="item-head"><span class="item-title">' + titleText + '</span></div><div class="item-sub">' + modeText + ' · ' + formatPackCountSummary(p.flashcards_count, p.test_questions_count) + '</div><div class="item-sub">' + metaText + '</div>');
-    div.addEventListener('click', function () { selectedPackId = p.study_pack_id; renderPacks(); openPack(p.study_pack_id); });
+    var activatePack = function () {
+      selectedPackId = p.study_pack_id;
+      renderPacks();
+      openPack(p.study_pack_id);
+    };
+    div.addEventListener('click', function () { activatePack(); });
+    bindKeyboardActivation(div, function () { activatePack(); });
     div.addEventListener('dragstart', function (e) { draggedPackId = p.study_pack_id; div.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', p.study_pack_id); });
     div.addEventListener('dragend', function () { div.classList.remove('dragging'); draggedPackId = ''; });
     packList.appendChild(div);

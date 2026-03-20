@@ -116,7 +116,7 @@
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
-  <script>
+  <script nonce="{{ csp_nonce }}">
     window.SharedStudyConfig = { shareToken: {{ share_token | tojson }} };
   </script>
   <script src="{{ url_for('static', filename=shared_study_js_asset or 'js/shared-study.js') }}"></script>

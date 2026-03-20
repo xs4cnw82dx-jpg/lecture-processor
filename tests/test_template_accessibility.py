@@ -1,5 +1,6 @@
 from html.parser import HTMLParser
 from pathlib import Path
+import re
 
 
 class _TemplateButtonParser(HTMLParser):
@@ -66,3 +67,10 @@ def test_study_template_no_longer_renders_top_fullscreen_button():
     study_template = Path('templates/study.html').read_text(encoding='utf-8')
 
     assert 'id="fullscreen-btn"' not in study_template
+
+
+def test_processing_upload_zones_are_keyboard_accessible():
+    index_template = Path('templates/index.html').read_text(encoding='utf-8')
+
+    assert re.search(r'<div class="upload-zone" id="pdf-zone"[^>]*role="button"[^>]*tabindex="0"', index_template)
+    assert re.search(r'<div class="upload-zone" id="audio-zone"[^>]*role="button"[^>]*tabindex="0"', index_template)

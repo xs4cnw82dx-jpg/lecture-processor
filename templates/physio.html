@@ -282,7 +282,7 @@
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js" integrity="sha384-5JqMv4L/Xa0hfvtF06qboNdhvuYXUku9ZrhZh3bSk8VXF0A/RuSLHpLsSV9Zqhl6" crossorigin="anonymous"></script>
-  <script>
+  <script nonce="{{ csp_nonce }}">
     window.PhysioConfig = {
       page: {{ physio_page_mode|tojson }},
       title: {{ physio_page_title|tojson }}

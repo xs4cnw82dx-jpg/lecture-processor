@@ -709,6 +709,9 @@ def delete_study_pack(app_ctx, request, pack_id):
     if not decoded_token:
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
+    deletion_guard = _account_write_guard(app_ctx, uid)
+    if deletion_guard is not None:
+        return deletion_guard
     try:
         pack_result, error_response, status = _get_owned_study_pack(app_ctx, uid, pack_id)
         if error_response is not None:
@@ -891,6 +894,9 @@ def delete_study_folder(app_ctx, request, folder_id):
     if not decoded_token:
         return app_ctx.jsonify({'error': 'Unauthorized'}), 401
     uid = decoded_token['uid']
+    deletion_guard = _account_write_guard(app_ctx, uid)
+    if deletion_guard is not None:
+        return deletion_guard
     try:
         folder_ref = app_ctx.study_repo.study_folder_doc_ref(app_ctx.db, folder_id)
         doc = folder_ref.get()
