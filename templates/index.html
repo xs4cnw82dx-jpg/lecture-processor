@@ -105,11 +105,16 @@
                                 <button type="button" class="upload-url-button" id="audio-url-fetch-btn">Import Audio</button>
                             </div>
                             <details class="upload-url-advanced">
-                                <summary>Advanced import: find the playlist URL manually</summary>
+                                <summary>
+                                    <span>Advanced import: Import audio by finding the video's URL manually</span>
+                                    <svg class="upload-url-advanced-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <polyline points="6 9 12 15 18 9"></polyline>
+                                    </svg>
+                                </summary>
                                 <div class="upload-url-help">
                                     <span class="upload-url-help-icon" aria-hidden="true">i</span>
                                     <div class="upload-url-help-text">
-                                        Open your LMS recording page, right click and inspect, open the Network tab, filter on <code>index.m3u8</code>, press play, then copy the playlist request URL.
+                                        Open your LMS recording page, right click on the screen and click on inspect, open the Network tab, filter on 'index.m3u8', press play, then copy the playlist request URL.
                                         <a class="upload-url-help-link" href="https://youtu.be/Sz3W9l8J1q0" target="_blank" rel="noopener noreferrer">Watch Brightspace walkthrough video</a>
                                     </div>
                                 </div>
@@ -127,70 +132,72 @@
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                             </button>
                             <div class="advanced-settings-body" id="advanced-settings-body">
-                                <div class="generation-controls" id="generation-controls">
-                                    <div class="generation-control wide">
-                                        <span class="control-label">Study Tools</span>
-                                        <button type="button" class="study-tools-toggle" id="study-tools-toggle">
-                                            <span id="study-tools-toggle-text">Flashcards + test</span>
-                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                                        </button>
-                                        <div class="study-tools-panel" id="study-tools-panel">
-                                            <button type="button" class="tool-chip" data-study-features="none">No study tools</button>
-                                            <button type="button" class="tool-chip" data-study-features="flashcards">Flashcards only</button>
-                                            <button type="button" class="tool-chip" data-study-features="test">Practice test only</button>
-                                            <button type="button" class="tool-chip active" data-study-features="both">Flashcards + test <span class="chip-badge">Recommended</span></button>
-                                        </div>
-                                        <div class="control-note" id="study-tools-note">Recommended for first runs: both flashcards and a practice test.</div>
-                                    </div>
-                                    <div class="generation-control" id="flashcard-amount-control">
-                                        <span class="control-label">Flashcard Amount</span>
-                                        <div class="amount-chips" id="flashcard-amount-chips">
-                                            <button type="button" class="amount-chip" data-value="10">10</button>
-                                            <button type="button" class="amount-chip active" data-value="20">20</button>
-                                            <button type="button" class="amount-chip" data-value="30">30</button>
-                                            <button type="button" class="amount-chip" data-value="auto">Auto</button>
-                                        </div>
-                                    </div>
-                                    <div class="generation-control" id="question-amount-control">
-                                        <span class="control-label">Practice Questions</span>
-                                        <div class="amount-chips" id="question-amount-chips">
-                                            <button type="button" class="amount-chip" data-value="5">5</button>
-                                            <button type="button" class="amount-chip active" data-value="10">10</button>
-                                            <button type="button" class="amount-chip" data-value="15">15</button>
-                                            <button type="button" class="amount-chip" data-value="auto">Auto</button>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="generation-controls hidden" id="interview-controls">
-                                    <div class="generation-control wide">
-                                        <span class="control-label">Interview Extras</span>
-                                        <div class="interview-options">
-                                            <button type="button" class="interview-option" data-feature="summary">Summary (max 1 page)</button>
-                                            <button type="button" class="interview-option" data-feature="sections">Structured transcript with headings</button>
-                                        </div>
-                                        <div class="control-note" id="interview-extra-note">No extras selected. Select one or both options (1 text extraction credit per option).</div>
-                                    </div>
-                                </div>
-                                <div class="generation-controls" id="language-controls">
-                                    <div class="generation-control wide">
-                                        <span class="control-label">Output Language</span>
-                                        <input type="hidden" id="output-language-select" value="english">
-                                        <div class="app-select" id="output-language-picker">
-                                            <button type="button" class="app-select-button" id="output-language-button" aria-haspopup="listbox" aria-expanded="false" aria-controls="output-language-menu">
-                                                <span id="output-language-label">🇬🇧 English</span>
+                                <div class="advanced-settings-body-inner">
+                                    <div class="generation-controls" id="generation-controls">
+                                        <div class="generation-control wide">
+                                            <span class="control-label">Study Tools</span>
+                                            <button type="button" class="study-tools-toggle" id="study-tools-toggle">
+                                                <span id="study-tools-toggle-text">Flashcards + test</span>
                                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                                             </button>
-                                            <div class="app-select-menu" id="output-language-menu" role="listbox">
-                                                <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="dutch">🇳🇱 Dutch</button>
-                                                <button type="button" role="option" aria-selected="true" class="app-select-item active" data-value="english">🇬🇧 English</button>
-                                                <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="spanish">🇪🇸 Spanish</button>
-                                                <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="french">🇫🇷 French</button>
-                                                <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="german">🇩🇪 German</button>
-                                                <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="chinese">🇨🇳 Chinese</button>
-                                                <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="other">🌐 Other</button>
+                                            <div class="study-tools-panel" id="study-tools-panel">
+                                                <button type="button" class="tool-chip" data-study-features="none">No study tools</button>
+                                                <button type="button" class="tool-chip" data-study-features="flashcards">Flashcards only</button>
+                                                <button type="button" class="tool-chip" data-study-features="test">Practice test only</button>
+                                                <button type="button" class="tool-chip active" data-study-features="both">Flashcards + test <span class="chip-badge">Recommended</span></button>
+                                            </div>
+                                            <div class="control-note" id="study-tools-note">Recommended for first runs: both flashcards and a practice test.</div>
+                                        </div>
+                                        <div class="generation-control" id="flashcard-amount-control">
+                                            <span class="control-label">Flashcard Amount</span>
+                                            <div class="amount-chips" id="flashcard-amount-chips">
+                                                <button type="button" class="amount-chip" data-value="10">10</button>
+                                                <button type="button" class="amount-chip active" data-value="20">20</button>
+                                                <button type="button" class="amount-chip" data-value="30">30</button>
+                                                <button type="button" class="amount-chip" data-value="auto">Auto</button>
                                             </div>
                                         </div>
-                                        <input class="language-custom-input" id="output-language-custom" placeholder="Type your preferred language (for example: Italian)" style="display:none;">
+                                        <div class="generation-control" id="question-amount-control">
+                                            <span class="control-label">Practice Questions</span>
+                                            <div class="amount-chips" id="question-amount-chips">
+                                                <button type="button" class="amount-chip" data-value="5">5</button>
+                                                <button type="button" class="amount-chip active" data-value="10">10</button>
+                                                <button type="button" class="amount-chip" data-value="15">15</button>
+                                                <button type="button" class="amount-chip" data-value="auto">Auto</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="generation-controls hidden" id="interview-controls">
+                                        <div class="generation-control wide">
+                                            <span class="control-label">Interview Extras</span>
+                                            <div class="interview-options">
+                                                <button type="button" class="interview-option" data-feature="summary">Summary (max 1 page)</button>
+                                                <button type="button" class="interview-option" data-feature="sections">Structured transcript with headings</button>
+                                            </div>
+                                            <div class="control-note" id="interview-extra-note">No extras selected. Select one or both options (1 text extraction credit per option).</div>
+                                        </div>
+                                    </div>
+                                    <div class="generation-controls" id="language-controls">
+                                        <div class="generation-control wide">
+                                            <span class="control-label">Output Language</span>
+                                            <input type="hidden" id="output-language-select" value="english">
+                                            <div class="app-select" id="output-language-picker">
+                                                <button type="button" class="app-select-button" id="output-language-button" aria-haspopup="listbox" aria-expanded="false" aria-controls="output-language-menu">
+                                                    <span id="output-language-label">🇬🇧 English</span>
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                                </button>
+                                                <div class="app-select-menu" id="output-language-menu" role="listbox">
+                                                    <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="dutch">🇳🇱 Dutch</button>
+                                                    <button type="button" role="option" aria-selected="true" class="app-select-item active" data-value="english">🇬🇧 English</button>
+                                                    <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="spanish">🇪🇸 Spanish</button>
+                                                    <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="french">🇫🇷 French</button>
+                                                    <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="german">🇩🇪 German</button>
+                                                    <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="chinese">🇨🇳 Chinese</button>
+                                                    <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="other">🌐 Other</button>
+                                                </div>
+                                            </div>
+                                            <input class="language-custom-input" id="output-language-custom" placeholder="Type your preferred language (for example: Italian)" style="display:none;">
+                                        </div>
                                     </div>
                                 </div>
                             </div>

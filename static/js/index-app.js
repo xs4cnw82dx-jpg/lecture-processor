@@ -792,6 +792,7 @@ function setAdvancedSettingsVisible(visible) {
     advancedSettingsBody.classList.toggle('visible', visible);
     advancedSettingsToggle.classList.toggle('open', visible);
     advancedSettingsToggle.setAttribute('aria-expanded', visible ? 'true' : 'false');
+    advancedSettingsBody.setAttribute('aria-hidden', visible ? 'false' : 'true');
 }
 function setOutputLanguageMenuVisible(visible) {
     outputLanguageMenu.classList.toggle('visible', visible);

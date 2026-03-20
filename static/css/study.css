@@ -2701,8 +2701,11 @@
     }
 
     .flatpickr-day {
-      border-radius: 10px !important;
-      font-weight: 500 !important;
+      border-radius: 12px !important;
+      font-weight: 600 !important;
+      box-sizing: border-box !important;
+      background-clip: padding-box !important;
+      position: relative;
     }
 
     .flatpickr-day.selected,
@@ -2713,16 +2716,29 @@
     .flatpickr-day.endRange:hover {
       background: linear-gradient(135deg, var(--primary), #2563EB) !important;
       border-color: transparent !important;
-      box-shadow: 0 6px 16px rgba(79, 70, 229, .26);
+      box-shadow: none !important;
+      z-index: 2;
     }
 
     .flatpickr-day.today {
-      border-color: var(--primary-light) !important;
+      border-color: transparent !important;
       background: rgba(79, 70, 229, .06) !important;
+      box-shadow: inset 0 0 0 2px var(--primary-light) !important;
+      z-index: 1;
+    }
+
+    .flatpickr-day.today.selected,
+    .flatpickr-day.today.startRange,
+    .flatpickr-day.today.endRange,
+    .flatpickr-day.today.selected:hover,
+    .flatpickr-day.today.startRange:hover,
+    .flatpickr-day.today.endRange:hover {
+      box-shadow: none !important;
     }
 
     .flatpickr-day:hover {
       background: rgba(79, 70, 229, .11) !important;
+      box-shadow: none !important;
     }
 
     .flatpickr-input,

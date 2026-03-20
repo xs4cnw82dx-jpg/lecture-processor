@@ -3325,10 +3325,10 @@ function renderFolderSelect() {
 
 function buildStudyPacksUrl(afterCursor) {
   if (typeof studyLibraryUtils.buildStudyPacksUrl === 'function') {
-    return studyLibraryUtils.buildStudyPacksUrl(afterCursor, { limit: 50, basePath: '/api/study-packs' });
+    return studyLibraryUtils.buildStudyPacksUrl(afterCursor, { limit: 100, basePath: '/api/study-packs' });
   }
 
-  var params = ['limit=50'];
+  var params = ['limit=100'];
   if (afterCursor) {
     params.push('after=' + encodeURIComponent(afterCursor));
   }
@@ -3359,11 +3359,9 @@ function mergeStudyPackPage(currentPacks, incomingPacks) {
 
 function renderPackListActions() {
   if (!packListActions || !loadMorePacksBtn) return;
-  var showActions = !!packsHasMore || !!packsLoadingMore;
-  packListActions.hidden = !showActions;
-  loadMorePacksBtn.hidden = !showActions;
-  loadMorePacksBtn.disabled = !!packsLoadingMore || !packsHasMore;
-  loadMorePacksBtn.textContent = packsLoadingMore ? 'Loading more…' : 'Load more study packs';
+  packListActions.hidden = true;
+  loadMorePacksBtn.hidden = true;
+  loadMorePacksBtn.disabled = true;
 }
 
 function renderPacks() {
@@ -3953,14 +3951,28 @@ function hydratePackStatesForKnownPacks() {
 }
 
 /* ── Load data ── */
+function fetchAllStudyPacks(afterCursor, collectedPacks) {
+  var cursor = String(afterCursor || '');
+  var merged = Array.isArray(collectedPacks) ? collectedPacks.slice() : [];
+  return apiCall(buildStudyPacksUrl(cursor)).then(function (data) {
+    var nextPacks = mergeStudyPackPage(merged, data.study_packs || []);
+    var hasMore = !!data.has_more;
+    var nextCursor = String(data.next_cursor || '');
+    if (hasMore && nextCursor) {
+      return fetchAllStudyPacks(nextCursor, nextPacks);
+    }
+    return nextPacks;
+  });
+}
+
 function loadData(preferredPackId) {
   var prefId = preferredPackId || '';
   packsLoadingMore = false;
-  return Promise.all([apiCall('/api/study-folders'), apiCall(buildStudyPacksUrl(''))]).then(function (results) {
+  return Promise.all([apiCall('/api/study-folders'), fetchAllStudyPacks('', [])]).then(function (results) {
     folders = results[0].folders || [];
-    packs = results[1].study_packs || [];
-    packsHasMore = !!results[1].has_more;
-    packsNextCursor = String(results[1].next_cursor || '');
+    packs = results[1] || [];
+    packsHasMore = false;
+    packsNextCursor = '';
     setGoalPanelStatus('Synced', 'success');
     loadPinnedFolderIds();
     syncPinnedFolderIds();

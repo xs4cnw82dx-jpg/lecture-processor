@@ -77,10 +77,15 @@
     .panel-title{font-size:1.02rem;font-weight:800;letter-spacing:-.01em;color:var(--gray-900)}
     .panel-body{padding:16px 20px}
     .calendar-empty-week{margin-bottom:16px}
-    .calendar-empty-week .panel-body{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+    .calendar-empty-week .panel-body{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+    .calendar-empty-week-copy{display:grid;gap:6px}
     .calendar-empty-week h2{margin:0 0 6px;font-size:1.08rem;letter-spacing:-.01em}
     .calendar-empty-week p{margin:0;max-width:760px;color:var(--gray-500)}
+    .calendar-empty-week-links{display:grid;gap:8px;justify-items:start}
+    .calendar-empty-week-links-label{font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--gray-400)}
     .calendar-empty-week-actions{display:flex;gap:10px;flex-wrap:wrap}
+    .calendar-empty-week-link{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:0 14px;border-radius:999px;border:1px solid var(--gray-300);background:rgba(255,255,255,.86);color:var(--gray-700);font-size:.84rem;font-weight:700;text-decoration:none;transition:border-color .2s ease,background-color .2s ease,color .2s ease,transform .2s ease}
+    .calendar-empty-week-link:hover{border-color:var(--gray-400);background:var(--gray-50);color:var(--gray-900);transform:translateY(-1px)}
 
     .field{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
     .field label{font-size:.76rem;font-weight:700;color:var(--gray-700);text-transform:uppercase;letter-spacing:.06em}
@@ -190,13 +195,16 @@
     .flatpickr-monthDropdown-months,.numInput{font-family:inherit!important}
     .flatpickr-weekdays{background:var(--gray-50)}
     .flatpickr-weekday{font-weight:700!important;color:var(--gray-500)!important}
-    .flatpickr-day{border-radius:10px!important;font-weight:500!important}
+    .flatpickr-day{border-radius:12px!important;font-weight:600!important;box-sizing:border-box!important;background-clip:padding-box!important;position:relative}
     .flatpickr-day.selected,.flatpickr-day.startRange,.flatpickr-day.endRange,.flatpickr-day.selected:hover,.flatpickr-day.startRange:hover,.flatpickr-day.endRange:hover{
       background:linear-gradient(135deg,var(--primary),var(--secondary))!important;
       border-color:transparent!important;
+      box-shadow:none!important;
+      z-index:2;
     }
-    .flatpickr-day.today{border-color:var(--primary-light)!important;background:rgba(79,70,229,.06)!important}
-    .flatpickr-day:hover{background:rgba(79,70,229,.11)!important}
+    .flatpickr-day.today{border-color:transparent!important;background:rgba(79,70,229,.06)!important;box-shadow:inset 0 0 0 2px var(--primary-light)!important;z-index:1}
+    .flatpickr-day.today.selected,.flatpickr-day.today.startRange,.flatpickr-day.today.endRange,.flatpickr-day.today.selected:hover,.flatpickr-day.today.startRange:hover,.flatpickr-day.today.endRange:hover{box-shadow:none!important}
+    .flatpickr-day:hover{background:rgba(79,70,229,.11)!important;box-shadow:none!important}
     .flatpickr-time{border-top:1px solid var(--gray-200)!important}
     .flatpickr-time input{
       font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif!important;
