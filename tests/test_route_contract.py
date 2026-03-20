@@ -140,6 +140,21 @@ def test_support_pages_and_shell_footer_render_consistent_links(client):
         assert 'Support' in html
 
 
+def test_public_pages_share_branding_and_primary_cta(client):
+    for path in ['/', '/features', '/helpcenter', '/FAQ']:
+        response = client.get(path)
+        assert response.status_code == 200
+        html = response.get_data(as_text=True)
+        assert 'public-header-brand-text">Lecture Processor<' in html
+        assert 'Public navigation' in html
+
+    for path in ['/', '/features']:
+        response = client.get(path)
+        html = response.get_data(as_text=True)
+        assert 'Start Studying' in html
+        assert 'Start for Free' not in html
+
+
 def test_lowercase_faq_redirects_to_canonical_route(client):
     response = client.get('/faq')
 
@@ -212,8 +227,23 @@ def test_pricing_pages_render_runtime_bundle_catalog(client, runtime, monkeypatc
         assert '5 audit lecture credits' in html
         assert '10 audit slides credits' in html
         assert '3 audit interview credits' in html
-        assert '\u20ac12.34' in html
+        assert 'data-price-cents="1234"' in html
+        assert 'data-currency="EUR"' in html
         assert 'best value' in html.lower()
+
+
+def test_processing_pages_render_updated_shell_labels(client):
+    lecture_response = client.get('/lecture-notes')
+    assert lecture_response.status_code == 200
+    lecture_html = lecture_response.get_data(as_text=True)
+    assert '>Lecture Notes<' in lecture_html
+    assert '>New Lecture<' not in lecture_html
+
+    batch_response = client.get('/batch_mode')
+    assert batch_response.status_code == 200
+    batch_html = batch_response.get_data(as_text=True)
+    assert '>Batch Processing<' in batch_html
+    assert 'Batch Mode Lectures' not in batch_html
 
 
 def test_shell_and_calendar_modal_overlays_start_hidden(client):
@@ -234,6 +264,6 @@ def test_physio_pages_render_open_physio_sidebar_group(client):
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert 'data-physio-page="soap"' in html
-    assert '<div class="app-shell-group is-open" id="shell-physio-group"' in html
+    assert '<div class="app-shell-group app-shell-group-secondary is-open" id="shell-physio-group"' in html
     assert 'aria-controls="shell-physio-panel"' in html
     assert '/physio/cases' in html

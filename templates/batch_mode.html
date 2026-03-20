@@ -9,11 +9,11 @@
 </head>
 <body data-forced-mode="{{ forced_mode or '' }}">
   {% if forced_mode == 'lecture-notes' %}
-    {% set shell_title = 'Batch Mode Lectures' %}
+    {% set shell_title = 'Batch Processing' %}
   {% elif forced_mode == 'slides-only' %}
-    {% set shell_title = 'Batch Slides Extraction' %}
+    {% set shell_title = 'Batch Processing · Slides Extraction' %}
   {% else %}
-    {% set shell_title = 'Batch Interview Transcription' %}
+    {% set shell_title = 'Batch Processing · Interview Transcription' %}
   {% endif %}
   {% include '_app_shell.html' %}
   <main class="app-shell-page batch-page" id="batch-page">
@@ -30,9 +30,9 @@
         <a href="/batch_status" class="btn batch-status-link">Batch status</a>
       </div>
       <div class="mode-links">
-        <a href="/batch_mode" class="mode-link{% if forced_mode == 'lecture-notes' %} active{% endif %}">Lectures</a>
-        <a href="/batch_mode_slides_extraction" class="mode-link{% if forced_mode == 'slides-only' %} active{% endif %}">Slides</a>
-        <a href="/batch_mode_interview_transcription" class="mode-link{% if forced_mode == 'interview' %} active{% endif %}">Interviews</a>
+        <a href="/batch_mode" class="mode-link{% if forced_mode == 'lecture-notes' %} active{% endif %}">Lecture Notes</a>
+        <a href="/batch_mode_slides_extraction" class="mode-link{% if forced_mode == 'slides-only' %} active{% endif %}">Slides Extraction</a>
+        <a href="/batch_mode_interview_transcription" class="mode-link{% if forced_mode == 'interview' %} active{% endif %}">Interview Transcription</a>
       </div>
     </section>
 

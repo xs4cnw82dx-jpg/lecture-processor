@@ -78,6 +78,23 @@ select {
   gap: 6px;
 }
 
+.app-shell-section-label {
+  margin: 12px 8px 2px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(215, 225, 244, 0.58);
+}
+
+.app-shell-section-label:first-child {
+  margin-top: 0;
+}
+
+.app-shell-section-label-secondary {
+  margin-top: 16px;
+}
+
 .app-shell-link {
   display: block;
   color: #d7e1f4;
@@ -109,6 +126,16 @@ select {
   transition: border-color var(--motion-fast, 140ms) var(--motion-ease, ease), background-color var(--motion-fast, 140ms) var(--motion-ease, ease), box-shadow var(--motion-fast, 140ms) var(--motion-ease, ease);
 }
 
+.app-shell-group-secondary {
+  background: rgba(255, 255, 255, 0.025);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.app-shell-group-secondary .app-shell-group-trigger,
+.app-shell-group-secondary .app-shell-link.sub {
+  color: #d0dbef;
+}
+
 .app-shell-group.is-open,
 .app-shell-group:focus-within {
   border-color: rgba(160, 180, 214, 0.32);
@@ -136,6 +163,11 @@ select {
 .app-shell-group-trigger.active {
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
+}
+
+.app-shell-group-secondary .app-shell-group-trigger:hover,
+.app-shell-group-secondary .app-shell-group-trigger.active {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .app-shell-group-label {

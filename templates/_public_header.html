@@ -1,0 +1,29 @@
+<header class="public-header">
+  <div class="public-header-shell">
+    <a href="/" class="public-header-brand" aria-label="Lecture Processor home">
+      <span class="public-header-brand-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+        </svg>
+      </span>
+      <span class="public-header-brand-text">Lecture Processor</span>
+    </a>
+
+    <nav class="public-header-nav" aria-label="Public navigation">
+      <a href="/" class="public-header-link{% if public_page == 'home' %} active{% endif %}">Home</a>
+      <a href="/features" class="public-header-link{% if public_page == 'features' %} active{% endif %}">Features</a>
+      <a href="/helpcenter" class="public-header-link{% if public_page == 'helpcenter' %} active{% endif %}">Help Center</a>
+      <a href="/FAQ" class="public-header-link{% if public_page == 'faq' %} active{% endif %}">FAQ</a>
+    </nav>
+
+    <a href="/lecture-notes?auth=signin" class="public-header-auth" id="public-auth-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+        <polyline points="10 17 15 12 10 7"></polyline>
+        <line x1="15" y1="12" x2="3" y2="12"></line>
+      </svg>
+      <span id="public-auth-label">Sign in</span>
+    </a>
+  </div>
+</header>

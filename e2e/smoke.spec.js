@@ -29,6 +29,26 @@ test('privacy and terms pages load', async ({ page }) => {
   await expect(page.locator('body')).toContainText(/Terms|Conditions/i);
 });
 
+test('public pages share header branding and primary CTA copy', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.public-header')).toContainText('Lecture Processor');
+  await expect(page.getByRole('link', { name: /Start Studying/i })).toBeVisible();
+
+  await page.goto('/features');
+  await expect(page.locator('.public-header')).toContainText('Lecture Processor');
+  await expect(page.getByRole('link', { name: /Start Studying/i })).toBeVisible();
+});
+
+test('lecture and batch pages show updated labels', async ({ page }) => {
+  await page.goto('/lecture-notes');
+  await expect(page.locator('body')).toContainText(/Lecture Notes/i);
+  await expect(page.locator('body')).not.toContainText(/New Lecture/i);
+
+  await page.goto('/batch_mode');
+  await expect(page.locator('body')).toContainText(/Batch Processing/i);
+  await expect(page.locator('body')).not.toContainText(/Batch Mode Lectures/i);
+});
+
 test('dashboard shell loads for unauthenticated user', async ({ page }) => {
   await page.goto('/dashboard');
   await expect(page.locator('body')).toContainText(/Sign in|Lecture Processor|Welcome/i);

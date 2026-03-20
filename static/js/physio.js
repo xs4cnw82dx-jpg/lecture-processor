@@ -67,155 +67,155 @@
   var sessionPanelNoteEl = document.getElementById('physio-session-panel-note');
 
   var BODY_REGION_LABELS = {
-    algemeen: 'Algemeen',
-    nek: 'Nek / CWK',
-    schouder: 'Schouder',
-    elleboog_pols_hand: 'Elleboog / Pols / Hand',
-    thoracaal: 'Thoracaal / BWK',
-    lumbaal: 'Lumbaal / LWK',
-    heup: 'Heup',
-    knie: 'Knie',
-    enkel_voet: 'Enkel / Voet',
-    neurologisch: 'Neurologisch',
-    overig: 'Overig'
+    algemeen: 'General',
+    nek: 'Neck / C-spine',
+    schouder: 'Shoulder',
+    elleboog_pols_hand: 'Elbow / Wrist / Hand',
+    thoracaal: 'Thoracic / T-spine',
+    lumbaal: 'Lumbar / L-spine',
+    heup: 'Hip',
+    knie: 'Knee',
+    enkel_voet: 'Ankle / Foot',
+    neurologisch: 'Neurological',
+    overig: 'Other'
   };
 
   var SOURCE_KIND_LABELS = {
-    guidelines: 'Richtlijn',
-    forms: 'Formulier',
-    lectures: 'Hoorcollege',
-    articles: 'Artikel',
-    books: 'Boek',
-    cases: 'Casus',
-    overig: 'Bron'
+    guidelines: 'Guideline',
+    forms: 'Form',
+    lectures: 'Lecture',
+    articles: 'Article',
+    books: 'Book',
+    cases: 'Case',
+    overig: 'Source'
   };
 
   var FIELD_LABELS = {
-    hulpvraag: 'Hulpvraag',
-    hoofdklacht: 'Hoofdklacht',
-    pijn_beschrijving: 'Pijnbeschrijving',
-    functionele_beperkingen: 'Functionele beperkingen',
-    voorgeschiedenis: 'Voorgeschiedenis',
-    medicatie: 'Medicatie',
-    beloop: 'Beloop',
-    verwachtingen_patient: 'Verwachtingen patiënt',
-    overig_subjectief: 'Overig subjectief',
-    inspectie: 'Inspectie',
-    palpatie: 'Palpatie',
-    actief_bewegingsonderzoek: 'Actief bewegingsonderzoek',
-    passief_bewegingsonderzoek: 'Passief bewegingsonderzoek',
-    spierkracht: 'Spierkracht',
-    speciale_testen: 'Speciale testen',
-    neurologisch_onderzoek: 'Neurologisch onderzoek',
-    functionele_testen: 'Functionele testen',
-    meetinstrumenten: 'Meetinstrumenten',
-    overig_objectief: 'Overig objectief',
-    fysiotherapeutische_diagnose: 'Fysiotherapeutische diagnose',
-    betrokken_structuren: 'Betrokken structuren',
-    fase_herstel: 'Fase herstel',
-    belemmerende_factoren: 'Belemmerende factoren',
-    bevorderende_factoren: 'Bevorderende factoren',
-    prognose: 'Prognose',
-    behandeldoelen: 'Behandeldoelen',
-    behandelplan: 'Behandelplan',
-    frequentie: 'Frequentie',
-    thuisoefeningen: 'Thuisoefeningen',
-    adviezen: 'Adviezen',
-    evaluatie: 'Evaluatie',
-    verwijzing: 'Verwijzing',
-    naam_patient: 'Naam patiënt',
-    leeftijd: 'Leeftijd',
-    geslacht: 'Geslacht',
-    datum: 'Datum',
-    pathologie: 'Pathologie',
-    volgens_patient: 'Volgens patiënt',
-    volgens_therapeut: 'Volgens therapeut',
-    functies_stoornissen: 'Functies en stoornissen',
-    activiteiten: 'Activiteiten',
-    participatie: 'Participatie',
-    persoonlijke_factoren: 'Persoonlijke factoren',
-    omgevingsfactoren: 'Omgevingsfactoren',
-    differentiaal_diagnostiek: 'Differentiaaldiagnostiek',
-    cognitief: 'Cognitief',
-    emotioneel: 'Emotioneel',
-    sociaal: 'Sociaal',
-    beschrijving: 'Beschrijving',
-    hypothese_1: 'Hypothese 1',
-    hypothese_2: 'Hypothese 2',
-    hypothese_3: 'Hypothese 3',
-    pijn: 'Pijn',
+    hulpvraag: 'Reason for visit',
+    hoofdklacht: 'Primary complaint',
+    pijn_beschrijving: 'Pain description',
+    functionele_beperkingen: 'Functional limitations',
+    voorgeschiedenis: 'Medical history',
+    medicatie: 'Medication',
+    beloop: 'Symptom course',
+    verwachtingen_patient: 'Patient expectations',
+    overig_subjectief: 'Other subjective findings',
+    inspectie: 'Inspection',
+    palpatie: 'Palpation',
+    actief_bewegingsonderzoek: 'Active range of motion',
+    passief_bewegingsonderzoek: 'Passive range of motion',
+    spierkracht: 'Muscle strength',
+    speciale_testen: 'Special tests',
+    neurologisch_onderzoek: 'Neurological exam',
+    functionele_testen: 'Functional tests',
+    meetinstrumenten: 'Outcome measures',
+    overig_objectief: 'Other objective findings',
+    fysiotherapeutische_diagnose: 'Physiotherapy diagnosis',
+    betrokken_structuren: 'Involved structures',
+    fase_herstel: 'Recovery phase',
+    belemmerende_factoren: 'Barriers',
+    bevorderende_factoren: 'Facilitators',
+    prognose: 'Prognosis',
+    behandeldoelen: 'Treatment goals',
+    behandelplan: 'Treatment plan',
+    frequentie: 'Frequency',
+    thuisoefeningen: 'Home exercises',
+    adviezen: 'Advice',
+    evaluatie: 'Evaluation',
+    verwijzing: 'Referral',
+    naam_patient: 'Patient name',
+    leeftijd: 'Age',
+    geslacht: 'Sex',
+    datum: 'Date',
+    pathologie: 'Pathology',
+    volgens_patient: 'Patient perspective',
+    volgens_therapeut: 'Therapist perspective',
+    functies_stoornissen: 'Functions and impairments',
+    activiteiten: 'Activities',
+    participatie: 'Participation',
+    persoonlijke_factoren: 'Personal factors',
+    omgevingsfactoren: 'Environmental factors',
+    differentiaal_diagnostiek: 'Differential diagnosis',
+    cognitief: 'Cognitive',
+    emotioneel: 'Emotional',
+    sociaal: 'Social',
+    beschrijving: 'Description',
+    hypothese_1: 'Hypothesis 1',
+    hypothese_2: 'Hypothesis 2',
+    hypothese_3: 'Hypothesis 3',
+    pijn: 'Pain',
     type: 'Type',
-    nprs_score: 'NPRS-score',
-    locatie: 'Locatie',
-    provocatie: 'Provocatie',
-    mobiliteit: 'Mobiliteit',
+    nprs_score: 'NPRS score',
+    locatie: 'Location',
+    provocatie: 'Provocation',
+    mobiliteit: 'Mobility',
     arom: 'AROM',
     prom: 'PROM',
-    spierfunctie: 'Spierfunctie',
-    kracht: 'Kracht',
-    uithoudingsvermogen: 'Uithoudingsvermogen',
-    snelheid: 'Snelheid',
-    coordinatie: 'Coördinatie',
-    lenigheid: 'Lenigheid',
-    sensibiliteit_proprioceptie: 'Sensibiliteit / proprioceptie',
-    tonus: 'Tonus',
-    stabiliteit: 'Stabiliteit',
-    passief: 'Passief',
-    actief: 'Actief',
-    reiken: 'Reiken',
-    grijpen: 'Grijpen',
-    schrijven: 'Schrijven',
-    dragen: 'Dragen',
-    tillen: 'Tillen',
-    haarkammen: 'Haarkammen',
-    aankleden: 'Aankleden',
-    wassen: 'Wassen',
-    deur_open_maken: 'Deur openen',
-    lopen: 'Lopen',
-    overige_activiteiten: 'Overige activiteiten',
-    deelname_verkeer: 'Deelname verkeer',
-    deelname_werk: 'Deelname werk',
-    deelname_hobbys: 'Deelname hobby\'s',
-    sport: 'Sport',
-    stap_1_onduidelijke_termen: 'Stap 1 · Onduidelijke termen',
-    stap_2_3_probleemdefinitie: 'Stap 2/3 · Probleemdefinitie',
-    stap_4_gezondheidsprobleem: 'Stap 4 · Gezondheidsprobleem',
-    stap_5_diagnostisch_proces: 'Stap 5 · Diagnostisch proces',
-    stap_6_therapeutisch_proces: 'Stap 6 · Therapeutisch proces',
-    stap_7_effect_therapie: 'Stap 7 · Effect therapie',
-    persoonsgegevens: 'Persoonsgegevens',
-    patientencategorie: 'Patiëntencategorie',
-    additioneel_onderzoek: 'Additioneel onderzoek',
-    icf_classificatie: 'ICF-classificatie',
-    horizontale_relaties: 'Horizontale relaties',
-    persoonlijke_factor_invloed: 'Invloed persoonlijke factoren',
-    externe_factor_invloed: 'Invloed externe factoren',
-    medisch_biologische_processen: 'Medisch-biologische processen',
+    spierfunctie: 'Muscle function',
+    kracht: 'Strength',
+    uithoudingsvermogen: 'Endurance',
+    snelheid: 'Speed',
+    coordinatie: 'Coordination',
+    lenigheid: 'Flexibility',
+    sensibiliteit_proprioceptie: 'Sensation / proprioception',
+    tonus: 'Tone',
+    stabiliteit: 'Stability',
+    passief: 'Passive',
+    actief: 'Active',
+    reiken: 'Reach',
+    grijpen: 'Grip',
+    schrijven: 'Writing',
+    dragen: 'Carrying',
+    tillen: 'Lifting',
+    haarkammen: 'Combing hair',
+    aankleden: 'Dressing',
+    wassen: 'Washing',
+    deur_open_maken: 'Opening door',
+    lopen: 'Walking',
+    overige_activiteiten: 'Other activities',
+    deelname_verkeer: 'Transportation',
+    deelname_werk: 'Work',
+    deelname_hobbys: 'Hobbies',
+    sport: 'Sports',
+    stap_1_onduidelijke_termen: 'Step 1 · Unclear terms',
+    stap_2_3_probleemdefinitie: 'Step 2/3 · Problem definition',
+    stap_4_gezondheidsprobleem: 'Step 4 · Health problem',
+    stap_5_diagnostisch_proces: 'Step 5 · Diagnostic process',
+    stap_6_therapeutisch_proces: 'Step 6 · Therapeutic process',
+    stap_7_effect_therapie: 'Step 7 · Therapy effect',
+    persoonsgegevens: 'Personal details',
+    patientencategorie: 'Patient category',
+    additioneel_onderzoek: 'Additional exam',
+    icf_classificatie: 'ICF classification',
+    horizontale_relaties: 'Horizontal relationships',
+    persoonlijke_factor_invloed: 'Impact of personal factors',
+    externe_factor_invloed: 'Impact of external factors',
+    medisch_biologische_processen: 'Medical-biological processes',
     screening: 'Screening',
-    rode_vlaggen: 'Rode vlaggen',
-    gele_vlaggen: 'Gele vlaggen',
-    medische_diagnose_type: 'Medische diagnose / type',
-    indicatie_fysiotherapie: 'Indicatie fysiotherapie',
-    voorgesteld_onderzoek: 'Voorgesteld onderzoek',
-    anamnese_vragen: 'Anamnesevragen',
-    functieonderzoek: 'Functieonderzoek',
-    fysiotherapeutische_conclusie: 'Fysiotherapeutische conclusie',
-    hoofddoel: 'Hoofddoel',
-    subdoelen: 'Subdoelen',
-    evaluatieve_meetinstrumenten: 'Evaluatieve meetinstrumenten',
-    behandelmethoden: 'Behandelmethoden',
-    informeren_adviseren: 'Informeren en adviseren',
-    interventies: 'Interventies',
-    hulpmiddelen: 'Hulpmiddelen',
-    multidisciplinair: 'Multidisciplinair',
-    verwacht_effect_informeren: 'Verwacht effect informeren',
-    verwacht_effect_interventies: 'Verwacht effect interventies',
-    externe_factoren: 'Externe factoren',
-    onderbouwing: 'Onderbouwing',
-    hypothesen: 'Hypothesen',
-    vlag: 'Vlag',
-    actie: 'Aanbevolen actie',
-    ernst: 'Ernst'
+    rode_vlaggen: 'Red flags',
+    gele_vlaggen: 'Yellow flags',
+    medische_diagnose_type: 'Medical diagnosis / type',
+    indicatie_fysiotherapie: 'Physiotherapy indication',
+    voorgesteld_onderzoek: 'Proposed assessment',
+    anamnese_vragen: 'History-taking questions',
+    functieonderzoek: 'Functional exam',
+    fysiotherapeutische_conclusie: 'Physiotherapy conclusion',
+    hoofddoel: 'Primary goal',
+    subdoelen: 'Subgoals',
+    evaluatieve_meetinstrumenten: 'Evaluation measures',
+    behandelmethoden: 'Treatment methods',
+    informeren_adviseren: 'Educate and advise',
+    interventies: 'Interventions',
+    hulpmiddelen: 'Aids',
+    multidisciplinair: 'Multidisciplinary',
+    verwacht_effect_informeren: 'Expected effect of education',
+    verwacht_effect_interventies: 'Expected effect of interventions',
+    externe_factoren: 'External factors',
+    onderbouwing: 'Rationale',
+    hypothesen: 'Hypotheses',
+    vlag: 'Flag',
+    actie: 'Recommended action',
+    ernst: 'Severity'
   };
 
   var state = {
@@ -237,7 +237,7 @@
 
   var toastTimer = null;
   var sessionDatePicker = null;
-  var defaultKnowledgeButtonLabel = knowledgeAskBtn ? String(knowledgeAskBtn.textContent || '').trim() : 'Vraag aan kennisbank';
+  var defaultKnowledgeButtonLabel = knowledgeAskBtn ? String(knowledgeAskBtn.textContent || '').trim() : 'Ask Knowledge Base';
 
   function todayIso() {
     var now = new Date();
@@ -368,7 +368,7 @@
     var safeKey = String(key || '').trim();
     if (FIELD_LABELS[safeKey]) return FIELD_LABELS[safeKey];
     return safeKey
-      .replace(/^stap_(\d+)_/, 'Stap $1 ')
+      .replace(/^stap_(\d+)_/, 'Step $1 ')
       .replace(/_/g, ' ')
       .replace(/\b\w/g, function (match) { return match.toUpperCase(); });
   }
@@ -514,7 +514,7 @@
     var opts = options || {};
     var card = buildSectionCard(title, opts.description || '');
     var actions = createNode('div', 'physio-inline-actions');
-    var addBtn = createNode('button', 'physio-mini-btn primary', opts.addLabel || 'Item toevoegen');
+    var addBtn = createNode('button', 'physio-mini-btn primary', opts.addLabel || 'Add item');
     addBtn.type = 'button';
     addBtn.addEventListener('click', function () {
       var list = ensureArrayAtPath(state.currentEditorData, path);
@@ -526,13 +526,13 @@
 
     var listWrap = createNode('div', 'physio-array-list');
     if (!values.length) {
-      listWrap.appendChild(createNode('div', 'physio-output-empty compact', opts.emptyMessage || 'Nog geen items toegevoegd.'));
+      listWrap.appendChild(createNode('div', 'physio-output-empty compact', opts.emptyMessage || 'No items added yet.'));
     } else {
       values.forEach(function (item, index) {
         var itemCard = createNode('div', 'physio-array-item');
         var head = createNode('div', 'physio-array-item-head');
         head.appendChild(createNode('strong', '', (opts.itemLabel || 'Item') + ' ' + (index + 1)));
-        var removeBtn = createNode('button', 'physio-mini-btn danger', 'Verwijderen');
+        var removeBtn = createNode('button', 'physio-mini-btn danger', 'Remove');
         removeBtn.type = 'button';
         removeBtn.addEventListener('click', function () {
           deleteArrayIndexAtPath(state.currentEditorData, path, index);
@@ -563,7 +563,7 @@
     var opts = options || {};
     var card = buildSectionCard(title, opts.description || '');
     var actions = createNode('div', 'physio-inline-actions');
-    var addBtn = createNode('button', 'physio-mini-btn primary', opts.addLabel || 'Toevoegen');
+    var addBtn = createNode('button', 'physio-mini-btn primary', opts.addLabel || 'Add');
     addBtn.type = 'button';
     addBtn.addEventListener('click', function () {
       var list = ensureArrayAtPath(state.currentEditorData, path);
@@ -575,13 +575,13 @@
 
     var listWrap = createNode('div', 'physio-array-list');
     if (!items.length) {
-      listWrap.appendChild(createNode('div', 'physio-output-empty compact', opts.emptyMessage || 'Nog geen items.'));
+      listWrap.appendChild(createNode('div', 'physio-output-empty compact', opts.emptyMessage || 'No items yet.'));
     } else {
       items.forEach(function (item, index) {
         var itemCard = createNode('div', 'physio-array-item');
         var head = createNode('div', 'physio-array-item-head');
         head.appendChild(createNode('strong', '', (opts.itemLabel || 'Item') + ' ' + (index + 1)));
-        var removeBtn = createNode('button', 'physio-mini-btn danger', 'Verwijderen');
+        var removeBtn = createNode('button', 'physio-mini-btn danger', 'Remove');
         removeBtn.type = 'button';
         removeBtn.addEventListener('click', function () {
           deleteArrayIndexAtPath(state.currentEditorData, path, index);
@@ -613,10 +613,10 @@
   function renderEmptyOutput(message) {
     state.currentEditorData = {};
     state.lastOutputLabel = '';
-    if (outputLabelEl) outputLabelEl.textContent = 'Nog niets gegenereerd.';
+    if (outputLabelEl) outputLabelEl.textContent = 'Nothing generated yet.';
     if (!outputEl) return;
     outputEl.innerHTML = '';
-    outputEl.appendChild(createNode('div', 'physio-output-empty', message || 'Nog geen output beschikbaar.'));
+    outputEl.appendChild(createNode('div', 'physio-output-empty', message || 'No output available yet.'));
     setOutputEmptyState(true);
   }
 
@@ -626,9 +626,9 @@
     var list = Array.isArray(items) ? items : [];
     list.forEach(function (item, index) {
       var alert = createNode('div', 'physio-alert');
-      alert.appendChild(createNode('strong', '', String((item && item.vlag) || ('Rode vlag ' + (index + 1)))));
+      alert.appendChild(createNode('strong', '', String((item && item.vlag) || ('Red flag ' + (index + 1)))));
       if (item && item.ernst) {
-        alert.appendChild(createNode('div', '', 'Ernst: ' + String(item.ernst)));
+        alert.appendChild(createNode('div', '', 'Severity: ' + String(item.ernst)));
       }
       if (item && item.actie) {
         alert.appendChild(createNode('div', '', String(item.actie)));
@@ -644,7 +644,7 @@
       {
         title: 'S · Subjectief',
         key: 'subjective',
-        description: 'De hulpvraag, klachten en voorgeschiedenis van de patiënt.',
+        description: 'The patient\'s reason for visit, symptoms, and history.',
         fields: [
           { key: 'hulpvraag' },
           { key: 'hoofdklacht' },
@@ -660,7 +660,7 @@
       {
         title: 'O · Objectief',
         key: 'objective',
-        description: 'Onderzoeksbevindingen en relevante metingen.',
+        description: 'Exam findings and relevant measurements.',
         fields: [
           { key: 'spierkracht' },
           { key: 'meetinstrumenten' },
@@ -677,7 +677,7 @@
       {
         title: 'A · Analyse',
         key: 'assessment',
-        description: 'Fysiotherapeutische interpretatie en prognose.',
+        description: 'Physiotherapy interpretation and prognosis.',
         fields: [
           { key: 'fysiotherapeutische_diagnose', full: true, multiline: true },
           { key: 'betrokken_structuren', full: true, multiline: true },
@@ -690,7 +690,7 @@
       {
         title: 'P · Plan',
         key: 'plan',
-        description: 'Doelen, aanpak en vervolgafspraken.',
+        description: 'Goals, treatment approach, and follow-up.',
         fields: [
           { key: 'frequentie' },
           { key: 'evaluatie' },
@@ -715,7 +715,7 @@
     var rps = ((state.currentEditorData || {}).rps || {});
     var container = createNode('div', 'physio-structured-stack');
 
-    var headerCard = buildSectionCard('Header', 'Basisgegevens van patiënt en consult.');
+    var headerCard = buildSectionCard('Header', 'Core patient and session details.');
     var headerGrid = buildFieldGrid();
     appendConfiguredFields(headerGrid, rps.header || {}, ['rps', 'header'], [
       { key: 'naam_patient' },
@@ -728,7 +728,7 @@
     headerCard.appendChild(headerGrid);
     container.appendChild(headerCard);
 
-    var patientCard = buildSectionCard('Volgens patiënt', 'Wat de patiënt ervaart in functies, activiteiten en participatie.');
+    var patientCard = buildSectionCard('Patient perspective', 'What the patient experiences in functions, activities, and participation.');
     var patientGrid = buildFieldGrid();
     appendConfiguredFields(patientGrid, rps.volgens_patient || {}, ['rps', 'volgens_patient'], [
       { key: 'functies_stoornissen', multiline: true, full: true },
@@ -738,13 +738,13 @@
     patientCard.appendChild(patientGrid);
     container.appendChild(patientCard);
 
-    var therapistCard = buildSectionCard('Volgens therapeut', 'Observaties en bevindingen vanuit het fysiotherapeutisch onderzoek.');
+    var therapistCard = buildSectionCard('Therapist perspective', 'Observations and findings from the physiotherapy exam.');
     var therapistGrid = buildSubsectionGrid();
     var functies = ((rps.volgens_therapeut || {}).functies_stoornissen || {});
-    var functiesCard = buildSubsectionCard('Functies en stoornissen');
+    var functiesCard = buildSubsectionCard('Functions and impairments');
     var functiesGrid = buildSubsectionGrid();
 
-    var pijnCard = buildSubsectionCard('Pijn');
+    var pijnCard = buildSubsectionCard('Pain');
     var pijnGrid = buildFieldGrid();
     appendConfiguredFields(pijnGrid, functies.pijn || {}, ['rps', 'volgens_therapeut', 'functies_stoornissen', 'pijn'], [
       { key: 'type' },
@@ -755,7 +755,7 @@
     pijnCard.appendChild(pijnGrid);
     functiesGrid.appendChild(pijnCard);
 
-    var mobiliteitCard = buildSubsectionCard('Mobiliteit');
+    var mobiliteitCard = buildSubsectionCard('Mobility');
     var mobiliteitGrid = buildFieldGrid();
     appendConfiguredFields(mobiliteitGrid, functies.mobiliteit || {}, ['rps', 'volgens_therapeut', 'functies_stoornissen', 'mobiliteit'], [
       { key: 'arom' },
@@ -764,7 +764,7 @@
     mobiliteitCard.appendChild(mobiliteitGrid);
     functiesGrid.appendChild(mobiliteitCard);
 
-    var spierfunctieCard = buildSubsectionCard('Spierfunctie');
+    var spierfunctieCard = buildSubsectionCard('Muscle function');
     var spierfunctieGrid = buildFieldGrid();
     appendConfiguredFields(spierfunctieGrid, functies.spierfunctie || {}, ['rps', 'volgens_therapeut', 'functies_stoornissen', 'spierfunctie'], [
       { key: 'kracht' },
@@ -776,7 +776,7 @@
     spierfunctieCard.appendChild(spierfunctieGrid);
     functiesGrid.appendChild(spierfunctieCard);
 
-    var stabiliteitCard = buildSubsectionCard('Stabiliteit');
+    var stabiliteitCard = buildSubsectionCard('Stability');
     var stabiliteitGrid = buildFieldGrid();
     appendConfiguredFields(stabiliteitGrid, functies.stabiliteit || {}, ['rps', 'volgens_therapeut', 'functies_stoornissen', 'stabiliteit'], [
       { key: 'passief' },
@@ -785,7 +785,7 @@
     stabiliteitCard.appendChild(stabiliteitGrid);
     functiesGrid.appendChild(stabiliteitCard);
 
-    var overigeFunctiesCard = buildSubsectionCard('Overige functies');
+    var overigeFunctiesCard = buildSubsectionCard('Other functions');
     var overigeFunctiesGrid = buildFieldGrid();
     appendConfiguredFields(overigeFunctiesGrid, functies, ['rps', 'volgens_therapeut', 'functies_stoornissen'], [
       { key: 'sensibiliteit_proprioceptie', multiline: true, full: true },
@@ -797,7 +797,7 @@
     functiesCard.appendChild(functiesGrid);
     therapistGrid.appendChild(functiesCard);
 
-    var activiteitenCard = buildSubsectionCard('Activiteiten');
+    var activiteitenCard = buildSubsectionCard('Activities');
     var activiteitenGrid = buildFieldGrid();
     appendConfiguredFields(activiteitenGrid, ((rps.volgens_therapeut || {}).activiteiten || {}), ['rps', 'volgens_therapeut', 'activiteiten'], [
       { key: 'reiken' },
@@ -815,7 +815,7 @@
     activiteitenCard.appendChild(activiteitenGrid);
     therapistGrid.appendChild(activiteitenCard);
 
-    var participatieCard = buildSubsectionCard('Participatie');
+    var participatieCard = buildSubsectionCard('Participation');
     var participatieGrid = buildFieldGrid();
     appendConfiguredFields(participatieGrid, ((rps.volgens_therapeut || {}).participatie || {}), ['rps', 'volgens_therapeut', 'participatie'], [
       { key: 'deelname_verkeer' },
@@ -829,9 +829,9 @@
     therapistCard.appendChild(therapistGrid);
     container.appendChild(therapistCard);
 
-    var factorsCard = buildSectionCard('Persoonlijke en omgevingsfactoren', 'Factoren die herstel en belastbaarheid mee bepalen.');
+    var factorsCard = buildSectionCard('Personal and environmental factors', 'Factors that influence recovery and tolerance.');
     var factorsGrid = buildSubsectionGrid();
-    var personalCard = buildSubsectionCard('Persoonlijke factoren');
+    var personalCard = buildSubsectionCard('Personal factors');
     var personalGrid = buildFieldGrid();
     appendConfiguredFields(personalGrid, rps.persoonlijke_factoren || {}, ['rps', 'persoonlijke_factoren'], [
       { key: 'cognitief', multiline: true, full: true },
@@ -841,7 +841,7 @@
     personalCard.appendChild(personalGrid);
     factorsGrid.appendChild(personalCard);
 
-    var environmentCard = buildSubsectionCard('Omgevingsfactoren');
+    var environmentCard = buildSubsectionCard('Environmental factors');
     var environmentGrid = buildFieldGrid();
     appendConfiguredFields(environmentGrid, rps.omgevingsfactoren || {}, ['rps', 'omgevingsfactoren'], [
       { key: 'beschrijving', multiline: true, full: true }
@@ -851,7 +851,7 @@
     factorsCard.appendChild(factorsGrid);
     container.appendChild(factorsCard);
 
-    var differentialCard = buildSectionCard('Differentiaaldiagnostiek', 'Werkhypothesen en de centrale hulpvraag.');
+    var differentialCard = buildSectionCard('Differential diagnosis', 'Working hypotheses and the central care question.');
     var differentialGrid = buildFieldGrid();
     appendConfiguredFields(differentialGrid, rps.differentiaal_diagnostiek || {}, ['rps', 'differentiaal_diagnostiek'], [
       { key: 'hypothese_1', full: true, multiline: true },
@@ -877,17 +877,17 @@
         ['reasoning', 'stap_1_onduidelijke_termen'],
         Array.isArray(reasoning.stap_1_onduidelijke_termen) ? reasoning.stap_1_onduidelijke_termen : [],
         {
-          description: 'Losse termen of begrippen die eerst verduidelijkt moeten worden.',
-          addLabel: 'Term toevoegen',
+          description: 'Loose terms or concepts that need clarification first.',
+          addLabel: 'Add term',
           itemLabel: 'Term',
-          itemFieldLabel: 'Onbegrepen term',
+          itemFieldLabel: 'Unclear term',
           multiline: false,
-          emptyMessage: 'Nog geen onduidelijke termen genoteerd.'
+          emptyMessage: 'No unclear terms added yet.'
         }
       )
     );
 
-    var probleemCard = buildSectionCard(humanizeKey('stap_2_3_probleemdefinitie'), 'Persoonsgegevens, verwijzing en ICF-ordening van het probleem.');
+    var probleemCard = buildSectionCard(humanizeKey('stap_2_3_probleemdefinitie'), 'Personal details, referral context, and ICF framing of the problem.');
     var probleemGrid = buildFieldGrid();
     appendConfiguredFields(probleemGrid, reasoning.stap_2_3_probleemdefinitie || {}, ['reasoning', 'stap_2_3_probleemdefinitie'], [
       { key: 'persoonsgegevens', full: true, multiline: true },
@@ -910,7 +910,7 @@
       card.appendChild(grid);
       icfGrid.appendChild(card);
     });
-    var overigeIcfCard = buildSubsectionCard('Factoren');
+    var overigeIcfCard = buildSubsectionCard('Factors');
     var overigeIcfGrid = buildFieldGrid();
     appendConfiguredFields(overigeIcfGrid, icf, ['reasoning', 'stap_2_3_probleemdefinitie', 'icf_classificatie'], [
       { key: 'persoonlijke_factoren', full: true, multiline: true },
@@ -921,7 +921,7 @@
     probleemCard.appendChild(icfGrid);
     container.appendChild(probleemCard);
 
-    var gezondheidCard = buildSectionCard(humanizeKey('stap_4_gezondheidsprobleem'), 'Hypothesen over samenhang, beïnvloedende factoren en medisch-biologische processen.');
+    var gezondheidCard = buildSectionCard(humanizeKey('stap_4_gezondheidsprobleem'), 'Hypotheses about relationships, influencing factors, and medical-biological processes.');
     var gezondheidGrid = buildFieldGrid();
     appendConfiguredFields(gezondheidGrid, reasoning.stap_4_gezondheidsprobleem || {}, ['reasoning', 'stap_4_gezondheidsprobleem'], [
       { key: 'persoonlijke_factor_invloed', full: true, multiline: true },
@@ -935,16 +935,16 @@
         ['reasoning', 'stap_4_gezondheidsprobleem', 'horizontale_relaties'],
         Array.isArray((reasoning.stap_4_gezondheidsprobleem || {}).horizontale_relaties) ? reasoning.stap_4_gezondheidsprobleem.horizontale_relaties : [],
         {
-          addLabel: 'Relatie toevoegen',
-          itemLabel: 'Relatie',
-          itemFieldLabel: 'Relatie',
-          emptyMessage: 'Nog geen horizontale relaties toegevoegd.'
+          addLabel: 'Add relationship',
+          itemLabel: 'Relationship',
+          itemFieldLabel: 'Relationship',
+          emptyMessage: 'No horizontal relationships added yet.'
         }
       )
     );
     container.appendChild(gezondheidCard);
 
-    var diagnostiekCard = buildSectionCard(humanizeKey('stap_5_diagnostisch_proces'), 'Screening, diagnostiek en het voorgestelde onderzoek.');
+    var diagnostiekCard = buildSectionCard(humanizeKey('stap_5_diagnostisch_proces'), 'Screening, diagnostic reasoning, and the proposed assessment.');
     var screeningCard = buildSubsectionCard('Screening');
     var screeningGrid = buildFieldGrid();
     appendConfiguredFields(screeningGrid, ((reasoning.stap_5_diagnostisch_proces || {}).screening || {}), ['reasoning', 'stap_5_diagnostisch_proces', 'screening'], [
@@ -960,7 +960,7 @@
       { key: 'fysiotherapeutische_conclusie', full: true, multiline: true }
     ]);
     diagnostiekCard.appendChild(diagnostiekGrid);
-    var onderzoekCard = buildSubsectionCard('Voorgesteld onderzoek');
+    var onderzoekCard = buildSubsectionCard('Proposed assessment');
     var onderzoekGrid = buildFieldGrid();
     appendConfiguredFields(onderzoekGrid, ((reasoning.stap_5_diagnostisch_proces || {}).voorgesteld_onderzoek || {}), ['reasoning', 'stap_5_diagnostisch_proces', 'voorgesteld_onderzoek'], [
       { key: 'inspectie', full: true, multiline: true },
@@ -974,10 +974,10 @@
         ['reasoning', 'stap_5_diagnostisch_proces', 'voorgesteld_onderzoek', 'anamnese_vragen'],
         Array.isArray((((reasoning.stap_5_diagnostisch_proces || {}).voorgesteld_onderzoek || {}).anamnese_vragen)) ? reasoning.stap_5_diagnostisch_proces.voorgesteld_onderzoek.anamnese_vragen : [],
         {
-          addLabel: 'Vraag toevoegen',
-          itemLabel: 'Vraag',
-          itemFieldLabel: 'Anamnesevraag',
-          emptyMessage: 'Nog geen anamnesevragen toegevoegd.'
+          addLabel: 'Add question',
+          itemLabel: 'Question',
+          itemFieldLabel: 'History-taking question',
+          emptyMessage: 'No history-taking questions added yet.'
         }
       )
     );
@@ -987,10 +987,10 @@
         ['reasoning', 'stap_5_diagnostisch_proces', 'voorgesteld_onderzoek', 'speciale_testen'],
         Array.isArray((((reasoning.stap_5_diagnostisch_proces || {}).voorgesteld_onderzoek || {}).speciale_testen)) ? reasoning.stap_5_diagnostisch_proces.voorgesteld_onderzoek.speciale_testen : [],
         {
-          addLabel: 'Test toevoegen',
+          addLabel: 'Add test',
           itemLabel: 'Test',
-          itemFieldLabel: 'Speciale test',
-          emptyMessage: 'Nog geen speciale testen toegevoegd.'
+          itemFieldLabel: 'Special test',
+          emptyMessage: 'No special tests added yet.'
         }
       )
     );
@@ -1000,17 +1000,17 @@
         ['reasoning', 'stap_5_diagnostisch_proces', 'voorgesteld_onderzoek', 'meetinstrumenten'],
         Array.isArray((((reasoning.stap_5_diagnostisch_proces || {}).voorgesteld_onderzoek || {}).meetinstrumenten)) ? reasoning.stap_5_diagnostisch_proces.voorgesteld_onderzoek.meetinstrumenten : [],
         {
-          addLabel: 'Instrument toevoegen',
-          itemLabel: 'Instrument',
-          itemFieldLabel: 'Meetinstrument',
-          emptyMessage: 'Nog geen meetinstrumenten toegevoegd.'
+          addLabel: 'Add measure',
+          itemLabel: 'Measure',
+          itemFieldLabel: 'Outcome measure',
+          emptyMessage: 'No outcome measures added yet.'
         }
       )
     );
     diagnostiekCard.appendChild(onderzoekCard);
     container.appendChild(diagnostiekCard);
 
-    var therapieCard = buildSectionCard(humanizeKey('stap_6_therapeutisch_proces'), 'Doelen, meetmomenten en behandelkeuzes.');
+    var therapieCard = buildSectionCard(humanizeKey('stap_6_therapeutisch_proces'), 'Goals, measurement points, and treatment choices.');
     var therapieGrid = buildFieldGrid();
     appendConfiguredFields(therapieGrid, reasoning.stap_6_therapeutisch_proces || {}, ['reasoning', 'stap_6_therapeutisch_proces'], [
       { key: 'hoofddoel', full: true, multiline: true },
@@ -1024,10 +1024,10 @@
         ['reasoning', 'stap_6_therapeutisch_proces', 'subdoelen'],
         Array.isArray((reasoning.stap_6_therapeutisch_proces || {}).subdoelen) ? reasoning.stap_6_therapeutisch_proces.subdoelen : [],
         {
-          addLabel: 'Subdoel toevoegen',
-          itemLabel: 'Subdoel',
-          itemFieldLabel: 'Subdoel',
-          emptyMessage: 'Nog geen subdoelen toegevoegd.'
+          addLabel: 'Add subgoal',
+          itemLabel: 'Subgoal',
+          itemFieldLabel: 'Subgoal',
+          emptyMessage: 'No subgoals added yet.'
         }
       )
     );
@@ -1037,14 +1037,14 @@
         ['reasoning', 'stap_6_therapeutisch_proces', 'evaluatieve_meetinstrumenten'],
         Array.isArray((reasoning.stap_6_therapeutisch_proces || {}).evaluatieve_meetinstrumenten) ? reasoning.stap_6_therapeutisch_proces.evaluatieve_meetinstrumenten : [],
         {
-          addLabel: 'Meetinstrument toevoegen',
-          itemLabel: 'Instrument',
-          itemFieldLabel: 'Evaluatief meetinstrument',
-          emptyMessage: 'Nog geen evaluatieve meetinstrumenten toegevoegd.'
+          addLabel: 'Add measure',
+          itemLabel: 'Measure',
+          itemFieldLabel: 'Evaluation measure',
+          emptyMessage: 'No evaluation measures added yet.'
         }
       )
     );
-    var methodenCard = buildSubsectionCard('Behandelmethoden');
+    var methodenCard = buildSubsectionCard('Treatment methods');
     var methodenGrid = buildFieldGrid();
     appendConfiguredFields(methodenGrid, ((reasoning.stap_6_therapeutisch_proces || {}).behandelmethoden || {}), ['reasoning', 'stap_6_therapeutisch_proces', 'behandelmethoden'], [
       { key: 'informeren_adviseren', full: true, multiline: true }
@@ -1056,17 +1056,17 @@
         ['reasoning', 'stap_6_therapeutisch_proces', 'behandelmethoden', 'interventies'],
         Array.isArray((((reasoning.stap_6_therapeutisch_proces || {}).behandelmethoden || {}).interventies)) ? reasoning.stap_6_therapeutisch_proces.behandelmethoden.interventies : [],
         {
-          addLabel: 'Interventie toevoegen',
-          itemLabel: 'Interventie',
-          itemFieldLabel: 'Interventie',
-          emptyMessage: 'Nog geen interventies toegevoegd.'
+          addLabel: 'Add intervention',
+          itemLabel: 'Intervention',
+          itemFieldLabel: 'Intervention',
+          emptyMessage: 'No interventions added yet.'
         }
       )
     );
     therapieCard.appendChild(methodenCard);
     container.appendChild(therapieCard);
 
-    var effectCard = buildSectionCard(humanizeKey('stap_7_effect_therapie'), 'Verwachtingen over het effect van informatie en interventies.');
+    var effectCard = buildSectionCard(humanizeKey('stap_7_effect_therapie'), 'Expectations about the effect of education and interventions.');
     var effectGrid = buildFieldGrid();
     appendConfiguredFields(effectGrid, reasoning.stap_7_effect_therapie || {}, ['reasoning', 'stap_7_effect_therapie'], [
       { key: 'verwacht_effect_informeren', full: true, multiline: true }
@@ -1078,10 +1078,10 @@
         ['reasoning', 'stap_7_effect_therapie', 'verwacht_effect_interventies'],
         Array.isArray((reasoning.stap_7_effect_therapie || {}).verwacht_effect_interventies) ? reasoning.stap_7_effect_therapie.verwacht_effect_interventies : [],
         {
-          addLabel: 'Effect toevoegen',
+          addLabel: 'Add effect',
           itemLabel: 'Effect',
-          itemFieldLabel: 'Verwacht effect',
-          emptyMessage: 'Nog geen verwachte effecten toegevoegd.'
+          itemFieldLabel: 'Expected effect',
+          emptyMessage: 'No expected effects added yet.'
         }
       )
     );
@@ -1089,7 +1089,7 @@
 
     container.appendChild(
       buildObjectRepeaterCard(
-        'Differentiaaldiagnose',
+        'Differential diagnosis',
         ['differential_diagnosis', 'hypothesen'],
         Array.isArray(differential.hypothesen) ? differential.hypothesen : [],
         [
@@ -1097,15 +1097,15 @@
           { key: 'onderbouwing', multiline: true, full: true }
         ],
         {
-          addLabel: 'Hypothese toevoegen',
-          itemLabel: 'Hypothese',
+          addLabel: 'Add hypothesis',
+          itemLabel: 'Hypothesis',
           createItem: function () { return { titel: '', onderbouwing: '' }; },
-          emptyMessage: 'Nog geen hypotheses toegevoegd.'
+          emptyMessage: 'No hypotheses added yet.'
         }
       )
     );
 
-    var hulpvraagCard = buildSectionCard('Centrale hulpvraag', 'Welke hulpvraag staat centraal in de differentiaaldiagnose?');
+    var hulpvraagCard = buildSectionCard('Central care question', 'Which care question is central within the differential diagnosis?');
     var hulpvraagGrid = buildFieldGrid();
     appendConfiguredFields(hulpvraagGrid, differential, ['differential_diagnosis'], [
       { key: 'hulpvraag', full: true, multiline: true }
@@ -1115,7 +1115,7 @@
 
     container.appendChild(
       buildObjectRepeaterCard(
-        'Rode vlaggen',
+        'Red flags',
         ['red_flags'],
         redFlags,
         [
@@ -1124,10 +1124,10 @@
           { key: 'actie', full: true, multiline: true }
         ],
         {
-          addLabel: 'Rode vlag toevoegen',
-          itemLabel: 'Vlag',
+          addLabel: 'Add red flag',
+          itemLabel: 'Flag',
           createItem: function () { return { vlag: '', ernst: '', actie: '' }; },
-          emptyMessage: 'Nog geen losse rode vlaggen toegevoegd.'
+          emptyMessage: 'No standalone red flags added yet.'
         }
       )
     );
@@ -1139,7 +1139,7 @@
     if (!outputEl) return;
     outputEl.innerHTML = '';
     setOutputEmptyState(false);
-    if (outputLabelEl) outputLabelEl.textContent = state.lastOutputLabel || 'Bewerkbare uitvoer';
+    if (outputLabelEl) outputLabelEl.textContent = state.lastOutputLabel || 'Editable output';
     if (page === 'soap') {
       renderSoapEditor();
       return;
@@ -1153,13 +1153,13 @@
 
   function renderOutputEditor(payload, label) {
     state.currentEditorData = deepClone(payload || {});
-    state.lastOutputLabel = String(label || 'Bewerkbare uitvoer');
+    state.lastOutputLabel = String(label || 'Editable output');
     renderCurrentOutputEditor();
   }
 
   function loadOutputForPage(session) {
     if (!session || typeof session !== 'object') {
-      renderEmptyOutput('Genereer een nieuwe uitvoer of laad een opgeslagen sessie.');
+      renderEmptyOutput('Generate new output or load a saved session.');
       renderAlerts([]);
       state.currentOutput = {};
       return;
@@ -1185,7 +1185,7 @@
         red_flags: deepClone(session.red_flags || [])
       };
       renderAlerts(session.red_flags || []);
-      renderOutputEditor({ rps: session.rps }, 'RPS-formulier');
+      renderOutputEditor({ rps: session.rps }, 'RPS form');
       return;
     }
     if (page === 'reasoning' && (session.reasoning || session.differential_diagnosis)) {
@@ -1201,20 +1201,20 @@
         reasoning: session.reasoning || {},
         differential_diagnosis: session.differential_diagnosis || {},
         red_flags: session.red_flags || []
-      }, 'Klinisch redeneren');
+      }, 'Clinical reasoning');
       return;
     }
-    renderEmptyOutput('Voor deze sessie is nog geen output opgeslagen voor deze pagina.');
+    renderEmptyOutput('No saved output is available for this page yet.');
     renderAlerts(session.red_flags || []);
   }
 
   function formatTimestamp(ts) {
     var parsed = Number(ts);
-    if (!Number.isFinite(parsed) || parsed <= 0) return 'onbekend';
+    if (!Number.isFinite(parsed) || parsed <= 0) return 'unknown';
     try {
-      return new Date(parsed * 1000).toLocaleString('nl-NL');
+      return new Date(parsed * 1000).toLocaleString(navigator.language || 'en-GB');
     } catch (_error) {
-      return 'onbekend';
+      return 'unknown';
     }
   }
 
@@ -1222,20 +1222,20 @@
     if (!knowledgeMetaEl) return;
     var data = payload || {};
     var parts = [
-      '<strong>Kennisbankstatus</strong>',
-      '<div class="physio-inline-note">Gebouwd: ' + escapeHtml(formatTimestamp(data.generated_at)) + '</div>',
-      '<div class="physio-inline-note">Bronbestanden op schijf: ' + escapeHtml(String(data.source_count_on_disk || 0)) + '</div>',
-      '<div class="physio-inline-note">Geïndexeerde bronnen: ' + escapeHtml(String(data.indexed_source_count || 0)) + '</div>',
+      '<strong>Knowledge base status</strong>',
+      '<div class="physio-inline-note">Built: ' + escapeHtml(formatTimestamp(data.generated_at)) + '</div>',
+      '<div class="physio-inline-note">Source files on disk: ' + escapeHtml(String(data.source_count_on_disk || 0)) + '</div>',
+      '<div class="physio-inline-note">Indexed sources: ' + escapeHtml(String(data.indexed_source_count || 0)) + '</div>',
       '<div class="physio-inline-note">Chunks in index: ' + escapeHtml(String(data.document_count || 0)) + '</div>'
     ];
     if (data.stale) {
-      parts.push('<div class="physio-inline-note">De index is ouder dan een of meer bronbestanden. Bouw de kennisbank opnieuw en deploy daarna opnieuw.</div>');
+      parts.push('<div class="physio-inline-note">The index is older than one or more source files. Rebuild the knowledge base and deploy again.</div>');
     }
     if (data.error_count) {
-      parts.push('<div class="physio-inline-note">Bestanden zonder indexeerbare tekst/fouten: ' + escapeHtml(String(data.error_count)) + '</div>');
+      parts.push('<div class="physio-inline-note">Files without indexable text or with errors: ' + escapeHtml(String(data.error_count)) + '</div>');
     }
     if (Array.isArray(data.missing_source_paths) && data.missing_source_paths.length) {
-      parts.push('<div class="physio-inline-note">Niet in index opgenomen: ' + escapeHtml(data.missing_source_paths.slice(0, 3).join(', ')) + (data.missing_source_paths.length > 3 ? ' ...' : '') + '</div>');
+      parts.push('<div class="physio-inline-note">Not included in index: ' + escapeHtml(data.missing_source_paths.slice(0, 3).join(', ')) + (data.missing_source_paths.length > 3 ? ' ...' : '') + '</div>');
     }
     knowledgeMetaEl.className = 'physio-knowledge-meta' + (data.stale ? ' stale' : '');
     knowledgeMetaEl.innerHTML = parts.join('');
@@ -1257,7 +1257,7 @@
       .catch(function (error) {
         if (knowledgeMetaEl) {
           knowledgeMetaEl.className = 'physio-knowledge-meta stale';
-          knowledgeMetaEl.textContent = (error && error.error) || 'Kennisbankstatus laden mislukt.';
+          knowledgeMetaEl.textContent = (error && error.error) || 'Could not load knowledge base status.';
         }
         return null;
       });
@@ -1265,7 +1265,7 @@
 
   function sessionSummaryHtml(session) {
     var transcript = String(session.transcript || '').slice(0, 260);
-    return '<strong>' + escapeHtml(session.session_date || 'Onbekende datum') + ' · ' + escapeHtml(session.session_type || '') + '</strong>'
+    return '<strong>' + escapeHtml(session.session_date || 'Unknown date') + ' · ' + escapeHtml(session.session_type || '') + '</strong>'
       + '<div>' + escapeHtml(bodyRegionLabel(session.body_region || '')) + '</div>'
       + '<div class="physio-inline-note">' + escapeHtml(transcript) + (transcript.length >= 260 ? '...' : '') + '</div>';
   }
@@ -1301,7 +1301,7 @@
       return '<circle cx="' + point.svgX + '" cy="' + point.svgY + '" r="4" fill="#136f63"></circle>'
         + '<text x="' + point.svgX + '" y="' + (point.svgY - 10) + '" text-anchor="middle" font-size="10" fill="#12324a">' + escapeHtml(String(point.y)) + '</text>';
     }).join('');
-    progressChartEl.innerHTML = '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="NPRS verloop">'
+    progressChartEl.innerHTML = '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="NPRS trend">'
       + '<rect x="0" y="0" width="' + width + '" height="' + height + '" fill="transparent"></rect>'
       + '<line x1="' + padding + '" y1="' + padding + '" x2="' + padding + '" y2="' + (height - padding) + '" stroke="#b7cddd"></line>'
       + '<line x1="' + padding + '" y1="' + (height - padding) + '" x2="' + (width - padding) + '" y2="' + (height - padding) + '" stroke="#b7cddd"></line>'
@@ -1315,24 +1315,24 @@
     sessionPreviewEl.innerHTML = '';
     sessionPreviewEl.classList.toggle('compact-empty', !session);
     if (!session) {
-      sessionPreviewEl.appendChild(createNode('div', 'physio-output-empty', emptyMessage || 'Sla eerst een sessie op om hier een overzicht te zien.'));
+      sessionPreviewEl.appendChild(createNode('div', 'physio-output-empty', emptyMessage || 'Save a session first to see an overview here.'));
       return;
     }
     var links = ''
       + '<div class="physio-session-links">'
       + '<a class="physio-session-link" href="/physio/soap?case_id=' + encodeURIComponent(session.case_id || '') + '&session_id=' + encodeURIComponent(session.session_id || '') + '">Open in SOAP</a>'
       + '<a class="physio-session-link" href="/physio/rps?case_id=' + encodeURIComponent(session.case_id || '') + '&session_id=' + encodeURIComponent(session.session_id || '') + '">Open in RPS</a>'
-      + '<a class="physio-session-link" href="/physio/reasoning?case_id=' + encodeURIComponent(session.case_id || '') + '&session_id=' + encodeURIComponent(session.session_id || '') + '">Open in Redeneren</a>'
+      + '<a class="physio-session-link" href="/physio/reasoning?case_id=' + encodeURIComponent(session.case_id || '') + '&session_id=' + encodeURIComponent(session.session_id || '') + '">Open in Reasoning</a>'
       + '</div>';
     sessionPreviewEl.innerHTML =
-      '<h3>' + escapeHtml(session.session_date || 'Sessie') + ' · ' + escapeHtml(session.session_type || '') + '</h3>'
+      '<h3>' + escapeHtml(session.session_date || 'Session') + ' · ' + escapeHtml(session.session_type || '') + '</h3>'
       + links
       + '<div><strong>Transcript</strong><div class="physio-inline-note">' + escapeHtml(String(session.transcript || '').slice(0, 900)) + '</div></div>'
-      + '<div><strong>Opgeslagen onderdelen</strong><div class="physio-inline-note">'
+      + '<div><strong>Saved sections</strong><div class="physio-inline-note">'
       + (session.soap ? 'SOAP · ' : '')
       + (session.rps ? 'RPS · ' : '')
-      + (session.reasoning ? '7-stappenplan · ' : '')
-      + (session.differential_diagnosis ? 'Differentiaaldiagnose' : 'Nog geen gegenereerde output')
+      + (session.reasoning ? '7-step model · ' : '')
+      + (session.differential_diagnosis ? 'Differential diagnosis' : 'No generated output yet')
       + '</div></div>';
   }
 
@@ -1342,15 +1342,15 @@
     sessionListEl.innerHTML = '';
     if (!sessions.length) {
       if (sessionPanelNoteEl) {
-        sessionPanelNoteEl.textContent = caseId ? 'Sla eerst een sessie op om voortgang te bekijken.' : 'Kies of maak eerst een casus.';
+        sessionPanelNoteEl.textContent = caseId ? 'Save a session first to view progress.' : 'Choose or create a case first.';
       }
       sessionListEl.hidden = true;
       renderProgressChart([]);
-      renderSessionPreview(null, caseId ? 'Nog geen sessies in deze casus.' : 'Nog geen casus geselecteerd.');
+      renderSessionPreview(null, caseId ? 'No sessions in this case yet.' : 'No case selected yet.');
       return;
     }
     if (sessionPanelNoteEl) {
-      sessionPanelNoteEl.textContent = 'Klik een sessie om details te bekijken.';
+      sessionPanelNoteEl.textContent = 'Click a session to view details.';
     }
     sessionListEl.hidden = false;
     sessions.forEach(function (session) {
@@ -1403,12 +1403,12 @@
   function populateCaseSelect() {
     if (!caseSelect) return;
     var previousValue = caseSelect.value || state.selectedCaseId || '';
-    var placeholder = page === 'knowledge' ? 'Geen casus geselecteerd' : 'Kies een casus...';
+    var placeholder = page === 'knowledge' ? 'No case selected' : 'Choose a case...';
     caseSelect.innerHTML = '<option value="">' + placeholder + '</option>';
     state.cases.forEach(function (item) {
       var option = document.createElement('option');
       option.value = String(item.case_id || '');
-      option.textContent = String(item.display_label || item.patient_name || item.case_id || 'Casus');
+      option.textContent = String(item.display_label || item.patient_name || item.case_id || 'Case');
       caseSelect.appendChild(option);
     });
     if (previousValue) {
@@ -1424,14 +1424,14 @@
     if (!caseListEl) return;
     caseListEl.innerHTML = '';
     if (!state.cases.length) {
-      caseListEl.appendChild(createNode('div', 'physio-output-empty', 'Nog geen casussen opgeslagen.'));
+      caseListEl.appendChild(createNode('div', 'physio-output-empty', 'No cases saved yet.'));
       return;
     }
     state.cases.forEach(function (item) {
       var button = document.createElement('button');
       button.type = 'button';
       button.className = 'physio-case-item' + (String(item.case_id || '') === state.selectedCaseId ? ' active' : '');
-      button.innerHTML = '<strong>' + escapeHtml(item.display_label || item.patient_name || 'Casus') + '</strong>'
+      button.innerHTML = '<strong>' + escapeHtml(item.display_label || item.patient_name || 'Case') + '</strong>'
         + '<div>' + escapeHtml(item.primary_complaint || bodyRegionLabel(item.body_region || '')) + '</div>'
         + '<div class="physio-inline-note">' + escapeHtml(item.patient_name || '') + '</div>';
       button.addEventListener('click', function () {
@@ -1458,7 +1458,7 @@
     if (!casePayload) return;
     state.selectedCaseId = String(casePayload.case_id || '');
     if (caseMetaEl) {
-      caseMetaEl.textContent = (casePayload.display_label || casePayload.patient_name || 'Casus') + ' · ' + bodyRegionLabel(casePayload.body_region || '');
+      caseMetaEl.textContent = (casePayload.display_label || casePayload.patient_name || 'Case') + ' · ' + bodyRegionLabel(casePayload.body_region || '');
     }
     if (caseDisplayLabelInput) caseDisplayLabelInput.value = String(casePayload.display_label || '');
     if (casePatientNameInput) casePatientNameInput.value = String(casePayload.patient_name || '');
@@ -1520,14 +1520,14 @@
 
   function currentExportPayload() {
     if (page === 'soap') {
-      return { kind: 'SOAP', title: (getSelectedCase() || {}).display_label || 'SOAP Notitie', data: (state.currentEditorData || {}).soap || {} };
+      return { kind: 'SOAP', title: (getSelectedCase() || {}).display_label || 'SOAP Note', data: (state.currentEditorData || {}).soap || {} };
     }
     if (page === 'rps') {
-      return { kind: 'RPS', title: (getSelectedCase() || {}).display_label || 'RPS Formulier', data: (state.currentEditorData || {}).rps || {} };
+      return { kind: 'RPS', title: (getSelectedCase() || {}).display_label || 'RPS Form', data: (state.currentEditorData || {}).rps || {} };
     }
     return {
-      kind: 'Klinisch Redeneren',
-      title: (getSelectedCase() || {}).display_label || 'Klinisch Redeneren',
+      kind: 'Clinical Reasoning',
+      title: (getSelectedCase() || {}).display_label || 'Clinical Reasoning',
       data: {
         reasoning: (state.currentEditorData || {}).reasoning || {},
         differential_diagnosis: (state.currentEditorData || {}).differential_diagnosis || {},
@@ -1559,18 +1559,18 @@
             return;
           }
           if (body.status === 'error') {
-            throw new Error(body.error || 'Transcriptie is mislukt.');
+            throw new Error(body.error || 'Transcription failed.');
           }
           if (attempts > 150) {
-            throw new Error('Transcriptie duurt langer dan verwacht.');
+            throw new Error('Transcription is taking longer than expected.');
           }
-          setStatus(String(body.step_description || 'Bezig met verwerken...'), '');
+          setStatus(String(body.step_description || 'Processing...'), '');
           return new Promise(function (resolve) {
             window.setTimeout(resolve, 1600);
           }).then(tick);
         })
         .catch(function (error) {
-          setStatus(error.message || 'Transcriptie is mislukt.', 'error');
+          setStatus(error.message || 'Transcription failed.', 'error');
         });
     }
     return tick();
@@ -1601,7 +1601,7 @@
           setControlsDisabled(true);
           state.accessGranted = false;
         } else {
-          setStatus('Casussen laden mislukt.', 'error');
+          setStatus('Could not load cases.', 'error');
         }
         return null;
       });
@@ -1625,7 +1625,7 @@
         return sessions;
       })
       .catch(function (error) {
-        setStatus((error && error.error) || 'Sessies laden mislukt.', 'error');
+        setStatus((error && error.error) || 'Could not load sessions.', 'error');
         return [];
       });
   }
@@ -1640,8 +1640,8 @@
         var contextValue = String(knowledgeContextInput.value || '').trim();
         if (!contextValue) {
           var caseSummary = [];
-          if (selectedCase.primary_complaint) caseSummary.push('Hoofdklacht: ' + selectedCase.primary_complaint);
-          if (selectedCase.notes) caseSummary.push('Notities: ' + selectedCase.notes);
+          if (selectedCase.primary_complaint) caseSummary.push('Primary complaint: ' + selectedCase.primary_complaint);
+          if (selectedCase.notes) caseSummary.push('Notes: ' + selectedCase.notes);
           if (caseSummary.length) knowledgeContextInput.value = caseSummary.join('\n');
         }
       }
@@ -1664,7 +1664,7 @@
         renderSessionList('');
       }
       if (page === 'soap' || page === 'rps' || page === 'reasoning') {
-        renderEmptyOutput('Genereer een nieuwe uitvoer of laad een opgeslagen sessie.');
+        renderEmptyOutput('Generate new output or load a saved session.');
       }
       return Promise.resolve(null);
     }
@@ -1682,7 +1682,7 @@
           if (sessionNotesInput) sessionNotesInput.value = '';
           if (nprsBeforeInput) nprsBeforeInput.value = '';
           if (nprsAfterInput) nprsAfterInput.value = '';
-          renderEmptyOutput('Voor deze casus is nog geen sessie opgeslagen. Genereer eerst output of sla een sessie op.');
+          renderEmptyOutput('No session is saved for this case yet. Generate output first or save a session.');
           renderAlerts([]);
         }
       }
@@ -1693,10 +1693,10 @@
   function submitExport(format) {
     var exportPayload = currentExportPayload();
     if (!exportPayload.data || !Object.keys(exportPayload.data).length) {
-      setStatus('Er is nog geen uitvoer om te exporteren.', 'error');
+      setStatus('There is no output to export yet.', 'error');
       return;
     }
-    setStatus('Export voorbereiden...', '');
+    setStatus('Preparing export...', '');
     authFetch('/api/physio/export', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1710,7 +1710,7 @@
       .then(function (response) {
         if (!response.ok) {
           return response.json().then(function (body) {
-            throw new Error(body.error || 'Export mislukt.');
+            throw new Error(body.error || 'Export failed.');
           });
         }
         return Promise.all([response.blob(), Promise.resolve(response.headers.get('Content-Disposition') || '')]);
@@ -1727,28 +1727,28 @@
         link.click();
         document.body.removeChild(link);
         window.setTimeout(function () { URL.revokeObjectURL(link.href); }, 1200);
-        setStatus('Export gestart.', 'success');
+        setStatus('Export started.', 'success');
       })
       .catch(function (error) {
-        setStatus(error.message || 'Export mislukt.', 'error');
+        setStatus(error.message || 'Export failed.', 'error');
       });
   }
 
   function ensureCaseSelected() {
     if (state.selectedCaseId) return true;
-    setStatus('Kies eerst een casus of maak er één aan op de pagina Casussen.', 'error');
+    setStatus('Choose a case first, or create one on the Cases page.', 'error');
     return false;
   }
 
   function handleGenerate() {
     if (!transcriptInput || !transcriptInput.value.trim()) {
-      setStatus('Vul eerst een transcript in.', 'error');
+      setStatus('Enter a transcript first.', 'error');
       return;
     }
     var endpoint = page === 'soap' ? '/api/physio/soap' : page === 'rps' ? '/api/physio/rps' : '/api/physio/reasoning';
     var payload = workspaceSessionPayload();
     setControlsDisabled(true);
-    setStatus('AI-uitvoer genereren...', '');
+    setStatus('Generating AI output...', '');
     authFetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1764,11 +1764,11 @@
         if (page === 'soap') {
           state.currentOutput.soap = body.soap || {};
           renderAlerts([]);
-          renderOutputEditor({ soap: state.currentOutput.soap }, 'SOAP-notitie');
+          renderOutputEditor({ soap: state.currentOutput.soap }, 'SOAP note');
         } else if (page === 'rps') {
           state.currentOutput.rps = body.rps || {};
           renderAlerts([]);
-          renderOutputEditor({ rps: state.currentOutput.rps }, 'RPS-formulier');
+          renderOutputEditor({ rps: state.currentOutput.rps }, 'RPS form');
         } else {
           state.currentOutput.reasoning = body.seven_step || {};
           state.currentOutput.differential_diagnosis = body.differential_diagnosis || {};
@@ -1778,12 +1778,12 @@
             reasoning: state.currentOutput.reasoning,
             differential_diagnosis: state.currentOutput.differential_diagnosis,
             red_flags: state.currentOutput.red_flags
-          }, 'Klinisch redeneren');
+          }, 'Clinical reasoning');
         }
-        setStatus('Uitvoer gegenereerd. Controleer alles goed voor je opslaat.', 'success');
+        setStatus('Output generated. Review everything carefully before saving.', 'success');
       })
       .catch(function (error) {
-        setStatus((error && error.error) || error.message || 'Genereren mislukt.', 'error');
+        setStatus((error && error.error) || error.message || 'Generation failed.', 'error');
       })
       .finally(function () {
         setControlsDisabled(false);
@@ -1794,14 +1794,14 @@
     if (!ensureCaseSelected()) return;
     var payload = workspaceSessionPayload();
     if (!payload.transcript || !String(payload.transcript).trim()) {
-      setStatus('Transcript is verplicht om een sessie op te slaan.', 'error');
+      setStatus('A transcript is required to save a session.', 'error');
       return;
     }
     if (state.selectedSessionId) {
       payload.session_id = state.selectedSessionId;
     }
     setControlsDisabled(true);
-    setStatus('Sessie opslaan...', '');
+    setStatus('Saving session...', '');
     authFetch('/api/physio/cases/' + encodeURIComponent(state.selectedCaseId) + '/sessions', {
       method: state.selectedSessionId ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1816,8 +1816,8 @@
       .then(function (body) {
         var session = body.session || {};
         state.selectedSessionId = String(session.session_id || '');
-        showToast('Sessie opgeslagen');
-        setStatus('Sessie opgeslagen in de gekozen casus.', 'success');
+        showToast('Session saved');
+        setStatus('Session saved in the selected case.', 'success');
         return loadSessionsForCase(state.selectedCaseId);
       })
       .then(function (sessions) {
@@ -1827,7 +1827,7 @@
         if (existing) fillSessionForm(existing);
       })
       .catch(function (error) {
-        setStatus((error && error.error) || error.message || 'Opslaan mislukt.', 'error');
+        setStatus((error && error.error) || error.message || 'Saving failed.', 'error');
       })
       .finally(function () {
         setControlsDisabled(false);
@@ -1843,7 +1843,7 @@
         groupsByKey[key] = {
           key: key,
           source_name: String(source.source_name || '').trim(),
-          source_title: String(source.source_title || source.source_name || 'Bron').trim(),
+          source_title: String(source.source_title || source.source_name || 'Source').trim(),
           source_kind: String(source.source_kind || '').trim(),
           hits: []
         };
@@ -1867,7 +1867,7 @@
       citationsEl.innerHTML = '';
       (body.citations || []).forEach(function (citation, index) {
         var chip = createNode('div', 'physio-citation-chip');
-        chip.innerHTML = '<strong>[' + (index + 1) + ']</strong><span>' + escapeHtml(String(citation.label || citation.source_name || 'Bron')) + '</span>';
+        chip.innerHTML = '<strong>[' + (index + 1) + ']</strong><span>' + escapeHtml(String(citation.label || citation.source_name || 'Source')) + '</span>';
         citationsEl.appendChild(chip);
       });
     }
@@ -1875,7 +1875,7 @@
       sourceListEl.innerHTML = '';
       var groups = buildSourceGroups(body.retrieved_sources || []);
       if (!groups.length) {
-        sourceListEl.appendChild(createNode('div', 'physio-output-empty', 'Geen bronfragmenten beschikbaar.'));
+        sourceListEl.appendChild(createNode('div', 'physio-output-empty', 'No source excerpts available.'));
       } else {
         groups.forEach(function (group) {
           var card = createNode('div', 'physio-source-card');
@@ -1886,7 +1886,7 @@
           var list = createNode('div', 'physio-source-hit-list');
           group.hits.forEach(function (hit, hitIndex) {
             var item = createNode('div', 'physio-source-hit');
-            item.innerHTML = '<div class="physio-source-hit-topline"><span class="physio-source-page">' + escapeHtml(hit.page_label || ('Fragment ' + (hitIndex + 1))) + '</span><span class="physio-source-score">Relevantie ' + escapeHtml(hit.score.toFixed(3)) + '</span></div>'
+            item.innerHTML = '<div class="physio-source-hit-topline"><span class="physio-source-page">' + escapeHtml(hit.page_label || ('Excerpt ' + (hitIndex + 1))) + '</span><span class="physio-source-score">Relevance ' + escapeHtml(hit.score.toFixed(3)) + '</span></div>'
               + '<div>' + escapeHtml(hit.excerpt || '') + '</div>';
             list.appendChild(item);
           });
@@ -1899,12 +1899,12 @@
 
   function handleAskKnowledge() {
     if (!knowledgeQuestionInput || !knowledgeQuestionInput.value.trim()) {
-      setStatus('Typ eerst een vraag.', 'error');
+      setStatus('Type a question first.', 'error');
       return;
     }
     setControlsDisabled(true);
-    if (knowledgeAskBtn) knowledgeAskBtn.textContent = 'Bezig...';
-    setStatus('Kennisbank doorzoeken...', '');
+    if (knowledgeAskBtn) knowledgeAskBtn.textContent = 'Working...';
+    setStatus('Searching knowledge base...', '');
     authFetch('/api/physio/knowledge/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1924,12 +1924,12 @@
       .then(function (body) {
         state.hasKnowledgeResult = true;
         renderKnowledgeResults(body);
-        if (knowledgeAskBtn) knowledgeAskBtn.textContent = 'Vraag opnieuw';
-        setStatus('Antwoord klaar.', 'success');
+        if (knowledgeAskBtn) knowledgeAskBtn.textContent = 'Ask again';
+        setStatus('Answer ready.', 'success');
       })
       .catch(function (error) {
-        if (knowledgeAskBtn) knowledgeAskBtn.textContent = state.hasKnowledgeResult ? 'Vraag opnieuw' : defaultKnowledgeButtonLabel;
-        setStatus((error && error.error) || error.message || 'Kennisbankquery mislukt.', 'error');
+        if (knowledgeAskBtn) knowledgeAskBtn.textContent = state.hasKnowledgeResult ? 'Ask again' : defaultKnowledgeButtonLabel;
+        setStatus((error && error.error) || error.message || 'Knowledge base query failed.', 'error');
       })
       .finally(function () {
         setControlsDisabled(false);
@@ -1939,11 +1939,11 @@
   function handleSaveCase() {
     var payload = casePayloadFromForm();
     if (!payload.display_label && !payload.patient_name) {
-      setStatus('Geef minimaal een label of patiëntnaam op.', 'error');
+      setStatus('Enter at least a label or patient name.', 'error');
       return;
     }
     setControlsDisabled(true);
-    setStatus('Casus opslaan...', '');
+    setStatus('Saving case...', '');
     var path = '/api/physio/cases' + (state.selectedCaseId ? '/' + encodeURIComponent(state.selectedCaseId) : '');
     authFetch(path, {
       method: state.selectedCaseId ? 'PATCH' : 'POST',
@@ -1959,14 +1959,14 @@
       .then(function (body) {
         var savedCase = body.case || {};
         state.selectedCaseId = String(savedCase.case_id || '');
-        showToast('Casus opgeslagen');
-        setStatus('Casus opgeslagen.', 'success');
+        showToast('Case saved');
+        setStatus('Case saved.', 'success');
         return loadCases().then(function () {
           return selectCase(state.selectedCaseId, { syncForm: true });
         });
       })
       .catch(function (error) {
-        setStatus((error && error.error) || error.message || 'Casus opslaan mislukt.', 'error');
+        setStatus((error && error.error) || error.message || 'Could not save case.', 'error');
       })
       .finally(function () {
         setControlsDisabled(false);
@@ -1976,7 +1976,7 @@
   function resetCaseForm() {
     state.selectedCaseId = '';
     state.selectedSessionId = '';
-    if (caseMetaEl) caseMetaEl.textContent = 'Nieuwe casus';
+    if (caseMetaEl) caseMetaEl.textContent = 'New case';
     [
       caseDisplayLabelInput,
       casePatientNameInput,
@@ -1997,11 +1997,11 @@
   function updateAudioNote() {
     if (!audioNote) return;
     if (state.selectedAudioFile) {
-      audioNote.textContent = state.selectedAudioFile.name + ' geselecteerd.';
+      audioNote.textContent = state.selectedAudioFile.name + ' selected.';
       if (transcribeBtn) transcribeBtn.disabled = false;
       return;
     }
-    audioNote.textContent = 'Nog geen audio geselecteerd.';
+    audioNote.textContent = 'No audio selected yet.';
     if (transcribeBtn) transcribeBtn.disabled = true;
   }
 
@@ -2020,13 +2020,13 @@
 
   function startRecorder() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
-      setStatus('Opnemen wordt niet ondersteund in deze browser.', 'error');
+      setStatus('Recording is not supported in this browser.', 'error');
       return;
     }
     getMicrophonePermissionState()
       .then(function (permissionState) {
         if (permissionState === 'denied') {
-          throw new Error('Microfoontoegang is geblokkeerd. Sta microfoontoegang toe in je browser en probeer opnieuw.');
+          throw new Error('Microphone access is blocked. Allow microphone access in your browser and try again.');
         }
         return navigator.mediaDevices.getUserMedia({ audio: true });
       })
@@ -2041,20 +2041,20 @@
         state.recorder.addEventListener('stop', function () {
           stream.getTracks().forEach(function (track) { track.stop(); });
           var blob = new Blob(state.recorderChunks, { type: state.recorder.mimeType || 'audio/webm' });
-          state.selectedAudioFile = new File([blob], 'physio-opname.webm', { type: blob.type || 'audio/webm' });
+          state.selectedAudioFile = new File([blob], 'physio-recording.webm', { type: blob.type || 'audio/webm' });
           updateAudioNote();
           if (recordStartBtn) recordStartBtn.disabled = false;
           if (recordStopBtn) recordStopBtn.disabled = true;
-          setStatus('Opname klaar. Je kunt nu een transcript maken.', 'success');
-          showToast('Opname klaar');
+          setStatus('Recording finished. You can create a transcript now.', 'success');
+          showToast('Recording finished');
         });
         state.recorder.start();
         if (recordStartBtn) recordStartBtn.disabled = true;
         if (recordStopBtn) recordStopBtn.disabled = false;
-        setStatus('Opname loopt...', '');
+        setStatus('Recording in progress...', '');
       })
       .catch(function (error) {
-        var message = (error && error.message) || 'Microfoontoegang is geweigerd.';
+        var message = (error && error.message) || 'Microphone access was denied.';
         setStatus(message, 'error');
       });
   }
@@ -2062,13 +2062,13 @@
   function stopRecorder() {
     if (state.recorder && state.recorder.state !== 'inactive') {
       state.recorder.stop();
-      setStatus('Opname wordt afgerond...', '');
+      setStatus('Finishing recording...', '');
     }
   }
 
   function handleTranscribe() {
     if (!state.selectedAudioFile) {
-      setStatus('Kies eerst een audiobestand of neem iets op.', 'error');
+      setStatus('Choose an audio file first, or record something.', 'error');
       return;
     }
     setControlsDisabled(true);
@@ -2086,12 +2086,12 @@
       })
       .then(function (body) {
         if (!body.job_id) {
-          throw new Error('Er is geen job-id ontvangen.');
+          throw new Error('No job ID was returned.');
         }
         return pollRuntimeJob(body.job_id);
       })
       .catch(function (error) {
-        setStatus((error && error.error) || error.message || 'Transcriptie starten mislukt.', 'error');
+        setStatus((error && error.error) || error.message || 'Could not start transcription.', 'error');
       })
       .finally(function () {
         setControlsDisabled(false);
@@ -2120,7 +2120,7 @@
     auth.onAuthStateChanged(function (user) {
       state.user = user;
       if (!user) {
-        setAuthBanner('Meld je aan om Physio Assistant te gebruiken.', 'error');
+        setAuthBanner('Sign in to use Physio Assistant.', 'error');
         setControlsDisabled(true);
         state.accessGranted = false;
         return;
@@ -2165,12 +2165,12 @@
     } else if (page === 'knowledge') {
       setKnowledgeEmptyState(true);
       if (knowledgeAnswerEl) {
-        knowledgeAnswerEl.innerHTML = '<div class="physio-output-empty">Stel een vraag om een antwoord uit je kennisbank te krijgen.</div>';
+        knowledgeAnswerEl.innerHTML = '<div class="physio-output-empty">Ask a question to get an answer from your knowledge base.</div>';
       }
       if (citationsEl) citationsEl.innerHTML = '';
       if (sourceListEl) sourceListEl.innerHTML = '';
     } else {
-      renderEmptyOutput('Genereer een nieuwe uitvoer of laad een opgeslagen sessie.');
+      renderEmptyOutput('Generate new output or load a saved session.');
     }
     updateAudioNote();
   }

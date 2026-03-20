@@ -5,6 +5,7 @@
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
   var authUtils = window.LectureProcessorAuth || {};
   var authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
+  var displayFormatUtils = window.LectureProcessorDisplayFormatUtils || {};
 
   var toast = document.getElementById('buy-credits-toast');
   var historyList = document.getElementById('purchase-history-list');
@@ -78,23 +79,17 @@
   }
 
   function formatPurchaseDate(epochSeconds) {
-    var value = Number(epochSeconds || 0);
-    if (!value) return 'Unknown date';
-    try {
-      return new Date(value * 1000).toLocaleString();
-    } catch (_) {
-      return 'Unknown date';
+    if (displayFormatUtils && typeof displayFormatUtils.formatDateTimeFromEpochSeconds === 'function') {
+      return displayFormatUtils.formatDateTimeFromEpochSeconds(epochSeconds);
     }
+    return 'Unknown date';
   }
 
   function formatPrice(cents, currency) {
-    var amount = Number(cents || 0) / 100;
-    var code = String(currency || 'eur').toUpperCase();
-    try {
-      return new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).format(amount);
-    } catch (_) {
-      return '€' + amount.toFixed(2);
+    if (displayFormatUtils && typeof displayFormatUtils.formatCurrencyFromCents === 'function') {
+      return displayFormatUtils.formatCurrencyFromCents(cents, currency);
     }
+    return '€0.00';
   }
 
   function setHistoryEmpty(message) {
@@ -227,6 +222,10 @@
       purchaseBundle(button.dataset.bundleId || '');
     });
   });
+
+  if (displayFormatUtils && typeof displayFormatUtils.applyPricingCatalog === 'function') {
+    displayFormatUtils.applyPricingCatalog(document);
+  }
 
   if (refreshHistoryBtn) {
     refreshHistoryBtn.addEventListener('click', function () {
