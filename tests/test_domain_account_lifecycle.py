@@ -17,6 +17,7 @@ def test_count_active_jobs_for_user_uses_in_memory_job_store(app):
 
 def test_count_active_jobs_for_user_includes_runtime_and_batch_jobs(app, monkeypatch):
     runtime = get_runtime(app)
+    monkeypatch.setattr(runtime, "db", object(), raising=False)
     with runtime.JOBS_LOCK:
         runtime.jobs.clear()
 
@@ -36,6 +37,7 @@ def test_count_active_jobs_for_user_includes_runtime_and_batch_jobs(app, monkeyp
 
 def test_ensure_account_allows_writes_rejects_deleting_accounts(app, monkeypatch):
     runtime = get_runtime(app)
+    monkeypatch.setattr(runtime, "db", object(), raising=False)
     monkeypatch.setattr(
         runtime.users_repo,
         "get_doc",
@@ -50,6 +52,7 @@ def test_ensure_account_allows_writes_rejects_deleting_accounts(app, monkeypatch
 
 def test_restore_account_after_failed_deletion_sets_account_active(app, monkeypatch):
     runtime = get_runtime(app)
+    monkeypatch.setattr(runtime, "db", object(), raising=False)
     calls = []
     monkeypatch.setattr(
         runtime.users_repo,

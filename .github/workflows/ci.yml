@@ -7,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  guardrail-tests:
+  backend-tests:
     name: Guardrail Tests (pytest)
     runs-on: ubuntu-latest
     env:
@@ -20,21 +20,43 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.14.3"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt -c requirements.constraints.txt
 
       - name: Check tracked secrets/debug files
         run: |
           chmod +x scripts/check_no_tracked_secrets.sh
           ./scripts/check_no_tracked_secrets.sh
 
-      - name: Run pytest guardrail suite
+      - name: Run full pytest suite
         run: |
-          python -m pytest -q tests/test_launch_guardrails.py
+          python -m pytest -q
+
+  frontend-checks:
+    name: Frontend Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run client-side tests
+        run: npm run test:client-goals
+
+      - name: Verify generated assets
+        run: npm run check:assets
 
   smoke-tests:
     name: Smoke Tests
@@ -49,12 +71,12 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.14.3"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt -c requirements.constraints.txt
 
       - name: Run smoke tests with local app
         run: |

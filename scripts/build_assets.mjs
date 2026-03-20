@@ -8,9 +8,16 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 
 const targets = [
+  { entry: 'static/js/dashboard.js', out: 'static/js/dashboard.min.js' },
+  { entry: 'static/js/batch-dashboard.js', out: 'static/js/batch-dashboard.min.js' },
+  { entry: 'static/js/batch-mode.js', out: 'static/js/batch-mode.min.js' },
+  { entry: 'static/js/buy-credits.js', out: 'static/js/buy-credits.min.js' },
   { entry: 'static/js/index-app.js', out: 'static/js/index-app.min.js' },
-  { entry: 'static/js/study.js', out: 'static/js/study.min.js' },
   { entry: 'static/js/admin.js', out: 'static/js/admin.min.js' },
+  { entry: 'static/js/physio.js', out: 'static/js/physio.min.js' },
+  { entry: 'static/js/reader.js', out: 'static/js/reader.min.js' },
+  { entry: 'static/js/shared-study.js', out: 'static/js/shared-study.min.js' },
+  { entry: 'static/js/study.js', out: 'static/js/study.min.js' },
 ];
 
 const checkMode = process.argv.includes('--check');

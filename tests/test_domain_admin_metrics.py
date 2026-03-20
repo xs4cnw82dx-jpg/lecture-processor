@@ -22,6 +22,7 @@ def test_window_and_bucket_helpers_are_stable():
 
 def test_safe_count_collection_returns_partial_zero_and_records_warning(app, monkeypatch):
     runtime = get_runtime(app)
+    monkeypatch.setattr(runtime, "db", object(), raising=False)
 
     def _boom(_db, _collection_name, filters=None):
         _ = filters
@@ -40,6 +41,7 @@ def test_safe_count_collection_returns_partial_zero_and_records_warning(app, mon
 
 def test_safe_count_collection_falls_back_to_filtered_stream(app, monkeypatch):
     runtime = get_runtime(app)
+    monkeypatch.setattr(runtime, "db", object(), raising=False)
 
     def _boom(_db, _collection_name, filters=None):
         _ = filters
@@ -65,6 +67,7 @@ def test_safe_count_collection_falls_back_to_filtered_stream(app, monkeypatch):
 
 def test_safe_query_docs_in_window_falls_back_without_partial_warning(app, monkeypatch):
     runtime = get_runtime(app)
+    monkeypatch.setattr(runtime, "db", object(), raising=False)
     now_ts = runtime.time.time()
 
     def _query(_db, collection_name, timestamp_field, window_start, window_end=None, order_desc=False, limit=None, firestore_module=None, filters=None):

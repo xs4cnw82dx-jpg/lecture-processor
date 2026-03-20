@@ -91,7 +91,7 @@
   <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
-  <script>
+  <script nonce="{{ csp_nonce }}">
     window.ReaderConfig = {
       source: {{ reader_source|tojson }},
       title: {{ reader_title|tojson }}

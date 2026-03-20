@@ -1,4 +1,6 @@
 venv/
+.venv/
+node_modules/
 uploads/
 functions/node_modules/
 functions/lib/
@@ -21,3 +23,5 @@ test-*.m4a
 *.pre-*backup*
 *.backup
 *.dump
+playwright-report/
+test-results/
