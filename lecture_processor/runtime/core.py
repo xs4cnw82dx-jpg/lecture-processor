@@ -391,7 +391,9 @@ if should_init_backend_sentry():
     sentry_sdk.init(dsn=SENTRY_BACKEND_DSN, integrations=[FlaskIntegration()], traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE, send_default_pii=False, environment=SENTRY_ENVIRONMENT, release=SENTRY_RELEASE)
 
 def is_dev_environment():
-    env_value = str(SENTRY_ENVIRONMENT or '').strip().lower()
+    if str(os.getenv('RENDER', '') or '').strip():
+        return False
+    env_value = str(os.getenv('APP_ENV', os.getenv('FLASK_ENV', SENTRY_ENVIRONMENT)) or '').strip().lower()
     flask_debug = str(os.getenv('FLASK_DEBUG', '0')).strip().lower() in {'1', 'true', 'yes', 'on'}
     return env_value in DEV_ENV_NAMES or flask_debug
 

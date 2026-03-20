@@ -19,3 +19,11 @@ def test_resolve_js_asset_can_be_explicitly_disabled(monkeypatch):
     monkeypatch.setattr(core, 'is_dev_environment', lambda: False)
 
     assert core.resolve_js_asset('js/reader.js') == 'js/reader.js'
+
+
+def test_is_dev_environment_treats_render_as_production(monkeypatch):
+    monkeypatch.setenv('RENDER', 'true')
+    monkeypatch.setenv('FLASK_ENV', 'development')
+    monkeypatch.setattr(core, 'SENTRY_ENVIRONMENT', 'development')
+
+    assert core.is_dev_environment() is False
