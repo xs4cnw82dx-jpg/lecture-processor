@@ -22,10 +22,24 @@
         <div>
           <h1>Batch processing</h1>
           <p id="batch-hero-description">Create one batch request with multiple lectures. Each row produces its own outputs, and the batch can be downloaded as one ZIP.</p>
-          <p class="batch-hero-note">
-            Batch jobs are asynchronous and can take up to 24 hours to finish.<br>
-            You will receive an email when your batch reaches a final status.
-          </p>
+          <div class="batch-hero-meta-list" role="list" aria-label="Batch processing notes">
+            <div class="batch-hero-meta-item" role="listitem">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="10" x2="12" y2="16"></line>
+                <line x1="12" y1="7" x2="12.01" y2="7"></line>
+              </svg>
+              <span>Batch jobs are asynchronous and can take up to 24 hours to finish.</span>
+            </div>
+            <div class="batch-hero-meta-item" role="listitem">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="10" x2="12" y2="16"></line>
+                <line x1="12" y1="7" x2="12.01" y2="7"></line>
+              </svg>
+              <span>You will receive an email when your batch reaches a final status.</span>
+            </div>
+          </div>
         </div>
         <a href="/batch_status" class="btn batch-status-link">Batch status</a>
       </div>
@@ -102,10 +116,15 @@
         <label class="generation-control wide batch-export-option" for="include-combined-docx">
           <span class="control-label">Batch export</span>
           <span class="batch-export-option-row">
-            <input type="checkbox" id="include-combined-docx" name="include_combined_docx" value="1">
-            <span>Include a combined Word document of all outputs</span>
+            <span class="batch-export-check">
+              <input type="checkbox" id="include-combined-docx" name="include_combined_docx" value="1">
+              <span class="batch-export-checkmark" aria-hidden="true"></span>
+            </span>
+            <span class="batch-export-copy">
+              <span class="batch-export-title">Include a combined Word document of all outputs</span>
+              <span class="control-note">Your ZIP will still include every individual file, plus one combined `.docx` in batch order.</span>
+            </span>
           </span>
-          <span class="control-note">Your ZIP will still include every individual file, plus one combined `.docx` in batch order.</span>
         </label>
 
         <div class="rows-head">
