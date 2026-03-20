@@ -104,21 +104,25 @@
                                 <input type="url" id="audio-url-input" class="upload-url-input" placeholder="https://.../index.m3u8?..." autocomplete="off">
                                 <button type="button" class="upload-url-button" id="audio-url-fetch-btn">Import Audio</button>
                             </div>
-                            <details class="upload-url-advanced">
-                                <summary>
+                            <div class="upload-url-advanced" id="audio-url-advanced">
+                                <button type="button" class="upload-url-advanced-toggle" id="audio-url-advanced-toggle" aria-expanded="false" aria-controls="audio-url-advanced-panel">
                                     <span>Advanced import: Import audio by finding the video's URL manually</span>
                                     <svg class="upload-url-advanced-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                         <polyline points="6 9 12 15 18 9"></polyline>
                                     </svg>
-                                </summary>
-                                <div class="upload-url-help">
-                                    <span class="upload-url-help-icon" aria-hidden="true">i</span>
-                                    <div class="upload-url-help-text">
-                                        Open your LMS recording page, right click on the screen and click on inspect, open the Network tab, filter on 'index.m3u8', press play, then copy the playlist request URL.
-                                        <a class="upload-url-help-link" href="https://youtu.be/Sz3W9l8J1q0" target="_blank" rel="noopener noreferrer">Watch Brightspace walkthrough video</a>
+                                </button>
+                                <div class="upload-url-advanced-panel" id="audio-url-advanced-panel" aria-hidden="true">
+                                    <div class="upload-url-advanced-panel-inner">
+                                        <div class="upload-url-help">
+                                            <span class="upload-url-help-icon" aria-hidden="true">i</span>
+                                            <div class="upload-url-help-text">
+                                                Open your LMS recording page, right click on the screen and click on inspect, open the Network tab, filter on 'index.m3u8', press play, then copy the playlist request URL.
+                                                <a class="upload-url-help-link" href="https://youtu.be/Sz3W9l8J1q0" target="_blank" rel="noopener noreferrer">Watch Brightspace walkthrough video</a>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
-                            </details>
+                            </div>
                             <div class="upload-url-status" id="audio-url-status" aria-live="polite"></div>
                         </div>
                         <div class="upload-estimate" id="upload-estimate">

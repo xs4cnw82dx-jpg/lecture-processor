@@ -150,6 +150,25 @@ def _render_batch_page(forced_mode: str):
     )
 
 
+def _normalize_study_entry_mode(raw_value: str | None) -> str:
+    mode = str(raw_value or '').strip().lower()
+    if mode == 'create-pack':
+        return mode
+    return ''
+
+
+def _render_study_page(*, entry_mode: str = '', page_key: str = 'study', shell_title: str = 'Study Library', document_title: str = 'Study Library'):
+    runtime = get_runtime()
+    return render_template(
+        'study.html',
+        study_entry_mode=_normalize_study_entry_mode(entry_mode),
+        study_document_title=document_title,
+        study_shell_title=shell_title,
+        study_js_asset=runtime.resolve_js_asset('js/study.js'),
+        **_shell_context(runtime=runtime, page_key=page_key),
+    )
+
+
 def _render_physio_page(page_key: str, title: str, subtitle: str, page_mode: str):
     runtime = get_runtime()
     return render_template(
@@ -322,11 +341,21 @@ def admin_dashboard():
 
 @pages_bp.route('/study')
 def study_dashboard():
-    runtime = get_runtime()
-    return render_template(
-        'study.html',
-        study_js_asset=runtime.resolve_js_asset('js/study.js'),
-        **_shell_context(runtime=runtime, page_key='study'),
+    return _render_study_page(
+        entry_mode=request.args.get('action'),
+        page_key='study',
+        shell_title='Study Library',
+        document_title='Study Library',
+    )
+
+
+@pages_bp.route('/study-pack-builder')
+def study_pack_builder_page():
+    return _render_study_page(
+        entry_mode='create-pack',
+        page_key='study-builder',
+        shell_title='Study Pack Builder',
+        document_title='Study Pack Builder',
     )
 
 

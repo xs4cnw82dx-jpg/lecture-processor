@@ -453,6 +453,9 @@ const audioRemove = document.getElementById('audio-remove');
 const audioUrlImport = document.getElementById('audio-url-import');
 const audioUrlImportTitle = document.getElementById('audio-url-import-title');
 const audioUrlImportHint = document.getElementById('audio-url-import-hint');
+const audioUrlAdvanced = document.getElementById('audio-url-advanced');
+const audioUrlAdvancedToggle = document.getElementById('audio-url-advanced-toggle');
+const audioUrlAdvancedPanel = document.getElementById('audio-url-advanced-panel');
 const audioUrlInput = document.getElementById('audio-url-input');
 const audioUrlFetchBtn = document.getElementById('audio-url-fetch-btn');
 const audioUrlStatus = document.getElementById('audio-url-status');
@@ -793,6 +796,13 @@ function setAdvancedSettingsVisible(visible) {
     advancedSettingsToggle.classList.toggle('open', visible);
     advancedSettingsToggle.setAttribute('aria-expanded', visible ? 'true' : 'false');
     advancedSettingsBody.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+function setAudioUrlAdvancedOpen(visible) {
+    if (!audioUrlAdvanced || !audioUrlAdvancedToggle || !audioUrlAdvancedPanel) return;
+    const open = Boolean(visible);
+    audioUrlAdvanced.classList.toggle('is-open', open);
+    audioUrlAdvancedToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    audioUrlAdvancedPanel.setAttribute('aria-hidden', open ? 'false' : 'true');
 }
 function setOutputLanguageMenuVisible(visible) {
     outputLanguageMenu.classList.toggle('visible', visible);
@@ -4508,6 +4518,11 @@ outputLanguageCustom.addEventListener('blur', () => {
 });
 if (audioUrlFetchBtn) {
     audioUrlFetchBtn.addEventListener('click', importAudioFromUrl);
+}
+if (audioUrlAdvancedToggle) {
+    audioUrlAdvancedToggle.addEventListener('click', () => {
+        setAudioUrlAdvancedOpen(!(audioUrlAdvanced && audioUrlAdvanced.classList.contains('is-open')));
+    });
 }
 if (audioUrlInput) {
     audioUrlInput.addEventListener('input', () => {

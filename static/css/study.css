@@ -228,6 +228,10 @@
       gap: 10px
     }
 
+    #study-library-shell.study-library-shell--deferred {
+      visibility: hidden
+    }
+
     .processing-now-panel {
       border: 1px solid rgba(79, 70, 229, .16);
       border-radius: var(--radius-lg);

@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Study Library</title>
+  <title>{{ study_document_title or 'Study Library' }}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -14,8 +14,8 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/study.css') }}">
 </head>
 
-<body>
-  {% set shell_title = 'Study Library' %}
+<body data-study-entry-mode="{{ study_entry_mode or '' }}">
+  {% set shell_title = study_shell_title or 'Study Library' %}
   {% include '_app_shell.html' %}
   <main class="app-shell-page">
   <div class="container">
@@ -31,7 +31,7 @@
       </div>
     </section>
 
-    <div id="study-library-shell">
+    <div id="study-library-shell" data-entry-mode="{{ study_entry_mode or '' }}"{% if study_entry_mode == 'create-pack' %} class="study-library-shell--deferred"{% endif %}>
       <section class="processing-now-panel" id="processing-now-panel" hidden aria-live="polite">
         <div class="processing-now-head">
           <div>
