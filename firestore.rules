@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // This app uses Firestore through trusted server-side firebase-admin code.
+    // Security Rules apply only to client SDK access, so deny direct browser/mobile
+    // reads and writes unless we intentionally add a safe client use case later.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
