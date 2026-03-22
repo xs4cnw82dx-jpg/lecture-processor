@@ -820,6 +820,9 @@ function setMoreActionsDropdownVisible(visible) {
     moreActionsButton.setAttribute('aria-expanded', visible ? 'true' : 'false');
 }
 function setAdvancedSettingsVisible(visible) {
+    if (!visible) {
+        setOutputLanguageMenuVisible(false);
+    }
     advancedSettingsBody.classList.toggle('visible', visible);
     advancedSettingsToggle.classList.toggle('open', visible);
     advancedSettingsToggle.setAttribute('aria-expanded', visible ? 'true' : 'false');

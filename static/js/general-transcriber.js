@@ -9,12 +9,29 @@
 
   if (!auth) return;
 
+  var OUTPUT_LANGUAGE_LABELS = {
+    english: '\ud83c\uddec\ud83c\udde7 English',
+    dutch: '\ud83c\uddf3\ud83c\uddf1 Dutch',
+    spanish: '\ud83c\uddea\ud83c\uddf8 Spanish',
+    french: '\ud83c\uddeb\ud83c\uddf7 French',
+    german: '\ud83c\udde9\ud83c\uddea German',
+    chinese: '\ud83c\udde8\ud83c\uddf3 Chinese',
+    other: '\ud83c\udf10 Other'
+  };
+
   var fileInput = document.getElementById('transcriber-file-input');
   var dropzone = document.getElementById('transcriber-dropzone');
   var fileInfo = document.getElementById('transcriber-file-info');
   var fileNameEl = document.getElementById('transcriber-file-name');
   var fileSizeEl = document.getElementById('transcriber-file-size');
   var fileRemoveBtn = document.getElementById('transcriber-file-remove');
+  var outputLanguageInput = document.getElementById('transcriber-output-language');
+  var outputLanguagePicker = document.getElementById('transcriber-output-language-picker');
+  var outputLanguageButton = document.getElementById('transcriber-output-language-button');
+  var outputLanguageLabel = document.getElementById('transcriber-output-language-label');
+  var outputLanguageMenu = document.getElementById('transcriber-output-language-menu');
+  var outputLanguageItems = outputLanguageMenu ? Array.prototype.slice.call(outputLanguageMenu.querySelectorAll('.app-select-item[data-value]')) : [];
+  var outputLanguageCustom = document.getElementById('transcriber-output-language-custom');
   var languageNote = document.getElementById('transcriber-language-note');
   var runBtn = document.getElementById('transcriber-run-btn');
   var creditNote = document.getElementById('transcriber-credit-note');
@@ -35,6 +52,7 @@
   var pollTimer = null;
   var interviewCredits = null;
   var toastTimer = null;
+  var languageUserTouched = false;
 
   function getSignedInUser() {
     return currentUser || auth.currentUser || null;
@@ -78,6 +96,84 @@
     if (!languageNote) return;
     var safeLabel = String(label || 'English').trim() || 'English';
     languageNote.textContent = 'Transcript language: ' + safeLabel + '.';
+  }
+
+  function getVisibleMenuItems(menu, selector) {
+    if (!menu) return [];
+    return Array.prototype.slice.call(menu.querySelectorAll(selector || 'button:not([disabled])')).filter(function (item) {
+      return (item.offsetParent !== null || item === document.activeElement) && !item.disabled;
+    });
+  }
+
+  function focusMenuItem(menu, selector, mode) {
+    var items = getVisibleMenuItems(menu, selector);
+    var activeIndex = -1;
+    if (!items.length) return;
+    activeIndex = items.indexOf(document.activeElement);
+    if (mode === 'last') {
+      items[items.length - 1].focus();
+      return;
+    }
+    if (mode === 'next') {
+      items[(activeIndex + 1 + items.length) % items.length].focus();
+      return;
+    }
+    if (mode === 'prev') {
+      items[(activeIndex - 1 + items.length) % items.length].focus();
+      return;
+    }
+    if (mode === 'active') {
+      var selected = items.find(function (item) {
+        return item.classList.contains('active') || item.getAttribute('aria-selected') === 'true';
+      });
+      (selected || items[0]).focus();
+      return;
+    }
+    items[0].focus();
+  }
+
+  function setOutputLanguageMenuVisible(visible) {
+    if (!outputLanguageMenu || !outputLanguageButton) return;
+    outputLanguageMenu.classList.toggle('visible', !!visible);
+    outputLanguageButton.classList.toggle('open', !!visible);
+    outputLanguageButton.setAttribute('aria-expanded', visible ? 'true' : 'false');
+  }
+
+  function getLanguageLabel(value, customValue) {
+    var key = String(value || 'english').trim().toLowerCase();
+    if (key === 'other') {
+      var custom = String(customValue || '').trim();
+      return custom ? '\ud83c\udf10 ' + custom : OUTPUT_LANGUAGE_LABELS.other;
+    }
+    return OUTPUT_LANGUAGE_LABELS[key] || OUTPUT_LANGUAGE_LABELS.english;
+  }
+
+  function setOutputLanguage(value, customValue) {
+    var key = Object.prototype.hasOwnProperty.call(OUTPUT_LANGUAGE_LABELS, value) ? value : 'english';
+    var nextCustom = String(customValue || '').trim();
+    if (outputLanguageInput) outputLanguageInput.value = key;
+    if (outputLanguageCustom) {
+      outputLanguageCustom.hidden = key !== 'other';
+      outputLanguageCustom.value = key === 'other' ? nextCustom : '';
+    }
+    if (outputLanguageLabel) {
+      outputLanguageLabel.textContent = getLanguageLabel(key, outputLanguageCustom ? outputLanguageCustom.value : nextCustom);
+    }
+    outputLanguageItems.forEach(function (item) {
+      var active = item.dataset.value === key;
+      item.classList.toggle('active', active);
+      item.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    updateLanguageNote(getLanguageLabel(key, outputLanguageCustom ? outputLanguageCustom.value : nextCustom));
+  }
+
+  function getSelectedOutputLanguage() {
+    var value = outputLanguageInput ? String(outputLanguageInput.value || 'english').trim().toLowerCase() : 'english';
+    var custom = value === 'other' && outputLanguageCustom ? String(outputLanguageCustom.value || '').trim() : '';
+    return {
+      value: Object.prototype.hasOwnProperty.call(OUTPUT_LANGUAGE_LABELS, value) ? value : 'english',
+      custom: custom
+    };
   }
 
   function updateAuthStateUI() {
@@ -160,17 +256,26 @@
     if (!signedInUser) {
       interviewCredits = null;
       updateCreditNote();
-      updateLanguageNote('English');
+      if (!languageUserTouched) {
+        setOutputLanguage('english', '');
+      } else {
+        updateLanguageNote(getLanguageLabel(outputLanguageInput ? outputLanguageInput.value : 'english', outputLanguageCustom ? outputLanguageCustom.value : ''));
+      }
       return;
     }
     try {
       var response = await authFetch('/api/auth/user');
       if (!response.ok) return;
       var payload = await response.json();
+      var preferences = payload && payload.preferences ? payload.preferences : {};
       var credits = payload && payload.credits ? payload.credits : {};
       interviewCredits = Number(credits.interview_short || 0) + Number(credits.interview_medium || 0) + Number(credits.interview_long || 0);
       updateCreditNote();
-      updateLanguageNote(payload && payload.preferences ? payload.preferences.output_language_label : 'English');
+      if (!languageUserTouched) {
+        setOutputLanguage(preferences.output_language || 'english', preferences.output_language_custom || '');
+      } else {
+        updateLanguageNote(getLanguageLabel(outputLanguageInput ? outputLanguageInput.value : 'english', outputLanguageCustom ? outputLanguageCustom.value : ''));
+      }
     } catch (_) {
       interviewCredits = null;
       updateCreditNote();
@@ -292,11 +397,23 @@
       return;
     }
 
+    var selectedLanguage = getSelectedOutputLanguage();
+    if (selectedLanguage.value === 'other' && !selectedLanguage.custom) {
+      setStatus('Enter a custom transcript language first.', 'error');
+      if (outputLanguageCustom) {
+        outputLanguageCustom.hidden = false;
+        outputLanguageCustom.focus();
+      }
+      return;
+    }
+
     startRun();
     setStatus('', '');
 
     var formData = new FormData();
     formData.append('audio', selectedFile);
+    formData.append('output_language', selectedLanguage.value);
+    formData.append('output_language_custom', selectedLanguage.custom);
 
     try {
       var response = await authFetch('/api/tools/transcribe', { method: 'POST', body: formData });
@@ -359,6 +476,102 @@
     });
   }
 
+  if (outputLanguageButton && outputLanguageMenu) {
+    outputLanguageButton.addEventListener('click', function (event) {
+      event.stopPropagation();
+      var visible = !outputLanguageMenu.classList.contains('visible');
+      setOutputLanguageMenuVisible(visible);
+      if (visible) focusMenuItem(outputLanguageMenu, '.app-select-item', 'active');
+    });
+    outputLanguageButton.addEventListener('keydown', function (event) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setOutputLanguageMenuVisible(true);
+        focusMenuItem(outputLanguageMenu, '.app-select-item', 'active');
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setOutputLanguageMenuVisible(true);
+        focusMenuItem(outputLanguageMenu, '.app-select-item', 'last');
+      }
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        var visible = !outputLanguageMenu.classList.contains('visible');
+        setOutputLanguageMenuVisible(visible);
+        if (visible) focusMenuItem(outputLanguageMenu, '.app-select-item', 'active');
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setOutputLanguageMenuVisible(false);
+      }
+    });
+    outputLanguageMenu.addEventListener('keydown', function (event) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        focusMenuItem(outputLanguageMenu, '.app-select-item', 'next');
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        focusMenuItem(outputLanguageMenu, '.app-select-item', 'prev');
+      }
+      if (event.key === 'Home') {
+        event.preventDefault();
+        focusMenuItem(outputLanguageMenu, '.app-select-item', 'first');
+      }
+      if (event.key === 'End') {
+        event.preventDefault();
+        focusMenuItem(outputLanguageMenu, '.app-select-item', 'last');
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setOutputLanguageMenuVisible(false);
+        outputLanguageButton.focus();
+      }
+      if (event.key === 'Tab') {
+        setOutputLanguageMenuVisible(false);
+      }
+    });
+    outputLanguageItems.forEach(function (item) {
+      item.addEventListener('click', function () {
+        var value = item.dataset.value || 'english';
+        languageUserTouched = true;
+        setOutputLanguage(value, value === 'other' && outputLanguageCustom ? outputLanguageCustom.value : '');
+        setOutputLanguageMenuVisible(false);
+        if (value === 'other' && outputLanguageCustom) {
+          outputLanguageCustom.focus();
+          outputLanguageCustom.select();
+          return;
+        }
+        outputLanguageButton.focus();
+      });
+    });
+  }
+
+  if (outputLanguageCustom) {
+    outputLanguageCustom.addEventListener('input', function () {
+      if (!outputLanguageInput || outputLanguageInput.value !== 'other') return;
+      languageUserTouched = true;
+      if (outputLanguageLabel) {
+        outputLanguageLabel.textContent = getLanguageLabel('other', outputLanguageCustom.value);
+      }
+      updateLanguageNote(getLanguageLabel('other', outputLanguageCustom.value));
+    });
+    outputLanguageCustom.addEventListener('blur', function () {
+      if (!outputLanguageInput || outputLanguageInput.value !== 'other') return;
+      outputLanguageCustom.value = String(outputLanguageCustom.value || '').trim();
+      if (outputLanguageLabel) {
+        outputLanguageLabel.textContent = getLanguageLabel('other', outputLanguageCustom.value);
+      }
+      updateLanguageNote(getLanguageLabel('other', outputLanguageCustom.value));
+    });
+  }
+
+  document.addEventListener('click', function (event) {
+    if (!outputLanguagePicker || !outputLanguagePicker.contains(event.target)) {
+      setOutputLanguageMenuVisible(false);
+    }
+  });
+
   if (runBtn) {
     runBtn.addEventListener('click', runTranscription);
   }
@@ -411,7 +624,7 @@
 
   renderSelectedFile();
   updateCreditNote();
-  updateLanguageNote('English');
+  setOutputLanguage('english', '');
   updateRunState();
   updateOutputActionState();
   auth.onAuthStateChanged(function (user) {

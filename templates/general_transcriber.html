@@ -25,7 +25,7 @@
       <section class="reader-grid">
         <article class="shell-panel reader-input-card">
           <h2>Upload Audio</h2>
-          <p class="tool-note">Each run costs 1 interview credit. Transcript language follows your saved output-language preference.</p>
+          <p class="tool-note">Each run costs 1 interview credit. Choose the transcript language below, or keep your saved default.</p>
 
           <div class="tool-upload-wrap">
             <div class="tool-upload-zone" id="transcriber-dropzone" role="button" tabindex="0" aria-labelledby="transcriber-dropzone-title" aria-describedby="transcriber-dropzone-helper">
@@ -62,7 +62,29 @@
             </div>
           </div>
 
-          <p class="tool-note" id="transcriber-language-note">Transcript language: checking your preference…</p>
+          <div class="tool-language-field">
+            <span class="tool-language-label">Output Language</span>
+            <input type="hidden" id="transcriber-output-language" value="english">
+            <div class="app-select" id="transcriber-output-language-picker">
+              <button type="button" class="app-select-button" id="transcriber-output-language-button" aria-haspopup="listbox" aria-expanded="false" aria-controls="transcriber-output-language-menu">
+                <span id="transcriber-output-language-label">🇬🇧 English</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </button>
+              <div class="app-select-menu" id="transcriber-output-language-menu" role="listbox">
+                <button type="button" role="option" aria-selected="true" class="app-select-item active" data-value="english">🇬🇧 English</button>
+                <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="dutch">🇳🇱 Dutch</button>
+                <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="spanish">🇪🇸 Spanish</button>
+                <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="french">🇫🇷 French</button>
+                <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="german">🇩🇪 German</button>
+                <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="chinese">🇨🇳 Chinese</button>
+                <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="other">🌐 Other</button>
+              </div>
+            </div>
+            <input class="language-custom-input" id="transcriber-output-language-custom" placeholder="Type your preferred language (for example: Italian)" hidden>
+            <p class="tool-note tool-language-note" id="transcriber-language-note">Transcript language: checking your preference…</p>
+          </div>
 
           <div class="run-row">
             <button type="button" class="primary-btn" id="transcriber-run-btn" disabled>Transcribe</button>

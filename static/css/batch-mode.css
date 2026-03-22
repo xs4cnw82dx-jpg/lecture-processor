@@ -188,7 +188,6 @@
 }
 
 .app-select-menu {
-  display: none;
   position: absolute;
   left: 0;
   right: 0;
@@ -198,11 +197,22 @@
   border-radius: 12px;
   box-shadow: 0 16px 30px rgba(15, 23, 42, 0.12);
   z-index: 30;
-  overflow: hidden;
+  max-height: 320px;
+  overflow-y: auto;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-8px) scale(0.98);
+  transform-origin: top center;
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s linear 0.18s;
 }
 
 .app-select-menu.visible {
-  display: block;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  transition-delay: 0s;
 }
 
 .app-select-item {
