@@ -1272,6 +1272,18 @@ def download_audio_from_video_url(source_url, file_prefix):
         subprocess_module=subprocess,
     )
 
+def download_video_from_video_url(source_url, file_prefix):
+    return file_service.download_video_from_video_url(
+        source_url,
+        file_prefix,
+        upload_folder=UPLOAD_FOLDER,
+        max_download_bytes=MAX_AUDIO_UPLOAD_BYTES,
+        ffmpeg_binary_getter=get_ffmpeg_binary,
+        get_saved_file_size_fn=get_saved_file_size,
+        which_func=shutil.which,
+        subprocess_module=subprocess,
+    )
+
 def deduct_slides_credits(uid, amount):
     return billing_credits.deduct_slides_credits(uid, amount, runtime=_self_runtime())
 

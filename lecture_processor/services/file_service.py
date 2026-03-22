@@ -454,6 +454,83 @@ def download_audio_from_video_url(
     return output_path, os.path.basename(output_path), size_bytes
 
 
+def download_video_from_video_url(
+    source_url,
+    file_prefix,
+    *,
+    upload_folder,
+    max_download_bytes,
+    ffmpeg_binary_getter,
+    get_saved_file_size_fn,
+    which_func=shutil.which,
+    subprocess_module=subprocess,
+):
+    ytdlp_bin = which_func('yt-dlp')
+    ffmpeg_bin = ffmpeg_binary_getter()
+    if not ytdlp_bin:
+        raise RuntimeError('yt-dlp is not installed on the server.')
+    if not ffmpeg_bin:
+        raise RuntimeError('ffmpeg is not installed on the server.')
+
+    import_dir = os.path.join(upload_folder, 'imported_video')
+    os.makedirs(import_dir, exist_ok=True)
+    safe_prefix = re.sub(r'[^a-zA-Z0-9_-]+', '_', str(file_prefix or 'lecture-video')).strip('_') or 'lecture-video'
+    base = os.path.join(import_dir, safe_prefix)
+    output_template = f"{base}.%(ext)s"
+    _cleanup_audio_import_candidates(base)
+
+    metadata = _fetch_video_import_metadata(
+        ytdlp_bin,
+        source_url,
+        subprocess_module=subprocess_module,
+        timeout_seconds=60,
+    )
+    source_size_bytes = _metadata_filesize_bytes(metadata)
+    if source_size_bytes > max_download_bytes:
+        raise RuntimeError('Lecture video exceeds server limit (max 500MB).')
+
+    cmd = [
+        ytdlp_bin,
+        '--no-playlist',
+        '--no-progress',
+        '--restrict-filenames',
+        '--ffmpeg-location', ffmpeg_bin,
+        '--format', 'bv*+ba/b',
+        '--merge-output-format', 'mp4',
+        '--recode-video', 'mp4',
+        '--output', output_template,
+        '--', source_url,
+    ]
+    try:
+        result = subprocess_module.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30 * 60,
+        )
+    except subprocess.TimeoutExpired:
+        _cleanup_audio_import_candidates(base)
+        raise RuntimeError('Could not fetch video from the provided URL (download timed out).')
+    if result.returncode != 0:
+        _cleanup_audio_import_candidates(base)
+        stderr = (result.stderr or result.stdout or '').strip().splitlines()
+        reason = stderr[-1] if stderr else 'unknown import error'
+        raise RuntimeError(f'Could not fetch video from the provided URL ({reason[:220]}).')
+
+    candidates = sorted(glob.glob(f"{base}.*"))
+    if not candidates:
+        raise RuntimeError('Video download finished but no output file was generated.')
+    preferred = [path for path in candidates if path.lower().endswith('.mp4')]
+    output_path = preferred[0] if preferred else candidates[0]
+
+    size_bytes = get_saved_file_size_fn(output_path)
+    if size_bytes <= 0 or size_bytes > max_download_bytes:
+        _cleanup_audio_import_candidates(base)
+        raise RuntimeError('Downloaded video exceeds server limit (max 500MB) or is empty.')
+    return output_path, os.path.basename(output_path), size_bytes
+
+
 def convert_audio_to_mp3_with_ytdlp(
     local_audio_path,
     *,

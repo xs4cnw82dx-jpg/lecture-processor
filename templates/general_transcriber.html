@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>General Transcriber · Lecture Processor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/reader.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tool-pages.css') }}">
+</head>
+<body>
+  {% set shell_title = 'General Transcriber' %}
+  {% include '_app_shell.html' %}
+    <main class="app-shell-page reader-page">
+      <section class="shell-panel reader-hero">
+        <h1>General Transcriber</h1>
+        <p>Upload a standalone audio file and generate a clean transcript with the same audio prompt used in lecture processing.</p>
+      </section>
+
+      <section class="reader-grid">
+        <article class="shell-panel reader-input-card">
+          <h2>Upload Audio</h2>
+          <p class="tool-note">Each run costs 1 interview credit. Transcript language follows your saved output-language preference.</p>
+
+          <div class="dropzone-wrap">
+            <label class="dropzone" id="transcriber-dropzone" for="transcriber-file-input">
+              <input type="file" id="transcriber-file-input" accept=".mp3,.m4a,.wav,.aac,.ogg,.flac,.webm">
+              <div class="dropzone-title" id="transcriber-dropzone-title">Drop an audio file here or click to browse</div>
+              <div class="dropzone-sub">MP3, M4A, WAV, AAC, OGG, FLAC, WEBM</div>
+              <div class="dropzone-sub-extra">up to 500 MB</div>
+            </label>
+            <div class="selected-files" id="transcriber-selected-files"></div>
+          </div>
+
+          <p class="tool-note" id="transcriber-language-note">Transcript language: checking your preference…</p>
+
+          <div class="run-row">
+            <button type="button" class="primary-btn" id="transcriber-run-btn" disabled>Transcribe</button>
+            <span class="credit-note" id="transcriber-credit-note">Interview credits: &mdash;</span>
+          </div>
+          <div class="reader-auth-panel" id="transcriber-auth-panel" hidden>
+            <div class="reader-auth-copy">
+              <strong>Sign in required</strong>
+              <p>Sign in to transcribe audio and use your interview credits.</p>
+            </div>
+            <a class="ghost-btn reader-auth-link" id="transcriber-auth-link" href="/lecture-notes?auth=signin">Sign in</a>
+          </div>
+          <div class="status" id="transcriber-status" aria-live="polite"></div>
+        </article>
+
+        <article class="shell-panel reader-output-card">
+          <div class="result-head">
+            <h2>Transcript</h2>
+            <div class="actions">
+              <button type="button" class="ghost-btn" id="transcriber-copy-btn" disabled>Copy</button>
+              <button type="button" class="ghost-btn" id="transcriber-download-docx-btn" disabled>Download .docx</button>
+            </div>
+          </div>
+          <pre class="output-pre" id="transcriber-output-pre"></pre>
+        </article>
+      </section>
+    </main>
+  {% include '_shell_footer.html' %}
+  </div>
+  </div>
+  <div class="reader-toast" id="transcriber-toast" aria-live="polite"></div>
+
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/user-cache-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename=general_transcriber_js_asset or 'js/general-transcriber.js') }}"></script>
+</body>
+</html>

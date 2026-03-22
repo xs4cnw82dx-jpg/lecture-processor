@@ -1,6 +1,6 @@
 <div class="app-shell" id="app-shell" data-page-key="{{ shell_page_key or '' }}" data-auth-state="pending">
   {% set shell_physio_open = shell_page_key and shell_page_key.startswith('physio-') %}
-  {% set shell_more_tools_open = shell_page_key in ['document-reader', 'image-reader', 'url-reader', 'tools'] %}
+  {% set shell_more_tools_open = shell_page_key in ['document-reader', 'image-reader', 'url-reader', 'lecture-downloader', 'general-transcriber', 'tools'] %}
   <button type="button" class="app-shell-overlay" id="app-shell-overlay" aria-label="Close navigation"></button>
   <aside class="app-shell-sidebar" id="app-shell-sidebar" aria-label="Main navigation">
     <a href="/dashboard" class="app-shell-brand">
@@ -65,6 +65,8 @@
         </button>
         <div class="app-shell-group-panel-wrap">
           <div class="app-shell-group-panel" id="shell-more-tools-panel">
+            <a href="/lecture-downloader" class="app-shell-link sub">Lecture Downloader</a>
+            <a href="/general-transcriber" class="app-shell-link sub">General Transcriber</a>
             <a href="/document-reader" class="app-shell-link sub">Document Reader</a>
             <a href="/image-reader" class="app-shell-link sub">Image Reader</a>
             <a href="/url-reader" class="app-shell-link sub">URL Reader</a>

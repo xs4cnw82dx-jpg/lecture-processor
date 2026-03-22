@@ -77,6 +77,8 @@ EXPECTED_ROUTES = [
     ('GET', '/api/shared/<share_token>/packs/<pack_id>', 'study_api.get_public_shared_folder_pack'),
     ('POST', '/api/tools/export', 'upload_api.tools_export'),
     ('POST', '/api/tools/extract', 'upload_api.tools_extract'),
+    ('POST', '/api/tools/lecture-download', 'upload_api.tools_lecture_download'),
+    ('POST', '/api/tools/transcribe', 'upload_api.tools_transcribe'),
     ('GET', '/api/user-preferences', 'auth_api.get_user_preferences'),
     ('PUT', '/api/user-preferences', 'auth_api.update_user_preferences'),
     ('POST', '/api/verify-email', 'auth_api.verify_email'),
@@ -95,8 +97,10 @@ EXPECTED_ROUTES = [
     ('GET', '/FAQ', 'pages.faq_page'),
     ('GET', '/healthz', 'health.healthz'),
     ('GET', '/helpcenter', 'pages.help_center_page'),
+    ('GET', '/general-transcriber', 'pages.general_transcriber_page'),
     ('GET', '/image-reader', 'pages.image_reader_page'),
     ('GET', '/interview-transcription', 'pages.interview_transcription_page'),
+    ('GET', '/lecture-downloader', 'pages.lecture_downloader_page'),
     ('GET', '/lecture-notes', 'pages.lecture_notes_page'),
     ('GET', '/plan', 'pages.plan_dashboard'),
     ('GET', '/privacy', 'pages.privacy_policy'),
@@ -245,6 +249,25 @@ def test_processing_pages_render_updated_shell_labels(client):
     batch_html = batch_response.get_data(as_text=True)
     assert 'Batch Processing · Lecture Notes' in batch_html
     assert 'Batch Mode Lectures' not in batch_html
+
+
+def test_more_tools_pages_and_links_render(client):
+    tools_response = client.get('/tools')
+    assert tools_response.status_code == 200
+    tools_html = tools_response.get_data(as_text=True)
+    assert 'Lecture Downloader' in tools_html
+    assert 'General Transcriber' in tools_html
+
+    downloader_response = client.get('/lecture-downloader')
+    assert downloader_response.status_code == 200
+    downloader_html = downloader_response.get_data(as_text=True)
+    assert 'href="/lecture-downloader"' in downloader_html
+    assert 'href="/general-transcriber"' in downloader_html
+
+    transcriber_response = client.get('/general-transcriber')
+    assert transcriber_response.status_code == 200
+    transcriber_html = transcriber_response.get_data(as_text=True)
+    assert 'Each run costs 1 interview credit.' in transcriber_html
 
 
 def test_study_pack_builder_page_primes_direct_builder_entry(client):
