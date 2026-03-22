@@ -151,6 +151,28 @@ def sanitize_pack_id(value, runtime=None):
     return pack_id
 
 
+def sanitize_review_action(value, runtime=None):
+    _ = runtime
+    action = str(value or '').strip().lower()
+    if action in {'retry', 'hard', 'good', 'easy'}:
+        return action
+    return ''
+
+
+def card_entry_has_interaction(payload, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    entry = payload or {}
+    return (
+        sanitize_int(entry.get('seen', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime) > 0 or
+        sanitize_int(entry.get('correct', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime) > 0 or
+        sanitize_int(entry.get('wrong', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime) > 0 or
+        sanitize_int(entry.get('flip_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime) > 0 or
+        sanitize_int(entry.get('write_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime) > 0 or
+        bool(sanitize_progress_date(entry.get('last_review_date', ''), runtime=resolved_runtime)) or
+        bool(sanitize_review_action(entry.get('last_action', ''), runtime=resolved_runtime))
+    )
+
+
 def sanitize_card_state_entry(payload, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     if not isinstance(payload, dict):
@@ -160,12 +182,32 @@ def sanitize_card_state_entry(payload, runtime=None):
     correct = sanitize_int(payload.get('correct', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime)
     wrong = sanitize_int(payload.get('wrong', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime)
     interval_days = sanitize_int(payload.get('interval_days', 0), default=0, min_value=0, max_value=3650, runtime=resolved_runtime)
+    max_interval_days = sanitize_int(
+        payload.get('max_interval_days', interval_days),
+        default=interval_days,
+        min_value=0,
+        max_value=3650,
+        runtime=resolved_runtime,
+    )
+    flip_count = sanitize_int(payload.get('flip_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime)
+    write_count = sanitize_int(payload.get('write_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime)
 
     level = str(payload.get('level', '')).strip().lower()
     if level not in {'new', 'familiar', 'mastered'}:
         if interval_days >= 14:
             level = 'mastered'
-        elif seen > 0:
+        elif card_entry_has_interaction(
+            {
+                'seen': seen,
+                'correct': correct,
+                'wrong': wrong,
+                'flip_count': flip_count,
+                'write_count': write_count,
+                'last_review_date': payload.get('last_review_date', ''),
+                'last_action': payload.get('last_action', ''),
+            },
+            runtime=resolved_runtime,
+        ):
             level = 'familiar'
         else:
             level = 'new'
@@ -174,15 +216,21 @@ def sanitize_card_state_entry(payload, runtime=None):
     if difficulty not in {'easy', 'medium', 'hard'}:
         difficulty = 'medium'
 
+    last_action = sanitize_review_action(payload.get('last_action', ''), runtime=resolved_runtime)
+
     return {
         'seen': seen,
         'correct': correct,
         'wrong': wrong,
         'level': level,
         'interval_days': interval_days,
+        'max_interval_days': max(interval_days, max_interval_days),
         'next_review_date': sanitize_progress_date(payload.get('next_review_date', ''), runtime=resolved_runtime),
         'last_review_date': sanitize_progress_date(payload.get('last_review_date', ''), runtime=resolved_runtime),
         'difficulty': difficulty,
+        'last_action': last_action,
+        'flip_count': flip_count,
+        'write_count': write_count,
     }
 
 
@@ -271,11 +319,18 @@ def sanitize_notes_highlights_payload(payload, runtime=None):
     }
 
 
-def derive_card_level_from_stats(seen, interval_days, runtime=None):
-    _ = runtime
+def derive_card_level_from_stats(seen, interval_days, flip_count=0, write_count=0, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
     if interval_days >= 14:
         return 'mastered'
-    if seen > 0:
+    if card_entry_has_interaction(
+        {
+            'seen': seen,
+            'flip_count': flip_count,
+            'write_count': write_count,
+        },
+        runtime=resolved_runtime,
+    ):
         return 'familiar'
     return 'new'
 
@@ -461,6 +516,11 @@ def merge_card_state_entries(server_entry, incoming_entry, runtime=None):
         max_value=3650,
         runtime=resolved_runtime,
     )
+    merged_max_interval_days = max(
+        sanitize_int(cleaned_server.get('max_interval_days', 0), default=0, min_value=0, max_value=3650, runtime=resolved_runtime),
+        sanitize_int(cleaned_incoming.get('max_interval_days', 0), default=0, min_value=0, max_value=3650, runtime=resolved_runtime),
+        merged_interval_days,
+    )
     merged_next_review_date = sanitize_progress_date(source_for_schedule.get('next_review_date', ''), runtime=resolved_runtime)
     if not merged_next_review_date:
         merged_next_review_date = max(
@@ -471,16 +531,35 @@ def merge_card_state_entries(server_entry, incoming_entry, runtime=None):
     merged_difficulty = str(source_for_schedule.get('difficulty', 'medium')).strip().lower()
     if merged_difficulty not in {'easy', 'medium', 'hard'}:
         merged_difficulty = 'medium'
+    merged_last_action = sanitize_review_action(source_for_schedule.get('last_action', ''), runtime=resolved_runtime)
+    merged_flip_count = max(
+        sanitize_int(cleaned_server.get('flip_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime),
+        sanitize_int(cleaned_incoming.get('flip_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime),
+    )
+    merged_write_count = max(
+        sanitize_int(cleaned_server.get('write_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime),
+        sanitize_int(cleaned_incoming.get('write_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime),
+    )
 
     merged_entry = {
         'seen': merged_seen,
         'correct': merged_correct,
         'wrong': merged_wrong,
         'interval_days': merged_interval_days,
+        'max_interval_days': merged_max_interval_days,
         'last_review_date': merged_last,
         'next_review_date': merged_next_review_date,
         'difficulty': merged_difficulty,
-        'level': derive_card_level_from_stats(merged_seen, merged_interval_days, runtime=resolved_runtime),
+        'last_action': merged_last_action,
+        'flip_count': merged_flip_count,
+        'write_count': merged_write_count,
+        'level': derive_card_level_from_stats(
+            merged_seen,
+            merged_interval_days,
+            merged_flip_count,
+            merged_write_count,
+            runtime=resolved_runtime,
+        ),
     }
     return sanitize_card_state_entry(merged_entry, runtime=resolved_runtime)
 
@@ -512,8 +591,7 @@ def count_due_cards_in_state(state, today_local, runtime=None):
     for card_id, entry in (state or {}).items():
         if not str(card_id).startswith('fc_'):
             continue
-        seen = sanitize_int((entry or {}).get('seen', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime)
-        if seen <= 0:
+        if not card_entry_has_interaction(entry, runtime=resolved_runtime):
             continue
         next_date = str((entry or {}).get('next_review_date', '') or '').strip()
         if not next_date or next_date <= today_local:

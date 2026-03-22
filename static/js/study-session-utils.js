@@ -1,6 +1,37 @@
 (function (root) {
   'use strict';
 
+  function toInteger(value, fallbackValue) {
+    var fallback = Number.isFinite(fallbackValue) ? fallbackValue : 0;
+    if (typeof value === 'boolean') return fallback;
+    var parsed = parseInt(String(value == null ? '' : value).trim(), 10);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  function normalizeLevel(value) {
+    var normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'mastered' || normalized === 'familiar' || normalized === 'new') {
+      return normalized;
+    }
+    return '';
+  }
+
+  function normalizeDifficulty(value) {
+    var normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'easy' || normalized === 'hard' || normalized === 'medium') {
+      return normalized;
+    }
+    return 'medium';
+  }
+
+  function normalizeReviewAction(value) {
+    var normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'retry' || normalized === 'hard' || normalized === 'good' || normalized === 'easy') {
+      return normalized;
+    }
+    return '';
+  }
+
   function defaultRandom() {
     return Math.random();
   }
@@ -17,75 +48,213 @@
     return source;
   }
 
-  function orderCardsByAlgo(cards, options) {
-    if (!Array.isArray(cards) || !cards.length) return [];
+  function hasCardInteraction(cardState) {
+    var entry = cardState && typeof cardState === 'object' ? cardState : {};
+    return (
+      toInteger(entry.seen, 0) > 0 ||
+      toInteger(entry.correct, 0) > 0 ||
+      toInteger(entry.wrong, 0) > 0 ||
+      toInteger(entry.flip_count, 0) > 0 ||
+      toInteger(entry.write_count, 0) > 0 ||
+      Boolean(String(entry.last_review_date || '').trim()) ||
+      Boolean(normalizeReviewAction(entry.last_action))
+    );
+  }
+
+  function deriveCardLevel(cardState) {
+    var entry = cardState && typeof cardState === 'object' ? cardState : {};
+    if (toInteger(entry.interval_days, 0) >= 14) return 'mastered';
+    return hasCardInteraction(entry) ? 'familiar' : 'new';
+  }
+
+  function hasMasteryHistory(cardState) {
+    var entry = cardState && typeof cardState === 'object' ? cardState : {};
+    return normalizeLevel(entry.level) === 'mastered' ||
+      Math.max(toInteger(entry.interval_days, 0), toInteger(entry.max_interval_days, 0)) >= 14;
+  }
+
+  function isRetryCard(cardState) {
+    var entry = cardState && typeof cardState === 'object' ? cardState : {};
+    return normalizeReviewAction(entry.last_action) === 'retry' ||
+      toInteger(entry.wrong, 0) > toInteger(entry.correct, 0);
+  }
+
+  function isHardCard(cardState) {
+    var entry = cardState && typeof cardState === 'object' ? cardState : {};
+    return normalizeDifficulty(entry.difficulty) === 'hard' ||
+      normalizeReviewAction(entry.last_action) === 'hard';
+  }
+
+  function isCardDue(cardState, isDueDate) {
+    var entry = cardState && typeof cardState === 'object' ? cardState : {};
+    if (!hasCardInteraction(entry)) return true;
+    var nextReviewDate = String(entry.next_review_date || '').trim();
+    if (!nextReviewDate) return true;
+    return isDueDate(nextReviewDate);
+  }
+
+  function getCardStatusInfo(cardState, options) {
     var settings = options && typeof options === 'object' ? options : {};
-    var state = settings.cardState && typeof settings.cardState === 'object' ? settings.cardState : {};
-    var algo = Array.isArray(settings.sessionAlgo) ? settings.sessionAlgo : [];
     var isDueDate = typeof settings.isDueDate === 'function'
       ? settings.isDueDate
       : function (value) { return !!value; };
-    var randomFn = typeof settings.randomFn === 'function' ? settings.randomFn : defaultRandom;
-    var buckets = { new: [], familiar: [], retry: [], remaster: [], hard: [], random: [] };
-    var deferred = [];
+    var entry = cardState && typeof cardState === 'object' ? cardState : {};
+    var engaged = hasCardInteraction(entry);
+    var due = isCardDue(entry, isDueDate);
+    var retry = engaged && isRetryCard(entry);
+    var hard = engaged && !retry && isHardCard(entry);
+    var remaster = engaged && hasMasteryHistory(entry) && (due || retry || hard);
+    var viewedOnly = engaged &&
+      toInteger(entry.flip_count, 0) > 0 &&
+      toInteger(entry.write_count, 0) <= 0 &&
+      toInteger(entry.seen, 0) <= 0 &&
+      toInteger(entry.correct, 0) <= 0 &&
+      toInteger(entry.wrong, 0) <= 0;
+    var mastered = engaged && !remaster && !retry && !hard && deriveCardLevel(entry) === 'mastered' && !due;
+    var key = 'new';
+    var label = 'New';
+    var bucket = 'new';
 
-    cards.forEach(function (card, index) {
-      var id = 'fc_' + index;
-      var cardState = state[id];
-      var entry = { card: card, idx: index };
-      var due = !cardState || !cardState.seen || isDueDate(cardState.next_review_date);
-      if (due) {
-        if (!cardState || cardState.level === 'new') {
-          buckets.new.push(entry);
-        } else if (cardState.level === 'familiar') {
-          buckets.familiar.push(entry);
-        } else if (cardState.level === 'mastered') {
-          buckets.remaster.push(entry);
+    if (!engaged) {
+      key = 'new';
+      label = 'New';
+      bucket = 'new';
+    } else if (remaster) {
+      key = 'remaster';
+      label = 'Remaster';
+      bucket = 'remaster';
+    } else if (retry) {
+      key = 'retry';
+      label = 'Retry';
+      bucket = 'retry';
+    } else if (hard) {
+      key = 'hard';
+      label = 'Hard';
+      bucket = 'hard';
+    } else if (viewedOnly) {
+      key = 'viewed';
+      label = 'Viewed';
+      bucket = 'familiar';
+    } else if (mastered) {
+      key = 'mastered';
+      label = 'Mastered';
+      bucket = 'remaster';
+    } else {
+      key = 'familiar';
+      label = 'Familiar';
+      bucket = 'familiar';
+    }
+
+    return {
+      bucket: bucket,
+      due: due,
+      engaged: engaged,
+      hard: hard,
+      key: key,
+      label: label,
+      remaster: remaster,
+      retry: retry,
+      viewedOnly: viewedOnly,
+    };
+  }
+
+  function getCardBucketMemberships(cardState, options) {
+    var status = getCardStatusInfo(cardState, options);
+    return {
+      familiar: status.engaged && status.key !== 'mastered' && !status.remaster && !status.retry && !status.hard,
+      hard: status.hard,
+      new: !status.engaged,
+      random: true,
+      remaster: status.remaster,
+      retry: status.retry,
+    };
+  }
+
+  function isActiveCard(cardState, options) {
+    var status = getCardStatusInfo(cardState, options);
+    return !status.engaged || status.due || status.retry || status.hard || status.remaster;
+  }
+
+  function fillQueueFromLane(entries, settings) {
+    if (!Array.isArray(entries) || !entries.length) return [];
+    var options = settings && typeof settings === 'object' ? settings : {};
+    var algo = Array.isArray(options.sessionAlgo) && options.sessionAlgo.length
+      ? options.sessionAlgo.slice()
+      : ['random'];
+    var randomFn = typeof options.randomFn === 'function' ? options.randomFn : defaultRandom;
+    var pools = { new: [], familiar: [], retry: [], remaster: [], hard: [], random: [] };
+
+    entries.forEach(function (entry) {
+      var memberships = getCardBucketMemberships(entry.cardState, options);
+      Object.keys(memberships).forEach(function (bucketName) {
+        if (memberships[bucketName]) {
+          pools[bucketName].push(entry);
         }
-        var wrongCount = Number(cardState && cardState.wrong || 0);
-        var correctCount = Number(cardState && cardState.correct || 0);
-        if (cardState && (cardState.level === 'retry' || cardState.last_action === 'retry' || wrongCount > correctCount)) {
-          buckets.retry.push(entry);
-        }
-        if (cardState && (cardState.difficulty === 'hard' || cardState.last_action === 'hard')) {
-          buckets.hard.push(entry);
-        }
-      } else {
-        deferred.push(entry);
-      }
-      buckets.random.push({ card: card, idx: index });
+      });
     });
 
-    Object.keys(buckets).forEach(function (key) {
-      buckets[key] = shuffleWithRandom(buckets[key], randomFn);
+    Object.keys(pools).forEach(function (bucketName) {
+      pools[bucketName] = shuffleWithRandom(pools[bucketName], randomFn);
     });
 
     var result = [];
     var used = {};
-    algo.forEach(function (bucketName) {
-      var pool = buckets[bucketName] || buckets.random;
-      for (var poolIndex = 0; poolIndex < pool.length; poolIndex += 1) {
-        if (!used[pool[poolIndex].idx]) {
-          result.push(pool[poolIndex]);
-          used[pool[poolIndex].idx] = true;
+    while (result.length < entries.length) {
+      var addedThisCycle = 0;
+      algo.forEach(function (bucketName) {
+        var poolName = Object.prototype.hasOwnProperty.call(pools, bucketName) ? bucketName : 'random';
+        var pool = pools[poolName];
+        for (var index = 0; index < pool.length; index += 1) {
+          var candidate = pool[index];
+          if (used[candidate.idx]) continue;
+          result.push(candidate);
+          used[candidate.idx] = true;
+          addedThisCycle += 1;
           break;
         }
-      }
-    });
+      });
+      if (addedThisCycle === 0) break;
+    }
 
-    cards.forEach(function (card, index) {
-      var isDeferred = deferred.some(function (entry) { return entry.idx === index; });
-      if (!used[index] && !isDeferred) {
-        result.push({ card: card, idx: index });
-      }
-    });
-    deferred.forEach(function (entry) {
-      if (!used[entry.idx]) {
-        result.push(entry);
-      }
+    pools.random.forEach(function (entry) {
+      if (used[entry.idx]) return;
+      result.push(entry);
+      used[entry.idx] = true;
     });
 
     return result;
+  }
+
+  function orderCardsByAlgo(cards, options) {
+    if (!Array.isArray(cards) || !cards.length) return [];
+    var settings = options && typeof options === 'object' ? options : {};
+    var state = settings.cardState && typeof settings.cardState === 'object' ? settings.cardState : {};
+    var algo = Array.isArray(settings.sessionAlgo) && settings.sessionAlgo.length
+      ? settings.sessionAlgo.slice()
+      : ['random'];
+    var randomFn = typeof settings.randomFn === 'function' ? settings.randomFn : defaultRandom;
+    var entries = cards.map(function (card, index) {
+      return { card: card, cardState: state['fc_' + index] || null, idx: index };
+    });
+
+    if (algo.every(function (bucketName) { return bucketName === 'random'; })) {
+      return shuffleWithRandom(entries, randomFn).map(function (entry) {
+        return { card: entry.card, idx: entry.idx };
+      });
+    }
+
+    var activeEntries = [];
+    var deferredEntries = [];
+    entries.forEach(function (entry) {
+      if (isActiveCard(entry.cardState, settings)) activeEntries.push(entry);
+      else deferredEntries.push(entry);
+    });
+
+    return fillQueueFromLane(activeEntries, settings)
+      .concat(fillQueueFromLane(deferredEntries, settings))
+      .map(function (entry) {
+        return { card: entry.card, idx: entry.idx };
+      });
   }
 
   function getFlashcardQueue(orderedFlashcards, selectedPack) {
@@ -133,10 +302,13 @@
   }
 
   var exported = {
+    deriveCardLevel: deriveCardLevel,
     getAnswerDisplay: getAnswerDisplay,
+    getCardStatusInfo: getCardStatusInfo,
     getEnabledModes: getEnabledModes,
     getFlashcardQueue: getFlashcardQueue,
     gradeAnswer: gradeAnswer,
+    hasCardInteraction: hasCardInteraction,
     normalizeAnswer: normalizeAnswer,
     orderCardsByAlgo: orderCardsByAlgo,
   };

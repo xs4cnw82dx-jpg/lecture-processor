@@ -2215,6 +2215,27 @@
       border-color: var(--primary)
     }
 
+    .algo-explainer {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 14px 16px;
+      border-radius: var(--radius);
+      border: 1px solid rgba(79, 70, 229, .16);
+      background: linear-gradient(135deg, rgba(79, 70, 229, .05) 0%, rgba(14, 165, 233, .05) 100%);
+      color: var(--gray-600);
+      font-size: .84rem;
+      line-height: 1.55;
+      text-align: center;
+    }
+
+    .algo-explainer p {
+      margin: 0;
+    }
+
+    .algo-explainer p+p {
+      margin-top: 8px;
+    }
+
     /* Settings */
     .settings-list {
       display: flex;
@@ -3029,6 +3050,11 @@
       gap: 14px
     }
 
+    .flashcard-stage-card {
+      width: min(100%, 860px);
+      position: relative;
+    }
+
     .flashcard-view-tools {
       width: min(100%, 860px);
       display: flex;
@@ -3246,7 +3272,7 @@
     }
 
     .flashcard-3d {
-      width: min(100%, 860px);
+      width: 100%;
       height: 340px;
       perspective: 1200px;
       cursor: pointer;
@@ -3354,6 +3380,70 @@
       display: inline-flex;
       align-items: center;
       gap: 6px
+    }
+
+    .learn-card-status {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      z-index: 3;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 34px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, .34);
+      background: rgba(255, 255, 255, .82);
+      color: var(--gray-700);
+      box-shadow: 0 10px 24px rgba(15, 23, 42, .08);
+      backdrop-filter: blur(10px);
+      font-size: .78rem;
+      font-weight: 700;
+      letter-spacing: .01em;
+      text-transform: uppercase;
+    }
+
+    .learn-card-status[data-type="new"] {
+      background: rgba(224, 242, 254, .92);
+      border-color: rgba(56, 189, 248, .32);
+      color: #0369A1;
+    }
+
+    .learn-card-status[data-type="viewed"] {
+      background: rgba(236, 253, 245, .92);
+      border-color: rgba(110, 231, 183, .42);
+      color: #166534;
+    }
+
+    .learn-card-status[data-type="familiar"] {
+      background: rgba(220, 252, 231, .92);
+      border-color: rgba(134, 239, 172, .46);
+      color: #166534;
+    }
+
+    .learn-card-status[data-type="retry"] {
+      background: rgba(254, 226, 226, .94);
+      border-color: rgba(248, 113, 113, .4);
+      color: #B91C1C;
+    }
+
+    .learn-card-status[data-type="hard"] {
+      background: rgba(255, 237, 213, .94);
+      border-color: rgba(251, 146, 60, .38);
+      color: #C2410C;
+    }
+
+    .learn-card-status[data-type="remaster"] {
+      background: rgba(254, 249, 195, .94);
+      border-color: rgba(250, 204, 21, .42);
+      color: #A16207;
+    }
+
+    .learn-card-status[data-type="mastered"] {
+      background: rgba(219, 234, 254, .94);
+      border-color: rgba(96, 165, 250, .36);
+      color: #1D4ED8;
     }
 
     .kbd {
@@ -3516,6 +3606,11 @@
       width: 100%
     }
 
+    .write-prompt-card {
+      width: 100%;
+      position: relative;
+    }
+
     .write-prompt {
       font-size: 1.15rem;
       font-weight: 700;
@@ -3530,6 +3625,11 @@
       display: flex;
       align-items: center;
       justify-content: center
+    }
+
+    .write-prompt-card .learn-card-status {
+      top: 14px;
+      right: 14px;
     }
 
     .write-input-row {

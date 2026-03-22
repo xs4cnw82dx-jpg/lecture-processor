@@ -1426,6 +1426,50 @@ def test_merge_card_state_entries_keeps_counts_monotonic():
     assert merged["difficulty"] == "easy"
 
 
+def test_merge_card_state_entries_keeps_interaction_metadata_and_mastery_history():
+    server = {
+        "seen": 4,
+        "correct": 4,
+        "wrong": 0,
+        "level": "mastered",
+        "interval_days": 21,
+        "max_interval_days": 21,
+        "next_review_date": "2026-03-10",
+        "last_review_date": "2026-03-01",
+        "difficulty": "easy",
+        "last_action": "easy",
+        "flip_count": 2,
+        "write_count": 1,
+    }
+    incoming = {
+        "seen": 5,
+        "correct": 4,
+        "wrong": 1,
+        "level": "familiar",
+        "interval_days": 1,
+        "max_interval_days": 21,
+        "next_review_date": "2026-03-05",
+        "last_review_date": "2026-03-05",
+        "difficulty": "hard",
+        "last_action": "hard",
+        "flip_count": 4,
+        "write_count": 2,
+    }
+
+    merged = core.merge_card_state_entries(server, incoming)
+
+    assert merged["seen"] == 5
+    assert merged["correct"] == 4
+    assert merged["wrong"] == 1
+    assert merged["interval_days"] == 1
+    assert merged["max_interval_days"] == 21
+    assert merged["difficulty"] == "hard"
+    assert merged["last_action"] == "hard"
+    assert merged["flip_count"] == 4
+    assert merged["write_count"] == 2
+    assert merged["level"] == "familiar"
+
+
 def test_update_study_progress_empty_card_state_payload_does_not_delete_existing_pack(client, monkeypatch):
     class _FakeSnapshot:
         def __init__(self, payload=None, exists=True):

@@ -40,3 +40,20 @@ test('updatePackCollectionGoal updates only the requested pack', () => {
     { study_pack_id: 'pack-2', daily_card_goal: null, title: 'Two' },
   ]);
 });
+
+test('buildPackStats treats flipped cards as studied but still unmastered', () => {
+  const stats = progressUtils.buildPackStats(
+    { flashcards_count: 3 },
+    {
+      fc_0: { flip_count: 1, next_review_date: '' },
+      fc_1: { seen: 1, level: 'mastered', next_review_date: '2099-01-01' },
+    },
+    '2026-03-22'
+  );
+
+  assert.deepEqual(stats, {
+    total: 3,
+    due: 1,
+    unmastered: 2,
+  });
+});

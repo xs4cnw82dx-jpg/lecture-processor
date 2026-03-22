@@ -1624,8 +1624,14 @@ def sanitize_card_state_entry(payload):
 def sanitize_card_state_map(payload):
     return study_progress.sanitize_card_state_map(payload, runtime=_self_runtime())
 
-def derive_card_level_from_stats(seen, interval_days):
-    return study_progress.derive_card_level_from_stats(seen, interval_days, runtime=_self_runtime())
+def derive_card_level_from_stats(seen, interval_days, flip_count=0, write_count=0):
+    return study_progress.derive_card_level_from_stats(
+        seen,
+        interval_days,
+        flip_count,
+        write_count,
+        runtime=_self_runtime(),
+    )
 
 def merge_streak_data(server_payload, incoming_payload):
     return study_progress.merge_streak_data(server_payload, incoming_payload, runtime=_self_runtime())

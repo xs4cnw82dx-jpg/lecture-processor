@@ -57,6 +57,42 @@ def test_progress_summary_counts_due_cards_and_streak():
     }
 
 
+def test_progress_helpers_count_viewed_cards_as_familiar_and_due():
+    cleaned = progress.sanitize_card_state_entry(
+        {
+            'flip_count': 1,
+            'last_action': 'retry',
+            'difficulty': 'hard',
+            'max_interval_days': 21,
+        },
+        runtime=SimpleNamespace(),
+    )
+
+    assert cleaned == {
+        'seen': 0,
+        'correct': 0,
+        'wrong': 0,
+        'level': 'familiar',
+        'interval_days': 0,
+        'max_interval_days': 21,
+        'next_review_date': '',
+        'last_review_date': '',
+        'difficulty': 'hard',
+        'last_action': 'retry',
+        'flip_count': 1,
+        'write_count': 0,
+    }
+
+    summary = progress.compute_study_progress_summary(
+        {'daily_goal': 10, 'timezone': 'UTC', 'streak_data': {}},
+        [{'fc_1': cleaned}],
+        base_now=datetime(2026, 3, 22, 12, 0, tzinfo=timezone.utc),
+        runtime=SimpleNamespace(),
+    )
+
+    assert summary['due_today'] == 1
+
+
 def test_audio_storage_round_trip_and_persist(tmp_path):
     root = tmp_path / 'uploads' / 'study_audio'
     runtime = SimpleNamespace(
