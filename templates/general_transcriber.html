@@ -27,14 +27,39 @@
           <h2>Upload Audio</h2>
           <p class="tool-note">Each run costs 1 interview credit. Transcript language follows your saved output-language preference.</p>
 
-          <div class="dropzone-wrap">
-            <label class="dropzone" id="transcriber-dropzone" for="transcriber-file-input">
+          <div class="tool-upload-wrap">
+            <div class="tool-upload-zone" id="transcriber-dropzone" role="button" tabindex="0" aria-labelledby="transcriber-dropzone-title" aria-describedby="transcriber-dropzone-helper">
+              <svg class="tool-upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
+              <div class="tool-upload-title-row">
+                <div class="tool-upload-title" id="transcriber-dropzone-title">Audio Recording</div>
+              </div>
+              <div class="tool-upload-helper" id="transcriber-dropzone-helper">Upload one standalone audio file for transcription.</div>
+              <div class="tool-upload-subtitle">Drag &amp; drop or click to browse</div>
+              <div class="tool-upload-formats">MP3, M4A, WAV, AAC, OGG, FLAC, WEBM &middot; Max 500 MB</div>
               <input type="file" id="transcriber-file-input" accept=".mp3,.m4a,.wav,.aac,.ogg,.flac,.webm">
-              <div class="dropzone-title" id="transcriber-dropzone-title">Drop an audio file here or click to browse</div>
-              <div class="dropzone-sub">MP3, M4A, WAV, AAC, OGG, FLAC, WEBM</div>
-              <div class="dropzone-sub-extra">up to 500 MB</div>
-            </label>
-            <div class="selected-files" id="transcriber-selected-files"></div>
+              <div class="tool-file-info" id="transcriber-file-info" hidden>
+                <div class="tool-file-details">
+                  <div class="tool-file-name">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    <span id="transcriber-file-name"></span>
+                  </div>
+                  <div class="tool-file-size" id="transcriber-file-size"></div>
+                </div>
+                <button class="tool-file-remove" id="transcriber-file-remove" type="button" aria-label="Remove selected audio file">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
 
           <p class="tool-note" id="transcriber-language-note">Transcript language: checking your preference…</p>
