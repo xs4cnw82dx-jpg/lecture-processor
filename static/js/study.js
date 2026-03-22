@@ -103,7 +103,13 @@ function normalizeUrlPath(pathname) {
 }
 
 /* ── Session state ── */
-const ALGO_PRESETS = { balanced: ['new', 'new', 'familiar', 'retry', 'remaster'], random: ['random', 'random', 'random', 'random', 'random'], lastminute: ['new', 'new', 'new', 'new', 'retry'], fixmistakes: ['new', 'retry', 'new', 'retry', 'retry'], hardfirst: ['hard', 'hard', 'retry', 'new', 'familiar'] };
+const ALGO_PRESETS = {
+  balanced: ['new', 'familiar', 'retry', 'hard', 'remaster'],
+  random: ['random', 'random', 'random', 'random', 'random'],
+  lastminute: ['remaster', 'hard', 'familiar', 'retry', 'familiar'],
+  fixmistakes: ['retry', 'hard', 'retry', 'remaster', 'familiar'],
+  hardfirst: ['hard', 'retry', 'hard', 'remaster', 'familiar']
+};
 const ALGO_TYPES = ['new', 'familiar', 'retry', 'remaster', 'hard', 'random'];
 const ALGO_ICONS = {
   new: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>',
@@ -507,6 +513,55 @@ function mapLegacyDifficultyToAction(difficulty) {
   if (value === 'hard') return 'hard';
   return 'good';
 }
+function createEmptyCardStateEntry() {
+  return {
+    seen: 0,
+    correct: 0,
+    wrong: 0,
+    level: 'new',
+    interval_days: 0,
+    max_interval_days: 0,
+    next_review_date: '',
+    difficulty: 'medium',
+    last_review_date: '',
+    last_action: '',
+    flip_count: 0,
+    write_count: 0
+  };
+}
+function ensureCardStateEntry(state, cardId) {
+  if (!state || !cardId) return createEmptyCardStateEntry();
+  state[cardId] = Object.assign(createEmptyCardStateEntry(), state[cardId] || {});
+  if (!state[cardId].max_interval_days) {
+    state[cardId].max_interval_days = Math.max(0, parseInt(state[cardId].interval_days, 10) || 0);
+  }
+  return state[cardId];
+}
+function deriveCardLevelForEntry(entry) {
+  if (studySessionUtils && typeof studySessionUtils.deriveCardLevel === 'function') {
+    return studySessionUtils.deriveCardLevel(entry || {});
+  }
+  return (entry && parseInt(entry.interval_days, 10) >= 14) ? 'mastered' : (hasCardInteraction(entry) ? 'familiar' : 'new');
+}
+function hasCardInteraction(entry) {
+  if (studySessionUtils && typeof studySessionUtils.hasCardInteraction === 'function') {
+    return studySessionUtils.hasCardInteraction(entry || {});
+  }
+  var safeEntry = entry || {};
+  return (
+    (parseInt(safeEntry.seen, 10) || 0) > 0 ||
+    (parseInt(safeEntry.correct, 10) || 0) > 0 ||
+    (parseInt(safeEntry.wrong, 10) || 0) > 0 ||
+    (parseInt(safeEntry.flip_count, 10) || 0) > 0 ||
+    (parseInt(safeEntry.write_count, 10) || 0) > 0
+  );
+}
+function getCardStatusInfo(entry) {
+  if (studySessionUtils && typeof studySessionUtils.getCardStatusInfo === 'function') {
+    return studySessionUtils.getCardStatusInfo(entry || {}, { isDueDate: isDueDate });
+  }
+  return { key: hasCardInteraction(entry) ? 'familiar' : 'new', label: hasCardInteraction(entry) ? 'Familiar' : 'New' };
+}
 function getNextIntervalDaysForReviewAction(currentDays, action) {
   var current = Math.max(0, parseInt(currentDays, 10) || 0);
   var normalized = normalizeReviewAction(action);
@@ -554,45 +609,67 @@ function setCardReviewAction(cardId, action) {
   if (!cardId) return;
   var value = normalizeReviewAction(action);
   var state = loadCardState();
-  if (!state[cardId]) { state[cardId] = { seen: 0, correct: 0, wrong: 0, level: 'new', interval_days: 0, next_review_date: '', difficulty: 'medium', last_action: '' }; }
-  state[cardId].last_action = value;
-  if (value === 'hard') state[cardId].difficulty = 'hard';
-  else if (value === 'easy') state[cardId].difficulty = 'easy';
-  else state[cardId].difficulty = 'medium';
+  var entry = ensureCardStateEntry(state, cardId);
+  entry.last_action = value;
+  if (value === 'hard') entry.difficulty = 'hard';
+  else if (value === 'easy') entry.difficulty = 'easy';
+  else entry.difficulty = 'medium';
   saveCardState(state);
   updateDifficultyToolbar();
+  updateLearnCardStatus();
   renderMasteryGauge();
 }
 function applyReviewAction(cardId, action) {
   if (!cardId) return;
   var state = loadCardState();
-  if (!state[cardId]) {
-    state[cardId] = { seen: 0, correct: 0, wrong: 0, level: 'new', interval_days: 0, next_review_date: '', difficulty: 'medium', last_review_date: '', last_action: '' };
-  }
-  var entry = state[cardId];
+  var entry = ensureCardStateEntry(state, cardId);
   var reviewAction = normalizeReviewAction(action);
   entry.seen = (entry.seen || 0) + 1;
   if (reviewAction === 'retry') { entry.wrong = (entry.wrong || 0) + 1; }
   else { entry.correct = (entry.correct || 0) + 1; }
   entry.interval_days = getNextIntervalDaysForReviewAction(entry.interval_days, reviewAction);
+  entry.max_interval_days = Math.max(entry.max_interval_days || 0, entry.interval_days || 0);
   entry.last_review_date = todayLocalDateString();
   entry.next_review_date = reviewAction === 'retry'
     ? entry.last_review_date
     : addDaysToLocalDate(entry.last_review_date, entry.interval_days);
-  if (reviewAction === 'retry') { entry.level = 'retry'; }
-  else if (entry.interval_days >= 14) { entry.level = 'mastered'; }
-  else { entry.level = 'familiar'; }
   if (reviewAction === 'hard') entry.difficulty = 'hard';
   else if (reviewAction === 'easy') entry.difficulty = 'easy';
   else entry.difficulty = 'medium';
   entry.last_action = reviewAction;
+  entry.level = deriveCardLevelForEntry(entry);
   state[cardId] = entry;
   saveCardState(state);
   recordStudyActivity();
   renderMasteryGauge();
   updateTopbarDueCount();
   updateDifficultyToolbar();
+  updateLearnCardStatus();
   queueProgressSync(true);
+}
+function recordCardExposure(cardId) {
+  if (!cardId) return;
+  var state = loadCardState();
+  var entry = ensureCardStateEntry(state, cardId);
+  entry.flip_count = (entry.flip_count || 0) + 1;
+  entry.level = deriveCardLevelForEntry(entry);
+  state[cardId] = entry;
+  saveCardState(state);
+  renderMasteryGauge();
+  updateTopbarDueCount();
+  updateLearnCardStatus();
+}
+function recordWriteAttempt(cardId) {
+  if (!cardId) return;
+  var state = loadCardState();
+  var entry = ensureCardStateEntry(state, cardId);
+  entry.write_count = (entry.write_count || 0) + 1;
+  entry.level = deriveCardLevelForEntry(entry);
+  state[cardId] = entry;
+  saveCardState(state);
+  renderMasteryGauge();
+  updateTopbarDueCount();
+  updateLearnCardStatus();
 }
 function markCardReview(cardId, correct) {
   if (!cardId) return;
@@ -641,7 +718,7 @@ function countDueCardsInState(state) {
   Object.keys(state || {}).forEach(function (cardId) {
     if (cardId.indexOf('fc_') !== 0) return;
     var entry = state[cardId] || {};
-    if (!(parseInt(entry.seen, 10) > 0)) return;
+    if (!hasCardInteraction(entry)) return;
     if (isDueDate(entry.next_review_date)) due++;
   });
   return due;
@@ -1020,6 +1097,37 @@ function getCurrentDifficultyCardId() {
   if (activeLearnMode === 'test') { return 'q_' + learnQuestionIndex; }
   return '';
 }
+function renderCardStatusBadge(target, entry) {
+  if (!target) return;
+  var status = getCardStatusInfo(entry || {});
+  target.textContent = status.label || 'New';
+  target.dataset.type = status.key || 'new';
+  target.hidden = false;
+}
+function updateLearnCardStatus() {
+  if (learnFlashcardStatus) {
+    learnFlashcardStatus.hidden = true;
+  }
+  if (writeCardStatus) {
+    writeCardStatus.hidden = true;
+  }
+  if (!learnStage.classList.contains('visible') || !selectedPack) return;
+  if (activeLearnMode === 'flashcards') {
+    var flashcardQueue = getFlashcardQueue();
+    var flashcardEntry = flashcardQueue[learnFlashcardIndex];
+    if (!flashcardEntry) return;
+    var flashcardState = loadCardState()['fc_' + flashcardEntry.idx];
+    renderCardStatusBadge(learnFlashcardStatus, flashcardState);
+    return;
+  }
+  if (activeLearnMode === 'write') {
+    var writeQueue = getWriteCards();
+    var writeEntry = writeQueue[writeIndex];
+    if (!writeEntry) return;
+    var writeState = loadCardState()['fc_' + writeEntry.idx];
+    renderCardStatusBadge(writeCardStatus, writeState);
+  }
+}
 function updateDifficultyToolbar() {
   if (!difficultyToolbar) return;
   if (!learnStage.classList.contains('visible')) {
@@ -1040,10 +1148,10 @@ function updateDifficultyToolbar() {
   }
   var state = loadCardState();
   var entry = state[cardId] || {};
-  var current = normalizeReviewAction(entry.last_action || mapLegacyDifficultyToAction(entry.difficulty || 'medium'));
+  var current = normalizeReviewAction(entry.last_action || '');
   difficultyButtons.forEach(function (btn) {
     var action = normalizeReviewAction(btn.dataset.reviewAction || 'good');
-    btn.classList.toggle('active', action === current);
+    btn.classList.toggle('active', !!current && action === current);
   });
   difficultyToolbar.classList.add('visible');
   difficultyToolbar.classList.remove('faded');
@@ -1082,6 +1190,7 @@ var notesHighlightStatus = document.getElementById('notes-highlight-status');
 var hlDownloadWrap = document.getElementById('hl-download-wrap');
 var learnModeLabel = document.getElementById('learn-mode-label');
 var learnFlashcard3d = document.getElementById('learn-flashcard-3d'), learnFlashcardInner = document.getElementById('learn-flashcard-inner'), learnFlashcardFront = document.getElementById('learn-flashcard-front'), learnFlashcardBack = document.getElementById('learn-flashcard-back');
+var learnFlashcardStatus = document.getElementById('learn-flashcard-status'), writeCardStatus = document.getElementById('write-card-status');
 var learnFPrev = document.getElementById('learn-f-prev'), learnFFlip = document.getElementById('learn-f-flip'), learnFNext = document.getElementById('learn-f-next'), learnFProgress = document.getElementById('learn-f-progress');
 var learnFListBtn = document.getElementById('learn-f-list-btn'), learnFPeekWrap = document.getElementById('learn-f-peek-wrap'), learnFPeekToggle = document.getElementById('learn-f-peek-toggle'), learnFListView = document.getElementById('learn-f-list-view');
 var learnProgressFill = document.getElementById('learn-progress-fill'), learnProgressText = document.getElementById('learn-progress-text');
@@ -2767,16 +2876,17 @@ function renderMasteryGauge() {
   var seen = 0, famCount = 0, mastCount = 0, dueToday = 0, diffRetry = 0, diffHard = 0, diffGood = 0, diffEasy = 0;
   cards.forEach(function (c, i) {
     var cs = state['fc_' + i];
-    if (cs && parseInt(cs.seen, 10) > 0) {
+    if (cs && hasCardInteraction(cs)) {
       seen++;
-      if (cs.level === 'mastered') { mastCount++; } else if (cs.level === 'familiar') { famCount++; }
+      if (deriveCardLevelForEntry(cs) === 'mastered') { mastCount++; }
+      else { famCount++; }
       if (isDueDate(cs.next_review_date)) { dueToday++; }
+      var action = normalizeReviewAction((cs && cs.last_action) || mapLegacyDifficultyToAction((cs && cs.difficulty) || 'medium'));
+      if (action === 'retry') diffRetry++;
+      else if (action === 'hard') diffHard++;
+      else if (action === 'easy') diffEasy++;
+      else diffGood++;
     }
-    var action = normalizeReviewAction((cs && cs.last_action) || mapLegacyDifficultyToAction((cs && cs.difficulty) || 'medium'));
-    if (action === 'retry') diffRetry++;
-    else if (action === 'hard') diffHard++;
-    else if (action === 'easy') diffEasy++;
-    else diffGood++;
   });
   var newCount = total - seen;
   var packStats = getPackStatsSnapshot(selectedPack);
@@ -2926,6 +3036,7 @@ function renderWriteCard() {
   var cards = getWriteCards();
   if (!cards.length) {
     writePromptEl.textContent = 'No flashcards available.';
+    if (writeCardStatus) writeCardStatus.hidden = true;
     setHidden(writeInputEl, true);
     setHidden(writeCheckBtn, true);
     setHidden(writeRevealBtn, true);
@@ -2945,6 +3056,7 @@ function renderWriteCard() {
   writeInputEl.focus();
   updateLearnProgressBar();
   updateDifficultyToolbar();
+  updateLearnCardStatus();
 }
 function checkWriteAnswer() {
   if (writeChecked || writeRevealed) return;
@@ -2955,6 +3067,7 @@ function checkWriteAnswer() {
   var correctAnswer = writePromptSwapped ? (c.front || '') : (c.back || '');
   var isCorrect = gradeAnswer(writeInputEl.value, correctAnswer);
   writeInputEl.disabled = true;
+  recordWriteAttempt('fc_' + entry.idx);
   markCardSeen('fc_' + entry.idx, isCorrect);
   if (isCorrect) {
     writeInputEl.className = 'write-input correct-input';
@@ -2976,6 +3089,7 @@ function revealWriteAnswer() {
   writeInputEl.disabled = true; writeInputEl.className = 'write-input wrong-input';
   writeFeedbackEl.className = 'write-feedback visible wrong-fb';
   writeFeedbackEl.textContent = 'Answer: ' + correctAnswer;
+  recordWriteAttempt('fc_' + entry.idx);
   markCardSeen('fc_' + entry.idx, false);
 }
 writeCheckBtn.addEventListener('click', function () { checkWriteAnswer(); resetLearnHintVisibility(); });
@@ -3742,6 +3856,7 @@ function updateFlashcardContent() {
   if (!cards.length) {
     learnFlashcardFront.textContent = 'No flashcards available.'; learnFlashcardBack.textContent = '';
     learnFProgress.textContent = 'Card 0 of 0'; learnFPrev.disabled = true; learnFNext.disabled = true; learnFFlip.disabled = true;
+    if (learnFlashcardStatus) learnFlashcardStatus.hidden = true;
     updateLearnProgressBar(); return;
   }
   var entry = cards[learnFlashcardIndex] || { card: {}, idx: learnFlashcardIndex };
@@ -3754,6 +3869,7 @@ function updateFlashcardContent() {
   learnFNext.disabled = (learnFlashcardIndex === cards.length - 1);
   learnFFlip.disabled = false;
   renderFlashcardListView();
+  updateLearnCardStatus();
   updateDifficultyToolbar();
   updateLearnProgressBar();
 }
@@ -3875,7 +3991,13 @@ function openLearnStageWithMode(mode, requestFullscreen) {
   if (learnBody) { learnBody.scrollTop = 0; }
   var learnCard = learnStage.querySelector('.learn-card');
   if (learnCard) { learnCard.scrollTop = 0; }
-  requestAnimationFrame(function () { requestAnimationFrame(function () { learnStage.classList.replace('entering', 'visible'); }); });
+  requestAnimationFrame(function () {
+    requestAnimationFrame(function () {
+      learnStage.classList.replace('entering', 'visible');
+      updateDifficultyToolbar();
+      updateLearnCardStatus();
+    });
+  });
   resetLearnHintVisibility();
   if (requestFullscreen) {
     try { document.documentElement.requestFullscreen(); } catch (e) { }
@@ -3893,6 +4015,7 @@ function closeLearnStage() {
   if (keyboardHints) keyboardHints.classList.remove('faded');
   setAudioHiddenForLearn(false);
   updateDifficultyToolbar();
+  updateLearnCardStatus();
   setBodyScrollLocked(false);
   if (document.fullscreenElement) { try { document.exitFullscreen(); } catch (e) { } }
 }
@@ -4841,6 +4964,9 @@ learnFlashcard3d.addEventListener('click', function () {
   }
   if (fcSliding) return;
   learnFlashcardFlipped = !learnFlashcardFlipped;
+  if (learnFlashcardFlipped) {
+    recordCardExposure(getCurrentDifficultyCardId());
+  }
   renderLearnFlashcard();
   resetLearnHintVisibility();
 });
@@ -4849,6 +4975,9 @@ learnFNext.addEventListener('click', function () { doFlashcardSlide('next'); res
 learnFFlip.addEventListener('click', function () {
   if (fcSliding) return;
   learnFlashcardFlipped = !learnFlashcardFlipped;
+  if (learnFlashcardFlipped) {
+    recordCardExposure(getCurrentDifficultyCardId());
+  }
   renderLearnFlashcard();
   resetLearnHintVisibility();
 });

@@ -536,6 +536,10 @@
               Random</button><button class="algo-preset" data-preset="lastminute">Last Minute Overview</button><button
               class="algo-preset" data-preset="fixmistakes">Fix Mistakes</button><button class="algo-preset"
               data-preset="hardfirst">Hard First</button></div>
+          <div class="algo-explainer">
+            <p>The 5-slot lane repeats through the whole session. Due cards are picked first, then the rest.</p>
+            <p>New = never opened. Familiar = viewed or written. Retry = more wrong than right. Hard = graded hard. Remaster = once-mastered cards that are due again or have slipped.</p>
+          </div>
         </div>
         <button class="btn cta u-mt-8" id="setup-start-btn"><svg viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -608,13 +612,16 @@
                 </label>
               </div>
               <div class="flashcard-list-view" id="learn-f-list-view" hidden></div>
-              <div class="flashcard-3d" id="learn-flashcard-3d">
-                <div class="flashcard-inner" id="learn-flashcard-inner">
-                  <div class="flashcard-face front"><span class="flashcard-label">Front</span>
-                    <div class="flashcard-text" id="learn-flashcard-front"></div>
-                  </div>
-                  <div class="flashcard-face back"><span class="flashcard-label">Back</span>
-                    <div class="flashcard-text" id="learn-flashcard-back"></div>
+              <div class="flashcard-stage-card">
+                <div class="learn-card-status" id="learn-flashcard-status" hidden></div>
+                <div class="flashcard-3d" id="learn-flashcard-3d">
+                  <div class="flashcard-inner" id="learn-flashcard-inner">
+                    <div class="flashcard-face front"><span class="flashcard-label">Front</span>
+                      <div class="flashcard-text" id="learn-flashcard-front"></div>
+                    </div>
+                    <div class="flashcard-face back"><span class="flashcard-label">Back</span>
+                      <div class="flashcard-text" id="learn-flashcard-back"></div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -640,7 +647,10 @@
           <!-- Write pane -->
           <div class="learn-pane" id="learn-pane-write">
             <div class="write-stage">
-              <div class="write-prompt" id="write-prompt"></div>
+              <div class="write-prompt-card">
+                <div class="learn-card-status" id="write-card-status" hidden></div>
+                <div class="write-prompt" id="write-prompt"></div>
+              </div>
               <div class="write-input-row"><input type="text" class="write-input" id="write-input"
                   placeholder="Type your answer..." autocomplete="off"><button class="btn primary"
                   id="write-check-btn">Check</button><button class="btn" id="write-reveal-btn">Reveal</button></div>

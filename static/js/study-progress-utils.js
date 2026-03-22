@@ -131,12 +131,23 @@
     return target <= String(todayString || localDateString()).trim();
   }
 
+  function hasCardInteraction(entry) {
+    var card = entry && typeof entry === 'object' ? entry : {};
+    return (
+      safeInteger(card.seen) > 0 ||
+      safeInteger(card.correct) > 0 ||
+      safeInteger(card.wrong) > 0 ||
+      safeInteger(card.flip_count) > 0 ||
+      safeInteger(card.write_count) > 0
+    );
+  }
+
   function countDueCardsInState(state, todayString) {
     var due = 0;
     Object.keys(state || {}).forEach(function (cardId) {
       if (String(cardId).indexOf('fc_') !== 0) return;
       var entry = state[cardId] || {};
-      if (!(safeInteger(entry.seen) > 0)) return;
+      if (!hasCardInteraction(entry)) return;
       if (isDueDate(entry.next_review_date, todayString)) due += 1;
     });
     return due;
@@ -147,7 +158,7 @@
     var unmastered = 0;
     for (var index = 0; index < total; index += 1) {
       var entry = (state || {})['fc_' + index] || null;
-      if (!entry || !(safeInteger(entry.seen) > 0)) {
+      if (!entry || !hasCardInteraction(entry)) {
         unmastered += 1;
         continue;
       }
