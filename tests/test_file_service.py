@@ -129,8 +129,44 @@ def test_download_video_from_video_url_returns_mp4_when_download_succeeds(tmp_pa
     assert size_bytes == 4096
     assert output_path.endswith("lecture-video.mp4")
     video_command = next(command for command in commands if "--dump-single-json" not in command)
-    assert "--recode-video" in video_command
+    assert "--remux-video" in video_command
+    assert "--recode-video" not in video_command
     assert "mp4" in video_command
+
+
+def test_download_video_from_video_url_falls_back_to_recode_when_remux_fails(tmp_path):
+    commands = []
+
+    class _FakeSubprocess:
+        def run(self, cmd, **_kwargs):
+            commands.append(list(cmd))
+            if "--dump-single-json" in cmd:
+                return SimpleNamespace(returncode=0, stdout=json.dumps({"filesize": 1024}), stderr="")
+            if "--remux-video" in cmd:
+                return SimpleNamespace(returncode=1, stdout="", stderr="remux failed")
+            output_template = cmd[cmd.index("--output") + 1]
+            output_path = Path(output_template.replace("%(ext)s", "mp4"))
+            output_path.write_bytes(b"video-bytes")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    output_path, output_name, size_bytes = file_service.download_video_from_video_url(
+        "https://example.com/video",
+        "lecture-video",
+        upload_folder=str(tmp_path),
+        max_download_bytes=500 * 1024 * 1024,
+        ffmpeg_binary_getter=lambda: "/usr/bin/ffmpeg",
+        get_saved_file_size_fn=lambda _path: 4096,
+        which_func=lambda name: "/usr/bin/yt-dlp" if name == "yt-dlp" else "",
+        subprocess_module=_FakeSubprocess(),
+    )
+
+    assert output_name == "lecture-video.mp4"
+    assert size_bytes == 4096
+    assert output_path.endswith("lecture-video.mp4")
+    video_commands = [command for command in commands if "--dump-single-json" not in command]
+    assert len(video_commands) == 2
+    assert "--remux-video" in video_commands[0]
+    assert "--recode-video" in video_commands[1]
 
 
 def test_download_video_from_video_url_rejects_known_oversize_file(tmp_path):
@@ -153,3 +189,60 @@ def test_download_video_from_video_url_rejects_known_oversize_file(tmp_path):
             which_func=lambda name: "/usr/bin/yt-dlp" if name == "yt-dlp" else "",
             subprocess_module=_FakeSubprocess(),
         )
+
+
+def test_convert_audio_to_mp3_with_ytdlp_prefers_ffmpeg_for_local_files(tmp_path):
+    source_path = Path(tmp_path) / "lecture.wav"
+    source_path.write_bytes(b"RIFF0000WAVEfmt ")
+    commands = []
+
+    class _FakeSubprocess:
+        def run(self, cmd, **_kwargs):
+            commands.append(list(cmd))
+            assert cmd[0] == "/usr/bin/ffmpeg"
+            output_path = Path(cmd[-1])
+            output_path.write_bytes(b"ID3\x03\x00\x00\x00")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    output_path, converted = file_service.convert_audio_to_mp3_with_ytdlp(
+        str(source_path),
+        ffmpeg_binary_getter=lambda: "/usr/bin/ffmpeg",
+        logger=None,
+        which_func=lambda name: "/usr/bin/yt-dlp" if name == "yt-dlp" else "",
+        subprocess_module=_FakeSubprocess(),
+    )
+
+    assert converted is True
+    assert output_path.endswith("_converted.mp3")
+    assert len(commands) == 1
+    assert commands[0][0] == "/usr/bin/ffmpeg"
+
+
+def test_convert_audio_to_mp3_with_ytdlp_falls_back_to_ytdlp_when_ffmpeg_fails(tmp_path):
+    source_path = Path(tmp_path) / "lecture.wav"
+    source_path.write_bytes(b"RIFF0000WAVEfmt ")
+    commands = []
+
+    class _FakeSubprocess:
+        def run(self, cmd, **_kwargs):
+            commands.append(list(cmd))
+            if cmd[0] == "/usr/bin/ffmpeg":
+                return SimpleNamespace(returncode=1, stdout="", stderr="ffmpeg failed")
+            output_template = cmd[cmd.index("--output") + 1]
+            output_path = Path(output_template.replace("%(ext)s", "mp3"))
+            output_path.write_bytes(b"ID3\x03\x00\x00\x00")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    output_path, converted = file_service.convert_audio_to_mp3_with_ytdlp(
+        str(source_path),
+        ffmpeg_binary_getter=lambda: "/usr/bin/ffmpeg",
+        logger=None,
+        which_func=lambda name: "/usr/bin/yt-dlp" if name == "yt-dlp" else "",
+        subprocess_module=_FakeSubprocess(),
+    )
+
+    assert converted is True
+    assert output_path.endswith("_converted.mp3")
+    assert len(commands) == 2
+    assert commands[0][0] == "/usr/bin/ffmpeg"
+    assert commands[1][0] == "/usr/bin/yt-dlp"

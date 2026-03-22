@@ -489,34 +489,42 @@ def download_video_from_video_url(
     if source_size_bytes > max_download_bytes:
         raise RuntimeError('Lecture video exceeds server limit (max 500MB).')
 
-    cmd = [
-        ytdlp_bin,
-        '--no-playlist',
-        '--no-progress',
-        '--restrict-filenames',
-        '--ffmpeg-location', ffmpeg_bin,
-        '--format', 'bv*+ba/b',
-        '--merge-output-format', 'mp4',
-        '--recode-video', 'mp4',
-        '--output', output_template,
-        '--', source_url,
-    ]
-    try:
-        result = subprocess_module.run(
-            cmd,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=30 * 60,
-        )
-    except subprocess.TimeoutExpired:
-        _cleanup_audio_import_candidates(base)
-        raise RuntimeError('Could not fetch video from the provided URL (download timed out).')
-    if result.returncode != 0:
-        _cleanup_audio_import_candidates(base)
+    last_reason = 'unknown import error'
+    attempt_options = (
+        ['--merge-output-format', 'mp4', '--remux-video', 'mp4'],
+        ['--merge-output-format', 'mp4', '--recode-video', 'mp4'],
+    )
+
+    for extra_args in attempt_options:
+        cmd = [
+            ytdlp_bin,
+            '--no-playlist',
+            '--no-progress',
+            '--restrict-filenames',
+            '--ffmpeg-location', ffmpeg_bin,
+            '--format', 'bv*+ba/b',
+            *extra_args,
+            '--output', output_template,
+            '--', source_url,
+        ]
+        try:
+            result = subprocess_module.run(
+                cmd,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30 * 60,
+            )
+        except subprocess.TimeoutExpired:
+            _cleanup_audio_import_candidates(base)
+            raise RuntimeError('Could not fetch video from the provided URL (download timed out).')
+        if result.returncode == 0:
+            break
         stderr = (result.stderr or result.stdout or '').strip().splitlines()
-        reason = stderr[-1] if stderr else 'unknown import error'
-        raise RuntimeError(f'Could not fetch video from the provided URL ({reason[:220]}).')
+        last_reason = stderr[-1] if stderr else 'unknown import error'
+        _cleanup_audio_import_candidates(base)
+    else:
+        raise RuntimeError(f'Could not fetch video from the provided URL ({last_reason[:220]}).')
 
     candidates = sorted(glob.glob(f"{base}.*"))
     if not candidates:
@@ -547,6 +555,35 @@ def convert_audio_to_mp3_with_ytdlp(
     base_no_ext = os.path.splitext(local_audio_path)[0]
     output_path = f"{base_no_ext}_converted.mp3"
 
+    if ffmpeg_bin:
+        try:
+            command = [
+                ffmpeg_bin,
+                '-y',
+                '-i', local_audio_path,
+                '-vn',
+                '-codec:a', 'libmp3lame',
+                '-q:a', '5',
+                output_path,
+            ]
+            result = subprocess_module.run(command, check=False, capture_output=True, text=True, timeout=300)
+            if result.returncode == 0 and os.path.exists(output_path):
+                return output_path, True
+            if logger is not None:
+                logger.info(f"⚠️ ffmpeg conversion failed: {(result.stderr or '').strip()[:300]}")
+        except Exception as exc:
+            if logger is not None:
+                logger.info(f"⚠️ ffmpeg conversion exception: {exc}")
+    else:
+        if logger is not None:
+            logger.info('⚠️ ffmpeg not found, skipping direct ffmpeg conversion.')
+
+    try:
+        if os.path.exists(output_path):
+            os.remove(output_path)
+    except Exception:
+        pass
+
     if ytdlp_bin:
         try:
             source = f"file://{os.path.abspath(local_audio_path)}"
@@ -573,26 +610,11 @@ def convert_audio_to_mp3_with_ytdlp(
         if logger is not None:
             logger.info('⚠️ yt-dlp not found, skipping yt-dlp conversion.')
 
-    if not ffmpeg_bin:
-        return local_audio_path, False
     try:
-        command = [
-            ffmpeg_bin,
-            '-y',
-            '-i', local_audio_path,
-            '-vn',
-            '-codec:a', 'libmp3lame',
-            '-q:a', '5',
-            output_path,
-        ]
-        result = subprocess_module.run(command, check=False, capture_output=True, text=True, timeout=300)
-        if result.returncode == 0 and os.path.exists(output_path):
-            return output_path, True
-        if logger is not None:
-            logger.info(f"⚠️ ffmpeg conversion failed: {(result.stderr or '').strip()[:300]}")
-    except Exception as exc:
-        if logger is not None:
-            logger.info(f"⚠️ ffmpeg conversion exception: {exc}")
+        if os.path.exists(output_path):
+            os.remove(output_path)
+    except Exception:
+        pass
     return local_audio_path, False
 
 
