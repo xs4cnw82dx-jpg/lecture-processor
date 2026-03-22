@@ -72,3 +72,43 @@ test('getOtherAudioSummary returns the highest-priority active audio state', () 
     'Imported LMS audio ready'
   );
 });
+
+test('getProcessReadinessSummary explains missing lecture-note requirements in plain language', () => {
+  assert.equal(
+    processingUi.getProcessReadinessSummary({
+      signedIn: true,
+      currentMode: 'lecture-notes',
+      modeConfig: {
+        'lecture-notes': {
+          needsPdf: true,
+          needsAudio: true,
+        },
+      },
+      pdfReady: false,
+      audioReady: false,
+      hasCredits: true,
+    }),
+    'To continue, add your slides and add your audio.'
+  );
+});
+
+test('getProcessReadinessSummary reports the ready state for imported lecture audio', () => {
+  assert.equal(
+    processingUi.getProcessReadinessSummary({
+      signedIn: true,
+      currentMode: 'lecture-notes',
+      modeConfig: {
+        'lecture-notes': {
+          needsPdf: true,
+          needsAudio: true,
+        },
+      },
+      pdfReady: true,
+      audioReady: true,
+      hasCredits: true,
+      importedAudioReady: true,
+      hasLocalAudioFile: false,
+    }),
+    'Slides, imported audio, and credits ready. You can start processing.'
+  );
+});

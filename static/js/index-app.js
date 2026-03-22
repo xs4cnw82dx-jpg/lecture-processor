@@ -2390,41 +2390,29 @@ function updateUploadEstimatePanel() {
 function updateMobileProcessSummary(options = {}) {
     if (!mobileProcessSummary) return;
     const config = modeConfig[currentMode] || {};
-    const parts = [];
-    const statusParts = [];
     const uploadCooldown = Math.max(0, Number(options.uploadCooldown || 0));
     const hasCredits = options.hasCredits !== false;
     const pdfReady = !config.needsPdf || Boolean(pdfFile);
     const audioReady = !config.needsAudio || Boolean(audioFile) || hasReadyImportedAudioToken();
-
-    if (config.needsPdf) {
-        parts.push(pdfReady ? 'Slides ready' : 'Add slides');
+    if (processingUi && typeof processingUi.getProcessReadinessSummary === 'function') {
+        mobileProcessSummary.textContent = processingUi.getProcessReadinessSummary({
+            signedIn: Boolean(currentUser),
+            currentMode,
+            modeConfig,
+            pdfReady,
+            audioReady,
+            hasCredits,
+            uploadedAudioReady: Boolean(audioFile),
+            importedAudioReady: hasReadyImportedAudioToken(),
+            hasLocalAudioFile: Boolean(audioFile),
+            audioImportInFlight,
+            currentJobActive: Boolean(currentJobId && !resultsLocked),
+            uploadCooldown,
+            formatRetryDelay,
+        });
+        return;
     }
-    if (config.needsAudio) {
-        if (audioFile) {
-            parts.push('Audio file ready');
-        } else if (hasReadyImportedAudioToken()) {
-            parts.push('Imported audio ready');
-        } else if (audioImportInFlight) {
-            parts.push('Importing audio');
-        } else {
-            parts.push('Add audio');
-        }
-    }
-    if (currentUser) {
-        statusParts.push(hasCredits ? 'Credits ready' : 'Need credits');
-    } else {
-        statusParts.push('Sign in to continue');
-    }
-    if (currentJobId && !resultsLocked) {
-        statusParts.push('Processing in background');
-    } else if (uploadCooldown > 0) {
-        statusParts.push(`Try again in ${formatRetryDelay(uploadCooldown)}`);
-    } else if (!resultsLocked) {
-        statusParts.push(pdfReady && audioReady && hasCredits ? 'Ready to process' : 'Complete the missing items');
-    }
-
-    mobileProcessSummary.textContent = `${parts.join(' • ')}${parts.length && statusParts.length ? ' • ' : ''}${statusParts.join(' • ')}`;
+    mobileProcessSummary.textContent = 'Complete the required items to start processing.';
 }
 function updateProcessButton() {
     const config = modeConfig[currentMode];
