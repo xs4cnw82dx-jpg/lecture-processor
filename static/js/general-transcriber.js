@@ -11,8 +11,10 @@
 
   var fileInput = document.getElementById('transcriber-file-input');
   var dropzone = document.getElementById('transcriber-dropzone');
-  var dropzoneTitle = document.getElementById('transcriber-dropzone-title');
-  var selectedFilesEl = document.getElementById('transcriber-selected-files');
+  var fileInfo = document.getElementById('transcriber-file-info');
+  var fileNameEl = document.getElementById('transcriber-file-name');
+  var fileSizeEl = document.getElementById('transcriber-file-size');
+  var fileRemoveBtn = document.getElementById('transcriber-file-remove');
   var languageNote = document.getElementById('transcriber-language-note');
   var runBtn = document.getElementById('transcriber-run-btn');
   var creditNote = document.getElementById('transcriber-credit-note');
@@ -114,34 +116,17 @@
   }
 
   function renderSelectedFile() {
-    while (selectedFilesEl && selectedFilesEl.firstChild) selectedFilesEl.removeChild(selectedFilesEl.firstChild);
     if (!selectedFile) {
-      if (dropzoneTitle) dropzoneTitle.textContent = 'Drop an audio file here or click to browse';
+      if (dropzone) dropzone.classList.remove('has-file');
+      if (fileInfo) fileInfo.hidden = true;
+      if (fileNameEl) fileNameEl.textContent = '';
+      if (fileSizeEl) fileSizeEl.textContent = '';
       return;
     }
-    if (dropzoneTitle) dropzoneTitle.textContent = String(selectedFile.name || '');
-    var row = document.createElement('div');
-    row.className = 'selected-file';
-    var left = document.createElement('div');
-    var name = document.createElement('strong');
-    name.textContent = String(selectedFile.name || '');
-    var meta = document.createElement('div');
-    meta.className = 'selected-file-meta';
-    meta.textContent = formatBytes(selectedFile.size);
-    left.appendChild(name);
-    left.appendChild(meta);
-    var removeBtn = document.createElement('button');
-    removeBtn.type = 'button';
-    removeBtn.className = 'file-remove';
-    removeBtn.textContent = 'Remove';
-    removeBtn.addEventListener('click', function () {
-      selectedFile = null;
-      renderSelectedFile();
-      updateRunState();
-    });
-    row.appendChild(left);
-    row.appendChild(removeBtn);
-    if (selectedFilesEl) selectedFilesEl.appendChild(row);
+    if (dropzone) dropzone.classList.add('has-file');
+    if (fileInfo) fileInfo.hidden = false;
+    if (fileNameEl) fileNameEl.textContent = String(selectedFile.name || '');
+    if (fileSizeEl) fileSizeEl.textContent = formatBytes(selectedFile.size);
   }
 
   function updateOutputActionState() {
@@ -220,6 +205,33 @@
     if (outputPre) outputPre.textContent = lastOutput;
     updateOutputActionState();
     setStatus(String((payload && payload.step_description) || 'Transcription complete.'), 'success');
+    showToast('Transcription complete.', 'success');
+  }
+
+  function clearSelectedFile() {
+    selectedFile = null;
+    if (fileInput) fileInput.value = '';
+    renderSelectedFile();
+    updateRunState();
+  }
+
+  function applySelectedFile(nextFile) {
+    var error = validateAudioFile(nextFile);
+    if (error) {
+      clearSelectedFile();
+      setStatus(error, 'error');
+      return false;
+    }
+    selectedFile = nextFile;
+    renderSelectedFile();
+    updateRunState();
+    setStatus('', '');
+    return true;
+  }
+
+  function shouldIgnoreDropzoneActivation(target) {
+    if (!target || typeof target.closest !== 'function') return false;
+    return Boolean(target.closest('.tool-file-remove') || target.closest('.tool-file-info') || target.closest('button'));
   }
 
   function schedulePoll(jobId, delayMs) {
@@ -307,23 +319,22 @@
   if (fileInput) {
     fileInput.addEventListener('change', function (event) {
       var nextFile = event.target.files && event.target.files[0];
-      var error = validateAudioFile(nextFile);
-      if (error) {
-        selectedFile = null;
-        renderSelectedFile();
-        updateRunState();
-        setStatus(error, 'error');
-      } else {
-        selectedFile = nextFile;
-        renderSelectedFile();
-        updateRunState();
-        setStatus('', '');
-      }
+      applySelectedFile(nextFile);
       fileInput.value = '';
     });
   }
 
   if (dropzone) {
+    dropzone.addEventListener('click', function (event) {
+      if (shouldIgnoreDropzoneActivation(event.target)) return;
+      if (fileInput) fileInput.click();
+    });
+    dropzone.addEventListener('keydown', function (event) {
+      if (event.target !== dropzone) return;
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      if (fileInput) fileInput.click();
+    });
     dropzone.addEventListener('dragover', function (event) {
       event.preventDefault();
       dropzone.classList.add('drag');
@@ -335,14 +346,15 @@
       event.preventDefault();
       dropzone.classList.remove('drag');
       var nextFile = event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files[0] : null;
-      var error = validateAudioFile(nextFile);
-      if (error) {
-        setStatus(error, 'error');
-        return;
-      }
-      selectedFile = nextFile;
-      renderSelectedFile();
-      updateRunState();
+      applySelectedFile(nextFile);
+    });
+  }
+
+  if (fileRemoveBtn) {
+    fileRemoveBtn.addEventListener('click', function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      clearSelectedFile();
       setStatus('', '');
     });
   }
