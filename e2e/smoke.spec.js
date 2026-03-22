@@ -96,3 +96,49 @@ test('lecture notes audio disclosures toggle open and closed', async ({ page }) 
   await expect(advancedBody).toHaveAttribute('aria-hidden', 'true');
   await expect(advancedToggle).not.toHaveClass(/open/);
 });
+
+test('lecture notes keeps a stable layout on desktop and stacks cleanly on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 1200 });
+  await page.goto('/lecture-notes');
+
+  const desktopLayout = await page.evaluate(() => {
+    const uploadSection = document.getElementById('upload-section');
+    const buttonSection = document.getElementById('button-section');
+    const advancedSettings = document.getElementById('advanced-settings');
+    const secondaryGrid = document.querySelector('.processing-secondary-grid');
+    const processSummary = document.getElementById('mobile-process-summary');
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+
+    return {
+      templateAreas: normalize(getComputedStyle(uploadSection).gridTemplateAreas),
+      buttonPosition: getComputedStyle(buttonSection).position,
+      advancedArea: normalize(getComputedStyle(advancedSettings).gridArea),
+      secondaryArea: normalize(getComputedStyle(secondaryGrid).gridArea),
+      processSummary: normalize(processSummary.textContent),
+    };
+  });
+
+  expect(desktopLayout.templateAreas).toContain('"topic topic"');
+  expect(desktopLayout.templateAreas).toContain('"slides audio"');
+  expect(desktopLayout.templateAreas).toContain('"advanced secondary"');
+  expect(desktopLayout.templateAreas).toContain('"action action"');
+  expect(desktopLayout.buttonPosition).toBe('static');
+  expect(desktopLayout.advancedArea).toContain('advanced');
+  expect(desktopLayout.secondaryArea).toContain('secondary');
+  expect(desktopLayout.processSummary).toMatch(/Sign in to check your credits and start processing\./);
+  expect(desktopLayout.processSummary).not.toContain('•');
+
+  await page.setViewportSize({ width: 390, height: 1100 });
+
+  const mobileLayout = await page.evaluate(() => {
+    const uploadSection = document.getElementById('upload-section');
+    return String(getComputedStyle(uploadSection).gridTemplateAreas).replace(/\s+/g, ' ').trim();
+  });
+
+  expect(mobileLayout).toContain('"topic"');
+  expect(mobileLayout).toContain('"slides"');
+  expect(mobileLayout).toContain('"audio"');
+  expect(mobileLayout).toContain('"secondary"');
+  expect(mobileLayout).toContain('"advanced"');
+  expect(mobileLayout).toContain('"action"');
+});

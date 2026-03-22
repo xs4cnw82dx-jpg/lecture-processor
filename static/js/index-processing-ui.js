@@ -67,6 +67,62 @@
         return 'Import from LMS or record in your browser';
     }
 
+    function joinReadableList(items) {
+        const parts = Array.isArray(items)
+            ? items.filter(Boolean).map(function (item) { return String(item).trim(); }).filter(Boolean)
+            : [];
+        if (!parts.length) return '';
+        if (parts.length === 1) return parts[0];
+        if (parts.length === 2) return parts[0] + ' and ' + parts[1];
+        return parts.slice(0, -1).join(', ') + ', and ' + parts[parts.length - 1];
+    }
+
+    function sentenceCase(text) {
+        const value = String(text || '').trim();
+        if (!value) return '';
+        return value.charAt(0).toUpperCase() + value.slice(1);
+    }
+
+    function getProcessReadinessSummary(state) {
+        const safeState = state && typeof state === 'object' ? state : {};
+        const config = safeState.modeConfig && safeState.modeConfig[safeState.currentMode]
+            ? safeState.modeConfig[safeState.currentMode]
+            : {};
+        const signedIn = Boolean(safeState.signedIn);
+        const hasCredits = safeState.hasCredits !== false;
+        const pdfReady = !config.needsPdf || Boolean(safeState.pdfReady);
+        const audioReady = !config.needsAudio || Boolean(safeState.audioReady);
+        const uploadCooldown = Math.max(0, Number(safeState.uploadCooldown || 0));
+        const formatRetryDelay = typeof safeState.formatRetryDelay === 'function'
+            ? safeState.formatRetryDelay
+            : function (seconds) { return String(seconds) + ' seconds'; };
+
+        if (!signedIn) return 'Sign in to check your credits and start processing.';
+        if (safeState.currentJobActive) return 'This lecture is already processing in the background.';
+        if (uploadCooldown > 0) {
+            return 'Please wait ' + formatRetryDelay(uploadCooldown) + ' before starting another upload.';
+        }
+        if (config.needsAudio && safeState.audioImportInFlight && !safeState.hasLocalAudioFile) {
+            return 'Your imported lecture audio is still finishing. You can start as soon as it is ready.';
+        }
+
+        const missingSteps = [];
+        if (config.needsPdf && !pdfReady) missingSteps.push('add your slides');
+        if (config.needsAudio && !audioReady) missingSteps.push('add your audio');
+        if (!hasCredits) missingSteps.push('have enough credits');
+        if (missingSteps.length) {
+            return 'To continue, ' + joinReadableList(missingSteps) + '.';
+        }
+
+        const readyParts = [];
+        if (config.needsPdf) readyParts.push('slides');
+        if (config.needsAudio) {
+            readyParts.push(safeState.importedAudioReady && !safeState.hasLocalAudioFile ? 'imported audio' : 'audio');
+        }
+        readyParts.push('credits');
+        return sentenceCase(joinReadableList(readyParts)) + ' ready. You can start processing.';
+    }
+
     function syncProcessingLayout(dom, state) {
         const mode = state.modeConfig && state.modeConfig[state.currentMode] ? state.modeConfig[state.currentMode] : {};
         const signedIn = Boolean(state.signedIn);
@@ -113,6 +169,7 @@
     const exported = {
         getAdvancedSettingsSummary: getAdvancedSettingsSummary,
         getOtherAudioSummary: getOtherAudioSummary,
+        getProcessReadinessSummary: getProcessReadinessSummary,
         setDisclosureState: setDisclosureState,
         setHidden: setHidden,
         shouldAutoOpenOtherAudio: shouldAutoOpenOtherAudio,

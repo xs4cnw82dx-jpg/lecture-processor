@@ -1054,8 +1054,18 @@
         body[data-forced-mode="lecture-notes"] .processing-layout { grid-template-columns: 1fr; }
         body[data-forced-mode="lecture-notes"] .upload-section {
             margin-bottom: 0;
-            gap: 14px;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            grid-template-areas:
+                "topic topic"
+                "slides audio"
+                "advanced secondary"
+                "action action";
+            gap: 16px 20px;
+            align-items: start;
         }
+        body[data-forced-mode="lecture-notes"] .lecture-topic-field { grid-area: topic; }
+        body[data-forced-mode="lecture-notes"] #pdf-zone { grid-area: slides; }
+        body[data-forced-mode="lecture-notes"] #audio-zone { grid-area: audio; }
         body[data-forced-mode="lecture-notes"] .upload-zone {
             padding: 22px 18px;
             text-align: left;
@@ -1074,6 +1084,20 @@
         body[data-forced-mode="lecture-notes"] .upload-formats {
             text-align: left;
         }
+        body[data-forced-mode="lecture-notes"] .processing-secondary-grid {
+            grid-area: secondary;
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+        body[data-forced-mode="lecture-notes"] .processing-disclosure,
+        body[data-forced-mode="lecture-notes"] .upload-estimate {
+            height: auto;
+        }
+        body[data-forced-mode="lecture-notes"] .advanced-settings {
+            grid-area: advanced;
+            height: auto;
+            align-self: start;
+        }
         body[data-forced-mode="lecture-notes"] .advanced-settings-toggle {
             min-height: 44px;
         }
@@ -1086,25 +1110,51 @@
             gap: 12px;
         }
         body[data-forced-mode="lecture-notes"] .button-section {
+            grid-area: action;
             text-align: left;
-            position: sticky;
-            bottom: 12px;
-            z-index: 24;
-            padding: 12px;
+            position: static;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+            gap: 16px;
+            align-items: center;
+            padding: 16px 18px;
             border: 1px solid var(--gray-200);
             border-radius: 18px;
-            background: rgba(255, 255, 255, 0.94);
-            backdrop-filter: blur(12px);
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.96) 100%);
             box-shadow: 0 16px 30px rgba(15, 23, 42, 0.08);
         }
-        body[data-forced-mode="lecture-notes"] .mobile-process-summary { display: block; }
+        body[data-forced-mode="lecture-notes"] .mobile-process-summary {
+            display: block;
+            margin: 0;
+            font-size: 0.92rem;
+            color: var(--gray-700);
+            line-height: 1.55;
+        }
         body[data-forced-mode="lecture-notes"] .process-button {
             width: 100%;
             min-width: 0;
             padding: 14px 18px;
+            justify-self: end;
         }
         body[data-forced-mode="lecture-notes"] .no-credits-warning {
+            grid-column: 1 / -1;
+            margin-top: 0;
             text-align: left;
+        }
+        @media (max-width: 900px) {
+            body[data-forced-mode="lecture-notes"] .upload-section {
+                grid-template-columns: 1fr;
+                grid-template-areas:
+                    "topic"
+                    "slides"
+                    "audio"
+                    "secondary"
+                    "advanced"
+                    "action";
+            }
+            body[data-forced-mode="lecture-notes"] .button-section {
+                grid-template-columns: 1fr;
+            }
         }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(79,70,229,0.4); } 50% { box-shadow: 0 0 0 8px rgba(79,70,229,0); } }
