@@ -849,6 +849,18 @@ def tools_extract(app_ctx, request):
     return tools_extraction_service.tools_extract(app_ctx, request)
 
 
+def tools_lecture_download(app_ctx, request):
+    from lecture_processor.services import tools_download_service
+
+    return tools_download_service.download_lecture_media(app_ctx, request)
+
+
+def tools_transcribe(app_ctx, request):
+    from lecture_processor.services import tools_transcription_service
+
+    return tools_transcription_service.create_general_transcription(app_ctx, request)
+
+
 def tools_export(app_ctx, request):
     decoded_token = app_ctx.verify_firebase_token(request)
     if not decoded_token:

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lecture Downloader · Lecture Processor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/reader.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tool-pages.css') }}">
+</head>
+<body>
+  {% set shell_title = 'Lecture Downloader' %}
+  {% include '_app_shell.html' %}
+    <main class="app-shell-page reader-page">
+      <section class="shell-panel reader-hero">
+        <h1>Lecture Downloader</h1>
+        <p>Paste a supported lecture URL and download it as MP4 video, MP3 audio, or a ZIP that includes both.</p>
+      </section>
+
+      <section class="reader-grid">
+        <article class="shell-panel reader-input-card">
+          <h2>Lecture URL</h2>
+          <div class="tool-input-grid">
+            <label for="lecture-downloader-url">Source URL</label>
+            <input
+              type="url"
+              id="lecture-downloader-url"
+              class="tool-text-input"
+              placeholder="https://your-lecture-host.example/path"
+              autocomplete="off"
+            >
+          </div>
+
+          <div class="choice-grid" id="lecture-downloader-format-grid" role="group" aria-label="Download format">
+            <button type="button" class="choice-chip active" data-format="video">
+              <span class="choice-chip-title">MP4 Video</span>
+              <span class="choice-chip-copy">Download the lecture as a standard video file.</span>
+            </button>
+            <button type="button" class="choice-chip" data-format="audio">
+              <span class="choice-chip-title">MP3 Audio</span>
+              <span class="choice-chip-copy">Download the lecture as an audio-only file.</span>
+            </button>
+            <button type="button" class="choice-chip" data-format="both">
+              <span class="choice-chip-title">Both</span>
+              <span class="choice-chip-copy">Download a ZIP that contains both MP4 and MP3.</span>
+            </button>
+          </div>
+
+          <p class="tool-note">No credits are used for this tool. Sign in is still required so the download request uses your authenticated session.</p>
+
+          <div class="run-row">
+            <button type="button" class="primary-btn" id="lecture-downloader-run-btn" disabled>Download</button>
+          </div>
+          <div class="reader-auth-panel" id="lecture-downloader-auth-panel" hidden>
+            <div class="reader-auth-copy">
+              <strong>Sign in required</strong>
+              <p>Sign in to start a lecture download from a supported URL.</p>
+            </div>
+            <a class="ghost-btn reader-auth-link" id="lecture-downloader-auth-link" href="/lecture-notes?auth=signin">Sign in</a>
+          </div>
+          <div class="status" id="lecture-downloader-status" aria-live="polite"></div>
+        </article>
+
+        <article class="shell-panel reader-output-card">
+          <div class="result-head">
+            <h2>What You Get</h2>
+          </div>
+          <div class="info-stack">
+            <section class="info-card">
+              <h3>MP4 video</h3>
+              <p>Best when you want the original lecture with visuals intact for later review.</p>
+            </section>
+            <section class="info-card">
+              <h3>MP3 audio</h3>
+              <p>Best when you only need the spoken content and want a smaller file for listening.</p>
+            </section>
+            <section class="info-card">
+              <h3>Both in one ZIP</h3>
+              <p>Best when you want both versions now and prefer a single download.</p>
+            </section>
+          </div>
+          <div class="download-summary" id="lecture-downloader-summary">
+            <strong>Last download:</strong> none yet.
+          </div>
+        </article>
+      </section>
+    </main>
+  {% include '_shell_footer.html' %}
+  </div>
+  </div>
+  <div class="reader-toast" id="lecture-downloader-toast" aria-live="polite"></div>
+
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/user-cache-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename=lecture_downloader_js_asset or 'js/lecture-downloader.js') }}"></script>
+</body>
+</html>

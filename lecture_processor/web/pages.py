@@ -319,6 +319,26 @@ def url_reader_page():
     )
 
 
+@pages_bp.route('/lecture-downloader')
+def lecture_downloader_page():
+    runtime = get_runtime()
+    return render_template(
+        'lecture_downloader.html',
+        lecture_downloader_js_asset=runtime.resolve_js_asset('js/lecture-downloader.js'),
+        **_shell_context(runtime=runtime, page_key='lecture-downloader'),
+    )
+
+
+@pages_bp.route('/general-transcriber')
+def general_transcriber_page():
+    runtime = get_runtime()
+    return render_template(
+        'general_transcriber.html',
+        general_transcriber_js_asset=runtime.resolve_js_asset('js/general-transcriber.js'),
+        **_shell_context(runtime=runtime, page_key='general-transcriber'),
+    )
+
+
 @pages_bp.route('/buy_credits')
 def buy_credits_page():
     runtime = get_runtime()

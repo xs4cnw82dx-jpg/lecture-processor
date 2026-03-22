@@ -2,6 +2,7 @@ import io
 import json
 import zipfile
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -440,6 +441,42 @@ def test_import_audio_url_success_returns_token(client, monkeypatch, tmp_path):
     assert body["file_name"] == "lecture.mp3"
 
 
+def test_tools_lecture_download_returns_zip_for_both_formats(client, monkeypatch, tmp_path):
+    video_path = tmp_path / "lecture.mp4"
+    audio_path = tmp_path / "lecture.mp3"
+    video_path.write_bytes(b"video-bytes")
+    audio_path.write_bytes(b"ID3\x03\x00\x00\x00")
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "tool-dl-u1", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(
+        upload_import_audio,
+        "validate_video_import_url",
+        lambda _url, runtime=None: ("https://ovp.kaltura.com/path/index.m3u8", ""),
+    )
+    monkeypatch.setattr(
+        core,
+        "download_video_from_video_url",
+        lambda _url, _prefix: (str(video_path), "lecture.mp4", video_path.stat().st_size),
+    )
+    monkeypatch.setattr(core, "convert_audio_to_mp3_with_ytdlp", lambda _path: (str(audio_path), True))
+    monkeypatch.setattr(core, "get_saved_file_size", lambda path: Path(path).stat().st_size)
+    monkeypatch.setattr(core, "file_looks_like_audio", lambda _path: True)
+
+    response = client.post(
+        "/api/tools/lecture-download",
+        json={"url": "https://ovp.kaltura.com/path/index.m3u8", "format": "both"},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/zip"
+    archive = zipfile.ZipFile(io.BytesIO(response.data))
+    assert sorted(archive.namelist()) == ["lecture-audio.mp3", "lecture-video.mp4"]
+
+
 def test_upload_accepts_audio_import_token_for_lecture_mode(client, monkeypatch):
     token_calls = []
     released = []
@@ -714,6 +751,76 @@ def test_tools_extract_image_accepts_five_files_bills_once_and_returns_output_te
     assert len(deduct_calls) == 1
     assert deduct_calls[0][1] == "slides_credits"
     assert log_calls
+    assert cleanup_calls
+
+
+def test_tools_transcribe_audio_uses_interview_credit_and_returns_transcript(client, monkeypatch):
+    cleanup_calls = []
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "tools-tr-u1", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(
+        core,
+        "get_or_create_user",
+        lambda _uid, _email: {
+            "uid": "tools-tr-u1",
+            "email": "user@gmail.com",
+            "interview_credits_short": 1,
+            "interview_credits_medium": 0,
+            "interview_credits_long": 0,
+            "preferred_output_language": "dutch",
+            "preferred_output_language_custom": "",
+        },
+    )
+    monkeypatch.setattr(core, "allowed_file", lambda _filename, _allowed: True)
+    monkeypatch.setattr(core, "get_saved_file_size", lambda _path: 4096)
+    monkeypatch.setattr(core, "file_looks_like_audio", lambda _path: True)
+    monkeypatch.setattr(core, "cleanup_files", lambda local_paths, remote_files: cleanup_calls.append((list(local_paths), list(remote_files))))
+    monkeypatch.setattr(core, "save_job_log", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(billing_credits, "deduct_interview_credit", lambda _uid, runtime=None: "interview_credits_short")
+
+    class _UploadApi:
+        def upload(self, file=None, config=None):
+            return SimpleNamespace(uri=f"mock://{file}", name="mock-file")
+
+    monkeypatch.setattr(core, "client", SimpleNamespace(files=_UploadApi()))
+    monkeypatch.setattr(core, "convert_audio_to_mp3_with_ytdlp", lambda path: (path, False))
+    monkeypatch.setattr(core, "get_mime_type", lambda _path: "audio/mpeg")
+    monkeypatch.setattr(core, "wait_for_file_processing", lambda _uploaded: None)
+    monkeypatch.setattr(
+        core,
+        "transcribe_audio_plain",
+        lambda _audio_file, _audio_mime_type, output_language="English", retry_tracker=None, include_usage=False: (
+            ("Transcript in " + str(output_language), {"input_tokens": 11, "output_tokens": 7, "total_tokens": 18})
+            if include_usage else ("Transcript in " + str(output_language))
+        ),
+    )
+    monkeypatch.setattr(core, "submit_background_job", lambda target, *args, **kwargs: target(*args, **kwargs))
+
+    response = client.post(
+        "/api/tools/transcribe",
+        data={"audio": (io.BytesIO(b"ID3\x03\x00\x00\x00"), "lecture.mp3", "audio/mpeg")},
+        content_type="multipart/form-data",
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 202
+    payload = response.get_json()
+    assert payload["ok"] is True
+    job_id = payload["job_id"]
+
+    status_response = client.get(
+        f"/status/{job_id}",
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert status_response.status_code == 200
+    status_payload = status_response.get_json()
+    assert status_payload["status"] == "complete"
+    assert status_payload["output_text"] == "Transcript in Dutch"
+    assert status_payload["billing_receipt"]["charged"]["interview_credits_short"] == 1
     assert cleanup_calls
 
 

@@ -95,3 +95,61 @@ def test_download_audio_from_video_url_uses_max_filesize_for_audio_only_sources(
     assert size_bytes == 2048
     assert output_path.endswith("audio-only.mp3")
     assert any("--max-filesize" in command for command in commands if "--extract-audio" in command)
+
+
+def test_download_video_from_video_url_returns_mp4_when_download_succeeds(tmp_path):
+    commands = []
+
+    class _FakeSubprocess:
+        def run(self, cmd, **_kwargs):
+            commands.append(list(cmd))
+            if "--dump-single-json" in cmd:
+                return SimpleNamespace(
+                    returncode=0,
+                    stdout=json.dumps({"filesize": 1024}),
+                    stderr="",
+                )
+            output_template = cmd[cmd.index("--output") + 1]
+            output_path = Path(output_template.replace("%(ext)s", "mp4"))
+            output_path.write_bytes(b"video-bytes")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    output_path, output_name, size_bytes = file_service.download_video_from_video_url(
+        "https://example.com/video",
+        "lecture-video",
+        upload_folder=str(tmp_path),
+        max_download_bytes=500 * 1024 * 1024,
+        ffmpeg_binary_getter=lambda: "/usr/bin/ffmpeg",
+        get_saved_file_size_fn=lambda _path: 4096,
+        which_func=lambda name: "/usr/bin/yt-dlp" if name == "yt-dlp" else "",
+        subprocess_module=_FakeSubprocess(),
+    )
+
+    assert output_name == "lecture-video.mp4"
+    assert size_bytes == 4096
+    assert output_path.endswith("lecture-video.mp4")
+    video_command = next(command for command in commands if "--dump-single-json" not in command)
+    assert "--recode-video" in video_command
+    assert "mp4" in video_command
+
+
+def test_download_video_from_video_url_rejects_known_oversize_file(tmp_path):
+    class _FakeSubprocess:
+        def run(self, cmd, **_kwargs):
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({"filesize": 900 * 1024 * 1024}),
+                stderr="",
+            )
+
+    with pytest.raises(RuntimeError, match="exceeds server limit"):
+        file_service.download_video_from_video_url(
+            "https://example.com/video",
+            "lecture-video",
+            upload_folder=str(tmp_path),
+            max_download_bytes=500 * 1024 * 1024,
+            ffmpeg_binary_getter=lambda: "/usr/bin/ffmpeg",
+            get_saved_file_size_fn=lambda _path: 0,
+            which_func=lambda name: "/usr/bin/yt-dlp" if name == "yt-dlp" else "",
+            subprocess_module=_FakeSubprocess(),
+        )

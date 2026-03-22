@@ -66,6 +66,18 @@ def tools_extract():
     return upload_api_service.tools_extract(runtime, request)
 
 
+@upload_bp.route('/api/tools/lecture-download', methods=['POST'])
+def tools_lecture_download():
+    runtime = get_runtime()
+    return upload_api_service.tools_lecture_download(runtime, request)
+
+
+@upload_bp.route('/api/tools/transcribe', methods=['POST'])
+def tools_transcribe():
+    runtime = get_runtime()
+    return upload_api_service.tools_transcribe(runtime, request)
+
+
 @upload_bp.route('/api/tools/export', methods=['POST'])
 def tools_export():
     runtime = get_runtime()
