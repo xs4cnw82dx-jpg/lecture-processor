@@ -731,6 +731,7 @@ def test_study_pack_list_supports_cursor_pagination_contract(client, monkeypatch
         ]
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u1", "email": "u@example.com"})
+    monkeypatch.setattr(core, "db", None)
     monkeypatch.setattr(core.study_repo, "get_study_pack_summary_doc", _get_doc)
     monkeypatch.setattr(core.study_repo, "list_study_pack_summaries_by_uid", _list_docs)
 

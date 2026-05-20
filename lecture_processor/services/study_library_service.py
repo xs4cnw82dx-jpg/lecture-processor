@@ -12,6 +12,8 @@ def _study_pack_counts_source(app_ctx, uid, doc, pack):
     has_question_count = 'test_questions_count' in pack or isinstance(pack.get('test_questions'), list)
     if has_flashcard_count and has_question_count:
         return pack
+    if app_ctx.db is None:
+        return pack
     full_doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, doc.id)
     if not full_doc.exists:
         return pack
