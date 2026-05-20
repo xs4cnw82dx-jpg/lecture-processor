@@ -614,6 +614,7 @@ def test_study_pack_list_uses_repo_order_and_count_fallback(client, monkeypatch)
             return dict(self._payload)
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u1", "email": "u@example.com"})
+    monkeypatch.setattr(core, "db", object())
     monkeypatch.setattr(
         core.study_repo,
         "list_study_pack_summaries_by_uid",
