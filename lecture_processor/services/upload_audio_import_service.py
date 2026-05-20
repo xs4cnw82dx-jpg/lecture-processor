@@ -4,7 +4,7 @@ from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 
-from lecture_processor.services import upload_batch_support
+from lecture_processor.services import upload_batch_support, upload_quota_service, upload_redaction_service
 
 
 def import_audio_from_url(app_ctx, request):
@@ -42,25 +42,60 @@ def import_audio_from_url(app_ctx, request):
 
     upload_import_audio.cleanup_expired_audio_import_tokens(runtime=app_ctx)
     prefix = f"urlimport_{app_ctx.uuid.uuid4().hex}"
+    quota_reservation, quota_response, quota_status = upload_quota_service.reserve_upload_quota(
+        app_ctx,
+        uid,
+        upload_quota_service.max_audio_upload_bytes(app_ctx),
+        context='Audio URL import',
+    )
+    if quota_response is not None:
+        return quota_response, quota_status
+
+    audio_path = ''
     try:
         audio_path, output_name, size_bytes = app_ctx.download_audio_from_video_url(fetch_target, prefix)
+        actual_size = int(size_bytes or app_ctx.get_saved_file_size(audio_path) or 0)
+        quota_error, quota_error_status = upload_quota_service.adjust_reserved_upload_bytes(
+            app_ctx,
+            quota_reservation,
+            actual_size,
+            context='Audio URL import',
+        )
+        if quota_error is not None:
+            app_ctx.cleanup_files([audio_path], [])
+            return quota_error, quota_error_status
         token = upload_import_audio.register_audio_import_token(
             uid,
             audio_path,
-            upload_import_audio.resolved_url(fetch_target),
+            upload_redaction_service.redact_source_url(upload_import_audio.resolved_url(fetch_target)),
             output_name,
             runtime=app_ctx,
         )
+        upload_quota_service.mark_audio_import_token_quota(
+            uid,
+            token,
+            actual_size,
+            runtime=app_ctx,
+        )
+        upload_quota_service.commit_upload_quota(quota_reservation)
         return app_ctx.jsonify({
             'ok': True,
             'audio_import_token': token,
             'file_name': output_name,
-            'size_bytes': int(size_bytes),
+            'size_bytes': actual_size,
             'expires_in_seconds': app_ctx.AUDIO_IMPORT_TOKEN_TTL_SECONDS,
         })
     except Exception as error:
-        app_ctx.logger.error(f"Error importing audio from URL for user {uid}: {error}")
+        if audio_path:
+            app_ctx.cleanup_files([audio_path], [])
+        app_ctx.logger.error(
+            'Error importing audio from URL for user %s: %s',
+            uid,
+            upload_redaction_service.redact_exception(error, max_chars=500),
+        )
         return app_ctx.jsonify({'error': 'Could not import audio from URL. Please check that the URL is accessible and try again.'}), 400
+    finally:
+        upload_quota_service.release_uncommitted_upload_quota(app_ctx, quota_reservation)
 
 
 def release_imported_audio(app_ctx, request):

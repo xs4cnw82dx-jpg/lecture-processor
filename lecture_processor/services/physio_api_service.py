@@ -149,22 +149,34 @@ def _normalize_string(value, limit=2000):
     return str(value or "").strip()[:limit]
 
 
+def _payload_field_value(source, base, key, *, default=None, preserve_empty=False):
+    if key in source:
+        value = source.get(key)
+        if not preserve_empty and value in (None, "") and default is not None:
+            return default
+        return value
+    if key in base:
+        return base.get(key)
+    return default
+
+
 def _normalize_case_payload(uid, payload, *, existing=None, now_ts=0.0):
     source = payload if isinstance(payload, dict) else {}
     base = dict(existing or {})
+    preserve_empty = existing is not None
     normalized = {
         "uid": uid,
-        "display_label": _normalize_string(source.get("display_label") or base.get("display_label"), 120),
-        "patient_name": _normalize_string(source.get("patient_name") or base.get("patient_name"), 120),
-        "age": _normalize_string(source.get("age") or base.get("age"), 16),
-        "sex": _normalize_string(source.get("sex") or base.get("sex"), 40),
-        "referral_source": _normalize_string(source.get("referral_source") or base.get("referral_source"), 160),
-        "body_region": _normalize_string(source.get("body_region") or base.get("body_region") or DEFAULT_BODY_REGION, 80),
-        "primary_complaint": _normalize_string(source.get("primary_complaint") or base.get("primary_complaint"), 300),
-        "notes": _normalize_string(source.get("notes") or base.get("notes"), 2000),
+        "display_label": _normalize_string(_payload_field_value(source, base, "display_label"), 120),
+        "patient_name": _normalize_string(_payload_field_value(source, base, "patient_name"), 120),
+        "age": _normalize_string(_payload_field_value(source, base, "age"), 16),
+        "sex": _normalize_string(_payload_field_value(source, base, "sex"), 40),
+        "referral_source": _normalize_string(_payload_field_value(source, base, "referral_source"), 160),
+        "body_region": _normalize_string(_payload_field_value(source, base, "body_region", default=DEFAULT_BODY_REGION, preserve_empty=preserve_empty), 80),
+        "primary_complaint": _normalize_string(_payload_field_value(source, base, "primary_complaint"), 300),
+        "notes": _normalize_string(_payload_field_value(source, base, "notes"), 2000),
         "updated_at": float(now_ts or 0),
     }
-    raw_tags = source.get("tags", base.get("tags", []))
+    raw_tags = source.get("tags") if "tags" in source else base.get("tags", [])
     if isinstance(raw_tags, str):
         tags = [item.strip() for item in raw_tags.split(",") if item.strip()]
     elif isinstance(raw_tags, list):
@@ -198,33 +210,60 @@ def _session_date_ts(value, *, fallback_ts=0.0):
             return float(time.time())
 
 
-def _normalize_metrics(raw_metrics):
+def _normalize_metrics(raw_metrics, *, existing=None, clear_invalid=False):
+    if not isinstance(raw_metrics, dict):
+        if clear_invalid:
+            return {}
+        raw_metrics = existing if isinstance(existing, dict) else {}
     source = raw_metrics if isinstance(raw_metrics, dict) else {}
+    base = existing if isinstance(existing, dict) else {}
     normalized = {}
     for key in ("nprs_before", "nprs_after", "psk", "notes"):
-        value = source.get(key)
+        value = source.get(key) if key in source else base.get(key)
         if value in (None, ""):
             continue
         normalized[str(key)] = _normalize_string(value, 120)
     return normalized
 
 
+def _normalize_list_field(source, base, key):
+    if key in source:
+        value = source.get(key)
+    else:
+        value = base.get(key, [])
+    return list(value) if isinstance(value, list) else []
+
+
+def _normalize_dict_field(source, base, key):
+    if key in source:
+        value = source.get(key)
+    else:
+        value = base.get(key, {})
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def _normalize_session_payload(uid, case_id, payload, *, existing=None, now_ts=0.0):
     source = payload if isinstance(payload, dict) else {}
     base = dict(existing or {})
+    metrics_present = "metrics" in source
+    preserve_empty = existing is not None
     normalized = {
         "uid": uid,
         "case_id": case_id,
-        "session_date": _normalize_session_date(source.get("session_date") or base.get("session_date")),
-        "session_type": _normalize_string(source.get("session_type") or base.get("session_type") or DEFAULT_SESSION_TYPE, 80),
-        "body_region": _normalize_string(source.get("body_region") or base.get("body_region") or DEFAULT_BODY_REGION, 80),
-        "transcript": _normalize_string(source.get("transcript") or base.get("transcript"), 180000),
-        "red_flags": source.get("red_flags") if isinstance(source.get("red_flags"), list) else base.get("red_flags", []),
-        "soap": source.get("soap") if isinstance(source.get("soap"), dict) else base.get("soap", {}),
-        "rps": source.get("rps") if isinstance(source.get("rps"), dict) else base.get("rps", {}),
-        "reasoning": source.get("reasoning") if isinstance(source.get("reasoning"), dict) else base.get("reasoning", {}),
-        "differential_diagnosis": source.get("differential_diagnosis") if isinstance(source.get("differential_diagnosis"), dict) else base.get("differential_diagnosis", {}),
-        "metrics": _normalize_metrics(source.get("metrics", base.get("metrics", {}))),
+        "session_date": _normalize_session_date(_payload_field_value(source, base, "session_date")),
+        "session_type": _normalize_string(_payload_field_value(source, base, "session_type", default=DEFAULT_SESSION_TYPE, preserve_empty=preserve_empty), 80),
+        "body_region": _normalize_string(_payload_field_value(source, base, "body_region", default=DEFAULT_BODY_REGION, preserve_empty=preserve_empty), 80),
+        "transcript": _normalize_string(_payload_field_value(source, base, "transcript"), 180000),
+        "red_flags": _normalize_list_field(source, base, "red_flags"),
+        "soap": _normalize_dict_field(source, base, "soap"),
+        "rps": _normalize_dict_field(source, base, "rps"),
+        "reasoning": _normalize_dict_field(source, base, "reasoning"),
+        "differential_diagnosis": _normalize_dict_field(source, base, "differential_diagnosis"),
+        "metrics": _normalize_metrics(
+            source.get("metrics") if metrics_present else base.get("metrics", {}),
+            existing=base.get("metrics", {}) if metrics_present else None,
+            clear_invalid=metrics_present,
+        ),
         "updated_at": float(now_ts or 0),
     }
     normalized["session_date_ts"] = _session_date_ts(

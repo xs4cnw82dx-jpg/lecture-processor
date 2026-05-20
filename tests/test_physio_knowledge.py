@@ -26,8 +26,10 @@ def _allow_physio(monkeypatch, core, *, uid="physio-u1", email="owner@example.co
 @pytest.fixture(autouse=True)
 def clear_knowledge_cache():
     physio_knowledge._INDEX_CACHE.update({"path": "", "mtime": 0.0, "signature": "", "payload": None})
+    physio_knowledge._SHARD_DOCUMENT_CACHE.update({"path": "", "signature": "", "documents": None})
     yield
     physio_knowledge._INDEX_CACHE.update({"path": "", "mtime": 0.0, "signature": "", "payload": None})
+    physio_knowledge._SHARD_DOCUMENT_CACHE.update({"path": "", "signature": "", "documents": None})
 
 
 def test_rank_index_documents_orders_by_similarity():
@@ -177,6 +179,81 @@ def test_query_knowledge_index_reads_shards_incrementally(monkeypatch, tmp_path)
     assert response["citations"][0]["source_kind"] == "guidelines"
     assert response["retrieved_sources"][0]["source_name"] == "beroerte.pdf"
     assert response["retrieved_sources"][0]["source_kind"] == "guidelines"
+
+
+def test_query_knowledge_index_caches_shards_and_invalidates_on_change(monkeypatch, tmp_path):
+    manifest_path = tmp_path / "manifest.json"
+    shard_name = "manifest.documents-001.json.gz"
+    shard_path = tmp_path / shard_name
+
+    def write_shard(title, text):
+        with gzip.open(shard_path, "wt", encoding="utf-8") as handle:
+            json.dump(
+                [
+                    {
+                        "id": "doc-1",
+                        "text": text,
+                        "source_name": "knie.pdf",
+                        "source_title": title,
+                        "source_kind": "guidelines",
+                        "page_label": "pagina 3",
+                        "embedding": [1.0, 0.0],
+                    }
+                ],
+                handle,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+
+    write_shard("Knierichtlijn Oud", "Oude tekst over knieklachten.")
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "meta": {
+                    "source_count": 1,
+                    "document_count": 1,
+                    "embedding_dimension": 2,
+                    "format": physio_knowledge.SHARDED_INDEX_FORMAT,
+                    "document_shards": [shard_name],
+                },
+                "documents": [],
+                "errors": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    load_calls = {"count": 0}
+    original_loader = physio_knowledge._load_sharded_documents
+
+    def counting_loader(candidate, payload):
+        load_calls["count"] += 1
+        return original_loader(candidate, payload)
+
+    monkeypatch.setattr(physio_knowledge, "PHYSIO_LIBRARY_INDEX_PATH", manifest_path)
+    monkeypatch.setattr(physio_knowledge, "_load_sharded_documents", counting_loader)
+    monkeypatch.setattr(
+        physio_knowledge,
+        "embed_text",
+        lambda text, task_type="RETRIEVAL_QUERY", runtime=None, output_dimensionality=None: [1.0, 0.0],
+    )
+    monkeypatch.setattr(
+        ai_provider,
+        "generate_with_optional_thinking",
+        lambda model, prompt, max_output_tokens=4096, operation_name="", runtime=None: SimpleNamespace(text="## Antwoord\n- Gebruik de beste bron."),
+    )
+
+    first = physio_knowledge.query_knowledge_index("Wat adviseert de knierichtlijn?", runtime=SimpleNamespace(MODEL_TOOLS="gemini-test"))
+    second = physio_knowledge.query_knowledge_index("Wat adviseert de knierichtlijn?", runtime=SimpleNamespace(MODEL_TOOLS="gemini-test"))
+
+    assert load_calls["count"] == 1
+    assert first["retrieved_sources"][0]["source_title"] == "Knierichtlijn Oud"
+    assert second["retrieved_sources"][0]["source_title"] == "Knierichtlijn Oud"
+
+    write_shard("Knierichtlijn Nieuw", "Nieuwe uitgebreide tekst over knieklachten en oefentherapie met extra lengte.")
+    third = physio_knowledge.query_knowledge_index("Wat adviseert de knierichtlijn?", runtime=SimpleNamespace(MODEL_TOOLS="gemini-test"))
+
+    assert load_calls["count"] == 2
+    assert third["retrieved_sources"][0]["source_title"] == "Knierichtlijn Nieuw"
 
 
 def test_query_knowledge_index_boosts_matching_guidelines_from_body_region_and_case_context(monkeypatch, tmp_path):

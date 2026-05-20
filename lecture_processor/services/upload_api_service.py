@@ -14,7 +14,6 @@ from lecture_processor.domains.ai import pipelines as ai_pipelines
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
-from lecture_processor.domains.rate_limit import quotas as rate_limit_quotas
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.shared import sanitize_csv_row
 from lecture_processor.domains.shared import parsing as shared_parsing
@@ -25,6 +24,7 @@ from lecture_processor.services import (
     upload_audio_import_service,
     upload_batch_service,
     upload_batch_support,
+    upload_quota_service,
     upload_runtime_service,
     tools_extraction_support,
 )
@@ -239,34 +239,15 @@ def upload_files(app_ctx, request):
             retry_after,
             runtime=app_ctx,
         )
-    requested_bytes = int(request.content_length or 0)
-    disk_ok, free_bytes, needed_bytes = rate_limit_quotas.has_sufficient_upload_disk_space(
-        requested_bytes,
-        runtime=app_ctx,
-    )
-    if not disk_ok:
-        app_ctx.logger.warning(
-            "Upload rejected due to low disk space: free=%s needed=%s uid=%s",
-            free_bytes,
-            needed_bytes,
-            uid,
-        )
-        return app_ctx.jsonify({
-            'error': 'Upload temporarily unavailable due to low server storage. Please try again later.'
-        }), 503
-    reserved_daily, daily_retry_after = rate_limit_quotas.reserve_daily_upload_bytes(
+    quota_reservation, quota_response, quota_status = upload_quota_service.reserve_upload_quota(
+        app_ctx,
         uid,
-        requested_bytes,
-        runtime=app_ctx,
+        upload_quota_service.request_content_length(request),
+        context='Upload',
     )
-    if not reserved_daily:
-        analytics_events.log_rate_limit_hit('upload', daily_retry_after, runtime=app_ctx)
-        return rate_limiter.build_rate_limited_response(
-            'Daily upload quota reached for your account. Please try again tomorrow.',
-            daily_retry_after,
-            runtime=app_ctx,
-        )
-    daily_quota_committed = False
+    if quota_response is not None:
+        return quota_response, quota_status
+    actual_upload_bytes = 0
     try:
         user = app_ctx.get_or_create_user(uid, email)
         mode = request.form.get('mode', 'lecture-notes')
@@ -357,6 +338,20 @@ def upload_files(app_ctx, request):
             if not app_ctx.file_looks_like_audio(audio_path):
                 app_ctx.cleanup_files([pdf_path, audio_path], [])
                 return app_ctx.jsonify({'error': 'Uploaded audio file is invalid or unsupported.'}), 400
+            chargeable_audio_size = (
+                upload_quota_service.chargeable_import_token_bytes(app_ctx, uid, audio_import_token, audio_size)
+                if imported_audio_used else audio_size
+            )
+            actual_upload_bytes = max(0, int(pdf_size if pdf_size > 0 else 0)) + chargeable_audio_size
+            quota_error, quota_error_status = upload_quota_service.adjust_reserved_upload_bytes(
+                app_ctx,
+                quota_reservation,
+                actual_upload_bytes,
+                context='Upload',
+            )
+            if quota_error is not None:
+                app_ctx.cleanup_files([pdf_path, audio_path], [])
+                return quota_error, quota_error_status
             ai_unavailable = _require_ai_processing_ready(app_ctx)
             if ai_unavailable is not None:
                 app_ctx.cleanup_files([pdf_path, audio_path], [])
@@ -413,6 +408,16 @@ def upload_files(app_ctx, request):
             if slides_error:
                 return app_ctx.jsonify({'error': slides_error}), 400
             pdf_size = app_ctx.get_saved_file_size(pdf_path)
+            actual_upload_bytes = max(0, int(pdf_size if pdf_size > 0 else 0))
+            quota_error, quota_error_status = upload_quota_service.adjust_reserved_upload_bytes(
+                app_ctx,
+                quota_reservation,
+                actual_upload_bytes,
+                context='Upload',
+            )
+            if quota_error is not None:
+                app_ctx.cleanup_files([pdf_path], [])
+                return quota_error, quota_error_status
             ai_unavailable = _require_ai_processing_ready(app_ctx)
             if ai_unavailable is not None:
                 app_ctx.cleanup_files([pdf_path], [])
@@ -478,6 +483,19 @@ def upload_files(app_ctx, request):
             if not app_ctx.file_looks_like_audio(audio_path):
                 app_ctx.cleanup_files([audio_path], [])
                 return app_ctx.jsonify({'error': 'Uploaded audio file is invalid or unsupported.'}), 400
+            actual_upload_bytes = (
+                upload_quota_service.chargeable_import_token_bytes(app_ctx, uid, audio_import_token, audio_size)
+                if imported_audio_used else audio_size
+            )
+            quota_error, quota_error_status = upload_quota_service.adjust_reserved_upload_bytes(
+                app_ctx,
+                quota_reservation,
+                actual_upload_bytes,
+                context='Upload',
+            )
+            if quota_error is not None:
+                app_ctx.cleanup_files([audio_path], [])
+                return quota_error, quota_error_status
             ai_unavailable = _require_ai_processing_ready(app_ctx)
             if ai_unavailable is not None:
                 app_ctx.cleanup_files([audio_path], [])
@@ -562,7 +580,7 @@ def upload_files(app_ctx, request):
         else:
             return app_ctx.jsonify({'error': 'Invalid mode selected'}), 400
 
-        daily_quota_committed = True
+        upload_quota_service.commit_upload_quota(quota_reservation)
         created_job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx) or {}
         analytics_events.log_analytics_event(
             'processing_started_backend',
@@ -581,8 +599,7 @@ def upload_files(app_ctx, request):
         )
         return app_ctx.jsonify({'job_id': job_id})
     finally:
-        if reserved_daily and not daily_quota_committed:
-            rate_limit_quotas.release_daily_upload_bytes(uid, requested_bytes, runtime=app_ctx)
+        upload_quota_service.release_uncommitted_upload_quota(app_ctx, quota_reservation)
 
 
 def tools_extract(app_ctx, request):

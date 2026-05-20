@@ -8,6 +8,7 @@ import json
 import math
 import os
 import re
+import threading
 import unicodedata
 from pathlib import Path
 
@@ -28,6 +29,8 @@ DEFAULT_CHUNK_OVERLAP = 180
 SUPPORTED_SOURCE_SUFFIXES = {".pdf", ".docx", ".pptx", ".txt", ".md"}
 SHARDED_INDEX_FORMAT = "sharded-gzip-v1"
 _INDEX_CACHE = {"path": "", "mtime": 0.0, "signature": "", "payload": None}
+_SHARD_DOCUMENT_CACHE = {"path": "", "signature": "", "documents": None}
+_INDEX_CACHE_LOCK = threading.RLock()
 BODY_REGION_TERMS = {
     "algemeen": ["algemeen"],
     "nek": ["nek", "cervicaal", "cwk"],
@@ -387,6 +390,10 @@ def load_knowledge_manifest(*, index_path=None):
     return payload
 
 
+def _index_cache_key(candidate: Path):
+    return str(candidate.resolve()) if candidate.exists() else str(candidate)
+
+
 def _index_cache_signature(candidate: Path, payload: dict):
     parts = []
     try:
@@ -430,23 +437,53 @@ def _load_sharded_documents(candidate: Path, payload: dict):
     return documents, errors
 
 
+def _load_cached_sharded_documents(candidate: Path, payload: dict):
+    shard_names = ((payload.get("meta", {}) or {}).get("document_shards") or [])
+    if not shard_names:
+        return list(payload.get("documents", []) or [])
+    cache_key = _index_cache_key(candidate)
+    signature = _index_cache_signature(candidate, payload)
+    with _INDEX_CACHE_LOCK:
+        if (
+            _SHARD_DOCUMENT_CACHE.get("documents") is not None
+            and _SHARD_DOCUMENT_CACHE.get("path") == cache_key
+            and _SHARD_DOCUMENT_CACHE.get("signature") == signature
+        ):
+            return _SHARD_DOCUMENT_CACHE["documents"]
+
+    documents, shard_errors = _load_sharded_documents(candidate, payload)
+    if shard_errors:
+        first_error = shard_errors[0] if isinstance(shard_errors[0], dict) else {}
+        raise RuntimeError(str(first_error.get("error") or "Failed to load index shard."))
+
+    refreshed_signature = _index_cache_signature(candidate, payload)
+    if refreshed_signature == signature:
+        with _INDEX_CACHE_LOCK:
+            _SHARD_DOCUMENT_CACHE.update({"path": cache_key, "signature": signature, "documents": documents})
+    return documents
+
+
 def load_knowledge_index(*, index_path=None):
     candidate = Path(index_path or PHYSIO_LIBRARY_INDEX_PATH)
-    cache_key = str(candidate.resolve()) if candidate.exists() else str(candidate)
+    cache_key = _index_cache_key(candidate)
     try:
         mtime = float(candidate.stat().st_mtime)
     except Exception:
         return {"documents": [], "meta": {"path": cache_key, "missing": True}}
     payload = load_knowledge_manifest(index_path=candidate)
     signature = _index_cache_signature(candidate, payload)
-    if _INDEX_CACHE["payload"] is not None and _INDEX_CACHE["path"] == cache_key and _INDEX_CACHE.get("signature") == signature:
-        return _INDEX_CACHE["payload"]
+    with _INDEX_CACHE_LOCK:
+        if _INDEX_CACHE["payload"] is not None and _INDEX_CACHE["path"] == cache_key and _INDEX_CACHE.get("signature") == signature:
+            return _INDEX_CACHE["payload"]
     documents, shard_errors = _load_sharded_documents(candidate, payload)
     payload["documents"] = documents
     payload.setdefault("errors", [])
     if shard_errors:
         payload["errors"] = list(payload.get("errors", []) or []) + shard_errors
-    _INDEX_CACHE.update({"path": cache_key, "mtime": mtime, "signature": signature, "payload": payload})
+    with _INDEX_CACHE_LOCK:
+        _INDEX_CACHE.update({"path": cache_key, "mtime": mtime, "signature": signature, "payload": payload})
+        if not shard_errors and ((payload.get("meta", {}) or {}).get("document_shards") or []):
+            _SHARD_DOCUMENT_CACHE.update({"path": cache_key, "signature": signature, "documents": documents})
     return payload
 
 
@@ -552,23 +589,18 @@ def rank_sharded_index_documents(query_vector, payload, *, index_path=None, limi
     candidate = Path(index_path or PHYSIO_LIBRARY_INDEX_PATH)
     safe_limit = max(1, int(limit or 1))
     candidate_limit = max(safe_limit, safe_limit * 6)
-    shard_names = ((payload.get("meta", {}) or {}).get("document_shards") or [])
     top_matches = []
     record_index = 0
-    for name in shard_names:
-        shard_path = candidate.parent / str(name)
-        with gzip.open(shard_path, "rt", encoding="utf-8") as handle:
-            shard_documents = json.load(handle)
-        for record in shard_documents or []:
-            if not isinstance(record, dict):
-                continue
-            score = score_index_record(query_vector, record, query_context=query_context)
-            sortable = (float(score), -record_index, record)
-            if len(top_matches) < candidate_limit:
-                heapq.heappush(top_matches, sortable)
-            elif sortable > top_matches[0]:
-                heapq.heapreplace(top_matches, sortable)
-            record_index += 1
+    for record in _load_cached_sharded_documents(candidate, payload):
+        if not isinstance(record, dict):
+            continue
+        score = score_index_record(query_vector, record, query_context=query_context)
+        sortable = (float(score), -record_index, record)
+        if len(top_matches) < candidate_limit:
+            heapq.heappush(top_matches, sortable)
+        elif sortable > top_matches[0]:
+            heapq.heapreplace(top_matches, sortable)
+        record_index += 1
     ranked = []
     for score, _neg_index, record in sorted(top_matches, reverse=True):
         item = dict(record)

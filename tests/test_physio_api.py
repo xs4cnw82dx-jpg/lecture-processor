@@ -166,6 +166,133 @@ def test_physio_case_and_session_crud_roundtrip(client, monkeypatch, core):
     assert updated_session["metrics"]["nprs_after"] == "4"
 
 
+def test_physio_case_patch_empty_strings_clear_existing_fields(client, monkeypatch, core):
+    _allow_physio(monkeypatch, core)
+
+    create_case = client.post(
+        "/api/physio/cases",
+        json={
+            "display_label": "Casus 1 - Knie",
+            "patient_name": "P. Voorbeeld",
+            "age": "47",
+            "sex": "vrouw",
+            "referral_source": "huisarts",
+            "body_region": "knie",
+            "primary_complaint": "Traplopen doet pijn",
+            "tags": "artrose, knie",
+            "notes": "Startnotitie",
+        },
+        headers={"Authorization": "Bearer dev"},
+    )
+    assert create_case.status_code == 200
+    case_id = create_case.get_json()["case"]["case_id"]
+
+    update_case = client.patch(
+        f"/api/physio/cases/{case_id}",
+        json={
+            "display_label": "",
+            "patient_name": "",
+            "age": "",
+            "sex": "",
+            "referral_source": "",
+            "body_region": "",
+            "primary_complaint": "",
+            "tags": "",
+            "notes": "",
+        },
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert update_case.status_code == 200
+    cleared = update_case.get_json()["case"]
+    for key in ("display_label", "patient_name", "age", "sex", "referral_source", "body_region", "primary_complaint", "notes"):
+        assert cleared[key] == ""
+    assert cleared["tags"] == []
+
+    followup = client.patch(
+        f"/api/physio/cases/{case_id}",
+        json={"notes": "Alleen notitie teruggezet"},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert followup.status_code == 200
+    preserved = followup.get_json()["case"]
+    assert preserved["body_region"] == ""
+    assert preserved["display_label"] == ""
+    assert preserved["notes"] == "Alleen notitie teruggezet"
+
+
+def test_physio_session_patch_empty_strings_clear_existing_fields(client, monkeypatch, core):
+    _allow_physio(monkeypatch, core)
+
+    create_case = client.post(
+        "/api/physio/cases",
+        json={"display_label": "Casus 1 - Knie", "patient_name": "P. Voorbeeld", "body_region": "knie"},
+        headers={"Authorization": "Bearer dev"},
+    )
+    assert create_case.status_code == 200
+    case_id = create_case.get_json()["case"]["case_id"]
+    create_session = client.post(
+        f"/api/physio/cases/{case_id}/sessions",
+        json={
+            "session_date": "2026-03-15",
+            "session_type": "intake",
+            "body_region": "knie",
+            "transcript": "[Patiënt] Traplopen doet pijn.",
+            "red_flags": [{"vlag": "nachtpijn"}],
+            "soap": {"subjective": {"hulpvraag": "Traplopen zonder pijn"}},
+            "rps": {"header": {"datum": "2026-03-15"}},
+            "reasoning": {"stap_1_onduidelijke_termen": ["pijn"]},
+            "differential_diagnosis": {"hypothesen": [{"titel": "Artrose"}]},
+            "metrics": {"nprs_before": "7", "nprs_after": "5", "psk": "traplopen", "notes": "Eerste intake"},
+        },
+        headers={"Authorization": "Bearer dev"},
+    )
+    assert create_session.status_code == 200
+    session_id = create_session.get_json()["session"]["session_id"]
+
+    update_session = client.patch(
+        f"/api/physio/cases/{case_id}/sessions",
+        json={
+            "session_id": session_id,
+            "session_date": "",
+            "session_type": "",
+            "body_region": "",
+            "transcript": "",
+            "red_flags": "",
+            "soap": "",
+            "rps": "",
+            "reasoning": "",
+            "differential_diagnosis": "",
+            "metrics": {"nprs_before": "", "nprs_after": "", "psk": "", "notes": ""},
+        },
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert update_session.status_code == 200
+    cleared = update_session.get_json()["session"]
+    for key in ("session_date", "session_type", "body_region", "transcript"):
+        assert cleared[key] == ""
+    assert cleared["red_flags"] == []
+    assert cleared["soap"] == {}
+    assert cleared["rps"] == {}
+    assert cleared["reasoning"] == {}
+    assert cleared["differential_diagnosis"] == {}
+    assert cleared["metrics"] == {}
+
+    followup = client.patch(
+        f"/api/physio/cases/{case_id}/sessions",
+        json={"session_id": session_id, "transcript": "[Patiënt] Nieuwe tekst."},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert followup.status_code == 200
+    preserved = followup.get_json()["session"]
+    assert preserved["session_type"] == ""
+    assert preserved["body_region"] == ""
+    assert preserved["transcript"] == "[Patiënt] Nieuwe tekst."
+
+
 def test_physio_soap_endpoint_normalizes_partial_json(client, monkeypatch, core):
     _allow_physio(monkeypatch, core)
     monkeypatch.setattr(core, "client", object())

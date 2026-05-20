@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import zipfile
 
 import pytest
@@ -487,6 +488,85 @@ def test_batch_direct_url_does_not_download_when_daily_quota_fails(client, monke
     assert response.status_code == 429
     assert response.headers.get('Retry-After') == '123'
     assert 'daily upload quota' in response.get_json()['error'].lower()
+
+
+def test_batch_direct_url_redacts_source_url_and_releases_unused_quota(client, monkeypatch, tmp_path):
+    _patch_batch_auth(monkeypatch)
+    _patch_batch_quota_guards(monkeypatch)
+    monkeypatch.setattr(core, 'client', object())
+    monkeypatch.setattr(core, 'db', None)
+    capture = _Capture()
+    reserved = []
+    released = []
+
+    monkeypatch.setattr(
+        core,
+        'get_or_create_user',
+        lambda uid, email: {
+            'uid': uid,
+            'email': email,
+            'lecture_credits_standard': 2,
+            'lecture_credits_extended': 0,
+            'preferred_output_language': 'english',
+            'preferred_output_language_custom': '',
+        },
+    )
+    monkeypatch.setattr(
+        upload_import_audio,
+        'validate_video_import_fetch_target',
+        lambda raw_url, runtime=None: (raw_url, ''),
+    )
+
+    def _resolve_slides(_uploaded_file, job_id):
+        path = tmp_path / f'{job_id}.pdf'
+        path.write_bytes(b'%PDF-1.4 row slides')
+        return str(path), ''
+
+    def _download_audio(_fetch_target, prefix):
+        path = tmp_path / f'{prefix}.mp3'
+        path.write_bytes(b'ID3\x03\x00\x00downloaded audio')
+        return str(path), path.name, path.stat().st_size
+
+    monkeypatch.setattr(core, 'resolve_uploaded_slides_to_pdf', _resolve_slides)
+    monkeypatch.setattr(core, 'download_audio_from_video_url', _download_audio)
+    monkeypatch.setattr(core, 'get_saved_file_size', lambda path: os.path.getsize(path))
+    monkeypatch.setattr(core, 'file_looks_like_audio', lambda _path: True)
+    monkeypatch.setattr(rate_limit_quotas, 'reserve_daily_upload_bytes', lambda uid, byte_count, runtime=None: reserved.append((uid, byte_count)) or (True, 0))
+    monkeypatch.setattr(rate_limit_quotas, 'release_daily_upload_bytes', lambda uid, byte_count, runtime=None: released.append((uid, byte_count)) or True)
+    monkeypatch.setattr(billing_credits, 'deduct_credit', lambda *_args, **_kwargs: 'lecture_credits_standard')
+    monkeypatch.setattr(batch_orchestrator, 'process_batch_job', lambda _batch_id, runtime=None: None)
+
+    def _fake_create_batch(batch_payload, rows, runtime=None):
+        capture.batch_payload = dict(batch_payload)
+        capture.rows = [dict(row) for row in rows]
+
+    monkeypatch.setattr(batch_orchestrator, 'create_batch_job', _fake_create_batch)
+    monkeypatch.setattr(core, 'submit_batch_background_job', lambda target, *args, **kwargs: None)
+
+    rows = [
+        {'row_id': 'row-1', 'slides_file_field': 'row_1_slides', 'audio_m3u8_url': 'https://ovp.kaltura.com/a/index.m3u8?token=secret-a'},
+        {'row_id': 'row-2', 'slides_file_field': 'row_2_slides', 'audio_m3u8_url': 'https://ovp.kaltura.com/b/index.m3u8?token=secret-b'},
+    ]
+    response = client.post(
+        '/api/batch/jobs',
+        data={
+            'mode': 'lecture-notes',
+            'batch_title': 'Direct URL redaction',
+            'rows': json.dumps(rows),
+            'row_1_slides': (io.BytesIO(b'%PDF-1.4 row-1'), 'row-1.pdf'),
+            'row_2_slides': (io.BytesIO(b'%PDF-1.4 row-2'), 'row-2.pdf'),
+        },
+        content_type='multipart/form-data',
+    )
+
+    assert response.status_code == 200
+    assert capture.rows is not None
+    assert capture.rows[0]['source_url'] == 'https://ovp.kaltura.com/[redacted]'
+    assert capture.rows[1]['source_url'] == 'https://ovp.kaltura.com/[redacted]'
+    assert 'token=' not in json.dumps(capture.rows)
+    assert reserved and reserved[0][1] >= core.MAX_AUDIO_UPLOAD_BYTES * 2
+    assert released and released[0][0] == 'u-batch'
+    assert released[0][1] > 0
 
 
 def test_batch_queue_full_cleans_consumed_import_token_files(client, monkeypatch, tmp_path):

@@ -775,6 +775,35 @@
       align-items: center
     }
 
+    .folder-row-head {
+      align-items: flex-start
+    }
+
+    .folder-row-main {
+      min-width: 0;
+      flex: 1 1 auto;
+      display: grid;
+      gap: 4px;
+      border: 0;
+      border-radius: 10px;
+      padding: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer
+    }
+
+    .folder-row-main:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, .12)
+    }
+
+    .folder-row-main .item-sub {
+      display: block;
+      margin-top: 0
+    }
+
     .item-title-wrap {
       display: inline-flex;
       align-items: center;

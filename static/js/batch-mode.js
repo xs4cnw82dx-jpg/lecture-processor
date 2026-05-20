@@ -378,6 +378,10 @@
     Array.prototype.slice.call(rowsWrap.querySelectorAll('.batch-row')).forEach(function (rowNode, index) {
       var titleEl = rowNode.querySelector('.batch-row-head h3');
       if (titleEl) titleEl.textContent = meta.singular + ' ' + String(index + 1);
+      var slidesZone = rowNode.querySelector('[data-upload-zone="slides"]');
+      if (slidesZone) slidesZone.setAttribute('aria-label', 'Upload slides for ' + meta.singular + ' ' + String(index + 1));
+      var audioZone = rowNode.querySelector('[data-upload-zone="audio"]');
+      if (audioZone) audioZone.setAttribute('aria-label', 'Upload audio for ' + meta.singular + ' ' + String(index + 1));
     });
   }
 
@@ -949,7 +953,7 @@
     var slidesFieldHtml = meta.requiresSlides ? (
       '<div class="row-field row-field--slides">' +
       '  <span class="row-label">Slides (PDF/PPTX)</span>' +
-      '  <div class="row-upload-zone" data-upload-zone="slides" tabindex="0">' +
+      '  <div class="row-upload-zone" data-upload-zone="slides" role="button" tabindex="0" aria-label="Upload slides for ' + meta.singular + ' ' + String(ordinal) + '">' +
       '    <div class="row-upload-title">Upload slides</div>' +
       '    <div class="row-upload-subtitle">Drag & drop or click to browse</div>' +
       '    <input type="file" data-field="slides" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation">' +
@@ -974,7 +978,7 @@
     var audioFieldHtml = meta.requiresAudio ? (
       '<div class="row-field row-field--audio">' +
       '  <span class="row-label">Audio file</span>' +
-      '  <div class="row-upload-zone" data-upload-zone="audio" tabindex="0">' +
+      '  <div class="row-upload-zone" data-upload-zone="audio" role="button" tabindex="0" aria-label="Upload audio for ' + meta.singular + ' ' + String(ordinal) + '">' +
       '    <div class="row-upload-title">Upload audio</div>' +
       '    <div class="row-upload-subtitle">Drag & drop or click to browse</div>' +
       '    <input type="file" data-field="audio" accept=".mp3,.m4a,.wav,.aac,.ogg,.flac,audio/*">' +

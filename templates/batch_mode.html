@@ -45,9 +45,9 @@
         <a href="/batch_status" class="btn batch-status-link">Batch status</a>
       </div>
       <div class="mode-links">
-        <a href="/batch_mode" class="mode-link{% if forced_mode == 'lecture-notes' %} active{% endif %}">Lecture Notes</a>
-        <a href="/batch_mode_slides_extraction" class="mode-link{% if forced_mode == 'slides-only' %} active{% endif %}">Slides Extraction</a>
-        <a href="/batch_mode_interview_transcription" class="mode-link{% if forced_mode == 'interview' %} active{% endif %}">Interview Transcription</a>
+        <a href="/batch_mode" class="mode-link{% if forced_mode == 'lecture-notes' %} active{% endif %}"{% if forced_mode == 'lecture-notes' %} aria-current="page"{% endif %}>Lecture Notes</a>
+        <a href="/batch_mode_slides_extraction" class="mode-link{% if forced_mode == 'slides-only' %} active{% endif %}"{% if forced_mode == 'slides-only' %} aria-current="page"{% endif %}>Slides Extraction</a>
+        <a href="/batch_mode_interview_transcription" class="mode-link{% if forced_mode == 'interview' %} active{% endif %}"{% if forced_mode == 'interview' %} aria-current="page"{% endif %}>Interview Transcription</a>
       </div>
     </section>
 

@@ -33,6 +33,7 @@ let folderModalMode = 'create', editingFolderId = '', pendingOpenPackId = '', co
 let builderDraft = null, builderMode = 'edit', builderPane = 'info', builderDirty = false, builderPackId = '', builderExitResolver = null, builderImportParsed = null;
 let builderAutoSaveTimer = null, builderAutoSaving = false, builderAutoSaveQueued = false;
 let inlineAutoSaveTimer = null, inlineAutoSaving = false, inlineAutoSaveQueued = false;
+let inlineAutosaveBaseline = null;
 let learnFlashcardIndex = 0, learnFlashcardFlipped = false, learnQuestionIndex = 0, learnScore = 0, learnAnswered = false;
 let activeLearnMode = ''; // 'flashcards','test','write','match','notes'
 let orderedFlashcards = [];
@@ -1282,6 +1283,7 @@ function applyStudySignedOutState() {
   selectedFolderId = '';
   selectedPackId = '';
   selectedPack = null;
+  setInlineAutosaveBaseline(null);
   pendingOpenPackId = '';
   draggedPackId = '';
   orderedFlashcards = [];
@@ -2628,6 +2630,7 @@ function saveBuilderPack(closeAfter, options) {
     if (opts.refreshAfterSave === false) {
       if (selectedPack && selectedPackId && (builderPackId || selectedPackId) === selectedPackId) {
         selectedPack = Object.assign({}, selectedPack, payload, { study_pack_id: selectedPackId });
+        setInlineAutosaveBaseline(selectedPack);
       }
       return null;
     }
@@ -3394,13 +3397,6 @@ function renderFolders() {
     var div = document.createElement('div');
     div.className = 'item' + (selectedFolderId === f.folder_id ? ' active' : '');
     div.dataset.folderId = f.folder_id;
-    div.setAttribute('role', 'button');
-    div.setAttribute('tabindex', '0');
-    if (selectedFolderId === f.folder_id) {
-      div.setAttribute('aria-current', 'true');
-    } else {
-      div.removeAttribute('aria-current');
-    }
     var metaParts = [f.course, f.subject, f.semester, f.block].filter(Boolean).map(escapeHtml);
     var metaLine = buildMetadataText(
       metaParts,
@@ -3411,9 +3407,9 @@ function renderFolders() {
       ? '<span class="folder-pending-badge">Batch pending' + (pendingCount > 1 ? ' (' + pendingCount + ')' : '') + '</span>'
       : '';
     var pendingHint = pendingCount > 0 && String(f.pending_batch_hint || '').trim()
-      ? '<div class="item-sub pending-hint">' + escapeHtml(String(f.pending_batch_hint || '').trim()) + '</div>'
+      ? '<span class="item-sub pending-hint">' + escapeHtml(String(f.pending_batch_hint || '').trim()) + '</span>'
       : '';
-    var pinLine = f.is_pinned ? '<div class="item-sub pinned-note">Pinned</div>' : '';
+    var pinLine = f.is_pinned ? '<span class="item-sub pinned-note">Pinned</span>' : '';
     var examLine = '';
     if (f.folder_id && !f.is_builtin && f.exam_date) {
       var parts = String(f.exam_date).split('-');
@@ -3426,25 +3422,27 @@ function renderFolders() {
         if (diffDays > 0) { label = diffDays + ' day' + (diffDays === 1 ? '' : 's') + ' until exam'; }
         else if (diffDays === 0) { label = 'Exam today'; cls = 'overdue'; }
         else { label = 'Exam passed ' + Math.abs(diffDays) + ' day' + (Math.abs(diffDays) === 1 ? '' : 's') + ' ago'; cls = 'overdue'; }
-        examLine = '<div class="item-sub exam-countdown ' + cls + '">' + label + '</div>';
+        examLine = '<span class="item-sub exam-countdown ' + cls + '">' + label + '</span>';
       }
     }
     var actions = '';
     if (!f.is_builtin) {
       var pinLabel = f.is_pinned ? 'Unpin' : 'Pin';
-      actions = '<span class="folder-head-actions"><button class="btn folder-mini-btn" data-toggle-pin="1">' + pinLabel + '</button><button class="btn folder-mini-btn" data-share-folder="1">Share</button><button class="btn folder-mini-btn" data-edit-folder="1">Edit</button></span>';
+      actions = '<span class="folder-head-actions"><button type="button" class="btn folder-mini-btn" data-toggle-pin="1">' + pinLabel + '</button><button type="button" class="btn folder-mini-btn" data-share-folder="1">Share</button><button type="button" class="btn folder-mini-btn" data-edit-folder="1">Edit</button></span>';
     }
     setSafeInnerHtml(
       div,
-      '<div class="item-head"><span class="item-title-wrap"><span class="item-title">' + escapeHtml(f.name) + '</span>' + pendingBadge + '</span>' + actions + '</div><div class="item-sub">' + metaLine + '</div>' + pendingHint + pinLine + examLine
+      '<div class="item-head folder-row-head"><button type="button" class="folder-row-main" data-folder-activate="1"' + (selectedFolderId === f.folder_id ? ' aria-current="page"' : '') + '><span class="item-title-wrap"><span class="item-title">' + escapeHtml(f.name) + '</span>' + pendingBadge + '</span><span class="item-sub">' + metaLine + '</span>' + pendingHint + pinLine + examLine + '</button>' + actions + '</div>'
     );
     var activateFolder = function () {
       selectedFolderId = f.folder_id;
       renderFolders();
       renderPacks();
     };
-    div.addEventListener('click', function (e) { if (e.target.closest('[data-edit-folder]') || e.target.closest('[data-toggle-pin]') || e.target.closest('[data-share-folder]')) return; activateFolder(); });
-    bindKeyboardActivation(div, function () { activateFolder(); });
+    var activateButton = div.querySelector('[data-folder-activate]');
+    if (activateButton) {
+      activateButton.addEventListener('click', function () { activateFolder(); });
+    }
     if (!f.is_builtin) {
       var eb = div.querySelector('[data-edit-folder]');
       if (eb) { eb.addEventListener('click', function (e) { e.stopPropagation(); openFolderModal('edit', f); }); }
@@ -4122,6 +4120,7 @@ function openPack(packId) {
     packSubject.value = selectedPack.subject || '';
     packSemester.value = selectedPack.semester || '';
     packBlock.value = selectedPack.block || '';
+    setInlineAutosaveBaseline(selectedPack);
     packAdvancedMetadataOpen = false;
     syncPackAdvancedMetadataState();
     renderGoalPanel();
@@ -4202,7 +4201,7 @@ function loadData(preferredPackId) {
     } else if (learnPackFromUrl && packs.find(function (item) { return item.study_pack_id === learnPackFromUrl; })) {
       selectedPackId = learnPackFromUrl; renderPacks(); return openPack(learnPackFromUrl);
     } else {
-      selectedPack = null; showPackEditor(false); updatePackSummary();
+      selectedPack = null; setInlineAutosaveBaseline(null); showPackEditor(false); updatePackSummary();
       syncStudyPackExportMenu();
       renderGoalPanel();
       closeAudioPlayer();
@@ -4230,22 +4229,78 @@ function loadMorePacks() {
   });
 }
 
-function buildInlineAutosavePayload() {
-  if (!selectedPackId || !selectedPack) return null;
+function cloneInlineAutosaveValue(value) {
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (e) {
+    return value;
+  }
+}
+
+function inlineAutosaveValueChanged(leftValue, rightValue) {
+  return JSON.stringify(leftValue) !== JSON.stringify(rightValue);
+}
+
+function normalizeInlineAutosaveSnapshot(source) {
+  var pack = source || {};
   return {
-    title: String(packTitle && packTitle.value || '').trim(),
-    folder_id: String(packFolderSelect && packFolderSelect.value || ''),
-    course: String(packCourse && packCourse.value || '').trim(),
-    subject: String(packSubject && packSubject.value || '').trim(),
-    semester: String(packSemester && packSemester.value || '').trim(),
-    block: String(packBlock && packBlock.value || '').trim(),
-    notes_markdown: String(selectedPack.notes_markdown || ''),
-    flashcards: selectedPack.flashcards || [],
-    test_questions: selectedPack.test_questions || [],
+    title: String(pack.title || '').trim(),
+    folder_id: String(pack.folder_id || ''),
+    course: String(pack.course || '').trim(),
+    subject: String(pack.subject || '').trim(),
+    semester: String(pack.semester || '').trim(),
+    block: String(pack.block || '').trim(),
+    notes_markdown: String(pack.notes_markdown || ''),
+    flashcards: (Array.isArray(pack.flashcards) ? pack.flashcards : []).map(function (card) {
+      return { front: String(card && card.front || ''), back: String(card && card.back || '') };
+    }),
+    test_questions: (Array.isArray(pack.test_questions) ? pack.test_questions : []).map(normalizeQuestion)
   };
 }
 
-function runInlineAutosaveNow() {
+function buildCurrentInlineAutosaveSnapshot() {
+  if (!selectedPackId || !selectedPack) return null;
+  var snapshot = normalizeInlineAutosaveSnapshot(selectedPack);
+  snapshot.title = String(packTitle && packTitle.value || '').trim();
+  snapshot.folder_id = String(packFolderSelect && packFolderSelect.value || '');
+  snapshot.course = String(packCourse && packCourse.value || '').trim();
+  snapshot.subject = String(packSubject && packSubject.value || '').trim();
+  snapshot.semester = String(packSemester && packSemester.value || '').trim();
+  snapshot.block = String(packBlock && packBlock.value || '').trim();
+  return snapshot;
+}
+
+function setInlineAutosaveBaseline(pack) {
+  inlineAutosaveBaseline = pack ? normalizeInlineAutosaveSnapshot(pack) : null;
+}
+
+function mergeInlineAutosaveBaseline(payload) {
+  if (!payload || typeof payload !== 'object') return;
+  if (!inlineAutosaveBaseline) {
+    inlineAutosaveBaseline = {};
+  }
+  Object.keys(payload).forEach(function (field) {
+    inlineAutosaveBaseline[field] = cloneInlineAutosaveValue(payload[field]);
+  });
+}
+
+function buildInlineAutosavePayload() {
+  var snapshot = buildCurrentInlineAutosaveSnapshot();
+  if (!snapshot) return null;
+  if (!inlineAutosaveBaseline) {
+    return snapshot;
+  }
+  var payload = {};
+  Object.keys(snapshot).forEach(function (field) {
+    if (inlineAutosaveValueChanged(snapshot[field], inlineAutosaveBaseline[field])) {
+      payload[field] = snapshot[field];
+    }
+  });
+  return Object.keys(payload).length ? payload : null;
+}
+
+function runInlineAutosaveNow(options) {
+  var opts = options || {};
   if (!selectedPackId || !selectedPack || !token) return Promise.resolve();
   if (inlineAutoSaving) {
     inlineAutoSaveQueued = true;
@@ -4256,34 +4311,54 @@ function runInlineAutosaveNow() {
   var payload = buildInlineAutosavePayload();
   if (!payload) {
     inlineAutoSaving = false;
+    if (opts.showNoChangesToast) {
+      showToast('No changes to save.', 'success');
+    }
     return Promise.resolve();
   }
   return apiCall('/api/study-packs/' + encodeURIComponent(packId), {
     method: 'PATCH',
     body: JSON.stringify(payload)
   }).then(function () {
+    var hasPendingInlineChanges = inlineAutoSaveQueued || !!inlineAutoSaveTimer;
     if (selectedPack && selectedPack.study_pack_id === packId) {
-      selectedPack.title = payload.title;
-      selectedPack.folder_id = payload.folder_id;
-      selectedPack.folder_name = getFolderNameById(payload.folder_id || '');
-      selectedPack.course = payload.course;
-      selectedPack.subject = payload.subject;
-      selectedPack.semester = payload.semester;
-      selectedPack.block = payload.block;
+      if (!hasPendingInlineChanges) {
+        if (Object.prototype.hasOwnProperty.call(payload, 'title')) selectedPack.title = payload.title;
+        if (Object.prototype.hasOwnProperty.call(payload, 'folder_id')) {
+          selectedPack.folder_id = payload.folder_id;
+          selectedPack.folder_name = getFolderNameById(payload.folder_id || '');
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'course')) selectedPack.course = payload.course;
+        if (Object.prototype.hasOwnProperty.call(payload, 'subject')) selectedPack.subject = payload.subject;
+        if (Object.prototype.hasOwnProperty.call(payload, 'semester')) selectedPack.semester = payload.semester;
+        if (Object.prototype.hasOwnProperty.call(payload, 'block')) selectedPack.block = payload.block;
+        if (Object.prototype.hasOwnProperty.call(payload, 'notes_markdown')) selectedPack.notes_markdown = payload.notes_markdown;
+        if (Object.prototype.hasOwnProperty.call(payload, 'flashcards')) selectedPack.flashcards = payload.flashcards;
+        if (Object.prototype.hasOwnProperty.call(payload, 'test_questions')) selectedPack.test_questions = payload.test_questions;
+      }
       selectedPack.updated_at = Date.now() / 1000;
       updatePackSummary();
     }
+    mergeInlineAutosaveBaseline(payload);
     packs = (packs || []).map(function (pack) {
       if (String(pack.study_pack_id || '') !== packId) return pack;
-      return Object.assign({}, pack, {
-        title: payload.title,
-        folder_id: payload.folder_id,
-        folder_name: getFolderNameById(payload.folder_id || ''),
-        course: payload.course,
-        subject: payload.subject,
-        semester: payload.semester,
-        block: payload.block
+      var packUpdate = {};
+      ['title', 'course', 'subject', 'semester', 'block'].forEach(function (field) {
+        if (Object.prototype.hasOwnProperty.call(payload, field)) {
+          packUpdate[field] = payload[field];
+        }
       });
+      if (Object.prototype.hasOwnProperty.call(payload, 'folder_id')) {
+        packUpdate.folder_id = payload.folder_id;
+        packUpdate.folder_name = getFolderNameById(payload.folder_id || '');
+      }
+      if (Object.prototype.hasOwnProperty.call(payload, 'flashcards')) {
+        packUpdate.flashcards_count = payload.flashcards.length;
+      }
+      if (Object.prototype.hasOwnProperty.call(payload, 'test_questions')) {
+        packUpdate.test_questions_count = payload.test_questions.length;
+      }
+      return Object.assign({}, pack, packUpdate);
     });
     renderPacks();
     showToast('Saved successfully.', 'success');
@@ -4573,6 +4648,12 @@ builderQuestionList.addEventListener('click', function (event) {
 });
 builderImportType.addEventListener('change', clearBuilderImportState);
 builderCsvDrop.addEventListener('click', function () { builderCsvInput.click(); });
+builderCsvDrop.addEventListener('keydown', function (event) {
+  if (event.target !== builderCsvDrop) { return; }
+  if (event.key !== 'Enter' && event.key !== ' ') { return; }
+  event.preventDefault();
+  builderCsvInput.click();
+});
 builderCsvDrop.addEventListener('dragover', function (event) {
   event.preventDefault();
   builderCsvDrop.classList.add('dragover');
@@ -4724,7 +4805,7 @@ deleteFolderBtn.addEventListener('click', function () {
 if (savePackBtn) {
   savePackBtn.addEventListener('click', function () {
     if (!selectedPackId || !selectedPack) { showToast('Select a study pack first.', 'error'); return; }
-    runInlineAutosaveNow();
+    runInlineAutosaveNow({ showNoChangesToast: true });
   });
 }
 
@@ -4807,7 +4888,7 @@ deletePackBtn.addEventListener('click', function () {
       return apiCall('/api/study-progress', { method: 'PUT', body: JSON.stringify({ remove_pack_ids: [removedPackId] }) }).catch(function () { });
     }).then(function () {
       removePackLocalCaches(removedPackId);
-      selectedPackId = ''; selectedPack = null; showPackEditor(false); updatePackSummary();
+      selectedPackId = ''; selectedPack = null; setInlineAutosaveBaseline(null); showPackEditor(false); updatePackSummary();
       return loadData();
     }).then(function () { showToast('Study pack deleted.'); }).catch(function (e) { showToast(e.message || 'Could not delete study pack.', 'error'); });
   });

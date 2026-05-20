@@ -614,6 +614,9 @@ def test_study_pack_list_uses_repo_order_and_count_fallback(client, monkeypatch)
             return dict(self._payload)
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u1", "email": "u@example.com"})
+    monkeypatch.setattr(core, "db", object())
+    monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
+    monkeypatch.setattr(batch_orchestrator, "run_startup_batch_recovery_once", lambda runtime=None: None)
     monkeypatch.setattr(
         core.study_repo,
         "list_study_pack_summaries_by_uid",
@@ -658,6 +661,51 @@ def test_study_pack_list_uses_repo_order_and_count_fallback(client, monkeypatch)
     assert payload["next_cursor"] == ""
 
 
+def test_study_pack_list_fetches_legacy_counts_when_projection_lacks_counts(client, monkeypatch):
+    class _Doc:
+        def __init__(self, doc_id, payload, exists=True):
+            self.id = doc_id
+            self._payload = payload
+            self.exists = exists
+
+        def to_dict(self):
+            return dict(self._payload)
+
+    full_fetches = []
+
+    def _get_full_doc(_db, pack_id):
+        full_fetches.append(pack_id)
+        return _Doc(
+            pack_id,
+            {
+                "uid": "study-u1",
+                "flashcards": [{"front": "a", "back": "b"}],
+                "test_questions": [{"question": "Q1"}, {"question": "Q2"}],
+            },
+        )
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u1", "email": "u@example.com"})
+    monkeypatch.setattr(core, "db", object())
+    monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
+    monkeypatch.setattr(batch_orchestrator, "run_startup_batch_recovery_once", lambda runtime=None: None)
+    monkeypatch.setattr(
+        core.study_repo,
+        "list_study_pack_summaries_by_uid",
+        lambda _db, _uid, _limit, after_doc=None: [
+            _Doc("pack-legacy", {"title": "Legacy", "mode": "manual", "created_at": 200}),
+        ],
+    )
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", _get_full_doc)
+
+    response = client.get("/api/study-packs", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    pack = response.get_json()["study_packs"][0]
+    assert pack["flashcards_count"] == 1
+    assert pack["test_questions_count"] == 2
+    assert full_fetches == ["pack-legacy"]
+
+
 def test_study_pack_list_supports_cursor_pagination_contract(client, monkeypatch):
     class _Doc:
         def __init__(self, doc_id, payload):
@@ -689,7 +737,8 @@ def test_study_pack_list_supports_cursor_pagination_contract(client, monkeypatch
         ]
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u1", "email": "u@example.com"})
-    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", _get_doc)
+    monkeypatch.setattr(core, "db", None)
+    monkeypatch.setattr(core.study_repo, "get_study_pack_summary_doc", _get_doc)
     monkeypatch.setattr(core.study_repo, "list_study_pack_summaries_by_uid", _list_docs)
 
     response = client.get("/api/study-packs?limit=1&after=pack-cursor", headers={"Authorization": "Bearer dev"})
@@ -708,7 +757,7 @@ def test_study_pack_list_rejects_invalid_cursor(client, monkeypatch):
         exists = False
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u1", "email": "u@example.com"})
-    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _MissingDoc())
+    monkeypatch.setattr(core.study_repo, "get_study_pack_summary_doc", lambda _db, _pack_id: _MissingDoc())
 
     response = client.get("/api/study-packs?after=missing-pack", headers={"Authorization": "Bearer dev"})
 

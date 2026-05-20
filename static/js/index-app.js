@@ -330,6 +330,7 @@ const UPLOAD_ESTIMATE_COPY = Object.freeze({
 const allowedSlideExtensions = ['.pdf', '.pptx'];
 const allowedSlideMimeTypes = [
     'application/pdf',
+    'application/x-pdf',
     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     'application/vnd.ms-powerpoint',
     'application/octet-stream',
@@ -396,6 +397,9 @@ const resetView = document.getElementById('reset-view');
 const signinForm = document.getElementById('signin-form');
 const signupForm = document.getElementById('signup-form');
 const resetForm = document.getElementById('reset-form');
+const signinSubmit = document.getElementById('signin-submit');
+const signupSubmit = document.getElementById('signup-submit');
+const resetSubmit = document.getElementById('reset-submit');
 const signinEmail = document.getElementById('signin-email');
 const signinPassword = document.getElementById('signin-password');
 const signupEmail = document.getElementById('signup-email');
@@ -500,6 +504,7 @@ const languageOnboardingError = document.getElementById('language-onboarding-err
 const languageOnboardingSaveBtn = document.getElementById('language-onboarding-save-btn');
 
 const processButton = document.getElementById('process-button');
+const processDisabledReason = document.getElementById('process-disabled-reason');
 const noCreditsWarning = document.getElementById('no-credits-warning');
 const buyCreditsLink = document.getElementById('buy-credits-link');
 const progressSection = document.getElementById('progress-section');
@@ -724,11 +729,29 @@ async function fetchStudyProgressSummary() {
 let activeModalOverlay = null;
 let modalStateStack = [];
 let accountActionInFlight = false;
+let authSubmitBusyKind = '';
 let checkoutCooldownUntilMs = 0;
 let checkoutCooldownTimer = null;
 let checkoutRequestInFlight = false;
 let uploadCooldownUntilMs = 0;
 let uploadCooldownTimer = null;
+const authSubmitButtons = {
+    signin: signinSubmit,
+    signup: signupSubmit,
+    reset: resetSubmit,
+    google: [googleSignInBtn, googleSignUpBtn],
+};
+const authSubmitForms = {
+    signin: signinForm,
+    signup: signupForm,
+    reset: resetForm,
+};
+const authSubmitBusyLabels = {
+    signin: 'Signing in...',
+    signup: 'Creating account...',
+    reset: 'Sending...',
+    google: 'Continuing...',
+};
 function getModalContainer(overlay) {
     if (uxUtils.getModalContainer) return uxUtils.getModalContainer(overlay);
     if (!overlay) return null;
@@ -741,12 +764,31 @@ function getFocusableElements(overlay) {
     const selector = 'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
     return Array.from(container.querySelectorAll(selector)).filter((el) => el.offsetParent !== null || el === document.activeElement);
 }
+function requestCloseOverlay(overlay) {
+    if (overlay === authOverlay) { hideAuthModal(); return; }
+    if (overlay === pricingOverlay) { hidePricingModal(); return; }
+    if (overlay === historyOverlay) { hideHistoryModal(); return; }
+    if (overlay === goalModalOverlay) { closeGoalModal(); return; }
+    if (overlay === deleteAccountOverlay) { closeDeleteAccountModal(); return; }
+    if (overlay === languageOnboardingOverlay) { closeLanguageOnboarding(); return; }
+    closeOverlay(overlay);
+}
 function openOverlay(overlay) {
     if (!overlay) return;
-    modalStateStack.push({ overlay, restore: document.activeElement });
+    if (!modalStateStack.some((entry) => entry.overlay === overlay)) {
+        modalStateStack.push({ overlay, restore: document.activeElement });
+    }
+    activeModalOverlay = overlay;
+    if (typeof uxUtils.openModalOverlay === 'function') {
+        uxUtils.openModalOverlay(overlay, {
+            openClass: 'visible',
+            onRequestClose: () => requestCloseOverlay(overlay),
+        });
+        return;
+    }
+    overlay.hidden = false;
     overlay.classList.add('visible');
     overlay.setAttribute('aria-hidden', 'false');
-    activeModalOverlay = overlay;
     const focusables = getFocusableElements(overlay);
     if (focusables.length) {
         setTimeout(() => focusables[0].focus(), 30);
@@ -754,8 +796,6 @@ function openOverlay(overlay) {
 }
 function closeOverlay(overlay) {
     if (!overlay) return;
-    overlay.classList.remove('visible');
-    overlay.setAttribute('aria-hidden', 'true');
     let restoreTarget = null;
     for (let i = modalStateStack.length - 1; i >= 0; i -= 1) {
         if (modalStateStack[i].overlay === overlay) {
@@ -765,6 +805,16 @@ function closeOverlay(overlay) {
         }
     }
     activeModalOverlay = modalStateStack.length ? modalStateStack[modalStateStack.length - 1].overlay : null;
+    if (typeof uxUtils.closeModalOverlay === 'function') {
+        uxUtils.closeModalOverlay(overlay, {
+            openClass: 'visible',
+            returnFocus: restoreTarget,
+        });
+        return;
+    }
+    overlay.classList.remove('visible');
+    overlay.setAttribute('aria-hidden', 'true');
+    overlay.hidden = true;
     if (restoreTarget && typeof restoreTarget.focus === 'function') {
         try { restoreTarget.focus(); } catch (_) { }
     }
@@ -1018,7 +1068,49 @@ async function checkEmailAllowed(email) {
         return { allowed: false, message: 'Could not verify email. Please try again.' };
     }
 }
+function getAuthButtonsForKind(kind) {
+    const entry = authSubmitButtons[kind];
+    if (!entry) return [];
+    return Array.isArray(entry) ? entry.filter(Boolean) : [entry].filter(Boolean);
+}
+function setAuthButtonBusy(button, active, busyLabel) {
+    if (!button) return;
+    if (!button.dataset.defaultHtml) {
+        button.dataset.defaultHtml = button.innerHTML;
+    }
+    button.disabled = Boolean(authSubmitBusyKind);
+    button.setAttribute('aria-disabled', authSubmitBusyKind ? 'true' : 'false');
+    if (active) {
+        button.textContent = busyLabel || 'Working...';
+    } else {
+        button.innerHTML = button.dataset.defaultHtml;
+    }
+}
+function syncAuthSubmitBusyState() {
+    Object.keys(authSubmitButtons).forEach((kind) => {
+        const active = authSubmitBusyKind === kind;
+        getAuthButtonsForKind(kind).forEach((button) => {
+            setAuthButtonBusy(button, active, authSubmitBusyLabels[kind]);
+        });
+    });
+    Object.keys(authSubmitForms).forEach((kind) => {
+        if (!authSubmitForms[kind]) return;
+        authSubmitForms[kind].setAttribute('aria-busy', authSubmitBusyKind === kind ? 'true' : 'false');
+    });
+}
+function beginAuthSubmit(kind) {
+    if (authSubmitBusyKind) return false;
+    authSubmitBusyKind = kind;
+    syncAuthSubmitBusyState();
+    return true;
+}
+function endAuthSubmit(kind) {
+    if (authSubmitBusyKind !== kind) return;
+    authSubmitBusyKind = '';
+    syncAuthSubmitBusyState();
+}
 async function signInWithEmail(email, password) {
+    if (!beginAuthSubmit('signin')) return;
     try {
         const check = await checkEmailAllowed(email);
         if (!check.allowed) {
@@ -1038,9 +1130,12 @@ async function signInWithEmail(email, password) {
         trackEvent('auth_failed', { method: 'email', reason: e.code || 'unknown' });
         captureClientError(e, 'signin_email');
         showAuthError(signinError, getFirebaseErrorMessage(e));
+    } finally {
+        endAuthSubmit('signin');
     }
 }
 async function signUpWithEmail(email, password) {
+    if (!beginAuthSubmit('signup')) return;
     try {
         const check = await checkEmailAllowed(email);
         if (!check.allowed) {
@@ -1064,9 +1159,12 @@ async function signUpWithEmail(email, password) {
         trackEvent('auth_failed', { method: 'signup_email', reason: e.code || 'unknown' });
         captureClientError(e, 'signup_email');
         showAuthError(signupError, getFirebaseErrorMessage(e));
+    } finally {
+        endAuthSubmit('signup');
     }
 }
 async function signInWithGoogle() {
+    if (!beginAuthSubmit('google')) return;
     const provider = new firebase.auth.GoogleAuthProvider();
     try {
         const result = await auth.signInWithPopup(provider);
@@ -1094,15 +1192,20 @@ async function signInWithGoogle() {
         trackEvent('auth_failed', { method: 'google', reason: e.code || 'unknown' });
         captureClientError(e, 'signin_google');
         showAuthError(signinView.classList.contains('active') ? signinError : signupError, getFirebaseErrorMessage(e));
+    } finally {
+        endAuthSubmit('google');
     }
 }
 async function sendPasswordReset(email) {
+    if (!beginAuthSubmit('reset')) return;
     try {
         await auth.sendPasswordResetEmail(email);
         resetSuccess.textContent = 'Password reset email sent! Check your inbox.';
         resetSuccess.classList.add('visible');
     } catch (e) {
         showAuthError(resetError, getFirebaseErrorMessage(e));
+    } finally {
+        endAuthSubmit('reset');
     }
 }
 async function signOut() {
@@ -1857,6 +1960,8 @@ function getPreferredRecordingConfig() {
     const candidates = [
         { mimeType: 'audio/ogg;codecs=opus', extension: 'ogg' },
         { mimeType: 'audio/ogg', extension: 'ogg' },
+        { mimeType: 'audio/webm;codecs=opus', extension: 'webm' },
+        { mimeType: 'audio/webm', extension: 'webm' },
         { mimeType: 'audio/mp4;codecs=mp4a.40.2', extension: 'm4a' },
         { mimeType: 'audio/mp4', extension: 'm4a' },
     ];
@@ -2536,6 +2641,15 @@ function updateUploadEstimatePanel() {
         uploadEstimateMeta.textContent = `Requires audio only (max 500 MB). Selected extras: ${extras} (${extras} text extraction credits). Current upload: ${totalMb.toFixed(1)} MB.`;
     }
 }
+function setProcessButtonAvailability(disabled, reason) {
+    if (!processButton) return;
+    const isDisabled = Boolean(disabled);
+    processButton.disabled = isDisabled;
+    processButton.setAttribute('aria-disabled', isDisabled ? 'true' : 'false');
+    if (processDisabledReason) {
+        processDisabledReason.textContent = isDisabled ? String(reason || '') : '';
+    }
+}
 function updateMobileProcessSummary(options = {}) {
     if (!mobileProcessSummary) return;
     const config = modeConfig[currentMode] || {};
@@ -2572,24 +2686,38 @@ function updateProcessButton() {
     updateUploadEstimatePanel();
     updateMobileProcessSummary({ pdfReady, audioReady, hasCredits, uploadCooldown });
     if (uploadCooldown > 0) {
-        processButton.disabled = true;
+        setProcessButtonAvailability(true, `Processing can resume in ${formatRetryDelay(uploadCooldown)}.`);
         processButton.querySelector('span').textContent = `Try again in ${formatRetryDelay(uploadCooldown)}`;
         noCreditsWarning.classList.remove('visible');
         return;
     }
     if (config.needsAudio && audioImportInFlight && !audioFile) {
-        processButton.disabled = true;
+        setProcessButtonAvailability(true, 'Lecture audio is still importing.');
         processButton.querySelector('span').textContent = 'Importing lecture audio...';
         noCreditsWarning.classList.remove('visible');
         return;
     }
     if (currentJobId && !resultsLocked) {
-        processButton.disabled = true;
+        setProcessButtonAvailability(true, 'A processing job is already running in the background.');
         processButton.querySelector('span').textContent = 'Processing in background...';
         noCreditsWarning.classList.remove('visible');
         return;
     }
-    processButton.disabled = !(pdfReady && audioReady && hasCredits) || resultsLocked;
+    let disabledReason = '';
+    if (resultsLocked) {
+        disabledReason = 'The current results are still open.';
+    } else if (!pdfReady && !audioReady) {
+        disabledReason = 'Add the required slides and audio before processing.';
+    } else if (!pdfReady) {
+        disabledReason = 'Add the required slides before processing.';
+    } else if (!audioReady) {
+        disabledReason = 'Add the required audio before processing.';
+    } else if (!hasCredits) {
+        disabledReason = currentMode === 'interview' && userCredits && getTotalInterviewCredits() > 0 && userCredits.slides < getInterviewExtraCost()
+            ? 'Not enough text extraction credits for the selected interview extras.'
+            : 'Not enough credits for this processing mode.';
+    }
+    setProcessButtonAvailability(!(pdfReady && audioReady && hasCredits) || resultsLocked, disabledReason);
     processButton.querySelector('span').textContent = config.buttonText;
     if (currentUser && !hasCredits && !resultsLocked) {
         if (currentMode === 'interview' && getTotalInterviewCredits() > 0 && userCredits.slides < getInterviewExtraCost()) {
@@ -2708,7 +2836,7 @@ function handlePdfFile(file) {
 }
 function handleAudioFile(file, options = {}) {
     if (!file) return;
-    const valid = ['.mp3', '.m4a', '.wav', '.aac', '.ogg', '.flac'];
+    const valid = ['.mp3', '.m4a', '.wav', '.aac', '.ogg', '.flac', '.webm'];
     if (!valid.some(ext => file.name.toLowerCase().endsWith(ext))) { showToast('Please select a valid audio file', 'error'); return; }
     if (file.size > 500 * 1024 * 1024) { showToast('Audio file must be under 500 MB', 'error'); return; }
     pendingAutoImportUrl = '';
@@ -4436,6 +4564,7 @@ historyModalClose.addEventListener('click', hideHistoryModal);
 historyOverlay.addEventListener('click', (e) => { if (e.target === historyOverlay) hideHistoryModal(); });
 document.addEventListener('keydown', (e) => {
     if (!activeModalOverlay) return;
+    if (typeof uxUtils.openModalOverlay === 'function' && typeof uxUtils.closeModalOverlay === 'function') return;
     if (e.key === 'Escape') {
         e.preventDefault();
         if (activeModalOverlay === authOverlay) hideAuthModal();

@@ -10,7 +10,7 @@ from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.shared import parsing as shared_parsing
 from lecture_processor.runtime.job_dispatcher import JobQueueFullError
 
-from lecture_processor.services import access_service, upload_batch_support
+from lecture_processor.services import access_service, upload_batch_support, upload_quota_service
 
 
 def _account_write_guard_response(app_ctx, uid):
@@ -74,102 +74,126 @@ def create_general_transcription(app_ctx, request):
             runtime=app_ctx,
         )
 
-    user = app_ctx.get_or_create_user(uid, email)
-    if _total_interview_credits(user) <= 0:
-        return app_ctx.jsonify({'error': 'No interview credits remaining. Please purchase more credits.'}), 402
-
-    uploaded_audio_file = request.files.get('audio')
-    if not uploaded_audio_file or not str(uploaded_audio_file.filename or '').strip():
-        return app_ctx.jsonify({'error': 'Please choose an audio file before transcribing.'}), 400
-    if not app_ctx.allowed_file(uploaded_audio_file.filename, app_ctx.ALLOWED_AUDIO_EXTENSIONS):
-        return app_ctx.jsonify({'error': 'Invalid audio file'}), 400
-    if str(getattr(uploaded_audio_file, 'mimetype', '') or '').lower() not in app_ctx.ALLOWED_AUDIO_MIME_TYPES:
-        return app_ctx.jsonify({'error': 'Invalid audio content type'}), 400
-
-    preferred_language_key = shared_parsing.sanitize_output_language_pref_key(
-        user.get('preferred_output_language', app_ctx.DEFAULT_OUTPUT_LANGUAGE_KEY),
-        runtime=app_ctx,
+    quota_reservation, quota_response, quota_status = upload_quota_service.reserve_upload_quota(
+        app_ctx,
+        uid,
+        upload_quota_service.request_content_length(request),
+        context='Tools transcription upload',
     )
-    preferred_language_custom = shared_parsing.sanitize_output_language_pref_custom(
-        user.get('preferred_output_language_custom', ''),
-        runtime=app_ctx,
-    )
-    output_language = shared_parsing.parse_output_language(
-        request.form.get('output_language', preferred_language_key),
-        request.form.get('output_language_custom', preferred_language_custom),
-        runtime=app_ctx,
-    )
-
-    job_id = str(app_ctx.uuid.uuid4())
-    original_name = app_ctx.secure_filename(uploaded_audio_file.filename)
-    audio_path = app_ctx.os.path.join(app_ctx.UPLOAD_FOLDER, f"{job_id}_{original_name}")
-    uploaded_audio_file.save(audio_path)
-
-    audio_size = app_ctx.get_saved_file_size(audio_path)
-    if audio_size <= 0 or audio_size > app_ctx.MAX_AUDIO_UPLOAD_BYTES:
-        app_ctx.cleanup_files([audio_path], [])
-        return app_ctx.jsonify({'error': 'Audio exceeds server limit (max 500MB) or is empty.'}), 400
-    if not app_ctx.file_looks_like_audio(audio_path):
-        app_ctx.cleanup_files([audio_path], [])
-        return app_ctx.jsonify({'error': 'Uploaded audio file is invalid or unsupported.'}), 400
-
-    ai_unavailable = _require_ai_processing_ready(app_ctx)
-    if ai_unavailable is not None:
-        app_ctx.cleanup_files([audio_path], [])
-        return ai_unavailable
-
-    deducted_credit = billing_credits.deduct_interview_credit(uid, runtime=app_ctx)
-    if not deducted_credit:
-        app_ctx.cleanup_files([audio_path], [])
-        return app_ctx.jsonify({'error': 'No interview credits remaining.'}), 402
-
-    runtime_jobs_store.set_job(
-        job_id,
-        {
-            'status': 'queued',
-            'step': 0,
-            'step_description': 'Queued…',
-            'total_steps': 1,
-            'mode': 'tools-transcription',
-            'job_scope': 'tools',
-            'tool_source_type': 'audio',
-            'tool_input_name': original_name,
-            'user_id': uid,
-            'user_email': email,
-            'credit_deducted': deducted_credit,
-            'credit_refunded': False,
-            'started_at': app_ctx.time.time(),
-            'finished_at': 0,
-            'result': None,
-            'transcript': None,
-            'output_language': output_language,
-            'error': '',
-            'failed_stage': '',
-            'provider_error_code': '',
-            'retry_attempts': 0,
-            'billing_receipt': billing_receipts.initialize_billing_receipt({deducted_credit: 1}, runtime=app_ctx),
-        },
-        runtime=app_ctx,
-    )
+    if quota_response is not None:
+        return quota_response, quota_status
 
     try:
-        app_ctx.submit_background_job(
-            _run_general_transcription_job,
-            app_ctx,
-            job_id,
-            audio_path,
+        user = app_ctx.get_or_create_user(uid, email)
+        if _total_interview_credits(user) <= 0:
+            return app_ctx.jsonify({'error': 'No interview credits remaining. Please purchase more credits.'}), 402
+
+        uploaded_audio_file = request.files.get('audio')
+        if not uploaded_audio_file or not str(uploaded_audio_file.filename or '').strip():
+            return app_ctx.jsonify({'error': 'Please choose an audio file before transcribing.'}), 400
+        if not app_ctx.allowed_file(uploaded_audio_file.filename, app_ctx.ALLOWED_AUDIO_EXTENSIONS):
+            return app_ctx.jsonify({'error': 'Invalid audio file'}), 400
+        if str(getattr(uploaded_audio_file, 'mimetype', '') or '').lower() not in app_ctx.ALLOWED_AUDIO_MIME_TYPES:
+            return app_ctx.jsonify({'error': 'Invalid audio content type'}), 400
+
+        preferred_language_key = shared_parsing.sanitize_output_language_pref_key(
+            user.get('preferred_output_language', app_ctx.DEFAULT_OUTPUT_LANGUAGE_KEY),
             runtime=app_ctx,
         )
-    except JobQueueFullError:
-        return _handle_runtime_job_queue_full(
-            app_ctx,
-            job_id=job_id,
-            uid=uid,
-            cleanup_paths=[audio_path],
-            credit_type=deducted_credit,
+        preferred_language_custom = shared_parsing.sanitize_output_language_pref_custom(
+            user.get('preferred_output_language_custom', ''),
+            runtime=app_ctx,
+        )
+        output_language = shared_parsing.parse_output_language(
+            request.form.get('output_language', preferred_language_key),
+            request.form.get('output_language_custom', preferred_language_custom),
+            runtime=app_ctx,
         )
 
-    return app_ctx.jsonify({'ok': True, 'job_id': job_id, 'status': 'queued'}), 202
+        job_id = str(app_ctx.uuid.uuid4())
+        original_name = app_ctx.secure_filename(uploaded_audio_file.filename)
+        audio_path = app_ctx.os.path.join(app_ctx.UPLOAD_FOLDER, f"{job_id}_{original_name}")
+        uploaded_audio_file.save(audio_path)
+
+        audio_size = app_ctx.get_saved_file_size(audio_path)
+        if audio_size <= 0 or audio_size > app_ctx.MAX_AUDIO_UPLOAD_BYTES:
+            app_ctx.cleanup_files([audio_path], [])
+            return app_ctx.jsonify({'error': 'Audio exceeds server limit (max 500MB) or is empty.'}), 400
+        if not app_ctx.file_looks_like_audio(audio_path):
+            app_ctx.cleanup_files([audio_path], [])
+            return app_ctx.jsonify({'error': 'Uploaded audio file is invalid or unsupported.'}), 400
+
+        quota_error, quota_error_status = upload_quota_service.adjust_reserved_upload_bytes(
+            app_ctx,
+            quota_reservation,
+            audio_size,
+            context='Tools transcription upload',
+        )
+        if quota_error is not None:
+            app_ctx.cleanup_files([audio_path], [])
+            return quota_error, quota_error_status
+
+        ai_unavailable = _require_ai_processing_ready(app_ctx)
+        if ai_unavailable is not None:
+            app_ctx.cleanup_files([audio_path], [])
+            return ai_unavailable
+
+        deducted_credit = billing_credits.deduct_interview_credit(uid, runtime=app_ctx)
+        if not deducted_credit:
+            app_ctx.cleanup_files([audio_path], [])
+            return app_ctx.jsonify({'error': 'No interview credits remaining.'}), 402
+
+        runtime_jobs_store.set_job(
+            job_id,
+            {
+                'status': 'queued',
+                'step': 0,
+                'step_description': 'Queued…',
+                'total_steps': 1,
+                'mode': 'tools-transcription',
+                'job_scope': 'tools',
+                'tool_source_type': 'audio',
+                'tool_input_name': original_name,
+                'user_id': uid,
+                'user_email': email,
+                'credit_deducted': deducted_credit,
+                'credit_refunded': False,
+                'started_at': app_ctx.time.time(),
+                'finished_at': 0,
+                'result': None,
+                'transcript': None,
+                'output_language': output_language,
+                'error': '',
+                'failed_stage': '',
+                'provider_error_code': '',
+                'retry_attempts': 0,
+                'file_size_mb': round(audio_size / (1024 * 1024), 2),
+                'billing_receipt': billing_receipts.initialize_billing_receipt({deducted_credit: 1}, runtime=app_ctx),
+            },
+            runtime=app_ctx,
+        )
+
+        try:
+            app_ctx.submit_background_job(
+                _run_general_transcription_job,
+                app_ctx,
+                job_id,
+                audio_path,
+                runtime=app_ctx,
+            )
+        except JobQueueFullError:
+            return _handle_runtime_job_queue_full(
+                app_ctx,
+                job_id=job_id,
+                uid=uid,
+                cleanup_paths=[audio_path],
+                credit_type=deducted_credit,
+            )
+
+        upload_quota_service.commit_upload_quota(quota_reservation)
+        return app_ctx.jsonify({'ok': True, 'job_id': job_id, 'status': 'queued'}), 202
+    finally:
+        upload_quota_service.release_uncommitted_upload_quota(app_ctx, quota_reservation)
 
 
 def _run_general_transcription_job(app_ctx, job_id: str, audio_path: str, runtime=None):

@@ -7,6 +7,22 @@ from lecture_processor.domains.study import progress as study_progress
 from lecture_processor.services import study_api_support
 
 
+def _study_pack_counts_source(app_ctx, uid, doc, pack):
+    has_flashcard_count = 'flashcards_count' in pack or isinstance(pack.get('flashcards'), list)
+    has_question_count = 'test_questions_count' in pack or isinstance(pack.get('test_questions'), list)
+    if has_flashcard_count and has_question_count:
+        return pack
+    if app_ctx.db is None:
+        return pack
+    full_doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, doc.id)
+    if not full_doc.exists:
+        return pack
+    full_pack = full_doc.to_dict() or {}
+    if str(full_pack.get('uid', '') or '') != uid:
+        return pack
+    return full_pack
+
+
 def get_study_packs(app_ctx, request):
     decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
     if error_response is not None:
@@ -20,7 +36,7 @@ def get_study_packs(app_ctx, request):
         after_cursor = str(request.args.get('after', '') or '').strip()
         after_doc = None
         if after_cursor:
-            after_doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, after_cursor)
+            after_doc = app_ctx.study_repo.get_study_pack_summary_doc(app_ctx.db, after_cursor)
             if not after_doc.exists:
                 return app_ctx.jsonify({'error': 'Invalid study pack cursor'}), 400
             after_payload = after_doc.to_dict() or {}
@@ -37,12 +53,13 @@ def get_study_packs(app_ctx, request):
         packs = []
         for doc in study_docs[:limit]:
             pack = doc.to_dict() or {}
+            counts_source = _study_pack_counts_source(app_ctx, uid, doc, pack)
             packs.append({
                 'study_pack_id': doc.id,
                 'title': pack.get('title', ''),
                 'mode': pack.get('mode', ''),
-                'flashcards_count': study_api_support.pack_item_count(pack, 'flashcards_count', 'flashcards'),
-                'test_questions_count': study_api_support.pack_item_count(pack, 'test_questions_count', 'test_questions'),
+                'flashcards_count': study_api_support.pack_item_count(counts_source, 'flashcards_count', 'flashcards'),
+                'test_questions_count': study_api_support.pack_item_count(counts_source, 'test_questions_count', 'test_questions'),
                 'daily_card_goal': study_progress.sanitize_daily_card_goal_value(pack.get('daily_card_goal'), runtime=app_ctx),
                 'course': pack.get('course', ''),
                 'subject': pack.get('subject', ''),

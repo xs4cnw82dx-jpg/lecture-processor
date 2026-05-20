@@ -9,6 +9,11 @@ import subprocess
 import sys
 import zipfile
 
+from lecture_processor.services import upload_redaction_service
+
+
+GENERIC_SLIDE_MIME_TYPES = {'', 'application/octet-stream'}
+
 
 def allowed_file(filename, allowed_extensions):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
@@ -187,8 +192,8 @@ def resolve_uploaded_slides_to_pdf(
         return '', 'Slide file is required'
     if not allowed_file_fn(uploaded_file.filename, allowed_slide_extensions):
         return '', 'Invalid slide file. Please upload PDF or PPTX.'
-    mime_type = str(uploaded_file.mimetype or '').lower()
-    if mime_type not in allowed_slide_mime_types:
+    mime_type = str(uploaded_file.mimetype or '').strip().lower()
+    if mime_type not in allowed_slide_mime_types and mime_type not in GENERIC_SLIDE_MIME_TYPES:
         return '', 'Invalid slide content type'
 
     safe_name = secure_filename_fn(uploaded_file.filename)
@@ -455,8 +460,7 @@ def download_audio_from_video_url(
         '--ffmpeg-location', ffmpeg_bin,
         '--output', output_template,
     ]
-    if source_size_bytes > 0:
-        cmd.extend(['--max-filesize', str(max_audio_upload_bytes)])
+    cmd.extend(['--max-filesize', str(max_audio_upload_bytes)])
     cmd.extend(['--', _ytdlp_source_url(source_url)])
     try:
         result = _run_ytdlp(
@@ -475,6 +479,7 @@ def download_audio_from_video_url(
         _cleanup_audio_import_candidates(base)
         stderr = (result.stderr or result.stdout or '').strip().splitlines()
         reason = stderr[-1] if stderr else 'unknown import error'
+        reason = upload_redaction_service.redact_urls_in_text(reason, max_chars=220)
         raise RuntimeError(f'Could not fetch audio from the provided URL ({reason[:220]}).')
 
     candidates = sorted(glob.glob(f"{base}.*"))
@@ -564,6 +569,7 @@ def download_video_from_video_url(
             break
         stderr = (result.stderr or result.stdout or '').strip().splitlines()
         last_reason = stderr[-1] if stderr else 'unknown import error'
+        last_reason = upload_redaction_service.redact_urls_in_text(last_reason, max_chars=220)
         _cleanup_audio_import_candidates(base)
     else:
         raise RuntimeError(f'Could not fetch video from the provided URL ({last_reason[:220]}).')
