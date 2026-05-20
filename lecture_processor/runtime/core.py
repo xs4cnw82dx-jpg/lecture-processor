@@ -546,7 +546,7 @@ ALLOWED_EMAIL_DOMAINS, ALLOWED_EMAIL_PATTERNS = load_email_allowlist_config(EMAI
 def is_email_allowed(email):
     return auth_policy.is_email_allowed(email, runtime=_self_runtime())
 
-MODEL_SLIDES = 'gemini-3.1-flash-lite-preview'
+MODEL_SLIDES = 'gemini-3.1-flash-lite'
 
 MODEL_AUDIO = 'gemini-3-flash-preview'
 
@@ -554,9 +554,9 @@ MODEL_INTEGRATION = 'gemini-2.5-pro'
 
 MODEL_INTERVIEW = 'gemini-2.5-pro'
 
-MODEL_STUDY = 'gemini-3.1-flash-lite-preview'
+MODEL_STUDY = 'gemini-3.1-flash-lite'
 
-MODEL_TOOLS = 'gemini-3.1-flash-lite-preview'
+MODEL_TOOLS = 'gemini-3.1-flash-lite'
 
 ALLOWED_TOOLS_DOC_EXTENSIONS = {'pdf', 'pptx', 'docx'}
 
@@ -1369,7 +1369,7 @@ def add_job_credit_refund(job_data, credit_type, amount=1):
 def get_billing_receipt_snapshot(job_data):
     return billing_receipts.get_billing_receipt_snapshot(job_data, runtime=_self_runtime())
 
-MODEL_THINKING_POLICY = {'gemini-3.1-flash-lite-preview': {'thinking_level': 'high'}, 'gemini-2.5-pro': {'thinking_budget': 32768}, 'gemini-3-flash-preview': {'thinking_level': 'high'}}
+MODEL_THINKING_POLICY = {'gemini-3.1-flash-lite': {'thinking_level': 'high'}, 'gemini-2.5-pro': {'thinking_budget': 32768}, 'gemini-3-flash-preview': {'thinking_level': 'high'}}
 
 PROVIDER_RETRY_MAX_ATTEMPTS = safe_int_env('PROVIDER_RETRY_MAX_ATTEMPTS', 3, minimum=1, maximum=6)
 

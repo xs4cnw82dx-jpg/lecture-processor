@@ -692,7 +692,7 @@ def query_knowledge_index(question, *, body_region="", context_text="", case_con
         context_text=context_text,
     )
     response = ai_provider.generate_with_optional_thinking(
-        getattr(resolved_runtime, "MODEL_TOOLS", "gemini-3.1-flash-lite-preview"),
+        getattr(resolved_runtime, "MODEL_TOOLS", "gemini-3.1-flash-lite"),
         prompt,
         max_output_tokens=4096,
         operation_name="physio_knowledge_answer",

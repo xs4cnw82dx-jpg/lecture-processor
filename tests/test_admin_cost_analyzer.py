@@ -29,7 +29,7 @@ def _pricing_fixture():
     return {
         'version': 'test-pricing',
         'pricing_table': {
-            'gemini-3.1-flash-lite-preview': {
+            'gemini-3.1-flash-lite': {
                 'standard': {
                     'input_text_per_M': 0.25,
                     'input_audio_per_M': 0.50,
@@ -76,7 +76,7 @@ def _job_docs_fixture(now_ts):
                         'input_tokens': 100000,
                         'output_tokens': 20000,
                         'total_tokens': 120000,
-                        'model': 'gemini-3.1-flash-lite-preview',
+                        'model': 'gemini-3.1-flash-lite',
                         'billing_mode': 'standard',
                         'input_modality': 'text',
                     },
@@ -236,7 +236,7 @@ def test_admin_cost_analysis_hides_fixture_jobs(client, monkeypatch):
                             'input_tokens': 1000,
                             'output_tokens': 100,
                             'total_tokens': 1100,
-                            'model': 'gemini-3.1-flash-lite-preview',
+                            'model': 'gemini-3.1-flash-lite',
                             'billing_mode': 'standard',
                             'input_modality': 'text',
                         },
