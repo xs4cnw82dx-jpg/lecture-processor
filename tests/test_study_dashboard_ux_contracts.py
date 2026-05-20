@@ -93,3 +93,22 @@ def test_dashboard_auth_unavailable_reaches_ready_signed_out_state():
     assert 'if (!auth) return;' not in dashboard_js
     assert "if (!auth || typeof auth.onAuthStateChanged !== 'function')" in dashboard_js
     assert 'loadDashboard(null);' in dashboard_js
+
+
+def test_dashboard_uses_progress_summary_endpoint():
+    dashboard_js = _read('static/js/dashboard.js')
+
+    assert "fetch('/api/study-progress/summary', { headers: headers })" in dashboard_js
+    assert "fetch('/api/study-progress', { headers: headers })" not in dashboard_js
+    assert 'progressPayload && progressPayload.summary ? progressPayload.summary : progressPayload' in dashboard_js
+
+
+def test_study_inline_autosave_sends_dirty_fields_only():
+    study_js = _read('static/js/study.js')
+
+    assert 'let inlineAutosaveBaseline = null;' in study_js
+    assert 'function setInlineAutosaveBaseline(pack)' in study_js
+    assert 'function buildInlineAutosavePayload()' in study_js
+    assert 'Object.keys(snapshot).forEach(function (field)' in study_js
+    assert 'return Object.keys(payload).length ? payload : null;' in study_js
+    assert "if (Object.prototype.hasOwnProperty.call(payload, 'flashcards'))" in study_js

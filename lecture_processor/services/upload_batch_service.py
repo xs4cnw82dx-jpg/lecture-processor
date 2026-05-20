@@ -9,14 +9,13 @@ from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
-from lecture_processor.domains.rate_limit import quotas as rate_limit_quotas
 from lecture_processor.domains.shared import sanitize_csv_row
 from lecture_processor.domains.shared import parsing as shared_parsing
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 from lecture_processor.runtime.job_dispatcher import JobQueueFullError
 
-from lecture_processor.services import upload_batch_support
+from lecture_processor.services import upload_batch_support, upload_quota_service, upload_redaction_service
 
 
 def _safe_int(value, default=0):
@@ -50,11 +49,21 @@ def _release_pending_import_tokens(app_ctx, uid, token_paths):
             app_ctx.logger.warning('Could not release pending batch audio import token for uid=%s', uid, exc_info=True)
 
 
+def _refund_batch_charges(app_ctx, uid, charged_rows):
+    for charged in charged_rows:
+        credit_type = str(charged.get('credit_type', '') or '').strip()
+        if credit_type:
+            billing_credits.refund_credit(uid, credit_type, runtime=app_ctx)
+        extras = int(charged.get('interview_features_cost', 0) or 0)
+        if extras > 0:
+            billing_credits.refund_slides_credits(uid, extras, runtime=app_ctx)
+
+
 def _batch_requested_bytes_for_quota(app_ctx, request, row_plans):
-    requested_bytes = max(0, _safe_int(getattr(request, 'content_length', 0), 0))
+    requested_bytes = upload_quota_service.request_content_length(request)
     direct_url_rows = sum(1 for row in row_plans if row.get('audio_source_type') == 'm3u8_url')
     if direct_url_rows > 0:
-        requested_bytes += direct_url_rows * max(0, _safe_int(getattr(app_ctx, 'MAX_AUDIO_UPLOAD_BYTES', 0), 0))
+        requested_bytes += direct_url_rows * upload_quota_service.max_audio_upload_bytes(app_ctx)
     return requested_bytes
 
 
@@ -87,7 +96,7 @@ def _reserve_batch_upload_quota(app_ctx, uid, request, row_plans):
         analytics_events.log_rate_limit_hit('upload', 10, runtime=app_ctx)
         return app_ctx.jsonify({
             'error': f'You already have {active_jobs} active processing job(s). Please wait for one to finish before starting another.'
-        }), 429, 0, False
+        }), 429, None
 
     allowed_upload, retry_after = rate_limiter.check_rate_limit(
         key=f'upload:{uid}',
@@ -101,37 +110,18 @@ def _reserve_batch_upload_quota(app_ctx, uid, request, row_plans):
             'Too many upload attempts right now. Please wait and try again.',
             retry_after,
             runtime=app_ctx,
-        ), 429, 0, False
+        ), 429, None
 
     requested_bytes = _batch_requested_bytes_for_quota(app_ctx, request, row_plans)
-    disk_ok, free_bytes, needed_bytes = rate_limit_quotas.has_sufficient_upload_disk_space(
-        requested_bytes,
-        runtime=app_ctx,
-    )
-    if not disk_ok:
-        app_ctx.logger.warning(
-            "Batch upload rejected due to low disk space: free=%s needed=%s uid=%s",
-            free_bytes,
-            needed_bytes,
-            uid,
-        )
-        return app_ctx.jsonify({
-            'error': 'Upload temporarily unavailable due to low server storage. Please try again later.'
-        }), 503, requested_bytes, False
-
-    reserved_daily, daily_retry_after = rate_limit_quotas.reserve_daily_upload_bytes(
+    quota_reservation, quota_response, quota_status = upload_quota_service.reserve_upload_quota(
+        app_ctx,
         uid,
         requested_bytes,
-        runtime=app_ctx,
+        context='Batch upload',
     )
-    if not reserved_daily:
-        analytics_events.log_rate_limit_hit('upload', daily_retry_after, runtime=app_ctx)
-        return rate_limiter.build_rate_limited_response(
-            'Daily upload quota reached for your account. Please try again tomorrow.',
-            daily_retry_after,
-            runtime=app_ctx,
-        ), 429, requested_bytes, False
-    return None, 0, requested_bytes, True
+    if quota_response is not None:
+        return quota_response, quota_status, quota_reservation
+    return None, 0, quota_reservation
 
 
 def create_batch_job(app_ctx, request):
@@ -214,9 +204,8 @@ def create_batch_job(app_ctx, request):
     pending_import_token_paths = {}
     charged_rows = []
     created_folder_ref = None
-    reserved_daily = False
-    daily_quota_committed = False
-    requested_bytes = 0
+    quota_reservation = None
+    actual_upload_bytes = 0
     now_ts = app_ctx.time.time()
 
     try:
@@ -313,7 +302,7 @@ def create_batch_job(app_ctx, request):
         if credit_error:
             return app_ctx.jsonify({'error': credit_error}), credit_status
 
-        quota_response, quota_status, requested_bytes, reserved_daily = _reserve_batch_upload_quota(
+        quota_response, quota_status, quota_reservation = _reserve_batch_upload_quota(
             app_ctx,
             uid,
             request,
@@ -341,7 +330,9 @@ def create_batch_job(app_ctx, request):
                 if not fetch_target:
                     raise ValueError(f'Row {idx}: {url_error}')
                 plan['audio_fetch_target'] = fetch_target
-                plan['audio_source_url'] = upload_import_audio.resolved_url(fetch_target)
+                plan['audio_source_url'] = upload_redaction_service.redact_source_url(
+                    upload_import_audio.resolved_url(fetch_target)
+                )
 
         for plan in row_plans:
             interview_features_cost = int(plan.get('interview_features_cost', 0) or 0)
@@ -388,6 +379,8 @@ def create_batch_job(app_ctx, request):
                 if slides_error:
                     raise ValueError(f'Row {idx}: {slides_error}')
                 cleanup_paths.append(slides_local_path)
+                slides_size = app_ctx.get_saved_file_size(slides_local_path)
+                actual_upload_bytes += max(0, int(slides_size if slides_size > 0 else 0))
 
             audio_local_path = str(plan.get('audio_local_path', '') or '')
             audio_source_type = str(plan.get('audio_source_type', '') or '')
@@ -397,7 +390,7 @@ def create_batch_job(app_ctx, request):
             if plan.get('audio_required'):
                 if audio_source_type == 'm3u8_url':
                     prefix = f'batch_{batch_id}_{row_id}'
-                    audio_local_path, _output_name, _size_bytes = app_ctx.download_audio_from_video_url(audio_fetch_target, prefix)
+                    audio_local_path, _output_name, downloaded_size = app_ctx.download_audio_from_video_url(audio_fetch_target, prefix)
                     cleanup_paths.append(audio_local_path)
                 elif audio_source_type == 'upload':
                     audio_file = plan.get('audio_file')
@@ -413,6 +406,17 @@ def create_batch_job(app_ctx, request):
                     raise ValueError(f'Row {idx}: audio exceeds server limit or is empty.')
                 if not app_ctx.file_looks_like_audio(audio_local_path):
                     raise ValueError(f'Row {idx}: uploaded audio is invalid or unsupported.')
+                if audio_source_type == 'import_token':
+                    actual_upload_bytes += upload_quota_service.chargeable_import_token_bytes(
+                        app_ctx,
+                        uid,
+                        audio_import_token,
+                        audio_size,
+                    )
+                elif audio_source_type == 'm3u8_url':
+                    actual_upload_bytes += max(0, int(downloaded_size or audio_size or 0))
+                else:
+                    actual_upload_bytes += max(0, int(audio_size if audio_size > 0 else 0))
 
             if audio_import_token:
                 consumed_path, token_error = upload_import_audio.get_audio_import_token_path(
@@ -464,6 +468,19 @@ def create_batch_job(app_ctx, request):
                     'created_at': now_ts,
                 }
             )
+        quota_error, quota_error_status = upload_quota_service.adjust_reserved_upload_bytes(
+            app_ctx,
+            quota_reservation,
+            actual_upload_bytes,
+            context='Batch upload',
+        )
+        if quota_error is not None:
+            _refund_batch_charges(app_ctx, uid, charged_rows)
+            _release_pending_import_tokens(app_ctx, uid, pending_import_token_paths)
+            pending_import_token_paths.clear()
+            _cleanup_batch_local_files(app_ctx, cleanup_paths, consumed_import_paths)
+            return quota_error, quota_error_status
+
         folder_name = batch_title
         folder_id = ''
         if app_ctx.db is not None:
@@ -544,18 +561,12 @@ def create_batch_job(app_ctx, request):
                 upload_batch_support.queue_full_message(),
                 runtime=app_ctx,
             )
-            for charged in charged_rows:
-                credit_type = str(charged.get('credit_type', '') or '').strip()
-                if credit_type:
-                    billing_credits.refund_credit(uid, credit_type, runtime=app_ctx)
-                extras = int(charged.get('interview_features_cost', 0) or 0)
-                if extras > 0:
-                    billing_credits.refund_slides_credits(uid, extras, runtime=app_ctx)
+            _refund_batch_charges(app_ctx, uid, charged_rows)
             _release_pending_import_tokens(app_ctx, uid, pending_import_token_paths)
             pending_import_token_paths.clear()
             _cleanup_batch_local_files(app_ctx, cleanup_paths, consumed_import_paths)
             return upload_batch_support.queue_full_response(app_ctx, batch_id=batch_id)
-        daily_quota_committed = True
+        upload_quota_service.commit_upload_quota(quota_reservation)
         return app_ctx.jsonify({'batch_id': batch_id})
     except Exception as error:
         if created_folder_ref is not None:
@@ -563,20 +574,13 @@ def create_batch_job(app_ctx, request):
                 created_folder_ref.delete()
             except Exception:
                 pass
-        for charged in charged_rows:
-            credit_type = str(charged.get('credit_type', '') or '').strip()
-            if credit_type:
-                billing_credits.refund_credit(uid, credit_type, runtime=app_ctx)
-            extras = int(charged.get('interview_features_cost', 0) or 0)
-            if extras > 0:
-                billing_credits.refund_slides_credits(uid, extras, runtime=app_ctx)
+        _refund_batch_charges(app_ctx, uid, charged_rows)
         _release_pending_import_tokens(app_ctx, uid, pending_import_token_paths)
         pending_import_token_paths.clear()
         _cleanup_batch_local_files(app_ctx, cleanup_paths, consumed_import_paths)
-        return app_ctx.jsonify({'error': str(error)}), 400
+        return app_ctx.jsonify({'error': upload_redaction_service.redact_exception(error, max_chars=500)}), 400
     finally:
-        if reserved_daily and not daily_quota_committed:
-            rate_limit_quotas.release_daily_upload_bytes(uid, requested_bytes, runtime=app_ctx)
+        upload_quota_service.release_uncommitted_upload_quota(app_ctx, quota_reservation)
 
 
 def list_batch_jobs(app_ctx, request):

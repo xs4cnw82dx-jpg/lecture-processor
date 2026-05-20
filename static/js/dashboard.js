@@ -222,7 +222,7 @@
       var token = await user.getIdToken();
       var headers = { Authorization: 'Bearer ' + token };
       var result = await Promise.all([
-        fetch('/api/study-progress', { headers: headers }),
+        fetch('/api/study-progress/summary', { headers: headers }),
         fetch('/api/study-packs', { headers: headers }),
         fetchUpcomingSessions(token).catch(function () { return []; })
       ]);
@@ -230,7 +230,8 @@
       var snapshot = null;
       if (result[0].ok) {
         var progressPayload = await result[0].json();
-        var summary = progressPayload && progressPayload.summary ? progressPayload.summary : {};
+        var summary = progressPayload && progressPayload.summary ? progressPayload.summary : progressPayload;
+        if (!summary || typeof summary !== 'object') summary = {};
         snapshot = toSnapshot(summary);
         persistSnapshot(user, snapshot);
       }

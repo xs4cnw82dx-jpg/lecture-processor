@@ -1,5 +1,6 @@
 venv/
 .venv/
+venv_py39_backup/
 node_modules/
 uploads/
 functions/node_modules/

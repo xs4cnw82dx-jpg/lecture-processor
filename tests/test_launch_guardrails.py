@@ -412,14 +412,19 @@ def test_import_audio_url_success_returns_token(client, monkeypatch, tmp_path):
     core.AUDIO_IMPORT_TOKENS.clear()
     imported_path = tmp_path / "imported.mp3"
     imported_path.write_bytes(b"ID3\x03\x00\x00\x00")
+    reserved = []
+    released = []
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "imp-u2", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(rate_limit_quotas, "has_sufficient_upload_disk_space", lambda _bytes=0, runtime=None: (True, 10_000_000_000, 0))
+    monkeypatch.setattr(rate_limit_quotas, "reserve_daily_upload_bytes", lambda uid, byte_count, runtime=None: reserved.append((uid, byte_count)) or (True, 0))
+    monkeypatch.setattr(rate_limit_quotas, "release_daily_upload_bytes", lambda uid, byte_count, runtime=None: released.append((uid, byte_count)) or True)
     monkeypatch.setattr(
         upload_import_audio,
         "validate_video_import_fetch_target",
-        lambda _url, runtime=None: ("https://ovp.kaltura.com/path/index.m3u8", ""),
+        lambda _url, runtime=None: ("https://ovp.kaltura.com/path/index.m3u8?token=secret", ""),
     )
     monkeypatch.setattr(
         core,
@@ -439,6 +444,10 @@ def test_import_audio_url_success_returns_token(client, monkeypatch, tmp_path):
     token = body["audio_import_token"]
     assert token in core.AUDIO_IMPORT_TOKENS
     assert body["file_name"] == "lecture.mp3"
+    assert core.AUDIO_IMPORT_TOKENS[token]["source_url"] == "https://ovp.kaltura.com/[redacted]"
+    assert core.AUDIO_IMPORT_TOKENS[token]["quota_bytes_charged"] == imported_path.stat().st_size
+    assert reserved == [("imp-u2", core.MAX_AUDIO_UPLOAD_BYTES)]
+    assert released == [("imp-u2", core.MAX_AUDIO_UPLOAD_BYTES - imported_path.stat().st_size)]
 
 
 def test_tools_lecture_download_returns_zip_for_both_formats(client, monkeypatch, tmp_path):
@@ -822,6 +831,24 @@ def test_tools_transcribe_audio_uses_interview_credit_and_returns_transcript(cli
     assert status_payload["output_text"] == "Transcript in Dutch"
     assert status_payload["billing_receipt"]["charged"]["interview_credits_short"] == 1
     assert cleanup_calls
+
+
+def test_tools_transcribe_rejects_low_disk_before_saving_audio(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "tools-lowdisk", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(rate_limit_quotas, "has_sufficient_upload_disk_space", lambda _bytes=0, runtime=None: (False, 100, 200))
+
+    response = client.post(
+        "/api/tools/transcribe",
+        data={"audio": (io.BytesIO(b"ID3\x03\x00\x00\x00"), "lecture.mp3", "audio/mpeg")},
+        content_type="multipart/form-data",
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 503
+    assert "storage" in response.get_json()["error"].lower()
 
 
 def test_tools_transcribe_audio_allows_per_run_output_language_override(client, monkeypatch):
@@ -1732,6 +1759,113 @@ def test_compute_study_progress_summary_timezone_yesterday_window():
     assert summary["daily_goal"] == 25
 
 
+def test_get_study_progress_summary_uses_compact_card_state_summaries(client, monkeypatch):
+    class _FakeSnapshot:
+        def __init__(self, payload=None, exists=True):
+            self._payload = payload or {}
+            self.exists = exists
+
+        def to_dict(self):
+            return dict(self._payload)
+
+    class _FakeProgressDoc:
+        def get(self):
+            return _FakeSnapshot({"daily_goal": 30, "timezone": "UTC"})
+
+    class _FakeSummaryDoc:
+        id = "compact-u__pack-1"
+
+        def to_dict(self):
+            return {
+                "pack_id": "pack-1",
+                "summary": {
+                    "due_by_date": {
+                        "2000-01-01": 2,
+                        "2099-01-01": 99,
+                    }
+                },
+            }
+
+    runtime = get_runtime(client.application)
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "compact-u", "email": "user@gmail.com"})
+    monkeypatch.setattr(runtime, "db", object(), raising=False)
+    monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: _FakeProgressDoc(), raising=False)
+    monkeypatch.setattr(
+        core.study_repo,
+        "list_study_card_state_summaries_by_uid",
+        lambda _db, _uid, _limit: [_FakeSummaryDoc()],
+    )
+    monkeypatch.setattr(
+        runtime,
+        "get_study_card_state_doc",
+        lambda _uid, _pack_id: (_ for _ in ()).throw(AssertionError("full card state should not be loaded")),
+        raising=False,
+    )
+
+    response = client.get("/api/study-progress/summary", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["daily_goal"] == 30
+    assert payload["due_today"] == 2
+
+
+def test_get_study_progress_summary_falls_back_for_legacy_card_state_docs(client, monkeypatch):
+    class _FakeSnapshot:
+        def __init__(self, payload=None, exists=True):
+            self._payload = payload or {}
+            self.exists = exists
+
+        def to_dict(self):
+            return dict(self._payload)
+
+    class _FakeProgressDoc:
+        def get(self):
+            return _FakeSnapshot({"daily_goal": 20, "timezone": "UTC"})
+
+    class _LegacySummaryDoc:
+        id = "legacy-u__pack-legacy"
+
+        def to_dict(self):
+            return {"pack_id": "pack-legacy"}
+
+    class _FakeCardStateDoc:
+        def get(self):
+            return _FakeSnapshot(
+                {
+                    "state": {
+                        "fc_1": {"seen": 1, "next_review_date": "2000-01-01"},
+                        "fc_2": {"seen": 1, "next_review_date": "2099-01-01"},
+                    }
+                }
+            )
+
+    runtime = get_runtime(client.application)
+    loaded_pack_ids = []
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "legacy-u", "email": "user@gmail.com"})
+    monkeypatch.setattr(runtime, "db", object(), raising=False)
+    monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: _FakeProgressDoc(), raising=False)
+    monkeypatch.setattr(
+        core.study_repo,
+        "list_study_card_state_summaries_by_uid",
+        lambda _db, _uid, _limit: [_LegacySummaryDoc()],
+    )
+
+    def _get_card_doc(_uid, pack_id):
+        loaded_pack_ids.append(pack_id)
+        return _FakeCardStateDoc()
+
+    monkeypatch.setattr(runtime, "get_study_card_state_doc", _get_card_doc, raising=False)
+
+    response = client.get("/api/study-progress/summary", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    assert response.get_json()["due_today"] == 1
+    assert loaded_pack_ids == ["pack-legacy"]
+
+
 def test_update_study_progress_merges_cross_browser_card_states(client, monkeypatch):
     class _FakeSnapshot:
         def __init__(self, payload=None, exists=False):
@@ -1855,6 +1989,10 @@ def test_update_study_progress_merges_cross_browser_card_states(client, monkeypa
     assert saved_cards["fc_1"]["next_review_date"] == "2026-03-01"
     assert saved_cards["fc_1"]["difficulty"] == "easy"
     assert saved_cards["fc_2"]["seen"] == 1
+    assert card_state_store["u12:pack-sync-1"]["summary"]["due_by_date"] == {
+        "2026-02-27": 1,
+        "2026-03-01": 1,
+    }
 
 
 def test_billing_receipt_helpers_track_charged_and_refunded_credits():

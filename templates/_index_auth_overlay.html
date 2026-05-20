@@ -1,4 +1,4 @@
-<div class="auth-overlay" id="auth-overlay" aria-hidden="true">
+<div class="auth-overlay" id="auth-overlay" hidden aria-hidden="true">
     <div class="auth-modal" role="dialog" aria-modal="true" aria-label="Authentication">
         <button
             type="button"
@@ -21,7 +21,7 @@
             </div>
             <h2>Welcome back</h2>
             <p class="auth-modal-subtitle">Sign in to your account to continue</p>
-            <form class="auth-form" id="signin-form">
+            <form class="auth-form" id="signin-form" aria-busy="false">
                 <div class="form-group">
                     <label class="form-label" for="signin-email">Email address</label>
                     <input type="email" class="form-input" id="signin-email" placeholder="you@example.com" required autocomplete="email">
@@ -49,7 +49,7 @@
                 <button type="submit" class="auth-submit-btn" id="signin-submit">Sign in</button>
             </form>
             <div class="auth-divider"><span>or</span></div>
-            <button class="google-sign-in-button" id="google-sign-in-btn">
+            <button type="button" class="google-sign-in-button" id="google-sign-in-btn">
                 <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
                 Continue with Google
             </button>
@@ -68,7 +68,7 @@
             </div>
             <h2>Create your account</h2>
             <p class="auth-modal-subtitle">Get started with 1 free lecture credit</p>
-            <form class="auth-form" id="signup-form">
+            <form class="auth-form" id="signup-form" aria-busy="false">
                 <div class="form-group">
                     <label class="form-label" for="signup-email">Email address</label>
                     <input type="email" class="form-input" id="signup-email" placeholder="you@example.com" required autocomplete="email">
@@ -108,7 +108,7 @@
                 <button type="submit" class="auth-submit-btn u-mt-8" id="signup-submit">Create account</button>
             </form>
             <div class="auth-divider"><span>or</span></div>
-            <button class="google-sign-in-button" id="google-sign-up-btn">
+            <button type="button" class="google-sign-in-button" id="google-sign-up-btn">
                 <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
                 Continue with Google
             </button>
@@ -132,7 +132,7 @@
             </div>
             <h2>Reset your password</h2>
             <p class="auth-modal-subtitle">Enter your email and we'll send you a link to reset your password</p>
-            <form class="auth-form" id="reset-form">
+            <form class="auth-form" id="reset-form" aria-busy="false">
                 <div class="form-group">
                     <label class="form-label" for="reset-email">Email address</label>
                     <input type="email" class="form-input" id="reset-email" placeholder="you@example.com" required autocomplete="email">

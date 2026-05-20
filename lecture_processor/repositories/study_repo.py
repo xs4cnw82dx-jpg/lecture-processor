@@ -3,6 +3,49 @@
 from .query_utils import apply_where
 
 
+STUDY_PACK_SUMMARY_FIELDS = (
+    'uid',
+    'title',
+    'mode',
+    'flashcards_count',
+    'test_questions_count',
+    'daily_card_goal',
+    'course',
+    'subject',
+    'semester',
+    'block',
+    'folder_id',
+    'folder_name',
+    'created_at',
+)
+
+STUDY_PACK_CURSOR_FIELDS = (
+    'uid',
+    'created_at',
+)
+
+STUDY_CARD_STATE_SUMMARY_FIELDS = (
+    'uid',
+    'pack_id',
+    'summary',
+    'updated_at',
+)
+
+
+def _apply_select(query, field_paths):
+    select = getattr(query, 'select', None)
+    if callable(select):
+        return select(list(field_paths))
+    return query
+
+
+def _get_doc_with_fields(doc_ref, field_paths):
+    try:
+        return doc_ref.get(field_paths=list(field_paths))
+    except TypeError:
+        return doc_ref.get()
+
+
 def study_pack_doc_ref(db, pack_id):
     return db.collection('study_packs').document(pack_id)
 
@@ -13,6 +56,10 @@ def create_study_pack_doc_ref(db):
 
 def get_study_pack_doc(db, pack_id):
     return study_pack_doc_ref(db, pack_id).get()
+
+
+def get_study_pack_summary_doc(db, pack_id):
+    return _get_doc_with_fields(study_pack_doc_ref(db, pack_id), STUDY_PACK_CURSOR_FIELDS)
 
 
 def study_pack_source_doc_ref(db, pack_id):
@@ -27,6 +74,7 @@ def list_study_pack_summaries_by_uid(db, uid, limit, after_doc=None):
     query = apply_where(db.collection('study_packs'), 'uid', '==', uid).order_by('created_at', direction='DESCENDING').limit(limit)
     if after_doc is not None:
         query = query.start_after(after_doc)
+    query = _apply_select(query, STUDY_PACK_SUMMARY_FIELDS)
     return list(query.stream())
 
 
@@ -97,3 +145,9 @@ def study_card_state_doc_ref(db, uid, pack_id):
 
 def list_study_card_states_by_uid(db, uid, limit):
     return apply_where(db.collection('study_card_states'), 'uid', '==', uid).limit(limit).stream()
+
+
+def list_study_card_state_summaries_by_uid(db, uid, limit):
+    query = apply_where(db.collection('study_card_states'), 'uid', '==', uid).limit(limit)
+    query = _apply_select(query, STUDY_CARD_STATE_SUMMARY_FIELDS)
+    return query.stream()

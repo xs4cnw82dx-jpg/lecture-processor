@@ -76,6 +76,14 @@ def test_processing_upload_zones_are_keyboard_accessible():
     assert re.search(r'<div class="upload-zone" id="audio-zone"[^>]*role="button"[^>]*tabindex="0"', index_template)
 
 
+def test_processing_disabled_button_state_is_described():
+    index_template = Path('templates/index.html').read_text(encoding='utf-8')
+
+    assert 'id="process-disabled-reason" aria-live="polite"' in index_template
+    assert 'id="process-button" disabled aria-describedby="mobile-process-summary process-disabled-reason no-credits-warning" aria-disabled="true"' in index_template
+    assert 'id="no-credits-warning" aria-live="polite"' in index_template
+
+
 def test_processing_template_has_single_main_landmark():
     index_template = Path('templates/index.html').read_text(encoding='utf-8')
 
@@ -87,6 +95,24 @@ def test_batch_submit_feedback_is_live_region():
     batch_template = Path('templates/batch_mode.html').read_text(encoding='utf-8')
 
     assert 'id="batch-submit-feedback" role="status" aria-live="polite" aria-atomic="true" hidden' in batch_template
+
+
+def test_batch_and_study_generated_dropzones_are_keyboard_accessible():
+    batch_js = Path('static/js/batch-mode.js').read_text(encoding='utf-8')
+    study_template = Path('templates/study.html').read_text(encoding='utf-8')
+    study_js = Path('static/js/study.js').read_text(encoding='utf-8')
+
+    assert 'data-upload-zone="slides" role="button" tabindex="0"' in batch_js
+    assert 'data-upload-zone="audio" role="button" tabindex="0"' in batch_js
+    assert 'id="builder-csv-drop" role="button" tabindex="0"' in study_template
+    assert "builderCsvDrop.addEventListener('keydown'" in study_js
+
+
+def test_study_folder_rows_do_not_nest_actions_inside_button_role():
+    study_js = Path('static/js/study.js').read_text(encoding='utf-8')
+
+    assert '<div class="item-head folder-row-head"><button type="button" class="folder-row-main" data-folder-activate="1"' in study_js
+    assert '<span class="folder-head-actions"><button type="button" class="btn folder-mini-btn" data-toggle-pin="1">' in study_js
 
 
 def test_reader_dropzone_is_keyboard_accessible_and_announced():
@@ -101,10 +127,14 @@ def test_reader_dropzone_is_keyboard_accessible_and_announced():
 def test_shared_shell_hidden_and_live_region_contracts():
     shell_template = Path('templates/_app_shell.html').read_text(encoding='utf-8')
     app_shell_css = Path('static/css/app-shell.css').read_text(encoding='utf-8')
+    app_shell_js = Path('static/js/app-shell.js').read_text(encoding='utf-8')
 
     assert re.search(r'\[hidden\]\s*\{\s*display:\s*none\s*!important;', app_shell_css)
     assert 'id="app-shell-overlay" aria-label="Close navigation" aria-hidden="true" tabindex="-1"' in shell_template
     assert 'id="shell-toast" role="status" aria-live="polite" aria-atomic="true"' in shell_template
+    assert "href === '/batch_mode'" in app_shell_js
+    assert "currentPath === '/batch_mode_slides_extraction'" in app_shell_js
+    assert "link.setAttribute('aria-current', 'page');" in app_shell_js
 
 
 def test_non_study_toasts_and_auth_messages_are_live_regions():
@@ -123,7 +153,15 @@ def test_non_study_toasts_and_auth_messages_are_live_regions():
 
     auth_overlay = Path('templates/_index_auth_overlay.html').read_text(encoding='utf-8')
     index_footer_modals = Path('templates/_index_footer_modals.html').read_text(encoding='utf-8')
+    index_js = Path('static/js/index-app.js').read_text(encoding='utf-8')
 
+    assert 'id="auth-overlay" hidden aria-hidden="true"' in auth_overlay
+    assert 'id="signin-form" aria-busy="false"' in auth_overlay
+    assert 'id="signup-form" aria-busy="false"' in auth_overlay
+    assert 'id="reset-form" aria-busy="false"' in auth_overlay
+    assert "uxUtils.openModalOverlay(overlay" in index_js
+    assert 'let authSubmitBusyKind' in index_js
+    assert "if (!beginAuthSubmit('signin')) return;" in index_js
     assert 'id="signin-error" role="alert" aria-live="assertive" aria-atomic="true"' in auth_overlay
     assert 'id="signup-error" role="alert" aria-live="assertive" aria-atomic="true"' in auth_overlay
     assert 'id="reset-error" role="alert" aria-live="assertive" aria-atomic="true"' in auth_overlay

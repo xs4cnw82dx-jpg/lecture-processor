@@ -6,22 +6,32 @@ cd "$(dirname "$0")/.."
 blocked=(
   "firebase-credentials.json"
   ".env"
+  ".env.*"
   "context_dump.txt"
 )
 
 failed=0
 
 for path in "${blocked[@]}"; do
-  if git ls-files --error-unmatch "${path}" >/dev/null 2>&1; then
+  while IFS= read -r tracked_path; do
+    if [ -z "${tracked_path}" ]; then
+      continue
+    fi
     if git diff --cached --name-only --diff-filter=D | grep -Fxq "${path}"; then
+      continue
+    fi
+    if git diff --cached --name-only --diff-filter=D | grep -Fxq "${tracked_path}"; then
       continue
     fi
     if git diff --name-only --diff-filter=D | grep -Fxq "${path}"; then
       continue
     fi
-    echo "Blocked tracked file detected: ${path}"
+    if git diff --name-only --diff-filter=D | grep -Fxq "${tracked_path}"; then
+      continue
+    fi
+    echo "Blocked tracked file detected: ${tracked_path}"
     failed=1
-  fi
+  done < <(git ls-files -- "${path}")
 done
 
 if [ "${failed}" -ne 0 ]; then

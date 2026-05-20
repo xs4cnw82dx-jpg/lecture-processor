@@ -11,6 +11,76 @@ from lecture_processor.services import file_service, ytdlp_network_guard
 from lecture_processor.services.url_security import ValidatedFetchTarget
 
 
+class _UploadedFile:
+    def __init__(self, filename, mimetype, data):
+        self.filename = filename
+        self.mimetype = mimetype
+        self._data = data
+
+    def save(self, path):
+        Path(path).write_bytes(self._data)
+
+
+def _resolve_uploaded_slides_to_pdf(uploaded_file, tmp_path, cleanup_files_fn):
+    return file_service.resolve_uploaded_slides_to_pdf(
+        uploaded_file,
+        "job",
+        upload_folder=str(tmp_path),
+        allowed_slide_extensions={"pdf", "pptx"},
+        allowed_slide_mime_types={
+            "application/pdf",
+            "application/x-pdf",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/vnd.ms-powerpoint",
+        },
+        max_pdf_upload_bytes=50 * 1024 * 1024,
+        cleanup_files_fn=cleanup_files_fn,
+        secure_filename_fn=lambda filename: filename,
+        allowed_file_fn=file_service.allowed_file,
+        file_has_pdf_signature_fn=file_service.file_has_pdf_signature,
+        file_has_pptx_signature_fn=file_service.file_has_pptx_signature,
+        convert_pptx_to_pdf_fn=lambda _source_path, _target_path: ("", "unexpected conversion"),
+        get_saved_file_size_fn=file_service.get_saved_file_size,
+    )
+
+
+@pytest.mark.parametrize("mime_type", ["", "application/octet-stream"])
+def test_resolve_uploaded_slides_allows_generic_mime_after_pdf_signature(tmp_path, mime_type):
+    cleaned_paths = []
+    uploaded = _UploadedFile("slides.pdf", mime_type, b"%PDF-1.4\n")
+
+    path, error = _resolve_uploaded_slides_to_pdf(
+        uploaded,
+        tmp_path,
+        lambda paths, _dirs: cleaned_paths.extend(paths),
+    )
+
+    assert error == ""
+    assert Path(path).read_bytes().startswith(b"%PDF-")
+    assert cleaned_paths == []
+
+
+def test_resolve_uploaded_slides_rejects_generic_mime_without_pdf_signature(tmp_path):
+    cleaned_paths = []
+
+    def cleanup_files(paths, _dirs):
+        cleaned_paths.extend(paths)
+        for path in paths:
+            Path(path).unlink(missing_ok=True)
+
+    path, error = _resolve_uploaded_slides_to_pdf(
+        _UploadedFile("slides.pdf", "application/octet-stream", b"not-a-pdf"),
+        tmp_path,
+        cleanup_files,
+    )
+
+    expected_path = tmp_path / "job_slides.pdf"
+    assert path == ""
+    assert error == "Uploaded PDF file is invalid."
+    assert cleaned_paths == [str(expected_path)]
+    assert not expected_path.exists()
+
+
 def test_download_audio_from_video_url_rejects_overlong_media_before_download(tmp_path):
     calls = []
 
@@ -34,6 +104,36 @@ def test_download_audio_from_video_url_rejects_overlong_media_before_download(tm
 
     assert len(calls) == 1
     assert "--dump-single-json" in calls[0]
+
+
+def test_download_audio_from_video_url_redacts_urls_from_tool_errors(tmp_path):
+    class _FakeSubprocess:
+        def run(self, cmd, **_kwargs):
+            if "--dump-single-json" in cmd:
+                return SimpleNamespace(returncode=0, stdout=json.dumps({"duration": 60}), stderr="")
+            return SimpleNamespace(
+                returncode=1,
+                stdout="",
+                stderr="ERROR: unable to download https://example.com/private/video.m3u8?token=secret",
+            )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        file_service.download_audio_from_video_url(
+            "https://example.com/private/video.m3u8?token=secret",
+            "lecture-audio",
+            upload_folder=str(tmp_path),
+            max_audio_upload_bytes=500 * 1024 * 1024,
+            ffmpeg_binary_getter=lambda: "/usr/bin/ffmpeg",
+            file_looks_like_audio_fn=lambda _path: True,
+            get_saved_file_size_fn=lambda _path: 0,
+            which_func=lambda name: "/usr/bin/yt-dlp" if name == "yt-dlp" else "",
+            subprocess_module=_FakeSubprocess(),
+        )
+
+    message = str(exc_info.value)
+    assert "token=secret" not in message
+    assert "/private/video.m3u8" not in message
+    assert "https://example.com/[redacted]" in message
 
 
 def test_guarded_ytdlp_command_uses_pinned_fetch_target_and_strips_proxies(monkeypatch):
@@ -137,6 +237,44 @@ def test_download_audio_from_video_url_uses_max_filesize_for_audio_only_sources(
     assert size_bytes == 2048
     assert output_path.endswith("audio-only.mp3")
     assert any("--max-filesize" in command for command in commands if "--extract-audio" in command)
+
+
+def test_download_audio_from_video_url_uses_max_filesize_without_source_size(tmp_path):
+    commands = []
+
+    class _FakeSubprocess:
+        def run(self, cmd, **_kwargs):
+            commands.append(list(cmd))
+            if "--dump-single-json" in cmd:
+                return SimpleNamespace(
+                    returncode=0,
+                    stdout=json.dumps({"duration": 120}),
+                    stderr="",
+                )
+            output_template = cmd[cmd.index("--output") + 1]
+            output_path = Path(output_template.replace("%(ext)s", "mp3"))
+            output_path.write_bytes(b"ID3\x03\x00\x00\x00")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    output_path, output_name, size_bytes = file_service.download_audio_from_video_url(
+        "https://example.com/video-without-size",
+        "video-without-size",
+        upload_folder=str(tmp_path),
+        max_audio_upload_bytes=500 * 1024 * 1024,
+        ffmpeg_binary_getter=lambda: "/usr/bin/ffmpeg",
+        file_looks_like_audio_fn=lambda _path: True,
+        get_saved_file_size_fn=lambda _path: 2048,
+        which_func=lambda name: "/usr/bin/yt-dlp" if name == "yt-dlp" else "",
+        subprocess_module=_FakeSubprocess(),
+    )
+
+    assert output_name == "video-without-size.mp3"
+    assert size_bytes == 2048
+    assert output_path.endswith("video-without-size.mp3")
+    extract_commands = [command for command in commands if "--extract-audio" in command]
+    assert len(extract_commands) == 1
+    assert "--max-filesize" in extract_commands[0]
+    assert str(500 * 1024 * 1024) in extract_commands[0]
 
 
 def test_download_video_from_video_url_returns_mp4_when_download_succeeds(tmp_path):

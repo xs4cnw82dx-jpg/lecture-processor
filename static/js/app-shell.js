@@ -70,6 +70,15 @@
     return normalized || '/';
   }
 
+  function isActiveNavPath(href, currentPath) {
+    if (href === currentPath) return true;
+    if (href === '/plan' && currentPath === '/stats') return true;
+    if (href === '/batch_mode') {
+      return currentPath === '/batch_mode_slides_extraction' || currentPath === '/batch_mode_interview_transcription';
+    }
+    return false;
+  }
+
   function readCacheJson(key, fallbackValue) {
     return typeof userCache.getJson === 'function'
       ? userCache.getJson(key, fallbackValue, uiCache)
@@ -333,6 +342,22 @@
     if (!authOverlay) return false;
     if (!setAuthView(view || 'signin')) return false;
     clearAuthMessages();
+    if (typeof uxUtils.openModalOverlay === 'function') {
+      uxUtils.openModalOverlay(authOverlay, {
+        openClass: 'visible',
+        onRequestClose: function () {
+          if (typeof uxUtils.closeModalOverlay === 'function') {
+            uxUtils.closeModalOverlay(authOverlay, { openClass: 'visible' });
+          } else {
+            authOverlay.classList.remove('visible');
+            authOverlay.setAttribute('aria-hidden', 'true');
+            authOverlay.hidden = true;
+          }
+        }
+      });
+      return true;
+    }
+    authOverlay.hidden = false;
     authOverlay.classList.add('visible');
     authOverlay.setAttribute('aria-hidden', 'false');
     return true;
@@ -364,8 +389,13 @@
 
     navLinks.forEach(function (link) {
       var href = normalizePath(link.getAttribute('href') || '/');
-      var active = href === currentPath || (href === '/plan' && currentPath === '/stats');
+      var active = isActiveNavPath(href, currentPath);
       link.classList.toggle('active', !!active);
+      if (active) {
+        link.setAttribute('aria-current', 'page');
+      } else {
+        link.removeAttribute('aria-current');
+      }
       if (active && link.classList.contains('sub')) {
         var groupNode = link.closest ? link.closest('.app-shell-group[data-shell-group]') : null;
         if (groupNode) {
