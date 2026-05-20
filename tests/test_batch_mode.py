@@ -210,6 +210,12 @@ def test_batch_create_slides_only_contract(client, monkeypatch):
 
     monkeypatch.setattr(batch_orchestrator, 'create_batch_job', _fake_create_batch)
     monkeypatch.setattr(batch_orchestrator, 'process_batch_job', lambda _batch_id, runtime=None: None)
+    submitted = {}
+    monkeypatch.setattr(
+        core,
+        'submit_batch_background_job',
+        lambda func, *args, **kwargs: submitted.update({'func': func, 'args': args, 'kwargs': kwargs}),
+    )
 
     rows = [
         {'row_id': 'row-1', 'slides_file_field': 'row_1_slides'},
@@ -241,6 +247,9 @@ def test_batch_create_slides_only_contract(client, monkeypatch):
     assert isinstance(capture.rows, list)
     assert len(capture.rows) == 2
     assert capture.rows[0].get('billing_mode') == 'batch'
+    assert submitted['func'] is batch_orchestrator.process_batch_job
+    submitted_runtime = submitted['kwargs']['runtime']
+    assert getattr(submitted_runtime, 'core', submitted_runtime) is core
 
 
 def test_batch_create_lecture_notes_preserves_row_study_override_contract(client, monkeypatch):
@@ -518,7 +527,7 @@ def test_batch_queue_full_cleans_consumed_import_token_files(client, monkeypatch
     monkeypatch.setattr(batch_orchestrator, 'process_batch_job', lambda _batch_id, runtime=None: None)
     monkeypatch.setattr(
         core,
-        'submit_background_job',
+        'submit_batch_background_job',
         lambda *_args, **_kwargs: (_ for _ in ()).throw(JobQueueFullError('full')),
     )
 
@@ -625,6 +634,41 @@ def test_batch_status_contract(client, monkeypatch):
     assert body.get('completion_email_status') == 'pending'
 
 
+def test_finalize_row_job_log_marks_row_error_when_study_pack_save_fails(monkeypatch):
+    _patch_batch_refunds(monkeypatch)
+    saved_logs = []
+    monkeypatch.setattr(batch_orchestrator.ai_pipelines, 'save_study_pack', lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(core, 'save_job_log', lambda job_id, job_data, finished_at: saved_logs.append((job_id, dict(job_data), finished_at)))
+
+    batch = {
+        'batch_id': 'batch-save-fail',
+        'uid': 'u-batch',
+        'email': 'batch@example.com',
+        'mode': 'slides-only',
+        'created_at': 100.0,
+    }
+    row = {
+        'row_id': 'row-save-fail',
+        'row_job_id': 'row-job-save-fail',
+        'ordinal': 1,
+        'status': 'processing',
+        'slide_text': 'Slides text',
+        'study_features': 'none',
+        'credit_deducted': 'slides_credits',
+        'billing_receipt': {'charged': {'slides_credits': 1}},
+    }
+
+    batch_orchestrator._finalize_row_job_log(batch, row, runtime=core)
+
+    assert row['status'] == 'error'
+    assert row['failed_stage'] == 'study_pack_persistence'
+    assert row['error'] == 'Study pack could not be saved.'
+    assert row['study_pack_id'] == ''
+    assert row['credit_refunded'] is True
+    assert saved_logs[-1][1]['status'] == 'error'
+    assert saved_logs[-1][1]['failed_stage'] == 'study_pack_persistence'
+
+
 def test_batch_download_zip_includes_combined_docx_when_enabled(client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     monkeypatch.setattr(
@@ -667,6 +711,18 @@ def test_batch_download_zip_includes_combined_docx_when_enabled(client, monkeypa
                 'transcript': 'Transcript text',
                 'flashcards': [{'front': 'What is ATP?', 'back': 'Energy currency'}],
                 'test_questions': [{'question': 'What is ATP?', 'options': ['A', 'B'], 'answer': 'A', 'explanation': 'It stores energy'}],
+                'slides_local_path': '/tmp/private-slides.pdf',
+                'audio_local_path': '/tmp/private-audio.mp3',
+                'slides_file_uri': 'files/provider-slides',
+                'audio_file_uri': 'files/provider-audio',
+                'audio_storage_key': 'private/storage/key.mp3',
+                'source_url': 'https://video.example.com/watch?token=secret',
+                'billing_receipt': {'charged': {'lecture_credits_standard': 1}},
+                'credit_deducted': 'lecture_credits_standard',
+                'token_usage_by_stage': {'merge': {'input': 10}},
+                'row_job_id': 'job-internal',
+                '_local_paths': ['/tmp/internal'],
+                '_gemini_files': ['provider-object'],
             },
             {
                 'row_id': 'row-2',
@@ -708,6 +764,26 @@ def test_batch_download_zip_includes_combined_docx_when_enabled(client, monkeypa
     assert 'Lecture 2' in combined_text
     assert 'Status: processing' in combined_text
     assert 'Output was unavailable when this ZIP was created.' in combined_text
+
+    row_meta = json.loads(archive.read('rows/row-1/meta.json').decode('utf-8'))
+    assert row_meta['row_id'] == 'row-1'
+    assert row_meta['source_name'] == 'Lecture 1'
+    for sensitive_key in (
+        'slides_local_path',
+        'audio_local_path',
+        'slides_file_uri',
+        'audio_file_uri',
+        'audio_storage_key',
+        'source_url',
+        'billing_receipt',
+        'credit_deducted',
+        'token_usage_by_stage',
+        'row_job_id',
+        '_local_paths',
+        '_gemini_files',
+    ):
+        assert sensitive_key not in row_meta
+    assert b'token=secret' not in archive.read('rows/row-1/meta.json')
 
 
 def test_batch_download_zip_omits_combined_docx_when_disabled(client, monkeypatch):

@@ -337,10 +337,11 @@ def create_batch_job(app_ctx, request):
                 pending_import_token_paths[token] = audio_local_path
                 plan['audio_local_path'] = audio_local_path
             elif plan.get('audio_source_type') == 'm3u8_url':
-                safe_url, url_error = upload_import_audio.validate_video_import_url(plan.get('audio_url', ''), runtime=app_ctx)
-                if not safe_url:
+                fetch_target, url_error = upload_import_audio.validate_video_import_fetch_target(plan.get('audio_url', ''), runtime=app_ctx)
+                if not fetch_target:
                     raise ValueError(f'Row {idx}: {url_error}')
-                plan['audio_source_url'] = safe_url
+                plan['audio_fetch_target'] = fetch_target
+                plan['audio_source_url'] = upload_import_audio.resolved_url(fetch_target)
 
         for plan in row_plans:
             interview_features_cost = int(plan.get('interview_features_cost', 0) or 0)
@@ -391,11 +392,12 @@ def create_batch_job(app_ctx, request):
             audio_local_path = str(plan.get('audio_local_path', '') or '')
             audio_source_type = str(plan.get('audio_source_type', '') or '')
             audio_source_url = str(plan.get('audio_source_url', '') or '')
+            audio_fetch_target = plan.get('audio_fetch_target') or audio_source_url
             audio_import_token = str(plan.get('audio_import_token', '') or '').strip()
             if plan.get('audio_required'):
                 if audio_source_type == 'm3u8_url':
                     prefix = f'batch_{batch_id}_{row_id}'
-                    audio_local_path, _output_name, _size_bytes = app_ctx.download_audio_from_video_url(audio_source_url, prefix)
+                    audio_local_path, _output_name, _size_bytes = app_ctx.download_audio_from_video_url(audio_fetch_target, prefix)
                     cleanup_paths.append(audio_local_path)
                 elif audio_source_type == 'upload':
                     audio_file = plan.get('audio_file')
@@ -528,7 +530,10 @@ def create_batch_job(app_ctx, request):
         batch_orchestrator.create_batch_job(batch_payload, prepared_rows, runtime=app_ctx)
 
         try:
-            app_ctx.submit_background_job(
+            submit_batch = getattr(app_ctx, 'submit_batch_background_job', None)
+            if not callable(submit_batch):
+                submit_batch = app_ctx.submit_background_job
+            submit_batch(
                 batch_orchestrator.process_batch_job,
                 batch_id,
                 runtime=app_ctx,
@@ -860,7 +865,15 @@ def download_batch_zip(app_ctx, request, batch_id):
         for row in rows:
             row_id = str(row.get('row_id', '') or '')
             folder = f'rows/{row_id}'
-            archive.writestr(f'{folder}/meta.json', json.dumps(row, ensure_ascii=False, indent=2, default=str))
+            archive.writestr(
+                f'{folder}/meta.json',
+                json.dumps(
+                    batch_orchestrator.build_batch_row_export_metadata(row, batch, runtime=app_ctx),
+                    ensure_ascii=False,
+                    indent=2,
+                    default=str,
+                ),
+            )
             if row.get('status') != 'complete':
                 continue
             try:

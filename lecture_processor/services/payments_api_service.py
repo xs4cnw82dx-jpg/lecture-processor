@@ -196,6 +196,13 @@ def stripe_webhook(app_ctx, request):
             app_ctx.logger.info("ℹ️ Checkout session %s is complete but payment has not settled yet.", session.get('id', ''))
         elif not ok and status == 'account_deletion_in_progress':
             app_ctx.logger.warning("⚠️ Checkout session %s could not be fulfilled because account deletion is in progress.", session.get('id', ''))
+            return 'Account deletion in progress', 409
+        elif not ok and status in {'missing_checkout_metadata', 'missing_session_id', 'unknown_credit_bundle'}:
+            app_ctx.logger.warning("⚠️ Stripe webhook checkout session %s has invalid fulfillment data: %s", session.get('id', ''), status)
+            return 'Invalid checkout session metadata', 400
+        elif not ok:
+            app_ctx.logger.warning("⚠️ Webhook checkout session %s fulfillment failed: %s", session.get('id', ''), status)
+            return 'Checkout fulfillment failed', 500
         else:
             app_ctx.logger.warning(f"⚠️ Webhook checkout session {session.get('id', '')} not processed: {status}")
     elif event_type == 'checkout.session.async_payment_failed':

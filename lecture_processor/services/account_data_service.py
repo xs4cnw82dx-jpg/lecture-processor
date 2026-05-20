@@ -248,6 +248,7 @@ def delete_account_data(app_ctx, request):
         deletion_started = bool(account_lifecycle.mark_account_deletion_requested(uid, email=email, runtime=app_ctx))
         if not deletion_started:
             raise RuntimeError('Could not mark account deletion as started.')
+        deleted['pending_audio_import_tokens'] = account_lifecycle.remove_pending_audio_imports_for_uid(uid, runtime=app_ctx)
 
         def _delete_field_collection(collection_name, field_name, field_value, deleted_key=None):
             deleted_count = 0

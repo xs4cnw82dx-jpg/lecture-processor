@@ -44,6 +44,32 @@ def test_runtime_job_snapshot_persist_uses_repo(app, monkeypatch):
     assert "ignored" not in captured["payload"]
 
 
+def test_runtime_job_update_persists_only_changed_fields(app, monkeypatch):
+    runtime = get_runtime(app)
+    with runtime.JOBS_LOCK:
+        runtime.jobs.clear()
+    monkeypatch.setattr(runtime, "db", object())
+    monkeypatch.setattr(runtime, "RUNTIME_JOBS_COLLECTION", "runtime_jobs")
+    monkeypatch.setattr(runtime, "RUNTIME_JOB_PERSISTED_FIELDS", ("status", "result", "finished_at"))
+    monkeypatch.setattr(runtime.time, "time", lambda: 200.0)
+    writes = []
+
+    def _set_doc(_db, collection, job_id, payload, merge=True):
+        writes.append(dict(payload))
+
+    monkeypatch.setattr(runtime.runtime_jobs_repo, "set_doc", _set_doc)
+
+    store.set_job("job-large", {"status": "processing", "result": "large artifact"}, runtime=runtime)
+    store.update_job_fields("job-large", runtime=runtime, status="complete")
+    store.update_job_fields("job-large", runtime=runtime, finished_at=205.0)
+
+    assert writes[0]["result"] == "large artifact"
+    assert writes[1]["status"] == "complete"
+    assert "result" not in writes[1]
+    assert writes[2]["finished_at"] == 205.0
+    assert "result" not in writes[2]
+
+
 def test_run_startup_recovery_once_honors_disabled_flag():
     class _Lock:
         def __enter__(self):

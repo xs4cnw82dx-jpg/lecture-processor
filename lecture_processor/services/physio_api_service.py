@@ -140,6 +140,11 @@ def _generate_array_payload(prompt_text, *, operation_name, runtime):
     return payload if isinstance(payload, list) else []
 
 
+def _generation_error_response(app_ctx, label, error, status_code):
+    app_ctx.logger.error("Physio generation failed for %s: %s", label, error)
+    return app_ctx.jsonify({"error": "Physio generation failed."}), status_code
+
+
 def _normalize_string(value, limit=2000):
     return str(value or "").strip()[:limit]
 
@@ -338,17 +343,22 @@ def generate_soap(app_ctx, request):
     case_context = payload.get("case_context")
     if not isinstance(case_context, dict):
         case_context = _case_context_for_uid(app_ctx, decoded_token["uid"], payload.get("case_id"))
-    soap = _generate_json_payload(
-        physio_prompts.soap_prompt(
-            transcript,
-            body_region=_normalize_string(payload.get("body_region"), 80),
-            session_type=_normalize_string(payload.get("session_type"), 80),
-            case_context=case_context,
-        ),
-        physio_prompts.SOAP_RESPONSE_SHAPE,
-        operation_name="physio_generate_soap",
-        runtime=app_ctx,
-    )
+    try:
+        soap = _generate_json_payload(
+            physio_prompts.soap_prompt(
+                transcript,
+                body_region=_normalize_string(payload.get("body_region"), 80),
+                session_type=_normalize_string(payload.get("session_type"), 80),
+                case_context=case_context,
+            ),
+            physio_prompts.SOAP_RESPONSE_SHAPE,
+            operation_name="physio_generate_soap",
+            runtime=app_ctx,
+        )
+    except SystemExit as error:
+        return _generation_error_response(app_ctx, "soap", error, 502)
+    except Exception as error:
+        return _generation_error_response(app_ctx, "soap", error, 500)
     return app_ctx.jsonify({"soap": soap, "warnings": []})
 
 
@@ -366,17 +376,22 @@ def generate_rps(app_ctx, request):
     case_context = payload.get("case_context")
     if not isinstance(case_context, dict):
         case_context = _case_context_for_uid(app_ctx, decoded_token["uid"], payload.get("case_id"))
-    rps = _generate_json_payload(
-        physio_prompts.rps_prompt(
-            transcript,
-            body_region=_normalize_string(payload.get("body_region"), 80),
-            session_type=_normalize_string(payload.get("session_type"), 80),
-            case_context=case_context,
-        ),
-        physio_prompts.RPS_RESPONSE_SHAPE,
-        operation_name="physio_generate_rps",
-        runtime=app_ctx,
-    )
+    try:
+        rps = _generate_json_payload(
+            physio_prompts.rps_prompt(
+                transcript,
+                body_region=_normalize_string(payload.get("body_region"), 80),
+                session_type=_normalize_string(payload.get("session_type"), 80),
+                case_context=case_context,
+            ),
+            physio_prompts.RPS_RESPONSE_SHAPE,
+            operation_name="physio_generate_rps",
+            runtime=app_ctx,
+        )
+    except SystemExit as error:
+        return _generation_error_response(app_ctx, "rps", error, 502)
+    except Exception as error:
+        return _generation_error_response(app_ctx, "rps", error, 500)
     return app_ctx.jsonify({"rps": rps})
 
 
@@ -396,38 +411,43 @@ def generate_reasoning(app_ctx, request):
     case_context = payload.get("case_context")
     if not isinstance(case_context, dict):
         case_context = _case_context_for_uid(app_ctx, decoded_token["uid"], payload.get("case_id"))
-    reasoning = _generate_json_payload(
-        physio_prompts.reasoning_prompt(
-            transcript,
-            body_region=body_region,
-            session_type=session_type,
-            case_context=case_context,
-        ),
-        physio_prompts.REASONING_RESPONSE_SHAPE,
-        operation_name="physio_generate_reasoning",
-        runtime=app_ctx,
-    )
-    differential = _generate_json_payload(
-        physio_prompts.differential_prompt(
-            transcript,
-            body_region=body_region,
-            session_type=session_type,
-            case_context=case_context,
-        ),
-        physio_prompts.DIFFERENTIAL_RESPONSE_SHAPE,
-        operation_name="physio_generate_differential",
-        runtime=app_ctx,
-    )
-    red_flags = _generate_array_payload(
-        physio_prompts.red_flags_prompt(
-            transcript,
-            body_region=body_region,
-            session_type=session_type,
-            case_context=case_context,
-        ),
-        operation_name="physio_generate_red_flags",
-        runtime=app_ctx,
-    )
+    try:
+        reasoning = _generate_json_payload(
+            physio_prompts.reasoning_prompt(
+                transcript,
+                body_region=body_region,
+                session_type=session_type,
+                case_context=case_context,
+            ),
+            physio_prompts.REASONING_RESPONSE_SHAPE,
+            operation_name="physio_generate_reasoning",
+            runtime=app_ctx,
+        )
+        differential = _generate_json_payload(
+            physio_prompts.differential_prompt(
+                transcript,
+                body_region=body_region,
+                session_type=session_type,
+                case_context=case_context,
+            ),
+            physio_prompts.DIFFERENTIAL_RESPONSE_SHAPE,
+            operation_name="physio_generate_differential",
+            runtime=app_ctx,
+        )
+        red_flags = _generate_array_payload(
+            physio_prompts.red_flags_prompt(
+                transcript,
+                body_region=body_region,
+                session_type=session_type,
+                case_context=case_context,
+            ),
+            operation_name="physio_generate_red_flags",
+            runtime=app_ctx,
+        )
+    except SystemExit as error:
+        return _generation_error_response(app_ctx, "reasoning", error, 502)
+    except Exception as error:
+        return _generation_error_response(app_ctx, "reasoning", error, 500)
     return app_ctx.jsonify(
         {
             "seven_step": reasoning,

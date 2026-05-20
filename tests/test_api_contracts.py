@@ -13,6 +13,7 @@ from lecture_processor.domains.admin import rollups as admin_rollups
 from lecture_processor.domains.admin import metrics as admin_metrics
 from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.auth import policy as auth_policy
+from lecture_processor.domains.billing import purchases as billing_purchases
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.study import progress as study_progress
@@ -502,6 +503,39 @@ def test_stripe_webhook_requires_secret(client, monkeypatch):
 
     assert response.status_code == 500
     assert response.get_json().get("error") == "Webhook not configured"
+
+
+@pytest.mark.parametrize(
+    ("fulfillment_status", "expected_status"),
+    (
+        ("could_not_grant_credits", 500),
+        ("missing_checkout_metadata", 400),
+        ("missing_session_id", 400),
+        ("unknown_credit_bundle", 400),
+        ("account_deletion_in_progress", 409),
+        ("pending_payment", 200),
+    ),
+)
+def test_stripe_webhook_returns_retryable_status_for_failed_fulfillment(client, monkeypatch, fulfillment_status, expected_status):
+    monkeypatch.setattr(core, "STRIPE_WEBHOOK_SECRET", "whsec_test")
+    event = {
+        "type": "checkout.session.completed",
+        "data": {"object": {"id": "sess_failed", "metadata": {"uid": "u1", "bundle_id": "lecture_5"}}},
+    }
+    monkeypatch.setattr(core.stripe.Webhook, "construct_event", lambda *_args, **_kwargs: event)
+    monkeypatch.setattr(
+        billing_purchases,
+        "process_checkout_session_credits",
+        lambda _session, runtime=None: (False, fulfillment_status),
+    )
+
+    response = client.post(
+        "/api/stripe-webhook",
+        data=b"{}",
+        headers={"Content-Type": "application/json", "Stripe-Signature": "sig"},
+    )
+
+    assert response.status_code == expected_status
 
 
 def test_study_pack_get_missing_returns_404(client, monkeypatch):

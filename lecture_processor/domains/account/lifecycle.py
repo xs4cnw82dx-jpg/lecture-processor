@@ -2,6 +2,7 @@ import os
 
 from lecture_processor.runtime.container import get_runtime
 from lecture_processor.domains.study import audio as study_audio
+from lecture_processor.domains.upload import import_audio as upload_import_audio
 from lecture_processor.repositories.query_utils import apply_where
 
 
@@ -19,6 +20,10 @@ STUCK_DELETION_AFTER_SECONDS = 60 * 60
 def account_write_block_message(runtime=None):
     _ = _resolve_runtime(runtime)
     return 'Account deletion is in progress. New work and credit changes are blocked until deletion finishes.'
+
+
+def remove_pending_audio_imports_for_uid(uid, runtime=None):
+    return upload_import_audio.release_audio_import_tokens_for_uid(uid, runtime=_resolve_runtime(runtime))
 
 
 def get_user_account_state(uid, runtime=None):

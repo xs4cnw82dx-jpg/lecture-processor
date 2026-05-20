@@ -373,9 +373,9 @@
         .header-link-button { display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 12px; background: var(--white); border: 1px solid var(--gray-300); border-radius: var(--radius); font-size: 0.875rem; font-weight: 600; color: var(--gray-700); cursor: pointer; transition: all 0.2s ease; width: 100%; justify-content: flex-start; }
         .header-link-button:hover { background: var(--gray-50); border-color: var(--gray-400); color: var(--gray-900); }
         .header-link-button svg { width: 18px; height: 18px; }
-        .auth-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; align-items: center; justify-content: center; padding: 24px; }
+        .auth-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; align-items: flex-start; justify-content: center; overflow-y: auto; padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); }
         .auth-overlay.visible { display: flex; }
-        .auth-modal { background: var(--white); border-radius: var(--radius-xl); padding: 40px; max-width: 420px; width: 100%; text-align: center; box-shadow: var(--shadow-xl); animation: modalOpen 0.3s ease-out; position: relative; }
+        .auth-modal { background: var(--white); border-radius: var(--radius-xl); padding: 40px; max-width: 420px; width: min(100%, 420px); max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain; margin: auto 0; text-align: center; box-shadow: var(--shadow-xl); animation: modalOpen 0.3s ease-out; position: relative; }
         .auth-modal-close { position: absolute; top: 16px; right: 16px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: none; border: none; color: var(--gray-400); cursor: pointer; border-radius: 50%; transition: all 0.2s; }
         .auth-modal-close:hover { background: var(--gray-100); color: var(--gray-600); }
         .auth-modal-close svg { width: 20px; height: 20px; }
@@ -414,6 +414,16 @@
         .auth-success.visible { display: block; }
         .auth-view { display: none; }
         .auth-view.active { display: block; }
+        @media (max-width: 480px) {
+            .auth-modal { padding: 24px 18px; border-radius: var(--radius-lg); }
+            .auth-modal-close { top: 10px; right: 10px; }
+            .auth-modal-icon { width: 52px; height: 52px; margin-bottom: 16px; }
+            .auth-modal-icon svg { width: 26px; height: 26px; }
+            .auth-modal h2 { font-size: 1.3rem; }
+            .auth-modal-subtitle { margin-bottom: 18px; }
+            .auth-divider { margin: 18px 0; }
+            .auth-switch { margin-top: 18px; }
+        }
         .goal-modal-overlay {
             display: none;
             position: fixed;

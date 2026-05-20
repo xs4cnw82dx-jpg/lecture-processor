@@ -18,7 +18,7 @@ def _host_matches_allowed_suffix(hostname, allowed_suffixes):
     return any((host == suffix or host.endswith('.' + suffix) for suffix in allowed_suffixes))
 
 
-def validate_video_import_url(raw_url, runtime=None):
+def validate_video_import_fetch_target(raw_url, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     url_security = resolved_runtime.url_security
     url = str(raw_url or '').strip()
@@ -27,12 +27,13 @@ def validate_video_import_url(raw_url, runtime=None):
     if len(url) > resolved_runtime.VIDEO_IMPORT_MAX_URL_LENGTH:
         return ('', 'Video URL is too long.')
 
-    safe_url, validation_error = url_security.validate_external_url_for_fetch(
+    fetch_target, validation_error = url_security.validate_external_url_for_fetch(
         url,
         allowed_schemes=('https',),
         allow_credentials=False,
         allow_non_standard_ports=False,
         resolve_dns=True,
+        return_fetch_target=True,
     )
     if validation_error:
         if 'resolves to a restricted network address' in validation_error:
@@ -41,13 +42,26 @@ def validate_video_import_url(raw_url, runtime=None):
             return ('', 'This video host is not allowed.')
         return ('', validation_error)
 
-    host = (urlparse(safe_url).hostname or '').strip().lower()
+    host = str(getattr(fetch_target, 'host', '') or '').strip().lower()
+    if not host:
+        host = str(urlparse(resolved_url(fetch_target)).hostname or '').strip().lower()
     if not host:
         return ('', 'Video URL host is missing.')
     allowed_suffixes = tuple(getattr(resolved_runtime, 'VIDEO_IMPORT_ALLOWED_HOST_SUFFIXES', ()) or ())
     if allowed_suffixes and (not _host_matches_allowed_suffix(host, allowed_suffixes)):
         return ('', 'Only supported LMS/Kaltura video hosts are allowed for automatic import.')
-    return (safe_url, '')
+    return (fetch_target, '')
+
+
+def validate_video_import_url(raw_url, runtime=None):
+    fetch_target, error = validate_video_import_fetch_target(raw_url, runtime=runtime)
+    if error:
+        return ('', error)
+    return (resolved_url(fetch_target), '')
+
+
+def resolved_url(fetch_target):
+    return str(getattr(fetch_target, 'url', fetch_target) or '')
 
 
 def cleanup_expired_audio_import_tokens(runtime=None):
@@ -122,3 +136,28 @@ def release_audio_import_token(uid, token, runtime=None):
     except Exception:
         pass
     return True
+
+
+def release_audio_import_tokens_for_uid(uid, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    safe_uid = str(uid or '')
+    removed_paths = []
+    removed_tokens = 0
+    if not safe_uid:
+        return {'tokens': 0, 'files': 0}
+    with resolved_runtime.AUDIO_IMPORT_LOCK:
+        for token, entry in list(resolved_runtime.AUDIO_IMPORT_TOKENS.items()):
+            if entry.get('uid', '') != safe_uid:
+                continue
+            removed_tokens += 1
+            removed_paths.append(str(entry.get('path', '') or '').strip())
+            resolved_runtime.AUDIO_IMPORT_TOKENS.pop(token, None)
+    removed_files = 0
+    for path in removed_paths:
+        try:
+            if path and os.path.exists(path):
+                os.remove(path)
+                removed_files += 1
+        except Exception:
+            pass
+    return {'tokens': removed_tokens, 'files': removed_files}

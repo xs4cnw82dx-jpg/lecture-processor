@@ -1941,6 +1941,10 @@
       border: 2px solid var(--gray-200);
       border-radius: var(--radius-md);
       padding: 20px;
+      background: var(--white);
+      color: inherit;
+      font: inherit;
+      width: 100%;
       cursor: pointer;
       transition: all .25s ease;
       display: flex;
@@ -2249,8 +2253,12 @@
       justify-content: space-between;
       gap: 12px;
       padding: 14px 16px;
+      width: 100%;
+      border: 0;
       border-radius: var(--radius);
       background: var(--gray-50);
+      color: inherit;
+      font: inherit;
       transition: background .15s ease;
       cursor: pointer
     }
@@ -3737,7 +3745,15 @@
       align-items: center;
       justify-content: center;
       word-break: break-word;
+      font-family: inherit;
       background: var(--white)
+    }
+
+    .lesson-card:focus-visible,
+    .setting-row:focus-visible,
+    .match-cell:focus-visible {
+      outline: 3px solid rgba(79, 70, 229, .35);
+      outline-offset: 2px
     }
 
     .match-cell:hover:not(.matched):not(.selected) {

@@ -262,8 +262,8 @@
       return;
     }
     authBanner.hidden = false;
-    authBanner.textContent = String(message);
     authBanner.className = 'physio-auth-banner' + (tone ? ' ' + tone : '');
+    authBanner.innerHTML = '<span>' + escapeHtml(message) + '</span> <a href="/lecture-notes?auth=signin">Sign in</a>';
   }
 
   function showToast(message) {
@@ -277,12 +277,30 @@
   }
 
   function setControlsDisabled(disabled) {
-    [generateBtn, saveBtn, exportDocxBtn, exportPdfBtn, knowledgeAskBtn, caseSaveBtn].forEach(function (node) {
-      if (node) node.disabled = !!disabled;
+    var locked = !!disabled || !state.user || state.accessGranted === false;
+    [
+      caseSelect, bodyRegionSelect, sessionTypeSelect, sessionDateInput, nprsBeforeInput, nprsAfterInput,
+      sessionNotesInput, transcriptInput, audioInput, recordStartBtn, generateBtn, saveBtn,
+      exportDocxBtn, exportPdfBtn, knowledgeQuestionInput, knowledgeContextInput, knowledgeAskBtn,
+      caseNewBtn, caseDisplayLabelInput, casePatientNameInput, caseAgeInput, caseSexInput,
+      caseReferralInput, caseBodyRegionSelect, caseComplaintInput, caseTagsInput, caseNotesInput, caseSaveBtn
+    ].forEach(function (node) {
+      if (node) node.disabled = locked;
     });
+    var uploadLabel = audioInput ? audioInput.closest('.physio-upload-btn') : null;
+    if (uploadLabel) uploadLabel.setAttribute('aria-disabled', locked ? 'true' : 'false');
+    if (recordStopBtn) recordStopBtn.disabled = locked || !state.recorder || state.recorder.state === 'inactive';
     if (transcribeBtn) {
-      transcribeBtn.disabled = !!disabled || !state.selectedAudioFile;
+      transcribeBtn.disabled = locked || !state.selectedAudioFile;
     }
+  }
+
+  function requireSignedIn() {
+    if (state.user && state.accessGranted !== false) return true;
+    setAuthBanner('Sign in to use Physio Assistant.', 'error');
+    setStatus('Please sign in before using this tool.', 'error');
+    setControlsDisabled(true);
+    return false;
   }
 
   function authFetch(path, options) {
@@ -1597,6 +1615,7 @@
         state.cases = Array.isArray(body.cases) ? body.cases : [];
         populateCaseSelect();
         renderCasesList();
+        setControlsDisabled(false);
         if (page === 'cases' && state.cases.length) {
           var nextCaseId = state.selectedCaseId || queryCaseId || String(state.cases[0].case_id || '');
           return selectCase(nextCaseId, { syncForm: true });
@@ -1749,6 +1768,7 @@
   }
 
   function handleGenerate() {
+    if (!requireSignedIn()) return;
     if (!transcriptInput || !transcriptInput.value.trim()) {
       setStatus('Enter a transcript first.', 'error');
       return;
@@ -1799,6 +1819,7 @@
   }
 
   function handleSaveSession() {
+    if (!requireSignedIn()) return;
     if (!ensureCaseSelected()) return;
     var payload = workspaceSessionPayload();
     if (!payload.transcript || !String(payload.transcript).trim()) {
@@ -1906,6 +1927,7 @@
   }
 
   function handleAskKnowledge() {
+    if (!requireSignedIn()) return;
     if (!knowledgeQuestionInput || !knowledgeQuestionInput.value.trim()) {
       setStatus('Type a question first.', 'error');
       return;
@@ -1945,6 +1967,7 @@
   }
 
   function handleSaveCase() {
+    if (!requireSignedIn()) return;
     var payload = casePayloadFromForm();
     if (!payload.display_label && !payload.patient_name) {
       setStatus('Enter at least a label or patient name.', 'error');
@@ -1982,6 +2005,7 @@
   }
 
   function resetCaseForm() {
+    if (!requireSignedIn()) return;
     state.selectedCaseId = '';
     state.selectedSessionId = '';
     if (caseMetaEl) caseMetaEl.textContent = 'New case';
@@ -2027,6 +2051,7 @@
   }
 
   function startRecorder() {
+    if (!requireSignedIn()) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
       setStatus('Recording is not supported in this browser.', 'error');
       return;
@@ -2075,6 +2100,7 @@
   }
 
   function handleTranscribe() {
+    if (!requireSignedIn()) return;
     if (!state.selectedAudioFile) {
       setStatus('Choose an audio file first, or record something.', 'error');
       return;

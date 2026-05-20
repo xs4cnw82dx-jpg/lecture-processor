@@ -290,6 +290,18 @@
     submitFeedback.hidden = false;
   }
 
+  function showSubmitPendingFeedback(message) {
+    if (!submitFeedback) return;
+    submitFeedback.textContent = String(message || 'Submitting batch...');
+    submitFeedback.hidden = false;
+  }
+
+  function showSubmitErrorFeedback(message) {
+    if (!submitFeedback) return;
+    submitFeedback.textContent = String(message || 'Batch could not be started.');
+    submitFeedback.hidden = false;
+  }
+
   function makeRowId() {
     if (window.crypto && typeof window.crypto.randomUUID === 'function') {
       return window.crypto.randomUUID();
@@ -1380,19 +1392,17 @@
     }
 
     pendingStartRequest = true;
-    setStartButtonState(true, 'Queued…');
-    showSubmitFeedback({
-      status: 'queued',
-      created_at: Date.now() / 1000,
-      batch_title: batchTitleInput ? batchTitleInput.value : '',
-    });
+    setStartButtonState(true, 'Submitting...');
+    showSubmitPendingFeedback('Preparing batch...');
 
     try {
+      showSubmitPendingFeedback('Preparing rows...');
       await runAutoImportSweepBeforeStart();
       if (!activeSubmissionId) {
         activeSubmissionId = makeSubmissionId();
       }
       var formData = collectRowsAndFormData(activeSubmissionId);
+      showSubmitPendingFeedback('Submitting batch...');
       var response = await authFetch('/api/batch/jobs', {
         method: 'POST',
         body: formData,
@@ -1405,6 +1415,11 @@
       if (!currentBatchId) throw new Error('No batch id returned.');
       cacheCurrentBatchId(currentBatchId);
       setBatchIdInUrl(currentBatchId);
+      setStartButtonState(true, 'Queued…');
+      showSubmitFeedback(Object.assign({}, payload, {
+        status: payload.status || 'queued',
+        batch_title: payload.batch_title || (batchTitleInput ? batchTitleInput.value : ''),
+      }));
       if (payload.deduplicated) {
         showShellToast('This submission was already accepted. Showing the existing batch.', 'success');
       }
@@ -1414,6 +1429,7 @@
       activeSubmissionId = '';
     } catch (error) {
       showShellToast(String(error && error.message ? error.message : error), 'error');
+      showSubmitErrorFeedback(String(error && error.message ? error.message : 'Could not create batch.'));
       pendingStartRequest = false;
       if (!startLockedByBatchState) {
         setStartButtonState(false, 'Start batch');

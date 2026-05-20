@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
-from lecture_processor.services import tools_extraction_service, upload_api_service
+from lecture_processor.services import tools_extraction_service, tools_extraction_support
 
 
 class _Time:
@@ -56,8 +56,8 @@ def test_tools_extract_job_redacts_url_and_prompt_from_persisted_metadata(monkey
     )
 
     monkeypatch.setattr(
-        upload_api_service,
-        '_fetch_tools_url_text',
+        tools_extraction_support,
+        'fetch_tools_url_text',
         lambda _source_url: ('Readable page text', None, 'text/plain'),
     )
 

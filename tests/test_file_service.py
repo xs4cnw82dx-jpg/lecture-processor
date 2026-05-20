@@ -1,11 +1,14 @@
 import json
+import socket
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from lecture_processor.services import file_service
+from lecture_processor.services import file_service, ytdlp_network_guard
+from lecture_processor.services.url_security import ValidatedFetchTarget
 
 
 def test_download_audio_from_video_url_rejects_overlong_media_before_download(tmp_path):
@@ -31,6 +34,45 @@ def test_download_audio_from_video_url_rejects_overlong_media_before_download(tm
 
     assert len(calls) == 1
     assert "--dump-single-json" in calls[0]
+
+
+def test_guarded_ytdlp_command_uses_pinned_fetch_target_and_strips_proxies(monkeypatch):
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.local:8080")
+    target = ValidatedFetchTarget(
+        url="https://video.example.com/watch",
+        scheme="https",
+        host="video.example.com",
+        port=443,
+        resolved_ips=("93.184.216.34",),
+    )
+
+    command, env = file_service._guarded_ytdlp_command(
+        ["/usr/bin/yt-dlp", "--dump-single-json", "--", "https://video.example.com/watch"],
+        target,
+    )
+
+    assert command[:3] == [sys.executable, "-m", "lecture_processor.services.ytdlp_network_guard"]
+    assert "--proxy" in command
+    assert "HTTPS_PROXY" not in env
+    guard_config = json.loads(env["LECTURE_PROCESSOR_YTDLP_GUARD"])
+    assert guard_config == {"host": "video.example.com", "port": 443, "resolved_ips": ["93.184.216.34"]}
+
+
+def test_ytdlp_network_guard_rejects_restricted_dns_results():
+    def _restricted_getaddrinfo(*_args, **_kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("127.0.0.1", 443))]
+
+    guarded = ytdlp_network_guard._guard_getaddrinfo(
+        _restricted_getaddrinfo,
+        "video.example.com",
+        443,
+        ("93.184.216.34",),
+    )
+
+    pinned = guarded("video.example.com", 443)
+    assert pinned[0][4][0] == "93.184.216.34"
+    with pytest.raises(socket.gaierror):
+        guarded("cdn.example.com", 443)
 
 
 def test_download_audio_from_video_url_cleans_up_partial_files_on_timeout(tmp_path):

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from lecture_processor.domains.ai import provider as ai_provider
-from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
@@ -11,17 +10,7 @@ from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.shared import parsing as shared_parsing
 from lecture_processor.runtime.job_dispatcher import JobQueueFullError
 
-from lecture_processor.services import upload_batch_support
-
-
-def _is_email_allowed(app_ctx, email: str) -> bool:
-    checker = getattr(app_ctx, 'is_email_allowed', None)
-    if callable(checker):
-        try:
-            return bool(checker(email))
-        except TypeError:
-            return bool(checker(email, runtime=app_ctx))
-    return auth_policy.is_email_allowed(email, runtime=app_ctx)
+from lecture_processor.services import access_service, upload_batch_support
 
 
 def _account_write_guard_response(app_ctx, uid):
@@ -66,7 +55,7 @@ def create_general_transcription(app_ctx, request):
 
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
-    if not _is_email_allowed(app_ctx, email):
+    if not access_service.is_email_allowed(app_ctx, email):
         return app_ctx.jsonify({'error': 'Email not allowed'}), 403
     deletion_guard = _account_write_guard_response(app_ctx, uid)
     if deletion_guard is not None:
@@ -259,10 +248,18 @@ def _run_general_transcription_job(app_ctx, job_id: str, audio_path: str, runtim
         uid = failed_job.get('user_id')
         credit_type = failed_job.get('credit_deducted')
         if credit_type:
-            billing_credits.refund_credit(uid, credit_type, runtime=app_ctx)
+            refunded = bool(billing_credits.refund_credit(uid, credit_type, runtime=app_ctx))
             failed_job = get_fields()
-            billing_receipts.add_job_credit_refund(failed_job, credit_type, 1, runtime=app_ctx)
-            failed_job['credit_refunded'] = True
+            if refunded:
+                billing_receipts.add_job_credit_refund(failed_job, credit_type, 1, runtime=app_ctx)
+                failed_job['credit_refunded'] = True
+                failed_job.pop('credit_refund_pending', None)
+                failed_job.pop('credit_refund_error', None)
+            else:
+                failed_job['credit_refunded'] = False
+                failed_job['credit_refund_pending'] = True
+                failed_job['credit_refund_error'] = 'credit_refund_failed'
+                app_ctx.logger.warning('General transcription credit refund failed for job %s and user %s', job_id, uid)
             runtime_jobs_store.set_job(job_id, failed_job, runtime=app_ctx)
     finally:
         app_ctx.cleanup_files(local_paths, gemini_files)

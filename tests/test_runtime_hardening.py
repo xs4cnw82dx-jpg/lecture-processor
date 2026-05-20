@@ -31,6 +31,15 @@ def test_bounded_job_dispatcher_rejects_when_capacity_is_full_and_recovers():
     assert stats["running"] == 0
 
 
+def test_bounded_job_dispatcher_accepts_custom_thread_name_prefix():
+    dispatcher = BoundedJobDispatcher(max_workers=1, max_pending=1, thread_name_prefix="lp-batch-test")
+
+    future = dispatcher.submit(lambda: "ok")
+
+    assert future.result(timeout=1) == "ok"
+    assert dispatcher.stats()["max_workers"] == 1
+
+
 def test_client_ip_helper_prefers_proxy_fixed_remote_addr_over_spoofable_access_route():
     app = Flask(__name__)
     apply_proxy_fix(app, trusted_proxy_hops=1)

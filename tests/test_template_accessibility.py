@@ -76,6 +76,19 @@ def test_processing_upload_zones_are_keyboard_accessible():
     assert re.search(r'<div class="upload-zone" id="audio-zone"[^>]*role="button"[^>]*tabindex="0"', index_template)
 
 
+def test_processing_template_has_single_main_landmark():
+    index_template = Path('templates/index.html').read_text(encoding='utf-8')
+
+    assert len(re.findall(r'<main\b', index_template)) == 1
+    assert '<section class="focus-main" aria-label="Generated study output">' in index_template
+
+
+def test_batch_submit_feedback_is_live_region():
+    batch_template = Path('templates/batch_mode.html').read_text(encoding='utf-8')
+
+    assert 'id="batch-submit-feedback" role="status" aria-live="polite" aria-atomic="true" hidden' in batch_template
+
+
 def test_reader_dropzone_is_keyboard_accessible_and_announced():
     reader_template = Path('templates/reader.html').read_text(encoding='utf-8')
 

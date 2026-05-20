@@ -33,21 +33,21 @@ def import_audio_from_url(app_ctx, request):
         )
 
     data = request.get_json(silent=True) or {}
-    safe_url, error_message = upload_import_audio.validate_video_import_url(
+    fetch_target, error_message = upload_import_audio.validate_video_import_fetch_target(
         data.get('url', ''),
         runtime=app_ctx,
     )
-    if not safe_url:
+    if not fetch_target:
         return app_ctx.jsonify({'error': error_message}), 400
 
     upload_import_audio.cleanup_expired_audio_import_tokens(runtime=app_ctx)
     prefix = f"urlimport_{app_ctx.uuid.uuid4().hex}"
     try:
-        audio_path, output_name, size_bytes = app_ctx.download_audio_from_video_url(safe_url, prefix)
+        audio_path, output_name, size_bytes = app_ctx.download_audio_from_video_url(fetch_target, prefix)
         token = upload_import_audio.register_audio_import_token(
             uid,
             audio_path,
-            safe_url,
+            upload_import_audio.resolved_url(fetch_target),
             output_name,
             runtime=app_ctx,
         )

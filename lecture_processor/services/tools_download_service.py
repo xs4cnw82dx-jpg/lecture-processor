@@ -7,21 +7,10 @@ import zipfile
 
 from flask import after_this_request
 
-from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 
-from lecture_processor.services import upload_batch_support
-
-
-def _is_email_allowed(app_ctx, email: str) -> bool:
-    checker = getattr(app_ctx, 'is_email_allowed', None)
-    if callable(checker):
-        try:
-            return bool(checker(email))
-        except TypeError:
-            return bool(checker(email, runtime=app_ctx))
-    return auth_policy.is_email_allowed(email, runtime=app_ctx)
+from lecture_processor.services import access_service, upload_batch_support
 
 
 def _cleanup_local_paths(app_ctx, paths):
@@ -54,7 +43,7 @@ def download_lecture_media(app_ctx, request):
 
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
-    if not _is_email_allowed(app_ctx, email):
+    if not access_service.is_email_allowed(app_ctx, email):
         return app_ctx.jsonify({'error': 'Email not allowed'}), 403
     deletion_guard = upload_batch_support.account_write_guard_response(app_ctx, uid)
     if deletion_guard is not None:
@@ -78,11 +67,11 @@ def download_lecture_media(app_ctx, request):
     if requested_format not in {'audio', 'video', 'both'}:
         return app_ctx.jsonify({'error': 'Choose MP3, MP4, or both before downloading.'}), 400
 
-    safe_url, error_message = upload_import_audio.validate_video_import_url(
+    fetch_target, error_message = upload_import_audio.validate_video_import_fetch_target(
         payload.get('url', ''),
         runtime=app_ctx,
     )
-    if not safe_url:
+    if not fetch_target:
         return app_ctx.jsonify({'error': error_message}), 400
 
     prefix = f"tooldownload_{app_ctx.uuid.uuid4().hex}"
@@ -93,17 +82,17 @@ def download_lecture_media(app_ctx, request):
 
     try:
         if requested_format == 'audio':
-            response_path, _internal_name, _size_bytes = app_ctx.download_audio_from_video_url(safe_url, prefix)
+            response_path, _internal_name, _size_bytes = app_ctx.download_audio_from_video_url(fetch_target, prefix)
             response_path = app_ctx.os.path.abspath(response_path)
             cleanup_paths.append(response_path)
             mimetype = 'audio/mpeg'
         elif requested_format == 'video':
-            response_path, _internal_name, _size_bytes = app_ctx.download_video_from_video_url(safe_url, prefix)
+            response_path, _internal_name, _size_bytes = app_ctx.download_video_from_video_url(fetch_target, prefix)
             response_path = app_ctx.os.path.abspath(response_path)
             cleanup_paths.append(response_path)
             mimetype = 'video/mp4'
         else:
-            video_path, _internal_name, _size_bytes = app_ctx.download_video_from_video_url(safe_url, prefix)
+            video_path, _internal_name, _size_bytes = app_ctx.download_video_from_video_url(fetch_target, prefix)
             video_path = app_ctx.os.path.abspath(video_path)
             cleanup_paths.append(video_path)
             audio_path, converted = app_ctx.convert_audio_to_mp3_with_ytdlp(video_path)

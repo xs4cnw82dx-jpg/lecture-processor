@@ -26,6 +26,16 @@ def require_authenticated_user(app_ctx, request, *, unauthorized_error='Unauthor
     return decoded_token, None, None
 
 
+def is_email_allowed(app_ctx, email):
+    checker = getattr(app_ctx, 'is_email_allowed', None)
+    if callable(checker):
+        try:
+            return bool(checker(email))
+        except TypeError:
+            return bool(checker(email, runtime=app_ctx))
+    return auth_policy.is_email_allowed(email, runtime=app_ctx)
+
+
 def require_allowed_user(
     app_ctx,
     request,
@@ -43,7 +53,7 @@ def require_allowed_user(
     if error_response is not None:
         return None, error_response, status
     email = str(decoded_token.get('email', '') or '').strip()
-    if auth_policy.is_email_allowed(email, runtime=app_ctx):
+    if is_email_allowed(app_ctx, email):
         return decoded_token, None, None
     payload = {'error': str(email_not_allowed_error or 'Email not allowed')}
     message = str(email_not_allowed_message or '').strip()

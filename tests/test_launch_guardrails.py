@@ -418,7 +418,7 @@ def test_import_audio_url_success_returns_token(client, monkeypatch, tmp_path):
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
     monkeypatch.setattr(
         upload_import_audio,
-        "validate_video_import_url",
+        "validate_video_import_fetch_target",
         lambda _url, runtime=None: ("https://ovp.kaltura.com/path/index.m3u8", ""),
     )
     monkeypatch.setattr(
@@ -453,7 +453,7 @@ def test_tools_lecture_download_returns_zip_for_both_formats(client, monkeypatch
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
     monkeypatch.setattr(
         upload_import_audio,
-        "validate_video_import_url",
+        "validate_video_import_fetch_target",
         lambda _url, runtime=None: ("https://ovp.kaltura.com/path/index.m3u8", ""),
     )
     monkeypatch.setattr(
@@ -1145,7 +1145,7 @@ def test_account_delete_rejects_when_active_jobs_exist(client, monkeypatch):
     assert "cannot delete account while 1 queued or processing job" in response.get_json()["error"].lower()
 
 
-def test_account_delete_success_path_returns_ok(client, monkeypatch):
+def test_account_delete_success_path_returns_ok(client, monkeypatch, tmp_path):
     class _FakeProgressSnapshot:
         exists = False
 
@@ -1167,6 +1167,10 @@ def test_account_delete_success_path_returns_ok(client, monkeypatch):
     monkeypatch.setattr(core, "get_study_progress_doc", lambda _uid: _FakeProgressDoc())
     monkeypatch.setattr(core.auth, "delete_user", lambda _uid: None)
     monkeypatch.setattr(core.users_repo, "delete_doc", lambda _db, _uid: None)
+    core.AUDIO_IMPORT_TOKENS.clear()
+    pending_audio = tmp_path / "pending-import.mp3"
+    pending_audio.write_bytes(b"ID3\x03\x00\x00pending")
+    token = upload_import_audio.register_audio_import_token("u9", str(pending_audio), runtime=core)
 
     response = client.post(
         "/api/account/delete",
@@ -1178,6 +1182,9 @@ def test_account_delete_success_path_returns_ok(client, monkeypatch):
     body = response.get_json()
     assert body["ok"] is True
     assert body["auth_user_deleted"] is True
+    assert body["deleted"]["pending_audio_import_tokens"] == {"tokens": 1, "files": 1}
+    assert token not in core.AUDIO_IMPORT_TOKENS
+    assert not pending_audio.exists()
 
 
 def test_account_delete_exhaustively_deletes_paginated_docs(client, monkeypatch):
@@ -2045,7 +2052,7 @@ def test_process_interview_transcription_saves_pack_on_success(monkeypatch, tmp_
             "error": None,
         },
     )
-    monkeypatch.setattr(core, "save_study_pack", lambda job_id, _job: saved.append(job_id))
+    monkeypatch.setattr(core, "save_study_pack", lambda job_id, _job: saved.append(job_id) or True)
     monkeypatch.setattr(core, "cleanup_files", lambda _local, _gemini: None)
     monkeypatch.setattr(core, "save_job_log", lambda *_args, **_kwargs: None)
 

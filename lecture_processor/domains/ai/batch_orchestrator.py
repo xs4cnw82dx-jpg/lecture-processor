@@ -1106,8 +1106,20 @@ def _finalize_row_job_log(batch, row, runtime=None):
         'source_name': row.get('source_name', ''),
     }
     if row.get('status') == 'complete':
-        ai_pipelines.save_study_pack(row_job_id, job_data, runtime=resolved_runtime)
-        if job_data.get('study_pack_id'):
+        saved = ai_pipelines.save_study_pack(row_job_id, job_data, runtime=resolved_runtime)
+        if not saved:
+            row['status'] = 'error'
+            row['failed_stage'] = 'study_pack_persistence'
+            row['error'] = 'Study pack could not be saved.'
+            row['study_pack_id'] = ''
+            _refund_failed_row(batch, row, runtime=resolved_runtime)
+            job_data['status'] = 'error'
+            job_data['failed_stage'] = row['failed_stage']
+            job_data['error'] = row['error']
+            job_data['study_pack_id'] = ''
+            job_data['credit_refunded'] = row.get('credit_refunded', False)
+            job_data['billing_receipt'] = row.get('billing_receipt', {})
+        elif job_data.get('study_pack_id'):
             row['study_pack_id'] = job_data.get('study_pack_id')
             folder_id = str(batch.get('folder_id', '') or '')
             folder_name = str(batch.get('folder_name', '') or '')
@@ -2261,3 +2273,33 @@ def list_batches_for_admin(statuses=None, limit=200, runtime=None):
         payload.update(_build_batch_view(batch_id, batch, batch_rows, can_download_zip=can_download_zip, runtime=resolved_runtime))
         results.append(payload)
     return results
+
+
+def build_batch_row_export_metadata(row, batch=None, runtime=None):
+    _ = _resolve_runtime(runtime)
+    source = row if isinstance(row, dict) else {}
+    allowed_fields = (
+        'row_id',
+        'ordinal',
+        'status',
+        'source_name',
+        'source_type',
+        'current_stage',
+        'current_stage_label',
+        'failed_stage',
+        'error',
+        'created_at',
+        'updated_at',
+        'finished_at',
+        'output_language',
+        'study_features',
+        'interview_features',
+        'study_pack_id',
+    )
+    metadata = {}
+    for field in allowed_fields:
+        if field in source and source.get(field) not in (None, ''):
+            metadata[field] = source.get(field)
+    if batch and isinstance(batch, dict):
+        metadata.setdefault('mode', batch.get('mode', ''))
+    return metadata

@@ -20,6 +20,16 @@ def test_tools_analytics_events_are_allowed():
     assert core.sanitize_analytics_event_name("tools_export_requested") == "tools_export_requested"
 
 
+def test_safe_env_parsers_fall_back_and_clamp_invalid_values(monkeypatch):
+    monkeypatch.setenv("TEST_BAD_INT", "not-a-number")
+    monkeypatch.setenv("TEST_LOW_INT", "-10")
+    monkeypatch.setenv("TEST_HIGH_FLOAT", "999")
+
+    assert core.safe_int_env("TEST_BAD_INT", 3, minimum=1, maximum=10) == 3
+    assert core.safe_int_env("TEST_LOW_INT", 3, minimum=1, maximum=10) == 1
+    assert core.safe_float_env("TEST_HIGH_FLOAT", 1.5, minimum=0.2, maximum=10.0) == 10.0
+
+
 def test_save_job_log_redacts_sensitive_url_and_prompt(app, monkeypatch):
     captured = {}
 
