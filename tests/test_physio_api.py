@@ -188,6 +188,34 @@ def test_physio_soap_endpoint_normalizes_partial_json(client, monkeypatch, core)
     assert soap["assessment"]["prognose"] is None
 
 
+@pytest.mark.parametrize(
+    "endpoint",
+    ("/api/physio/soap", "/api/physio/rps", "/api/physio/reasoning"),
+)
+@pytest.mark.parametrize(
+    ("provider_error", "expected_status"),
+    ((RuntimeError("provider down"), 500), (SystemExit("provider exited"), 502)),
+)
+def test_physio_generation_endpoints_return_json_errors(client, monkeypatch, core, endpoint, provider_error, expected_status):
+    _allow_physio(monkeypatch, core)
+    monkeypatch.setattr(core, "client", object())
+
+    def _raise_provider_error(*_args, **_kwargs):
+        raise provider_error
+
+    monkeypatch.setattr(ai_provider, "run_with_provider_retry", _raise_provider_error)
+
+    response = client.post(
+        endpoint,
+        json={"transcript": "[Patiënt] Traplopen doet pijn.", "body_region": "knie", "session_type": "intake"},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == expected_status
+    assert response.is_json
+    assert response.get_json()["error"] == "Physio generation failed."
+
+
 def test_physio_reasoning_endpoint_handles_malformed_model_output(client, monkeypatch, core):
     _allow_physio(monkeypatch, core)
     monkeypatch.setattr(core, "client", object())

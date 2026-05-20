@@ -11,11 +11,11 @@ class JobQueueFullError(RuntimeError):
 
 
 class BoundedJobDispatcher:
-    def __init__(self, max_workers, max_pending, logger=None):
+    def __init__(self, max_workers, max_pending, logger=None, thread_name_prefix='lp-job'):
         self.max_workers = max(1, int(max_workers or 1))
         self.max_pending = max(0, int(max_pending or 0))
         self._capacity = self.max_workers + self.max_pending
-        self._executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix='lp-job')
+        self._executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix=str(thread_name_prefix or 'lp-job'))
         self._slots = threading.BoundedSemaphore(self._capacity)
         self._lock = threading.Lock()
         self._active = 0

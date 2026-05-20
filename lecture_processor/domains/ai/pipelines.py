@@ -25,6 +25,53 @@ def _save_study_pack(job_id, job_data, runtime=None):
     return save_study_pack(job_id, job_data, runtime=resolved_runtime)
 
 
+def _require_study_pack_saved(job_id, job_data, runtime=None):
+    if _save_study_pack(job_id, job_data, runtime=runtime):
+        return
+    raise RuntimeError('Study pack persistence failed.')
+
+
+def _refund_primary_job_credit(job_id, job_data, uid, credit_type, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    if not credit_type or bool(job_data.get('credit_refunded', False)):
+        return False
+    refunded = bool(billing_credits.refund_credit(uid, credit_type, runtime=resolved_runtime))
+    if refunded:
+        billing_receipts.add_job_credit_refund(job_data, credit_type, 1, runtime=resolved_runtime)
+        job_data['credit_refunded'] = True
+        job_data.pop('credit_refund_pending', None)
+        job_data.pop('credit_refund_error', None)
+    else:
+        job_data['credit_refunded'] = False
+        job_data['credit_refund_pending'] = True
+        job_data['credit_refund_error'] = 'credit_refund_failed'
+        resolved_runtime.logger.warning('Credit refund failed for job %s and user %s', job_id, uid)
+    runtime_jobs_store.set_job(job_id, job_data, runtime=resolved_runtime)
+    return refunded
+
+
+def _refund_extra_slides(job_id, job_data, uid, amount, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    try:
+        amount_int = int(amount or 0)
+    except Exception:
+        amount_int = 0
+    if amount_int <= 0:
+        return False
+    already_refunded = int(job_data.get('extra_slides_refunded', 0) or 0)
+    refunded = bool(billing_credits.refund_slides_credits(uid, amount_int, runtime=resolved_runtime))
+    if refunded:
+        job_data['extra_slides_refunded'] = already_refunded + amount_int
+        billing_receipts.add_job_credit_refund(job_data, 'slides_credits', amount_int, runtime=resolved_runtime)
+        job_data.pop('extra_slides_refund_pending', None)
+    else:
+        job_data['extra_slides_refunded'] = already_refunded
+        job_data['extra_slides_refund_pending'] = int(job_data.get('extra_slides_refund_pending', 0) or 0) + amount_int
+        resolved_runtime.logger.warning('Slides-credit refund failed for job %s and user %s', job_id, uid)
+    runtime_jobs_store.set_job(job_id, job_data, runtime=resolved_runtime)
+    return refunded
+
+
 def save_study_pack(job_id, job_data, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     try:
@@ -323,8 +370,9 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
         else:
             set_fields(flashcards=[], test_questions=[], study_generation_error=None)
 
+        failed_stage = 'study_pack_persistence'
         job_data = get_fields()
-        _save_study_pack(job_id, job_data, runtime=resolved_runtime)
+        _require_study_pack_saved(job_id, job_data, runtime=resolved_runtime)
         final_snapshot = get_fields()
         set_fields(status='complete', step=final_snapshot.get('total_steps', 3), step_description='Complete!')
     except Exception as error:
@@ -339,11 +387,7 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
         failed_job = get_fields()
         uid = failed_job.get('user_id')
         credit_type = failed_job.get('credit_deducted')
-        billing_credits.refund_credit(uid, credit_type, runtime=resolved_runtime)
-        failed_job = get_fields()
-        billing_receipts.add_job_credit_refund(failed_job, credit_type, 1, runtime=resolved_runtime)
-        runtime_jobs_store.set_job(job_id, failed_job, runtime=resolved_runtime)
-        set_fields(credit_refunded=True)
+        _refund_primary_job_credit(job_id, failed_job, uid, credit_type, runtime=resolved_runtime)
     finally:
         resolved_runtime.cleanup_files(local_paths, gemini_files)
         finished_at = resolved_runtime.time.time()
@@ -437,8 +481,9 @@ def process_slides_only(job_id, pdf_path, runtime=None):
         else:
             set_fields(flashcards=[], test_questions=[], study_generation_error=None)
 
+        failed_stage = 'study_pack_persistence'
         job_data = get_fields()
-        _save_study_pack(job_id, job_data, runtime=resolved_runtime)
+        _require_study_pack_saved(job_id, job_data, runtime=resolved_runtime)
         final_snapshot = get_fields()
         set_fields(status='complete', step=final_snapshot.get('total_steps', 1), step_description='Complete!')
     except Exception as error:
@@ -453,11 +498,7 @@ def process_slides_only(job_id, pdf_path, runtime=None):
         failed_job = get_fields()
         uid = failed_job.get('user_id')
         credit_type = failed_job.get('credit_deducted')
-        billing_credits.refund_credit(uid, credit_type, runtime=resolved_runtime)
-        failed_job = get_fields()
-        billing_receipts.add_job_credit_refund(failed_job, credit_type, 1, runtime=resolved_runtime)
-        runtime_jobs_store.set_job(job_id, failed_job, runtime=resolved_runtime)
-        set_fields(credit_refunded=True)
+        _refund_primary_job_credit(job_id, failed_job, uid, credit_type, runtime=resolved_runtime)
     finally:
         resolved_runtime.cleanup_files(local_paths, gemini_files)
         finished_at = resolved_runtime.time.time()
@@ -565,11 +606,7 @@ def process_interview_transcription(job_id, audio_path, runtime=None):
             if failed_count > 0:
                 current_job = get_fields()
                 uid = current_job.get('user_id')
-                billing_credits.refund_slides_credits(uid, failed_count, runtime=resolved_runtime)
-                current_job = get_fields()
-                current_job['extra_slides_refunded'] = current_job.get('extra_slides_refunded', 0) + failed_count
-                billing_receipts.add_job_credit_refund(current_job, 'slides_credits', failed_count, runtime=resolved_runtime)
-                runtime_jobs_store.set_job(job_id, current_job, runtime=resolved_runtime)
+                _refund_extra_slides(job_id, current_job, uid, failed_count, runtime=resolved_runtime)
 
             if enhancement.get('summary') and enhancement.get('sections'):
                 set_fields(result=enhancement.get('combined', transcript_text))
@@ -578,8 +615,9 @@ def process_interview_transcription(job_id, audio_path, runtime=None):
             elif enhancement.get('sections'):
                 set_fields(result=enhancement.get('sections'))
 
+        failed_stage = 'study_pack_persistence'
         job_data = get_fields()
-        _save_study_pack(job_id, job_data, runtime=resolved_runtime)
+        _require_study_pack_saved(job_id, job_data, runtime=resolved_runtime)
         final_snapshot = get_fields()
         set_fields(status='complete', step=final_snapshot.get('total_steps', 1), step_description='Complete!')
     except Exception as error:
@@ -595,20 +633,14 @@ def process_interview_transcription(job_id, audio_path, runtime=None):
         failed_job = get_fields()
         uid = failed_job.get('user_id')
         credit_type = failed_job.get('credit_deducted')
-        billing_credits.refund_credit(uid, credit_type, runtime=resolved_runtime)
+        _refund_primary_job_credit(job_id, failed_job, uid, credit_type, runtime=resolved_runtime)
 
         failed_job = get_fields()
-        billing_receipts.add_job_credit_refund(failed_job, credit_type, 1, runtime=resolved_runtime)
-
         extra_spent = failed_job.get('interview_features_cost', 0)
         already_refunded = failed_job.get('extra_slides_refunded', 0)
         to_refund = max(0, extra_spent - already_refunded)
         if to_refund > 0:
-            billing_credits.refund_slides_credits(uid, to_refund, runtime=resolved_runtime)
-            failed_job['extra_slides_refunded'] = already_refunded + to_refund
-            billing_receipts.add_job_credit_refund(failed_job, 'slides_credits', to_refund, runtime=resolved_runtime)
-        failed_job['credit_refunded'] = True
-        runtime_jobs_store.set_job(job_id, failed_job, runtime=resolved_runtime)
+            _refund_extra_slides(job_id, failed_job, uid, to_refund, runtime=resolved_runtime)
     finally:
         resolved_runtime.cleanup_files(local_paths, gemini_files)
         finished_at = resolved_runtime.time.time()

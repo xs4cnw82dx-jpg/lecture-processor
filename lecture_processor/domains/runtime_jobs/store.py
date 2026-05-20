@@ -26,19 +26,22 @@ def _runtime_job_sanitize_value(value, runtime=None):
     return value
 
 
-def _build_runtime_job_payload(job_id, job_data, runtime=None):
+def _build_runtime_job_payload(job_id, job_data, runtime=None, changed_fields=None):
     resolved_runtime = _resolve_runtime(runtime)
     payload = {'job_id': job_id, 'updated_at': resolved_runtime.time.time()}
     if not isinstance(job_data, dict):
         payload['status'] = 'unknown'
         return payload
-    for field in resolved_runtime.RUNTIME_JOB_PERSISTED_FIELDS:
+    persisted_fields = set(resolved_runtime.RUNTIME_JOB_PERSISTED_FIELDS)
+    if changed_fields is not None:
+        persisted_fields &= {str(field) for field in changed_fields}
+    for field in persisted_fields:
         if field in job_data:
             payload[field] = _runtime_job_sanitize_value(job_data.get(field), runtime=resolved_runtime)
     return payload
 
 
-def persist_runtime_job_snapshot(job_id, job_data, runtime=None):
+def persist_runtime_job_snapshot(job_id, job_data, runtime=None, changed_fields=None):
     resolved_runtime = _resolve_runtime(runtime)
     if not _runtime_job_storage_enabled(runtime=resolved_runtime) or not job_id:
         return
@@ -47,7 +50,7 @@ def persist_runtime_job_snapshot(job_id, job_data, runtime=None):
             resolved_runtime.db,
             resolved_runtime.RUNTIME_JOBS_COLLECTION,
             job_id,
-            _build_runtime_job_payload(job_id, job_data, runtime=resolved_runtime),
+            _build_runtime_job_payload(job_id, job_data, runtime=resolved_runtime, changed_fields=changed_fields),
             merge=True,
         )
     except Exception:
@@ -98,7 +101,7 @@ def update_job_fields(job_id, runtime=None, **fields):
     def _mutator(job):
         job.update(fields)
 
-    return mutate_job(job_id, _mutator, runtime=resolved_runtime)
+    return mutate_job(job_id, _mutator, runtime=resolved_runtime, changed_fields=set(fields))
 
 
 def get_job_snapshot(job_id, runtime=None):
@@ -122,8 +125,13 @@ def get_job_snapshot(job_id, runtime=None):
     return None
 
 
-def mutate_job(job_id, mutator_fn, runtime=None):
+def mutate_job(job_id, mutator_fn, runtime=None, changed_fields=None):
     resolved_runtime = _resolve_runtime(runtime)
+    before = resolved_runtime.job_state_service.get_job_snapshot(
+        job_id,
+        jobs_store=resolved_runtime.jobs,
+        lock=resolved_runtime.JOBS_LOCK,
+    )
     snapshot = resolved_runtime.job_state_service.mutate_job(
         job_id,
         mutator_fn,
@@ -131,7 +139,10 @@ def mutate_job(job_id, mutator_fn, runtime=None):
         lock=resolved_runtime.JOBS_LOCK,
     )
     if snapshot is not None:
-        persist_runtime_job_snapshot(job_id, snapshot, runtime=resolved_runtime)
+        if changed_fields is None and isinstance(before, dict):
+            persisted = set(resolved_runtime.RUNTIME_JOB_PERSISTED_FIELDS)
+            changed_fields = {field for field in persisted if before.get(field) != snapshot.get(field)}
+        persist_runtime_job_snapshot(job_id, snapshot, runtime=resolved_runtime, changed_fields=changed_fields)
     return snapshot
 
 

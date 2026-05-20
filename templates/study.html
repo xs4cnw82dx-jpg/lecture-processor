@@ -439,7 +439,7 @@
           <p class="u-text-center u-color-muted u-font-sm u-mb-16">Choose which lesson
             types to include:</p>
           <div class="lesson-grid" id="lesson-grid">
-            <div class="lesson-card selected" data-lesson="flashcards" id="lesson-card-flashcards">
+            <button type="button" class="lesson-card selected" data-lesson="flashcards" id="lesson-card-flashcards" aria-pressed="true">
               <div class="lesson-card-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
                   stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="20 6 9 17 4 12"></polyline>
@@ -451,8 +451,8 @@
                 </svg></div>
               <div class="lesson-card-title">Zen Cards</div>
               <div class="lesson-card-desc">Distraction-free flashcards</div>
-            </div>
-            <div class="lesson-card selected" data-lesson="test" id="lesson-card-test">
+            </button>
+            <button type="button" class="lesson-card selected" data-lesson="test" id="lesson-card-test" aria-pressed="true">
               <div class="lesson-card-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
                   stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="20 6 9 17 4 12"></polyline>
@@ -464,8 +464,8 @@
                 </svg></div>
               <div class="lesson-card-title">Multiple Choice</div>
               <div class="lesson-card-desc">Choose your answer from options</div>
-            </div>
-            <div class="lesson-card" data-lesson="write" id="lesson-card-write">
+            </button>
+            <button type="button" class="lesson-card" data-lesson="write" id="lesson-card-write" aria-pressed="false">
               <div class="lesson-card-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
                   stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="20 6 9 17 4 12"></polyline>
@@ -477,8 +477,8 @@
                 </svg></div>
               <div class="lesson-card-title">Write</div>
               <div class="lesson-card-desc">Type answers from memory</div>
-            </div>
-            <div class="lesson-card" data-lesson="match" id="lesson-card-match">
+            </button>
+            <button type="button" class="lesson-card" data-lesson="match" id="lesson-card-match" aria-pressed="false">
               <div class="lesson-card-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
                   stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="20 6 9 17 4 12"></polyline>
@@ -493,41 +493,41 @@
               <div class="lesson-card-title">Match</div>
               <div class="lesson-card-desc">Pair terms with definitions</div>
               <div class="lesson-card-badge" id="match-min-badge" hidden>Needs 6+ cards</div>
-            </div>
+            </button>
           </div>
         </div>
         <div class="setup-pane" id="setup-pane-settings">
           <div class="settings-list" id="settings-list">
-            <div class="setting-row" data-setting="swapAnswerQuestion"><span class="setting-label">Swap answer and
+            <button type="button" class="setting-row" data-setting="swapAnswerQuestion" role="switch" aria-checked="false"><span class="setting-label">Swap answer and
                 question</span>
               <div class="setting-toggle"></div>
-            </div>
-            <div class="setting-row" data-setting="randomSwap"><span class="setting-label">Randomly swap answer and
+            </button>
+            <button type="button" class="setting-row" data-setting="randomSwap" role="switch" aria-checked="false"><span class="setting-label">Randomly swap answer and
                 question</span>
               <div class="setting-toggle"></div>
-            </div>
-            <div class="setting-row" data-setting="caseSensitive"><span class="setting-label">Case sensitive</span>
+            </button>
+            <button type="button" class="setting-row" data-setting="caseSensitive" role="switch" aria-checked="false"><span class="setting-label">Case sensitive</span>
               <div class="setting-toggle"></div>
-            </div>
-            <div class="setting-row" data-setting="forceExactMatch"><span class="setting-label">Force exact
+            </button>
+            <button type="button" class="setting-row" data-setting="forceExactMatch" role="switch" aria-checked="false"><span class="setting-label">Force exact
                 matches</span>
               <div class="setting-toggle"></div>
-            </div>
-            <div class="setting-row active" data-setting="addMissedToReview"><span class="setting-label">Add missed
+            </button>
+            <button type="button" class="setting-row active" data-setting="addMissedToReview" role="switch" aria-checked="true"><span class="setting-label">Add missed
                 terms to review list</span>
               <div class="setting-toggle"></div>
-            </div>
-            <div class="setting-row" data-setting="ignoreArticles"><span class="setting-label">Ignore articles (a, an,
+            </button>
+            <button type="button" class="setting-row" data-setting="ignoreArticles" role="switch" aria-checked="false"><span class="setting-label">Ignore articles (a, an,
                 the)</span>
               <div class="setting-toggle"></div>
-            </div>
-            <div class="setting-row" data-setting="ignoreDeterminers"><span class="setting-label">Ignore determiners (;
+            </button>
+            <button type="button" class="setting-row" data-setting="ignoreDeterminers" role="switch" aria-checked="false"><span class="setting-label">Ignore determiners (;
                 , /)</span>
               <div class="setting-toggle"></div>
-            </div>
-            <div class="setting-row" data-setting="ignoreBrackets"><span class="setting-label">Ignore () and []</span>
+            </button>
+            <button type="button" class="setting-row" data-setting="ignoreBrackets" role="switch" aria-checked="false"><span class="setting-label">Ignore () and []</span>
               <div class="setting-toggle"></div>
-            </div>
+            </button>
           </div>
         </div>
         <div class="setup-pane" id="setup-pane-algorithm">

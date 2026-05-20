@@ -2848,7 +2848,13 @@ function renderAlgoLane() {
 }
 function renderAlgoPresets() { algoPresets.forEach(function (b) { b.classList.toggle('active', b.dataset.preset === sessionAlgoPreset); }); }
 function applyAlgoPreset(p) { if (ALGO_PRESETS[p]) { sessionAlgo = ALGO_PRESETS[p].slice(); sessionAlgoPreset = p; renderAlgoLane(); renderAlgoPresets(); saveSessionState(); } }
-function renderSettingsRows() { document.querySelectorAll('.setting-row[data-setting]').forEach(function (r) { r.classList.toggle('active', !!sessionSettings[r.dataset.setting]); }); }
+function renderSettingsRows() {
+  document.querySelectorAll('.setting-row[data-setting]').forEach(function (r) {
+    var active = !!sessionSettings[r.dataset.setting];
+    r.classList.toggle('active', active);
+    r.setAttribute('aria-checked', active ? 'true' : 'false');
+  });
+}
 
 function renderLessonCards() {
   var hf = selectedPack && selectedPack.flashcards && selectedPack.flashcards.length > 0;
@@ -2879,6 +2885,12 @@ function renderLessonCards() {
   tc.classList.toggle('selected', sessionLessons.test);
   wc.classList.toggle('selected', sessionLessons.write);
   mc.classList.toggle('selected', sessionLessons.match);
+  fc.setAttribute('aria-pressed', sessionLessons.flashcards ? 'true' : 'false');
+  tc.setAttribute('aria-pressed', sessionLessons.test ? 'true' : 'false');
+  wc.setAttribute('aria-pressed', sessionLessons.write ? 'true' : 'false');
+  mc.setAttribute('aria-pressed', sessionLessons.match ? 'true' : 'false');
+  mc.disabled = mc.classList.contains('unavailable');
+  mc.setAttribute('aria-disabled', mc.disabled ? 'true' : 'false');
 }
 
 function renderMasteryGauge() {
@@ -3142,13 +3154,15 @@ function initMatchMode() {
 function renderMatchGrid() {
   matchGridEl.innerHTML = '';
   matchCards.forEach(function (cell, idx) {
-    var div = document.createElement('div');
+    var div = document.createElement('button');
+    div.type = 'button';
     div.className = 'match-cell';
     div.textContent = cell.text;
     div.dataset.idx = String(idx);
     div.dataset.pairId = String(cell.pairId);
     div.dataset.side = cell.side;
-    if (cell.matched) { div.classList.add('matched'); }
+    if (cell.matched) { div.classList.add('matched'); div.disabled = true; }
+    div.setAttribute('aria-pressed', matchSelected === idx ? 'true' : 'false');
     div.addEventListener('click', function () { handleMatchClick(idx); });
     matchGridEl.appendChild(div);
   });
@@ -3161,9 +3175,11 @@ function handleMatchClick(idx) {
     // First selection
     matchSelected = idx;
     cellEl.classList.add('selected');
+    cellEl.setAttribute('aria-pressed', 'true');
   } else if (matchSelected === idx) {
     // Deselect
     cellEl.classList.remove('selected');
+    cellEl.setAttribute('aria-pressed', 'false');
     matchSelected = null;
   } else {
     // Second selection — check match
@@ -3174,6 +3190,10 @@ function handleMatchClick(idx) {
       firstCell.matched = true; cell.matched = true;
       firstEl.classList.remove('selected'); firstEl.classList.add('matched');
       cellEl.classList.add('matched');
+      firstEl.setAttribute('aria-pressed', 'false');
+      cellEl.setAttribute('aria-pressed', 'false');
+      firstEl.disabled = true;
+      cellEl.disabled = true;
       matchMatched++;
       markCardSeen('fc_' + cell.cardIdx, true);
       if (matchMatched >= matchTotal) {
@@ -3187,7 +3207,10 @@ function handleMatchClick(idx) {
       var fi = matchSelected;
       setTimeout(function () {
         cellEl.classList.remove('wrong-flash');
-        if (matchGridEl.children[fi]) { matchGridEl.children[fi].classList.remove('wrong-flash', 'selected'); }
+        if (matchGridEl.children[fi]) {
+          matchGridEl.children[fi].classList.remove('wrong-flash', 'selected');
+          matchGridEl.children[fi].setAttribute('aria-pressed', 'false');
+        }
       }, 500);
     }
     matchSelected = null;
@@ -5049,6 +5072,19 @@ learnQNext.addEventListener('click', function () {
   else { showToast('All questions completed!'); }
 });
 
+function shouldIgnoreStudyShortcut(event) {
+  var target = event && event.target ? event.target : document.activeElement;
+  if (!target) return false;
+  if (event && (event.metaKey || event.ctrlKey || event.altKey)) return true;
+  if (target.closest && target.closest('input, textarea, select, button, a, [role="button"], [role="menu"], [role="dialog"], [contenteditable="true"]')) {
+    return true;
+  }
+  if (exportMenuList && exportMenuList.classList.contains('visible')) return true;
+  if (packFolderMenu && packFolderMenu.classList.contains('visible')) return true;
+  if (hlDownloadMenu && hlDownloadMenu.classList.contains('visible')) return true;
+  return false;
+}
+
 /* Keyboard shortcuts */
 window.addEventListener('keydown', function (e) {
   if (activeModalOverlay) {
@@ -5080,14 +5116,7 @@ window.addEventListener('keydown', function (e) {
     return;
   }
   if (!learnStage.classList.contains('visible')) return;
-  var activeElement = document.activeElement;
-  var isTypingTarget = activeElement && (
-    activeElement.tagName === 'INPUT' ||
-    activeElement.tagName === 'TEXTAREA' ||
-    activeElement.tagName === 'SELECT' ||
-    activeElement.isContentEditable
-  );
-  if (!isTypingTarget && activeLearnMode === 'flashcards') {
+  if (!shouldIgnoreStudyShortcut(e) && activeLearnMode === 'flashcards') {
     if (e.key === '1' || e.key === '2' || e.key === '3' || e.key === '4') {
       e.preventDefault();
       var mapped = e.key === '1' ? 'retry' : (e.key === '2' ? 'hard' : (e.key === '3' ? 'good' : 'easy'));
@@ -5095,7 +5124,7 @@ window.addEventListener('keydown', function (e) {
       return;
     }
   }
-  if (activeLearnMode === 'flashcards') {
+  if (!shouldIgnoreStudyShortcut(e) && activeLearnMode === 'flashcards') {
     if (e.key === 'ArrowLeft') { e.preventDefault(); doFlashcardSlide('prev'); resetLearnHintVisibility(); }
     if (e.key === 'ArrowRight') { e.preventDefault(); doFlashcardSlide('next'); resetLearnHintVisibility(); }
     if (e.code === 'Space') { e.preventDefault(); learnFFlip.click(); resetLearnHintVisibility(); }
@@ -5939,6 +5968,10 @@ document.addEventListener('keydown', function (e) {
   if (!selectedPackId || !notesView) return;
   var active = document.activeElement;
   if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+  var selection = window.getSelection ? window.getSelection() : null;
+  var selectionInsideNotes = !!(selection && selection.rangeCount && notesView.contains(selection.getRangeAt(0).commonAncestorContainer));
+  var focusInsideNotes = !!(active && notesView.contains(active));
+  if (!selectionInsideNotes && !focusInsideNotes && active !== notesView) return;
   var cmdOrCtrl = e.metaKey || e.ctrlKey;
   if (!cmdOrCtrl) return;
   var isZ = (e.key || '').toLowerCase() === 'z';

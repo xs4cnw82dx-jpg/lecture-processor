@@ -22,6 +22,7 @@
   function setDashboardLoading(isLoading) {
     if (!dashboardPage) return;
     dashboardPage.setAttribute('data-load-state', isLoading ? 'loading' : 'ready');
+    dashboardPage.setAttribute('aria-busy', isLoading ? 'true' : 'false');
   }
 
   function setSignedOutHero(visible) {
@@ -266,6 +267,11 @@
   }
 
   setDashboardLoading(true);
+  window.setTimeout(function () {
+    if (dashboardPage && dashboardPage.getAttribute('data-load-state') === 'loading') {
+      setDashboardLoading(false);
+    }
+  }, 5000);
   if (!auth || typeof auth.onAuthStateChanged !== 'function') {
     loadDashboard(null);
     return;

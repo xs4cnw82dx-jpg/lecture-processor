@@ -7,13 +7,12 @@ from urllib.parse import urlparse
 
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.ai import provider as ai_provider
-from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.runtime.job_dispatcher import JobQueueFullError
-from lecture_processor.services import upload_api_service
+from lecture_processor.services import access_service, tools_extraction_support, upload_api_service
 
 
 @dataclass(frozen=True)
@@ -86,16 +85,6 @@ def _safe_tool_input_name(source_type: str, input_name: str, source_url: str = '
     return str(input_name or '').strip()
 
 
-def _is_email_allowed(app_ctx, email: str) -> bool:
-    checker = getattr(app_ctx, 'is_email_allowed', None)
-    if callable(checker):
-        try:
-            return bool(checker(email))
-        except TypeError:
-            return bool(checker(email, runtime=app_ctx))
-    return auth_policy.is_email_allowed(email, runtime=app_ctx)
-
-
 def _stage_uploaded_file(app_ctx, uploaded_file, *, job_id: str, label: str, index: int | None = None) -> tuple[str, int]:
     safe_name = app_ctx.secure_filename(str(getattr(uploaded_file, 'filename', '') or ''))
     suffix = f'_{index}' if index is not None else ''
@@ -105,8 +94,8 @@ def _stage_uploaded_file(app_ctx, uploaded_file, *, job_id: str, label: str, ind
 
 
 def _stage_tools_request_inputs(app_ctx, request, *, job_id: str) -> tuple[_StagedToolInput | None, tuple[str, ...], tuple[object, ...], tuple[object, ...], tuple[object, ...]]:
-    custom_prompt = upload_api_service._sanitize_tools_custom_prompt(request.form.get('custom_prompt', ''))
-    prompt_template_key = upload_api_service._sanitize_tools_template_key(request.form.get('prompt_template_key', ''))
+    custom_prompt = tools_extraction_support.sanitize_tools_custom_prompt(request.form.get('custom_prompt', ''))
+    prompt_template_key = tools_extraction_support.sanitize_tools_template_key(request.form.get('prompt_template_key', ''))
     prompt_source = 'default'
     if prompt_template_key:
         prompt_source = 'template'
@@ -126,7 +115,7 @@ def _stage_tools_request_inputs(app_ctx, request, *, job_id: str) -> tuple[_Stag
     normalized_input_name = ''
 
     if str(requested_source or '').strip().lower() == 'url':
-        source_url, url_error = upload_api_service._sanitize_tools_source_url(request.form.get('source_url', ''))
+        source_url, url_error = tools_extraction_support.sanitize_tools_source_url(request.form.get('source_url', ''))
         if url_error:
             return None, tuple(staged_paths), (source_url, url_error), (), ()
         source_type = 'url'
@@ -145,7 +134,7 @@ def _stage_tools_request_inputs(app_ctx, request, *, job_id: str) -> tuple[_Stag
             if len(uploaded_image_files) > 5:
                 return None, tuple(staged_paths), (), ('You can upload up to 5 images per run.',), ()
             uploaded_file = uploaded_image_files[0]
-            source_type, extension, mime_type, detect_error = upload_api_service._detect_tools_source_type(
+            source_type, extension, mime_type, detect_error = tools_extraction_support.detect_tools_source_type(
                 app_ctx,
                 uploaded_file,
                 'image',
@@ -154,7 +143,7 @@ def _stage_tools_request_inputs(app_ctx, request, *, job_id: str) -> tuple[_Stag
             uploaded_file = request.files.get('file')
             if not uploaded_file or not str(uploaded_file.filename or '').strip():
                 return None, tuple(staged_paths), (), ('Please choose a file before running extraction.',), ()
-            source_type, extension, mime_type, detect_error = upload_api_service._detect_tools_source_type(
+            source_type, extension, mime_type, detect_error = tools_extraction_support.detect_tools_source_type(
                 app_ctx,
                 uploaded_file,
                 requested_source,
@@ -241,7 +230,7 @@ def tools_extract(app_ctx, request):
 
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
-    if not _is_email_allowed(app_ctx, email):
+    if not access_service.is_email_allowed(app_ctx, email):
         return app_ctx.jsonify({'error': 'Email not allowed'}), 403
     deletion_guard = upload_api_service._account_write_guard_response(app_ctx, uid)
     if deletion_guard is not None:
@@ -371,7 +360,7 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
 
         if source_type == 'url':
             _set_tools_job_progress(app_ctx, job_id, step=1, description='Reading webpage…')
-            docx_text, source_error, upload_mime_type = upload_api_service._fetch_tools_url_text(source_url)
+            docx_text, source_error, upload_mime_type = tools_extraction_support.fetch_tools_url_text(source_url)
             if source_error:
                 raise ValueError(source_error)
             source_size_mb = round(len(docx_text.encode('utf-8')) / (1024 * 1024), 4)
@@ -382,7 +371,7 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
                 raise ValueError('Unsupported document content type for tools extraction.')
             if staged_input.extension == 'docx':
                 _set_tools_job_progress(app_ctx, job_id, step=1, description='Reading document…')
-                docx_text, docx_error = upload_api_service._extract_docx_text(app_ctx, staged_path)
+                docx_text, docx_error = tools_extraction_support.extract_docx_text(app_ctx, staged_path)
                 if docx_error:
                     raise ValueError(docx_error)
             else:
@@ -418,7 +407,7 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
                 total_image_bytes += saved_size
             source_size_mb = round(total_image_bytes / (1024 * 1024), 4)
 
-        prompt = upload_api_service._build_tools_prompt(source_type, custom_prompt)
+        prompt = tools_extraction_support.build_tools_prompt(source_type, custom_prompt)
 
         if docx_text:
             _set_tools_job_progress(app_ctx, job_id, step=2, description='Preparing prompt…')
@@ -509,7 +498,7 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
             'billing_mode': 'standard',
             'input_modality': 'text' if source_type in {'document', 'url'} else 'image',
         }
-        retry_attempts_total = upload_api_service._sum_retry_attempts(retry_tracker)
+        retry_attempts_total = tools_extraction_support.sum_retry_attempts(retry_tracker)
         analytics_events.log_analytics_event(
             'tools_extract_completed',
             source='backend',
@@ -593,7 +582,7 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
                 deducted_credit,
                 expected_floor=user_text_credits_before if deducted_credit == 'slides_credits' else None,
             )
-        retry_attempts_total = upload_api_service._sum_retry_attempts(retry_tracker)
+        retry_attempts_total = tools_extraction_support.sum_retry_attempts(retry_tracker)
         analytics_events.log_analytics_event(
             'tools_extract_failed',
             source='backend',

@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import zipfile
 
 
@@ -333,6 +334,40 @@ def _parse_ytdlp_json_output(raw_output):
     return {}
 
 
+def _ytdlp_source_url(source_url):
+    from lecture_processor.services import url_security
+
+    return url_security.fetch_target_url(source_url)
+
+
+def _guarded_ytdlp_command(command, source_url):
+    from lecture_processor.services import url_security
+
+    if not isinstance(source_url, url_security.ValidatedFetchTarget):
+        return list(command), None
+    safe_command = list(command)
+    if '--proxy' not in safe_command:
+        safe_command[1:1] = ['--proxy', '']
+    env = dict(os.environ)
+    for proxy_name in ('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy'):
+        env.pop(proxy_name, None)
+    env['LECTURE_PROCESSOR_YTDLP_GUARD'] = json.dumps(
+        {
+            'host': source_url.host,
+            'port': int(source_url.port or 0),
+            'resolved_ips': list(source_url.resolved_ips or ()),
+        }
+    )
+    return [sys.executable, '-m', 'lecture_processor.services.ytdlp_network_guard', *safe_command[1:]], env
+
+
+def _run_ytdlp(command, source_url, *, subprocess_module=subprocess, **kwargs):
+    guarded_command, guarded_env = _guarded_ytdlp_command(command, source_url)
+    if guarded_env is not None:
+        kwargs['env'] = guarded_env
+    return subprocess_module.run(guarded_command, **kwargs)
+
+
 def _fetch_video_import_metadata(
     ytdlp_bin,
     source_url,
@@ -348,11 +383,13 @@ def _fetch_video_import_metadata(
         '--no-warnings',
         '--restrict-filenames',
         '--',
-        source_url,
+        _ytdlp_source_url(source_url),
     ]
     try:
-        result = subprocess_module.run(
+        result = _run_ytdlp(
             command,
+            source_url,
+            subprocess_module=subprocess_module,
             check=False,
             capture_output=True,
             text=True,
@@ -420,10 +457,12 @@ def download_audio_from_video_url(
     ]
     if source_size_bytes > 0:
         cmd.extend(['--max-filesize', str(max_audio_upload_bytes)])
-    cmd.extend(['--', source_url])
+    cmd.extend(['--', _ytdlp_source_url(source_url)])
     try:
-        result = subprocess_module.run(
+        result = _run_ytdlp(
             cmd,
+            source_url,
+            subprocess_module=subprocess_module,
             check=False,
             capture_output=True,
             text=True,
@@ -503,13 +542,16 @@ def download_video_from_video_url(
             '--restrict-filenames',
             '--ffmpeg-location', ffmpeg_bin,
             '--format', 'bv*+ba/b',
+            '--max-filesize', str(max_download_bytes),
             *extra_args,
             '--output', output_template,
-            '--', source_url,
+            '--', _ytdlp_source_url(source_url),
         ]
         try:
-            result = subprocess_module.run(
+            result = _run_ytdlp(
                 cmd,
+                source_url,
+                subprocess_module=subprocess_module,
                 check=False,
                 capture_output=True,
                 text=True,

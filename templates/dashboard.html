@@ -15,7 +15,7 @@
 <body>
   {% set shell_title = 'Dashboard' %}
   {% include '_app_shell.html' %}
-    <main class="app-shell-page dashboard-page" id="dashboard-page" data-load-state="loading">
+    <main class="app-shell-page dashboard-page" id="dashboard-page" data-load-state="loading" aria-busy="true">
       <section class="shell-panel hero">
         <h1>Your semester at a glance</h1>
         <p>Track what is due, continue recent packs, and launch the right extraction flow when you need new material.</p>
@@ -49,7 +49,7 @@
         <article class="shell-panel stat-card">
           <div class="stat-label">Daily goal</div>
           <div class="stat-value" id="dash-goal">Sign in to set goals</div>
-          <progress class="goal-track goal-track-bar" id="dash-goal-fill" max="100" value="0" hidden aria-hidden="true">0%</progress>
+          <progress class="goal-track goal-track-bar" id="dash-goal-fill" max="100" value="0" hidden aria-hidden="true" aria-label="Daily goal progress">0%</progress>
         </article>
       </section>
 

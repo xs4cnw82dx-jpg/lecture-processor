@@ -75,6 +75,7 @@ from lecture_processor.domains.admin import metrics as admin_metrics
 from lecture_processor.domains.ai import pipelines as ai_pipelines
 from lecture_processor.domains.ai import study_generation
 from lecture_processor.domains.account import users as account_users
+from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import purchases as billing_purchases
 from lecture_processor.domains.billing import receipts as billing_receipts
@@ -123,13 +124,42 @@ LOG_LEVEL = (os.getenv('LOG_LEVEL', 'INFO') or 'INFO').strip().upper()
 
 logger = runtime_bootstrap.configure_logging(LOG_LEVEL)
 
-JOB_WORKERS = int(os.getenv('JOB_WORKERS', '2') or 2)
 
-JOB_QUEUE_MAX_PENDING = int(os.getenv('JOB_QUEUE_MAX_PENDING', '8') or 8)
+def safe_int_env(name, default=0, minimum=1, maximum=100000):
+    raw = str(os.getenv(name, str(default)) or str(default)).strip()
+    try:
+        value = int(raw)
+    except Exception:
+        value = int(default)
+    return min(max(value, int(minimum)), int(maximum))
 
-TRUSTED_PROXY_HOPS = int(os.getenv('TRUSTED_PROXY_HOPS', '1') or 1)
 
-job_dispatcher = BoundedJobDispatcher(JOB_WORKERS, JOB_QUEUE_MAX_PENDING, logger=logger)
+def safe_float_env(name, default=0.0, minimum=None, maximum=None):
+    raw = str(os.getenv(name, str(default)) or str(default)).strip()
+    try:
+        value = float(raw)
+    except Exception:
+        value = float(default)
+    if minimum is not None:
+        value = max(float(minimum), value)
+    if maximum is not None:
+        value = min(float(maximum), value)
+    return value
+
+
+JOB_WORKERS = safe_int_env('JOB_WORKERS', 2, minimum=1, maximum=32)
+
+JOB_QUEUE_MAX_PENDING = safe_int_env('JOB_QUEUE_MAX_PENDING', 8, minimum=0, maximum=1000)
+
+BATCH_JOB_WORKERS = safe_int_env('BATCH_JOB_WORKERS', 1, minimum=1, maximum=16)
+
+BATCH_JOB_QUEUE_MAX_PENDING = safe_int_env('BATCH_JOB_QUEUE_MAX_PENDING', 24, minimum=0, maximum=2000)
+
+TRUSTED_PROXY_HOPS = safe_int_env('TRUSTED_PROXY_HOPS', 1, minimum=0, maximum=10)
+
+job_dispatcher = BoundedJobDispatcher(JOB_WORKERS, JOB_QUEUE_MAX_PENDING, logger=logger, thread_name_prefix='lp-job')
+
+batch_job_dispatcher = BoundedJobDispatcher(BATCH_JOB_WORKERS, BATCH_JOB_QUEUE_MAX_PENDING, logger=logger, thread_name_prefix='lp-batch')
 
 def log_event(level, event, **fields):
     payload = {'event': event}
@@ -192,7 +222,7 @@ ADMIN_UIDS = {uid.strip() for uid in os.getenv('ADMIN_UIDS', '').split(',') if u
 
 ADMIN_SESSION_COOKIE_NAME = 'lp_admin_session'
 
-ADMIN_SESSION_DURATION_SECONDS = int(os.getenv('ADMIN_SESSION_DURATION_SECONDS', str(8 * 60 * 60)) or 8 * 60 * 60)
+ADMIN_SESSION_DURATION_SECONDS = safe_int_env('ADMIN_SESSION_DURATION_SECONDS', 8 * 60 * 60, minimum=5 * 60, maximum=30 * 24 * 60 * 60)
 
 ADMIN_PAGE_UNAUTHORIZED_MODE = str(os.getenv('ADMIN_PAGE_UNAUTHORIZED_MODE', 'redirect')).strip().lower()
 
@@ -202,7 +232,7 @@ JOBS_LOCK = threading.RLock()
 
 RUNTIME_JOBS_COLLECTION = 'runtime_jobs'
 
-RUNTIME_JOB_RECOVERY_BATCH_LIMIT = int(os.getenv('RUNTIME_JOB_RECOVERY_BATCH_LIMIT', '200') or 200)
+RUNTIME_JOB_RECOVERY_BATCH_LIMIT = safe_int_env('RUNTIME_JOB_RECOVERY_BATCH_LIMIT', 200, minimum=1, maximum=5000)
 
 RUNTIME_JOB_RECOVERY_ENABLED = str(os.getenv('ENABLE_RUNTIME_JOB_RECOVERY', '1')).strip().lower() in {'1', 'true', 'yes', 'on'}
 
@@ -210,13 +240,13 @@ RUNTIME_JOB_RECOVERY_LEASE_COLLECTION = str(os.getenv('RUNTIME_JOB_RECOVERY_LEAS
 
 RUNTIME_JOB_RECOVERY_LEASE_ID = str(os.getenv('RUNTIME_JOB_RECOVERY_LEASE_ID', 'startup') or 'startup').strip()
 
-RUNTIME_JOB_RECOVERY_LEASE_SECONDS = int(os.getenv('RUNTIME_JOB_RECOVERY_LEASE_SECONDS', '300') or 300)
+RUNTIME_JOB_RECOVERY_LEASE_SECONDS = safe_int_env('RUNTIME_JOB_RECOVERY_LEASE_SECONDS', 300, minimum=30, maximum=3600)
 
 RUNTIME_JOB_RECOVERY_LOCK = threading.Lock()
 
 RUNTIME_JOB_RECOVERY_DONE = False
 
-BATCH_JOB_RECOVERY_BATCH_LIMIT = int(os.getenv('BATCH_JOB_RECOVERY_BATCH_LIMIT', '100') or 100)
+BATCH_JOB_RECOVERY_BATCH_LIMIT = safe_int_env('BATCH_JOB_RECOVERY_BATCH_LIMIT', 100, minimum=1, maximum=5000)
 
 BATCH_JOB_RECOVERY_ENABLED = str(os.getenv('ENABLE_BATCH_JOB_RECOVERY', '1')).strip().lower() in {'1', 'true', 'yes', 'on'}
 
@@ -224,9 +254,9 @@ BATCH_JOB_RECOVERY_LEASE_COLLECTION = str(os.getenv('BATCH_JOB_RECOVERY_LEASE_CO
 
 BATCH_JOB_RECOVERY_LEASE_ID = str(os.getenv('BATCH_JOB_RECOVERY_LEASE_ID', 'startup') or 'startup').strip()
 
-BATCH_JOB_RECOVERY_LEASE_SECONDS = int(os.getenv('BATCH_JOB_RECOVERY_LEASE_SECONDS', '300') or 300)
+BATCH_JOB_RECOVERY_LEASE_SECONDS = safe_int_env('BATCH_JOB_RECOVERY_LEASE_SECONDS', 300, minimum=30, maximum=3600)
 
-BATCH_JOB_RECOVERY_STALE_SECONDS = int(os.getenv('BATCH_JOB_RECOVERY_STALE_SECONDS', '0') or 0)
+BATCH_JOB_RECOVERY_STALE_SECONDS = safe_int_env('BATCH_JOB_RECOVERY_STALE_SECONDS', 0, minimum=0, maximum=7 * 24 * 60 * 60)
 
 BATCH_JOB_RECOVERY_LOCK = threading.Lock()
 
@@ -288,14 +318,6 @@ ANALYTICS_ALLOWED_EVENTS = {
 ANALYTICS_FUNNEL_STAGES = [{'event': 'auth_modal_opened', 'label': 'Opened sign-in'}, {'event': 'auth_success', 'label': 'Signed in'}, {'event': 'checkout_started', 'label': 'Started checkout'}, {'event': 'payment_confirmed', 'label': 'Payment confirmed'}, {'event': 'process_clicked', 'label': 'Clicked process'}, {'event': 'processing_started', 'label': 'Upload accepted'}, {'event': 'processing_completed', 'label': 'Processing complete'}, {'event': 'study_mode_opened', 'label': 'Opened study mode'}]
 
 ANALYTICS_FUNNEL_EVENT_NAMES = {stage['event'] for stage in ANALYTICS_FUNNEL_STAGES}
-
-def safe_int_env(name, default=0, minimum=1, maximum=100000):
-    raw = os.getenv(name, str(default)).strip()
-    try:
-        value = int(raw)
-    except Exception:
-        value = int(default)
-    return min(max(value, minimum), maximum)
 
 UPLOAD_RATE_LIMIT_WINDOW_SECONDS = safe_int_env('UPLOAD_RATE_LIMIT_WINDOW_SECONDS', 600, minimum=10, maximum=86400)
 
@@ -382,9 +404,6 @@ def parse_cors_allowed_origins():
     }
 
 CORS_ALLOWED_ORIGINS = parse_cors_allowed_origins()
-
-def safe_float_env(name, default=0.0):
-    return runtime_bootstrap.safe_float_env(name, default, environ=os.environ)
 
 SENTRY_TRACES_SAMPLE_RATE = safe_float_env('SENTRY_TRACES_SAMPLE_RATE', 0.0)
 
@@ -520,38 +539,12 @@ CREDIT_BUNDLES = {'lecture_5': {'name': 'Lecture Notes — 5 Pack', 'description
 EMAIL_ALLOWLIST_CONFIG_PATH = os.path.join(PROJECT_ROOT_DIR, 'config', 'allowed_email_domains.json')
 
 def load_email_allowlist_config(path):
-    try:
-        with open(path, 'r', encoding='utf-8') as handle:
-            data = json.load(handle)
-    except Exception as e:
-        raise RuntimeError(f'Could not read allowlist config at {path}: {e}')
-    if not isinstance(data, dict):
-        raise RuntimeError(f'Allowlist config at {path} must be a JSON object.')
-    raw_domains = data.get('domains', [])
-    raw_suffixes = data.get('suffixes', [])
-    if not isinstance(raw_domains, list) or not isinstance(raw_suffixes, list):
-        raise RuntimeError(f"Allowlist config at {path} must contain list values for 'domains' and 'suffixes'.")
-    domains = {str(item).strip().lower() for item in raw_domains if str(item).strip()}
-    suffixes = [str(item).strip().lower() for item in raw_suffixes if str(item).strip()]
-    if not domains:
-        raise RuntimeError(f'Allowlist config at {path} has an empty domains list.')
-    if not suffixes:
-        raise RuntimeError(f'Allowlist config at {path} has an empty suffixes list.')
-    return (domains, suffixes)
+    return auth_policy.load_email_allowlist_config(path)
 
 ALLOWED_EMAIL_DOMAINS, ALLOWED_EMAIL_PATTERNS = load_email_allowlist_config(EMAIL_ALLOWLIST_CONFIG_PATH)
 
 def is_email_allowed(email):
-    if not email:
-        return False
-    email = email.lower()
-    domain = email.split('@')[-1] if '@' in email else ''
-    if domain in ALLOWED_EMAIL_DOMAINS:
-        return True
-    for pattern in ALLOWED_EMAIL_PATTERNS:
-        if domain.endswith(pattern):
-            return True
-    return False
+    return auth_policy.is_email_allowed(email, runtime=_self_runtime())
 
 MODEL_SLIDES = 'gemini-3.1-flash-lite-preview'
 
@@ -658,12 +651,13 @@ def cleanup_expired_audio_stream_tokens():
         AUDIO_STREAM_TOKENS.pop(token, None)
 
 def _run_periodic_cleanup():
-    """Background thread: periodically evict stale jobs and audio stream tokens."""
+    """Background thread: periodically evict stale jobs and audio/import tokens."""
     while True:
         time.sleep(JOB_CLEANUP_INTERVAL_SECONDS)
         try:
             cleanup_old_jobs()
             cleanup_expired_audio_stream_tokens()
+            upload_import_audio.cleanup_expired_audio_import_tokens(runtime=_self_runtime())
         except Exception:
             logger.warning('Periodic cleanup failed', exc_info=True)
 
@@ -995,21 +989,24 @@ def _runtime_job_sanitize_value(value):
         return {str(k): _runtime_job_sanitize_value(v) for k, v in value.items()}
     return value
 
-def _build_runtime_job_payload(job_id, job_data):
+def _build_runtime_job_payload(job_id, job_data, changed_fields=None):
     payload = {'job_id': job_id, 'updated_at': time.time()}
     if not isinstance(job_data, dict):
         payload['status'] = 'unknown'
         return payload
-    for field in RUNTIME_JOB_PERSISTED_FIELDS:
+    persisted_fields = set(RUNTIME_JOB_PERSISTED_FIELDS)
+    if changed_fields is not None:
+        persisted_fields &= {str(field) for field in changed_fields}
+    for field in persisted_fields:
         if field in job_data:
             payload[field] = _runtime_job_sanitize_value(job_data.get(field))
     return payload
 
-def persist_runtime_job_snapshot(job_id, job_data):
+def persist_runtime_job_snapshot(job_id, job_data, changed_fields=None):
     if not _runtime_job_storage_enabled() or not job_id:
         return
     try:
-        runtime_jobs_repo.set_doc(db, RUNTIME_JOBS_COLLECTION, job_id, _build_runtime_job_payload(job_id, job_data), merge=True)
+        runtime_jobs_repo.set_doc(db, RUNTIME_JOBS_COLLECTION, job_id, _build_runtime_job_payload(job_id, job_data, changed_fields=changed_fields), merge=True)
     except Exception:
         logger.warning('Failed to persist runtime job snapshot for %s', job_id, exc_info=True)
 
@@ -1057,9 +1054,13 @@ def get_job_snapshot(job_id):
     return None
 
 def mutate_job(job_id, mutator_fn):
+    before = job_state_service.get_job_snapshot(job_id, jobs_store=jobs, lock=JOBS_LOCK)
     snapshot = job_state_service.mutate_job(job_id, mutator_fn, jobs_store=jobs, lock=JOBS_LOCK)
     if snapshot is not None:
-        persist_runtime_job_snapshot(job_id, snapshot)
+        changed_fields = None
+        if isinstance(before, dict):
+            changed_fields = {field for field in RUNTIME_JOB_PERSISTED_FIELDS if before.get(field) != snapshot.get(field)}
+        persist_runtime_job_snapshot(job_id, snapshot, changed_fields=changed_fields)
     return snapshot
 
 def set_job(job_id, value):
@@ -1106,6 +1107,14 @@ def submit_background_job(target, *args, **kwargs):
 
 def get_background_queue_stats():
     return job_dispatcher.stats()
+
+
+def submit_batch_background_job(target, *args, **kwargs):
+    return batch_job_dispatcher.submit(target, *args, **kwargs)
+
+
+def get_batch_background_queue_stats():
+    return batch_job_dispatcher.stats()
 
 def has_sufficient_upload_disk_space(required_bytes=0):
     """Return (ok, free_bytes, threshold_bytes) for upload safety checks."""
@@ -1364,9 +1373,9 @@ MODEL_THINKING_POLICY = {'gemini-3.1-flash-lite-preview': {'thinking_level': 'hi
 
 PROVIDER_RETRY_MAX_ATTEMPTS = safe_int_env('PROVIDER_RETRY_MAX_ATTEMPTS', 3, minimum=1, maximum=6)
 
-PROVIDER_RETRY_BASE_SECONDS = max(0.2, min(10.0, float(os.getenv('PROVIDER_RETRY_BASE_SECONDS', '1.2') or 1.2)))
+PROVIDER_RETRY_BASE_SECONDS = safe_float_env('PROVIDER_RETRY_BASE_SECONDS', 1.2, minimum=0.2, maximum=10.0)
 
-PROVIDER_RETRY_MAX_SECONDS = max(1.0, min(30.0, float(os.getenv('PROVIDER_RETRY_MAX_SECONDS', '10.0') or 10.0)))
+PROVIDER_RETRY_MAX_SECONDS = safe_float_env('PROVIDER_RETRY_MAX_SECONDS', 10.0, minimum=1.0, maximum=30.0)
 
 PROVIDER_TRANSIENT_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
 
