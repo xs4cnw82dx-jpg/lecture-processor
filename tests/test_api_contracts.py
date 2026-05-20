@@ -615,6 +615,8 @@ def test_study_pack_list_uses_repo_order_and_count_fallback(client, monkeypatch)
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u1", "email": "u@example.com"})
     monkeypatch.setattr(core, "db", object())
+    monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
+    monkeypatch.setattr(batch_orchestrator, "run_startup_batch_recovery_once", lambda runtime=None: None)
     monkeypatch.setattr(
         core.study_repo,
         "list_study_pack_summaries_by_uid",
@@ -683,6 +685,9 @@ def test_study_pack_list_fetches_legacy_counts_when_projection_lacks_counts(clie
         )
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u1", "email": "u@example.com"})
+    monkeypatch.setattr(core, "db", object())
+    monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
+    monkeypatch.setattr(batch_orchestrator, "run_startup_batch_recovery_once", lambda runtime=None: None)
     monkeypatch.setattr(
         core.study_repo,
         "list_study_pack_summaries_by_uid",
