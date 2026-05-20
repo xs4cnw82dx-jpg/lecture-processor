@@ -97,6 +97,9 @@
           <div class="split">
             <div>
               <div class="list" id="pack-list"></div>
+              <div class="pack-list-actions" id="pack-list-actions" hidden>
+                <button type="button" class="btn" id="load-more-packs-btn">Load more study packs</button>
+              </div>
             </div>
             <div>
               <div class="empty" id="pack-empty">
@@ -114,8 +117,8 @@
               </div>
               <div class="editor-wrap" id="pack-editor-wrap">
                 <div class="meta-grid">
-                  <div class="field"><label>Title</label><input id="pack-title"></div>
-                  <div class="field"><label>Folder</label><input type="hidden" id="pack-folder-select" value="">
+                  <div class="field"><label for="pack-title">Title</label><input id="pack-title"></div>
+                  <div class="field"><label for="pack-folder-button">Folder</label><input type="hidden" id="pack-folder-select" value="">
                     <div class="app-select" id="pack-folder-picker"><button type="button" class="app-select-button"
                         id="pack-folder-button" aria-haspopup="listbox" aria-expanded="false"
                         aria-controls="pack-folder-menu"><span class="app-select-label" id="pack-folder-label">No
@@ -126,8 +129,8 @@
                       <div class="app-select-menu" id="pack-folder-menu" role="listbox"></div>
                     </div>
                   </div>
-                  <div class="field"><label>Course</label><input id="pack-course"></div>
-                  <div class="field"><label>Subject</label><input id="pack-subject"></div>
+                  <div class="field"><label for="pack-course">Course</label><input id="pack-course"></div>
+                  <div class="field"><label for="pack-subject">Subject</label><input id="pack-subject"></div>
                 </div>
                 <div class="meta-advanced-toggle">
                   <button type="button" class="btn" id="pack-advanced-meta-btn" aria-expanded="false"
@@ -136,8 +139,8 @@
                 <div class="meta-advanced-shell" id="pack-advanced-meta-shell" aria-hidden="true">
                   <div class="meta-advanced-shell-inner">
                     <div class="meta-grid meta-advanced-panel meta-advanced-panel-pack" id="pack-advanced-meta-panel">
-                      <div class="field"><label>Semester</label><input id="pack-semester"></div>
-                      <div class="field"><label>Block</label><input id="pack-block"></div>
+                      <div class="field"><label for="pack-semester">Semester</label><input id="pack-semester"></div>
+                      <div class="field"><label for="pack-block">Block</label><input id="pack-block"></div>
                     </div>
                     <section class="pack-goals-panel" id="pack-goals-panel" aria-label="Study goals">
                       <div class="pack-goals-head">
@@ -757,22 +760,22 @@
               <div class="builder-info-banner"><span>Configure title, folder, metadata, and notes before
                   learning.</span><button class="btn" id="builder-open-learn-shortcut">Open Learn Setup</button></div>
               <div class="builder-grid">
-                <div class="field"><label>Title</label><input id="builder-title-input" placeholder="Untitled pack">
+                <div class="field"><label for="builder-title-input">Title</label><input id="builder-title-input" placeholder="Untitled pack">
                 </div>
-                <div class="field"><label>Folder</label><select id="builder-folder-select"
+                <div class="field"><label for="builder-folder-select">Folder</label><select id="builder-folder-select"
                     class="builder-select"></select></div>
-                <div class="field"><label>Course</label><input id="builder-course-input"></div>
-                <div class="field"><label>Subject</label><input id="builder-subject-input"></div>
+                <div class="field"><label for="builder-course-input">Course</label><input id="builder-course-input"></div>
+                <div class="field"><label for="builder-subject-input">Subject</label><input id="builder-subject-input"></div>
               </div>
               <div class="builder-advanced-toggle">
                 <button type="button" class="btn" id="builder-advanced-meta-btn" aria-expanded="false"
                   aria-controls="builder-advanced-meta-panel">Show advanced metadata</button>
               </div>
               <div class="builder-grid builder-advanced-panel" id="builder-advanced-meta-panel" aria-hidden="true">
-                <div class="field"><label>Semester</label><input id="builder-semester-input"></div>
-                <div class="field"><label>Block</label><input id="builder-block-input"></div>
+                <div class="field"><label for="builder-semester-input">Semester</label><input id="builder-semester-input"></div>
+                <div class="field"><label for="builder-block-input">Block</label><input id="builder-block-input"></div>
               </div>
-              <div class="field u-mt-12"><label>Notes (Markdown)</label><textarea
+              <div class="field u-mt-12"><label for="builder-notes-input">Notes (Markdown)</label><textarea
                   id="builder-notes-input" class="u-min-h-180"
                   placeholder="# Key Concepts&#10;&#10;- Add summary notes here"></textarea></div>
             </div>
@@ -799,11 +802,11 @@
               <div class="builder-helper u-mb-8">Import data directly into this pack and preview
                 before applying.</div>
               <div class="builder-import-tools">
-                <div class="field"><label>Import Type</label><select class="builder-select" id="builder-import-type">
+                <div class="field"><label for="builder-import-type">Import Type</label><select class="builder-select" id="builder-import-type">
                     <option value="flashcards">Flashcards CSV</option>
                     <option value="test">Practice Test CSV</option>
                   </select></div>
-                <div class="field"><label>Import Mode</label><select class="builder-select" id="builder-import-mode">
+                <div class="field"><label for="builder-import-mode">Import Mode</label><select class="builder-select" id="builder-import-mode">
                     <option value="append">Append to existing</option>
                     <option value="replace">Replace existing</option>
                   </select></div>
@@ -815,14 +818,14 @@
               <div class="builder-cta-strip u-mt-12"><button class="btn"
                   id="builder-template-btn">Download CSV Template</button><button class="btn primary"
                   id="builder-apply-import-btn" disabled>Apply Import</button></div>
-              <div class="builder-helper" id="builder-import-summary">No file loaded.</div>
+              <div class="builder-helper" id="builder-import-summary" role="status" aria-live="polite" aria-atomic="true">No file loaded.</div>
               <div class="builder-preview" id="builder-preview" hidden>
                 <div class="builder-preview-head">Preview (first 10 valid rows)</div>
                 <div class="u-overflow-auto">
                   <table class="builder-preview-table" id="builder-preview-table"></table>
                 </div>
               </div>
-              <div class="builder-errors" id="builder-import-errors" hidden></div>
+              <div class="builder-errors" id="builder-import-errors" role="alert" aria-live="assertive" aria-atomic="true" hidden></div>
             </div>
           </section>
         </div>

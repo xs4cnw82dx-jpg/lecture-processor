@@ -4,7 +4,7 @@
         <div class="goal-modal-subtitle">Choose how many cards you want to review each day (1–500).</div>
         <label class="form-label" for="goal-modal-input">Daily goal</label>
         <input id="goal-modal-input" class="form-input" type="number" min="1" max="500" inputmode="numeric">
-        <div class="goal-modal-error" id="goal-modal-error"></div>
+        <div class="goal-modal-error" id="goal-modal-error" role="alert" aria-live="assertive" aria-atomic="true"></div>
         <div class="goal-modal-actions">
             <button type="button" class="progress-action-btn" id="goal-modal-cancel-btn">Cancel</button>
             <button type="button" class="progress-action-btn primary" id="goal-modal-save-btn">Save goal</button>
@@ -28,7 +28,7 @@
         <input class="form-input" id="delete-account-text-input" autocomplete="off" spellcheck="false">
         <label class="form-label" for="delete-account-email-input">Confirm your email</label>
         <input class="form-input" id="delete-account-email-input" autocomplete="off" spellcheck="false">
-        <div class="delete-account-error" id="delete-account-error"></div>
+        <div class="delete-account-error" id="delete-account-error" role="alert" aria-live="assertive" aria-atomic="true"></div>
         <div class="delete-account-actions">
             <button type="button" class="progress-action-btn" id="delete-account-cancel-btn">Cancel</button>
             <button type="button" class="progress-action-btn danger" id="delete-account-confirm-btn">Delete permanently</button>
@@ -50,14 +50,14 @@
             <button type="button" class="onboarding-language-btn" data-value="other">🌐 Other</button>
         </div>
         <input class="language-custom-input onboarding-custom-input" id="language-onboarding-custom" placeholder="Type your preferred language (for example: Italian)" hidden>
-        <div class="onboarding-error" id="language-onboarding-error"></div>
+        <div class="onboarding-error" id="language-onboarding-error" role="alert" aria-live="assertive" aria-atomic="true"></div>
         <div class="onboarding-actions">
             <button type="button" class="progress-action-btn primary" id="language-onboarding-save-btn">Save preference</button>
         </div>
     </div>
 </div>
 
-<div class="toast" id="toast">
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true">
     <svg id="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="20 6 9 17 4 12"></polyline>
     </svg>

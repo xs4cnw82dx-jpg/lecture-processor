@@ -21,6 +21,7 @@
   var dropzoneTitle = document.getElementById('reader-dropzone-title');
   var dropzoneSub = document.getElementById('reader-dropzone-sub');
   var dropzoneSubExtra = document.getElementById('reader-dropzone-sub-extra');
+  var dropzoneState = document.getElementById('reader-dropzone-state');
   var fileInput = document.getElementById('reader-file-input');
   var addImageBtn = document.getElementById('reader-add-image-btn');
   var selectedFilesEl = document.getElementById('reader-selected-files');
@@ -43,6 +44,7 @@
   var pollTimer = null;
   var slidesCredits = null;
   var toastTimer = null;
+  var dropzoneDragging = false;
   var CREDITS_CACHE_KEY = 'credits_breakdown';
 
   function getSignedInUser() {
@@ -62,15 +64,40 @@
     if (!readerToast || !message) return;
     readerToast.textContent = String(message);
     readerToast.className = 'reader-toast visible' + (type ? ' ' + type : '');
+    readerToast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    readerToast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
     if (toastTimer) window.clearTimeout(toastTimer);
     toastTimer = window.setTimeout(function () {
       readerToast.className = 'reader-toast';
+      readerToast.setAttribute('role', 'status');
+      readerToast.setAttribute('aria-live', 'polite');
     }, 2200);
   }
 
   function setStatus(message, type) {
+    if (!statusEl) return;
     statusEl.textContent = String(message || '');
     statusEl.className = type ? ('status ' + type) : 'status';
+    statusEl.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    statusEl.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+  }
+
+  function announceDropzoneState(message, type) {
+    if (!dropzoneState) return;
+    dropzoneState.textContent = String(message || '');
+    dropzoneState.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+  }
+
+  function setDropzoneDragState(active) {
+    if (!dropzone) return;
+    if (dropzoneDragging === !!active) return;
+    dropzoneDragging = !!active;
+    dropzone.classList.toggle('drag', !!active);
+    if (active) {
+      announceDropzoneState('Drop files now.');
+      return;
+    }
+    announceDropzoneState(selectedFiles.length ? selectedFilesSummary() : 'No file selected.');
   }
 
   function getSignInHref() {
@@ -207,9 +234,11 @@
     while (selectedFilesEl.firstChild) selectedFilesEl.removeChild(selectedFilesEl.firstChild);
     if (!selectedFiles.length) {
       dropzoneTitle.textContent = sourceType === 'image' ? 'Drop image files here or click to browse' : 'Drop a file here or click to browse';
+      announceDropzoneState(sourceType === 'image' ? 'No images selected.' : 'No file selected.');
       return;
     }
     dropzoneTitle.textContent = selectedFilesSummary();
+    announceDropzoneState(selectedFilesSummary());
     selectedFiles.forEach(function (file, index) {
       var row = document.createElement('div');
       row.className = 'selected-file';
@@ -267,15 +296,22 @@
         }
         selectedFiles.push(file);
       });
-      if (exceededLimit) showReaderToast('Max 5 images per run.', 'error');
+      if (exceededLimit) {
+        showReaderToast('Max 5 images per run.', 'error');
+        announceDropzoneState('Max 5 images per run.', 'error');
+      }
     } else {
       var file = incoming[0];
       var docError = validateFile(file);
       if (docError) errors.push(docError);
       else selectedFiles = [file];
     }
-    if (errors.length) setStatus(errors[0], 'error');
-    else setStatus('', '');
+    if (errors.length) {
+      setStatus(errors[0], 'error');
+      announceDropzoneState(errors[0], 'error');
+    } else {
+      setStatus('', '');
+    }
     renderSelectedFiles();
     updateRunState();
   }
@@ -506,14 +542,19 @@
   }
 
   if (dropzone) {
+    dropzone.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      if (fileInput) fileInput.click();
+    });
     dropzone.addEventListener('dragover', function (event) {
       event.preventDefault();
-      dropzone.classList.add('drag');
+      setDropzoneDragState(true);
     });
-    dropzone.addEventListener('dragleave', function () { dropzone.classList.remove('drag'); });
+    dropzone.addEventListener('dragleave', function () { setDropzoneDragState(false); });
     dropzone.addEventListener('drop', function (event) {
       event.preventDefault();
-      dropzone.classList.remove('drag');
+      setDropzoneDragState(false);
       addFiles(event.dataTransfer && event.dataTransfer.files);
     });
   }
@@ -573,14 +614,19 @@
   hydrateCachedCredits(getSignedInUser());
   updateAuthStateUI();
   updateOutputActionState();
-  auth.onAuthStateChanged(function (user) {
+  if (auth && typeof auth.onAuthStateChanged === 'function') {
+    auth.onAuthStateChanged(function (user) {
+      authStateResolved = true;
+      currentUser = user || null;
+      if (authClient && typeof authClient.clearToken === 'function' && !currentUser) authClient.clearToken();
+      if (!currentUser) finishExtractionRun();
+      hydrateCachedCredits(currentUser);
+      refreshCredits();
+      updateRunState();
+      updateOutputActionState();
+    });
+  } else {
     authStateResolved = true;
-    currentUser = user || null;
-    if (authClient && typeof authClient.clearToken === 'function' && !currentUser) authClient.clearToken();
-    if (!currentUser) finishExtractionRun();
-    hydrateCachedCredits(currentUser);
-    refreshCredits();
     updateRunState();
-    updateOutputActionState();
-  });
+  }
 })();

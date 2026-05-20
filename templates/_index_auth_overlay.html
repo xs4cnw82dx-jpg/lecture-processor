@@ -54,7 +54,7 @@
                 Continue with Google
             </button>
             <p class="auth-switch">Don't have an account? <a href="#" id="switch-to-signup">Create one</a></p>
-            <div class="auth-error" id="signin-error"></div>
+            <div class="auth-error" id="signin-error" role="alert" aria-live="assertive" aria-atomic="true"></div>
         </div>
 
         <div class="auth-view" id="signup-view">
@@ -113,7 +113,7 @@
                 Continue with Google
             </button>
             <p class="auth-switch">Already have an account? <a href="#" id="switch-to-signin">Sign in</a></p>
-            <div class="auth-error" id="signup-error"></div>
+            <div class="auth-error" id="signup-error" role="alert" aria-live="assertive" aria-atomic="true"></div>
         </div>
 
         <div class="auth-view" id="reset-view">
@@ -139,8 +139,8 @@
                 </div>
                 <button type="submit" class="auth-submit-btn u-mt-8" id="reset-submit">Send reset link</button>
             </form>
-            <div class="auth-error" id="reset-error"></div>
-            <div class="auth-success" id="reset-success"></div>
+            <div class="auth-error" id="reset-error" role="alert" aria-live="assertive" aria-atomic="true"></div>
+            <div class="auth-success" id="reset-success" role="status" aria-live="polite" aria-atomic="true"></div>
         </div>
     </div>
 </div>

@@ -119,11 +119,15 @@ def _fetch_tools_url_text(source_url, max_bytes=1_500_000, max_chars=180000):
             allow_credentials=False,
             allow_non_standard_ports=False,
             resolve_dns=True,
+            return_fetch_target=True,
         )
 
-    safe_url, validation_error = _validate_url(source_url)
+    fetch_target, validation_error = _validate_url(source_url)
     if validation_error:
         return '', validation_error, ''
+    safe_url = url_security.fetch_target_url(fetch_target)
+    pinned_targets = url_security.PinnedFetchTargetRegistry()
+    pinned_targets.add(fetch_target)
 
     request = urllib.request.Request(
         safe_url,
@@ -133,7 +137,10 @@ def _fetch_tools_url_text(source_url, max_bytes=1_500_000, max_chars=180000):
         },
     )
     opener = urllib.request.build_opener(
-        url_security.ValidatingRedirectHandler(_validate_url),
+        urllib.request.ProxyHandler({}),
+        url_security.IPBoundHTTPHandler(pinned_targets),
+        url_security.IPBoundHTTPSHandler(pinned_targets),
+        url_security.ValidatingRedirectHandler(_validate_url, on_validated_url=pinned_targets.add),
     )
     try:
         with opener.open(request, timeout=20) as response:

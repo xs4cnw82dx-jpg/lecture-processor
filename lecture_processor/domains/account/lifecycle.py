@@ -149,6 +149,8 @@ def count_active_jobs_for_user(uid, runtime=None):
         return 0
 
     active_ids = set()
+    max_active_jobs = int(getattr(resolved_runtime, 'MAX_ACTIVE_JOBS_PER_USER', 2) or 2)
+    query_limit = max(1, max_active_jobs + 1)
     with resolved_runtime.JOBS_LOCK:
         for job_id, job in (resolved_runtime.jobs or {}).items():
             if not isinstance(job, dict):
@@ -157,6 +159,8 @@ def count_active_jobs_for_user(uid, runtime=None):
                 continue
             if str(job.get('status', '') or '').strip().lower() in ACTIVE_ACCOUNT_JOB_STATES:
                 active_ids.add(f'in-memory:{job_id}')
+            if len(active_ids) >= query_limit:
+                return len(active_ids)
 
     db = getattr(resolved_runtime, 'db', None)
     if db is None:
@@ -168,10 +172,12 @@ def count_active_jobs_for_user(uid, runtime=None):
             resolved_runtime.RUNTIME_JOBS_COLLECTION,
             uid,
             ACTIVE_ACCOUNT_JOB_STATES,
-            limit=500,
+            limit=max(1, query_limit - len(active_ids)),
         )
         for doc in runtime_docs:
             active_ids.add(f'runtime:{doc.id}')
+            if len(active_ids) >= query_limit:
+                return len(active_ids)
     except Exception as error:
         resolved_runtime.logger.warning("Warning: could not inspect runtime jobs for user %s: %s", uid, error)
 
@@ -180,10 +186,12 @@ def count_active_jobs_for_user(uid, runtime=None):
             db,
             uid,
             list(ACTIVE_ACCOUNT_JOB_STATES),
-            limit=500,
+            limit=max(1, query_limit - len(active_ids)),
         )
         for doc in batch_docs:
             active_ids.add(f'batch:{doc.id}')
+            if len(active_ids) >= query_limit:
+                return len(active_ids)
     except Exception as error:
         resolved_runtime.logger.warning("Warning: could not inspect batch jobs for user %s: %s", uid, error)
 

@@ -44,11 +44,20 @@
           </label>
 
           <div class="dropzone-wrap" id="reader-dropzone-wrap">
-            <label class="dropzone" id="reader-dropzone" for="reader-file-input">
+            <label
+              class="dropzone"
+              id="reader-dropzone"
+              for="reader-file-input"
+              role="button"
+              tabindex="0"
+              aria-controls="reader-file-input"
+              aria-describedby="reader-dropzone-sub reader-dropzone-sub-extra reader-dropzone-state"
+            >
               <input type="file" id="reader-file-input">
               <div class="dropzone-title" id="reader-dropzone-title">Drop a file here or click to browse</div>
               <div class="dropzone-sub" id="reader-dropzone-sub"></div>
               <div class="dropzone-sub-extra" id="reader-dropzone-sub-extra"></div>
+              <div class="sr-only" id="reader-dropzone-state" role="status" aria-live="polite" aria-atomic="true">No file selected.</div>
             </label>
             <button type="button" class="add-image-btn" id="reader-add-image-btn" hidden>+ Add image</button>
             <div class="selected-files" id="reader-selected-files"></div>
@@ -65,7 +74,7 @@
             </div>
             <a class="ghost-btn reader-auth-link" id="reader-auth-link" href="/lecture-notes?auth=signin">Sign in</a>
           </div>
-          <div class="status" id="reader-status" aria-live="polite"></div>
+          <div class="status" id="reader-status" role="status" aria-live="polite" aria-atomic="true"></div>
         </article>
 
         <article class="shell-panel reader-output-card">
@@ -83,7 +92,7 @@
   {% include '_shell_footer.html' %}
   </div>
   </div>
-  <div class="reader-toast" id="reader-toast" aria-live="polite"></div>
+  <div class="reader-toast" id="reader-toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
   <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>

@@ -31,12 +31,12 @@
       </button>
     </div>
     <div class="modal-grid u-mb-14">
-      <div class="field"><label>Folder Name *</label><input id="folder-name-input"></div>
-      <div class="field"><label>Course</label><input id="folder-course-input"></div>
-      <div class="field"><label>Subject</label><input id="folder-subject-input"></div>
-      <div class="field"><label>Semester</label><input id="folder-semester-input"></div>
-      <div class="field"><label>Block</label><input id="folder-block-input"></div>
-      <div class="field"><label>Exam Date</label><input type="text" id="folder-exam-date-input" placeholder="dd-mm-yyyy" inputmode="numeric"></div>
+      <div class="field"><label for="folder-name-input">Folder Name *</label><input id="folder-name-input"></div>
+      <div class="field"><label for="folder-course-input">Course</label><input id="folder-course-input"></div>
+      <div class="field"><label for="folder-subject-input">Subject</label><input id="folder-subject-input"></div>
+      <div class="field"><label for="folder-semester-input">Semester</label><input id="folder-semester-input"></div>
+      <div class="field"><label for="folder-block-input">Block</label><input id="folder-block-input"></div>
+      <div class="field"><label for="folder-exam-date-input">Exam Date</label><input type="text" id="folder-exam-date-input" placeholder="dd-mm-yyyy" inputmode="numeric"></div>
     </div>
     <div class="actions u-justify-end">
       <button class="btn" id="folder-modal-cancel" type="button">Cancel</button>
@@ -89,7 +89,7 @@
         <button class="btn" id="share-copy-btn" type="button">Copy</button>
       </div>
     </div>
-    <p class="modal-message u-mt-12" id="share-modal-status">Private links are disabled for everyone except you inside the app.</p>
+    <p class="modal-message u-mt-12" id="share-modal-status" role="status" aria-live="polite" aria-atomic="true">Private links are disabled for everyone except you inside the app.</p>
     <div class="actions u-justify-end">
       <button class="btn" id="share-modal-cancel" type="button">Cancel</button>
       <button class="btn primary" id="share-modal-save" type="button">Create Link</button>
@@ -122,4 +122,4 @@
   </button>
 </div>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>

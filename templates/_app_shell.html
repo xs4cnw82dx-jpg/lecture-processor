@@ -1,7 +1,7 @@
 <div class="app-shell" id="app-shell" data-page-key="{{ shell_page_key or '' }}" data-auth-state="pending">
   {% set shell_physio_open = shell_page_key and shell_page_key.startswith('physio-') %}
   {% set shell_more_tools_open = shell_page_key in ['document-reader', 'image-reader', 'url-reader', 'lecture-downloader', 'general-transcriber', 'tools'] %}
-  <button type="button" class="app-shell-overlay" id="app-shell-overlay" aria-label="Close navigation"></button>
+  <button type="button" class="app-shell-overlay" id="app-shell-overlay" aria-label="Close navigation" aria-hidden="true" tabindex="-1"></button>
   <aside class="app-shell-sidebar" id="app-shell-sidebar" aria-label="Main navigation">
     <a href="/dashboard" class="app-shell-brand">
       <span class="app-shell-brand-icon">
@@ -108,7 +108,7 @@
               <polyline points="6 9 12 15 18 9"></polyline>
             </svg>
           </button>
-          <div class="app-shell-account-panel-wrap" id="shell-account-menu-wrap">
+          <div class="app-shell-account-panel-wrap" id="shell-account-menu-wrap" aria-hidden="true">
             <div class="app-shell-account-menu" id="shell-account-menu" role="menu">
               <div class="app-shell-email" id="user-email">Checking sign-in...</div>
               <a href="/buy_credits" class="app-shell-account-item" role="menuitem">Buy credits</a>
@@ -140,4 +140,4 @@
         </div>
       </div>
     </div>
-    <div class="app-shell-toast" id="shell-toast" aria-live="polite"></div>
+    <div class="app-shell-toast" id="shell-toast" role="status" aria-live="polite" aria-atomic="true"></div>

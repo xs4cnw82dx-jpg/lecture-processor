@@ -64,3 +64,62 @@ def test_fetch_tools_url_text_decodes_using_declared_charset(monkeypatch):
     assert error is None
     assert content_type == "text/plain; charset=iso-8859-1"
     assert text == "Café"
+
+
+def test_fetch_tools_url_text_uses_ip_bound_fetch_target(monkeypatch):
+    import urllib.request
+
+    target = url_security.ValidatedFetchTarget(
+        url="https://example.com/article?token=secret",
+        scheme="https",
+        host="example.com",
+        port=443,
+        resolved_ips=("93.184.216.34",),
+    )
+    validate_calls = []
+
+    def _fake_validate(url, **kwargs):
+        validate_calls.append((url, kwargs))
+        return target, None
+
+    class _FakeResponse:
+        status = 200
+        headers = {"Content-Type": "text/plain; charset=utf-8"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self, _max_bytes):
+            return b"Hello"
+
+    captured = {}
+
+    class _FakeOpener:
+        def open(self, request, timeout=20):
+            captured["request_url"] = request.full_url
+            return _FakeResponse()
+
+    def _fake_build_opener(*handlers):
+        captured["handlers"] = handlers
+        return _FakeOpener()
+
+    monkeypatch.setattr(url_security, "validate_external_url_for_fetch", _fake_validate)
+    monkeypatch.setattr(urllib.request, "build_opener", _fake_build_opener)
+
+    text, error, content_type = upload_api_service._fetch_tools_url_text(
+        "https://example.com/article?token=secret"
+    )
+
+    assert error is None
+    assert text == "Hello"
+    assert content_type == "text/plain; charset=utf-8"
+    assert captured["request_url"] == "https://example.com/article?token=secret"
+    assert validate_calls[0][1]["return_fetch_target"] is True
+    https_handler = next(
+        handler for handler in captured["handlers"]
+        if isinstance(handler, url_security.IPBoundHTTPSHandler)
+    )
+    assert https_handler.registry.resolve("example.com", 443) == ("93.184.216.34",)

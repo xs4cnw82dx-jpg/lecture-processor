@@ -143,6 +143,15 @@ def _grant_credits_and_record_purchase_atomic(stripe_session, runtime=None):
     bundle = resolved_runtime.CREDIT_BUNDLES.get(bundle_id)
     if not bundle:
         return (False, 'unknown_credit_bundle')
+    purchase_record = _build_purchase_record(
+        uid,
+        bundle_id,
+        stripe_session_id,
+        payment_status='paid',
+        fulfilled_at=fulfilled_at,
+        created_at=created_at,
+        runtime=resolved_runtime,
+    )
 
     purchase_ref = resolved_runtime.purchases_repo.doc_ref(db, stripe_session_id)
     user_ref = resolved_runtime.users_repo.doc_ref(db, uid)
@@ -171,24 +180,17 @@ def _grant_credits_and_record_purchase_atomic(stripe_session, runtime=None):
 
         user_payload['updated_at'] = fulfilled_at
         transaction.set(user_ref_arg, user_payload, merge=True)
-        transaction.set(
-            purchase_ref_arg,
-            _build_purchase_record(
-                uid,
-                bundle_id,
-                stripe_session_id,
-                payment_status='paid',
-                fulfilled_at=fulfilled_at,
-                created_at=created_at,
-                runtime=resolved_runtime,
-            ),
-            merge=True,
-        )
+        transaction.set(purchase_ref_arg, purchase_record, merge=True)
         return 'granted'
 
     try:
         transaction = db.transaction()
         status = _run_transaction(transaction, purchase_ref, user_ref)
+        if status == 'granted':
+            try:
+                admin_rollups.increment_purchase_rollups(purchase_record, runtime=resolved_runtime)
+            except Exception as error:
+                resolved_runtime.logger.error("❌ Failed to update purchase rollups for session %s: %s", stripe_session_id, error)
         return (status in {'granted', 'already_processed'}, status)
     except Exception as error:
         resolved_runtime.logger.error("❌ Atomic purchase fulfillment failed for session %s: %s", stripe_session_id, error)

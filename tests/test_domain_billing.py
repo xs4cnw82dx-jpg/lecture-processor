@@ -72,7 +72,68 @@ def test_process_checkout_session_credits_returns_already_processed(app, monkeyp
     assert purchases.process_checkout_session_credits(session, runtime=runtime) == (True, "already_processed")
 
 
-def _configure_transactional_purchase_runtime(runtime, monkeypatch, store, fail_on_purchase=False):
+def test_save_purchase_record_updates_admin_purchase_rollups(app, monkeypatch):
+    runtime = get_runtime(app)
+    monkeypatch.setattr(
+        runtime,
+        'CREDIT_BUNDLES',
+        {
+            'bundle_x': {
+                'name': 'Bundle X',
+                'price_cents': 100,
+                'currency': 'eur',
+                'credits': {'slides_credits': 2},
+            }
+        },
+    )
+    purchase_writes = []
+    rollup_calls = []
+
+    def _set_purchase(_db, purchase_id, payload, merge=True):
+        purchase_writes.append((purchase_id, dict(payload), merge))
+
+    monkeypatch.setattr(runtime.purchases_repo, 'set_doc', _set_purchase)
+    monkeypatch.setattr(
+        purchases.admin_rollups,
+        'increment_purchase_rollups',
+        lambda payload, runtime=None: rollup_calls.append(dict(payload)),
+    )
+
+    purchases.save_purchase_record(
+        'u1',
+        'bundle_x',
+        'sess_direct',
+        runtime=runtime,
+        payment_status='paid',
+        fulfilled_at=2000.0,
+        created_at=1000.0,
+    )
+
+    assert purchase_writes == [
+        (
+            'sess_direct',
+            {
+                'uid': 'u1',
+                'bundle_id': 'bundle_x',
+                'bundle_name': 'Bundle X',
+                'price_cents': 100,
+                'currency': 'eur',
+                'credits': {'slides_credits': 2},
+                'stripe_session_id': 'sess_direct',
+                'payment_status': 'paid',
+                'created_at': 1000.0,
+                'fulfilled_at': 2000.0,
+            },
+            True,
+        )
+    ]
+    assert rollup_calls == [purchase_writes[0][1]]
+
+
+def _configure_transactional_purchase_runtime(runtime, monkeypatch, store, fail_on_purchase=False, rollup_calls=None):
+    if rollup_calls is None:
+        rollup_calls = []
+
     class _Snapshot:
         def __init__(self, payload):
             self._payload = dict(payload) if payload is not None else None
@@ -125,6 +186,12 @@ def _configure_transactional_purchase_runtime(runtime, monkeypatch, store, fail_
     monkeypatch.setattr(runtime.users_repo, 'doc_ref', lambda _db, uid: _Ref('users', uid))
     monkeypatch.setattr(runtime.purchases_repo, 'doc_ref', lambda _db, session_id: _Ref('purchases', session_id))
     monkeypatch.setattr(purchases.analytics_events, 'log_analytics_event', lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        purchases.admin_rollups,
+        'increment_purchase_rollups',
+        lambda payload, runtime=None: rollup_calls.append(dict(payload)),
+    )
+    return rollup_calls
 
 
 def test_process_checkout_session_credits_rejects_unpaid_session(app, monkeypatch):
@@ -174,7 +241,8 @@ def test_process_checkout_session_credits_is_idempotent_in_transaction(app, monk
         },
     )
     store = {'users': {}, 'purchases': {}}
-    _configure_transactional_purchase_runtime(runtime, monkeypatch, store)
+    rollup_calls = []
+    _configure_transactional_purchase_runtime(runtime, monkeypatch, store, rollup_calls=rollup_calls)
 
     session = {
         'id': 'sess_once',
@@ -190,6 +258,9 @@ def test_process_checkout_session_credits_is_idempotent_in_transaction(app, monk
     assert store['users']['u1']['slides_credits'] == expected_slides_credits
     assert store['purchases']['sess_once']['payment_status'] == 'paid'
     assert len(store['purchases']) == 1
+    assert len(rollup_calls) == 1
+    assert rollup_calls[0]['stripe_session_id'] == 'sess_once'
+    assert rollup_calls[0]['price_cents'] == 100
 
 
 def test_process_checkout_session_credits_blocks_deleting_account(app, monkeypatch):

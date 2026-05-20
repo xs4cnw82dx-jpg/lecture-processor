@@ -8,25 +8,50 @@
   var displayFormatUtils = window.LectureProcessorDisplayFormatUtils || {};
 
   var toast = document.getElementById('buy-credits-toast');
+  var authPanel = document.getElementById('buy-credits-auth-panel');
+  var signInLink = document.getElementById('buy-credits-signin-link');
   var historyList = document.getElementById('purchase-history-list');
   var refreshHistoryBtn = document.getElementById('refresh-purchase-history-btn');
   var checkoutBusy = false;
   var paymentResultChecked = false;
+  var authStateResolved = !auth || !!auth.currentUser;
 
-  function showToast(message) {
+  function getCurrentUser() {
+    return auth && auth.currentUser ? auth.currentUser : null;
+  }
+
+  function getSignInHref() {
+    return '/lecture-notes?auth=signin';
+  }
+
+  function showToast(message, type) {
     if (!toast) return;
     toast.textContent = String(message || '');
+    toast.classList.remove('error');
+    if (type === 'error') toast.classList.add('error');
+    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
     toast.classList.add('visible');
     window.setTimeout(function () {
       toast.classList.remove('visible');
+      toast.classList.remove('error');
+      toast.setAttribute('role', 'status');
+      toast.setAttribute('aria-live', 'polite');
     }, 2800);
+  }
+
+  function updateSignedOutUi() {
+    var signedIn = !!getCurrentUser();
+    if (authPanel) authPanel.hidden = signedIn || !authStateResolved;
+    if (signInLink) signInLink.href = getSignInHref();
+    setBundleButtons(false);
   }
 
   async function authFetch(path, options) {
     if (authClient && typeof authClient.authFetch === 'function') {
       return authClient.authFetch(path, options, { retryOn401: true });
     }
-    var user = auth.currentUser;
+    var user = getCurrentUser();
     if (!user) throw new Error('Please sign in');
     var token = await user.getIdToken();
     var opts = options || {};
@@ -35,8 +60,15 @@
   }
 
   function setBundleButtons(disabled, activeBundle) {
+    var signedIn = !!getCurrentUser();
+    var needsSignIn = !signedIn && authStateResolved;
     document.querySelectorAll('.bundle-buy-btn').forEach(function (button) {
       button.disabled = !!disabled;
+      if (needsSignIn) {
+        button.setAttribute('aria-describedby', 'buy-credits-auth-panel');
+      } else {
+        button.removeAttribute('aria-describedby');
+      }
       if (!button.dataset.baseText) {
         var ctaNode = button.querySelector('.cta');
         button.dataset.baseText = ctaNode ? ctaNode.textContent : 'Buy now';
@@ -45,6 +77,8 @@
       if (!target) return;
       if (disabled && activeBundle && button.dataset.bundleId === activeBundle) {
         target.textContent = 'Redirecting...';
+      } else if (needsSignIn) {
+        target.textContent = 'Sign in to buy';
       } else {
         target.textContent = button.dataset.baseText || 'Buy now';
       }
@@ -52,8 +86,11 @@
   }
 
   async function purchaseBundle(bundleId) {
-    if (!auth.currentUser) {
-      showToast('Please sign in first.');
+    if (!getCurrentUser()) {
+      authStateResolved = true;
+      updateSignedOutUi();
+      showToast('Sign in to buy credits.', 'error');
+      if (signInLink && typeof signInLink.focus === 'function') signInLink.focus();
       return;
     }
     if (checkoutBusy) return;
@@ -72,7 +109,7 @@
       window.location.href = payload.checkout_url;
       return;
     } catch (error) {
-      showToast(error && error.message ? error.message : 'Could not start checkout.');
+      showToast(error && error.message ? error.message : 'Could not start checkout.', 'error');
       checkoutBusy = false;
       setBundleButtons(false);
     }
@@ -129,7 +166,7 @@
 
   async function loadPurchaseHistory() {
     if (!historyList) return;
-    if (!auth.currentUser) {
+    if (!getCurrentUser()) {
       setHistoryEmpty('Sign in to view purchase history.');
       return;
     }
@@ -145,10 +182,11 @@
   }
 
   async function refreshUserCredits() {
-    if (!auth.currentUser) return false;
+    var user = getCurrentUser();
+    if (!user) return false;
     try {
-      if (typeof auth.currentUser.getIdToken === 'function') {
-        await auth.currentUser.getIdToken(true);
+      if (typeof user.getIdToken === 'function') {
+        await user.getIdToken(true);
       }
       var response = await authFetch('/api/auth/user');
       if (!response.ok) return false;
@@ -163,7 +201,7 @@
     if (!sessionId) {
       return { ok: false, status: 'missing_session' };
     }
-    if (!auth.currentUser) {
+    if (!getCurrentUser()) {
       return { ok: false, status: 'not_signed_in' };
     }
     try {
@@ -208,8 +246,12 @@
         showToast('Payment received. Confirmation is still pending.');
       } else if (confirmation.status === 'account_deletion_in_progress') {
         showToast('Payment could not be applied because account deletion is in progress.');
+      } else if (confirmation.status === 'not_signed_in') {
+        authStateResolved = true;
+        updateSignedOutUi();
+        showToast('Sign in to apply your payment credits.', 'error');
       } else {
-        showToast('Could not confirm payment yet. Please refresh and try again shortly.');
+        showToast('Could not confirm payment yet. Please refresh and try again shortly.', 'error');
       }
     } else if (status === 'cancelled') {
       showToast('Payment cancelled.');
@@ -233,8 +275,19 @@
     });
   }
 
-  auth.onAuthStateChanged(function () {
+  updateSignedOutUi();
+
+  if (auth && typeof auth.onAuthStateChanged === 'function') {
+    auth.onAuthStateChanged(function () {
+      authStateResolved = true;
+      updateSignedOutUi();
+      checkPaymentResult();
+      loadPurchaseHistory();
+    });
+  } else {
+    authStateResolved = true;
+    updateSignedOutUi();
     checkPaymentResult();
     loadPurchaseHistory();
-  });
+  }
 })();

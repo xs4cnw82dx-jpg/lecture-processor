@@ -7,7 +7,6 @@
   var userCache = window.LectureProcessorUserCache || {};
   var progressUtils = window.LectureProcessorStudyProgressUtils || {};
   var displayFormatUtils = window.LectureProcessorDisplayFormatUtils || {};
-  if (!auth) return;
 
   var streakEl = document.getElementById('dash-streak');
   var dueEl = document.getElementById('dash-due');
@@ -266,10 +265,14 @@
     });
   }
 
+  setDashboardLoading(true);
+  if (!auth || typeof auth.onAuthStateChanged !== 'function') {
+    loadDashboard(null);
+    return;
+  }
+
   auth.onAuthStateChanged(function (user) {
     currentUser = user || null;
     loadDashboard(currentUser);
   });
-
-  setDashboardLoading(true);
 })();

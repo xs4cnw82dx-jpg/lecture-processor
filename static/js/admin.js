@@ -180,7 +180,7 @@ async function loadAdminBatchJobs(showToastOnSuccess = false) {
 
 function formatPromptSummary(job) {
     const templateKey = String(job.prompt_template_key || '').trim();
-    const customPrompt = String(job.custom_prompt || '').trim();
+    const customPromptLength = Number(job.custom_prompt_length || 0);
     const source = String(job.prompt_source || '').trim();
     const parts = [];
     if (templateKey) {
@@ -188,9 +188,8 @@ function formatPromptSummary(job) {
     } else if (source === 'default') {
         parts.push('Default prompt');
     }
-    if (customPrompt) {
-        const compact = customPrompt.replace(/\s+/g, ' ').trim();
-        parts.push(compact.length > 90 ? `${compact.slice(0, 87)}...` : compact);
+    if (customPromptLength > 0) {
+        parts.push(`Custom prompt (${customPromptLength} chars)`);
     }
     return parts.join(' · ') || 'Default prompt';
 }
