@@ -1,13 +1,13 @@
 {
-  "version": "2026-03-15",
+  "version": "2026-05-20",
   "models": {
-    "gemini-3.1-flash-lite-preview": {
+    "gemini-3.1-flash-lite": {
       "label": "Gemini 3.1 Flash Lite (Standard)",
       "input_text_per_M": 0.25,
       "input_audio_per_M": 0.50,
       "output_per_M": 1.50
     },
-    "gemini-3.1-flash-lite-preview-batch": {
+    "gemini-3.1-flash-lite-batch": {
       "label": "Gemini 3.1 Flash Lite (Batch)",
       "input_text_per_M": 0.125,
       "input_audio_per_M": 0.25,
@@ -39,7 +39,7 @@
     }
   },
   "pricing_table": {
-    "gemini-3.1-flash-lite-preview": {
+    "gemini-3.1-flash-lite": {
       "standard": {
         "input_text_per_M": 0.25,
         "input_audio_per_M": 0.50,
@@ -108,7 +108,7 @@
       "stages": [
         {
           "stage": "Slide extraction",
-          "model": "gemini-3.1-flash-lite-preview",
+          "model": "gemini-3.1-flash-lite",
           "input_tokens": 80000,
           "output_tokens": 15000
         },
@@ -127,7 +127,7 @@
         },
         {
           "stage": "Study tools",
-          "model": "gemini-3.1-flash-lite-preview",
+          "model": "gemini-3.1-flash-lite",
           "input_tokens": 30000,
           "output_tokens": 20000
         }
@@ -138,13 +138,13 @@
       "stages": [
         {
           "stage": "Slide extraction",
-          "model": "gemini-3.1-flash-lite-preview",
+          "model": "gemini-3.1-flash-lite",
           "input_tokens": 80000,
           "output_tokens": 15000
         },
         {
           "stage": "Study tools",
-          "model": "gemini-3.1-flash-lite-preview",
+          "model": "gemini-3.1-flash-lite",
           "input_tokens": 20000,
           "output_tokens": 15000
         }

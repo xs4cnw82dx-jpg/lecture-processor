@@ -98,7 +98,7 @@ def _generate_json_payload(prompt_text, default_shape, *, operation_name, runtim
     response = ai_provider.run_with_provider_retry(
         operation_name,
         lambda: runtime.client.models.generate_content(
-            model=getattr(runtime, "MODEL_TOOLS", "gemini-3.1-flash-lite-preview"),
+            model=getattr(runtime, "MODEL_TOOLS", "gemini-3.1-flash-lite"),
             contents=[prompt_text],
             config=config or {"max_output_tokens": 65536},
         ),
@@ -126,7 +126,7 @@ def _generate_array_payload(prompt_text, *, operation_name, runtime):
     response = ai_provider.run_with_provider_retry(
         operation_name,
         lambda: runtime.client.models.generate_content(
-            model=getattr(runtime, "MODEL_TOOLS", "gemini-3.1-flash-lite-preview"),
+            model=getattr(runtime, "MODEL_TOOLS", "gemini-3.1-flash-lite"),
             contents=[prompt_text],
             config=config or {"max_output_tokens": 32768},
         ),

@@ -29,6 +29,24 @@ from lecture_processor.services import upload_api_service
 pytestmark = pytest.mark.usefixtures("disable_sentry")
 
 
+def test_discontinued_gemini_flash_lite_preview_model_is_not_reintroduced():
+    repo_root = Path(__file__).resolve().parents[1]
+    blocked_model = "gemini-3.1-flash-lite-" + "preview"
+    scanned_suffixes = {".py", ".js", ".html", ".json", ".md", ".yaml", ".yml"}
+    ignored_dirs = {".git", ".venv", "venv", "venv_py39_backup", "node_modules", ".pytest_cache", "__pycache__"}
+    offenders = []
+
+    for path in repo_root.rglob("*"):
+        if any(part in ignored_dirs for part in path.parts):
+            continue
+        if not path.is_file() or path.suffix not in scanned_suffixes:
+            continue
+        if blocked_model in path.read_text(encoding="utf-8", errors="ignore"):
+            offenders.append(str(path.relative_to(repo_root)))
+
+    assert offenders == []
+
+
 def test_verify_email_allows_student_domain(client):
     response = client.post("/api/verify-email", json={"email": "student@st.hanze.nl"})
     assert response.status_code == 200
