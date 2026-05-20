@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.ai import provider as ai_provider
@@ -40,6 +41,49 @@ class _SavedUploadFile:
 
     def save(self, destination_path):
         self._app_ctx.shutil.copyfile(self._source_path, destination_path)
+
+
+def _redacted_url_metadata(source_url: str) -> dict:
+    try:
+        parsed = urlparse(str(source_url or '').strip())
+    except Exception:
+        parsed = None
+    scheme = str(getattr(parsed, 'scheme', '') or '').strip().lower() if parsed else ''
+    host = str(getattr(parsed, 'hostname', '') or '').strip().lower() if parsed else ''
+    if not host:
+        return {
+            'source_url': '',
+            'source_host': '',
+            'source_scheme': scheme,
+            'source_url_length': len(str(source_url or '')),
+            'source_url_has_path': False,
+            'source_url_has_query': False,
+        }
+    try:
+        parsed_port = parsed.port if parsed else None
+    except ValueError:
+        parsed_port = None
+    default_port = 443 if scheme == 'https' else 80 if scheme == 'http' else None
+    port_part = f':{parsed_port}' if parsed_port and parsed_port != default_port else ''
+    display_host = f'[{host}]' if ':' in host and not host.startswith('[') else host
+    redacted_url = f'{scheme or "https"}://{display_host}{port_part}'
+    path = str(getattr(parsed, 'path', '') or '') if parsed else ''
+    query = str(getattr(parsed, 'query', '') or '') if parsed else ''
+    return {
+        'source_url': redacted_url,
+        'source_host': host,
+        'source_scheme': scheme,
+        'source_url_length': len(str(source_url or '')),
+        'source_url_has_path': bool(path and path != '/'),
+        'source_url_has_query': bool(query),
+    }
+
+
+def _safe_tool_input_name(source_type: str, input_name: str, source_url: str = '') -> str:
+    if source_type == 'url':
+        host = _redacted_url_metadata(source_url).get('source_host', '')
+        return f'URL: {host}' if host else 'URL source'
+    return str(input_name or '').strip()
 
 
 def _is_email_allowed(app_ctx, email: str) -> bool:
@@ -87,6 +131,7 @@ def _stage_tools_request_inputs(app_ctx, request, *, job_id: str) -> tuple[_Stag
             return None, tuple(staged_paths), (source_url, url_error), (), ()
         source_type = 'url'
         mime_type = 'text/html'
+        normalized_input_name = _safe_tool_input_name('url', '', source_url)
     else:
         requested_source_key = str(requested_source or '').strip().lower()
         if requested_source_key == 'image':
@@ -156,7 +201,7 @@ def _stage_tools_request_inputs(app_ctx, request, *, job_id: str) -> tuple[_Stag
         extension=extension,
         mime_type=mime_type,
         staged_paths=tuple(staged_paths),
-        normalized_input_name=normalized_input_name or source_url,
+        normalized_input_name=_safe_tool_input_name(source_type, normalized_input_name, source_url),
         normalized_input_names=tuple(normalized_input_names),
         upload_mime_type=upload_mime_type,
         source_size_mb=source_size_mb,
@@ -295,11 +340,14 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
     refunded_credit = False
     provider_error_code = ''
     credit_refund_method = ''
-    effective_prompt_preview = ''
     extracted_markdown = ''
     started_at_ts = app_ctx.time.time()
     source_size_mb = float(staged_input.source_size_mb or 0.0)
-    normalized_input_name = staged_input.normalized_input_name
+    normalized_input_name = _safe_tool_input_name(
+        staged_input.source_type,
+        staged_input.normalized_input_name,
+        staged_input.source_url,
+    )
 
     try:
         _set_tools_job_progress(
@@ -316,6 +364,7 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
         custom_prompt = staged_input.custom_prompt
         prompt_template_key = staged_input.prompt_template_key
         prompt_source = staged_input.prompt_source
+        source_url_metadata = _redacted_url_metadata(source_url) if source_type == 'url' else {}
         docx_text = ''
         upload_path = ''
         upload_mime_type = staged_input.upload_mime_type
@@ -326,7 +375,7 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
             if source_error:
                 raise ValueError(source_error)
             source_size_mb = round(len(docx_text.encode('utf-8')) / (1024 * 1024), 4)
-            normalized_input_name = source_url
+            normalized_input_name = _safe_tool_input_name(source_type, normalized_input_name, source_url)
         elif source_type == 'document':
             staged_path = local_paths[0] if local_paths else ''
             if staged_input.mime_type and staged_input.mime_type not in app_ctx.ALLOWED_TOOLS_DOC_MIME_TYPES:
@@ -370,12 +419,11 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
             source_size_mb = round(total_image_bytes / (1024 * 1024), 4)
 
         prompt = upload_api_service._build_tools_prompt(source_type, custom_prompt)
-        effective_prompt_preview = prompt[:1400]
 
         if docx_text:
             _set_tools_job_progress(app_ctx, job_id, step=2, description='Preparing prompt…')
             if source_type == 'url':
-                source_block_title = f"Source content extracted from URL ({source_url}):"
+                source_block_title = 'Source content extracted from URL:'
                 operation_name = 'tools_extract_url'
             else:
                 source_block_title = 'Source content extracted from DOCX:'
@@ -471,11 +519,11 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
             properties={
                 'source_type': source_type,
                 'file_name': normalized_input_name,
-                'custom_prompt': custom_prompt,
                 'prompt_template_key': prompt_template_key,
                 'prompt_source': prompt_source,
                 'custom_prompt_length': len(custom_prompt),
-                'source_url': source_url,
+                'has_custom_prompt': bool(custom_prompt),
+                **source_url_metadata,
                 'retry_attempts': retry_attempts_total,
                 'input_tokens': int(usage.get('input_tokens', 0) or 0),
                 'output_tokens': int(usage.get('output_tokens', 0) or 0),
@@ -489,7 +537,7 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
                 'user_email': email,
                 'mode': 'tools',
                 'source_type': source_type,
-                'source_url': source_url,
+                'source_url': source_url_metadata.get('source_url', '') if source_type == 'url' else '',
                 'source_name': normalized_input_name,
                 'status': 'complete',
                 'credit_deducted': deducted_credit,
@@ -504,11 +552,9 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
                 'token_output_total': int(usage.get('output_tokens', 0) or 0),
                 'token_total': int(usage.get('total_tokens', 0) or 0),
                 'file_size_mb': source_size_mb,
-                'custom_prompt': custom_prompt,
                 'prompt_template_key': prompt_template_key,
                 'prompt_source': prompt_source,
                 'custom_prompt_length': len(custom_prompt),
-                'effective_prompt_preview': effective_prompt_preview,
                 'started_at': started_at_ts,
             },
             app_ctx.time.time(),
@@ -557,11 +603,11 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
             properties={
                 'source_type': source_type,
                 'provider_error_code': provider_error_code,
-                'custom_prompt': staged_input.custom_prompt,
                 'prompt_template_key': staged_input.prompt_template_key,
                 'prompt_source': staged_input.prompt_source,
                 'custom_prompt_length': len(staged_input.custom_prompt),
-                'source_url': staged_input.source_url,
+                'has_custom_prompt': bool(staged_input.custom_prompt),
+                **(_redacted_url_metadata(staged_input.source_url) if source_type == 'url' else {}),
                 'retry_attempts': retry_attempts_total,
                 'credit_refund_method': credit_refund_method,
             },
@@ -574,7 +620,11 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
                 'user_email': email,
                 'mode': 'tools',
                 'source_type': source_type,
-                'source_url': staged_input.source_url,
+                'source_url': (
+                    _redacted_url_metadata(staged_input.source_url).get('source_url', '')
+                    if source_type == 'url'
+                    else ''
+                ),
                 'source_name': normalized_input_name,
                 'status': 'error',
                 'credit_deducted': deducted_credit,
@@ -589,11 +639,9 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
                 'token_output_total': 0,
                 'token_total': 0,
                 'file_size_mb': source_size_mb,
-                'custom_prompt': staged_input.custom_prompt,
                 'prompt_template_key': staged_input.prompt_template_key,
                 'prompt_source': staged_input.prompt_source,
                 'custom_prompt_length': len(staged_input.custom_prompt),
-                'effective_prompt_preview': effective_prompt_preview,
                 'credit_refund_method': credit_refund_method,
                 'started_at': started_at_ts,
             },

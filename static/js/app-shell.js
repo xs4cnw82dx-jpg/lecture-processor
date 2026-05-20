@@ -6,11 +6,11 @@
   var uiCache = window.LectureProcessorUiCache || null;
   var userCache = window.LectureProcessorUserCache || {};
   var uxUtils = window.LectureProcessorUx || {};
-  if (!auth) return;
 
   var shell = document.getElementById('app-shell');
   var menuBtn = document.getElementById('app-shell-menu-btn');
   var overlay = document.getElementById('app-shell-overlay');
+  var sidebar = document.getElementById('app-shell-sidebar');
   var signInBtn = document.getElementById('shell-sign-in-btn');
   var creditsLink = document.getElementById('shell-credits-link');
   var creditsTotalLabel = document.getElementById('shell-credits-total');
@@ -46,6 +46,8 @@
   var exportConfirmBtn = document.getElementById('shell-export-confirm');
   var exportCheckboxes = Array.prototype.slice.call(document.querySelectorAll('[data-export-key]'));
   var shellToast = document.getElementById('shell-toast');
+  var mobileSidebarQuery = window.matchMedia ? window.matchMedia('(max-width: 1024px)') : null;
+  var sidebarControlsInitialized = false;
   var CACHE_KEYS = {
     credits: 'credits_breakdown',
     moreToolsExpanded: 'more_tools_group_expanded',
@@ -60,7 +62,7 @@
   ];
 
   var currentUserIsAdmin = false;
-  var lastSignedInUid = auth.currentUser && auth.currentUser.uid ? String(auth.currentUser.uid) : '';
+  var lastSignedInUid = auth && auth.currentUser && auth.currentUser.uid ? String(auth.currentUser.uid) : '';
   var toastTimer = null;
 
   function normalizePath(pathname) {
@@ -125,17 +127,89 @@
     shellToast.classList.remove('error', 'success');
     if (variant === 'error') shellToast.classList.add('error');
     if (variant === 'success') shellToast.classList.add('success');
+    shellToast.setAttribute('role', variant === 'error' ? 'alert' : 'status');
+    shellToast.setAttribute('aria-live', variant === 'error' ? 'assertive' : 'polite');
     shellToast.classList.add('visible');
     if (toastTimer) window.clearTimeout(toastTimer);
     toastTimer = window.setTimeout(function () {
       shellToast.classList.remove('visible');
+      shellToast.setAttribute('role', 'status');
+      shellToast.setAttribute('aria-live', 'polite');
     }, 2600);
+  }
+
+  function isMobileSidebar() {
+    if (mobileSidebarQuery) return !!mobileSidebarQuery.matches;
+    return (window.innerWidth || document.documentElement.clientWidth || 0) <= 1024;
+  }
+
+  function setElementInert(node, inert) {
+    if (!node) return;
+    if ('inert' in node) {
+      node.inert = !!inert;
+    }
+    if (inert) {
+      node.setAttribute('inert', '');
+      return;
+    }
+    node.removeAttribute('inert');
+  }
+
+  function syncSidebarAccessibility(open) {
+    var mobile = isMobileSidebar();
+    var sidebarHidden = mobile && !open;
+    if (sidebar) {
+      sidebar.setAttribute('aria-hidden', sidebarHidden ? 'true' : 'false');
+      setElementInert(sidebar, sidebarHidden);
+    }
+    if (overlay) {
+      overlay.setAttribute('aria-hidden', mobile && open ? 'false' : 'true');
+      overlay.tabIndex = mobile && open ? 0 : -1;
+    }
+    if (menuBtn) menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
   function setSidebarOpen(open) {
     if (!shell) return;
+    var restoreFocus = !open && isMobileSidebar() && sidebar && sidebar.contains(document.activeElement);
+    if (restoreFocus && menuBtn) menuBtn.focus();
     shell.classList.toggle('sidebar-open', !!open);
-    if (menuBtn) menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    syncSidebarAccessibility(!!open);
+  }
+
+  function setupSidebarControls() {
+    if (sidebarControlsInitialized) return;
+    sidebarControlsInitialized = true;
+    if (menuBtn) {
+      menuBtn.addEventListener('click', function () {
+        var next = !(shell && shell.classList.contains('sidebar-open'));
+        setSidebarOpen(next);
+      });
+    }
+    if (overlay) {
+      overlay.addEventListener('click', function () {
+        setSidebarOpen(false);
+      });
+    }
+    var syncCurrentState = function () {
+      syncSidebarAccessibility(!!(shell && shell.classList.contains('sidebar-open')));
+    };
+    if (mobileSidebarQuery) {
+      if (typeof mobileSidebarQuery.addEventListener === 'function') {
+        mobileSidebarQuery.addEventListener('change', syncCurrentState);
+      } else if (typeof mobileSidebarQuery.addListener === 'function') {
+        mobileSidebarQuery.addListener(syncCurrentState);
+      }
+    } else {
+      window.addEventListener('resize', syncCurrentState);
+    }
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && shell && shell.classList.contains('sidebar-open')) {
+        event.preventDefault();
+        setSidebarOpen(false);
+      }
+    });
+    setSidebarOpen(false);
   }
 
   function focusMenuItem(menu, direction) {
@@ -578,6 +652,8 @@
     }
   }
 
+  setupSidebarControls();
+  markActiveNav();
   shellGroups.forEach(function (group) {
     if (!group.trigger) return;
     group.trigger.addEventListener('click', function () {
@@ -588,23 +664,22 @@
     });
   });
 
-  if (menuBtn) {
-    menuBtn.addEventListener('click', function () {
-      var next = !(shell && shell.classList.contains('sidebar-open'));
-      setSidebarOpen(next);
-    });
-  }
-
-  if (overlay) {
-    overlay.addEventListener('click', function () {
-      setSidebarOpen(false);
-    });
-  }
-
   if (signInBtn) {
     signInBtn.addEventListener('click', function () {
       openSignInPortal();
     });
+  }
+
+  if (!auth) {
+    setAuthState('signed-out');
+    setCreditsVisible(false);
+    if (signInBtn) signInBtn.hidden = false;
+    maybeOpenAuthFromQuery();
+    setupRoutePrefetch();
+    window.LectureProcessorShell = Object.assign({}, window.LectureProcessorShell || {}, {
+      showToast: showToast,
+    });
+    return;
   }
 
   if (accountBtn && accountMenu) {

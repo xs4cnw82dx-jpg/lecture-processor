@@ -3,9 +3,13 @@
 import json
 import zipfile
 
+from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.ai import batch_orchestrator
+from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import receipts as billing_receipts
+from lecture_processor.domains.rate_limit import limiter as rate_limiter
+from lecture_processor.domains.rate_limit import quotas as rate_limit_quotas
 from lecture_processor.domains.shared import sanitize_csv_row
 from lecture_processor.domains.shared import parsing as shared_parsing
 from lecture_processor.domains.study import export as study_export
@@ -13,6 +17,121 @@ from lecture_processor.domains.upload import import_audio as upload_import_audio
 from lecture_processor.runtime.job_dispatcher import JobQueueFullError
 
 from lecture_processor.services import upload_batch_support
+
+
+def _safe_int(value, default=0):
+    try:
+        return int(value or default)
+    except Exception:
+        return int(default or 0)
+
+
+def _dedupe_paths(paths):
+    seen = set()
+    deduped = []
+    for raw_path in paths or ():
+        path = str(raw_path or '').strip()
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        deduped.append(path)
+    return deduped
+
+
+def _cleanup_batch_local_files(app_ctx, cleanup_paths, consumed_import_paths):
+    app_ctx.cleanup_files(_dedupe_paths(list(cleanup_paths or []) + list(consumed_import_paths or [])), [])
+
+
+def _release_pending_import_tokens(app_ctx, uid, token_paths):
+    for token in list((token_paths or {}).keys()):
+        try:
+            upload_import_audio.release_audio_import_token(uid, token, runtime=app_ctx)
+        except Exception:
+            app_ctx.logger.warning('Could not release pending batch audio import token for uid=%s', uid, exc_info=True)
+
+
+def _batch_requested_bytes_for_quota(app_ctx, request, row_plans):
+    requested_bytes = max(0, _safe_int(getattr(request, 'content_length', 0), 0))
+    direct_url_rows = sum(1 for row in row_plans if row.get('audio_source_type') == 'm3u8_url')
+    if direct_url_rows > 0:
+        requested_bytes += direct_url_rows * max(0, _safe_int(getattr(app_ctx, 'MAX_AUDIO_UPLOAD_BYTES', 0), 0))
+    return requested_bytes
+
+
+def _batch_credit_preflight_error(user, mode, row_plans):
+    row_count = len(row_plans)
+    if mode == 'lecture-notes':
+        available = _safe_int(user.get('lecture_credits_standard', 0)) + _safe_int(user.get('lecture_credits_extended', 0))
+        if available < row_count:
+            return 'Not enough lecture credits to start this batch.', 402
+    elif mode == 'slides-only':
+        if _safe_int(user.get('slides_credits', 0)) < row_count:
+            return 'Not enough text extraction credits to start this batch.', 402
+    elif mode == 'interview':
+        available = (
+            _safe_int(user.get('interview_credits_short', 0))
+            + _safe_int(user.get('interview_credits_medium', 0))
+            + _safe_int(user.get('interview_credits_long', 0))
+        )
+        if available < row_count:
+            return 'Not enough interview credits to start this batch.', 402
+        extras_needed = sum(_safe_int(row.get('interview_features_cost', 0)) for row in row_plans)
+        if extras_needed > 0 and _safe_int(user.get('slides_credits', 0)) < extras_needed:
+            return 'Not enough text extraction credits for interview extras in this batch.', 402
+    return '', 0
+
+
+def _reserve_batch_upload_quota(app_ctx, uid, request, row_plans):
+    active_jobs = account_lifecycle.count_active_jobs_for_user(uid, runtime=app_ctx)
+    if active_jobs >= app_ctx.MAX_ACTIVE_JOBS_PER_USER:
+        analytics_events.log_rate_limit_hit('upload', 10, runtime=app_ctx)
+        return app_ctx.jsonify({
+            'error': f'You already have {active_jobs} active processing job(s). Please wait for one to finish before starting another.'
+        }), 429, 0, False
+
+    allowed_upload, retry_after = rate_limiter.check_rate_limit(
+        key=f'upload:{uid}',
+        limit=app_ctx.UPLOAD_RATE_LIMIT_MAX_REQUESTS,
+        window_seconds=app_ctx.UPLOAD_RATE_LIMIT_WINDOW_SECONDS,
+        runtime=app_ctx,
+    )
+    if not allowed_upload:
+        analytics_events.log_rate_limit_hit('upload', retry_after, runtime=app_ctx)
+        return rate_limiter.build_rate_limited_response(
+            'Too many upload attempts right now. Please wait and try again.',
+            retry_after,
+            runtime=app_ctx,
+        ), 429, 0, False
+
+    requested_bytes = _batch_requested_bytes_for_quota(app_ctx, request, row_plans)
+    disk_ok, free_bytes, needed_bytes = rate_limit_quotas.has_sufficient_upload_disk_space(
+        requested_bytes,
+        runtime=app_ctx,
+    )
+    if not disk_ok:
+        app_ctx.logger.warning(
+            "Batch upload rejected due to low disk space: free=%s needed=%s uid=%s",
+            free_bytes,
+            needed_bytes,
+            uid,
+        )
+        return app_ctx.jsonify({
+            'error': 'Upload temporarily unavailable due to low server storage. Please try again later.'
+        }), 503, requested_bytes, False
+
+    reserved_daily, daily_retry_after = rate_limit_quotas.reserve_daily_upload_bytes(
+        uid,
+        requested_bytes,
+        runtime=app_ctx,
+    )
+    if not reserved_daily:
+        analytics_events.log_rate_limit_hit('upload', daily_retry_after, runtime=app_ctx)
+        return rate_limiter.build_rate_limited_response(
+            'Daily upload quota reached for your account. Please try again tomorrow.',
+            daily_retry_after,
+            runtime=app_ctx,
+        ), 429, requested_bytes, False
+    return None, 0, requested_bytes, True
 
 
 def create_batch_job(app_ctx, request):
@@ -88,55 +207,42 @@ def create_batch_job(app_ctx, request):
     include_combined_docx = upload_batch_support.parse_checkbox_value(request.form.get('include_combined_docx', '0'))
 
     batch_id = str(app_ctx.uuid.uuid4())
+    row_plans = []
     prepared_rows = []
     cleanup_paths = []
+    consumed_import_paths = []
+    pending_import_token_paths = {}
     charged_rows = []
     created_folder_ref = None
+    reserved_daily = False
+    daily_quota_committed = False
+    requested_bytes = 0
     now_ts = app_ctx.time.time()
 
     try:
+        upload_import_audio.cleanup_expired_audio_import_tokens(runtime=app_ctx)
         for idx, row_cfg in enumerate(rows, start=1):
             row_id = str(row_cfg.get('row_id', '') or app_ctx.uuid.uuid4())
             slides_required = mode in {'lecture-notes', 'slides-only'}
             audio_required = mode in {'lecture-notes', 'interview'}
 
-            slides_local_path = ''
+            slides_file = None
             slides_field = str(row_cfg.get('slides_file_field', f'row_{idx}_slides') or '').strip()
             if slides_required:
                 slides_file = request.files.get(slides_field)
                 if not slides_file or slides_file.filename == '':
                     raise ValueError(f'Row {idx}: slides file is required.')
-                slides_local_path, slides_error = app_ctx.resolve_uploaded_slides_to_pdf(slides_file, f'{batch_id}_{row_id}')
-                if slides_error:
-                    raise ValueError(f'Row {idx}: {slides_error}')
-                cleanup_paths.append(slides_local_path)
 
-            audio_local_path = ''
             audio_source_type = ''
-            audio_source_url = ''
             audio_import_token = str(row_cfg.get('audio_import_token', '') or '').strip()
             audio_url = str(row_cfg.get('audio_m3u8_url', '') or '').strip()
+            audio_file = None
             audio_field = str(row_cfg.get('audio_file_field', f'row_{idx}_audio') or '').strip()
             if audio_required:
                 if audio_import_token:
-                    audio_local_path, token_error = upload_import_audio.get_audio_import_token_path(
-                        uid,
-                        audio_import_token,
-                        consume=False,
-                        runtime=app_ctx,
-                    )
-                    if token_error:
-                        raise ValueError(f'Row {idx}: {token_error}')
                     audio_source_type = 'import_token'
                 elif audio_url:
-                    safe_url, url_error = upload_import_audio.validate_video_import_url(audio_url, runtime=app_ctx)
-                    if not safe_url:
-                        raise ValueError(f'Row {idx}: {url_error}')
-                    prefix = f'batch_{batch_id}_{row_id}'
-                    audio_local_path, _output_name, _size_bytes = app_ctx.download_audio_from_video_url(safe_url, prefix)
-                    cleanup_paths.append(audio_local_path)
                     audio_source_type = 'm3u8_url'
-                    audio_source_url = safe_url
                 else:
                     audio_file = request.files.get(audio_field)
                     if not audio_file or audio_file.filename == '':
@@ -145,16 +251,7 @@ def create_batch_job(app_ctx, request):
                         raise ValueError(f'Row {idx}: invalid audio file extension.')
                     if (audio_file.mimetype or '').lower() not in app_ctx.ALLOWED_AUDIO_MIME_TYPES:
                         raise ValueError(f'Row {idx}: invalid audio content type.')
-                    audio_local_path = app_ctx.os.path.join(app_ctx.UPLOAD_FOLDER, f'{batch_id}_{row_id}_{app_ctx.secure_filename(audio_file.filename)}')
-                    audio_file.save(audio_local_path)
-                    cleanup_paths.append(audio_local_path)
                     audio_source_type = 'upload'
-
-                audio_size = app_ctx.get_saved_file_size(audio_local_path)
-                if audio_size <= 0 or audio_size > app_ctx.MAX_AUDIO_UPLOAD_BYTES:
-                    raise ValueError(f'Row {idx}: audio exceeds server limit or is empty.')
-                if not app_ctx.file_looks_like_audio(audio_local_path):
-                    raise ValueError(f'Row {idx}: uploaded audio is invalid or unsupported.')
 
             row_study_features = default_study_features
             row_flashcards = default_flashcards
@@ -189,6 +286,64 @@ def create_batch_job(app_ctx, request):
                 row_interview_features = shared_parsing.parse_interview_features(raw_features_text, runtime=app_ctx)
                 interview_features_cost = len(row_interview_features)
 
+            row_plans.append(
+                {
+                    'row_id': row_id,
+                    'ordinal': idx,
+                    'slides_required': slides_required,
+                    'slides_file': slides_file,
+                    'audio_required': audio_required,
+                    'audio_file': audio_file,
+                    'audio_file_field': audio_field,
+                    'audio_import_token': audio_import_token,
+                    'audio_url': audio_url,
+                    'audio_source_type': audio_source_type,
+                    'audio_source_url': '',
+                    'audio_local_path': '',
+                    'study_features': row_study_features,
+                    'flashcard_selection': row_flashcards,
+                    'question_selection': row_questions,
+                    'interview_features': row_interview_features,
+                    'interview_features_cost': interview_features_cost,
+                    'charged_credit': '',
+                }
+            )
+
+        credit_error, credit_status = _batch_credit_preflight_error(user, mode, row_plans)
+        if credit_error:
+            return app_ctx.jsonify({'error': credit_error}), credit_status
+
+        quota_response, quota_status, requested_bytes, reserved_daily = _reserve_batch_upload_quota(
+            app_ctx,
+            uid,
+            request,
+            row_plans,
+        )
+        if quota_response is not None:
+            return quota_response, quota_status
+
+        for plan in row_plans:
+            idx = plan['ordinal']
+            if plan.get('audio_source_type') == 'import_token':
+                token = str(plan.get('audio_import_token', '') or '').strip()
+                audio_local_path, token_error = upload_import_audio.get_audio_import_token_path(
+                    uid,
+                    token,
+                    consume=False,
+                    runtime=app_ctx,
+                )
+                if token_error:
+                    raise ValueError(f'Row {idx}: {token_error}')
+                pending_import_token_paths[token] = audio_local_path
+                plan['audio_local_path'] = audio_local_path
+            elif plan.get('audio_source_type') == 'm3u8_url':
+                safe_url, url_error = upload_import_audio.validate_video_import_url(plan.get('audio_url', ''), runtime=app_ctx)
+                if not safe_url:
+                    raise ValueError(f'Row {idx}: {url_error}')
+                plan['audio_source_url'] = safe_url
+
+        for plan in row_plans:
+            interview_features_cost = int(plan.get('interview_features_cost', 0) or 0)
             charged_credit = ''
             if mode == 'lecture-notes':
                 charged_credit = billing_credits.deduct_credit(
@@ -211,6 +366,7 @@ def create_batch_job(app_ctx, request):
                     if not billing_credits.deduct_slides_credits(uid, interview_features_cost, runtime=app_ctx):
                         billing_credits.refund_credit(uid, charged_credit, runtime=app_ctx)
                         raise ValueError('Not enough text extraction credits for interview extras in this batch row.')
+            plan['charged_credit'] = charged_credit
 
             charged_rows.append(
                 {
@@ -219,16 +375,60 @@ def create_batch_job(app_ctx, request):
                 }
             )
 
+        for plan in row_plans:
+            idx = plan['ordinal']
+            row_id = plan['row_id']
+            slides_local_path = ''
+            if plan.get('slides_required'):
+                slides_local_path, slides_error = app_ctx.resolve_uploaded_slides_to_pdf(
+                    plan.get('slides_file'),
+                    f'{batch_id}_{row_id}',
+                )
+                if slides_error:
+                    raise ValueError(f'Row {idx}: {slides_error}')
+                cleanup_paths.append(slides_local_path)
+
+            audio_local_path = str(plan.get('audio_local_path', '') or '')
+            audio_source_type = str(plan.get('audio_source_type', '') or '')
+            audio_source_url = str(plan.get('audio_source_url', '') or '')
+            audio_import_token = str(plan.get('audio_import_token', '') or '').strip()
+            if plan.get('audio_required'):
+                if audio_source_type == 'm3u8_url':
+                    prefix = f'batch_{batch_id}_{row_id}'
+                    audio_local_path, _output_name, _size_bytes = app_ctx.download_audio_from_video_url(audio_source_url, prefix)
+                    cleanup_paths.append(audio_local_path)
+                elif audio_source_type == 'upload':
+                    audio_file = plan.get('audio_file')
+                    audio_local_path = app_ctx.os.path.join(
+                        app_ctx.UPLOAD_FOLDER,
+                        f'{batch_id}_{row_id}_{app_ctx.secure_filename(audio_file.filename)}',
+                    )
+                    audio_file.save(audio_local_path)
+                    cleanup_paths.append(audio_local_path)
+
+                audio_size = app_ctx.get_saved_file_size(audio_local_path)
+                if audio_size <= 0 or audio_size > app_ctx.MAX_AUDIO_UPLOAD_BYTES:
+                    raise ValueError(f'Row {idx}: audio exceeds server limit or is empty.')
+                if not app_ctx.file_looks_like_audio(audio_local_path):
+                    raise ValueError(f'Row {idx}: uploaded audio is invalid or unsupported.')
+
             if audio_import_token:
-                _consumed_path, token_error = upload_import_audio.get_audio_import_token_path(
+                consumed_path, token_error = upload_import_audio.get_audio_import_token_path(
                     uid,
                     audio_import_token,
                     consume=True,
                     runtime=app_ctx,
                 )
                 if token_error:
+                    pending_path = pending_import_token_paths.pop(audio_import_token, '')
+                    if pending_path:
+                        consumed_import_paths.append(pending_path)
                     raise ValueError(f'Row {idx}: {token_error}')
+                pending_import_token_paths.pop(audio_import_token, None)
+                consumed_import_paths.append(consumed_path or audio_local_path)
 
+            charged_credit = str(plan.get('charged_credit', '') or '').strip()
+            interview_features_cost = int(plan.get('interview_features_cost', 0) or 0)
             billing_receipt = billing_receipts.initialize_billing_receipt(
                 {charged_credit: 1, 'slides_credits': interview_features_cost},
                 runtime=app_ctx,
@@ -244,10 +444,10 @@ def create_batch_job(app_ctx, request):
                     'slides_local_path': slides_local_path,
                     'audio_local_path': audio_local_path,
                     'output_language': output_language,
-                    'study_features': row_study_features if mode != 'interview' else 'none',
-                    'flashcard_selection': row_flashcards,
-                    'question_selection': row_questions,
-                    'interview_features': row_interview_features,
+                    'study_features': plan.get('study_features', 'none') if mode != 'interview' else 'none',
+                    'flashcard_selection': plan.get('flashcard_selection', default_flashcards),
+                    'question_selection': plan.get('question_selection', default_questions),
+                    'interview_features': plan.get('interview_features', []),
                     'interview_features_cost': interview_features_cost,
                     'credit_deducted': charged_credit,
                     'credit_refunded': False,
@@ -346,8 +546,11 @@ def create_batch_job(app_ctx, request):
                 extras = int(charged.get('interview_features_cost', 0) or 0)
                 if extras > 0:
                     billing_credits.refund_slides_credits(uid, extras, runtime=app_ctx)
-            app_ctx.cleanup_files(cleanup_paths, [])
+            _release_pending_import_tokens(app_ctx, uid, pending_import_token_paths)
+            pending_import_token_paths.clear()
+            _cleanup_batch_local_files(app_ctx, cleanup_paths, consumed_import_paths)
             return upload_batch_support.queue_full_response(app_ctx, batch_id=batch_id)
+        daily_quota_committed = True
         return app_ctx.jsonify({'batch_id': batch_id})
     except Exception as error:
         if created_folder_ref is not None:
@@ -362,8 +565,13 @@ def create_batch_job(app_ctx, request):
             extras = int(charged.get('interview_features_cost', 0) or 0)
             if extras > 0:
                 billing_credits.refund_slides_credits(uid, extras, runtime=app_ctx)
-        app_ctx.cleanup_files(cleanup_paths, [])
+        _release_pending_import_tokens(app_ctx, uid, pending_import_token_paths)
+        pending_import_token_paths.clear()
+        _cleanup_batch_local_files(app_ctx, cleanup_paths, consumed_import_paths)
         return app_ctx.jsonify({'error': str(error)}), 400
+    finally:
+        if reserved_daily and not daily_quota_committed:
+            rate_limit_quotas.release_daily_upload_bytes(uid, requested_bytes, runtime=app_ctx)
 
 
 def list_batch_jobs(app_ctx, request):

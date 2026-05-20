@@ -10,13 +10,28 @@ from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.physio import access as physio_access
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.shared import parsing as shared_parsing
-from lecture_processor.services import access_service
+from lecture_processor.services import access_service, auth_service
+
+
+def _auth_failure_response(app_ctx, request, *, decoded_token=None, unauthorized_error='Unauthorized'):
+    if (
+        auth_service.get_request_auth_error(request) == auth_service.EMAIL_NOT_VERIFIED_AUTH_ERROR
+        or auth_service.token_has_unverified_email(decoded_token)
+    ):
+        return app_ctx.jsonify({
+            'error': 'Email not verified',
+            'error_code': auth_service.EMAIL_NOT_VERIFIED_AUTH_ERROR,
+            'message': 'Please verify your email address before continuing.',
+        }), 403
+    return app_ctx.jsonify({'error': unauthorized_error}), 401
 
 
 def create_admin_session(app_ctx, request):
     decoded_token = app_ctx.verify_firebase_token(request)
     if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+        return _auth_failure_response(app_ctx, request)
+    if auth_service.token_has_unverified_email(decoded_token):
+        return _auth_failure_response(app_ctx, request, decoded_token=decoded_token)
     if not app_ctx.is_admin_user(decoded_token):
         return app_ctx.jsonify({'error': 'Forbidden'}), 403
 
@@ -89,7 +104,9 @@ def dev_sentry_test(app_ctx, request):
         return app_ctx.jsonify({'error': 'Not found'}), 404
     decoded_token = app_ctx.verify_firebase_token(request)
     if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+        return _auth_failure_response(app_ctx, request)
+    if auth_service.token_has_unverified_email(decoded_token):
+        return _auth_failure_response(app_ctx, request, decoded_token=decoded_token)
     if not app_ctx.is_admin_user(decoded_token):
         return app_ctx.jsonify({'error': 'Forbidden'}), 403
     if not app_ctx.sentry_sdk or not app_ctx.SENTRY_BACKEND_DSN:

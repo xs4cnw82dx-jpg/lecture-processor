@@ -4,12 +4,16 @@ import zipfile
 
 import pytest
 
+from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import receipts as billing_receipts
+from lecture_processor.domains.rate_limit import limiter as rate_limiter
+from lecture_processor.domains.rate_limit import quotas as rate_limit_quotas
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.upload import import_audio as upload_import_audio
+from lecture_processor.runtime.job_dispatcher import JobQueueFullError
 from tests.runtime_test_support import get_test_core
 
 core = get_test_core()
@@ -70,6 +74,14 @@ def _patch_batch_refunds(monkeypatch):
     monkeypatch.setattr(batch_orchestrator, 'send_batch_completion_email', lambda *args, **kwargs: ('skipped', 'disabled in test'))
 
 
+def _patch_batch_quota_guards(monkeypatch, *, reserve_daily=(True, 0)):
+    monkeypatch.setattr(account_lifecycle, 'count_active_jobs_for_user', lambda _uid, runtime=None: 0)
+    monkeypatch.setattr(rate_limiter, 'check_rate_limit', lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(rate_limit_quotas, 'has_sufficient_upload_disk_space', lambda _bytes=0, runtime=None: (True, 10_000_000_000, 0))
+    monkeypatch.setattr(rate_limit_quotas, 'reserve_daily_upload_bytes', lambda _uid, _bytes, runtime=None: reserve_daily)
+    monkeypatch.setattr(rate_limit_quotas, 'release_daily_upload_bytes', lambda _uid, _bytes, runtime=None: True)
+
+
 def test_batch_create_requires_minimum_two_rows(client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     monkeypatch.setattr(core, 'client', None)
@@ -99,6 +111,7 @@ def test_batch_create_requires_batch_title(client, monkeypatch):
         lambda uid, email: {
             'uid': uid,
             'email': email,
+            'slides_credits': 2,
             'preferred_output_language': 'english',
             'preferred_output_language_custom': '',
         },
@@ -170,6 +183,7 @@ def test_batch_create_deduplicates_client_submission_id(client, monkeypatch):
 
 def test_batch_create_slides_only_contract(client, monkeypatch):
     _patch_batch_auth(monkeypatch)
+    _patch_batch_quota_guards(monkeypatch)
     monkeypatch.setattr(core, 'client', object())
     monkeypatch.setattr(upload_import_audio, 'cleanup_expired_audio_import_tokens', lambda runtime=None: None)
     monkeypatch.setattr(core, 'threading', type('T', (), {'Thread': _DummyThread}))
@@ -179,6 +193,7 @@ def test_batch_create_slides_only_contract(client, monkeypatch):
         lambda uid, email: {
             'uid': uid,
             'email': email,
+            'slides_credits': 2,
             'preferred_output_language': 'english',
             'preferred_output_language_custom': '',
         },
@@ -230,6 +245,7 @@ def test_batch_create_slides_only_contract(client, monkeypatch):
 
 def test_batch_create_lecture_notes_preserves_row_study_override_contract(client, monkeypatch):
     _patch_batch_auth(monkeypatch)
+    _patch_batch_quota_guards(monkeypatch)
     monkeypatch.setattr(core, 'client', object())
     monkeypatch.setattr(upload_import_audio, 'cleanup_expired_audio_import_tokens', lambda runtime=None: None)
     monkeypatch.setattr(core, 'threading', type('T', (), {'Thread': _DummyThread}))
@@ -239,6 +255,8 @@ def test_batch_create_lecture_notes_preserves_row_study_override_contract(client
         lambda uid, email: {
             'uid': uid,
             'email': email,
+            'lecture_credits_standard': 2,
+            'lecture_credits_extended': 0,
             'preferred_output_language': 'english',
             'preferred_output_language_custom': '',
         },
@@ -306,6 +324,7 @@ def test_batch_create_lecture_notes_preserves_row_study_override_contract(client
 
 def test_batch_create_interview_accepts_empty_extras_by_default(client, monkeypatch):
     _patch_batch_auth(monkeypatch)
+    _patch_batch_quota_guards(monkeypatch)
     monkeypatch.setattr(core, 'client', object())
     monkeypatch.setattr(upload_import_audio, 'cleanup_expired_audio_import_tokens', lambda runtime=None: None)
     monkeypatch.setattr(core, 'threading', type('T', (), {'Thread': _DummyThread}))
@@ -315,6 +334,10 @@ def test_batch_create_interview_accepts_empty_extras_by_default(client, monkeypa
         lambda uid, email: {
             'uid': uid,
             'email': email,
+            'interview_credits_short': 2,
+            'interview_credits_medium': 0,
+            'interview_credits_long': 0,
+            'slides_credits': 0,
             'preferred_output_language': 'english',
             'preferred_output_language_custom': '',
         },
@@ -360,6 +383,166 @@ def test_batch_create_interview_accepts_empty_extras_by_default(client, monkeypa
     assert capture.rows[0].get('interview_features_cost') == 0
     assert capture.rows[1].get('interview_features') == []
     assert capture.rows[1].get('interview_features_cost') == 0
+
+
+def test_batch_direct_url_does_not_download_when_credit_preflight_fails(client, monkeypatch):
+    _patch_batch_auth(monkeypatch)
+    _patch_batch_quota_guards(monkeypatch)
+    monkeypatch.setattr(core, 'client', object())
+    monkeypatch.setattr(
+        core,
+        'get_or_create_user',
+        lambda uid, email: {
+            'uid': uid,
+            'email': email,
+            'lecture_credits_standard': 0,
+            'lecture_credits_extended': 0,
+            'preferred_output_language': 'english',
+            'preferred_output_language_custom': '',
+        },
+    )
+    monkeypatch.setattr(
+        core,
+        'download_audio_from_video_url',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError('direct media URL should not download before credit preflight')),
+    )
+    monkeypatch.setattr(
+        upload_import_audio,
+        'validate_video_import_url',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError('direct media URL should not validate before credit preflight')),
+    )
+
+    rows = [
+        {'row_id': 'row-1', 'slides_file_field': 'row_1_slides', 'audio_m3u8_url': 'https://ovp.kaltura.com/a/index.m3u8'},
+        {'row_id': 'row-2', 'slides_file_field': 'row_2_slides', 'audio_m3u8_url': 'https://ovp.kaltura.com/b/index.m3u8'},
+    ]
+    response = client.post(
+        '/api/batch/jobs',
+        data={
+            'mode': 'lecture-notes',
+            'batch_title': 'Credit preflight before URL import',
+            'rows': json.dumps(rows),
+            'row_1_slides': (io.BytesIO(b'%PDF-1.4 row-1'), 'row-1.pdf'),
+            'row_2_slides': (io.BytesIO(b'%PDF-1.4 row-2'), 'row-2.pdf'),
+        },
+        content_type='multipart/form-data',
+    )
+
+    assert response.status_code == 402
+    assert 'not enough lecture credits' in response.get_json()['error'].lower()
+
+
+def test_batch_direct_url_does_not_download_when_daily_quota_fails(client, monkeypatch):
+    _patch_batch_auth(monkeypatch)
+    _patch_batch_quota_guards(monkeypatch, reserve_daily=(False, 123))
+    monkeypatch.setattr(core, 'client', object())
+    monkeypatch.setattr(
+        core,
+        'get_or_create_user',
+        lambda uid, email: {
+            'uid': uid,
+            'email': email,
+            'lecture_credits_standard': 2,
+            'lecture_credits_extended': 0,
+            'preferred_output_language': 'english',
+            'preferred_output_language_custom': '',
+        },
+    )
+    monkeypatch.setattr(
+        core,
+        'download_audio_from_video_url',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError('direct media URL should not download before quota preflight')),
+    )
+    monkeypatch.setattr(
+        upload_import_audio,
+        'validate_video_import_url',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError('direct media URL should not validate before quota preflight')),
+    )
+
+    rows = [
+        {'row_id': 'row-1', 'slides_file_field': 'row_1_slides', 'audio_m3u8_url': 'https://ovp.kaltura.com/a/index.m3u8'},
+        {'row_id': 'row-2', 'slides_file_field': 'row_2_slides', 'audio_m3u8_url': 'https://ovp.kaltura.com/b/index.m3u8'},
+    ]
+    response = client.post(
+        '/api/batch/jobs',
+        data={
+            'mode': 'lecture-notes',
+            'batch_title': 'Quota preflight before URL import',
+            'rows': json.dumps(rows),
+            'row_1_slides': (io.BytesIO(b'%PDF-1.4 row-1'), 'row-1.pdf'),
+            'row_2_slides': (io.BytesIO(b'%PDF-1.4 row-2'), 'row-2.pdf'),
+        },
+        content_type='multipart/form-data',
+    )
+
+    assert response.status_code == 429
+    assert response.headers.get('Retry-After') == '123'
+    assert 'daily upload quota' in response.get_json()['error'].lower()
+
+
+def test_batch_queue_full_cleans_consumed_import_token_files(client, monkeypatch, tmp_path):
+    _clear_batch_memory()
+    _patch_batch_auth(monkeypatch)
+    _patch_batch_quota_guards(monkeypatch)
+    monkeypatch.setattr(core, 'client', object())
+    core.AUDIO_IMPORT_TOKENS.clear()
+    audio_one = tmp_path / 'imported-one.mp3'
+    audio_two = tmp_path / 'imported-two.mp3'
+    audio_one.write_bytes(b'ID3\x03\x00\x00one')
+    audio_two.write_bytes(b'ID3\x03\x00\x00two')
+    token_one = upload_import_audio.register_audio_import_token('u-batch', str(audio_one), runtime=core)
+    token_two = upload_import_audio.register_audio_import_token('u-batch', str(audio_two), runtime=core)
+    cleanup_calls = []
+    released_daily = []
+
+    monkeypatch.setattr(
+        core,
+        'get_or_create_user',
+        lambda uid, email: {
+            'uid': uid,
+            'email': email,
+            'interview_credits_short': 2,
+            'interview_credits_medium': 0,
+            'interview_credits_long': 0,
+            'slides_credits': 0,
+            'preferred_output_language': 'english',
+            'preferred_output_language_custom': '',
+        },
+    )
+    monkeypatch.setattr(core, 'get_saved_file_size', lambda path: 1024 if path else 0)
+    monkeypatch.setattr(core, 'file_looks_like_audio', lambda _path: True)
+    monkeypatch.setattr(core, 'cleanup_files', lambda local_paths, remote_files: cleanup_calls.append((list(local_paths), list(remote_files))))
+    monkeypatch.setattr(rate_limit_quotas, 'release_daily_upload_bytes', lambda uid, requested, runtime=None: released_daily.append((uid, requested)) or True)
+    monkeypatch.setattr(billing_credits, 'deduct_interview_credit', lambda uid, runtime=None: 'interview_credits_short')
+    monkeypatch.setattr(billing_credits, 'refund_credit', lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(batch_orchestrator, 'process_batch_job', lambda _batch_id, runtime=None: None)
+    monkeypatch.setattr(
+        core,
+        'submit_background_job',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(JobQueueFullError('full')),
+    )
+
+    rows = [
+        {'row_id': 'row-1', 'audio_import_token': token_one},
+        {'row_id': 'row-2', 'audio_import_token': token_two},
+    ]
+    response = client.post(
+        '/api/batch/jobs',
+        data={
+            'mode': 'interview',
+            'batch_title': 'Queue full import cleanup',
+            'rows': json.dumps(rows),
+        },
+        content_type='multipart/form-data',
+    )
+
+    assert response.status_code == 503
+    cleaned_paths = [path for paths, _remote in cleanup_calls for path in paths]
+    assert str(audio_one) in cleaned_paths
+    assert str(audio_two) in cleaned_paths
+    assert token_one not in core.AUDIO_IMPORT_TOKENS
+    assert token_two not in core.AUDIO_IMPORT_TOKENS
+    assert released_daily and released_daily[0][0] == 'u-batch'
 
 
 def test_batch_jobs_list_contract(client, monkeypatch):

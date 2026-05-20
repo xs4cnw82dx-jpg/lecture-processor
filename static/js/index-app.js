@@ -102,6 +102,7 @@ function formatTimeLabel(value) {
 }
 
 let currentUser = null;
+let unverifiedEmailUser = null;
 let userCredits = null;
 let idToken = null;
 let currentUserIsAdmin = false;
@@ -892,6 +893,109 @@ function showAuthError(el, msg) {
     el.textContent = msg;
     el.classList.add('visible');
 }
+function isUnverifiedEmailUser(user) {
+    return Boolean(user && user.email && user.emailVerified === false);
+}
+async function sendEmailVerificationIfPossible(user) {
+    const targetUser = user || unverifiedEmailUser || auth.currentUser;
+    if (!targetUser || typeof targetUser.sendEmailVerification !== 'function') {
+        throw new Error('Could not send a verification email for this account.');
+    }
+    await targetUser.sendEmailVerification();
+}
+function showEmailVerificationPrompt(user, options = {}) {
+    unverifiedEmailUser = user || unverifiedEmailUser || auth.currentUser;
+    const view = options.view || (signupView.classList.contains('active') ? 'signup' : 'signin');
+    const target = view === 'signup' ? signupError : signinError;
+    const email = String((unverifiedEmailUser && unverifiedEmailUser.email) || '').trim();
+    showAuthModal(view);
+    target.innerHTML = '';
+    target.classList.add('visible');
+
+    const message = document.createElement('div');
+    message.textContent = email
+        ? `Verify ${email} before continuing.`
+        : 'Verify your email address before continuing.';
+    target.appendChild(message);
+
+    const detail = document.createElement('div');
+    detail.textContent = 'Use the verification link in your inbox, then return here.';
+    target.appendChild(detail);
+
+    const status = document.createElement('div');
+    status.textContent = options.verificationEmailSent
+        ? 'Verification email sent. Check your inbox.'
+        : '';
+    target.appendChild(status);
+
+    const resendButton = document.createElement('button');
+    resendButton.type = 'button';
+    resendButton.className = 'auth-submit-btn u-mt-8';
+    resendButton.textContent = 'Resend verification email';
+    resendButton.addEventListener('click', async () => {
+        resendButton.disabled = true;
+        status.textContent = 'Sending verification email...';
+        try {
+            await sendEmailVerificationIfPossible(unverifiedEmailUser);
+            status.textContent = 'Verification email sent. Check your inbox.';
+        } catch (error) {
+            captureClientError(error, 'resend_email_verification');
+            status.textContent = getFirebaseErrorMessage(error);
+        } finally {
+            resendButton.disabled = false;
+        }
+    });
+    target.appendChild(resendButton);
+
+    const verifiedButton = document.createElement('button');
+    verifiedButton.type = 'button';
+    verifiedButton.className = 'google-sign-in-button u-mt-8';
+    verifiedButton.textContent = 'I verified my email';
+    verifiedButton.addEventListener('click', async () => {
+        verifiedButton.disabled = true;
+        status.textContent = 'Checking verification status...';
+        try {
+            const targetUser = unverifiedEmailUser || auth.currentUser;
+            if (!targetUser || typeof targetUser.reload !== 'function') {
+                throw new Error('Please sign in again after verifying your email.');
+            }
+            await targetUser.reload();
+            const refreshedUser = auth.currentUser || targetUser;
+            if (isUnverifiedEmailUser(refreshedUser)) {
+                status.textContent = 'Email is not verified yet. Open the link from your inbox, then try again.';
+                return;
+            }
+            await activateVerifiedUser(refreshedUser);
+            hideAuthModal();
+            showToast('Email verified. You are signed in.', 'success');
+        } catch (error) {
+            captureClientError(error, 'check_email_verification');
+            status.textContent = getFirebaseErrorMessage(error);
+        } finally {
+            verifiedButton.disabled = false;
+        }
+    });
+    target.appendChild(verifiedButton);
+
+    const signOutButton = document.createElement('button');
+    signOutButton.type = 'button';
+    signOutButton.className = 'google-sign-in-button u-mt-8';
+    signOutButton.textContent = 'Sign out';
+    signOutButton.addEventListener('click', async () => {
+        signOutButton.disabled = true;
+        try {
+            unverifiedEmailUser = null;
+            await auth.signOut();
+            showToast('Signed out', 'success');
+        } catch (error) {
+            captureClientError(error, 'signout_unverified_email');
+            status.textContent = getFirebaseErrorMessage(error);
+        } finally {
+            signOutButton.disabled = false;
+        }
+    });
+    target.appendChild(signOutButton);
+}
 function getFirebaseErrorMessage(e) {
     const m = {
         'auth/email-already-in-use': 'This email is already registered. Please sign in instead.',
@@ -922,7 +1026,11 @@ async function signInWithEmail(email, password) {
             showAuthError(signinError, check.message);
             return;
         }
-        await auth.signInWithEmailAndPassword(email, password);
+        const credential = await auth.signInWithEmailAndPassword(email, password);
+        if (isUnverifiedEmailUser(credential.user)) {
+            handleUnverifiedEmailUser(credential.user, { view: 'signin' });
+            return;
+        }
         hideAuthModal();
         showToast('Signed in successfully!', 'success');
         trackEvent('auth_success', { method: 'email' });
@@ -940,10 +1048,18 @@ async function signUpWithEmail(email, password) {
             showAuthError(signupError, check.message);
             return;
         }
-        await auth.createUserWithEmailAndPassword(email, password);
-        hideAuthModal();
-        showToast('Account created successfully!', 'success');
-        trackEvent('auth_success', { method: 'signup_email' });
+        const credential = await auth.createUserWithEmailAndPassword(email, password);
+        let verificationEmailSent = false;
+        if (credential.user) {
+            try {
+                await sendEmailVerificationIfPossible(credential.user);
+                verificationEmailSent = true;
+            } catch (verifyError) {
+                captureClientError(verifyError, 'signup_send_email_verification');
+            }
+        }
+        handleUnverifiedEmailUser(credential.user, { view: 'signup', verificationEmailSent });
+        trackEvent('auth_success', { method: 'signup_email', verification_required: true });
     } catch (e) {
         trackEvent('auth_failed', { method: 'signup_email', reason: e.code || 'unknown' });
         captureClientError(e, 'signup_email');
@@ -965,6 +1081,10 @@ async function signInWithGoogle() {
             await auth.signOut();
             trackEvent('auth_failed', { method: 'google', reason: 'disallowed_email' });
             showAuthError(signinView.classList.contains('active') ? signinError : signupError, check.message);
+            return;
+        }
+        if (isUnverifiedEmailUser(result.user)) {
+            handleUnverifiedEmailUser(result.user, { view: signinView.classList.contains('active') ? 'signin' : 'signup' });
             return;
         }
         hideAuthModal();
@@ -1573,6 +1693,34 @@ function updateUIForAuthState(user) {
         syncProcessingLayout();
     }
 }
+function handleUnverifiedEmailUser(user, options = {}) {
+    unverifiedEmailUser = user || auth.currentUser || unverifiedEmailUser;
+    currentUser = null;
+    userCredits = null;
+    idToken = null;
+    currentUserIsAdmin = false;
+    userProfileLoaded = false;
+    userPreferences = null;
+    if (authClient && typeof authClient.clearToken === 'function') authClient.clearToken();
+    updateUIForAuthState(null);
+    showEmailVerificationPrompt(unverifiedEmailUser, {
+        view: options.view || 'signin',
+        verificationEmailSent: Boolean(options.verificationEmailSent),
+    });
+}
+async function activateVerifiedUser(user) {
+    if (!user) return;
+    unverifiedEmailUser = null;
+    currentUser = user;
+    idToken = await user.getIdToken(true);
+    if (authClient && typeof authClient.setToken === 'function') authClient.setToken(idToken);
+    updateUIForAuthState(user);
+    setActiveRuntimeJobs(readActiveRuntimeJobsCache(user));
+    resumeLatestRuntimeJob(activeRuntimeJobs, { startPolling: true });
+    await fetchUserData();
+    await checkPaymentResult();
+    await refreshActiveRuntimeJobs(true);
+}
 let handlingDisallowedAuthState = false;
 auth.onAuthStateChanged(async (user) => {
     if (handlingDisallowedAuthState) return;
@@ -1595,15 +1743,13 @@ auth.onAuthStateChanged(async (user) => {
             showAuthError(preferredView === 'signup' ? signupError : signinError, check.message || 'This email is not allowed.');
             return;
         }
-        idToken = await user.getIdToken();
-        if (authClient && typeof authClient.setToken === 'function') authClient.setToken(idToken);
-        updateUIForAuthState(user);
-        setActiveRuntimeJobs(readActiveRuntimeJobsCache(user));
-        resumeLatestRuntimeJob(activeRuntimeJobs, { startPolling: true });
-        await fetchUserData();
-        await checkPaymentResult();
-        await refreshActiveRuntimeJobs(true);
+        if (isUnverifiedEmailUser(user)) {
+            handleUnverifiedEmailUser(user, { view: signupView.classList.contains('active') ? 'signup' : 'signin' });
+            return;
+        }
+        await activateVerifiedUser(user);
     } else {
+        unverifiedEmailUser = null;
         updateUIForAuthState(null);
     }
 });

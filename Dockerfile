@@ -26,4 +26,4 @@ COPY . .
 
 EXPOSE 10000
 
-CMD ["sh", "-c", "gunicorn --workers 1 --timeout 180 --graceful-timeout 30 --bind 0.0.0.0:${PORT:-10000} app:app"]
+CMD ["sh", "-c", "gunicorn --workers ${WEB_CONCURRENCY:-2} --threads ${WEB_THREADS:-2} --timeout 180 --graceful-timeout 30 --bind 0.0.0.0:${PORT:-10000} app:app"]

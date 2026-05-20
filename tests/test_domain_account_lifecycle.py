@@ -35,6 +35,30 @@ def test_count_active_jobs_for_user_includes_runtime_and_batch_jobs(app, monkeyp
     assert lifecycle.count_active_jobs_for_user("u1", runtime=runtime) == 3
 
 
+def test_count_active_jobs_for_user_limits_remote_reads_to_guard_threshold(app, monkeypatch):
+    runtime = get_runtime(app)
+    monkeypatch.setattr(runtime, "db", object(), raising=False)
+    monkeypatch.setattr(runtime, "MAX_ACTIVE_JOBS_PER_USER", 2, raising=False)
+    limits = {}
+    with runtime.JOBS_LOCK:
+        runtime.jobs.clear()
+        runtime.jobs["j1"] = {"user_id": "u1", "status": "processing"}
+
+    def runtime_jobs(_db, _collection, _uid, _statuses, limit=500):
+        limits["runtime"] = limit
+        return [SimpleNamespace(id="r1"), SimpleNamespace(id="r2"), SimpleNamespace(id="r3")]
+
+    monkeypatch.setattr(runtime.runtime_jobs_repo, "query_by_user_and_statuses", runtime_jobs)
+    monkeypatch.setattr(
+        runtime.batch_repo,
+        "list_batch_jobs_by_uid_and_statuses",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("batch jobs should not be queried after cap is reached")),
+    )
+
+    assert lifecycle.count_active_jobs_for_user("u1", runtime=runtime) == 3
+    assert limits["runtime"] == 2
+
+
 def test_ensure_account_allows_writes_rejects_deleting_accounts(app, monkeypatch):
     runtime = get_runtime(app)
     monkeypatch.setattr(runtime, "db", object(), raising=False)

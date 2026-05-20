@@ -294,6 +294,8 @@ def test_admin_overview_uses_rollups_and_limited_recent_queries(client, monkeypa
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u1", "email": "admin@example.com"})
     monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)
+    monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
+    monkeypatch.setattr(batch_orchestrator, "run_startup_batch_recovery_once", lambda runtime=None: None)
     now_ts = 1_762_000_000.0
     monkeypatch.setattr(core.time, "time", lambda: now_ts)
     monkeypatch.setattr(admin_metrics, "safe_count_collection", lambda collection_name, filters=None, runtime=None: 12 if collection_name == "users" else 34)
@@ -338,7 +340,17 @@ def test_admin_overview_uses_rollups_and_limited_recent_queries(client, monkeypa
             "allow_unfiltered_fallback": allow_unfiltered_fallback,
         })
         if collection_name == "job_logs":
-            return [_Doc({"job_id": "job-1", "email": "u@example.com", "mode": "lecture-notes", "status": "complete", "finished_at": now_ts, "duration_seconds": 42})]
+            return [_Doc({
+                "job_id": "job-1",
+                "email": "u@example.com",
+                "mode": "lecture-notes",
+                "source_type": "url",
+                "source_url": "https://example.com/private/path?token=secret",
+                "custom_prompt": "private prompt text",
+                "status": "complete",
+                "finished_at": now_ts,
+                "duration_seconds": 42,
+            })]
         if collection_name == "purchases":
             return [_Doc({"uid": "admin-u1", "bundle_name": "Lecture 5", "price_cents": 999, "currency": "eur", "created_at": now_ts})]
         if collection_name == "rate_limit_logs":
@@ -359,6 +371,9 @@ def test_admin_overview_uses_rollups_and_limited_recent_queries(client, monkeypa
     assert payload["metrics"]["rate_limit_429_total"] == 7
     assert payload["trends"]["revenue_cents"][0] == 100
     assert payload["recent_jobs"][0]["job_id"] == "job-1"
+    assert payload["recent_jobs"][0]["source_url"] == "https://example.com/[redacted]"
+    assert payload["recent_jobs"][0]["custom_prompt"] == ""
+    assert payload["recent_jobs"][0]["custom_prompt_length"] == len("private prompt text")
     assert payload["recent_purchases"][0]["bundle_name"] == "Lecture 5"
     assert payload["recent_rate_limits"][0]["limit_name"] == "upload"
     assert len(query_calls) == 3
@@ -1728,6 +1743,8 @@ def test_index_auth_query_redirects_to_lecture_notes_modal_page(client):
 def test_admin_export_sanitizes_formula_like_cells(client, monkeypatch):
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
     monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)
+    monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
+    monkeypatch.setattr(batch_orchestrator, "run_startup_batch_recovery_once", lambda runtime=None: None)
 
     class _Doc:
         def __init__(self, doc_id, payload):
@@ -1768,8 +1785,9 @@ def test_admin_export_sanitizes_formula_like_cells(client, monkeypatch):
     assert response.status_code == 200
     csv_text = response.get_data(as_text=True)
     assert "'=malicious@example.com" in csv_text
-    assert "'+https://evil.example" in csv_text
-    assert "'-SUM(1,1)" in csv_text
+    assert "'+https://evil.example" not in csv_text
+    assert "'-SUM(1,1)" not in csv_text
+    assert "[redacted-url]" in csv_text
     assert "'@template" in csv_text
 
 

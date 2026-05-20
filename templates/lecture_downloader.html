@@ -63,7 +63,7 @@
             </div>
             <a class="ghost-btn reader-auth-link" id="lecture-downloader-auth-link" href="/lecture-notes?auth=signin">Sign in</a>
           </div>
-          <div class="status" id="lecture-downloader-status" aria-live="polite"></div>
+          <div class="status" id="lecture-downloader-status" role="status" aria-live="polite" aria-atomic="true"></div>
         </article>
 
         <article class="shell-panel reader-output-card">
@@ -93,7 +93,7 @@
   {% include '_shell_footer.html' %}
   </div>
   </div>
-  <div class="reader-toast" id="lecture-downloader-toast" aria-live="polite"></div>
+  <div class="reader-toast" id="lecture-downloader-toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
   <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>

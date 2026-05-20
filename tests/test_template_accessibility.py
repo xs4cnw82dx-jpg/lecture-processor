@@ -76,6 +76,63 @@ def test_processing_upload_zones_are_keyboard_accessible():
     assert re.search(r'<div class="upload-zone" id="audio-zone"[^>]*role="button"[^>]*tabindex="0"', index_template)
 
 
+def test_reader_dropzone_is_keyboard_accessible_and_announced():
+    reader_template = Path('templates/reader.html').read_text(encoding='utf-8')
+
+    assert 'id="reader-dropzone"' in reader_template
+    assert re.search(r'id="reader-dropzone"[\s\S]*?role="button"[\s\S]*?tabindex="0"', reader_template)
+    assert 'aria-describedby="reader-dropzone-sub reader-dropzone-sub-extra reader-dropzone-state"' in reader_template
+    assert 'id="reader-dropzone-state" role="status" aria-live="polite" aria-atomic="true"' in reader_template
+
+
+def test_shared_shell_hidden_and_live_region_contracts():
+    shell_template = Path('templates/_app_shell.html').read_text(encoding='utf-8')
+    app_shell_css = Path('static/css/app-shell.css').read_text(encoding='utf-8')
+
+    assert re.search(r'\[hidden\]\s*\{\s*display:\s*none\s*!important;', app_shell_css)
+    assert 'id="app-shell-overlay" aria-label="Close navigation" aria-hidden="true" tabindex="-1"' in shell_template
+    assert 'id="shell-toast" role="status" aria-live="polite" aria-atomic="true"' in shell_template
+
+
+def test_non_study_toasts_and_auth_messages_are_live_regions():
+    for template_name in (
+        'reader.html',
+        'buy_credits.html',
+        'calendar.html',
+        'plan.html',
+        'lecture_downloader.html',
+        'general_transcriber.html',
+        'physio.html',
+        '_index_footer_modals.html',
+    ):
+        template = Path('templates', template_name).read_text(encoding='utf-8')
+        assert 'role="status" aria-live="polite" aria-atomic="true"' in template
+
+    auth_overlay = Path('templates/_index_auth_overlay.html').read_text(encoding='utf-8')
+    index_footer_modals = Path('templates/_index_footer_modals.html').read_text(encoding='utf-8')
+
+    assert 'id="signin-error" role="alert" aria-live="assertive" aria-atomic="true"' in auth_overlay
+    assert 'id="signup-error" role="alert" aria-live="assertive" aria-atomic="true"' in auth_overlay
+    assert 'id="reset-error" role="alert" aria-live="assertive" aria-atomic="true"' in auth_overlay
+    assert 'id="reset-success" role="status" aria-live="polite" aria-atomic="true"' in auth_overlay
+    assert 'id="goal-modal-error" role="alert" aria-live="assertive" aria-atomic="true"' in index_footer_modals
+    assert 'id="delete-account-error" role="alert" aria-live="assertive" aria-atomic="true"' in index_footer_modals
+    assert 'id="language-onboarding-error" role="alert" aria-live="assertive" aria-atomic="true"' in index_footer_modals
+
+
+def test_buy_credits_signed_out_has_sign_in_path():
+    buy_credits_template = Path('templates/buy_credits.html').read_text(encoding='utf-8')
+
+    assert 'id="buy-credits-auth-panel" hidden' in buy_credits_template
+    assert 'id="buy-credits-signin-link" href="/lecture-notes?auth=signin"' in buy_credits_template
+
+
+def test_calendar_modal_stacks_above_shell_topbar():
+    calendar_css = Path('static/css/calendar.css').read_text(encoding='utf-8')
+
+    assert re.search(r'\.overlay\{[^}]*z-index:320', calendar_css)
+
+
 def test_processing_template_defaults_optional_sections_to_collapsed_state():
     index_template = Path('templates/index.html').read_text(encoding='utf-8')
 

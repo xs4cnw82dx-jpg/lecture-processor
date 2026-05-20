@@ -260,7 +260,30 @@ ANALYTICS_NAME_RE = re.compile('^[a-z0-9_]{2,64}$')
 
 ANALYTICS_SESSION_ID_RE = re.compile('^[A-Za-z0-9_-]{6,80}$')
 
-ANALYTICS_ALLOWED_EVENTS = {'auth_modal_opened', 'auth_success', 'auth_failed', 'checkout_started', 'payment_confirmed', 'payment_cancelled', 'process_clicked', 'processing_started', 'processing_completed', 'processing_failed', 'processing_timeout', 'processing_retry_requested', 'study_mode_opened', 'payment_confirmed_backend', 'processing_started_backend', 'processing_completed_backend', 'processing_failed_backend', 'processing_finished_backend'}
+ANALYTICS_ALLOWED_EVENTS = {
+    'auth_modal_opened',
+    'auth_success',
+    'auth_failed',
+    'checkout_started',
+    'payment_confirmed',
+    'payment_cancelled',
+    'process_clicked',
+    'processing_started',
+    'processing_completed',
+    'processing_failed',
+    'processing_timeout',
+    'processing_retry_requested',
+    'study_mode_opened',
+    'payment_confirmed_backend',
+    'processing_started_backend',
+    'processing_completed_backend',
+    'processing_failed_backend',
+    'processing_finished_backend',
+    'tools_page_opened',
+    'tools_extract_completed',
+    'tools_extract_failed',
+    'tools_export_requested',
+}
 
 ANALYTICS_FUNNEL_STAGES = [{'event': 'auth_modal_opened', 'label': 'Opened sign-in'}, {'event': 'auth_success', 'label': 'Signed in'}, {'event': 'checkout_started', 'label': 'Started checkout'}, {'event': 'payment_confirmed', 'label': 'Payment confirmed'}, {'event': 'process_clicked', 'label': 'Clicked process'}, {'event': 'processing_started', 'label': 'Upload accepted'}, {'event': 'processing_completed', 'label': 'Processing complete'}, {'event': 'study_mode_opened', 'label': 'Opened study mode'}]
 
@@ -708,6 +731,27 @@ def log_rate_limit_hit(limit_name, retry_after=0):
     runtime = app.extensions.get('lecture_processor', {}).get('runtime')
     return analytics_service.log_rate_limit_hit(limit_name, retry_after=retry_after, db=db, logger=logger, time_module=time, runtime=runtime)
 
+def _safe_source_url_summary(source_url):
+    raw_url = str(source_url or '').strip()
+    if not raw_url:
+        return ''
+    try:
+        parsed = urlparse(raw_url)
+    except Exception:
+        return '[redacted-url]'
+    scheme = parsed.scheme.lower() if parsed.scheme else 'https'
+    hostname = (parsed.hostname or '').strip().lower()
+    if not hostname:
+        return '[redacted-url]'
+    if ':' in hostname and not hostname.startswith('['):
+        host = f'[{hostname}]'
+    else:
+        host = hostname
+    if parsed.port:
+        host = f'{host}:{parsed.port}'
+    suffix = '/[redacted]' if parsed.path and parsed.path != '/' else ''
+    return f'{scheme}://{host}{suffix}'[:500]
+
 def save_job_log(job_id, job_data, finished_at):
     """Save a processing job log to Firestore for analytics."""
     try:
@@ -722,7 +766,7 @@ def save_job_log(job_id, job_data, finished_at):
             'email': job_data.get('user_email', ''),
             'mode': job_data.get('mode', ''),
             'source_type': job_data.get('source_type', ''),
-            'source_url': job_data.get('source_url', ''),
+            'source_url': _safe_source_url_summary(job_data.get('source_url', '')),
             'source_name': job_data.get('source_name', ''),
             'status': job_data.get('status', ''),
             'study_features': job_data.get('study_features', 'none'),
@@ -738,11 +782,11 @@ def save_job_log(job_id, job_data, finished_at):
             'token_output_total': int(job_data.get('token_output_total', 0) or 0),
             'token_total': int(job_data.get('token_total', 0) or 0),
             'file_size_mb': round(float(job_data.get('file_size_mb', 0) or 0), 2),
-            'custom_prompt': job_data.get('custom_prompt', ''),
+            'custom_prompt': '',
             'prompt_template_key': job_data.get('prompt_template_key', ''),
             'prompt_source': job_data.get('prompt_source', ''),
-            'custom_prompt_length': int(job_data.get('custom_prompt_length', 0) or 0),
-            'effective_prompt_preview': str(job_data.get('effective_prompt_preview', '') or '')[:1800],
+            'custom_prompt_length': int(job_data.get('custom_prompt_length') or len(str(job_data.get('custom_prompt', '') or ''))),
+            'effective_prompt_preview': '',
             'credit_refund_method': job_data.get('credit_refund_method', ''),
             'is_batch': bool(job_data.get('is_batch', False)),
             'batch_parent_id': str(job_data.get('batch_parent_id', '') or ''),
@@ -864,7 +908,9 @@ def is_admin_user(decoded_token):
         return False
     uid = decoded_token.get('uid', '')
     email = decoded_token.get('email', '').lower()
-    return uid in ADMIN_UIDS or email in ADMIN_EMAILS
+    if uid in ADMIN_UIDS:
+        return True
+    return bool(email and email in ADMIN_EMAILS and decoded_token.get('email_verified') is True)
 
 def _extract_bearer_token(req):
     from lecture_processor.domains.auth import session as auth_session

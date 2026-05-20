@@ -1,5 +1,7 @@
 """Admin dashboard, export, and batch-list flows extracted from admin API service."""
 
+from urllib.parse import urlparse
+
 from lecture_processor.domains.admin import metrics as admin_metrics
 from lecture_processor.domains.admin import rollups as admin_rollups
 from lecture_processor.domains.ai import batch_orchestrator
@@ -17,6 +19,36 @@ def _to_non_negative_float(value, default=0.0):
 
 def _to_non_negative_int(value, default=0):
     return admin_support.to_non_negative_int(value, default=default)
+
+
+def _redact_admin_source_url(value):
+    raw_url = str(value or '').strip()
+    if not raw_url:
+        return ''
+    try:
+        parsed = urlparse(raw_url)
+    except Exception:
+        return '[redacted-url]'
+    scheme = str(parsed.scheme or '').strip().lower()
+    host = str(parsed.hostname or '').strip().lower()
+    if not host:
+        return '[redacted-url]'
+    try:
+        parsed_port = parsed.port
+    except ValueError:
+        parsed_port = None
+    default_port = 443 if scheme == 'https' else 80 if scheme == 'http' else None
+    port_part = f':{parsed_port}' if parsed_port and parsed_port != default_port else ''
+    display_host = f'[{host}]' if ':' in host and not host.startswith('[') else host
+    suffix = '/[redacted]' if parsed.path and parsed.path != '/' else ''
+    return f'{scheme or "https"}://{display_host}{port_part}{suffix}'[:500]
+
+
+def _admin_custom_prompt_length(job):
+    stored_length = _to_non_negative_int((job or {}).get('custom_prompt_length', 0))
+    if stored_length:
+        return stored_length
+    return len(str((job or {}).get('custom_prompt', '') or ''))
 
 
 def admin_overview(app_ctx, request):
@@ -148,7 +180,7 @@ def admin_overview(app_ctx, request):
                 'email': job.get('email', ''),
                 'mode': job.get('mode', ''),
                 'source_type': job.get('source_type', ''),
-                'source_url': job.get('source_url', ''),
+                'source_url': _redact_admin_source_url(job.get('source_url', '')),
                 'status': job.get('status', ''),
                 'duration_seconds': job.get('duration_seconds', 0),
                 'credit_refunded': job.get('credit_refunded', False),
@@ -156,7 +188,8 @@ def admin_overview(app_ctx, request):
                 'token_input_total': job.get('token_input_total', 0),
                 'token_output_total': job.get('token_output_total', 0),
                 'token_total': job.get('token_total', 0),
-                'custom_prompt': job.get('custom_prompt', ''),
+                'custom_prompt': '',
+                'custom_prompt_length': _admin_custom_prompt_length(job),
                 'prompt_template_key': job.get('prompt_template_key', ''),
                 'prompt_source': job.get('prompt_source', ''),
                 'credit_refund_method': job.get('credit_refund_method', ''),
@@ -296,7 +329,7 @@ def admin_export(app_ctx, request):
         if export_type == 'jobs':
             yield [
                 'job_id', 'uid', 'email', 'mode', 'source_type', 'source_url',
-                'custom_prompt', 'prompt_template_key', 'prompt_source', 'status', 'credit_deducted',
+                'custom_prompt', 'custom_prompt_length', 'prompt_template_key', 'prompt_source', 'status', 'credit_deducted',
                 'credit_refund_method',
                 'credit_refunded', 'error_message', 'started_at', 'finished_at', 'duration_seconds',
                 'token_input_total', 'token_output_total', 'token_total', 'cost_usd', 'cost_eur'
@@ -325,8 +358,9 @@ def admin_export(app_ctx, request):
                     job.get('email', ''),
                     job.get('mode', ''),
                     job.get('source_type', ''),
-                    job.get('source_url', ''),
-                    job.get('custom_prompt', ''),
+                    _redact_admin_source_url(job.get('source_url', '')),
+                    '',
+                    _admin_custom_prompt_length(job),
                     job.get('prompt_template_key', ''),
                     job.get('prompt_source', ''),
                     job.get('status', ''),

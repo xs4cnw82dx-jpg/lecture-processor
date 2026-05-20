@@ -119,7 +119,7 @@
             <button type="button" class="physio-btn ghost" id="physio-export-docx-btn">Export DOCX</button>
             <button type="button" class="physio-btn ghost" id="physio-export-pdf-btn">Export PDF</button>
           </div>
-          <div class="physio-status" id="physio-status" aria-live="polite"></div>
+          <div class="physio-status" id="physio-status" role="status" aria-live="polite" aria-atomic="true"></div>
         </article>
 
         <article class="shell-panel physio-card physio-output-card" id="physio-output-card">
@@ -173,7 +173,7 @@
           <div class="physio-actions">
             <button type="button" class="physio-btn primary" id="physio-knowledge-ask-btn">Ask Knowledge Base</button>
           </div>
-          <div class="physio-status" id="physio-status" aria-live="polite"></div>
+          <div class="physio-status" id="physio-status" role="status" aria-live="polite" aria-atomic="true"></div>
         </article>
 
         <article class="shell-panel physio-card physio-output-card" id="physio-knowledge-output-card">
@@ -255,7 +255,7 @@
           <div class="physio-actions">
             <button type="button" class="physio-btn primary" id="physio-case-save-btn">Save case</button>
           </div>
-          <div class="physio-status" id="physio-status" aria-live="polite"></div>
+          <div class="physio-status" id="physio-status" role="status" aria-live="polite" aria-atomic="true"></div>
         </article>
 
         <article class="shell-panel physio-card">
@@ -273,7 +273,7 @@
   {% include '_shell_footer.html' %}
   </div>
   </div>
-  <div class="physio-toast" id="physio-toast" aria-live="polite"></div>
+  <div class="physio-toast" id="physio-toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
   <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>

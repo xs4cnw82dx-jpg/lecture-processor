@@ -294,6 +294,7 @@ function removePackLocalCaches(packId) {
 }
 function cleanupCardStateCacheForKnownPacks() {
   if (!auth.currentUser) { return; }
+  if (packsHasMore) { return; }
   var uid = auth.currentUser.uid;
   var knownPackMap = {};
   (packs || []).forEach(function (pack) {
@@ -400,7 +401,7 @@ function readLocalProgressSnapshot() {
   var nextIndex = [];
   trackedPackIds.forEach(function (packId) {
     if (!packId) { return; }
-    if (Object.keys(knownPackMap).length && (!knownPackMap[packId])) {
+    if (!packsHasMore && Object.keys(knownPackMap).length && (!knownPackMap[packId])) {
       removePackLocalCaches(packId);
       return;
     }
@@ -1224,6 +1225,10 @@ var toastTimer = null;
 /* ── Helpers ── */
 function showToast(msg, type) {
   if (!toastEl || !msg) return;
+  var isError = type === 'error';
+  toastEl.setAttribute('role', isError ? 'alert' : 'status');
+  toastEl.setAttribute('aria-live', isError ? 'assertive' : 'polite');
+  toastEl.setAttribute('aria-atomic', 'true');
   toastEl.textContent = msg;
   toastEl.className = 'toast visible ' + (type || 'success');
   if (toastTimer) { clearTimeout(toastTimer); }
@@ -2404,10 +2409,12 @@ function renderBuilderFlashcards() {
     return;
   }
   setSafeInnerHtml(builderFlashcardList, cards.map(function (card, index) {
+    var frontId = 'builder-fc-front-' + index;
+    var backId = 'builder-fc-back-' + index;
     return '<div class="builder-row" data-fc-row="' + index + '">'
       + '<div class="builder-row-head"><span class="builder-row-title">Flashcard ' + (index + 1) + '</span><button class="btn danger u-btn-compact" data-delete-fc="' + index + '">Delete</button></div>'
-      + '<div class="builder-split"><div class="field"><label>Front</label><textarea class="u-min-h-92" data-fc-field="front" data-fc-index="' + index + '">' + escapeHtml(card.front || '') + '</textarea></div>'
-      + '<div class="field"><label>Back</label><textarea class="u-min-h-92" data-fc-field="back" data-fc-index="' + index + '">' + escapeHtml(card.back || '') + '</textarea></div></div></div>';
+      + '<div class="builder-split"><div class="field"><label for="' + frontId + '">Front</label><textarea id="' + frontId + '" class="u-min-h-92" data-fc-field="front" data-fc-index="' + index + '">' + escapeHtml(card.front || '') + '</textarea></div>'
+      + '<div class="field"><label for="' + backId + '">Back</label><textarea id="' + backId + '" class="u-min-h-92" data-fc-field="back" data-fc-index="' + index + '">' + escapeHtml(card.back || '') + '</textarea></div></div></div>';
   }).join(''));
   updateBuilderStats();
 }
@@ -2425,21 +2432,25 @@ function renderBuilderQuestions() {
     return;
   }
   setSafeInnerHtml(builderQuestionList, questions.map(function (question, index) {
+    var questionId = 'builder-q-question-' + index;
+    var optionPrefix = 'builder-q-option-' + index + '-';
+    var answerId = 'builder-q-answer-' + index;
+    var explanationId = 'builder-q-explanation-' + index;
     var answerOptions = (question.options || []).map(function (option, optionIndex) {
       var letter = ['A', 'B', 'C', 'D'][optionIndex] || '';
       return '<option value="' + escapeHtml(option) + '" ' + (question.answer === option ? 'selected' : '') + '>' + letter + ': ' + escapeHtml(option || '(empty)') + '</option>';
     }).join('');
     return '<div class="builder-row" data-q-row="' + index + '">'
       + '<div class="builder-row-head"><span class="builder-row-title">Question ' + (index + 1) + '</span><button class="btn danger u-btn-compact" data-delete-q="' + index + '">Delete</button></div>'
-      + '<div class="field"><label>Question</label><textarea class="u-min-h-86" data-q-field="question" data-q-index="' + index + '">' + escapeHtml(question.question || '') + '</textarea></div>'
+      + '<div class="field"><label for="' + questionId + '">Question</label><textarea id="' + questionId + '" class="u-min-h-86" data-q-field="question" data-q-index="' + index + '">' + escapeHtml(question.question || '') + '</textarea></div>'
       + '<div class="builder-grid-3 u-mt-8">'
-      + '<div class="field"><label>Option A</label><input data-q-option="0" data-q-index="' + index + '" value="' + escapeHtml(question.options[0] || '') + '"></div>'
-      + '<div class="field"><label>Option B</label><input data-q-option="1" data-q-index="' + index + '" value="' + escapeHtml(question.options[1] || '') + '"></div>'
-      + '<div class="field"><label>Option C</label><input data-q-option="2" data-q-index="' + index + '" value="' + escapeHtml(question.options[2] || '') + '"></div>'
+      + '<div class="field"><label for="' + optionPrefix + '0">Option A</label><input id="' + optionPrefix + '0" data-q-option="0" data-q-index="' + index + '" value="' + escapeHtml(question.options[0] || '') + '"></div>'
+      + '<div class="field"><label for="' + optionPrefix + '1">Option B</label><input id="' + optionPrefix + '1" data-q-option="1" data-q-index="' + index + '" value="' + escapeHtml(question.options[1] || '') + '"></div>'
+      + '<div class="field"><label for="' + optionPrefix + '2">Option C</label><input id="' + optionPrefix + '2" data-q-option="2" data-q-index="' + index + '" value="' + escapeHtml(question.options[2] || '') + '"></div>'
       + '</div><div class="builder-grid u-mt-8">'
-      + '<div class="field"><label>Option D</label><input data-q-option="3" data-q-index="' + index + '" value="' + escapeHtml(question.options[3] || '') + '"></div>'
-      + '<div class="field"><label>Correct Answer</label><select class="builder-select" data-q-answer="' + index + '">' + answerOptions + '</select></div>'
-      + '</div><div class="field u-mt-8"><label>Explanation (optional)</label><textarea class="u-min-h-72" data-q-field="explanation" data-q-index="' + index + '">' + escapeHtml(question.explanation || '') + '</textarea></div></div>';
+      + '<div class="field"><label for="' + optionPrefix + '3">Option D</label><input id="' + optionPrefix + '3" data-q-option="3" data-q-index="' + index + '" value="' + escapeHtml(question.options[3] || '') + '"></div>'
+      + '<div class="field"><label for="' + answerId + '">Correct Answer</label><select id="' + answerId + '" class="builder-select" data-q-answer="' + index + '">' + answerOptions + '</select></div>'
+      + '</div><div class="field u-mt-8"><label for="' + explanationId + '">Explanation (optional)</label><textarea id="' + explanationId + '" class="u-min-h-72" data-q-field="explanation" data-q-index="' + index + '">' + escapeHtml(question.explanation || '') + '</textarea></div></div>';
   }).join(''));
   updateBuilderStats();
 }
@@ -3504,9 +3515,11 @@ function mergeStudyPackPage(currentPacks, incomingPacks) {
 
 function renderPackListActions() {
   if (!packListActions || !loadMorePacksBtn) return;
-  packListActions.hidden = true;
-  loadMorePacksBtn.hidden = true;
-  loadMorePacksBtn.disabled = true;
+  var shouldShow = !!packsHasMore || !!packsLoadingMore;
+  packListActions.hidden = !shouldShow;
+  loadMorePacksBtn.hidden = !shouldShow;
+  loadMorePacksBtn.disabled = !!packsLoadingMore || !packsHasMore || !packsNextCursor;
+  loadMorePacksBtn.textContent = packsLoadingMore ? 'Loading...' : 'Load more study packs';
 }
 
 function renderPacks() {
@@ -3596,9 +3609,11 @@ function renderFlashcardEditor(hi) {
   if (!cards.length) { setSafeInnerHtml(flashcardEditorList, '<div class="empty">No flashcards yet. Add one to start editing.</div>'); return; }
   cards.forEach(function (card, ci) {
     var row = document.createElement('div'); row.className = 'editor-card' + (ci === idx ? ' newly-added' : ''); row.dataset.rowIndex = String(ci);
+    var frontId = 'editor-card-front-' + ci;
+    var backId = 'editor-card-back-' + ci;
     var safeFront = escapeHtml(card.front || '');
     var safeBack = escapeHtml(card.back || '');
-    setSafeInnerHtml(row, '<div class="editor-card-head"><span class="editor-card-title">Flashcard ' + (ci + 1) + '</span><button class="btn danger u-btn-compact" data-delete-card="' + ci + '">Delete</button></div><div class="field"><label>Front</label><input data-card-field="front" data-card-index="' + ci + '" value="' + safeFront + '"></div><div class="field u-mt-8"><label>Back</label><textarea data-card-field="back" data-card-index="' + ci + '">' + safeBack + '</textarea></div>');
+    setSafeInnerHtml(row, '<div class="editor-card-head"><span class="editor-card-title">Flashcard ' + (ci + 1) + '</span><button class="btn danger u-btn-compact" data-delete-card="' + ci + '">Delete</button></div><div class="field"><label for="' + frontId + '">Front</label><input id="' + frontId + '" data-card-field="front" data-card-index="' + ci + '" value="' + safeFront + '"></div><div class="field u-mt-8"><label for="' + backId + '">Back</label><textarea id="' + backId + '" data-card-field="back" data-card-index="' + ci + '">' + safeBack + '</textarea></div>');
     flashcardEditorList.appendChild(row);
   });
   flashcardEditorList.querySelectorAll('[data-card-field]').forEach(function (el) {
@@ -3643,6 +3658,10 @@ function renderQuestionEditor(hi) {
     var row = document.createElement('div'); row.className = 'editor-card' + (qi === idx ? ' newly-added' : ''); row.dataset.rowIndex = String(qi);
     var adStr = escapeHtml(getAnswerDisplay(q));
     var answerMenuId = 'q-answer-menu-' + qi;
+    var answerButtonId = 'q-answer-button-' + qi;
+    var questionId = 'editor-question-text-' + qi;
+    var optionPrefix = 'editor-question-option-' + qi + '-';
+    var explanationId = 'editor-question-explanation-' + qi;
     var safeQuestion = escapeHtml(q.question || '');
     var safeOptA = escapeHtml(q.options[0] || '');
     var safeOptB = escapeHtml(q.options[1] || '');
@@ -3650,19 +3669,19 @@ function renderQuestionEditor(hi) {
     var safeOptD = escapeHtml(q.options[3] || '');
     var safeExplanation = escapeHtml(q.explanation || '');
     setSafeInnerHtml(row, '<div class="editor-card-head"><span class="editor-card-title">Question ' + (qi + 1) + '</span><button class="btn danger u-btn-compact" data-delete-question="' + qi + '">Delete</button></div>'
-      + '<div class="field"><label>Question</label><textarea data-question-field="question" data-question-index="' + qi + '">' + safeQuestion + '</textarea></div>'
+      + '<div class="field"><label for="' + questionId + '">Question</label><textarea id="' + questionId + '" data-question-field="question" data-question-index="' + qi + '">' + safeQuestion + '</textarea></div>'
       + '<div class="q-options-grid u-mt-8">'
-      + '<div class="field"><label>Option A</label><input data-option-index="0" data-question-index="' + qi + '" value="' + safeOptA + '"></div>'
-      + '<div class="field"><label>Option B</label><input data-option-index="1" data-question-index="' + qi + '" value="' + safeOptB + '"></div>'
-      + '<div class="field"><label>Option C</label><input data-option-index="2" data-question-index="' + qi + '" value="' + safeOptC + '"></div>'
-      + '<div class="field"><label>Option D</label><input data-option-index="3" data-question-index="' + qi + '" value="' + safeOptD + '"></div></div>'
-      + '<div class="field u-mt-8"><label>Correct Answer</label>'
+      + '<div class="field"><label for="' + optionPrefix + '0">Option A</label><input id="' + optionPrefix + '0" data-option-index="0" data-question-index="' + qi + '" value="' + safeOptA + '"></div>'
+      + '<div class="field"><label for="' + optionPrefix + '1">Option B</label><input id="' + optionPrefix + '1" data-option-index="1" data-question-index="' + qi + '" value="' + safeOptB + '"></div>'
+      + '<div class="field"><label for="' + optionPrefix + '2">Option C</label><input id="' + optionPrefix + '2" data-option-index="2" data-question-index="' + qi + '" value="' + safeOptC + '"></div>'
+      + '<div class="field"><label for="' + optionPrefix + '3">Option D</label><input id="' + optionPrefix + '3" data-option-index="3" data-question-index="' + qi + '" value="' + safeOptD + '"></div></div>'
+      + '<div class="field u-mt-8"><label for="' + answerButtonId + '">Correct Answer</label>'
       + '<div class="app-select q-answer-picker" data-question-index="' + qi + '">'
-      + '<button type="button" class="app-select-button" data-answer-button data-question-index="' + qi + '" aria-haspopup="listbox" aria-expanded="false" aria-controls="' + answerMenuId + '"><span class="app-select-label">' + adStr + '</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>'
+      + '<button type="button" class="app-select-button" id="' + answerButtonId + '" data-answer-button data-question-index="' + qi + '" aria-haspopup="listbox" aria-expanded="false" aria-controls="' + answerMenuId + '"><span class="app-select-label">' + adStr + '</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>'
       + '<div class="app-select-menu" id="' + answerMenuId + '" role="listbox" data-answer-menu data-question-index="' + qi + '">'
       + q.options.map(function (o, oi) { var isActive = q.answer === o; return '<button type="button" role="option" aria-selected="' + (isActive ? 'true' : 'false') + '" class="app-select-item' + (isActive ? ' active' : '') + '" data-answer-item data-question-index="' + qi + '" data-option-index="' + oi + '">' + (['A', 'B', 'C', 'D'][oi]) + ': ' + escapeHtml(o || '(empty)') + '</button>'; }).join('')
       + '</div></div></div>'
-      + '<div class="field u-mt-8"><label>Explanation</label><textarea data-question-field="explanation" data-question-index="' + qi + '">' + safeExplanation + '</textarea></div>');
+      + '<div class="field u-mt-8"><label for="' + explanationId + '">Explanation</label><textarea id="' + explanationId + '" data-question-field="explanation" data-question-index="' + qi + '">' + safeExplanation + '</textarea></div>');
     questionEditorList.appendChild(row);
   });
   questionEditorList.querySelectorAll('[data-question-field="question"],[data-question-field="explanation"]').forEach(function (el) {
@@ -4125,28 +4144,26 @@ function hydratePackStatesForKnownPacks() {
 }
 
 /* ── Load data ── */
-function fetchAllStudyPacks(afterCursor, collectedPacks) {
-  var cursor = String(afterCursor || '');
-  var merged = Array.isArray(collectedPacks) ? collectedPacks.slice() : [];
-  return apiCall(buildStudyPacksUrl(cursor)).then(function (data) {
-    var nextPacks = mergeStudyPackPage(merged, data.study_packs || []);
-    var hasMore = !!data.has_more;
-    var nextCursor = String(data.next_cursor || '');
-    if (hasMore && nextCursor) {
-      return fetchAllStudyPacks(nextCursor, nextPacks);
-    }
-    return nextPacks;
+function fetchStudyPackPage(afterCursor) {
+  return apiCall(buildStudyPacksUrl(afterCursor)).then(function (data) {
+    data = data || {};
+    return {
+      study_packs: Array.isArray(data.study_packs) ? data.study_packs : [],
+      has_more: !!data.has_more,
+      next_cursor: String(data.next_cursor || '')
+    };
   });
 }
 
 function loadData(preferredPackId) {
   var prefId = preferredPackId || '';
   packsLoadingMore = false;
-  return Promise.all([apiCall('/api/study-folders'), fetchAllStudyPacks('', [])]).then(function (results) {
+  return Promise.all([apiCall('/api/study-folders'), fetchStudyPackPage('')]).then(function (results) {
+    var packPage = results[1] || {};
     folders = results[0].folders || [];
-    packs = results[1] || [];
-    packsHasMore = false;
-    packsNextCursor = '';
+    packs = mergeStudyPackPage([], packPage.study_packs || []);
+    packsHasMore = !!packPage.has_more;
+    packsNextCursor = String(packPage.next_cursor || '');
     setGoalPanelStatus('Synced', 'success');
     loadPinnedFolderIds();
     syncPinnedFolderIds();

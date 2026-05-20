@@ -20,6 +20,11 @@
         <h1>Buy Credits</h1>
         <p>Choose a credit pack and continue processing without interruptions.</p>
       </section>
+      <section class="shell-panel" id="buy-credits-auth-panel" hidden>
+        <h2>Sign in to buy credits</h2>
+        <p>Credit purchases are saved to your account, so sign in before choosing a bundle.</p>
+        <a class="refresh-history-btn" id="buy-credits-signin-link" href="/lecture-notes?auth=signin">Sign in</a>
+      </section>
       <section class="pricing-grid">{{ render_pricing_catalog(pricing_catalog, variant='page') }}</section>
       <section class="shell-panel purchase-history-panel" id="purchase-history">
         <div class="purchase-history-head">
@@ -30,7 +35,7 @@
           <div class="history-empty">Sign in to view purchase history.</div>
         </div>
       </section>
-      <div class="toast" id="buy-credits-toast"></div>
+      <div class="toast" id="buy-credits-toast" role="status" aria-live="polite" aria-atomic="true"></div>
     </main>
     {% include '_shell_footer.html' %}
   </div>
