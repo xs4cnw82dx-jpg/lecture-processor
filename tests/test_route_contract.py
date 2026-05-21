@@ -79,6 +79,10 @@ EXPECTED_ROUTES = [
     ('GET', '/api/study-progress/summary', 'study_api.get_study_progress_summary'),
     ('GET', '/api/shared/<share_token>', 'study_api.get_public_study_share'),
     ('GET', '/api/shared/<share_token>/packs/<pack_id>', 'study_api.get_public_shared_folder_pack'),
+    ('POST', '/api/voice-notes', 'study_api.create_voice_note'),
+    ('GET', '/api/voice-notes/jobs/<job_id>', 'study_api.get_voice_note_job_status'),
+    ('PATCH', '/api/voice-notes/<pack_id>/metadata', 'study_api.update_voice_note_metadata'),
+    ('POST', '/api/voice-notes/<pack_id>/study-tools', 'study_api.regenerate_voice_note_study_tools'),
     ('POST', '/api/tools/export', 'upload_api.tools_export'),
     ('POST', '/api/tools/extract', 'upload_api.tools_extract'),
     ('POST', '/api/tools/lecture-download', 'upload_api.tools_lecture_download'),
@@ -120,9 +124,11 @@ EXPECTED_ROUTES = [
     ('GET', '/study', 'pages.study_dashboard'),
     ('GET', '/study-pack-builder', 'pages.study_pack_builder_page'),
     ('GET', '/shared/<share_token>', 'pages.shared_study_page'),
+    ('GET', '/service-worker.js', 'pages.service_worker'),
     ('GET', '/terms', 'pages.terms_of_service'),
     ('GET', '/tools', 'pages.tools_page'),
     ('GET', '/url-reader', 'pages.url_reader_page'),
+    ('GET', '/voice-notes', 'pages.voice_notes_page'),
     ('POST', '/upload', 'upload_api.upload_file'),
 ]
 
@@ -272,6 +278,20 @@ def test_more_tools_pages_and_links_render(client):
     assert transcriber_response.status_code == 200
     transcriber_html = transcriber_response.get_data(as_text=True)
     assert 'Each run costs 1 interview credit.' in transcriber_html
+
+
+def test_voice_notes_page_renders_pwa_assets(client):
+    response = client.get('/voice-notes')
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert '<title>Voice Notes</title>' in html
+    assert 'rel="manifest"' in html
+    assert '/service-worker.js' in client.get('/service-worker.js').get_data(as_text=True)
+    assert 'voice-notes.js' in html
+    assert 'Transcript' in html
+    assert 'Flashcards' in html
+    assert 'Practice Test' in html
 
 
 def test_study_pack_builder_page_primes_direct_builder_entry(client):

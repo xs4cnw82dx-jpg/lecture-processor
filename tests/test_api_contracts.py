@@ -1015,6 +1015,52 @@ def test_study_pack_update_rejects_invalid_notes_highlights(client, monkeypatch)
     assert "notes_highlights" in response.get_json()["error"]
 
 
+def test_voice_note_metadata_update_persists_mobile_organizer_fields(client, monkeypatch):
+    stored = {
+        "uid": "voice-u1",
+        "title": "Voice note",
+        "mode": "voice-note",
+        "tags": [],
+        "pinned": False,
+        "archived": False,
+    }
+
+    class _Doc:
+        exists = True
+
+        def to_dict(self):
+            return dict(stored)
+
+    class _DocRef:
+        def get(self):
+            return _Doc()
+
+        def update(self, updates):
+            stored.update(dict(updates))
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "voice-u1", "email": "u@example.com"})
+    monkeypatch.setattr(core.study_repo, "study_pack_doc_ref", lambda _db, _pack_id: _DocRef())
+
+    response = client.patch(
+        "/api/voice-notes/pack-voice/metadata",
+        json={
+            "title": "Renamed voice note",
+            "tags": ["biology", "biology", "exam prep"],
+            "pinned": True,
+            "archived": False,
+            "custom_instruction": "Use short bullets",
+        },
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 200
+    assert stored["title"] == "Renamed voice note"
+    assert stored["tags"] == ["biology", "exam prep"]
+    assert stored["pinned"] is True
+    assert stored["archived"] is False
+    assert stored["custom_instruction"] == "Use short bullets"
+
+
 def test_study_pack_delete_respects_account_write_guard(client, monkeypatch):
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u-delete", "email": "u@example.com"})
     monkeypatch.setattr(

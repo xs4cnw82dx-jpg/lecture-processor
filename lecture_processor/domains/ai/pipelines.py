@@ -72,6 +72,20 @@ def _refund_extra_slides(job_id, job_data, uid, amount, runtime=None):
     return refunded
 
 
+def _voice_note_audio_session(job_id, job_data, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    key = study_audio.normalize_audio_storage_key(job_data.get('audio_storage_key', ''), runtime=resolved_runtime)
+    if not key:
+        return None
+    return {
+        'session_id': job_id,
+        'audio_storage_key': key,
+        'title': str(job_data.get('study_pack_title', '') or '').strip()[:120],
+        'created_at': float(job_data.get('started_at', 0) or resolved_runtime.time.time()),
+        'transcript_chars': len(str(job_data.get('transcript', '') or '')),
+    }
+
+
 def save_study_pack(job_id, job_data, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     try:
@@ -140,8 +154,17 @@ def save_study_pack(job_id, job_data, runtime=None):
                 'subject': '',
                 'semester': '',
                 'block': '',
-                'folder_id': '',
-                'folder_name': '',
+                'folder_id': str(job_data.get('folder_id', '') or '').strip(),
+                'folder_name': str(job_data.get('folder_name', '') or '').strip()[:120],
+                'tags': job_data.get('voice_note_tags', []) if isinstance(job_data.get('voice_note_tags', []), list) else [],
+                'pinned': bool(job_data.get('voice_note_pinned', False)),
+                'archived': bool(job_data.get('voice_note_archived', False)),
+                'custom_instruction': str(job_data.get('voice_note_custom_instruction', '') or '').strip()[:2000],
+                'audio_sessions': (
+                    [_voice_note_audio_session(job_id, job_data, runtime=resolved_runtime)]
+                    if mode == 'voice-note' and _voice_note_audio_session(job_id, job_data, runtime=resolved_runtime)
+                    else []
+                ),
                 'created_at': now_ts,
                 'updated_at': now_ts,
             }
@@ -162,6 +185,8 @@ def save_study_pack(job_id, job_data, runtime=None):
         elif mode == 'slides-only':
             slide_text = str(job_data.get('result', '') or '')
         elif mode == 'interview':
+            transcript = str(job_data.get('transcript', '') or '')
+        elif mode == 'voice-note':
             transcript = str(job_data.get('transcript', '') or '')
         if slide_text:
             source_payload['slide_text'] = slide_text
@@ -643,6 +668,353 @@ def process_interview_transcription(job_id, audio_path, runtime=None):
             _refund_extra_slides(job_id, failed_job, uid, to_refund, runtime=resolved_runtime)
     finally:
         resolved_runtime.cleanup_files(local_paths, gemini_files)
+        finished_at = resolved_runtime.time.time()
+        set_fields(
+            finished_at=finished_at,
+            retry_attempts=sum((int(v or 0) for v in retry_tracker.values())),
+            **tokens.as_dict(),
+        )
+        final_job = get_fields()
+        resolved_runtime.save_job_log(job_id, final_job, finished_at)
+
+
+def _demote_markdown_headings(markdown_text, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    text = str(markdown_text or '').strip()
+    if not text:
+        return ''
+    return resolved_runtime.re.sub(r'^(#{1,5})\s+', r'\1# ', text, flags=resolved_runtime.re.MULTILINE)
+
+
+def _format_voice_note_added_heading(job_data, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    title = str(job_data.get('study_pack_title', '') or '').strip()[:120]
+    if title:
+        return title
+    started_at = float(job_data.get('started_at', 0) or resolved_runtime.time.time())
+    try:
+        return datetime.fromtimestamp(started_at, tz=timezone.utc).strftime('%Y-%m-%d %H:%M')
+    except Exception:
+        return 'Voice note'
+
+
+def _append_voice_note_to_existing_pack(job_id, job_data, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    pack_id = str(job_data.get('voice_note_append_to_pack_id', '') or '').strip()
+    uid = str(job_data.get('user_id', '') or '').strip()
+    if not pack_id or not uid:
+        return False
+
+    pack_doc = resolved_runtime.study_repo.get_study_pack_doc(resolved_runtime.db, pack_id)
+    if not getattr(pack_doc, 'exists', False):
+        raise RuntimeError('Target study pack was not found.')
+    pack = pack_doc.to_dict() or {}
+    if str(pack.get('uid', '') or '').strip() != uid:
+        raise RuntimeError('Target study pack is not owned by this user.')
+
+    notes_section = _demote_markdown_headings(job_data.get('result', ''), runtime=resolved_runtime)
+    heading = _format_voice_note_added_heading(job_data, runtime=resolved_runtime)
+    existing_notes = str(pack.get('notes_markdown', '') or '').strip()
+    appended_notes = f"{existing_notes}\n\n---\n\n## Added Voice Note: {heading}\n\n{notes_section}".strip()
+    max_notes_chars = 180000
+    notes_truncated = len(appended_notes) > max_notes_chars
+    if notes_truncated:
+        appended_notes = appended_notes[:max_notes_chars]
+
+    current_flashcards = pack.get('flashcards', []) if isinstance(pack.get('flashcards', []), list) else []
+    current_questions = pack.get('test_questions', []) if isinstance(pack.get('test_questions', []), list) else []
+    next_flashcards = study_generation.sanitize_flashcards(
+        current_flashcards + (job_data.get('flashcards', []) if isinstance(job_data.get('flashcards', []), list) else []),
+        500,
+        runtime=resolved_runtime,
+    )
+    next_questions = study_generation.sanitize_questions(
+        current_questions + (job_data.get('test_questions', []) if isinstance(job_data.get('test_questions', []), list) else []),
+        500,
+        runtime=resolved_runtime,
+    )
+
+    session = _voice_note_audio_session(job_id, job_data, runtime=resolved_runtime)
+    audio_sessions = pack.get('audio_sessions', []) if isinstance(pack.get('audio_sessions', []), list) else []
+    if session:
+        audio_sessions = (audio_sessions + [session])[-50:]
+
+    audio_storage_key = study_audio.normalize_audio_storage_key(job_data.get('audio_storage_key', ''), runtime=resolved_runtime)
+    updates = {
+        'notes_markdown': appended_notes,
+        'notes_truncated': bool(pack.get('notes_truncated', False) or notes_truncated),
+        'notes_audio_map': (
+            study_audio.parse_audio_markers_from_notes(appended_notes, runtime=resolved_runtime)
+            if resolved_runtime.FEATURE_AUDIO_SECTION_SYNC
+            else []
+        ),
+        'has_audio_sync': False,
+        'flashcards': next_flashcards,
+        'test_questions': next_questions,
+        'flashcards_count': len(next_flashcards),
+        'test_questions_count': len(next_questions),
+        'study_features': job_data.get('study_features', pack.get('study_features', 'both')),
+        'study_generation_error': job_data.get('study_generation_error'),
+        'audio_sessions': audio_sessions,
+        'updated_at': resolved_runtime.time.time(),
+    }
+    if audio_storage_key:
+        updates['audio_storage_key'] = audio_storage_key
+        updates['has_audio_playback'] = True
+    pack_doc.reference.update(updates)
+
+    source_ref = resolved_runtime.study_repo.study_pack_source_doc_ref(resolved_runtime.db, pack_id)
+    try:
+        source_doc = source_ref.get()
+        source_payload = source_doc.to_dict() if getattr(source_doc, 'exists', False) else {}
+    except Exception:
+        source_payload = {}
+    transcript = str(job_data.get('transcript', '') or '').strip()
+    if transcript:
+        existing_transcript = str((source_payload or {}).get('transcript', '') or '').strip()
+        next_transcript = f"{existing_transcript}\n\n---\n\n## Added Voice Note: {heading}\n\n{transcript}".strip()
+        source_ref.set(
+            {
+                'study_pack_id': pack_id,
+                'uid': uid,
+                'mode': str(pack.get('mode', '') or 'voice-note'),
+                'transcript': next_transcript[:300000],
+                'updated_at': resolved_runtime.time.time(),
+                'created_at': float((source_payload or {}).get('created_at', resolved_runtime.time.time()) or resolved_runtime.time.time()),
+            },
+            merge=True,
+        )
+
+    job_data['study_pack_id'] = pack_id
+    runtime_jobs_store.set_job(job_id, job_data, runtime=resolved_runtime)
+    return True
+
+
+def process_voice_note(job_id, audio_path, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    gemini_files = []
+    local_paths = [audio_path]
+    set_fields = lambda **fields: runtime_jobs_store.update_job_fields(job_id, runtime=resolved_runtime, **fields)
+    get_fields = lambda: runtime_jobs_store.get_job_snapshot(job_id, runtime=resolved_runtime) or {}
+    tokens = ai_provider.TokenAccumulator(runtime=resolved_runtime)
+    retry_tracker = {}
+    failed_stage = 'initialization'
+
+    try:
+        set_fields(status='processing', step=1, step_description='Preparing audio...')
+
+        output_language = get_fields().get('output_language', 'English')
+        converted_audio_path, converted = resolved_runtime.convert_audio_to_mp3_with_ytdlp(audio_path)
+        if converted and converted_audio_path not in local_paths:
+            local_paths.append(converted_audio_path)
+
+        audio_storage_key = study_audio.persist_audio_for_study_pack(job_id, converted_audio_path, runtime=resolved_runtime)
+        set_fields(audio_storage_key=audio_storage_key)
+        audio_mime_type = resolved_runtime.get_mime_type(converted_audio_path)
+
+        failed_stage = 'audio_upload'
+        audio_file = ai_provider.run_with_provider_retry(
+            'voice_note_audio_upload',
+            lambda: resolved_runtime.client.files.upload(file=converted_audio_path, config={'mime_type': audio_mime_type}),
+            retry_tracker=retry_tracker,
+            runtime=resolved_runtime,
+        )
+        gemini_files.append(audio_file)
+
+        set_fields(step_description='Processing audio file...')
+        failed_stage = 'audio_file_processing'
+        ai_provider.run_with_provider_retry(
+            'voice_note_audio_file_processing',
+            lambda: resolved_runtime.wait_for_file_processing(audio_file),
+            retry_tracker=retry_tracker,
+            runtime=resolved_runtime,
+        )
+
+        set_fields(step_description='Generating transcript...')
+        failed_stage = 'voice_note_transcription'
+        transcript_text, usage = resolved_runtime.transcribe_audio_plain(
+            audio_file,
+            audio_mime_type,
+            output_language=output_language,
+            retry_tracker=retry_tracker,
+            include_usage=True,
+        )
+        if not str(transcript_text or '').strip():
+            raise ValueError('Transcript generation returned empty output.')
+        tokens.record_usage(
+            'voice_note_transcription',
+            usage,
+            model=resolved_runtime.MODEL_AUDIO,
+            billing_mode='standard',
+            input_modality='audio',
+        )
+        set_fields(transcript=transcript_text, step=2, step_description='Creating notes...')
+
+        custom_instruction = str(get_fields().get('voice_note_custom_instruction', '') or '').strip()
+        prompt = resolved_runtime.PROMPT_VOICE_NOTE_NOTES.format(
+            transcript=transcript_text[:120000],
+            output_language=output_language,
+            custom_instruction=custom_instruction or 'None.',
+        )
+        failed_stage = 'voice_note_notes'
+        response = ai_provider.generate_with_policy(
+            resolved_runtime.MODEL_STUDY,
+            [resolved_runtime.types.Content(role='user', parts=[resolved_runtime.types.Part.from_text(text=prompt)])],
+            retry_tracker=retry_tracker,
+            operation_name='voice_note_notes',
+            runtime=resolved_runtime,
+        )
+        tokens.record('voice_note_notes', response, model=resolved_runtime.MODEL_STUDY, billing_mode='standard', input_modality='text')
+        notes_markdown = str(getattr(response, 'text', '') or '').strip()
+        if not notes_markdown:
+            raise ValueError('Voice-note notes generation returned empty output.')
+        set_fields(result=notes_markdown, notes_audio_map=[])
+
+        job_data = get_fields()
+        if job_data.get('study_features', 'both') != 'none':
+            set_fields(step=3, step_description='Generating flashcards and practice test...')
+            failed_stage = 'voice_note_study_tools'
+            flashcards, test_questions, study_error, study_usage = study_generation.generate_study_materials(
+                notes_markdown,
+                job_data.get('flashcard_selection', '20'),
+                job_data.get('question_selection', '10'),
+                job_data.get('study_features', 'both'),
+                output_language,
+                retry_tracker=retry_tracker,
+                runtime=resolved_runtime,
+                include_usage=True,
+            )
+            for stage_name, stage_usage in (study_usage.get('token_usage_by_stage', {}) or {}).items():
+                tokens.record_usage(
+                    stage_name,
+                    stage_usage,
+                    model=stage_usage.get('model') or resolved_runtime.MODEL_STUDY,
+                    billing_mode=stage_usage.get('billing_mode') or 'standard',
+                    input_modality=stage_usage.get('input_modality') or 'text',
+                )
+            set_fields(flashcards=flashcards, test_questions=test_questions, study_generation_error=study_error)
+        else:
+            set_fields(flashcards=[], test_questions=[], study_generation_error=None)
+
+        failed_stage = 'study_pack_persistence'
+        job_data = get_fields()
+        if str(job_data.get('voice_note_append_to_pack_id', '') or '').strip():
+            _append_voice_note_to_existing_pack(job_id, job_data, runtime=resolved_runtime)
+        else:
+            _require_study_pack_saved(job_id, job_data, runtime=resolved_runtime)
+        final_snapshot = get_fields()
+        set_fields(status='complete', step=final_snapshot.get('total_steps', 3), step_description='Complete!')
+    except Exception as error:
+        resolved_runtime.logger.exception('Voice-note processing failed for job %s', job_id)
+        set_fields(
+            status='error',
+            error=resolved_runtime.PROCESSING_PUBLIC_ERROR_MESSAGE,
+            failed_stage=failed_stage,
+            retry_attempts=sum((int(v or 0) for v in retry_tracker.values())),
+            provider_error_code=ai_provider.classify_provider_error_code(error, runtime=resolved_runtime),
+        )
+        failed_job = get_fields()
+        uid = failed_job.get('user_id')
+        _refund_primary_job_credit(job_id, failed_job, uid, failed_job.get('credit_deducted'), runtime=resolved_runtime)
+        failed_job = get_fields()
+        study_tools_cost = int(failed_job.get('study_tools_credit_cost', 0) or 0)
+        already_refunded = int(failed_job.get('extra_slides_refunded', 0) or 0)
+        to_refund = max(0, study_tools_cost - already_refunded)
+        if to_refund > 0:
+            _refund_extra_slides(job_id, failed_job, uid, to_refund, runtime=resolved_runtime)
+    finally:
+        resolved_runtime.cleanup_files(local_paths, gemini_files)
+        finished_at = resolved_runtime.time.time()
+        set_fields(
+            finished_at=finished_at,
+            retry_attempts=sum((int(v or 0) for v in retry_tracker.values())),
+            **tokens.as_dict(),
+        )
+        final_job = get_fields()
+        resolved_runtime.save_job_log(job_id, final_job, finished_at)
+
+
+def regenerate_study_tools_for_pack(job_id, pack_id, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    set_fields = lambda **fields: runtime_jobs_store.update_job_fields(job_id, runtime=resolved_runtime, **fields)
+    get_fields = lambda: runtime_jobs_store.get_job_snapshot(job_id, runtime=resolved_runtime) or {}
+    tokens = ai_provider.TokenAccumulator(runtime=resolved_runtime)
+    retry_tracker = {}
+    failed_stage = 'initialization'
+
+    try:
+        set_fields(status='processing', step=1, step_description='Refreshing study tools...')
+        job_data = get_fields()
+        uid = str(job_data.get('user_id', '') or '').strip()
+        pack_doc = resolved_runtime.study_repo.get_study_pack_doc(resolved_runtime.db, pack_id)
+        if not getattr(pack_doc, 'exists', False):
+            raise RuntimeError('Study pack not found.')
+        pack = pack_doc.to_dict() or {}
+        if str(pack.get('uid', '') or '').strip() != uid:
+            raise RuntimeError('Study pack is not owned by this user.')
+
+        source_text = str(pack.get('notes_markdown', '') or '').strip()
+        if not source_text:
+            source_doc = resolved_runtime.study_repo.get_study_pack_source_doc(resolved_runtime.db, pack_id)
+            if getattr(source_doc, 'exists', False):
+                source_text = str((source_doc.to_dict() or {}).get('transcript', '') or '').strip()
+        if not source_text:
+            raise ValueError('No notes or transcript available for study-tool generation.')
+
+        failed_stage = 'study_tools_generation'
+        flashcards, test_questions, study_error, study_usage = study_generation.generate_study_materials(
+            source_text,
+            job_data.get('flashcard_selection', '20'),
+            job_data.get('question_selection', '10'),
+            job_data.get('study_features', 'both'),
+            job_data.get('output_language', pack.get('output_language', 'English')),
+            retry_tracker=retry_tracker,
+            runtime=resolved_runtime,
+            include_usage=True,
+        )
+        for stage_name, stage_usage in (study_usage.get('token_usage_by_stage', {}) or {}).items():
+            tokens.record_usage(
+                stage_name,
+                stage_usage,
+                model=stage_usage.get('model') or resolved_runtime.MODEL_STUDY,
+                billing_mode=stage_usage.get('billing_mode') or 'standard',
+                input_modality=stage_usage.get('input_modality') or 'text',
+            )
+
+        pack_doc.reference.update(
+            {
+                'flashcards': flashcards,
+                'test_questions': test_questions,
+                'flashcards_count': len(flashcards),
+                'test_questions_count': len(test_questions),
+                'study_features': job_data.get('study_features', 'both'),
+                'flashcard_selection': job_data.get('flashcard_selection', '20'),
+                'question_selection': job_data.get('question_selection', '10'),
+                'study_generation_error': study_error,
+                'updated_at': resolved_runtime.time.time(),
+            }
+        )
+        set_fields(
+            status='complete',
+            step=1,
+            step_description='Complete!',
+            flashcards=flashcards,
+            test_questions=test_questions,
+            study_generation_error=study_error,
+            study_pack_id=pack_id,
+        )
+    except Exception as error:
+        resolved_runtime.logger.exception('Study-tool regeneration failed for job %s', job_id)
+        set_fields(
+            status='error',
+            error=resolved_runtime.PROCESSING_PUBLIC_ERROR_MESSAGE,
+            failed_stage=failed_stage,
+            retry_attempts=sum((int(v or 0) for v in retry_tracker.values())),
+            provider_error_code=ai_provider.classify_provider_error_code(error, runtime=resolved_runtime),
+        )
+        failed_job = get_fields()
+        _refund_extra_slides(job_id, failed_job, failed_job.get('user_id'), 1, runtime=resolved_runtime)
+    finally:
         finished_at = resolved_runtime.time.time()
         set_fields(
             finished_at=finished_at,

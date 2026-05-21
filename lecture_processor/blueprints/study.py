@@ -1,7 +1,7 @@
 from flask import Blueprint, request
 
 from lecture_processor.runtime.container import get_runtime
-from lecture_processor.services import planner_api_service, study_api_service
+from lecture_processor.services import planner_api_service, study_api_service, voice_note_service
 
 study_bp = Blueprint('study_api', __name__)
 
@@ -178,3 +178,27 @@ def export_study_pack_pdf(pack_id):
 def export_study_pack_annotated_pdf(pack_id):
     runtime = get_runtime()
     return study_api_service.export_study_pack_annotated_pdf(runtime, request, pack_id)
+
+
+@study_bp.route('/api/voice-notes', methods=['POST'])
+def create_voice_note():
+    runtime = get_runtime()
+    return voice_note_service.create_voice_note(runtime, request)
+
+
+@study_bp.route('/api/voice-notes/jobs/<job_id>', methods=['GET'])
+def get_voice_note_job_status(job_id):
+    runtime = get_runtime()
+    return voice_note_service.get_voice_note_job_status(runtime, request, job_id)
+
+
+@study_bp.route('/api/voice-notes/<pack_id>/metadata', methods=['PATCH'])
+def update_voice_note_metadata(pack_id):
+    runtime = get_runtime()
+    return voice_note_service.update_voice_note_metadata(runtime, request, pack_id)
+
+
+@study_bp.route('/api/voice-notes/<pack_id>/study-tools', methods=['POST'])
+def regenerate_voice_note_study_tools(pack_id):
+    runtime = get_runtime()
+    return voice_note_service.regenerate_voice_note_study_tools(runtime, request, pack_id)

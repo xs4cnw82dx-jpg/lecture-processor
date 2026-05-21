@@ -262,7 +262,7 @@ BATCH_JOB_RECOVERY_LOCK = threading.Lock()
 
 BATCH_JOB_RECOVERY_DONE = False
 
-RUNTIME_JOB_PERSISTED_FIELDS = {'status', 'step', 'step_description', 'total_steps', 'mode', 'job_scope', 'tool_source_type', 'tool_input_name', 'user_id', 'user_email', 'credit_deducted', 'credit_refunded', 'started_at', 'finished_at', 'result', 'slide_text', 'transcript', 'flashcards', 'test_questions', 'flashcard_selection', 'question_selection', 'study_features', 'output_language', 'study_generation_error', 'study_pack_id', 'study_pack_title', 'error', 'billing_receipt', 'interview_features', 'interview_features_successful', 'interview_summary', 'interview_sections', 'interview_combined', 'interview_features_cost', 'extra_slides_refunded', 'audio_storage_key', 'notes_audio_map', 'transcript_segments', 'token_usage_by_stage', 'token_input_total', 'token_output_total', 'token_total', 'export_manifest', 'is_batch', 'batch_parent_id', 'batch_row_id', 'billing_mode', 'billing_multiplier', 'stage_costs'}
+RUNTIME_JOB_PERSISTED_FIELDS = {'status', 'step', 'step_description', 'total_steps', 'mode', 'job_scope', 'tool_source_type', 'tool_input_name', 'user_id', 'user_email', 'credit_deducted', 'credit_refunded', 'started_at', 'finished_at', 'result', 'slide_text', 'transcript', 'flashcards', 'test_questions', 'flashcard_selection', 'question_selection', 'study_features', 'output_language', 'study_generation_error', 'study_pack_id', 'study_pack_title', 'folder_id', 'folder_name', 'error', 'billing_receipt', 'interview_features', 'interview_features_successful', 'interview_summary', 'interview_sections', 'interview_combined', 'interview_features_cost', 'extra_slides_refunded', 'audio_storage_key', 'notes_audio_map', 'transcript_segments', 'token_usage_by_stage', 'token_input_total', 'token_output_total', 'token_total', 'export_manifest', 'is_batch', 'batch_parent_id', 'batch_row_id', 'billing_mode', 'billing_multiplier', 'stage_costs', 'voice_note_tags', 'voice_note_pinned', 'voice_note_archived', 'voice_note_custom_instruction', 'voice_note_append_to_pack_id', 'study_tools_credit_cost'}
 
 RUNTIME_JOB_MAX_STRING_LENGTH = 200000
 
@@ -607,6 +607,8 @@ PROMPT_INTERVIEW_TRANSCRIPTION = prompt_registry.PROMPT_INTERVIEW_TRANSCRIPTION
 PROMPT_INTERVIEW_SUMMARY = prompt_registry.PROMPT_INTERVIEW_SUMMARY
 
 PROMPT_INTERVIEW_SECTIONED = prompt_registry.PROMPT_INTERVIEW_SECTIONED
+
+PROMPT_VOICE_NOTE_NOTES = prompt_registry.PROMPT_VOICE_NOTE_NOTES
 
 PROMPT_MERGE_TEMPLATE = prompt_registry.PROMPT_MERGE_TEMPLATE
 

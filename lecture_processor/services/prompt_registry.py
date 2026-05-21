@@ -85,6 +85,29 @@ Transcript:
 {transcript}
 """
 
+PROMPT_VOICE_NOTE_NOTES = """You are an expert study-note editor. Turn this voice-note transcript into clean, study-ready Markdown notes.
+
+GOAL:
+- Preserve the meaning and useful details from the transcript.
+- Remove filler, repetition, false starts, and small talk.
+- Organize the material so it is easy to review on a phone.
+- Do not invent facts, examples, numbers, citations, or claims not supported by the transcript.
+
+OUTPUT FORMAT:
+1. Start directly with Markdown content, with no assistant preface.
+2. First line must be a concise `#` title based on the transcript.
+3. Use `##` and `###` headings for clear sections.
+4. Use bullets only where they make scanning easier.
+5. End with `## Key Takeaways` containing 5-12 concrete bullets.
+6. Write fully in this language: {output_language}.
+
+OPTIONAL USER INSTRUCTIONS:
+{custom_instruction}
+
+TRANSCRIPT:
+{transcript}
+"""
+
 PROMPT_MERGE_TEMPLATE = """Create one complete, consistent, study-ready lecture document by combining slide text and audio transcript.
 
 GOAL:
@@ -201,6 +224,7 @@ PROMPT_RECORDS: List[PromptRecord] = [
     PromptRecord("interview_transcription", "Interview transcription", PROMPT_INTERVIEW_TRANSCRIPTION),
     PromptRecord("interview_summary", "Interview summary", PROMPT_INTERVIEW_SUMMARY),
     PromptRecord("interview_sectioned", "Interview sectioned", PROMPT_INTERVIEW_SECTIONED),
+    PromptRecord("voice_note_notes", "Voice note notes", PROMPT_VOICE_NOTE_NOTES),
     PromptRecord("merge_template", "Lecture merge template", PROMPT_MERGE_TEMPLATE),
     PromptRecord("merge_with_audio_markers", "Lecture merge with audio markers", PROMPT_MERGE_WITH_AUDIO_MARKERS),
     PromptRecord("study_template", "Study tools generation", PROMPT_STUDY_TEMPLATE),
