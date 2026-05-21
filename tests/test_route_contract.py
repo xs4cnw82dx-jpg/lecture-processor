@@ -288,7 +288,7 @@ def test_voice_notes_page_renders_pwa_assets(client):
     assert '<title>Voice Notes</title>' in html
     assert 'rel="manifest"' in html
     assert '/service-worker.js' in client.get('/service-worker.js').get_data(as_text=True)
-    assert 'voice-notes.js' in html
+    assert 'voice-notes.min.js' in html or 'voice-notes.js' in html
     assert 'Transcript' in html
     assert 'Flashcards' in html
     assert 'Practice Test' in html
