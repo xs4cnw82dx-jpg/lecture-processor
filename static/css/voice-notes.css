@@ -21,6 +21,10 @@ body {
   background: var(--voice-bg);
 }
 
+.voice-notes-body .app-shell-topbar {
+  padding-top: calc(12px + env(safe-area-inset-top));
+}
+
 .voice-page {
   color: var(--voice-text);
   padding-bottom: calc(92px + env(safe-area-inset-bottom));
@@ -112,6 +116,11 @@ body {
   place-items: center;
   padding: 28px 18px;
   min-height: 420px;
+}
+
+.voice-recorder-simple {
+  width: min(720px, 100%);
+  margin: 0 auto;
 }
 
 .voice-meter {
@@ -706,6 +715,7 @@ body {
   color: var(--voice-muted);
   font-size: 0.74rem;
   font-weight: 850;
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -721,6 +731,25 @@ body {
 .voice-auth-card p:not(.voice-eyebrow) {
   color: var(--voice-muted);
   line-height: 1.55;
+}
+
+.voice-advanced-settings {
+  margin-bottom: 14px;
+  border: 1px solid var(--voice-border);
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 12px;
+}
+
+.voice-advanced-settings summary {
+  cursor: pointer;
+  color: var(--voice-text);
+  font-weight: 850;
+}
+
+.voice-advanced-settings .voice-field {
+  margin-top: 12px;
+  margin-bottom: 0;
 }
 
 .voice-toast {
@@ -759,6 +788,39 @@ body {
 }
 
 @media (max-width: 760px) {
+  .voice-notes-body .app-shell-topbar {
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+
+  .voice-notes-body .app-shell-menu-btn {
+    min-width: 44px;
+    padding: 8px;
+  }
+
+  .voice-notes-body .app-shell-menu-btn span {
+    display: none;
+  }
+
+  .voice-notes-body .app-shell-title {
+    min-width: 0;
+    font-size: 1rem;
+  }
+
+  .voice-notes-body .app-shell-account-btn {
+    max-width: 142px;
+    min-height: 42px;
+  }
+
+  .voice-notes-body #shell-account-name {
+    max-width: 74px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .voice-page {
     padding-left: 12px;
     padding-right: 12px;
@@ -766,6 +828,15 @@ body {
 
   .voice-header {
     align-items: flex-start;
+    margin-bottom: 14px;
+  }
+
+  .voice-header h1 {
+    font-size: 2.05rem;
+  }
+
+  .voice-eyebrow {
+    font-size: 0.72rem;
   }
 
   .voice-sync-pill {
@@ -779,7 +850,12 @@ body {
   }
 
   .voice-recorder {
-    min-height: 360px;
+    min-height: 430px;
+    padding: 24px 16px;
+  }
+
+  .voice-meter {
+    width: min(260px, 74vw);
   }
 
   .voice-tabs {

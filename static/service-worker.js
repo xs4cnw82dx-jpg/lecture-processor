@@ -1,4 +1,4 @@
-const VOICE_CACHE = 'lecture-processor-voice-v1';
+const VOICE_CACHE = 'lecture-processor-voice-v2';
 const APP_SHELL = [
   '/voice-notes',
   '/static/manifest.webmanifest',

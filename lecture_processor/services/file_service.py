@@ -87,6 +87,8 @@ def file_has_audio_signature(path):
             return True
         if header.startswith(b'OggS'):
             return True
+        if header.startswith(b'\x1a\x45\xdf\xa3'):
+            return True
         if header[4:8] == b'ftyp':
             return True
         if header[0] == 0xFF and (header[1] & 0xF0) == 0xF0:
@@ -678,5 +680,7 @@ def get_mime_type(filename):
         'aac': 'audio/aac',
         'ogg': 'audio/ogg',
         'flac': 'audio/flac',
+        'webm': 'audio/webm',
+        'mp4': 'audio/mp4',
     }
     return mime_types.get(ext, 'application/octet-stream')

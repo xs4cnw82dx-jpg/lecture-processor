@@ -177,7 +177,7 @@ ALLOWED_SLIDE_EXTENSIONS = {'pdf', 'pptx'}
 
 ALLOWED_PDF_EXTENSIONS = ALLOWED_SLIDE_EXTENSIONS
 
-ALLOWED_AUDIO_EXTENSIONS = {'mp3', 'm4a', 'wav', 'aac', 'ogg', 'flac', 'webm'}
+ALLOWED_AUDIO_EXTENSIONS = {'mp3', 'm4a', 'wav', 'aac', 'ogg', 'flac', 'webm', 'mp4'}
 
 MAX_PDF_UPLOAD_BYTES = 50 * 1024 * 1024
 
@@ -189,7 +189,7 @@ ALLOWED_SLIDE_MIME_TYPES = {'application/pdf', 'application/x-pdf', 'application
 
 ALLOWED_PDF_MIME_TYPES = ALLOWED_SLIDE_MIME_TYPES
 
-ALLOWED_AUDIO_MIME_TYPES = {'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/x-wav', 'audio/aac', 'audio/ogg', 'audio/flac', 'audio/webm', 'video/webm'}
+ALLOWED_AUDIO_MIME_TYPES = {'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/x-wav', 'audio/aac', 'audio/ogg', 'audio/flac', 'audio/webm', 'video/webm', 'video/mp4'}
 
 runtime_bootstrap.ensure_directory(UPLOAD_FOLDER)
 
@@ -548,7 +548,7 @@ def is_email_allowed(email):
 
 MODEL_SLIDES = 'gemini-3.1-flash-lite'
 
-MODEL_AUDIO = 'gemini-3-flash-preview'
+MODEL_AUDIO = 'gemini-3.1-flash-lite'
 
 MODEL_INTEGRATION = 'gemini-2.5-pro'
 
@@ -601,6 +601,8 @@ PROMPT_SLIDE_EXTRACTION = prompt_registry.PROMPT_SLIDE_EXTRACTION
 PROMPT_AUDIO_TRANSCRIPTION = prompt_registry.PROMPT_AUDIO_TRANSCRIPTION
 
 PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED = prompt_registry.PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED
+
+PROMPT_VOICE_NOTE_TRANSCRIPTION = prompt_registry.PROMPT_VOICE_NOTE_TRANSCRIPTION
 
 PROMPT_INTERVIEW_TRANSCRIPTION = prompt_registry.PROMPT_INTERVIEW_TRANSCRIPTION
 
@@ -1371,7 +1373,7 @@ def add_job_credit_refund(job_data, credit_type, amount=1):
 def get_billing_receipt_snapshot(job_data):
     return billing_receipts.get_billing_receipt_snapshot(job_data, runtime=_self_runtime())
 
-MODEL_THINKING_POLICY = {'gemini-3.1-flash-lite': {'thinking_level': 'high'}, 'gemini-2.5-pro': {'thinking_budget': 32768}, 'gemini-3-flash-preview': {'thinking_level': 'high'}}
+MODEL_THINKING_POLICY = {'gemini-3.1-flash-lite': {'thinking_level': 'minimal'}, 'gemini-2.5-pro': {'thinking_budget': 32768}, 'gemini-3-flash-preview': {'thinking_level': 'high'}}
 
 PROVIDER_RETRY_MAX_ATTEMPTS = safe_int_env('PROVIDER_RETRY_MAX_ATTEMPTS', 3, minimum=1, maximum=6)
 

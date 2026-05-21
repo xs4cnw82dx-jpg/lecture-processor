@@ -790,6 +790,53 @@ def _append_voice_note_to_existing_pack(job_id, job_data, runtime=None):
     return True
 
 
+def _sanitize_generated_voice_tags(raw_tags, runtime=None):
+    _ = runtime
+    values = raw_tags if isinstance(raw_tags, list) else []
+    cleaned = []
+    seen = set()
+    for value in values:
+        tag = ' '.join(str(value or '').strip().lower().split())[:32]
+        if not tag or tag in seen:
+            continue
+        seen.add(tag)
+        cleaned.append(tag)
+        if len(cleaned) >= 5:
+            break
+    return cleaned
+
+
+def _fallback_voice_note_title(transcript, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    text = ' '.join(str(transcript or '').strip().split())
+    if not text:
+        return 'Voice note'
+    sentence = resolved_runtime.re.split(r'(?<=[.!?])\s+', text, maxsplit=1)[0]
+    title = sentence[:72].strip(' .,:;-')
+    return title or 'Voice note'
+
+
+def _parse_voice_note_transcription_response(raw_text, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    parsed = resolved_runtime.extract_json_payload(str(raw_text or ''))
+    if isinstance(parsed, dict):
+        transcript = str(parsed.get('transcript', '') or '').strip()
+        title = str(parsed.get('title', '') or '').strip()[:120]
+        tags = _sanitize_generated_voice_tags(parsed.get('tags', []), runtime=resolved_runtime)
+        if transcript:
+            return {
+                'transcript': transcript,
+                'title': title or _fallback_voice_note_title(transcript, runtime=resolved_runtime),
+                'tags': tags,
+            }
+    transcript = str(raw_text or '').strip()
+    return {
+        'transcript': transcript,
+        'title': _fallback_voice_note_title(transcript, runtime=resolved_runtime),
+        'tags': [],
+    }
+
+
 def process_voice_note(job_id, audio_path, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     gemini_files = []
@@ -830,80 +877,58 @@ def process_voice_note(job_id, audio_path, runtime=None):
             runtime=resolved_runtime,
         )
 
-        set_fields(step_description='Generating transcript...')
+        set_fields(step_description='Transcribing voice note...')
         failed_stage = 'voice_note_transcription'
-        transcript_text, usage = resolved_runtime.transcribe_audio_plain(
-            audio_file,
-            audio_mime_type,
+        custom_instruction = str(get_fields().get('voice_note_custom_instruction', '') or '').strip()
+        prompt = resolved_runtime.PROMPT_VOICE_NOTE_TRANSCRIPTION.format(
             output_language=output_language,
-            retry_tracker=retry_tracker,
-            include_usage=True,
+            custom_instruction=custom_instruction or 'None.',
         )
+        response = ai_provider.generate_with_policy(
+            resolved_runtime.MODEL_AUDIO,
+            [
+                resolved_runtime.types.Content(
+                    role='user',
+                    parts=[
+                        resolved_runtime.types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type),
+                        resolved_runtime.types.Part.from_text(text=prompt),
+                    ],
+                )
+            ],
+            retry_tracker=retry_tracker,
+            operation_name='voice_note_transcription',
+            runtime=resolved_runtime,
+        )
+        parsed_voice_note = _parse_voice_note_transcription_response(getattr(response, 'text', '') or '', runtime=resolved_runtime)
+        transcript_text = parsed_voice_note.get('transcript', '')
         if not str(transcript_text or '').strip():
             raise ValueError('Transcript generation returned empty output.')
-        tokens.record_usage(
+        tokens.record(
             'voice_note_transcription',
-            usage,
+            response,
             model=resolved_runtime.MODEL_AUDIO,
             billing_mode='standard',
             input_modality='audio',
         )
-        set_fields(transcript=transcript_text, step=2, step_description='Creating notes...')
-
-        custom_instruction = str(get_fields().get('voice_note_custom_instruction', '') or '').strip()
-        prompt = resolved_runtime.PROMPT_VOICE_NOTE_NOTES.format(
-            transcript=transcript_text[:120000],
-            output_language=output_language,
-            custom_instruction=custom_instruction or 'None.',
+        set_fields(
+            transcript=transcript_text,
+            result=transcript_text,
+            study_pack_title=parsed_voice_note.get('title') or _fallback_voice_note_title(transcript_text, runtime=resolved_runtime),
+            voice_note_tags=parsed_voice_note.get('tags', []),
+            flashcards=[],
+            test_questions=[],
+            study_features='none',
+            study_generation_error=None,
+            notes_audio_map=[],
+            step=2,
+            step_description='Saving transcript...',
         )
-        failed_stage = 'voice_note_notes'
-        response = ai_provider.generate_with_policy(
-            resolved_runtime.MODEL_STUDY,
-            [resolved_runtime.types.Content(role='user', parts=[resolved_runtime.types.Part.from_text(text=prompt)])],
-            retry_tracker=retry_tracker,
-            operation_name='voice_note_notes',
-            runtime=resolved_runtime,
-        )
-        tokens.record('voice_note_notes', response, model=resolved_runtime.MODEL_STUDY, billing_mode='standard', input_modality='text')
-        notes_markdown = str(getattr(response, 'text', '') or '').strip()
-        if not notes_markdown:
-            raise ValueError('Voice-note notes generation returned empty output.')
-        set_fields(result=notes_markdown, notes_audio_map=[])
-
-        job_data = get_fields()
-        if job_data.get('study_features', 'both') != 'none':
-            set_fields(step=3, step_description='Generating flashcards and practice test...')
-            failed_stage = 'voice_note_study_tools'
-            flashcards, test_questions, study_error, study_usage = study_generation.generate_study_materials(
-                notes_markdown,
-                job_data.get('flashcard_selection', '20'),
-                job_data.get('question_selection', '10'),
-                job_data.get('study_features', 'both'),
-                output_language,
-                retry_tracker=retry_tracker,
-                runtime=resolved_runtime,
-                include_usage=True,
-            )
-            for stage_name, stage_usage in (study_usage.get('token_usage_by_stage', {}) or {}).items():
-                tokens.record_usage(
-                    stage_name,
-                    stage_usage,
-                    model=stage_usage.get('model') or resolved_runtime.MODEL_STUDY,
-                    billing_mode=stage_usage.get('billing_mode') or 'standard',
-                    input_modality=stage_usage.get('input_modality') or 'text',
-                )
-            set_fields(flashcards=flashcards, test_questions=test_questions, study_generation_error=study_error)
-        else:
-            set_fields(flashcards=[], test_questions=[], study_generation_error=None)
 
         failed_stage = 'study_pack_persistence'
         job_data = get_fields()
-        if str(job_data.get('voice_note_append_to_pack_id', '') or '').strip():
-            _append_voice_note_to_existing_pack(job_id, job_data, runtime=resolved_runtime)
-        else:
-            _require_study_pack_saved(job_id, job_data, runtime=resolved_runtime)
+        _require_study_pack_saved(job_id, job_data, runtime=resolved_runtime)
         final_snapshot = get_fields()
-        set_fields(status='complete', step=final_snapshot.get('total_steps', 3), step_description='Complete!')
+        set_fields(status='complete', step=final_snapshot.get('total_steps', 2), step_description='Complete!')
     except Exception as error:
         resolved_runtime.logger.exception('Voice-note processing failed for job %s', job_id)
         set_fields(
@@ -916,12 +941,6 @@ def process_voice_note(job_id, audio_path, runtime=None):
         failed_job = get_fields()
         uid = failed_job.get('user_id')
         _refund_primary_job_credit(job_id, failed_job, uid, failed_job.get('credit_deducted'), runtime=resolved_runtime)
-        failed_job = get_fields()
-        study_tools_cost = int(failed_job.get('study_tools_credit_cost', 0) or 0)
-        already_refunded = int(failed_job.get('extra_slides_refunded', 0) or 0)
-        to_refund = max(0, study_tools_cost - already_refunded)
-        if to_refund > 0:
-            _refund_extra_slides(job_id, failed_job, uid, to_refund, runtime=resolved_runtime)
     finally:
         resolved_runtime.cleanup_files(local_paths, gemini_files)
         finished_at = resolved_runtime.time.time()

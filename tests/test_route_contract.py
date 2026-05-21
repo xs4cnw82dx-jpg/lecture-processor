@@ -290,8 +290,10 @@ def test_voice_notes_page_renders_pwa_assets(client):
     assert '/service-worker.js' in client.get('/service-worker.js').get_data(as_text=True)
     assert 'voice-notes.min.js' in html or 'voice-notes.js' in html
     assert 'Transcript' in html
-    assert 'Flashcards' in html
-    assert 'Practice Test' in html
+    assert 'Advanced prompt' in html
+    assert 'href="/study"' in html
+    assert 'voice-pane-flashcards' not in html
+    assert 'voice-pane-test' not in html
 
 
 def test_study_pack_builder_page_primes_direct_builder_entry(client):
