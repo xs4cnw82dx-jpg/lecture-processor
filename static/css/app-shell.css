@@ -705,3 +705,63 @@ select {
     right: -6px;
   }
 }
+
+@media (max-width: 760px) {
+  .app-shell-topbar {
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+
+  .app-shell-menu-btn {
+    flex: 0 0 auto;
+    min-width: 44px;
+    min-height: 42px;
+    padding: 8px;
+    justify-content: center;
+  }
+
+  .app-shell-menu-btn span {
+    display: none;
+  }
+
+  .app-shell-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 1rem;
+  }
+
+  .app-shell-topbar-right {
+    flex: 0 0 auto;
+    margin-left: auto;
+    min-width: 0;
+  }
+
+  .app-shell[data-auth-state="pending"] .app-shell-signin {
+    visibility: visible;
+    opacity: .72;
+  }
+
+  .app-shell-signin {
+    min-height: 42px;
+    padding: 8px 12px;
+    white-space: nowrap;
+  }
+
+  .app-shell-account-btn {
+    max-width: min(44vw, 168px);
+    min-height: 42px;
+    overflow: hidden;
+  }
+
+  .app-shell-account-btn #shell-account-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

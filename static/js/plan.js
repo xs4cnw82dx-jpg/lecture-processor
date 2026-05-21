@@ -1126,7 +1126,9 @@
       ]);
     }).then(function (payloads) {
       currentFolders = Array.isArray(payloads[0].folders) ? payloads[0].folders : [];
-      currentPacks = Array.isArray(payloads[1].study_packs) ? payloads[1].study_packs : [];
+      currentPacks = (Array.isArray(payloads[1].study_packs) ? payloads[1].study_packs : []).filter(function (pack) {
+        return String(pack && pack.mode || '') !== 'voice-note';
+      });
       applyProgressPayload(payloads[2]);
       renderFolders();
       renderPackGoals();

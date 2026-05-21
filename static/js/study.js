@@ -3419,6 +3419,8 @@ function filteredPacks() {
       if ((p.mode || '') !== 'interview') return false;
     } else if (selectedFolderId === BUILTIN_VOICE_NOTES_FOLDER_ID) {
       if ((p.mode || '') !== 'voice-note') return false;
+    } else if (!selectedFolderId || selectedFolderId === BUILTIN_ALL_FOLDER_ID) {
+      if ((p.mode || '') === 'voice-note') return false;
     } else if (selectedFolderId && selectedFolderId !== BUILTIN_ALL_FOLDER_ID && p.folder_id !== selectedFolderId) {
       return false;
     }
@@ -5324,6 +5326,7 @@ var hlDownloadMenu = null;
 var HL_HISTORY_LIMIT = 50;
 var hlUndoStack = [];
 var hlRedoStack = [];
+var hlSelectionTimer = null;
 
 function renderNotesForSelectedPackBase() {
   if (!notesView || !selectedPack) return;
@@ -5792,6 +5795,10 @@ function reapplyHighlightsForPack() {
 }
 
 function applyHighlightToSelection() {
+  if (hlSelectionTimer) {
+    window.clearTimeout(hlSelectionTimer);
+    hlSelectionTimer = null;
+  }
   var sel = window.getSelection();
   if (!sel || sel.isCollapsed || !sel.rangeCount || !notesView) return;
   var range = sel.getRangeAt(0);
@@ -5804,6 +5811,25 @@ function applyHighlightToSelection() {
     }
   });
   sel.removeAllRanges();
+}
+
+function selectionIsInsideNotes() {
+  var sel = window.getSelection ? window.getSelection() : null;
+  if (!sel || sel.isCollapsed || !sel.rangeCount || !notesView) return false;
+  try {
+    return notesView.contains(sel.getRangeAt(0).commonAncestorContainer);
+  } catch (e) {
+    return false;
+  }
+}
+
+function scheduleHighlightToSelection(delayMs) {
+  if (!selectionIsInsideNotes()) return;
+  if (hlSelectionTimer) window.clearTimeout(hlSelectionTimer);
+  hlSelectionTimer = window.setTimeout(function () {
+    hlSelectionTimer = null;
+    applyHighlightToSelection();
+  }, Math.max(80, Number(delayMs || 120)));
 }
 
 function undoHighlightChange() {
@@ -5860,9 +5886,17 @@ if (notesView) {
 // Apply highlight on text selection (mouseup)
 if (notesView) {
   notesView.addEventListener('mouseup', function () {
-    setTimeout(function () { applyHighlightToSelection(); }, 10);
+    scheduleHighlightToSelection(120);
+  });
+  notesView.addEventListener('touchend', function () {
+    scheduleHighlightToSelection(1000);
   });
 }
+
+document.addEventListener('selectionchange', function () {
+  if (!selectionIsInsideNotes()) return;
+  scheduleHighlightToSelection(1000);
+});
 
 function downloadBlob(filename, mime, textContent) {
   var blob = new Blob([textContent], { type: mime });

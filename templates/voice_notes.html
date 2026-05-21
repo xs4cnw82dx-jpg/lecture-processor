@@ -56,7 +56,7 @@
           <span>Study</span>
         </a>
         <button type="button" class="voice-nav-btn" data-voice-view="settings" aria-pressed="false">
-          <svg viewBox="-1 -1 26 26" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.6.25 1 .84 1 1.5V12c0 .66-.4 1.25-1 1.5Z"></path></svg>
+          <svg viewBox="-3 -3 30 30" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.6.25 1 .84 1 1.5V12c0 .66-.4 1.25-1 1.5Z"></path></svg>
           <span>Settings</span>
         </button>
       </nav>
@@ -109,15 +109,21 @@
       <section class="voice-view" id="voice-view-detail" data-voice-panel="detail">
         <div class="voice-detail-empty" id="voice-detail-empty">Select a note from the library.</div>
         <article class="voice-detail" id="voice-detail" hidden>
+          <button type="button" class="voice-back-btn" id="voice-back-btn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>
+            <span>Library</span>
+          </button>
           <header class="voice-detail-head">
             <div>
               <input class="voice-detail-title" id="voice-detail-title" aria-label="Voice note title">
               <div class="voice-detail-meta" id="voice-detail-meta"></div>
             </div>
             <div class="voice-detail-actions">
+              <button type="button" class="voice-mini-action" id="voice-archive-btn">Archive</button>
               <button type="button" class="voice-icon-btn" id="voice-share-btn" aria-label="Share transcript">
                 <svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><path d="m8.6 13.5 6.8 4"></path><path d="m15.4 6.5-6.8 4"></path></svg>
               </button>
+              <button type="button" class="voice-mini-action danger" id="voice-delete-btn">Delete</button>
             </div>
           </header>
 
