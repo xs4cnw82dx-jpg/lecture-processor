@@ -67,25 +67,19 @@ def _batch_requested_bytes_for_quota(app_ctx, request, row_plans):
     return requested_bytes
 
 
-def _batch_credit_preflight_error(user, mode, row_plans):
+def _batch_credit_preflight_error(user, mode, row_plans, runtime=None):
     row_count = len(row_plans)
     if mode == 'lecture-notes':
-        available = _safe_int(user.get('lecture_credits_standard', 0)) + _safe_int(user.get('lecture_credits_extended', 0))
-        if available < row_count:
+        if not billing_credits.has_category_credit(user, 'lecture', row_count, runtime=runtime):
             return 'Not enough lecture credits to start this batch.', 402
     elif mode == 'slides-only':
-        if _safe_int(user.get('slides_credits', 0)) < row_count:
+        if not billing_credits.has_category_credit(user, 'slides', row_count, runtime=runtime):
             return 'Not enough text extraction credits to start this batch.', 402
     elif mode == 'interview':
-        available = (
-            _safe_int(user.get('interview_credits_short', 0))
-            + _safe_int(user.get('interview_credits_medium', 0))
-            + _safe_int(user.get('interview_credits_long', 0))
-        )
-        if available < row_count:
+        if not billing_credits.has_category_credit(user, 'interview', row_count, runtime=runtime):
             return 'Not enough interview credits to start this batch.', 402
         extras_needed = sum(_safe_int(row.get('interview_features_cost', 0)) for row in row_plans)
-        if extras_needed > 0 and _safe_int(user.get('slides_credits', 0)) < extras_needed:
+        if extras_needed > 0 and not billing_credits.has_category_credit(user, 'slides', extras_needed, runtime=runtime):
             return 'Not enough text extraction credits for interview extras in this batch.', 402
     return '', 0
 
@@ -298,7 +292,7 @@ def create_batch_job(app_ctx, request):
                 }
             )
 
-        credit_error, credit_status = _batch_credit_preflight_error(user, mode, row_plans)
+        credit_error, credit_status = _batch_credit_preflight_error(user, mode, row_plans, runtime=app_ctx)
         if credit_error:
             return app_ctx.jsonify({'error': credit_error}), credit_status
 

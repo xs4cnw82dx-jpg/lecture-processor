@@ -40,6 +40,7 @@
                 <div class="admin-tabs">
                     <button class="btn admin-tab active" data-admin-tab="overview" type="button">Overview</button>
                     <button class="btn admin-tab" data-admin-tab="batch-jobs" type="button">Batch Jobs</button>
+                    <button class="btn admin-tab" data-admin-tab="credits" type="button">Credits</button>
                 </div>
             </section>
 
@@ -412,6 +413,134 @@
                                 </tr>
                             </thead>
                             <tbody id="admin-batch-jobs-body"></tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+
+            <div id="admin-tab-credits-content" hidden>
+                <section class="panel">
+                    <div class="analyzer-head">
+                        <div>
+                            <h2>User Credits</h2>
+                            <p class="analyzer-intro">Find an existing account, grant category credits, or turn on unlimited access.</p>
+                        </div>
+                        <div class="actions">
+                            <button class="btn" id="admin-credit-refresh-btn" type="button">Refresh grants</button>
+                        </div>
+                    </div>
+
+                    <form class="admin-credit-search" id="admin-credit-search-form">
+                        <label class="calculator-control">
+                            <span>Email address</span>
+                            <input id="admin-credit-email" class="calculator-input" type="email" placeholder="user@example.com" autocomplete="off">
+                        </label>
+                        <button class="btn primary" id="admin-credit-search-btn" type="submit">Search user</button>
+                        <span class="admin-credit-hint">Existing users only.</span>
+                    </form>
+
+                    <div class="admin-credit-state" id="admin-credit-state">Search for a user to manage credits.</div>
+
+                    <div class="admin-credit-user" id="admin-credit-user-card" hidden>
+                        <div class="admin-credit-user-head">
+                            <div>
+                                <h3 id="admin-credit-user-email">User</h3>
+                                <div class="admin-credit-user-meta" id="admin-credit-user-meta">UID</div>
+                            </div>
+                            <span class="status other" id="admin-credit-user-status">Active</span>
+                        </div>
+
+                        <div class="admin-credit-admin-note" id="admin-credit-admin-note" hidden>
+                            Configured admin account: unlimited access is automatic from server settings.
+                        </div>
+
+                        <div class="admin-credit-summary-grid">
+                            <article class="admin-credit-summary-card">
+                                <span>Lecture Notes</span>
+                                <strong id="admin-credit-summary-lecture">0</strong>
+                            </article>
+                            <article class="admin-credit-summary-card">
+                                <span>Text Extraction</span>
+                                <strong id="admin-credit-summary-slides">0</strong>
+                            </article>
+                            <article class="admin-credit-summary-card">
+                                <span>Interview Transcription</span>
+                                <strong id="admin-credit-summary-interview">0</strong>
+                            </article>
+                        </div>
+
+                        <div class="admin-credit-forms-grid">
+                            <form class="admin-credit-form" id="admin-credit-grant-form">
+                                <h3>Grant Credits</h3>
+                                <div class="admin-credit-form-grid">
+                                    <label class="calculator-control">
+                                        <span>Lecture Notes</span>
+                                        <input id="admin-credit-grant-lecture" class="calculator-input" type="number" min="0" max="10000" step="1" value="0">
+                                    </label>
+                                    <label class="calculator-control">
+                                        <span>Text Extraction</span>
+                                        <input id="admin-credit-grant-slides" class="calculator-input" type="number" min="0" max="10000" step="1" value="0">
+                                    </label>
+                                    <label class="calculator-control">
+                                        <span>Interview Transcription</span>
+                                        <input id="admin-credit-grant-interview" class="calculator-input" type="number" min="0" max="10000" step="1" value="0">
+                                    </label>
+                                </div>
+                                <label class="calculator-control">
+                                    <span>Note</span>
+                                    <input id="admin-credit-grant-note" class="calculator-input" maxlength="300" placeholder="Optional reason">
+                                </label>
+                                <button class="btn primary" id="admin-credit-grant-btn" type="submit">Grant credits</button>
+                            </form>
+
+                            <form class="admin-credit-form" id="admin-credit-unlimited-form">
+                                <h3>Unlimited Access</h3>
+                                <div class="admin-credit-toggle-list">
+                                    <label class="admin-credit-toggle">
+                                        <input id="admin-credit-unlimited-lecture" type="checkbox">
+                                        <span>Lecture Notes</span>
+                                    </label>
+                                    <label class="admin-credit-toggle">
+                                        <input id="admin-credit-unlimited-slides" type="checkbox">
+                                        <span>Text Extraction</span>
+                                    </label>
+                                    <label class="admin-credit-toggle">
+                                        <input id="admin-credit-unlimited-interview" type="checkbox">
+                                        <span>Interview Transcription</span>
+                                    </label>
+                                </div>
+                                <label class="calculator-control">
+                                    <span>Note</span>
+                                    <input id="admin-credit-unlimited-note" class="calculator-input" maxlength="300" placeholder="Optional reason">
+                                </label>
+                                <div class="admin-credit-actions">
+                                    <button class="btn" id="admin-credit-unlimited-all-btn" type="button">Set all unlimited</button>
+                                    <button class="btn" id="admin-credit-unlimited-clear-btn" type="button">Clear all</button>
+                                    <button class="btn primary" id="admin-credit-unlimited-save-btn" type="submit">Save unlimited</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="panel u-mt-12">
+                    <div class="analyzer-head">
+                        <h2>Recent Admin Grants</h2>
+                        <div class="calculator-meta">Tracked as €0 grants for finance visibility.</div>
+                    </div>
+                    <div class="table-wrap">
+                        <table class="admin-credit-grants-table">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>User</th>
+                                    <th>Action</th>
+                                    <th>Change</th>
+                                    <th>Note</th>
+                                    <th>Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-credit-grants-body"></tbody>
                         </table>
                     </div>
                 </section>

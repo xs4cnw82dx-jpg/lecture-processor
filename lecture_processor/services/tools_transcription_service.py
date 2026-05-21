@@ -85,7 +85,7 @@ def create_general_transcription(app_ctx, request):
 
     try:
         user = app_ctx.get_or_create_user(uid, email)
-        if _total_interview_credits(user) <= 0:
+        if not billing_credits.has_category_credit(user, 'interview', runtime=app_ctx):
             return app_ctx.jsonify({'error': 'No interview credits remaining. Please purchase more credits.'}), 402
 
         uploaded_audio_file = request.files.get('audio')

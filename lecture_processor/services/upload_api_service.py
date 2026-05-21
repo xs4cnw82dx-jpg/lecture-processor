@@ -287,8 +287,7 @@ def upload_files(app_ctx, request):
             return app_ctx.jsonify({'error': 'Upload too large. Maximum total upload size is 560MB (up to 50MB slides file (PDF/PPTX) and 500MB audio).'}), 413
 
         if mode == 'lecture-notes':
-            total_lecture = user.get('lecture_credits_standard', 0) + user.get('lecture_credits_extended', 0)
-            if total_lecture <= 0:
+            if not billing_credits.has_category_credit(user, 'lecture', runtime=app_ctx):
                 return app_ctx.jsonify({'error': 'No lecture credits remaining. Please purchase more credits.'}), 402
             if 'pdf' not in request.files:
                 return app_ctx.jsonify({'error': 'Both slides (PDF/PPTX) and audio files are required'}), 400
@@ -396,7 +395,7 @@ def upload_files(app_ctx, request):
                 )
 
         elif mode == 'slides-only':
-            if user.get('slides_credits', 0) <= 0:
+            if not billing_credits.has_category_credit(user, 'slides', runtime=app_ctx):
                 return app_ctx.jsonify({'error': 'No text extraction credits remaining. Please purchase more credits.'}), 402
             if 'pdf' not in request.files:
                 return app_ctx.jsonify({'error': 'Slide file (PDF or PPTX) is required'}), 400
@@ -446,8 +445,7 @@ def upload_files(app_ctx, request):
                 )
 
         elif mode == 'interview':
-            total_interview = user.get('interview_credits_short', 0) + user.get('interview_credits_medium', 0) + user.get('interview_credits_long', 0)
-            if total_interview <= 0:
+            if not billing_credits.has_category_credit(user, 'interview', runtime=app_ctx):
                 return app_ctx.jsonify({'error': 'No interview credits remaining. Please purchase more credits.'}), 402
             uploaded_audio_file = request.files.get('audio')
             has_uploaded_audio = bool(uploaded_audio_file and uploaded_audio_file.filename)
@@ -506,7 +504,7 @@ def upload_files(app_ctx, request):
                 return app_ctx.jsonify({'error': 'No interview credits remaining.'}), 402
             interview_features_cost = len(interview_features)
             if interview_features_cost > 0:
-                if user.get('slides_credits', 0) < interview_features_cost:
+                if not billing_credits.has_category_credit(user, 'slides', interview_features_cost, runtime=app_ctx):
                     billing_credits.refund_credit(uid, deducted, runtime=app_ctx)
                     app_ctx.cleanup_files([audio_path], [])
                     return app_ctx.jsonify({'error': f'Not enough text extraction credits for interview extras. You selected {interview_features_cost} option(s) and need {interview_features_cost} text extraction credits.'}), 402

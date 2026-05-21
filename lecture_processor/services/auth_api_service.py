@@ -7,6 +7,7 @@ from lecture_processor.services import account_data_service
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.auth import session as auth_session
 from lecture_processor.domains.analytics import events as analytics_events
+from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.physio import access as physio_access
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.shared import parsing as shared_parsing
@@ -183,16 +184,13 @@ def get_user(app_ctx, request):
     email = decoded_token.get('email', '')
     user = app_ctx.get_or_create_user(uid, email)
     preferences = shared_parsing.build_user_preferences_payload(user, runtime=app_ctx)
+    credit_payload = billing_credits.build_credit_payload(user, decoded_token=decoded_token, runtime=app_ctx)
+    credit_summary = billing_credits.build_category_summary(user, decoded_token=decoded_token, runtime=app_ctx)
     return app_ctx.jsonify({
         'uid': user['uid'], 'email': user['email'],
-        'credits': {
-            'lecture_standard': user.get('lecture_credits_standard', 0),
-            'lecture_extended': user.get('lecture_credits_extended', 0),
-            'slides': user.get('slides_credits', 0),
-            'interview_short': user.get('interview_credits_short', 0),
-            'interview_medium': user.get('interview_credits_medium', 0),
-            'interview_long': user.get('interview_credits_long', 0),
-        },
+        'credits': credit_payload,
+        'unlimited_credits': credit_payload.get('unlimited', {}),
+        'credits_breakdown': credit_summary,
         'total_processed': user.get('total_processed', 0),
         'has_created_study_pack': bool(user.get('has_created_study_pack', bool(user.get('total_processed', 0)))),
         'is_admin': app_ctx.is_admin_user(decoded_token),

@@ -417,6 +417,7 @@
 
   function parseCreditBreakdown(payload) {
     var credits = payload && payload.credits ? payload.credits : {};
+    var unlimited = payload && payload.unlimited_credits ? payload.unlimited_credits : (credits.unlimited || {});
     var lecture = Number(credits.lecture_standard || 0) + Number(credits.lecture_extended || 0);
     var textExtraction = Number(credits.slides || 0);
     var interview = Number(credits.interview_short || 0) + Number(credits.interview_medium || 0) + Number(credits.interview_long || 0);
@@ -424,8 +425,23 @@
       lecture: lecture,
       textExtraction: textExtraction,
       interview: interview,
-      total: lecture + textExtraction + interview
+      total: lecture + textExtraction + interview,
+      unlimited: {
+        lecture: !!(unlimited && unlimited.lecture),
+        slides: !!(unlimited && unlimited.slides),
+        interview: !!(unlimited && unlimited.interview)
+      }
     };
+  }
+
+  function hasAnyUnlimitedCredits(breakdown) {
+    var unlimited = breakdown && breakdown.unlimited ? breakdown.unlimited : {};
+    return !!(unlimited.lecture || unlimited.slides || unlimited.interview);
+  }
+
+  function formatShellCreditValue(breakdown, category, value) {
+    var unlimited = breakdown && breakdown.unlimited ? breakdown.unlimited : {};
+    return unlimited[category] ? 'Unlimited' : String(Number(value || 0));
   }
 
   function applyCreditBreakdown(breakdown) {
@@ -442,13 +458,14 @@
       lecture: Number(breakdown.lecture || 0),
       textExtraction: Number(breakdown.textExtraction || 0),
       interview: Number(breakdown.interview || 0),
-      total: Number(breakdown.total || 0)
+      total: Number(breakdown.total || 0),
+      unlimited: breakdown.unlimited || {}
     };
-    creditsTotalLabel.textContent = next.total + ' credits';
-    if (creditsLectureValue) creditsLectureValue.textContent = String(next.lecture);
-    if (creditsTextValue) creditsTextValue.textContent = String(next.textExtraction);
-    if (creditsInterviewValue) creditsInterviewValue.textContent = String(next.interview);
-    if (creditsTotalValue) creditsTotalValue.textContent = String(next.total);
+    creditsTotalLabel.textContent = hasAnyUnlimitedCredits(next) ? 'Unlimited credits' : (next.total + ' credits');
+    if (creditsLectureValue) creditsLectureValue.textContent = formatShellCreditValue(next, 'lecture', next.lecture);
+    if (creditsTextValue) creditsTextValue.textContent = formatShellCreditValue(next, 'slides', next.textExtraction);
+    if (creditsInterviewValue) creditsInterviewValue.textContent = formatShellCreditValue(next, 'interview', next.interview);
+    if (creditsTotalValue) creditsTotalValue.textContent = hasAnyUnlimitedCredits(next) ? 'Unlimited' : String(next.total);
   }
 
   function setCreditsVisible(visible) {

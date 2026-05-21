@@ -1,10 +1,11 @@
-from . import users_repo, purchases_repo, study_repo, admin_repo, analytics_repo, job_logs_repo, rate_limit_repo, runtime_jobs_repo, batch_repo, planner_repo, physio_repo
+from . import users_repo, purchases_repo, study_repo, admin_repo, admin_credit_grants_repo, analytics_repo, job_logs_repo, rate_limit_repo, runtime_jobs_repo, batch_repo, planner_repo, physio_repo
 
 __all__ = [
     'users_repo',
     'purchases_repo',
     'study_repo',
     'admin_repo',
+    'admin_credit_grants_repo',
     'analytics_repo',
     'job_logs_repo',
     'rate_limit_repo',

@@ -51,6 +51,7 @@
   var currentJobId = '';
   var pollTimer = null;
   var interviewCredits = null;
+  var interviewUnlimited = false;
   var toastTimer = null;
   var languageUserTouched = false;
 
@@ -89,7 +90,7 @@
       creditNote.textContent = 'Interview credits: \u2014';
       return;
     }
-    creditNote.textContent = 'Interview credits: ' + String(interviewCredits);
+    creditNote.textContent = 'Interview credits: ' + (interviewUnlimited ? 'Unlimited' : String(interviewCredits));
   }
 
   function updateLanguageNote(label) {
@@ -255,6 +256,7 @@
     var signedInUser = getSignedInUser();
     if (!signedInUser) {
       interviewCredits = null;
+      interviewUnlimited = false;
       updateCreditNote();
       if (!languageUserTouched) {
         setOutputLanguage('english', '');
@@ -270,6 +272,7 @@
       var preferences = payload && payload.preferences ? payload.preferences : {};
       var credits = payload && payload.credits ? payload.credits : {};
       interviewCredits = Number(credits.interview_short || 0) + Number(credits.interview_medium || 0) + Number(credits.interview_long || 0);
+      interviewUnlimited = !!(payload && payload.unlimited_credits && payload.unlimited_credits.interview);
       updateCreditNote();
       if (!languageUserTouched) {
         setOutputLanguage(preferences.output_language || 'english', preferences.output_language_custom || '');
@@ -278,6 +281,7 @@
       }
     } catch (_) {
       interviewCredits = null;
+      interviewUnlimited = false;
       updateCreditNote();
     }
   }
