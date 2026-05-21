@@ -7,6 +7,7 @@
     var pinnedFolderIds = Array.isArray(settings.pinnedFolderIds) ? settings.pinnedFolderIds : [];
     var allFolderId = String(settings.allFolderId == null ? '' : settings.allFolderId);
     var interviewFolderId = String(settings.interviewFolderId == null ? '__interviews__' : settings.interviewFolderId);
+    var voiceNotesFolderId = String(settings.voiceNotesFolderId == null ? '__voice_notes__' : settings.voiceNotesFolderId);
     var pinnedSet = new Set(pinnedFolderIds.map(function (folderId) { return String(folderId || ''); }).filter(Boolean));
 
     var pinnedFolders = pinnedFolderIds.map(function (folderId) {
@@ -38,6 +39,19 @@
         meta_default: 'All packs',
       },
       {
+        folder_id: voiceNotesFolderId,
+        name: 'Voice Notes',
+        course: '',
+        subject: '',
+        semester: '',
+        block: '',
+        exam_date: '',
+        is_pinned: true,
+        is_builtin: true,
+        is_fixed: true,
+        meta_default: 'Quick transcriber notes',
+      },
+      {
         folder_id: interviewFolderId,
         name: 'Interviews',
         course: '',
@@ -60,10 +74,13 @@
     var selectedFolderId = String(settings.selectedFolderId || '');
     var allFolderId = String(settings.allFolderId == null ? '' : settings.allFolderId);
     var interviewFolderId = String(settings.interviewFolderId == null ? '__interviews__' : settings.interviewFolderId);
+    var voiceNotesFolderId = String(settings.voiceNotesFolderId == null ? '__voice_notes__' : settings.voiceNotesFolderId);
 
     return collection.filter(function (pack) {
       if (selectedFolderId === interviewFolderId) {
         if (String(pack && pack.mode || '') !== 'interview') return false;
+      } else if (selectedFolderId === voiceNotesFolderId) {
+        if (String(pack && pack.mode || '') !== 'voice-note') return false;
       } else if (selectedFolderId && selectedFolderId !== allFolderId && String(pack && pack.folder_id || '') !== selectedFolderId) {
         return false;
       }
@@ -118,7 +135,7 @@
   function buildStudyPackExportItems(pack) {
     var safePack = pack && typeof pack === 'object' ? pack : {};
     var mode = String(safePack.mode || '').trim().toLowerCase();
-    var transcriptLabel = mode === 'interview' ? 'Interview Transcript' : 'Lecture Transcript';
+    var transcriptLabel = mode === 'interview' ? 'Interview Transcript' : (mode === 'voice-note' ? 'Voice Note Transcript' : 'Lecture Transcript');
     var items = [
       { kind: 'flashcards', visible: true, label: 'Flashcards CSV' },
       { kind: 'test', visible: true, label: 'Practice Test CSV' },

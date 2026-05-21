@@ -95,6 +95,7 @@ const MATCH_MIN_CARDS = 6;
 const BUILDER_AUTOSAVE_DELAY_MS = 1500;
 const BUILTIN_ALL_FOLDER_ID = '';
 const BUILTIN_INTERVIEWS_FOLDER_ID = '__interviews__';
+const BUILTIN_VOICE_NOTES_FOLDER_ID = '__voice_notes__';
 const MAX_PINNED_FOLDERS = 5;
 let pinnedFolderIds = [];
 
@@ -1403,6 +1404,7 @@ function formatRuntimeJobMode(mode) {
   if (safeMode === 'lecture-notes') return 'Lecture Notes';
   if (safeMode === 'slides-only') return 'Slides Extraction';
   if (safeMode === 'interview') return 'Interview Transcription';
+  if (safeMode === 'voice-note') return 'Voice Note';
   return 'Processing';
 }
 function formatRuntimeJobStartedAt(seconds) {
@@ -1684,24 +1686,42 @@ function updateAudioControls() {
   var paused = !audioPlayerEl || audioPlayerEl.paused;
   setHidden(audioPlayIcon, !paused);
   setHidden(audioPauseIcon, paused);
+  if (audioPlayBtn) audioPlayBtn.setAttribute('aria-label', paused ? 'Play audio' : 'Pause audio');
   var dur = audioPlayerEl && isFinite(audioPlayerEl.duration) ? audioPlayerEl.duration : 0;
   var cur = audioPlayerEl ? audioPlayerEl.currentTime : 0;
   if (audioTime) audioTime.textContent = fmtAudioTime(cur) + ' / ' + fmtAudioTime(dur);
   var pct = dur > 0 ? (cur / dur) * 100 : 0;
   if (audioProgressFill) audioProgressFill.value = pct;
+  updateAudioSectionButtonStates(getCurrentAudioSectionIndex());
 }
 function clearAudioActiveSections() {
   audioSections.forEach(function (entry) { entry.el.classList.remove('audio-active'); });
+  updateAudioSectionButtonStates(-1);
+}
+function getCurrentAudioSectionIndex() {
+  if (!audioMap.length || !audioPlayerEl) return -1;
+  var currentMs = (audioPlayerEl.currentTime || 0) * 1000;
+  for (var i = 0; i < audioMap.length; i++) {
+    var seg = audioMap[i];
+    if (currentMs >= seg.start_ms && currentMs <= seg.end_ms) return seg.section_index;
+  }
+  return -1;
+}
+function updateAudioSectionButtonStates(activeSectionIndex) {
+  var isPlaying = !!(audioPlayerEl && !audioPlayerEl.paused);
+  audioSections.forEach(function (entry) {
+    if (!entry.button || !entry.path) return;
+    var activePlaying = isPlaying && entry.sectionIndex === activeSectionIndex;
+    entry.path.setAttribute('d', activePlaying ? 'M6 5h4v14H6zM14 5h4v14h-4z' : 'M8 5v14l11-7z');
+    entry.button.setAttribute('aria-label', activePlaying ? 'Pause section audio' : 'Play section audio');
+    entry.button.classList.toggle('is-playing', activePlaying);
+  });
 }
 function updateAudioActiveSection() {
   if (!audioMap.length) { clearAudioActiveSections(); return; }
-  var currentMs = (audioPlayerEl.currentTime || 0) * 1000;
-  var activeSectionIndex = -1;
-  for (var i = 0; i < audioMap.length; i++) {
-    var seg = audioMap[i];
-    if (currentMs >= seg.start_ms && currentMs <= seg.end_ms) { activeSectionIndex = seg.section_index; break; }
-  }
+  var activeSectionIndex = getCurrentAudioSectionIndex();
   audioSections.forEach(function (entry) { entry.el.classList.toggle('audio-active', entry.sectionIndex === activeSectionIndex); });
+  updateAudioSectionButtonStates(activeSectionIndex);
 }
 function seekAudioTo(startMs) {
   if (!audioReady || !audioPlayerEl) return;
@@ -1709,6 +1729,25 @@ function seekAudioTo(startMs) {
   audioPlayerEl.play().catch(function () { });
   updateAudioControls();
   updateAudioActiveSection();
+}
+function playAudioSection(seg, sectionIndex) {
+  if (!seg) return;
+  var currentSectionIndex = getCurrentAudioSectionIndex();
+  if (currentSectionIndex === sectionIndex) {
+    if (audioPlayerEl && !audioPlayerEl.paused) {
+      audioPlayerEl.pause();
+      updateAudioControls();
+      updateAudioActiveSection();
+      return;
+    }
+    if (audioPlayerEl) {
+      audioPlayerEl.play().catch(function () { });
+      updateAudioControls();
+      updateAudioActiveSection();
+      return;
+    }
+  }
+  seekAudioTo(seg.start_ms);
 }
 function closeAudioPlayer() {
   if (audioPlayerEl) { audioPlayerEl.pause(); audioPlayerEl.removeAttribute('src'); audioPlayerEl.load(); }
@@ -1737,7 +1776,6 @@ function decorateNotesWithAudio(container) {
     }
     if (entry) {
       (function (seg, sectionIndex, wrap) {
-        audioSections.push({ el: wrap, sectionIndex: sectionIndex });
         var playBtn = document.createElement('button');
         playBtn.type = 'button';
         playBtn.className = 'notes-audio-btn';
@@ -1748,9 +1786,10 @@ function decorateNotesWithAudio(container) {
         path.setAttribute('d', 'M8 5v14l11-7z');
         icon.appendChild(path);
         playBtn.appendChild(icon);
-        playBtn.addEventListener('click', function (e) { e.stopPropagation(); seekAudioTo(seg.start_ms); });
+        audioSections.push({ el: wrap, sectionIndex: sectionIndex, button: playBtn, path: path });
+        playBtn.addEventListener('click', function (e) { e.stopPropagation(); playAudioSection(seg, sectionIndex); });
         wrap.appendChild(playBtn);
-        wrap.addEventListener('click', function (e) { if (e.target.tagName === 'A') return; seekAudioTo(seg.start_ms); });
+        wrap.addEventListener('click', function (e) { if (e.target.tagName === 'A') return; playAudioSection(seg, sectionIndex); });
       })(entry, i, wrapper);
     }
   }
@@ -3280,7 +3319,7 @@ function getFolderPinsStorageKey() {
   return 'pinned_folder_ids_' + auth.currentUser.uid;
 }
 function isBuiltInFolderId(folderId) {
-  return folderId === BUILTIN_ALL_FOLDER_ID || folderId === BUILTIN_INTERVIEWS_FOLDER_ID;
+  return folderId === BUILTIN_ALL_FOLDER_ID || folderId === BUILTIN_INTERVIEWS_FOLDER_ID || folderId === BUILTIN_VOICE_NOTES_FOLDER_ID;
 }
 function sanitizePinnedFolderIds(rawIds) {
   if (!Array.isArray(rawIds)) return [];
@@ -3342,6 +3381,7 @@ function buildFolderItemsForSidebar() {
       pinnedFolderIds: pinnedFolderIds,
       allFolderId: BUILTIN_ALL_FOLDER_ID,
       interviewFolderId: BUILTIN_INTERVIEWS_FOLDER_ID,
+      voiceNotesFolderId: BUILTIN_VOICE_NOTES_FOLDER_ID,
     });
   }
 
@@ -3358,6 +3398,7 @@ function buildFolderItemsForSidebar() {
   });
   return [
     { folder_id: BUILTIN_ALL_FOLDER_ID, name: 'All Study Packs', course: '', subject: '', semester: '', block: '', exam_date: '', is_pinned: true, is_builtin: true, is_fixed: true, meta_default: 'All packs' },
+    { folder_id: BUILTIN_VOICE_NOTES_FOLDER_ID, name: 'Voice Notes', course: '', subject: '', semester: '', block: '', exam_date: '', is_pinned: true, is_builtin: true, is_fixed: true, meta_default: 'Quick transcriber notes' },
     { folder_id: BUILTIN_INTERVIEWS_FOLDER_ID, name: 'Interviews', course: '', subject: '', semester: '', block: '', exam_date: '', is_pinned: true, is_builtin: true, is_fixed: true, meta_default: 'Interview transcript packs' },
   ].concat(pinnedFolders, remaining);
 }
@@ -3368,6 +3409,7 @@ function filteredPacks() {
       selectedFolderId: selectedFolderId,
       allFolderId: BUILTIN_ALL_FOLDER_ID,
       interviewFolderId: BUILTIN_INTERVIEWS_FOLDER_ID,
+      voiceNotesFolderId: BUILTIN_VOICE_NOTES_FOLDER_ID,
     });
   }
 
@@ -3375,6 +3417,8 @@ function filteredPacks() {
   return packs.filter(function (p) {
     if (selectedFolderId === BUILTIN_INTERVIEWS_FOLDER_ID) {
       if ((p.mode || '') !== 'interview') return false;
+    } else if (selectedFolderId === BUILTIN_VOICE_NOTES_FOLDER_ID) {
+      if ((p.mode || '') !== 'voice-note') return false;
     } else if (selectedFolderId && selectedFolderId !== BUILTIN_ALL_FOLDER_ID && p.folder_id !== selectedFolderId) {
       return false;
     }
@@ -3462,6 +3506,7 @@ function renderFolders() {
 function getFolderNameById(id) {
   if (!id) return 'No folder';
   if (id === BUILTIN_INTERVIEWS_FOLDER_ID) return 'Interviews';
+  if (id === BUILTIN_VOICE_NOTES_FOLDER_ID) return 'Voice Notes';
   var f = folders.find(function (x) { return x.folder_id === id; });
   return f ? f.name : 'No folder';
 }
@@ -3576,12 +3621,12 @@ function renderPacks() {
     var metaParts = [p.course, p.subject, p.semester, p.block].filter(Boolean).map(escapeHtml);
     var defaultFolderText = (p.mode === 'interview')
       ? 'Folder: Interviews'
-      : 'Add course details to organize this pack.';
+      : (p.mode === 'voice-note' ? 'Folder: Voice Notes' : 'Add course details to organize this pack.');
     var metaText = buildMetadataText(
       metaParts,
       p.folder_name ? 'Folder: ' + escapeHtml(p.folder_name) : defaultFolderText
     );
-    setSafeInnerHtml(div, '<div class="item-head"><span class="item-title">' + titleText + '</span></div><div class="item-sub">' + modeText + ' · ' + formatPackCountSummary(p.flashcards_count, p.test_questions_count) + '</div><div class="item-sub">' + metaText + '</div>');
+    setSafeInnerHtml(div, '<div class="item-head"><span class="item-title">' + titleText + '</span><button type="button" class="pack-quick-learn" data-pack-learn>Learn</button></div><div class="item-sub">' + modeText + ' · ' + formatPackCountSummary(p.flashcards_count, p.test_questions_count) + '</div><div class="item-sub">' + metaText + '</div>');
     var activatePack = function () {
       selectedPackId = p.study_pack_id;
       renderPacks();
@@ -3589,6 +3634,15 @@ function renderPacks() {
     };
     div.addEventListener('click', function () { activatePack(); });
     bindKeyboardActivation(div, function () { activatePack(); });
+    var learnBtn = div.querySelector('[data-pack-learn]');
+    if (learnBtn) {
+      learnBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        selectedPackId = p.study_pack_id;
+        renderPacks();
+        openPack(p.study_pack_id).then(function () { openSessionSetup(); });
+      });
+    }
     div.addEventListener('dragstart', function (e) { draggedPackId = p.study_pack_id; div.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', p.study_pack_id); });
     div.addEventListener('dragend', function () { div.classList.remove('dragging'); draggedPackId = ''; });
     packList.appendChild(div);
@@ -4116,6 +4170,9 @@ function openPack(packId) {
     syncStudyPackExportMenu();
     packTitle.value = selectedPack.title || '';
     setPackFolderSelection(selectedPack.folder_id || '');
+    if (!selectedPack.folder_id && selectedPack.mode === 'voice-note' && packFolderLabel) {
+      packFolderLabel.textContent = 'Voice Notes';
+    }
     packCourse.value = selectedPack.course || '';
     packSubject.value = selectedPack.subject || '';
     packSemester.value = selectedPack.semester || '';
@@ -4189,7 +4246,7 @@ function loadData(preferredPackId) {
     setGoalPanelStatus('Synced', 'success');
     loadPinnedFolderIds();
     syncPinnedFolderIds();
-    if (selectedFolderId && selectedFolderId !== BUILTIN_INTERVIEWS_FOLDER_ID && selectedFolderId !== BUILTIN_ALL_FOLDER_ID && !folders.some(function (folder) { return folder.folder_id === selectedFolderId; })) {
+    if (selectedFolderId && !isBuiltInFolderId(selectedFolderId) && !folders.some(function (folder) { return folder.folder_id === selectedFolderId; })) {
       selectedFolderId = '';
     }
     hydratePackStatesForKnownPacks();
@@ -4896,7 +4953,8 @@ deletePackBtn.addEventListener('click', function () {
 
 exportPackNotesBtn.addEventListener('click', function () {
   if (!selectedPackId) { showToast('Select a study pack first.', 'error'); return; }
-  downloadStudyPackNotes(selectedPackId, 'docx').then(function () { showToast('Lecture notes export started.'); }).catch(function (e) { showToast(e.message || 'Could not export notes.', 'error'); });
+  showToast('Lecture notes export started.', 'success');
+  downloadStudyPackNotes(selectedPackId, 'docx').catch(function (e) { showToast(e.message || 'Could not export notes.', 'error'); });
 });
 if (packShareBtn) {
   packShareBtn.addEventListener('click', function () {
@@ -4939,27 +4997,28 @@ if (exportMenuBtn && exportMenuList) {
     }
     setExportMenuOpen(false);
     if (kind === 'pdf-with-answers') {
-      downloadStudyPackPdf(selectedPackId, true).then(function () { showToast('PDF export started.'); }).catch(function (e2) { showToast(e2.message || 'Could not export PDF.', 'error'); });
+      showToast('PDF export started.', 'success');
+      downloadStudyPackPdf(selectedPackId, true).catch(function (e2) { showToast(e2.message || 'Could not export PDF.', 'error'); });
       return;
     }
     if (kind === 'pdf-no-answers') {
-      downloadStudyPackPdf(selectedPackId, false).then(function () { showToast('Practice PDF export started.'); }).catch(function (e3) { showToast(e3.message || 'Could not export PDF.', 'error'); });
+      showToast('Practice PDF export started.', 'success');
+      downloadStudyPackPdf(selectedPackId, false).catch(function (e3) { showToast(e3.message || 'Could not export PDF.', 'error'); });
       return;
     }
     if (kind === 'source-slides-md' || kind === 'source-slides-docx') {
-      downloadStudyPackSource(selectedPackId, 'slides', kind === 'source-slides-docx' ? 'docx' : 'md').then(function () {
-        showToast('Slide extract export started.');
-      }).catch(function (e5) { showToast(e5.message || 'Could not export slide extract.', 'error'); });
+      showToast('Slide extract export started.', 'success');
+      downloadStudyPackSource(selectedPackId, 'slides', kind === 'source-slides-docx' ? 'docx' : 'md').catch(function (e5) { showToast(e5.message || 'Could not export slide extract.', 'error'); });
       return;
     }
     if (kind === 'source-transcript-md' || kind === 'source-transcript-docx') {
-      downloadStudyPackSource(selectedPackId, 'transcript', kind === 'source-transcript-docx' ? 'docx' : 'md').then(function () {
-        showToast('Transcript export started.');
-      }).catch(function (e6) { showToast(e6.message || 'Could not export transcript.', 'error'); });
+      showToast('Transcript export started.', 'success');
+      downloadStudyPackSource(selectedPackId, 'transcript', kind === 'source-transcript-docx' ? 'docx' : 'md').catch(function (e6) { showToast(e6.message || 'Could not export transcript.', 'error'); });
       return;
     }
     var csvType = (kind === 'test') ? 'test' : 'flashcards';
-    downloadStudyPackCsv(selectedPackId, csvType).then(function () { showToast('CSV export started.'); }).catch(function (e4) { showToast(e4.message || 'Could not export CSV.', 'error'); });
+    showToast('CSV export started.', 'success');
+    downloadStudyPackCsv(selectedPackId, csvType).catch(function (e4) { showToast(e4.message || 'Could not export CSV.', 'error'); });
   });
   exportMenuList.addEventListener('keydown', function (e) {
     var focused = document.activeElement;
@@ -5821,9 +5880,8 @@ function downloadOriginalNotesDocx() {
     showToast('No notes to download.', 'error');
     return;
   }
-  downloadStudyPackNotes(selectedPackId, 'docx').then(function () {
-    showToast('Original notes Word export started.');
-  }).catch(function (e) {
+  showToast('Original notes Word export started.', 'success');
+  downloadStudyPackNotes(selectedPackId, 'docx').catch(function (e) {
     showToast(e.message || 'Could not export Word file.', 'error');
   });
 }
@@ -5863,6 +5921,7 @@ function downloadAnnotatedNotesPdf() {
   }
   var title = (selectedPack && selectedPack.title) ? selectedPack.title : 'Study Notes';
   var filename = title.replace(/[^a-zA-Z0-9 _-]/g, '').substring(0, 60).trim() || 'Study Notes';
+  showToast('Annotated PDF export started.', 'success');
   authenticatedFetch('/api/study-packs/' + encodeURIComponent(selectedPackId) + '/export-annotated-pdf', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -5891,7 +5950,7 @@ function downloadAnnotatedNotesPdf() {
       return filename + ' - Annotated.pdf';
     });
   }).then(function () {
-    showToast('Annotated notes downloaded as PDF.');
+    showToast('Annotated notes downloaded as PDF.', 'success');
   }).catch(function (e) {
     showToast(e && e.message ? e.message : 'Could not export annotated PDF.', 'error');
   });

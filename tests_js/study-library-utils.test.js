@@ -13,17 +13,20 @@ test('buildFolderItemsForSidebar keeps built-ins first and preserves pinned orde
     pinnedFolderIds: ['folder-c', 'folder-a', 'missing-folder'],
     allFolderId: '',
     interviewFolderId: '__interviews__',
+    voiceNotesFolderId: '__voice_notes__',
   });
 
   assert.deepEqual(items.map((item) => item.folder_id), [
     '',
+    '__voice_notes__',
     '__interviews__',
     'folder-c',
     'folder-a',
     'folder-b',
   ]);
-  assert.equal(items[2].is_pinned, true);
-  assert.equal(items[4].is_pinned, false);
+  assert.equal(items[1].name, 'Voice Notes');
+  assert.equal(items[3].is_pinned, true);
+  assert.equal(items[5].is_pinned, false);
 });
 
 test('filterStudyPacks matches folder and search filters consistently', () => {
@@ -31,6 +34,7 @@ test('filterStudyPacks matches folder and search filters consistently', () => {
     { study_pack_id: 'pack-1', folder_id: 'folder-a', title: 'Biology Intro', course: 'BIO101', mode: 'study' },
     { study_pack_id: 'pack-2', folder_id: 'folder-b', title: 'Interview Practice', subject: 'Hiring', mode: 'interview' },
     { study_pack_id: 'pack-3', folder_id: 'folder-a', title: 'Organic Chemistry', subject: 'Chemistry', mode: 'study' },
+    { study_pack_id: 'pack-4', folder_id: '', title: 'Quick Voice Memo', subject: 'Ideas', mode: 'voice-note' },
   ];
 
   assert.deepEqual(studyLibraryUtils.filterStudyPacks(packs, {
@@ -46,6 +50,14 @@ test('filterStudyPacks matches folder and search filters consistently', () => {
     allFolderId: '',
     interviewFolderId: '__interviews__',
   }).map((pack) => pack.study_pack_id), ['pack-2']);
+
+  assert.deepEqual(studyLibraryUtils.filterStudyPacks(packs, {
+    searchQuery: '',
+    selectedFolderId: '__voice_notes__',
+    allFolderId: '',
+    interviewFolderId: '__interviews__',
+    voiceNotesFolderId: '__voice_notes__',
+  }).map((pack) => pack.study_pack_id), ['pack-4']);
 });
 
 test('buildStudyPacksUrl uses the default limit and encodes cursors', () => {
@@ -99,4 +111,11 @@ test('buildStudyPackExportItems shows source exports only when source outputs ex
   const interviewTranscriptMd = interviewItems.find((item) => item.kind === 'source-transcript-md');
   assert.equal(interviewTranscriptMd.visible, true);
   assert.equal(interviewTranscriptMd.label, 'Interview Transcript (.md)');
+
+  const voiceItems = studyLibraryUtils.buildStudyPackExportItems({
+    mode: 'voice-note',
+    has_source_transcript: true,
+  });
+  const voiceTranscriptDocx = voiceItems.find((item) => item.kind === 'source-transcript-docx');
+  assert.equal(voiceTranscriptDocx.label, 'Voice Note Transcript (.docx)');
 });

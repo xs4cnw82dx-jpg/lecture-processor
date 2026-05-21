@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#111827">
+  <meta name="theme-color" content="#4F46E5">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Voice Notes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -56,21 +56,33 @@
           <span>Study</span>
         </a>
         <button type="button" class="voice-nav-btn" data-voice-view="settings" aria-pressed="false">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.6.25 1 .84 1 1.5V12c0 .66-.4 1.25-1 1.5Z"></path></svg>
+          <svg viewBox="-1 -1 26 26" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.6.25 1 .84 1 1.5V12c0 .66-.4 1.25-1 1.5Z"></path></svg>
           <span>Settings</span>
         </button>
       </nav>
 
       <section class="voice-view active" id="voice-view-record" data-voice-panel="record">
         <section class="voice-recorder voice-recorder-simple">
-          <div class="voice-meter" id="voice-meter">
-            <div class="voice-meter-ring"></div>
+          <div class="voice-recorder-head">
+            <div>
+              <p class="voice-recorder-title">Record in browser</p>
+              <p class="voice-recorder-copy">Keep Voice Notes open and unlocked while recording. Transcription starts when you stop.</p>
+            </div>
             <div class="voice-time" id="voice-time">00:00</div>
+          </div>
+          <div class="voice-meter" id="voice-meter" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
           </div>
           <div class="voice-record-actions">
             <button type="button" class="voice-record-btn" id="voice-record-btn" aria-label="Start recording">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"></circle></svg>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a4 4 0 0 0-4 4v5a4 4 0 0 0 8 0V7a4 4 0 0 0-4-4Z"></path><path d="M19 11a7 7 0 0 1-14 0"></path><path d="M12 18v3"></path><path d="M8 21h8"></path></svg>
+              <span>Start recording</span>
             </button>
+            <button type="button" class="voice-btn" id="voice-pause-btn" disabled>Pause</button>
             <button type="button" class="voice-btn" id="voice-stop-btn" disabled>Stop</button>
           </div>
           <div class="voice-record-status" id="voice-record-status" role="status" aria-live="polite">Tap record. Transcription starts when you stop.</div>
