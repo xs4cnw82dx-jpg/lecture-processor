@@ -18,16 +18,43 @@ const exportFunnelDailyBtn = document.getElementById('export-funnel-daily-btn');
 const adminTabButtons = Array.from(document.querySelectorAll('[data-admin-tab]'));
 const adminOverviewContent = document.getElementById('admin-tab-overview-content');
 const adminBatchContent = document.getElementById('admin-tab-batch-content');
+const adminCreditsContent = document.getElementById('admin-tab-credits-content');
 const adminBatchRefreshBtn = document.getElementById('admin-batch-refresh-btn');
 const adminBatchMode = document.getElementById('admin-batch-mode');
 const adminBatchStatus = document.getElementById('admin-batch-status');
 const adminBatchJobsBody = document.getElementById('admin-batch-jobs-body');
+const adminCreditRefreshBtn = document.getElementById('admin-credit-refresh-btn');
+const adminCreditSearchForm = document.getElementById('admin-credit-search-form');
+const adminCreditEmail = document.getElementById('admin-credit-email');
+const adminCreditSearchBtn = document.getElementById('admin-credit-search-btn');
+const adminCreditState = document.getElementById('admin-credit-state');
+const adminCreditUserCard = document.getElementById('admin-credit-user-card');
+const adminCreditUserEmail = document.getElementById('admin-credit-user-email');
+const adminCreditUserMeta = document.getElementById('admin-credit-user-meta');
+const adminCreditUserStatus = document.getElementById('admin-credit-user-status');
+const adminCreditAdminNote = document.getElementById('admin-credit-admin-note');
+const adminCreditGrantForm = document.getElementById('admin-credit-grant-form');
+const adminCreditGrantLecture = document.getElementById('admin-credit-grant-lecture');
+const adminCreditGrantSlides = document.getElementById('admin-credit-grant-slides');
+const adminCreditGrantInterview = document.getElementById('admin-credit-grant-interview');
+const adminCreditGrantNote = document.getElementById('admin-credit-grant-note');
+const adminCreditGrantBtn = document.getElementById('admin-credit-grant-btn');
+const adminCreditUnlimitedForm = document.getElementById('admin-credit-unlimited-form');
+const adminCreditUnlimitedLecture = document.getElementById('admin-credit-unlimited-lecture');
+const adminCreditUnlimitedSlides = document.getElementById('admin-credit-unlimited-slides');
+const adminCreditUnlimitedInterview = document.getElementById('admin-credit-unlimited-interview');
+const adminCreditUnlimitedNote = document.getElementById('admin-credit-unlimited-note');
+const adminCreditUnlimitedAllBtn = document.getElementById('admin-credit-unlimited-all-btn');
+const adminCreditUnlimitedClearBtn = document.getElementById('admin-credit-unlimited-clear-btn');
+const adminCreditUnlimitedSaveBtn = document.getElementById('admin-credit-unlimited-save-btn');
+const adminCreditGrantsBody = document.getElementById('admin-credit-grants-body');
 
 let currentWindow = '7d';
 let currentModeView = 'total';
 let latestModeBreakdown = {};
 let activeAdminTab = 'overview';
 let adminToastTimer = null;
+let currentAdminCreditUser = null;
 
 const adminToast = document.createElement('div');
 adminToast.className = 'admin-toast';
@@ -94,13 +121,14 @@ function showAdminToast(message, type) {
 }
 
 function setAdminTab(tabKey) {
-    const next = tabKey === 'batch-jobs' ? 'batch-jobs' : 'overview';
+    const next = ['overview', 'batch-jobs', 'credits'].includes(tabKey) ? tabKey : 'overview';
     activeAdminTab = next;
     adminTabButtons.forEach((btn) => {
         btn.classList.toggle('active', btn.dataset.adminTab === next);
     });
     if (adminOverviewContent) adminOverviewContent.hidden = next !== 'overview';
     if (adminBatchContent) adminBatchContent.hidden = next !== 'batch-jobs';
+    if (adminCreditsContent) adminCreditsContent.hidden = next !== 'credits';
 }
 
 function renderAdminBatchJobs(rows) {
@@ -175,6 +203,287 @@ async function loadAdminBatchJobs(showToastOnSuccess = false) {
     } catch (error) {
         console.error(error);
         showAdminToast(error.message || 'Could not load batch jobs.', 'error');
+    }
+}
+
+function adminCreditCategoryLabels() {
+    return {
+        lecture: 'Lecture Notes',
+        slides: 'Text Extraction',
+        interview: 'Interview Transcription',
+    };
+}
+
+function formatAdminCreditValue(user, category) {
+    const effective = user && user.effective_unlimited ? user.effective_unlimited : {};
+    const credits = user && user.credits ? user.credits : {};
+    if (effective[category]) return 'Unlimited';
+    return String(Number(credits[category] || 0));
+}
+
+function setAdminCreditState(message, type = '') {
+    if (!adminCreditState) return;
+    adminCreditState.textContent = String(message || '');
+    adminCreditState.className = `admin-credit-state${type ? ` ${type}` : ''}`;
+}
+
+function setAdminCreditBusy(busy) {
+    [adminCreditSearchBtn, adminCreditGrantBtn, adminCreditUnlimitedSaveBtn, adminCreditRefreshBtn].forEach((btn) => {
+        if (btn) btn.disabled = !!busy;
+    });
+    if (!busy && currentAdminCreditUser) {
+        setUnlimitedInputsDisabled(!!currentAdminCreditUser.is_configured_admin);
+    }
+}
+
+function setUnlimitedInputsDisabled(disabled) {
+    [
+        adminCreditUnlimitedLecture,
+        adminCreditUnlimitedSlides,
+        adminCreditUnlimitedInterview,
+        adminCreditUnlimitedAllBtn,
+        adminCreditUnlimitedClearBtn,
+        adminCreditUnlimitedSaveBtn,
+    ].forEach((node) => {
+        if (node) node.disabled = !!disabled;
+    });
+}
+
+function setUnlimitedCheckboxes(value) {
+    [adminCreditUnlimitedLecture, adminCreditUnlimitedSlides, adminCreditUnlimitedInterview].forEach((input) => {
+        if (input) input.checked = !!value;
+    });
+}
+
+function renderAdminCreditUser(user) {
+    currentAdminCreditUser = user || null;
+    if (!adminCreditUserCard) return;
+    if (!currentAdminCreditUser) {
+        adminCreditUserCard.hidden = true;
+        setAdminCreditState('Search for a user to manage credits.');
+        return;
+    }
+    adminCreditUserCard.hidden = false;
+    setAdminCreditState('User loaded. Changes here are recorded as €0 admin grants.');
+    if (adminCreditUserEmail) adminCreditUserEmail.textContent = currentAdminCreditUser.email || 'User';
+    if (adminCreditUserMeta) adminCreditUserMeta.textContent = `UID: ${currentAdminCreditUser.uid || '-'}`;
+    const status = String(currentAdminCreditUser.account_status || 'active').toLowerCase();
+    if (adminCreditUserStatus) {
+        adminCreditUserStatus.textContent = status;
+        adminCreditUserStatus.className = `status ${status === 'active' ? 'complete' : 'partial'}`;
+    }
+    const configuredAdmin = !!currentAdminCreditUser.is_configured_admin;
+    if (adminCreditAdminNote) adminCreditAdminNote.hidden = !configuredAdmin;
+
+    const summaryMap = {
+        lecture: document.getElementById('admin-credit-summary-lecture'),
+        slides: document.getElementById('admin-credit-summary-slides'),
+        interview: document.getElementById('admin-credit-summary-interview'),
+    };
+    Object.entries(summaryMap).forEach(([category, node]) => {
+        if (node) node.textContent = formatAdminCreditValue(currentAdminCreditUser, category);
+    });
+
+    const stored = currentAdminCreditUser.unlimited || {};
+    if (adminCreditUnlimitedLecture) adminCreditUnlimitedLecture.checked = !!stored.lecture || configuredAdmin;
+    if (adminCreditUnlimitedSlides) adminCreditUnlimitedSlides.checked = !!stored.slides || configuredAdmin;
+    if (adminCreditUnlimitedInterview) adminCreditUnlimitedInterview.checked = !!stored.interview || configuredAdmin;
+    setUnlimitedInputsDisabled(configuredAdmin);
+}
+
+function formatAdminGrantChange(grant) {
+    const labels = adminCreditCategoryLabels();
+    if (!grant || !grant.action) return '-';
+    if (grant.action === 'grant_credits') {
+        const categories = grant.credit_categories || {};
+        const parts = Object.keys(labels)
+            .filter((category) => Number(categories[category] || 0) > 0)
+            .map((category) => `${labels[category]} +${Number(categories[category] || 0)}`);
+        return parts.join(' · ') || '-';
+    }
+    if (grant.action === 'set_unlimited') {
+        const before = grant.unlimited_before || {};
+        const after = grant.unlimited_after || {};
+        const parts = Object.keys(labels)
+            .filter((category) => Boolean(before[category]) !== Boolean(after[category]))
+            .map((category) => `${labels[category]} ${after[category] ? 'on' : 'off'}`);
+        return parts.join(' · ') || 'No visible change';
+    }
+    return String(grant.action || '-');
+}
+
+function renderAdminCreditGrants(rows) {
+    if (!adminCreditGrantsBody) return;
+    adminCreditGrantsBody.innerHTML = '';
+    const grants = Array.isArray(rows) ? rows : [];
+    if (!grants.length) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 6;
+        td.className = 'empty';
+        td.textContent = 'No admin grants found.';
+        tr.appendChild(td);
+        adminCreditGrantsBody.appendChild(tr);
+        return;
+    }
+    grants.forEach((grant) => {
+        const tr = document.createElement('tr');
+        [
+            formatDate(grant.created_at),
+            grant.email || grant.uid || '-',
+            grant.action === 'grant_credits' ? 'Grant credits' : 'Unlimited access',
+            formatAdminGrantChange(grant),
+            grant.note || '-',
+            formatMoney(grant.price_cents || 0),
+        ].forEach((value) => {
+            const td = document.createElement('td');
+            td.textContent = String(value || '-');
+            tr.appendChild(td);
+        });
+        adminCreditGrantsBody.appendChild(tr);
+    });
+}
+
+async function loadAdminCreditGrants(showToastOnSuccess = false) {
+    if (!auth.currentUser) {
+        renderAdminCreditGrants([]);
+        return;
+    }
+    const params = new URLSearchParams();
+    params.set('limit', '20');
+    if (currentAdminCreditUser && currentAdminCreditUser.email) {
+        params.set('email', currentAdminCreditUser.email);
+    }
+    try {
+        const res = await authFetch(`/api/admin/credit-grants?${params.toString()}`);
+        if (!res.ok) {
+            const payload = await res.json().catch(() => ({}));
+            throw new Error(payload.error || 'Could not load admin grants.');
+        }
+        const payload = await res.json();
+        renderAdminCreditGrants(payload.grants || []);
+        if (showToastOnSuccess) showAdminToast('Admin grants refreshed.', 'success');
+    } catch (error) {
+        console.error(error);
+        showAdminToast(error.message || 'Could not load admin grants.', 'error');
+    }
+}
+
+async function searchAdminCreditUser() {
+    if (!auth.currentUser) {
+        setAdminCreditState('Please sign in to search users.', 'blocked');
+        return;
+    }
+    const email = adminCreditEmail ? String(adminCreditEmail.value || '').trim() : '';
+    if (!email || !email.includes('@')) {
+        setAdminCreditState('Enter a valid email address.', 'error');
+        return;
+    }
+    setAdminCreditBusy(true);
+    setAdminCreditState('Searching user...');
+    try {
+        const res = await authFetch(`/api/admin/users/search?email=${encodeURIComponent(email)}`);
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            renderAdminCreditUser(null);
+            throw new Error(payload.error || 'Could not find that user.');
+        }
+        renderAdminCreditUser(payload.user || null);
+        renderAdminCreditGrants(payload.recent_grants || []);
+        showAdminToast('User loaded.', 'success');
+    } catch (error) {
+        console.error(error);
+        setAdminCreditState(error.message || 'Could not search users.', 'error');
+        showAdminToast(error.message || 'Could not search users.', 'error');
+    } finally {
+        setAdminCreditBusy(false);
+    }
+}
+
+function readGrantAmount(input) {
+    const value = Number(input && input.value || 0);
+    if (!Number.isFinite(value)) return 0;
+    return Math.max(0, Math.floor(value));
+}
+
+async function submitAdminCreditGrant() {
+    if (!currentAdminCreditUser) {
+        setAdminCreditState('Search for a user before granting credits.', 'error');
+        return;
+    }
+    const credits = {
+        lecture: readGrantAmount(adminCreditGrantLecture),
+        slides: readGrantAmount(adminCreditGrantSlides),
+        interview: readGrantAmount(adminCreditGrantInterview),
+    };
+    if (!credits.lecture && !credits.slides && !credits.interview) {
+        setAdminCreditState('Enter at least one positive credit amount.', 'error');
+        return;
+    }
+    setAdminCreditBusy(true);
+    try {
+        const res = await authFetch(`/api/admin/users/${encodeURIComponent(currentAdminCreditUser.uid)}/credits/grant`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                credits,
+                note: adminCreditGrantNote ? adminCreditGrantNote.value : '',
+            }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error || 'Could not grant credits.');
+        renderAdminCreditUser(payload.user || currentAdminCreditUser);
+        [adminCreditGrantLecture, adminCreditGrantSlides, adminCreditGrantInterview].forEach((input) => {
+            if (input) input.value = '0';
+        });
+        if (adminCreditGrantNote) adminCreditGrantNote.value = '';
+        showAdminToast('Credits granted.', 'success');
+        await loadAdminCreditGrants(false);
+    } catch (error) {
+        console.error(error);
+        setAdminCreditState(error.message || 'Could not grant credits.', 'error');
+        showAdminToast(error.message || 'Could not grant credits.', 'error');
+    } finally {
+        setAdminCreditBusy(false);
+    }
+}
+
+async function submitAdminUnlimitedUpdate() {
+    if (!currentAdminCreditUser) {
+        setAdminCreditState('Search for a user before changing unlimited access.', 'error');
+        return;
+    }
+    if (currentAdminCreditUser.is_configured_admin) {
+        setAdminCreditState('Configured admins are already unlimited from server settings.', 'error');
+        return;
+    }
+    const unlimited = {
+        lecture: !!(adminCreditUnlimitedLecture && adminCreditUnlimitedLecture.checked),
+        slides: !!(adminCreditUnlimitedSlides && adminCreditUnlimitedSlides.checked),
+        interview: !!(adminCreditUnlimitedInterview && adminCreditUnlimitedInterview.checked),
+    };
+    setAdminCreditBusy(true);
+    try {
+        const res = await authFetch(`/api/admin/users/${encodeURIComponent(currentAdminCreditUser.uid)}/credits/unlimited`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                unlimited,
+                note: adminCreditUnlimitedNote ? adminCreditUnlimitedNote.value : '',
+            }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error || 'Could not update unlimited access.');
+        renderAdminCreditUser(payload.user || currentAdminCreditUser);
+        if (adminCreditUnlimitedNote) adminCreditUnlimitedNote.value = '';
+        showAdminToast('Unlimited access updated.', 'success');
+        await loadAdminCreditGrants(false);
+    } catch (error) {
+        console.error(error);
+        setAdminCreditState(error.message || 'Could not update unlimited access.', 'error');
+        showAdminToast(error.message || 'Could not update unlimited access.', 'error');
+    } finally {
+        setAdminCreditBusy(false);
     }
 }
 
@@ -770,6 +1079,8 @@ auth.onAuthStateChanged(async (user) => {
         authBtn.textContent = 'Sign in';
         setAdminTab('overview');
         renderAdminBatchJobs([]);
+        renderAdminCreditUser(null);
+        renderAdminCreditGrants([]);
         setState('Please sign in with your admin account.', 'blocked');
     }
 });
@@ -792,6 +1103,14 @@ refreshBtn.addEventListener('click', async () => {
     }
     if (activeAdminTab === 'batch-jobs') {
         await loadAdminBatchJobs(true);
+        return;
+    }
+    if (activeAdminTab === 'credits') {
+        if (currentAdminCreditUser && currentAdminCreditUser.email) {
+            await searchAdminCreditUser();
+        } else {
+            await loadAdminCreditGrants(true);
+        }
         return;
     }
     await loadAdminOverview(auth.currentUser);
@@ -844,6 +1163,9 @@ adminTabButtons.forEach((btn) => {
         if (tabKey === 'batch-jobs' && auth.currentUser) {
             await loadAdminBatchJobs(false);
         }
+        if (tabKey === 'credits' && auth.currentUser) {
+            await loadAdminCreditGrants(false);
+        }
     });
 });
 
@@ -862,6 +1184,45 @@ if (adminBatchMode) {
 if (adminBatchStatus) {
     adminBatchStatus.addEventListener('change', async () => {
         await loadAdminBatchJobs(false);
+    });
+}
+
+if (adminCreditRefreshBtn) {
+    adminCreditRefreshBtn.addEventListener('click', async () => {
+        await loadAdminCreditGrants(true);
+    });
+}
+
+if (adminCreditSearchForm) {
+    adminCreditSearchForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        await searchAdminCreditUser();
+    });
+}
+
+if (adminCreditGrantForm) {
+    adminCreditGrantForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        await submitAdminCreditGrant();
+    });
+}
+
+if (adminCreditUnlimitedForm) {
+    adminCreditUnlimitedForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        await submitAdminUnlimitedUpdate();
+    });
+}
+
+if (adminCreditUnlimitedAllBtn) {
+    adminCreditUnlimitedAllBtn.addEventListener('click', () => {
+        setUnlimitedCheckboxes(true);
+    });
+}
+
+if (adminCreditUnlimitedClearBtn) {
+    adminCreditUnlimitedClearBtn.addEventListener('click', () => {
+        setUnlimitedCheckboxes(false);
     });
 }
 

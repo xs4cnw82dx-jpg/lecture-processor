@@ -43,6 +43,95 @@ def test_refund_credit_handles_missing_document_update(app, monkeypatch):
     assert credits.refund_credit("u1", "slides_credits", runtime=runtime) is False
 
 
+def _configure_credit_transaction_runtime(runtime, monkeypatch, store):
+    class _Increment:
+        def __init__(self, amount):
+            self.amount = amount
+
+    class _Snapshot:
+        def __init__(self, payload):
+            self._payload = dict(payload) if payload is not None else None
+            self.exists = payload is not None
+
+        def to_dict(self):
+            return dict(self._payload or {})
+
+    class _Ref:
+        def __init__(self, uid):
+            self.uid = uid
+
+        def get(self, transaction=None):
+            _ = transaction
+            return _Snapshot(store.get(self.uid))
+
+        def update(self, payload):
+            current = dict(store.get(self.uid) or {})
+            for key, value in dict(payload or {}).items():
+                if isinstance(value, _Increment):
+                    current[key] = int(current.get(key, 0) or 0) + value.amount
+                else:
+                    current[key] = value
+            store[self.uid] = current
+
+    class _Transaction:
+        def update(self, ref, payload):
+            ref.update(payload)
+
+    class _DB:
+        def transaction(self):
+            return _Transaction()
+
+    monkeypatch.setattr(runtime, 'db', _DB())
+    monkeypatch.setattr(runtime.firestore, 'Increment', lambda amount: _Increment(amount), raising=False)
+    monkeypatch.setattr(runtime.firestore, 'transactional', lambda fn: fn, raising=False)
+    monkeypatch.setattr(runtime.users_repo, 'doc_ref', lambda _db, uid: _Ref(uid))
+    monkeypatch.setattr(runtime.users_repo, 'get_doc', lambda _db, uid: _Snapshot(store.get(uid)))
+    monkeypatch.setattr(runtime.users_repo, 'update_doc', lambda _db, uid, payload: _Ref(uid).update(payload))
+
+
+def test_unlimited_lecture_deducts_and_refunds_without_changing_finite_balance(app, monkeypatch):
+    runtime = get_runtime(app)
+    store = {
+        'u1': {
+            'uid': 'u1',
+            'email': 'user@example.com',
+            'lecture_credits_standard': 0,
+            'lecture_credits_extended': 0,
+            'unlimited_credits': {'lecture': True, 'slides': False, 'interview': False},
+            'total_processed': 0,
+        }
+    }
+    _configure_credit_transaction_runtime(runtime, monkeypatch, store)
+
+    deducted = credits.deduct_credit('u1', 'lecture_credits_standard', 'lecture_credits_extended', runtime=runtime)
+    assert deducted == 'lecture_credits_standard'
+    assert store['u1']['lecture_credits_standard'] == 0
+    assert store['u1']['total_processed'] == 1
+
+    assert credits.refund_credit('u1', 'lecture_credits_standard', runtime=runtime) is True
+    assert store['u1']['lecture_credits_standard'] == 0
+    assert store['u1']['total_processed'] == 0
+
+
+def test_unlimited_slides_extra_charge_and_refund_are_noops_for_balance(app, monkeypatch):
+    runtime = get_runtime(app)
+    store = {
+        'u1': {
+            'uid': 'u1',
+            'email': 'user@example.com',
+            'slides_credits': 0,
+            'unlimited_credits': {'lecture': False, 'slides': True, 'interview': False},
+            'total_processed': 0,
+        }
+    }
+    _configure_credit_transaction_runtime(runtime, monkeypatch, store)
+
+    assert credits.deduct_slides_credits('u1', 2, runtime=runtime) is True
+    assert store['u1']['slides_credits'] == 0
+    assert credits.refund_slides_credits('u1', 2, runtime=runtime) is True
+    assert store['u1']['slides_credits'] == 0
+
+
 def test_process_checkout_session_credits_returns_already_processed(app, monkeypatch):
     runtime = get_runtime(app)
     monkeypatch.setattr(

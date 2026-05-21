@@ -46,3 +46,27 @@ def admin_cost_analysis_export():
 def admin_batch_jobs():
     runtime = get_runtime()
     return admin_api_service.admin_batch_jobs(runtime, request)
+
+
+@admin_bp.route('/api/admin/users/search', methods=['GET'])
+def admin_user_search():
+    runtime = get_runtime()
+    return admin_api_service.admin_user_search(runtime, request)
+
+
+@admin_bp.route('/api/admin/users/<uid>/credits/grant', methods=['POST'])
+def admin_grant_user_credits(uid):
+    runtime = get_runtime()
+    return admin_api_service.admin_grant_user_credits(runtime, request, uid)
+
+
+@admin_bp.route('/api/admin/users/<uid>/credits/unlimited', methods=['PATCH'])
+def admin_update_user_unlimited(uid):
+    runtime = get_runtime()
+    return admin_api_service.admin_update_user_unlimited(runtime, request, uid)
+
+
+@admin_bp.route('/api/admin/credit-grants', methods=['GET'])
+def admin_credit_grants():
+    runtime = get_runtime()
+    return admin_api_service.admin_credit_grants(runtime, request)

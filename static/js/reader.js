@@ -43,6 +43,7 @@
   var currentJobId = '';
   var pollTimer = null;
   var slidesCredits = null;
+  var slidesUnlimited = false;
   var toastTimer = null;
   var dropzoneDragging = false;
   var CREDITS_CACHE_KEY = 'credits_breakdown';
@@ -129,7 +130,7 @@
       creditNote.textContent = 'Text extraction credits: \u2014';
       return;
     }
-    creditNote.textContent = 'Text extraction credits: ' + String(slidesCredits);
+    creditNote.textContent = 'Text extraction credits: ' + (slidesUnlimited ? 'Unlimited' : String(slidesCredits));
   }
 
   function readCacheJson(key, fallbackValue) {
@@ -159,16 +160,19 @@
   function hydrateCachedCredits(user) {
     if (!user || !user.uid) {
       slidesCredits = null;
+      slidesUnlimited = false;
       updateCreditNote();
       return;
     }
     var cached = readUserCacheJson(user, CREDITS_CACHE_KEY, null);
     if (!cached || typeof cached !== 'object') {
       slidesCredits = null;
+      slidesUnlimited = false;
       updateCreditNote();
       return;
     }
     slidesCredits = Number(cached.textExtraction || 0);
+    slidesUnlimited = !!(cached.unlimited && cached.unlimited.slides);
     updateCreditNote();
   }
 
@@ -343,6 +347,7 @@
     var signedInUser = getSignedInUser();
     if (!signedInUser) {
       slidesCredits = null;
+      slidesUnlimited = false;
       updateCreditNote();
       return;
     }
@@ -351,6 +356,7 @@
       if (!response.ok) return;
       var payload = await response.json();
       slidesCredits = payload && payload.credits ? Number(payload.credits.slides || 0) : 0;
+      slidesUnlimited = !!(payload && payload.unlimited_credits && payload.unlimited_credits.slides);
       if (payload && payload.credits) {
         var lecture = Number(payload.credits.lecture_standard || 0) + Number(payload.credits.lecture_extended || 0);
         var interview = Number(payload.credits.interview_short || 0) + Number(payload.credits.interview_medium || 0) + Number(payload.credits.interview_long || 0);
@@ -358,7 +364,8 @@
           lecture: lecture,
           textExtraction: slidesCredits,
           interview: interview,
-          total: lecture + slidesCredits + interview
+          total: lecture + slidesCredits + interview,
+          unlimited: payload.unlimited_credits || {}
         });
       }
       updateCreditNote();

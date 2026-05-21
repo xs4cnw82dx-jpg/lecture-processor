@@ -723,6 +723,135 @@
             text-overflow: ellipsis;
             white-space: nowrap;
         }
+        .admin-credit-search {
+            display: grid;
+            grid-template-columns: minmax(260px, 1fr) auto auto;
+            gap: 10px;
+            align-items: end;
+            margin-bottom: 12px;
+        }
+        .admin-credit-hint,
+        .admin-credit-user-meta {
+            color: var(--muted);
+            font-size: 0.82rem;
+            font-weight: 600;
+        }
+        .admin-credit-hint {
+            align-self: center;
+            padding-bottom: 10px;
+        }
+        .admin-credit-state {
+            color: var(--muted);
+            font-size: 0.9rem;
+            padding: 10px 12px;
+            border: 1px solid #edf2f8;
+            border-radius: 10px;
+            background: #f8fafc;
+        }
+        .admin-credit-state.error,
+        .admin-credit-state.blocked {
+            color: #991B1B;
+            border-color: #FECACA;
+            background: #FEF2F2;
+        }
+        .admin-credit-user {
+            display: grid;
+            gap: 14px;
+            margin-top: 12px;
+        }
+        .admin-credit-user-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .admin-credit-user-head h3,
+        .admin-credit-form h3 {
+            margin: 0 0 6px;
+            font-size: 0.98rem;
+        }
+        .admin-credit-admin-note {
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(14, 165, 233, 0.28);
+            background: rgba(224, 242, 254, 0.72);
+            color: #075985;
+            font-size: 0.84rem;
+            font-weight: 700;
+        }
+        .admin-credit-summary-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .admin-credit-summary-card {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: #f8fafc;
+            padding: 12px;
+            display: grid;
+            gap: 4px;
+        }
+        .admin-credit-summary-card span {
+            color: var(--muted);
+            font-size: 0.76rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        .admin-credit-summary-card strong {
+            font-size: 1.12rem;
+        }
+        .admin-credit-forms-grid {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            gap: 12px;
+        }
+        .admin-credit-form {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px;
+            background: linear-gradient(145deg, rgba(255,255,255,0.98), rgba(248,250,252,0.92));
+            display: grid;
+            gap: 12px;
+        }
+        .admin-credit-form-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .admin-credit-toggle-list {
+            display: grid;
+            gap: 8px;
+        }
+        .admin-credit-toggle {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            min-height: 38px;
+            padding: 8px 10px;
+            border: 1px solid #edf2f8;
+            border-radius: 10px;
+            background: #fff;
+            color: var(--text);
+            font-size: 0.9rem;
+            font-weight: 700;
+        }
+        .admin-credit-toggle input {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--primary);
+        }
+        .admin-credit-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+        .admin-credit-grants-table {
+            min-width: 760px;
+        }
         .table-wrap { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
         th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #F1F5F9; }
@@ -788,6 +917,11 @@
             .calculator-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .analyzer-controls { grid-template-columns: 1fr; }
             .analyzer-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .admin-credit-search { grid-template-columns: 1fr; align-items: stretch; }
+            .admin-credit-hint { padding-bottom: 0; }
+            .admin-credit-summary-grid,
+            .admin-credit-forms-grid,
+            .admin-credit-form-grid { grid-template-columns: 1fr; }
         }
         @media (max-width: 720px) {
             .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -797,4 +931,44 @@
             .funnel-count, .funnel-conversion { text-align: left; }
             .calculator-summary { grid-template-columns: 1fr; }
             .analyzer-summary { grid-template-columns: 1fr; }
+            .admin-credit-grants-table {
+                min-width: 0;
+            }
+            .admin-credit-grants-table thead {
+                display: none;
+            }
+            .admin-credit-grants-table,
+            .admin-credit-grants-table tbody,
+            .admin-credit-grants-table tr,
+            .admin-credit-grants-table td {
+                display: block;
+                width: 100%;
+            }
+            .admin-credit-grants-table tr {
+                margin-top: 8px;
+                padding: 8px 10px;
+                border: 1px solid #eef2f7;
+                border-radius: 10px;
+                background: #fff;
+            }
+            .admin-credit-grants-table td {
+                display: grid;
+                grid-template-columns: 82px minmax(0, 1fr);
+                gap: 8px;
+                padding: 4px 0;
+                border-bottom: 0;
+                word-break: break-word;
+            }
+            .admin-credit-grants-table td::before {
+                color: var(--muted);
+                font-size: 0.72rem;
+                font-weight: 700;
+                text-transform: uppercase;
+            }
+            .admin-credit-grants-table td:nth-child(1)::before { content: "Time"; }
+            .admin-credit-grants-table td:nth-child(2)::before { content: "User"; }
+            .admin-credit-grants-table td:nth-child(3)::before { content: "Action"; }
+            .admin-credit-grants-table td:nth-child(4)::before { content: "Change"; }
+            .admin-credit-grants-table td:nth-child(5)::before { content: "Note"; }
+            .admin-credit-grants-table td:nth-child(6)::before { content: "Amount"; }
         }

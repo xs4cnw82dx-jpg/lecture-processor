@@ -22,6 +22,12 @@ def get_or_create_user(uid, email, runtime=None):
         updates = {}
         if user_data.get('email') != email and email:
             updates['email'] = email
+        normalized_email = billing_credits.normalize_email(email or user_data.get('email', ''))
+        if user_data.get('email_normalized') != normalized_email:
+            updates['email_normalized'] = normalized_email
+        normalized_unlimited = billing_credits.normalize_unlimited_credits(user_data.get('unlimited_credits'))
+        if user_data.get('unlimited_credits') != normalized_unlimited:
+            updates['unlimited_credits'] = normalized_unlimited
 
         preferred_key = resolved_runtime.sanitize_output_language_pref_key(
             user_data.get('preferred_output_language', resolved_runtime.DEFAULT_OUTPUT_LANGUAGE_KEY),

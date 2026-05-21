@@ -251,7 +251,7 @@ def tools_extract(app_ctx, request):
         )
 
     user = app_ctx.get_or_create_user(uid, email)
-    if int(user.get('slides_credits', 0) or 0) <= 0:
+    if not billing_credits.has_category_credit(user, 'slides', runtime=app_ctx):
         return app_ctx.jsonify({'error': 'No text extraction credits remaining. Please purchase more credits.'}), 402
 
     job_id = str(app_ctx.uuid.uuid4())
@@ -300,7 +300,7 @@ def tools_extract(app_ctx, request):
             uid=uid,
             cleanup_paths=list(cleanup_paths or []),
             credit_type=deducted_credit,
-            expected_credit_floor=int(user.get('slides_credits', 0) or 0),
+            expected_credit_floor=None if billing_credits.is_unlimited_for_category(user, 'slides', runtime=app_ctx) else int(user.get('slides_credits', 0) or 0),
         )
 
     return app_ctx.jsonify({

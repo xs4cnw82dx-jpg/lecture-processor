@@ -86,7 +86,7 @@ from lecture_processor.domains.study import progress as study_progress
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 from lecture_processor.services import analytics_service, auth_service, file_service, job_state_service, prompt_registry, rate_limit_service, url_security
 
-from lecture_processor.repositories import admin_repo, batch_repo, job_logs_repo, planner_repo, purchases_repo, runtime_jobs_repo, study_repo, users_repo
+from lecture_processor.repositories import admin_repo, admin_credit_grants_repo, batch_repo, job_logs_repo, planner_repo, purchases_repo, runtime_jobs_repo, study_repo, users_repo
 from lecture_processor.runtime import bootstrap as runtime_bootstrap
 from lecture_processor.runtime import media_runtime
 from lecture_processor.runtime import environment as runtime_environment
