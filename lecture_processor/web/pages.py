@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, abort, redirect, render_template, request
+from flask import Blueprint, abort, redirect, render_template, request, send_from_directory
 
 from lecture_processor.domains.auth import session as auth_session
 from lecture_processor.runtime.container import get_runtime
@@ -337,6 +337,30 @@ def general_transcriber_page():
         general_transcriber_js_asset=runtime.resolve_js_asset('js/general-transcriber.js'),
         **_shell_context(runtime=runtime, page_key='general-transcriber'),
     )
+
+
+@pages_bp.route('/voice-notes')
+def voice_notes_page():
+    runtime = get_runtime()
+    return render_template(
+        'voice_notes.html',
+        voice_notes_utils_js_asset=runtime.resolve_js_asset('js/voice-notes-utils.js'),
+        voice_notes_js_asset=runtime.resolve_js_asset('js/voice-notes.js'),
+        **_shell_context(runtime=runtime, page_key='voice-notes'),
+    )
+
+
+@pages_bp.route('/service-worker.js')
+def service_worker():
+    runtime = get_runtime()
+    response = send_from_directory(
+        runtime.os.path.join(runtime.PROJECT_ROOT_DIR, 'static'),
+        'service-worker.js',
+        mimetype='application/javascript',
+        max_age=0,
+    )
+    response.headers['Service-Worker-Allowed'] = '/'
+    return response
 
 
 @pages_bp.route('/buy_credits')

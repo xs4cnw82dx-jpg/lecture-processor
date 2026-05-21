@@ -16,6 +16,9 @@ STUDY_PACK_SUMMARY_FIELDS = (
     'block',
     'folder_id',
     'folder_name',
+    'tags',
+    'pinned',
+    'archived',
     'created_at',
 )
 

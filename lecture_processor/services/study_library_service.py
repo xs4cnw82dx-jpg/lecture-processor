@@ -67,6 +67,9 @@ def get_study_packs(app_ctx, request):
                 'block': pack.get('block', ''),
                 'folder_id': pack.get('folder_id', ''),
                 'folder_name': pack.get('folder_name', ''),
+                'tags': pack.get('tags', []) if isinstance(pack.get('tags', []), list) else [],
+                'pinned': bool(pack.get('pinned', False)),
+                'archived': bool(pack.get('archived', False)),
                 'created_at': pack.get('created_at', 0),
             })
         next_cursor = packs[-1]['study_pack_id'] if has_more and packs else ''
@@ -202,6 +205,7 @@ def get_study_pack(app_ctx, request, pack_id):
             'has_audio_playback': has_audio_playback,
             'has_source_slides': bool(str(source_payload.get('slide_text', '') or '').strip()),
             'has_source_transcript': bool(str(source_payload.get('transcript', '') or '').strip()),
+            'source_transcript': str(source_payload.get('transcript', '') or ''),
             'flashcards': pack.get('flashcards', []),
             'test_questions': pack.get('test_questions', []),
             'interview_summary': pack.get('interview_summary'),
@@ -217,6 +221,11 @@ def get_study_pack(app_ctx, request, pack_id):
             'block': pack.get('block', ''),
             'folder_id': pack.get('folder_id', ''),
             'folder_name': pack.get('folder_name', ''),
+            'tags': pack.get('tags', []) if isinstance(pack.get('tags', []), list) else [],
+            'pinned': bool(pack.get('pinned', False)),
+            'archived': bool(pack.get('archived', False)),
+            'custom_instruction': str(pack.get('custom_instruction', '') or ''),
+            'audio_sessions': pack.get('audio_sessions', []) if isinstance(pack.get('audio_sessions', []), list) else [],
             'created_at': pack.get('created_at', 0),
         })
     except Exception as error:
@@ -257,6 +266,16 @@ def update_study_pack(app_ctx, request, pack_id):
             updates['semester'] = str(payload.get('semester', '')).strip()[:120]
         if 'block' in payload:
             updates['block'] = str(payload.get('block', '')).strip()[:120]
+        if 'tags' in payload:
+            from lecture_processor.services.voice_note_service import sanitize_voice_note_tags
+
+            updates['tags'] = sanitize_voice_note_tags(payload.get('tags'))
+        if 'pinned' in payload:
+            updates['pinned'] = bool(payload.get('pinned'))
+        if 'archived' in payload:
+            updates['archived'] = bool(payload.get('archived'))
+        if 'custom_instruction' in payload:
+            updates['custom_instruction'] = str(payload.get('custom_instruction', '') or '').strip()[:2000]
         if 'folder_id' in payload:
             folder_id = str(payload.get('folder_id', '')).strip()
             updates['folder_id'] = ''

@@ -1,0 +1,25 @@
+{
+  "name": "Lecture Processor Voice Notes",
+  "short_name": "Voice Notes",
+  "description": "Offline-first voice notes with transcripts, notes, flashcards, and practice tests.",
+  "start_url": "/voice-notes",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f8fb",
+  "theme_color": "#111827",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/static/icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -163,6 +163,20 @@ def test_extra_slides_refund_does_not_increment_when_refund_fails(monkeypatch):
                 "transcript": "Interview transcript",
             },
         ),
+        (
+            "voice-note",
+            {
+                "result": "# Voice Note",
+                "transcript": "Voice transcript",
+                "voice_note_tags": ["biology", "exam"],
+                "voice_note_pinned": True,
+                "voice_note_custom_instruction": "Use exam bullets",
+            },
+            {
+                "mode": "voice-note",
+                "transcript": "Voice transcript",
+            },
+        ),
     ],
 )
 def test_save_study_pack_writes_source_outputs(monkeypatch, mode, job_data, expected_source):
@@ -230,3 +244,7 @@ def test_save_study_pack_writes_source_outputs(monkeypatch, mode, job_data, expe
     assert source_ref.payload["source_job_id"] == f"job-{mode}"
     for key, value in expected_source.items():
         assert source_ref.payload[key] == value
+    if mode == "voice-note":
+        assert pack_ref.payload["tags"] == ["biology", "exam"]
+        assert pack_ref.payload["pinned"] is True
+        assert pack_ref.payload["custom_instruction"] == "Use exam bullets"

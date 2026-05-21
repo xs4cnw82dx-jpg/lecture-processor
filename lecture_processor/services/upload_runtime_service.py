@@ -68,6 +68,8 @@ def get_status(app_ctx, request, job_id):
             response['transcript'] = job.get('transcript')
         if job.get('mode') == 'interview':
             response['transcript'] = job.get('transcript')
+        if job.get('mode') == 'voice-note':
+            response['transcript'] = job.get('transcript')
         if job.get('mode') == 'physio-transcription':
             response['transcript'] = job.get('transcript')
     elif job['status'] == 'error':
