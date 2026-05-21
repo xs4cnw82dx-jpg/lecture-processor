@@ -26,7 +26,7 @@ test('filterVoiceNotes searches transcript notes and tags while hiding archived 
   assert.deepEqual(utils.filterVoiceNotes(notes, { filter: 'archived' }).map((note) => note.id), ['2']);
 });
 
-test('normalizePackPayload keeps study tools and mobile metadata', () => {
+test('normalizePackPayload keeps transcript and mobile metadata without study tools', () => {
   const normalized = utils.normalizePackPayload({
     study_pack_id: 'pack-1',
     title: 'Voice',
@@ -40,8 +40,9 @@ test('normalizePackPayload keeps study tools and mobile metadata', () => {
 
   assert.equal(normalized.study_pack_id, 'pack-1');
   assert.equal(normalized.status, 'synced');
-  assert.equal(normalized.flashcards.length, 1);
-  assert.equal(normalized.test_questions.length, 1);
+  assert.equal(normalized.notes_markdown, 'Transcript');
+  assert.equal(normalized.flashcards.length, 0);
+  assert.equal(normalized.test_questions.length, 0);
   assert.deepEqual(normalized.tags, ['exam']);
   assert.equal(normalized.pinned, true);
 });

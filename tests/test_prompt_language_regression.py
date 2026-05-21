@@ -12,6 +12,7 @@ def test_core_prompts_are_english_and_language_controlled():
     language_controlled_prompts = [
         core.PROMPT_AUDIO_TRANSCRIPTION,
         core.PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED,
+        core.PROMPT_VOICE_NOTE_TRANSCRIPTION,
         core.PROMPT_MERGE_TEMPLATE,
         core.PROMPT_MERGE_WITH_AUDIO_MARKERS,
     ]

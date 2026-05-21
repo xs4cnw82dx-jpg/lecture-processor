@@ -81,6 +81,16 @@ def test_resolve_uploaded_slides_rejects_generic_mime_without_pdf_signature(tmp_
     assert not expected_path.exists()
 
 
+def test_file_signature_accepts_webm_audio_without_ffprobe(tmp_path):
+    audio = tmp_path / "voice-note.webm"
+    audio.write_bytes(b"\x1a\x45\xdf\xa3webm-data")
+
+    assert file_service.file_looks_like_audio(
+        str(audio),
+        ffprobe_binary_getter=lambda: "",
+    )
+
+
 def test_download_audio_from_video_url_rejects_overlong_media_before_download(tmp_path):
     calls = []
 

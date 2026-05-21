@@ -19,11 +19,7 @@
   var state = {
     user: auth.currentUser || null,
     notes: [],
-    folders: [],
     selectedId: '',
-    selectedAudioBlob: null,
-    selectedAudioName: '',
-    selectedAudioSeconds: 0,
     recorder: null,
     recordingStream: null,
     recordingChunks: [],
@@ -32,14 +28,12 @@
     syncing: {},
     search: '',
     filter: 'all',
-    activeDetailTab: 'transcript',
     highlightColor: 'yellow',
     highlightUndo: [],
     highlightRedo: [],
     settings: {
       output_language: 'english',
-      flashcard_amount: '20',
-      question_amount: '10'
+      custom_instruction: ''
     }
   };
 
@@ -52,16 +46,11 @@
   function cacheElements() {
     [
       'voice-auth', 'voice-app', 'voice-sync-pill', 'voice-record-btn', 'voice-stop-btn', 'voice-time',
-      'voice-meter', 'voice-record-status', 'voice-file-input', 'voice-import-btn', 'voice-title-input',
-      'voice-tags-input', 'voice-folder-select', 'voice-append-select', 'voice-custom-input',
-      'voice-pinned-input', 'voice-generate-tools-input', 'voice-save-local-btn', 'voice-sync-current-btn',
-      'voice-search-input', 'voice-note-list', 'voice-detail-empty', 'voice-detail', 'voice-detail-title',
-      'voice-detail-meta', 'voice-pin-btn', 'voice-share-btn', 'voice-audio', 'voice-transcript',
-      'voice-notes-surface', 'voice-highlight-toolbar', 'voice-hl-undo', 'voice-hl-redo', 'voice-hl-clear',
-      'voice-download-notes', 'voice-flashcard-count', 'voice-question-count', 'voice-flashcards',
-      'voice-questions', 'voice-refresh-tools-btn', 'voice-language-select', 'voice-flashcard-amount',
-      'voice-question-amount', 'voice-storage-count', 'voice-storage-size', 'voice-sync-all-btn',
-      'voice-toast'
+      'voice-meter', 'voice-record-status', 'voice-file-input', 'voice-import-btn', 'voice-search-input',
+      'voice-note-list', 'voice-detail-empty', 'voice-detail', 'voice-detail-title', 'voice-detail-meta',
+      'voice-share-btn', 'voice-audio', 'voice-transcript', 'voice-notes-surface', 'voice-highlight-toolbar',
+      'voice-hl-undo', 'voice-hl-redo', 'voice-hl-clear', 'voice-download-notes', 'voice-language-select',
+      'voice-custom-input', 'voice-storage-count', 'voice-storage-size', 'voice-sync-all-btn', 'voice-toast'
     ].forEach(function (id) {
       var key = id.replace(/^voice-/, '').replace(/-([a-z])/g, function (_m, chr) { return chr.toUpperCase(); });
       els[key] = $(id);
@@ -73,15 +62,9 @@
       var request = indexedDB.open(DB_NAME, DB_VERSION);
       request.onupgradeneeded = function () {
         var db = request.result;
-        if (!db.objectStoreNames.contains(STORE_NOTES)) {
-          db.createObjectStore(STORE_NOTES, { keyPath: 'id' });
-        }
-        if (!db.objectStoreNames.contains(STORE_AUDIO)) {
-          db.createObjectStore(STORE_AUDIO, { keyPath: 'id' });
-        }
-        if (!db.objectStoreNames.contains(STORE_SETTINGS)) {
-          db.createObjectStore(STORE_SETTINGS, { keyPath: 'key' });
-        }
+        if (!db.objectStoreNames.contains(STORE_NOTES)) db.createObjectStore(STORE_NOTES, { keyPath: 'id' });
+        if (!db.objectStoreNames.contains(STORE_AUDIO)) db.createObjectStore(STORE_AUDIO, { keyPath: 'id' });
+        if (!db.objectStoreNames.contains(STORE_SETTINGS)) db.createObjectStore(STORE_SETTINGS, { keyPath: 'key' });
       };
       request.onsuccess = function () { resolve(request.result); };
       request.onerror = function () { reject(request.error || new Error('IndexedDB unavailable')); };
@@ -220,6 +203,26 @@
     els.syncPill.classList.toggle('is-error', type === 'error');
   }
 
+  function renderSyncPill() {
+    if (!navigator.onLine) {
+      syncPill('Offline', 'error');
+      return;
+    }
+    var syncing = state.notes.filter(function (note) {
+      return (utils.normalizeStatus ? utils.normalizeStatus(note.status) : note.status) === 'syncing';
+    }).length;
+    var pending = state.notes.filter(function (note) {
+      return (utils.normalizeStatus ? utils.normalizeStatus(note.status) : note.status) === 'pending';
+    }).length;
+    var errors = state.notes.filter(function (note) {
+      return (utils.normalizeStatus ? utils.normalizeStatus(note.status) : note.status) === 'error';
+    }).length;
+    if (syncing) syncPill(syncing === 1 ? 'Transcribing' : syncing + ' transcribing', 'online');
+    else if (pending) syncPill(pending + ' pending', 'online');
+    else if (errors) syncPill(errors + ' retry', 'error');
+    else syncPill('Synced', 'online');
+  }
+
   function selectedNote() {
     return state.notes.find(function (note) { return note.id === state.selectedId; }) || null;
   }
@@ -234,13 +237,7 @@
       btn.classList.toggle('active', active);
       btn.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
-    if (safe === 'study') renderDetail();
-  }
-
-  function updateRecordButtons() {
-    var hasAudio = !!state.selectedAudioBlob;
-    if (els.saveLocalBtn) els.saveLocalBtn.disabled = !hasAudio;
-    if (els.syncCurrentBtn) els.syncCurrentBtn.disabled = !hasAudio && !selectedNote();
+    if (safe === 'detail') renderDetail();
   }
 
   function setRecordStatus(text) {
@@ -249,11 +246,27 @@
 
   function preferredMimeType() {
     if (!window.MediaRecorder || typeof MediaRecorder.isTypeSupported !== 'function') return '';
-    var candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/aac'];
+    var candidates = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/aac'];
     for (var i = 0; i < candidates.length; i += 1) {
       if (MediaRecorder.isTypeSupported(candidates[i])) return candidates[i];
     }
     return '';
+  }
+
+  function extensionForMime(mimeType) {
+    var mime = String(mimeType || '').split(';', 1)[0].toLowerCase();
+    if (mime.indexOf('mpeg') >= 0 || mime.indexOf('mp3') >= 0) return '.mp3';
+    if (mime.indexOf('mp4') >= 0 || mime.indexOf('m4a') >= 0 || mime.indexOf('aac') >= 0) return '.m4a';
+    if (mime.indexOf('wav') >= 0) return '.wav';
+    if (mime.indexOf('ogg') >= 0) return '.ogg';
+    if (mime.indexOf('flac') >= 0) return '.flac';
+    return '.webm';
+  }
+
+  function audioFileName(name, blob) {
+    var safe = String(name || '').trim();
+    if (/\.(mp3|m4a|mp4|wav|aac|ogg|flac|webm)$/i.test(safe)) return safe;
+    return 'voice-note-' + Date.now() + extensionForMime(blob && blob.type);
   }
 
   function startTimer() {
@@ -261,7 +274,6 @@
     window.clearInterval(state.recordingTimer);
     state.recordingTimer = window.setInterval(function () {
       var seconds = Math.floor((Date.now() - state.recordingStartedAt) / 1000);
-      state.selectedAudioSeconds = seconds;
       if (els.time) els.time.textContent = utils.formatDuration ? utils.formatDuration(seconds) : String(seconds);
     }, 250);
   }
@@ -269,6 +281,11 @@
   function stopTimer() {
     window.clearInterval(state.recordingTimer);
     state.recordingTimer = 0;
+  }
+
+  function recordingSeconds() {
+    if (!state.recordingStartedAt) return 0;
+    return Math.max(0, Math.floor((Date.now() - state.recordingStartedAt) / 1000));
   }
 
   function startRecording() {
@@ -286,10 +303,10 @@
         if (event.data && event.data.size > 0) state.recordingChunks.push(event.data);
       };
       state.recorder.onstop = function () {
+        var seconds = recordingSeconds();
         var blobType = state.recorder && state.recorder.mimeType ? state.recorder.mimeType : (mimeType || 'audio/webm');
         var blob = new Blob(state.recordingChunks, { type: blobType });
-        state.selectedAudioBlob = blob;
-        state.selectedAudioName = 'voice-note-' + Date.now() + (blobType.indexOf('mp4') >= 0 ? '.m4a' : '.webm');
+        var name = audioFileName('', blob);
         if (state.recordingStream) {
           state.recordingStream.getTracks().forEach(function (track) { track.stop(); });
         }
@@ -299,9 +316,9 @@
         if (els.recordBtn) els.recordBtn.classList.remove('recording');
         if (els.stopBtn) els.stopBtn.disabled = true;
         if (els.recordBtn) els.recordBtn.disabled = false;
-        setRecordStatus('Recording saved locally in this browser.');
         stopTimer();
-        updateRecordButtons();
+        setRecordStatus('Saved locally. Transcribing...');
+        saveAudioAndSync(blob, name, seconds);
       };
       state.recorder.start(1000);
       if (els.meter) els.meter.classList.add('recording');
@@ -316,38 +333,21 @@
   }
 
   function stopRecording() {
-    if (state.recorder && state.recorder.state !== 'inactive') {
-      state.recorder.stop();
+    if (state.recorder && state.recorder.state !== 'inactive') state.recorder.stop();
+  }
+
+  function saveAudioAndSync(blob, name, seconds) {
+    if (!blob || !blob.size) {
+      showToast('The recording was empty. Please try again.', 'error');
+      return Promise.resolve(null);
     }
-  }
-
-  function readFormMetadata() {
-    return {
-      title: String(els.titleInput && els.titleInput.value || '').trim() || 'Untitled voice note',
-      tags: utils.parseTags ? utils.parseTags(els.tagsInput && els.tagsInput.value) : [],
-      folder_id: String(els.folderSelect && els.folderSelect.value || '').trim(),
-      append_to_pack_id: String(els.appendSelect && els.appendSelect.value || '').trim(),
-      custom_instruction: String(els.customInput && els.customInput.value || '').trim(),
-      pinned: !!(els.pinnedInput && els.pinnedInput.checked),
-      archived: false,
-      generate_tools: !!(els.generateToolsInput && els.generateToolsInput.checked)
-    };
-  }
-
-  function saveCurrentAudioOffline() {
-    if (!state.selectedAudioBlob) return Promise.resolve(null);
-    var meta = readFormMetadata();
     var id = createLocalId();
     var note = {
       id: id,
       study_pack_id: '',
       local_audio_id: id,
-      title: meta.title,
-      tags: meta.tags,
-      folder_id: meta.folder_id,
-      append_to_pack_id: meta.append_to_pack_id,
-      custom_instruction: meta.custom_instruction,
-      pinned: meta.pinned,
+      title: 'Transcribing voice note...',
+      tags: [],
       archived: false,
       status: 'pending',
       transcript: '',
@@ -355,23 +355,30 @@
       notes_highlights: null,
       flashcards: [],
       test_questions: [],
-      audio_size: Number(state.selectedAudioBlob.size || 0),
-      audio_name: state.selectedAudioName || 'voice-note.webm',
-      audio_type: state.selectedAudioBlob.type || 'audio/webm',
-      audio_seconds: state.selectedAudioSeconds,
+      audio_size: Number(blob.size || 0),
+      audio_name: audioFileName(name, blob),
+      audio_type: blob.type || 'audio/webm',
+      audio_seconds: Number(seconds || 0),
       created_at: nowSeconds(),
-      updated_at: nowSeconds(),
-      generate_tools: meta.generate_tools
+      updated_at: nowSeconds()
     };
-    return putAudioBlob(id, state.selectedAudioBlob, note.audio_name)
+    return putAudioBlob(id, blob, note.audio_name)
       .then(function () { return putNote(note); })
       .then(function () {
         state.notes.unshift(note);
         state.selectedId = id;
-        state.selectedAudioBlob = null;
-        updateRecordButtons();
+        setView('detail');
         renderAll();
-        showToast('Saved offline.');
+        if (!navigator.onLine) {
+          setRecordStatus('Saved offline. It will transcribe when you are online.');
+          return note;
+        }
+        if (!hasSignedInSession()) {
+          setRecordStatus('Saved offline. Sign in to transcribe.');
+          showToast('Saved offline. Sign in to transcribe.');
+          return note;
+        }
+        syncNote(note);
         return note;
       });
   }
@@ -379,33 +386,31 @@
   function syncNote(note) {
     if (!note || state.syncing[note.id]) return Promise.resolve();
     if (!hasSignedInSession()) {
-      showToast('Sign in to sync.', 'error');
+      showToast('Sign in to transcribe.', 'error');
+      renderSyncPill();
       return Promise.resolve();
     }
     state.syncing[note.id] = true;
     note.status = 'syncing';
     note.error = '';
+    note.step_description = 'Uploading audio...';
+    note.updated_at = nowSeconds();
     renderAll();
-    return getAudioBlob(note.local_audio_id || note.id).then(function (blob) {
+    return putNote(note).then(function () {
+      return getAudioBlob(note.local_audio_id || note.id);
+    }).then(function (blob) {
       if (!blob) throw new Error('Offline audio was not found on this device.');
       var form = new FormData();
-      form.append('audio', blob, note.audio_name || 'voice-note.webm');
-      form.append('title', note.title || 'Untitled voice note');
-      form.append('tags', (note.tags || []).join(','));
-      form.append('folder_id', note.folder_id || '');
-      form.append('append_to_pack_id', note.append_to_pack_id || '');
-      form.append('custom_instruction', note.custom_instruction || '');
-      form.append('pinned', note.pinned ? '1' : '0');
-      form.append('study_features', note.generate_tools === false ? 'none' : 'both');
-      form.append('flashcard_amount', state.settings.flashcard_amount || '20');
-      form.append('question_amount', state.settings.question_amount || '10');
+      form.append('audio', blob, audioFileName(note.audio_name, blob));
+      form.append('custom_instruction', state.settings.custom_instruction || note.custom_instruction || '');
       form.append('output_language', state.settings.output_language || 'english');
       return authFetch('/api/voice-notes', { method: 'POST', body: form });
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (payload) {
-        if (!response.ok) throw new Error(payload.error || 'Could not sync voice note');
+        if (!response.ok) throw new Error(payload.error || 'Could not transcribe voice note');
         note.job_id = payload.job_id;
         note.status = 'syncing';
+        note.step_description = 'Transcribing...';
         note.updated_at = nowSeconds();
         return putNote(note).then(function () { return pollJob(note, payload.job_id); });
       });
@@ -413,6 +418,7 @@
       note.status = 'error';
       note.error = error && error.message ? error.message : 'Sync failed';
       note.updated_at = nowSeconds();
+      setRecordStatus('Saved offline. Sync needs retry.');
       showToast(note.error, 'error');
       return putNote(note);
     }).finally(function () {
@@ -428,15 +434,23 @@
       return apiJson('/api/voice-notes/jobs/' + encodeURIComponent(jobId)).then(function (payload) {
         note.status = payload.status || 'syncing';
         note.step_description = payload.step_description || '';
-        note.transcript = payload.transcript || note.transcript || '';
+        if (payload.transcript) {
+          note.transcript = payload.transcript;
+          note.notes_markdown = payload.transcript;
+        }
         if (payload.status === 'complete') {
           note.status = 'synced';
           note.study_pack_id = payload.study_pack_id || note.study_pack_id || '';
-          note.notes_markdown = payload.result || note.notes_markdown || '';
-          note.flashcards = Array.isArray(payload.flashcards) ? payload.flashcards : note.flashcards;
-          note.test_questions = Array.isArray(payload.test_questions) ? payload.test_questions : note.test_questions;
+          note.title = payload.title || note.title || 'Voice note';
+          note.tags = utils.parseTags ? utils.parseTags(payload.tags || note.tags || []) : (payload.tags || note.tags || []);
+          note.transcript = payload.transcript || payload.result || note.transcript || '';
+          note.notes_markdown = note.transcript;
+          note.flashcards = [];
+          note.test_questions = [];
+          note.updated_at = nowSeconds();
           return fetchAndCachePack(note).then(function () {
-            showToast('Voice note synced.');
+            setRecordStatus('Transcript ready.');
+            showToast('Transcript ready.');
           });
         }
         if (payload.status === 'error') {
@@ -444,10 +458,12 @@
           note.error = payload.error || 'Processing failed';
           return putNote(note);
         }
+        note.updated_at = nowSeconds();
         return putNote(note).then(function () {
+          renderAll();
           if (attempts > 240) throw new Error('Processing is taking longer than expected.');
           return new Promise(function (resolve) {
-            window.setTimeout(function () { resolve(tick()); }, 2500);
+            window.setTimeout(function () { resolve(tick()); }, 1500);
           });
         });
       });
@@ -462,14 +478,19 @@
       merged.id = note.id;
       merged.local_audio_id = note.local_audio_id || note.id;
       merged.transcript = pack.source_transcript || note.transcript || '';
+      merged.notes_markdown = merged.transcript;
       merged.audio_size = note.audio_size || 0;
       merged.audio_name = note.audio_name || '';
       merged.audio_type = note.audio_type || '';
+      merged.flashcards = [];
+      merged.test_questions = [];
       Object.assign(note, merged);
       return putNote(note).then(function () {
         var index = state.notes.findIndex(function (item) { return item.id === note.id; });
         if (index >= 0) state.notes[index] = note;
       });
+    }).catch(function () {
+      return putNote(note);
     });
   }
 
@@ -478,34 +499,10 @@
       var status = utils.normalizeStatus ? utils.normalizeStatus(note.status) : note.status;
       return status === 'pending' || status === 'error';
     });
+    renderSyncPill();
     return pending.reduce(function (chain, note) {
       return chain.then(function () { return syncNote(note); });
     }, Promise.resolve());
-  }
-
-  function renderFolders() {
-    if (!els.folderSelect || !els.appendSelect) return;
-    var folderValue = els.folderSelect.value || '';
-    els.folderSelect.innerHTML = '<option value="">No folder</option>';
-    state.folders.forEach(function (folder) {
-      var option = document.createElement('option');
-      option.value = folder.folder_id;
-      option.textContent = folder.name || 'Untitled folder';
-      els.folderSelect.appendChild(option);
-    });
-    els.folderSelect.value = folderValue;
-
-    var appendValue = els.appendSelect.value || '';
-    els.appendSelect.innerHTML = '<option value="">Create new note</option>';
-    state.notes.filter(function (note) {
-      return note.study_pack_id && !note.archived;
-    }).forEach(function (note) {
-      var option = document.createElement('option');
-      option.value = note.study_pack_id;
-      option.textContent = note.title || 'Untitled note';
-      els.appendSelect.appendChild(option);
-    });
-    els.appendSelect.value = appendValue;
   }
 
   function renderList() {
@@ -532,9 +529,12 @@
         '<div class="voice-note-meta"></div>',
         '<div class="voice-tag-row"></div>'
       ].join('');
-      button.querySelector('.voice-note-title').textContent = (note.pinned ? 'Pinned - ' : '') + (note.title || 'Untitled voice note');
-      button.querySelector('.voice-note-status').textContent = status;
-      button.querySelector('.voice-note-meta').textContent = formatDate(note.created_at) + ' - ' + (note.flashcards || []).length + ' cards - ' + (note.test_questions || []).length + ' questions';
+      button.querySelector('.voice-note-title').textContent = note.title || 'Voice note';
+      button.querySelector('.voice-note-status').textContent = status === 'syncing' ? 'transcribing' : status;
+      var pieces = [formatDate(note.created_at)];
+      if (note.audio_seconds) pieces.push(utils.formatDuration ? utils.formatDuration(note.audio_seconds) : String(note.audio_seconds) + 's');
+      if (note.step_description && status === 'syncing') pieces.push(note.step_description);
+      button.querySelector('.voice-note-meta').textContent = pieces.join(' - ');
       var tagRow = button.querySelector('.voice-tag-row');
       (note.tags || []).forEach(function (tag) {
         var span = document.createElement('span');
@@ -544,7 +544,7 @@
       });
       button.addEventListener('click', function () {
         state.selectedId = note.id;
-        setView('study');
+        setView('detail');
         renderAll();
       });
       els.noteList.appendChild(button);
@@ -555,6 +555,10 @@
     return String(text || '').replace(/[&<>"']/g, function (ch) {
       return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
     });
+  }
+
+  function transcriptText(note) {
+    return String((note && (note.transcript || note.notes_markdown)) || '');
   }
 
   function normalizedRanges(note) {
@@ -602,28 +606,12 @@
     els.detailEmpty.hidden = true;
     if (els.detailTitle && els.detailTitle.value !== note.title) els.detailTitle.value = note.title || '';
     if (els.detailMeta) {
-      els.detailMeta.textContent = formatDate(note.created_at) + ' - ' + (note.status || 'pending');
+      var meta = [formatDate(note.created_at), note.status || 'pending'];
+      if (note.error) meta.push(note.error);
+      els.detailMeta.textContent = meta.join(' - ');
     }
-    if (els.pinBtn) els.pinBtn.classList.toggle('active', !!note.pinned);
-    renderDetailTabs();
     renderAudio(note);
     renderTranscript(note);
-    renderNotes(note);
-    renderFlashcards(note);
-    renderQuestions(note);
-  }
-
-  function renderDetailTabs() {
-    Array.prototype.slice.call(document.querySelectorAll('[data-detail-tab]')).forEach(function (button) {
-      var tab = button.getAttribute('data-detail-tab');
-      var active = tab === state.activeDetailTab;
-      button.classList.toggle('active', active);
-      button.setAttribute('aria-selected', active ? 'true' : 'false');
-    });
-    ['transcript', 'notes', 'flashcards', 'test'].forEach(function (tab) {
-      var pane = $('voice-pane-' + tab);
-      if (pane) pane.classList.toggle('active', tab === state.activeDetailTab);
-    });
   }
 
   function renderAudio(note) {
@@ -641,84 +629,18 @@
           return response.blob();
         }).then(function (remoteBlob) {
           putAudioBlob(note.local_audio_id || note.id, remoteBlob, note.audio_name || 'voice-note.mp3');
-          if (selectedNote() && selectedNote().id === note.id) {
-            els.audio.src = URL.createObjectURL(remoteBlob);
-          }
+          if (selectedNote() && selectedNote().id === note.id) els.audio.src = URL.createObjectURL(remoteBlob);
         }).catch(function () {});
       }
     });
   }
 
   function renderTranscript(note) {
-    if (!els.transcript) return;
-    els.transcript.textContent = note.transcript || 'Transcript will appear after sync.';
-  }
-
-  function renderNotes(note) {
+    var text = transcriptText(note);
+    if (els.transcript) els.transcript.textContent = text || 'Transcript will appear automatically after recording.';
     if (!els.notesSurface) return;
-    var text = note.notes_markdown || 'Notes will appear after sync.';
-    els.notesSurface.innerHTML = '<div class="voice-note-plain">' + highlightedText(text, normalizedRanges(note)) + '</div>';
-  }
-
-  function renderFlashcards(note) {
-    if (!els.flashcards) return;
-    var cards = Array.isArray(note.flashcards) ? note.flashcards : [];
-    if (els.flashcardCount) els.flashcardCount.textContent = cards.length + (cards.length === 1 ? ' flashcard' : ' flashcards');
-    els.flashcards.innerHTML = '';
-    if (!cards.length) {
-      els.flashcards.innerHTML = '<div class="voice-detail-empty">No flashcards yet.</div>';
-      return;
-    }
-    cards.forEach(function (card) {
-      var node = document.createElement('button');
-      node.type = 'button';
-      node.className = 'voice-flashcard';
-      node.innerHTML = '<div class="voice-flashcard-front"></div><div class="voice-flashcard-back"></div>';
-      node.querySelector('.voice-flashcard-front').textContent = card.front || 'Question';
-      node.querySelector('.voice-flashcard-back').textContent = card.back || '';
-      node.addEventListener('click', function () {
-        node.classList.toggle('flipped');
-      });
-      els.flashcards.appendChild(node);
-    });
-  }
-
-  function renderQuestions(note) {
-    if (!els.questions) return;
-    var questions = Array.isArray(note.test_questions) ? note.test_questions : [];
-    if (els.questionCount) els.questionCount.textContent = questions.length + (questions.length === 1 ? ' question' : ' questions');
-    els.questions.innerHTML = '';
-    if (!questions.length) {
-      els.questions.innerHTML = '<div class="voice-detail-empty">No practice questions yet.</div>';
-      return;
-    }
-    questions.forEach(function (question) {
-      var wrapper = document.createElement('div');
-      wrapper.className = 'voice-question';
-      var title = document.createElement('strong');
-      title.textContent = question.question || 'Question';
-      wrapper.appendChild(title);
-      (Array.isArray(question.options) ? question.options : []).forEach(function (option) {
-        var btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'voice-option';
-        btn.textContent = option;
-        btn.addEventListener('click', function () {
-          Array.prototype.slice.call(wrapper.querySelectorAll('.voice-option')).forEach(function (node) {
-            node.classList.toggle('correct', node.textContent === question.answer);
-            if (node === btn && node.textContent !== question.answer) node.classList.add('incorrect');
-          });
-          explanation.hidden = false;
-        });
-        wrapper.appendChild(btn);
-      });
-      var explanation = document.createElement('div');
-      explanation.className = 'voice-question-explanation';
-      explanation.hidden = true;
-      explanation.textContent = question.explanation || '';
-      wrapper.appendChild(explanation);
-      els.questions.appendChild(wrapper);
-    });
+    var visible = text || (note.status === 'error' ? (note.error || 'Sync failed. Use Sync All to retry.') : 'Transcript will appear automatically after recording.');
+    els.notesSurface.innerHTML = '<div class="voice-note-plain">' + highlightedText(visible, normalizedRanges(note)) + '</div>';
   }
 
   function renderStorage() {
@@ -731,23 +653,17 @@
 
   function renderSettings() {
     if (els.languageSelect) els.languageSelect.value = state.settings.output_language || 'english';
-    if (els.flashcardAmount) els.flashcardAmount.value = state.settings.flashcard_amount || '20';
-    if (els.questionAmount) els.questionAmount.value = state.settings.question_amount || '10';
+    if (els.customInput && els.customInput.value !== (state.settings.custom_instruction || '')) {
+      els.customInput.value = state.settings.custom_instruction || '';
+    }
   }
 
   function renderAll() {
-    renderFolders();
     renderList();
     renderDetail();
     renderStorage();
     renderSettings();
-    var pending = state.notes.filter(function (note) {
-      var status = utils.normalizeStatus ? utils.normalizeStatus(note.status) : note.status;
-      return status === 'pending' || status === 'syncing' || status === 'error';
-    }).length;
-    if (!navigator.onLine) syncPill('Offline', 'error');
-    else if (pending) syncPill(pending + ' to sync', 'online');
-    else syncPill('Synced', 'online');
+    renderSyncPill();
   }
 
   function setAuthUi() {
@@ -759,7 +675,7 @@
   function saveSelectedTitle() {
     var note = selectedNote();
     if (!note || !els.detailTitle) return;
-    var title = String(els.detailTitle.value || '').trim() || 'Untitled voice note';
+    var title = String(els.detailTitle.value || '').trim() || 'Voice note';
     if (title === note.title) return;
     note.title = title;
     note.updated_at = nowSeconds();
@@ -774,26 +690,10 @@
     }).then(renderAll);
   }
 
-  function savePinState() {
-    var note = selectedNote();
-    if (!note) return;
-    note.pinned = !note.pinned;
-    note.updated_at = nowSeconds();
-    putNote(note).then(function () {
-      if (note.study_pack_id) {
-        return apiJson('/api/voice-notes/' + encodeURIComponent(note.study_pack_id) + '/metadata', {
-          method: 'PATCH',
-          body: JSON.stringify({ pinned: note.pinned }),
-          headers: { 'Content-Type': 'application/json' }
-        }).catch(function () {});
-      }
-    }).then(renderAll);
-  }
-
   function shareSelectedNote() {
     var note = selectedNote();
     if (!note) return;
-    var text = [note.title || 'Voice note', '', note.notes_markdown || note.transcript || ''].join('\n');
+    var text = [note.title || 'Voice note', '', transcriptText(note)].join('\n');
     if (navigator.share) {
       navigator.share({ title: note.title || 'Voice note', text: text }).catch(function () {});
       return;
@@ -826,7 +726,7 @@
 
   function setHighlightPayload(note, ranges) {
     note.notes_highlights = {
-      base_key: (note.study_pack_id || note.id) + ':' + String(note.notes_markdown || '').length,
+      base_key: (note.study_pack_id || note.id) + ':' + transcriptText(note).length,
       ranges: ranges,
       updated_at: nowSeconds()
     };
@@ -843,7 +743,7 @@
 
   function applyHighlightFromSelection() {
     var note = selectedNote();
-    if (!note || !els.notesSurface || !(note.notes_markdown || '').trim()) return;
+    if (!note || !els.notesSurface || !transcriptText(note).trim()) return;
     var offsets = getSelectionOffsets(els.notesSurface);
     if (!offsets) return;
     pushHighlightHistory(note);
@@ -851,9 +751,7 @@
     ranges = ranges.filter(function (range) {
       return range.end <= offsets.start || range.start >= offsets.end;
     });
-    if (state.highlightColor !== 'eraser') {
-      ranges.push({ start: offsets.start, end: offsets.end, color: state.highlightColor });
-    }
+    if (state.highlightColor !== 'eraser') ranges.push({ start: offsets.start, end: offsets.end, color: state.highlightColor });
     window.getSelection().removeAllRanges();
     setHighlightPayload(note, ranges);
   }
@@ -883,42 +781,19 @@
   function downloadNotes() {
     var note = selectedNote();
     if (!note) return;
-    var blob = new Blob([note.notes_markdown || note.transcript || ''], { type: 'text/markdown;charset=utf-8' });
+    var blob = new Blob([transcriptText(note)], { type: 'text/plain;charset=utf-8' });
     if (downloadUtils.saveBlobAsFile) {
-      downloadUtils.saveBlobAsFile(blob, (note.title || 'voice-note') + '.md');
+      downloadUtils.saveBlobAsFile(blob, (note.title || 'voice-note') + '.txt');
       return;
     }
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
-    a.download = (note.title || 'voice-note') + '.md';
+    a.download = (note.title || 'voice-note') + '.txt';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }
-
-  function refreshStudyTools() {
-    var note = selectedNote();
-    if (!note || !note.study_pack_id) {
-      showToast('Sync this note first.', 'error');
-      return;
-    }
-    apiJson('/api/voice-notes/' + encodeURIComponent(note.study_pack_id) + '/study-tools', {
-      method: 'POST',
-      body: JSON.stringify({
-        study_features: 'both',
-        flashcard_amount: state.settings.flashcard_amount,
-        question_amount: state.settings.question_amount
-      }),
-      headers: { 'Content-Type': 'application/json' }
-    }).then(function (payload) {
-      note.status = 'syncing';
-      note.job_id = payload.job_id;
-      return putNote(note).then(function () { return pollJob(note, payload.job_id); });
-    }).catch(function (error) {
-      showToast(error.message || 'Could not refresh study tools.', 'error');
-    });
   }
 
   function loadServerStudyPacks() {
@@ -936,24 +811,17 @@
             note.id = existing ? existing.id : ('server-' + detail.study_pack_id);
             note.local_audio_id = existing ? existing.local_audio_id : note.id;
             note.transcript = detail.source_transcript || note.transcript || '';
+            note.notes_markdown = note.transcript;
             note.created_at = Number(detail.created_at || note.created_at || nowSeconds());
-            if (existing) {
-              Object.assign(existing, note);
-            } else {
-              state.notes.push(note);
-            }
+            note.flashcards = [];
+            note.test_questions = [];
+            if (existing) Object.assign(existing, note);
+            else state.notes.push(note);
             return putNote(existing || note);
           });
         });
       });
       return chain;
-    }).catch(function () {});
-  }
-
-  function loadFolders() {
-    if (!hasSignedInSession()) return Promise.resolve();
-    return apiJson('/api/study-folders').then(function (payload) {
-      state.folders = Array.isArray(payload.folders) ? payload.folders : [];
     }).catch(function () {});
   }
 
@@ -970,12 +838,6 @@
         renderList();
       });
     });
-    Array.prototype.slice.call(document.querySelectorAll('[data-detail-tab]')).forEach(function (button) {
-      button.addEventListener('click', function () {
-        state.activeDetailTab = button.getAttribute('data-detail-tab') || 'transcript';
-        renderDetailTabs();
-      });
-    });
     if (els.recordBtn) els.recordBtn.addEventListener('click', startRecording);
     if (els.stopBtn) els.stopBtn.addEventListener('click', stopRecording);
     if (els.importBtn) els.importBtn.addEventListener('click', function () { if (els.fileInput) els.fileInput.click(); });
@@ -983,29 +845,17 @@
       els.fileInput.addEventListener('change', function () {
         var file = els.fileInput.files && els.fileInput.files[0];
         if (!file) return;
-        state.selectedAudioBlob = file;
-        state.selectedAudioName = file.name || 'voice-note.m4a';
-        state.selectedAudioSeconds = 0;
-        setRecordStatus('Audio ready.');
-        updateRecordButtons();
+        setRecordStatus('Audio imported. Transcribing...');
+        saveAudioAndSync(file, file.name || 'voice-note.m4a', 0);
+        els.fileInput.value = '';
       });
     }
-    if (els.saveLocalBtn) els.saveLocalBtn.addEventListener('click', function () { saveCurrentAudioOffline(); });
-    if (els.syncCurrentBtn) els.syncCurrentBtn.addEventListener('click', function () {
-      var note = selectedNote();
-      if (state.selectedAudioBlob) {
-        saveCurrentAudioOffline().then(syncNote);
-      } else if (note) {
-        syncNote(note);
-      }
-    });
     if (els.syncAllBtn) els.syncAllBtn.addEventListener('click', syncAllPending);
     if (els.searchInput) els.searchInput.addEventListener('input', function () {
       state.search = els.searchInput.value || '';
       renderList();
     });
     if (els.detailTitle) els.detailTitle.addEventListener('change', saveSelectedTitle);
-    if (els.pinBtn) els.pinBtn.addEventListener('click', savePinState);
     if (els.shareBtn) els.shareBtn.addEventListener('click', shareSelectedNote);
     if (els.notesSurface) {
       els.notesSurface.addEventListener('mouseup', applyHighlightFromSelection);
@@ -1027,19 +877,18 @@
     if (els.hlRedo) els.hlRedo.addEventListener('click', function () { restoreHighlightHistory('redo'); });
     if (els.hlClear) els.hlClear.addEventListener('click', clearHighlights);
     if (els.downloadNotes) els.downloadNotes.addEventListener('click', downloadNotes);
-    if (els.refreshToolsBtn) els.refreshToolsBtn.addEventListener('click', refreshStudyTools);
-    [
-      ['languageSelect', 'output_language'],
-      ['flashcardAmount', 'flashcard_amount'],
-      ['questionAmount', 'question_amount']
-    ].forEach(function (pair) {
-      var element = els[pair[0]];
-      if (!element) return;
-      element.addEventListener('change', function () {
-        state.settings[pair[1]] = element.value;
+    if (els.languageSelect) {
+      els.languageSelect.addEventListener('change', function () {
+        state.settings.output_language = els.languageSelect.value;
         saveSettings();
       });
-    });
+    }
+    if (els.customInput) {
+      els.customInput.addEventListener('input', function () {
+        state.settings.custom_instruction = els.customInput.value || '';
+        saveSettings();
+      });
+    }
     window.addEventListener('online', function () {
       renderAll();
       syncAllPending();
@@ -1060,7 +909,7 @@
       .then(getAllNotes)
       .then(function (notes) {
         state.notes = notes;
-        return Promise.all([loadFolders(), loadServerStudyPacks()]);
+        return loadServerStudyPacks();
       })
       .then(function () {
         renderAll();
@@ -1073,9 +922,7 @@
     auth.onAuthStateChanged(function (user) {
       state.user = user || null;
       setAuthUi();
-      if (user) {
-        Promise.all([loadFolders(), loadServerStudyPacks()]).then(renderAll);
-      }
+      if (user) loadServerStudyPacks().then(renderAll);
     });
     setAuthUi();
   }

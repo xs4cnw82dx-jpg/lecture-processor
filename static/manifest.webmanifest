@@ -1,7 +1,7 @@
 {
   "name": "Lecture Processor Voice Notes",
   "short_name": "Voice Notes",
-  "description": "Offline-first voice notes with transcripts, notes, flashcards, and practice tests.",
+  "description": "Offline-first voice notes with fast Gemini transcripts.",
   "start_url": "/voice-notes",
   "scope": "/",
   "display": "standalone",

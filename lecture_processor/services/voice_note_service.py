@@ -78,6 +78,10 @@ def sanitize_voice_note_tags(raw_value, max_tags=12, max_chars=32):
     return cleaned
 
 
+def _normalize_audio_mime(raw_value):
+    return str(raw_value or '').split(';', 1)[0].strip().lower()
+
+
 def _resolve_folder(app_ctx, uid, folder_id):
     safe_folder_id = str(folder_id or '').strip()
     if not safe_folder_id:
@@ -164,17 +168,12 @@ def create_voice_note(app_ctx, request):
         if not billing_credits.has_category_credit(user, 'interview', runtime=app_ctx):
             return app_ctx.jsonify({'error': 'No interview credits remaining. Your recording is still saved offline on this device.'}), 402
 
-        study_features = shared_parsing.parse_study_features(request.form.get('study_features', 'both'), runtime=app_ctx)
-        study_tools_credit_cost = 1
-        if not billing_credits.has_category_credit(user, 'slides', study_tools_credit_cost, runtime=app_ctx):
-            return app_ctx.jsonify({'error': 'Not enough text extraction credits for notes, flashcards, and practice test generation. Your recording is still saved offline on this device.'}), 402
-
         uploaded_audio_file = request.files.get('audio')
         if not uploaded_audio_file or not str(uploaded_audio_file.filename or '').strip():
             return app_ctx.jsonify({'error': 'Audio file is required'}), 400
         if not app_ctx.allowed_file(uploaded_audio_file.filename, app_ctx.ALLOWED_AUDIO_EXTENSIONS):
             return app_ctx.jsonify({'error': 'Invalid audio file'}), 400
-        if str(getattr(uploaded_audio_file, 'mimetype', '') or '').lower() not in app_ctx.ALLOWED_AUDIO_MIME_TYPES:
+        if _normalize_audio_mime(getattr(uploaded_audio_file, 'mimetype', '')) not in app_ctx.ALLOWED_AUDIO_MIME_TYPES:
             return app_ctx.jsonify({'error': 'Invalid audio content type'}), 400
 
         job_id = str(app_ctx.uuid.uuid4())
@@ -205,55 +204,26 @@ def create_voice_note(app_ctx, request):
             app_ctx.cleanup_files([audio_path], [])
             return ai_unavailable
 
-        folder_id, folder_name = _resolve_folder(app_ctx, uid, request.form.get('folder_id', ''))
-        append_to_pack_id = str(request.form.get('append_to_pack_id', '') or '').strip()
-        if append_to_pack_id:
-            pack_doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, append_to_pack_id)
-            if not getattr(pack_doc, 'exists', False):
-                app_ctx.cleanup_files([audio_path], [])
-                return app_ctx.jsonify({'error': 'Append target not found'}), 404
-            pack = pack_doc.to_dict() or {}
-            if str(pack.get('uid', '') or '').strip() != uid:
-                app_ctx.cleanup_files([audio_path], [])
-                return app_ctx.jsonify({'error': 'Forbidden'}), 403
-
         deducted_credit = billing_credits.deduct_interview_credit(uid, runtime=app_ctx)
         if not deducted_credit:
             app_ctx.cleanup_files([audio_path], [])
             return app_ctx.jsonify({'error': 'No interview credits remaining.'}), 402
-        if study_tools_credit_cost > 0 and not billing_credits.deduct_slides_credits(uid, study_tools_credit_cost, runtime=app_ctx):
-            billing_credits.refund_credit(uid, deducted_credit, runtime=app_ctx)
-            app_ctx.cleanup_files([audio_path], [])
-            return app_ctx.jsonify({'error': 'Could not reserve text extraction credits for study tools. Please try again.'}), 402
 
-        flashcard_selection = shared_parsing.parse_requested_amount(
-            request.form.get('flashcard_amount', '20'),
-            {'10', '20', '30', 'auto'},
-            '20',
-            runtime=app_ctx,
-        )
-        question_selection = shared_parsing.parse_requested_amount(
-            request.form.get('question_amount', '10'),
-            {'5', '10', '15', 'auto'},
-            '10',
-            runtime=app_ctx,
-        )
         study_pack_title = upload_batch_support.sanitize_study_pack_title(
             request.form.get('title') or request.form.get('study_pack_title') or '',
             max_chars=120,
         )
         if not study_pack_title:
-            study_pack_title = f"Voice Note {app_ctx.datetime.now(app_ctx.timezone.utc).strftime('%Y-%m-%d %H:%M')}"
+            study_pack_title = 'Transcribing voice note...'
 
         output_language = _resolve_output_language(app_ctx, request, user)
-        total_steps = 3 if study_features != 'none' else 2
         runtime_jobs_store.set_job(
             job_id,
             {
                 'status': 'queued',
                 'step': 0,
                 'step_description': 'Queued...',
-                'total_steps': total_steps,
+                'total_steps': 2,
                 'mode': 'voice-note',
                 'job_scope': 'study',
                 'tool_source_type': 'audio',
@@ -262,34 +232,34 @@ def create_voice_note(app_ctx, request):
                 'user_email': email,
                 'credit_deducted': deducted_credit,
                 'credit_refunded': False,
-                'study_tools_credit_cost': study_tools_credit_cost,
+                'study_tools_credit_cost': 0,
                 'started_at': app_ctx.time.time(),
                 'finished_at': 0,
                 'result': None,
                 'transcript': None,
                 'flashcards': [],
                 'test_questions': [],
-                'flashcard_selection': flashcard_selection,
-                'question_selection': question_selection,
-                'study_features': study_features,
+                'flashcard_selection': '10',
+                'question_selection': '5',
+                'study_features': 'none',
                 'output_language': output_language,
                 'study_generation_error': None,
-                'study_pack_id': append_to_pack_id or None,
+                'study_pack_id': None,
                 'study_pack_title': study_pack_title,
-                'folder_id': folder_id,
-                'folder_name': folder_name,
-                'voice_note_tags': sanitize_voice_note_tags(request.form.get('tags', '')),
-                'voice_note_pinned': _parse_bool(request.form.get('pinned')),
+                'folder_id': '',
+                'folder_name': '',
+                'voice_note_tags': [],
+                'voice_note_pinned': False,
                 'voice_note_archived': _parse_bool(request.form.get('archived')),
                 'voice_note_custom_instruction': str(request.form.get('custom_instruction', '') or '').strip()[:2000],
-                'voice_note_append_to_pack_id': append_to_pack_id,
+                'voice_note_append_to_pack_id': '',
                 'error': '',
                 'failed_stage': '',
                 'provider_error_code': '',
                 'retry_attempts': 0,
                 'file_size_mb': round(audio_size / (1024 * 1024), 2),
                 'billing_receipt': billing_receipts.initialize_billing_receipt(
-                    {deducted_credit: 1, 'slides_credits': study_tools_credit_cost},
+                    {deducted_credit: 1},
                     runtime=app_ctx,
                 ),
             },
@@ -310,7 +280,7 @@ def create_voice_note(app_ctx, request):
                 uid=uid,
                 cleanup_paths=[audio_path],
                 credit_type=deducted_credit,
-                extra_slides_credits=study_tools_credit_cost,
+                extra_slides_credits=0,
             )
 
         upload_quota_service.commit_upload_quota(quota_reservation)

@@ -55,6 +55,27 @@ Rules:
 - full_transcript contains the complete transcript as continuous text.
 - Write transcript text fully in this language: {output_language}."""
 
+PROMPT_VOICE_NOTE_TRANSCRIPTION = """Transcribe this voice note and create lightweight organizer metadata.
+
+Return ONLY valid JSON, without markdown or extra text, in exactly this shape:
+{{
+  "title": "Short title based on what was said",
+  "tags": ["tag one", "tag two"],
+  "transcript": "The clean transcript text"
+}}
+
+Rules:
+- The transcript must contain only the spoken content. Do not start with phrases like "Here is the transcript".
+- Keep the transcript faithful to the audio; clean filler words only when it improves readability without changing meaning.
+- Use paragraphs for natural breaks.
+- Create a short, useful title from the content. If the content is unclear, use "Voice note".
+- Create 0-5 short lowercase tags from the content.
+- Do not invent details not present in the audio.
+- Write transcript, title, and tags fully in this language: {output_language}.
+
+Optional user instruction:
+{custom_instruction}"""
+
 PROMPT_INTERVIEW_TRANSCRIPTION = """Transcribe this interview in the format: timecode (mm:ss) - speaker - caption.
 Rules:
 - Use speaker A, speaker B, etc. to identify speakers.
@@ -221,6 +242,7 @@ PROMPT_RECORDS: List[PromptRecord] = [
     PromptRecord("slide_extraction", "Slide extraction", PROMPT_SLIDE_EXTRACTION),
     PromptRecord("audio_transcription", "Audio transcription", PROMPT_AUDIO_TRANSCRIPTION),
     PromptRecord("audio_transcription_timestamped", "Audio transcription (timestamped JSON)", PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED),
+    PromptRecord("voice_note_transcription", "Voice note transcription and metadata", PROMPT_VOICE_NOTE_TRANSCRIPTION),
     PromptRecord("interview_transcription", "Interview transcription", PROMPT_INTERVIEW_TRANSCRIPTION),
     PromptRecord("interview_summary", "Interview summary", PROMPT_INTERVIEW_SUMMARY),
     PromptRecord("interview_sectioned", "Interview sectioned", PROMPT_INTERVIEW_SECTIONED),
