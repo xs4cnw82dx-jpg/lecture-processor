@@ -23,7 +23,12 @@
 
   function getAuth() {
     ensureFirebaseApp();
-    return global.firebase.auth();
+    var auth = global.firebase.auth();
+    if (!auth.__lectureProcessorLocalPersistenceSet && auth.setPersistence && global.firebase.auth.Auth && global.firebase.auth.Auth.Persistence) {
+      auth.__lectureProcessorLocalPersistenceSet = true;
+      auth.setPersistence(global.firebase.auth.Auth.Persistence.LOCAL).catch(function () {});
+    }
+    return auth;
   }
 
   global.LectureProcessorBootstrap = {

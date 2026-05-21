@@ -20,6 +20,7 @@
     user: auth.currentUser || null,
     notes: [],
     selectedId: '',
+    view: 'record',
     recorder: null,
     recordingStream: null,
     recordingChunks: [],
@@ -55,7 +56,7 @@
       'voice-auth', 'voice-app', 'voice-sync-pill', 'voice-record-btn', 'voice-pause-btn', 'voice-stop-btn', 'voice-time',
       'voice-meter', 'voice-record-status', 'voice-file-input', 'voice-import-btn', 'voice-search-input',
       'voice-note-list', 'voice-detail-empty', 'voice-detail', 'voice-detail-title', 'voice-detail-meta',
-      'voice-share-btn', 'voice-audio', 'voice-transcript', 'voice-notes-surface', 'voice-highlight-toolbar',
+      'voice-back-btn', 'voice-share-btn', 'voice-archive-btn', 'voice-delete-btn', 'voice-audio', 'voice-transcript', 'voice-notes-surface', 'voice-highlight-toolbar',
       'voice-hl-undo', 'voice-hl-redo', 'voice-hl-clear', 'voice-download-notes', 'voice-language-select',
       'voice-custom-input', 'voice-storage-count', 'voice-storage-size', 'voice-sync-all-btn', 'voice-toast'
     ].forEach(function (id) {
@@ -123,6 +124,12 @@
     });
   }
 
+  function removeNoteRow(id) {
+    return withStore(STORE_NOTES, 'readwrite', function (store) {
+      store.delete(id);
+    });
+  }
+
   function getAudioBlob(id) {
     return withStore(STORE_AUDIO, 'readonly', function (store) {
       return requestToPromise(store.get(id));
@@ -134,6 +141,12 @@
   function putAudioBlob(id, blob, name) {
     return withStore(STORE_AUDIO, 'readwrite', function (store) {
       store.put({ id: id, blob: blob, name: name || 'voice-note.webm', size: Number(blob && blob.size) || 0, updated_at: Date.now() });
+    });
+  }
+
+  function removeAudioBlob(id) {
+    return withStore(STORE_AUDIO, 'readwrite', function (store) {
+      store.delete(id);
     });
   }
 
@@ -234,8 +247,10 @@
     return state.notes.find(function (note) { return note.id === state.selectedId; }) || null;
   }
 
-  function setView(view) {
+  function setView(view, options) {
     var safe = view || 'record';
+    var previous = state.view;
+    state.view = safe;
     Array.prototype.slice.call(document.querySelectorAll('[data-voice-panel]')).forEach(function (panel) {
       panel.classList.toggle('active', panel.getAttribute('data-voice-panel') === safe);
     });
@@ -245,6 +260,11 @@
       btn.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
     if (safe === 'detail') renderDetail();
+    if (!options || options.history !== false) {
+      if (safe !== previous && window.history && window.history.pushState) {
+        window.history.pushState({ voiceView: safe, selectedId: state.selectedId || '' }, '', window.location.pathname + window.location.search);
+      }
+    }
   }
 
   function setRecordStatus(text) {
@@ -674,19 +694,25 @@
     }
     notes.forEach(function (note) {
       var status = utils.normalizeStatus ? utils.normalizeStatus(note.status) : note.status;
-      var button = document.createElement('button');
-      button.type = 'button';
+      var button = document.createElement('article');
       button.className = 'voice-note-item' + (note.id === state.selectedId ? ' active' : '');
+      button.setAttribute('role', 'button');
+      button.setAttribute('tabindex', '0');
       button.innerHTML = [
         '<div class="voice-note-row">',
         '<div class="voice-note-title"></div>',
         '<span class="voice-note-status ' + (status === 'synced' ? 'synced' : status === 'error' ? 'error' : '') + '"></span>',
         '</div>',
         '<div class="voice-note-meta"></div>',
-        '<div class="voice-tag-row"></div>'
+        '<div class="voice-tag-row"></div>',
+        '<div class="voice-note-actions">',
+        '<button type="button" class="voice-note-action" data-note-archive></button>',
+        '<button type="button" class="voice-note-action danger" data-note-delete>Delete</button>',
+        '</div>'
       ].join('');
       button.querySelector('.voice-note-title').textContent = note.title || 'Voice note';
       button.querySelector('.voice-note-status').textContent = status === 'syncing' ? 'transcribing' : status;
+      button.querySelector('[data-note-archive]').textContent = note.archived ? 'Restore' : 'Archive';
       var pieces = [formatDate(note.created_at)];
       if (note.audio_seconds) pieces.push(utils.formatDuration ? utils.formatDuration(note.audio_seconds) : String(note.audio_seconds) + 's');
       if (note.step_description && status === 'syncing') pieces.push(note.step_description);
@@ -703,6 +729,27 @@
         setView('detail');
         renderAll();
       });
+      button.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        state.selectedId = note.id;
+        setView('detail');
+        renderAll();
+      });
+      var archiveButton = button.querySelector('[data-note-archive]');
+      if (archiveButton) {
+        archiveButton.addEventListener('click', function (event) {
+          event.stopPropagation();
+          toggleArchiveNote(note);
+        });
+      }
+      var deleteButton = button.querySelector('[data-note-delete]');
+      if (deleteButton) {
+        deleteButton.addEventListener('click', function (event) {
+          event.stopPropagation();
+          deleteVoiceNote(note);
+        });
+      }
       els.noteList.appendChild(button);
     });
   }
@@ -763,9 +810,11 @@
     if (els.detailTitle && els.detailTitle.value !== note.title) els.detailTitle.value = note.title || '';
     if (els.detailMeta) {
       var meta = [formatDate(note.created_at), note.status || 'pending'];
+      if (note.archived) meta.push('archived');
       if (note.error) meta.push(note.error);
       els.detailMeta.textContent = meta.join(' - ');
     }
+    if (els.archiveBtn) els.archiveBtn.textContent = note.archived ? 'Restore' : 'Archive';
     renderAudio(note);
     renderTranscript(note);
   }
@@ -861,6 +910,64 @@
     });
   }
 
+  function persistArchiveState(note, archived) {
+    if (!note) return Promise.resolve();
+    note.archived = !!archived;
+    note.updated_at = nowSeconds();
+    return putNote(note).then(function () {
+      if (!note.study_pack_id || !navigator.onLine) return null;
+      return apiJson('/api/voice-notes/' + encodeURIComponent(note.study_pack_id) + '/metadata', {
+        method: 'PATCH',
+        body: JSON.stringify({ archived: note.archived }),
+        headers: { 'Content-Type': 'application/json' }
+      });
+    });
+  }
+
+  function toggleArchiveNote(note) {
+    var target = note || selectedNote();
+    if (!target) return;
+    var nextArchived = !target.archived;
+    persistArchiveState(target, nextArchived).then(function () {
+      showToast(nextArchived ? 'Voice note archived.' : 'Voice note restored.');
+      if (nextArchived && state.filter !== 'archived') {
+        state.selectedId = '';
+        setView('library');
+      }
+      renderAll();
+    }).catch(function (error) {
+      target.archived = !nextArchived;
+      putNote(target).catch(function () {});
+      showToast(error && error.message ? error.message : 'Could not update archive state.', 'error');
+      renderAll();
+    });
+  }
+
+  function deleteVoiceNote(note) {
+    var target = note || selectedNote();
+    if (!target) return;
+    var confirmed = window.confirm('Delete this voice note permanently? This also removes the synced study-pack copy.');
+    if (!confirmed) return;
+    var removeLocal = function () {
+      state.notes = state.notes.filter(function (item) { return item.id !== target.id; });
+      if (state.selectedId === target.id) state.selectedId = '';
+      return Promise.all([
+        removeNoteRow(target.id).catch(function () {}),
+        removeAudioBlob(target.local_audio_id || target.id).catch(function () {})
+      ]);
+    };
+    var remoteDelete = target.study_pack_id && navigator.onLine
+      ? apiJson('/api/study-packs/' + encodeURIComponent(target.study_pack_id), { method: 'DELETE' })
+      : Promise.resolve();
+    remoteDelete.then(removeLocal).then(function () {
+      showToast('Voice note deleted.');
+      setView('library');
+      renderAll();
+    }).catch(function (error) {
+      showToast(error && error.message ? error.message : 'Could not delete voice note.', 'error');
+    });
+  }
+
   function getSelectionOffsets(container) {
     var selection = window.getSelection ? window.getSelection() : null;
     if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
@@ -897,7 +1004,13 @@
     }).then(renderDetail);
   }
 
+  var highlightSelectionTimer = null;
+
   function applyHighlightFromSelection() {
+    if (highlightSelectionTimer) {
+      window.clearTimeout(highlightSelectionTimer);
+      highlightSelectionTimer = null;
+    }
     var note = selectedNote();
     if (!note || !els.notesSurface || !transcriptText(note).trim()) return;
     var offsets = getSelectionOffsets(els.notesSurface);
@@ -910,6 +1023,25 @@
     if (state.highlightColor !== 'eraser') ranges.push({ start: offsets.start, end: offsets.end, color: state.highlightColor });
     window.getSelection().removeAllRanges();
     setHighlightPayload(note, ranges);
+  }
+
+  function selectionInsideVoiceNotes() {
+    var selection = window.getSelection ? window.getSelection() : null;
+    if (!selection || selection.isCollapsed || !selection.rangeCount || !els.notesSurface) return false;
+    try {
+      return els.notesSurface.contains(selection.getRangeAt(0).commonAncestorContainer);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function scheduleVoiceHighlight(delayMs) {
+    if (!selectionInsideVoiceNotes()) return;
+    if (highlightSelectionTimer) window.clearTimeout(highlightSelectionTimer);
+    highlightSelectionTimer = window.setTimeout(function () {
+      highlightSelectionTimer = null;
+      applyHighlightFromSelection();
+    }, Math.max(80, Number(delayMs || 120)));
   }
 
   function restoreHighlightHistory(direction) {
@@ -1013,13 +1145,20 @@
       renderList();
     });
     if (els.detailTitle) els.detailTitle.addEventListener('change', saveSelectedTitle);
+    if (els.backBtn) els.backBtn.addEventListener('click', function () { setView('library'); });
     if (els.shareBtn) els.shareBtn.addEventListener('click', shareSelectedNote);
+    if (els.archiveBtn) els.archiveBtn.addEventListener('click', function () { toggleArchiveNote(); });
+    if (els.deleteBtn) els.deleteBtn.addEventListener('click', function () { deleteVoiceNote(); });
     if (els.notesSurface) {
-      els.notesSurface.addEventListener('mouseup', applyHighlightFromSelection);
+      els.notesSurface.addEventListener('mouseup', function () { scheduleVoiceHighlight(120); });
       els.notesSurface.addEventListener('touchend', function () {
-        window.setTimeout(applyHighlightFromSelection, 80);
+        scheduleVoiceHighlight(1000);
       });
     }
+    document.addEventListener('selectionchange', function () {
+      if (!selectionInsideVoiceNotes()) return;
+      scheduleVoiceHighlight(1000);
+    });
     if (els.highlightToolbar) {
       els.highlightToolbar.addEventListener('click', function (event) {
         var target = event.target.closest('[data-hl-color]');
@@ -1058,6 +1197,13 @@
       }
       setRecordStatus('Keep this app open and unlocked while recording.');
     });
+    window.addEventListener('popstate', function (event) {
+      var historyState = event.state && typeof event.state === 'object' ? event.state : {};
+      var nextView = String(historyState.voiceView || 'record');
+      if (historyState.selectedId !== undefined) state.selectedId = String(historyState.selectedId || '');
+      setView(nextView, { history: false });
+      renderAll();
+    });
   }
 
   function registerServiceWorker() {
@@ -1067,6 +1213,9 @@
 
   function init() {
     cacheElements();
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState({ voiceView: state.view, selectedId: state.selectedId || '' }, '', window.location.pathname + window.location.search);
+    }
     attachEvents();
     registerServiceWorker();
     loadSettings()

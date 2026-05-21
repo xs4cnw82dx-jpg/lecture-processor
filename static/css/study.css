@@ -775,6 +775,10 @@
       flex-shrink: 0;
     }
 
+    .export-notes-label-short {
+      display: none;
+    }
+
     .item.dragging {
       opacity: .35;
       transform: scale(.985);
@@ -4718,6 +4722,28 @@
       .editor-actions>.export-menu,
       .editor-actions>.export-menu .btn {
         width: 100%;
+      }
+
+      .editor-actions .btn {
+        min-width: 0;
+        justify-content: center;
+        gap: 7px;
+        padding-left: 10px;
+        padding-right: 10px;
+        font-size: .84rem;
+        line-height: 1.18;
+      }
+
+      .editor-actions .btn svg {
+        flex: 0 0 auto;
+      }
+
+      .export-notes-label-full {
+        display: none;
+      }
+
+      .export-notes-label-short {
+        display: inline;
       }
 
       #open-learn-btn {

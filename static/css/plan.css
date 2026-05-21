@@ -346,9 +346,99 @@
       .container{padding:0 12px}
     }
     @media (max-width:600px){
+      body {
+        background: var(--gray-50);
+      }
+
+      .page {
+        padding-top: 12px;
+      }
+
+      .container {
+        padding: 0 12px;
+      }
+
+      .headline {
+        margin-bottom: 12px;
+      }
+
+      .headline h1 {
+        font-size: 1.45rem;
+      }
+
+      .headline p {
+        font-size: .9rem;
+      }
+
       .folders-wrap{display:none}
       .folders-cards{display:grid}
       .pack-goals-summary{grid-template-columns:1fr}
       .pack-goals-cards{grid-template-columns:1fr}
-      .section{padding:16px}
+      .section{padding:16px;border-radius:16px}
+      .pack-goal-card {
+        gap: 12px;
+        padding: 14px;
+        border-radius: 16px;
+      }
+
+      .pack-goal-card-head {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .pack-goal-card-kicker {
+        gap: 6px;
+      }
+
+      .pack-goal-card-title {
+        font-size: 1.02rem;
+      }
+
+      .pack-goal-card-head > .chip {
+        align-self: flex-start;
+      }
+
+      .pack-goal-card-stats {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+
+      .pack-goal-stat {
+        padding: 11px 12px;
+        border-radius: 14px;
+      }
+
+      .pack-goal-stat-label {
+        margin-bottom: 4px;
+      }
+
+      .pack-goal-stat-value {
+        font-size: 1rem;
+        overflow-wrap: anywhere;
+      }
+
+      .pack-goal-editor,
+      .pack-goal-callout {
+        border-radius: 14px;
+        padding: 12px;
+      }
+
+      .pack-goal-editor-head {
+        align-items: flex-start;
+      }
+
+      .pack-goal-status-chip,
+      .pack-goal-target-chip,
+      .pack-goal-mode-chip,
+      .pack-goal-card-folder,
+      .chip {
+        max-width: 100%;
+        white-space: normal;
+        line-height: 1.25;
+      }
+
+      .pack-recommendation,
+      .pack-goal-note {
+        font-size: .88rem;
+      }
     }

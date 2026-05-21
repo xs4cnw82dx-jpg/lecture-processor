@@ -53,6 +53,14 @@ test('filterStudyPacks matches folder and search filters consistently', () => {
 
   assert.deepEqual(studyLibraryUtils.filterStudyPacks(packs, {
     searchQuery: '',
+    selectedFolderId: '',
+    allFolderId: '',
+    interviewFolderId: '__interviews__',
+    voiceNotesFolderId: '__voice_notes__',
+  }).map((pack) => pack.study_pack_id), ['pack-1', 'pack-2', 'pack-3']);
+
+  assert.deepEqual(studyLibraryUtils.filterStudyPacks(packs, {
+    searchQuery: '',
     selectedFolderId: '__voice_notes__',
     allFolderId: '',
     interviewFolderId: '__interviews__',

@@ -531,12 +531,42 @@ body {
   overflow: hidden;
 }
 
+.voice-back-btn {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 14px 0;
+  min-height: 40px;
+  border: 1px solid var(--voice-border);
+  border-radius: 8px;
+  background: var(--voice-surface);
+  color: var(--voice-primary-dark);
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.voice-back-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .voice-detail-head {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   padding: 14px;
   border-bottom: 1px solid var(--voice-border);
+}
+
+.voice-detail-head > div:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .voice-detail-title {
@@ -549,6 +579,9 @@ body {
 
 .voice-detail-actions {
   display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -562,6 +595,44 @@ body {
   background: var(--voice-surface);
   color: var(--voice-text);
   cursor: pointer;
+}
+
+.voice-mini-action,
+.voice-note-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  border: 1px solid var(--voice-border);
+  border-radius: 8px;
+  background: #fbfdff;
+  color: var(--voice-text);
+  font-size: 0.8rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.voice-mini-action {
+  padding: 0 10px;
+}
+
+.voice-mini-action.danger,
+.voice-note-action.danger {
+  color: #991b1b;
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.voice-note-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.voice-note-action {
+  min-height: 32px;
+  padding: 0 9px;
 }
 
 .voice-icon-btn.active {
@@ -825,9 +896,10 @@ body {
 }
 
 .voice-nav-btn svg {
-  width: 24px;
-  height: 24px;
+  width: 23px;
+  height: 23px;
   flex: 0 0 auto;
+  overflow: visible;
 }
 
 .voice-nav-btn.active {
@@ -1011,11 +1083,22 @@ body {
 
   .voice-detail-head,
   .voice-storage-row {
-    flex-direction: column;
-    align-items: stretch;
+    align-items: flex-start;
   }
 
   .voice-detail-actions {
-    justify-content: flex-end;
+    justify-content: flex-start;
+  }
+
+  .voice-back-btn {
+    display: inline-flex;
+  }
+
+  .voice-detail-head {
+    padding-top: 10px;
+  }
+
+  .voice-detail-title {
+    font-size: 1.15rem;
   }
 }

@@ -81,6 +81,8 @@
         if (String(pack && pack.mode || '') !== 'interview') return false;
       } else if (selectedFolderId === voiceNotesFolderId) {
         if (String(pack && pack.mode || '') !== 'voice-note') return false;
+      } else if (!selectedFolderId || selectedFolderId === allFolderId) {
+        if (String(pack && pack.mode || '') === 'voice-note') return false;
       } else if (selectedFolderId && selectedFolderId !== allFolderId && String(pack && pack.folder_id || '') !== selectedFolderId) {
         return false;
       }

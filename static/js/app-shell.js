@@ -590,6 +590,15 @@
     refreshUserProfile(user);
   }
 
+  function revealSignInIfAuthStalls() {
+    if (!shell || shell.getAttribute('data-auth-state') !== 'pending') return;
+    if (auth && auth.currentUser) return;
+    setAuthState('signed-out');
+    if (signInBtn) signInBtn.hidden = false;
+    if (accountWrap) accountWrap.hidden = true;
+    setCreditsVisible(false);
+  }
+
   function setExportModalOpen(open) {
     if (!exportOverlay) return;
     if (open) {
@@ -904,6 +913,7 @@
   } else {
     setCreditsVisible(false);
   }
+  window.setTimeout(revealSignInIfAuthStalls, 1800);
   markActiveNav();
   maybeOpenAuthFromQuery();
   setupRoutePrefetch();
