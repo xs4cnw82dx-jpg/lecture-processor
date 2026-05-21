@@ -23,8 +23,15 @@
     recorder: null,
     recordingStream: null,
     recordingChunks: [],
-    recordingStartedAt: 0,
+    recordingElapsedMs: 0,
+    recordingTickStartedAt: 0,
     recordingTimer: 0,
+    audioContext: null,
+    analyser: null,
+    micSource: null,
+    amplitudeData: null,
+    amplitudeFrame: 0,
+    amplitudeLevel: 0,
     syncing: {},
     search: '',
     filter: 'all',
@@ -45,7 +52,7 @@
 
   function cacheElements() {
     [
-      'voice-auth', 'voice-app', 'voice-sync-pill', 'voice-record-btn', 'voice-stop-btn', 'voice-time',
+      'voice-auth', 'voice-app', 'voice-sync-pill', 'voice-record-btn', 'voice-pause-btn', 'voice-stop-btn', 'voice-time',
       'voice-meter', 'voice-record-status', 'voice-file-input', 'voice-import-btn', 'voice-search-input',
       'voice-note-list', 'voice-detail-empty', 'voice-detail', 'voice-detail-title', 'voice-detail-meta',
       'voice-share-btn', 'voice-audio', 'voice-transcript', 'voice-notes-surface', 'voice-highlight-toolbar',
@@ -269,23 +276,144 @@
     return 'voice-note-' + Date.now() + extensionForMime(blob && blob.type);
   }
 
-  function startTimer() {
-    state.recordingStartedAt = Date.now();
+  function updateRecordingClock() {
+    var ms = state.recordingElapsedMs;
+    if (state.recordingTickStartedAt) ms += Date.now() - state.recordingTickStartedAt;
+    var seconds = Math.floor(ms / 1000);
+    if (els.time) els.time.textContent = utils.formatDuration ? utils.formatDuration(seconds) : String(seconds);
+  }
+
+  function startTimer(reset) {
+    if (reset) state.recordingElapsedMs = 0;
+    if (!state.recordingTickStartedAt) state.recordingTickStartedAt = Date.now();
     window.clearInterval(state.recordingTimer);
-    state.recordingTimer = window.setInterval(function () {
-      var seconds = Math.floor((Date.now() - state.recordingStartedAt) / 1000);
-      if (els.time) els.time.textContent = utils.formatDuration ? utils.formatDuration(seconds) : String(seconds);
-    }, 250);
+    state.recordingTimer = window.setInterval(updateRecordingClock, 250);
+    updateRecordingClock();
+  }
+
+  function pauseTimer() {
+    if (state.recordingTickStartedAt) {
+      state.recordingElapsedMs += Date.now() - state.recordingTickStartedAt;
+      state.recordingTickStartedAt = 0;
+    }
+    window.clearInterval(state.recordingTimer);
+    state.recordingTimer = 0;
+    updateRecordingClock();
+  }
+
+  function resumeTimer() {
+    startTimer(false);
   }
 
   function stopTimer() {
+    pauseTimer();
     window.clearInterval(state.recordingTimer);
     state.recordingTimer = 0;
   }
 
   function recordingSeconds() {
-    if (!state.recordingStartedAt) return 0;
-    return Math.max(0, Math.floor((Date.now() - state.recordingStartedAt) / 1000));
+    var ms = state.recordingElapsedMs;
+    if (state.recordingTickStartedAt) ms += Date.now() - state.recordingTickStartedAt;
+    return Math.max(0, Math.floor(ms / 1000));
+  }
+
+  function stopAmplitudeMeter() {
+    if (state.amplitudeFrame) {
+      window.cancelAnimationFrame(state.amplitudeFrame);
+      state.amplitudeFrame = 0;
+    }
+    if (state.micSource && typeof state.micSource.disconnect === 'function') {
+      try { state.micSource.disconnect(); } catch (e) {}
+    }
+    state.micSource = null;
+    state.analyser = null;
+    state.amplitudeData = null;
+    state.amplitudeLevel = 0;
+    if (els.meter) {
+      setMeterLevel(0);
+      els.meter.classList.remove('paused');
+    }
+    if (state.audioContext && typeof state.audioContext.close === 'function') {
+      state.audioContext.close().catch(function () {});
+    }
+    state.audioContext = null;
+  }
+
+  function setMeterLevel(level) {
+    if (!els.meter) return;
+    var next = Math.max(0, Math.min(8, Math.round(Number(level || 0) * 8)));
+    for (var i = 0; i <= 8; i += 1) {
+      els.meter.classList.toggle('level-' + i, i === next);
+    }
+  }
+
+  function startAmplitudeMeter(stream) {
+    var AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor || !stream || !els.meter) return;
+    stopAmplitudeMeter();
+    try {
+      state.audioContext = new AudioContextCtor();
+      state.analyser = state.audioContext.createAnalyser();
+      state.analyser.fftSize = 512;
+      state.amplitudeData = new Uint8Array(state.analyser.fftSize);
+      state.micSource = state.audioContext.createMediaStreamSource(stream);
+      state.micSource.connect(state.analyser);
+      if (state.audioContext.state === 'suspended' && typeof state.audioContext.resume === 'function') {
+        state.audioContext.resume().catch(function () {});
+      }
+      var tick = function () {
+        if (!state.analyser || !state.amplitudeData) return;
+        var targetLevel = 0;
+        if (state.recorder && state.recorder.state === 'recording') {
+          state.analyser.getByteTimeDomainData(state.amplitudeData);
+          var sum = 0;
+          for (var i = 0; i < state.amplitudeData.length; i += 1) {
+            var normalized = (state.amplitudeData[i] - 128) / 128;
+            sum += normalized * normalized;
+          }
+          targetLevel = Math.min(1, Math.sqrt(sum / state.amplitudeData.length) * 4.6);
+        }
+        state.amplitudeLevel = (state.amplitudeLevel * 0.65) + (targetLevel * 0.35);
+        setMeterLevel(state.amplitudeLevel);
+        state.amplitudeFrame = window.requestAnimationFrame(tick);
+      };
+      tick();
+    } catch (e) {
+      stopAmplitudeMeter();
+    }
+  }
+
+  function resetRecorderControls() {
+    if (els.meter) els.meter.classList.remove('recording', 'paused');
+    if (els.recordBtn) els.recordBtn.classList.remove('recording');
+    if (els.stopBtn) els.stopBtn.disabled = true;
+    if (els.pauseBtn) {
+      els.pauseBtn.disabled = true;
+      els.pauseBtn.textContent = 'Pause';
+    }
+    if (els.recordBtn) {
+      els.recordBtn.disabled = false;
+      els.recordBtn.setAttribute('aria-label', 'Start recording');
+      var label = els.recordBtn.querySelector('span');
+      if (label) label.textContent = 'Start recording';
+    }
+  }
+
+  function setRecordingControls(recording) {
+    if (els.meter) els.meter.classList.toggle('recording', !!recording);
+    if (els.recordBtn) {
+      els.recordBtn.classList.toggle('recording', !!recording);
+      els.recordBtn.disabled = !!recording;
+      els.recordBtn.setAttribute('aria-label', recording ? 'Recording' : 'Start recording');
+      var label = els.recordBtn.querySelector('span');
+      if (label) label.textContent = recording ? 'Recording' : 'Start recording';
+    }
+    if (els.stopBtn) els.stopBtn.disabled = !recording;
+    if (els.pauseBtn) {
+      var canPause = !!(state.recorder && typeof state.recorder.pause === 'function' && typeof state.recorder.resume === 'function');
+      els.pauseBtn.disabled = !recording || !canPause;
+      els.pauseBtn.textContent = 'Pause';
+    }
   }
 
   function startRecording() {
@@ -307,33 +435,61 @@
         var blobType = state.recorder && state.recorder.mimeType ? state.recorder.mimeType : (mimeType || 'audio/webm');
         var blob = new Blob(state.recordingChunks, { type: blobType });
         var name = audioFileName('', blob);
+        stopTimer();
+        stopAmplitudeMeter();
         if (state.recordingStream) {
           state.recordingStream.getTracks().forEach(function (track) { track.stop(); });
         }
         state.recordingStream = null;
         state.recorder = null;
-        if (els.meter) els.meter.classList.remove('recording');
-        if (els.recordBtn) els.recordBtn.classList.remove('recording');
-        if (els.stopBtn) els.stopBtn.disabled = true;
-        if (els.recordBtn) els.recordBtn.disabled = false;
-        stopTimer();
+        resetRecorderControls();
         setRecordStatus('Saved locally. Transcribing...');
         saveAudioAndSync(blob, name, seconds);
       };
       state.recorder.start(1000);
-      if (els.meter) els.meter.classList.add('recording');
-      if (els.recordBtn) els.recordBtn.classList.add('recording');
-      if (els.recordBtn) els.recordBtn.disabled = true;
-      if (els.stopBtn) els.stopBtn.disabled = false;
-      setRecordStatus('Recording...');
-      startTimer();
+      startAmplitudeMeter(stream);
+      setRecordingControls(true);
+      setRecordStatus('Recording. Keep this app open and unlocked.');
+      showToast('Keep Voice Notes open while recording on iPhone.');
+      startTimer(true);
     }).catch(function (error) {
+      stopAmplitudeMeter();
+      resetRecorderControls();
       showToast(error && error.message ? error.message : 'Microphone permission was not granted.', 'error');
     });
   }
 
   function stopRecording() {
     if (state.recorder && state.recorder.state !== 'inactive') state.recorder.stop();
+  }
+
+  function toggleRecordingPause() {
+    if (!state.recorder || state.recorder.state === 'inactive') return;
+    if (typeof state.recorder.pause !== 'function' || typeof state.recorder.resume !== 'function') return;
+    if (state.recorder.state === 'recording') {
+      try {
+        if (typeof state.recorder.requestData === 'function') state.recorder.requestData();
+        state.recorder.pause();
+        pauseTimer();
+        if (els.meter) els.meter.classList.add('paused');
+        if (els.pauseBtn) els.pauseBtn.textContent = 'Resume';
+        setRecordStatus('Paused. Resume or stop to transcribe.');
+      } catch (e) {
+        showToast('Pause is not available in this browser.', 'error');
+      }
+      return;
+    }
+    if (state.recorder.state === 'paused') {
+      try {
+        state.recorder.resume();
+        resumeTimer();
+        if (els.meter) els.meter.classList.remove('paused');
+        if (els.pauseBtn) els.pauseBtn.textContent = 'Pause';
+        setRecordStatus('Recording. Keep this app open and unlocked.');
+      } catch (e) {
+        showToast('Could not resume recording.', 'error');
+      }
+    }
   }
 
   function saveAudioAndSync(blob, name, seconds) {
@@ -839,6 +995,7 @@
       });
     });
     if (els.recordBtn) els.recordBtn.addEventListener('click', startRecording);
+    if (els.pauseBtn) els.pauseBtn.addEventListener('click', toggleRecordingPause);
     if (els.stopBtn) els.stopBtn.addEventListener('click', stopRecording);
     if (els.importBtn) els.importBtn.addEventListener('click', function () { if (els.fileInput) els.fileInput.click(); });
     if (els.fileInput) {
@@ -894,6 +1051,13 @@
       syncAllPending();
     });
     window.addEventListener('offline', renderAll);
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden || !state.recorder || state.recorder.state === 'inactive') return;
+      if (typeof state.recorder.requestData === 'function') {
+        try { state.recorder.requestData(); } catch (e) {}
+      }
+      setRecordStatus('Keep this app open and unlocked while recording.');
+    });
   }
 
   function registerServiceWorker() {
