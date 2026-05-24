@@ -26,7 +26,7 @@ body {
 }
 
 .voice-notes-body .app-shell-topbar {
-  padding-top: calc(12px + env(safe-area-inset-top));
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
 }
 
 .voice-page {
@@ -881,6 +881,8 @@ body {
   display: grid;
   place-items: center;
   gap: 4px;
+  width: 100%;
+  min-width: 0;
   min-height: 62px;
   padding: 7px 2px 6px;
   border: 0;
@@ -900,6 +902,11 @@ body {
   height: 23px;
   flex: 0 0 auto;
   overflow: visible;
+}
+
+.voice-nav-btn span {
+  max-width: 100%;
+  white-space: nowrap;
 }
 
 .voice-nav-btn.active {
@@ -1349,7 +1356,7 @@ body {
 @media (max-width: 760px) {
   .voice-page {
     padding-top: 14px;
-    padding-bottom: calc(96px + env(safe-area-inset-bottom));
+    padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
   }
 
   .voice-header h1 {
@@ -1361,9 +1368,9 @@ body {
   }
 
   .voice-bottom-nav {
-    left: max(10px, env(safe-area-inset-left));
-    right: max(10px, env(safe-area-inset-right));
-    bottom: max(10px, env(safe-area-inset-bottom));
+    left: max(10px, env(safe-area-inset-left, 0px));
+    right: max(10px, env(safe-area-inset-right, 0px));
+    bottom: max(10px, env(safe-area-inset-bottom, 0px));
     padding: 7px;
   }
 

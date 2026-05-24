@@ -103,6 +103,24 @@ def test_dashboard_uses_progress_summary_endpoint():
     assert 'progressPayload && progressPayload.summary ? progressPayload.summary : progressPayload' in dashboard_js
 
 
+def test_dashboard_hides_voice_note_packs_from_recent_list():
+    dashboard_js = _read('static/js/dashboard.js')
+
+    assert 'function dashboardVisiblePacks(packs)' in dashboard_js
+    assert "!== 'voice-note'" in dashboard_js
+    assert 'renderRecentPacks(dashboardVisiblePacks(' in dashboard_js
+
+
+def test_study_supports_voice_notes_folder_deep_link():
+    study_js = _read('static/js/study.js')
+    voice_template = _read('templates/voice_notes.html')
+
+    assert 'folderFromUrl' in study_js
+    assert "safe === 'voice-notes'" in study_js
+    assert 'selectedFolderId = initialFolderFromUrl(folderFromUrl);' in study_js
+    assert 'href="/study?folder=voice-notes"' in voice_template
+
+
 def test_study_inline_autosave_sends_dirty_fields_only():
     study_js = _read('static/js/study.js')
 
