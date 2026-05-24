@@ -1,4 +1,4 @@
-const VOICE_CACHE = 'lecture-processor-voice-v3';
+const VOICE_CACHE = 'lecture-processor-voice-v4';
 const APP_SHELL = [
   '/voice-notes',
   '/static/manifest.webmanifest',
@@ -7,10 +7,19 @@ const APP_SHELL = [
   '/static/css/motion.css',
   '/static/css/voice-notes.css',
   '/static/js/firebase-bootstrap.js',
+  '/static/js/html-utils.js',
   '/static/js/auth-utils.js',
+  '/static/js/download-utils.js',
+  '/static/js/topbar-utils.js',
+  '/static/js/ui-cache.js',
+  '/static/js/user-cache-utils.js',
+  '/static/js/app-shell.js',
   '/static/js/study-api-utils.js',
+  '/static/js/study-api-utils.min.js',
   '/static/js/voice-notes-utils.js',
+  '/static/js/voice-notes-utils.min.js',
   '/static/js/voice-notes.js',
+  '/static/js/voice-notes.min.js',
   '/static/icons/icon-192.svg',
   '/static/icons/icon-512.svg'
 ];

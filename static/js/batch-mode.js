@@ -920,7 +920,7 @@
       '          <button type="button" class="tool-chip" data-override-study-chip="none">No study tools</button>' +
       '          <button type="button" class="tool-chip" data-override-study-chip="flashcards">Flashcards only</button>' +
       '          <button type="button" class="tool-chip" data-override-study-chip="test">Practice test only</button>' +
-      '          <button type="button" class="tool-chip active" data-override-study-chip="both">Flashcards + test</button>' +
+      '          <button type="button" class="tool-chip active" data-override-study-chip="both">Flashcards + test <span class="chip-badge">Recommended</span></button>' +
       '        </div>' +
       '      </div>' +
       '      <div class="row-override-amounts">' +

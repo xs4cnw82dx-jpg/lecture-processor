@@ -1,8 +1,9 @@
 :root {
   --motion-fast: 140ms;
-  --motion-mid: 200ms;
-  --motion-slow: 220ms;
+  --motion-mid: 240ms;
+  --motion-slow: 320ms;
   --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-menu: cubic-bezier(0.16, 0.84, 0.24, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {

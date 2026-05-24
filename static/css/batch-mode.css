@@ -1167,3 +1167,297 @@ th {
     grid-template-columns: 1fr;
   }
 }
+
+/* Batch mode redesign overrides */
+.batch-page {
+  max-width: 1080px;
+  margin: 0 auto;
+  gap: 20px;
+}
+
+.batch-page .shell-panel,
+.batch-row {
+  border-radius: 8px;
+  border-color: #e5e7eb;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 12px 28px rgba(15, 23, 42, 0.04);
+}
+
+.batch-hero {
+  padding: 30px;
+}
+
+.batch-hero h1 {
+  color: #111827;
+  font-size: clamp(2.2rem, 5vw, 3.4rem);
+  letter-spacing: 0;
+  line-height: 1.05;
+}
+
+.batch-hero p,
+.batch-hero-meta-item,
+.field-help,
+.control-note {
+  color: #6b7280;
+}
+
+.batch-hero-meta-item svg {
+  color: #4f46e5;
+}
+
+.mode-links {
+  gap: 8px;
+}
+
+.mode-link {
+  min-height: 40px;
+  border-radius: 8px;
+  border-color: #d1d5db;
+  background: #ffffff;
+  color: #4b5563;
+}
+
+.mode-link.active {
+  border-color: rgba(79, 70, 229, 0.28);
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+.batch-form {
+  gap: 20px;
+}
+
+.batch-grid,
+.study-defaults-wrap {
+  gap: 20px;
+}
+
+.field-control input,
+.app-select-button,
+.language-custom-input,
+.row-url-input {
+  border-radius: 8px;
+  border-color: #d1d5db;
+  background: #ffffff;
+  color: #111827;
+}
+
+.field-control input:focus,
+.app-select-button:focus,
+.app-select-item:focus,
+.amount-chip:focus,
+.tool-chip:focus,
+.interview-extra-chip:focus,
+.btn:focus,
+.row-upload-zone:focus,
+.row-upload-zone:focus-within,
+.row-url-input:focus {
+  outline: 2px solid #4f46e5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+.app-select-menu {
+  border-radius: 8px;
+  border-color: #e5e7eb;
+  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.12);
+  transition:
+    opacity 220ms var(--motion-ease, ease),
+    transform 220ms var(--motion-ease, ease),
+    visibility 0s linear 220ms;
+}
+
+.app-select-item.active {
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+.generation-control,
+.batch-export-option,
+.row-url-import,
+.row-inline-group,
+.row-override {
+  border-radius: 8px;
+  border-color: #e5e7eb;
+  background: #f8fafc;
+}
+
+.control-label,
+.field-control > span,
+.field-label-row > span,
+.row-label {
+  color: #6b7280;
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+}
+
+.tool-chip-grid {
+  gap: 10px;
+}
+
+.tool-chip,
+.amount-chip,
+.interview-extra-chip,
+.btn {
+  border-radius: 8px;
+}
+
+.tool-chip,
+.amount-chip,
+.interview-extra-chip {
+  border-color: #d1d5db;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.tool-chip:hover,
+.amount-chip:hover:not(:disabled),
+.interview-extra-chip:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+}
+
+.tool-chip.active,
+.interview-extra-chip.active {
+  border-color: #86efac;
+  background: #d1fae5;
+  color: #14532d;
+  box-shadow: 0 0 0 1px rgba(134, 239, 172, 0.24);
+}
+
+.amount-chip.active {
+  border-color: rgba(79, 70, 229, 0.36);
+  background: #eef2ff;
+  color: #4f46e5;
+  box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.08);
+}
+
+.chip-badge {
+  display: block;
+  width: fit-content;
+  margin: 4px auto 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #15803d;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.batch-export-checkmark {
+  border-radius: 6px;
+}
+
+.batch-export-check input:checked + .batch-export-checkmark {
+  background: #4f46e5;
+}
+
+.rows-head {
+  margin-top: 4px;
+}
+
+.rows-head h2 {
+  color: #111827;
+  font-size: 2rem;
+  letter-spacing: 0;
+}
+
+.batch-row {
+  padding: 22px;
+}
+
+.batch-row-head h3 {
+  color: #111827;
+}
+
+.row-upload-zone {
+  min-height: 132px;
+  border-width: 1.5px;
+  border-radius: 8px;
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.row-upload-zone:hover,
+.row-upload-zone.dragover {
+  border-color: #4f46e5;
+  background: #eef2ff;
+}
+
+.row-upload-zone.has-file {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.row-file-info {
+  border-radius: 8px;
+}
+
+.row-override-shell,
+.row-override-amounts {
+  transition:
+    grid-template-rows 300ms var(--motion-menu, cubic-bezier(.16,.84,.24,1)),
+    opacity 220ms var(--motion-ease, ease),
+    transform 220ms var(--motion-ease, ease);
+}
+
+.row-override-shell {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+.row-override.enabled .row-override-shell {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.row-url-status.success {
+  color: #14532d;
+}
+
+.btn.primary,
+#submit-batch-btn:not(:disabled) {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: #ffffff;
+  box-shadow: 0 12px 24px rgba(79, 70, 229, 0.18);
+}
+
+.btn.primary:hover,
+#submit-batch-btn:not(:disabled):hover {
+  background: #4338ca;
+  border-color: #4338ca;
+}
+
+.rows-foot {
+  border-radius: 8px;
+  border-color: #e5e7eb;
+  background: #f8fafc;
+}
+
+.batch-status-banner,
+.batch-summary-card {
+  border-radius: 8px;
+}
+
+@media (max-width: 760px) {
+  .batch-page {
+    gap: 14px;
+  }
+
+  .batch-hero,
+  .batch-page .shell-panel,
+  .batch-row {
+    padding: 18px;
+  }
+
+  .batch-hero h1 {
+    font-size: 2.25rem;
+  }
+
+  .rows-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
