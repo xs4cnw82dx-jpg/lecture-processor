@@ -1464,3 +1464,161 @@
                 max-height: 340px;
             }
         }
+
+        /* Lecture Notes polish round */
+        body[data-forced-mode="lecture-notes"] .container {
+            max-width: min(1240px, calc(100vw - 48px));
+        }
+
+        body[data-forced-mode="lecture-notes"] .app-card {
+            border-radius: 18px;
+            border-color: #e5e7eb;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 14px 34px rgba(15, 23, 42, 0.05);
+        }
+
+        body[data-forced-mode="lecture-notes"] .mode-section {
+            padding: 38px 40px 36px;
+            border-bottom: 1px solid #eef2f7;
+        }
+
+        body[data-forced-mode="lecture-notes"] .mode-description {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            padding: 22px 24px;
+            border-radius: 14px;
+            background: #f8fafc;
+        }
+
+        body[data-forced-mode="lecture-notes"] .mode-description svg {
+            width: 34px;
+            height: 34px;
+            flex: 0 0 34px;
+            padding: 7px;
+            border-radius: 999px;
+            background: #eef2ff;
+            color: #4f46e5;
+            box-sizing: border-box;
+        }
+
+        body[data-forced-mode="lecture-notes"] .mode-credit-cost {
+            margin-top: 8px;
+        }
+
+        body[data-forced-mode="lecture-notes"] .upload-section {
+            padding: 0;
+            gap: 0 30px;
+        }
+
+        body[data-forced-mode="lecture-notes"] .lecture-topic-field {
+            padding: 32px 40px 30px;
+            border-bottom: 1px solid #eef2f7;
+        }
+
+        body[data-forced-mode="lecture-notes"] #study-pack-title-input {
+            min-height: 60px;
+            border-radius: 14px;
+            padding: 0 20px;
+            font-size: 1.05rem;
+        }
+
+        body[data-forced-mode="lecture-notes"] #pdf-zone {
+            margin: 28px 0 28px 40px;
+        }
+
+        body[data-forced-mode="lecture-notes"] #audio-zone {
+            margin: 28px 40px 28px 0;
+        }
+
+        body[data-forced-mode="lecture-notes"] .upload-zone {
+            min-height: 278px;
+            padding: 32px 28px;
+            border-radius: 14px;
+            background: #ffffff;
+            text-align: center;
+        }
+
+        body[data-forced-mode="lecture-notes"] .upload-icon {
+            width: 58px;
+            height: 58px;
+            margin: 0 auto 22px;
+            padding: 13px;
+            border-radius: 14px;
+            background: #f3f4f6;
+            color: #9ca3af;
+            box-sizing: border-box;
+        }
+
+        body[data-forced-mode="lecture-notes"] .upload-title-row {
+            justify-content: center;
+        }
+
+        body[data-forced-mode="lecture-notes"] .upload-title {
+            font-size: 1.08rem;
+        }
+
+        body[data-forced-mode="lecture-notes"] .upload-helper {
+            max-width: 430px;
+            margin: 12px auto 10px;
+            text-align: center;
+        }
+
+        body[data-forced-mode="lecture-notes"] .upload-subtitle,
+        body[data-forced-mode="lecture-notes"] .upload-formats {
+            text-align: center;
+        }
+
+        body[data-forced-mode="lecture-notes"] .advanced-settings {
+            margin: 16px 0 36px 40px;
+        }
+
+        body[data-forced-mode="lecture-notes"] .processing-secondary-grid {
+            margin: 16px 40px 36px 0;
+        }
+
+        body[data-forced-mode="lecture-notes"] .advanced-settings-toggle,
+        body[data-forced-mode="lecture-notes"] .processing-disclosure-toggle {
+            min-height: 104px;
+            padding: 22px 20px;
+            border-radius: 14px;
+        }
+
+        body[data-forced-mode="lecture-notes"] .advanced-settings-summary,
+        body[data-forced-mode="lecture-notes"] .processing-disclosure-summary {
+            margin-top: 8px;
+            font-size: 0.95rem;
+        }
+
+        body[data-forced-mode="lecture-notes"] .button-section {
+            margin: 0;
+            border-top: 1px solid #eef2f7;
+            border-right: 0;
+            border-left: 0;
+            border-bottom: 0;
+            border-radius: 0;
+            background: #f8fafc;
+            box-shadow: none;
+        }
+
+        @media (max-width: 900px) {
+            body[data-forced-mode="lecture-notes"] .container {
+                max-width: min(100% - 24px, 760px);
+            }
+
+            body[data-forced-mode="lecture-notes"] .mode-section,
+            body[data-forced-mode="lecture-notes"] .lecture-topic-field {
+                padding-left: 20px;
+                padding-right: 20px;
+            }
+
+            body[data-forced-mode="lecture-notes"] #pdf-zone,
+            body[data-forced-mode="lecture-notes"] #audio-zone,
+            body[data-forced-mode="lecture-notes"] .advanced-settings,
+            body[data-forced-mode="lecture-notes"] .processing-secondary-grid {
+                margin: 18px 20px 0;
+            }
+
+            body[data-forced-mode="lecture-notes"] .processing-secondary-grid {
+                margin-bottom: 24px;
+            }
+        }

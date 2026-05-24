@@ -21,6 +21,7 @@
     notes: [],
     selectedId: '',
     view: 'record',
+    authReady: !!auth.currentUser,
     recorder: null,
     recordingStream: null,
     recordingChunks: [],
@@ -873,7 +874,8 @@
 
   function setAuthUi() {
     var signedIn = hasSignedInSession();
-    if (els.auth) els.auth.hidden = signedIn;
+    var ready = !!state.authReady || signedIn;
+    if (els.auth) els.auth.hidden = !ready || signedIn;
     if (els.app) els.app.hidden = false;
   }
 
@@ -1233,7 +1235,9 @@
       });
 
     auth.onAuthStateChanged(function (user) {
+      state.authReady = true;
       state.user = user || null;
+      if (!state.user && authClient && typeof authClient.clearToken === 'function') authClient.clearToken();
       setAuthUi();
       if (user) loadServerStudyPacks().then(renderAll);
     });

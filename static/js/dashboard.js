@@ -206,6 +206,12 @@
     });
   }
 
+  function dashboardVisiblePacks(packs) {
+    return (Array.isArray(packs) ? packs : []).filter(function (pack) {
+      return String((pack && pack.mode) || '').trim() !== 'voice-note';
+    });
+  }
+
   async function loadDashboard(user) {
     setDashboardLoading(true);
     if (!user) {
@@ -240,7 +246,7 @@
       renderUpcomingSessions(user, sessions);
       if (result[1].ok) {
         var packsPayload = await result[1].json();
-        renderRecentPacks((packsPayload && packsPayload.study_packs) || []);
+        renderRecentPacks(dashboardVisiblePacks((packsPayload && packsPayload.study_packs) || []));
       } else {
         renderRecentPacks([]);
       }

@@ -291,7 +291,7 @@ def test_voice_notes_page_renders_pwa_assets(client):
     assert 'voice-notes.min.js' in html or 'voice-notes.js' in html
     assert 'Transcript' in html
     assert 'Advanced prompt' in html
-    assert 'href="/study"' in html
+    assert 'href="/study?folder=voice-notes"' in html
     assert 'voice-pane-flashcards' not in html
     assert 'voice-pane-test' not in html
 

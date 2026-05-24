@@ -63,6 +63,8 @@
 
   var currentUserIsAdmin = false;
   var lastSignedInUid = auth && auth.currentUser && auth.currentUser.uid ? String(auth.currentUser.uid) : '';
+  var authStateResolved = !!(auth && auth.currentUser);
+  var authObserverStartedAt = Date.now();
   var toastTimer = null;
 
   function normalizePath(pathname) {
@@ -593,6 +595,11 @@
   function revealSignInIfAuthStalls() {
     if (!shell || shell.getAttribute('data-auth-state') !== 'pending') return;
     if (auth && auth.currentUser) return;
+    if (!authStateResolved && Date.now() - authObserverStartedAt < 6000) {
+      window.setTimeout(revealSignInIfAuthStalls, 1200);
+      return;
+    }
+    authStateResolved = true;
     setAuthState('signed-out');
     if (signInBtn) signInBtn.hidden = false;
     if (accountWrap) accountWrap.hidden = true;
@@ -897,6 +904,7 @@
   });
 
   auth.onAuthStateChanged(function (user) {
+    authStateResolved = true;
     applyAuth(user || null);
   });
 

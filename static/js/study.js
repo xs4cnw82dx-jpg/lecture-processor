@@ -75,6 +75,7 @@ const learnPackFromUrl = urlParams.get('pack_id') || '';
 const openLearnFromUrl = urlParams.get('mode') === 'learn';
 const fullscreenFromUrl = urlParams.get('fullscreen') === '1';
 const focusFromUrl = urlParams.get('focus') || '';
+const folderFromUrl = String(urlParams.get('folder') || '').trim().toLowerCase();
 const actionFromUrl = String(urlParams.get('action') || '').trim().toLowerCase();
 const bodyEntryMode = String((document.body && document.body.dataset && document.body.dataset.studyEntryMode) || '').trim().toLowerCase();
 const initialStudyEntryMode = bodyEntryMode || actionFromUrl;
@@ -98,6 +99,15 @@ const BUILTIN_INTERVIEWS_FOLDER_ID = '__interviews__';
 const BUILTIN_VOICE_NOTES_FOLDER_ID = '__voice_notes__';
 const MAX_PINNED_FOLDERS = 5;
 let pinnedFolderIds = [];
+
+function initialFolderFromUrl(value) {
+  var safe = String(value || '').trim().toLowerCase();
+  if (safe === 'voice-notes' || safe === 'voice_notes' || safe === BUILTIN_VOICE_NOTES_FOLDER_ID) return BUILTIN_VOICE_NOTES_FOLDER_ID;
+  if (safe === 'interviews' || safe === 'interview' || safe === BUILTIN_INTERVIEWS_FOLDER_ID) return BUILTIN_INTERVIEWS_FOLDER_ID;
+  return '';
+}
+
+selectedFolderId = initialFolderFromUrl(folderFromUrl);
 
 function normalizeUrlPath(pathname) {
   var normalized = String(pathname || '/').replace(/\/+$/, '');
