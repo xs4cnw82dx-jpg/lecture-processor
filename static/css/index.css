@@ -1173,3 +1173,294 @@
         @keyframes dropdownOpen { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes modalOpen { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
         @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+        /* Processing redesign overrides */
+        .container {
+            max-width: 1080px;
+        }
+
+        body[data-forced-mode="lecture-notes"] .hero {
+            padding: 30px 0 18px;
+            background: transparent;
+        }
+
+        body[data-forced-mode="lecture-notes"] .hero .container {
+            gap: 8px;
+        }
+
+        body[data-forced-mode="lecture-notes"] .hero-title {
+            max-width: 720px;
+            color: #111827;
+            font-size: clamp(2.25rem, 5vw, 3.5rem);
+            letter-spacing: 0;
+        }
+
+        body[data-forced-mode="lecture-notes"] .hero-title span {
+            color: #4f46e5;
+        }
+
+        body[data-forced-mode="lecture-notes"] .hero-description {
+            color: #6b7280;
+            font-size: 1.05rem;
+        }
+
+        body[data-forced-mode="lecture-notes"] .app-card {
+            overflow: hidden;
+            padding: 0;
+            border-radius: 8px;
+            border-color: #e5e7eb;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 14px 30px rgba(15, 23, 42, 0.06);
+        }
+
+        body[data-forced-mode="lecture-notes"] .mode-section {
+            padding: 24px 28px;
+            margin: 0;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        body[data-forced-mode="lecture-notes"] .mode-label,
+        .control-label,
+        .field-control > span,
+        .field-label-row > span {
+            color: #6b7280;
+            font-size: 0.74rem;
+            letter-spacing: 0.08em;
+        }
+
+        body[data-forced-mode="lecture-notes"] .mode-description {
+            margin-top: 0;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            background: #f8fafc;
+            color: #4b5563;
+        }
+
+        body[data-forced-mode="lecture-notes"] .sign-in-required {
+            margin: 24px 28px;
+        }
+
+        body[data-forced-mode="lecture-notes"] .processing-layout {
+            padding: 0;
+        }
+
+        body[data-forced-mode="lecture-notes"] .upload-section {
+            padding: 24px 28px 0;
+            margin: 0;
+            gap: 20px;
+        }
+
+        body[data-forced-mode="lecture-notes"] .lecture-topic-field {
+            padding-bottom: 2px;
+        }
+
+        body[data-forced-mode="lecture-notes"] .language-custom-input,
+        body[data-forced-mode="lecture-notes"] .upload-url-input,
+        body[data-forced-mode="lecture-notes"] .app-select-button,
+        body[data-forced-mode="lecture-notes"] .study-tools-toggle {
+            border-radius: 8px;
+            border-color: #d1d5db;
+            background: #ffffff;
+        }
+
+        body[data-forced-mode="lecture-notes"] .upload-zone {
+            min-height: 250px;
+            border-width: 1.5px;
+            border-color: #cbd5e1;
+            border-radius: 8px;
+            background: #f8fafc;
+        }
+
+        body[data-forced-mode="lecture-notes"] .upload-zone:hover,
+        body[data-forced-mode="lecture-notes"] .upload-zone.drag-over {
+            border-color: #4f46e5;
+            background: #eef2ff;
+            box-shadow: none;
+            transform: none;
+        }
+
+        body[data-forced-mode="lecture-notes"] .upload-zone.has-file {
+            border-color: #86efac;
+            background: #f0fdf4;
+        }
+
+        body[data-forced-mode="lecture-notes"] .upload-icon {
+            width: 46px;
+            height: 46px;
+            color: #9ca3af;
+        }
+
+        body[data-forced-mode="lecture-notes"] .upload-badge.required {
+            border-radius: 4px;
+            background: #eef2ff;
+            border-color: rgba(79, 70, 229, 0.16);
+            color: #4f46e5;
+        }
+
+        body[data-forced-mode="lecture-notes"] .processing-disclosure,
+        body[data-forced-mode="lecture-notes"] .advanced-settings-toggle,
+        body[data-forced-mode="lecture-notes"] .generation-control,
+        body[data-forced-mode="lecture-notes"] .upload-estimate,
+        body[data-forced-mode="lecture-notes"] .upload-url-import,
+        body[data-forced-mode="lecture-notes"] .upload-url-advanced,
+        body[data-forced-mode="lecture-notes"] .audio-recorder-panel {
+            border-radius: 8px;
+            border-color: #e5e7eb;
+            background: #ffffff;
+            box-shadow: none;
+        }
+
+        body[data-forced-mode="lecture-notes"] .processing-disclosure-toggle:hover,
+        body[data-forced-mode="lecture-notes"] .advanced-settings-toggle:hover {
+            background: #f9fafb;
+        }
+
+        body[data-forced-mode="lecture-notes"] .button-section {
+            margin: 24px 0 0;
+            border-right: 0;
+            border-left: 0;
+            border-bottom: 0;
+            border-radius: 0;
+            background: #f8fafc;
+            box-shadow: none;
+        }
+
+        .process-button,
+        .action-button.primary,
+        .audio-recorder-btn.primary,
+        .quickstart-btn.primary {
+            border-radius: 8px;
+            background: #4f46e5;
+            box-shadow: 0 12px 24px rgba(79, 70, 229, 0.18);
+        }
+
+        .process-button:hover:not(:disabled),
+        .action-button.primary:hover,
+        .audio-recorder-btn.primary:hover:not(:disabled),
+        .quickstart-btn.primary:hover {
+            background: #4338ca;
+            box-shadow: 0 16px 28px rgba(79, 70, 229, 0.22);
+        }
+
+        .tool-chip,
+        .amount-chip,
+        .interview-option {
+            border-radius: 8px;
+            box-shadow: none;
+        }
+
+        .tool-chip.active,
+        .interview-option.active {
+            border-color: #86efac;
+            background: #d1fae5;
+            color: #14532d;
+            box-shadow: 0 0 0 1px rgba(134, 239, 172, 0.24);
+        }
+
+        .amount-chip.active {
+            border-color: rgba(79, 70, 229, 0.36);
+            background: #eef2ff;
+            color: #4f46e5;
+            box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.08);
+        }
+
+        .tool-chip .chip-badge {
+            display: block;
+            width: fit-content;
+            margin: 4px auto 0;
+            color: #15803d;
+            background: transparent;
+            padding: 0;
+            letter-spacing: 0.08em;
+        }
+
+        .study-tools-panel {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+            max-height: 0;
+            margin-top: 0;
+            opacity: 0;
+            visibility: hidden;
+            overflow: hidden;
+            pointer-events: none;
+            transform: translateY(-6px);
+            transition:
+                max-height 260ms var(--motion-menu, cubic-bezier(.16,.84,.24,1)),
+                opacity 220ms var(--motion-ease, ease),
+                transform 220ms var(--motion-ease, ease),
+                margin-top 220ms var(--motion-ease, ease),
+                visibility 0s linear 260ms;
+        }
+
+        .study-tools-panel.visible {
+            display: grid;
+            max-height: 220px;
+            margin-top: 8px;
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+            transform: translateY(0);
+            animation: none;
+            transition-delay: 0s, 0s, 0s, 0s, 0s;
+        }
+
+        .app-select-menu,
+        .dropdown-content {
+            border-radius: 8px;
+            border-color: #e5e7eb;
+            box-shadow: 0 18px 34px rgba(15, 23, 42, 0.12);
+            transition:
+                opacity 220ms var(--motion-ease, ease),
+                transform 220ms var(--motion-ease, ease),
+                visibility 0s linear 220ms;
+        }
+
+        .upload-url-advanced-panel,
+        .processing-disclosure-body,
+        .advanced-settings-body {
+            transition:
+                grid-template-rows 300ms var(--motion-menu, cubic-bezier(.16,.84,.24,1)),
+                opacity 220ms var(--motion-ease, ease),
+                margin-top 220ms var(--motion-ease, ease),
+                visibility 0s linear 300ms;
+        }
+
+        .focus-sidebar,
+        .results-content {
+            border-radius: 8px;
+            background: #f8fafc;
+        }
+
+        @media (max-width: 900px) {
+            body[data-forced-mode="lecture-notes"] .app-card {
+                border-radius: 8px;
+            }
+
+            body[data-forced-mode="lecture-notes"] .mode-section,
+            body[data-forced-mode="lecture-notes"] .upload-section {
+                padding-left: 18px;
+                padding-right: 18px;
+            }
+        }
+
+        @media (max-width: 640px) {
+            body[data-forced-mode="lecture-notes"] .hero {
+                padding-top: 20px;
+            }
+
+            body[data-forced-mode="lecture-notes"] .hero-title {
+                font-size: 2.3rem;
+            }
+
+            body[data-forced-mode="lecture-notes"] .upload-zone {
+                min-height: 216px;
+            }
+
+            .study-tools-panel {
+                grid-template-columns: 1fr;
+            }
+
+            .study-tools-panel.visible {
+                max-height: 340px;
+            }
+        }

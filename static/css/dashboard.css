@@ -329,3 +329,188 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Dashboard redesign */
+.dashboard-page {
+  max-width: 1280px;
+  margin: 0 auto;
+  gap: 20px;
+}
+
+.dashboard-page .shell-panel {
+  border-radius: 8px;
+  background: #ffffff;
+  border-color: #e5e7eb;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 12px 28px rgba(15, 23, 42, 0.04);
+}
+
+.dashboard-page .hero {
+  padding: 32px;
+  background: #ffffff;
+}
+
+.dashboard-page .hero h1 {
+  max-width: 760px;
+  margin-bottom: 8px;
+  color: #111827;
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+.dashboard-page .hero p {
+  max-width: 880px;
+  color: #6b7280;
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.hero-actions {
+  margin-top: 22px;
+  gap: 10px;
+}
+
+.hero-btn,
+.empty-state-link.primary {
+  min-height: 42px;
+  border-radius: 8px;
+  border-color: #4f46e5;
+  background: #4f46e5;
+  box-shadow: 0 10px 20px rgba(79, 70, 229, 0.18);
+}
+
+.hero-btn:hover,
+.empty-state-link.primary:hover {
+  background: #4338ca;
+  border-color: #4338ca;
+  box-shadow: 0 14px 24px rgba(79, 70, 229, 0.22);
+}
+
+.hero-btn.secondary,
+.empty-state-link {
+  border-color: #d1d5db;
+  background: #ffffff;
+  color: #374151;
+}
+
+.hero-btn.secondary:hover,
+.empty-state-link:hover {
+  background: #f9fafb;
+  border-color: #cbd5e1;
+  color: #111827;
+}
+
+.dashboard-auth-banner {
+  border-radius: 8px;
+  border-color: #e0e7ff;
+  background: #f8fafc;
+  box-shadow: none;
+}
+
+.dashboard-grid {
+  gap: 20px;
+}
+
+.dashboard-grid.two-col {
+  align-items: start;
+}
+
+.stat-card {
+  min-height: 156px;
+  gap: 8px;
+  padding: 24px;
+  background: #ffffff;
+  border-color: #e5e7eb;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  border-color: #d1d5db;
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.08);
+}
+
+.stat-label {
+  color: #9ca3af;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+}
+
+.stat-value {
+  color: #111827;
+  font-size: clamp(2rem, 4vw, 2.55rem);
+  line-height: 1.05;
+}
+
+.goal-track.goal-track-bar::-webkit-progress-value {
+  background: #4f46e5;
+}
+
+.goal-track.goal-track-bar::-moz-progress-bar {
+  background: #4f46e5;
+}
+
+.section-head {
+  margin-bottom: 14px;
+}
+
+.section-head h2 {
+  color: #111827;
+  font-size: 1.08rem;
+}
+
+.section-head a {
+  color: #4f46e5;
+}
+
+.list-item,
+.empty-state-card,
+.quick-link-card {
+  border-radius: 8px;
+  border-color: #e5e7eb;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.list-item {
+  padding: 14px;
+}
+
+.list-item:hover,
+.quick-link-card:hover {
+  border-color: #d1d5db;
+  box-shadow: 0 12px 22px rgba(15, 23, 42, 0.07);
+}
+
+.empty-state-card {
+  border-style: dashed;
+  background: #f8fafc;
+}
+
+.quick-links {
+  gap: 14px;
+}
+
+.quick-link-card {
+  padding: 16px;
+}
+
+.quick-link-card h3 {
+  color: #111827;
+}
+
+@media (max-width: 760px) {
+  .dashboard-page {
+    gap: 14px;
+  }
+
+  .dashboard-page .hero,
+  .stat-card,
+  .dashboard-page .shell-panel {
+    padding: 18px;
+  }
+
+  .dashboard-page .hero h1 {
+    font-size: 2rem;
+  }
+}
