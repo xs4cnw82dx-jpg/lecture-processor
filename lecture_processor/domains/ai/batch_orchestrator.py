@@ -173,6 +173,8 @@ def _batch_page_path(mode_name):
         return '/batch_mode_slides_extraction'
     if mode_value == 'interview':
         return '/batch_mode_interview_transcription'
+    if mode_value == 'audio-transcription':
+        return '/batch_mode_audio_transcription'
     return '/batch_mode'
 
 
@@ -2007,6 +2009,45 @@ def process_batch_job(batch_id, runtime=None):
                 'study_materials_generation',
                 _slides_study_builder,
                 _slides_study_handler,
+                runtime=resolved_runtime,
+            )
+
+        if mode == 'audio-transcription':
+            def _audio_transcription_builder(row):
+                if row.get('status') == 'error' or not row.get('audio_file_uri'):
+                    return None
+                prompt = resolved_runtime.PROMPT_AUDIO_TRANSCRIPTION.format(
+                    output_language=row.get('output_language', 'English'),
+                )
+                return {
+                    'contents': [
+                        {
+                            'role': 'user',
+                            'parts': [
+                                {
+                                    'file_data': {
+                                        'file_uri': row.get('audio_file_uri', ''),
+                                        'mime_type': row.get('audio_mime_type', 'audio/mpeg'),
+                                    }
+                                },
+                                {'text': prompt},
+                            ],
+                        }
+                    ]
+                }
+
+            def _audio_transcription_handler(row, response):
+                transcript = _response_text(response, runtime=resolved_runtime)
+                row['transcript'] = transcript
+                row['transcript_segments'] = []
+                row['result'] = transcript
+
+            _run_stage_with_builder(
+                batch_id,
+                rows,
+                'audio_transcription',
+                _audio_transcription_builder,
+                _audio_transcription_handler,
                 runtime=resolved_runtime,
             )
 

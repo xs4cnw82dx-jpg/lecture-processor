@@ -186,6 +186,8 @@ def save_study_pack(job_id, job_data, runtime=None):
             slide_text = str(job_data.get('result', '') or '')
         elif mode == 'interview':
             transcript = str(job_data.get('transcript', '') or '')
+        elif mode == 'audio-transcription':
+            transcript = str(job_data.get('transcript', '') or '')
         elif mode == 'voice-note':
             transcript = str(job_data.get('transcript', '') or '')
         if slide_text:

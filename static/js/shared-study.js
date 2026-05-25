@@ -79,6 +79,7 @@
     if (safeMode === 'lecture-notes') return 'Lecture Notes';
     if (safeMode === 'slides-only') return 'Slides Extraction';
     if (safeMode === 'interview') return 'Interview Transcription';
+    if (safeMode === 'audio-transcription') return 'Audio Transcription';
     return safeMode
       .split(/[-_\s]+/)
       .filter(Boolean)

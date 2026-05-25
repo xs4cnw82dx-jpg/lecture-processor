@@ -110,6 +110,7 @@ def admin_overview(app_ctx, request):
             'lecture-notes': {'label': 'Lecture Notes', 'total': 0, 'complete': 0, 'error': 0},
             'slides-only': {'label': 'Slide Extract', 'total': 0, 'complete': 0, 'error': 0},
             'interview': {'label': 'Interview Transcript', 'total': 0, 'complete': 0, 'error': 0},
+            'audio-transcription': {'label': 'Audio Transcript', 'total': 0, 'complete': 0, 'error': 0},
             'other': {'label': 'Other', 'total': 0, 'complete': 0, 'error': 0},
         }
 

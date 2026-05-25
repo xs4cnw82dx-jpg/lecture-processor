@@ -840,6 +840,10 @@
   margin-top: 22px;
 }
 
+.batch-row.mode-audio .row-field--audio {
+  grid-column: 1 / -1;
+}
+
 .batch-row.mode-lecture .row-field--slides .row-override {
   margin-top: 14px;
 }

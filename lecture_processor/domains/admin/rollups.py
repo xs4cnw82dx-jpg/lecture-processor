@@ -9,7 +9,7 @@ from lecture_processor.runtime.container import get_runtime
 HOURLY_COLLECTION = 'admin_rollups_hourly'
 DAILY_COLLECTION = 'admin_rollups_daily'
 KNOWN_RATE_LIMITS = ('upload', 'checkout', 'analytics', 'tools')
-KNOWN_MODES = ('lecture-notes', 'slides-only', 'interview', 'other')
+KNOWN_MODES = ('lecture-notes', 'slides-only', 'interview', 'audio-transcription', 'other')
 
 
 def _resolve_runtime(runtime=None):
@@ -96,7 +96,7 @@ def _empty_rollup(bucket_key, period, runtime=None):
 
 def _incremented_mode(mode):
     safe_mode = str(mode or '').strip().lower()
-    if safe_mode not in {'lecture-notes', 'slides-only', 'interview'}:
+    if safe_mode not in {'lecture-notes', 'slides-only', 'interview', 'audio-transcription'}:
         return 'other'
     return safe_mode
 

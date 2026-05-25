@@ -18,6 +18,11 @@ from lecture_processor.runtime.job_dispatcher import JobQueueFullError
 from lecture_processor.services import upload_batch_support, upload_quota_service, upload_redaction_service
 
 
+BATCH_MODES = {'lecture-notes', 'slides-only', 'interview', 'audio-transcription'}
+STUDY_TOOL_BATCH_MODES = {'lecture-notes', 'slides-only'}
+AUDIO_BATCH_MODES = {'lecture-notes', 'interview', 'audio-transcription'}
+
+
 def _safe_int(value, default=0):
     try:
         return int(value or default)
@@ -96,6 +101,9 @@ def _batch_credit_preflight_error(user, mode, row_plans, runtime=None):
         extras_needed = sum(_safe_int(row.get('interview_features_cost', 0)) for row in row_plans)
         if extras_needed > 0 and not billing_credits.has_category_credit(user, 'slides', extras_needed, runtime=runtime):
             return 'Not enough text extraction credits for interview extras in this batch.', 402
+    elif mode == 'audio-transcription':
+        if not billing_credits.has_category_credit(user, 'interview', row_count, runtime=runtime):
+            return 'Not enough interview credits to start this batch.', 402
     return '', 0
 
 
@@ -142,7 +150,7 @@ def create_batch_job(app_ctx, request):
         return deletion_guard
 
     mode = str(request.form.get('mode', 'lecture-notes') or '').strip()
-    if mode not in {'lecture-notes', 'slides-only', 'interview'}:
+    if mode not in BATCH_MODES:
         return app_ctx.jsonify({'error': 'Invalid mode selected'}), 400
 
     rows = upload_batch_support.parse_batch_rows_payload(request)
@@ -222,7 +230,7 @@ def create_batch_job(app_ctx, request):
         for idx, row_cfg in enumerate(rows, start=1):
             row_id = str(row_cfg.get('row_id', '') or app_ctx.uuid.uuid4())
             slides_required = mode in {'lecture-notes', 'slides-only'}
-            audio_required = mode in {'lecture-notes', 'interview'}
+            audio_required = mode in AUDIO_BATCH_MODES
 
             slides_file = None
             slides_field = str(row_cfg.get('slides_file_field', f'row_{idx}_slides') or '').strip()
@@ -372,6 +380,10 @@ def create_batch_job(app_ctx, request):
                     if not billing_credits.deduct_slides_credits(uid, interview_features_cost, runtime=app_ctx):
                         billing_credits.refund_credit(uid, charged_credit, runtime=app_ctx)
                         raise ValueError('Not enough text extraction credits for interview extras in this batch row.')
+            elif mode == 'audio-transcription':
+                charged_credit = billing_credits.deduct_interview_credit(uid, runtime=app_ctx)
+                if not charged_credit:
+                    raise ValueError('Not enough interview credits to start this batch.')
             plan['charged_credit'] = charged_credit
 
             charged_rows.append(
@@ -467,7 +479,7 @@ def create_batch_job(app_ctx, request):
                     'audio_quota_actual_bytes': 0,
                     'audio_quota_released': False,
                     'output_language': output_language,
-                    'study_features': plan.get('study_features', 'none') if mode != 'interview' else 'none',
+                    'study_features': plan.get('study_features', 'none') if mode in STUDY_TOOL_BATCH_MODES else 'none',
                     'flashcard_selection': plan.get('flashcard_selection', default_flashcards),
                     'question_selection': plan.get('question_selection', default_questions),
                     'interview_features': plan.get('interview_features', []),
@@ -525,7 +537,7 @@ def create_batch_job(app_ctx, request):
             'batch_title': batch_title,
             'output_language': output_language,
             'study_defaults': {
-                'study_features': default_study_features,
+                'study_features': default_study_features if mode in STUDY_TOOL_BATCH_MODES else 'none',
                 'flashcard_amount': default_flashcards,
                 'question_amount': default_questions,
             },
@@ -770,6 +782,8 @@ def batch_row_combined_markdown(batch, row):
         append_combined_markdown_section(parts, 'Structured Transcript', interview_sections)
         if interview_combined and not interview_summary and not interview_sections:
             append_combined_markdown_section(parts, 'Combined Output', interview_combined)
+    elif mode == 'audio-transcription':
+        append_combined_markdown_section(parts, 'Transcript', transcript_text or result_text)
     else:
         append_combined_markdown_section(parts, 'Output', result_text)
 
