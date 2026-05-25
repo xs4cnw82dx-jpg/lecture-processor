@@ -97,6 +97,7 @@ EXPECTED_ROUTES = [
     ('GET', '/batch_mode_audio_transcription', 'pages.batch_mode_audio_transcription_page'),
     ('GET', '/batch_mode_interview_transcription', 'pages.batch_mode_interview_page'),
     ('GET', '/batch_mode_slides_extraction', 'pages.batch_mode_slides_page'),
+    ('GET', '/batch_mode_text_combine', 'pages.batch_mode_text_combine_page'),
     ('GET', '/calendar', 'pages.calendar_dashboard'),
     ('GET', '/dashboard', 'pages.dashboard'),
     ('GET', '/download-docx/<job_id>', 'upload_api.download_docx'),
@@ -268,6 +269,12 @@ def test_processing_pages_render_updated_shell_labels(client):
     assert 'Batch Processing · Audio Transcription' in audio_batch_html
     assert 'Audio Transcription' in audio_batch_html
 
+    combine_batch_response = client.get('/batch_mode_text_combine')
+    assert combine_batch_response.status_code == 200
+    combine_batch_html = combine_batch_response.get_data(as_text=True)
+    assert 'Batch Processing · Combine Text' in combine_batch_html
+    assert 'Combine Text' in combine_batch_html
+
 
 def test_more_tools_pages_and_links_render(client):
     tools_response = client.get('/tools')
@@ -276,6 +283,7 @@ def test_more_tools_pages_and_links_render(client):
     assert 'Lecture Downloader' in tools_html
     assert 'General Transcriber' in tools_html
     assert 'Batch Transcriber' in tools_html
+    assert 'Batch Combine Text' in tools_html
 
     downloader_response = client.get('/lecture-downloader')
     assert downloader_response.status_code == 200
@@ -283,6 +291,7 @@ def test_more_tools_pages_and_links_render(client):
     assert 'href="/lecture-downloader"' in downloader_html
     assert 'href="/general-transcriber"' in downloader_html
     assert 'href="/batch_mode_audio_transcription"' in downloader_html
+    assert 'href="/batch_mode_text_combine"' in downloader_html
 
     transcriber_response = client.get('/general-transcriber')
     assert transcriber_response.status_code == 200

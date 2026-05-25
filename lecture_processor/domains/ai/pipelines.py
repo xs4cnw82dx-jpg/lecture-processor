@@ -179,7 +179,7 @@ def save_study_pack(job_id, job_data, runtime=None):
         }
         slide_text = ''
         transcript = ''
-        if mode == 'lecture-notes':
+        if mode in {'lecture-notes', 'text-combine'}:
             slide_text = str(job_data.get('slide_text', '') or '')
             transcript = str(job_data.get('transcript', '') or '')
         elif mode == 'slides-only':

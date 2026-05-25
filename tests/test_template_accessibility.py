@@ -104,6 +104,8 @@ def test_batch_and_study_generated_dropzones_are_keyboard_accessible():
 
     assert 'data-upload-zone="slides" role="button" tabindex="0"' in batch_js
     assert 'data-upload-zone="audio" role="button" tabindex="0"' in batch_js
+    assert 'data-upload-zone="slideText" role="button" tabindex="0"' in batch_js
+    assert 'data-upload-zone="transcriptText" role="button" tabindex="0"' in batch_js
     assert 'id="builder-csv-drop" role="button" tabindex="0"' in study_template
     assert "builderCsvDrop.addEventListener('keydown'" in study_js
 
@@ -114,6 +116,8 @@ def test_batch_audio_transcription_mode_disables_study_tools_and_allows_audio_im
     assert "'audio-transcription': {" in batch_js
     assert 'supportsStudyTools: false' in batch_js
     assert 'allowsAudioUrlImport: true' in batch_js
+    assert "'text-combine': {" in batch_js
+    assert 'requiresTextInputs: true' in batch_js
     assert 'if (modeSupportsStudyTools()) wireRowOverride(card);' in batch_js
 
 
@@ -144,6 +148,7 @@ def test_shared_shell_hidden_and_live_region_contracts():
     assert "href === '/batch_mode'" in app_shell_js
     assert "currentPath === '/batch_mode_slides_extraction'" in app_shell_js
     assert "currentPath === '/batch_mode_audio_transcription'" in app_shell_js
+    assert "currentPath === '/batch_mode_text_combine'" in app_shell_js
     assert "link.setAttribute('aria-current', 'page');" in app_shell_js
 
 

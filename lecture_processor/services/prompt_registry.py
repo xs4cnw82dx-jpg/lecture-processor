@@ -202,6 +202,116 @@ Input slide text:
 Input timestamped transcript:
 {transcript}"""
 
+PROMPT_TEXT_COMBINE_BOTH_TEMPLATE = """Doel: Creëer een volledige, integrale en goed leesbare uitwerking van een college door de slide-tekst en het audio-transcript naadloos te combineren. Het eindresultaat moet een compleet naslagwerk zijn dat direct in een Word-document geplakt kan worden.
+
+Input:
+1. Slide-tekst: de output van de slide-tekstextractie staat onderaan deze prompt.
+2. Audio-transcript: de output van de audiotranscriptie staat onderaan deze prompt.
+
+Kernprincipe:
+Jouw taak is niet om samen te vatten, maar om te completeren. Het doel is volledigheid, niet beknoptheid. Combineer alle relevante informatie van de slides en de audio tot één compleet, doorlopend en goed gestructureerd document. Wees niet terughoudend met de lengte; de output moet zo lang zijn als nodig is om alle inhoud te dekken. Beschouw het als het uitschrijven van een college voor iemand die er niet bij kon zijn en geen detail mag missen.
+
+Instructies voor verwerking:
+1. Integreer in plaats van te synthetiseren:
+   - Gebruik de slide-tekst als de ruggengraat en de structuur van het document.
+   - Verweef de gesproken tekst uit het audio-transcript op de juiste logische plek in de slide-tekst.
+   - Voeg alle aanvullende uitleg, context, voorbeelden, nuanceringen en zijsporen uit de audio toe.
+   - Behoud details. Verwijder geen informatie omdat het een detail lijkt.
+2. Redigeer voor leesbaarheid, niet voor beknoptheid:
+   - Verwijder alleen letterlijke herhalingen waarbij de audio exact hetzelfde zegt als de slide-tekst.
+   - Als de audio iets anders verwoordt, behoud die uitleg wanneer die inhoudelijke waarde heeft.
+   - Verwijder overbodige conversationele zinnen en directe instructies aan studenten, tenzij ze cruciaal zijn voor de context.
+   - Herschrijf zinnen waar nodig om vloeiende overgangen te maken.
+3. Structuur en opmaak:
+   - Gebruik de slide-titels als H1- of H2-koppen.
+   - Creëer waar nodig subkoppen voor subonderwerpen die in de audio worden besproken.
+   - Gebruik alinea's en bullet points om de tekst overzichtelijk te maken.
+   - Gebruik absoluut geen labels zoals "Audio:", "Spreker:" of "Slide:".
+   - Zorg voor een professionele, informatieve en neutrale toon.
+4. Visuele elementen:
+   - Neem placeholders voor `[Informatieve Afbeelding/Tabel: ...]` op de juiste plek in de tekst op.
+   - Laat placeholders voor `[Decoratieve Afbeelding]` volledig weg.
+5. Trouw aan bronmateriaal:
+   - Voeg geen nieuwe feiten, getallen, bronnen, richtlijnen, diagnoses of claims toe die niet uit de input volgen.
+   - Als iets onzeker is, formuleer neutraal of laat het weg.
+6. Taal:
+   - Schrijf de volledige output in: {output_language}.
+
+Output:
+- Start direct met de uiteindelijke Markdown-tekst.
+- De eerste regel moet een titel zijn met `#`.
+- Geef alleen het einddocument terug, zonder voorwoord of uitleg over de taak.
+
+Slide-tekst:
+{slide_text}
+
+Audio-transcript:
+{transcript}"""
+
+PROMPT_TEXT_COMBINE_SLIDES_ONLY_TEMPLATE = """Doel: Creëer een volledige, integrale en goed leesbare uitwerking van een college op basis van de beschikbare slide-tekst. Er is geen audio-transcript beschikbaar. Het eindresultaat moet een compleet naslagwerk zijn dat direct in een Word-document geplakt kan worden.
+
+Kernprincipe:
+Jouw taak is niet om samen te vatten, maar om de beschikbare slide-tekst zo volledig, helder en bruikbaar mogelijk uit te werken. Gebruik uitsluitend de informatie die in de slide-tekst staat. Verzin geen gesproken uitleg, voorbeelden of details die niet uit de input volgen.
+
+Instructies voor verwerking:
+1. Gebruik de slide-tekst als ruggengraat en structuur van het document.
+2. Behoud alle inhoudelijke details uit de slide-tekst.
+3. Redigeer voor leesbaarheid, niet voor beknoptheid:
+   - Maak zinnen vloeiend waar de slide-tekst fragmentarisch is.
+   - Voeg alleen korte verbindende formuleringen toe wanneer die direct door de input worden ondersteund.
+4. Structuur en opmaak:
+   - Gebruik de slide-titels als H1- of H2-koppen.
+   - Creëer waar nodig subkoppen voor subonderwerpen uit de slide-tekst.
+   - Gebruik alinea's en bullet points om de tekst overzichtelijk te maken.
+   - Gebruik absoluut geen labels zoals "Audio:", "Spreker:" of "Slide:".
+   - Zorg voor een professionele, informatieve en neutrale toon.
+5. Visuele elementen:
+   - Neem placeholders voor `[Informatieve Afbeelding/Tabel: ...]` op de juiste plek in de tekst op.
+   - Laat placeholders voor `[Decoratieve Afbeelding]` volledig weg.
+6. Trouw aan bronmateriaal:
+   - Voeg geen nieuwe feiten, getallen, bronnen, richtlijnen, diagnoses of claims toe die niet uit de input volgen.
+7. Taal:
+   - Schrijf de volledige output in: {output_language}.
+
+Output:
+- Start direct met de uiteindelijke Markdown-tekst.
+- De eerste regel moet een titel zijn met `#`.
+- Geef alleen het einddocument terug, zonder voorwoord of uitleg over de taak.
+
+Slide-tekst:
+{slide_text}"""
+
+PROMPT_TEXT_COMBINE_TRANSCRIPT_ONLY_TEMPLATE = """Doel: Creëer een volledige, integrale en goed leesbare uitwerking van een college op basis van het beschikbare audio-transcript. Er is geen slide-tekst beschikbaar. Het eindresultaat moet een compleet naslagwerk zijn dat direct in een Word-document geplakt kan worden.
+
+Kernprincipe:
+Jouw taak is niet om samen te vatten, maar om het transcript volledig om te zetten naar een doorlopend, goed gestructureerd document. Gebruik uitsluitend de informatie die in het transcript staat. Verzin geen slide-inhoud, visuele elementen, voorbeelden of details die niet uit de input volgen.
+
+Instructies voor verwerking:
+1. Gebruik de volgorde en inhoudelijke opbouw van het transcript als ruggengraat.
+2. Behoud alle aanvullende uitleg, context, voorbeelden, nuanceringen en zijsporen uit het transcript.
+3. Redigeer voor leesbaarheid, niet voor beknoptheid:
+   - Verwijder overbodige conversationele zinnen, filler en directe instructies aan studenten, tenzij ze cruciaal zijn voor de context.
+   - Herschrijf gesproken classroom phrasing naar vloeiende informatieve tekst zonder inhoud te verliezen.
+4. Structuur en opmaak:
+   - Maak zelf logische H1- en H2-koppen op basis van de onderwerpen in het transcript.
+   - Creëer waar nodig subkoppen voor subonderwerpen.
+   - Gebruik alinea's en bullet points om de tekst overzichtelijk te maken.
+   - Gebruik absoluut geen labels zoals "Audio:", "Spreker:" of "Slide:".
+   - Zorg voor een professionele, informatieve en neutrale toon.
+5. Trouw aan bronmateriaal:
+   - Voeg geen nieuwe feiten, getallen, bronnen, richtlijnen, diagnoses of claims toe die niet uit de input volgen.
+   - Als iets onzeker is, formuleer neutraal of laat het weg.
+6. Taal:
+   - Schrijf de volledige output in: {output_language}.
+
+Output:
+- Start direct met de uiteindelijke Markdown-tekst.
+- De eerste regel moet een titel zijn met `#`.
+- Geef alleen het einddocument terug, zonder voorwoord of uitleg over de taak.
+
+Audio-transcript:
+{transcript}"""
+
 PROMPT_STUDY_TEMPLATE = """You are an expert university professor creating study materials. I will provide you with the complete text of a lecture or slide deck.
 
 Your task is to generate {flashcard_amount} flashcards and {question_amount} multiple-choice test questions based strictly on the provided text. Do not invent outside information.
@@ -249,6 +359,9 @@ PROMPT_RECORDS: List[PromptRecord] = [
     PromptRecord("voice_note_notes", "Voice note notes", PROMPT_VOICE_NOTE_NOTES),
     PromptRecord("merge_template", "Lecture merge template", PROMPT_MERGE_TEMPLATE),
     PromptRecord("merge_with_audio_markers", "Lecture merge with audio markers", PROMPT_MERGE_WITH_AUDIO_MARKERS),
+    PromptRecord("text_combine_both", "Text combine prompt with slides and transcript", PROMPT_TEXT_COMBINE_BOTH_TEMPLATE),
+    PromptRecord("text_combine_slides_only", "Text combine prompt with slides only", PROMPT_TEXT_COMBINE_SLIDES_ONLY_TEMPLATE),
+    PromptRecord("text_combine_transcript_only", "Text combine prompt with transcript only", PROMPT_TEXT_COMBINE_TRANSCRIPT_ONLY_TEMPLATE),
     PromptRecord("study_template", "Study tools generation", PROMPT_STUDY_TEMPLATE),
     PromptRecord("physio_transcription", "Physio transcription", physio_prompts.PHYSIO_TRANSCRIPTION_PROMPT),
     PromptRecord("physio_soap", "Physio SOAP", physio_prompts.soap_prompt("{transcript}")),

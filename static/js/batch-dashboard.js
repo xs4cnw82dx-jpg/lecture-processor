@@ -69,6 +69,7 @@
     if (key === 'slides-only') return 'Slides';
     if (key === 'interview') return 'Interviews';
     if (key === 'audio-transcription') return 'Audio Transcriptions';
+    if (key === 'text-combine') return 'Combine Text';
     return key || '-';
   }
 
@@ -76,6 +77,7 @@
     if (mode === 'slides-only') return '/batch_mode_slides_extraction';
     if (mode === 'interview') return '/batch_mode_interview_transcription';
     if (mode === 'audio-transcription') return '/batch_mode_audio_transcription';
+    if (mode === 'text-combine') return '/batch_mode_text_combine';
     return '/batch_mode';
   }
 

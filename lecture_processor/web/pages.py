@@ -143,6 +143,7 @@ def _render_batch_page(forced_mode: str):
         'slides-only': 'batch-mode-slides',
         'interview': 'batch-mode-interview',
         'audio-transcription': 'batch-mode-audio',
+        'text-combine': 'batch-mode-combine',
     }.get(forced_mode, 'batch-mode')
     return render_template(
         'batch_mode.html',
@@ -269,6 +270,11 @@ def batch_mode_slides_page():
 @pages_bp.route('/batch_mode_audio_transcription')
 def batch_mode_audio_transcription_page():
     return _render_batch_page('audio-transcription')
+
+
+@pages_bp.route('/batch_mode_text_combine')
+def batch_mode_text_combine_page():
+    return _render_batch_page('text-combine')
 
 
 @pages_bp.route('/batch_status')

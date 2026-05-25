@@ -4,8 +4,10 @@
   {% set shell_title = 'Batch Processing · Slides Extraction' %}
 {% elif forced_mode == 'interview' %}
   {% set shell_title = 'Batch Processing · Interview Transcription' %}
-{% else %}
+{% elif forced_mode == 'audio-transcription' %}
   {% set shell_title = 'Batch Processing · Audio Transcription' %}
+{% else %}
+  {% set shell_title = 'Batch Processing · Combine Text' %}
 {% endif %}
 <!DOCTYPE html>
 <html lang="en">
@@ -50,6 +52,7 @@
         <a href="/batch_mode_slides_extraction" class="mode-link{% if forced_mode == 'slides-only' %} active{% endif %}"{% if forced_mode == 'slides-only' %} aria-current="page"{% endif %}>Slides Extraction</a>
         <a href="/batch_mode_interview_transcription" class="mode-link{% if forced_mode == 'interview' %} active{% endif %}"{% if forced_mode == 'interview' %} aria-current="page"{% endif %}>Interview Transcription</a>
         <a href="/batch_mode_audio_transcription" class="mode-link{% if forced_mode == 'audio-transcription' %} active{% endif %}"{% if forced_mode == 'audio-transcription' %} aria-current="page"{% endif %}>Audio Transcription</a>
+        <a href="/batch_mode_text_combine" class="mode-link{% if forced_mode == 'text-combine' %} active{% endif %}"{% if forced_mode == 'text-combine' %} aria-current="page"{% endif %}>Combine Text</a>
       </div>
     </section>
 

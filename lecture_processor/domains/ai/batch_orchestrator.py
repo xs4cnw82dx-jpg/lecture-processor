@@ -175,6 +175,8 @@ def _batch_page_path(mode_name):
         return '/batch_mode_interview_transcription'
     if mode_value == 'audio-transcription':
         return '/batch_mode_audio_transcription'
+    if mode_value == 'text-combine':
+        return '/batch_mode_text_combine'
     return '/batch_mode'
 
 
@@ -707,6 +709,42 @@ def _wait_for_batch(batch_name, runtime=None, on_poll=None):
     return batch_job
 
 
+def _batch_stage_generation_config(stage_name, runtime):
+    if stage_name != 'notes_merge':
+        return {}
+    model = _batch_model(stage_name, runtime)
+    policy = getattr(runtime, 'MODEL_THINKING_POLICY', {}).get(model, {}) or {}
+    generation_config = {'maxOutputTokens': 65536}
+    if 'thinking_budget' in policy:
+        try:
+            generation_config['thinkingConfig'] = {'thinkingBudget': int(policy.get('thinking_budget'))}
+        except Exception:
+            generation_config['thinkingConfig'] = {'thinkingBudget': 32768}
+    elif 'thinking_level' in policy:
+        generation_config['thinkingConfig'] = {'thinkingLevel': str(policy.get('thinking_level') or '')}
+    return generation_config
+
+
+def _request_with_stage_config(request, stage_name, runtime):
+    if not isinstance(request, dict):
+        return request
+    stage_config = _batch_stage_generation_config(stage_name, runtime)
+    if not stage_config:
+        return request
+    payload = dict(request)
+    existing_config = payload.get('generationConfig')
+    if not isinstance(existing_config, dict):
+        existing_config = {}
+    generation_config = dict(existing_config)
+    generation_config.update(stage_config)
+    if isinstance(existing_config.get('thinkingConfig'), dict) and isinstance(stage_config.get('thinkingConfig'), dict):
+        merged_thinking = dict(existing_config.get('thinkingConfig') or {})
+        merged_thinking.update(stage_config.get('thinkingConfig') or {})
+        generation_config['thinkingConfig'] = merged_thinking
+    payload['generationConfig'] = generation_config
+    return payload
+
+
 def _run_batch_stage(batch_id, stage_name, requests, request_keys=None, runtime=None, display_name=''):
     resolved_runtime = _resolve_runtime(runtime)
     if not requests:
@@ -739,7 +777,7 @@ def _run_batch_stage(batch_id, stage_name, requests, request_keys=None, runtime=
     try:
         with open(local_input_path, 'w', encoding='utf-8') as handle:
             for idx, request in enumerate(requests):
-                line = {'key': request_keys[idx], 'request': request}
+                line = {'key': request_keys[idx], 'request': _request_with_stage_config(request, stage_name, resolved_runtime)}
                 handle.write(json.dumps(line, ensure_ascii=False) + '\n')
 
         input_file_handle = ai_provider.run_with_provider_retry(
@@ -892,6 +930,27 @@ def _merge_prompt_for_row(row, runtime):
         )
     return runtime.PROMPT_MERGE_TEMPLATE.format(
         slide_text=slide_text,
+        transcript=transcript,
+        output_language=output_language,
+    )
+
+
+def _text_combine_prompt_for_row(row, runtime):
+    slide_text = str(row.get('slide_text', '') or '').strip()
+    transcript = str(row.get('transcript', '') or '').strip()
+    output_language = str(row.get('output_language', 'English') or 'English')
+    if slide_text and transcript:
+        return runtime.PROMPT_TEXT_COMBINE_BOTH_TEMPLATE.format(
+            slide_text=slide_text,
+            transcript=transcript,
+            output_language=output_language,
+        )
+    if slide_text:
+        return runtime.PROMPT_TEXT_COMBINE_SLIDES_ONLY_TEMPLATE.format(
+            slide_text=slide_text,
+            output_language=output_language,
+        )
+    return runtime.PROMPT_TEXT_COMBINE_TRANSCRIPT_ONLY_TEMPLATE.format(
         transcript=transcript,
         output_language=output_language,
     )
@@ -1235,6 +1294,7 @@ def _finalize_row_job_log(batch, row, runtime=None):
         'source_type': row.get('source_type', ''),
         'source_url': row.get('source_url', ''),
         'source_name': row.get('source_name', ''),
+        'text_input_mode': row.get('text_input_mode', ''),
     }
     if row.get('status') == 'complete':
         saved = ai_pipelines.save_study_pack(row_job_id, job_data, runtime=resolved_runtime)
@@ -1943,6 +2003,41 @@ def process_batch_job(batch_id, runtime=None):
 
             _run_stage_with_builder(batch_id, rows, 'study_materials_generation', _study_builder, _study_handler, runtime=resolved_runtime)
 
+        if mode == 'text-combine':
+            def _text_combine_builder(row):
+                if row.get('status') == 'error':
+                    return None
+                if not str(row.get('slide_text', '') or '').strip() and not str(row.get('transcript', '') or '').strip():
+                    row['status'] = 'error'
+                    row['failed_stage'] = 'notes_merge'
+                    row['error'] = 'Missing slide text or transcript input.'
+                    return None
+                return {
+                    'contents': [
+                        {
+                            'role': 'user',
+                            'parts': [
+                                {'text': _text_combine_prompt_for_row(row, resolved_runtime)},
+                            ],
+                        }
+                    ]
+                }
+
+            def _text_combine_handler(row, response):
+                merged = _response_text(response, runtime=resolved_runtime)
+                row['merged_notes'] = merged
+                row['result'] = merged
+                row['notes_audio_map'] = []
+
+            _run_stage_with_builder(
+                batch_id,
+                rows,
+                'notes_merge',
+                _text_combine_builder,
+                _text_combine_handler,
+                runtime=resolved_runtime,
+            )
+
         if mode == 'slides-only':
             for row in rows:
                 if row.get('status') != 'error':
@@ -2455,6 +2550,7 @@ def build_batch_row_export_metadata(row, batch=None, runtime=None):
         'status',
         'source_name',
         'source_type',
+        'text_input_mode',
         'current_stage',
         'current_stage_label',
         'failed_stage',
