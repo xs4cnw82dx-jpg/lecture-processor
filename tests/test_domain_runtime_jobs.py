@@ -87,3 +87,82 @@ def test_run_startup_recovery_once_honors_disabled_flag():
 
     recovery.run_startup_recovery_once(runtime=_Runtime())
     assert any("disabled" in msg.lower() for msg in log_messages)
+
+
+class _RuntimeJobDoc:
+    def __init__(self, doc_id, payload):
+        self.id = doc_id
+        self._payload = dict(payload)
+
+    def to_dict(self):
+        return dict(self._payload)
+
+
+def _runtime_for_recovery_docs(docs, *, now_ts=1000.0):
+    return SimpleNamespace(
+        db=object(),
+        firestore=None,
+        time=SimpleNamespace(time=lambda: now_ts),
+        runtime_jobs_repo=SimpleNamespace(query_statuses=lambda *_args, **_kwargs: docs),
+        RUNTIME_JOBS_COLLECTION="runtime_jobs",
+        RUNTIME_JOB_RECOVERY_BATCH_LIMIT=10,
+        RUNTIME_JOB_RECOVERY_STALE_SECONDS=300,
+        RUNTIME_JOB_RECOVERY_LEASE_SECONDS=300,
+        logger=SimpleNamespace(warning=lambda *_args, **_kwargs: None),
+        save_job_log=lambda *_args, **_kwargs: None,
+    )
+
+
+def test_recover_stale_runtime_jobs_skips_fresh_active_jobs(monkeypatch):
+    writes = []
+    refunds = []
+    runtime = _runtime_for_recovery_docs([
+        _RuntimeJobDoc(
+            "job-fresh",
+            {
+                "status": "processing",
+                "user_id": "user-1",
+                "credit_deducted": "lecture_credits_standard",
+                "updated_at": 920.0,
+            },
+        )
+    ])
+
+    monkeypatch.setattr(recovery.billing_credits, "refund_credit", lambda *args, **kwargs: refunds.append(args))
+    monkeypatch.setattr(recovery.runtime_jobs_store, "set_job", lambda *args, **kwargs: writes.append(args))
+
+    assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 0
+    assert refunds == []
+    assert writes == []
+
+
+def test_recover_stale_runtime_jobs_refunds_and_marks_stale_job(monkeypatch):
+    writes = []
+    refunds = []
+    receipt_refunds = []
+    logs = []
+    runtime = _runtime_for_recovery_docs([
+        _RuntimeJobDoc(
+            "job-stale",
+            {
+                "status": "processing",
+                "user_id": "user-1",
+                "credit_deducted": "lecture_credits_standard",
+                "updated_at": 100.0,
+            },
+        )
+    ])
+    runtime.save_job_log = lambda *args, **_kwargs: logs.append(args)
+
+    monkeypatch.setattr(recovery.billing_credits, "refund_credit", lambda *args, **kwargs: refunds.append(args))
+    monkeypatch.setattr(recovery.billing_receipts, "add_job_credit_refund", lambda *args, **kwargs: receipt_refunds.append(args))
+    monkeypatch.setattr(recovery.billing_receipts, "ensure_job_billing_receipt", lambda *args, **kwargs: None)
+    monkeypatch.setattr(recovery.runtime_jobs_store, "set_job", lambda *args, **kwargs: writes.append(args))
+
+    assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 1
+    assert refunds == [("user-1", "lecture_credits_standard")]
+    assert len(receipt_refunds) == 1
+    assert writes[0][0] == "job-stale"
+    assert writes[0][1]["status"] == "error"
+    assert writes[0][1]["credit_refunded"] is True
+    assert logs and logs[0][0] == "job-stale"

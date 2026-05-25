@@ -66,6 +66,27 @@ def _sort_payloads(items, *, key_name="updated_at", reverse=True):
     return sorted(items, key=_sort_key, reverse=bool(reverse))
 
 
+def _query_requires_index(error):
+    text = str(error or "").lower()
+    return "requires an index" in text or "failedprecondition" in text or "failed_precondition" in text
+
+
+def _stream_ordered_with_index_fallback(ordered_query, fallback_query, *, key_name, limit):
+    try:
+        return list(ordered_query.stream())
+    except Exception as error:
+        if not _query_requires_index(error):
+            raise
+    docs = list(fallback_query.stream())
+    def _doc_sort_key(doc):
+        try:
+            return float((doc.to_dict() or {}).get(key_name, 0) or 0)
+        except Exception:
+            return 0.0
+    docs.sort(key=_doc_sort_key, reverse=True)
+    return docs[:limit]
+
+
 def physio_case_doc_ref(db, case_id):
     if db is None:
         return _MemoryReference("physio_cases", case_id)
@@ -106,13 +127,9 @@ def list_physio_cases_by_uid(db, uid, limit=200):
             if len(records) >= safe_limit:
                 break
         return records
-    query = apply_where(db.collection("physio_cases"), "uid", "==", safe_uid).limit(safe_limit)
-    docs = list(query.stream())
-    docs = sorted(
-        docs,
-        key=lambda doc: float((doc.to_dict() or {}).get("updated_at", 0) or 0),
-        reverse=True,
-    )
+    base_query = apply_where(db.collection("physio_cases"), "uid", "==", safe_uid)
+    query = base_query.order_by("updated_at", direction="DESCENDING").limit(safe_limit)
+    docs = _stream_ordered_with_index_fallback(query, base_query, key_name="updated_at", limit=safe_limit)
     records = []
     for doc in docs:
         payload = doc.to_dict() or {}
@@ -164,14 +181,10 @@ def list_physio_sessions_by_case(db, uid, case_id, limit=300):
             if len(records) >= safe_limit:
                 break
         return records
-    query = apply_where(db.collection("physio_case_sessions"), "uid", "==", safe_uid)
-    query = apply_where(query, "case_id", "==", safe_case_id).limit(safe_limit)
-    docs = list(query.stream())
-    docs = sorted(
-        docs,
-        key=lambda doc: float((doc.to_dict() or {}).get("session_date_ts", (doc.to_dict() or {}).get("updated_at", 0)) or 0),
-        reverse=True,
-    )
+    base_query = apply_where(db.collection("physio_case_sessions"), "uid", "==", safe_uid)
+    base_query = apply_where(base_query, "case_id", "==", safe_case_id)
+    query = base_query.order_by("session_date_ts", direction="DESCENDING").limit(safe_limit)
+    docs = _stream_ordered_with_index_fallback(query, base_query, key_name="session_date_ts", limit=safe_limit)
     records = []
     for doc in docs:
         payload = doc.to_dict() or {}
@@ -195,13 +208,9 @@ def list_physio_sessions_by_uid(db, uid, limit=300):
             if len(records) >= safe_limit:
                 break
         return records
-    query = apply_where(db.collection("physio_case_sessions"), "uid", "==", safe_uid).limit(safe_limit)
-    docs = list(query.stream())
-    docs = sorted(
-        docs,
-        key=lambda doc: float((doc.to_dict() or {}).get("updated_at", 0) or 0),
-        reverse=True,
-    )
+    base_query = apply_where(db.collection("physio_case_sessions"), "uid", "==", safe_uid)
+    query = base_query.order_by("updated_at", direction="DESCENDING").limit(safe_limit)
+    docs = _stream_ordered_with_index_fallback(query, base_query, key_name="updated_at", limit=safe_limit)
     records = []
     for doc in docs:
         payload = doc.to_dict() or {}

@@ -10,7 +10,9 @@ import time
 from datetime import datetime
 
 from lecture_processor.domains.account import lifecycle as account_lifecycle
+from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.ai import provider as ai_provider
+from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.physio import access as physio_access
 from lecture_processor.domains.physio import export as physio_export
@@ -19,6 +21,7 @@ from lecture_processor.domains.physio import prompts as physio_prompts
 from lecture_processor.domains.physio import transcription as physio_transcription
 from lecture_processor.repositories import physio_repo
 from lecture_processor.runtime.job_dispatcher import JobQueueFullError
+from lecture_processor.services import upload_quota_service
 
 
 DEFAULT_BODY_REGION = "algemeen"
@@ -307,6 +310,26 @@ def create_transcription_job(app_ctx, request):
     unavailable = _require_ready_runtime(app_ctx)
     if unavailable is not None:
         return unavailable
+    uid = decoded_token["uid"]
+    active_jobs = account_lifecycle.count_active_jobs_for_user(uid, runtime=app_ctx)
+    if active_jobs >= app_ctx.MAX_ACTIVE_JOBS_PER_USER:
+        analytics_events.log_rate_limit_hit("physio_transcription", 10, runtime=app_ctx)
+        return app_ctx.jsonify({
+            "error": f"You already have {active_jobs} active processing job(s). Please wait for one to finish before starting another."
+        }), 429
+    allowed, retry_after = rate_limiter.check_rate_limit(
+        key=f"physio_transcription:{rate_limiter.normalize_rate_limit_key_part(uid, fallback='anon_uid', runtime=app_ctx)}",
+        limit=getattr(app_ctx, "TOOLS_RATE_LIMIT_MAX_REQUESTS", 12),
+        window_seconds=getattr(app_ctx, "TOOLS_RATE_LIMIT_WINDOW_SECONDS", 60),
+        runtime=app_ctx,
+    )
+    if not allowed:
+        analytics_events.log_rate_limit_hit("physio_transcription", retry_after, runtime=app_ctx)
+        return rate_limiter.build_rate_limited_response(
+            "Too many physio transcription attempts right now. Please wait and try again.",
+            retry_after,
+            runtime=app_ctx,
+        )
 
     uploaded_audio = request.files.get("audio") or request.files.get("file")
     if not uploaded_audio or not str(uploaded_audio.filename or "").strip():
@@ -317,55 +340,81 @@ def create_transcription_job(app_ctx, request):
     if mime_type not in app_ctx.ALLOWED_AUDIO_MIME_TYPES:
         return app_ctx.jsonify({"error": "Invalid audio content type."}), 400
 
-    job_id = str(app_ctx.uuid.uuid4())
-    safe_name = app_ctx.secure_filename(uploaded_audio.filename)
-    audio_path = app_ctx.os.path.join(app_ctx.UPLOAD_FOLDER, f"{job_id}_{safe_name}")
-    uploaded_audio.save(audio_path)
-    audio_size = app_ctx.get_saved_file_size(audio_path)
-    if audio_size <= 0 or audio_size > app_ctx.MAX_AUDIO_UPLOAD_BYTES:
-        app_ctx.cleanup_files([audio_path], [])
-        return app_ctx.jsonify({"error": "Audio exceeds server limit (max 500MB) or is empty."}), 400
-    if not app_ctx.file_looks_like_audio(audio_path):
-        app_ctx.cleanup_files([audio_path], [])
-        return app_ctx.jsonify({"error": "Uploaded audio file is invalid or unsupported."}), 400
-
-    now_ts = app_ctx.time.time()
-    runtime_jobs_store.set_job(
-        job_id,
-        {
-            "status": "starting",
-            "step": 0,
-            "step_description": "Starten...",
-            "total_steps": 2,
-            "mode": "physio-transcription",
-            "user_id": decoded_token["uid"],
-            "user_email": decoded_token.get("email", ""),
-            "started_at": now_ts,
-            "result": None,
-            "transcript": None,
-            "error": None,
-            "failed_stage": "",
-            "provider_error_code": "",
-            "retry_attempts": 0,
-            "study_pack_title": "Physio transcript",
-            "file_size_mb": round(audio_size / (1024 * 1024), 2),
-            "study_features": "none",
-            "billing_mode": "internal",
-        },
-        runtime=app_ctx,
-    )
+    quota_reservation = None
+    audio_path = ""
     try:
-        app_ctx.submit_background_job(
-            physio_transcription.process_physio_transcription,
+        quota_reservation, quota_response, quota_status = upload_quota_service.reserve_upload_quota(
+            app_ctx,
+            uid,
+            upload_quota_service.request_content_length(request),
+            context="Physio transcription upload",
+            analytics_limit_name="physio_transcription",
+        )
+        if quota_response is not None:
+            return quota_response, quota_status
+
+        job_id = str(app_ctx.uuid.uuid4())
+        safe_name = app_ctx.secure_filename(uploaded_audio.filename)
+        audio_path = app_ctx.os.path.join(app_ctx.UPLOAD_FOLDER, f"{job_id}_{safe_name}")
+        uploaded_audio.save(audio_path)
+        audio_size = app_ctx.get_saved_file_size(audio_path)
+        quota_error, quota_error_status = upload_quota_service.adjust_reserved_upload_bytes(
+            app_ctx,
+            quota_reservation,
+            audio_size,
+            context="Physio transcription upload",
+            analytics_limit_name="physio_transcription",
+        )
+        if quota_error is not None:
+            app_ctx.cleanup_files([audio_path], [])
+            return quota_error, quota_error_status
+        if audio_size <= 0 or audio_size > app_ctx.MAX_AUDIO_UPLOAD_BYTES:
+            app_ctx.cleanup_files([audio_path], [])
+            return app_ctx.jsonify({"error": "Audio exceeds server limit (max 500MB) or is empty."}), 400
+        if not app_ctx.file_looks_like_audio(audio_path):
+            app_ctx.cleanup_files([audio_path], [])
+            return app_ctx.jsonify({"error": "Uploaded audio file is invalid or unsupported."}), 400
+
+        now_ts = app_ctx.time.time()
+        runtime_jobs_store.set_job(
             job_id,
-            audio_path,
+            {
+                "status": "starting",
+                "step": 0,
+                "step_description": "Starten...",
+                "total_steps": 2,
+                "mode": "physio-transcription",
+                "user_id": uid,
+                "user_email": decoded_token.get("email", ""),
+                "started_at": now_ts,
+                "result": None,
+                "transcript": None,
+                "error": None,
+                "failed_stage": "",
+                "provider_error_code": "",
+                "retry_attempts": 0,
+                "study_pack_title": "Physio transcript",
+                "file_size_mb": round(audio_size / (1024 * 1024), 2),
+                "study_features": "none",
+                "billing_mode": "internal",
+            },
             runtime=app_ctx,
         )
-    except JobQueueFullError:
-        app_ctx.cleanup_files([audio_path], [])
-        runtime_jobs_store.delete_job(job_id, runtime=app_ctx)
-        return app_ctx.jsonify({"error": "The server is busy. Please retry in a moment."}), 503
-    return app_ctx.jsonify({"ok": True, "job_id": job_id})
+        try:
+            app_ctx.submit_background_job(
+                physio_transcription.process_physio_transcription,
+                job_id,
+                audio_path,
+                runtime=app_ctx,
+            )
+        except JobQueueFullError:
+            app_ctx.cleanup_files([audio_path], [])
+            runtime_jobs_store.delete_job(job_id, runtime=app_ctx)
+            return app_ctx.jsonify({"error": "The server is busy. Please retry in a moment."}), 503
+        upload_quota_service.commit_upload_quota(quota_reservation)
+        return app_ctx.jsonify({"ok": True, "job_id": job_id})
+    finally:
+        upload_quota_service.release_uncommitted_upload_quota(app_ctx, quota_reservation)
 
 
 def generate_soap(app_ctx, request):

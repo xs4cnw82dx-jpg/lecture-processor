@@ -126,16 +126,22 @@ def list_study_shares_by_uid(db, uid, limit=200):
 
 
 def find_study_share_by_owner_and_entity(db, owner_uid, entity_type, entity_id):
+    docs = list_study_shares_by_owner_and_entity(db, owner_uid, entity_type, entity_id, limit=1)
+    return docs[0] if docs else None
+
+
+def list_study_shares_by_owner_and_entity(db, owner_uid, entity_type, entity_id, limit=20):
     safe_owner_uid = str(owner_uid or '').strip()
     safe_entity_type = str(entity_type or '').strip()
     safe_entity_id = str(entity_id or '').strip()
     if not safe_owner_uid or not safe_entity_type or not safe_entity_id:
-        return None
+        return []
     query = apply_where(db.collection('study_shares'), 'owner_uid', '==', safe_owner_uid)
     query = apply_where(query, 'entity_type', '==', safe_entity_type)
-    query = apply_where(query, 'entity_id', '==', safe_entity_id).limit(1)
-    docs = list(query.stream())
-    return docs[0] if docs else None
+    query = apply_where(query, 'entity_id', '==', safe_entity_id)
+    if isinstance(limit, int) and limit > 0:
+        query = query.limit(limit)
+    return list(query.stream())
 
 
 def study_progress_doc_ref(db, uid):

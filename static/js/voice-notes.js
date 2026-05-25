@@ -695,63 +695,57 @@
     }
     notes.forEach(function (note) {
       var status = utils.normalizeStatus ? utils.normalizeStatus(note.status) : note.status;
-      var button = document.createElement('article');
-      button.className = 'voice-note-item' + (note.id === state.selectedId ? ' active' : '');
-      button.setAttribute('role', 'button');
-      button.setAttribute('tabindex', '0');
-      button.innerHTML = [
+      var item = document.createElement('article');
+      item.className = 'voice-note-item' + (note.id === state.selectedId ? ' active' : '');
+      item.innerHTML = [
+        '<button type="button" class="voice-note-open" data-note-open>',
         '<div class="voice-note-row">',
         '<div class="voice-note-title"></div>',
         '<span class="voice-note-status ' + (status === 'synced' ? 'synced' : status === 'error' ? 'error' : '') + '"></span>',
         '</div>',
         '<div class="voice-note-meta"></div>',
         '<div class="voice-tag-row"></div>',
+        '</button>',
         '<div class="voice-note-actions">',
         '<button type="button" class="voice-note-action" data-note-archive></button>',
         '<button type="button" class="voice-note-action danger" data-note-delete>Delete</button>',
         '</div>'
       ].join('');
-      button.querySelector('.voice-note-title').textContent = note.title || 'Voice note';
-      button.querySelector('.voice-note-status').textContent = status === 'syncing' ? 'transcribing' : status;
-      button.querySelector('[data-note-archive]').textContent = note.archived ? 'Restore' : 'Archive';
+      item.querySelector('.voice-note-title').textContent = note.title || 'Voice note';
+      item.querySelector('.voice-note-status').textContent = status === 'syncing' ? 'transcribing' : status;
+      item.querySelector('[data-note-archive]').textContent = note.archived ? 'Restore' : 'Archive';
       var pieces = [formatDate(note.created_at)];
       if (note.audio_seconds) pieces.push(utils.formatDuration ? utils.formatDuration(note.audio_seconds) : String(note.audio_seconds) + 's');
       if (note.step_description && status === 'syncing') pieces.push(note.step_description);
-      button.querySelector('.voice-note-meta').textContent = pieces.join(' - ');
-      var tagRow = button.querySelector('.voice-tag-row');
+      item.querySelector('.voice-note-meta').textContent = pieces.join(' - ');
+      var tagRow = item.querySelector('.voice-tag-row');
       (note.tags || []).forEach(function (tag) {
         var span = document.createElement('span');
         span.className = 'voice-tag';
         span.textContent = tag;
         tagRow.appendChild(span);
       });
-      button.addEventListener('click', function () {
+      var openButton = item.querySelector('[data-note-open]');
+      openButton.addEventListener('click', function () {
         state.selectedId = note.id;
         setView('detail');
         renderAll();
       });
-      button.addEventListener('keydown', function (event) {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        state.selectedId = note.id;
-        setView('detail');
-        renderAll();
-      });
-      var archiveButton = button.querySelector('[data-note-archive]');
+      var archiveButton = item.querySelector('[data-note-archive]');
       if (archiveButton) {
         archiveButton.addEventListener('click', function (event) {
           event.stopPropagation();
           toggleArchiveNote(note);
         });
       }
-      var deleteButton = button.querySelector('[data-note-delete]');
+      var deleteButton = item.querySelector('[data-note-delete]');
       if (deleteButton) {
         deleteButton.addEventListener('click', function (event) {
           event.stopPropagation();
           deleteVoiceNote(note);
         });
       }
-      els.noteList.appendChild(button);
+      els.noteList.appendChild(item);
     });
   }
 

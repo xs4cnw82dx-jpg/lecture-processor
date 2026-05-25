@@ -1,5 +1,8 @@
 """Shared helpers for study API route handlers."""
 
+import hashlib
+import hmac
+
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.study import export as study_export
@@ -202,6 +205,18 @@ def get_public_share(app_ctx, share_token):
     return (doc, share), None, None
 
 
+def _stable_share_token(app_ctx, owner_uid, entity_type, entity_id):
+    secret = str(getattr(app_ctx, 'FLASK_SECRET_KEY', '') or getattr(app_ctx, 'PUBLIC_BASE_URL', '') or 'lecture-processor-local').strip()
+    message = '\0'.join(
+        [
+            str(owner_uid or '').strip(),
+            str(entity_type or '').strip().lower(),
+            str(entity_id or '').strip(),
+        ]
+    ).encode('utf-8')
+    return hmac.new(secret.encode('utf-8'), message, hashlib.sha256).hexdigest()[:32]
+
+
 def ensure_share_record(app_ctx, owner_uid, entity_type, entity_id):
     share_doc = app_ctx.study_repo.find_study_share_by_owner_and_entity(
         app_ctx.db,
@@ -216,7 +231,7 @@ def ensure_share_record(app_ctx, owner_uid, entity_type, entity_id):
         share_token = str(share_payload.get('share_token', '') or share_ref.id)
         created_at = float(share_payload.get('created_at', now_ts) or now_ts)
         return share_ref, share_token, now_ts, created_at
-    share_token = str(app_ctx.uuid.uuid4()).replace('-', '')
+    share_token = _stable_share_token(app_ctx, owner_uid, entity_type, entity_id)
     share_ref = app_ctx.study_repo.create_study_share_doc_ref(app_ctx.db, share_token)
     return share_ref, share_token, now_ts, now_ts
 
@@ -225,14 +240,20 @@ def delete_share_for_entity(app_ctx, owner_uid, entity_type, entity_id):
     if app_ctx.db is None:
         return
     try:
-        share_doc = app_ctx.study_repo.find_study_share_by_owner_and_entity(
-            app_ctx.db,
-            owner_uid,
-            entity_type,
-            entity_id,
-        )
-        if share_doc is not None and getattr(share_doc, 'exists', False):
-            share_doc.reference.delete()
+        list_matches = getattr(app_ctx.study_repo, 'list_study_shares_by_owner_and_entity', None)
+        if callable(list_matches):
+            share_docs = list_matches(app_ctx.db, owner_uid, entity_type, entity_id, limit=100)
+        else:
+            share_doc = app_ctx.study_repo.find_study_share_by_owner_and_entity(
+                app_ctx.db,
+                owner_uid,
+                entity_type,
+                entity_id,
+            )
+            share_docs = [share_doc] if share_doc is not None else []
+        for share_doc in share_docs:
+            if share_doc is not None and getattr(share_doc, 'exists', False):
+                share_doc.reference.delete()
     except Exception as error:
         app_ctx.logger.warning(
             'Could not delete share for %s %s owned by %s: %s',

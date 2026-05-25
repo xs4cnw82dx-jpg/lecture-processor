@@ -113,6 +113,7 @@ EXPECTED_ROUTES = [
     ('GET', '/plan', 'pages.plan_dashboard'),
     ('GET', '/privacy', 'pages.privacy_policy'),
     ('GET', '/faq', 'pages.faq_page_lowercase'),
+    ('GET', '/physio', 'pages.physio_page'),
     ('GET', '/physio/cases', 'pages.physio_cases_page'),
     ('GET', '/physio/knowledge', 'pages.physio_knowledge_page'),
     ('GET', '/physio/reasoning', 'pages.physio_reasoning_page'),

@@ -642,7 +642,7 @@
                 0/0</span></div>
             <div class="quiz-question" id="learn-q-text"></div>
             <div class="quiz-options" id="learn-q-options"></div>
-            <div class="quiz-expl" id="learn-q-expl"></div>
+            <div class="quiz-expl" id="learn-q-expl" role="status" aria-live="polite" aria-atomic="true"></div>
             <div class="actions u-mt-12"><button class="btn primary" id="learn-q-next">Next
                 question</button></div>
           </div>
@@ -655,9 +655,9 @@
                 <div class="write-prompt" id="write-prompt"></div>
               </div>
               <div class="write-input-row"><input type="text" class="write-input" id="write-input"
-                  placeholder="Type your answer..." autocomplete="off"><button class="btn primary"
+                  placeholder="Type your answer..." autocomplete="off" aria-label="Type your answer" aria-describedby="write-feedback"><button class="btn primary"
                   id="write-check-btn">Check</button><button class="btn" id="write-reveal-btn">Reveal</button></div>
-              <div class="write-feedback" id="write-feedback"></div>
+              <div class="write-feedback" id="write-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
               <div class="learn-controls"><button class="btn primary" id="write-next-btn">Next</button><span
                   class="learn-progress-fc" id="write-progress">0 / 0</span></div>
             </div>

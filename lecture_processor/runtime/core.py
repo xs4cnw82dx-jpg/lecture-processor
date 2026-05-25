@@ -26,8 +26,6 @@ import logging
 
 import statistics
 
-import random
-
 from datetime import datetime, timedelta, timezone
 
 from urllib.parse import urlparse
@@ -73,6 +71,7 @@ from firebase_admin import credentials, auth, firestore
 from lecture_processor.config import resolve_sentry_environment
 from lecture_processor.domains.admin import metrics as admin_metrics
 from lecture_processor.domains.ai import pipelines as ai_pipelines
+from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai import study_generation
 from lecture_processor.domains.account import users as account_users
 from lecture_processor.domains.auth import policy as auth_policy
@@ -233,6 +232,8 @@ JOBS_LOCK = threading.RLock()
 RUNTIME_JOBS_COLLECTION = 'runtime_jobs'
 
 RUNTIME_JOB_RECOVERY_BATCH_LIMIT = safe_int_env('RUNTIME_JOB_RECOVERY_BATCH_LIMIT', 200, minimum=1, maximum=5000)
+
+RUNTIME_JOB_RECOVERY_STALE_SECONDS = safe_int_env('RUNTIME_JOB_RECOVERY_STALE_SECONDS', 0, minimum=0, maximum=7 * 24 * 60 * 60)
 
 RUNTIME_JOB_RECOVERY_ENABLED = str(os.getenv('ENABLE_RUNTIME_JOB_RECOVERY', '1')).strip().lower() in {'1', 'true', 'yes', 'on'}
 
@@ -811,50 +812,10 @@ def save_job_log(job_id, job_data, finished_at):
         logger.error(f'❌ Failed to log job {job_id}: {e}')
 
 def recover_stale_runtime_jobs():
-    """Recover jobs left in starting/processing state after a restart."""
-    if db is None:
-        return 0
-    now_ts = time.time()
-    recovered = 0
-    try:
-        stale_docs = runtime_jobs_repo.query_statuses(db, RUNTIME_JOBS_COLLECTION, {'starting', 'processing'}, limit=RUNTIME_JOB_RECOVERY_BATCH_LIMIT)
-    except Exception:
-        logger.warning('Runtime-job recovery query failed', exc_info=True)
-        return 0
-    for doc in stale_docs:
-        job_id = doc.id
-        job_data = doc.to_dict() or {}
-        if not isinstance(job_data, dict):
-            continue
-        status = str(job_data.get('status', '') or '').lower()
-        if status not in {'starting', 'processing'}:
-            continue
-        uid = str(job_data.get('user_id', '') or '').strip()
-        credit_type = str(job_data.get('credit_deducted', '') or '').strip()
-        already_refunded = bool(job_data.get('credit_refunded', False))
-        if uid and credit_type and (not already_refunded):
-            refund_credit(uid, credit_type)
-            add_job_credit_refund(job_data, credit_type, 1)
-            job_data['credit_refunded'] = True
-        extra_spent = int(job_data.get('interview_features_cost', 0) or 0)
-        extra_refunded = int(job_data.get('extra_slides_refunded', 0) or 0)
-        extra_to_refund = max(0, extra_spent - extra_refunded)
-        if uid and extra_to_refund > 0:
-            refund_slides_credits(uid, extra_to_refund)
-            job_data['extra_slides_refunded'] = extra_refunded + extra_to_refund
-            add_job_credit_refund(job_data, 'slides_credits', extra_to_refund)
-        ensure_job_billing_receipt(job_data, {credit_type: 1} if credit_type else None)
-        job_data['status'] = 'error'
-        job_data['step_description'] = 'Interrupted by server restart'
-        job_data['error'] = 'Processing was interrupted by a server restart. Your credit has been refunded.'
-        job_data['finished_at'] = now_ts
-        job_data['job_id'] = job_id
-        set_job(job_id, job_data)
-        save_job_log(job_id, job_data, now_ts)
-        recovered += 1
-    if recovered:
-        logger.warning('Recovered %s stale runtime jobs after startup.', recovered)
-    return recovered
+    """Recover runtime jobs that are old enough to be considered abandoned."""
+    from lecture_processor.domains.runtime_jobs import recovery as runtime_job_recovery
+
+    return runtime_job_recovery.recover_stale_runtime_jobs(runtime=_self_runtime())
 
 def acquire_runtime_job_recovery_lease(now_ts=None):
     if db is None:
@@ -1386,122 +1347,50 @@ PROVIDER_TRANSIENT_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
 PROVIDER_TRANSIENT_MESSAGE_HINTS = ('timeout', 'timed out', 'temporarily unavailable', 'try again', 'resource exhausted', 'unavailable', 'internal error', 'connection reset', 'deadline exceeded')
 
 def _build_thinking_config(model_name):
-    """Build a ThinkingConfig for the given model based on MODEL_THINKING_POLICY."""
-    policy = MODEL_THINKING_POLICY.get(model_name)
-    if not policy or not hasattr(types, 'ThinkingConfig'):
-        return None
-    try:
-        return types.ThinkingConfig(**policy)
-    except Exception:
-        return None
+    return ai_provider._build_thinking_config(model_name, runtime=_self_runtime())
 
 def get_provider_status_code(error):
-    if error is None:
-        return None
-    for attr in ('status_code', 'code'):
-        value = getattr(error, attr, None)
-        if isinstance(value, int) and value > 0:
-            return value
-        if isinstance(value, str) and value.isdigit():
-            return int(value)
-    response = getattr(error, 'response', None)
-    if response is not None:
-        value = getattr(response, 'status_code', None)
-        if isinstance(value, int) and value > 0:
-            return value
-    return None
+    return ai_provider.get_provider_status_code(error, runtime=_self_runtime())
 
 def classify_provider_error_code(error):
-    status_code = get_provider_status_code(error)
-    if status_code:
-        return f'HTTP_{status_code}'
-    text = str(error or '').lower()
-    if 'timeout' in text or 'timed out' in text or 'deadline exceeded' in text:
-        return 'TIMEOUT'
-    if 'resource exhausted' in text or 'rate limit' in text or 'too many requests' in text:
-        return 'RATE_LIMIT'
-    if 'unavailable' in text or 'temporarily unavailable' in text:
-        return 'UNAVAILABLE'
-    if 'connection reset' in text:
-        return 'CONNECTION_RESET'
-    return 'GENERIC'
+    return ai_provider.classify_provider_error_code(error, runtime=_self_runtime())
 
 def is_transient_provider_error(error):
-    status_code = get_provider_status_code(error)
-    if status_code in PROVIDER_TRANSIENT_STATUS_CODES:
-        return True
-    if isinstance(error, (TimeoutError, ConnectionError)):
-        return True
-    text = str(error or '').lower()
-    return any((fragment in text for fragment in PROVIDER_TRANSIENT_MESSAGE_HINTS))
+    return ai_provider.is_transient_provider_error(error, runtime=_self_runtime())
 
 def run_with_provider_retry(operation_name, func, retry_tracker=None):
-    attempts = max(1, PROVIDER_RETRY_MAX_ATTEMPTS)
-    last_error = None
-    for attempt in range(1, attempts + 1):
-        try:
-            result = func()
-            if retry_tracker is not None:
-                retry_tracker[operation_name] = max(retry_tracker.get(operation_name, 0), attempt - 1)
-            return result
-        except Exception as error:
-            last_error = error
-            transient = is_transient_provider_error(error)
-            if retry_tracker is not None:
-                retry_tracker[operation_name] = max(retry_tracker.get(operation_name, 0), attempt)
-            if not transient or attempt >= attempts:
-                raise
-            delay = min(PROVIDER_RETRY_MAX_SECONDS, PROVIDER_RETRY_BASE_SECONDS * 2 ** (attempt - 1))
-            delay += random.uniform(0.0, 0.4)
-            logger.warning('Transient provider error during %s (attempt %s/%s, code=%s): %s. Retrying in %.1fs', operation_name, attempt, attempts, classify_provider_error_code(error), error, delay)
-            time.sleep(delay)
-    if last_error is not None:
-        raise last_error
+    return ai_provider.run_with_provider_retry(
+        operation_name,
+        func,
+        retry_tracker=retry_tracker,
+        runtime=_self_runtime(),
+    )
 
 def extract_token_usage(response):
-    """Extract token counts from a Gemini response's usage_metadata."""
-    meta = getattr(response, 'usage_metadata', None)
-    if not meta:
-        return {'input_tokens': 0, 'output_tokens': 0, 'total_tokens': 0}
-    return {'input_tokens': getattr(meta, 'prompt_token_count', 0) or 0, 'output_tokens': getattr(meta, 'candidates_token_count', 0) or 0, 'total_tokens': getattr(meta, 'total_token_count', 0) or 0}
+    return ai_provider.extract_token_usage(response, runtime=_self_runtime())
 
-class TokenAccumulator:
-    """Accumulates token usage across multiple AI calls in a processing job."""
-
-    def __init__(self):
-        self.stages = {}
-        self.input_total = 0
-        self.output_total = 0
-        self.total = 0
-
-    def record(self, stage_name, response):
-        usage = extract_token_usage(response)
-        self.stages[stage_name] = usage
-        self.input_total += usage['input_tokens']
-        self.output_total += usage['output_tokens']
-        self.total += usage['total_tokens']
-
-    def as_dict(self):
-        return {'token_usage_by_stage': self.stages, 'token_input_total': self.input_total, 'token_output_total': self.output_total, 'token_total': self.total}
+TokenAccumulator = ai_provider.TokenAccumulator
 
 def generate_with_policy(model, contents, max_output_tokens=65536, retry_tracker=None, operation_name=None):
-    """Unified generation wrapper that applies model-specific thinking config."""
-    if client is None:
-        raise RuntimeError('Gemini client is not configured.')
-    base_config = {'max_output_tokens': max_output_tokens}
-    thinking = _build_thinking_config(model)
-    if thinking:
-        base_config['thinking_config'] = thinking
-    try:
-        config = types.GenerateContentConfig(**base_config)
-    except Exception:
-        config = types.GenerateContentConfig(max_output_tokens=max_output_tokens)
-    return run_with_provider_retry(operation_name or f'generate_content:{model}', lambda: client.models.generate_content(model=model, contents=contents, config=config), retry_tracker=retry_tracker)
+    return ai_provider.generate_with_policy(
+        model,
+        contents,
+        max_output_tokens=max_output_tokens,
+        retry_tracker=retry_tracker,
+        operation_name=operation_name,
+        runtime=_self_runtime(),
+    )
 
 def generate_with_optional_thinking(model, prompt_text, max_output_tokens=65536, thinking_budget=None, retry_tracker=None, operation_name=None):
-    """Convenience wrapper for text-only prompts. Uses model policy for thinking config."""
-    contents = [types.Content(role='user', parts=[types.Part.from_text(text=prompt_text)])]
-    return generate_with_policy(model, contents, max_output_tokens=max_output_tokens, retry_tracker=retry_tracker, operation_name=operation_name)
+    return ai_provider.generate_with_optional_thinking(
+        model,
+        prompt_text,
+        max_output_tokens=max_output_tokens,
+        thinking_budget=thinking_budget,
+        retry_tracker=retry_tracker,
+        operation_name=operation_name,
+        runtime=_self_runtime(),
+    )
 
 def convert_audio_to_mp3_with_ytdlp(local_audio_path):
     return file_service.convert_audio_to_mp3_with_ytdlp(local_audio_path, ffmpeg_binary_getter=get_ffmpeg_binary, logger=logger, which_func=shutil.which, subprocess_module=subprocess)

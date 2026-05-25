@@ -511,6 +511,10 @@ select {
 }
 
 .shell-footer-text a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 2px 4px;
   color: #3f4b63;
   text-decoration: none;
   font-weight: 600;

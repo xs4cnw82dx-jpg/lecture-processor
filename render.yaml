@@ -5,7 +5,19 @@ services:
     plan: free
     dockerfilePath: ./Dockerfile
     envVars:
+      - key: FLASK_SECRET_KEY
+        sync: false
+      - key: PUBLIC_BASE_URL
+        value: "https://lecture-processor.onrender.com"
       - key: GEMINI_API_KEY
+        sync: false
+      - key: FIREBASE_CREDENTIALS
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
         sync: false
       - key: USE_MINIFIED_JS_ASSETS
         value: "1"

@@ -2,27 +2,13 @@ import { build } from 'esbuild';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { intentionallyUnminifiedScripts, minifiedTargets } from './js_asset_manifest.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 
-const targets = [
-  { entry: 'static/js/dashboard.js', out: 'static/js/dashboard.min.js' },
-  { entry: 'static/js/batch-dashboard.js', out: 'static/js/batch-dashboard.min.js' },
-  { entry: 'static/js/batch-mode.js', out: 'static/js/batch-mode.min.js' },
-  { entry: 'static/js/buy-credits.js', out: 'static/js/buy-credits.min.js' },
-  { entry: 'static/js/index-app.js', out: 'static/js/index-app.min.js' },
-  { entry: 'static/js/index-results-utils.js', out: 'static/js/index-results-utils.min.js' },
-  { entry: 'static/js/admin.js', out: 'static/js/admin.min.js' },
-  { entry: 'static/js/physio.js', out: 'static/js/physio.min.js' },
-  { entry: 'static/js/reader.js', out: 'static/js/reader.min.js' },
-  { entry: 'static/js/shared-study.js', out: 'static/js/shared-study.min.js' },
-  { entry: 'static/js/study-api-utils.js', out: 'static/js/study-api-utils.min.js' },
-  { entry: 'static/js/study.js', out: 'static/js/study.min.js' },
-  { entry: 'static/js/voice-notes-utils.js', out: 'static/js/voice-notes-utils.min.js' },
-  { entry: 'static/js/voice-notes.js', out: 'static/js/voice-notes.min.js' },
-];
+const targets = minifiedTargets;
 
 const checkMode = process.argv.includes('--check');
 
@@ -75,10 +61,36 @@ async function getExternalScriptsMissingIntegrity() {
   return missing;
 }
 
+async function getUntrackedLocalScripts() {
+  const templateFiles = await listTemplateFiles();
+  const minifiedEntries = new Set(targets.map((target) => target.entry));
+  const allowedUnminified = new Set(intentionallyUnminifiedScripts);
+  const untracked = new Set();
+  const localScriptPattern = /js\/[A-Za-z0-9_.-]+\.js/g;
+  for (const filePath of templateFiles) {
+    const content = await readFile(filePath, 'utf8');
+    const matches = content.match(localScriptPattern) || [];
+    for (const match of matches) {
+      const scriptPath = `static/${match}`;
+      if (!minifiedEntries.has(scriptPath) && !allowedUnminified.has(scriptPath)) {
+        untracked.add(scriptPath);
+      }
+    }
+  }
+  return [...untracked].sort();
+}
+
 async function verifyTemplateScriptIntegrity() {
   const missing = await getExternalScriptsMissingIntegrity();
   if (!missing.length) return;
   console.error('External script tags missing integrity:', missing.join(', '));
+  process.exit(1);
+}
+
+async function verifyLocalScriptManifest() {
+  const untracked = await getUntrackedLocalScripts();
+  if (!untracked.length) return;
+  console.error('First-party scripts missing from asset manifest:', untracked.join(', '));
   process.exit(1);
 }
 
@@ -95,6 +107,7 @@ if (checkMode) {
     process.exit(1);
   }
   await verifyTemplateScriptIntegrity();
+  await verifyLocalScriptManifest();
   console.log('Generated assets are up to date:', targets.map((target) => target.out).join(', '));
   process.exit(0);
 }
@@ -104,4 +117,5 @@ for (const target of targets) {
 }
 
 await verifyTemplateScriptIntegrity();
+await verifyLocalScriptManifest();
 console.log('Minified assets generated:', targets.map((t) => t.out).join(', '));

@@ -428,19 +428,23 @@
       button.addEventListener('keydown', (e) => {
         if (e.key === 'ArrowDown') {
           e.preventDefault();
+          e.stopPropagation();
           closeAllSelectMenus();
           setMenuOpen(true, 'first');
         } else if (e.key === 'ArrowUp') {
           e.preventDefault();
+          e.stopPropagation();
           closeAllSelectMenus();
           setMenuOpen(true, 'last');
         } else if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
+          e.stopPropagation();
           const open = !menu.classList.contains('visible');
           closeAllSelectMenus();
           if (open) setMenuOpen(true);
         } else if (e.key === 'Escape') {
           e.preventDefault();
+          e.stopPropagation();
           setMenuOpen(false);
         }
       });
@@ -456,18 +460,23 @@
       menu.addEventListener('keydown', (e) => {
         if (e.key === 'ArrowDown') {
           e.preventDefault();
+          e.stopPropagation();
           focusItem('next');
         } else if (e.key === 'ArrowUp') {
           e.preventDefault();
+          e.stopPropagation();
           focusItem('prev');
         } else if (e.key === 'Home') {
           e.preventDefault();
+          e.stopPropagation();
           focusItem('first');
         } else if (e.key === 'End') {
           e.preventDefault();
+          e.stopPropagation();
           focusItem('last');
         } else if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
+          e.stopPropagation();
           const item = document.activeElement && document.activeElement.closest('.app-select-item[data-value]');
           if (!item) return;
           setValue(item.getAttribute('data-value'));
@@ -475,6 +484,7 @@
           button.focus();
         } else if (e.key === 'Escape') {
           e.preventDefault();
+          e.stopPropagation();
           setMenuOpen(false);
           button.focus();
         } else if (e.key === 'Tab') {
@@ -1020,8 +1030,7 @@
 
     modalCard.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
-      if (e.target === sessionNotesEl) return;
-      if (e.target && e.target.closest('.app-select-menu')) return;
+      if (e.target !== sessionTitleEl) return;
       e.preventDefault();
       saveSessionFromModal();
     });

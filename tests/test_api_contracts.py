@@ -1468,10 +1468,11 @@ def test_study_pack_share_contract_and_public_visibility(client, monkeypatch):
     assert share_payload["entity_type"] == "pack"
     assert share_payload["entity_id"] == "pack-1"
     assert share_payload["access_scope"] == "public"
-    assert share_payload["share_url"] == "https://share.example/shared/sharetoken123"
+    share_token = share_payload["share_url"].rsplit("/", 1)[-1]
+    assert share_payload["share_url"] == f"https://share.example/shared/{share_token}"
     assert share_payload["updated_at"] == 123.0
 
-    pack_share_response = client.get("/api/shared/sharetoken123")
+    pack_share_response = client.get(f"/api/shared/{share_token}")
     assert pack_share_response.status_code == 200
     pack_payload = pack_share_response.get_json()
     assert pack_payload["entity_type"] == "pack"
@@ -1487,7 +1488,7 @@ def test_study_pack_share_contract_and_public_visibility(client, monkeypatch):
     assert private_response.status_code == 200
     assert private_response.get_json()["access_scope"] == "private"
 
-    hidden_response = client.get("/api/shared/sharetoken123")
+    hidden_response = client.get(f"/api/shared/{share_token}")
     assert hidden_response.status_code == 404
     assert "not found" in hidden_response.get_json()["error"].lower()
 
@@ -1592,22 +1593,23 @@ def test_study_folder_public_share_contract_and_membership_guard(client, monkeyp
     )
 
     assert update_response.status_code == 200
-    assert update_response.get_json()["share_url"] == "https://share.example/shared/foldershare456"
+    folder_share_token = update_response.get_json()["share_url"].rsplit("/", 1)[-1]
+    assert update_response.get_json()["share_url"] == f"https://share.example/shared/{folder_share_token}"
 
-    folder_response = client.get("/api/shared/foldershare456")
+    folder_response = client.get(f"/api/shared/{folder_share_token}")
     assert folder_response.status_code == 200
     folder_payload = folder_response.get_json()
     assert folder_payload["entity_type"] == "folder"
     assert folder_payload["folder"]["folder_id"] == "folder-1"
     assert [item["study_pack_id"] for item in folder_payload["study_packs"]] == ["pack-2", "pack-1"]
 
-    nested_pack_response = client.get("/api/shared/foldershare456/packs/pack-2")
+    nested_pack_response = client.get(f"/api/shared/{folder_share_token}/packs/pack-2")
     assert nested_pack_response.status_code == 200
     nested_pack_payload = nested_pack_response.get_json()
     assert nested_pack_payload["study_pack_id"] == "pack-2"
     assert nested_pack_payload["folder_id"] == "folder-1"
 
-    outside_pack_response = client.get("/api/shared/foldershare456/packs/pack-outside")
+    outside_pack_response = client.get(f"/api/shared/{folder_share_token}/packs/pack-outside")
     assert outside_pack_response.status_code == 404
     assert "not found" in outside_pack_response.get_json()["error"].lower()
 

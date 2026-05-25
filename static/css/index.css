@@ -1622,3 +1622,51 @@
                 margin-bottom: 24px;
             }
         }
+
+        @media (max-width: 640px) {
+            body[data-forced-mode="lecture-notes"] .app-shell-page {
+                padding-top: 12px;
+            }
+
+            body[data-forced-mode="lecture-notes"] .hero {
+                padding: 12px 0 10px;
+            }
+
+            body[data-forced-mode="lecture-notes"] .hero-title {
+                font-size: 2rem;
+                line-height: 1.12;
+            }
+
+            body[data-forced-mode="lecture-notes"] .hero-description {
+                margin-bottom: 18px;
+                font-size: 0.98rem;
+            }
+
+            body[data-forced-mode="lecture-notes"] .upload-section {
+                gap: 12px;
+                margin-bottom: 20px;
+            }
+
+            body[data-forced-mode="lecture-notes"] #pdf-zone,
+            body[data-forced-mode="lecture-notes"] #audio-zone {
+                min-height: 0;
+                margin: 12px 16px 0;
+                padding: 18px 16px;
+            }
+
+            body[data-forced-mode="lecture-notes"] .upload-icon {
+                width: 36px;
+                height: 36px;
+                margin-bottom: 10px;
+            }
+
+            body[data-forced-mode="lecture-notes"] .processing-secondary-grid {
+                margin: 12px 16px 20px;
+                gap: 10px;
+            }
+
+            body[data-forced-mode="lecture-notes"] .button-section {
+                margin: 0 16px 18px;
+                padding: 14px;
+            }
+        }

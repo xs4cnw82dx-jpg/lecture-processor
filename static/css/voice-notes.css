@@ -447,8 +447,20 @@ body {
   background: var(--voice-surface);
   color: var(--voice-text);
   padding: 14px;
-  cursor: pointer;
   box-shadow: 0 10px 28px rgba(17, 24, 39, 0.06);
+}
+
+.voice-note-open {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
 }
 
 .voice-note-item.active {

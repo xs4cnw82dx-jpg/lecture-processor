@@ -1365,7 +1365,9 @@ function setStudyFeature(value) {
     };
     studyToolsToggleText.textContent = labels[selectedStudyFeatures];
     studyToolChips.forEach(chip => {
-        chip.classList.toggle('active', chip.dataset.studyFeatures === selectedStudyFeatures);
+        const active = chip.dataset.studyFeatures === selectedStudyFeatures;
+        chip.classList.toggle('active', active);
+        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
     if (selectedStudyFeatures === 'none') {
         studyToolsNote.textContent = 'Notes-only output. No flashcards or test questions will be generated.';
@@ -1393,10 +1395,18 @@ function setStudyFeature(value) {
 function setAmountSelection(kind, value) {
     if (kind === 'flashcards') {
         selectedFlashcardAmount = value;
-        flashcardAmountChips.forEach(chip => chip.classList.toggle('active', chip.dataset.value === value));
+        flashcardAmountChips.forEach(chip => {
+            const active = chip.dataset.value === value;
+            chip.classList.toggle('active', active);
+            chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
     } else {
         selectedQuestionAmount = value;
-        questionAmountChips.forEach(chip => chip.classList.toggle('active', chip.dataset.value === value));
+        questionAmountChips.forEach(chip => {
+            const active = chip.dataset.value === value;
+            chip.classList.toggle('active', active);
+            chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
     }
 }
 function updateInterviewOptionsUI() {
@@ -1408,7 +1418,9 @@ function updateInterviewOptionsUI() {
     }
     updateInterviewOptionAvailability();
     interviewOptionButtons.forEach(btn => {
-        btn.classList.toggle('active', selectedInterviewFeatures.includes(btn.dataset.feature));
+        const active = selectedInterviewFeatures.includes(btn.dataset.feature);
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
     const slidesCredits = userCredits ? (hasUnlimitedCredit('slides') ? Number.POSITIVE_INFINITY : Number(userCredits.slides || 0)) : 0;
     if (!selectedInterviewFeatures.length && userCredits && hasUnlimitedCredit('slides')) {
@@ -2917,6 +2929,12 @@ function downloadLocalPreviewFile(file) {
     URL.revokeObjectURL(blobUrl);
     return true;
 }
+function handleFileInfoKeydown(event, downloadFn) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    if (event.target && event.target.closest('.file-remove')) return;
+    event.preventDefault();
+    downloadFn(event);
+}
 setupDropZone(pdfZone, pdfInput, handlePdfFile);
 setupDropZone(audioZone, audioInput, handleAudioFile);
 if (audioRecordStartBtn) {
@@ -2939,16 +2957,18 @@ if (audioRecordStopBtn) {
 }
 if (pdfInfo) {
     pdfInfo.title = 'Click to download this selected file';
-    pdfInfo.addEventListener('click', (e) => {
+    const downloadSelectedPdf = (e) => {
         if (e.target.closest('.file-remove')) return;
         if (downloadLocalPreviewFile(pdfFile)) {
             showToast('Lecture slides download started.', 'success', 1600);
         }
-    });
+    };
+    pdfInfo.addEventListener('click', downloadSelectedPdf);
+    pdfInfo.addEventListener('keydown', (e) => handleFileInfoKeydown(e, downloadSelectedPdf));
 }
 if (audioInfo) {
     audioInfo.title = 'Click to download this selected file';
-    audioInfo.addEventListener('click', (e) => {
+    const downloadSelectedAudio = (e) => {
         if (e.target.closest('.file-remove')) return;
         if (downloadLocalPreviewFile(audioFile)) {
             if (audioFileOrigin === 'recording') {
@@ -2963,7 +2983,9 @@ if (audioInfo) {
         if (importedAudioToken) {
             showToast('Imported audio is temporary and cannot be downloaded from this preview.', 'info', 2800);
         }
-    });
+    };
+    audioInfo.addEventListener('click', downloadSelectedAudio);
+    audioInfo.addEventListener('keydown', (e) => handleFileInfoKeydown(e, downloadSelectedAudio));
 }
 pdfRemove.addEventListener('click', (e) => {
     e.stopPropagation();

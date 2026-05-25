@@ -344,7 +344,9 @@
     var next = ['none', 'flashcards', 'test', 'both'].indexOf(value) >= 0 ? value : 'none';
     if (studyFeaturesInput) studyFeaturesInput.value = next;
     studyToolChips.forEach(function (chip) {
-      chip.classList.toggle('active', chip.dataset.studyFeature === next);
+      var active = chip.dataset.studyFeature === next;
+      chip.classList.toggle('active', active);
+      chip.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
 
     var hideFlashcards = mode === 'interview' || next === 'none' || next === 'test';
@@ -357,13 +359,17 @@
     if (kind === 'flashcards') {
       if (flashcardInput) flashcardInput.value = value;
       flashcardAmountChips.forEach(function (chip) {
-        chip.classList.toggle('active', chip.dataset.value === value);
+        var active = chip.dataset.value === value;
+        chip.classList.toggle('active', active);
+        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
       });
       return;
     }
     if (questionInput) questionInput.value = value;
     questionAmountChips.forEach(function (chip) {
-      chip.classList.toggle('active', chip.dataset.value === value);
+      var active = chip.dataset.value === value;
+      chip.classList.toggle('active', active);
+      chip.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
   }
 
@@ -599,7 +605,7 @@
     var silentIfAlreadyImported = opts.silentIfAlreadyImported !== false;
 
     if (!auth || !auth.currentUser) {
-      if (reason === 'manual') alert('Please sign in first.');
+      if (reason === 'manual') showShellToast('Please sign in first.', 'error');
       return Promise.resolve({ ok: false, reason: 'not-signed-in' });
     }
     var url = getRowM3u8Url(rowNode);
@@ -667,7 +673,9 @@
     var next = ['none', 'flashcards', 'test', 'both'].indexOf(value) >= 0 ? value : 'both';
     if (hidden) hidden.value = next;
     Array.prototype.slice.call(rowNode.querySelectorAll('[data-override-study-chip]')).forEach(function (chip) {
-      chip.classList.toggle('active', chip.dataset.overrideStudyChip === next);
+      var active = chip.dataset.overrideStudyChip === next;
+      chip.classList.toggle('active', active);
+      chip.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
 
     var flashWrap = rowNode.querySelector('[data-override-flashcards-wrap]');
@@ -687,7 +695,9 @@
     var selector = kind === 'flashcards' ? '[data-override-flashcards-chip]' : '[data-override-questions-chip]';
     var dataKey = kind === 'flashcards' ? 'overrideFlashcardsChip' : 'overrideQuestionsChip';
     Array.prototype.slice.call(rowNode.querySelectorAll(selector)).forEach(function (chip) {
-      chip.classList.toggle('active', chip.dataset[dataKey] === value);
+      var active = chip.dataset[dataKey] === value;
+      chip.classList.toggle('active', active);
+      chip.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
   }
 
@@ -720,6 +730,7 @@
       input.click();
     });
     zone.addEventListener('keydown', function (event) {
+      if (event.target !== zone) return;
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         input.click();
@@ -875,15 +886,17 @@
     Array.prototype.slice.call(rowNode.querySelectorAll('[data-interview-feature-chip]')).forEach(function (chip) {
       chip.addEventListener('click', function () {
         chip.classList.toggle('active');
+        chip.setAttribute('aria-pressed', chip.classList.contains('active') ? 'true' : 'false');
         syncInterviewExtrasNote();
       });
+      chip.setAttribute('aria-pressed', chip.classList.contains('active') ? 'true' : 'false');
     });
     syncInterviewExtrasNote();
   }
 
   function removeRow(rowNode) {
     if (rowCount() <= 2) {
-      alert('Batch mode requires at least 2 rows.');
+      showShellToast('Batch mode requires at least 2 rows.', 'error');
       return;
     }
     releaseRowImportedAudio(rowNode, { clearStatus: true }).finally(function () {
