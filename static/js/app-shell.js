@@ -90,6 +90,12 @@
         || currentPath === '/batch_mode_audio_transcription'
         || currentPath === '/batch_mode_text_combine';
     }
+    if (href === '/instant_batch_mode') {
+      return currentPath === '/instant_batch_mode_slides_extraction'
+        || currentPath === '/instant_batch_mode_interview_transcription'
+        || currentPath === '/instant_batch_mode_audio_transcription'
+        || currentPath === '/instant_batch_mode_text_combine';
+    }
     return false;
   }
 

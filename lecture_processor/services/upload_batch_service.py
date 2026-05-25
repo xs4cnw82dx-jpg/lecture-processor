@@ -5,6 +5,7 @@ import zipfile
 
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.ai import batch_orchestrator
+from lecture_processor.domains.ai import instant_batch_orchestrator
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import receipts as billing_receipts
@@ -23,6 +24,7 @@ STUDY_TOOL_BATCH_MODES = {'lecture-notes', 'slides-only'}
 AUDIO_BATCH_MODES = {'lecture-notes', 'interview', 'audio-transcription'}
 TEXT_COMBINE_BATCH_MODE = 'text-combine'
 MAX_BATCH_TEXT_UPLOAD_BYTES_DEFAULT = 2 * 1024 * 1024
+INSTANT_BATCH_MAX_ROWS_DEFAULT = 20
 
 
 def _safe_int(value, default=0):
@@ -187,7 +189,7 @@ def _reserve_batch_upload_quota(app_ctx, uid, request, row_plans):
     return None, 0, quota_reservation
 
 
-def create_batch_job(app_ctx, request):
+def create_batch_job(app_ctx, request, *, instant=False):
     uid, decoded_token, error_response, status = upload_batch_support.batch_user_guard(app_ctx, request)
     if error_response is not None:
         return error_response, status
@@ -204,6 +206,10 @@ def create_batch_job(app_ctx, request):
         return app_ctx.jsonify({'error': 'Invalid rows payload'}), 400
     if len(rows) < 2:
         return app_ctx.jsonify({'error': 'Batch mode requires at least 2 rows.'}), 400
+    if instant:
+        max_rows = int(getattr(app_ctx, 'INSTANT_BATCH_MAX_ROWS', INSTANT_BATCH_MAX_ROWS_DEFAULT) or INSTANT_BATCH_MAX_ROWS_DEFAULT)
+        if len(rows) > max_rows:
+            return app_ctx.jsonify({'error': f'Instant Batch supports up to {max_rows} rows at a time.'}), 400
     client_submission_id = str(request.form.get('client_submission_id', '') or '').strip()[:120]
     if client_submission_id:
         existing = batch_orchestrator.find_batch_by_submission_id(
@@ -591,8 +597,9 @@ def create_batch_job(app_ctx, request):
                     'credit_deducted': charged_credit,
                     'credit_refunded': False,
                     'billing_receipt': billing_receipt,
-                    'billing_mode': 'batch',
-                    'billing_multiplier': 0.5,
+                    'processing_strategy': 'instant' if instant else 'batch',
+                    'billing_mode': 'instant_batch' if instant else 'batch',
+                    'billing_multiplier': 1.0 if instant else 0.5,
                     'token_usage_by_stage': {},
                     'token_input_total': 0,
                     'token_output_total': 0,
@@ -638,6 +645,7 @@ def create_batch_job(app_ctx, request):
             'email': decoded_email or str(user.get('email', '') or '').strip(),
             'mode': mode,
             'status': 'queued',
+            'processing_strategy': 'instant' if instant else 'batch',
             'batch_title': batch_title,
             'output_language': output_language,
             'study_defaults': {
@@ -661,8 +669,10 @@ def create_batch_job(app_ctx, request):
             'created_at': now_ts,
             'updated_at': now_ts,
             'finished_at': 0,
-            'billing_mode': 'batch',
-            'billing_multiplier': 0.5,
+            'billing_mode': 'instant_batch' if instant else 'batch',
+            'billing_multiplier': 1.0 if instant else 0.5,
+            'instant_max_parallel_rows': int(getattr(app_ctx, 'INSTANT_BATCH_MAX_PARALLEL_ROWS', 2) or 2) if instant else 0,
+            'instant_api_stagger_seconds': float(getattr(app_ctx, 'INSTANT_BATCH_API_STAGGER_SECONDS', 5.0) or 5.0) if instant else 0,
             'completion_email_status': 'pending',
             'completion_email_sent_at': 0,
             'completion_email_error': '',
@@ -684,7 +694,7 @@ def create_batch_job(app_ctx, request):
             if not callable(submit_batch):
                 submit_batch = app_ctx.submit_background_job
             submit_batch(
-                batch_orchestrator.process_batch_job,
+                instant_batch_orchestrator.process_instant_batch_job if instant else batch_orchestrator.process_batch_job,
                 batch_id,
                 runtime=app_ctx,
             )
@@ -718,12 +728,17 @@ def create_batch_job(app_ctx, request):
         upload_quota_service.release_uncommitted_upload_quota(app_ctx, quota_reservation)
 
 
-def list_batch_jobs(app_ctx, request):
+def create_instant_batch_job(app_ctx, request):
+    return create_batch_job(app_ctx, request, instant=True)
+
+
+def list_batch_jobs(app_ctx, request, *, strategy_override=''):
     uid, _decoded_token, error_response, status = upload_batch_support.batch_user_guard(app_ctx, request)
     if error_response is not None:
         return error_response, status
 
     mode = str(request.args.get('mode', '') or '').strip()
+    strategy = str(strategy_override or request.args.get('strategy', '') or '').strip().lower()
     status_filter = str(request.args.get('status', '') or '').strip()
     limit = 100
     try:
@@ -739,7 +754,13 @@ def list_batch_jobs(app_ctx, request):
     batches = batch_orchestrator.list_batches_for_uid(uid, statuses=statuses, limit=limit, runtime=app_ctx)
     if mode:
         batches = [item for item in batches if str(item.get('mode', '') or '') == mode]
+    if strategy:
+        batches = [item for item in batches if str(item.get('processing_strategy', 'batch') or 'batch').strip().lower() == strategy]
     return app_ctx.jsonify({'batches': batches})
+
+
+def list_instant_batch_jobs(app_ctx, request):
+    return list_batch_jobs(app_ctx, request, strategy_override='instant')
 
 
 def get_batch_job_status(app_ctx, request, batch_id):
@@ -991,6 +1012,7 @@ def download_batch_zip(app_ctx, request, batch_id):
         summary = {
             'batch_id': batch.get('batch_id', batch_id),
             'mode': batch.get('mode', ''),
+            'processing_strategy': batch.get('processing_strategy', 'batch'),
             'status': batch.get('status', ''),
             'total_rows': batch.get('total_rows', len(rows)),
             'completed_rows': batch.get('completed_rows', 0),

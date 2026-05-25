@@ -1142,6 +1142,13 @@ th {
   font-size: 0.82rem;
 }
 
+.batch-row-progress-text {
+  margin-top: 4px;
+  color: #52627a;
+  line-height: 1.45;
+  font-size: 0.82rem;
+}
+
 @media (max-width: 1100px) {
   .study-defaults-wrap,
   .batch-grid {

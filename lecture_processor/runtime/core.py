@@ -154,6 +154,12 @@ BATCH_JOB_WORKERS = safe_int_env('BATCH_JOB_WORKERS', 1, minimum=1, maximum=16)
 
 BATCH_JOB_QUEUE_MAX_PENDING = safe_int_env('BATCH_JOB_QUEUE_MAX_PENDING', 24, minimum=0, maximum=2000)
 
+INSTANT_BATCH_MAX_ROWS = safe_int_env('INSTANT_BATCH_MAX_ROWS', 20, minimum=2, maximum=100)
+
+INSTANT_BATCH_MAX_PARALLEL_ROWS = safe_int_env('INSTANT_BATCH_MAX_PARALLEL_ROWS', 2, minimum=1, maximum=8)
+
+INSTANT_BATCH_API_STAGGER_SECONDS = safe_float_env('INSTANT_BATCH_API_STAGGER_SECONDS', 5.0, minimum=0.0, maximum=60.0)
+
 TRUSTED_PROXY_HOPS = safe_int_env('TRUSTED_PROXY_HOPS', 1, minimum=0, maximum=10)
 
 job_dispatcher = BoundedJobDispatcher(JOB_WORKERS, JOB_QUEUE_MAX_PENDING, logger=logger, thread_name_prefix='lp-job')
@@ -265,7 +271,7 @@ BATCH_JOB_RECOVERY_LOCK = threading.Lock()
 
 BATCH_JOB_RECOVERY_DONE = False
 
-RUNTIME_JOB_PERSISTED_FIELDS = {'status', 'step', 'step_description', 'total_steps', 'mode', 'job_scope', 'tool_source_type', 'tool_input_name', 'user_id', 'user_email', 'credit_deducted', 'credit_refunded', 'started_at', 'finished_at', 'result', 'slide_text', 'transcript', 'flashcards', 'test_questions', 'flashcard_selection', 'question_selection', 'study_features', 'output_language', 'study_generation_error', 'study_pack_id', 'study_pack_title', 'folder_id', 'folder_name', 'error', 'billing_receipt', 'interview_features', 'interview_features_successful', 'interview_summary', 'interview_sections', 'interview_combined', 'interview_features_cost', 'extra_slides_refunded', 'audio_storage_key', 'notes_audio_map', 'transcript_segments', 'token_usage_by_stage', 'token_input_total', 'token_output_total', 'token_total', 'export_manifest', 'is_batch', 'batch_parent_id', 'batch_row_id', 'billing_mode', 'billing_multiplier', 'stage_costs', 'voice_note_tags', 'voice_note_pinned', 'voice_note_archived', 'voice_note_custom_instruction', 'voice_note_append_to_pack_id', 'study_tools_credit_cost'}
+RUNTIME_JOB_PERSISTED_FIELDS = {'status', 'step', 'step_description', 'total_steps', 'mode', 'job_scope', 'tool_source_type', 'tool_input_name', 'user_id', 'user_email', 'credit_deducted', 'credit_refunded', 'started_at', 'finished_at', 'result', 'slide_text', 'transcript', 'flashcards', 'test_questions', 'flashcard_selection', 'question_selection', 'study_features', 'output_language', 'study_generation_error', 'study_pack_id', 'study_pack_title', 'folder_id', 'folder_name', 'error', 'billing_receipt', 'interview_features', 'interview_features_successful', 'interview_summary', 'interview_sections', 'interview_combined', 'interview_features_cost', 'extra_slides_refunded', 'audio_storage_key', 'notes_audio_map', 'transcript_segments', 'token_usage_by_stage', 'token_input_total', 'token_output_total', 'token_total', 'export_manifest', 'is_batch', 'batch_parent_id', 'batch_row_id', 'processing_strategy', 'billing_mode', 'billing_multiplier', 'stage_costs', 'voice_note_tags', 'voice_note_pinned', 'voice_note_archived', 'voice_note_custom_instruction', 'voice_note_append_to_pack_id', 'study_tools_credit_cost'}
 
 RUNTIME_JOB_MAX_STRING_LENGTH = 200000
 

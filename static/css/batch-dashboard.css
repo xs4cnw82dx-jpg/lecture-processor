@@ -36,7 +36,7 @@
   margin-top: 12px;
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(2, minmax(0, 220px));
+  grid-template-columns: repeat(3, minmax(0, 220px));
 }
 
 .batch-dashboard-filters label {

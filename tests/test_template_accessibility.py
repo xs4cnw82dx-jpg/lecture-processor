@@ -119,6 +119,8 @@ def test_batch_audio_transcription_mode_disables_study_tools_and_allows_audio_im
     assert "'text-combine': {" in batch_js
     assert 'requiresTextInputs: true' in batch_js
     assert 'if (modeSupportsStudyTools()) wireRowOverride(card);' in batch_js
+    assert "var isInstantBatch =" in batch_js
+    assert "'/api/instant-batch/jobs'" in batch_js
 
 
 def test_study_folder_rows_do_not_nest_actions_inside_button_role():
@@ -149,6 +151,8 @@ def test_shared_shell_hidden_and_live_region_contracts():
     assert "currentPath === '/batch_mode_slides_extraction'" in app_shell_js
     assert "currentPath === '/batch_mode_audio_transcription'" in app_shell_js
     assert "currentPath === '/batch_mode_text_combine'" in app_shell_js
+    assert "href === '/instant_batch_mode'" in app_shell_js
+    assert "currentPath === '/instant_batch_mode_audio_transcription'" in app_shell_js
     assert "link.setAttribute('aria-current', 'page');" in app_shell_js
 
 

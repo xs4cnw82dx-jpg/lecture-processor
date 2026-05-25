@@ -8,6 +8,7 @@
 
   var refreshBtn = document.getElementById('batch-dashboard-refresh-btn');
   var modeFilter = document.getElementById('batch-dashboard-mode-filter');
+  var strategyFilter = document.getElementById('batch-dashboard-strategy-filter');
   var statusFilter = document.getElementById('batch-dashboard-status-filter');
   var authGate = document.getElementById('batch-dashboard-auth-gate');
   var contentWrap = document.getElementById('batch-dashboard-content');
@@ -73,12 +74,21 @@
     return key || '-';
   }
 
-  function modePath(mode) {
-    if (mode === 'slides-only') return '/batch_mode_slides_extraction';
-    if (mode === 'interview') return '/batch_mode_interview_transcription';
-    if (mode === 'audio-transcription') return '/batch_mode_audio_transcription';
-    if (mode === 'text-combine') return '/batch_mode_text_combine';
-    return '/batch_mode';
+  function isInstantBatch(batch) {
+    return String((batch || {}).processing_strategy || 'batch').trim().toLowerCase() === 'instant';
+  }
+
+  function modePath(mode, batch) {
+    var prefix = isInstantBatch(batch) ? '/instant_batch_mode' : '/batch_mode';
+    if (mode === 'slides-only') return prefix + '_slides_extraction';
+    if (mode === 'interview') return prefix + '_interview_transcription';
+    if (mode === 'audio-transcription') return prefix + '_audio_transcription';
+    if (mode === 'text-combine') return prefix + '_text_combine';
+    return prefix;
+  }
+
+  function apiPath(batch) {
+    return isInstantBatch(batch) ? '/api/instant-batch/jobs' : '/api/batch/jobs';
   }
 
   function stageText(batch) {
@@ -130,23 +140,23 @@
       var updated = formatDate(batch.updated_at || batch.last_heartbeat_at || 0);
       var rowsText = String(Number(batch.completed_rows || 0)) + '/' + String(Number(batch.total_rows || 0)) + ' complete · ' + String(Number(batch.failed_rows || 0)) + ' failed';
       var actions = [];
-      var viewHref = modePath(batch.mode) + '?batch_id=' + encodeURIComponent(batchId);
+      var viewHref = modePath(batch.mode, batch) + '?batch_id=' + encodeURIComponent(batchId);
       actions.push('<a class="btn-link" href="' + viewHref + '">View</a>');
       if (batch.next_action_label && batch.next_action_href && batch.next_action_href !== viewHref) {
-        if (String(batch.next_action_href).indexOf('/api/batch/jobs/') === 0) {
+        if (String(batch.next_action_href).indexOf('/api/batch/jobs/') === 0 || String(batch.next_action_href).indexOf('/api/instant-batch/jobs/') === 0) {
           actions.push('<button type="button" class="btn-link" data-action="open-href" data-href="' + escapeHtml(String(batch.next_action_href)) + '">' + escapeHtml(String(batch.next_action_label)) + '</button>');
         } else {
           actions.push('<a class="btn-link" href="' + escapeHtml(String(batch.next_action_href)) + '">' + escapeHtml(String(batch.next_action_label)) + '</a>');
         }
       }
       if (batch.can_download_zip) {
-        actions.push('<button type="button" class="btn-link" data-action="download-zip" data-batch-id="' + batchId + '">Download ZIP</button>');
+        actions.push('<button type="button" class="btn-link" data-action="download-zip" data-batch-id="' + batchId + '" data-api-base="' + apiPath(batch) + '">Download ZIP</button>');
       }
       var tr = document.createElement('tr');
       if (isActiveTable) {
         tr.innerHTML =
           '<td>' + batchTitleCell(batch) + '</td>' +
-          '<td>' + modeLabel(batch.mode) + '</td>' +
+          '<td>' + modeLabel(batch.mode) + (isInstantBatch(batch) ? ' · Instant' : ' · Standard') + '</td>' +
           '<td>' + created + '</td>' +
           '<td>' + stageText(batch) + '</td>' +
           '<td>' + rowsText + '</td>' +
@@ -156,7 +166,7 @@
       } else {
         tr.innerHTML =
           '<td>' + batchTitleCell(batch) + '</td>' +
-          '<td>' + modeLabel(batch.mode) + '</td>' +
+          '<td>' + modeLabel(batch.mode) + (isInstantBatch(batch) ? ' · Instant' : ' · Standard') + '</td>' +
           '<td>' + statusPill(batch.status) + '</td>' +
           '<td>' + created + '</td>' +
           '<td>' + rowsText + '</td>' +
@@ -181,18 +191,18 @@
 
     rows.forEach(function (batch) {
       var batchId = String(batch.batch_id || '');
-      var viewHref = modePath(batch.mode) + '?batch_id=' + encodeURIComponent(batchId);
+      var viewHref = modePath(batch.mode, batch) + '?batch_id=' + encodeURIComponent(batchId);
       var actions = [];
       actions.push('<a class="btn-link" href="' + viewHref + '">View</a>');
       if (batch.next_action_label && batch.next_action_href && batch.next_action_href !== viewHref) {
-        if (String(batch.next_action_href).indexOf('/api/batch/jobs/') === 0) {
+        if (String(batch.next_action_href).indexOf('/api/batch/jobs/') === 0 || String(batch.next_action_href).indexOf('/api/instant-batch/jobs/') === 0) {
           actions.push('<button type="button" class="btn-link" data-action="open-href" data-href="' + escapeHtml(String(batch.next_action_href)) + '">' + escapeHtml(String(batch.next_action_label)) + '</button>');
         } else {
           actions.push('<a class="btn-link" href="' + escapeHtml(String(batch.next_action_href)) + '">' + escapeHtml(String(batch.next_action_label)) + '</a>');
         }
       }
       if (batch.can_download_zip) {
-        actions.push('<button type="button" class="btn-link" data-action="download-zip" data-batch-id="' + batchId + '">Download ZIP</button>');
+        actions.push('<button type="button" class="btn-link" data-action="download-zip" data-batch-id="' + batchId + '" data-api-base="' + apiPath(batch) + '">Download ZIP</button>');
       }
 
       var card = document.createElement('article');
@@ -207,6 +217,7 @@
         '</div>' +
         '<div class="batch-card-meta">' +
           '<span><strong>Mode</strong>' + escapeHtml(modeLabel(batch.mode)) + '</span>' +
+          '<span><strong>Processing</strong>' + escapeHtml(isInstantBatch(batch) ? 'Instant batch' : 'Standard batch') + '</span>' +
           '<span><strong>Submitted</strong>' + escapeHtml(formatDate(batch.created_at)) + '</span>' +
           '<span><strong>Updated</strong>' + escapeHtml(formatDate(batch.updated_at || batch.last_heartbeat_at || 0)) + '</span>' +
           '<span><strong>Rows</strong>' + escapeHtml(String(Number(batch.completed_rows || 0)) + '/' + String(Number(batch.total_rows || 0)) + ' complete · ' + String(Number(batch.failed_rows || 0)) + ' failed') + '</span>' +
@@ -223,7 +234,8 @@
       button.addEventListener('click', function () {
         var batchId = String(button.getAttribute('data-batch-id') || '').trim();
         if (!batchId) return;
-        window.open('/api/batch/jobs/' + encodeURIComponent(batchId) + '/download.zip', '_blank');
+        var apiBase = String(button.getAttribute('data-api-base') || '/api/batch/jobs');
+        window.open(apiBase + '/' + encodeURIComponent(batchId) + '/download.zip', '_blank');
       });
     });
     Array.prototype.slice.call(document.querySelectorAll('[data-action="open-href"]')).forEach(function (button) {
@@ -252,8 +264,10 @@
   function listPath() {
     var params = new URLSearchParams();
     var mode = String((modeFilter && modeFilter.value) || '').trim();
+    var strategy = String((strategyFilter && strategyFilter.value) || '').trim();
     var status = String((statusFilter && statusFilter.value) || '').trim();
     if (mode) params.set('mode', mode);
+    if (strategy) params.set('strategy', strategy);
     if (status) params.set('status', status);
     params.set('limit', '200');
     return '/api/batch/jobs?' + params.toString();
@@ -471,6 +485,11 @@
         loadBatches(false);
       });
     }
+    if (strategyFilter) {
+      strategyFilter.addEventListener('change', function () {
+        loadBatches(false);
+      });
+    }
     if (statusFilter) {
       statusFilter.addEventListener('change', function () {
         loadBatches(false);
@@ -488,6 +507,7 @@
 
   function boot() {
     enhanceDashboardSelect(modeFilter);
+    enhanceDashboardSelect(strategyFilter);
     enhanceDashboardSelect(statusFilter);
     document.addEventListener('click', function (event) {
       if (event.target && event.target.closest('.batch-dashboard-select')) return;
