@@ -74,6 +74,19 @@ function authFetch(path, options) {
     });
 }
 
+function onAdminAuthStateReady(callback) {
+    if (bootstrap && typeof bootstrap.onAuthStateReady === 'function') {
+        return bootstrap.onAuthStateReady(auth, callback);
+    }
+    if (auth && typeof auth.onAuthStateChanged === 'function') {
+        return auth.onAuthStateChanged(callback, function () {
+            callback(auth.currentUser || null);
+        });
+    }
+    callback(null);
+    return function () {};
+}
+
 function formatMoney(cents) {
     return `€${((cents || 0) / 100).toFixed(2)}`;
 }
@@ -1062,7 +1075,7 @@ function setActiveModeViewButton() {
     });
 }
 
-bootstrap.onAuthStateReady(auth, async (user) => {
+onAdminAuthStateReady(async (user) => {
     if (user) {
         if (authClient && typeof authClient.setToken === 'function') {
             try { authClient.setToken(await user.getIdToken()); } catch (_) { }

@@ -41,12 +41,14 @@
   function queueAuthCallback(callback, user) {
     if (global.Promise && typeof global.Promise.resolve === 'function') {
       global.Promise.resolve().then(function () {
-        callback(user || null);
+        return callback(user || null);
       }).catch(function () {});
       return;
     }
     global.setTimeout(function () {
-      callback(user || null);
+      try {
+        callback(user || null);
+      } catch (_error) {}
     }, 0);
   }
 
@@ -96,7 +98,12 @@
     record.lastNotifiedKey = nextKey;
     record.listeners.slice().forEach(function (listener) {
       try {
-        listener(nextUser);
+        var result = listener(nextUser);
+        if (result && typeof result.catch === 'function') {
+          result.catch(function (error) {
+            global.setTimeout(function () { throw error; }, 0);
+          });
+        }
       } catch (error) {
         global.setTimeout(function () { throw error; }, 0);
       }
