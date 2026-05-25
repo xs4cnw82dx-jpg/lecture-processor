@@ -130,8 +130,14 @@ def _grant_credits_and_record_purchase_fallback(stripe_session, runtime=None):
 def _grant_credits_and_record_purchase_atomic(stripe_session, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     db = getattr(resolved_runtime, 'db', None)
-    if db is None or not hasattr(db, 'transaction'):
+    if db is None:
         return _grant_credits_and_record_purchase_fallback(stripe_session, runtime=resolved_runtime)
+    if not hasattr(db, 'transaction'):
+        resolved_runtime.logger.error(
+            "❌ Refusing non-transactional checkout fulfillment for session %s",
+            stripe_session.get('id', ''),
+        )
+        return (False, 'transaction_unavailable')
 
     metadata = stripe_session.get('metadata', {}) or {}
     uid = metadata.get('uid', '')

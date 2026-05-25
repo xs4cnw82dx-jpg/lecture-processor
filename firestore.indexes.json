@@ -131,6 +131,98 @@
       ]
     },
     {
+      "collectionGroup": "study_shares",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "owner_uid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "entity_type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "entity_id",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "admin_credit_grants",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "email_normalized",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "admin_credit_grants",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "uid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "physio_cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "uid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updated_at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "physio_case_sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "uid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "case_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "session_date_ts",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "physio_case_sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "uid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updated_at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "batch_jobs",
       "queryScope": "COLLECTION",
       "fields": [

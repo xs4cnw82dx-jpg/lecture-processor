@@ -67,6 +67,21 @@ def _batch_requested_bytes_for_quota(app_ctx, request, row_plans):
     return requested_bytes
 
 
+def _serialize_audio_fetch_target(fetch_target):
+    resolved_ips = getattr(fetch_target, 'resolved_ips', ()) or ()
+    try:
+        port = int(getattr(fetch_target, 'port', 0) or 0)
+    except Exception:
+        port = 0
+    return {
+        'url': upload_import_audio.resolved_url(fetch_target),
+        'scheme': str(getattr(fetch_target, 'scheme', '') or '').strip().lower(),
+        'host': str(getattr(fetch_target, 'host', '') or '').strip().lower(),
+        'port': port,
+        'resolved_ips': [str(ip) for ip in resolved_ips if str(ip or '').strip()],
+    }
+
+
 def _batch_credit_preflight_error(user, mode, row_plans, runtime=None):
     row_count = len(row_plans)
     if mode == 'lecture-notes':
@@ -323,9 +338,14 @@ def create_batch_job(app_ctx, request):
                 fetch_target, url_error = upload_import_audio.validate_video_import_fetch_target(plan.get('audio_url', ''), runtime=app_ctx)
                 if not fetch_target:
                     raise ValueError(f'Row {idx}: {url_error}')
-                plan['audio_fetch_target'] = fetch_target
                 plan['audio_source_url'] = upload_redaction_service.redact_source_url(
                     upload_import_audio.resolved_url(fetch_target)
+                )
+                batch_orchestrator.register_batch_audio_fetch_target(
+                    batch_id,
+                    plan['row_id'],
+                    _serialize_audio_fetch_target(fetch_target),
+                    runtime=app_ctx,
                 )
 
         for plan in row_plans:
@@ -379,13 +399,10 @@ def create_batch_job(app_ctx, request):
             audio_local_path = str(plan.get('audio_local_path', '') or '')
             audio_source_type = str(plan.get('audio_source_type', '') or '')
             audio_source_url = str(plan.get('audio_source_url', '') or '')
-            audio_fetch_target = plan.get('audio_fetch_target') or audio_source_url
             audio_import_token = str(plan.get('audio_import_token', '') or '').strip()
             if plan.get('audio_required'):
                 if audio_source_type == 'm3u8_url':
-                    prefix = f'batch_{batch_id}_{row_id}'
-                    audio_local_path, _output_name, downloaded_size = app_ctx.download_audio_from_video_url(audio_fetch_target, prefix)
-                    cleanup_paths.append(audio_local_path)
+                    pass
                 elif audio_source_type == 'upload':
                     audio_file = plan.get('audio_file')
                     audio_local_path = app_ctx.os.path.join(
@@ -395,22 +412,24 @@ def create_batch_job(app_ctx, request):
                     audio_file.save(audio_local_path)
                     cleanup_paths.append(audio_local_path)
 
-                audio_size = app_ctx.get_saved_file_size(audio_local_path)
-                if audio_size <= 0 or audio_size > app_ctx.MAX_AUDIO_UPLOAD_BYTES:
-                    raise ValueError(f'Row {idx}: audio exceeds server limit or is empty.')
-                if not app_ctx.file_looks_like_audio(audio_local_path):
-                    raise ValueError(f'Row {idx}: uploaded audio is invalid or unsupported.')
-                if audio_source_type == 'import_token':
-                    actual_upload_bytes += upload_quota_service.chargeable_import_token_bytes(
-                        app_ctx,
-                        uid,
-                        audio_import_token,
-                        audio_size,
-                    )
-                elif audio_source_type == 'm3u8_url':
-                    actual_upload_bytes += max(0, int(downloaded_size or audio_size or 0))
+                if audio_source_type == 'm3u8_url':
+                    audio_size = 0
+                    actual_upload_bytes += upload_quota_service.max_audio_upload_bytes(app_ctx)
                 else:
-                    actual_upload_bytes += max(0, int(audio_size if audio_size > 0 else 0))
+                    audio_size = app_ctx.get_saved_file_size(audio_local_path)
+                    if audio_size <= 0 or audio_size > app_ctx.MAX_AUDIO_UPLOAD_BYTES:
+                        raise ValueError(f'Row {idx}: audio exceeds server limit or is empty.')
+                    if not app_ctx.file_looks_like_audio(audio_local_path):
+                        raise ValueError(f'Row {idx}: uploaded audio is invalid or unsupported.')
+                    if audio_source_type == 'import_token':
+                        actual_upload_bytes += upload_quota_service.chargeable_import_token_bytes(
+                            app_ctx,
+                            uid,
+                            audio_import_token,
+                            audio_size,
+                        )
+                    else:
+                        actual_upload_bytes += max(0, int(audio_size if audio_size > 0 else 0))
 
             if audio_import_token:
                 consumed_path, token_error = upload_import_audio.get_audio_import_token_path(
@@ -438,11 +457,15 @@ def create_batch_job(app_ctx, request):
                     'row_id': row_id,
                     'ordinal': idx,
                     'status': 'queued',
+                    'uid': uid,
                     'source_type': audio_source_type if audio_source_type else ('upload' if slides_required else 'audio'),
                     'source_url': audio_source_url,
                     'source_name': f'row-{idx}',
                     'slides_local_path': slides_local_path,
                     'audio_local_path': audio_local_path,
+                    'audio_quota_reserved_bytes': upload_quota_service.max_audio_upload_bytes(app_ctx) if audio_source_type == 'm3u8_url' else 0,
+                    'audio_quota_actual_bytes': 0,
+                    'audio_quota_released': False,
                     'output_language': output_language,
                     'study_features': plan.get('study_features', 'none') if mode != 'interview' else 'none',
                     'flashcard_selection': plan.get('flashcard_selection', default_flashcards),
@@ -559,6 +582,7 @@ def create_batch_job(app_ctx, request):
             _release_pending_import_tokens(app_ctx, uid, pending_import_token_paths)
             pending_import_token_paths.clear()
             _cleanup_batch_local_files(app_ctx, cleanup_paths, consumed_import_paths)
+            batch_orchestrator.clear_batch_audio_fetch_targets(batch_id, runtime=app_ctx)
             return upload_batch_support.queue_full_response(app_ctx, batch_id=batch_id)
         upload_quota_service.commit_upload_quota(quota_reservation)
         return app_ctx.jsonify({'batch_id': batch_id})
@@ -572,6 +596,7 @@ def create_batch_job(app_ctx, request):
         _release_pending_import_tokens(app_ctx, uid, pending_import_token_paths)
         pending_import_token_paths.clear()
         _cleanup_batch_local_files(app_ctx, cleanup_paths, consumed_import_paths)
+        batch_orchestrator.clear_batch_audio_fetch_targets(batch_id, runtime=app_ctx)
         return app_ctx.jsonify({'error': upload_redaction_service.redact_exception(error, max_chars=500)}), 400
     finally:
         upload_quota_service.release_uncommitted_upload_quota(app_ctx, quota_reservation)

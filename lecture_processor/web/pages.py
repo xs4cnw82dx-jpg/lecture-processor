@@ -405,6 +405,11 @@ def study_pack_builder_page():
     )
 
 
+@pages_bp.route('/physio')
+def physio_page():
+    return redirect('/physio/soap', code=302)
+
+
 @pages_bp.route('/physio/soap')
 def physio_soap_page():
     return _render_physio_page(

@@ -49,10 +49,10 @@
           <div class="panel-head"><div class="panel-title">Reminder Settings</div></div>
           <div class="panel-body">
             <div class="field">
-              <label>Desktop Notifications</label>
+              <label id="notify-enabled-label" for="notify-enabled">Desktop Notifications</label>
               <div class="app-select" id="notify-enabled-select">
                 <input type="hidden" id="notify-enabled" value="off">
-                <button type="button" class="app-select-button"><span class="app-select-label">Off</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+                <button type="button" class="app-select-button" aria-labelledby="notify-enabled-label notify-enabled-current"><span class="app-select-label" id="notify-enabled-current">Off</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
                 <div class="app-select-menu">
                   <button type="button" class="app-select-item" data-value="off">Off</button>
                   <button type="button" class="app-select-item" data-value="on">On</button>
@@ -61,10 +61,10 @@
             </div>
 
             <div class="field">
-              <label>Remind Before Session</label>
+              <label id="notify-offset-label" for="notify-offset">Remind Before Session</label>
               <div class="app-select" id="notify-offset-select">
                 <input type="hidden" id="notify-offset" value="30">
-                <button type="button" class="app-select-button"><span class="app-select-label">30 minutes</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+                <button type="button" class="app-select-button" aria-labelledby="notify-offset-label notify-offset-current"><span class="app-select-label" id="notify-offset-current">30 minutes</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
                 <div class="app-select-menu">
                   <button type="button" class="app-select-item" data-value="5">5 minutes</button>
                   <button type="button" class="app-select-item" data-value="10">10 minutes</button>
@@ -76,10 +76,10 @@
             </div>
 
             <div class="field">
-              <label>Daily Reminder</label>
+              <label id="daily-reminder-enabled-label" for="daily-reminder-enabled">Daily Reminder</label>
               <div class="app-select" id="daily-reminder-enabled-select">
                 <input type="hidden" id="daily-reminder-enabled" value="on">
-                <button type="button" class="app-select-button"><span class="app-select-label">Enabled</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+                <button type="button" class="app-select-button" aria-labelledby="daily-reminder-enabled-label daily-reminder-enabled-current"><span class="app-select-label" id="daily-reminder-enabled-current">Enabled</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
                 <div class="app-select-menu">
                   <button type="button" class="app-select-item" data-value="on">Enabled</button>
                   <button type="button" class="app-select-item" data-value="off">Disabled</button>
@@ -88,10 +88,10 @@
             </div>
 
             <div class="field" id="daily-reminder-time-row">
-              <label>Daily Reminder Time</label>
+              <label id="daily-reminder-time-label" for="daily-reminder-time">Daily Reminder Time</label>
               <div class="app-select" id="daily-reminder-time-select">
                 <input type="hidden" id="daily-reminder-time" value="19:00">
-                <button type="button" class="app-select-button"><span class="app-select-label">19:00</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+                <button type="button" class="app-select-button" aria-labelledby="daily-reminder-time-label daily-reminder-time-current"><span class="app-select-label" id="daily-reminder-time-current">19:00</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
                 <div class="app-select-menu" id="daily-reminder-time-menu"></div>
               </div>
             </div>
@@ -134,19 +134,19 @@
         <button class="btn" id="session-modal-close">Close</button>
       </div>
       <div class="modal-grid">
-        <div class="field"><label>Title</label><input id="session-title" class="input" placeholder="Review chapter 3"></div>
+        <div class="field"><label for="session-title">Title</label><input id="session-title" class="input" placeholder="Review chapter 3"></div>
 
         <div class="field">
-          <label>Study Pack (optional)</label>
+          <label id="session-pack-label" for="session-pack-id">Study Pack (optional)</label>
           <div class="app-select" id="session-pack-select">
             <input type="hidden" id="session-pack-id" value="">
-            <button type="button" class="app-select-button"><span class="app-select-label">No linked study pack</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+            <button type="button" class="app-select-button" aria-labelledby="session-pack-label session-pack-current"><span class="app-select-label" id="session-pack-current">No linked study pack</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
             <div class="app-select-menu" id="session-pack-menu"></div>
           </div>
         </div>
 
         <div class="field">
-          <label>Date</label>
+          <label for="session-date">Date</label>
           <div class="input-icon-wrap">
             <input id="session-date" class="input" type="text" placeholder="dd-mm-yyyy">
             <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
@@ -154,16 +154,16 @@
         </div>
 
         <div class="field">
-          <label>Start Time</label>
+          <label for="session-time">Start Time</label>
           <div class="input-icon-wrap">
             <input id="session-time" class="input" type="text" placeholder="19:00">
             <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
           </div>
         </div>
 
-        <div class="field"><label>Duration (minutes)</label><input id="session-duration" class="input" type="number" min="5" max="360" value="60"></div>
+        <div class="field"><label for="session-duration">Duration (minutes)</label><input id="session-duration" class="input" type="number" min="5" max="360" value="60"></div>
       </div>
-      <div class="field calendar-modal-notes"><label>Notes</label><textarea id="session-notes" class="textarea" placeholder="What will you focus on?"></textarea></div>
+      <div class="field calendar-modal-notes"><label for="session-notes">Notes</label><textarea id="session-notes" class="textarea" placeholder="What will you focus on?"></textarea></div>
       <div class="modal-actions">
         <button class="btn" id="session-cancel-btn">Cancel</button>
         <button class="btn primary" id="session-save-btn">Save Session</button>

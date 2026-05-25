@@ -3,11 +3,116 @@ from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 
+ACTIVE_RUNTIME_JOB_STATUSES = {'starting', 'processing'}
+
 
 def _resolve_runtime(runtime=None):
     if runtime is not None:
         return runtime
     return get_runtime()
+
+
+def _runtime_job_recovery_stale_seconds(runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    configured = getattr(resolved_runtime, 'RUNTIME_JOB_RECOVERY_STALE_SECONDS', 0)
+    try:
+        safe_configured = int(configured or 0)
+    except Exception:
+        safe_configured = 0
+    if safe_configured > 0:
+        return max(120, safe_configured)
+    return max(180, int(getattr(resolved_runtime, 'RUNTIME_JOB_RECOVERY_LEASE_SECONDS', 300) or 300) * 2)
+
+
+def _active_job_timestamp(job_data):
+    if not isinstance(job_data, dict):
+        return 0.0
+    for field in ('last_heartbeat_at', 'updated_at', 'started_at'):
+        try:
+            value = float(job_data.get(field, 0) or 0)
+        except Exception:
+            value = 0.0
+        if value > 0:
+            return value
+    return 0.0
+
+
+def _runtime_job_is_stale(job_data, *, now_ts, runtime=None):
+    if not isinstance(job_data, dict):
+        return False
+    status = str(job_data.get('status', '') or '').lower()
+    if status not in ACTIVE_RUNTIME_JOB_STATUSES:
+        return False
+    timestamp = _active_job_timestamp(job_data)
+    if timestamp <= 0:
+        return False
+    return (float(now_ts) - timestamp) >= float(_runtime_job_recovery_stale_seconds(runtime=runtime))
+
+
+def _runtime_job_recovery_holder_id(runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    return (
+        str(resolved_runtime.os.getenv('RENDER_INSTANCE_ID', '') or '').strip()
+        or str(resolved_runtime.os.getenv('HOSTNAME', '') or '').strip()
+        or f'pid-{resolved_runtime.os.getpid()}'
+    )
+
+
+def _claim_stale_runtime_job(doc, *, now_ts, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    job_id = str(getattr(doc, 'id', '') or '').strip()
+    if not job_id:
+        return None
+
+    db = getattr(resolved_runtime, 'db', None)
+    firestore_module = getattr(resolved_runtime, 'firestore', None)
+    if db is None or not hasattr(db, 'transaction') or firestore_module is None:
+        job_data = doc.to_dict() or {}
+        return dict(job_data) if _runtime_job_is_stale(job_data, now_ts=now_ts, runtime=resolved_runtime) else None
+
+    job_ref = getattr(doc, 'reference', None)
+    if job_ref is None:
+        job_ref = resolved_runtime.runtime_jobs_repo.doc_ref(
+            db,
+            resolved_runtime.RUNTIME_JOBS_COLLECTION,
+            job_id,
+        )
+    transaction = db.transaction()
+    holder_id = _runtime_job_recovery_holder_id(runtime=resolved_runtime)
+
+    @firestore_module.transactional
+    def _txn(txn):
+        snapshot = job_ref.get(transaction=txn)
+        if not getattr(snapshot, 'exists', False):
+            return None
+        job_data = snapshot.to_dict() or {}
+        if not _runtime_job_is_stale(job_data, now_ts=now_ts, runtime=resolved_runtime):
+            return None
+        try:
+            claimed_at = float(job_data.get('recovery_claimed_at', 0) or 0)
+        except Exception:
+            claimed_at = 0.0
+        if claimed_at > 0 and (float(now_ts) - claimed_at) < float(_runtime_job_recovery_stale_seconds(runtime=resolved_runtime)):
+            return None
+        txn.set(
+            job_ref,
+            {
+                'recovery_claimed_at': float(now_ts),
+                'recovery_claimed_by': holder_id,
+                'updated_at': float(now_ts),
+            },
+            merge=True,
+        )
+        job_data['recovery_claimed_at'] = float(now_ts)
+        job_data['recovery_claimed_by'] = holder_id
+        return job_data
+
+    try:
+        claimed = _txn(transaction)
+    except Exception:
+        resolved_runtime.logger.warning('Runtime-job recovery claim failed for %s', job_id, exc_info=True)
+        return None
+    return dict(claimed) if isinstance(claimed, dict) else None
 
 
 def recover_stale_runtime_jobs(runtime=None):
@@ -21,7 +126,7 @@ def recover_stale_runtime_jobs(runtime=None):
         stale_docs = resolved_runtime.runtime_jobs_repo.query_statuses(
             resolved_runtime.db,
             resolved_runtime.RUNTIME_JOBS_COLLECTION,
-            {'starting', 'processing'},
+            ACTIVE_RUNTIME_JOB_STATUSES,
             limit=resolved_runtime.RUNTIME_JOB_RECOVERY_BATCH_LIMIT,
         )
     except Exception:
@@ -30,11 +135,11 @@ def recover_stale_runtime_jobs(runtime=None):
 
     for doc in stale_docs:
         job_id = doc.id
-        job_data = doc.to_dict() or {}
+        job_data = _claim_stale_runtime_job(doc, now_ts=now_ts, runtime=resolved_runtime)
         if not isinstance(job_data, dict):
             continue
         status = str(job_data.get('status', '') or '').lower()
-        if status not in {'starting', 'processing'}:
+        if status not in ACTIVE_RUNTIME_JOB_STATUSES:
             continue
         uid = str(job_data.get('user_id', '') or '').strip()
         credit_type = str(job_data.get('credit_deducted', '') or '').strip()

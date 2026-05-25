@@ -7,12 +7,13 @@ from urllib.parse import urlparse
 
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.ai import provider as ai_provider
+from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.runtime.job_dispatcher import JobQueueFullError
-from lecture_processor.services import access_service, tools_extraction_support, upload_api_service
+from lecture_processor.services import access_service, tools_extraction_support, upload_api_service, upload_quota_service
 
 
 @dataclass(frozen=True)
@@ -235,6 +236,12 @@ def tools_extract(app_ctx, request):
     deletion_guard = upload_api_service._account_write_guard_response(app_ctx, uid)
     if deletion_guard is not None:
         return deletion_guard
+    active_jobs = account_lifecycle.count_active_jobs_for_user(uid, runtime=app_ctx)
+    if active_jobs >= app_ctx.MAX_ACTIVE_JOBS_PER_USER:
+        analytics_events.log_rate_limit_hit('tools', 10, runtime=app_ctx)
+        return app_ctx.jsonify({
+            'error': f'You already have {active_jobs} active processing job(s). Please wait for one to finish before starting another.'
+        }), 429
 
     allowed, retry_after = rate_limiter.check_rate_limit(
         key=f"tools_extract:{rate_limiter.normalize_rate_limit_key_part(uid, fallback='anon_uid', runtime=app_ctx)}",
@@ -255,60 +262,86 @@ def tools_extract(app_ctx, request):
         return app_ctx.jsonify({'error': 'No text extraction credits remaining. Please purchase more credits.'}), 402
 
     job_id = str(app_ctx.uuid.uuid4())
-    staged_input, cleanup_paths, url_error, detect_error, _unused = _stage_tools_request_inputs(app_ctx, request, job_id=job_id)
-    if url_error:
-        return app_ctx.jsonify({'error': url_error[1]}), 400
-    if detect_error:
-        app_ctx.cleanup_files(list(cleanup_paths or []), [])
-        return app_ctx.jsonify({'error': detect_error[0]}), 400
-    if staged_input is None:
-        app_ctx.cleanup_files(list(cleanup_paths or []), [])
-        return app_ctx.jsonify({'error': 'Could not prepare tools extraction input.'}), 400
-
-    deducted_credit = billing_credits.deduct_credit(uid, 'slides_credits', runtime=app_ctx)
-    if not deducted_credit:
-        app_ctx.cleanup_files(list(cleanup_paths or []), [])
-        return app_ctx.jsonify({'error': 'No text extraction credits remaining.'}), 402
-
-    runtime_jobs_store.set_job(
-        job_id,
-        _tools_job_payload(
-            app_ctx,
-            uid=uid,
-            email=email,
-            staged_input=staged_input,
-            deducted_credit=deducted_credit,
-        ),
-        runtime=app_ctx,
-    )
-
+    cleanup_paths = ()
+    quota_reservation = None
     try:
-        app_ctx.submit_background_job(
-            _run_tools_extract_job,
+        quota_reservation, quota_response, quota_status = upload_quota_service.reserve_upload_quota(
             app_ctx,
-            job_id,
             uid,
-            email,
-            staged_input,
-            deducted_credit,
-            int(user.get('slides_credits', 0) or 0),
+            upload_quota_service.request_content_length(request),
+            context='Tools extraction upload',
+            analytics_limit_name='tools',
         )
-    except JobQueueFullError:
-        return upload_api_service._handle_runtime_job_queue_full(
+        if quota_response is not None:
+            return quota_response, quota_status
+
+        staged_input, cleanup_paths, url_error, detect_error, _unused = _stage_tools_request_inputs(app_ctx, request, job_id=job_id)
+        actual_upload_bytes = sum(max(0, int(app_ctx.get_saved_file_size(path) or 0)) for path in cleanup_paths or ())
+        quota_error, quota_error_status = upload_quota_service.adjust_reserved_upload_bytes(
             app_ctx,
-            job_id=job_id,
-            uid=uid,
-            cleanup_paths=list(cleanup_paths or []),
-            credit_type=deducted_credit,
-            expected_credit_floor=None if billing_credits.is_unlimited_for_category(user, 'slides', runtime=app_ctx) else int(user.get('slides_credits', 0) or 0),
+            quota_reservation,
+            actual_upload_bytes,
+            context='Tools extraction upload',
+            analytics_limit_name='tools',
+        )
+        if quota_error is not None:
+            app_ctx.cleanup_files(list(cleanup_paths or []), [])
+            return quota_error, quota_error_status
+        if url_error:
+            return app_ctx.jsonify({'error': url_error[1]}), 400
+        if detect_error:
+            app_ctx.cleanup_files(list(cleanup_paths or []), [])
+            return app_ctx.jsonify({'error': detect_error[0]}), 400
+        if staged_input is None:
+            app_ctx.cleanup_files(list(cleanup_paths or []), [])
+            return app_ctx.jsonify({'error': 'Could not prepare tools extraction input.'}), 400
+
+        deducted_credit = billing_credits.deduct_credit(uid, 'slides_credits', runtime=app_ctx)
+        if not deducted_credit:
+            app_ctx.cleanup_files(list(cleanup_paths or []), [])
+            return app_ctx.jsonify({'error': 'No text extraction credits remaining.'}), 402
+
+        runtime_jobs_store.set_job(
+            job_id,
+            _tools_job_payload(
+                app_ctx,
+                uid=uid,
+                email=email,
+                staged_input=staged_input,
+                deducted_credit=deducted_credit,
+            ),
+            runtime=app_ctx,
         )
 
-    return app_ctx.jsonify({
-        'ok': True,
-        'job_id': job_id,
-        'status': 'queued',
-        'source_type': staged_input.source_type,
-    }), 202
+        try:
+            app_ctx.submit_background_job(
+                _run_tools_extract_job,
+                app_ctx,
+                job_id,
+                uid,
+                email,
+                staged_input,
+                deducted_credit,
+                int(user.get('slides_credits', 0) or 0),
+            )
+        except JobQueueFullError:
+            return upload_api_service._handle_runtime_job_queue_full(
+                app_ctx,
+                job_id=job_id,
+                uid=uid,
+                cleanup_paths=list(cleanup_paths or []),
+                credit_type=deducted_credit,
+                expected_credit_floor=None if billing_credits.is_unlimited_for_category(user, 'slides', runtime=app_ctx) else int(user.get('slides_credits', 0) or 0),
+            )
+        upload_quota_service.commit_upload_quota(quota_reservation)
+        return app_ctx.jsonify({
+            'ok': True,
+            'job_id': job_id,
+            'status': 'queued',
+            'source_type': staged_input.source_type,
+        }), 202
+    finally:
+        upload_quota_service.release_uncommitted_upload_quota(app_ctx, quota_reservation)
 
 
 def _set_tools_job_progress(app_ctx, job_id: str, *, step: int, description: str, status: str = 'processing', **extra_fields):

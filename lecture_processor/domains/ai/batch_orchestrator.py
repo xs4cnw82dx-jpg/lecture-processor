@@ -10,6 +10,7 @@ from lecture_processor.domains.ai import pipelines as ai_pipelines
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.notifications import send_batch_completion_email
+from lecture_processor.domains.rate_limit import quotas as rate_limit_quotas
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.runtime.container import get_runtime
 
@@ -28,6 +29,7 @@ STAGE_LABELS = {
     'queued': 'Queued',
     'validation': 'Validating batch',
     'file_upload': 'Uploading source files',
+    'audio_import': 'Importing audio',
     'slide_extraction': 'Extracting slide text',
     'audio_transcription': 'Transcribing audio',
     'notes_merge': 'Merging notes',
@@ -74,6 +76,41 @@ def _memory_store(runtime):
     if not hasattr(runtime, '_BATCH_ROWS_MEMORY'):
         runtime._BATCH_ROWS_MEMORY = {}
     return runtime._BATCH_JOBS_MEMORY, runtime._BATCH_ROWS_MEMORY
+
+
+def _audio_fetch_target_store(runtime):
+    if not hasattr(runtime, '_BATCH_AUDIO_FETCH_TARGETS'):
+        runtime._BATCH_AUDIO_FETCH_TARGETS = {}
+    return runtime._BATCH_AUDIO_FETCH_TARGETS
+
+
+def register_batch_audio_fetch_target(batch_id, row_id, fetch_target, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    safe_batch_id = str(batch_id or '').strip()
+    safe_row_id = str(row_id or '').strip()
+    if not safe_batch_id or not safe_row_id or not fetch_target:
+        return
+    _audio_fetch_target_store(resolved_runtime)[(safe_batch_id, safe_row_id)] = fetch_target
+
+
+def clear_batch_audio_fetch_targets(batch_id, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    safe_batch_id = str(batch_id or '').strip()
+    if not safe_batch_id:
+        return
+    store = _audio_fetch_target_store(resolved_runtime)
+    for key in list(store.keys()):
+        if key[0] == safe_batch_id:
+            store.pop(key, None)
+
+
+def _pop_batch_audio_fetch_target(row, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    batch_id = str(row.get('batch_id', '') or '').strip()
+    row_id = str(row.get('row_id', '') or '').strip()
+    if not batch_id or not row_id:
+        return None
+    return _audio_fetch_target_store(resolved_runtime).pop((batch_id, row_id), None)
 
 
 def _sanitize_persisted_value(value):
@@ -1015,10 +1052,102 @@ def _run_stage_with_builder(batch_id, rows, stage_name, builder, handler, runtim
         )
 
 
+def _release_row_audio_quota(row, actual_bytes, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    if str(row.get('source_type', '') or '') != 'm3u8_url':
+        return
+    if bool(row.get('audio_quota_released', False)):
+        return
+    reserved = 0
+    try:
+        reserved = int(row.get('audio_quota_reserved_bytes', 0) or 0)
+    except Exception:
+        reserved = 0
+    try:
+        actual = max(0, int(actual_bytes or 0))
+    except Exception:
+        actual = 0
+    release_bytes = max(0, reserved - actual)
+    if release_bytes > 0:
+        rate_limit_quotas.release_daily_upload_bytes(
+            str(row.get('uid', '') or row.get('user_id', '') or ''),
+            release_bytes,
+            runtime=resolved_runtime,
+        )
+    row['audio_quota_actual_bytes'] = actual
+    row['audio_quota_released'] = True
+
+
+def _restore_audio_fetch_target(raw_target, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    url_security = getattr(resolved_runtime, 'url_security', None)
+    target_cls = getattr(url_security, 'ValidatedFetchTarget', None)
+    if target_cls is not None and isinstance(raw_target, target_cls):
+        return raw_target
+    if isinstance(raw_target, dict):
+        url = str(raw_target.get('url', '') or '').strip()
+        if not url:
+            return ''
+        scheme = str(raw_target.get('scheme', '') or '').strip().lower()
+        host = str(raw_target.get('host', '') or '').strip().lower()
+        try:
+            port = int(raw_target.get('port', 0) or 0)
+        except Exception:
+            port = 0
+        resolved_ips = tuple(
+            str(ip or '').strip()
+            for ip in (raw_target.get('resolved_ips', ()) or ())
+            if str(ip or '').strip()
+        )
+        if target_cls is not None and scheme and host and port and resolved_ips:
+            return target_cls(
+                url=url,
+                scheme=scheme,
+                host=host,
+                port=port,
+                resolved_ips=resolved_ips,
+            )
+        return url
+    return str(raw_target or '').strip()
+
+
+def _prepare_row_audio_source(row, local_paths, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    if str(row.get('source_type', '') or '') != 'm3u8_url':
+        return
+    if str(row.get('audio_local_path', '') or '').strip():
+        return
+    fetch_target = _restore_audio_fetch_target(
+        row.get('_audio_fetch_target') or row.get('audio_fetch_target') or _pop_batch_audio_fetch_target(row, runtime=resolved_runtime),
+        runtime=resolved_runtime,
+    )
+    if not fetch_target:
+        row['status'] = 'error'
+        row['failed_stage'] = 'audio_import'
+        row['error'] = 'Missing audio import URL.'
+        _release_row_audio_quota(row, 0, runtime=resolved_runtime)
+        raise ValueError(row['error'])
+    prefix = f"batch_{str(row.get('row_job_id', '') or row.get('row_id', '') or resolved_runtime.uuid.uuid4())}"
+    row['current_stage'] = 'audio_import'
+    row['last_stage_update_at'] = resolved_runtime.time.time()
+    try:
+        audio_path, _output_name, downloaded_size = resolved_runtime.download_audio_from_video_url(fetch_target, prefix)
+    except Exception:
+        _release_row_audio_quota(row, 0, runtime=resolved_runtime)
+        raise
+    row['audio_local_path'] = audio_path
+    row['audio_quota_actual_bytes'] = max(0, int(downloaded_size or 0))
+    if audio_path and audio_path not in local_paths:
+        local_paths.append(audio_path)
+    _release_row_audio_quota(row, row.get('audio_quota_actual_bytes', 0), runtime=resolved_runtime)
+
+
 def _upload_row_files(row, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     local_paths = row.setdefault('_local_paths', [])
     gemini_files = row.setdefault('_gemini_files', [])
+
+    _prepare_row_audio_source(row, local_paths, runtime=resolved_runtime)
 
     slides_path = str(row.get('slides_local_path', '') or '').strip()
     if slides_path and not row.get('slides_file_uri'):
@@ -1993,6 +2122,7 @@ def process_batch_job(batch_id, runtime=None):
             stage_error=stage_error,
             runtime=resolved_runtime,
         )
+        clear_batch_audio_fetch_targets(batch_id, runtime=resolved_runtime)
 
 
 def get_batch_status(batch_id, runtime=None):

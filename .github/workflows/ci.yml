@@ -58,6 +58,26 @@ jobs:
       - name: Verify generated assets
         run: npm run check:assets
 
+  functions-checks:
+    name: Firebase Functions Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install Functions dependencies
+        run: npm ci --prefix functions
+
+      - name: Load Functions module
+        run: node -e "require('./functions/index.js')"
+
   smoke-tests:
     name: Smoke Tests
     runs-on: ubuntu-latest

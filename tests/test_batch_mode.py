@@ -490,7 +490,7 @@ def test_batch_direct_url_does_not_download_when_daily_quota_fails(client, monke
     assert 'daily upload quota' in response.get_json()['error'].lower()
 
 
-def test_batch_direct_url_redacts_source_url_and_releases_unused_quota(client, monkeypatch, tmp_path):
+def test_batch_direct_url_redacts_source_url_and_defers_download(client, monkeypatch, tmp_path):
     _patch_batch_auth(monkeypatch)
     _patch_batch_quota_guards(monkeypatch)
     monkeypatch.setattr(core, 'client', object())
@@ -498,6 +498,7 @@ def test_batch_direct_url_redacts_source_url_and_releases_unused_quota(client, m
     capture = _Capture()
     reserved = []
     released = []
+    downloads = []
 
     monkeypatch.setattr(
         core,
@@ -523,6 +524,7 @@ def test_batch_direct_url_redacts_source_url_and_releases_unused_quota(client, m
         return str(path), ''
 
     def _download_audio(_fetch_target, prefix):
+        downloads.append((_fetch_target, prefix))
         path = tmp_path / f'{prefix}.mp3'
         path.write_bytes(b'ID3\x03\x00\x00downloaded audio')
         return str(path), path.name, path.stat().st_size
@@ -565,8 +567,51 @@ def test_batch_direct_url_redacts_source_url_and_releases_unused_quota(client, m
     assert capture.rows[1]['source_url'] == 'https://ovp.kaltura.com/[redacted]'
     assert 'token=' not in json.dumps(capture.rows)
     assert reserved and reserved[0][1] >= core.MAX_AUDIO_UPLOAD_BYTES * 2
+    assert downloads == []
+
+
+def test_batch_worker_downloads_direct_url_and_releases_unused_quota(monkeypatch, tmp_path):
+    monkeypatch.setattr(core, 'db', None)
+    released = []
+
+    def _download_audio(_fetch_target, prefix):
+        path = tmp_path / f'{prefix}.mp3'
+        path.write_bytes(b'ID3\x03\x00\x00downloaded audio')
+        return str(path), path.name, path.stat().st_size
+
+    monkeypatch.setattr(core, 'download_audio_from_video_url', _download_audio)
+    monkeypatch.setattr(rate_limit_quotas, 'release_daily_upload_bytes', lambda uid, byte_count, runtime=None: released.append((uid, byte_count)) or True)
+
+    row = {
+        'batch_id': 'batch-direct',
+        'row_id': 'row-1',
+        'row_job_id': 'row-job-1',
+        'uid': 'u-batch',
+        'source_type': 'm3u8_url',
+        'audio_quota_reserved_bytes': core.MAX_AUDIO_UPLOAD_BYTES,
+        'audio_quota_released': False,
+    }
+    batch_orchestrator.register_batch_audio_fetch_target(
+        'batch-direct',
+        'row-1',
+        {
+            'url': 'https://ovp.kaltura.com/a/index.m3u8?token=secret-a',
+            'scheme': 'https',
+            'host': 'ovp.kaltura.com',
+            'port': 443,
+            'resolved_ips': ['8.8.8.8'],
+        },
+        runtime=core,
+    )
+    local_paths = []
+
+    batch_orchestrator._prepare_row_audio_source(row, local_paths, runtime=core)
+
+    assert row['audio_local_path'].endswith('.mp3')
+    assert row['audio_quota_released'] is True
     assert released and released[0][0] == 'u-batch'
-    assert released[0][1] > 0
+    assert released[0][1] == core.MAX_AUDIO_UPLOAD_BYTES - row['audio_quota_actual_bytes']
+    assert local_paths == [row['audio_local_path']]
 
 
 def test_batch_queue_full_cleans_consumed_import_token_files(client, monkeypatch, tmp_path):
