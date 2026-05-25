@@ -136,6 +136,9 @@ def export_study_pack_source(app_ctx, request, pack_id):
             if str(pack.get('mode', '') or '').strip() == 'interview':
                 label = 'Interview Transcript'
                 suffix = 'interview-transcript'
+            elif str(pack.get('mode', '') or '').strip() == 'audio-transcription':
+                label = 'Audio Transcript'
+                suffix = 'audio-transcript'
             else:
                 label = 'Lecture Transcript'
                 suffix = 'lecture-transcript'

@@ -85,7 +85,9 @@
     if (href === currentPath) return true;
     if (href === '/plan' && currentPath === '/stats') return true;
     if (href === '/batch_mode') {
-      return currentPath === '/batch_mode_slides_extraction' || currentPath === '/batch_mode_interview_transcription';
+      return currentPath === '/batch_mode_slides_extraction'
+        || currentPath === '/batch_mode_interview_transcription'
+        || currentPath === '/batch_mode_audio_transcription';
     }
     return false;
   }

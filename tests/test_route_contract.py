@@ -94,6 +94,7 @@ EXPECTED_ROUTES = [
     ('GET', '/batch_status', 'pages.batch_status_page'),
     ('GET', '/batch_dashboard', 'pages.batch_dashboard_page'),
     ('GET', '/batch_mode', 'pages.batch_mode_page'),
+    ('GET', '/batch_mode_audio_transcription', 'pages.batch_mode_audio_transcription_page'),
     ('GET', '/batch_mode_interview_transcription', 'pages.batch_mode_interview_page'),
     ('GET', '/batch_mode_slides_extraction', 'pages.batch_mode_slides_page'),
     ('GET', '/calendar', 'pages.calendar_dashboard'),
@@ -261,6 +262,12 @@ def test_processing_pages_render_updated_shell_labels(client):
     assert 'Batch Processing · Lecture Notes' in batch_html
     assert 'Batch Mode Lectures' not in batch_html
 
+    audio_batch_response = client.get('/batch_mode_audio_transcription')
+    assert audio_batch_response.status_code == 200
+    audio_batch_html = audio_batch_response.get_data(as_text=True)
+    assert 'Batch Processing · Audio Transcription' in audio_batch_html
+    assert 'Audio Transcription' in audio_batch_html
+
 
 def test_more_tools_pages_and_links_render(client):
     tools_response = client.get('/tools')
@@ -268,12 +275,14 @@ def test_more_tools_pages_and_links_render(client):
     tools_html = tools_response.get_data(as_text=True)
     assert 'Lecture Downloader' in tools_html
     assert 'General Transcriber' in tools_html
+    assert 'Batch Transcriber' in tools_html
 
     downloader_response = client.get('/lecture-downloader')
     assert downloader_response.status_code == 200
     downloader_html = downloader_response.get_data(as_text=True)
     assert 'href="/lecture-downloader"' in downloader_html
     assert 'href="/general-transcriber"' in downloader_html
+    assert 'href="/batch_mode_audio_transcription"' in downloader_html
 
     transcriber_response = client.get('/general-transcriber')
     assert transcriber_response.status_code == 200

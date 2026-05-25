@@ -108,6 +108,15 @@ def test_batch_and_study_generated_dropzones_are_keyboard_accessible():
     assert "builderCsvDrop.addEventListener('keydown'" in study_js
 
 
+def test_batch_audio_transcription_mode_disables_study_tools_and_allows_audio_import():
+    batch_js = Path('static/js/batch-mode.js').read_text(encoding='utf-8')
+
+    assert "'audio-transcription': {" in batch_js
+    assert 'supportsStudyTools: false' in batch_js
+    assert 'allowsAudioUrlImport: true' in batch_js
+    assert 'if (modeSupportsStudyTools()) wireRowOverride(card);' in batch_js
+
+
 def test_study_folder_rows_do_not_nest_actions_inside_button_role():
     study_js = Path('static/js/study.js').read_text(encoding='utf-8')
 
@@ -134,6 +143,7 @@ def test_shared_shell_hidden_and_live_region_contracts():
     assert 'id="shell-toast" role="status" aria-live="polite" aria-atomic="true"' in shell_template
     assert "href === '/batch_mode'" in app_shell_js
     assert "currentPath === '/batch_mode_slides_extraction'" in app_shell_js
+    assert "currentPath === '/batch_mode_audio_transcription'" in app_shell_js
     assert "link.setAttribute('aria-current', 'page');" in app_shell_js
 
 

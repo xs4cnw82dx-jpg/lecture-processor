@@ -1617,6 +1617,7 @@ function formatRuntimeJobMode(mode) {
   if (safeMode === 'lecture-notes') return 'Lecture Notes';
   if (safeMode === 'slides-only') return 'Slides Extraction';
   if (safeMode === 'interview') return 'Interview Transcription';
+  if (safeMode === 'audio-transcription') return 'Audio Transcription';
   if (safeMode === 'voice-note') return 'Voice Note';
   return 'Processing';
 }

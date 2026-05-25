@@ -395,6 +395,89 @@ def test_batch_create_interview_accepts_empty_extras_by_default(client, monkeypa
     assert capture.rows[1].get('interview_features_cost') == 0
 
 
+def test_batch_create_audio_transcription_uses_interview_credits_without_study_tools(client, monkeypatch):
+    _patch_batch_auth(monkeypatch)
+    _patch_batch_quota_guards(monkeypatch)
+    monkeypatch.setattr(core, 'client', object())
+    monkeypatch.setattr(upload_import_audio, 'cleanup_expired_audio_import_tokens', lambda runtime=None: None)
+    monkeypatch.setattr(core, 'threading', type('T', (), {'Thread': _DummyThread}))
+    monkeypatch.setattr(
+        core,
+        'get_or_create_user',
+        lambda uid, email: {
+            'uid': uid,
+            'email': email,
+            'interview_credits_short': 2,
+            'interview_credits_medium': 0,
+            'interview_credits_long': 0,
+            'slides_credits': 0,
+            'preferred_output_language': 'english',
+            'preferred_output_language_custom': '',
+        },
+    )
+    monkeypatch.setattr(core, 'file_looks_like_audio', lambda _path: True)
+    monkeypatch.setattr(billing_credits, 'deduct_interview_credit', lambda uid, runtime=None: 'interview_credits_short')
+    monkeypatch.setattr(
+        billing_credits,
+        'deduct_credit',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError('Audio transcription batches should not charge lecture or slides credits')),
+    )
+    monkeypatch.setattr(
+        billing_credits,
+        'deduct_slides_credits',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError('Audio transcription batches should not charge study-tool credits')),
+    )
+
+    capture = _Capture()
+
+    def _fake_create_batch(batch_payload, rows, runtime=None):
+        capture.batch_payload = dict(batch_payload)
+        capture.rows = list(rows)
+
+    monkeypatch.setattr(batch_orchestrator, 'create_batch_job', _fake_create_batch)
+    monkeypatch.setattr(batch_orchestrator, 'process_batch_job', lambda _batch_id, runtime=None: None)
+
+    rows = [
+        {
+            'row_id': 'row-1',
+            'audio_file_field': 'row_1_audio',
+            'study_override': {'study_features': 'both'},
+            'interview_features': ['summary'],
+        },
+        {'row_id': 'row-2', 'audio_file_field': 'row_2_audio'},
+    ]
+    response = client.post(
+        '/api/batch/jobs',
+        data={
+            'mode': 'audio-transcription',
+            'batch_title': 'Audio transcription batch',
+            'include_combined_docx': '1',
+            'output_language': 'other',
+            'output_language_custom': 'Italian',
+            'study_features': 'both',
+            'rows': json.dumps(rows),
+            'row_1_audio': (io.BytesIO(b'RIFF0000WAVEfmt row-1'), 'audio-1.wav', 'audio/wav'),
+            'row_2_audio': (io.BytesIO(b'RIFF0000WAVEfmt row-2'), 'audio-2.wav', 'audio/wav'),
+        },
+        content_type='multipart/form-data',
+    )
+
+    assert response.status_code == 200
+    assert capture.batch_payload is not None
+    assert capture.batch_payload.get('mode') == 'audio-transcription'
+    assert capture.batch_payload.get('output_language') == 'Italian'
+    assert capture.batch_payload.get('study_defaults', {}).get('study_features') == 'none'
+    assert capture.batch_payload.get('export_options') == {'include_combined_docx': True}
+    assert isinstance(capture.rows, list)
+    assert len(capture.rows) == 2
+    assert capture.rows[0].get('study_features') == 'none'
+    assert capture.rows[0].get('interview_features') == []
+    assert capture.rows[0].get('interview_features_cost') == 0
+    assert capture.rows[0].get('credit_deducted') == 'interview_credits_short'
+    assert capture.rows[0].get('source_type') == 'upload'
+    assert capture.rows[1].get('study_features') == 'none'
+
+
 def test_batch_direct_url_does_not_download_when_credit_preflight_fails(client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     _patch_batch_quota_guards(monkeypatch)
@@ -612,6 +695,140 @@ def test_batch_worker_downloads_direct_url_and_releases_unused_quota(monkeypatch
     assert released and released[0][0] == 'u-batch'
     assert released[0][1] == core.MAX_AUDIO_UPLOAD_BYTES - row['audio_quota_actual_bytes']
     assert local_paths == [row['audio_local_path']]
+
+
+def test_batch_upload_row_files_converts_audio_for_audio_transcription_rows(monkeypatch, tmp_path):
+    source = tmp_path / 'recording.wav'
+    converted = tmp_path / 'recording.mp3'
+    source.write_bytes(b'RIFF0000WAVEfmt source')
+    converted.write_bytes(b'ID3\x03\x00\x00converted')
+    uploads = []
+
+    class _FakeFiles:
+        def upload(self, file=None, config=None):
+            uploads.append((file, dict(config or {})))
+            return type('UploadedFile', (), {'uri': 'files/audio-transcription'})()
+
+    monkeypatch.setattr(core, 'client', type('FakeClient', (), {'files': _FakeFiles()})())
+    monkeypatch.setattr(core, 'convert_audio_to_mp3_with_ytdlp', lambda path: (str(converted), True))
+    monkeypatch.setattr(core, 'get_mime_type', lambda path: 'audio/mpeg')
+    monkeypatch.setattr(core, 'wait_for_file_processing', lambda _file: None)
+    monkeypatch.setattr(batch_orchestrator.study_audio, 'persist_audio_for_study_pack', lambda *_args, **_kwargs: 'audio/storage/key.mp3')
+
+    row = {
+        'row_id': 'row-audio',
+        'row_job_id': 'row-job-audio',
+        'source_type': 'upload',
+        'audio_local_path': str(source),
+    }
+
+    batch_orchestrator._upload_row_files(row, runtime=core)
+
+    assert uploads == [(str(converted), {'mime_type': 'audio/mpeg'})]
+    assert str(converted) in row.get('_local_paths', [])
+    assert row.get('audio_file_uri') == 'files/audio-transcription'
+    assert row.get('audio_mime_type') == 'audio/mpeg'
+    assert row.get('audio_storage_key') == 'audio/storage/key.mp3'
+
+
+def test_process_batch_audio_transcription_runs_clean_transcript_prompt(monkeypatch):
+    _clear_batch_memory()
+    _patch_batch_refunds(monkeypatch)
+    monkeypatch.setattr(core, 'db', None)
+    monkeypatch.setattr(batch_orchestrator.ai_pipelines, 'save_study_pack', lambda *_args, **_kwargs: True)
+
+    captured_stages = []
+
+    def _fake_upload_row_files(row, runtime=None):
+        row['audio_file_uri'] = 'files/' + row['row_id']
+        row['audio_mime_type'] = 'audio/mpeg'
+
+    def _fake_run_batch_stage(batch_id, stage_name, requests, request_keys=None, runtime=None, display_name=''):
+        captured_stages.append(
+            {
+                'stage_name': stage_name,
+                'requests': requests,
+                'request_keys': list(request_keys or []),
+                'display_name': display_name,
+            }
+        )
+        return [
+            {
+                'response': {
+                    'text': 'Clean transcript row one.',
+                    'usage_metadata': {
+                        'prompt_token_count': 10,
+                        'candidates_token_count': 5,
+                        'total_token_count': 15,
+                    },
+                }
+            },
+            {
+                'response': {
+                    'text': 'Clean transcript row two.',
+                    'usage_metadata': {
+                        'prompt_token_count': 12,
+                        'candidates_token_count': 6,
+                        'total_token_count': 18,
+                    },
+                }
+            },
+        ]
+
+    monkeypatch.setattr(batch_orchestrator, '_upload_row_files', _fake_upload_row_files)
+    monkeypatch.setattr(batch_orchestrator, '_run_batch_stage', _fake_run_batch_stage)
+
+    batch_id = batch_orchestrator.create_batch_job(
+        {
+            'batch_id': 'batch-audio-prompt',
+            'uid': 'u-batch',
+            'email': 'batch@example.com',
+            'mode': 'audio-transcription',
+            'status': 'queued',
+            'batch_title': 'Audio prompt',
+            'total_rows': 2,
+            'completion_email_status': 'pending',
+        },
+        [
+            {
+                'row_id': 'row-1',
+                'ordinal': 1,
+                'status': 'queued',
+                'output_language': 'Dutch',
+                'study_features': 'none',
+                'credit_deducted': 'interview_credits_short',
+            },
+            {
+                'row_id': 'row-2',
+                'ordinal': 2,
+                'status': 'queued',
+                'output_language': 'Dutch',
+                'study_features': 'none',
+                'credit_deducted': 'interview_credits_short',
+            },
+        ],
+        runtime=core,
+    )
+
+    batch_orchestrator.process_batch_job(batch_id, runtime=core)
+
+    assert [stage['stage_name'] for stage in captured_stages] == ['audio_transcription']
+    assert captured_stages[0]['request_keys'] == ['row-1', 'row-2']
+    first_request = captured_stages[0]['requests'][0]
+    parts = first_request['contents'][0]['parts']
+    assert parts[0]['file_data'] == {'file_uri': 'files/row-1', 'mime_type': 'audio/mpeg'}
+    prompt_text = parts[1]['text']
+    assert 'Do not include timestamps.' in prompt_text
+    assert 'Write the final output fully in this language: Dutch.' in prompt_text
+
+    row_one = batch_orchestrator.get_batch_row(batch_id, 'row-1', runtime=core)
+    row_two = batch_orchestrator.get_batch_row(batch_id, 'row-2', runtime=core)
+    assert row_one.get('status') == 'complete'
+    assert row_one.get('result') == 'Clean transcript row one.'
+    assert row_one.get('transcript') == 'Clean transcript row one.'
+    assert row_one.get('transcript_segments') == []
+    assert row_one.get('study_features') == 'none'
+    assert row_two.get('result') == 'Clean transcript row two.'
 
 
 def test_batch_queue_full_cleans_consumed_import_token_files(client, monkeypatch, tmp_path):
@@ -969,6 +1186,69 @@ def test_batch_download_zip_omits_combined_docx_when_disabled(client, monkeypatc
 
     summary = json.loads(archive.read('summary.json').decode('utf-8'))
     assert summary['export_options'] == {'include_combined_docx': False}
+
+
+def test_batch_download_zip_audio_transcription_includes_transcripts_and_combined_docx(client, monkeypatch):
+    _patch_batch_auth(monkeypatch)
+    monkeypatch.setattr(
+        batch_orchestrator,
+        'get_batch',
+        lambda batch_id, runtime=None: {
+            'batch_id': batch_id,
+            'uid': 'u-batch',
+            'mode': 'audio-transcription',
+            'status': 'complete',
+            'batch_title': 'Audio Batch',
+            'total_rows': 1,
+            'completed_rows': 1,
+            'failed_rows': 0,
+            'export_options': {'include_combined_docx': True},
+        },
+    )
+    monkeypatch.setattr(
+        batch_orchestrator,
+        'get_batch_status',
+        lambda batch_id, runtime=None: {
+            'batch_id': batch_id,
+            'can_download_zip': True,
+        },
+    )
+    monkeypatch.setattr(
+        batch_orchestrator,
+        'list_batch_rows',
+        lambda batch_id, runtime=None: [
+            {
+                'row_id': 'row-1',
+                'ordinal': 1,
+                'status': 'complete',
+                'source_name': 'Audio 1',
+                'result': 'Transcript text',
+                'transcript': 'Transcript text',
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        study_export,
+        'markdown_to_docx',
+        lambda markdown_text, title='Document', runtime=None: _SimpleDocx(f'{title}\n{markdown_text}'),
+    )
+
+    response = client.get('/api/batch/jobs/batch-audio/download.zip')
+
+    assert response.status_code == 200
+    archive = zipfile.ZipFile(io.BytesIO(response.data), 'r')
+    names = archive.namelist()
+    assert 'rows/row-1/result.docx' in names
+    assert 'rows/row-1/transcript.docx' in names
+    assert 'rows/row-1/flashcards.csv' not in names
+    assert 'rows/row-1/test_questions.csv' not in names
+    combined_name = next(name for name in names if name.endswith('_Combined.docx'))
+    combined_text = archive.read(combined_name).decode('utf-8')
+    assert 'Audio 1' in combined_text
+    assert 'Transcript' in combined_text
+    assert 'Transcript text' in combined_text
+    summary = json.loads(archive.read('summary.json').decode('utf-8'))
+    assert summary['mode'] == 'audio-transcription'
 
 
 def test_batch_status_repairs_terminal_batch_with_incomplete_rows(monkeypatch):

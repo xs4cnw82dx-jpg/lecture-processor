@@ -8,7 +8,7 @@
 
   var body = document.body;
   var forcedMode = String((body && body.dataset && body.dataset.forcedMode) || 'lecture-notes').trim();
-  var mode = ['lecture-notes', 'slides-only', 'interview'].indexOf(forcedMode) >= 0 ? forcedMode : 'lecture-notes';
+  var mode = ['lecture-notes', 'slides-only', 'interview', 'audio-transcription'].indexOf(forcedMode) >= 0 ? forcedMode : 'lecture-notes';
   var batchPage = document.getElementById('batch-page');
   var modeLinks = Array.prototype.slice.call(document.querySelectorAll('.mode-link[href]'));
 
@@ -18,6 +18,8 @@
       singular: 'Lecture',
       requiresSlides: true,
       requiresAudio: true,
+      allowsAudioUrlImport: true,
+      supportsStudyTools: true,
       heroDescription: 'Create one batch request with multiple lectures. Each row produces its own outputs, and the batch can be downloaded as one ZIP.',
       minimumNote: 'Minimum 2 lectures required for batch mode.',
     },
@@ -26,6 +28,8 @@
       singular: 'Slide set',
       requiresSlides: true,
       requiresAudio: false,
+      allowsAudioUrlImport: false,
+      supportsStudyTools: true,
       heroDescription: 'Create one batch request with multiple slide sets. Each row produces its own outputs, and the batch can be downloaded as one ZIP.',
       minimumNote: 'Minimum 2 slides sets required for batch mode.',
     },
@@ -34,8 +38,20 @@
       singular: 'Interview',
       requiresSlides: false,
       requiresAudio: true,
+      allowsAudioUrlImport: false,
+      supportsStudyTools: false,
       heroDescription: 'Create one batch request with multiple interviews. Each row produces its own outputs, and the batch can be downloaded as one ZIP.',
       minimumNote: 'Minimum 2 interviews required for batch mode.',
+    },
+    'audio-transcription': {
+      plural: 'Audio recordings',
+      singular: 'Audio recording',
+      requiresSlides: false,
+      requiresAudio: true,
+      allowsAudioUrlImport: true,
+      supportsStudyTools: false,
+      heroDescription: 'Create one batch request with multiple lecture recordings. Each row produces a clean transcript, and the batch can be downloaded as one ZIP.',
+      minimumNote: 'Minimum 2 audio recordings required for batch mode.',
     },
   };
 
@@ -99,6 +115,14 @@
 
   function modeMeta() {
     return MODE_META[mode] || MODE_META['lecture-notes'];
+  }
+
+  function modeSupportsStudyTools() {
+    return !!modeMeta().supportsStudyTools;
+  }
+
+  function modeAllowsAudioUrlImport() {
+    return !!modeMeta().allowsAudioUrlImport;
   }
 
   function showShellToast(message, variant) {
@@ -349,8 +373,9 @@
       chip.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
 
-    var hideFlashcards = mode === 'interview' || next === 'none' || next === 'test';
-    var hideQuestions = mode === 'interview' || next === 'none' || next === 'flashcards';
+    var disableStudyTools = !modeSupportsStudyTools();
+    var hideFlashcards = disableStudyTools || next === 'none' || next === 'test';
+    var hideQuestions = disableStudyTools || next === 'none' || next === 'flashcards';
     if (flashcardWrap) flashcardWrap.hidden = hideFlashcards;
     if (questionWrap) questionWrap.hidden = hideQuestions;
   }
@@ -392,7 +417,7 @@
   }
 
   function updateTopControls() {
-    var showStudyDefaults = mode !== 'interview';
+    var showStudyDefaults = modeSupportsStudyTools();
     if (studyDefaultsWrap) studyDefaultsWrap.hidden = !showStudyDefaults;
     if (!showStudyDefaults) {
       if (studyFeaturesInput) studyFeaturesInput.value = 'none';
@@ -610,7 +635,7 @@
     }
     var url = getRowM3u8Url(rowNode);
     if (!url) {
-      setRowAudioImportStatus(rowNode, 'Paste the lecture video page URL or direct playlist URL first.', 'error');
+      setRowAudioImportStatus(rowNode, 'Paste the audio/video page URL or direct playlist URL first.', 'error');
       return Promise.resolve({ ok: false, reason: 'empty-url' });
     }
 
@@ -652,7 +677,7 @@
         return { ok: true, reason: 'imported' };
       });
     }).catch(function () {
-      setRowAudioImportStatus(rowNode, 'Import failed: Could not import audio from the lecture video URL. Please try again.', 'error');
+      setRowAudioImportStatus(rowNode, 'Import failed: Could not import audio from that URL. Please try again.', 'error');
       return { ok: false, reason: 'network-error' };
     }).finally(function () {
       setRowAudioImportPending(rowNode, false);
@@ -912,7 +937,7 @@
     var ordinal = rowCount() + 1;
     var rowId = makeRowId();
 
-    var overrideBlockHtml = mode !== 'interview' ? (
+    var overrideBlockHtml = modeSupportsStudyTools() ? (
       '<div class="row-override" data-override-wrap>' +
       '  <div class="row-override-head">' +
       '    <label class="custom-check">' +
@@ -1006,15 +1031,15 @@
       '    </div>' +
       '  </div>' +
       (
-        mode === 'lecture-notes'
+        meta.allowsAudioUrlImport
           ? (
             '  <div class="row-url-import" data-audio-url-wrap>' +
             '    <div class="row-url-head">' +
-            '      <strong>Import from lecture video URL</strong>' +
-            '      <span>Paste the normal lecture video page first. Direct playlist links also work and audio can be auto-imported for this lecture row.</span>' +
+            '      <strong>Import from audio or video URL</strong>' +
+            '      <span>Paste the normal lecture video page first. Direct playlist links also work and audio can be auto-imported for this row.</span>' +
             '    </div>' +
             '    <div class="row-url-row">' +
-            '      <input type="url" class="row-url-input" data-field="m3u8" placeholder="https://.../lecture-video-or-index.m3u8" autocomplete="off">' +
+            '      <input type="url" class="row-url-input" data-field="m3u8" placeholder="https://.../audio-video-or-index.m3u8" autocomplete="off">' +
             '      <button type="button" class="btn small" data-action="import-audio-url">Import audio</button>' +
             '    </div>' +
             '    <div class="row-url-help">' +
@@ -1044,7 +1069,12 @@
       '<div class="row-field row-field-override">' + overrideBlockHtml + '</div>'
     ) : '';
 
-    var rowModeClass = mode === 'lecture-notes' ? 'mode-lecture' : (mode === 'slides-only' ? 'mode-slides' : 'mode-interview');
+    var rowModeClass = {
+      'lecture-notes': 'mode-lecture',
+      'slides-only': 'mode-slides',
+      interview: 'mode-interview',
+      'audio-transcription': 'mode-audio',
+    }[mode] || 'mode-lecture';
     var card = document.createElement('article');
     card.className = 'batch-row ' + rowModeClass;
     card.dataset.rowId = rowId;
@@ -1075,14 +1105,14 @@
     }
 
     if (meta.requiresSlides) wireUploadField(card, 'slides');
-    if (mode === 'lecture-notes') {
+    if (modeAllowsAudioUrlImport()) {
       wireUploadField(card, 'audio');
       wireAudioImport(card);
     } else if (meta.requiresAudio) {
       wireUploadField(card, 'audio');
     }
     if (mode === 'interview') wireInterviewExtras(card);
-    if (mode !== 'interview') wireRowOverride(card);
+    if (modeSupportsStudyTools()) wireRowOverride(card);
 
     updateRowLabels();
   }
@@ -1125,8 +1155,8 @@
         var importedToken = String(state.importedAudioToken || '').trim();
 
         if (!audioFile && !importedToken && !m3u8Url) {
-          if (mode === 'lecture-notes') {
-            throw new Error(meta.singular + ' ' + rowOrdinal + ': provide an audio file or import from a lecture video URL.');
+          if (meta.allowsAudioUrlImport) {
+            throw new Error(meta.singular + ' ' + rowOrdinal + ': provide an audio file or import from an audio or video URL.');
           }
           throw new Error(meta.singular + ' ' + rowOrdinal + ': provide an audio file.');
         }
@@ -1147,7 +1177,7 @@
         row.interview_features = Array.prototype.slice.call(rowNode.querySelectorAll('[data-interview-feature-chip].active')).map(function (chip) {
           return String(chip.dataset.interviewFeatureChip || '').trim();
         });
-      } else {
+      } else if (meta.supportsStudyTools) {
         var overrideEnabled = rowNode.querySelector('input[data-field="override-enabled"]');
         if (overrideEnabled && overrideEnabled.checked) {
           row.study_override = {
@@ -1270,25 +1300,27 @@
           window.open('/api/batch/jobs/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-docx', '_blank');
         });
 
-        var cardsBtn = document.createElement('button');
-        cardsBtn.type = 'button';
-        cardsBtn.className = 'btn tiny';
-        cardsBtn.textContent = 'Flashcards CSV';
-        cardsBtn.addEventListener('click', function () {
-          window.open('/api/batch/jobs/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-flashcards-csv?type=flashcards', '_blank');
-        });
-
-        var testBtn = document.createElement('button');
-        testBtn.type = 'button';
-        testBtn.className = 'btn tiny';
-        testBtn.textContent = 'Test CSV';
-        testBtn.addEventListener('click', function () {
-          window.open('/api/batch/jobs/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-flashcards-csv?type=test', '_blank');
-        });
-
         actionsCell.appendChild(docxBtn);
-        actionsCell.appendChild(cardsBtn);
-        actionsCell.appendChild(testBtn);
+        if (meta.supportsStudyTools) {
+          var cardsBtn = document.createElement('button');
+          cardsBtn.type = 'button';
+          cardsBtn.className = 'btn tiny';
+          cardsBtn.textContent = 'Flashcards CSV';
+          cardsBtn.addEventListener('click', function () {
+            window.open('/api/batch/jobs/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-flashcards-csv?type=flashcards', '_blank');
+          });
+
+          var testBtn = document.createElement('button');
+          testBtn.type = 'button';
+          testBtn.className = 'btn tiny';
+          testBtn.textContent = 'Test CSV';
+          testBtn.addEventListener('click', function () {
+            window.open('/api/batch/jobs/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-flashcards-csv?type=test', '_blank');
+          });
+
+          actionsCell.appendChild(cardsBtn);
+          actionsCell.appendChild(testBtn);
+        }
       } else {
         actionsCell.textContent = '-';
       }
@@ -1362,7 +1394,8 @@
   }
 
   function runAutoImportSweepBeforeStart() {
-    if (mode !== 'lecture-notes') return Promise.resolve();
+    var meta = modeMeta();
+    if (!meta.allowsAudioUrlImport) return Promise.resolve();
     var rowNodes = Array.prototype.slice.call(rowsWrap.querySelectorAll('.batch-row'));
     var importedCount = 0;
     var chain = Promise.resolve();
@@ -1380,7 +1413,7 @@
           silentIfAlreadyImported: true,
         }).then(function (result) {
           if (!result || !result.ok) {
-            throw new Error('Lecture ' + String(index + 1) + ': could not auto-import the lecture video URL. Please import it manually or upload audio.');
+            throw new Error(meta.singular + ' ' + String(index + 1) + ': could not auto-import the audio or video URL. Please import it manually or upload audio.');
           }
           if (result.reason === 'imported') importedCount += 1;
           return true;
@@ -1389,7 +1422,7 @@
     });
     return chain.then(function () {
       if (importedCount > 0) {
-        showShellToast('Imported audio for ' + importedCount + ' lecture row' + (importedCount === 1 ? '' : 's') + '.', 'success');
+        showShellToast('Imported audio for ' + importedCount + ' row' + (importedCount === 1 ? '' : 's') + '.', 'success');
       }
       return true;
     });

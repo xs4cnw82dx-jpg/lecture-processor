@@ -68,12 +68,14 @@
     if (key === 'lecture-notes') return 'Lectures';
     if (key === 'slides-only') return 'Slides';
     if (key === 'interview') return 'Interviews';
+    if (key === 'audio-transcription') return 'Audio Transcriptions';
     return key || '-';
   }
 
   function modePath(mode) {
     if (mode === 'slides-only') return '/batch_mode_slides_extraction';
     if (mode === 'interview') return '/batch_mode_interview_transcription';
+    if (mode === 'audio-transcription') return '/batch_mode_audio_transcription';
     return '/batch_mode';
   }
 
