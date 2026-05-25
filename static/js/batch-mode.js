@@ -1635,7 +1635,7 @@
     }
 
     if (auth) {
-      bootstrap.onAuthStateReady(auth, function (user) {
+      auth.onAuthStateChanged(function (user) {
         if (user && queryBatchId) {
           currentBatchId = queryBatchId;
           startPollingForBatch();

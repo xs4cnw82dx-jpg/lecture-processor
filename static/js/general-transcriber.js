@@ -631,7 +631,7 @@
   setOutputLanguage('english', '');
   updateRunState();
   updateOutputActionState();
-  bootstrap.onAuthStateReady(auth, function (user) {
+  auth.onAuthStateChanged(function (user) {
     authStateResolved = true;
     currentUser = user || null;
     if (authClient && typeof authClient.clearToken === 'function' && !currentUser) authClient.clearToken();
