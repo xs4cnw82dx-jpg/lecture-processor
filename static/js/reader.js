@@ -621,8 +621,8 @@
   hydrateCachedCredits(getSignedInUser());
   updateAuthStateUI();
   updateOutputActionState();
-  if (auth && typeof auth.onAuthStateChanged === 'function') {
-    auth.onAuthStateChanged(function (user) {
+  if (auth && typeof bootstrap.onAuthStateReady === 'function') {
+    bootstrap.onAuthStateReady(auth, function (user) {
       authStateResolved = true;
       currentUser = user || null;
       if (authClient && typeof authClient.clearToken === 'function' && !currentUser) authClient.clearToken();

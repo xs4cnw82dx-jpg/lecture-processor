@@ -80,7 +80,13 @@
     var signedInHref = opts.signedInHref || '/dashboard';
     var signedOutHref = opts.signedOutHref || '/lecture-notes?auth=signin';
 
-    auth.onAuthStateChanged(function (user) {
+    var subscribe = (global.LectureProcessorBootstrap && typeof global.LectureProcessorBootstrap.onAuthStateReady === 'function')
+      ? global.LectureProcessorBootstrap.onAuthStateReady
+      : function (authInstance, callback) {
+        authInstance.onAuthStateChanged(callback);
+      };
+
+    subscribe(auth, function (user) {
       if (labelEl) {
         safeSetText(labelEl, user ? signedInText : signedOutText);
       }

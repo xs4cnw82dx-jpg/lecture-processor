@@ -4456,7 +4456,7 @@ function queueInlineAutosave() {
 
 /* ── Auth ── */
 hydrateTopbarDueFromCache(auth.currentUser || null);
-auth.onAuthStateChanged(function (user) {
+bootstrap.onAuthStateReady(auth, function (user) {
   if (!user) {
     token = null;
     if (authClient && typeof authClient.clearToken === 'function') { authClient.clearToken(); }
