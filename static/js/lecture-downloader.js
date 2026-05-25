@@ -193,7 +193,7 @@
   updateFormatUI();
   updateSummary('none yet.');
   updateRunState();
-  auth.onAuthStateChanged(function (user) {
+  bootstrap.onAuthStateReady(auth, function (user) {
     authStateResolved = true;
     currentUser = user || null;
     if (authClient && typeof authClient.clearToken === 'function' && !currentUser) authClient.clearToken();

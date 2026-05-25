@@ -2151,7 +2151,7 @@
     if (sessionDateInput && !sessionDateInput.value) sessionDateInput.value = todayIso();
     initializeEnhancedControls();
 
-    auth.onAuthStateChanged(function (user) {
+    bootstrap.onAuthStateReady(auth, function (user) {
       state.user = user;
       if (!user) {
         setAuthBanner('Sign in to use Physio Assistant.', 'error');
