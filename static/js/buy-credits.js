@@ -277,8 +277,8 @@
 
   updateSignedOutUi();
 
-  if (auth && typeof auth.onAuthStateChanged === 'function') {
-    auth.onAuthStateChanged(function () {
+  if (auth && typeof bootstrap.onAuthStateReady === 'function') {
+    bootstrap.onAuthStateReady(auth, function () {
       authStateResolved = true;
       updateSignedOutUi();
       checkPaymentResult();

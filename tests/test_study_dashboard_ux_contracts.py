@@ -91,7 +91,8 @@ def test_dashboard_auth_unavailable_reaches_ready_signed_out_state():
     dashboard_js = _read('static/js/dashboard.js')
 
     assert 'if (!auth) return;' not in dashboard_js
-    assert "if (!auth || typeof auth.onAuthStateChanged !== 'function')" in dashboard_js
+    assert "if (!auth || typeof bootstrap.onAuthStateReady !== 'function')" in dashboard_js
+    assert 'bootstrap.onAuthStateReady(auth, function (user)' in dashboard_js
     assert 'loadDashboard(null);' in dashboard_js
 
 
@@ -119,6 +120,16 @@ def test_study_supports_voice_notes_folder_deep_link():
     assert "safe === 'voice-notes'" in study_js
     assert 'selectedFolderId = initialFolderFromUrl(folderFromUrl);' in study_js
     assert 'href="/study?folder=voice-notes"' in voice_template
+
+
+def test_study_initial_load_uses_lightweight_progress_and_folder_requests():
+    study_js = _read('static/js/study.js')
+
+    assert "apiCall('/api/study-progress/summary')" in study_js
+    assert "apiCall('/api/study-folders?include_pending=0')" in study_js
+    assert "      queueProgressSync(false);\n      return refreshActiveRuntimeJobs(true);" not in study_js
+    assert "queueProgressSync(false, { markDirty: false });" in study_js
+    assert "if (hasProgressDirty())" in study_js
 
 
 def test_study_inline_autosave_sends_dirty_fields_only():

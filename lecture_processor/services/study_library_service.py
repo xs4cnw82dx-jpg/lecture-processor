@@ -365,7 +365,12 @@ def get_study_folders(app_ctx, request):
         return error_response, status
     uid = decoded_token['uid']
     try:
-        pending_by_folder = study_api_support.list_pending_batches_by_folder(app_ctx, uid)
+        include_pending = str(request.args.get('include_pending', '1') or '1').strip().lower() not in {'0', 'false', 'no'}
+        pending_by_folder = (
+            study_api_support.list_pending_batches_by_folder(app_ctx, uid)
+            if include_pending
+            else {}
+        )
         docs = app_ctx.study_repo.list_study_folders_by_uid(app_ctx.db, uid)
         folders = []
         for doc in docs:

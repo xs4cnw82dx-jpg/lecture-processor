@@ -279,12 +279,12 @@
       setDashboardLoading(false);
     }
   }, 5000);
-  if (!auth || typeof auth.onAuthStateChanged !== 'function') {
+  if (!auth || typeof bootstrap.onAuthStateReady !== 'function') {
     loadDashboard(null);
     return;
   }
 
-  auth.onAuthStateChanged(function (user) {
+  bootstrap.onAuthStateReady(auth, function (user) {
     currentUser = user || null;
     loadDashboard(currentUser);
   });
