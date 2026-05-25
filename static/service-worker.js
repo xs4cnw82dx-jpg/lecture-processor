@@ -1,4 +1,4 @@
-const VOICE_CACHE = 'lecture-processor-voice-v5';
+const VOICE_CACHE = 'lecture-processor-voice-v6';
 const APP_SHELL = [
   '/voice-notes',
   '/static/manifest.webmanifest',
@@ -65,11 +65,13 @@ self.addEventListener('fetch', (event) => {
 
   if (url.pathname.startsWith('/static/') || url.pathname === '/service-worker.js') {
     event.respondWith(
-      caches.match(request).then((cached) => cached || fetch(request).then((response) => {
-        const copy = response.clone();
-        caches.open(VOICE_CACHE).then((cache) => cache.put(request, copy));
-        return response;
-      }))
+      fetch(new Request(request, { cache: 'no-cache' }))
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(VOICE_CACHE).then((cache) => cache.put(request, copy));
+          return response;
+        })
+        .catch(() => caches.match(request))
     );
   }
 });
