@@ -18,9 +18,11 @@ from lecture_processor.runtime.job_dispatcher import JobQueueFullError
 from lecture_processor.services import upload_batch_support, upload_quota_service, upload_redaction_service
 
 
-BATCH_MODES = {'lecture-notes', 'slides-only', 'interview', 'audio-transcription'}
+BATCH_MODES = {'lecture-notes', 'slides-only', 'interview', 'audio-transcription', 'text-combine'}
 STUDY_TOOL_BATCH_MODES = {'lecture-notes', 'slides-only'}
 AUDIO_BATCH_MODES = {'lecture-notes', 'interview', 'audio-transcription'}
+TEXT_COMBINE_BATCH_MODE = 'text-combine'
+MAX_BATCH_TEXT_UPLOAD_BYTES_DEFAULT = 2 * 1024 * 1024
 
 
 def _safe_int(value, default=0):
@@ -87,6 +89,47 @@ def _serialize_audio_fetch_target(fetch_target):
     }
 
 
+def _has_uploaded_file(uploaded_file):
+    return bool(uploaded_file and str(getattr(uploaded_file, 'filename', '') or '').strip())
+
+
+def _read_batch_text_upload(app_ctx, uploaded_file, row_index, label):
+    if not _has_uploaded_file(uploaded_file):
+        return '', 0
+    filename = str(getattr(uploaded_file, 'filename', '') or '').strip()
+    if not app_ctx.allowed_file(filename, {'txt'}):
+        raise ValueError(f'Row {row_index}: {label} must be a .txt file.')
+
+    max_bytes = int(getattr(app_ctx, 'MAX_BATCH_TEXT_UPLOAD_BYTES', MAX_BATCH_TEXT_UPLOAD_BYTES_DEFAULT) or MAX_BATCH_TEXT_UPLOAD_BYTES_DEFAULT)
+    data = uploaded_file.read(max_bytes + 1)
+    if hasattr(uploaded_file, 'stream') and hasattr(uploaded_file.stream, 'seek'):
+        try:
+            uploaded_file.stream.seek(0)
+        except Exception:
+            pass
+    if not data:
+        raise ValueError(f'Row {row_index}: {label} text file is empty.')
+    if len(data) > max_bytes:
+        max_mb = max(1, int(max_bytes / (1024 * 1024)))
+        raise ValueError(f'Row {row_index}: {label} text file exceeds the {max_mb} MB limit.')
+    if b'\x00' in data:
+        raise ValueError(f'Row {row_index}: {label} text file is not valid text.')
+
+    decoded = ''
+    for encoding in ('utf-8-sig', 'utf-8', 'cp1252'):
+        try:
+            decoded = data.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    if not decoded:
+        raise ValueError(f'Row {row_index}: {label} text file could not be decoded.')
+    decoded = decoded.replace('\r\n', '\n').replace('\r', '\n').strip()
+    if not decoded:
+        raise ValueError(f'Row {row_index}: {label} text file is empty.')
+    return decoded, len(data)
+
+
 def _batch_credit_preflight_error(user, mode, row_plans, runtime=None):
     row_count = len(row_plans)
     if mode == 'lecture-notes':
@@ -104,6 +147,9 @@ def _batch_credit_preflight_error(user, mode, row_plans, runtime=None):
     elif mode == 'audio-transcription':
         if not billing_credits.has_category_credit(user, 'interview', row_count, runtime=runtime):
             return 'Not enough interview credits to start this batch.', 402
+    elif mode == TEXT_COMBINE_BATCH_MODE:
+        if not billing_credits.has_category_credit(user, 'lecture', row_count, runtime=runtime):
+            return 'Not enough lecture credits to start this batch.', 402
     return '', 0
 
 
@@ -231,6 +277,7 @@ def create_batch_job(app_ctx, request):
             row_id = str(row_cfg.get('row_id', '') or app_ctx.uuid.uuid4())
             slides_required = mode in {'lecture-notes', 'slides-only'}
             audio_required = mode in AUDIO_BATCH_MODES
+            text_combine_required = mode == TEXT_COMBINE_BATCH_MODE
 
             slides_file = None
             slides_field = str(row_cfg.get('slides_file_field', f'row_{idx}_slides') or '').strip()
@@ -238,6 +285,16 @@ def create_batch_job(app_ctx, request):
                 slides_file = request.files.get(slides_field)
                 if not slides_file or slides_file.filename == '':
                     raise ValueError(f'Row {idx}: slides file is required.')
+
+            slide_text_file = None
+            transcript_text_file = None
+            slide_text_field = str(row_cfg.get('slide_text_file_field', f'row_{idx}_slide_text') or '').strip()
+            transcript_text_field = str(row_cfg.get('transcript_text_file_field', f'row_{idx}_transcript_text') or '').strip()
+            if text_combine_required:
+                slide_text_file = request.files.get(slide_text_field)
+                transcript_text_file = request.files.get(transcript_text_field)
+                if not _has_uploaded_file(slide_text_file) and not _has_uploaded_file(transcript_text_file):
+                    raise ValueError(f'Row {idx}: upload at least one .txt file for slide text or audio transcript.')
 
             audio_source_type = ''
             audio_import_token = str(row_cfg.get('audio_import_token', '') or '').strip()
@@ -298,6 +355,13 @@ def create_batch_job(app_ctx, request):
                     'ordinal': idx,
                     'slides_required': slides_required,
                     'slides_file': slides_file,
+                    'text_combine_required': text_combine_required,
+                    'slide_text_file': slide_text_file,
+                    'transcript_text_file': transcript_text_file,
+                    'text_input_mode': '',
+                    'slide_text': '',
+                    'transcript': '',
+                    'text_upload_bytes': 0,
                     'audio_required': audio_required,
                     'audio_file': audio_file,
                     'audio_file_field': audio_field,
@@ -356,6 +420,33 @@ def create_batch_job(app_ctx, request):
                     runtime=app_ctx,
                 )
 
+            if plan.get('text_combine_required'):
+                slide_text, slide_bytes = _read_batch_text_upload(
+                    app_ctx,
+                    plan.get('slide_text_file'),
+                    idx,
+                    'slide text',
+                )
+                transcript, transcript_bytes = _read_batch_text_upload(
+                    app_ctx,
+                    plan.get('transcript_text_file'),
+                    idx,
+                    'audio transcript',
+                )
+                if not slide_text and not transcript:
+                    raise ValueError(f'Row {idx}: upload at least one .txt file for slide text or audio transcript.')
+                if slide_text and transcript:
+                    text_input_mode = 'both'
+                elif slide_text:
+                    text_input_mode = 'slides-only'
+                else:
+                    text_input_mode = 'transcript-only'
+                plan['slide_text'] = slide_text
+                plan['transcript'] = transcript
+                plan['text_input_mode'] = text_input_mode
+                plan['text_upload_bytes'] = int(slide_bytes or 0) + int(transcript_bytes or 0)
+                actual_upload_bytes += plan['text_upload_bytes']
+
         for plan in row_plans:
             interview_features_cost = int(plan.get('interview_features_cost', 0) or 0)
             charged_credit = ''
@@ -384,6 +475,15 @@ def create_batch_job(app_ctx, request):
                 charged_credit = billing_credits.deduct_interview_credit(uid, runtime=app_ctx)
                 if not charged_credit:
                     raise ValueError('Not enough interview credits to start this batch.')
+            elif mode == TEXT_COMBINE_BATCH_MODE:
+                charged_credit = billing_credits.deduct_credit(
+                    uid,
+                    'lecture_credits_standard',
+                    'lecture_credits_extended',
+                    runtime=app_ctx,
+                )
+                if not charged_credit:
+                    raise ValueError('Not enough lecture credits to start this batch.')
             plan['charged_credit'] = charged_credit
 
             charged_rows.append(
@@ -464,17 +564,21 @@ def create_batch_job(app_ctx, request):
                 {charged_credit: 1, 'slides_credits': interview_features_cost},
                 runtime=app_ctx,
             )
+            source_type = audio_source_type if audio_source_type else ('text-upload' if mode == TEXT_COMBINE_BATCH_MODE else ('upload' if slides_required else 'audio'))
             prepared_rows.append(
                 {
                     'row_id': row_id,
                     'ordinal': idx,
                     'status': 'queued',
                     'uid': uid,
-                    'source_type': audio_source_type if audio_source_type else ('upload' if slides_required else 'audio'),
+                    'source_type': source_type,
                     'source_url': audio_source_url,
                     'source_name': f'row-{idx}',
                     'slides_local_path': slides_local_path,
                     'audio_local_path': audio_local_path,
+                    'text_input_mode': plan.get('text_input_mode', ''),
+                    'slide_text': plan.get('slide_text', ''),
+                    'transcript': plan.get('transcript', ''),
                     'audio_quota_reserved_bytes': upload_quota_service.max_audio_upload_bytes(app_ctx) if audio_source_type == 'm3u8_url' else 0,
                     'audio_quota_actual_bytes': 0,
                     'audio_quota_released': False,
@@ -784,6 +888,10 @@ def batch_row_combined_markdown(batch, row):
             append_combined_markdown_section(parts, 'Combined Output', interview_combined)
     elif mode == 'audio-transcription':
         append_combined_markdown_section(parts, 'Transcript', transcript_text or result_text)
+    elif mode == TEXT_COMBINE_BATCH_MODE:
+        append_combined_markdown_section(parts, 'Combined Lecture Notes', result_text)
+        append_combined_markdown_section(parts, 'Slide Text', slide_text)
+        append_combined_markdown_section(parts, 'Transcript', transcript_text)
     else:
         append_combined_markdown_section(parts, 'Output', result_text)
 

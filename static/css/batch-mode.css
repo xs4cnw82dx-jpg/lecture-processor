@@ -844,6 +844,25 @@
   grid-column: 1 / -1;
 }
 
+.batch-row.mode-text-combine .text-combine-mode-badge {
+  grid-column: 1 / -1;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(62, 168, 116, 0.1);
+  color: #176c45;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.batch-row.mode-text-combine .text-combine-mode-badge.is-empty {
+  background: rgba(100, 116, 139, 0.12);
+  color: #64748b;
+}
+
 .batch-row.mode-lecture .row-field--slides .row-override {
   margin-top: 14px;
 }

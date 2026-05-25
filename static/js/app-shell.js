@@ -87,7 +87,8 @@
     if (href === '/batch_mode') {
       return currentPath === '/batch_mode_slides_extraction'
         || currentPath === '/batch_mode_interview_transcription'
-        || currentPath === '/batch_mode_audio_transcription';
+        || currentPath === '/batch_mode_audio_transcription'
+        || currentPath === '/batch_mode_text_combine';
     }
     return false;
   }

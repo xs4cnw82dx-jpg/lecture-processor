@@ -8,7 +8,7 @@
 
   var body = document.body;
   var forcedMode = String((body && body.dataset && body.dataset.forcedMode) || 'lecture-notes').trim();
-  var mode = ['lecture-notes', 'slides-only', 'interview', 'audio-transcription'].indexOf(forcedMode) >= 0 ? forcedMode : 'lecture-notes';
+  var mode = ['lecture-notes', 'slides-only', 'interview', 'audio-transcription', 'text-combine'].indexOf(forcedMode) >= 0 ? forcedMode : 'lecture-notes';
   var batchPage = document.getElementById('batch-page');
   var modeLinks = Array.prototype.slice.call(document.querySelectorAll('.mode-link[href]'));
 
@@ -48,10 +48,22 @@
       singular: 'Audio recording',
       requiresSlides: false,
       requiresAudio: true,
+      requiresTextInputs: false,
       allowsAudioUrlImport: true,
       supportsStudyTools: false,
       heroDescription: 'Create one batch request with multiple lecture recordings. Each row produces a clean transcript, and the batch can be downloaded as one ZIP.',
       minimumNote: 'Minimum 2 audio recordings required for batch mode.',
+    },
+    'text-combine': {
+      plural: 'Text sets',
+      singular: 'Text set',
+      requiresSlides: false,
+      requiresAudio: false,
+      requiresTextInputs: true,
+      allowsAudioUrlImport: false,
+      supportsStudyTools: false,
+      heroDescription: 'Create one batch request from existing slide extraction and transcript text files. Each row produces complete lecture notes, and the batch can be downloaded as one ZIP.',
+      minimumNote: 'Minimum 2 text sets required for batch mode.',
     },
   };
 
@@ -413,6 +425,10 @@
       if (slidesZone) slidesZone.setAttribute('aria-label', 'Upload slides for ' + meta.singular + ' ' + String(index + 1));
       var audioZone = rowNode.querySelector('[data-upload-zone="audio"]');
       if (audioZone) audioZone.setAttribute('aria-label', 'Upload audio for ' + meta.singular + ' ' + String(index + 1));
+      var slideTextZone = rowNode.querySelector('[data-upload-zone="slideText"]');
+      if (slideTextZone) slideTextZone.setAttribute('aria-label', 'Upload slide extraction text for ' + meta.singular + ' ' + String(index + 1));
+      var transcriptTextZone = rowNode.querySelector('[data-upload-zone="transcriptText"]');
+      if (transcriptTextZone) transcriptTextZone.setAttribute('aria-label', 'Upload audio transcript text for ' + meta.singular + ' ' + String(index + 1));
     });
   }
 
@@ -521,6 +537,31 @@
       zone.classList.remove('has-file');
     }
     syncRowAudioSourceVisual(rowNode);
+    if (fieldName === 'slideText' || fieldName === 'transcriptText') {
+      syncTextCombineBadge(rowNode);
+    }
+  }
+
+  function textFileSelected(rowNode, fieldName) {
+    var input = rowNode.querySelector('input[data-field="' + fieldName + '"]');
+    return !!(input && input.files && input.files[0]);
+  }
+
+  function textCombineModeLabel(rowNode) {
+    var hasSlideText = textFileSelected(rowNode, 'slideText');
+    var hasTranscriptText = textFileSelected(rowNode, 'transcriptText');
+    if (hasSlideText && hasTranscriptText) return 'Slides + transcript';
+    if (hasSlideText) return 'Slides only';
+    if (hasTranscriptText) return 'Transcript only';
+    return 'No text files selected';
+  }
+
+  function syncTextCombineBadge(rowNode) {
+    var badge = rowNode.querySelector('[data-text-combine-badge]');
+    if (!badge) return;
+    var label = textCombineModeLabel(rowNode);
+    badge.textContent = label;
+    badge.classList.toggle('is-empty', label === 'No text files selected');
   }
 
   function clearRowImportedAudioState(rowNode) {
@@ -1054,6 +1095,44 @@
       '</div>'
     ) : '';
 
+    var textCombineFieldsHtml = meta.requiresTextInputs ? (
+      '<div class="row-field row-field--text-input">' +
+      '  <span class="row-label">Slide extraction text (.txt)</span>' +
+      '  <div class="row-upload-zone" data-upload-zone="slideText" role="button" tabindex="0" aria-label="Upload slide extraction text for ' + meta.singular + ' ' + String(ordinal) + '">' +
+      '    <div class="row-upload-title">Upload slide text</div>' +
+      '    <div class="row-upload-subtitle">Drag & drop or click to browse</div>' +
+      '    <input type="file" data-field="slideText" accept=".txt,text/plain">' +
+      '    <div class="row-file-info" data-file-info="slideText" hidden>' +
+      '      <div>' +
+      '        <div class="row-file-name" data-file-name="slideText"></div>' +
+      '        <div class="row-file-meta" data-file-meta="slideText"></div>' +
+      '      </div>' +
+      '      <button type="button" class="file-remove" data-remove-file="slideText" aria-label="Remove slide text file">' +
+      '        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>' +
+      '      </button>' +
+      '    </div>' +
+      '  </div>' +
+      '</div>' +
+      '<div class="row-field row-field--text-input">' +
+      '  <span class="row-label">Audio transcript text (.txt)</span>' +
+      '  <div class="row-upload-zone" data-upload-zone="transcriptText" role="button" tabindex="0" aria-label="Upload audio transcript text for ' + meta.singular + ' ' + String(ordinal) + '">' +
+      '    <div class="row-upload-title">Upload transcript text</div>' +
+      '    <div class="row-upload-subtitle">Drag & drop or click to browse</div>' +
+      '    <input type="file" data-field="transcriptText" accept=".txt,text/plain">' +
+      '    <div class="row-file-info" data-file-info="transcriptText" hidden>' +
+      '      <div>' +
+      '        <div class="row-file-name" data-file-name="transcriptText"></div>' +
+      '        <div class="row-file-meta" data-file-meta="transcriptText"></div>' +
+      '      </div>' +
+      '      <button type="button" class="file-remove" data-remove-file="transcriptText" aria-label="Remove transcript text file">' +
+      '        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>' +
+      '      </button>' +
+      '    </div>' +
+      '  </div>' +
+      '</div>' +
+      '<div class="text-combine-mode-badge is-empty" data-text-combine-badge>No text files selected</div>'
+    ) : '';
+
     var interviewExtrasHtml = mode === 'interview' ? (
       '<div class="row-field">' +
       '  <span class="row-label">Interview extras</span>' +
@@ -1074,6 +1153,7 @@
       'slides-only': 'mode-slides',
       interview: 'mode-interview',
       'audio-transcription': 'mode-audio',
+      'text-combine': 'mode-text-combine',
     }[mode] || 'mode-lecture';
     var card = document.createElement('article');
     card.className = 'batch-row ' + rowModeClass;
@@ -1084,7 +1164,7 @@
       '  <button type="button" class="btn danger-soft" data-action="remove-row">Remove</button>' +
       '</div>' +
       '<div class="batch-row-fields">' +
-      slidesFieldHtml + audioFieldHtml + interviewExtrasHtml + overrideHtml +
+      slidesFieldHtml + audioFieldHtml + textCombineFieldsHtml + interviewExtrasHtml + overrideHtml +
       '</div>';
 
     rowsWrap.appendChild(card);
@@ -1112,6 +1192,11 @@
       wireUploadField(card, 'audio');
     }
     if (mode === 'interview') wireInterviewExtras(card);
+    if (meta.requiresTextInputs) {
+      wireUploadField(card, 'slideText');
+      wireUploadField(card, 'transcriptText');
+      syncTextCombineBadge(card);
+    }
     if (modeSupportsStudyTools()) wireRowOverride(card);
 
     updateRowLabels();
@@ -1170,6 +1255,32 @@
           row.audio_import_token = importedToken;
         } else if (!audioFile && m3u8Url) {
           row.audio_m3u8_url = m3u8Url;
+        }
+      }
+
+      if (meta.requiresTextInputs) {
+        var slideTextInput = rowNode.querySelector('input[data-field="slideText"]');
+        var transcriptTextInput = rowNode.querySelector('input[data-field="transcriptText"]');
+        var slideTextFile = slideTextInput && slideTextInput.files ? slideTextInput.files[0] : null;
+        var transcriptTextFile = transcriptTextInput && transcriptTextInput.files ? transcriptTextInput.files[0] : null;
+        if (!slideTextFile && !transcriptTextFile) {
+          throw new Error(meta.singular + ' ' + rowOrdinal + ': upload slide text, transcript text, or both.');
+        }
+        if (slideTextFile) {
+          if (!String(slideTextFile.name || '').toLowerCase().endsWith('.txt')) {
+            throw new Error(meta.singular + ' ' + rowOrdinal + ': slide text must be a .txt file.');
+          }
+          var slideTextField = 'row_' + rowOrdinal + '_slide_text';
+          row.slide_text_file_field = slideTextField;
+          formData.append(slideTextField, slideTextFile);
+        }
+        if (transcriptTextFile) {
+          if (!String(transcriptTextFile.name || '').toLowerCase().endsWith('.txt')) {
+            throw new Error(meta.singular + ' ' + rowOrdinal + ': transcript text must be a .txt file.');
+          }
+          var transcriptTextField = 'row_' + rowOrdinal + '_transcript_text';
+          row.transcript_text_file_field = transcriptTextField;
+          formData.append(transcriptTextField, transcriptTextFile);
         }
       }
 
