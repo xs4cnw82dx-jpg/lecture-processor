@@ -12,7 +12,7 @@
         signedOutHref:'/lecture-notes?auth=signin'
       });
     }else{
-      auth.onAuthStateChanged(function(user){
+      bootstrap.onAuthStateReady(auth,function(user){
         var dashboardBtn=document.getElementById('dashboard-btn');
         dashboardBtnLabel.textContent=user?'Dashboard':'Sign in';
         if(dashboardBtn){

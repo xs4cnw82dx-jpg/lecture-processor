@@ -957,7 +957,7 @@
     }
   });
 
-  auth.onAuthStateChanged(function (user) {
+  bootstrap.onAuthStateReady(auth, function (user) {
     authStateResolved = true;
     applyAuth(user || null);
   });

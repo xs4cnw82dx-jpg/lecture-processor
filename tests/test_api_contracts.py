@@ -18,7 +18,7 @@ from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.study import progress as study_progress
 from lecture_processor.domains.study import export as study_export
-from lecture_processor.services import upload_api_service
+from lecture_processor.services import study_api_support, upload_api_service
 from tests.runtime_test_support import get_test_core
 
 core = get_test_core()
@@ -704,6 +704,36 @@ def test_study_pack_list_fetches_legacy_counts_when_projection_lacks_counts(clie
     assert pack["flashcards_count"] == 1
     assert pack["test_questions_count"] == 2
     assert full_fetches == ["pack-legacy"]
+
+
+def test_study_folders_can_skip_pending_batch_counts_for_fast_initial_load(client, monkeypatch):
+    class _Doc:
+        id = "folder-1"
+
+        def to_dict(self):
+            return {
+                "name": "Course A",
+                "course": "Anatomy",
+                "created_at": 123,
+            }
+
+    pending_calls = []
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u1", "email": "u@example.com"})
+    monkeypatch.setattr(core.study_repo, "list_study_folders_by_uid", lambda _db, _uid: [_Doc()])
+    monkeypatch.setattr(
+        study_api_support,
+        "list_pending_batches_by_folder",
+        lambda _app_ctx, _uid: pending_calls.append(True) or {"folder-1": 2},
+    )
+
+    response = client.get("/api/study-folders?include_pending=0", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["folders"][0]["folder_id"] == "folder-1"
+    assert payload["folders"][0]["pending_batch_count"] == 0
+    assert pending_calls == []
 
 
 def test_study_pack_list_supports_cursor_pagination_contract(client, monkeypatch):

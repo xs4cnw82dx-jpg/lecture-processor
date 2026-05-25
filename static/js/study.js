@@ -85,6 +85,7 @@ let resetStudyEntryAfterBuilderClose = initialStudyEntryMode === 'create-pack' &
   normalizeUrlPath(window.location.pathname) !== STUDY_LIBRARY_PATH || actionFromUrl === 'create-pack'
 );
 const progressSyncSourceId = 'study-' + Math.random().toString(36).slice(2, 10);
+const PROGRESS_DIRTY_SUMMARY_KEY = '__summary__';
 
 /* Write mode state */
 let writeIndex = 0, writeRevealed = false, writeChecked = false, writePromptSwapped = false;
@@ -99,6 +100,28 @@ const BUILTIN_INTERVIEWS_FOLDER_ID = '__interviews__';
 const BUILTIN_VOICE_NOTES_FOLDER_ID = '__voice_notes__';
 const MAX_PINNED_FOLDERS = 5;
 let pinnedFolderIds = [];
+const LAZY_VENDOR_ASSETS = {
+  flatpickrCss: {
+    href: 'https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css',
+    integrity: 'sha384-RkASv+6KfBMW9eknReJIJ6b3UnjKOKC5bOUaNgIY778NFbQ8MtWq9Lr/khUgqtTt'
+  },
+  flatpickr: {
+    src: 'https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js',
+    integrity: 'sha384-5JqMv4L/Xa0hfvtF06qboNdhvuYXUku9ZrhZh3bSk8VXF0A/RuSLHpLsSV9Zqhl6'
+  },
+  marked: {
+    src: 'https://cdn.jsdelivr.net/npm/marked@17.0.4/lib/marked.umd.js',
+    integrity: 'sha384-aLjW8wZKyOuTOcURHHubORbxQvuyZMLWE2b70jrYAHM0r11vW/KII2EqaifKahR4'
+  },
+  papa: {
+    src: 'https://cdn.jsdelivr.net/npm/papaparse@5.5.3/papaparse.min.js',
+    integrity: 'sha384-Jd2/X5FXVKahwaY2nivvw4LfSTg9idSj8yNXWtT4qef0fHSYr6M7M8bJAfbFYoMc'
+  }
+};
+const lazyScriptPromises = {};
+const lazyStylesheetPromises = {};
+let markdownToolsPromise = null;
+let progressDetailsHydrationScheduled = false;
 
 function initialFolderFromUrl(value) {
   var safe = String(value || '').trim().toLowerCase();
@@ -108,6 +131,81 @@ function initialFolderFromUrl(value) {
 }
 
 selectedFolderId = initialFolderFromUrl(folderFromUrl);
+
+function loadLazyScript(key, asset) {
+  if (!asset || !asset.src) return Promise.reject(new Error('Missing script asset.'));
+  if (lazyScriptPromises[key]) return lazyScriptPromises[key];
+  lazyScriptPromises[key] = new Promise(function (resolve, reject) {
+    var existing = document.querySelector('script[data-lazy-vendor="' + key + '"]');
+    if (existing && existing.dataset.loaded === 'true') {
+      resolve();
+      return;
+    }
+    var script = existing || document.createElement('script');
+    script.src = asset.src;
+    script.async = true;
+    script.dataset.lazyVendor = key;
+    if (asset.integrity) script.integrity = asset.integrity;
+    script.crossOrigin = 'anonymous';
+    script.addEventListener('load', function () {
+      script.dataset.loaded = 'true';
+      resolve();
+    }, { once: true });
+    script.addEventListener('error', function () {
+      reject(new Error('Could not load ' + key + '.'));
+    }, { once: true });
+    if (!existing) document.head.appendChild(script);
+  });
+  return lazyScriptPromises[key];
+}
+
+function loadLazyStylesheet(key, asset) {
+  if (!asset || !asset.href) return Promise.resolve();
+  if (lazyStylesheetPromises[key]) return lazyStylesheetPromises[key];
+  lazyStylesheetPromises[key] = new Promise(function (resolve, reject) {
+    var existing = document.querySelector('link[data-lazy-vendor="' + key + '"]');
+    if (existing && existing.dataset.loaded === 'true') {
+      resolve();
+      return;
+    }
+    var link = existing || document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = asset.href;
+    link.dataset.lazyVendor = key;
+    if (asset.integrity) link.integrity = asset.integrity;
+    link.crossOrigin = 'anonymous';
+    link.addEventListener('load', function () {
+      link.dataset.loaded = 'true';
+      resolve();
+    }, { once: true });
+    link.addEventListener('error', function () {
+      reject(new Error('Could not load ' + key + '.'));
+    }, { once: true });
+    if (!existing) document.head.appendChild(link);
+  });
+  return lazyStylesheetPromises[key];
+}
+
+function ensureFlatpickr() {
+  if (typeof window.flatpickr !== 'undefined') return Promise.resolve();
+  return Promise.all([
+    loadLazyStylesheet('flatpickr-css', LAZY_VENDOR_ASSETS.flatpickrCss),
+    loadLazyScript('flatpickr', LAZY_VENDOR_ASSETS.flatpickr)
+  ]).then(function () {});
+}
+
+function ensureCsvParser() {
+  if (window.Papa && typeof window.Papa.parse === 'function') return Promise.resolve();
+  return loadLazyScript('papaparse', LAZY_VENDOR_ASSETS.papa);
+}
+
+function ensureMarkdownTools() {
+  if (window.marked && typeof window.marked.parse === 'function') return Promise.resolve();
+  if (!markdownToolsPromise) {
+    markdownToolsPromise = loadLazyScript('marked', LAZY_VENDOR_ASSETS.marked);
+  }
+  return markdownToolsPromise;
+}
 
 function normalizeUrlPath(pathname) {
   var normalized = String(pathname || '/').replace(/\/+$/, '');
@@ -205,15 +303,21 @@ function setFolderExamDateValue(rawValue) {
   }
 }
 function initFolderExamDatePicker() {
-  if (typeof flatpickr === 'undefined' || !folderExamDateInput) return;
-  if (folderExamDatePicker && typeof folderExamDatePicker.destroy === 'function') {
-    try { folderExamDatePicker.destroy(); } catch (e) { }
-  }
-  folderExamDatePicker = flatpickr(folderExamDateInput, {
-    dateFormat: 'd-m-Y',
-    allowInput: true,
-    disableMobile: true,
-    locale: { firstDayOfWeek: 1 },
+  if (!folderExamDateInput) return Promise.resolve(null);
+  return ensureFlatpickr().then(function () {
+    if (typeof flatpickr === 'undefined') return null;
+    if (folderExamDatePicker && typeof folderExamDatePicker.destroy === 'function') {
+      try { folderExamDatePicker.destroy(); } catch (e) { }
+    }
+    folderExamDatePicker = flatpickr(folderExamDateInput, {
+      dateFormat: 'd-m-Y',
+      allowInput: true,
+      disableMobile: true,
+      locale: { firstDayOfWeek: 1 },
+    });
+    return folderExamDatePicker;
+  }).catch(function () {
+    return null;
   });
 }
 function getDateStringInTimezone(ts, timezoneName) {
@@ -278,6 +382,61 @@ function writeCardStateIndex(packIds) {
   });
   try { localStorage.setItem(getCardStateIndexKey(), JSON.stringify(cleaned)); } catch (e) { }
   return cleaned;
+}
+function getProgressDirtyKey() {
+  return 'study_progress_dirty_' + (auth.currentUser ? auth.currentUser.uid : 'anon');
+}
+function readProgressDirtyKeys() {
+  try {
+    var raw = JSON.parse(localStorage.getItem(getProgressDirtyKey()) || '[]');
+    if (!Array.isArray(raw)) return [];
+    var seen = {};
+    return raw.map(function (value) {
+      return String(value || '').trim();
+    }).filter(function (value) {
+      if (!value || seen[value]) return false;
+      seen[value] = true;
+      return true;
+    });
+  } catch (e) {
+    return [];
+  }
+}
+function writeProgressDirtyKeys(keys) {
+  var seen = {};
+  var cleaned = (keys || []).map(function (value) {
+    return String(value || '').trim();
+  }).filter(function (value) {
+    if (!value || seen[value]) return false;
+    seen[value] = true;
+    return true;
+  });
+  try {
+    if (cleaned.length) localStorage.setItem(getProgressDirtyKey(), JSON.stringify(cleaned));
+    else localStorage.removeItem(getProgressDirtyKey());
+  } catch (e) { }
+  return cleaned;
+}
+function markProgressDirty(packId) {
+  var marker = String(packId || PROGRESS_DIRTY_SUMMARY_KEY).trim() || PROGRESS_DIRTY_SUMMARY_KEY;
+  var next = readProgressDirtyKeys();
+  if (next.indexOf(marker) < 0) next.push(marker);
+  writeProgressDirtyKeys(next);
+}
+function clearProgressDirty(packIds) {
+  if (!Array.isArray(packIds)) {
+    writeProgressDirtyKeys([]);
+    return;
+  }
+  var clearMap = {};
+  packIds.forEach(function (value) {
+    var key = String(value || '').trim();
+    if (key) clearMap[key] = true;
+  });
+  writeProgressDirtyKeys(readProgressDirtyKeys().filter(function (key) { return !clearMap[key]; }));
+}
+function hasProgressDirty() {
+  return readProgressDirtyKeys().length > 0;
 }
 function addPackToCardStateIndex(packId) {
   var id = String(packId || '').trim();
@@ -360,10 +519,12 @@ function loadStreakData() {
     return { last_study_date: '', current_streak: 0, daily_progress_date: '', daily_progress_count: 0 };
   }
 }
-function saveStreakData(data) {
+function saveStreakData(data, options) {
   try { localStorage.setItem(getStreakKey(), JSON.stringify(data || {})); } catch (e) { }
   broadcastProgressState({ type: 'summary' });
-  queueProgressSync(false);
+  if (!options || options.sync !== false) {
+    queueProgressSync(false);
+  }
 }
 function getDailyGoalKey() { return 'daily_goal_' + (auth.currentUser ? auth.currentUser.uid : 'anon'); }
 function loadDailyGoal() {
@@ -454,7 +615,7 @@ function mergeProgressFromServer(remote) {
     var localDate = String(local.daily_progress_date || '');
     var remoteDate = String(remote.streak_data.daily_progress_date || '');
     if (!local.last_study_date || (remoteDate && remoteDate >= localDate && remoteSeen >= localSeen)) {
-      saveStreakData(remote.streak_data);
+      saveStreakData(remote.streak_data, { sync: false });
     }
   }
   remoteProgressCardStates = (remote.card_states && typeof remote.card_states === 'object') ? remote.card_states : {};
@@ -485,6 +646,41 @@ function loadRemoteProgress() {
     console.warn('Could not load remote study progress:', e && e.message ? e.message : e);
   });
 }
+function loadRemoteProgressSummary() {
+  if (!auth.currentUser || !token) { return Promise.resolve(); }
+  return apiCall('/api/study-progress/summary').then(function (summary) {
+    progressHydrationDone = true;
+    if (summary && typeof summary === 'object') {
+      progressSummaryCache = summary;
+      if (typeof summary.daily_goal === 'number' && summary.daily_goal > 0) {
+        saveDailyGoal(summary.daily_goal);
+      }
+      if (auth.currentUser) {
+        persistSharedSummaryCaches(auth.currentUser, progressSummaryCache);
+      }
+      renderGoalPanel();
+    }
+  }).catch(function (e) {
+    console.warn('Could not load remote study progress summary:', e && e.message ? e.message : e);
+  });
+}
+function scheduleRemoteProgressDetailsHydration() {
+  if (progressDetailsHydrationScheduled || !auth.currentUser || !token) return;
+  progressDetailsHydrationScheduled = true;
+  var run = function () {
+    loadRemoteProgress().then(function () {
+      hydratePackStatesForKnownPacks();
+      updateTopbarDueCount();
+      renderGoalPanel();
+      updateLearnCardStatus();
+    });
+  };
+  if (window.requestIdleCallback) {
+    window.requestIdleCallback(run, { timeout: 4000 });
+  } else {
+    window.setTimeout(run, 1200);
+  }
+}
 function flushProgressSync(forceAllPacks) {
   if (progressSyncInFlight || !auth.currentUser || !token) return;
   progressSyncInFlight = true;
@@ -496,14 +692,21 @@ function flushProgressSync(forceAllPacks) {
     payload.card_states = {};
     payload.card_states[selectedPackId] = loadCardState();
   }
-  apiCall('/api/study-progress', { method: 'PUT', body: JSON.stringify(payload) }).catch(function (e) {
+  apiCall('/api/study-progress', { method: 'PUT', body: JSON.stringify(payload) }).then(function () {
+    if (forceAllPacks) clearProgressDirty();
+    else clearProgressDirty([selectedPackId, PROGRESS_DIRTY_SUMMARY_KEY]);
+  }).catch(function (e) {
     console.warn('Could not sync study progress:', e && e.message ? e.message : e);
   }).finally(function () {
     progressSyncInFlight = false;
   });
 }
-function queueProgressSync(currentPackOnly) {
+function queueProgressSync(currentPackOnly, options) {
   if (!auth.currentUser || !token) return;
+  var opts = options || {};
+  if (opts.markDirty !== false) {
+    markProgressDirty(currentPackOnly ? selectedPackId : PROGRESS_DIRTY_SUMMARY_KEY);
+  }
   if (progressSyncTimer) { clearTimeout(progressSyncTimer); }
   progressSyncTimer = setTimeout(function () {
     progressSyncTimer = null;
@@ -1675,6 +1878,10 @@ function mdToHtml(md) {
   }
   return escapeHtml(String(md || '')).replace(/\n/g, '<br>');
 }
+function getSelectedNotesRenderKey() {
+  if (!selectedPack) return '';
+  return String(selectedPackId || '') + ':' + String(selectedPack.updated_at || '') + ':' + String((selectedPack.notes_markdown || '').length);
+}
 function fmtAudioTime(seconds) {
   if (!isFinite(seconds) || seconds < 0) return '0:00';
   var m = Math.floor(seconds / 60), s = Math.floor(seconds % 60);
@@ -2002,20 +2209,28 @@ function refreshActiveRuntimeJobs(force) {
     return Promise.resolve();
   }
   runtimeJobsRefreshInFlight = true;
+  var shouldContinuePolling = false;
   return apiCall('/api/runtime-jobs/active').then(function (payload) {
     return reconcileCachedRuntimeJobs(payload && payload.jobs ? payload.jobs : []);
   }).then(function (result) {
-    setActiveRuntimeJobs(result && result.jobs ? result.jobs : []);
+    var nextJobs = result && result.jobs ? result.jobs : [];
+    setActiveRuntimeJobs(nextJobs);
+    shouldContinuePolling = nextJobs.length > 0;
     if (result && result.shouldReload) {
       return loadData(selectedPackId || '').catch(function () { });
     }
   }).catch(function (error) {
+    shouldContinuePolling = activeRuntimeJobs.length > 0;
     if (force) {
       showToast(error.message || 'Could not refresh processing jobs.', 'error');
     }
   }).finally(function () {
     runtimeJobsRefreshInFlight = false;
-    scheduleRuntimeJobsRefresh(RUNTIME_JOBS_REFRESH_MS);
+    if (shouldContinuePolling) {
+      scheduleRuntimeJobsRefresh(RUNTIME_JOBS_REFRESH_MS);
+    } else {
+      clearRuntimeJobsRefreshTimer();
+    }
   });
 }
 function downloadStudyPackCsv(packId, type) {
@@ -2828,18 +3043,27 @@ function handleBuilderCsvFile(file) {
   if (!file) { return; }
   var reader = new FileReader();
   reader.onload = function () {
-    var parsed = parseBuilderCsvContent(String(reader.result || ''), builderImportType.value);
-    builderImportParsed = parsed;
-    builderApplyImportBtn.disabled = !parsed.items.length;
-    builderImportSummary.textContent = 'Loaded ' + parsed.items.length + ' valid row(s).';
-    if (parsed.errors.length) {
+    builderImportSummary.textContent = 'Loading CSV parser...';
+    ensureCsvParser().then(function () {
+      var parsed = parseBuilderCsvContent(String(reader.result || ''), builderImportType.value);
+      builderImportParsed = parsed;
+      builderApplyImportBtn.disabled = !parsed.items.length;
+      builderImportSummary.textContent = 'Loaded ' + parsed.items.length + ' valid row(s).';
+      if (parsed.errors.length) {
+        setHidden(builderImportErrors, false);
+        setSafeInnerHtml(builderImportErrors, parsed.errors.map(function (err) { return '<div>' + escapeHtml(err) + '</div>'; }).join(''));
+      } else {
+        setHidden(builderImportErrors, true);
+        builderImportErrors.textContent = '';
+      }
+      renderBuilderImportPreview();
+    }).catch(function () {
+      builderImportParsed = null;
+      builderApplyImportBtn.disabled = true;
+      builderImportSummary.textContent = 'CSV parser could not load.';
       setHidden(builderImportErrors, false);
-      setSafeInnerHtml(builderImportErrors, parsed.errors.map(function (err) { return '<div>' + escapeHtml(err) + '</div>'; }).join(''));
-    } else {
-      setHidden(builderImportErrors, true);
-      builderImportErrors.textContent = '';
-    }
-    renderBuilderImportPreview();
+      builderImportErrors.textContent = 'CSV parser could not load. Check your connection and try again.';
+    });
   };
   reader.onerror = function () {
     showToast('Could not read CSV file.', 'error');
@@ -4137,6 +4361,9 @@ function openFolderModal(mode, folder) {
   folderSemesterInput.value = folder ? (folder.semester || '') : '';
   folderBlockInput.value = folder ? (folder.block || '') : '';
   setFolderExamDateValue(folder ? (folder.exam_date || '') : '');
+  initFolderExamDatePicker().then(function () {
+    setFolderExamDateValue(folder ? (folder.exam_date || '') : '');
+  });
   openModal(folderModalOverlay);
   setTimeout(function () { folderNameInput.focus(); }, 100);
 }
@@ -4249,7 +4476,7 @@ function fetchStudyPackPage(afterCursor) {
 function loadData(preferredPackId) {
   var prefId = preferredPackId || '';
   packsLoadingMore = false;
-  return Promise.all([apiCall('/api/study-folders'), fetchStudyPackPage('')]).then(function (results) {
+  return Promise.all([apiCall('/api/study-folders?include_pending=0'), fetchStudyPackPage('')]).then(function (results) {
     var packPage = results[1] || {};
     folders = results[0].folders || [];
     packs = mergeStudyPackPage([], packPage.study_packs || []);
@@ -4456,7 +4683,7 @@ function queueInlineAutosave() {
 
 /* ── Auth ── */
 hydrateTopbarDueFromCache(auth.currentUser || null);
-auth.onAuthStateChanged(function (user) {
+bootstrap.onAuthStateReady(auth, function (user) {
   if (!user) {
     token = null;
     if (authClient && typeof authClient.clearToken === 'function') { authClient.clearToken(); }
@@ -4465,6 +4692,7 @@ auth.onAuthStateChanged(function (user) {
     pinnedFolderIds = [];
     progressTimezone = getBrowserTimezone();
     progressHydrationDone = false;
+    progressDetailsHydrationScheduled = false;
     progressSummaryCache = null;
     masterDailyGoal = progressUtils.DEFAULT_DAILY_GOAL || 20;
     goalPanelStatusText = 'Synced';
@@ -4510,7 +4738,7 @@ auth.onAuthStateChanged(function (user) {
       userMeta.textContent = 'Signed in as ' + user.email;
     }
     hydrateTopbarDueFromCache(user);
-    return loadRemoteProgress().then(function () {
+    return loadRemoteProgressSummary().then(function () {
       return loadData();
     }).then(function () {
       renderGoalPanel();
@@ -4518,7 +4746,10 @@ auth.onAuthStateChanged(function (user) {
         autoCreateConsumed = true;
         openBuilderOverlay('create', null);
       }
-      queueProgressSync(false);
+      if (hasProgressDirty()) {
+        queueProgressSync(false, { markDirty: false });
+      }
+      scheduleRemoteProgressDetailsHydration();
       return refreshActiveRuntimeJobs(true);
     });
   }).catch(function (e) {
@@ -5340,7 +5571,16 @@ var hlSelectionTimer = null;
 
 function renderNotesForSelectedPackBase() {
   if (!notesView || !selectedPack) return;
+  var renderKey = getSelectedNotesRenderKey();
   setSafeInnerHtml(notesView, mdToHtml(selectedPack.notes_markdown || ''));
+  if (selectedPack.notes_markdown && !(window.marked && typeof window.marked.parse === 'function')) {
+    ensureMarkdownTools().then(function () {
+      if (renderKey === getSelectedNotesRenderKey()) {
+        renderNotesForSelectedPackBase();
+        reapplyHighlightsForPack();
+      }
+    }).catch(function () {});
+  }
   audioMap = selectedPack.has_audio_sync ? selectedPack.notes_audio_map.slice() : [];
   audioSections = [];
   if (selectedPack.has_audio_sync && audioMap.length) {
@@ -6167,6 +6407,5 @@ document.addEventListener('keydown', function (e) {
     undoHighlightChange();
   }
 });
-initFolderExamDatePicker();
 updateHighlightHistoryButtons();
 updateShareActionAvailability();

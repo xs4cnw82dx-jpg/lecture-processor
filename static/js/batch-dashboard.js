@@ -495,7 +495,7 @@
     });
     wireEvents();
     if (auth) {
-      auth.onAuthStateChanged(function () {
+      bootstrap.onAuthStateReady(auth, function () {
         loadBatches(false);
       });
     } else {

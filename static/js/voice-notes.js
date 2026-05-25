@@ -1228,7 +1228,7 @@
         showToast(error && error.message ? error.message : 'Could not load voice notes.', 'error');
       });
 
-    auth.onAuthStateChanged(function (user) {
+    bootstrap.onAuthStateReady(auth, function (user) {
       state.authReady = true;
       state.user = user || null;
       if (!state.user && authClient && typeof authClient.clearToken === 'function') authClient.clearToken();

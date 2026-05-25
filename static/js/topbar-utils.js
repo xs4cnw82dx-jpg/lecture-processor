@@ -70,8 +70,21 @@
     });
   }
 
+  function observeAuthState(auth, callback) {
+    if (!auth || typeof callback !== 'function') return function () {};
+    var bootstrap = global.LectureProcessorBootstrap || {};
+    if (typeof bootstrap.onAuthStateReady === 'function') {
+      return bootstrap.onAuthStateReady(auth, callback);
+    }
+    if (typeof auth.onAuthStateChanged === 'function') {
+      return auth.onAuthStateChanged(callback);
+    }
+    callback(auth.currentUser || null);
+    return function () {};
+  }
+
   function bindAuthCta(auth, options) {
-    if (!auth || typeof auth.onAuthStateChanged !== 'function') return;
+    if (!auth) return;
     var opts = options || {};
     var labelEl = opts.labelEl || null;
     var linkEl = opts.linkEl || null;
@@ -80,7 +93,7 @@
     var signedInHref = opts.signedInHref || '/dashboard';
     var signedOutHref = opts.signedOutHref || '/lecture-notes?auth=signin';
 
-    auth.onAuthStateChanged(function (user) {
+    observeAuthState(auth, function (user) {
       if (labelEl) {
         safeSetText(labelEl, user ? signedInText : signedOutText);
       }

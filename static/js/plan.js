@@ -1354,7 +1354,7 @@
     if (!document.hidden && currentUser) loadPlannerData();
   });
 
-  auth.onAuthStateChanged(function (user) {
+  bootstrap.onAuthStateReady(auth, function (user) {
     currentUser = user || null;
     currentToken = null;
     if (authClient && !user && typeof authClient.clearToken === 'function') {
