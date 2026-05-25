@@ -42,6 +42,8 @@ STAGE_LABELS = {
 
 PROVIDER_STATE_LABELS = {
     'FILE_UPLOAD': 'Uploading files',
+    'DIRECT_API': 'Running directly',
+    'INSTANT_RUNNING': 'Running instantly',
     'NO_ROWS': 'No rows to process',
     'FAILED': 'Failed',
     'PARTIAL': 'Partial result',
@@ -167,17 +169,25 @@ def _batch_model(stage_name, runtime):
     return runtime.MODEL_STUDY
 
 
-def _batch_page_path(mode_name):
+def _batch_page_path(mode_name, processing_strategy='batch'):
     mode_value = str(mode_name or '').strip().lower()
+    instant = str(processing_strategy or '').strip().lower() == 'instant'
+    prefix = '/instant_batch_mode' if instant else '/batch_mode'
     if mode_value == 'slides-only':
-        return '/batch_mode_slides_extraction'
+        return f'{prefix}_slides_extraction'
     if mode_value == 'interview':
-        return '/batch_mode_interview_transcription'
+        return f'{prefix}_interview_transcription'
     if mode_value == 'audio-transcription':
-        return '/batch_mode_audio_transcription'
+        return f'{prefix}_audio_transcription'
     if mode_value == 'text-combine':
-        return '/batch_mode_text_combine'
-    return '/batch_mode'
+        return f'{prefix}_text_combine'
+    return prefix
+
+
+def _batch_download_base_path(batch_id, batch=None):
+    strategy = str((batch or {}).get('processing_strategy', '') or '').strip().lower()
+    prefix = '/api/instant-batch/jobs' if strategy == 'instant' else '/api/batch/jobs'
+    return f'{prefix}/{batch_id}'
 
 
 def _completion_email_subject(status, batch_title):
@@ -206,7 +216,7 @@ def _completion_email_body(batch, status, runtime=None):
     except Exception:
         finished_at_label = ''
 
-    path = _batch_page_path(mode_name)
+    path = _batch_page_path(mode_name, batch.get('processing_strategy', 'batch'))
     deep_link = f'{path}?batch_id={batch_id}' if batch_id else path
     public_base = str(getattr(resolved_runtime, 'PUBLIC_BASE_URL', '') or '').rstrip('/')
     if public_base:
@@ -346,6 +356,7 @@ def _status_message(batch, rows, can_download_zip=False, runtime=None):
 def _next_action(batch_id, batch, can_download_zip=False):
     status = str((batch or {}).get('status', 'queued') or 'queued').strip().lower()
     mode_name = str((batch or {}).get('mode', '') or '').strip()
+    strategy = str((batch or {}).get('processing_strategy', 'batch') or 'batch').strip()
     if status == 'complete':
         return {
             'label': 'Open Study Library',
@@ -355,16 +366,16 @@ def _next_action(batch_id, batch, can_download_zip=False):
         if can_download_zip:
             return {
                 'label': 'Download finished rows',
-                'href': f'/api/batch/jobs/{batch_id}/download.zip',
+                'href': f'{_batch_download_base_path(batch_id, batch)}/download.zip',
             }
         return {
             'label': 'Open batch status',
-            'href': f'{_batch_page_path(mode_name)}?batch_id={batch_id}',
+            'href': f'{_batch_page_path(mode_name, strategy)}?batch_id={batch_id}',
         }
     if status == 'error':
         return {
             'label': 'Start a new batch',
-            'href': _batch_page_path(mode_name),
+            'href': _batch_page_path(mode_name, strategy),
         }
     return {
         'label': 'Open batch status',
@@ -536,7 +547,8 @@ def create_batch_job(batch_payload, row_payloads, runtime=None):
             'token_input_total': int(payload.get('token_input_total', 0) or 0),
             'token_output_total': int(payload.get('token_output_total', 0) or 0),
             'token_total': int(payload.get('token_total', 0) or 0),
-            'billing_mode': 'batch',
+            'processing_strategy': str(payload.get('processing_strategy', 'batch') or 'batch'),
+            'billing_mode': str(payload.get('billing_mode', 'batch') or 'batch'),
             'billing_multiplier': float(payload.get('billing_multiplier', 0.5) or 0.5),
             'completion_email_status': str(payload.get('completion_email_status', 'pending') or 'pending'),
             'completion_email_sent_at': float(payload.get('completion_email_sent_at', 0) or 0),
@@ -571,8 +583,9 @@ def create_batch_job(batch_payload, row_payloads, runtime=None):
                 'token_input_total': int(row_payload.get('token_input_total', 0) or 0),
                 'token_output_total': int(row_payload.get('token_output_total', 0) or 0),
                 'token_total': int(row_payload.get('token_total', 0) or 0),
-                'billing_mode': 'batch',
-                'billing_multiplier': float(row_payload.get('billing_multiplier', 0.5) or 0.5),
+                'processing_strategy': str(row_payload.get('processing_strategy', payload.get('processing_strategy', 'batch')) or 'batch'),
+                'billing_mode': str(row_payload.get('billing_mode', payload.get('billing_mode', 'batch')) or 'batch'),
+                'billing_multiplier': float(row_payload.get('billing_multiplier', payload.get('billing_multiplier', 0.5)) or 0.5),
                 'current_stage': str(row_payload.get('current_stage', 'queued') or 'queued'),
                 'last_stage_update_at': float(row_payload.get('last_stage_update_at', now_ts) or now_ts),
                 'interview_features_refunded_count': int(row_payload.get('interview_features_refunded_count', 0) or 0),
@@ -1289,8 +1302,9 @@ def _finalize_row_job_log(batch, row, runtime=None):
         'is_batch': True,
         'batch_parent_id': batch.get('batch_id', ''),
         'batch_row_id': row.get('row_id', ''),
-        'billing_mode': 'batch',
-        'billing_multiplier': 0.5,
+        'processing_strategy': row.get('processing_strategy', batch.get('processing_strategy', 'batch')),
+        'billing_mode': row.get('billing_mode', batch.get('billing_mode', 'batch')),
+        'billing_multiplier': float(row.get('billing_multiplier', batch.get('billing_multiplier', 0.5)) or 0.5),
         'source_type': row.get('source_type', ''),
         'source_url': row.get('source_url', ''),
         'source_name': row.get('source_name', ''),
@@ -2284,6 +2298,7 @@ def get_batch_status(batch_id, runtime=None):
                 'job_log_id': row.get('job_log_id', ''),
                 'current_stage': row_stage,
                 'current_stage_label': _stage_label(row_stage),
+                'current_stage_detail': row.get('current_stage_detail', ''),
                 'last_stage_update_at': row.get('last_stage_update_at', 0),
                 'token_input_total': int(row.get('token_input_total', 0) or 0),
                 'token_output_total': int(row.get('token_output_total', 0) or 0),
@@ -2305,6 +2320,7 @@ def get_batch_status(batch_id, runtime=None):
         'batch_id': batch.get('batch_id', batch_id),
         'status': batch.get('status', 'queued'),
         'mode': batch.get('mode', ''),
+        'processing_strategy': batch.get('processing_strategy', 'batch'),
         'batch_title': batch.get('batch_title', ''),
         'total_rows': int(batch.get('total_rows', len(rows)) or len(rows)),
         'completed_rows': int(batch.get('completed_rows', 0) or 0),
@@ -2440,6 +2456,7 @@ def list_batches_for_uid(uid, statuses=None, limit=100, runtime=None):
         payload = {
             'batch_id': batch_id,
             'mode': str(batch.get('mode', '') or ''),
+            'processing_strategy': str(batch.get('processing_strategy', 'batch') or 'batch'),
             'batch_title': str(batch.get('batch_title', '') or ''),
             'status': str(batch.get('status', 'queued') or 'queued'),
             'total_rows': int(batch.get('total_rows', len(batch_rows)) or len(batch_rows)),
@@ -2512,6 +2529,7 @@ def list_batches_for_admin(statuses=None, limit=200, runtime=None):
             'uid': str(batch.get('uid', '') or ''),
             'email': str(batch.get('email', '') or ''),
             'mode': str(batch.get('mode', '') or ''),
+            'processing_strategy': str(batch.get('processing_strategy', 'batch') or 'batch'),
             'batch_title': str(batch.get('batch_title', '') or ''),
             'status': str(batch.get('status', 'queued') or 'queued'),
             'total_rows': int(batch.get('total_rows', len(batch_rows)) or len(batch_rows)),
@@ -2553,6 +2571,7 @@ def build_batch_row_export_metadata(row, batch=None, runtime=None):
         'text_input_mode',
         'current_stage',
         'current_stage_label',
+        'current_stage_detail',
         'failed_stage',
         'error',
         'created_at',
@@ -2569,4 +2588,5 @@ def build_batch_row_export_metadata(row, batch=None, runtime=None):
             metadata[field] = source.get(field)
     if batch and isinstance(batch, dict):
         metadata.setdefault('mode', batch.get('mode', ''))
+        metadata.setdefault('processing_strategy', batch.get('processing_strategy', 'batch'))
     return metadata

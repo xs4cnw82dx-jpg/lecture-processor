@@ -136,18 +136,22 @@ def _render_processing_page(forced_mode: str):
     )
 
 
-def _render_batch_page(forced_mode: str):
+def _render_batch_page(forced_mode: str, *, instant_mode: bool = False):
     runtime = get_runtime()
-    page_key = {
+    page_keys = {
         'lecture-notes': 'batch-mode',
         'slides-only': 'batch-mode-slides',
         'interview': 'batch-mode-interview',
         'audio-transcription': 'batch-mode-audio',
         'text-combine': 'batch-mode-combine',
-    }.get(forced_mode, 'batch-mode')
+    }
+    page_key = page_keys.get(forced_mode, 'batch-mode')
+    if instant_mode:
+        page_key = page_key.replace('batch-mode', 'instant-batch-mode', 1)
     return render_template(
         'batch_mode.html',
         forced_mode=forced_mode,
+        instant_mode=instant_mode,
         batch_mode_js_asset=runtime.resolve_js_asset('js/batch-mode.js'),
         **_shell_context(runtime=runtime, page_key=page_key),
     )
@@ -275,6 +279,31 @@ def batch_mode_audio_transcription_page():
 @pages_bp.route('/batch_mode_text_combine')
 def batch_mode_text_combine_page():
     return _render_batch_page('text-combine')
+
+
+@pages_bp.route('/instant_batch_mode')
+def instant_batch_mode_page():
+    return _render_batch_page('lecture-notes', instant_mode=True)
+
+
+@pages_bp.route('/instant_batch_mode_interview_transcription')
+def instant_batch_mode_interview_page():
+    return _render_batch_page('interview', instant_mode=True)
+
+
+@pages_bp.route('/instant_batch_mode_slides_extraction')
+def instant_batch_mode_slides_page():
+    return _render_batch_page('slides-only', instant_mode=True)
+
+
+@pages_bp.route('/instant_batch_mode_audio_transcription')
+def instant_batch_mode_audio_transcription_page():
+    return _render_batch_page('audio-transcription', instant_mode=True)
+
+
+@pages_bp.route('/instant_batch_mode_text_combine')
+def instant_batch_mode_text_combine_page():
+    return _render_batch_page('text-combine', instant_mode=True)
 
 
 @pages_bp.route('/batch_status')

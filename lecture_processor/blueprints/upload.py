@@ -60,6 +60,42 @@ def download_batch_row_flashcards_csv(batch_id, row_id):
     return upload_api_service.download_batch_row_flashcards_csv(runtime, request, batch_id, row_id)
 
 
+@upload_bp.route('/api/instant-batch/jobs', methods=['POST'])
+def create_instant_batch_job():
+    runtime = get_runtime()
+    return upload_api_service.create_instant_batch_job(runtime, request)
+
+
+@upload_bp.route('/api/instant-batch/jobs', methods=['GET'])
+def list_instant_batch_jobs():
+    runtime = get_runtime()
+    return upload_api_service.list_instant_batch_jobs(runtime, request)
+
+
+@upload_bp.route('/api/instant-batch/jobs/<batch_id>', methods=['GET'])
+def get_instant_batch_job_status(batch_id):
+    runtime = get_runtime()
+    return upload_api_service.get_batch_job_status(runtime, request, batch_id)
+
+
+@upload_bp.route('/api/instant-batch/jobs/<batch_id>/download.zip', methods=['GET'])
+def download_instant_batch_zip(batch_id):
+    runtime = get_runtime()
+    return upload_api_service.download_batch_zip(runtime, request, batch_id)
+
+
+@upload_bp.route('/api/instant-batch/jobs/<batch_id>/rows/<row_id>/download-docx', methods=['GET'])
+def download_instant_batch_row_docx(batch_id, row_id):
+    runtime = get_runtime()
+    return upload_api_service.download_batch_row_docx(runtime, request, batch_id, row_id)
+
+
+@upload_bp.route('/api/instant-batch/jobs/<batch_id>/rows/<row_id>/download-flashcards-csv', methods=['GET'])
+def download_instant_batch_row_flashcards_csv(batch_id, row_id):
+    runtime = get_runtime()
+    return upload_api_service.download_batch_row_flashcards_csv(runtime, request, batch_id, row_id)
+
+
 @upload_bp.route('/api/tools/extract', methods=['POST'])
 def tools_extract():
     runtime = get_runtime()

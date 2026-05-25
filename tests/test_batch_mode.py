@@ -7,6 +7,7 @@ import pytest
 
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.ai import batch_orchestrator
+from lecture_processor.domains.ai import instant_batch_orchestrator
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import receipts as billing_receipts
@@ -251,6 +252,141 @@ def test_batch_create_slides_only_contract(client, monkeypatch):
     assert submitted['func'] is batch_orchestrator.process_batch_job
     submitted_runtime = submitted['kwargs']['runtime']
     assert getattr(submitted_runtime, 'core', submitted_runtime) is core
+
+
+def test_instant_batch_create_accepts_all_modes_with_instant_metadata(client, monkeypatch):
+    _patch_batch_auth(monkeypatch)
+    _patch_batch_quota_guards(monkeypatch)
+    monkeypatch.setattr(core, 'client', object())
+    monkeypatch.setattr(core, 'INSTANT_BATCH_MAX_ROWS', 20)
+    monkeypatch.setattr(upload_import_audio, 'cleanup_expired_audio_import_tokens', lambda runtime=None: None)
+    monkeypatch.setattr(
+        core,
+        'get_or_create_user',
+        lambda uid, email: {
+            'uid': uid,
+            'email': email,
+            'lecture_credits_standard': 20,
+            'lecture_credits_extended': 0,
+            'slides_credits': 20,
+            'interview_credits_short': 20,
+            'interview_credits_medium': 0,
+            'interview_credits_long': 0,
+            'preferred_output_language': 'english',
+            'preferred_output_language_custom': '',
+        },
+    )
+    monkeypatch.setattr(core, 'resolve_uploaded_slides_to_pdf', lambda uploaded_file, job_id: (f'{job_id}.pdf', None))
+    monkeypatch.setattr(core, 'get_saved_file_size', lambda _path: 128)
+    monkeypatch.setattr(core, 'file_looks_like_audio', lambda _path: True)
+    monkeypatch.setattr(billing_credits, 'deduct_credit', lambda uid, *credit_types, runtime=None: str(credit_types[0]))
+    monkeypatch.setattr(billing_credits, 'deduct_interview_credit', lambda uid, runtime=None: 'interview_credits_short')
+    monkeypatch.setattr(billing_credits, 'deduct_slides_credits', lambda uid, amount, runtime=None: True)
+
+    created = []
+    submitted = []
+
+    def _fake_create_batch(batch_payload, rows, runtime=None):
+        created.append((dict(batch_payload), list(rows)))
+
+    monkeypatch.setattr(batch_orchestrator, 'create_batch_job', _fake_create_batch)
+    monkeypatch.setattr(
+        core,
+        'submit_batch_background_job',
+        lambda func, *args, **kwargs: submitted.append({'func': func, 'args': args, 'kwargs': kwargs}),
+    )
+
+    mode_payloads = {
+        'lecture-notes': {
+            'rows': [
+                {'row_id': 'row-1', 'slides_file_field': 'row_1_slides', 'audio_file_field': 'row_1_audio'},
+                {'row_id': 'row-2', 'slides_file_field': 'row_2_slides', 'audio_file_field': 'row_2_audio'},
+            ],
+            'files': {
+                'row_1_slides': (io.BytesIO(b'%PDF row 1'), 'row-1.pdf'),
+                'row_2_slides': (io.BytesIO(b'%PDF row 2'), 'row-2.pdf'),
+                'row_1_audio': (io.BytesIO(b'audio row 1'), 'row-1.mp3'),
+                'row_2_audio': (io.BytesIO(b'audio row 2'), 'row-2.mp3'),
+            },
+        },
+        'slides-only': {
+            'rows': [
+                {'row_id': 'row-1', 'slides_file_field': 'row_1_slides'},
+                {'row_id': 'row-2', 'slides_file_field': 'row_2_slides'},
+            ],
+            'files': {
+                'row_1_slides': (io.BytesIO(b'%PDF row 1'), 'row-1.pdf'),
+                'row_2_slides': (io.BytesIO(b'%PDF row 2'), 'row-2.pdf'),
+            },
+        },
+        'interview': {
+            'rows': [
+                {'row_id': 'row-1', 'audio_file_field': 'row_1_audio'},
+                {'row_id': 'row-2', 'audio_file_field': 'row_2_audio'},
+            ],
+            'files': {
+                'row_1_audio': (io.BytesIO(b'audio row 1'), 'row-1.mp3'),
+                'row_2_audio': (io.BytesIO(b'audio row 2'), 'row-2.mp3'),
+            },
+        },
+        'audio-transcription': {
+            'rows': [
+                {'row_id': 'row-1', 'audio_file_field': 'row_1_audio'},
+                {'row_id': 'row-2', 'audio_file_field': 'row_2_audio'},
+            ],
+            'files': {
+                'row_1_audio': (io.BytesIO(b'audio row 1'), 'row-1.mp3'),
+                'row_2_audio': (io.BytesIO(b'audio row 2'), 'row-2.mp3'),
+            },
+        },
+        'text-combine': {
+            'rows': [
+                {'row_id': 'row-1', 'slide_text_file_field': 'row_1_slide_text'},
+                {'row_id': 'row-2', 'transcript_text_file_field': 'row_2_transcript_text'},
+            ],
+            'files': {
+                'row_1_slide_text': (io.BytesIO('Slide text'.encode('utf-8')), 'slides-1.txt'),
+                'row_2_transcript_text': (io.BytesIO('Transcript'.encode('utf-8')), 'transcript-2.txt'),
+            },
+        },
+    }
+
+    for mode_name, config in mode_payloads.items():
+        data = {
+            'mode': mode_name,
+            'batch_title': f'Instant {mode_name}',
+            'rows': json.dumps(config['rows']),
+        }
+        data.update(config['files'])
+        response = client.post('/api/instant-batch/jobs', data=data, content_type='multipart/form-data')
+        assert response.status_code == 200
+
+    assert len(created) == 5
+    assert len(submitted) == 5
+    for batch_payload, rows in created:
+        assert batch_payload['processing_strategy'] == 'instant'
+        assert batch_payload['billing_mode'] == 'instant_batch'
+        assert batch_payload['billing_multiplier'] == 1.0
+        assert batch_payload['instant_max_parallel_rows'] == 2
+        assert batch_payload['instant_api_stagger_seconds'] == 5.0
+        assert rows
+        assert all(row.get('processing_strategy') == 'instant' for row in rows)
+        assert all(row.get('billing_mode') == 'instant_batch' for row in rows)
+    assert all(item['func'] is instant_batch_orchestrator.process_instant_batch_job for item in submitted)
+
+
+def test_instant_batch_rejects_more_than_twenty_rows(client, monkeypatch):
+    _patch_batch_auth(monkeypatch)
+    rows = [{'row_id': f'row-{idx}'} for idx in range(21)]
+
+    response = client.post(
+        '/api/instant-batch/jobs',
+        data={'mode': 'text-combine', 'rows': json.dumps(rows)},
+        content_type='multipart/form-data',
+    )
+
+    assert response.status_code == 400
+    assert 'up to 20 rows' in response.get_json().get('error', '')
 
 
 def test_batch_create_lecture_notes_preserves_row_study_override_contract(client, monkeypatch):
@@ -1010,6 +1146,121 @@ def test_batch_notes_merge_requests_include_max_thinking_config():
     assert payload['generationConfig']['maxOutputTokens'] == 65536
     assert payload['generationConfig']['thinkingConfig']['thinkingBudget'] == 32768
     assert 'generationConfig' not in request
+
+
+def test_instant_api_stagger_spaces_calls(monkeypatch):
+    monkeypatch.setattr(core, 'INSTANT_BATCH_API_STAGGER_SECONDS', 5.0)
+    monkeypatch.setattr(core.time, 'time', lambda: 100.0)
+    sleeps = []
+    monkeypatch.setattr(core.time, 'sleep', lambda seconds: sleeps.append(seconds))
+
+    throttler = instant_batch_orchestrator.InstantApiStagger(runtime=core)
+    throttler.wait()
+    throttler.wait()
+    throttler.wait()
+
+    assert sleeps == [5.0, 10.0]
+
+
+def test_instant_text_combine_uses_direct_generate_without_gemini_batch(monkeypatch):
+    _clear_batch_memory()
+    _patch_batch_refunds(monkeypatch)
+    monkeypatch.setattr(core, 'db', None)
+    monkeypatch.setattr(core, 'INSTANT_BATCH_API_STAGGER_SECONDS', 0)
+    monkeypatch.setattr(core, 'INSTANT_BATCH_MAX_PARALLEL_ROWS', 2)
+    monkeypatch.setattr(batch_orchestrator.ai_pipelines, 'save_study_pack', lambda *_args, **_kwargs: True)
+
+    class _ForbiddenBatches:
+        def create(self, *args, **kwargs):
+            raise AssertionError('Gemini Batch API must not be used for instant batch.')
+
+    class _InstantClient:
+        batches = _ForbiddenBatches()
+
+    class _Usage:
+        prompt_token_count = 10
+        candidates_token_count = 5
+        total_token_count = 15
+
+    class _Response:
+        usage_metadata = _Usage()
+
+        def __init__(self, text):
+            self.text = text
+
+    generate_calls = []
+
+    def _fake_generate(model, contents, **kwargs):
+        generate_calls.append({'model': model, 'contents': contents, 'kwargs': kwargs})
+        return _Response(f'# Instant result {len(generate_calls)}')
+
+    monkeypatch.setattr(core, 'client', _InstantClient())
+    monkeypatch.setattr(instant_batch_orchestrator.ai_provider, 'generate_with_policy', _fake_generate)
+
+    batch_id = batch_orchestrator.create_batch_job(
+        {
+            'batch_id': 'instant-text-combine',
+            'uid': 'u-batch',
+            'email': 'batch@example.com',
+            'mode': 'text-combine',
+            'status': 'queued',
+            'processing_strategy': 'instant',
+            'billing_mode': 'instant_batch',
+            'billing_multiplier': 1.0,
+            'batch_title': 'Instant Combine',
+            'total_rows': 2,
+            'completion_email_status': 'pending',
+        },
+        [
+            {
+                'row_id': 'row-1',
+                'ordinal': 1,
+                'status': 'queued',
+                'source_name': 'Lecture 1',
+                'slide_text': 'Slide text',
+                'transcript': 'Transcript text',
+                'text_input_mode': 'both',
+                'output_language': 'Dutch',
+                'study_features': 'none',
+                'credit_deducted': 'lecture_credits_standard',
+                'processing_strategy': 'instant',
+                'billing_mode': 'instant_batch',
+                'billing_multiplier': 1.0,
+            },
+            {
+                'row_id': 'row-2',
+                'ordinal': 2,
+                'status': 'queued',
+                'source_name': 'Lecture 2',
+                'slide_text': '',
+                'transcript': 'Transcript only',
+                'text_input_mode': 'transcript-only',
+                'output_language': 'Dutch',
+                'study_features': 'none',
+                'credit_deducted': 'lecture_credits_standard',
+                'processing_strategy': 'instant',
+                'billing_mode': 'instant_batch',
+                'billing_multiplier': 1.0,
+            },
+        ],
+        runtime=core,
+    )
+
+    instant_batch_orchestrator.process_instant_batch_job(batch_id, runtime=core)
+
+    assert len(generate_calls) == 2
+    assert all(call['model'] == core.MODEL_INTEGRATION for call in generate_calls)
+    row_one = batch_orchestrator.get_batch_row(batch_id, 'row-1', runtime=core)
+    row_two = batch_orchestrator.get_batch_row(batch_id, 'row-2', runtime=core)
+    summary = batch_orchestrator.get_batch_status(batch_id, runtime=core)
+    assert row_one['status'] == 'complete'
+    assert row_one['result'].startswith('# Instant result')
+    assert row_one['current_stage_detail'] == 'Lecture 1 · complete'
+    assert row_one['billing_mode'] == 'instant_batch'
+    assert row_two['status'] == 'complete'
+    assert summary['status'] == 'complete'
+    assert summary['processing_strategy'] == 'instant'
+    assert summary['next_action_href'] == '/study'
 
 
 def test_process_batch_text_combine_runs_prompt3_variants(monkeypatch):

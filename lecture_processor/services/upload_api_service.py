@@ -161,8 +161,16 @@ def create_batch_job(app_ctx, request):
     return upload_batch_service.create_batch_job(app_ctx, request)
 
 
+def create_instant_batch_job(app_ctx, request):
+    return upload_batch_service.create_instant_batch_job(app_ctx, request)
+
+
 def list_batch_jobs(app_ctx, request):
     return upload_batch_service.list_batch_jobs(app_ctx, request)
+
+
+def list_instant_batch_jobs(app_ctx, request):
+    return upload_batch_service.list_instant_batch_jobs(app_ctx, request)
 
 
 def get_batch_job_status(app_ctx, request, batch_id):

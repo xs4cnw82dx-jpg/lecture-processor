@@ -8,6 +8,9 @@
 
   var body = document.body;
   var forcedMode = String((body && body.dataset && body.dataset.forcedMode) || 'lecture-notes').trim();
+  var isInstantBatch = String((body && body.dataset && body.dataset.instantBatch) || '').trim() === '1';
+  var batchApiBase = isInstantBatch ? '/api/instant-batch/jobs' : '/api/batch/jobs';
+  var batchKindLabel = isInstantBatch ? 'Instant batch' : 'Batch';
   var mode = ['lecture-notes', 'slides-only', 'interview', 'audio-transcription', 'text-combine'].indexOf(forcedMode) >= 0 ? forcedMode : 'lecture-notes';
   var batchPage = document.getElementById('batch-page');
   var modeLinks = Array.prototype.slice.call(document.querySelectorAll('.mode-link[href]'));
@@ -21,6 +24,7 @@
       allowsAudioUrlImport: true,
       supportsStudyTools: true,
       heroDescription: 'Create one batch request with multiple lectures. Each row produces its own outputs, and the batch can be downloaded as one ZIP.',
+      instantHeroDescription: 'Start multiple lectures immediately. Up to 2 rows run at once, and each row shows live progress while it produces outputs.',
       minimumNote: 'Minimum 2 lectures required for batch mode.',
     },
     'slides-only': {
@@ -31,6 +35,7 @@
       allowsAudioUrlImport: false,
       supportsStudyTools: true,
       heroDescription: 'Create one batch request with multiple slide sets. Each row produces its own outputs, and the batch can be downloaded as one ZIP.',
+      instantHeroDescription: 'Start multiple slide extractions immediately. Up to 2 rows run at once, and each row shows live progress.',
       minimumNote: 'Minimum 2 slides sets required for batch mode.',
     },
     interview: {
@@ -41,6 +46,7 @@
       allowsAudioUrlImport: false,
       supportsStudyTools: false,
       heroDescription: 'Create one batch request with multiple interviews. Each row produces its own outputs, and the batch can be downloaded as one ZIP.',
+      instantHeroDescription: 'Start multiple interview transcriptions immediately. Up to 2 rows run at once, with clear progress for every recording.',
       minimumNote: 'Minimum 2 interviews required for batch mode.',
     },
     'audio-transcription': {
@@ -52,6 +58,7 @@
       allowsAudioUrlImport: true,
       supportsStudyTools: false,
       heroDescription: 'Create one batch request with multiple lecture recordings. Each row produces a clean transcript, and the batch can be downloaded as one ZIP.',
+      instantHeroDescription: 'Start multiple audio transcriptions immediately. Up to 2 rows run at once, and every row shows what audio step is active.',
       minimumNote: 'Minimum 2 audio recordings required for batch mode.',
     },
     'text-combine': {
@@ -63,6 +70,7 @@
       allowsAudioUrlImport: false,
       supportsStudyTools: false,
       heroDescription: 'Create one batch request from existing slide extraction and transcript text files. Each row produces complete lecture notes, and the batch can be downloaded as one ZIP.',
+      instantHeroDescription: 'Combine multiple text sets immediately. Up to 2 rows run at once, with live progress while notes are merged.',
       minimumNote: 'Minimum 2 text sets required for batch mode.',
     },
   };
@@ -123,7 +131,7 @@
   var activeSubmissionId = '';
   var pendingStartRequest = false;
   var startLockedByBatchState = false;
-  var BATCH_CACHE_KEY_PREFIX = 'batch_mode_last_batch_';
+  var BATCH_CACHE_KEY_PREFIX = isInstantBatch ? 'instant_batch_mode_last_batch_' : 'batch_mode_last_batch_';
 
   function modeMeta() {
     return MODE_META[mode] || MODE_META['lecture-notes'];
@@ -206,8 +214,9 @@
     var label = String(summary.next_action_label || '').trim();
     var href = String(summary.next_action_href || '').trim();
     if (!label || !href) return '';
-    var className = href.indexOf('/api/batch/jobs/') === 0 ? 'btn small' : 'btn small secondary';
-    if (href.indexOf('/api/batch/jobs/') === 0) {
+    var apiAction = href.indexOf('/api/batch/jobs/') === 0 || href.indexOf('/api/instant-batch/jobs/') === 0;
+    var className = apiAction ? 'btn small' : 'btn small secondary';
+    if (apiAction) {
       return '<button type="button" class="' + className + '" data-batch-action-href="' + escapeHtml(href) + '">' + escapeHtml(label) + '</button>';
     }
     return '<a class="' + className + '" href="' + escapeHtml(href) + '">' + escapeHtml(label) + '</a>';
@@ -309,7 +318,7 @@
   function setStartButtonState(locked, label) {
     if (!submitBtn) return;
     submitBtn.disabled = !!locked;
-    submitBtn.textContent = String(label || (locked ? 'Queued…' : 'Start batch'));
+    submitBtn.textContent = String(label || (locked ? 'Queued…' : (isInstantBatch ? 'Start instant batch' : 'Start batch')));
   }
 
   function showSubmitFeedback(summary) {
@@ -319,8 +328,8 @@
     var submittedAt = payload.created_at ? formatDate(payload.created_at) : formatDate(Date.now() / 1000);
     var status = String(payload.status || 'queued').trim();
     submitFeedback.innerHTML =
-      'Batch accepted at <strong>' + escapeHtml(submittedAt) + '</strong> (' + escapeHtml(status) + '). ' +
-      'You can continue using the app while it runs. ' +
+      batchKindLabel + ' accepted at <strong>' + escapeHtml(submittedAt) + '</strong> (' + escapeHtml(status) + '). ' +
+      (isInstantBatch ? 'Processing starts immediately. ' : 'You can continue using the app while it runs. ') +
       'Study Library folder: <strong>' + escapeHtml(title) + '</strong>. ' +
       '<a href="/batch_status">Open batch status</a>.';
     submitFeedback.hidden = false;
@@ -413,10 +422,12 @@
   function updateRowLabels() {
     var meta = modeMeta();
     if (rowsTitle) rowsTitle.textContent = meta.plural;
-    if (rowsMinimumNote) rowsMinimumNote.textContent = meta.minimumNote || ('Minimum 2 ' + meta.plural.toLowerCase() + ' required for batch mode.');
+    if (rowsMinimumNote) rowsMinimumNote.textContent = isInstantBatch
+      ? ((meta.minimumNote || ('Minimum 2 ' + meta.plural.toLowerCase() + ' required for batch mode.')).replace('batch mode', 'instant batch') + ' Maximum 20 rows.')
+      : (meta.minimumNote || ('Minimum 2 ' + meta.plural.toLowerCase() + ' required for batch mode.'));
     if (statusRowHeader) statusRowHeader.textContent = meta.singular;
     if (addRowLabel) addRowLabel.textContent = 'Add ' + meta.singular.toLowerCase();
-    if (heroDescription) heroDescription.textContent = meta.heroDescription || '';
+    if (heroDescription) heroDescription.textContent = (isInstantBatch ? meta.instantHeroDescription : meta.heroDescription) || '';
 
     Array.prototype.slice.call(rowsWrap.querySelectorAll('.batch-row')).forEach(function (rowNode, index) {
       var titleEl = rowNode.querySelector('.batch-row-head h3');
@@ -1303,7 +1314,10 @@
     });
 
     if (rows.length < 2) {
-      throw new Error('Batch mode requires at least 2 rows.');
+      throw new Error((isInstantBatch ? 'Instant batch' : 'Batch mode') + ' requires at least 2 rows.');
+    }
+    if (isInstantBatch && rows.length > 20) {
+      throw new Error('Instant batch supports up to 20 rows at a time.');
     }
 
     formData.append('rows', JSON.stringify(rows));
@@ -1391,8 +1405,11 @@
       var rowError = String(row.error || '').trim();
       var tr = document.createElement('tr');
       var canDownload = rowStatus === 'complete';
+      var rowDetail = String(row.current_stage_detail || '').trim();
       var statusText = rowStatus + (rowStage ? ' · ' + rowStage : '') + (row.failed_stage ? ' (' + String(row.failed_stage) + ')' : '');
-      var statusDetail = rowError ? '<div class="batch-row-error-text">' + escapeHtml(truncateText(rowError, 180)) + '</div>' : '';
+      var detailText = rowError || rowDetail;
+      var detailClass = rowError ? 'batch-row-error-text' : 'batch-row-progress-text';
+      var statusDetail = detailText ? '<div class="' + detailClass + '">' + escapeHtml(truncateText(detailText, 180)) + '</div>' : '';
       tr.innerHTML =
         '<td>' + meta.singular + ' ' + Number(row.ordinal || 0) + '</td>' +
         '<td><div class="batch-row-status-line">' + escapeHtml(statusText) + '</div>' + statusDetail + '</td>' +
@@ -1408,7 +1425,7 @@
         docxBtn.className = 'btn tiny';
         docxBtn.textContent = 'DOCX';
         docxBtn.addEventListener('click', function () {
-          window.open('/api/batch/jobs/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-docx', '_blank');
+          window.open(batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-docx', '_blank');
         });
 
         actionsCell.appendChild(docxBtn);
@@ -1418,7 +1435,7 @@
           cardsBtn.className = 'btn tiny';
           cardsBtn.textContent = 'Flashcards CSV';
           cardsBtn.addEventListener('click', function () {
-            window.open('/api/batch/jobs/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-flashcards-csv?type=flashcards', '_blank');
+            window.open(batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-flashcards-csv?type=flashcards', '_blank');
           });
 
           var testBtn = document.createElement('button');
@@ -1426,7 +1443,7 @@
           testBtn.className = 'btn tiny';
           testBtn.textContent = 'Test CSV';
           testBtn.addEventListener('click', function () {
-            window.open('/api/batch/jobs/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-flashcards-csv?type=test', '_blank');
+            window.open(batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-flashcards-csv?type=test', '_blank');
           });
 
           actionsCell.appendChild(cardsBtn);
@@ -1440,7 +1457,7 @@
 
     var locked = status === 'queued' || status === 'processing' || Boolean(summary.submission_locked);
     startLockedByBatchState = locked;
-    setStartButtonState(locked, locked ? 'Queued…' : 'Start batch');
+    setStartButtonState(locked, locked ? 'Queued…' : (isInstantBatch ? 'Start instant batch' : 'Start batch'));
 
     if (locked) {
       showSubmitFeedback(summary);
@@ -1476,7 +1493,7 @@
   function refreshBatchStatus(options) {
     var opts = options || {};
     if (!currentBatchId) return Promise.resolve();
-    return authFetch('/api/batch/jobs/' + encodeURIComponent(currentBatchId))
+    return authFetch(batchApiBase + '/' + encodeURIComponent(currentBatchId))
       .then(function (response) {
         return response.json().then(function (payload) {
           return { response: response, payload: payload };
@@ -1564,7 +1581,7 @@
       }
       var formData = collectRowsAndFormData(activeSubmissionId);
       showSubmitPendingFeedback('Submitting batch...');
-      var response = await authFetch('/api/batch/jobs', {
+      var response = await authFetch(batchApiBase, {
         method: 'POST',
         body: formData,
       });
@@ -1576,7 +1593,7 @@
       if (!currentBatchId) throw new Error('No batch id returned.');
       cacheCurrentBatchId(currentBatchId);
       setBatchIdInUrl(currentBatchId);
-      setStartButtonState(true, 'Queued…');
+      setStartButtonState(true, isInstantBatch ? 'Running…' : 'Queued…');
       showSubmitFeedback(Object.assign({}, payload, {
         status: payload.status || 'queued',
         batch_title: payload.batch_title || (batchTitleInput ? batchTitleInput.value : ''),
@@ -1593,7 +1610,7 @@
       showSubmitErrorFeedback(String(error && error.message ? error.message : 'Could not create batch.'));
       pendingStartRequest = false;
       if (!startLockedByBatchState) {
-        setStartButtonState(false, 'Start batch');
+        setStartButtonState(false, isInstantBatch ? 'Start instant batch' : 'Start batch');
       }
     } finally {
       if (!pendingStartRequest && !startLockedByBatchState && !currentBatchId) {
@@ -1646,7 +1663,7 @@
         if (!submitBtn) return;
         if (!pendingStartRequest && !startLockedByBatchState) {
           activeSubmissionId = '';
-          setStartButtonState(false, 'Start batch');
+          setStartButtonState(false, isInstantBatch ? 'Start instant batch' : 'Start batch');
         }
       });
     }
@@ -1715,7 +1732,7 @@
     if (downloadZipBtn) {
       downloadZipBtn.addEventListener('click', function () {
         if (!currentBatchId) return;
-        window.open('/api/batch/jobs/' + encodeURIComponent(currentBatchId) + '/download.zip', '_blank');
+        window.open(batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/download.zip', '_blank');
       });
     }
 
@@ -1789,7 +1806,7 @@
           currentBatchId = '';
           startLockedByBatchState = false;
           pendingStartRequest = false;
-          setStartButtonState(false, 'Start batch');
+          setStartButtonState(false, isInstantBatch ? 'Start instant batch' : 'Start batch');
           stopPolling();
         }
       });

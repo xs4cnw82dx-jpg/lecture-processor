@@ -21,8 +21,14 @@ EXPECTED_ROUTES = [
     ('GET', '/api/batch/jobs/<batch_id>/download.zip', 'upload_api.download_batch_zip'),
     ('GET', '/api/batch/jobs/<batch_id>/rows/<row_id>/download-docx', 'upload_api.download_batch_row_docx'),
     ('GET', '/api/batch/jobs/<batch_id>/rows/<row_id>/download-flashcards-csv', 'upload_api.download_batch_row_flashcards_csv'),
+    ('GET', '/api/instant-batch/jobs', 'upload_api.list_instant_batch_jobs'),
+    ('GET', '/api/instant-batch/jobs/<batch_id>', 'upload_api.get_instant_batch_job_status'),
+    ('GET', '/api/instant-batch/jobs/<batch_id>/download.zip', 'upload_api.download_instant_batch_zip'),
+    ('GET', '/api/instant-batch/jobs/<batch_id>/rows/<row_id>/download-docx', 'upload_api.download_instant_batch_row_docx'),
+    ('GET', '/api/instant-batch/jobs/<batch_id>/rows/<row_id>/download-flashcards-csv', 'upload_api.download_instant_batch_row_flashcards_csv'),
     ('GET', '/api/auth/user', 'auth_api.get_user'),
     ('POST', '/api/batch/jobs', 'upload_api.create_batch_job'),
+    ('POST', '/api/instant-batch/jobs', 'upload_api.create_instant_batch_job'),
     ('GET', '/api/config', 'payments_api.get_config'),
     ('GET', '/api/confirm-checkout-session', 'payments_api.confirm_checkout_session'),
     ('POST', '/api/create-checkout-session', 'payments_api.create_checkout_session'),
@@ -98,6 +104,11 @@ EXPECTED_ROUTES = [
     ('GET', '/batch_mode_interview_transcription', 'pages.batch_mode_interview_page'),
     ('GET', '/batch_mode_slides_extraction', 'pages.batch_mode_slides_page'),
     ('GET', '/batch_mode_text_combine', 'pages.batch_mode_text_combine_page'),
+    ('GET', '/instant_batch_mode', 'pages.instant_batch_mode_page'),
+    ('GET', '/instant_batch_mode_audio_transcription', 'pages.instant_batch_mode_audio_transcription_page'),
+    ('GET', '/instant_batch_mode_interview_transcription', 'pages.instant_batch_mode_interview_page'),
+    ('GET', '/instant_batch_mode_slides_extraction', 'pages.instant_batch_mode_slides_page'),
+    ('GET', '/instant_batch_mode_text_combine', 'pages.instant_batch_mode_text_combine_page'),
     ('GET', '/calendar', 'pages.calendar_dashboard'),
     ('GET', '/dashboard', 'pages.dashboard'),
     ('GET', '/download-docx/<job_id>', 'upload_api.download_docx'),
@@ -275,6 +286,13 @@ def test_processing_pages_render_updated_shell_labels(client):
     assert 'Batch Processing · Combine Text' in combine_batch_html
     assert 'Combine Text' in combine_batch_html
 
+    instant_batch_response = client.get('/instant_batch_mode')
+    assert instant_batch_response.status_code == 200
+    instant_batch_html = instant_batch_response.get_data(as_text=True)
+    assert 'Instant Batch · Lecture Notes' in instant_batch_html
+    assert 'data-instant-batch="1"' in instant_batch_html
+    assert 'start processing immediately' in instant_batch_html.lower()
+
 
 def test_more_tools_pages_and_links_render(client):
     tools_response = client.get('/tools')
@@ -284,6 +302,7 @@ def test_more_tools_pages_and_links_render(client):
     assert 'General Transcriber' in tools_html
     assert 'Batch Transcriber' in tools_html
     assert 'Batch Combine Text' in tools_html
+    assert 'Instant Batch' in tools_html
 
     downloader_response = client.get('/lecture-downloader')
     assert downloader_response.status_code == 200
@@ -292,6 +311,7 @@ def test_more_tools_pages_and_links_render(client):
     assert 'href="/general-transcriber"' in downloader_html
     assert 'href="/batch_mode_audio_transcription"' in downloader_html
     assert 'href="/batch_mode_text_combine"' in downloader_html
+    assert 'href="/instant_batch_mode"' in downloader_html
 
     transcriber_response = client.get('/general-transcriber')
     assert transcriber_response.status_code == 200
