@@ -1062,7 +1062,7 @@ function setActiveModeViewButton() {
     });
 }
 
-bootstrap.onAuthStateReady(auth, async (user) => {
+auth.onAuthStateChanged(async (user) => {
     if (user) {
         if (authClient && typeof authClient.setToken === 'function') {
             try { authClient.setToken(await user.getIdToken()); } catch (_) { }

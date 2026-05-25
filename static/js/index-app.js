@@ -1858,9 +1858,9 @@ async function activateVerifiedUser(user) {
     await refreshActiveRuntimeJobs(true);
 }
 let handlingDisallowedAuthState = false;
-bootstrap.onAuthStateReady(auth, async (user) => {
-  if (handlingDisallowedAuthState) return;
-  currentUser = user;
+auth.onAuthStateChanged(async (user) => {
+    if (handlingDisallowedAuthState) return;
+    currentUser = user;
     if (user) {
         const check = await checkEmailAllowed(user.email || '');
         if (!check.allowed) {

@@ -15,7 +15,7 @@
         signedOutHref:'/lecture-notes?auth=signin'
       });
     }else{
-      bootstrap.onAuthStateReady(auth,function(user){
+      auth.onAuthStateChanged(function(user){
         if(user){
           navAuthLabel.textContent='Dashboard';
           navAuthBtn.href='/dashboard';

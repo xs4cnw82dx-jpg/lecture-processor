@@ -284,7 +284,7 @@
     return;
   }
 
-  bootstrap.onAuthStateReady(auth, function (user) {
+  auth.onAuthStateChanged(function (user) {
     currentUser = user || null;
     loadDashboard(currentUser);
   });

@@ -21,7 +21,7 @@
     return;
   }
 
-  bootstrap.onAuthStateReady(auth, function (user) {
+  auth.onAuthStateChanged(function (user) {
     authLabel.textContent = user ? 'Dashboard' : 'Sign in';
     authBtn.href = user ? '/dashboard' : '/lecture-notes?auth=signin';
   });

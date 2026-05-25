@@ -1056,7 +1056,7 @@
     modalOverlay.setAttribute('aria-hidden', 'true');
     wireWeekActions();
 
-    bootstrap.onAuthStateReady(auth, async (user) => {
+    auth.onAuthStateChanged(async (user) => {
       authStateResolved = true;
       currentUser = user;
       updateAddSessionButton();
