@@ -710,6 +710,27 @@
       margin-bottom: 16px
     }
 
+    .pack-selection-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin: -6px 0 14px;
+      padding: 10px 12px;
+      border: 1px solid rgba(79, 70, 229, .16);
+      border-radius: var(--radius-md);
+      background: rgba(79, 70, 229, .05);
+      color: var(--gray-700);
+      font-size: .82rem;
+      font-weight: 700
+    }
+
+    .pack-selection-bar .btn {
+      min-height: 30px;
+      padding: 5px 9px;
+      font-size: .76rem
+    }
+
     .list {
       display: flex;
       flex-direction: column;
@@ -755,6 +776,67 @@
       border-color: var(--primary);
       background: rgba(79, 70, 229, .04);
       box-shadow: 0 0 0 3px rgba(79, 70, 229, .08)
+    }
+
+    .item.selected-for-delete {
+      border-color: rgba(220, 38, 38, .38);
+      background: rgba(254, 242, 242, .86)
+    }
+
+    .item.selected-for-delete.active {
+      box-shadow: 0 0 0 3px rgba(220, 38, 38, .1), inset 3px 0 0 rgba(220, 38, 38, .68)
+    }
+
+    .pack-row-main {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      min-width: 0
+    }
+
+    .pack-row-content {
+      flex: 1 1 auto;
+      min-width: 0
+    }
+
+    .pack-select-control {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      margin-top: -2px;
+      border-radius: 6px;
+      cursor: pointer
+    }
+
+    .pack-select-control input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none
+    }
+
+    .pack-select-box {
+      width: 18px;
+      height: 18px;
+      border: 1.5px solid var(--gray-300);
+      border-radius: 5px;
+      background: var(--white);
+      box-shadow: inset 0 0 0 2px var(--white);
+      transition: all .16s ease
+    }
+
+    .pack-select-control:hover .pack-select-box,
+    .pack-select-control input:focus-visible + .pack-select-box {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, .12), inset 0 0 0 2px var(--white)
+    }
+
+    .pack-select-control input:checked + .pack-select-box {
+      border-color: var(--danger);
+      background: var(--danger);
+      box-shadow: inset 0 0 0 4px var(--white)
     }
 
     .pack-quick-learn {
@@ -4627,6 +4709,10 @@
         display: none;
       }
 
+      #study-library-shell.has-pack-selection #delete-pack-btn {
+        display: inline-flex;
+      }
+
       #create-pack-btn {
         max-width: none;
       }
@@ -4684,6 +4770,14 @@
 
       #pack-list .item {
         padding: 11px 12px;
+      }
+
+      #pack-list .pack-row-main {
+        gap: 8px;
+      }
+
+      #pack-list .pack-select-control {
+        margin-top: -1px;
       }
 
       #pack-list .item .item-head {

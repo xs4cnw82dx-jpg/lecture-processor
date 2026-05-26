@@ -27,6 +27,7 @@ const setBodyScrollLocked = typeof uxUtils.setBodyScrollLocked === 'function'
 
 /* ── State ── */
 let token = null, folders = [], packs = [], selectedFolderId = '', selectedPackId = '', selectedPack = null;
+let selectedPackIds = new Set(), packSelectionAnchorId = '';
 let packsHasMore = false, packsNextCursor = '', packsLoadingMore = false;
 let activeEditorPane = 'notes', exportType = 'flashcards', draggedPackId = '';
 let folderModalMode = 'create', editingFolderId = '', pendingOpenPackId = '', confirmModalResolver = null;
@@ -1391,7 +1392,7 @@ function gradeAnswer(userAnswer, correctAnswer) {
 var userMeta = document.getElementById('user-meta'), backAppBtn = document.getElementById('back-app-btn'), fullscreenBtn = document.getElementById('fullscreen-btn'), topbarDueText = document.getElementById('topbar-due-text');
 var studyAuthGate = document.getElementById('study-auth-gate'), studyLibraryShell = document.getElementById('study-library-shell'), studyAuthSignInBtn = document.getElementById('study-auth-signin-btn');
 var processingNowPanel = document.getElementById('processing-now-panel'), processingNowList = document.getElementById('processing-now-list');
-var searchInput = document.getElementById('search-input'), folderList = document.getElementById('folder-list'), packList = document.getElementById('pack-list'), packListActions = document.getElementById('pack-list-actions'), loadMorePacksBtn = document.getElementById('load-more-packs-btn'), newFolderBtn = document.getElementById('new-folder-btn'), deleteFolderBtn = document.getElementById('delete-folder-btn');
+var searchInput = document.getElementById('search-input'), folderList = document.getElementById('folder-list'), packList = document.getElementById('pack-list'), packSelectionBar = document.getElementById('pack-selection-bar'), packSelectionCount = document.getElementById('pack-selection-count'), clearPackSelectionBtn = document.getElementById('clear-pack-selection-btn'), packListActions = document.getElementById('pack-list-actions'), loadMorePacksBtn = document.getElementById('load-more-packs-btn'), newFolderBtn = document.getElementById('new-folder-btn'), deleteFolderBtn = document.getElementById('delete-folder-btn');
 var packEmpty = document.getElementById('pack-empty'), packEmptyDefault = document.getElementById('pack-empty-default'), packEmptyOnboarding = document.getElementById('pack-empty-onboarding'), packEmptyCreateBtn = document.getElementById('pack-empty-create-btn'), packEmptyDemoBtn = document.getElementById('pack-empty-demo-btn'), packEditorWrap = document.getElementById('pack-editor-wrap'), packTitle = document.getElementById('pack-title'), packFolderSelect = document.getElementById('pack-folder-select'), packFolderPicker = document.getElementById('pack-folder-picker'), packFolderButton = document.getElementById('pack-folder-button'), packFolderLabel = document.getElementById('pack-folder-label'), packFolderMenu = document.getElementById('pack-folder-menu');
 var packCourse = document.getElementById('pack-course'), packSubject = document.getElementById('pack-subject'), packSemester = document.getElementById('pack-semester'), packBlock = document.getElementById('pack-block'), notesView = document.getElementById('notes-view');
 var packAdvancedMetaBtn = document.getElementById('pack-advanced-meta-btn'), packAdvancedMetaShell = document.getElementById('pack-advanced-meta-shell'), packAdvancedMetaPanel = document.getElementById('pack-advanced-meta-panel');
@@ -1497,6 +1498,9 @@ function applyStudySignedOutState() {
   selectedFolderId = '';
   selectedPackId = '';
   selectedPack = null;
+  selectedPackIds = new Set();
+  packSelectionAnchorId = '';
+  syncPackSelectionControls();
   setInlineAutosaveBaseline(null);
   pendingOpenPackId = '';
   draggedPackId = '';
@@ -3665,6 +3669,90 @@ function filteredPacks() {
   });
 }
 
+function getSelectedPackIds() {
+  return Array.from(selectedPackIds || []).filter(Boolean);
+}
+
+function syncPackSelectionControls() {
+  var count = getSelectedPackIds().length;
+  if (studyLibraryShell) {
+    studyLibraryShell.classList.toggle('has-pack-selection', count > 0);
+  }
+  if (packSelectionBar) {
+    packSelectionBar.hidden = count <= 0;
+  }
+  if (packSelectionCount) {
+    packSelectionCount.textContent = count === 1 ? '1 pack selected' : count + ' packs selected';
+  }
+  if (deletePackBtn) {
+    deletePackBtn.textContent = count > 0 ? 'Delete selected (' + count + ')' : 'Delete Pack';
+    deletePackBtn.setAttribute('aria-label', count > 0 ? 'Delete selected study packs' : 'Delete current study pack');
+  }
+}
+
+function prunePackSelection() {
+  var validIds = new Set((packs || []).map(function (pack) {
+    return String((pack && pack.study_pack_id) || '');
+  }).filter(Boolean));
+  selectedPackIds = new Set(getSelectedPackIds().filter(function (packId) {
+    return validIds.has(packId);
+  }));
+  if (packSelectionAnchorId && !validIds.has(packSelectionAnchorId)) {
+    packSelectionAnchorId = '';
+  }
+  syncPackSelectionControls();
+}
+
+function clearPackSelection(shouldRender) {
+  selectedPackIds = new Set();
+  packSelectionAnchorId = '';
+  syncPackSelectionControls();
+  if (shouldRender) {
+    renderPacks();
+  }
+}
+
+function applyPackSelection(packId, checked, useRange) {
+  var id = String(packId || '');
+  if (!id) return;
+  var currentSelection = getSelectedPackIds();
+  var nextSelection;
+  if (typeof studyLibraryUtils.buildStudyPackSelection === 'function') {
+    nextSelection = studyLibraryUtils.buildStudyPackSelection(currentSelection, id, filteredPacks(), {
+      checked: checked,
+      range: !!useRange,
+      anchorPackId: packSelectionAnchorId,
+    });
+  } else {
+    nextSelection = currentSelection.slice();
+    var nextSet = new Set(nextSelection);
+    if (checked) {
+      nextSet.add(id);
+    } else {
+      nextSet.delete(id);
+    }
+    nextSelection = Array.from(nextSet);
+  }
+  selectedPackIds = new Set(nextSelection);
+  packSelectionAnchorId = id;
+  renderPacks();
+}
+
+function getPackIdsForDelete() {
+  var selectedIds = getSelectedPackIds();
+  if (selectedIds.length) {
+    return selectedIds;
+  }
+  return selectedPackId ? [selectedPackId] : [];
+}
+
+function formatPackDeleteMessage(packIds) {
+  if (packIds.length === 1) {
+    return 'Delete this study pack permanently? This cannot be undone.';
+  }
+  return 'Delete ' + packIds.length + ' study packs permanently? This cannot be undone.';
+}
+
 function movePackToFolder(pid, fid) {
   return apiCall('/api/study-packs/' + encodeURIComponent(pid), { method: 'PATCH', body: JSON.stringify({ folder_id: fid }) }).then(function () {
     showToast('Study pack moved.'); return loadData(pid);
@@ -3827,6 +3915,7 @@ function renderPackListActions() {
 
 function renderPacks() {
   var items = filteredPacks(); packList.innerHTML = '';
+  prunePackSelection();
   updatePackEmptyState();
   if (!items.length) {
     setSafeInnerHtml(packList, '<div class="empty">No study packs match this filter.<div class="builder-list-empty-actions"><button type="button" class="btn" id="clear-pack-filters-btn">Clear filters</button></div></div>');
@@ -3843,12 +3932,14 @@ function renderPacks() {
     return;
   }
   items.forEach(function (p) {
+    var packId = String((p && p.study_pack_id) || '');
     var div = document.createElement('div');
-    div.className = 'item' + (selectedPackId === p.study_pack_id ? ' active' : '');
-    div.draggable = true; div.dataset.packId = p.study_pack_id;
+    var isCheckedForDelete = selectedPackIds.has(packId);
+    div.className = 'item pack-list-item' + (selectedPackId === packId ? ' active' : '') + (isCheckedForDelete ? ' selected-for-delete' : '');
+    div.draggable = true; div.dataset.packId = packId;
     div.setAttribute('role', 'button');
     div.setAttribute('tabindex', '0');
-    if (selectedPackId === p.study_pack_id) {
+    if (selectedPackId === packId) {
       div.setAttribute('aria-current', 'true');
     } else {
       div.removeAttribute('aria-current');
@@ -3863,24 +3954,49 @@ function renderPacks() {
       metaParts,
       p.folder_name ? 'Folder: ' + escapeHtml(p.folder_name) : defaultFolderText
     );
-    setSafeInnerHtml(div, '<div class="item-head"><span class="item-title">' + titleText + '</span><button type="button" class="pack-quick-learn" data-pack-learn>Learn</button></div><div class="item-sub">' + modeText + ' · ' + formatPackCountSummary(p.flashcards_count, p.test_questions_count) + '</div><div class="item-sub">' + metaText + '</div>');
+    div.setAttribute('aria-label', (isCheckedForDelete ? 'Selected for deletion, ' : '') + (p.title || 'Untitled pack'));
+    setSafeInnerHtml(div, '<div class="pack-row-main"><label class="pack-select-control"><input type="checkbox" data-pack-select aria-label="Select ' + titleText + ' for deletion"' + (isCheckedForDelete ? ' checked' : '') + '><span class="pack-select-box" aria-hidden="true"></span></label><div class="pack-row-content"><div class="item-head"><span class="item-title">' + titleText + '</span><button type="button" class="pack-quick-learn" data-pack-learn>Learn</button></div><div class="item-sub">' + modeText + ' · ' + formatPackCountSummary(p.flashcards_count, p.test_questions_count) + '</div><div class="item-sub">' + metaText + '</div></div></div>');
     var activatePack = function () {
-      selectedPackId = p.study_pack_id;
+      selectedPackId = packId;
       renderPacks();
-      openPack(p.study_pack_id);
+      openPack(packId);
     };
-    div.addEventListener('click', function () { activatePack(); });
-    bindKeyboardActivation(div, function () { activatePack(); });
+    var checkbox = div.querySelector('[data-pack-select]');
+    var selectControl = div.querySelector('.pack-select-control');
+    if (selectControl) {
+      selectControl.addEventListener('click', function (e) { e.stopPropagation(); });
+    }
+    if (checkbox) {
+      checkbox.addEventListener('click', function (e) {
+        e.stopPropagation();
+        applyPackSelection(packId, checkbox.checked, e.shiftKey);
+      });
+    }
+    div.addEventListener('click', function (e) {
+      if (e.shiftKey || e.metaKey || e.ctrlKey) {
+        e.preventDefault();
+        applyPackSelection(packId, !selectedPackIds.has(packId), e.shiftKey);
+        return;
+      }
+      activatePack();
+    });
+    bindKeyboardActivation(div, function (e) {
+      if (e && (e.shiftKey || e.metaKey || e.ctrlKey)) {
+        applyPackSelection(packId, !selectedPackIds.has(packId), e.shiftKey);
+        return;
+      }
+      activatePack();
+    });
     var learnBtn = div.querySelector('[data-pack-learn]');
     if (learnBtn) {
       learnBtn.addEventListener('click', function (e) {
         e.stopPropagation();
-        selectedPackId = p.study_pack_id;
+        selectedPackId = packId;
         renderPacks();
-        openPack(p.study_pack_id).then(function () { openSessionSetup(); });
+        openPack(packId).then(function () { openSessionSetup(); });
       });
     }
-    div.addEventListener('dragstart', function (e) { draggedPackId = p.study_pack_id; div.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', p.study_pack_id); });
+    div.addEventListener('dragstart', function (e) { draggedPackId = packId; div.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', packId); });
     div.addEventListener('dragend', function () { div.classList.remove('dragging'); draggedPackId = ''; });
     packList.appendChild(div);
   });
@@ -5001,6 +5117,9 @@ if (fullscreenBtn) {
   });
 }
 searchInput.addEventListener('input', renderPacks);
+if (clearPackSelectionBtn) {
+  clearPackSelectionBtn.addEventListener('click', function () { clearPackSelection(true); });
+}
 if (loadMorePacksBtn) {
   loadMorePacksBtn.addEventListener('click', function () {
     loadMorePacks();
@@ -5181,17 +5300,28 @@ if (packDailyGoalInput) {
 }
 
 deletePackBtn.addEventListener('click', function () {
-  if (!selectedPackId) { showToast('Select a study pack first.', 'error'); return; }
-  openConfirmModal('Delete Study Pack', 'Delete this study pack permanently? This cannot be undone.', 'Delete Pack').then(function (confirmed) {
+  var packIdsToDelete = getPackIdsForDelete();
+  if (!packIdsToDelete.length) { showToast('Select a study pack first.', 'error'); return; }
+  var deletingMultiple = packIdsToDelete.length > 1;
+  openConfirmModal(deletingMultiple ? 'Delete Study Packs' : 'Delete Study Pack', formatPackDeleteMessage(packIdsToDelete), deletingMultiple ? 'Delete Packs' : 'Delete Pack').then(function (confirmed) {
     if (!confirmed) return;
-    var removedPackId = selectedPackId;
-    apiCall('/api/study-packs/' + encodeURIComponent(selectedPackId), { method: 'DELETE' }).then(function () {
-      return apiCall('/api/study-progress', { method: 'PUT', body: JSON.stringify({ remove_pack_ids: [removedPackId] }) }).catch(function () { });
+    var removedPackIds = packIdsToDelete.slice();
+    var activePackDeleted = removedPackIds.indexOf(selectedPackId) >= 0;
+    var deleteChain = removedPackIds.reduce(function (chain, packId) {
+      return chain.then(function () {
+        return apiCall('/api/study-packs/' + encodeURIComponent(packId), { method: 'DELETE' });
+      });
+    }, Promise.resolve());
+    deleteChain.then(function () {
+      return apiCall('/api/study-progress', { method: 'PUT', body: JSON.stringify({ remove_pack_ids: removedPackIds }) }).catch(function () { });
     }).then(function () {
-      removePackLocalCaches(removedPackId);
-      selectedPackId = ''; selectedPack = null; setInlineAutosaveBaseline(null); showPackEditor(false); updatePackSummary();
-      return loadData();
-    }).then(function () { showToast('Study pack deleted.'); }).catch(function (e) { showToast(e.message || 'Could not delete study pack.', 'error'); });
+      removedPackIds.forEach(removePackLocalCaches);
+      clearPackSelection(false);
+      if (activePackDeleted) {
+        selectedPackId = ''; selectedPack = null; setInlineAutosaveBaseline(null); showPackEditor(false); updatePackSummary();
+      }
+      return loadData(activePackDeleted ? '' : selectedPackId);
+    }).then(function () { showToast(deletingMultiple ? 'Study packs deleted.' : 'Study pack deleted.'); }).catch(function (e) { showToast(e.message || 'Could not delete study pack.', 'error'); });
   });
 });
 
