@@ -19,6 +19,20 @@ def set_batch_job(db, batch_id, payload, merge=True):
     return batch_job_doc_ref(db, batch_id).set(payload, merge=merge)
 
 
+def set_batch_job_with_rows(db, batch_id, batch_payload, rows):
+    try:
+        write_batch = db.batch()
+    except AttributeError:
+        set_batch_job(db, batch_id, batch_payload, merge=False)
+        for row_id, row_payload in rows:
+            set_batch_row(db, batch_id, row_id, row_payload, merge=False)
+        return None
+    write_batch.set(batch_job_doc_ref(db, batch_id), batch_payload, merge=False)
+    for row_id, row_payload in rows:
+        write_batch.set(batch_row_doc_ref(db, batch_id, row_id), row_payload, merge=False)
+    return write_batch.commit()
+
+
 def update_batch_job_fields(db, batch_id, payload):
     return batch_job_doc_ref(db, batch_id).update(payload)
 
@@ -95,5 +109,8 @@ def get_batch_row_doc(db, batch_id, row_id):
     return batch_row_doc_ref(db, batch_id, row_id).get()
 
 
-def list_batch_rows(db, batch_id):
-    return list(batch_rows_collection(db, batch_id).order_by('ordinal').stream())
+def list_batch_rows(db, batch_id, limit=None):
+    query = batch_rows_collection(db, batch_id).order_by('ordinal')
+    if isinstance(limit, int) and limit > 0:
+        query = query.limit(limit)
+    return list(query.stream())

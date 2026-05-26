@@ -105,6 +105,98 @@ def test_batch_create_requires_minimum_two_rows(client, monkeypatch):
     assert 'at least 2 rows' in str(body.get('error', '')).lower()
 
 
+def test_regular_batch_create_enforces_row_cap(client, monkeypatch):
+    _patch_batch_auth(monkeypatch)
+    monkeypatch.setattr(core, 'BATCH_MAX_ROWS', 2)
+
+    response = client.post(
+        '/api/batch/jobs',
+        data={
+            'mode': 'slides-only',
+            'rows': json.dumps([
+                {'row_id': 'row-1'},
+                {'row_id': 'row-2'},
+                {'row_id': 'row-3'},
+            ]),
+        },
+        content_type='multipart/form-data',
+    )
+
+    assert response.status_code == 400
+    assert 'supports up to 2 rows' in response.get_json()['error']
+
+
+def test_batch_create_rejects_unsafe_row_ids_before_charging(client, monkeypatch):
+    _patch_batch_auth(monkeypatch)
+    monkeypatch.setattr(core, 'client', object())
+    monkeypatch.setattr(
+        core,
+        'get_or_create_user',
+        lambda uid, email: {
+            'uid': uid,
+            'email': email,
+            'slides_credits': 2,
+            'preferred_output_language': 'english',
+            'preferred_output_language_custom': '',
+        },
+    )
+    charged = []
+    monkeypatch.setattr(billing_credits, 'deduct_credit', lambda *args, **kwargs: charged.append(args) or 'slides_credits')
+
+    response = client.post(
+        '/api/batch/jobs',
+        data={
+            'mode': 'slides-only',
+            'batch_title': 'Unsafe row id',
+            'rows': json.dumps([
+                {'row_id': '../bad', 'slides_file_field': 'row_1_slides'},
+                {'row_id': 'row-2', 'slides_file_field': 'row_2_slides'},
+            ]),
+        },
+        content_type='multipart/form-data',
+    )
+
+    assert response.status_code == 400
+    assert 'row identifier is invalid' in response.get_json()['error']
+    assert charged == []
+
+
+def test_batch_create_rejects_duplicate_row_ids_before_charging(client, monkeypatch):
+    _patch_batch_auth(monkeypatch)
+    monkeypatch.setattr(core, 'client', object())
+    monkeypatch.setattr(
+        core,
+        'get_or_create_user',
+        lambda uid, email: {
+            'uid': uid,
+            'email': email,
+            'slides_credits': 2,
+            'preferred_output_language': 'english',
+            'preferred_output_language_custom': '',
+        },
+    )
+    charged = []
+    monkeypatch.setattr(billing_credits, 'deduct_credit', lambda *args, **kwargs: charged.append(args) or 'slides_credits')
+
+    response = client.post(
+        '/api/batch/jobs',
+        data={
+            'mode': 'slides-only',
+            'batch_title': 'Duplicate row id',
+            'rows': json.dumps([
+                {'row_id': 'row-1', 'slides_file_field': 'row_1_slides'},
+                {'row_id': 'row-1', 'slides_file_field': 'row_2_slides'},
+            ]),
+            'row_1_slides': (io.BytesIO(b'%PDF-1.4 row-1'), 'row-1.pdf'),
+        },
+        content_type='multipart/form-data',
+    )
+
+    assert response.status_code == 400
+    assert 'row identifier is duplicated' in response.get_json()['error']
+    assert charged == []
+
+
 def test_batch_create_requires_batch_title(client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     monkeypatch.setattr(core, 'client', None)
@@ -145,6 +237,57 @@ def test_batch_create_requires_batch_title(client, monkeypatch):
     assert response.status_code == 400
     body = response.get_json()
     assert str(body.get('error', '')).strip() == 'Batch title is required.'
+
+
+def test_batch_submit_failure_after_persistence_marks_rows_refunded(client, monkeypatch):
+    _clear_batch_memory()
+    _patch_batch_auth(monkeypatch)
+    _patch_batch_refunds(monkeypatch)
+    _patch_batch_quota_guards(monkeypatch)
+    monkeypatch.setattr(core, 'client', object())
+    monkeypatch.setattr(
+        core,
+        'get_or_create_user',
+        lambda uid, email: {
+            'uid': uid,
+            'email': email,
+            'slides_credits': 2,
+            'preferred_output_language': 'english',
+            'preferred_output_language_custom': '',
+        },
+    )
+    monkeypatch.setattr(core, 'resolve_uploaded_slides_to_pdf', lambda uploaded_file, job_id: (f'{job_id}.pdf', None))
+    monkeypatch.setattr(core, 'get_saved_file_size', lambda _path: 1024)
+    monkeypatch.setattr(billing_credits, 'deduct_credit', lambda uid, credit_type, runtime=None: 'slides_credits')
+    monkeypatch.setattr(
+        core,
+        'submit_batch_background_job',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError('broker unavailable')),
+    )
+
+    response = client.post(
+        '/api/batch/jobs',
+        data={
+            'mode': 'slides-only',
+            'batch_title': 'Submit failure',
+            'rows': json.dumps([
+                {'row_id': 'row-1', 'slides_file_field': 'row_1_slides'},
+                {'row_id': 'row-2', 'slides_file_field': 'row_2_slides'},
+            ]),
+            'row_1_slides': (io.BytesIO(b'%PDF-1.4 row-1'), 'row-1.pdf'),
+            'row_2_slides': (io.BytesIO(b'%PDF-1.4 row-2'), 'row-2.pdf'),
+        },
+        content_type='multipart/form-data',
+    )
+
+    assert response.status_code == 400
+    runtime = client.application.extensions['lecture_processor']['runtime']
+    batch_id = next(iter(runtime._BATCH_JOBS_MEMORY))
+    batch = batch_orchestrator.get_batch(batch_id, runtime=runtime)
+    rows = batch_orchestrator.list_batch_rows(batch_id, runtime=runtime)
+    assert batch['status'] == 'error'
+    assert all(row['status'] == 'error' for row in rows)
+    assert all(row['credit_refunded'] is True for row in rows)
 
 
 def test_batch_create_deduplicates_client_submission_id(client, monkeypatch):
@@ -1517,7 +1660,7 @@ def test_batch_status_contract(client, monkeypatch):
     monkeypatch.setattr(
         batch_orchestrator,
         'get_batch_status',
-        lambda batch_id, runtime=None: {
+        lambda batch_id, runtime=None, rows_limit=None: {
             'batch_id': batch_id,
             'status': 'processing',
             'mode': 'lecture-notes',
@@ -1912,6 +2055,8 @@ def test_batch_download_zip_text_combine_includes_sources_and_combined_docx(clie
 def test_batch_status_repairs_terminal_batch_with_incomplete_rows(monkeypatch):
     _clear_batch_memory()
     _patch_batch_refunds(monkeypatch)
+    released = []
+    monkeypatch.setattr(rate_limit_quotas, 'release_daily_upload_bytes', lambda uid, byte_count, runtime=None: released.append((uid, byte_count)) or True)
     batch_id = 'batch-terminal-repair'
     batch_orchestrator.create_batch_job(
         {
@@ -1930,7 +2075,7 @@ def test_batch_status_repairs_terminal_batch_with_incomplete_rows(monkeypatch):
             'completion_email_status': 'pending',
         },
         [
-            {'row_id': 'row-1', 'ordinal': 1, 'status': 'queued', 'credit_deducted': 'lecture_credits_standard'},
+            {'row_id': 'row-1', 'ordinal': 1, 'status': 'queued', 'credit_deducted': 'lecture_credits_standard', 'uid': 'u-batch', 'source_type': 'm3u8_url', 'audio_quota_reserved_bytes': core.MAX_AUDIO_UPLOAD_BYTES, 'audio_quota_released': False},
             {'row_id': 'row-2', 'ordinal': 2, 'status': 'queued', 'credit_deducted': 'lecture_credits_standard'},
         ],
         runtime=core,
@@ -1942,6 +2087,38 @@ def test_batch_status_repairs_terminal_batch_with_incomplete_rows(monkeypatch):
     assert payload.get('failed_rows') == 2
     assert 'interrupted' in str(payload.get('error_message', '')).lower()
     assert all(str(row.get('status', '')) == 'error' for row in payload.get('rows', []))
+    assert released == [('u-batch', core.MAX_AUDIO_UPLOAD_BYTES)]
+
+
+def test_batch_status_zip_availability_uses_batch_counts_when_rows_are_limited(monkeypatch):
+    _clear_batch_memory()
+    rows = [
+        {'row_id': f'row-{idx}', 'ordinal': idx, 'status': 'error'}
+        for idx in range(1, 101)
+    ]
+    rows.append({'row_id': 'row-101', 'ordinal': 101, 'status': 'complete'})
+    batch_orchestrator.create_batch_job(
+        {
+            'batch_id': 'batch-limited-complete-row',
+            'uid': 'u-batch',
+            'email': 'batch@example.com',
+            'mode': 'lecture-notes',
+            'status': 'partial',
+            'batch_title': 'Limited rows',
+            'total_rows': 101,
+            'completed_rows': 1,
+            'failed_rows': 100,
+        },
+        rows,
+        runtime=core,
+    )
+
+    payload = batch_orchestrator.get_batch_status('batch-limited-complete-row', runtime=core, rows_limit=100)
+
+    assert payload['rows_returned'] == 100
+    assert all(row['status'] != 'complete' for row in payload['rows'])
+    assert payload['completed_rows'] == 1
+    assert payload['can_download_zip'] is True
 
 
 def test_list_batches_repairs_stale_processing_batch(monkeypatch):

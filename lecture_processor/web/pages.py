@@ -385,6 +385,7 @@ def voice_notes_page():
     runtime = get_runtime()
     return render_template(
         'voice_notes.html',
+        study_api_js_asset=runtime.resolve_js_asset('js/study-api-utils.js'),
         voice_notes_utils_js_asset=runtime.resolve_js_asset('js/voice-notes-utils.js'),
         voice_notes_js_asset=runtime.resolve_js_asset('js/voice-notes.js'),
         **_shell_context(runtime=runtime, page_key='voice-notes'),

@@ -28,6 +28,8 @@ import statistics
 
 from datetime import datetime, timedelta, timezone
 
+from pathlib import Path
+
 from urllib.parse import urlparse
 
 try:
@@ -154,7 +156,13 @@ BATCH_JOB_WORKERS = safe_int_env('BATCH_JOB_WORKERS', 1, minimum=1, maximum=16)
 
 BATCH_JOB_QUEUE_MAX_PENDING = safe_int_env('BATCH_JOB_QUEUE_MAX_PENDING', 24, minimum=0, maximum=2000)
 
+ADMIN_FALLBACK_MAX_DOCS = safe_int_env('ADMIN_FALLBACK_MAX_DOCS', 5000, minimum=100, maximum=50000)
+
 INSTANT_BATCH_MAX_ROWS = safe_int_env('INSTANT_BATCH_MAX_ROWS', 20, minimum=2, maximum=100)
+
+BATCH_MAX_ROWS = safe_int_env('BATCH_MAX_ROWS', 100, minimum=2, maximum=499)
+
+BATCH_STATUS_ROWS_LIMIT = safe_int_env('BATCH_STATUS_ROWS_LIMIT', 100, minimum=1, maximum=500)
 
 INSTANT_BATCH_MAX_PARALLEL_ROWS = safe_int_env('INSTANT_BATCH_MAX_PARALLEL_ROWS', 2, minimum=1, maximum=8)
 
@@ -474,13 +482,11 @@ def should_use_minified_js_assets():
 def resolve_js_asset(filename):
     """Use minified JS outside development when a built bundle exists."""
     safe_name = str(filename or '').strip()
-    if not safe_name.endswith('.js'):
-        return safe_name
-    if not should_use_minified_js_assets():
+    if not safe_name.endswith('.js') or not should_use_minified_js_assets():
         return safe_name
     min_name = safe_name[:-3] + '.min.js'
-    min_path = os.path.join(PROJECT_ROOT_DIR, 'static', min_name)
-    if os.path.exists(min_path):
+    min_path = Path(PROJECT_ROOT_DIR) / 'static' / min_name
+    if min_path.exists():
         return min_name
     return safe_name
 

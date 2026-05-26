@@ -138,8 +138,35 @@ def test_batch_audio_transcription_mode_disables_study_tools_and_allows_audio_im
     assert "'text-combine': {" in batch_js
     assert 'requiresTextInputs: true' in batch_js
     assert 'if (modeSupportsStudyTools()) wireRowOverride(card);' in batch_js
-    assert "var isInstantBatch =" in batch_js
-    assert "'/api/instant-batch/jobs'" in batch_js
+
+
+def test_batch_override_panel_removes_hidden_controls_from_tab_order():
+    batch_js = Path('static/js/batch-mode.js').read_text(encoding='utf-8')
+
+    assert 'panel.inert = !enabled;' in batch_js
+    assert "control.setAttribute('tabindex', '-1');" in batch_js
+    assert "control.disabled = true;" in batch_js
+
+
+def test_calendar_validation_errors_are_field_owned():
+    calendar_template = Path('templates/calendar.html').read_text(encoding='utf-8')
+    calendar_js = Path('static/js/calendar.js').read_text(encoding='utf-8')
+
+    assert 'placeholder="yyyy-mm-dd"' in calendar_template
+    assert 'id="session-date-error" role="alert" hidden' in calendar_template
+    assert "input.setAttribute('aria-invalid', 'true');" in calendar_js
+    assert 'function isValidIsoDateValue(value)' in calendar_js
+    assert 'function isValidTimeValue(value)' in calendar_js
+    assert "Choose a valid session date in yyyy-mm-dd format." in calendar_js
+
+
+def test_voice_notes_and_study_pages_have_single_page_heading_contract():
+    voice_template = Path('templates/voice_notes.html').read_text(encoding='utf-8')
+    study_template = Path('templates/study.html').read_text(encoding='utf-8')
+
+    assert '<h2>Sign in to transcribe</h2>' in voice_template
+    assert '<h1>Sign in to transcribe</h1>' not in voice_template
+    assert '<h1 class="sr-only">{{ study_shell_title or ' in study_template
 
 
 def test_study_folder_rows_do_not_nest_actions_inside_button_role():

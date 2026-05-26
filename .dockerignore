@@ -3,6 +3,7 @@ venv/
 venv_py39_backup/
 node_modules/
 uploads/
+physio_library/sources/
 functions/node_modules/
 functions/lib/
 .git/

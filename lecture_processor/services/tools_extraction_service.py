@@ -301,19 +301,18 @@ def tools_extract(app_ctx, request):
             app_ctx.cleanup_files(list(cleanup_paths or []), [])
             return app_ctx.jsonify({'error': 'No text extraction credits remaining.'}), 402
 
-        runtime_jobs_store.set_job(
-            job_id,
-            _tools_job_payload(
-                app_ctx,
-                uid=uid,
-                email=email,
-                staged_input=staged_input,
-                deducted_credit=deducted_credit,
-            ),
-            runtime=app_ctx,
-        )
-
         try:
+            runtime_jobs_store.set_job(
+                job_id,
+                _tools_job_payload(
+                    app_ctx,
+                    uid=uid,
+                    email=email,
+                    staged_input=staged_input,
+                    deducted_credit=deducted_credit,
+                ),
+                runtime=app_ctx,
+            )
             app_ctx.submit_background_job(
                 _run_tools_extract_job,
                 app_ctx,
@@ -332,6 +331,16 @@ def tools_extract(app_ctx, request):
                 cleanup_paths=list(cleanup_paths or []),
                 credit_type=deducted_credit,
                 expected_credit_floor=None if billing_credits.is_unlimited_for_category(user, 'slides', runtime=app_ctx) else int(user.get('slides_credits', 0) or 0),
+            )
+        except Exception as error:
+            return upload_api_service._handle_runtime_job_setup_failure(
+                app_ctx,
+                job_id=job_id,
+                uid=uid,
+                cleanup_paths=list(cleanup_paths or []),
+                credit_type=deducted_credit,
+                expected_credit_floor=None if billing_credits.is_unlimited_for_category(user, 'slides', runtime=app_ctx) else int(user.get('slides_credits', 0) or 0),
+                error=error,
             )
         upload_quota_service.commit_upload_quota(quota_reservation)
         return app_ctx.jsonify({

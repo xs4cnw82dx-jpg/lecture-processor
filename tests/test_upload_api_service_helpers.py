@@ -1,7 +1,9 @@
 import json
+import zipfile
 from types import SimpleNamespace
 
 from lecture_processor.services import upload_api_service
+from lecture_processor.services import tools_extraction_support
 from lecture_processor.services import url_security
 
 
@@ -25,6 +27,21 @@ def test_extract_content_charset_uses_declared_charset():
     assert upload_api_service._extract_content_charset("text/plain; charset=iso-8859-1") == "iso-8859-1"
     assert upload_api_service._extract_content_charset("text/plain") == "utf-8"
     assert upload_api_service._extract_content_charset("") == "utf-8"
+
+
+def test_docx_zip_validation_rejects_large_internal_member(tmp_path, monkeypatch):
+    monkeypatch.setattr(tools_extraction_support, "OOXML_MAX_MEMBER_UNCOMPRESSED_BYTES", 10)
+    docx_path = tmp_path / "oversized.docx"
+    with zipfile.ZipFile(docx_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("word/document.xml", "x" * 11)
+
+    error = tools_extraction_support.validate_ooxml_zip(
+        docx_path,
+        required_members=("[Content_Types].xml", "word/document.xml"),
+    )
+
+    assert error == "DOCX file contains an internal part that is too large."
 
 
 def test_fetch_tools_url_text_decodes_using_declared_charset(monkeypatch):

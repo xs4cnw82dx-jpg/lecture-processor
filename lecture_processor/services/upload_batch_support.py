@@ -174,6 +174,75 @@ def handle_runtime_job_queue_full(
     return queue_full_response(app_ctx, job_id=job_id)
 
 
+def handle_runtime_job_setup_failure(
+    app_ctx,
+    *,
+    job_id,
+    uid,
+    cleanup_paths,
+    credit_type='',
+    expected_credit_floor=None,
+    extra_slides_credits=0,
+    error=None,
+):
+    refund_methods = []
+    credit_refunded = False
+    if credit_type:
+        refunded, method = attempt_credit_refund(
+            app_ctx,
+            uid,
+            credit_type,
+            expected_floor=expected_credit_floor,
+        )
+        if refunded:
+            credit_refunded = True
+            if method:
+                refund_methods.append(method)
+    if int(extra_slides_credits or 0) > 0:
+        try:
+            extras_refunded = bool(
+                billing_credits.refund_slides_credits(
+                    uid,
+                    int(extra_slides_credits or 0),
+                    runtime=app_ctx,
+                )
+            )
+        except Exception:
+            extras_refunded = False
+        if extras_refunded:
+            credit_refunded = True
+            refund_methods.append('refund_slides_credits')
+    if credit_refunded:
+        message = 'Could not start processing. Your credit was refunded. Please try again.'
+    else:
+        message = 'Could not start processing. Please try again. If a credit was charged, contact support.'
+    try:
+        updated = runtime_jobs_store.update_job_fields(
+            job_id,
+            runtime=app_ctx,
+            status='error',
+            error=message,
+            failed_stage='queued',
+            provider_error_code='setup_failed',
+            step_description='Could not start',
+            credit_refunded=credit_refunded,
+            credit_refund_method=', '.join(refund_methods),
+        )
+        if updated is None:
+            runtime_jobs_store.delete_job(job_id, runtime=app_ctx)
+    except Exception:
+        try:
+            runtime_jobs_store.delete_job(job_id, runtime=app_ctx)
+        except Exception:
+            pass
+    try:
+        app_ctx.cleanup_files(list(cleanup_paths or []), [])
+    except Exception:
+        app_ctx.logger.warning('Could not clean up files after job setup failure for %s', job_id, exc_info=True)
+    app_ctx.logger.exception('Runtime job setup failed for %s', job_id) if error else app_ctx.logger.error('Runtime job setup failed for %s', job_id)
+    return app_ctx.jsonify({'error': message, 'status': 'setup_failed', 'job_id': str(job_id or '')}), 500
+
+
 def parse_batch_rows_payload(request):
     rows_raw = str(request.form.get('rows', '') or '').strip()
     if not rows_raw:

@@ -19,6 +19,14 @@ class _FixedUuid(str):
         return str(self).replace("-", "")
 
 
+class _Env:
+    def __init__(self, values=None):
+        self.values = dict(values or {})
+
+    def getenv(self, key, default=""):
+        return self.values.get(key, default)
+
+
 @pytest.fixture(autouse=True)
 def clear_physio_state():
     physio_repo.clear_memory_state()
@@ -47,6 +55,32 @@ def test_physio_api_rejects_non_allowed_user(client, monkeypatch, core):
 
     assert response.status_code == 403
     assert response.get_json()["reason"] == "owner_only"
+
+
+def test_physio_access_fails_closed_when_allowlist_config_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(physio_access, "PHYSIO_ALLOWLIST_CONFIG_PATH", str(tmp_path / "missing.json"))
+    runtime = SimpleNamespace(
+        is_admin_user=lambda _token: False,
+        os=_Env(),
+        settings=SimpleNamespace(environment="development"),
+    )
+
+    payload = physio_access.build_physio_access_payload({"uid": "user-1", "email": "user@example.com"}, runtime=runtime)
+
+    assert payload == {"allowed": False, "reason": "owner_only"}
+
+
+def test_physio_access_local_dev_requires_explicit_flag(monkeypatch, tmp_path):
+    monkeypatch.setattr(physio_access, "PHYSIO_ALLOWLIST_CONFIG_PATH", str(tmp_path / "missing.json"))
+    runtime = SimpleNamespace(
+        is_admin_user=lambda _token: False,
+        os=_Env({"PHYSIO_ALLOW_LOCAL_DEV": "1"}),
+        settings=SimpleNamespace(environment="development"),
+    )
+
+    payload = physio_access.build_physio_access_payload({"uid": "user-1", "email": "user@example.com"}, runtime=runtime)
+
+    assert payload == {"allowed": True, "reason": "local_dev"}
 
 
 def test_physio_transcription_accepts_webm_and_starts_job(client, monkeypatch, core):
@@ -100,6 +134,34 @@ def test_physio_transcription_invalid_audio_cleans_up_temp_file(client, monkeypa
     assert response.status_code == 400
     assert "invalid" in response.get_json()["error"].lower()
     assert not os.path.exists(expected_path)
+
+
+def test_physio_transcription_job_setup_failure_cleans_up_temp_file(client, monkeypatch, core):
+    _allow_physio(monkeypatch, core)
+    monkeypatch.setattr(core, "client", object())
+    monkeypatch.setattr(core, "file_looks_like_audio", lambda _path: True)
+    monkeypatch.setattr(core.uuid, "uuid4", lambda: _FixedUuid("job-setup-fail"))
+    monkeypatch.setattr(
+        core,
+        "submit_background_job",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("queue offline")),
+    )
+
+    expected_path = os.path.join(core.UPLOAD_FOLDER, "job-setup-fail_consult.webm")
+    if os.path.exists(expected_path):
+        os.remove(expected_path)
+
+    response = client.post(
+        "/api/physio/transcriptions",
+        data={"audio": (io.BytesIO(b"fake-webm-audio"), "consult.webm", "audio/webm")},
+        content_type="multipart/form-data",
+        headers={"Authorization": "Bearer dev", "X-Request-ID": "test-physio-setup-fail"},
+    )
+
+    assert response.status_code == 500
+    assert "could not start" in response.get_json()["error"].lower()
+    assert not os.path.exists(expected_path)
+    assert "job-setup-fail" not in core.jobs
 
 
 def test_physio_case_and_session_crud_roundtrip(client, monkeypatch, core):

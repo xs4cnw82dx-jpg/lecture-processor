@@ -287,6 +287,19 @@ def _parse_payload(request):
     return request.get_json(silent=True) or {}
 
 
+def _ensure_physio_access(app_ctx, request):
+    decoded_token = app_ctx.verify_firebase_token(request)
+    if not decoded_token:
+        return None, app_ctx.jsonify({"error": "Please sign in to continue."}), 401
+    payload = physio_access.build_physio_access_payload(decoded_token, runtime=app_ctx)
+    if not payload.get("allowed"):
+        return decoded_token, app_ctx.jsonify({
+            "error": "Physio Assistant is private and only available to the configured owner account.",
+            "reason": payload.get("reason", "owner_only"),
+        }), 403
+    return decoded_token, None, None
+
+
 def _case_context_for_uid(app_ctx, uid, case_id):
     if not case_id:
         return {}
@@ -301,7 +314,7 @@ def _case_context_for_uid(app_ctx, uid, case_id):
 
 
 def create_transcription_job(app_ctx, request):
-    decoded_token, error_response, status_code = physio_access.ensure_physio_access(request, runtime=app_ctx)
+    decoded_token, error_response, status_code = _ensure_physio_access(app_ctx, request)
     if error_response is not None:
         return error_response, status_code
     write_guard = account_lifecycle.ensure_account_allows_writes(decoded_token["uid"], runtime=app_ctx)
@@ -375,32 +388,32 @@ def create_transcription_job(app_ctx, request):
             app_ctx.cleanup_files([audio_path], [])
             return app_ctx.jsonify({"error": "Uploaded audio file is invalid or unsupported."}), 400
 
-        now_ts = app_ctx.time.time()
-        runtime_jobs_store.set_job(
-            job_id,
-            {
-                "status": "starting",
-                "step": 0,
-                "step_description": "Starten...",
-                "total_steps": 2,
-                "mode": "physio-transcription",
-                "user_id": uid,
-                "user_email": decoded_token.get("email", ""),
-                "started_at": now_ts,
-                "result": None,
-                "transcript": None,
-                "error": None,
-                "failed_stage": "",
-                "provider_error_code": "",
-                "retry_attempts": 0,
-                "study_pack_title": "Physio transcript",
-                "file_size_mb": round(audio_size / (1024 * 1024), 2),
-                "study_features": "none",
-                "billing_mode": "internal",
-            },
-            runtime=app_ctx,
-        )
         try:
+            now_ts = app_ctx.time.time()
+            runtime_jobs_store.set_job(
+                job_id,
+                {
+                    "status": "starting",
+                    "step": 0,
+                    "step_description": "Starten...",
+                    "total_steps": 2,
+                    "mode": "physio-transcription",
+                    "user_id": uid,
+                    "user_email": decoded_token.get("email", ""),
+                    "started_at": now_ts,
+                    "result": None,
+                    "transcript": None,
+                    "error": None,
+                    "failed_stage": "",
+                    "provider_error_code": "",
+                    "retry_attempts": 0,
+                    "study_pack_title": "Physio transcript",
+                    "file_size_mb": round(audio_size / (1024 * 1024), 2),
+                    "study_features": "none",
+                    "billing_mode": "internal",
+                },
+                runtime=app_ctx,
+            )
             app_ctx.submit_background_job(
                 physio_transcription.process_physio_transcription,
                 job_id,
@@ -411,6 +424,14 @@ def create_transcription_job(app_ctx, request):
             app_ctx.cleanup_files([audio_path], [])
             runtime_jobs_store.delete_job(job_id, runtime=app_ctx)
             return app_ctx.jsonify({"error": "The server is busy. Please retry in a moment."}), 503
+        except Exception:
+            app_ctx.cleanup_files([audio_path], [])
+            try:
+                runtime_jobs_store.delete_job(job_id, runtime=app_ctx)
+            except Exception:
+                pass
+            app_ctx.logger.exception("Physio transcription job setup failed for %s", job_id)
+            return app_ctx.jsonify({"error": "Could not start transcription. Please try again."}), 500
         upload_quota_service.commit_upload_quota(quota_reservation)
         return app_ctx.jsonify({"ok": True, "job_id": job_id})
     finally:
@@ -418,7 +439,7 @@ def create_transcription_job(app_ctx, request):
 
 
 def generate_soap(app_ctx, request):
-    decoded_token, error_response, status_code = physio_access.ensure_physio_access(request, runtime=app_ctx)
+    decoded_token, error_response, status_code = _ensure_physio_access(app_ctx, request)
     if error_response is not None:
         return error_response, status_code
     unavailable = _require_ready_runtime(app_ctx)
@@ -451,7 +472,7 @@ def generate_soap(app_ctx, request):
 
 
 def generate_rps(app_ctx, request):
-    decoded_token, error_response, status_code = physio_access.ensure_physio_access(request, runtime=app_ctx)
+    decoded_token, error_response, status_code = _ensure_physio_access(app_ctx, request)
     if error_response is not None:
         return error_response, status_code
     unavailable = _require_ready_runtime(app_ctx)
@@ -484,7 +505,7 @@ def generate_rps(app_ctx, request):
 
 
 def generate_reasoning(app_ctx, request):
-    decoded_token, error_response, status_code = physio_access.ensure_physio_access(request, runtime=app_ctx)
+    decoded_token, error_response, status_code = _ensure_physio_access(app_ctx, request)
     if error_response is not None:
         return error_response, status_code
     unavailable = _require_ready_runtime(app_ctx)
@@ -546,7 +567,7 @@ def generate_reasoning(app_ctx, request):
 
 
 def knowledge_query(app_ctx, request):
-    decoded_token, error_response, status_code = physio_access.ensure_physio_access(request, runtime=app_ctx)
+    decoded_token, error_response, status_code = _ensure_physio_access(app_ctx, request)
     if error_response is not None:
         return error_response, status_code
     unavailable = _require_ready_runtime(app_ctx)
@@ -584,14 +605,14 @@ def knowledge_query(app_ctx, request):
 
 
 def knowledge_status(app_ctx, request):
-    _decoded_token, error_response, status_code = physio_access.ensure_physio_access(request, runtime=app_ctx)
+    _decoded_token, error_response, status_code = _ensure_physio_access(app_ctx, request)
     if error_response is not None:
         return error_response, status_code
     return app_ctx.jsonify(physio_knowledge.knowledge_index_status())
 
 
 def list_cases(app_ctx, request):
-    decoded_token, error_response, status_code = physio_access.ensure_physio_access(request, runtime=app_ctx)
+    decoded_token, error_response, status_code = _ensure_physio_access(app_ctx, request)
     if error_response is not None:
         return error_response, status_code
     cases = physio_repo.list_physio_cases_by_uid(app_ctx.db, decoded_token["uid"], limit=250)
@@ -599,7 +620,7 @@ def list_cases(app_ctx, request):
 
 
 def create_case(app_ctx, request):
-    decoded_token, error_response, status_code = physio_access.ensure_physio_access(request, runtime=app_ctx)
+    decoded_token, error_response, status_code = _ensure_physio_access(app_ctx, request)
     if error_response is not None:
         return error_response, status_code
     allowed, message = account_lifecycle.ensure_account_allows_writes(decoded_token["uid"], runtime=app_ctx)
@@ -615,7 +636,7 @@ def create_case(app_ctx, request):
 
 
 def update_case(app_ctx, request, case_id):
-    decoded_token, error_response, status_code = physio_access.ensure_physio_access(request, runtime=app_ctx)
+    decoded_token, error_response, status_code = _ensure_physio_access(app_ctx, request)
     if error_response is not None:
         return error_response, status_code
     allowed, message = account_lifecycle.ensure_account_allows_writes(decoded_token["uid"], runtime=app_ctx)
@@ -635,7 +656,7 @@ def update_case(app_ctx, request, case_id):
 
 
 def list_case_sessions(app_ctx, request, case_id):
-    decoded_token, error_response, status_code = physio_access.ensure_physio_access(request, runtime=app_ctx)
+    decoded_token, error_response, status_code = _ensure_physio_access(app_ctx, request)
     if error_response is not None:
         return error_response, status_code
     case_doc = physio_repo.get_physio_case_doc(app_ctx.db, case_id)
@@ -649,7 +670,7 @@ def list_case_sessions(app_ctx, request, case_id):
 
 
 def create_case_session(app_ctx, request, case_id):
-    decoded_token, error_response, status_code = physio_access.ensure_physio_access(request, runtime=app_ctx)
+    decoded_token, error_response, status_code = _ensure_physio_access(app_ctx, request)
     if error_response is not None:
         return error_response, status_code
     allowed, message = account_lifecycle.ensure_account_allows_writes(decoded_token["uid"], runtime=app_ctx)
@@ -675,7 +696,7 @@ def create_case_session(app_ctx, request, case_id):
 
 
 def update_case_session(app_ctx, request, case_id):
-    decoded_token, error_response, status_code = physio_access.ensure_physio_access(request, runtime=app_ctx)
+    decoded_token, error_response, status_code = _ensure_physio_access(app_ctx, request)
     if error_response is not None:
         return error_response, status_code
     allowed, message = account_lifecycle.ensure_account_allows_writes(decoded_token["uid"], runtime=app_ctx)
@@ -707,7 +728,7 @@ def update_case_session(app_ctx, request, case_id):
 
 
 def export_payload(app_ctx, request):
-    _decoded_token, error_response, status_code = physio_access.ensure_physio_access(request, runtime=app_ctx)
+    _decoded_token, error_response, status_code = _ensure_physio_access(app_ctx, request)
     if error_response is not None:
         return error_response, status_code
     payload = _parse_payload(request)

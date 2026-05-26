@@ -27,7 +27,7 @@
     <section class="voice-auth" id="voice-auth" hidden>
       <div class="voice-auth-card">
         <p class="voice-eyebrow">Private sync</p>
-        <h1>Sign in to transcribe</h1>
+        <h2>Sign in to transcribe</h2>
         <p>Recordings stay saved on this iPhone until you sign in and sync them.</p>
         <a class="voice-btn voice-btn-primary" href="/lecture-notes?auth=signin">Sign in</a>
       </div>
@@ -191,7 +191,7 @@
   <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
   <script src="{{ url_for('static', filename='js/user-cache-utils.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/study-api-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename=study_api_js_asset or 'js/study-api-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
   <script src="{{ url_for('static', filename=voice_notes_utils_js_asset or 'js/voice-notes-utils.js') }}"></script>
   <script src="{{ url_for('static', filename=voice_notes_js_asset or 'js/voice-notes.js') }}"></script>

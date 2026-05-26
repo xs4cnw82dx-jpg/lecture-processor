@@ -908,9 +908,43 @@
     var panel = rowNode.querySelector('[data-override-panel]');
     if (!enabledCheckbox || !panel || !overrideWrap) return;
 
+    var setOverridePanelInteractive = function (enabled) {
+      try {
+        panel.inert = !enabled;
+      } catch (_) {}
+      Array.prototype.slice.call(panel.querySelectorAll('button, input, select, textarea, a[href]')).forEach(function (control) {
+        var tag = String(control.tagName || '').toLowerCase();
+        var type = String(control.getAttribute('type') || '').toLowerCase();
+        if (tag === 'input' && type === 'hidden') return;
+        if (!enabled) {
+          if (!control.hasAttribute('data-prev-tabindex')) {
+            control.setAttribute('data-prev-tabindex', control.hasAttribute('tabindex') ? control.getAttribute('tabindex') : '');
+          }
+          control.setAttribute('tabindex', '-1');
+          control.setAttribute('aria-disabled', 'true');
+          if (tag === 'button' || tag === 'input' || tag === 'select' || tag === 'textarea') {
+            control.disabled = true;
+          }
+          return;
+        }
+        var previousTabIndex = control.getAttribute('data-prev-tabindex');
+        if (previousTabIndex === '') {
+          control.removeAttribute('tabindex');
+        } else if (previousTabIndex !== null) {
+          control.setAttribute('tabindex', previousTabIndex);
+        }
+        control.removeAttribute('data-prev-tabindex');
+        control.removeAttribute('aria-disabled');
+        if (tag === 'button' || tag === 'input' || tag === 'select' || tag === 'textarea') {
+          control.disabled = false;
+        }
+      });
+    };
+
     var syncOverrideVisible = function () {
       var enabled = !!enabledCheckbox.checked;
       overrideWrap.classList.toggle('enabled', enabled);
+      setOverridePanelInteractive(enabled);
       panel.setAttribute('aria-hidden', enabled ? 'false' : 'true');
       enabledCheckbox.setAttribute('aria-expanded', enabled ? 'true' : 'false');
       if (!enabled) {

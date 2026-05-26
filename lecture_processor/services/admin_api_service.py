@@ -320,33 +320,83 @@ def _select_jobs(filtered_jobs, normalized_filters):
     return list(filtered_jobs)
 
 
+def _analysis_firestore_filters(normalized_filters, runtime=None):
+    _ = runtime
+    filters = []
+    for field in ('mode', 'status', 'uid'):
+        value = str(normalized_filters.get(field, '') or '').strip()
+        if field == 'email':
+            value = value.lower()
+        if value:
+            filters.append((field, '==', value))
+    return filters
+
+
+def _job_with_doc_id(doc):
+    if not getattr(doc, 'exists', True):
+        return None
+    job = doc.to_dict() or {}
+    job_id = str(job.get('job_id', getattr(doc, 'id', '') or '') or getattr(doc, 'id', '') or '')
+    if not job_id:
+        return None
+    job['job_id'] = job_id
+    return job
+
+
 def _build_cost_analysis_payload(app_ctx, normalized_filters):
     now_ts = app_ctx.time.time()
     window = admin_metrics.resolve_period_window(normalized_filters.get('period', 'monthly'), now_ts=now_ts, runtime=app_ctx)
     pricing = admin_metrics.get_model_pricing_config(runtime=app_ctx)
 
-    docs = admin_metrics.safe_query_docs_in_window(
-        collection_name='job_logs',
-        timestamp_field='finished_at',
-        window_start=window['start'],
-        window_end=window['end'],
-        order_desc=True,
-        filters=admin_metrics.admin_job_filters(runtime=app_ctx),
-        runtime=app_ctx,
-    )
-    filtered_jobs = []
-    for doc in docs:
-        job = doc.to_dict() or {}
-        job_id = str(job.get('job_id', doc.id) or doc.id)
-        if not job_id:
-            continue
-        job['job_id'] = job_id
-        if not admin_metrics.is_admin_visible_job(job, runtime=app_ctx):
-            continue
-        if _job_matches_filters(job, normalized_filters):
-            filtered_jobs.append(job)
+    selected_filter_ids = list(normalized_filters.get('job_ids', []) or [])
+    if normalized_filters.get('selection') == 'one' and normalized_filters.get('single_job_id'):
+        selected_filter_ids = [normalized_filters.get('single_job_id')]
+    docs = []
+    used_direct_lookup = False
+    if selected_filter_ids and getattr(app_ctx, 'db', None) is not None:
+        docs = app_ctx.admin_repo.get_docs_by_ids(app_ctx.db, 'job_logs', selected_filter_ids)
+        used_direct_lookup = True
+    if not docs:
+        docs = admin_metrics.safe_query_docs_in_window(
+            collection_name='job_logs',
+            timestamp_field='finished_at',
+            window_start=window['start'],
+            window_end=window['end'],
+            order_desc=True,
+            filters=_analysis_firestore_filters(normalized_filters, runtime=app_ctx),
+            runtime=app_ctx,
+        )
+
+    def _collect_filtered_jobs(query_docs):
+        collected = []
+        for doc in query_docs:
+            job = _job_with_doc_id(doc)
+            if not job:
+                continue
+            if not admin_metrics.is_admin_visible_job(job, runtime=app_ctx):
+                continue
+            finished_at = _to_non_negative_float(job.get('finished_at', 0), default=0.0)
+            if finished_at < window['start'] or (window.get('end') is not None and finished_at > window['end']):
+                continue
+            if _job_matches_filters(job, normalized_filters):
+                collected.append(job)
+        return collected
+
+    filtered_jobs = _collect_filtered_jobs(docs)
 
     selected_jobs = _select_jobs(filtered_jobs, normalized_filters)
+    if used_direct_lookup and selected_filter_ids and not selected_jobs:
+        fallback_docs = admin_metrics.safe_query_docs_in_window(
+            collection_name='job_logs',
+            timestamp_field='finished_at',
+            window_start=window['start'],
+            window_end=window['end'],
+            order_desc=True,
+            filters=_analysis_firestore_filters(normalized_filters, runtime=app_ctx),
+            runtime=app_ctx,
+        )
+        filtered_jobs = _collect_filtered_jobs(fallback_docs)
+        selected_jobs = _select_jobs(filtered_jobs, normalized_filters)
     usd_to_eur = _to_non_negative_float(normalized_filters.get('usd_to_eur', 0.93), default=0.93) or 0.93
 
     job_rows = []

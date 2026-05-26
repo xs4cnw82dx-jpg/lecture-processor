@@ -15,6 +15,7 @@ _ADMIN_HIDDEN_BATCH_TITLES = {
     'batch missing email',
     'batch disabled',
 }
+ADMIN_FALLBACK_MAX_DOCS_DEFAULT = 5000
 
 
 def _resolve_runtime(runtime=None):
@@ -212,6 +213,14 @@ def get_admin_data_warnings(runtime=None):
     return [str(entry) for entry in warnings_list if str(entry or '').strip()]
 
 
+def _admin_fallback_max_docs(runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    try:
+        return max(1, int(getattr(resolved_runtime, 'ADMIN_FALLBACK_MAX_DOCS', ADMIN_FALLBACK_MAX_DOCS_DEFAULT) or ADMIN_FALLBACK_MAX_DOCS_DEFAULT))
+    except Exception:
+        return ADMIN_FALLBACK_MAX_DOCS_DEFAULT
+
+
 def safe_query_docs_in_window(collection_name, timestamp_field, window_start, window_end=None, order_desc=False, limit=None, filters=None, allow_unfiltered_fallback=True, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     if resolved_runtime.db is None:
@@ -237,16 +246,19 @@ def safe_query_docs_in_window(collection_name, timestamp_field, window_start, wi
         )
         if safe_filters and allow_unfiltered_fallback:
             try:
+                fallback_limit = _admin_fallback_max_docs(runtime=resolved_runtime)
                 fallback_docs = query_docs_in_window(
                     collection_name=collection_name,
                     timestamp_field=timestamp_field,
                     window_start=window_start,
                     window_end=window_end,
                     order_desc=order_desc,
-                    limit=None,
+                    limit=fallback_limit,
                     filters=None,
                     runtime=resolved_runtime,
                 )
+                if len(fallback_docs) >= fallback_limit:
+                    mark_admin_data_warning(collection_name, 'fallback_capped', runtime=resolved_runtime)
                 filtered_docs = _fallback_filter_docs(fallback_docs, safe_filters)
                 if isinstance(limit, int) and limit > 0:
                     return filtered_docs[:limit]
@@ -296,10 +308,16 @@ def safe_count_collection(collection_name, filters=None, runtime=None):
             exc_info=True,
         )
         try:
-            fallback_docs = resolved_runtime.admin_repo.stream_collection(resolved_runtime.db, collection_name)
+            fallback_limit = _admin_fallback_max_docs(runtime=resolved_runtime)
+            try:
+                fallback_docs = list(resolved_runtime.admin_repo.stream_collection(resolved_runtime.db, collection_name, limit=fallback_limit))
+            except TypeError:
+                fallback_docs = list(resolved_runtime.admin_repo.stream_collection(resolved_runtime.db, collection_name))[:fallback_limit]
+            if len(fallback_docs) >= fallback_limit:
+                mark_admin_data_warning(collection_name, 'count_capped', runtime=resolved_runtime)
             if safe_filters:
                 return len(_fallback_filter_docs(fallback_docs, safe_filters))
-            return sum(1 for _ in fallback_docs)
+            return len(fallback_docs)
         except Exception:
             resolved_runtime.logger.warning(
                 'Admin fallback count failed for %s; returning 0 partial dataset.',
@@ -331,30 +349,36 @@ def safe_count_window(collection_name, timestamp_field, window_start, filters=No
             exc_info=True,
         )
         try:
+            fallback_limit = _admin_fallback_max_docs(runtime=resolved_runtime)
             fallback_docs = query_docs_in_window(
                 collection_name=collection_name,
                 timestamp_field=timestamp_field,
                 window_start=window_start,
                 window_end=None,
                 order_desc=False,
-                limit=None,
+                limit=fallback_limit,
                 filters=safe_filters,
                 runtime=resolved_runtime,
             )
+            if len(fallback_docs) >= fallback_limit:
+                mark_admin_data_warning(collection_name, 'window_count_capped', runtime=resolved_runtime)
             return len(fallback_docs)
         except Exception:
             if safe_filters:
                 try:
+                    fallback_limit = _admin_fallback_max_docs(runtime=resolved_runtime)
                     fallback_docs = query_docs_in_window(
                         collection_name=collection_name,
                         timestamp_field=timestamp_field,
                         window_start=window_start,
                         window_end=None,
                         order_desc=False,
-                        limit=None,
+                        limit=fallback_limit,
                         filters=None,
                         runtime=resolved_runtime,
                     )
+                    if len(fallback_docs) >= fallback_limit:
+                        mark_admin_data_warning(collection_name, 'window_count_capped', runtime=resolved_runtime)
                     return len(_fallback_filter_docs(fallback_docs, safe_filters))
                 except Exception:
                     pass
@@ -527,7 +551,7 @@ def resolve_period_window(period_key, now_ts=None, runtime=None):
     return {
         'period': safe_period,
         'start': start_dt.timestamp(),
-        'end': end_dt.timestamp(),
+        'end': now_ts_value,
     }
 
 

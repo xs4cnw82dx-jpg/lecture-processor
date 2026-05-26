@@ -4,6 +4,7 @@ import pytest
 from openpyxl import load_workbook
 
 from lecture_processor.domains.admin import metrics as admin_metrics
+from lecture_processor.domains.ai import batch_orchestrator
 from tests.runtime_test_support import get_test_core
 
 core = get_test_core()
@@ -23,6 +24,8 @@ class _Doc:
 def _patch_admin_auth(monkeypatch):
     monkeypatch.setattr(core, 'verify_firebase_token', lambda _request: {'uid': 'admin-uid', 'email': 'admin@example.com'})
     monkeypatch.setattr(core, 'is_admin_user', lambda _decoded: True)
+    monkeypatch.setattr(core, 'run_startup_recovery_once', lambda: None)
+    monkeypatch.setattr(batch_orchestrator, 'run_startup_batch_recovery_once', lambda runtime=None: None)
 
 
 def _pricing_fixture():
@@ -165,6 +168,53 @@ def test_admin_cost_analysis_allows_job_selection(client, monkeypatch):
     jobs = body.get('jobs', [])
     assert len(jobs) == 1
     assert jobs[0].get('job_id') == 'job-1'
+
+
+def test_admin_cost_analysis_email_filter_is_case_insensitive(client, monkeypatch):
+    _patch_admin_auth(monkeypatch)
+    now_ts = core.time.time()
+    captured = {}
+    monkeypatch.setattr(admin_metrics, 'get_model_pricing_config', lambda runtime=None: _pricing_fixture())
+
+    def _safe_query_docs_in_window(**kwargs):
+        captured['filters'] = kwargs.get('filters', [])
+        return [
+            _Doc(
+                'job-mixed-email',
+                {
+                    'job_id': 'job-mixed-email',
+                    'uid': 'u1',
+                    'email': 'Student.Mixed@Example.com',
+                    'mode': 'lecture-notes',
+                    'status': 'complete',
+                    'billing_mode': 'standard',
+                    'finished_at': now_ts,
+                    'token_usage_by_stage': {
+                        'slide_extraction': {
+                            'input_tokens': 1000,
+                            'output_tokens': 100,
+                            'total_tokens': 1100,
+                            'model': 'gemini-3.1-flash-lite',
+                            'billing_mode': 'standard',
+                            'input_modality': 'text',
+                        },
+                    },
+                },
+            )
+        ]
+
+    monkeypatch.setattr(admin_metrics, 'safe_query_docs_in_window', _safe_query_docs_in_window)
+
+    response = client.post(
+        '/api/admin/cost-analysis',
+        json={'period': 'monthly', 'email': 'student.mixed@example.com'},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body.get('summary', {}).get('jobs_selected') == 1
+    assert body.get('jobs', [])[0].get('job_id') == 'job-mixed-email'
+    assert all(item[0] != 'email' for item in captured['filters'])
 
 
 def test_admin_cost_analysis_export_xlsx(client, monkeypatch):

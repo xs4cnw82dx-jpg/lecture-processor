@@ -1,5 +1,13 @@
 """Support helpers for the Tools extraction flow."""
 
+import zipfile
+
+
+OOXML_MAX_MEMBERS = 512
+OOXML_MAX_TOTAL_UNCOMPRESSED_BYTES = 80 * 1024 * 1024
+OOXML_MAX_MEMBER_UNCOMPRESSED_BYTES = 20 * 1024 * 1024
+OOXML_MAX_COMPRESSION_RATIO = 100
+
 
 def sanitize_tools_custom_prompt(raw_prompt, max_chars=6000):
     raw_text = str(raw_prompt or '')
@@ -203,7 +211,42 @@ def build_tools_prompt(source_type, custom_prompt=''):
     )
 
 
+def validate_ooxml_zip(path, *, required_members=()):
+    try:
+        with zipfile.ZipFile(path) as archive:
+            members = archive.infolist()
+    except Exception:
+        return 'Uploaded DOCX file is invalid or unreadable.'
+    if len(members) > OOXML_MAX_MEMBERS:
+        return 'DOCX file has too many internal parts.'
+    names = {str(member.filename or '') for member in members}
+    for required in required_members or ():
+        if required not in names:
+            return 'DOCX file is missing required document content.'
+    total_uncompressed = 0
+    for member in members:
+        name = str(member.filename or '')
+        if not name or name.endswith('/'):
+            continue
+        file_size = int(getattr(member, 'file_size', 0) or 0)
+        compressed_size = int(getattr(member, 'compress_size', 0) or 0)
+        total_uncompressed += file_size
+        if file_size > OOXML_MAX_MEMBER_UNCOMPRESSED_BYTES:
+            return 'DOCX file contains an internal part that is too large.'
+        if total_uncompressed > OOXML_MAX_TOTAL_UNCOMPRESSED_BYTES:
+            return 'DOCX file expands to too much data.'
+        if compressed_size > 0 and file_size / compressed_size > OOXML_MAX_COMPRESSION_RATIO:
+            return 'DOCX file compression ratio is too high.'
+    return None
+
+
 def extract_docx_text(app_ctx, docx_path, max_chars=180000):
+    zip_error = validate_ooxml_zip(
+        docx_path,
+        required_members=('[Content_Types].xml', 'word/document.xml'),
+    )
+    if zip_error:
+        return '', zip_error
     try:
         document = app_ctx.Document(docx_path)
     except Exception:

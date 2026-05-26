@@ -39,6 +39,25 @@ def _handle_runtime_job_queue_full(
     )
 
 
+def _handle_runtime_job_setup_failure(
+    app_ctx,
+    *,
+    job_id,
+    uid,
+    cleanup_paths,
+    credit_type='',
+    error=None,
+):
+    return upload_batch_support.handle_runtime_job_setup_failure(
+        app_ctx,
+        job_id=job_id,
+        uid=uid,
+        cleanup_paths=cleanup_paths,
+        credit_type=credit_type,
+        error=error,
+    )
+
+
 def _total_interview_credits(user):
     if not isinstance(user, dict):
         return 0
@@ -149,37 +168,36 @@ def create_general_transcription(app_ctx, request):
             app_ctx.cleanup_files([audio_path], [])
             return app_ctx.jsonify({'error': 'No interview credits remaining.'}), 402
 
-        runtime_jobs_store.set_job(
-            job_id,
-            {
-                'status': 'queued',
-                'step': 0,
-                'step_description': 'Queued…',
-                'total_steps': 1,
-                'mode': 'tools-transcription',
-                'job_scope': 'tools',
-                'tool_source_type': 'audio',
-                'tool_input_name': original_name,
-                'user_id': uid,
-                'user_email': email,
-                'credit_deducted': deducted_credit,
-                'credit_refunded': False,
-                'started_at': app_ctx.time.time(),
-                'finished_at': 0,
-                'result': None,
-                'transcript': None,
-                'output_language': output_language,
-                'error': '',
-                'failed_stage': '',
-                'provider_error_code': '',
-                'retry_attempts': 0,
-                'file_size_mb': round(audio_size / (1024 * 1024), 2),
-                'billing_receipt': billing_receipts.initialize_billing_receipt({deducted_credit: 1}, runtime=app_ctx),
-            },
-            runtime=app_ctx,
-        )
-
         try:
+            runtime_jobs_store.set_job(
+                job_id,
+                {
+                    'status': 'queued',
+                    'step': 0,
+                    'step_description': 'Queued...',
+                    'total_steps': 1,
+                    'mode': 'tools-transcription',
+                    'job_scope': 'tools',
+                    'tool_source_type': 'audio',
+                    'tool_input_name': original_name,
+                    'user_id': uid,
+                    'user_email': email,
+                    'credit_deducted': deducted_credit,
+                    'credit_refunded': False,
+                    'started_at': app_ctx.time.time(),
+                    'finished_at': 0,
+                    'result': None,
+                    'transcript': None,
+                    'output_language': output_language,
+                    'error': '',
+                    'failed_stage': '',
+                    'provider_error_code': '',
+                    'retry_attempts': 0,
+                    'file_size_mb': round(audio_size / (1024 * 1024), 2),
+                    'billing_receipt': billing_receipts.initialize_billing_receipt({deducted_credit: 1}, runtime=app_ctx),
+                },
+                runtime=app_ctx,
+            )
             app_ctx.submit_background_job(
                 _run_general_transcription_job,
                 app_ctx,
@@ -194,6 +212,15 @@ def create_general_transcription(app_ctx, request):
                 uid=uid,
                 cleanup_paths=[audio_path],
                 credit_type=deducted_credit,
+            )
+        except Exception as error:
+            return _handle_runtime_job_setup_failure(
+                app_ctx,
+                job_id=job_id,
+                uid=uid,
+                cleanup_paths=[audio_path],
+                credit_type=deducted_credit,
+                error=error,
             )
 
         upload_quota_service.commit_upload_quota(quota_reservation)
