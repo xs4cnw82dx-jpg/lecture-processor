@@ -148,6 +148,46 @@ def _count_term_hits(text, terms):
     return count
 
 
+def _vector_norm(vector):
+    return math.sqrt(sum(float(value or 0.0) ** 2 for value in (vector or [])))
+
+
+def _prepare_record_search_cache(record):
+    if not isinstance(record, dict):
+        return record
+    if "_embedding_norm" not in record:
+        record["_embedding_norm"] = _vector_norm(record.get("embedding", []))
+    if "_title_search_text" not in record:
+        record["_title_search_text"] = _normalize_match_text(
+            " ".join(
+                [
+                    str(record.get("source_title", "") or ""),
+                    str(record.get("source_name", "") or ""),
+                    str(record.get("source_path", "") or ""),
+                    str(record.get("page_label", "") or ""),
+                ]
+            )
+        )
+    if "_body_search_text" not in record:
+        record["_body_search_text"] = _normalize_match_text(record.get("text", ""))
+    return record
+
+
+def _cosine_similarity_with_norm(query_vector, query_norm, record):
+    embedding = record.get("embedding", []) if isinstance(record, dict) else []
+    if not query_vector or not embedding:
+        return 0.0
+    length = min(len(query_vector), len(embedding))
+    if length <= 0:
+        return 0.0
+    dot = sum(float(query_vector[index] or 0.0) * float(embedding[index] or 0.0) for index in range(length))
+    left_norm = float(query_norm or 0.0)
+    right_norm = float(record.get("_embedding_norm", 0.0) or 0.0)
+    if left_norm <= 0 or right_norm <= 0:
+        return 0.0
+    return dot / (left_norm * right_norm)
+
+
 def _source_key(record):
     payload = record if isinstance(record, dict) else {}
     for key in ("source_path", "source_name", "source_title", "id"):
@@ -157,21 +197,23 @@ def _source_key(record):
     return "unknown-source"
 
 
-def score_index_record(query_vector, record, *, query_context=None):
+def _public_ranked_item(record):
+    item = dict(record)
+    item.pop("_embedding_norm", None)
+    item.pop("_title_search_text", None)
+    item.pop("_body_search_text", None)
+    return item
+
+
+def score_index_record(query_vector, record, *, query_context=None, query_norm=None):
     payload = record if isinstance(record, dict) else {}
-    base_score = cosine_similarity(query_vector, payload.get("embedding", []))
+    _prepare_record_search_cache(payload)
+    base_score = _cosine_similarity_with_norm(query_vector, query_norm or _vector_norm(query_vector), payload)
     if not query_context:
         return float(base_score)
 
-    title_blob = " ".join(
-        [
-            str(payload.get("source_title", "") or ""),
-            str(payload.get("source_name", "") or ""),
-            str(payload.get("source_path", "") or ""),
-            str(payload.get("page_label", "") or ""),
-        ]
-    )
-    text_blob = str(payload.get("text", "") or "")
+    title_blob = str(payload.get("_title_search_text", "") or "")
+    text_blob = str(payload.get("_body_search_text", "") or "")
     source_kind = str(payload.get("source_kind", "") or "").strip().lower()
 
     bonus = 0.0
@@ -566,11 +608,13 @@ def format_citation_label(record):
 def rank_index_documents(query_vector, documents, *, limit=5):
     safe_limit = max(1, int(limit or 1))
     candidate_limit = max(safe_limit, safe_limit * 6)
+    query_norm = _vector_norm(query_vector)
     top_matches = []
     for index, record in enumerate(documents or []):
         if not isinstance(record, dict):
             continue
-        score = cosine_similarity(query_vector, record.get("embedding", []))
+        _prepare_record_search_cache(record)
+        score = _cosine_similarity_with_norm(query_vector, query_norm, record)
         sortable = (float(score), -index, record)
         if len(top_matches) < candidate_limit:
             heapq.heappush(top_matches, sortable)
@@ -579,7 +623,7 @@ def rank_index_documents(query_vector, documents, *, limit=5):
             heapq.heapreplace(top_matches, sortable)
     ranked = []
     for score, _neg_index, record in sorted(top_matches, reverse=True):
-        item = dict(record)
+        item = _public_ranked_item(record)
         item["score"] = round(float(score), 6)
         ranked.append(item)
     return ranked[:safe_limit]
@@ -589,12 +633,13 @@ def rank_sharded_index_documents(query_vector, payload, *, index_path=None, limi
     candidate = Path(index_path or PHYSIO_LIBRARY_INDEX_PATH)
     safe_limit = max(1, int(limit or 1))
     candidate_limit = max(safe_limit, safe_limit * 6)
+    query_norm = _vector_norm(query_vector)
     top_matches = []
     record_index = 0
     for record in _load_cached_sharded_documents(candidate, payload):
         if not isinstance(record, dict):
             continue
-        score = score_index_record(query_vector, record, query_context=query_context)
+        score = score_index_record(query_vector, record, query_context=query_context, query_norm=query_norm)
         sortable = (float(score), -record_index, record)
         if len(top_matches) < candidate_limit:
             heapq.heappush(top_matches, sortable)
@@ -603,7 +648,7 @@ def rank_sharded_index_documents(query_vector, payload, *, index_path=None, limi
         record_index += 1
     ranked = []
     for score, _neg_index, record in sorted(top_matches, reverse=True):
-        item = dict(record)
+        item = _public_ranked_item(record)
         item["score"] = round(float(score), 6)
         ranked.append(item)
     return _diversify_ranked_records(ranked, limit=safe_limit)
@@ -652,11 +697,12 @@ def query_knowledge_index(question, *, body_region="", context_text="", case_con
     else:
         raw_ranked = []
         candidate_limit = max(1, int(limit or 1)) * 6
+        query_norm = _vector_norm(query_vector)
         top_matches = []
         for index, record in enumerate(documents or []):
             if not isinstance(record, dict):
                 continue
-            score = score_index_record(query_vector, record, query_context=query_context)
+            score = score_index_record(query_vector, record, query_context=query_context, query_norm=query_norm)
             sortable = (float(score), -index, record)
             if len(top_matches) < candidate_limit:
                 heapq.heappush(top_matches, sortable)
@@ -664,7 +710,7 @@ def query_knowledge_index(question, *, body_region="", context_text="", case_con
             if sortable > top_matches[0]:
                 heapq.heapreplace(top_matches, sortable)
         for score, _neg_index, record in sorted(top_matches, reverse=True):
-            item = dict(record)
+            item = _public_ranked_item(record)
             item["score"] = round(float(score), 6)
             raw_ranked.append(item)
         ranked = _diversify_ranked_records(raw_ranked, limit=limit)

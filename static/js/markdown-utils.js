@@ -29,13 +29,6 @@
     if (!source.trim()) return '';
 
     var htmlUtils = getHtmlUtils();
-    var sanitizeHtmlFragment = htmlUtils.sanitizeHtmlFragment || function (rawHtml) {
-      var html = String(rawHtml == null ? '' : rawHtml);
-      if (global.DOMPurify && typeof global.DOMPurify.sanitize === 'function') {
-        return global.DOMPurify.sanitize(html);
-      }
-      return html;
-    };
     var escapeHtml = htmlUtils.escapeHtml || function (value) {
       return String(value == null ? '' : value)
         .replace(/&/g, '&amp;')
@@ -43,6 +36,13 @@
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+    };
+    var sanitizeHtmlFragment = htmlUtils.sanitizeHtmlFragment || function (rawHtml, sanitizeOptions) {
+      var html = String(rawHtml == null ? '' : rawHtml);
+      if (global.DOMPurify && typeof global.DOMPurify.sanitize === 'function') {
+        return global.DOMPurify.sanitize(html, sanitizeOptions || {});
+      }
+      return escapeHtml(html);
     };
 
     if (global.marked && typeof global.marked.parse === 'function') {

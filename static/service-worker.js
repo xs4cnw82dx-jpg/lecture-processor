@@ -1,4 +1,4 @@
-const VOICE_CACHE = 'lecture-processor-voice-v6';
+const VOICE_CACHE = 'lecture-processor-voice-v7';
 const APP_SHELL = [
   '/voice-notes',
   '/static/manifest.webmanifest',
@@ -14,11 +14,8 @@ const APP_SHELL = [
   '/static/js/ui-cache.js',
   '/static/js/user-cache-utils.js',
   '/static/js/app-shell.js',
-  '/static/js/study-api-utils.js',
   '/static/js/study-api-utils.min.js',
-  '/static/js/voice-notes-utils.js',
   '/static/js/voice-notes-utils.min.js',
-  '/static/js/voice-notes.js',
   '/static/js/voice-notes.min.js',
   '/static/icons/icon-192.svg',
   '/static/icons/icon-512.svg'

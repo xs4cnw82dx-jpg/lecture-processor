@@ -1,6 +1,7 @@
 """Batch upload routes extracted from upload API service."""
 
 import json
+import re
 import zipfile
 
 from lecture_processor.domains.account import lifecycle as account_lifecycle
@@ -25,6 +26,8 @@ AUDIO_BATCH_MODES = {'lecture-notes', 'interview', 'audio-transcription'}
 TEXT_COMBINE_BATCH_MODE = 'text-combine'
 MAX_BATCH_TEXT_UPLOAD_BYTES_DEFAULT = 2 * 1024 * 1024
 INSTANT_BATCH_MAX_ROWS_DEFAULT = 20
+BATCH_MAX_ROWS_DEFAULT = 100
+SAFE_BATCH_ROW_ID_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
 
 
 def _safe_int(value, default=0):
@@ -32,6 +35,18 @@ def _safe_int(value, default=0):
         return int(value or default)
     except Exception:
         return int(default or 0)
+
+
+def _safe_batch_row_id(app_ctx, raw_row_id, seen_row_ids, row_index):
+    row_id = str(raw_row_id or '').strip()
+    if not row_id:
+        row_id = f'row-{row_index}-{str(app_ctx.uuid.uuid4()).split("-", 1)[0]}'
+    if not SAFE_BATCH_ROW_ID_RE.fullmatch(row_id):
+        raise ValueError(f'Row {row_index}: row identifier is invalid.')
+    if row_id in seen_row_ids:
+        raise ValueError(f'Row {row_index}: row identifier is duplicated.')
+    seen_row_ids.add(row_id)
+    return row_id
 
 
 def _dedupe_paths(paths):
@@ -206,10 +221,12 @@ def create_batch_job(app_ctx, request, *, instant=False):
         return app_ctx.jsonify({'error': 'Invalid rows payload'}), 400
     if len(rows) < 2:
         return app_ctx.jsonify({'error': 'Batch mode requires at least 2 rows.'}), 400
-    if instant:
-        max_rows = int(getattr(app_ctx, 'INSTANT_BATCH_MAX_ROWS', INSTANT_BATCH_MAX_ROWS_DEFAULT) or INSTANT_BATCH_MAX_ROWS_DEFAULT)
-        if len(rows) > max_rows:
-            return app_ctx.jsonify({'error': f'Instant Batch supports up to {max_rows} rows at a time.'}), 400
+    max_rows_attr = 'INSTANT_BATCH_MAX_ROWS' if instant else 'BATCH_MAX_ROWS'
+    max_rows_default = INSTANT_BATCH_MAX_ROWS_DEFAULT if instant else BATCH_MAX_ROWS_DEFAULT
+    max_rows = int(getattr(app_ctx, max_rows_attr, max_rows_default) or max_rows_default)
+    if len(rows) > max_rows:
+        label = 'Instant Batch' if instant else 'Batch mode'
+        return app_ctx.jsonify({'error': f'{label} supports up to {max_rows} rows at a time.'}), 400
     client_submission_id = str(request.form.get('client_submission_id', '') or '').strip()[:120]
     if client_submission_id:
         existing = batch_orchestrator.find_batch_by_submission_id(
@@ -273,14 +290,16 @@ def create_batch_job(app_ctx, request, *, instant=False):
     pending_import_token_paths = {}
     charged_rows = []
     created_folder_ref = None
+    batch_created = False
     quota_reservation = None
     actual_upload_bytes = 0
     now_ts = app_ctx.time.time()
 
     try:
         upload_import_audio.cleanup_expired_audio_import_tokens(runtime=app_ctx)
+        seen_row_ids = set()
         for idx, row_cfg in enumerate(rows, start=1):
-            row_id = str(row_cfg.get('row_id', '') or app_ctx.uuid.uuid4())
+            row_id = _safe_batch_row_id(app_ctx, row_cfg.get('row_id', ''), seen_row_ids, idx)
             slides_required = mode in {'lecture-notes', 'slides-only'}
             audio_required = mode in AUDIO_BATCH_MODES
             text_combine_required = mode == TEXT_COMBINE_BATCH_MODE
@@ -694,6 +713,7 @@ def create_batch_job(app_ctx, request, *, instant=False):
             'credits_refund_pending': 0,
         }
         batch_orchestrator.create_batch_job(batch_payload, prepared_rows, runtime=app_ctx)
+        batch_created = True
 
         try:
             submit_batch = getattr(app_ctx, 'submit_batch_background_job', None)
@@ -709,8 +729,8 @@ def create_batch_job(app_ctx, request, *, instant=False):
                 batch_id,
                 upload_batch_support.queue_full_message(),
                 runtime=app_ctx,
+                mark_audio_quota_released=True,
             )
-            _refund_batch_charges(app_ctx, uid, charged_rows)
             _release_pending_import_tokens(app_ctx, uid, pending_import_token_paths)
             pending_import_token_paths.clear()
             _cleanup_batch_local_files(app_ctx, cleanup_paths, consumed_import_paths)
@@ -724,7 +744,19 @@ def create_batch_job(app_ctx, request, *, instant=False):
                 created_folder_ref.delete()
             except Exception:
                 pass
-        _refund_batch_charges(app_ctx, uid, charged_rows)
+        try:
+            batch_exists = batch_created or bool(batch_orchestrator.get_batch(batch_id, runtime=app_ctx))
+        except Exception:
+            batch_exists = batch_created
+        if batch_exists:
+            batch_orchestrator.mark_batch_submission_error(
+                batch_id,
+                upload_redaction_service.redact_exception(error, max_chars=500),
+                runtime=app_ctx,
+                mark_audio_quota_released=True,
+            )
+        else:
+            _refund_batch_charges(app_ctx, uid, charged_rows)
         _release_pending_import_tokens(app_ctx, uid, pending_import_token_paths)
         pending_import_token_paths.clear()
         _cleanup_batch_local_files(app_ctx, cleanup_paths, consumed_import_paths)
@@ -778,7 +810,12 @@ def get_batch_job_status(app_ctx, request, batch_id):
     )
     if error_response is not None:
         return error_response, status
-    status_payload = batch_orchestrator.get_batch_status(batch_id, runtime=app_ctx)
+    try:
+        rows_limit = int(request.args.get('rows_limit', getattr(app_ctx, 'BATCH_STATUS_ROWS_LIMIT', 100)) or 100)
+    except Exception:
+        rows_limit = 100
+    rows_limit = max(1, min(500, rows_limit))
+    status_payload = batch_orchestrator.get_batch_status(batch_id, runtime=app_ctx, rows_limit=rows_limit)
     if not status_payload:
         return app_ctx.jsonify({'error': 'Batch not found'}), 404
     return app_ctx.jsonify(status_payload)

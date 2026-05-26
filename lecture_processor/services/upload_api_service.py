@@ -130,6 +130,29 @@ def _handle_runtime_job_queue_full(
     )
 
 
+def _handle_runtime_job_setup_failure(
+    app_ctx,
+    *,
+    job_id,
+    uid,
+    cleanup_paths,
+    credit_type='',
+    expected_credit_floor=None,
+    extra_slides_credits=0,
+    error=None,
+):
+    return upload_batch_support.handle_runtime_job_setup_failure(
+        app_ctx,
+        job_id=job_id,
+        uid=uid,
+        cleanup_paths=cleanup_paths,
+        credit_type=credit_type,
+        expected_credit_floor=expected_credit_floor,
+        extra_slides_credits=extra_slides_credits,
+        error=error,
+    )
+
+
 def _normalize_tools_markdown_for_export(markdown_text):
     return tools_extraction_support.normalize_tools_markdown_for_export(markdown_text)
 
@@ -402,8 +425,8 @@ def upload_files(app_ctx, request):
                     billing_credits.refund_credit(uid, deducted, runtime=app_ctx)
                     return app_ctx.jsonify({'error': token_error}), 400
             total_steps = 4 if study_features != 'none' else 3
-            runtime_jobs_store.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'study_pack_title': study_pack_title, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round(((pdf_size if pdf_size > 0 else 0) + audio_size) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
             try:
+                runtime_jobs_store.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'study_pack_title': study_pack_title, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round(((pdf_size if pdf_size > 0 else 0) + audio_size) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
                 app_ctx.submit_background_job(
                     ai_pipelines.process_lecture_notes,
                     job_id,
@@ -418,6 +441,15 @@ def upload_files(app_ctx, request):
                     uid=uid,
                     cleanup_paths=[pdf_path, audio_path],
                     credit_type=deducted,
+                )
+            except Exception as error:
+                return _handle_runtime_job_setup_failure(
+                    app_ctx,
+                    job_id=job_id,
+                    uid=uid,
+                    cleanup_paths=[pdf_path, audio_path],
+                    credit_type=deducted,
+                    error=error,
                 )
 
         elif mode == 'slides-only':
@@ -452,8 +484,8 @@ def upload_files(app_ctx, request):
                 app_ctx.cleanup_files([pdf_path], [])
                 return app_ctx.jsonify({'error': 'No text extraction credits remaining.'}), 402
             total_steps = 2 if study_features != 'none' else 1
-            runtime_jobs_store.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'study_pack_title': study_pack_title, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round((pdf_size if pdf_size > 0 else 0) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
             try:
+                runtime_jobs_store.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'study_pack_title': study_pack_title, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round((pdf_size if pdf_size > 0 else 0) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
                 app_ctx.submit_background_job(
                     ai_pipelines.process_slides_only,
                     job_id,
@@ -468,6 +500,16 @@ def upload_files(app_ctx, request):
                     cleanup_paths=[pdf_path],
                     credit_type=deducted,
                     expected_credit_floor=int(user.get('slides_credits', 0) or 0),
+                )
+            except Exception as error:
+                return _handle_runtime_job_setup_failure(
+                    app_ctx,
+                    job_id=job_id,
+                    uid=uid,
+                    cleanup_paths=[pdf_path],
+                    credit_type=deducted,
+                    expected_credit_floor=int(user.get('slides_credits', 0) or 0),
+                    error=error,
                 )
 
         elif mode == 'interview':
@@ -556,40 +598,40 @@ def upload_files(app_ctx, request):
                         billing_credits.refund_slides_credits(uid, interview_features_cost, runtime=app_ctx)
                     return app_ctx.jsonify({'error': token_error}), 400
             total_steps = 2 if interview_features_cost > 0 else 1
-            runtime_jobs_store.set_job(job_id, {
-                'status': 'starting',
-                'step': 0,
-                'step_description': 'Starting...',
-                'total_steps': total_steps,
-                'mode': 'interview',
-                'user_id': uid,
-                'user_email': email,
-                'credit_deducted': deducted,
-                'credit_refunded': False,
-                'started_at': app_ctx.time.time(),
-                'result': None,
-                'study_pack_title': study_pack_title,
-                'transcript': None,
-                'flashcards': [],
-                'test_questions': [],
-                'study_features': 'none',
-                'output_language': output_language,
-                'interview_features': interview_features,
-                'interview_features_cost': interview_features_cost,
-                'interview_features_successful': [],
-                'interview_summary': None,
-                'interview_sections': None,
-                'interview_combined': None,
-                'extra_slides_refunded': 0,
-                'study_generation_error': None,
-                'error': None,
-                'failed_stage': '',
-                'provider_error_code': '',
-                'retry_attempts': 0,
-                'file_size_mb': round(audio_size / (1024 * 1024), 2),
-                'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1, 'slides_credits': interview_features_cost}, runtime=app_ctx),
-            }, runtime=app_ctx)
             try:
+                runtime_jobs_store.set_job(job_id, {
+                    'status': 'starting',
+                    'step': 0,
+                    'step_description': 'Starting...',
+                    'total_steps': total_steps,
+                    'mode': 'interview',
+                    'user_id': uid,
+                    'user_email': email,
+                    'credit_deducted': deducted,
+                    'credit_refunded': False,
+                    'started_at': app_ctx.time.time(),
+                    'result': None,
+                    'study_pack_title': study_pack_title,
+                    'transcript': None,
+                    'flashcards': [],
+                    'test_questions': [],
+                    'study_features': 'none',
+                    'output_language': output_language,
+                    'interview_features': interview_features,
+                    'interview_features_cost': interview_features_cost,
+                    'interview_features_successful': [],
+                    'interview_summary': None,
+                    'interview_sections': None,
+                    'interview_combined': None,
+                    'extra_slides_refunded': 0,
+                    'study_generation_error': None,
+                    'error': None,
+                    'failed_stage': '',
+                    'provider_error_code': '',
+                    'retry_attempts': 0,
+                    'file_size_mb': round(audio_size / (1024 * 1024), 2),
+                    'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1, 'slides_credits': interview_features_cost}, runtime=app_ctx),
+                }, runtime=app_ctx)
                 app_ctx.submit_background_job(
                     ai_pipelines.process_interview_transcription,
                     job_id,
@@ -604,6 +646,16 @@ def upload_files(app_ctx, request):
                     cleanup_paths=[audio_path],
                     credit_type=deducted,
                     extra_slides_credits=interview_features_cost,
+                )
+            except Exception as error:
+                return _handle_runtime_job_setup_failure(
+                    app_ctx,
+                    job_id=job_id,
+                    uid=uid,
+                    cleanup_paths=[audio_path],
+                    credit_type=deducted,
+                    extra_slides_credits=interview_features_cost,
+                    error=error,
                 )
         else:
             return app_ctx.jsonify({'error': 'Invalid mode selected'}), 400

@@ -165,3 +165,14 @@
     .reveal{opacity:0;transform:translateY(30px);transition:all .6s ease-out}
     .reveal.visible{opacity:1;transform:translateY(0)}
     @media(prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}}
+
+    @media(max-width:600px){
+      .calc-card{padding:28px 18px}
+      .calc-slider-row{align-items:stretch;flex-direction:column;gap:10px;text-align:left}
+      .calc-slider-label{min-width:0;text-align:left}
+      .calc-slider{width:100%}
+      .calc-slider-val{min-width:0;text-align:left}
+      .comparison{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:6px}
+      .comparison-table{min-width:440px}
+      .comparison-table th,.comparison-table td{padding:14px 12px}
+    }

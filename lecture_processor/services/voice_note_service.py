@@ -42,6 +42,27 @@ def _handle_runtime_job_queue_full(
     )
 
 
+def _handle_runtime_job_setup_failure(
+    app_ctx,
+    *,
+    job_id,
+    uid,
+    cleanup_paths,
+    credit_type='',
+    extra_slides_credits=0,
+    error=None,
+):
+    return upload_batch_support.handle_runtime_job_setup_failure(
+        app_ctx,
+        job_id=job_id,
+        uid=uid,
+        cleanup_paths=cleanup_paths,
+        credit_type=credit_type,
+        extra_slides_credits=extra_slides_credits,
+        error=error,
+    )
+
+
 def _parse_bool(raw_value):
     value = str(raw_value or '').strip().lower()
     return value in {'1', 'true', 'yes', 'on'}
@@ -217,56 +238,55 @@ def create_voice_note(app_ctx, request):
             study_pack_title = 'Transcribing voice note...'
 
         output_language = _resolve_output_language(app_ctx, request, user)
-        runtime_jobs_store.set_job(
-            job_id,
-            {
-                'status': 'queued',
-                'step': 0,
-                'step_description': 'Queued...',
-                'total_steps': 2,
-                'mode': 'voice-note',
-                'job_scope': 'study',
-                'tool_source_type': 'audio',
-                'tool_input_name': original_name,
-                'user_id': uid,
-                'user_email': email,
-                'credit_deducted': deducted_credit,
-                'credit_refunded': False,
-                'study_tools_credit_cost': 0,
-                'started_at': app_ctx.time.time(),
-                'finished_at': 0,
-                'result': None,
-                'transcript': None,
-                'flashcards': [],
-                'test_questions': [],
-                'flashcard_selection': '10',
-                'question_selection': '5',
-                'study_features': 'none',
-                'output_language': output_language,
-                'study_generation_error': None,
-                'study_pack_id': None,
-                'study_pack_title': study_pack_title,
-                'folder_id': '',
-                'folder_name': '',
-                'voice_note_tags': [],
-                'voice_note_pinned': False,
-                'voice_note_archived': _parse_bool(request.form.get('archived')),
-                'voice_note_custom_instruction': str(request.form.get('custom_instruction', '') or '').strip()[:2000],
-                'voice_note_append_to_pack_id': '',
-                'error': '',
-                'failed_stage': '',
-                'provider_error_code': '',
-                'retry_attempts': 0,
-                'file_size_mb': round(audio_size / (1024 * 1024), 2),
-                'billing_receipt': billing_receipts.initialize_billing_receipt(
-                    {deducted_credit: 1},
-                    runtime=app_ctx,
-                ),
-            },
-            runtime=app_ctx,
-        )
-
         try:
+            runtime_jobs_store.set_job(
+                job_id,
+                {
+                    'status': 'queued',
+                    'step': 0,
+                    'step_description': 'Queued...',
+                    'total_steps': 2,
+                    'mode': 'voice-note',
+                    'job_scope': 'study',
+                    'tool_source_type': 'audio',
+                    'tool_input_name': original_name,
+                    'user_id': uid,
+                    'user_email': email,
+                    'credit_deducted': deducted_credit,
+                    'credit_refunded': False,
+                    'study_tools_credit_cost': 0,
+                    'started_at': app_ctx.time.time(),
+                    'finished_at': 0,
+                    'result': None,
+                    'transcript': None,
+                    'flashcards': [],
+                    'test_questions': [],
+                    'flashcard_selection': '10',
+                    'question_selection': '5',
+                    'study_features': 'none',
+                    'output_language': output_language,
+                    'study_generation_error': None,
+                    'study_pack_id': None,
+                    'study_pack_title': study_pack_title,
+                    'folder_id': '',
+                    'folder_name': '',
+                    'voice_note_tags': [],
+                    'voice_note_pinned': False,
+                    'voice_note_archived': _parse_bool(request.form.get('archived')),
+                    'voice_note_custom_instruction': str(request.form.get('custom_instruction', '') or '').strip()[:2000],
+                    'voice_note_append_to_pack_id': '',
+                    'error': '',
+                    'failed_stage': '',
+                    'provider_error_code': '',
+                    'retry_attempts': 0,
+                    'file_size_mb': round(audio_size / (1024 * 1024), 2),
+                    'billing_receipt': billing_receipts.initialize_billing_receipt(
+                        {deducted_credit: 1},
+                        runtime=app_ctx,
+                    ),
+                },
+                runtime=app_ctx,
+            )
             app_ctx.submit_background_job(
                 ai_pipelines.process_voice_note,
                 job_id,
@@ -281,6 +301,15 @@ def create_voice_note(app_ctx, request):
                 cleanup_paths=[audio_path],
                 credit_type=deducted_credit,
                 extra_slides_credits=0,
+            )
+        except Exception as error:
+            return _handle_runtime_job_setup_failure(
+                app_ctx,
+                job_id=job_id,
+                uid=uid,
+                cleanup_paths=[audio_path],
+                credit_type=deducted_credit,
+                error=error,
             )
 
         upload_quota_service.commit_upload_quota(quota_reservation)

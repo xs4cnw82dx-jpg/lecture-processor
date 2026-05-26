@@ -36,7 +36,11 @@ def create_admin_session(app_ctx, request):
     if not app_ctx.is_admin_user(decoded_token):
         return app_ctx.jsonify({'error': 'Forbidden'}), 403
 
-    id_token = auth_session._extract_bearer_token(request, runtime=app_ctx)
+    id_token = auth_session.extract_bearer_token(
+        request.headers.get('Authorization', ''),
+        request.get_json(silent=True) or {},
+        runtime=app_ctx,
+    )
     if not id_token:
         return app_ctx.jsonify({'error': 'Missing ID token'}), 400
 

@@ -93,6 +93,8 @@
     .textarea{min-height:96px;border:1px solid var(--gray-300);border-radius:var(--radius-md);padding:12px 14px;font-size:1rem;line-height:1.55;resize:vertical;background:var(--white);color:var(--gray-900);font-family:inherit}
     .input::placeholder,.textarea::placeholder{font-family:inherit;color:var(--gray-400)}
     .input:focus,.textarea:focus{outline:none;border-color:rgba(79,70,229,.6);box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+    .input[aria-invalid="true"],.textarea[aria-invalid="true"]{border-color:var(--danger);box-shadow:0 0 0 3px rgba(239,68,68,.12)}
+    .field-error{font-size:.82rem;font-weight:700;color:#B91C1C;line-height:1.35}
     .muted{font-size:.84rem;color:var(--gray-500);line-height:1.5}
 
     .input-icon-wrap{position:relative}

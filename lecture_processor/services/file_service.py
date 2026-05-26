@@ -13,6 +13,10 @@ from lecture_processor.services import upload_redaction_service
 
 
 GENERIC_SLIDE_MIME_TYPES = {'', 'application/octet-stream'}
+OOXML_MAX_MEMBERS = 512
+OOXML_MAX_TOTAL_UNCOMPRESSED_BYTES = 80 * 1024 * 1024
+OOXML_MAX_MEMBER_UNCOMPRESSED_BYTES = 20 * 1024 * 1024
+OOXML_MAX_COMPRESSION_RATIO = 100
 
 
 def allowed_file(filename, allowed_extensions):
@@ -40,7 +44,24 @@ def file_has_pptx_signature(path):
             if handle.read(4) != b'PK\x03\x04':
                 return False
         with zipfile.ZipFile(path, 'r') as archive:
-            members = set(archive.namelist())
+            infos = archive.infolist()
+            if len(infos) > OOXML_MAX_MEMBERS:
+                return False
+            total_uncompressed = 0
+            members = set()
+            for member in infos:
+                members.add(member.filename)
+                if member.filename.endswith('/'):
+                    continue
+                file_size = int(getattr(member, 'file_size', 0) or 0)
+                compressed_size = int(getattr(member, 'compress_size', 0) or 0)
+                total_uncompressed += file_size
+                if file_size > OOXML_MAX_MEMBER_UNCOMPRESSED_BYTES:
+                    return False
+                if total_uncompressed > OOXML_MAX_TOTAL_UNCOMPRESSED_BYTES:
+                    return False
+                if compressed_size > 0 and file_size / compressed_size > OOXML_MAX_COMPRESSION_RATIO:
+                    return False
         return '[Content_Types].xml' in members and 'ppt/presentation.xml' in members
     except Exception:
         return False

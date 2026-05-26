@@ -36,8 +36,23 @@ def query_docs_in_window(
     return list(query.stream())
 
 
-def stream_collection(db, collection_name):
-    return db.collection(collection_name).stream()
+def stream_collection(db, collection_name, limit=None):
+    query = db.collection(collection_name)
+    if isinstance(limit, int) and limit > 0:
+        query = query.limit(limit)
+    return query.stream()
+
+
+def get_docs_by_ids(db, collection_name, doc_ids):
+    docs = []
+    seen = set()
+    for raw_doc_id in doc_ids or ():
+        doc_id = str(raw_doc_id or '').strip()
+        if not doc_id or doc_id in seen:
+            continue
+        seen.add(doc_id)
+        docs.append(db.collection(collection_name).document(doc_id).get())
+    return docs
 
 
 def count_collection(db, collection_name, filters=None):

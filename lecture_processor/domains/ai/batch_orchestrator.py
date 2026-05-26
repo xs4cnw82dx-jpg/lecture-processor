@@ -28,6 +28,7 @@ TERMINAL_BATCH_STATES = {
 
 ACTIVE_BATCH_STATUSES = {'queued', 'processing'}
 ACTIVE_ROW_STATUSES = {'queued', 'processing'}
+SAFE_BATCH_ROW_ID_CHARS = frozenset('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-')
 
 STAGE_LABELS = {
     'queued': 'Queued',
@@ -328,6 +329,14 @@ def _batch_recovery_stale_seconds(runtime=None):
     return max(180, (max(pending_poll, running_poll) * 3) + 60)
 
 
+def _safe_batch_row_id(raw_row_id, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    row_id = str(raw_row_id or '').strip() or str(resolved_runtime.uuid.uuid4())
+    if 1 <= len(row_id) <= 64 and all(ch in SAFE_BATCH_ROW_ID_CHARS for ch in row_id):
+        return row_id
+    raise ValueError('Invalid batch row identifier.')
+
+
 def _batch_is_stale(batch, runtime=None, now_ts=None):
     resolved_runtime = _resolve_runtime(runtime)
     if not isinstance(batch, dict):
@@ -514,11 +523,11 @@ def _get_batch(batch_id, runtime=None):
     return dict(data)
 
 
-def _list_rows(batch_id, runtime=None):
+def _list_rows(batch_id, runtime=None, limit=None):
     resolved_runtime = _resolve_runtime(runtime)
     db = getattr(resolved_runtime, 'db', None)
     if db is not None:
-        docs = resolved_runtime.batch_repo.list_batch_rows(db, batch_id)
+        docs = resolved_runtime.batch_repo.list_batch_rows(db, batch_id, limit=limit)
         rows = []
         for doc in docs:
             row = doc.to_dict() or {}
@@ -530,7 +539,10 @@ def _list_rows(batch_id, runtime=None):
     if not isinstance(rows, dict):
         return []
     values = [dict(v) for v in rows.values() if isinstance(v, dict)]
-    return sorted(values, key=lambda item: int(item.get('ordinal', 0) or 0))
+    sorted_rows = sorted(values, key=lambda item: int(item.get('ordinal', 0) or 0))
+    if isinstance(limit, int) and limit > 0:
+        return sorted_rows[:limit]
+    return sorted_rows
 
 
 def _upsert_row(batch_id, row_id, payload, runtime=None, merge=True):
@@ -606,9 +618,13 @@ def create_batch_job(batch_payload, row_payloads, runtime=None):
             },
         }
     )
-    _upsert_batch(batch_id, payload, runtime=resolved_runtime, merge=False)
+    stored_rows = []
+    seen_row_ids = set()
     for row in row_payloads:
-        row_id = str(row.get('row_id', '') or resolved_runtime.uuid.uuid4())
+        row_id = _safe_batch_row_id(row.get('row_id', ''), runtime=resolved_runtime)
+        if row_id in seen_row_ids:
+            raise ValueError('Duplicate batch row identifier.')
+        seen_row_ids.add(row_id)
         row_payload = dict(row)
         row_payload.update(
             {
@@ -635,6 +651,23 @@ def create_batch_job(batch_payload, row_payloads, runtime=None):
                 ),
             }
         )
+        stored_rows.append((row_id, row_payload))
+
+    db = getattr(resolved_runtime, 'db', None)
+    set_with_rows = getattr(getattr(resolved_runtime, 'batch_repo', None), 'set_batch_job_with_rows', None)
+    if db is not None and callable(set_with_rows):
+        if len(stored_rows) > 499:
+            raise ValueError('Batch mode supports up to 499 rows.')
+        set_with_rows(
+            db,
+            batch_id,
+            _sanitize_batch_payload(payload),
+            [(row_id, _sanitize_row_payload(row_payload)) for row_id, row_payload in stored_rows],
+        )
+        return batch_id
+
+    _upsert_batch(batch_id, payload, runtime=resolved_runtime, merge=False)
+    for row_id, row_payload in stored_rows:
         _upsert_row(batch_id, row_id, row_payload, runtime=resolved_runtime, merge=False)
     return batch_id
 
@@ -1575,7 +1608,16 @@ def _finalize_batch_record(
     return finalized_batch
 
 
-def _mark_incomplete_rows_failed(batch_id, batch, rows, error_message, runtime=None):
+def _mark_incomplete_rows_failed(
+    batch_id,
+    batch,
+    rows,
+    error_message,
+    runtime=None,
+    *,
+    release_audio_quota=False,
+    mark_audio_quota_released=False,
+):
     resolved_runtime = _resolve_runtime(runtime)
     for row in rows:
         status = str(row.get('status', '') or '').strip().lower() or 'queued'
@@ -1587,6 +1629,10 @@ def _mark_incomplete_rows_failed(batch_id, batch, rows, error_message, runtime=N
             row['failed_stage'] = row.get('current_stage', '') or batch.get('current_stage', '') or 'batch_pipeline'
         row['current_stage'] = row.get('current_stage', '') or batch.get('current_stage', '') or ''
         row['last_stage_update_at'] = resolved_runtime.time.time()
+        if release_audio_quota:
+            _release_row_audio_quota(row, 0, runtime=resolved_runtime)
+        elif mark_audio_quota_released and int(row.get('audio_quota_reserved_bytes', 0) or 0) > 0:
+            row['audio_quota_released'] = True
         _refund_failed_row(batch, row, runtime=resolved_runtime)
         _finalize_row_job_log(batch, row, runtime=resolved_runtime)
         _upsert_row(
@@ -1598,7 +1644,7 @@ def _mark_incomplete_rows_failed(batch_id, batch, rows, error_message, runtime=N
         )
 
 
-def mark_batch_submission_error(batch_id, error_message, runtime=None):
+def mark_batch_submission_error(batch_id, error_message, runtime=None, *, mark_audio_quota_released=False):
     resolved_runtime = _resolve_runtime(runtime)
     safe_batch_id = str(batch_id or '').strip()
     if not safe_batch_id:
@@ -1614,6 +1660,7 @@ def mark_batch_submission_error(batch_id, error_message, runtime=None):
         rows,
         message,
         runtime=resolved_runtime,
+        mark_audio_quota_released=mark_audio_quota_released,
     )
     return _finalize_batch_record(
         safe_batch_id,
@@ -1635,17 +1682,18 @@ def _repair_batch_state_if_needed(batch_id, batch=None, rows=None, runtime=None)
     current_batch = batch or _get_batch(safe_batch_id, runtime=resolved_runtime)
     if not current_batch:
         return None, []
-    current_rows = rows if isinstance(rows, list) else _list_rows(safe_batch_id, runtime=resolved_runtime)
     now_ts = resolved_runtime.time.time()
     current_status = str(current_batch.get('status', '') or '').strip().lower()
 
     if _batch_is_stale(current_batch, runtime=resolved_runtime, now_ts=now_ts):
+        current_rows = rows if isinstance(rows, list) else _list_rows(safe_batch_id, runtime=resolved_runtime)
         _mark_incomplete_rows_failed(
             safe_batch_id,
             current_batch,
             current_rows,
             BATCH_INTERRUPTED_PUBLIC_MESSAGE,
             runtime=resolved_runtime,
+            release_audio_quota=True,
         )
         current_batch = _finalize_batch_record(
             safe_batch_id,
@@ -1660,9 +1708,16 @@ def _repair_batch_state_if_needed(batch_id, batch=None, rows=None, runtime=None)
         return current_batch, current_rows
 
     if _is_terminal_status(current_status):
-        if current_status == 'error' and int(current_batch.get('completed_rows', 0) or 0) == 0:
+        total_rows = int(current_batch.get('total_rows', 0) or 0)
+        completed_rows = int(current_batch.get('completed_rows', 0) or 0)
+        failed_rows = int(current_batch.get('failed_rows', 0) or 0)
+        if current_status == 'error' and completed_rows == 0:
             _cleanup_empty_batch_folder(current_batch, runtime=resolved_runtime)
             current_batch = _get_batch(safe_batch_id, runtime=resolved_runtime) or current_batch
+        if total_rows > 0 and (completed_rows + failed_rows) >= total_rows:
+            return current_batch, rows if isinstance(rows, list) else None
+
+        current_rows = rows if isinstance(rows, list) else _list_rows(safe_batch_id, runtime=resolved_runtime)
         has_incomplete_rows = any(
             (str((row or {}).get('status', '') or '').strip().lower() or 'queued') in ACTIVE_ROW_STATUSES
             for row in current_rows
@@ -1675,6 +1730,7 @@ def _repair_batch_state_if_needed(batch_id, batch=None, rows=None, runtime=None)
                 current_rows,
                 repair_message,
                 runtime=resolved_runtime,
+                release_audio_quota=True,
             )
             current_batch = _finalize_batch_record(
                 safe_batch_id,
@@ -1685,7 +1741,8 @@ def _repair_batch_state_if_needed(batch_id, batch=None, rows=None, runtime=None)
                 runtime=resolved_runtime,
             )
             current_rows = _list_rows(safe_batch_id, runtime=resolved_runtime)
-    return current_batch, current_rows
+        return current_batch, current_rows
+    return current_batch, rows if isinstance(rows, list) else None
 
 
 def recover_stale_batches(runtime=None):
@@ -2310,6 +2367,7 @@ def process_batch_job(batch_id, runtime=None):
             row['error'] = row.get('error', '') or stage_error
             if not row.get('failed_stage'):
                 row['failed_stage'] = 'batch_pipeline'
+            _release_row_audio_quota(row, row.get('audio_quota_actual_bytes', 0), runtime=resolved_runtime)
             _refund_failed_row(batch, row, runtime=resolved_runtime)
             _finalize_row_job_log(batch, row, runtime=resolved_runtime)
             _drop_persisted_audio_fetch_target(row)
@@ -2324,14 +2382,24 @@ def process_batch_job(batch_id, runtime=None):
         clear_batch_audio_fetch_targets(batch_id, runtime=resolved_runtime)
 
 
-def get_batch_status(batch_id, runtime=None):
+def get_batch_status(batch_id, runtime=None, *, rows_limit=None):
     resolved_runtime = _resolve_runtime(runtime)
     batch = _get_batch(batch_id, runtime=resolved_runtime)
     if not batch:
         return None
+    safe_rows_limit = None
+    if rows_limit is not None:
+        try:
+            safe_rows_limit = max(1, min(500, int(rows_limit)))
+        except Exception:
+            safe_rows_limit = None
     batch, rows = _repair_batch_state_if_needed(batch_id, batch=batch, rows=None, runtime=resolved_runtime)
     if not batch:
         return None
+    if rows is not None and safe_rows_limit and len(rows) > safe_rows_limit:
+        rows = rows[:safe_rows_limit]
+    if rows is None:
+        rows = _list_rows(batch_id, runtime=resolved_runtime, limit=safe_rows_limit)
     response_rows = []
     for row in rows:
         row_stage = str(row.get('current_stage', '') or '')
@@ -2364,7 +2432,9 @@ def get_batch_status(batch_id, runtime=None):
                 'status_message': row_error or _stage_label(row_stage),
             }
         )
-    can_download_zip = any(str(row.get('status', '') or '') == 'complete' for row in response_rows)
+    can_download_zip = int(batch.get('completed_rows', 0) or 0) > 0 or any(
+        str(row.get('status', '') or '') == 'complete' for row in response_rows
+    )
     response = {
         'batch_id': batch.get('batch_id', batch_id),
         'status': batch.get('status', 'queued'),
@@ -2392,6 +2462,8 @@ def get_batch_status(batch_id, runtime=None):
         'last_heartbeat_at': batch.get('last_heartbeat_at', 0),
         'export_options': batch.get('export_options', {}),
         'rows': response_rows,
+        'rows_returned': len(response_rows),
+        'rows_limited': bool(safe_rows_limit and int(batch.get('total_rows', len(rows)) or len(rows)) > len(response_rows)),
         'external_batch_refs': batch.get('external_batch_refs', {}),
         'error_summary': batch.get('error_summary', ''),
         'completion_email_status': batch.get('completion_email_status', 'pending'),

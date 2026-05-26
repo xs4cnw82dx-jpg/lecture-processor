@@ -29,6 +29,10 @@
     const sessionNotesEl = document.getElementById('session-notes');
     const sessionPackIdEl = document.getElementById('session-pack-id');
     const sessionPackMenu = document.getElementById('session-pack-menu');
+    const sessionTitleErrorEl = document.getElementById('session-title-error');
+    const sessionDateErrorEl = document.getElementById('session-date-error');
+    const sessionTimeErrorEl = document.getElementById('session-time-error');
+    const sessionDurationErrorEl = document.getElementById('session-duration-error');
 
     const notifyEnabledEl = document.getElementById('notify-enabled');
     const notifyOffsetEl = document.getElementById('notify-offset');
@@ -52,8 +56,31 @@
 
     function showToast(msg, type) {
       toastEl.textContent = msg;
+      toastEl.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
       toastEl.className = 'toast visible' + (type ? ' ' + type : '');
       setTimeout(() => toastEl.className = 'toast', 2400);
+    }
+
+    function setFieldError(input, errorEl, message) {
+      if (!input || !errorEl) return;
+      input.setAttribute('aria-invalid', 'true');
+      errorEl.textContent = message;
+      errorEl.hidden = false;
+      showToast(message, 'error');
+    }
+
+    function clearFieldError(input, errorEl) {
+      if (!input || !errorEl) return;
+      input.removeAttribute('aria-invalid');
+      errorEl.textContent = '';
+      errorEl.hidden = true;
+    }
+
+    function clearSessionFormErrors() {
+      clearFieldError(sessionTitleEl, sessionTitleErrorEl);
+      clearFieldError(sessionDateEl, sessionDateErrorEl);
+      clearFieldError(sessionTimeEl, sessionTimeErrorEl);
+      clearFieldError(sessionDurationEl, sessionDurationErrorEl);
     }
 
     function getSignInHref() {
@@ -128,8 +155,29 @@
     }
 
     function formatTimeDisplay(value) {
-      if (!/^\d{2}:\d{2}$/.test(String(value || ''))) return '00:00';
+      if (!isValidTimeValue(value)) return '00:00';
       return String(value);
+    }
+
+    function isValidIsoDateValue(value) {
+      const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+      if (!match) return false;
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+      const parsed = new Date(Date.UTC(year, month - 1, day));
+      return parsed.getUTCFullYear() === year
+        && parsed.getUTCMonth() === month - 1
+        && parsed.getUTCDate() === day;
+    }
+
+    function isValidTimeValue(value) {
+      const match = /^(\d{2}):(\d{2})$/.exec(String(value || ''));
+      if (!match) return false;
+      const hour = Number(match[1]);
+      const minute = Number(match[2]);
+      return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
     }
 
     function getIsoWeekNumber(date) {
@@ -150,7 +198,7 @@
         enabled: payload.enabled === 'on' ? 'on' : 'off',
         offset: ['5', '10', '15', '30', '60'].includes(String(payload.offset || '30')) ? String(payload.offset || '30') : '30',
         daily_enabled: payload.daily_enabled === 'off' ? 'off' : 'on',
-        daily_time: /^\d{2}:\d{2}$/.test(String(payload.daily_time || '')) ? String(payload.daily_time) : '19:00',
+        daily_time: isValidTimeValue(payload.daily_time) ? String(payload.daily_time) : '19:00',
         updated_at: Number(payload.updated_at || 0) || 0
       };
     }
@@ -557,9 +605,6 @@
       if (!sessionDatePicker) {
         sessionDatePicker = flatpickr(sessionDateEl, {
           dateFormat: 'Y-m-d',
-          altInput: true,
-          altFormat: 'd-m-Y',
-          altInputClass: 'input',
           disableMobile: true,
           locale: { firstDayOfWeek: 1 },
           allowInput: true,
@@ -640,6 +685,7 @@
         return;
       }
       editingSessionId = editSession ? editSession.id : '';
+      clearSessionFormErrors();
       modalTitleEl.textContent = editingSessionId ? 'Edit Study Session' : 'Add Study Session';
       sessionTitleEl.value = editSession ? (editSession.title || '') : '';
       sessionDurationEl.value = editSession ? String(editSession.duration || 60) : '60';
@@ -821,25 +867,26 @@
       const pack = getPackById(packId);
 
       if (!title) {
-        showToast('Session title is required.', 'error');
+        setFieldError(sessionTitleEl, sessionTitleErrorEl, 'Session title is required.');
         sessionTitleEl.focus();
         return;
       }
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-        showToast('Choose a valid session date.', 'error');
+      if (!isValidIsoDateValue(date)) {
+        setFieldError(sessionDateEl, sessionDateErrorEl, 'Choose a valid session date in yyyy-mm-dd format.');
         sessionDateEl.focus();
         return;
       }
-      if (!/^\d{2}:\d{2}$/.test(time)) {
-        showToast('Choose a valid start time.', 'error');
+      if (!isValidTimeValue(time)) {
+        setFieldError(sessionTimeEl, sessionTimeErrorEl, 'Choose a valid start time in 24-hour format, such as 19:00.');
         sessionTimeEl.focus();
         return;
       }
       if (!Number.isFinite(duration) || duration < 5 || duration > 360) {
-        showToast('Duration must be between 5 and 360 minutes.', 'error');
+        setFieldError(sessionDurationEl, sessionDurationErrorEl, 'Duration must be between 5 and 360 minutes.');
         sessionDurationEl.focus();
         return;
       }
+      clearSessionFormErrors();
 
       const payload = {
         id: editingSessionId || (Date.now().toString(36) + Math.random().toString(36).slice(2, 7)),
@@ -1027,6 +1074,10 @@
     modalCancelBtn.addEventListener('click', closeModal);
     modalSaveBtn.addEventListener('click', () => { saveSessionFromModal(); });
     modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
+    sessionTitleEl.addEventListener('input', () => clearFieldError(sessionTitleEl, sessionTitleErrorEl));
+    sessionDateEl.addEventListener('input', () => clearFieldError(sessionDateEl, sessionDateErrorEl));
+    sessionTimeEl.addEventListener('input', () => clearFieldError(sessionTimeEl, sessionTimeErrorEl));
+    sessionDurationEl.addEventListener('input', () => clearFieldError(sessionDurationEl, sessionDurationErrorEl));
 
     modalCard.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;

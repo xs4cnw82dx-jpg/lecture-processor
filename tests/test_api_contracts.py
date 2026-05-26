@@ -662,7 +662,7 @@ def test_study_pack_list_uses_repo_order_and_count_fallback(client, monkeypatch)
     assert payload["next_cursor"] == ""
 
 
-def test_study_pack_list_fetches_legacy_counts_when_projection_lacks_counts(client, monkeypatch):
+def test_study_pack_list_skips_legacy_full_doc_count_fetch_for_fast_listing(client, monkeypatch):
     class _Doc:
         def __init__(self, doc_id, payload, exists=True):
             self.id = doc_id
@@ -702,9 +702,9 @@ def test_study_pack_list_fetches_legacy_counts_when_projection_lacks_counts(clie
 
     assert response.status_code == 200
     pack = response.get_json()["study_packs"][0]
-    assert pack["flashcards_count"] == 1
-    assert pack["test_questions_count"] == 2
-    assert full_fetches == ["pack-legacy"]
+    assert pack["flashcards_count"] == 0
+    assert pack["test_questions_count"] == 0
+    assert full_fetches == []
 
 
 def test_study_folders_can_skip_pending_batch_counts_for_fast_initial_load(client, monkeypatch):
