@@ -83,6 +83,10 @@ def test_study_initial_pack_load_preserves_pagination():
     assert "packsNextCursor = String(packPage.next_cursor || '');" in study_js
     assert 'id="pack-list-actions"' in study_template
     assert 'id="load-more-packs-btn"' in study_template
+    assert 'id="pack-selection-bar"' in study_template
+    assert 'id="clear-pack-selection-btn"' in study_template
+    assert 'data-pack-select' in study_js
+    assert 'buildStudyPackSelection(currentSelection, id, filteredPacks()' in study_js
     assert 'loadMorePacksBtn.textContent = packsLoadingMore ?' in study_js
     assert 'if (packsHasMore) { return; }' in study_js
 

@@ -96,6 +96,65 @@ test('mergeStudyPackPage appends only unseen study packs', () => {
   ]);
 });
 
+test('buildStudyPackSelection toggles individual packs', () => {
+  const packs = [
+    { study_pack_id: 'pack-1' },
+    { study_pack_id: 'pack-2' },
+  ];
+
+  assert.deepEqual(
+    studyLibraryUtils.buildStudyPackSelection([], 'pack-1', packs, { checked: true }),
+    ['pack-1']
+  );
+  assert.deepEqual(
+    studyLibraryUtils.buildStudyPackSelection(['pack-1'], 'pack-1', packs, { checked: false }),
+    []
+  );
+});
+
+test('buildStudyPackSelection supports shift range selection from an anchor', () => {
+  const packs = [
+    { study_pack_id: 'pack-1' },
+    { study_pack_id: 'pack-2' },
+    { study_pack_id: 'pack-3' },
+    { study_pack_id: 'pack-4' },
+  ];
+
+  assert.deepEqual(
+    studyLibraryUtils.buildStudyPackSelection(['pack-1'], 'pack-4', packs, {
+      checked: true,
+      range: true,
+      anchorPackId: 'pack-1',
+    }),
+    ['pack-1', 'pack-2', 'pack-3', 'pack-4']
+  );
+
+  assert.deepEqual(
+    studyLibraryUtils.buildStudyPackSelection(['pack-1', 'pack-2', 'pack-3', 'pack-4'], 'pack-3', packs, {
+      checked: false,
+      range: true,
+      anchorPackId: 'pack-2',
+    }),
+    ['pack-1', 'pack-4']
+  );
+});
+
+test('buildStudyPackSelection falls back to single selection when range anchor is hidden', () => {
+  const packs = [
+    { study_pack_id: 'pack-2' },
+    { study_pack_id: 'pack-3' },
+  ];
+
+  assert.deepEqual(
+    studyLibraryUtils.buildStudyPackSelection(['pack-1'], 'pack-3', packs, {
+      checked: true,
+      range: true,
+      anchorPackId: 'pack-1',
+    }),
+    ['pack-1', 'pack-3']
+  );
+});
+
 test('buildStudyPackExportItems shows source exports only when source outputs exist', () => {
   const lectureItems = studyLibraryUtils.buildStudyPackExportItems({
     mode: 'lecture-notes',

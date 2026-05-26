@@ -309,9 +309,15 @@ def test_more_tools_pages_and_links_render(client):
     downloader_html = downloader_response.get_data(as_text=True)
     assert 'href="/lecture-downloader"' in downloader_html
     assert 'href="/general-transcriber"' in downloader_html
-    assert 'href="/batch_mode_audio_transcription"' in downloader_html
-    assert 'href="/batch_mode_text_combine"' in downloader_html
     assert 'href="/instant_batch_mode"' in downloader_html
+    assert 'href="/batch_mode_audio_transcription"' not in downloader_html
+    assert 'href="/batch_mode_text_combine"' not in downloader_html
+    assert 'href="/instant_batch_mode_audio_transcription"' not in downloader_html
+    assert 'href="/instant_batch_mode_text_combine"' not in downloader_html
+    assert "'batch-mode-audio'" not in downloader_html
+    assert "'batch-mode-combine'" not in downloader_html
+    assert "'instant-batch-mode-audio'" not in downloader_html
+    assert "'instant-batch-mode-combine'" not in downloader_html
 
     transcriber_response = client.get('/general-transcriber')
     assert transcriber_response.status_code == 200
