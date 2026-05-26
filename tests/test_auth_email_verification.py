@@ -78,6 +78,26 @@ def test_verify_firebase_token_preserves_tokens_without_email_verification_claim
     assert 'lecture_processor.auth_error' not in request.environ
 
 
+def test_verify_firebase_token_forwards_revocation_check_when_supported():
+    request = _Request()
+    calls = []
+
+    class _RevocationAwareAuthModule:
+        def verify_id_token(self, _token, check_revoked=False):
+            calls.append(check_revoked)
+            return {'uid': 'user-1', 'email': 'user@example.com', 'email_verified': True}
+
+    result = auth_service.verify_firebase_token(
+        request,
+        _RevocationAwareAuthModule(),
+        _Logger(),
+        check_revoked=True,
+    )
+
+    assert result['uid'] == 'user-1'
+    assert calls == [True]
+
+
 def test_allowed_user_guard_rejects_unverified_email_token_before_allowlist(monkeypatch):
     request = _Request()
     token = {

@@ -50,7 +50,18 @@ def _checkout_failure_response(app_ctx, status):
         return app_ctx.jsonify({'error': 'Missing session id on Stripe checkout session.'}), 400
     if status == 'unknown_credit_bundle':
         return app_ctx.jsonify({'error': 'Unknown credit bundle.'}), 400
+    if status == 'checkout_incomplete':
+        return app_ctx.jsonify({'error': 'Checkout is not complete yet.', 'status': status}), 409
+    if str(status or '').startswith('checkout_') or status in {'invalid_checkout_session', 'missing_checkout_line_items'}:
+        return app_ctx.jsonify({'error': 'Checkout session did not match the selected credit bundle.', 'status': status}), 400
     return app_ctx.jsonify({'error': 'Could not grant credits.'}), 500
+
+
+def _retrieve_checkout_session_for_fulfillment(app_ctx, session_id):
+    try:
+        return app_ctx.stripe.checkout.Session.retrieve(session_id, expand=['line_items'])
+    except TypeError:
+        return app_ctx.stripe.checkout.Session.retrieve(session_id)
 
 
 def create_checkout_session(app_ctx, request):
@@ -121,6 +132,7 @@ def create_checkout_session(app_ctx, request):
             metadata={
                 'uid': uid,
                 'bundle_id': bundle_id,
+                'firebase_email': email,
             },
         )
         return app_ctx.jsonify({'checkout_url': checkout_session.url})
@@ -144,7 +156,7 @@ def confirm_checkout_session(app_ctx, request):
         return app_ctx.jsonify({'error': 'Missing session_id'}), 400
 
     try:
-        session = app_ctx.stripe.checkout.Session.retrieve(session_id)
+        session = _retrieve_checkout_session_for_fulfillment(app_ctx, session_id)
         metadata = session.get('metadata', {}) or {}
         if metadata.get('uid', '') != uid:
             return app_ctx.jsonify({'error': 'Forbidden'}), 403
@@ -186,6 +198,13 @@ def stripe_webhook(app_ctx, request):
     event_type = str(event.get('type', '') or '').strip()
     if event_type in {'checkout.session.completed', 'checkout.session.async_payment_succeeded'}:
         session = event['data']['object']
+        session_id = str(session.get('id', '') or '').strip()
+        if session_id:
+            try:
+                session = _retrieve_checkout_session_for_fulfillment(app_ctx, session_id)
+            except app_ctx.stripe.error.StripeError as error:
+                app_ctx.logger.warning("⚠️ Stripe webhook could not expand checkout session %s: %s", session_id, error)
+                return 'Could not retrieve checkout session', 500
         ok, status = billing_purchases.process_checkout_session_credits(session, runtime=app_ctx)
         if ok and status == 'granted':
             metadata = session.get('metadata', {}) or {}
@@ -197,7 +216,13 @@ def stripe_webhook(app_ctx, request):
         elif not ok and status == 'account_deletion_in_progress':
             app_ctx.logger.warning("⚠️ Checkout session %s could not be fulfilled because account deletion is in progress.", session.get('id', ''))
             return 'Account deletion in progress', 409
-        elif not ok and status in {'missing_checkout_metadata', 'missing_session_id', 'unknown_credit_bundle'}:
+        elif not ok and (str(status or '').startswith('checkout_') or status in {
+            'missing_checkout_metadata',
+            'missing_session_id',
+            'unknown_credit_bundle',
+            'invalid_checkout_session',
+            'missing_checkout_line_items',
+        }):
             app_ctx.logger.warning("⚠️ Stripe webhook checkout session %s has invalid fulfillment data: %s", session.get('id', ''), status)
             return 'Invalid checkout session metadata', 400
         elif not ok:

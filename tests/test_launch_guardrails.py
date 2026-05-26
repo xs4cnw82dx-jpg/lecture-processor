@@ -787,6 +787,7 @@ def test_tools_transcribe_audio_uses_interview_credit_and_returns_transcript(cli
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "tools-tr-u1", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
     monkeypatch.setattr(
         core,
@@ -855,6 +856,7 @@ def test_tools_transcribe_rejects_low_disk_before_saving_audio(client, monkeypat
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "tools-lowdisk", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
     monkeypatch.setattr(rate_limit_quotas, "has_sufficient_upload_disk_space", lambda _bytes=0, runtime=None: (False, 100, 200))
 
@@ -869,10 +871,33 @@ def test_tools_transcribe_rejects_low_disk_before_saving_audio(client, monkeypat
     assert "storage" in response.get_json()["error"].lower()
 
 
+def test_tools_transcribe_rejects_when_user_has_too_many_active_jobs(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "tools-busy", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: core.MAX_ACTIVE_JOBS_PER_USER)
+    monkeypatch.setattr(
+        rate_limiter,
+        "check_rate_limit",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("rate limit should not run after active job cap")),
+    )
+
+    response = client.post(
+        "/api/tools/transcribe",
+        data={"audio": (io.BytesIO(b"ID3\x03\x00\x00\x00"), "lecture.mp3", "audio/mpeg")},
+        content_type="multipart/form-data",
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 429
+    assert "active processing job" in response.get_json()["error"]
+
+
 def test_tools_transcribe_audio_allows_per_run_output_language_override(client, monkeypatch):
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "tools-tr-u2", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
     monkeypatch.setattr(
         core,

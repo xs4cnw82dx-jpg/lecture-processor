@@ -545,7 +545,7 @@ def get_study_pack_share(app_ctx, request, pack_id):
         if error_response is not None:
             return error_response, status
         _doc, _pack = pack_result
-        share_doc = app_ctx.study_repo.find_study_share_by_owner_and_entity(app_ctx.db, uid, 'pack', pack_id)
+        share_doc = study_api_support.find_share_record(app_ctx, uid, 'pack', pack_id)
         return app_ctx.jsonify(study_api_support.serialize_share_state(app_ctx, request, 'pack', pack_id, share_doc=share_doc))
     except Exception as error:
         app_ctx.logger.error('Error loading share state for pack %s: %s', pack_id, error)
@@ -573,7 +573,13 @@ def update_study_pack_share(app_ctx, request, pack_id):
         if error_response is not None:
             return error_response, status
         _doc, _pack = pack_result
-        share_ref, share_token, now_ts, created_at = study_api_support.ensure_share_record(app_ctx, uid, 'pack', pack_id)
+        share_ref, share_token, now_ts, created_at = study_api_support.ensure_share_record(
+            app_ctx,
+            uid,
+            'pack',
+            pack_id,
+            requested_scope=access_scope,
+        )
         share_ref.set(
             {
                 'share_token': share_token,
@@ -606,7 +612,7 @@ def get_study_folder_share(app_ctx, request, folder_id):
         if error_response is not None:
             return error_response, status
         _doc, _folder = folder_result
-        share_doc = app_ctx.study_repo.find_study_share_by_owner_and_entity(app_ctx.db, uid, 'folder', folder_id)
+        share_doc = study_api_support.find_share_record(app_ctx, uid, 'folder', folder_id)
         return app_ctx.jsonify(study_api_support.serialize_share_state(app_ctx, request, 'folder', folder_id, share_doc=share_doc))
     except Exception as error:
         app_ctx.logger.error('Error loading share state for folder %s: %s', folder_id, error)
@@ -634,7 +640,13 @@ def update_study_folder_share(app_ctx, request, folder_id):
         if error_response is not None:
             return error_response, status
         _doc, _folder = folder_result
-        share_ref, share_token, now_ts, created_at = study_api_support.ensure_share_record(app_ctx, uid, 'folder', folder_id)
+        share_ref, share_token, now_ts, created_at = study_api_support.ensure_share_record(
+            app_ctx,
+            uid,
+            'folder',
+            folder_id,
+            requested_scope=access_scope,
+        )
         share_ref.set(
             {
                 'share_token': share_token,
@@ -686,7 +698,15 @@ def get_public_study_share(app_ctx, request, share_token):
             folder = folder_doc.to_dict() or {}
             if str(folder.get('uid', '') or '').strip() != owner_uid:
                 return app_ctx.jsonify({'error': 'Shared content not found'}), 404
-            packs = app_ctx.study_repo.list_study_packs_by_uid_and_folder(app_ctx.db, owner_uid, entity_id)
+            try:
+                packs = app_ctx.study_repo.list_study_pack_summaries_by_uid_and_folder(
+                    app_ctx.db,
+                    owner_uid,
+                    entity_id,
+                    limit=100,
+                )
+            except Exception:
+                packs = app_ctx.study_repo.list_study_packs_by_uid_and_folder(app_ctx.db, owner_uid, entity_id)
             pack_summaries = []
             for pack_doc in packs:
                 pack = pack_doc.to_dict() or {}

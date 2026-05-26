@@ -24,5 +24,8 @@ test-*.m4a
 *.pre-*backup*
 *.backup
 *.dump
+*.swp
+*.swo
+*~
 playwright-report/
 test-results/

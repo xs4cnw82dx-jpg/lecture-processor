@@ -7,8 +7,22 @@ async function assertAppHealth(request) {
   expect(payload).toMatchObject({ status: 'ok' });
 }
 
-test.beforeEach(async ({ request }) => {
+test.beforeEach(async ({ page, request }, testInfo) => {
+  const browserFailures = [];
+  testInfo.browserFailures = browserFailures;
+  page.on('pageerror', (error) => {
+    browserFailures.push(`pageerror: ${error.message}`);
+  });
+  page.on('console', (message) => {
+    if (message.type() === 'error') {
+      browserFailures.push(`console.error: ${message.text()}`);
+    }
+  });
   await assertAppHealth(request);
+});
+
+test.afterEach(async ({}, testInfo) => {
+  expect(testInfo.browserFailures || []).toEqual([]);
 });
 
 test('landing and config endpoints are healthy', async ({ page, request }) => {

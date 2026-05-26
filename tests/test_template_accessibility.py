@@ -84,6 +84,25 @@ def test_processing_disabled_button_state_is_described():
     assert 'id="no-credits-warning" aria-live="polite"' in index_template
 
 
+def test_lecture_topic_required_state_is_programmatic():
+    index_template = Path('templates/index.html').read_text(encoding='utf-8')
+    index_js = Path('static/js/index-app.js').read_text(encoding='utf-8')
+
+    assert re.search(r'id="study-pack-title-input"[\s\S]*?required[\s\S]*?aria-required="true"[\s\S]*?aria-describedby="study-pack-title-error"', index_template)
+    assert re.search(r'id="study-pack-title-error"[\s\S]*?role="alert"[\s\S]*?hidden', index_template)
+    assert "setStudyPackTitleInvalid(true);" in index_js
+
+
+def test_study_tools_picker_exposes_expanded_and_selected_state():
+    index_template = Path('templates/index.html').read_text(encoding='utf-8')
+    index_js = Path('static/js/index-app.js').read_text(encoding='utf-8')
+
+    assert 'id="study-tools-toggle" aria-haspopup="listbox" aria-expanded="false" aria-controls="study-tools-panel"' in index_template
+    assert re.search(r'class="study-tools-panel"[\s\S]*?id="study-tools-panel"[\s\S]*?role="listbox"[\s\S]*?aria-hidden="true"', index_template)
+    assert 'role="option" aria-selected="true"' in index_template
+    assert "studyToolsToggle.setAttribute('aria-expanded', isVisible ? 'true' : 'false');" in index_js
+
+
 def test_processing_template_has_single_main_landmark():
     index_template = Path('templates/index.html').read_text(encoding='utf-8')
 

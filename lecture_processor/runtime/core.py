@@ -873,8 +873,13 @@ def run_startup_recovery_once():
         return
     recover_stale_runtime_jobs()
 
-def verify_firebase_token(request):
-    return auth_service.verify_firebase_token(request, auth_module=auth, logger=logger)
+def verify_firebase_token(request, *, check_revoked=False):
+    return auth_service.verify_firebase_token(
+        request,
+        auth_module=auth,
+        logger=logger,
+        check_revoked=check_revoked,
+    )
 
 def is_admin_user(decoded_token):
     if not decoded_token:

@@ -20,8 +20,11 @@
     return auth && auth.currentUser ? auth.currentUser : null;
   }
 
-  function getSignInHref() {
-    return '/lecture-notes?auth=signin';
+  function getSignInHref(bundleId) {
+    var next = '/buy_credits';
+    var safeBundle = String(bundleId || '').trim();
+    if (safeBundle) next += '?bundle_id=' + encodeURIComponent(safeBundle);
+    return '/lecture-notes?auth=signin&next=' + encodeURIComponent(next);
   }
 
   function showToast(message, type) {
@@ -89,6 +92,7 @@
     if (!getCurrentUser()) {
       authStateResolved = true;
       updateSignedOutUi();
+      if (signInLink) signInLink.href = getSignInHref(bundleId);
       showToast('Sign in to buy credits.', 'error');
       if (signInLink && typeof signInLink.focus === 'function') signInLink.focus();
       return;
@@ -259,6 +263,18 @@
     window.history.replaceState({}, '', '/buy_credits');
   }
 
+  function maybeResumeBundleIntent() {
+    if (!getCurrentUser() || checkoutBusy) return;
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('payment')) return;
+    var bundleId = String(params.get('bundle_id') || '').trim();
+    if (!bundleId) return;
+    params.delete('bundle_id');
+    var nextQuery = params.toString();
+    window.history.replaceState({}, '', '/buy_credits' + (nextQuery ? '?' + nextQuery : ''));
+    purchaseBundle(bundleId);
+  }
+
   document.querySelectorAll('.bundle-buy-btn').forEach(function (button) {
     button.addEventListener('click', function () {
       purchaseBundle(button.dataset.bundleId || '');
@@ -283,11 +299,13 @@
       updateSignedOutUi();
       checkPaymentResult();
       loadPurchaseHistory();
+      maybeResumeBundleIntent();
     });
   } else {
     authStateResolved = true;
     updateSignedOutUi();
     checkPaymentResult();
     loadPurchaseHistory();
+    maybeResumeBundleIntent();
   }
 })();

@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import json
 import time
+import base64
+import hashlib
 from datetime import datetime, timezone
+
+from cryptography.fernet import Fernet, InvalidToken
 
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai import study_generation
@@ -64,12 +68,46 @@ BATCH_INTERRUPTED_PUBLIC_MESSAGE = (
 
 TRANSIENT_ROW_KEYS = {'_gemini_files', '_local_paths'}
 _DROP_PERSISTED_VALUE = object()
+BATCH_AUDIO_FETCH_TARGET_FIELD = 'audio_fetch_target_encrypted'
 
 
 def _resolve_runtime(runtime=None):
     if runtime is not None:
         return runtime
     return get_runtime()
+
+
+def _batch_audio_fetch_cipher(runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    secret = str(
+        getattr(resolved_runtime, 'FLASK_SECRET_KEY', '')
+        or getattr(resolved_runtime, 'PUBLIC_BASE_URL', '')
+        or 'lecture-processor-local'
+    ).strip()
+    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode('utf-8')).digest())
+    return Fernet(key)
+
+
+def encrypt_batch_audio_fetch_target(fetch_target, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    if not fetch_target:
+        return ''
+    payload = _sanitize_persisted_value(fetch_target)
+    if payload is _DROP_PERSISTED_VALUE:
+        return ''
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+    return _batch_audio_fetch_cipher(resolved_runtime).encrypt(raw).decode('ascii')
+
+
+def _decrypt_batch_audio_fetch_target(token, runtime=None):
+    safe_token = str(token or '').strip()
+    if not safe_token:
+        return None
+    try:
+        raw = _batch_audio_fetch_cipher(runtime).decrypt(safe_token.encode('ascii'))
+        return json.loads(raw.decode('utf-8'))
+    except (InvalidToken, UnicodeError, ValueError, TypeError):
+        return None
 
 
 def _memory_store(runtime):
@@ -1185,6 +1223,12 @@ def _restore_audio_fetch_target(raw_target, runtime=None):
     return str(raw_target or '').strip()
 
 
+def _drop_persisted_audio_fetch_target(row):
+    if isinstance(row, dict):
+        row.pop(BATCH_AUDIO_FETCH_TARGET_FIELD, None)
+        row.pop('audio_fetch_target', None)
+
+
 def _prepare_row_audio_source(row, local_paths, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     if str(row.get('source_type', '') or '') != 'm3u8_url':
@@ -1192,7 +1236,10 @@ def _prepare_row_audio_source(row, local_paths, runtime=None):
     if str(row.get('audio_local_path', '') or '').strip():
         return
     fetch_target = _restore_audio_fetch_target(
-        row.get('_audio_fetch_target') or row.get('audio_fetch_target') or _pop_batch_audio_fetch_target(row, runtime=resolved_runtime),
+        row.get('_audio_fetch_target')
+        or row.get('audio_fetch_target')
+        or _decrypt_batch_audio_fetch_target(row.get(BATCH_AUDIO_FETCH_TARGET_FIELD), runtime=resolved_runtime)
+        or _pop_batch_audio_fetch_target(row, runtime=resolved_runtime),
         runtime=resolved_runtime,
     )
     if not fetch_target:
@@ -2242,6 +2289,7 @@ def process_batch_job(batch_id, runtime=None):
             if row.get('status') == 'error':
                 _refund_failed_row(batch, row, runtime=resolved_runtime)
             _finalize_row_job_log(batch, row, runtime=resolved_runtime)
+            _drop_persisted_audio_fetch_target(row)
             _upsert_row(
                 batch_id,
                 row.get('row_id', ''),
@@ -2264,6 +2312,7 @@ def process_batch_job(batch_id, runtime=None):
                 row['failed_stage'] = 'batch_pipeline'
             _refund_failed_row(batch, row, runtime=resolved_runtime)
             _finalize_row_job_log(batch, row, runtime=resolved_runtime)
+            _drop_persisted_audio_fetch_target(row)
             _upsert_row(batch_id, row.get('row_id', ''), row, runtime=resolved_runtime, merge=False)
     finally:
         _finalize_batch_record(
@@ -2446,20 +2495,16 @@ def list_batches_for_uid(uid, statuses=None, limit=100, runtime=None):
     results = []
     for batch in rows:
         batch_id = str(batch.get('batch_id', '') or '').strip()
-        if batch_id:
-            batch, batch_rows = _repair_batch_state_if_needed(batch_id, batch=batch, rows=None, runtime=resolved_runtime)
-        else:
-            batch_rows = []
         if not isinstance(batch, dict):
             continue
-        can_download_zip = any(str(row.get('status', '') or '') == 'complete' for row in batch_rows)
+        can_download_zip = int(batch.get('completed_rows', 0) or 0) > 0
         payload = {
             'batch_id': batch_id,
             'mode': str(batch.get('mode', '') or ''),
             'processing_strategy': str(batch.get('processing_strategy', 'batch') or 'batch'),
             'batch_title': str(batch.get('batch_title', '') or ''),
             'status': str(batch.get('status', 'queued') or 'queued'),
-            'total_rows': int(batch.get('total_rows', len(batch_rows)) or len(batch_rows)),
+            'total_rows': int(batch.get('total_rows', 0) or 0),
             'completed_rows': int(batch.get('completed_rows', 0) or 0),
             'failed_rows': int(batch.get('failed_rows', 0) or 0),
             'created_at': float(batch.get('created_at', 0) or 0),
@@ -2481,7 +2526,7 @@ def list_batches_for_uid(uid, statuses=None, limit=100, runtime=None):
             'folder_id': str(batch.get('folder_id', '') or ''),
             'folder_name': str(batch.get('folder_name', '') or ''),
         }
-        payload.update(_build_batch_view(batch_id, batch, batch_rows, can_download_zip=can_download_zip, runtime=resolved_runtime))
+        payload.update(_build_batch_view(batch_id, batch, [], can_download_zip=can_download_zip, runtime=resolved_runtime))
         results.append(payload)
     results.sort(key=lambda entry: float(entry.get('created_at', 0) or 0), reverse=True)
     return results
@@ -2517,13 +2562,9 @@ def list_batches_for_admin(statuses=None, limit=200, runtime=None):
     results = []
     for batch in rows:
         batch_id = str(batch.get('batch_id', '') or '').strip()
-        if batch_id:
-            batch, batch_rows = _repair_batch_state_if_needed(batch_id, batch=batch, rows=None, runtime=resolved_runtime)
-        else:
-            batch_rows = []
         if not isinstance(batch, dict):
             continue
-        can_download_zip = any(str(row.get('status', '') or '') == 'complete' for row in batch_rows)
+        can_download_zip = int(batch.get('completed_rows', 0) or 0) > 0
         payload = {
             'batch_id': batch_id,
             'uid': str(batch.get('uid', '') or ''),
@@ -2532,7 +2573,7 @@ def list_batches_for_admin(statuses=None, limit=200, runtime=None):
             'processing_strategy': str(batch.get('processing_strategy', 'batch') or 'batch'),
             'batch_title': str(batch.get('batch_title', '') or ''),
             'status': str(batch.get('status', 'queued') or 'queued'),
-            'total_rows': int(batch.get('total_rows', len(batch_rows)) or len(batch_rows)),
+            'total_rows': int(batch.get('total_rows', 0) or 0),
             'completed_rows': int(batch.get('completed_rows', 0) or 0),
             'failed_rows': int(batch.get('failed_rows', 0) or 0),
             'created_at': float(batch.get('created_at', 0) or 0),
@@ -2554,7 +2595,7 @@ def list_batches_for_admin(statuses=None, limit=200, runtime=None):
             'folder_id': str(batch.get('folder_id', '') or ''),
             'folder_name': str(batch.get('folder_name', '') or ''),
         }
-        payload.update(_build_batch_view(batch_id, batch, batch_rows, can_download_zip=can_download_zip, runtime=resolved_runtime))
+        payload.update(_build_batch_view(batch_id, batch, [], can_download_zip=can_download_zip, runtime=resolved_runtime))
         results.append(payload)
     return results
 

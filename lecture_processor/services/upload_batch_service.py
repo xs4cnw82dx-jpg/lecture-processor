@@ -416,13 +416,18 @@ def create_batch_job(app_ctx, request, *, instant=False):
                 fetch_target, url_error = upload_import_audio.validate_video_import_fetch_target(plan.get('audio_url', ''), runtime=app_ctx)
                 if not fetch_target:
                     raise ValueError(f'Row {idx}: {url_error}')
+                serialized_fetch_target = _serialize_audio_fetch_target(fetch_target)
                 plan['audio_source_url'] = upload_redaction_service.redact_source_url(
                     upload_import_audio.resolved_url(fetch_target)
                 )
                 batch_orchestrator.register_batch_audio_fetch_target(
                     batch_id,
                     plan['row_id'],
-                    _serialize_audio_fetch_target(fetch_target),
+                    serialized_fetch_target,
+                    runtime=app_ctx,
+                )
+                plan['audio_fetch_target_encrypted'] = batch_orchestrator.encrypt_batch_audio_fetch_target(
+                    serialized_fetch_target,
                     runtime=app_ctx,
                 )
 
@@ -579,6 +584,7 @@ def create_batch_job(app_ctx, request, *, instant=False):
                     'uid': uid,
                     'source_type': source_type,
                     'source_url': audio_source_url,
+                    'audio_fetch_target_encrypted': plan.get('audio_fetch_target_encrypted', ''),
                     'source_name': f'row-{idx}',
                     'slides_local_path': slides_local_path,
                     'audio_local_path': audio_local_path,

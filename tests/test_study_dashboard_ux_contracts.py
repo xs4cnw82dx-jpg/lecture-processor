@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 
 def _read(path):
@@ -69,8 +70,22 @@ def test_study_feedback_regions_are_announced_to_assistive_tech():
     assert 'id="share-modal-status" role="status" aria-live="polite" aria-atomic="true"' in dialog_template
     assert 'id="builder-import-summary" role="status" aria-live="polite" aria-atomic="true"' in study_template
     assert 'id="builder-import-errors" role="alert" aria-live="assertive" aria-atomic="true"' in study_template
+    assert re.search(r'id="pack-save-status"[\s\S]*?role="status"[\s\S]*?aria-live="polite"[\s\S]*?aria-atomic="true"', study_template)
     assert "toastEl.setAttribute('role', isError ? 'alert' : 'status');" in study_js
     assert "toastEl.setAttribute('aria-live', isError ? 'assertive' : 'polite');" in study_js
+
+
+def test_study_tabs_expose_tab_roles_and_keyboard_support():
+    study_template = _read('templates/study.html')
+    study_js = _read('static/js/study.js')
+
+    assert 'class="editor-tabs" role="tablist" aria-label="Study pack sections"' in study_template
+    assert 'id="editor-tab-notes" data-editor-pane="notes" role="tab"' in study_template
+    assert 'id="editor-pane-notes" role="tabpanel" aria-labelledby="editor-tab-notes"' in study_template
+    assert 'class="setup-tabs" id="setup-tabs" role="tablist" aria-label="Session setup sections"' in study_template
+    assert 'class="builder-nav" role="tablist" aria-label="Builder sections"' in study_template
+    assert "bindTabKeyboard(editorTabs, 'editorPane', setEditorPane);" in study_js
+    assert "button.setAttribute('aria-selected', isActive ? 'true' : 'false');" in study_js
 
 
 def test_study_initial_pack_load_preserves_pagination():

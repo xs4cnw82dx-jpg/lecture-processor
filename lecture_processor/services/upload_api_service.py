@@ -78,6 +78,20 @@ def _account_write_guard_response(app_ctx, uid):
     return upload_batch_support.account_write_guard_response(app_ctx, uid)
 
 
+def _cleanup_upload_files(app_ctx, paths, *, imported_audio_used=False, imported_audio_path=''):
+    protected_import_path = str(imported_audio_path or '').strip() if imported_audio_used else ''
+    cleanup_paths = []
+    for path in paths or []:
+        safe_path = str(path or '').strip()
+        if not safe_path:
+            continue
+        if protected_import_path and safe_path == protected_import_path:
+            continue
+        cleanup_paths.append(safe_path)
+    if cleanup_paths:
+        app_ctx.cleanup_files(cleanup_paths, [])
+
+
 def _attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None):
     return upload_batch_support.attempt_credit_refund(
         app_ctx,
@@ -340,10 +354,14 @@ def upload_files(app_ctx, request):
 
             audio_size = app_ctx.get_saved_file_size(audio_path)
             if audio_size <= 0 or audio_size > app_ctx.MAX_AUDIO_UPLOAD_BYTES:
-                app_ctx.cleanup_files([pdf_path, audio_path], [])
+                if imported_audio_used:
+                    upload_import_audio.release_audio_import_token(uid, audio_import_token, runtime=app_ctx)
+                _cleanup_upload_files(app_ctx, [pdf_path, audio_path])
                 return app_ctx.jsonify({'error': 'Audio exceeds server limit (max 500MB) or is empty.'}), 400
             if not app_ctx.file_looks_like_audio(audio_path):
-                app_ctx.cleanup_files([pdf_path, audio_path], [])
+                if imported_audio_used:
+                    upload_import_audio.release_audio_import_token(uid, audio_import_token, runtime=app_ctx)
+                _cleanup_upload_files(app_ctx, [pdf_path, audio_path])
                 return app_ctx.jsonify({'error': 'Uploaded audio file is invalid or unsupported.'}), 400
             chargeable_audio_size = (
                 upload_quota_service.chargeable_import_token_bytes(app_ctx, uid, audio_import_token, audio_size)
@@ -357,11 +375,11 @@ def upload_files(app_ctx, request):
                 context='Upload',
             )
             if quota_error is not None:
-                app_ctx.cleanup_files([pdf_path, audio_path], [])
+                _cleanup_upload_files(app_ctx, [pdf_path, audio_path], imported_audio_used=imported_audio_used, imported_audio_path=audio_path)
                 return quota_error, quota_error_status
             ai_unavailable = _require_ai_processing_ready(app_ctx)
             if ai_unavailable is not None:
-                app_ctx.cleanup_files([pdf_path, audio_path], [])
+                _cleanup_upload_files(app_ctx, [pdf_path, audio_path], imported_audio_used=imported_audio_used, imported_audio_path=audio_path)
                 return ai_unavailable
             deducted = billing_credits.deduct_credit(
                 uid,
@@ -370,7 +388,7 @@ def upload_files(app_ctx, request):
                 runtime=app_ctx,
             )
             if not deducted:
-                app_ctx.cleanup_files([pdf_path, audio_path], [])
+                _cleanup_upload_files(app_ctx, [pdf_path, audio_path], imported_audio_used=imported_audio_used, imported_audio_path=audio_path)
                 return app_ctx.jsonify({'error': 'No lecture credits remaining.'}), 402
             if imported_audio_used:
                 _consumed_path, token_error = upload_import_audio.get_audio_import_token_path(
@@ -484,10 +502,14 @@ def upload_files(app_ctx, request):
 
             audio_size = app_ctx.get_saved_file_size(audio_path)
             if audio_size <= 0 or audio_size > app_ctx.MAX_AUDIO_UPLOAD_BYTES:
-                app_ctx.cleanup_files([audio_path], [])
+                if imported_audio_used:
+                    upload_import_audio.release_audio_import_token(uid, audio_import_token, runtime=app_ctx)
+                _cleanup_upload_files(app_ctx, [audio_path])
                 return app_ctx.jsonify({'error': 'Audio exceeds server limit (max 500MB) or is empty.'}), 400
             if not app_ctx.file_looks_like_audio(audio_path):
-                app_ctx.cleanup_files([audio_path], [])
+                if imported_audio_used:
+                    upload_import_audio.release_audio_import_token(uid, audio_import_token, runtime=app_ctx)
+                _cleanup_upload_files(app_ctx, [audio_path])
                 return app_ctx.jsonify({'error': 'Uploaded audio file is invalid or unsupported.'}), 400
             actual_upload_bytes = (
                 upload_quota_service.chargeable_import_token_bytes(app_ctx, uid, audio_import_token, audio_size)
@@ -500,25 +522,25 @@ def upload_files(app_ctx, request):
                 context='Upload',
             )
             if quota_error is not None:
-                app_ctx.cleanup_files([audio_path], [])
+                _cleanup_upload_files(app_ctx, [audio_path], imported_audio_used=imported_audio_used, imported_audio_path=audio_path)
                 return quota_error, quota_error_status
             ai_unavailable = _require_ai_processing_ready(app_ctx)
             if ai_unavailable is not None:
-                app_ctx.cleanup_files([audio_path], [])
+                _cleanup_upload_files(app_ctx, [audio_path], imported_audio_used=imported_audio_used, imported_audio_path=audio_path)
                 return ai_unavailable
             deducted = billing_credits.deduct_interview_credit(uid, runtime=app_ctx)
             if not deducted:
-                app_ctx.cleanup_files([audio_path], [])
+                _cleanup_upload_files(app_ctx, [audio_path], imported_audio_used=imported_audio_used, imported_audio_path=audio_path)
                 return app_ctx.jsonify({'error': 'No interview credits remaining.'}), 402
             interview_features_cost = len(interview_features)
             if interview_features_cost > 0:
                 if not billing_credits.has_category_credit(user, 'slides', interview_features_cost, runtime=app_ctx):
                     billing_credits.refund_credit(uid, deducted, runtime=app_ctx)
-                    app_ctx.cleanup_files([audio_path], [])
+                    _cleanup_upload_files(app_ctx, [audio_path], imported_audio_used=imported_audio_used, imported_audio_path=audio_path)
                     return app_ctx.jsonify({'error': f'Not enough text extraction credits for interview extras. You selected {interview_features_cost} option(s) and need {interview_features_cost} text extraction credits.'}), 402
                 if not billing_credits.deduct_slides_credits(uid, interview_features_cost, runtime=app_ctx):
                     billing_credits.refund_credit(uid, deducted, runtime=app_ctx)
-                    app_ctx.cleanup_files([audio_path], [])
+                    _cleanup_upload_files(app_ctx, [audio_path], imported_audio_used=imported_audio_used, imported_audio_path=audio_path)
                     return app_ctx.jsonify({'error': 'Could not reserve text extraction credits for interview extras. Please try again.'}), 402
             if imported_audio_used:
                 _consumed_path, token_error = upload_import_audio.get_audio_import_token_path(

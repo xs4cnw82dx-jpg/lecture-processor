@@ -102,7 +102,8 @@
   }
 
   function getSignInHref() {
-    return '/lecture-notes?auth=signin';
+    var next = window.location.pathname + window.location.search + window.location.hash;
+    return '/lecture-notes?auth=signin&next=' + encodeURIComponent(next);
   }
 
   function updateAuthStateUI() {

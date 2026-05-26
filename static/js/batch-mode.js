@@ -1065,6 +1065,11 @@
       '</div>'
     ) : '';
 
+    var urlTitleId = 'row-' + String(ordinal) + '-url-title';
+    var urlHintId = 'row-' + String(ordinal) + '-url-hint';
+    var urlHelpId = 'row-' + String(ordinal) + '-url-help';
+    var urlStatusId = 'row-' + String(ordinal) + '-url-status';
+
     var audioFieldHtml = meta.requiresAudio ? (
       '<div class="row-field row-field--audio">' +
       '  <span class="row-label">Audio file</span>' +
@@ -1087,18 +1092,18 @@
           ? (
             '  <div class="row-url-import" data-audio-url-wrap>' +
             '    <div class="row-url-head">' +
-            '      <strong>Import from audio or video URL</strong>' +
-            '      <span>Paste the normal lecture video page first. Direct playlist links also work and audio can be auto-imported for this row.</span>' +
+            '      <strong id="' + urlTitleId + '">Import from audio or video URL</strong>' +
+            '      <span id="' + urlHintId + '">Paste the normal lecture video page first. Direct playlist links also work and audio can be auto-imported for this row.</span>' +
             '    </div>' +
             '    <div class="row-url-row">' +
-            '      <input type="url" class="row-url-input" data-field="m3u8" placeholder="https://.../audio-video-or-index.m3u8" autocomplete="off">' +
+            '      <input type="url" class="row-url-input" data-field="m3u8" placeholder="https://.../audio-video-or-index.m3u8" autocomplete="off" aria-labelledby="' + urlTitleId + '" aria-describedby="' + urlHintId + ' ' + urlHelpId + ' ' + urlStatusId + '">' +
             '      <button type="button" class="btn small" data-action="import-audio-url">Import audio</button>' +
             '    </div>' +
-            '    <div class="row-url-help">' +
+            '    <div class="row-url-help" id="' + urlHelpId + '">' +
             '      <span class="info-dot" aria-hidden="true">i</span>' +
             '      <span>These links expire quickly. Importing stores audio immediately so the batch can still run even when processing takes longer. If the page URL fails, retry with the direct playlist URL.</span>' +
             '    </div>' +
-            '    <div class="row-url-status" data-field="m3u8-status" aria-live="polite"></div>' +
+            '    <div class="row-url-status" id="' + urlStatusId + '" data-field="m3u8-status" aria-live="polite"></div>' +
             '  </div>'
           )
           : ''

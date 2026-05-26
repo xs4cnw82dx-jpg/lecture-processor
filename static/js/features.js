@@ -1,27 +1,27 @@
     /* -- Firebase auth detection for nav -- */
     var bootstrap=window.LectureProcessorBootstrap||{};
-    var auth=bootstrap.getAuth?bootstrap.getAuth():firebase.auth();
+    var auth=bootstrap.getAuth?bootstrap.getAuth():(window.firebase&&window.firebase.auth?window.firebase.auth():null);
     var topbarUtils=window.LectureProcessorTopbar||{};
-    var navAuthBtn=document.getElementById('nav-auth-btn');
-    var navAuthLabel=document.getElementById('nav-auth-label');
+    var navAuthBtn=document.getElementById('nav-auth-btn')||document.querySelector('.public-header-auth');
+    var navAuthLabel=document.getElementById('nav-auth-label')||(navAuthBtn?navAuthBtn.querySelector('span'):null);
 
-    if(topbarUtils.bindAuthCta){
+    if(auth&&navAuthBtn&&navAuthLabel&&topbarUtils.bindAuthCta){
       topbarUtils.bindAuthCta(auth,{
         labelEl:navAuthLabel,
         linkEl:navAuthBtn,
         signedInText:'Dashboard',
-        signedOutText:'Sign In',
+        signedOutText:'Open app',
         signedInHref:'/dashboard',
-        signedOutHref:'/lecture-notes?auth=signin'
+        signedOutHref:'/lecture-notes'
       });
-    }else{
+    }else if(auth&&navAuthBtn&&navAuthLabel&&bootstrap.onAuthStateReady){
       bootstrap.onAuthStateReady(auth,function(user){
         if(user){
           navAuthLabel.textContent='Dashboard';
           navAuthBtn.href='/dashboard';
         }else{
-          navAuthLabel.textContent='Sign In';
-          navAuthBtn.href='/lecture-notes?auth=signin';
+          navAuthLabel.textContent='Open app';
+          navAuthBtn.href='/lecture-notes';
         }
       });
     }
