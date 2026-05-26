@@ -4,7 +4,10 @@ from __future__ import annotations
 
 
 def require_admin(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
+    try:
+        decoded_token = app_ctx.verify_firebase_token(request, check_revoked=True)
+    except TypeError:  # Test doubles and older runtime adapters may not accept the flag.
+        decoded_token = app_ctx.verify_firebase_token(request)
     if not decoded_token:
         return None, app_ctx.jsonify({'error': 'Unauthorized'}), 401
     if not app_ctx.is_admin_user(decoded_token):

@@ -24,6 +24,13 @@ RUN pip install -r requirements.txt -c requirements.constraints.txt
 
 COPY . .
 
+RUN groupadd --system appuser && \
+    useradd --system --gid appuser --home-dir /app --shell /usr/sbin/nologin appuser && \
+    mkdir -p /app/uploads /app/.cache /app/tmp && \
+    chown -R appuser:appuser /app
+
+USER appuser
+
 EXPOSE 10000
 
-CMD ["sh", "-c", "gunicorn --workers ${WEB_CONCURRENCY:-2} --threads ${WEB_THREADS:-2} --timeout 180 --graceful-timeout 30 --bind 0.0.0.0:${PORT:-10000} app:app"]
+CMD ["sh", "-c", "gunicorn --workers ${WEB_CONCURRENCY:-1} --threads ${WEB_THREADS:-2} --timeout 180 --graceful-timeout 30 --bind 0.0.0.0:${PORT:-10000} app:app"]

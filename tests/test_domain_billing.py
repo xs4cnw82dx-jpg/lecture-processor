@@ -5,6 +5,42 @@ from lecture_processor.domains.billing import purchases
 from lecture_processor.runtime.container import get_runtime
 
 
+def _paid_checkout_session(
+    *,
+    session_id='sess_1',
+    uid='u1',
+    bundle_id='bundle_x',
+    price_cents=100,
+    currency='eur',
+    payment_status='paid',
+    status='complete',
+    mode='payment',
+    firebase_email='u1@example.com',
+    **overrides,
+):
+    session = {
+        'id': session_id,
+        'mode': mode,
+        'status': status,
+        'payment_status': payment_status,
+        'amount_total': price_cents,
+        'currency': currency,
+        'livemode': False,
+        'metadata': {'uid': uid, 'bundle_id': bundle_id, 'firebase_email': firebase_email},
+        'line_items': {
+            'data': [
+                {
+                    'quantity': 1,
+                    'amount_total': price_cents,
+                    'currency': currency,
+                }
+            ]
+        },
+    }
+    session.update(overrides)
+    return session
+
+
 def test_grant_credits_to_user_updates_expected_credit_fields(app, monkeypatch):
     runtime = get_runtime(app)
     monkeypatch.setattr(runtime, "CREDIT_BUNDLES", {"bundle_x": {"credits": {"slides_credits": 2}}})
@@ -152,12 +188,7 @@ def test_process_checkout_session_credits_returns_already_processed(app, monkeyp
         lambda _session, runtime=None: (True, "already_processed"),
     )
 
-    session = {
-        "id": "sess_1",
-        "status": "complete",
-        "payment_status": "paid",
-        "metadata": {"uid": "u1", "bundle_id": "bundle_x"},
-    }
+    session = _paid_checkout_session(session_id="sess_1")
     assert purchases.process_checkout_session_credits(session, runtime=runtime) == (True, "already_processed")
 
 
@@ -304,12 +335,7 @@ def test_process_checkout_session_credits_rejects_unpaid_session(app, monkeypatc
         lambda *_args, **_kwargs: called.append(True) or (True, 'granted'),
     )
 
-    session = {
-        'id': 'sess_unpaid',
-        'status': 'complete',
-        'payment_status': 'unpaid',
-        'metadata': {'uid': 'u1', 'bundle_id': 'bundle_x'},
-    }
+    session = _paid_checkout_session(session_id='sess_unpaid', payment_status='unpaid')
 
     assert purchases.process_checkout_session_credits(session, runtime=runtime) == (False, 'pending_payment')
     assert called == []
@@ -333,18 +359,17 @@ def test_process_checkout_session_credits_is_idempotent_in_transaction(app, monk
     rollup_calls = []
     _configure_transactional_purchase_runtime(runtime, monkeypatch, store, rollup_calls=rollup_calls)
 
-    session = {
-        'id': 'sess_once',
-        'status': 'complete',
-        'payment_status': 'paid',
-        'metadata': {'uid': 'u1', 'bundle_id': 'bundle_x'},
-        'customer_email': 'u1@example.com',
-    }
+    session = _paid_checkout_session(
+        session_id='sess_once',
+        firebase_email='firebase@example.com',
+        customer_email='stripe-customer@example.com',
+    )
 
     assert purchases.process_checkout_session_credits(session, runtime=runtime) == (True, 'granted')
     assert purchases.process_checkout_session_credits(session, runtime=runtime) == (True, 'already_processed')
     expected_slides_credits = credits.build_default_user_data('u1', 'u1@example.com', runtime=runtime)['slides_credits'] + 2
     assert store['users']['u1']['slides_credits'] == expected_slides_credits
+    assert store['users']['u1']['email'] == 'firebase@example.com'
     assert store['purchases']['sess_once']['payment_status'] == 'paid'
     assert len(store['purchases']) == 1
     assert len(rollup_calls) == 1
@@ -379,12 +404,7 @@ def test_process_checkout_session_credits_blocks_deleting_account(app, monkeypat
     }
     _configure_transactional_purchase_runtime(runtime, monkeypatch, store)
 
-    session = {
-        'id': 'sess_blocked',
-        'status': 'complete',
-        'payment_status': 'paid',
-        'metadata': {'uid': 'u1', 'bundle_id': 'bundle_x'},
-    }
+    session = _paid_checkout_session(session_id='sess_blocked')
 
     assert purchases.process_checkout_session_credits(session, runtime=runtime) == (False, 'account_deletion_in_progress')
     assert store['users']['u1']['slides_credits'] == 0
@@ -408,14 +428,62 @@ def test_atomic_purchase_failure_does_not_partially_grant_credits(app, monkeypat
     store = {'users': {}, 'purchases': {}}
     _configure_transactional_purchase_runtime(runtime, monkeypatch, store, fail_on_purchase=True)
 
-    session = {
-        'id': 'sess_fail',
-        'status': 'complete',
-        'payment_status': 'paid',
-        'metadata': {'uid': 'u1', 'bundle_id': 'bundle_x'},
-        'customer_email': 'u1@example.com',
-    }
+    session = _paid_checkout_session(session_id='sess_fail')
 
     assert purchases.process_checkout_session_credits(session, runtime=runtime) == (False, 'could_not_grant_credits')
     assert store['users'] == {}
     assert store['purchases'] == {}
+
+
+def test_process_checkout_session_credits_rejects_amount_mismatch(app, monkeypatch):
+    runtime = get_runtime(app)
+    monkeypatch.setattr(
+        runtime,
+        'CREDIT_BUNDLES',
+        {
+            'bundle_x': {
+                'name': 'Bundle X',
+                'price_cents': 100,
+                'currency': 'eur',
+                'credits': {'slides_credits': 2},
+            }
+        },
+    )
+    called = []
+    monkeypatch.setattr(
+        purchases,
+        '_grant_credits_and_record_purchase_atomic',
+        lambda *_args, **_kwargs: called.append(True) or (True, 'granted'),
+    )
+
+    session = _paid_checkout_session(session_id='sess_tampered', amount_total=1)
+
+    assert purchases.process_checkout_session_credits(session, runtime=runtime) == (False, 'checkout_amount_mismatch')
+    assert called == []
+
+
+def test_process_checkout_session_credits_requires_expanded_line_items(app, monkeypatch):
+    runtime = get_runtime(app)
+    monkeypatch.setattr(
+        runtime,
+        'CREDIT_BUNDLES',
+        {
+            'bundle_x': {
+                'name': 'Bundle X',
+                'price_cents': 100,
+                'currency': 'eur',
+                'credits': {'slides_credits': 2},
+            }
+        },
+    )
+    called = []
+    monkeypatch.setattr(
+        purchases,
+        '_grant_credits_and_record_purchase_atomic',
+        lambda *_args, **_kwargs: called.append(True) or (True, 'granted'),
+    )
+
+    session = _paid_checkout_session(session_id='sess_missing_lines', line_items={'data': []})
+
+    assert purchases.process_checkout_session_credits(session, runtime=runtime) == (False, 'missing_checkout_line_items')
+    assert called == []

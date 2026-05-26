@@ -25,6 +25,93 @@ def _customer_email_from_session(stripe_session):
     return str(email or '').strip()
 
 
+def _firebase_email_from_session(stripe_session):
+    metadata = stripe_session.get('metadata', {}) or {}
+    return str(metadata.get('firebase_email', '') or metadata.get('email', '') or '').strip()
+
+
+def _session_line_items(stripe_session):
+    line_items = stripe_session.get('line_items', {}) or {}
+    if isinstance(line_items, dict):
+        data = line_items.get('data', [])
+    else:
+        data = getattr(line_items, 'data', []) or []
+    return [item for item in data if isinstance(item, dict) or hasattr(item, 'get')]
+
+
+def _session_amount_total(stripe_session):
+    try:
+        return int(stripe_session.get('amount_total', -1))
+    except Exception:
+        return -1
+
+
+def _line_item_amount_total(line_item):
+    try:
+        return int(line_item.get('amount_total', -1))
+    except Exception:
+        return -1
+
+
+def _line_item_quantity(line_item):
+    try:
+        return int(line_item.get('quantity', 0))
+    except Exception:
+        return 0
+
+
+def _stripe_key_is_live(runtime):
+    api_key = str(getattr(getattr(runtime, 'stripe', None), 'api_key', '') or '').strip()
+    return api_key.startswith('sk_live_')
+
+
+def _validate_checkout_session(stripe_session, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    metadata = stripe_session.get('metadata', {}) or {}
+    uid = metadata.get('uid', '')
+    bundle_id = metadata.get('bundle_id', '')
+    stripe_session_id = stripe_session.get('id', '')
+    payment_status = str(stripe_session.get('payment_status', '') or '').strip().lower()
+
+    if not uid or not bundle_id:
+        return (False, 'missing_checkout_metadata')
+    if not stripe_session_id:
+        return (False, 'missing_session_id')
+    bundle = resolved_runtime.CREDIT_BUNDLES.get(bundle_id)
+    if not bundle:
+        return (False, 'unknown_credit_bundle')
+    if str(stripe_session.get('mode', '') or '').strip().lower() != 'payment':
+        return (False, 'invalid_checkout_session')
+    if str(stripe_session.get('status', '') or '').strip().lower() != 'complete':
+        return (False, 'checkout_incomplete')
+    if payment_status != 'paid':
+        return (False, 'pending_payment')
+
+    expected_amount = int(bundle.get('price_cents', 0) or 0)
+    expected_currency = str(bundle.get('currency', '') or '').strip().lower()
+    if _session_amount_total(stripe_session) != expected_amount:
+        return (False, 'checkout_amount_mismatch')
+    if str(stripe_session.get('currency', '') or '').strip().lower() != expected_currency:
+        return (False, 'checkout_currency_mismatch')
+
+    if 'livemode' in stripe_session:
+        livemode = bool(stripe_session.get('livemode'))
+        if livemode != _stripe_key_is_live(resolved_runtime):
+            return (False, 'checkout_livemode_mismatch')
+
+    line_items = _session_line_items(stripe_session)
+    if len(line_items) != 1:
+        return (False, 'missing_checkout_line_items')
+    line_item = line_items[0]
+    if _line_item_quantity(line_item) != 1:
+        return (False, 'checkout_quantity_mismatch')
+    if _line_item_amount_total(line_item) != expected_amount:
+        return (False, 'checkout_line_amount_mismatch')
+    if str(line_item.get('currency', '') or '').strip().lower() != expected_currency:
+        return (False, 'checkout_line_currency_mismatch')
+    return (True, 'valid')
+
+
 def _build_purchase_record(uid, bundle_id, stripe_session_id, *, payment_status, fulfilled_at, created_at, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     bundle = resolved_runtime.CREDIT_BUNDLES.get(bundle_id)
@@ -91,7 +178,7 @@ def _grant_credits_and_record_purchase_fallback(stripe_session, runtime=None):
     uid = metadata.get('uid', '')
     bundle_id = metadata.get('bundle_id', '')
     stripe_session_id = stripe_session.get('id', '')
-    customer_email = _customer_email_from_session(stripe_session)
+    firebase_email = _firebase_email_from_session(stripe_session)
 
     try:
         user_doc = resolved_runtime.users_repo.get_doc(resolved_runtime.db, uid)
@@ -105,7 +192,7 @@ def _grant_credits_and_record_purchase_fallback(stripe_session, runtime=None):
         resolved_runtime.users_repo.set_doc(
             resolved_runtime.db,
             uid,
-            billing_credits.build_default_user_data(uid, customer_email, runtime=resolved_runtime),
+            billing_credits.build_default_user_data(uid, firebase_email, runtime=resolved_runtime),
             merge=True,
         )
 
@@ -143,7 +230,7 @@ def _grant_credits_and_record_purchase_atomic(stripe_session, runtime=None):
     uid = metadata.get('uid', '')
     bundle_id = metadata.get('bundle_id', '')
     stripe_session_id = stripe_session.get('id', '')
-    customer_email = _customer_email_from_session(stripe_session)
+    firebase_email = _firebase_email_from_session(stripe_session)
     created_at = _session_created_at(stripe_session, runtime=resolved_runtime)
     fulfilled_at = float(resolved_runtime.time.time())
     bundle = resolved_runtime.CREDIT_BUNDLES.get(bundle_id)
@@ -174,10 +261,8 @@ def _grant_credits_and_record_purchase_atomic(stripe_session, runtime=None):
             if str(user_data.get('account_status', '') or '').strip().lower() == 'deleting':
                 return 'account_deletion_in_progress'
             user_payload = {}
-            if customer_email and customer_email != str(user_data.get('email', '') or '').strip():
-                user_payload['email'] = customer_email
         else:
-            user_data = billing_credits.build_default_user_data(uid, customer_email, runtime=resolved_runtime)
+            user_data = billing_credits.build_default_user_data(uid, firebase_email, runtime=resolved_runtime)
             user_payload = dict(user_data)
 
         for credit_key, credit_amount in bundle.get('credits', {}).items():
@@ -209,16 +294,10 @@ def process_checkout_session_credits(stripe_session, runtime=None):
     uid = metadata.get('uid', '')
     bundle_id = metadata.get('bundle_id', '')
     stripe_session_id = stripe_session.get('id', '')
-    payment_status = (stripe_session.get('payment_status') or '').lower()
 
-    if not uid or not bundle_id:
-        return (False, 'missing_checkout_metadata')
-    if not stripe_session_id:
-        return (False, 'missing_session_id')
-    if bundle_id not in resolved_runtime.CREDIT_BUNDLES:
-        return (False, 'unknown_credit_bundle')
-    if payment_status != 'paid':
-        return (False, 'pending_payment')
+    valid, validation_status = _validate_checkout_session(stripe_session, runtime=resolved_runtime)
+    if not valid:
+        return (False, validation_status)
 
     ok, status = _grant_credits_and_record_purchase_atomic(stripe_session, runtime=resolved_runtime)
     if not ok:

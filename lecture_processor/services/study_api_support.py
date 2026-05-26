@@ -1,7 +1,6 @@
 """Shared helpers for study API route handlers."""
 
-import hashlib
-import hmac
+import secrets
 
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.ai import batch_orchestrator
@@ -205,33 +204,53 @@ def get_public_share(app_ctx, share_token):
     return (doc, share), None, None
 
 
-def _stable_share_token(app_ctx, owner_uid, entity_type, entity_id):
-    secret = str(getattr(app_ctx, 'FLASK_SECRET_KEY', '') or getattr(app_ctx, 'PUBLIC_BASE_URL', '') or 'lecture-processor-local').strip()
-    message = '\0'.join(
-        [
-            str(owner_uid or '').strip(),
-            str(entity_type or '').strip().lower(),
-            str(entity_id or '').strip(),
-        ]
-    ).encode('utf-8')
-    return hmac.new(secret.encode('utf-8'), message, hashlib.sha256).hexdigest()[:32]
+def _new_share_token():
+    return secrets.token_urlsafe(24)
 
 
-def ensure_share_record(app_ctx, owner_uid, entity_type, entity_id):
-    share_doc = app_ctx.study_repo.find_study_share_by_owner_and_entity(
+def find_share_record(app_ctx, owner_uid, entity_type, entity_id):
+    try:
+        docs = app_ctx.study_repo.list_study_shares_by_owner_and_entity(
+            app_ctx.db,
+            owner_uid,
+            entity_type,
+            entity_id,
+            limit=20,
+        )
+        docs = [doc for doc in docs if getattr(doc, 'exists', False)]
+        if docs:
+            docs.sort(
+                key=lambda doc: float((doc.to_dict() or {}).get('updated_at', 0) or 0),
+                reverse=True,
+            )
+            return docs[0]
+    except Exception:
+        pass
+    return app_ctx.study_repo.find_study_share_by_owner_and_entity(
         app_ctx.db,
         owner_uid,
         entity_type,
         entity_id,
     )
+
+
+def ensure_share_record(app_ctx, owner_uid, entity_type, entity_id, *, requested_scope='private'):
+    share_doc = find_share_record(app_ctx, owner_uid, entity_type, entity_id)
     now_ts = app_ctx.time.time()
     if share_doc is not None and getattr(share_doc, 'exists', False):
         share_ref = share_doc.reference
         share_payload = share_doc.to_dict() or {}
         share_token = str(share_payload.get('share_token', '') or share_ref.id)
         created_at = float(share_payload.get('created_at', now_ts) or now_ts)
+        if (
+            str(requested_scope or '').strip().lower() == 'public'
+            and str(share_payload.get('access_scope', 'private') or 'private').strip().lower() != 'public'
+        ):
+            share_token = _new_share_token()
+            share_ref = app_ctx.study_repo.create_study_share_doc_ref(app_ctx.db, share_token)
+            created_at = now_ts
         return share_ref, share_token, now_ts, created_at
-    share_token = _stable_share_token(app_ctx, owner_uid, entity_type, entity_id)
+    share_token = _new_share_token()
     share_ref = app_ctx.study_repo.create_study_share_doc_ref(app_ctx.db, share_token)
     return share_ref, share_token, now_ts, now_ts
 

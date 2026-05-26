@@ -60,7 +60,7 @@ def is_configured_admin_identity(uid='', email='', decoded_token=None, runtime=N
 def effective_unlimited_credits(user_data, decoded_token=None, runtime=None):
     user = user_data if isinstance(user_data, dict) else {}
     uid = str(user.get('uid', '') or (decoded_token or {}).get('uid', '') or '').strip()
-    email = normalize_email(user.get('email', '') or (decoded_token or {}).get('email', ''))
+    email = normalize_email((decoded_token or {}).get('email', '') or user.get('email', ''))
     if is_configured_admin_identity(uid=uid, email=email, decoded_token=decoded_token, runtime=runtime):
         return {category: True for category in CREDIT_CATEGORIES}
     return normalize_unlimited_credits(user.get('unlimited_credits'))

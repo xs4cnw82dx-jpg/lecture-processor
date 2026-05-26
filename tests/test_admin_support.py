@@ -47,6 +47,25 @@ def test_require_admin_accepts_admin_user():
     assert status is None
 
 
+def test_require_admin_requests_revocation_check_when_supported():
+    calls = []
+    token = {'uid': 'admin-1', 'email': 'admin@example.com'}
+
+    class _RevocationAwareApp(_FakeApp):
+        def verify_firebase_token(self, _request, check_revoked=False):
+            calls.append(check_revoked)
+            return self._token
+
+    app = _RevocationAwareApp(token=token, is_admin=True)
+
+    decoded_token, response, status = admin_support.require_admin(app, object())
+
+    assert decoded_token == token
+    assert response is None
+    assert status is None
+    assert calls == [True]
+
+
 def test_numeric_parsers_clamp_negative_and_invalid_values():
     assert admin_support.to_non_negative_float('4.5') == 4.5
     assert admin_support.to_non_negative_float('-3') == 0.0

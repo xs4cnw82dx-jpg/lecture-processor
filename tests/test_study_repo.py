@@ -92,6 +92,28 @@ def test_list_study_pack_summaries_by_uid_applies_start_after_cursor():
     assert ("start_after", after_doc) in query.calls
 
 
+def test_list_study_pack_summaries_by_uid_and_folder_filters_folder():
+    query = _StudyPackQuery()
+
+    result = study_repo.list_study_pack_summaries_by_uid_and_folder(_DB(query), "u-123", "folder-1", 20)
+
+    assert result == ["doc-1", "doc-2"]
+    filters = [
+        (
+            getattr(call[2].get("filter"), "field_path", ""),
+            getattr(call[2].get("filter"), "op_string", ""),
+            getattr(call[2].get("filter"), "value", ""),
+        )
+        for call in query.calls
+        if call[0] == "where"
+    ]
+    assert ("uid", "==", "u-123") in filters
+    assert ("folder_id", "==", "folder-1") in filters
+    assert ("order_by", "created_at", "DESCENDING") in query.calls
+    assert ("limit", 20) in query.calls
+    assert ("select", tuple(study_repo.STUDY_PACK_SUMMARY_FIELDS)) in query.calls
+
+
 def test_get_study_pack_summary_doc_projects_cursor_fields():
     query = _StudyPackQuery()
     db = _DB(query)

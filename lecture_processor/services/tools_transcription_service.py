@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from lecture_processor.domains.ai import provider as ai_provider
+from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
@@ -60,6 +61,11 @@ def create_general_transcription(app_ctx, request):
     deletion_guard = _account_write_guard_response(app_ctx, uid)
     if deletion_guard is not None:
         return deletion_guard
+    active_jobs = account_lifecycle.count_active_jobs_for_user(uid, runtime=app_ctx)
+    if active_jobs >= app_ctx.MAX_ACTIVE_JOBS_PER_USER:
+        return app_ctx.jsonify({
+            'error': f'You already have {active_jobs} active processing job(s). Please wait for one to finish before starting another.'
+        }), 429
 
     allowed, retry_after = rate_limiter.check_rate_limit(
         key=f"tools_transcribe:{rate_limiter.normalize_rate_limit_key_part(uid, fallback='anon_uid', runtime=app_ctx)}",

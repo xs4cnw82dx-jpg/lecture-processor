@@ -90,6 +90,15 @@ def list_study_packs_by_uid_and_folder(db, uid, folder_id):
     return list(apply_where(apply_where(db.collection('study_packs'), 'uid', '==', uid), 'folder_id', '==', folder_id).stream())
 
 
+def list_study_pack_summaries_by_uid_and_folder(db, uid, folder_id, limit=100):
+    query = apply_where(db.collection('study_packs'), 'uid', '==', uid)
+    query = apply_where(query, 'folder_id', '==', folder_id).order_by('created_at', direction='DESCENDING')
+    if isinstance(limit, int) and limit > 0:
+        query = query.limit(limit)
+    query = _apply_select(query, STUDY_PACK_SUMMARY_FIELDS)
+    return list(query.stream())
+
+
 def study_folder_doc_ref(db, folder_id):
     return db.collection('study_folders').document(folder_id)
 

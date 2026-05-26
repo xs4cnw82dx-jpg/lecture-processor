@@ -1398,7 +1398,7 @@ var packCourse = document.getElementById('pack-course'), packSubject = document.
 var packAdvancedMetaBtn = document.getElementById('pack-advanced-meta-btn'), packAdvancedMetaShell = document.getElementById('pack-advanced-meta-shell'), packAdvancedMetaPanel = document.getElementById('pack-advanced-meta-panel');
 var packSummary = document.getElementById('pack-summary'), packSummaryTitle = document.getElementById('pack-summary-title'), packSummaryMeta = document.getElementById('pack-summary-meta'), packStatNotes = document.getElementById('pack-stat-notes'), packStatCards = document.getElementById('pack-stat-cards'), packStatTest = document.getElementById('pack-stat-test');
 var packGoalsPanel = document.getElementById('pack-goals-panel'), packGoalCard = document.getElementById('pack-goal-card'), packGoalsStatus = document.getElementById('pack-goals-status'), overallDailyGoalInput = document.getElementById('overall-daily-goal-input'), overallDailyGoalDecrease = document.getElementById('overall-daily-goal-decrease'), overallDailyGoalIncrease = document.getElementById('overall-daily-goal-increase'), packDailyGoalInput = document.getElementById('pack-daily-goal-input'), packDailyGoalClear = document.getElementById('pack-daily-goal-clear'), packDailyGoalDecrease = document.getElementById('pack-daily-goal-decrease'), packDailyGoalIncrease = document.getElementById('pack-daily-goal-increase'), packGoalDue = document.getElementById('pack-goal-due'), packGoalUnmastered = document.getElementById('pack-goal-unmastered'), packGoalRecommendation = document.getElementById('pack-goal-recommendation'), packGoalHelper = document.getElementById('pack-goal-helper');
-var createPackBtn = document.getElementById('create-pack-btn'), openBuilderBtn = document.getElementById('open-builder-btn'), savePackBtn = document.getElementById('save-pack-btn'), deletePackBtn = document.getElementById('delete-pack-btn'), exportPackNotesBtn = document.getElementById('export-pack-notes-btn'), packShareBtn = document.getElementById('pack-share-btn'), openLearnBtn = document.getElementById('open-learn-btn');
+var createPackBtn = document.getElementById('create-pack-btn'), openBuilderBtn = document.getElementById('open-builder-btn'), savePackBtn = document.getElementById('save-pack-btn'), deletePackBtn = document.getElementById('delete-pack-btn'), exportPackNotesBtn = document.getElementById('export-pack-notes-btn'), packShareBtn = document.getElementById('pack-share-btn'), openLearnBtn = document.getElementById('open-learn-btn'), packSaveStatus = document.getElementById('pack-save-status');
 var exportMenu = document.getElementById('export-menu'), exportMenuBtn = document.getElementById('export-menu-btn'), exportMenuList = document.getElementById('export-menu-list'), exportPdfSubmenu = document.getElementById('export-pdf-submenu');
 var editorTabs = document.querySelectorAll('.editor-tab'), flashcardCount = document.getElementById('flashcard-count'), questionCount = document.getElementById('question-count'), addFlashcardBtn = document.getElementById('add-flashcard-btn'), addQuestionBtn = document.getElementById('add-question-btn'), flashcardEditorList = document.getElementById('flashcard-editor-list'), questionEditorList = document.getElementById('question-editor-list');
 var learnStage = document.getElementById('learn-stage'), learnTitle = document.getElementById('learn-title'), learnSub = document.getElementById('learn-sub'), learnBackAppBtn = document.getElementById('learn-back-app-btn'), learnBackLibraryBtn = document.getElementById('learn-back-library-btn'), learnFullscreenBtn = document.getElementById('learn-fullscreen-btn');
@@ -2727,12 +2727,7 @@ function renderBuilderQuestions() {
 }
 function setBuilderPane(nextPane) {
   builderPane = nextPane;
-  document.querySelectorAll('.builder-pane').forEach(function (pane) {
-    pane.classList.toggle('active', pane.id === ('builder-pane-' + nextPane));
-  });
-  builderPaneButtons.forEach(function (button) {
-    button.classList.toggle('active', button.dataset.builderPane === nextPane);
-  });
+  syncTabSelection(builderPaneButtons, 'builderPane', nextPane);
 }
 function clearBuilderImportState() {
   builderImportParsed = null;
@@ -3229,11 +3224,7 @@ function renderMasteryGauge() {
 
 function setSetupPane(p) {
   activeSetupPane = p;
-  setupTabs.forEach(function (t) { t.classList.toggle('active', t.dataset.setupPane === p); });
-  ['mastery', 'lessons', 'settings', 'algorithm'].forEach(function (x) {
-    var el = document.getElementById('setup-pane-' + x);
-    if (el) { el.classList.toggle('active', x === p); }
-  });
+  syncTabSelection(setupTabs, 'setupPane', p);
 }
 
 function getEnabledModes() {
@@ -3250,6 +3241,46 @@ function bindKeyboardActivation(element, callback) {
     if (event.key !== 'Enter' && event.key !== ' ') { return; }
     event.preventDefault();
     callback(event);
+  });
+}
+
+function syncTabSelection(buttons, datasetKey, activeValue) {
+  buttons.forEach(function (button) {
+    var isActive = button.dataset[datasetKey] === activeValue;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    button.setAttribute('tabindex', isActive ? '0' : '-1');
+    var paneId = button.getAttribute('aria-controls');
+    var pane = paneId ? document.getElementById(paneId) : null;
+    if (pane) {
+      pane.classList.toggle('active', isActive);
+      pane.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+    }
+  });
+}
+
+function bindTabKeyboard(buttons, datasetKey, activate) {
+  buttons.forEach(function (button, index) {
+    button.addEventListener('keydown', function (event) {
+      if (event.key !== 'ArrowRight' && event.key !== 'ArrowDown' && event.key !== 'ArrowLeft' && event.key !== 'ArrowUp' && event.key !== 'Home' && event.key !== 'End') {
+        return;
+      }
+      event.preventDefault();
+      var nextIndex = index;
+      if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+        nextIndex = (index + 1) % buttons.length;
+      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+        nextIndex = (index - 1 + buttons.length) % buttons.length;
+      } else if (event.key === 'Home') {
+        nextIndex = 0;
+      } else if (event.key === 'End') {
+        nextIndex = buttons.length - 1;
+      }
+      var nextButton = buttons[nextIndex];
+      if (!nextButton) return;
+      activate(nextButton.dataset[datasetKey]);
+      nextButton.focus();
+    });
   });
 }
 
@@ -3288,6 +3319,7 @@ function openSessionSetup() {
 function closeSessionSetup() { closeModal(setupOverlay); hideModePicker(); if (!learnStage.classList.contains('visible')) { setAudioHiddenForLearn(false); } }
 
 setupTabs.forEach(function (t) { t.addEventListener('click', function () { setSetupPane(t.dataset.setupPane); }); });
+bindTabKeyboard(setupTabs, 'setupPane', setSetupPane);
 setupCloseBtn.addEventListener('click', closeSessionSetup);
 setupOverlay.addEventListener('click', function (e) { if (e.target === setupOverlay) { closeSessionSetup(); } });
 algoPresets.forEach(function (b) { b.addEventListener('click', function () { applyAlgoPreset(b.dataset.preset); }); });
@@ -3545,10 +3577,7 @@ matchPlayAgainBtn.addEventListener('click', function () { initMatchMode(); });
 /* ── Editor pane ── */
 function setEditorPane(pane) {
   activeEditorPane = pane;
-  editorTabs.forEach(function (b) { b.classList.toggle('active', b.dataset.editorPane === pane); });
-  document.getElementById('editor-pane-notes').classList.toggle('active', pane === 'notes');
-  document.getElementById('editor-pane-flashcards').classList.toggle('active', pane === 'flashcards');
-  document.getElementById('editor-pane-test').classList.toggle('active', pane === 'test');
+  syncTabSelection(editorTabs, 'editorPane', pane);
   exportType = (pane === 'test') ? 'test' : 'flashcards';
   if (pane === 'notes') { scheduleNotesFullscreenIdle(); }
 }
@@ -4685,6 +4714,14 @@ function buildCurrentInlineAutosaveSnapshot() {
 
 function setInlineAutosaveBaseline(pack) {
   inlineAutosaveBaseline = pack ? normalizeInlineAutosaveSnapshot(pack) : null;
+  setInlineAutosaveStatus('saved', 'Saved');
+}
+
+function setInlineAutosaveStatus(state, message) {
+  if (!packSaveStatus) return;
+  var safeState = ['saved', 'pending', 'saving', 'error'].indexOf(state) >= 0 ? state : 'saved';
+  packSaveStatus.className = 'pack-save-status builder-status ' + safeState;
+  packSaveStatus.textContent = String(message || 'Saved');
 }
 
 function mergeInlineAutosaveBaseline(payload) {
@@ -4717,6 +4754,7 @@ function runInlineAutosaveNow(options) {
   if (!selectedPackId || !selectedPack || !token) return Promise.resolve();
   if (inlineAutoSaving) {
     inlineAutoSaveQueued = true;
+    setInlineAutosaveStatus('pending', 'Auto-save pending');
     return Promise.resolve();
   }
   inlineAutoSaving = true;
@@ -4727,8 +4765,10 @@ function runInlineAutosaveNow(options) {
     if (opts.showNoChangesToast) {
       showToast('No changes to save.', 'success');
     }
+    setInlineAutosaveStatus('saved', 'Saved');
     return Promise.resolve();
   }
+  setInlineAutosaveStatus('saving', 'Saving...');
   return apiCall('/api/study-packs/' + encodeURIComponent(packId), {
     method: 'PATCH',
     body: JSON.stringify(payload)
@@ -4774,8 +4814,10 @@ function runInlineAutosaveNow(options) {
       return Object.assign({}, pack, packUpdate);
     });
     renderPacks();
+    setInlineAutosaveStatus('saved', 'Saved');
     showToast('Saved successfully.', 'success');
   }).catch(function (e) {
+    setInlineAutosaveStatus('error', 'Save failed');
     showToast(e.message || 'Could not save study pack.', 'error');
   }).finally(function () {
     inlineAutoSaving = false;
@@ -4792,6 +4834,7 @@ function queueInlineAutosave() {
     clearTimeout(inlineAutoSaveTimer);
     inlineAutoSaveTimer = null;
   }
+  setInlineAutosaveStatus('pending', 'Auto-save pending');
   inlineAutoSaveTimer = setTimeout(function () {
     inlineAutoSaveTimer = null;
     runInlineAutosaveNow();
@@ -4932,6 +4975,7 @@ builderPaneButtons.forEach(function (button) {
     setBuilderPane(button.dataset.builderPane);
   });
 });
+bindTabKeyboard(builderPaneButtons, 'builderPane', setBuilderPane);
 builderOpenLearnShortcut.addEventListener('click', function () {
   if (builderDirty) {
     showToast('Save changes before opening Learn mode.', 'error');
@@ -5423,6 +5467,7 @@ if (exportMenuBtn && exportMenuList) {
 
 openLearnBtn.addEventListener('click', function () { openSessionSetup(); });
 editorTabs.forEach(function (btn) { btn.addEventListener('click', function () { setEditorPane(btn.dataset.editorPane); }); });
+bindTabKeyboard(editorTabs, 'editorPane', setEditorPane);
 
 addFlashcardBtn.addEventListener('click', function () {
   if (!selectedPack) return;

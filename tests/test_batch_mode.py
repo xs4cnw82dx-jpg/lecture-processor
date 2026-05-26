@@ -61,10 +61,13 @@ def _patch_batch_auth(monkeypatch):
 def _clear_batch_memory():
     jobs = getattr(core, '_BATCH_JOBS_MEMORY', None)
     rows = getattr(core, '_BATCH_ROWS_MEMORY', None)
+    fetch_targets = getattr(core, '_BATCH_AUDIO_FETCH_TARGETS', None)
     if isinstance(jobs, dict):
         jobs.clear()
     if isinstance(rows, dict):
         rows.clear()
+    if isinstance(fetch_targets, dict):
+        fetch_targets.clear()
 
 
 def _patch_batch_refunds(monkeypatch):
@@ -955,6 +958,8 @@ def test_batch_direct_url_redacts_source_url_and_defers_download(client, monkeyp
     assert capture.rows is not None
     assert capture.rows[0]['source_url'] == 'https://ovp.kaltura.com/[redacted]'
     assert capture.rows[1]['source_url'] == 'https://ovp.kaltura.com/[redacted]'
+    assert capture.rows[0].get(batch_orchestrator.BATCH_AUDIO_FETCH_TARGET_FIELD)
+    assert capture.rows[1].get(batch_orchestrator.BATCH_AUDIO_FETCH_TARGET_FIELD)
     assert 'token=' not in json.dumps(capture.rows)
     assert reserved and reserved[0][1] >= core.MAX_AUDIO_UPLOAD_BYTES * 2
     assert downloads == []
@@ -1001,6 +1006,49 @@ def test_batch_worker_downloads_direct_url_and_releases_unused_quota(monkeypatch
     assert row['audio_quota_released'] is True
     assert released and released[0][0] == 'u-batch'
     assert released[0][1] == core.MAX_AUDIO_UPLOAD_BYTES - row['audio_quota_actual_bytes']
+    assert local_paths == [row['audio_local_path']]
+
+
+def test_batch_worker_downloads_direct_url_from_encrypted_row_target(monkeypatch, tmp_path):
+    _clear_batch_memory()
+    monkeypatch.setattr(core, 'db', None)
+    downloads = []
+
+    fetch_target = {
+        'url': 'https://ovp.kaltura.com/a/index.m3u8?token=secret-a',
+        'scheme': 'https',
+        'host': 'ovp.kaltura.com',
+        'port': 443,
+        'resolved_ips': ['8.8.8.8'],
+    }
+
+    def _download_audio(target, prefix):
+        downloads.append((target, prefix))
+        path = tmp_path / f'{prefix}.mp3'
+        path.write_bytes(b'ID3\x03\x00\x00downloaded audio')
+        return str(path), path.name, path.stat().st_size
+
+    monkeypatch.setattr(core, 'download_audio_from_video_url', _download_audio)
+    monkeypatch.setattr(rate_limit_quotas, 'release_daily_upload_bytes', lambda *_args, **_kwargs: True)
+
+    row = {
+        'batch_id': 'batch-direct',
+        'row_id': 'row-1',
+        'row_job_id': 'row-job-1',
+        'uid': 'u-batch',
+        'source_type': 'm3u8_url',
+        'audio_quota_reserved_bytes': core.MAX_AUDIO_UPLOAD_BYTES,
+        batch_orchestrator.BATCH_AUDIO_FETCH_TARGET_FIELD: batch_orchestrator.encrypt_batch_audio_fetch_target(fetch_target, runtime=core),
+    }
+    local_paths = []
+
+    batch_orchestrator._prepare_row_audio_source(row, local_paths, runtime=core)
+
+    assert downloads
+    downloaded_target, download_prefix = downloads[0]
+    assert getattr(downloaded_target, 'url', downloaded_target) == fetch_target['url']
+    assert download_prefix == 'batch_row-job-1'
+    assert row['audio_local_path'].endswith('.mp3')
     assert local_paths == [row['audio_local_path']]
 
 

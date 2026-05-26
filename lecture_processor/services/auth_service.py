@@ -31,7 +31,7 @@ def token_has_unverified_email(decoded_token):
     return decoded_token.get('email_verified') is False
 
 
-def verify_firebase_token(request, auth_module, logger):
+def verify_firebase_token(request, auth_module, logger, *, check_revoked=False):
     """Return decoded Firebase token dict, or None when invalid/missing."""
     _set_request_auth_error(request, '')
     auth_header = request.headers.get('Authorization', '')
@@ -39,7 +39,12 @@ def verify_firebase_token(request, auth_module, logger):
         return None
     token = auth_header.split('Bearer ', 1)[1]
     try:
-        decoded_token = auth_module.verify_id_token(token)
+        try:
+            decoded_token = auth_module.verify_id_token(token, check_revoked=bool(check_revoked))
+        except TypeError as exc:
+            if 'check_revoked' not in str(exc):
+                raise
+            decoded_token = auth_module.verify_id_token(token)
         if token_has_unverified_email(decoded_token):
             _set_request_auth_error(request, EMAIL_NOT_VERIFIED_AUTH_ERROR)
             if logger is not None:

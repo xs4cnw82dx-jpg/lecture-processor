@@ -523,6 +523,7 @@ def test_stripe_webhook_returns_retryable_status_for_failed_fulfillment(client, 
         "data": {"object": {"id": "sess_failed", "metadata": {"uid": "u1", "bundle_id": "lecture_5"}}},
     }
     monkeypatch.setattr(core.stripe.Webhook, "construct_event", lambda *_args, **_kwargs: event)
+    monkeypatch.setattr(core.stripe.checkout.Session, "retrieve", lambda _session_id, **_kwargs: event["data"]["object"])
     monkeypatch.setattr(
         billing_purchases,
         "process_checkout_session_credits",
@@ -1850,6 +1851,7 @@ def test_checkout_session_uses_trusted_public_base_url(client, monkeypatch):
     assert response.get_json().get("checkout_url", "").startswith("https://checkout.stripe.test/")
     assert captured.get("success_url", "").startswith("https://trusted.example/buy_credits?payment=success")
     assert captured.get("cancel_url") == "https://trusted.example/buy_credits?payment=cancelled"
+    assert captured.get("metadata", {}).get("firebase_email") == "u@example.com"
 
 
 def test_download_flashcards_csv_sanitizes_formula_like_cells(client, monkeypatch):

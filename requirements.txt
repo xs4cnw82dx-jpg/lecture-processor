@@ -13,4 +13,5 @@ sentry-sdk==2.54.0
 pytest==9.0.2
 imageio-ffmpeg==0.6.0
 flask-compress==1.23
+cryptography==46.0.5
 openpyxl==3.1.5

@@ -103,6 +103,7 @@ function formatTimeLabel(value) {
 
 let currentUser = null;
 let unverifiedEmailUser = null;
+const AUTH_RETURN_STORAGE_KEY = 'lectureProcessorAuthReturnUrl';
 let userCredits = null;
 let idToken = null;
 let currentUserIsAdmin = false;
@@ -420,6 +421,7 @@ const backToSignin = document.getElementById('back-to-signin');
 const signInRequired = document.getElementById('sign-in-required');
 const signInToProcessBtn = document.getElementById('sign-in-to-process-btn');
 const studyPackTitleInput = document.getElementById('study-pack-title-input');
+const studyPackTitleError = document.getElementById('study-pack-title-error');
 const modeTabs = document.querySelectorAll('.mode-tab');
 const modeDescriptionText = document.getElementById('mode-description-text');
 const modeCreditCost = document.getElementById('mode-credit-cost');
@@ -924,6 +926,42 @@ function hideAuthModal() {
     signupForm.reset();
     resetForm.reset();
 }
+function sanitizeAuthReturnUrl(rawValue) {
+    const raw = String(rawValue || '').trim();
+    if (!raw) return '';
+    try {
+        const target = new URL(raw, window.location.origin);
+        if (target.origin !== window.location.origin) return '';
+        return target.pathname + target.search + target.hash;
+    } catch (_) {
+        return '';
+    }
+}
+function setPendingAuthReturnUrl(rawValue) {
+    const safeUrl = sanitizeAuthReturnUrl(rawValue);
+    if (!safeUrl) return;
+    try {
+        sessionStorage.setItem(AUTH_RETURN_STORAGE_KEY, safeUrl);
+    } catch (_) { }
+}
+function consumePendingAuthReturnUrl() {
+    let safeUrl = '';
+    try {
+        safeUrl = sanitizeAuthReturnUrl(sessionStorage.getItem(AUTH_RETURN_STORAGE_KEY) || '');
+        sessionStorage.removeItem(AUTH_RETURN_STORAGE_KEY);
+    } catch (_) {
+        safeUrl = '';
+    }
+    return safeUrl;
+}
+function resumePendingAuthReturnIfNeeded() {
+    const returnUrl = consumePendingAuthReturnUrl();
+    if (!returnUrl) return false;
+    const currentUrl = window.location.pathname + window.location.search + window.location.hash;
+    if (returnUrl === currentUrl) return false;
+    window.location.assign(returnUrl);
+    return true;
+}
 function showAuthView(view) {
     signinView.classList.remove('active');
     signupView.classList.remove('active');
@@ -1017,6 +1055,7 @@ function showEmailVerificationPrompt(user, options = {}) {
             }
             await activateVerifiedUser(refreshedUser);
             hideAuthModal();
+            if (resumePendingAuthReturnIfNeeded()) return;
             showToast('Email verified. You are signed in.', 'success');
         } catch (error) {
             captureClientError(error, 'check_email_verification');
@@ -1124,6 +1163,7 @@ async function signInWithEmail(email, password) {
             return;
         }
         hideAuthModal();
+        if (resumePendingAuthReturnIfNeeded()) return;
         showToast('Signed in successfully!', 'success');
         trackEvent('auth_success', { method: 'email' });
     } catch (e) {
@@ -1186,6 +1226,7 @@ async function signInWithGoogle() {
             return;
         }
         hideAuthModal();
+        if (resumePendingAuthReturnIfNeeded()) return;
         showToast('Signed in successfully!', 'success');
         trackEvent('auth_success', { method: 'google' });
     } catch (e) {
@@ -1322,6 +1363,13 @@ function getStudyPackTitleValue() {
         .trim()
         .slice(0, 120);
 }
+function setStudyPackTitleInvalid(invalid) {
+    if (!studyPackTitleInput) return;
+    studyPackTitleInput.setAttribute('aria-invalid', invalid ? 'true' : 'false');
+    if (studyPackTitleError) {
+        studyPackTitleError.hidden = !invalid;
+    }
+}
 function updateModeCostSummary() {
     if (!modeCostSummary) return;
     modeCostSummary.textContent = '';
@@ -1368,6 +1416,7 @@ function setStudyFeature(value) {
         const active = chip.dataset.studyFeatures === selectedStudyFeatures;
         chip.classList.toggle('active', active);
         chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+        chip.setAttribute('aria-selected', active ? 'true' : 'false');
     });
     if (selectedStudyFeatures === 'none') {
         studyToolsNote.textContent = 'Notes-only output. No flashcards or test questions will be generated.';
@@ -1856,6 +1905,7 @@ async function activateVerifiedUser(user) {
     await fetchUserData();
     await checkPaymentResult();
     await refreshActiveRuntimeJobs(true);
+    resumePendingAuthReturnIfNeeded();
 }
 let handlingDisallowedAuthState = false;
 bootstrap.onAuthStateReady(auth, async (user) => {
@@ -2716,6 +2766,7 @@ function updateProcessButton() {
     const config = modeConfig[currentMode];
     const pdfReady = !config.needsPdf || pdfFile;
     const audioReady = !config.needsAudio || audioFile || hasReadyImportedAudioToken();
+    const titleReady = Boolean(getStudyPackTitleValue());
     const hasCredits = hasEnoughCredits();
     const uploadCooldown = getUploadCooldownSeconds();
     updateUploadEstimatePanel();
@@ -2747,12 +2798,14 @@ function updateProcessButton() {
         disabledReason = 'Add the required slides before processing.';
     } else if (!audioReady) {
         disabledReason = 'Add the required audio before processing.';
+    } else if (!titleReady) {
+        disabledReason = 'Add a lecture topic or name before processing.';
     } else if (!hasCredits) {
         disabledReason = currentMode === 'interview' && userCredits && getTotalInterviewCredits() > 0 && !hasUnlimitedCredit('slides') && userCredits.slides < getInterviewExtraCost()
             ? 'Not enough text extraction credits for the selected interview extras.'
             : 'Not enough credits for this processing mode.';
     }
-    setProcessButtonAvailability(!(pdfReady && audioReady && hasCredits) || resultsLocked, disabledReason);
+    setProcessButtonAvailability(!(pdfReady && audioReady && titleReady && hasCredits) || resultsLocked, disabledReason);
     processButton.querySelector('span').textContent = config.buttonText;
     if (currentUser && !hasCredits && !resultsLocked) {
         if (currentMode === 'interview' && getTotalInterviewCredits() > 0 && !hasUnlimitedCredit('slides') && userCredits.slides < getInterviewExtraCost()) {
@@ -2805,8 +2858,7 @@ function switchMode(mode) {
     generationControls.classList.toggle('hidden', mode === 'interview');
     interviewControls.classList.toggle('hidden', mode !== 'interview');
     if (mode === 'interview') {
-        studyToolsPanel.classList.remove('visible');
-        studyToolsToggle.classList.remove('open');
+        setStudyToolsPanelVisible(false);
     }
     updateModeCreditDisplay();
     setHidden(pdfInfo, !pdfFile);
@@ -2819,6 +2871,15 @@ function switchMode(mode) {
     updateProcessButton();
 }
 modeTabs.forEach(tab => tab.addEventListener('click', () => switchMode(tab.dataset.mode)));
+if (studyPackTitleInput) {
+    studyPackTitleInput.addEventListener('input', () => {
+        setStudyPackTitleInvalid(false);
+        updateProcessButton();
+    });
+    studyPackTitleInput.addEventListener('blur', () => {
+        setStudyPackTitleInvalid(!getStudyPackTitleValue());
+    });
+}
 modeTabs.forEach((tab, index) => tab.addEventListener('keydown', (e) => {
     if (!modeTabs.length) return;
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
@@ -2848,8 +2909,7 @@ advancedSettingsToggle.addEventListener('click', () => {
     setAdvancedSettingsVisible(visible);
     if (!visible) {
         setOutputLanguageMenuVisible(false);
-        studyToolsPanel.classList.remove('visible');
-        studyToolsToggle.classList.remove('open');
+        setStudyToolsPanelVisible(false);
     }
 });
 
@@ -3501,6 +3561,7 @@ async function processFiles() {
     const config = modeConfig[currentMode];
     const studyPackTitle = getStudyPackTitleValue();
     if (!studyPackTitle) {
+        setStudyPackTitleInvalid(true);
         showToast('Lecture Topic / Name is required.', 'error');
         if (studyPackTitleInput && typeof studyPackTitleInput.focus === 'function') {
             studyPackTitleInput.focus();
@@ -4201,6 +4262,9 @@ function maybeOpenAuthModalFromQuery() {
     const params = new URLSearchParams(window.location.search);
     const requested = String(params.get('auth') || '').trim().toLowerCase();
     if (!requested) return;
+    setPendingAuthReturnUrl(params.get('next') || '');
+    params.delete('next');
+    if (currentUser && resumePendingAuthReturnIfNeeded()) return;
     const view = ['signin', 'signup', 'reset'].includes(requested) ? requested : 'signin';
     showAuthModal(view);
     params.delete('auth');
@@ -4808,14 +4872,27 @@ if (quickstartDismissBtn) {
     });
 }
 progressRetryBtn.addEventListener('click', retryStatusCheckNow);
+function setStudyToolsPanelVisible(visible) {
+    const isVisible = Boolean(visible);
+    studyToolsPanel.classList.toggle('visible', isVisible);
+    studyToolsPanel.setAttribute('aria-hidden', isVisible ? 'false' : 'true');
+    studyToolsToggle.classList.toggle('open', isVisible);
+    studyToolsToggle.setAttribute('aria-expanded', isVisible ? 'true' : 'false');
+}
 studyToolsToggle.addEventListener('click', (e) => {
     e.stopPropagation();
-    studyToolsPanel.classList.toggle('visible');
-    studyToolsToggle.classList.toggle('open', studyToolsPanel.classList.contains('visible'));
+    setStudyToolsPanelVisible(!studyToolsPanel.classList.contains('visible'));
+});
+studyToolsToggle.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        setStudyToolsPanelVisible(false);
+        studyToolsToggle.focus();
+    }
 });
 studyToolChips.forEach(chip => {
     chip.addEventListener('click', () => {
         setStudyFeature(chip.dataset.studyFeatures || 'none');
+        setStudyToolsPanelVisible(false);
     });
 });
 flashcardAmountChips.forEach(chip => {
@@ -4971,8 +5048,7 @@ languageOnboardingOverlay.addEventListener('click', (e) => {
 });
 document.addEventListener('click', (e) => {
     if (!studyToolsPanel.contains(e.target) && !studyToolsToggle.contains(e.target)) {
-        studyToolsPanel.classList.remove('visible');
-        studyToolsToggle.classList.remove('open');
+        setStudyToolsPanelVisible(false);
     }
     if (!outputLanguagePicker.contains(e.target)) {
         setOutputLanguageMenuVisible(false);

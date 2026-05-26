@@ -204,6 +204,8 @@
                   </div>
                 </div>
                 <div class="actions editor-actions">
+                  <span class="pack-save-status builder-status saved" id="pack-save-status" role="status"
+                    aria-live="polite" aria-atomic="true">Saved</span>
                   <button class="btn" id="open-builder-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                       stroke-width="2">
                       <path d="M3 3h7v7H3z"></path>
@@ -272,24 +274,28 @@
                       <polygon points="5 3 19 12 5 21 5 3"></polygon>
                     </svg>Learn Mode</button>
                 </div>
-                <div class="editor-tabs">
-                  <button class="editor-tab active" data-editor-pane="notes"><svg viewBox="0 0 24 24" fill="none"
+                <div class="editor-tabs" role="tablist" aria-label="Study pack sections">
+                  <button class="editor-tab active" id="editor-tab-notes" data-editor-pane="notes" role="tab"
+                    aria-selected="true" aria-controls="editor-pane-notes" tabindex="0"><svg viewBox="0 0 24 24" fill="none"
                       stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                       <polyline points="14 2 14 8 20 8"></polyline>
                     </svg>Notes</button>
-                  <button class="editor-tab" data-editor-pane="flashcards"><svg viewBox="0 0 24 24" fill="none"
+                  <button class="editor-tab" id="editor-tab-flashcards" data-editor-pane="flashcards" role="tab"
+                    aria-selected="false" aria-controls="editor-pane-flashcards" tabindex="-1"><svg viewBox="0 0 24 24" fill="none"
                       stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <rect x="2" y="4" width="20" height="16" rx="2"></rect>
                       <line x1="2" y1="12" x2="22" y2="12"></line>
                     </svg>Flashcards</button>
-                  <button class="editor-tab" data-editor-pane="test"><svg viewBox="0 0 24 24" fill="none"
+                  <button class="editor-tab" id="editor-tab-test" data-editor-pane="test" role="tab"
+                    aria-selected="false" aria-controls="editor-pane-test" tabindex="-1"><svg viewBox="0 0 24 24" fill="none"
                       stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
                       <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
                     </svg>Practice Test</button>
                 </div>
-                <div class="editor-pane active" id="editor-pane-notes">
+                <div class="editor-pane active" id="editor-pane-notes" role="tabpanel" aria-labelledby="editor-tab-notes"
+                  aria-hidden="false">
                   <div class="notes-pane-shell" id="notes-pane-shell">
                     <div class="notes-controls">
                       <div class="notes-controls-main">
@@ -345,12 +351,14 @@
                     </div>
                   </div>
                 </div>
-                <div class="editor-pane" id="editor-pane-flashcards">
+                <div class="editor-pane" id="editor-pane-flashcards" role="tabpanel" aria-labelledby="editor-tab-flashcards"
+                  aria-hidden="true">
                   <div class="editor-toolbar"><span class="editor-count" id="flashcard-count">0 flashcards</span><button
                       class="btn" id="add-flashcard-btn">+ Add flashcard</button></div>
                   <div class="editor-list" id="flashcard-editor-list"></div>
                 </div>
-                <div class="editor-pane" id="editor-pane-test">
+                <div class="editor-pane" id="editor-pane-test" role="tabpanel" aria-labelledby="editor-tab-test"
+                  aria-hidden="true">
                   <div class="editor-toolbar"><span class="editor-count" id="question-count">0 practice
                       questions</span><button class="btn" id="add-question-btn">+ Add question</button></div>
                   <div class="editor-list" id="question-editor-list"></div>
@@ -383,30 +391,35 @@
 
       <!-- Setup tabs + panes (hidden when mode picker is shown) -->
       <div id="setup-main-content">
-        <div class="setup-tabs" id="setup-tabs">
-          <button class="setup-tab active" data-setup-pane="mastery"><svg viewBox="0 0 24 24" fill="none"
+        <div class="setup-tabs" id="setup-tabs" role="tablist" aria-label="Session setup sections">
+          <button class="setup-tab active" id="setup-tab-mastery" data-setup-pane="mastery" role="tab"
+            aria-selected="true" aria-controls="setup-pane-mastery" tabindex="0"><svg viewBox="0 0 24 24" fill="none"
               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5C5.7 4 7 4.8 8 6c1-1.2 2.3-2 3.5-2a2.5 2.5 0 0 1 0 5H10"></path>
               <path d="M6 9l6 6 6-6"></path>
             </svg>Mastery</button>
-          <button class="setup-tab" data-setup-pane="lessons"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          <button class="setup-tab" id="setup-tab-lessons" data-setup-pane="lessons" role="tab"
+            aria-selected="false" aria-controls="setup-pane-lessons" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="2" y="4" width="20" height="16" rx="2"></rect>
               <line x1="2" y1="12" x2="22" y2="12"></line>
             </svg>Lessons</button>
-          <button class="setup-tab" data-setup-pane="settings"><svg viewBox="0 0 24 24" fill="none"
+          <button class="setup-tab" id="setup-tab-settings" data-setup-pane="settings" role="tab"
+            aria-selected="false" aria-controls="setup-pane-settings" tabindex="-1"><svg viewBox="0 0 24 24" fill="none"
               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="3"></circle>
               <path
                 d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.77 1.05 1.37 1.22H21a2 2 0 0 1 0 4h-.09c-.6.17-1.11.62-1.37 1.22z">
               </path>
             </svg>Settings</button>
-          <button class="setup-tab" data-setup-pane="algorithm"><svg viewBox="0 0 24 24" fill="none"
+          <button class="setup-tab" id="setup-tab-algorithm" data-setup-pane="algorithm" role="tab"
+            aria-selected="false" aria-controls="setup-pane-algorithm" tabindex="-1"><svg viewBox="0 0 24 24" fill="none"
               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
             </svg>Algorithm</button>
         </div>
-        <div class="setup-pane active" id="setup-pane-mastery">
+        <div class="setup-pane active" id="setup-pane-mastery" role="tabpanel" aria-labelledby="setup-tab-mastery"
+          aria-hidden="false">
           <div class="mastery-section">
             <div class="mastery-stat"><span>Cards seen:</span> <strong id="mastery-seen">0</strong> / <strong
                 id="mastery-total">0</strong></div>
@@ -438,7 +451,8 @@
               target recommendation.</div>
           </div>
         </div>
-        <div class="setup-pane" id="setup-pane-lessons">
+        <div class="setup-pane" id="setup-pane-lessons" role="tabpanel" aria-labelledby="setup-tab-lessons"
+          aria-hidden="true">
           <p class="u-text-center u-color-muted u-font-sm u-mb-16">Choose which lesson
             types to include:</p>
           <div class="lesson-grid" id="lesson-grid">
@@ -499,7 +513,8 @@
             </button>
           </div>
         </div>
-        <div class="setup-pane" id="setup-pane-settings">
+        <div class="setup-pane" id="setup-pane-settings" role="tabpanel" aria-labelledby="setup-tab-settings"
+          aria-hidden="true">
           <div class="settings-list" id="settings-list">
             <button type="button" class="setting-row" data-setting="swapAnswerQuestion" role="switch" aria-checked="false"><span class="setting-label">Swap answer and
                 question</span>
@@ -533,7 +548,8 @@
             </button>
           </div>
         </div>
-        <div class="setup-pane" id="setup-pane-algorithm">
+        <div class="setup-pane" id="setup-pane-algorithm" role="tabpanel" aria-labelledby="setup-tab-algorithm"
+          aria-hidden="true">
           <p class="u-text-center u-color-muted u-font-sm u-mb-16">Adjust how cards are
             selected for review:</p>
           <div class="algo-lane" id="algo-lane"></div>
@@ -718,24 +734,28 @@
             <button class="btn" id="builder-share-btn" disabled>Share</button>
           </div>
         </div>
-        <div class="builder-nav">
-          <button class="builder-nav-btn active" data-builder-pane="info"><svg viewBox="0 0 24 24" fill="none"
+        <div class="builder-nav" role="tablist" aria-label="Builder sections">
+          <button class="builder-nav-btn active" id="builder-tab-info" data-builder-pane="info" role="tab"
+            aria-selected="true" aria-controls="builder-pane-info" tabindex="0"><svg viewBox="0 0 24 24" fill="none"
               stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="10"></circle>
               <line x1="12" y1="16" x2="12" y2="12"></line>
               <line x1="12" y1="8" x2="12.01" y2="8"></line>
             </svg>Deck Info</button>
-          <button class="builder-nav-btn" data-builder-pane="flashcards"><svg viewBox="0 0 24 24" fill="none"
+          <button class="builder-nav-btn" id="builder-tab-flashcards" data-builder-pane="flashcards" role="tab"
+            aria-selected="false" aria-controls="builder-pane-flashcards" tabindex="-1"><svg viewBox="0 0 24 24" fill="none"
               stroke="currentColor" stroke-width="2">
               <rect x="2" y="4" width="20" height="16" rx="2"></rect>
               <line x1="2" y1="12" x2="22" y2="12"></line>
             </svg>Flashcards</button>
-          <button class="builder-nav-btn" data-builder-pane="test"><svg viewBox="0 0 24 24" fill="none"
+          <button class="builder-nav-btn" id="builder-tab-test" data-builder-pane="test" role="tab"
+            aria-selected="false" aria-controls="builder-pane-test" tabindex="-1"><svg viewBox="0 0 24 24" fill="none"
               stroke="currentColor" stroke-width="2">
               <path d="M9 11l3 3L22 4"></path>
               <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
             </svg>Practice Test</button>
-          <button class="builder-nav-btn" data-builder-pane="import"><svg viewBox="0 0 24 24" fill="none"
+          <button class="builder-nav-btn" id="builder-tab-import" data-builder-pane="import" role="tab"
+            aria-selected="false" aria-controls="builder-pane-import" tabindex="-1"><svg viewBox="0 0 24 24" fill="none"
               stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
               <polyline points="17 8 12 3 7 8"></polyline>
@@ -758,7 +778,8 @@
             <div class="builder-helper" id="builder-summary">0 cards · 0 questions</div>
           </div>
 
-          <section class="builder-pane active" id="builder-pane-info">
+          <section class="builder-pane active" id="builder-pane-info" role="tabpanel" aria-labelledby="builder-tab-info"
+            aria-hidden="false">
             <div class="builder-card">
               <div class="builder-info-banner"><span>Configure title, folder, metadata, and notes before
                   learning.</span><button class="btn" id="builder-open-learn-shortcut">Open Learn Setup</button></div>
@@ -784,7 +805,8 @@
             </div>
           </section>
 
-          <section class="builder-pane" id="builder-pane-flashcards">
+          <section class="builder-pane" id="builder-pane-flashcards" role="tabpanel" aria-labelledby="builder-tab-flashcards"
+            aria-hidden="true">
             <div class="builder-card">
               <div class="builder-cta-strip"><button class="btn primary" id="builder-add-card-btn">+ Add
                   Flashcard</button><button class="btn" id="builder-add-card-batch-btn">+ Add 5</button></div>
@@ -792,7 +814,8 @@
             </div>
           </section>
 
-          <section class="builder-pane" id="builder-pane-test">
+          <section class="builder-pane" id="builder-pane-test" role="tabpanel" aria-labelledby="builder-tab-test"
+            aria-hidden="true">
             <div class="builder-card">
               <div class="builder-cta-strip"><button class="btn primary" id="builder-add-question-btn">+ Add
                   Question</button><button class="btn" id="builder-add-question-batch-btn">+ Add 3</button></div>
@@ -800,7 +823,8 @@
             </div>
           </section>
 
-          <section class="builder-pane" id="builder-pane-import">
+          <section class="builder-pane" id="builder-pane-import" role="tabpanel" aria-labelledby="builder-tab-import"
+            aria-hidden="true">
             <div class="builder-card">
               <div class="builder-helper u-mb-8">Import data directly into this pack and preview
                 before applying.</div>
