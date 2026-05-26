@@ -273,6 +273,7 @@ def test_processing_pages_render_updated_shell_labels(client):
     batch_html = batch_response.get_data(as_text=True)
     assert 'Batch Processing · Lecture Notes' in batch_html
     assert 'Batch Mode Lectures' not in batch_html
+    assert 'd="m3 7 9 6 9-6"' in batch_html
 
     audio_batch_response = client.get('/batch_mode_audio_transcription')
     assert audio_batch_response.status_code == 200
@@ -292,6 +293,7 @@ def test_processing_pages_render_updated_shell_labels(client):
     assert 'Instant Batch · Lecture Notes' in instant_batch_html
     assert 'data-instant-batch="1"' in instant_batch_html
     assert 'start processing immediately' in instant_batch_html.lower()
+    assert 'd="m3 7 9 6 9-6"' not in instant_batch_html
 
 
 def test_more_tools_pages_and_links_render(client):

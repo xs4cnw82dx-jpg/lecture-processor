@@ -87,6 +87,20 @@
     ].join(' \u00b7 ');
   }
 
+  function formatPackMode(mode) {
+    var safeMode = String(mode || '').trim().toLowerCase();
+    var labels = {
+      'manual': 'Study Pack',
+      'lecture-notes': 'Lecture Notes',
+      'slides-only': 'Slides Extraction',
+      'interview': 'Interview Transcription',
+      'audio-transcription': 'Audio Transcription',
+      'text-combine': 'Lecture Notes',
+      'voice-note': 'Voice Note'
+    };
+    return labels[safeMode] || 'Study Pack';
+  }
+
   function applyPricingCatalog(target) {
     var rootNode = target && typeof target.querySelectorAll === 'function' ? target : root.document;
     if (!rootNode) return;
@@ -116,7 +130,8 @@
     formatCount: formatCount,
     formatCurrencyFromCents: formatCurrencyFromCents,
     formatDateTimeFromEpochSeconds: formatDateTimeFromEpochSeconds,
-    formatPackCounts: formatPackCounts
+    formatPackCounts: formatPackCounts,
+    formatPackMode: formatPackMode
   };
 
   if (typeof module !== 'undefined' && module.exports) {

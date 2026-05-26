@@ -1422,7 +1422,7 @@ var builderPaneButtons = document.querySelectorAll('.builder-nav-btn[data-builde
 var builderTitleInput = document.getElementById('builder-title-input'), builderFolderSelect = document.getElementById('builder-folder-select'), builderCourseInput = document.getElementById('builder-course-input'), builderSubjectInput = document.getElementById('builder-subject-input'), builderSemesterInput = document.getElementById('builder-semester-input'), builderBlockInput = document.getElementById('builder-block-input'), builderNotesInput = document.getElementById('builder-notes-input');
 var builderAdvancedMetaBtn = document.getElementById('builder-advanced-meta-btn'), builderAdvancedMetaPanel = document.getElementById('builder-advanced-meta-panel');
 var builderFlashcardList = document.getElementById('builder-flashcard-list'), builderQuestionList = document.getElementById('builder-question-list'), builderAddCardBtn = document.getElementById('builder-add-card-btn'), builderAddCardBatchBtn = document.getElementById('builder-add-card-batch-btn'), builderAddQuestionBtn = document.getElementById('builder-add-question-btn'), builderAddQuestionBatchBtn = document.getElementById('builder-add-question-batch-btn');
-var builderImportType = document.getElementById('builder-import-type'), builderImportMode = document.getElementById('builder-import-mode'), builderCsvDrop = document.getElementById('builder-csv-drop'), builderCsvInput = document.getElementById('builder-csv-input'), builderTemplateBtn = document.getElementById('builder-template-btn'), builderApplyImportBtn = document.getElementById('builder-apply-import-btn'), builderImportSummary = document.getElementById('builder-import-summary'), builderPreview = document.getElementById('builder-preview'), builderPreviewTable = document.getElementById('builder-preview-table'), builderImportErrors = document.getElementById('builder-import-errors');
+var builderImportType = document.getElementById('builder-import-type'), builderImportMode = document.getElementById('builder-import-mode'), builderCsvDrop = document.getElementById('builder-csv-drop'), builderCsvInput = document.getElementById('builder-csv-input'), builderTemplateBtn = document.getElementById('builder-template-btn'), builderApplyImportBtn = document.getElementById('builder-apply-import-btn'), builderImportSummary = document.getElementById('builder-import-summary'), builderPreview = document.getElementById('builder-preview'), builderPreviewList = document.getElementById('builder-preview-list'), builderImportErrors = document.getElementById('builder-import-errors');
 var builderExitOverlay = document.getElementById('builder-exit-overlay'), builderExitSave = document.getElementById('builder-exit-save'), builderExitDiscard = document.getElementById('builder-exit-discard'), builderExitCancel = document.getElementById('builder-exit-cancel');
 var learnNotesContent = document.getElementById('learn-notes-content');
 var folderModalOverlay = document.getElementById('folder-modal-overlay'), folderModalTitle = document.getElementById('folder-modal-title'), folderModalClose = document.getElementById('folder-modal-close'), folderModalCancel = document.getElementById('folder-modal-cancel'), folderModalSave = document.getElementById('folder-modal-save'), folderNameInput = document.getElementById('folder-name-input'), folderCourseInput = document.getElementById('folder-course-input'), folderSubjectInput = document.getElementById('folder-subject-input'), folderSemesterInput = document.getElementById('folder-semester-input'), folderBlockInput = document.getElementById('folder-block-input'), folderExamDateInput = document.getElementById('folder-exam-date-input');
@@ -1624,6 +1624,12 @@ function formatRuntimeJobMode(mode) {
   if (safeMode === 'audio-transcription') return 'Audio Transcription';
   if (safeMode === 'voice-note') return 'Voice Note';
   return 'Processing';
+}
+function formatStudyPackMode(mode) {
+  if (displayFormatUtils && typeof displayFormatUtils.formatPackMode === 'function') {
+    return displayFormatUtils.formatPackMode(mode);
+  }
+  return 'Study Pack';
 }
 function formatRuntimeJobStartedAt(seconds) {
   var safeSeconds = Number(seconds || 0);
@@ -2675,7 +2681,7 @@ function renderBuilderFlashcards() {
     var addCardBtn = document.getElementById('builder-empty-add-card-btn');
     var importCardBtn = document.getElementById('builder-empty-import-card-btn');
     if (addCardBtn) { addCardBtn.addEventListener('click', function () { builderAddCardBtn.click(); }); }
-    if (importCardBtn) { importCardBtn.addEventListener('click', function () { setBuilderPane('import'); builderImportType.value = 'flashcards'; }); }
+    if (importCardBtn) { importCardBtn.addEventListener('click', function () { setBuilderPane('import'); builderImportType.value = 'flashcards'; clearBuilderImportState(); }); }
     updateBuilderStats();
     return;
   }
@@ -2698,7 +2704,7 @@ function renderBuilderQuestions() {
     var addQuestionBtn = document.getElementById('builder-empty-add-question-btn');
     var importQuestionBtn = document.getElementById('builder-empty-import-question-btn');
     if (addQuestionBtn) { addQuestionBtn.addEventListener('click', function () { builderAddQuestionBtn.click(); }); }
-    if (importQuestionBtn) { importQuestionBtn.addEventListener('click', function () { setBuilderPane('import'); builderImportType.value = 'questions'; }); }
+    if (importQuestionBtn) { importQuestionBtn.addEventListener('click', function () { setBuilderPane('import'); builderImportType.value = 'test'; clearBuilderImportState(); }); }
     updateBuilderStats();
     return;
   }
@@ -2731,8 +2737,9 @@ function setBuilderPane(nextPane) {
 }
 function clearBuilderImportState() {
   builderImportParsed = null;
-  builderApplyImportBtn.disabled = true;
+  setBuilderImportButtonState('Apply Import', true);
   setHidden(builderPreview, true);
+  if (builderPreviewList) builderPreviewList.innerHTML = '';
   setHidden(builderImportErrors, true);
   builderImportErrors.textContent = '';
   builderImportSummary.textContent = 'No file loaded.';
@@ -2943,6 +2950,11 @@ function parseCsvRows(text) {
 function normalizeHeader(name) {
   return String(name || '').trim().toLowerCase().replace(/[\s\-]+/g, '_');
 }
+function csvHeadersLookLikePracticeTest(headers) {
+  return ['question', 'option_a', 'option_b', 'option_c', 'option_d', 'answer'].every(function (name) {
+    return headers.indexOf(name) >= 0;
+  });
+}
 function parseBuilderCsvContent(rawText, type) {
   var parsedCsv = parseCsvRows(rawText || '');
   var rows = parsedCsv.rows || [];
@@ -2957,6 +2969,9 @@ function parseBuilderCsvContent(rawText, type) {
     return { type: type, items: [], errors: ['CSV has too many rows. Please keep imports to 5,000 data rows or fewer.'], preview: [] };
   }
   var headers = (rows[0] || []).map(function (header) { return normalizeHeader(header.replace(/^\uFEFF/, '')); });
+  if (type === 'flashcards' && csvHeadersLookLikePracticeTest(headers)) {
+    type = 'test';
+  }
   var errors = [];
   var items = [];
   function idx(name) { return headers.indexOf(name); }
@@ -3023,20 +3038,51 @@ function parseBuilderCsvContent(rawText, type) {
   }
   return { type: type, items: items, errors: errors, preview: items.slice(0, 10) };
 }
+function formatBuilderImportCount(count) {
+  var safeCount = Math.max(0, parseInt(count, 10) || 0);
+  return safeCount + ' valid row' + (safeCount === 1 ? '' : 's');
+}
+function setBuilderImportButtonState(label, disabled) {
+  if (!builderApplyImportBtn) return;
+  builderApplyImportBtn.textContent = label || 'Apply Import';
+  builderApplyImportBtn.disabled = disabled !== false;
+}
+function renderBuilderQuestionPreviewCard(item, index) {
+  var options = Array.isArray(item.options) ? item.options.slice(0, 4) : [];
+  while (options.length < 4) options.push('');
+  var optionHtml = options.map(function (option, optionIndex) {
+    return '<div class="builder-preview-field"><div class="builder-preview-label">Option ' + escapeHtml(['A', 'B', 'C', 'D'][optionIndex]) + '</div><div class="builder-preview-value">' + escapeHtml(option) + '</div></div>';
+  }).join('');
+  var answerIndex = options.indexOf(item.answer);
+  var answerLabel = answerIndex >= 0 ? (['A', 'B', 'C', 'D'][answerIndex] + ': ' + item.answer) : item.answer;
+  return '<article class="builder-import-preview-card">'
+    + '<div class="builder-preview-card-head">Question ' + (index + 1) + '</div>'
+    + '<div class="builder-preview-field builder-preview-field-wide"><div class="builder-preview-label">Question</div><div class="builder-preview-value builder-preview-question">' + escapeHtml(item.question || '') + '</div></div>'
+    + '<div class="builder-preview-options">' + optionHtml + '</div>'
+    + '<div class="builder-preview-field builder-preview-field-wide"><div class="builder-preview-label">Correct Answer</div><div class="builder-preview-value">' + escapeHtml(answerLabel || '') + '</div></div>'
+    + '<div class="builder-preview-field builder-preview-field-wide"><div class="builder-preview-label">Explanation</div><div class="builder-preview-value builder-preview-explanation">' + escapeHtml(item.explanation || 'No explanation provided.') + '</div></div>'
+    + '</article>';
+}
+function renderBuilderFlashcardPreviewCard(item, index) {
+  return '<article class="builder-import-preview-card">'
+    + '<div class="builder-preview-card-head">Flashcard ' + (index + 1) + '</div>'
+    + '<div class="builder-preview-field builder-preview-field-wide"><div class="builder-preview-label">Front</div><div class="builder-preview-value">' + escapeHtml(item.front || '') + '</div></div>'
+    + '<div class="builder-preview-field builder-preview-field-wide"><div class="builder-preview-label">Back</div><div class="builder-preview-value builder-preview-explanation">' + escapeHtml(item.back || '') + '</div></div>'
+    + '</article>';
+}
 function renderBuilderImportPreview() {
   if (!builderImportParsed || !builderImportParsed.items.length) {
     setHidden(builderPreview, true);
+    if (builderPreviewList) builderPreviewList.innerHTML = '';
     return;
   }
   var parsed = builderImportParsed;
-  var headers = parsed.type === 'flashcards' ? ['Front', 'Back'] : ['Question', 'Answer', 'Explanation'];
-  var rowsHtml = parsed.preview.map(function (item) {
-    if (parsed.type === 'flashcards') {
-      return '<tr><td>' + escapeHtml(item.front) + '</td><td>' + escapeHtml(item.back) + '</td></tr>';
-    }
-    return '<tr><td>' + escapeHtml(item.question) + '</td><td>' + escapeHtml(item.answer) + '</td><td>' + escapeHtml(item.explanation || '') + '</td></tr>';
+  var rowsHtml = parsed.preview.map(function (item, index) {
+    return parsed.type === 'flashcards'
+      ? renderBuilderFlashcardPreviewCard(item, index)
+      : renderBuilderQuestionPreviewCard(item, index);
   }).join('');
-  setSafeInnerHtml(builderPreviewTable, '<thead><tr>' + headers.map(function (header) { return '<th>' + escapeHtml(header) + '</th>'; }).join('') + '</tr></thead><tbody>' + rowsHtml + '</tbody>');
+  setSafeInnerHtml(builderPreviewList, rowsHtml);
   setHidden(builderPreview, false);
 }
 function handleBuilderCsvFile(file) {
@@ -3046,9 +3092,15 @@ function handleBuilderCsvFile(file) {
     builderImportSummary.textContent = 'Loading CSV parser...';
     ensureCsvParser().then(function () {
       var parsed = parseBuilderCsvContent(String(reader.result || ''), builderImportType.value);
+      parsed.applied = false;
       builderImportParsed = parsed;
-      builderApplyImportBtn.disabled = !parsed.items.length;
-      builderImportSummary.textContent = 'Loaded ' + parsed.items.length + ' valid row(s).';
+      if (builderImportType.value !== parsed.type) {
+        builderImportType.value = parsed.type;
+      }
+      setBuilderImportButtonState('Apply Import', !parsed.items.length);
+      builderImportSummary.textContent = parsed.items.length
+        ? 'Loaded ' + formatBuilderImportCount(parsed.items.length) + '. Importing automatically...'
+        : 'No valid rows found.';
       if (parsed.errors.length) {
         setHidden(builderImportErrors, false);
         setSafeInnerHtml(builderImportErrors, parsed.errors.map(function (err) { return '<div>' + escapeHtml(err) + '</div>'; }).join(''));
@@ -3057,9 +3109,12 @@ function handleBuilderCsvFile(file) {
         builderImportErrors.textContent = '';
       }
       renderBuilderImportPreview();
+      if (parsed.items.length) {
+        applyBuilderImport({ autoSave: true });
+      }
     }).catch(function () {
       builderImportParsed = null;
-      builderApplyImportBtn.disabled = true;
+      setBuilderImportButtonState('Apply Import', true);
       builderImportSummary.textContent = 'CSV parser could not load.';
       setHidden(builderImportErrors, false);
       builderImportErrors.textContent = 'CSV parser could not load. Check your connection and try again.';
@@ -3070,9 +3125,40 @@ function handleBuilderCsvFile(file) {
   };
   reader.readAsText(file, 'utf-8');
 }
-function applyBuilderImport() {
+function saveImportedBuilderDraft(importedCount) {
+  var wasCreateMode = builderMode === 'create';
+  builderAutoSaving = true;
+  updateBuilderDirtyIndicator();
+  setBuilderImportButtonState('Saving...', true);
+  return saveBuilderPack(false, {
+    silent: true,
+    refreshAfterSave: wasCreateMode,
+    skipAutoSave: true,
+    autoSavedToast: true
+  }).then(function (saved) {
+    if (saved) {
+      builderImportSummary.textContent = 'Imported ' + formatBuilderImportCount(importedCount) + ' and saved automatically.';
+      setBuilderImportButtonState('Imported', true);
+      return true;
+    }
+    builderImportSummary.textContent = 'Imported ' + formatBuilderImportCount(importedCount) + ', but automatic save failed. Use Save Pack before exiting.';
+    setBuilderImportButtonState('Imported', true);
+    return false;
+  }).finally(function () {
+    builderAutoSaving = false;
+    updateBuilderDirtyIndicator();
+  });
+}
+function applyBuilderImport(options) {
   if (!builderDraft || !builderImportParsed || !builderImportParsed.items.length) {
-    return;
+    return Promise.resolve(false);
+  }
+  var opts = options || {};
+  if (builderImportParsed.applied) {
+    if (!opts.autoSave) {
+      showToast('This CSV has already been imported.', 'info');
+    }
+    return Promise.resolve(false);
   }
   var replaceMode = builderImportMode.value === 'replace';
   if (builderImportParsed.type === 'flashcards') {
@@ -3083,9 +3169,15 @@ function applyBuilderImport() {
     builderDraft.test_questions = replaceMode ? incoming : (builderDraft.test_questions || []).concat(incoming);
     renderBuilderQuestions();
   }
-  markBuilderDirty(true);
+  builderImportParsed.applied = true;
+  markBuilderDirty(true, opts.autoSave ? { skipAutoSave: true } : {});
   updateBuilderStats();
-  showToast('Imported ' + builderImportParsed.items.length + ' row(s).');
+  setBuilderImportButtonState('Imported', true);
+  if (opts.autoSave) {
+    return saveImportedBuilderDraft(builderImportParsed.items.length);
+  }
+  showToast('Imported ' + formatBuilderImportCount(builderImportParsed.items.length) + '.');
+  return Promise.resolve(true);
 }
 function downloadBuilderTemplate() {
   var csvText = '';
@@ -3157,6 +3249,7 @@ function renderLessonCards() {
   }
   if (!hf) { sessionLessons.flashcards = false; sessionLessons.write = false; sessionLessons.match = false; }
   if (!ht) { sessionLessons.test = false; }
+  if (ht && !hf && !sessionLessons.test) { sessionLessons.test = true; }
   fc.classList.toggle('selected', sessionLessons.flashcards);
   tc.classList.toggle('selected', sessionLessons.test);
   wc.classList.toggle('selected', sessionLessons.write);
@@ -3575,6 +3668,24 @@ function showMatchResults() {
 }
 matchPlayAgainBtn.addEventListener('click', function () { initMatchMode(); });
 /* ── Editor pane ── */
+function hasReadableNotes(pack) {
+  return !!String(pack && pack.notes_markdown || '').trim();
+}
+function hasFlashcards(pack) {
+  return !!(pack && Array.isArray(pack.flashcards) && pack.flashcards.length);
+}
+function hasPracticeQuestions(pack) {
+  return !!(pack && Array.isArray(pack.test_questions) && pack.test_questions.length);
+}
+function isPracticeOnlyPack(pack) {
+  return !hasReadableNotes(pack) && !hasFlashcards(pack) && hasPracticeQuestions(pack);
+}
+function getContentPreferredEditorPane(pack, currentPane) {
+  if (isPracticeOnlyPack(pack)) {
+    return 'test';
+  }
+  return currentPane || 'notes';
+}
 function setEditorPane(pane) {
   activeEditorPane = pane;
   syncTabSelection(editorTabs, 'editorPane', pane);
@@ -3974,7 +4085,7 @@ function renderPacks() {
       div.removeAttribute('aria-current');
     }
     var titleText = escapeHtml(p.title || 'Untitled pack');
-    var modeText = escapeHtml(formatRuntimeJobMode(p.mode || ''));
+    var modeText = escapeHtml(formatStudyPackMode(p.mode || ''));
     var metaParts = [p.course, p.subject, p.semester, p.block].filter(Boolean).map(escapeHtml);
     var defaultFolderText = (p.mode === 'interview')
       ? 'Folder: Interviews'
@@ -4044,7 +4155,7 @@ function updatePackSummary() {
   packSummaryTitle.textContent = selectedPack.title || 'Untitled pack';
   packSummaryMeta.textContent = buildMetadataText(
     [selectedPack.course, selectedPack.subject, selectedPack.semester, selectedPack.block].filter(Boolean),
-    formatRuntimeJobMode(selectedPack.mode || '')
+    formatStudyPackMode(selectedPack.mode || '')
   );
   packStatNotes.textContent = selectedPack.notes_markdown ? 'Has notes' : 'No notes';
   packStatCards.textContent = formatItemCount((selectedPack.flashcards || []).length, 'flashcard');
@@ -4570,7 +4681,7 @@ function openPack(packId) {
     reapplyHighlightsForPack();
     initAudioForSelectedPack();
     renderFlashcardEditor(); renderQuestionEditor();
-    setEditorPane(activeEditorPane);
+    setEditorPane(getContentPreferredEditorPane(selectedPack, activeEditorPane));
     updateShareActionAvailability();
     // Deep link: auto-open learn mode if URL says so
     if (openLearnFromUrl && !autoLearnConsumed && selectedPack.study_pack_id === learnPackFromUrl) {
@@ -4578,6 +4689,8 @@ function openPack(packId) {
       var preferMode = focusFromUrl || '';
       if (preferMode && ['flashcards', 'test', 'write', 'match'].indexOf(preferMode) >= 0) {
         openLearnStageWithMode(preferMode, fullscreenFromUrl);
+      } else if (isPracticeOnlyPack(selectedPack)) {
+        openLearnStageWithMode('test', fullscreenFromUrl);
       } else {
         openSessionSetup();
       }
@@ -5133,7 +5246,7 @@ builderCsvInput.addEventListener('change', function () {
     handleBuilderCsvFile(builderCsvInput.files[0]);
   }
 });
-builderApplyImportBtn.addEventListener('click', applyBuilderImport);
+builderApplyImportBtn.addEventListener('click', function () { applyBuilderImport({ autoSave: true }); });
 builderTemplateBtn.addEventListener('click', downloadBuilderTemplate);
 builderExitSave.addEventListener('click', function () { closeBuilderExitModal('save'); });
 builderExitDiscard.addEventListener('click', function () { closeBuilderExitModal('discard'); });
