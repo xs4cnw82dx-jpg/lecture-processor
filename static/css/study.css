@@ -4356,25 +4356,70 @@
       border-bottom: 1px solid var(--gray-200)
     }
 
-    .builder-preview-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: .82rem
+    .builder-preview-list {
+      display: grid;
+      gap: 12px;
+      max-height: min(62vh, 680px);
+      overflow: auto;
+      padding: 12px
     }
 
-    .builder-preview-table th,
-    .builder-preview-table td {
-      padding: 8px 10px;
-      border-bottom: 1px solid var(--gray-100);
-      text-align: left;
-      vertical-align: top
+    .builder-import-preview-card {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid var(--gray-200);
+      border-radius: 10px;
+      background: var(--gray-50)
     }
 
-    .builder-preview-table th {
-      font-size: .74rem;
+    .builder-preview-card-head {
+      font-size: .78rem;
+      font-weight: 800;
+      color: var(--gray-700)
+    }
+
+    .builder-preview-options {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px
+    }
+
+    .builder-preview-field {
+      min-width: 0
+    }
+
+    .builder-preview-field-wide {
+      grid-column: 1 / -1
+    }
+
+    .builder-preview-label {
+      margin-bottom: 5px;
+      color: var(--gray-500);
+      font-size: .72rem;
+      font-weight: 800;
       text-transform: uppercase;
-      letter-spacing: .04em;
-      color: var(--gray-500)
+      letter-spacing: 0
+    }
+
+    .builder-preview-value {
+      min-height: 44px;
+      padding: 10px 12px;
+      border: 1px solid var(--gray-200);
+      border-radius: 10px;
+      background: #fff;
+      color: var(--gray-900);
+      font-size: .92rem;
+      line-height: 1.35;
+      overflow-wrap: anywhere
+    }
+
+    .builder-preview-question {
+      min-height: 78px
+    }
+
+    .builder-preview-explanation {
+      white-space: pre-wrap
     }
 
     .builder-errors {
@@ -5168,7 +5213,8 @@
       .builder-grid,
       .builder-grid-3,
       .builder-split,
-      .builder-import-tools {
+      .builder-import-tools,
+      .builder-preview-options {
         grid-template-columns: 1fr
       }
     }

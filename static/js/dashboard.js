@@ -199,7 +199,10 @@
       var countSummary = displayFormatUtils && typeof displayFormatUtils.formatPackCounts === 'function'
         ? displayFormatUtils.formatPackCounts(pack.flashcards_count || 0, pack.test_questions_count || 0)
         : ((pack.flashcards_count || 0) + ' cards · ' + (pack.test_questions_count || 0) + ' questions');
-      meta.textContent = (pack.mode || '-') + ' · ' + countSummary;
+      var modeLabel = displayFormatUtils && typeof displayFormatUtils.formatPackMode === 'function'
+        ? displayFormatUtils.formatPackMode(pack.mode || '')
+        : 'Study Pack';
+      meta.textContent = modeLabel + ' · ' + countSummary;
       row.appendChild(title);
       row.appendChild(meta);
       packsList.appendChild(row);

@@ -14,6 +14,12 @@ test('formatPackCounts combines both count labels consistently', () => {
   assert.equal(displayFormatUtils.formatPackCounts(3, 1), '3 cards · 1 question');
 });
 
+test('formatPackMode keeps saved manual packs from looking like processing jobs', () => {
+  assert.equal(displayFormatUtils.formatPackMode('manual'), 'Study Pack');
+  assert.equal(displayFormatUtils.formatPackMode('lecture-notes'), 'Lecture Notes');
+  assert.equal(displayFormatUtils.formatPackMode('unexpected-mode'), 'Study Pack');
+});
+
 test('formatCurrencyFromCents formats currency from raw cents', () => {
   const eur = displayFormatUtils.formatCurrencyFromCents(1234, 'EUR');
   const usd = displayFormatUtils.formatCurrencyFromCents(999, 'USD');

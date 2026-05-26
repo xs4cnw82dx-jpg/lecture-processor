@@ -827,8 +827,7 @@
           <section class="builder-pane" id="builder-pane-import" role="tabpanel" aria-labelledby="builder-tab-import"
             aria-hidden="true">
             <div class="builder-card">
-              <div class="builder-helper u-mb-8">Import data directly into this pack and preview
-                before applying.</div>
+              <div class="builder-helper u-mb-8">Import data directly into this pack. CSV files apply and save automatically.</div>
               <div class="builder-import-tools">
                 <div class="field"><label for="builder-import-type">Import Type</label><select class="builder-select" id="builder-import-type">
                     <option value="flashcards">Flashcards CSV</option>
@@ -845,13 +844,11 @@
               </div>
               <div class="builder-cta-strip u-mt-12"><button class="btn"
                   id="builder-template-btn">Download CSV Template</button><button class="btn primary"
-                  id="builder-apply-import-btn" disabled>Apply Import</button></div>
+                  id="builder-apply-import-btn" disabled hidden>Apply Import</button></div>
               <div class="builder-helper" id="builder-import-summary" role="status" aria-live="polite" aria-atomic="true">No file loaded.</div>
               <div class="builder-preview" id="builder-preview" hidden>
-                <div class="builder-preview-head">Preview (first 10 valid rows)</div>
-                <div class="u-overflow-auto">
-                  <table class="builder-preview-table" id="builder-preview-table"></table>
-                </div>
+                <div class="builder-preview-head">Imported preview (first 10 valid rows)</div>
+                <div class="builder-preview-list" id="builder-preview-list"></div>
               </div>
               <div class="builder-errors" id="builder-import-errors" role="alert" aria-live="assertive" aria-atomic="true" hidden></div>
             </div>

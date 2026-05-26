@@ -75,6 +75,36 @@ def test_study_feedback_regions_are_announced_to_assistive_tech():
     assert "toastEl.setAttribute('aria-live', isError ? 'assertive' : 'polite');" in study_js
 
 
+def test_study_csv_import_auto_applies_saves_and_uses_structured_preview():
+    study_template = _read('templates/study.html')
+    study_js = _read('static/js/study.js')
+    study_css = _read('static/css/study.css')
+
+    assert 'CSV files apply and save automatically.' in study_template
+    assert 'id="builder-apply-import-btn" disabled hidden' in study_template
+    assert 'id="builder-preview-list"' in study_template
+    assert 'builder-preview-table' not in study_template
+    assert "applyBuilderImport({ autoSave: true });" in study_js
+    assert 'function csvHeadersLookLikePracticeTest(headers)' in study_js
+    assert "saveBuilderPack(false, {" in study_js
+    assert "refreshAfterSave: wasCreateMode" in study_js
+    assert "builderImportType.value = 'test';" in study_js
+    assert 'builder-import-preview-card' in study_js
+    assert '.builder-preview-options' in study_css
+
+
+def test_study_pack_modes_and_question_only_packs_have_user_friendly_defaults():
+    dashboard_js = _read('static/js/dashboard.js')
+    study_js = _read('static/js/study.js')
+
+    assert 'formatPackMode(pack.mode || \'\')' in dashboard_js
+    assert 'function formatStudyPackMode(mode)' in study_js
+    assert "formatStudyPackMode(p.mode || '')" in study_js
+    assert 'function getContentPreferredEditorPane(pack, currentPane)' in study_js
+    assert "setEditorPane(getContentPreferredEditorPane(selectedPack, activeEditorPane));" in study_js
+    assert "openLearnStageWithMode('test', fullscreenFromUrl);" in study_js
+
+
 def test_study_tabs_expose_tab_roles_and_keyboard_support():
     study_template = _read('templates/study.html')
     study_js = _read('static/js/study.js')
