@@ -267,6 +267,8 @@ def test_processing_pages_render_updated_shell_labels(client):
     lecture_html = lecture_response.get_data(as_text=True)
     assert '>Lecture Notes<' in lecture_html
     assert '>New Lecture<' not in lecture_html
+    assert 'href="/interview-transcription" class="app-shell-link"' in lecture_html
+    assert lecture_html.index('href="/voice-notes"') < lecture_html.index('href="/interview-transcription"') < lecture_html.index('href="/batch_mode"')
 
     batch_response = client.get('/batch_mode')
     assert batch_response.status_code == 200

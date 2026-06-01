@@ -430,6 +430,7 @@ const uploadEstimate = document.getElementById('upload-estimate');
 const uploadEstimateTime = document.getElementById('upload-estimate-time');
 const uploadEstimateMeta = document.getElementById('upload-estimate-meta');
 const uploadSection = document.getElementById('upload-section');
+const processingSecondaryGrid = document.querySelector('.processing-secondary-grid');
 const buttonSection = document.getElementById('button-section');
 const mobileProcessSummary = document.getElementById('mobile-process-summary');
 const generationControls = document.getElementById('generation-controls');
@@ -1661,6 +1662,7 @@ function syncProcessingLayout() {
                 pdfZone,
                 audioZone,
                 uploadEstimate,
+                processingSecondaryGrid,
                 otherAudioDisclosure,
                 otherAudioToggle,
                 otherAudioBody,
