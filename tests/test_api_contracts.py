@@ -64,6 +64,12 @@ class _StoredRef:
         self._store[self.id] = dict(payload)
         return None
 
+    def update(self, updates):
+        existing = dict(self._store.get(self.id, {}))
+        existing.update(dict(updates))
+        self._store[self.id] = existing
+        return None
+
     def delete(self):
         self._store.pop(self.id, None)
 
@@ -1044,6 +1050,108 @@ def test_study_pack_update_rejects_invalid_notes_highlights(client, monkeypatch)
 
     assert response.status_code == 400
     assert "notes_highlights" in response.get_json()["error"]
+
+
+def test_study_folder_nesting_and_bulk_pack_move(client, monkeypatch):
+    folder_store = {
+        "parent": {"uid": "study-folder-u1", "name": "Parent", "parent_folder_id": "", "created_at": 1},
+        "child": {"uid": "study-folder-u1", "name": "Child", "parent_folder_id": "parent", "created_at": 2},
+    }
+    pack_store = {
+        "pack-1": {"uid": "study-folder-u1", "title": "One"},
+        "pack-2": {"uid": "study-folder-u1", "title": "Two"},
+    }
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-folder-u1", "email": "u@example.com"})
+    monkeypatch.setattr(core.study_repo, "create_study_folder_doc_ref", lambda _db: _StoredRef(folder_store, "created"))
+    monkeypatch.setattr(core.study_repo, "get_study_folder_doc", lambda _db, folder_id: _StoredDoc(folder_id, folder_store) if folder_id in folder_store else _MissingDoc())
+    monkeypatch.setattr(core.study_repo, "study_folder_doc_ref", lambda _db, folder_id: _StoredRef(folder_store, folder_id))
+    monkeypatch.setattr(core.study_repo, "list_study_folders_by_uid", lambda _db, _uid: [_StoredDoc(doc_id, folder_store) for doc_id in folder_store])
+    monkeypatch.setattr(core.study_repo, "study_pack_doc_ref", lambda _db, pack_id: _StoredRef(pack_store, pack_id))
+
+    response = client.post(
+        "/api/study-folders",
+        json={"name": "New child", "parent_folder_id": "parent", "sort_order": 7},
+        headers={"Authorization": "Bearer dev"},
+    )
+    assert response.status_code == 200
+    assert folder_store["created"]["parent_folder_id"] == "parent"
+    assert folder_store["created"]["sort_order"] == 7.0
+
+    cycle_response = client.patch(
+        "/api/study-folders/parent",
+        json={"parent_folder_id": "child"},
+        headers={"Authorization": "Bearer dev"},
+    )
+    assert cycle_response.status_code == 400
+    assert "subfolders" in cycle_response.get_json()["error"]
+
+    move_response = client.patch(
+        "/api/study-packs/bulk-folder",
+        json={"study_pack_ids": ["pack-1", "pack-2"], "folder_id": "parent"},
+        headers={"Authorization": "Bearer dev"},
+    )
+    assert move_response.status_code == 200
+    assert move_response.get_json()["moved"] == 2
+    assert pack_store["pack-1"]["folder_id"] == "parent"
+    assert pack_store["pack-2"]["folder_name"] == "Parent"
+
+
+def test_interview_coding_state_quote_and_pdf(client, monkeypatch):
+    transcript = "00:01 - Speaker A - Patients want clear guidance.\n00:08 - Speaker B - Follow-up feels rushed."
+    pack_store = {
+        "pack-1": {"uid": "coding-u1", "title": "Interview One", "mode": "interview"},
+    }
+    source_store = {
+        "pack-1": {"uid": "coding-u1", "transcript": transcript},
+    }
+    code_store = {}
+    quote_store = {}
+    run_store = {}
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "coding-u1", "email": "u@example.com"})
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, pack_id: _StoredDoc(pack_id, pack_store) if pack_id in pack_store else _MissingDoc())
+    monkeypatch.setattr(core.study_repo, "get_study_pack_source_doc", lambda _db, pack_id: _StoredDoc(pack_id, source_store) if pack_id in source_store else _MissingDoc())
+    monkeypatch.setattr(core.study_repo, "create_interview_code_doc_ref", lambda _db: _StoredRef(code_store, f"code-{len(code_store) + 1}"))
+    monkeypatch.setattr(core.study_repo, "get_interview_code_doc", lambda _db, code_id: _StoredDoc(code_id, code_store) if code_id in code_store else _MissingDoc())
+    monkeypatch.setattr(core.study_repo, "list_interview_codes_by_uid", lambda _db, _uid, limit=1000: [_StoredDoc(doc_id, code_store) for doc_id in code_store])
+    monkeypatch.setattr(core.study_repo, "create_interview_quotation_doc_ref", lambda _db: _StoredRef(quote_store, f"quote-{len(quote_store) + 1}"))
+    monkeypatch.setattr(core.study_repo, "get_interview_quotation_doc", lambda _db, quote_id: _StoredDoc(quote_id, quote_store) if quote_id in quote_store else _MissingDoc())
+    monkeypatch.setattr(core.study_repo, "list_interview_quotations_by_uid_and_pack", lambda _db, _uid, _pack_id, limit=2000: [_StoredDoc(doc_id, quote_store) for doc_id in quote_store])
+    monkeypatch.setattr(core.study_repo, "list_interview_ai_coding_runs_by_uid_and_pack", lambda _db, _uid, _pack_id, limit=20: [_StoredDoc(doc_id, run_store) for doc_id in run_store])
+
+    code_response = client.post(
+        "/api/interview-coding/packs/pack-1/codes",
+        json={"name": "Guidance", "color": "amber"},
+        headers={"Authorization": "Bearer dev"},
+    )
+    assert code_response.status_code == 200
+    code_id = code_response.get_json()["code"]["code_id"]
+
+    start = transcript.index("Patients")
+    end = transcript.index("\n")
+    quote_response = client.post(
+        "/api/interview-coding/packs/pack-1/quotations",
+        json={"start_offset": start, "end_offset": end, "code_ids": [code_id], "comment": "needs clarity"},
+        headers={"Authorization": "Bearer dev"},
+    )
+    assert quote_response.status_code == 200
+    assert quote_store["quote-1"]["code_ids"] == [code_id]
+
+    state_response = client.get(
+        "/api/interview-coding/packs/pack-1",
+        headers={"Authorization": "Bearer dev"},
+    )
+    assert state_response.status_code == 200
+    assert state_response.get_json()["quotations"][0]["text"] == "Patients want clear guidance."
+
+    pdf_response = client.get(
+        "/api/interview-coding/packs/pack-1/export-pdf",
+        headers={"Authorization": "Bearer dev"},
+    )
+    assert pdf_response.status_code == 200
+    assert pdf_response.mimetype == "application/pdf"
+    assert pdf_response.data.startswith(b"%PDF-")
 
 
 def test_voice_note_metadata_update_persists_mobile_organizer_fields(client, monkeypatch):

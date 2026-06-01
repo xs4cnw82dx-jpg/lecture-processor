@@ -290,6 +290,9 @@ def collect_user_export_payload(uid, email, runtime=None):
     study_packs, packs_truncated = list_docs_by_uid('study_packs', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     study_pack_sources, sources_truncated = list_docs_by_uid('study_pack_sources', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     card_states, card_states_truncated = list_docs_by_uid('study_card_states', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
+    interview_codes, interview_codes_truncated = list_docs_by_uid('interview_codes', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
+    interview_quotations, interview_quotations_truncated = list_docs_by_uid('interview_quotations', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
+    interview_ai_coding_runs, interview_ai_coding_runs_truncated = list_docs_by_uid('interview_ai_coding_runs', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     planner_settings_docs, planner_settings_truncated = list_docs_by_uid('planner_settings', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     planner_sessions, planner_sessions_truncated = list_docs_by_uid('planner_sessions', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     physio_cases, physio_cases_truncated = list_docs_by_uid('physio_cases', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
@@ -326,6 +329,9 @@ def collect_user_export_payload(uid, email, runtime=None):
                 'study_packs': packs_truncated,
                 'study_pack_sources': sources_truncated,
                 'study_card_states': card_states_truncated,
+                'interview_codes': interview_codes_truncated,
+                'interview_quotations': interview_quotations_truncated,
+                'interview_ai_coding_runs': interview_ai_coding_runs_truncated,
                 'study_shares': shares_truncated,
                 'planner_settings': planner_settings_truncated,
                 'planner_sessions': planner_sessions_truncated,
@@ -346,6 +352,9 @@ def collect_user_export_payload(uid, email, runtime=None):
             'study_packs': study_packs,
             'study_pack_sources': study_pack_sources,
             'study_card_states': card_states,
+            'interview_codes': interview_codes,
+            'interview_quotations': interview_quotations,
+            'interview_ai_coding_runs': interview_ai_coding_runs,
             'study_shares': study_shares,
             'planner_sessions': planner_sessions,
             'physio_cases': physio_cases,

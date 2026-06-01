@@ -16,6 +16,7 @@ STUDY_PACK_SUMMARY_FIELDS = (
     'block',
     'folder_id',
     'folder_name',
+    'parent_folder_id',
     'tags',
     'pinned',
     'archived',
@@ -113,6 +114,65 @@ def get_study_folder_doc(db, folder_id):
 
 def list_study_folders_by_uid(db, uid):
     return list(apply_where(db.collection('study_folders'), 'uid', '==', uid).stream())
+
+
+def interview_code_doc_ref(db, code_id):
+    return db.collection('interview_codes').document(code_id)
+
+
+def create_interview_code_doc_ref(db):
+    return db.collection('interview_codes').document()
+
+
+def get_interview_code_doc(db, code_id):
+    return interview_code_doc_ref(db, code_id).get()
+
+
+def list_interview_codes_by_uid(db, uid, limit=1000):
+    query = apply_where(db.collection('interview_codes'), 'uid', '==', uid)
+    if isinstance(limit, int) and limit > 0:
+        query = query.limit(limit)
+    return list(query.stream())
+
+
+def interview_quotation_doc_ref(db, quotation_id):
+    return db.collection('interview_quotations').document(quotation_id)
+
+
+def create_interview_quotation_doc_ref(db):
+    return db.collection('interview_quotations').document()
+
+
+def get_interview_quotation_doc(db, quotation_id):
+    return interview_quotation_doc_ref(db, quotation_id).get()
+
+
+def list_interview_quotations_by_uid_and_pack(db, uid, pack_id, limit=2000):
+    query = apply_where(db.collection('interview_quotations'), 'uid', '==', uid)
+    query = apply_where(query, 'pack_id', '==', pack_id)
+    if isinstance(limit, int) and limit > 0:
+        query = query.limit(limit)
+    return list(query.stream())
+
+
+def interview_ai_coding_run_doc_ref(db, run_id):
+    return db.collection('interview_ai_coding_runs').document(run_id)
+
+
+def create_interview_ai_coding_run_doc_ref(db):
+    return db.collection('interview_ai_coding_runs').document()
+
+
+def get_interview_ai_coding_run_doc(db, run_id):
+    return interview_ai_coding_run_doc_ref(db, run_id).get()
+
+
+def list_interview_ai_coding_runs_by_uid_and_pack(db, uid, pack_id, limit=20):
+    query = apply_where(db.collection('interview_ai_coding_runs'), 'uid', '==', uid)
+    query = apply_where(query, 'pack_id', '==', pack_id)
+    if isinstance(limit, int) and limit > 0:
+        query = query.limit(limit)
+    return list(query.stream())
 
 
 def study_share_doc_ref(db, share_token):

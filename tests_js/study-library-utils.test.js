@@ -68,6 +68,50 @@ test('filterStudyPacks matches folder and search filters consistently', () => {
   }).map((pack) => pack.study_pack_id), ['pack-4']);
 });
 
+test('buildFolderItemsForSidebar renders nested folders under built-ins and collapse state', () => {
+  const items = studyLibraryUtils.buildFolderItemsForSidebar({
+    folders: [
+      { folder_id: 'interview-child', name: 'Interview Child', parent_folder_id: '__interviews__', sort_order: 1 },
+      { folder_id: 'root', name: 'Root', parent_folder_id: '', sort_order: 1 },
+      { folder_id: 'nested', name: 'Nested', parent_folder_id: 'root', sort_order: 1 },
+    ],
+    collapsedFolderIds: ['root'],
+    allFolderId: '',
+    interviewFolderId: '__interviews__',
+    voiceNotesFolderId: '__voice_notes__',
+  });
+
+  assert.deepEqual(items.map((item) => item.folder_id), [
+    '',
+    '__voice_notes__',
+    '__interviews__',
+    'interview-child',
+    'root',
+  ]);
+  assert.equal(items.find((item) => item.folder_id === 'interview-child').depth, 1);
+  assert.equal(items.find((item) => item.folder_id === 'root').is_collapsed, true);
+});
+
+test('getDescendantFolderIds and filterStudyPacks include nested folder packs', () => {
+  const folders = [
+    { folder_id: 'root', parent_folder_id: '' },
+    { folder_id: 'child', parent_folder_id: 'root' },
+    { folder_id: 'grandchild', parent_folder_id: 'child' },
+  ];
+  const descendants = studyLibraryUtils.getDescendantFolderIds(folders, 'root');
+  assert.deepEqual(descendants.sort(), ['child', 'grandchild']);
+
+  const packs = [
+    { study_pack_id: 'p1', folder_id: 'root', title: 'Root', mode: 'study' },
+    { study_pack_id: 'p2', folder_id: 'grandchild', title: 'Nested', mode: 'study' },
+    { study_pack_id: 'p3', folder_id: 'other', title: 'Other', mode: 'study' },
+  ];
+  assert.deepEqual(studyLibraryUtils.filterStudyPacks(packs, {
+    selectedFolderId: 'root',
+    descendantFolderIds: descendants,
+  }).map((pack) => pack.study_pack_id), ['p1', 'p2']);
+});
+
 test('buildStudyPacksUrl uses the default limit and encodes cursors', () => {
   assert.equal(studyLibraryUtils.buildStudyPacksUrl(''), '/api/study-packs?limit=50');
   assert.equal(
@@ -153,6 +197,11 @@ test('buildStudyPackSelection falls back to single selection when range anchor i
     }),
     ['pack-1', 'pack-3']
   );
+});
+
+test('getPackIdsForDrag drags selected packs when dragging within the selection', () => {
+  assert.deepEqual(studyLibraryUtils.getPackIdsForDrag(['pack-1', 'pack-2'], 'pack-2'), ['pack-1', 'pack-2']);
+  assert.deepEqual(studyLibraryUtils.getPackIdsForDrag(['pack-1'], 'pack-3'), ['pack-3']);
 });
 
 test('buildStudyPackExportItems shows source exports only when source outputs exist', () => {

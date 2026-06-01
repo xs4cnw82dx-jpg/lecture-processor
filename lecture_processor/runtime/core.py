@@ -569,6 +569,8 @@ MODEL_INTEGRATION = 'gemini-2.5-pro'
 
 MODEL_INTERVIEW = 'gemini-2.5-pro'
 
+MODEL_INTERVIEW_CODING = 'gemini-3-flash-preview'
+
 MODEL_STUDY = 'gemini-3.1-flash-lite'
 
 MODEL_TOOLS = 'gemini-3.1-flash-lite'
@@ -624,6 +626,8 @@ PROMPT_INTERVIEW_TRANSCRIPTION = prompt_registry.PROMPT_INTERVIEW_TRANSCRIPTION
 PROMPT_INTERVIEW_SUMMARY = prompt_registry.PROMPT_INTERVIEW_SUMMARY
 
 PROMPT_INTERVIEW_SECTIONED = prompt_registry.PROMPT_INTERVIEW_SECTIONED
+
+PROMPT_INTERVIEW_CODING = prompt_registry.PROMPT_INTERVIEW_CODING
 
 PROMPT_VOICE_NOTE_NOTES = prompt_registry.PROMPT_VOICE_NOTE_NOTES
 
@@ -1230,13 +1234,16 @@ def collect_user_export_payload(uid, email):
     study_folders, folders_truncated = list_docs_by_uid('study_folders', uid, ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION)
     study_packs, packs_truncated = list_docs_by_uid('study_packs', uid, ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION)
     card_states, card_states_truncated = list_docs_by_uid('study_card_states', uid, ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION)
+    interview_codes, interview_codes_truncated = list_docs_by_uid('interview_codes', uid, ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION)
+    interview_quotations, interview_quotations_truncated = list_docs_by_uid('interview_quotations', uid, ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION)
+    interview_ai_coding_runs, interview_ai_coding_runs_truncated = list_docs_by_uid('interview_ai_coding_runs', uid, ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION)
     for pack in study_packs:
         audio_key = get_audio_storage_key_from_pack(pack)
         audio_path = resolve_audio_storage_path_from_key(audio_key) if audio_key else ''
         pack['audio_filename'] = os.path.basename(audio_path) if audio_path else ''
         pack.pop('audio_storage_path', None)
         pack.pop('audio_storage_key', None)
-    return {'meta': {'exported_at': time.time(), 'version': 1, 'uid': uid, 'email': email, 'source': 'lecture-processor', 'limits': {'max_docs_per_collection': ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION}, 'truncated': {'purchases': purchases_truncated, 'job_logs': job_logs_truncated, 'analytics_events': analytics_truncated, 'study_folders': folders_truncated, 'study_packs': packs_truncated, 'study_card_states': card_states_truncated}}, 'account': {'profile': user_profile, 'study_progress': study_progress}, 'collections': {'purchases': purchases, 'job_logs': job_logs, 'analytics_events': analytics_events, 'study_folders': study_folders, 'study_packs': study_packs, 'study_card_states': card_states}}
+    return {'meta': {'exported_at': time.time(), 'version': 1, 'uid': uid, 'email': email, 'source': 'lecture-processor', 'limits': {'max_docs_per_collection': ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION}, 'truncated': {'purchases': purchases_truncated, 'job_logs': job_logs_truncated, 'analytics_events': analytics_truncated, 'study_folders': folders_truncated, 'study_packs': packs_truncated, 'study_card_states': card_states_truncated, 'interview_codes': interview_codes_truncated, 'interview_quotations': interview_quotations_truncated, 'interview_ai_coding_runs': interview_ai_coding_runs_truncated}}, 'account': {'profile': user_profile, 'study_progress': study_progress}, 'collections': {'purchases': purchases, 'job_logs': job_logs, 'analytics_events': analytics_events, 'study_folders': study_folders, 'study_packs': study_packs, 'study_card_states': card_states, 'interview_codes': interview_codes, 'interview_quotations': interview_quotations, 'interview_ai_coding_runs': interview_ai_coding_runs}}
 
 def parse_requested_amount(raw_value, allowed, default):
     return shared_parsing.parse_requested_amount(raw_value, allowed, default, runtime=_self_runtime())

@@ -6,6 +6,54 @@ from lecture_processor.domains.study import progress as study_progress
 
 from lecture_processor.services import study_api_support
 
+BUILTIN_FOLDER_PARENT_IDS = {'', '__interviews__', '__voice_notes__'}
+MAX_BULK_PACK_MOVE = 100
+
+
+def _sanitize_sort_order(raw_value):
+    try:
+        value = float(raw_value)
+    except Exception:
+        return 0.0
+    if value != value:
+        return 0.0
+    return max(-1000000.0, min(1000000.0, value))
+
+
+def _owned_folder_payloads(app_ctx, uid):
+    return study_api_support.build_folder_payloads_from_docs(
+        app_ctx.study_repo.list_study_folders_by_uid(app_ctx.db, uid)
+    )
+
+
+def _resolve_parent_folder_input(app_ctx, uid, raw_parent_id, *, current_folder_id=''):
+    parent_id = str(raw_parent_id or '').strip()
+    current_id = str(current_folder_id or '').strip()
+    if parent_id in BUILTIN_FOLDER_PARENT_IDS:
+        return parent_id, None, None
+    parent_doc = app_ctx.study_repo.get_study_folder_doc(app_ctx.db, parent_id)
+    if not parent_doc.exists:
+        return '', app_ctx.jsonify({'error': 'Parent folder not found'}), 404
+    parent = parent_doc.to_dict() or {}
+    if str(parent.get('uid', '') or '').strip() != uid:
+        return '', app_ctx.jsonify({'error': 'Forbidden'}), 403
+    if current_id:
+        if parent_id == current_id:
+            return '', app_ctx.jsonify({'error': 'A folder cannot be moved inside itself'}), 400
+        folders = _owned_folder_payloads(app_ctx, uid)
+        descendants = study_api_support.build_folder_descendant_ids(folders, current_id)
+        if parent_id in descendants:
+            return '', app_ctx.jsonify({'error': 'A folder cannot be moved inside one of its subfolders'}), 400
+    return parent_id, None, None
+
+
+def _folder_ids_including_descendants(app_ctx, uid, folder_id):
+    root_id = str(folder_id or '').strip()
+    if not root_id:
+        return {''}
+    folders = _owned_folder_payloads(app_ctx, uid)
+    return {root_id} | study_api_support.build_folder_descendant_ids(folders, root_id)
+
 
 def get_study_packs(app_ctx, request):
     decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
@@ -311,6 +359,66 @@ def update_study_pack(app_ctx, request, pack_id):
         return app_ctx.jsonify({'error': 'Could not update study pack'}), 500
 
 
+def bulk_move_study_packs(app_ctx, request):
+    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
+    uid = decoded_token['uid']
+    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
+    if deletion_guard is not None:
+        return deletion_guard
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return app_ctx.jsonify({'error': 'Invalid payload'}), 400
+    raw_ids = payload.get('study_pack_ids', [])
+    if not isinstance(raw_ids, list):
+        return app_ctx.jsonify({'error': 'study_pack_ids must be a list'}), 400
+    pack_ids = []
+    seen = set()
+    for raw_id in raw_ids:
+        pack_id = str(raw_id or '').strip()
+        if not pack_id or pack_id in seen:
+            continue
+        seen.add(pack_id)
+        pack_ids.append(pack_id)
+    if not pack_ids:
+        return app_ctx.jsonify({'error': 'No study packs selected'}), 400
+    if len(pack_ids) > MAX_BULK_PACK_MOVE:
+        return app_ctx.jsonify({'error': f'You can move up to {MAX_BULK_PACK_MOVE} study packs at once'}), 400
+
+    folder_id = str(payload.get('folder_id', '') or '').strip()
+    folder_name = ''
+    if folder_id:
+        folder_doc = app_ctx.study_repo.get_study_folder_doc(app_ctx.db, folder_id)
+        if not folder_doc.exists:
+            return app_ctx.jsonify({'error': 'Folder not found'}), 404
+        folder_data = folder_doc.to_dict() or {}
+        if str(folder_data.get('uid', '') or '').strip() != uid:
+            return app_ctx.jsonify({'error': 'Forbidden'}), 403
+        folder_name = str(folder_data.get('name', '') or '').strip()[:120]
+
+    moved = 0
+    skipped = []
+    try:
+        now_ts = app_ctx.time.time()
+        for pack_id in pack_ids:
+            pack_ref = app_ctx.study_repo.study_pack_doc_ref(app_ctx.db, pack_id)
+            doc = pack_ref.get()
+            if not doc.exists:
+                skipped.append({'study_pack_id': pack_id, 'reason': 'not_found'})
+                continue
+            pack = doc.to_dict() or {}
+            if str(pack.get('uid', '') or '').strip() != uid:
+                skipped.append({'study_pack_id': pack_id, 'reason': 'forbidden'})
+                continue
+            pack_ref.update({'folder_id': folder_id, 'folder_name': folder_name, 'updated_at': now_ts})
+            moved += 1
+        return app_ctx.jsonify({'ok': True, 'moved': moved, 'skipped': skipped})
+    except Exception as error:
+        app_ctx.logger.error('Error bulk-moving study packs for %s: %s', uid, error)
+        return app_ctx.jsonify({'error': 'Could not move study packs'}), 500
+
+
 def delete_study_pack(app_ctx, request, pack_id):
     decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
     if error_response is not None:
@@ -357,12 +465,14 @@ def get_study_folders(app_ctx, request):
         docs = app_ctx.study_repo.list_study_folders_by_uid(app_ctx.db, uid)
         folders = []
         for doc in docs:
-            folder = doc.to_dict()
+            folder = doc.to_dict() or {}
             folder_id = doc.id
             pending_count = int(pending_by_folder.get(folder_id, 0) or 0)
             folders.append({
                 'folder_id': folder_id,
                 'name': folder.get('name', ''),
+                'parent_folder_id': str(folder.get('parent_folder_id', '') or '').strip(),
+                'sort_order': float(folder.get('sort_order', 0) or 0),
                 'course': folder.get('course', ''),
                 'subject': folder.get('subject', ''),
                 'semester': folder.get('semester', ''),
@@ -376,7 +486,7 @@ def get_study_folders(app_ctx, request):
                     else ''
                 ),
             })
-        folders.sort(key=lambda item: item.get('created_at', 0), reverse=True)
+        folders.sort(key=lambda item: (str(item.get('parent_folder_id', '') or ''), float(item.get('sort_order', 0) or 0), -float(item.get('created_at', 0) or 0), str(item.get('name', '') or '').lower()))
         return app_ctx.jsonify({'folders': folders})
     except Exception as error:
         app_ctx.logger.error(f"Error fetching study folders: {error}")
@@ -425,11 +535,20 @@ def create_study_folder(app_ctx, request):
             exam_date = study_export.normalize_exam_date(payload.get('exam_date', ''), runtime=app_ctx)
         except ValueError as error:
             return app_ctx.jsonify({'error': str(error)}), 400
+        parent_folder_id, parent_error, parent_status = _resolve_parent_folder_input(
+            app_ctx,
+            uid,
+            payload.get('parent_folder_id', ''),
+        )
+        if parent_error is not None:
+            return parent_error, parent_status
         doc_ref = app_ctx.study_repo.create_study_folder_doc_ref(app_ctx.db)
         doc_ref.set({
             'folder_id': doc_ref.id,
             'uid': uid,
             'name': name,
+            'parent_folder_id': parent_folder_id,
+            'sort_order': _sanitize_sort_order(payload.get('sort_order', now_ts)),
             'course': str(payload.get('course', '')).strip()[:120],
             'subject': str(payload.get('subject', '')).strip()[:120],
             'semester': str(payload.get('semester', '')).strip()[:120],
@@ -470,6 +589,18 @@ def update_study_folder(app_ctx, request, folder_id):
         for field in ['course', 'subject', 'semester', 'block']:
             if field in payload:
                 updates[field] = str(payload.get(field, '')).strip()[:120]
+        if 'parent_folder_id' in payload:
+            parent_folder_id, parent_error, parent_status = _resolve_parent_folder_input(
+                app_ctx,
+                uid,
+                payload.get('parent_folder_id', ''),
+                current_folder_id=folder_id,
+            )
+            if parent_error is not None:
+                return parent_error, parent_status
+            updates['parent_folder_id'] = parent_folder_id
+        if 'sort_order' in payload:
+            updates['sort_order'] = _sanitize_sort_order(payload.get('sort_order', 0))
         if 'exam_date' in payload:
             try:
                 updates['exam_date'] = study_export.normalize_exam_date(
@@ -505,11 +636,19 @@ def delete_study_folder(app_ctx, request, folder_id):
         folder = doc.to_dict()
         if folder.get('uid', '') != uid:
             return app_ctx.jsonify({'error': 'Forbidden'}), 403
+        parent_folder_id = str(folder.get('parent_folder_id', '') or '').strip()
         study_api_support.delete_share_for_entity(app_ctx, uid, 'folder', folder_id)
         folder_ref.delete()
         packs = app_ctx.study_repo.list_study_packs_by_uid_and_folder(app_ctx.db, uid, folder_id)
         for pack_doc in packs:
             pack_doc.reference.update({'folder_id': '', 'folder_name': '', 'updated_at': app_ctx.time.time()})
+        child_docs = app_ctx.study_repo.list_study_folders_by_uid(app_ctx.db, uid)
+        for child_doc in child_docs:
+            if child_doc.id == folder_id:
+                continue
+            child = child_doc.to_dict() or {}
+            if str(child.get('parent_folder_id', '') or '').strip() == folder_id:
+                child_doc.reference.update({'parent_folder_id': parent_folder_id, 'updated_at': app_ctx.time.time()})
         return app_ctx.jsonify({'ok': True})
     except Exception as error:
         app_ctx.logger.error(f"Error deleting folder {folder_id}: {error}")
@@ -682,16 +821,25 @@ def get_public_study_share(app_ctx, request, share_token):
             if str(folder.get('uid', '') or '').strip() != owner_uid:
                 return app_ctx.jsonify({'error': 'Shared content not found'}), 404
             try:
-                packs = app_ctx.study_repo.list_study_pack_summaries_by_uid_and_folder(
-                    app_ctx.db,
-                    owner_uid,
-                    entity_id,
-                    limit=100,
-                )
+                folder_ids = _folder_ids_including_descendants(app_ctx, owner_uid, entity_id)
+                packs = []
+                for folder_id in folder_ids:
+                    packs.extend(
+                        app_ctx.study_repo.list_study_pack_summaries_by_uid_and_folder(
+                            app_ctx.db,
+                            owner_uid,
+                            folder_id,
+                            limit=100,
+                        )
+                    )
             except Exception:
                 packs = app_ctx.study_repo.list_study_packs_by_uid_and_folder(app_ctx.db, owner_uid, entity_id)
             pack_summaries = []
+            seen_pack_ids = set()
             for pack_doc in packs:
+                if pack_doc.id in seen_pack_ids:
+                    continue
+                seen_pack_ids.add(pack_doc.id)
                 pack = pack_doc.to_dict() or {}
                 pack_summaries.append(study_api_support.serialize_public_pack_summary(pack_doc.id, pack))
             pack_summaries.sort(key=lambda item: item.get('created_at', 0), reverse=True)
@@ -724,7 +872,11 @@ def get_public_shared_folder_pack(app_ctx, request, share_token, pack_id):
         if not pack_doc.exists:
             return app_ctx.jsonify({'error': 'Shared content not found'}), 404
         pack = pack_doc.to_dict() or {}
-        if str(pack.get('uid', '') or '').strip() != owner_uid or str(pack.get('folder_id', '') or '').strip() != folder_id:
+        try:
+            allowed_folder_ids = _folder_ids_including_descendants(app_ctx, owner_uid, folder_id)
+        except Exception:
+            allowed_folder_ids = {folder_id}
+        if str(pack.get('uid', '') or '').strip() != owner_uid or str(pack.get('folder_id', '') or '').strip() not in allowed_folder_ids:
             return app_ctx.jsonify({'error': 'Shared content not found'}), 404
         return app_ctx.jsonify(study_api_support.serialize_public_pack(app_ctx, pack_id, pack))
     except Exception as error:

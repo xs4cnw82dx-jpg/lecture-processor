@@ -5,66 +5,159 @@
     var settings = options && typeof options === 'object' ? options : {};
     var folders = Array.isArray(settings.folders) ? settings.folders : [];
     var pinnedFolderIds = Array.isArray(settings.pinnedFolderIds) ? settings.pinnedFolderIds : [];
+    var collapsedFolderIds = Array.isArray(settings.collapsedFolderIds) ? settings.collapsedFolderIds.map(function (folderId) {
+      return String(folderId || '');
+    }) : [];
     var allFolderId = String(settings.allFolderId == null ? '' : settings.allFolderId);
     var interviewFolderId = String(settings.interviewFolderId == null ? '__interviews__' : settings.interviewFolderId);
     var voiceNotesFolderId = String(settings.voiceNotesFolderId == null ? '__voice_notes__' : settings.voiceNotesFolderId);
     var pinnedSet = new Set(pinnedFolderIds.map(function (folderId) { return String(folderId || ''); }).filter(Boolean));
+    var collapsedSet = new Set(collapsedFolderIds.filter(Boolean));
+    var displayed = new Set();
+    var childrenByParent = {};
+    var foldersById = {};
+
+    folders.forEach(function (folder) {
+      var item = Object.assign({}, folder || {});
+      item.folder_id = String(item.folder_id || '');
+      if (!item.folder_id) return;
+      item.parent_folder_id = String(item.parent_folder_id || '');
+      if (item.parent_folder_id === allFolderId) item.parent_folder_id = '';
+      item.sort_order = Number(item.sort_order || 0);
+      foldersById[item.folder_id] = item;
+      childrenByParent[item.parent_folder_id] = childrenByParent[item.parent_folder_id] || [];
+      childrenByParent[item.parent_folder_id].push(item);
+    });
+
+    Object.keys(childrenByParent).forEach(function (parentId) {
+      childrenByParent[parentId].sort(function (left, right) {
+        var leftPinned = pinnedSet.has(String(left.folder_id || '')) ? 0 : 1;
+        var rightPinned = pinnedSet.has(String(right.folder_id || '')) ? 0 : 1;
+        if (leftPinned !== rightPinned) return leftPinned - rightPinned;
+        if (left.sort_order !== right.sort_order) return left.sort_order - right.sort_order;
+        var leftCreated = Number(left.created_at || 0);
+        var rightCreated = Number(right.created_at || 0);
+        if (leftCreated !== rightCreated) return rightCreated - leftCreated;
+        return String(left.name || '').localeCompare(String(right.name || ''));
+      });
+    });
+
+    function decorate(folder, depth) {
+      var folderId = String(folder.folder_id || '');
+      var childCount = (childrenByParent[folderId] || []).length;
+      return Object.assign({}, folder, {
+        depth: Math.max(0, Number(depth || 0)),
+        child_count: childCount,
+        is_collapsed: collapsedSet.has(folderId),
+        is_pinned: pinnedSet.has(folderId),
+        is_builtin: false,
+        is_fixed: false,
+      });
+    }
+
+    function appendChildren(parentId, depth, output) {
+      (childrenByParent[parentId] || []).forEach(function (folder) {
+        var folderId = String(folder.folder_id || '');
+        if (!folderId || displayed.has(folderId)) return;
+        displayed.add(folderId);
+        var item = decorate(folder, depth);
+        output.push(item);
+        if (!item.is_collapsed) {
+          appendChildren(folderId, depth + 1, output);
+        }
+      });
+    }
+
+    function builtin(folderId, name, metaDefault) {
+      return {
+        folder_id: folderId,
+        name: name,
+        course: '',
+        subject: '',
+        semester: '',
+        block: '',
+        exam_date: '',
+        parent_folder_id: '',
+        sort_order: 0,
+        depth: 0,
+        child_count: (childrenByParent[folderId] || []).length,
+        is_collapsed: collapsedSet.has(folderId),
+        is_pinned: true,
+        is_builtin: true,
+        is_fixed: true,
+        meta_default: metaDefault,
+      };
+    }
+
+    function shouldRenderAsTopLevel(folder) {
+      var parentId = String(folder && folder.parent_folder_id || '');
+      if (parentId === allFolderId) parentId = '';
+      if (!parentId) return true;
+      if (parentId === interviewFolderId || parentId === voiceNotesFolderId) return false;
+      return !foldersById[parentId];
+    }
+
+    var output = [
+      builtin(allFolderId, 'All Study Packs', 'All packs'),
+      builtin(voiceNotesFolderId, 'Voice Notes', 'Quick transcriber notes'),
+    ];
+    if (!output[1].is_collapsed) appendChildren(voiceNotesFolderId, 1, output);
+    var interviews = builtin(interviewFolderId, 'Interviews', 'Interview transcript packs');
+    output.push(interviews);
+    if (!interviews.is_collapsed) appendChildren(interviewFolderId, 1, output);
 
     var pinnedFolders = pinnedFolderIds.map(function (folderId) {
       return folders.find(function (folder) {
         return String(folder && folder.folder_id || '') === String(folderId || '');
       }) || null;
-    }).filter(Boolean).map(function (folder) {
-      return Object.assign({}, folder, { is_pinned: true, is_builtin: false, is_fixed: false });
+    }).filter(Boolean).filter(function (folder) {
+      var folderId = String(folder && folder.folder_id || '');
+      return folderId && !displayed.has(folderId) && shouldRenderAsTopLevel(folder);
+    }).map(function (folder) {
+      displayed.add(String(folder.folder_id || ''));
+      return decorate(Object.assign({}, folder, { parent_folder_id: String(folder.parent_folder_id || '') }), 0);
     });
 
     var remaining = folders.filter(function (folder) {
-      return !pinnedSet.has(String(folder && folder.folder_id || ''));
+      var folderId = String(folder && folder.folder_id || '');
+      return folderId && !displayed.has(folderId) && !pinnedSet.has(folderId) && shouldRenderAsTopLevel(folder);
     }).map(function (folder) {
-      return Object.assign({}, folder, { is_pinned: false, is_builtin: false, is_fixed: false });
+      displayed.add(String(folder.folder_id || ''));
+      return decorate(Object.assign({}, folder, { parent_folder_id: String(folder.parent_folder_id || '') }), 0);
     });
 
-    return [
-      {
-        folder_id: allFolderId,
-        name: 'All Study Packs',
-        course: '',
-        subject: '',
-        semester: '',
-        block: '',
-        exam_date: '',
-        is_pinned: true,
-        is_builtin: true,
-        is_fixed: true,
-        meta_default: 'All packs',
-      },
-      {
-        folder_id: voiceNotesFolderId,
-        name: 'Voice Notes',
-        course: '',
-        subject: '',
-        semester: '',
-        block: '',
-        exam_date: '',
-        is_pinned: true,
-        is_builtin: true,
-        is_fixed: true,
-        meta_default: 'Quick transcriber notes',
-      },
-      {
-        folder_id: interviewFolderId,
-        name: 'Interviews',
-        course: '',
-        subject: '',
-        semester: '',
-        block: '',
-        exam_date: '',
-        is_pinned: true,
-        is_builtin: true,
-        is_fixed: true,
-        meta_default: 'Interview transcript packs',
-      },
-    ].concat(pinnedFolders, remaining);
+    pinnedFolders.forEach(function (item) {
+      output.push(item);
+      if (!item.is_collapsed) appendChildren(item.folder_id, item.depth + 1, output);
+    });
+    remaining.forEach(function (item) {
+      output.push(item);
+      if (!item.is_collapsed) appendChildren(item.folder_id, item.depth + 1, output);
+    });
+    return output;
+  }
+
+  function getDescendantFolderIds(folders, folderId) {
+    var rootId = String(folderId || '');
+    var childrenByParent = {};
+    (Array.isArray(folders) ? folders : []).forEach(function (folder) {
+      var id = String(folder && folder.folder_id || '');
+      if (!id) return;
+      var parentId = String(folder && folder.parent_folder_id || '');
+      childrenByParent[parentId] = childrenByParent[parentId] || [];
+      childrenByParent[parentId].push(id);
+    });
+    var found = [];
+    var seen = new Set();
+    var stack = (childrenByParent[rootId] || []).slice();
+    while (stack.length) {
+      var id = stack.pop();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      found.push(id);
+      (childrenByParent[id] || []).forEach(function (childId) { stack.push(childId); });
+    }
+    return found;
   }
 
   function filterStudyPacks(packs, options) {
@@ -75,6 +168,12 @@
     var allFolderId = String(settings.allFolderId == null ? '' : settings.allFolderId);
     var interviewFolderId = String(settings.interviewFolderId == null ? '__interviews__' : settings.interviewFolderId);
     var voiceNotesFolderId = String(settings.voiceNotesFolderId == null ? '__voice_notes__' : settings.voiceNotesFolderId);
+    var descendantFolderIds = Array.isArray(settings.descendantFolderIds) ? settings.descendantFolderIds.map(function (folderId) {
+      return String(folderId || '');
+    }) : [];
+    var selectedFolderIds = new Set([selectedFolderId].concat(descendantFolderIds).filter(function (folderId) {
+      return !!folderId;
+    }));
 
     return collection.filter(function (pack) {
       if (selectedFolderId === interviewFolderId) {
@@ -83,7 +182,7 @@
         if (String(pack && pack.mode || '') !== 'voice-note') return false;
       } else if (!selectedFolderId || selectedFolderId === allFolderId) {
         if (String(pack && pack.mode || '') === 'voice-note') return false;
-      } else if (selectedFolderId && selectedFolderId !== allFolderId && String(pack && pack.folder_id || '') !== selectedFolderId) {
+      } else if (selectedFolderId && selectedFolderId !== allFolderId && !selectedFolderIds.has(String(pack && pack.folder_id || ''))) {
         return false;
       }
 
@@ -138,6 +237,17 @@
     return (Array.isArray(packs) ? packs : []).map(function (pack) {
       return String(pack && pack.study_pack_id || '');
     }).filter(Boolean);
+  }
+
+  function getPackIdsForDrag(currentSelection, targetPackId) {
+    var targetId = String(targetPackId || '');
+    var selected = (Array.isArray(currentSelection) ? currentSelection : []).map(function (packId) {
+      return String(packId || '');
+    }).filter(Boolean);
+    if (targetId && selected.indexOf(targetId) >= 0) {
+      return selected;
+    }
+    return targetId ? [targetId] : selected;
   }
 
   function buildStudyPackSelection(currentSelection, targetPackId, visiblePacks, options) {
@@ -212,10 +322,12 @@
 
   var exported = {
     buildFolderItemsForSidebar: buildFolderItemsForSidebar,
+    getDescendantFolderIds: getDescendantFolderIds,
     filterStudyPacks: filterStudyPacks,
     buildStudyPacksUrl: buildStudyPacksUrl,
     mergeStudyPackPage: mergeStudyPackPage,
     getStudyPackIds: getStudyPackIds,
+    getPackIdsForDrag: getPackIdsForDrag,
     buildStudyPackSelection: buildStudyPackSelection,
     buildStudyPackExportItems: buildStudyPackExportItems,
     buildStudyPackTitleFromCsvFilename: buildStudyPackTitleFromCsvFilename,
