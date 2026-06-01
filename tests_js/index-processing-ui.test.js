@@ -3,6 +3,27 @@ const assert = require('node:assert/strict');
 
 const processingUi = require('../static/js/index-processing-ui.js');
 
+function createMockElement() {
+  const classes = new Set();
+  return {
+    hidden: false,
+    textContent: '',
+    attributes: {},
+    classList: {
+      toggle(name, force) {
+        if (force) classes.add(name);
+        else classes.delete(name);
+      },
+      contains(name) {
+        return classes.has(name);
+      },
+    },
+    setAttribute(name, value) {
+      this.attributes[name] = String(value);
+    },
+  };
+}
+
 test('getAdvancedSettingsSummary reflects lecture study tools and language', () => {
   assert.equal(
     processingUi.getAdvancedSettingsSummary({
@@ -13,6 +34,83 @@ test('getAdvancedSettingsSummary reflects lecture study tools and language', () 
     }),
     'Flashcards only · English'
   );
+});
+
+test('syncProcessingLayout hides an empty secondary panel on signed-out single-upload pages', () => {
+  const dom = {
+    uploadSection: createMockElement(),
+    pdfZone: createMockElement(),
+    audioZone: createMockElement(),
+    uploadEstimate: createMockElement(),
+    processingSecondaryGrid: createMockElement(),
+    otherAudioDisclosure: createMockElement(),
+    otherAudioToggle: createMockElement(),
+    otherAudioBody: createMockElement(),
+    otherAudioSummary: createMockElement(),
+    generationControls: createMockElement(),
+    interviewControls: createMockElement(),
+    advancedSettingsSummary: createMockElement(),
+  };
+
+  processingUi.syncProcessingLayout(dom, {
+    signedIn: false,
+    currentMode: 'slides-only',
+    modeConfig: {
+      'slides-only': {
+        needsPdf: true,
+        needsAudio: false,
+      },
+    },
+    selectedStudyFeatures: 'both',
+    selectedInterviewFeatures: [],
+    outputLanguageValue: 'english',
+    getLanguageLabel: () => 'English',
+  });
+
+  assert.equal(dom.uploadSection.classList.contains('single-upload'), true);
+  assert.equal(dom.uploadSection.classList.contains('has-secondary-panel'), false);
+  assert.equal(dom.processingSecondaryGrid.hidden, true);
+  assert.equal(dom.pdfZone.hidden, false);
+  assert.equal(dom.audioZone.hidden, true);
+});
+
+test('syncProcessingLayout keeps the secondary panel when interview audio options are available', () => {
+  const dom = {
+    uploadSection: createMockElement(),
+    pdfZone: createMockElement(),
+    audioZone: createMockElement(),
+    uploadEstimate: createMockElement(),
+    processingSecondaryGrid: createMockElement(),
+    otherAudioDisclosure: createMockElement(),
+    otherAudioToggle: createMockElement(),
+    otherAudioBody: createMockElement(),
+    otherAudioSummary: createMockElement(),
+    generationControls: createMockElement(),
+    interviewControls: createMockElement(),
+    advancedSettingsSummary: createMockElement(),
+  };
+
+  processingUi.syncProcessingLayout(dom, {
+    signedIn: true,
+    currentMode: 'interview',
+    modeConfig: {
+      interview: {
+        needsPdf: false,
+        needsAudio: true,
+      },
+    },
+    selectedStudyFeatures: 'both',
+    selectedInterviewFeatures: [],
+    outputLanguageValue: 'english',
+    getLanguageLabel: () => 'English',
+  });
+
+  assert.equal(dom.uploadSection.classList.contains('single-upload'), true);
+  assert.equal(dom.uploadSection.classList.contains('has-secondary-panel'), true);
+  assert.equal(dom.processingSecondaryGrid.hidden, false);
+  assert.equal(dom.pdfZone.hidden, true);
+  assert.equal(dom.audioZone.hidden, false);
+  assert.equal(dom.otherAudioDisclosure.hidden, false);
 });
 
 test('getAdvancedSettingsSummary reflects interview extras and language', () => {

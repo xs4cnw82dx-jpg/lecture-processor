@@ -156,3 +156,36 @@ test('lecture notes keeps a stable layout on desktop and stacks cleanly on mobil
   expect(mobileLayout).toContain('"advanced"');
   expect(mobileLayout).toContain('"action"');
 });
+
+test('singular processing pages use the desktop width instead of a narrow mobile column', async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 1050 });
+
+  for (const path of ['/slides-extraction', '/interview-transcription']) {
+    await page.goto(path);
+    await expect(page.locator('#upload-section.single-upload')).toBeVisible();
+
+    const layout = await page.evaluate(() => {
+      const uploadSection = document.getElementById('upload-section');
+      const sourceZone = document.querySelector('#pdf-zone:not([hidden]), #audio-zone:not([hidden])');
+      const secondaryGrid = document.querySelector('.processing-secondary-grid');
+      const buttonSection = document.getElementById('button-section');
+      const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+
+      return {
+        templateAreas: normalize(getComputedStyle(uploadSection).gridTemplateAreas),
+        maxWidth: getComputedStyle(uploadSection).maxWidth,
+        sourceWidth: sourceZone.getBoundingClientRect().width,
+        uploadSectionWidth: uploadSection.getBoundingClientRect().width,
+        secondaryHidden: secondaryGrid.hidden,
+        buttonColumns: normalize(getComputedStyle(buttonSection).gridTemplateColumns),
+      };
+    });
+
+    expect(layout.templateAreas).toContain('"source advanced"');
+    expect(layout.maxWidth).toBe('none');
+    expect(layout.sourceWidth).toBeGreaterThan(500);
+    expect(layout.uploadSectionWidth).toBeGreaterThan(900);
+    expect(layout.secondaryHidden).toBeTruthy();
+    expect(layout.buttonColumns).not.toBe('none');
+  }
+});

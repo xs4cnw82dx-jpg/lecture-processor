@@ -129,17 +129,18 @@
         const needsPdf = Boolean(mode.needsPdf);
         const needsAudio = Boolean(mode.needsAudio);
         const singleUpload = (needsPdf && !needsAudio) || (!needsPdf && needsAudio);
+        const shouldShowEstimate = signedIn && Boolean(state.hasAnySourceFile);
+        const showOtherAudio = signedIn && needsAudio;
+        const hasSecondaryPanel = showOtherAudio || shouldShowEstimate;
         if (dom.uploadSection) {
             dom.uploadSection.classList.toggle('single-upload', singleUpload);
+            dom.uploadSection.classList.toggle('has-secondary-panel', hasSecondaryPanel);
         }
         setHidden(dom.pdfZone, !needsPdf);
         setHidden(dom.audioZone, !needsAudio);
-
-        const shouldShowEstimate = signedIn && Boolean(state.hasAnySourceFile);
         setHidden(dom.uploadEstimate, !shouldShowEstimate);
-
-        const showOtherAudio = signedIn && needsAudio;
         setHidden(dom.otherAudioDisclosure, !showOtherAudio);
+        setHidden(dom.processingSecondaryGrid, singleUpload && !hasSecondaryPanel);
         if (dom.otherAudioSummary) {
             dom.otherAudioSummary.textContent = getOtherAudioSummary({
                 signedIn: signedIn,
