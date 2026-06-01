@@ -186,3 +186,18 @@ test('buildStudyPackExportItems shows source exports only when source outputs ex
   const voiceTranscriptDocx = voiceItems.find((item) => item.kind === 'source-transcript-docx');
   assert.equal(voiceTranscriptDocx.label, 'Voice Note Transcript (.docx)');
 });
+
+test('buildStudyPackTitleFromCsvFilename derives clean study pack titles', () => {
+  assert.equal(
+    studyLibraryUtils.buildStudyPackTitleFromCsvFilename('Cardiovascular Review.csv'),
+    'Cardiovascular Review'
+  );
+  assert.equal(
+    studyLibraryUtils.buildStudyPackTitleFromCsvFilename('/tmp/respiratory_practice_test.CSV'),
+    'respiratory practice test'
+  );
+  assert.equal(
+    studyLibraryUtils.buildStudyPackTitleFromCsvFilename('', 'Fallback Title'),
+    'Fallback Title'
+  );
+});

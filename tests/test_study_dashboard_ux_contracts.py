@@ -80,12 +80,19 @@ def test_study_csv_import_auto_applies_saves_and_uses_structured_preview():
     study_js = _read('static/js/study.js')
     study_css = _read('static/css/study.css')
 
+    assert 'id="import-pack-csv-btn"' in study_template
+    assert 'id="pack-empty-import-csv-btn"' in study_template
     assert 'CSV files apply and save automatically.' in study_template
+    assert 'id="builder-csv-input"\n                  accept=".csv,text/csv" multiple hidden' in study_template
     assert 'id="builder-apply-import-btn" disabled hidden' in study_template
     assert 'id="builder-preview-list"' in study_template
     assert 'builder-preview-table' not in study_template
     assert "applyBuilderImport({ autoSave: true });" in study_js
     assert 'function csvHeadersLookLikePracticeTest(headers)' in study_js
+    assert 'function csvHeadersLookLikeFlashcards(headers)' in study_js
+    assert 'function handleBuilderCsvFiles(fileList)' in study_js
+    assert 'function importBuilderCsvFilesAsStudyPacks(files, initialErrors)' in study_js
+    assert 'getCsvImportFileTitle(file)' in study_js
     assert "saveBuilderPack(false, {" in study_js
     assert "refreshAfterSave: wasCreateMode" in study_js
     assert "builderImportType.value = 'test';" in study_js

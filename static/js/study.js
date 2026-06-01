@@ -32,7 +32,7 @@ let packsHasMore = false, packsNextCursor = '', packsLoadingMore = false;
 let activeEditorPane = 'notes', exportType = 'flashcards', draggedPackId = '';
 let folderModalMode = 'create', editingFolderId = '', pendingOpenPackId = '', confirmModalResolver = null;
 let builderDraft = null, builderMode = 'edit', builderPane = 'info', builderDirty = false, builderPackId = '', builderExitResolver = null, builderImportParsed = null;
-let builderAutoSaveTimer = null, builderAutoSaving = false, builderAutoSaveQueued = false;
+let builderAutoSaveTimer = null, builderAutoSaving = false, builderAutoSaveQueued = false, builderBulkImporting = false;
 let inlineAutoSaveTimer = null, inlineAutoSaving = false, inlineAutoSaveQueued = false;
 let inlineAutosaveBaseline = null;
 let learnFlashcardIndex = 0, learnFlashcardFlipped = false, learnQuestionIndex = 0, learnScore = 0, learnAnswered = false;
@@ -96,6 +96,7 @@ let matchCards = [], matchSelected = null, matchMatched = 0, matchTotal = 0;
 let matchTimerInterval = null, matchStartTime = 0, matchElapsed = 0, matchRunning = false;
 const MATCH_MIN_CARDS = 6;
 const BUILDER_AUTOSAVE_DELAY_MS = 1500;
+const MAX_BUILDER_IMPORT_FILES = 50;
 const BUILTIN_ALL_FOLDER_ID = '';
 const BUILTIN_INTERVIEWS_FOLDER_ID = '__interviews__';
 const BUILTIN_VOICE_NOTES_FOLDER_ID = '__voice_notes__';
@@ -1393,12 +1394,12 @@ var userMeta = document.getElementById('user-meta'), backAppBtn = document.getEl
 var studyAuthGate = document.getElementById('study-auth-gate'), studyLibraryShell = document.getElementById('study-library-shell'), studyAuthSignInBtn = document.getElementById('study-auth-signin-btn');
 var processingNowPanel = document.getElementById('processing-now-panel'), processingNowList = document.getElementById('processing-now-list');
 var searchInput = document.getElementById('search-input'), folderList = document.getElementById('folder-list'), packList = document.getElementById('pack-list'), packSelectionBar = document.getElementById('pack-selection-bar'), packSelectionCount = document.getElementById('pack-selection-count'), clearPackSelectionBtn = document.getElementById('clear-pack-selection-btn'), packListActions = document.getElementById('pack-list-actions'), loadMorePacksBtn = document.getElementById('load-more-packs-btn'), newFolderBtn = document.getElementById('new-folder-btn'), deleteFolderBtn = document.getElementById('delete-folder-btn');
-var packEmpty = document.getElementById('pack-empty'), packEmptyDefault = document.getElementById('pack-empty-default'), packEmptyOnboarding = document.getElementById('pack-empty-onboarding'), packEmptyCreateBtn = document.getElementById('pack-empty-create-btn'), packEmptyDemoBtn = document.getElementById('pack-empty-demo-btn'), packEditorWrap = document.getElementById('pack-editor-wrap'), packTitle = document.getElementById('pack-title'), packFolderSelect = document.getElementById('pack-folder-select'), packFolderPicker = document.getElementById('pack-folder-picker'), packFolderButton = document.getElementById('pack-folder-button'), packFolderLabel = document.getElementById('pack-folder-label'), packFolderMenu = document.getElementById('pack-folder-menu');
+var packEmpty = document.getElementById('pack-empty'), packEmptyDefault = document.getElementById('pack-empty-default'), packEmptyOnboarding = document.getElementById('pack-empty-onboarding'), packEmptyCreateBtn = document.getElementById('pack-empty-create-btn'), packEmptyImportCsvBtn = document.getElementById('pack-empty-import-csv-btn'), packEmptyDemoBtn = document.getElementById('pack-empty-demo-btn'), packEditorWrap = document.getElementById('pack-editor-wrap'), packTitle = document.getElementById('pack-title'), packFolderSelect = document.getElementById('pack-folder-select'), packFolderPicker = document.getElementById('pack-folder-picker'), packFolderButton = document.getElementById('pack-folder-button'), packFolderLabel = document.getElementById('pack-folder-label'), packFolderMenu = document.getElementById('pack-folder-menu');
 var packCourse = document.getElementById('pack-course'), packSubject = document.getElementById('pack-subject'), packSemester = document.getElementById('pack-semester'), packBlock = document.getElementById('pack-block'), notesView = document.getElementById('notes-view');
 var packAdvancedMetaBtn = document.getElementById('pack-advanced-meta-btn'), packAdvancedMetaShell = document.getElementById('pack-advanced-meta-shell'), packAdvancedMetaPanel = document.getElementById('pack-advanced-meta-panel');
 var packSummary = document.getElementById('pack-summary'), packSummaryTitle = document.getElementById('pack-summary-title'), packSummaryMeta = document.getElementById('pack-summary-meta'), packStatNotes = document.getElementById('pack-stat-notes'), packStatCards = document.getElementById('pack-stat-cards'), packStatTest = document.getElementById('pack-stat-test');
 var packGoalsPanel = document.getElementById('pack-goals-panel'), packGoalCard = document.getElementById('pack-goal-card'), packGoalsStatus = document.getElementById('pack-goals-status'), overallDailyGoalInput = document.getElementById('overall-daily-goal-input'), overallDailyGoalDecrease = document.getElementById('overall-daily-goal-decrease'), overallDailyGoalIncrease = document.getElementById('overall-daily-goal-increase'), packDailyGoalInput = document.getElementById('pack-daily-goal-input'), packDailyGoalClear = document.getElementById('pack-daily-goal-clear'), packDailyGoalDecrease = document.getElementById('pack-daily-goal-decrease'), packDailyGoalIncrease = document.getElementById('pack-daily-goal-increase'), packGoalDue = document.getElementById('pack-goal-due'), packGoalUnmastered = document.getElementById('pack-goal-unmastered'), packGoalRecommendation = document.getElementById('pack-goal-recommendation'), packGoalHelper = document.getElementById('pack-goal-helper');
-var createPackBtn = document.getElementById('create-pack-btn'), openBuilderBtn = document.getElementById('open-builder-btn'), savePackBtn = document.getElementById('save-pack-btn'), deletePackBtn = document.getElementById('delete-pack-btn'), exportPackNotesBtn = document.getElementById('export-pack-notes-btn'), packShareBtn = document.getElementById('pack-share-btn'), openLearnBtn = document.getElementById('open-learn-btn'), packSaveStatus = document.getElementById('pack-save-status');
+var createPackBtn = document.getElementById('create-pack-btn'), importPackCsvBtn = document.getElementById('import-pack-csv-btn'), openBuilderBtn = document.getElementById('open-builder-btn'), savePackBtn = document.getElementById('save-pack-btn'), deletePackBtn = document.getElementById('delete-pack-btn'), exportPackNotesBtn = document.getElementById('export-pack-notes-btn'), packShareBtn = document.getElementById('pack-share-btn'), openLearnBtn = document.getElementById('open-learn-btn'), packSaveStatus = document.getElementById('pack-save-status');
 var exportMenu = document.getElementById('export-menu'), exportMenuBtn = document.getElementById('export-menu-btn'), exportMenuList = document.getElementById('export-menu-list'), exportPdfSubmenu = document.getElementById('export-pdf-submenu');
 var editorTabs = document.querySelectorAll('.editor-tab'), flashcardCount = document.getElementById('flashcard-count'), questionCount = document.getElementById('question-count'), addFlashcardBtn = document.getElementById('add-flashcard-btn'), addQuestionBtn = document.getElementById('add-question-btn'), flashcardEditorList = document.getElementById('flashcard-editor-list'), questionEditorList = document.getElementById('question-editor-list');
 var learnStage = document.getElementById('learn-stage'), learnTitle = document.getElementById('learn-title'), learnSub = document.getElementById('learn-sub'), learnBackAppBtn = document.getElementById('learn-back-app-btn'), learnBackLibraryBtn = document.getElementById('learn-back-library-btn'), learnFullscreenBtn = document.getElementById('learn-fullscreen-btn');
@@ -2737,12 +2738,16 @@ function setBuilderPane(nextPane) {
 }
 function clearBuilderImportState() {
   builderImportParsed = null;
+  setBuilderBulkImportBusy(false);
   setBuilderImportButtonState('Apply Import', true);
   setHidden(builderPreview, true);
   if (builderPreviewList) builderPreviewList.innerHTML = '';
   setHidden(builderImportErrors, true);
   builderImportErrors.textContent = '';
   builderImportSummary.textContent = 'No file loaded.';
+}
+function getDefaultManualPackFolderId() {
+  return selectedFolderId && !isBuiltInFolderId(selectedFolderId) ? selectedFolderId : '';
 }
 function openBuilderOverlay(mode, pack) {
   var openingCreate = (mode === 'create');
@@ -2754,6 +2759,7 @@ function openBuilderOverlay(mode, pack) {
   builderPackId = openingCreate ? '' : (pack && pack.study_pack_id ? pack.study_pack_id : selectedPackId);
   builderDraft = openingCreate ? buildDraftFromPack({
     title: '',
+    folder_id: getDefaultManualPackFolderId(),
     notes_markdown: '',
     flashcards: [],
     test_questions: []
@@ -2877,6 +2883,25 @@ function createDemoPack() {
       }
     });
 }
+function openCsvImportBuilder() {
+  if (!auth.currentUser) {
+    showToast('Please sign in first.', 'error');
+    return;
+  }
+  openBuilderOverlay('create', null);
+  setBuilderPane('import');
+  if (builderImportType) {
+    builderImportType.value = 'flashcards';
+  }
+  clearBuilderImportState();
+  if (builderCsvInput) {
+    window.setTimeout(function () {
+      if (builderOverlay && builderOverlay.classList.contains('visible') && !builderBulkImporting) {
+        builderCsvInput.click();
+      }
+    }, 0);
+  }
+}
 function saveBuilderPack(closeAfter, options) {
   if (!builderDraft) { return Promise.resolve(); }
   var opts = options || {};
@@ -2955,6 +2980,10 @@ function csvHeadersLookLikePracticeTest(headers) {
     return headers.indexOf(name) >= 0;
   });
 }
+function csvHeadersLookLikeFlashcards(headers) {
+  return (headers.indexOf('front') >= 0 && headers.indexOf('back') >= 0)
+    || (headers.indexOf('question') >= 0 && headers.indexOf('answer') >= 0 && !csvHeadersLookLikePracticeTest(headers));
+}
 function parseBuilderCsvContent(rawText, type) {
   var parsedCsv = parseCsvRows(rawText || '');
   var rows = parsedCsv.rows || [];
@@ -2969,8 +2998,10 @@ function parseBuilderCsvContent(rawText, type) {
     return { type: type, items: [], errors: ['CSV has too many rows. Please keep imports to 5,000 data rows or fewer.'], preview: [] };
   }
   var headers = (rows[0] || []).map(function (header) { return normalizeHeader(header.replace(/^\uFEFF/, '')); });
-  if (type === 'flashcards' && csvHeadersLookLikePracticeTest(headers)) {
+  if (csvHeadersLookLikePracticeTest(headers)) {
     type = 'test';
+  } else if (csvHeadersLookLikeFlashcards(headers)) {
+    type = 'flashcards';
   }
   var errors = [];
   var items = [];
@@ -3085,6 +3116,76 @@ function renderBuilderImportPreview() {
   setSafeInnerHtml(builderPreviewList, rowsHtml);
   setHidden(builderPreview, false);
 }
+function getCsvImportFileTitle(file) {
+  var filename = file && file.name ? file.name : '';
+  if (studyLibraryUtils && typeof studyLibraryUtils.buildStudyPackTitleFromCsvFilename === 'function') {
+    return studyLibraryUtils.buildStudyPackTitleFromCsvFilename(filename, 'Untitled pack');
+  }
+  return String(filename || '').replace(/\.csv$/i, '').trim() || 'Untitled pack';
+}
+function readBuilderCsvFileAsText(file) {
+  return new Promise(function (resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function () { resolve(String(reader.result || '')); };
+    reader.onerror = function () { reject(new Error('Could not read CSV file.')); };
+    reader.readAsText(file, 'utf-8');
+  });
+}
+function fileLooksLikeCsv(file) {
+  var filename = String(file && file.name || '').trim();
+  var mime = String(file && file.type || '').toLowerCase();
+  return /\.csv$/i.test(filename) || mime === 'text/csv' || mime === 'application/csv' || mime === 'application/vnd.ms-excel';
+}
+function renderBuilderImportErrorMessages(messages) {
+  var safeMessages = (Array.isArray(messages) ? messages : []).filter(Boolean);
+  if (!safeMessages.length) {
+    setHidden(builderImportErrors, true);
+    builderImportErrors.textContent = '';
+    return;
+  }
+  var visibleMessages = safeMessages.slice(0, 25);
+  if (safeMessages.length > visibleMessages.length) {
+    visibleMessages.push('Showing the first 25 issues. Fix those and import again if more remain.');
+  }
+  setHidden(builderImportErrors, false);
+  setSafeInnerHtml(builderImportErrors, visibleMessages.map(function (err) { return '<div>' + escapeHtml(err) + '</div>'; }).join(''));
+}
+function setBuilderBulkImportBusy(isBusy) {
+  builderBulkImporting = !!isBusy;
+  if (builderCsvInput) builderCsvInput.disabled = builderBulkImporting;
+  if (builderImportType) builderImportType.disabled = builderBulkImporting;
+  if (builderImportMode) builderImportMode.disabled = builderBulkImporting;
+  if (builderTemplateBtn) builderTemplateBtn.disabled = builderBulkImporting;
+}
+function getBulkImportBasePayload() {
+  return {
+    folder_id: builderDraft && builderDraft.folder_id ? builderDraft.folder_id : '',
+    course: builderDraft ? (builderDraft.course || '') : '',
+    subject: builderDraft ? (builderDraft.subject || '') : '',
+    semester: builderDraft ? (builderDraft.semester || '') : '',
+    block: builderDraft ? (builderDraft.block || '') : '',
+    notes_markdown: builderDraft ? (builderDraft.notes_markdown || '') : ''
+  };
+}
+function createStudyPackFromImportedCsv(file, parsed) {
+  var payload = Object.assign({}, getBulkImportBasePayload(), {
+    title: getCsvImportFileTitle(file),
+    flashcards: [],
+    test_questions: []
+  });
+  if (parsed.type === 'flashcards') {
+    payload.flashcards = parsed.items.slice();
+  } else {
+    payload.test_questions = parsed.items.map(normalizeQuestion);
+  }
+  return apiCall('/api/study-packs', { method: 'POST', body: JSON.stringify(payload) }).then(function (response) {
+    var packId = response && response.study_pack_id ? response.study_pack_id : '';
+    if (!packId) {
+      throw new Error('Could not create study pack.');
+    }
+    return packId;
+  });
+}
 function handleBuilderCsvFile(file) {
   if (!file) { return; }
   var reader = new FileReader();
@@ -3124,6 +3225,125 @@ function handleBuilderCsvFile(file) {
     showToast('Could not read CSV file.', 'error');
   };
   reader.readAsText(file, 'utf-8');
+}
+function handleBuilderCsvFiles(fileList) {
+  if (builderBulkImporting) { return Promise.resolve(false); }
+  var files = Array.prototype.slice.call(fileList || []).filter(Boolean);
+  if (!files.length) { return Promise.resolve(false); }
+  if (files.length > MAX_BUILDER_IMPORT_FILES) {
+    builderImportSummary.textContent = 'Too many files selected.';
+    renderBuilderImportErrorMessages(['Please import ' + MAX_BUILDER_IMPORT_FILES + ' CSV files or fewer at once.']);
+    return Promise.resolve(false);
+  }
+  var fileErrors = [];
+  var csvFiles = files.filter(function (file) {
+    if (fileLooksLikeCsv(file)) return true;
+    fileErrors.push((file && file.name ? file.name : 'Selected file') + ': only CSV files can be imported.');
+    return false;
+  });
+  if (!csvFiles.length) {
+    builderImportSummary.textContent = 'No CSV files selected.';
+    renderBuilderImportErrorMessages(fileErrors);
+    return Promise.resolve(false);
+  }
+  if (builderMode === 'edit' && csvFiles.length === 1 && !fileErrors.length) {
+    handleBuilderCsvFile(csvFiles[0]);
+    return Promise.resolve(true);
+  }
+  return importBuilderCsvFilesAsStudyPacks(csvFiles, fileErrors);
+}
+function importBuilderCsvFilesAsStudyPacks(files, initialErrors) {
+  var importErrors = (initialErrors || []).slice();
+  builderImportParsed = null;
+  setHidden(builderPreview, true);
+  if (builderPreviewList) builderPreviewList.innerHTML = '';
+  setBuilderBulkImportBusy(true);
+  setBuilderImportButtonState('Importing...', true);
+  builderImportSummary.textContent = files.length === 1 ? 'Reading CSV file...' : 'Reading ' + files.length + ' CSV files...';
+  renderBuilderImportErrorMessages(importErrors);
+  return ensureCsvParser().then(function () {
+    return Promise.all(files.map(function (file) {
+      return readBuilderCsvFileAsText(file).then(function (text) {
+        var parsed = parseBuilderCsvContent(text, builderImportType.value);
+        return { file: file, parsed: parsed };
+      }).catch(function (error) {
+        return { file: file, read_error: error };
+      });
+    }));
+  }).then(function (results) {
+    var importable = [];
+    results.forEach(function (result) {
+      var file = result.file || {};
+      var title = getCsvImportFileTitle(file);
+      if (result.read_error) {
+        importErrors.push(title + ': could not read the file.');
+        return;
+      }
+      var parsed = result.parsed || { items: [], errors: [], type: builderImportType.value };
+      (parsed.errors || []).forEach(function (error) {
+        importErrors.push(title + ': ' + error);
+      });
+      if (!parsed.items || !parsed.items.length) {
+        if (!(parsed.errors || []).length) {
+          importErrors.push(title + ': no valid rows found.');
+        }
+        return;
+      }
+      importable.push({ file: file, parsed: parsed });
+    });
+    if (!importable.length) {
+      builderImportSummary.textContent = 'No valid rows found.';
+      setBuilderImportButtonState('Apply Import', true);
+      renderBuilderImportErrorMessages(importErrors);
+      return { createdIds: [], errors: importErrors };
+    }
+    var createdIds = [];
+    var createErrors = [];
+    return importable.reduce(function (chain, entry, index) {
+      return chain.then(function () {
+        builderImportSummary.textContent = 'Creating study pack ' + (index + 1) + ' of ' + importable.length + '...';
+        return createStudyPackFromImportedCsv(entry.file, entry.parsed).then(function (packId) {
+          createdIds.push(packId);
+        }).catch(function (error) {
+          createErrors.push(getCsvImportFileTitle(entry.file) + ': ' + (error.message || 'Could not create study pack.'));
+        });
+      });
+    }, Promise.resolve()).then(function () {
+      return { createdIds: createdIds, errors: importErrors.concat(createErrors) };
+    });
+  }).then(function (result) {
+    var createdIds = result && Array.isArray(result.createdIds) ? result.createdIds : [];
+    var errors = result && Array.isArray(result.errors) ? result.errors : importErrors;
+    renderBuilderImportErrorMessages(errors);
+    if (!createdIds.length) {
+      builderImportSummary.textContent = 'No study packs were imported.';
+      setBuilderImportButtonState('Apply Import', true);
+      return false;
+    }
+    var packText = createdIds.length + ' study pack' + (createdIds.length === 1 ? '' : 's');
+    builderImportSummary.textContent = errors.length
+      ? 'Imported ' + packText + '. Some files or rows need attention.'
+      : 'Imported ' + packText + ' from CSV.';
+    setBuilderImportButtonState('Imported', true);
+    showToast('Imported ' + packText + ' from CSV.', 'success');
+    var preferredPackId = createdIds[createdIds.length - 1];
+    if (!errors.length) {
+      closeBuilderOverlay();
+    }
+    return loadData(preferredPackId).then(function () { return true; }).catch(function (error) {
+      showToast(error.message || 'Imported CSV, but could not refresh the library.', 'error');
+      return true;
+    });
+  }).catch(function (error) {
+    builderImportParsed = null;
+    setBuilderImportButtonState('Apply Import', true);
+    builderImportSummary.textContent = 'CSV import failed.';
+    renderBuilderImportErrorMessages([error && error.message ? error.message : 'CSV import failed. Check your connection and try again.']);
+    return false;
+  }).finally(function () {
+    setBuilderBulkImportBusy(false);
+    if (builderCsvInput) builderCsvInput.value = '';
+  });
 }
 function saveImportedBuilderDraft(importedCount) {
   var wasCreateMode = builderMode === 'create';
@@ -5049,6 +5269,9 @@ createPackBtn.addEventListener('click', function () {
   }
   openBuilderOverlay('create', null);
 });
+if (importPackCsvBtn) {
+  importPackCsvBtn.addEventListener('click', openCsvImportBuilder);
+}
 openBuilderBtn.addEventListener('click', function () {
   if (!auth.currentUser) {
     showToast('Please sign in first.', 'error');
@@ -5239,11 +5462,14 @@ builderCsvDrop.addEventListener('drop', function (event) {
   event.preventDefault();
   builderCsvDrop.classList.remove('dragover');
   var files = event.dataTransfer && event.dataTransfer.files;
-  if (files && files[0]) { handleBuilderCsvFile(files[0]); }
+  if (files && files.length) { handleBuilderCsvFiles(files); }
 });
 builderCsvInput.addEventListener('change', function () {
-  if (builderCsvInput.files && builderCsvInput.files[0]) {
-    handleBuilderCsvFile(builderCsvInput.files[0]);
+  if (builderCsvInput.files && builderCsvInput.files.length) {
+    handleBuilderCsvFiles(builderCsvInput.files);
+    if (!builderBulkImporting) {
+      builderCsvInput.value = '';
+    }
   }
 });
 builderApplyImportBtn.addEventListener('click', function () { applyBuilderImport({ autoSave: true }); });
@@ -5284,6 +5510,9 @@ if (loadMorePacksBtn) {
 }
 if (packEmptyCreateBtn) {
   packEmptyCreateBtn.addEventListener('click', function () { openBuilderOverlay('create', null); });
+}
+if (packEmptyImportCsvBtn) {
+  packEmptyImportCsvBtn.addEventListener('click', openCsvImportBuilder);
 }
 if (packEmptyDemoBtn) {
   packEmptyDemoBtn.addEventListener('click', createDemoPack);

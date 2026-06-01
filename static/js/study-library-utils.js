@@ -194,6 +194,22 @@
     return items;
   }
 
+  function buildStudyPackTitleFromCsvFilename(filename, fallbackTitle) {
+    var fallback = String(fallbackTitle || 'Untitled pack').trim() || 'Untitled pack';
+    var rawName = String(filename || '').split(/[\\/]/).pop().trim();
+    if (!rawName) return fallback;
+    var withoutQuery = rawName.split(/[?#]/)[0].trim();
+    var withoutExtension = withoutQuery.replace(/\.csv$/i, '').trim();
+    if (withoutExtension === withoutQuery) {
+      withoutExtension = withoutQuery.replace(/\.[^.]+$/, '').trim();
+    }
+    var cleaned = withoutExtension
+      .replace(/[_]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return cleaned || fallback;
+  }
+
   var exported = {
     buildFolderItemsForSidebar: buildFolderItemsForSidebar,
     filterStudyPacks: filterStudyPacks,
@@ -202,6 +218,7 @@
     getStudyPackIds: getStudyPackIds,
     buildStudyPackSelection: buildStudyPackSelection,
     buildStudyPackExportItems: buildStudyPackExportItems,
+    buildStudyPackTitleFromCsvFilename: buildStudyPackTitleFromCsvFilename,
   };
 
   if (typeof module !== 'undefined' && module.exports) {

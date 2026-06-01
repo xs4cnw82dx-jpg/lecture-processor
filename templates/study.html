@@ -55,7 +55,12 @@
       </aside>
       <section class="panel">
         <div class="panel-head"><span class="panel-title">Study Packs</span>
-          <div class="actions"><button class="btn primary" id="create-pack-btn"><svg viewBox="0 0 24 24" fill="none"
+          <div class="actions"><button class="btn primary" id="import-pack-csv-btn"><svg viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg><span>Import CSV</span></button><button class="btn" id="create-pack-btn"><svg viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -114,6 +119,7 @@
                   <div>Create your first pack manually or upload a lecture to auto-generate one.</div>
                   <div class="pack-empty-actions">
                     <a class="btn primary" id="pack-empty-upload-btn" href="/lecture-notes">Upload your first lecture</a>
+                    <button type="button" class="btn" id="pack-empty-import-csv-btn">Import CSV</button>
                     <button type="button" class="btn" id="pack-empty-create-btn">Create first study pack</button>
                     <button type="button" class="btn" id="pack-empty-demo-btn">Create demo pack</button>
                   </div>
@@ -827,7 +833,7 @@
           <section class="builder-pane" id="builder-pane-import" role="tabpanel" aria-labelledby="builder-tab-import"
             aria-hidden="true">
             <div class="builder-card">
-              <div class="builder-helper u-mb-8">Import data directly into this pack. CSV files apply and save automatically.</div>
+              <div class="builder-helper u-mb-8">Import data directly into this pack, or choose multiple CSV files to create separate study packs. CSV files apply and save automatically.</div>
               <div class="builder-import-tools">
                 <div class="field"><label for="builder-import-type">Import Type</label><select class="builder-select" id="builder-import-type">
                     <option value="flashcards">Flashcards CSV</option>
@@ -838,9 +844,9 @@
                     <option value="replace">Replace existing</option>
                   </select></div>
               </div>
-              <div class="builder-drop" id="builder-csv-drop" role="button" tabindex="0" aria-labelledby="builder-csv-drop-title" aria-describedby="builder-csv-drop-helper builder-import-summary" aria-controls="builder-csv-input"><strong id="builder-csv-drop-title">Drag a CSV file here</strong>
+              <div class="builder-drop" id="builder-csv-drop" role="button" tabindex="0" aria-labelledby="builder-csv-drop-title" aria-describedby="builder-csv-drop-helper builder-import-summary" aria-controls="builder-csv-input"><strong id="builder-csv-drop-title">Drag CSV files here</strong>
                 <div class="builder-helper" id="builder-csv-drop-helper">or click to browse</div><input type="file" id="builder-csv-input"
-                  accept=".csv,text/csv" hidden>
+                  accept=".csv,text/csv" multiple hidden>
               </div>
               <div class="builder-cta-strip u-mt-12"><button class="btn"
                   id="builder-template-btn">Download CSV Template</button><button class="btn primary"
