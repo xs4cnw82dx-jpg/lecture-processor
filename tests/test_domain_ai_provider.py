@@ -1,6 +1,9 @@
 from types import SimpleNamespace
 
 from lecture_processor.domains.ai import provider
+from tests.runtime_test_support import get_test_core
+
+core = get_test_core()
 
 
 class _ErrorWithStatus:
@@ -138,3 +141,8 @@ def test_generate_with_policy_and_optional_thinking_builds_expected_payloads():
     assert len(calls[1]['contents']) == 1
     assert calls[1]['contents'][0].role == 'user'
     assert calls[1]['contents'][0].parts == [{'text': 'hello world'}]
+
+
+def test_interview_coding_model_uses_high_thinking_policy():
+    assert core.MODEL_INTERVIEW_CODING == 'gemini-3-flash-preview'
+    assert core.MODEL_THINKING_POLICY[core.MODEL_INTERVIEW_CODING]['thinking_level'] == 'high'

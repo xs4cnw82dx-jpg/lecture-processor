@@ -106,6 +106,46 @@ Transcript:
 {transcript}
 """
 
+PROMPT_INTERVIEW_CODING = """You are a qualitative research coding assistant helping a researcher review an interview transcript.
+
+Your task is first-cycle qualitative coding, not final analysis. Use descriptive, in-vivo, and thematic codes grounded strictly in the transcript. Reuse existing codes when they are semantically equivalent. Create concise parent codes and subcodes only when they improve organization. A quotation may receive multiple codes when multiple concepts are genuinely present.
+
+Rules:
+- Do not invent participant meaning beyond the transcript.
+- Preserve exact quoted text from the transcript.
+- Prefer useful, human-readable code names of 2-6 words.
+- Use in-vivo wording when a participant phrase is especially revealing.
+- Avoid generic codes such as "interview", "topic", or "answer".
+- Return only strict JSON. No Markdown fences or commentary.
+
+Existing codebook:
+{existing_codes_json}
+
+Transcript segments:
+{segments_json}
+
+Required JSON shape:
+{{
+  "codes": [
+    {{
+      "temp_id": "c1",
+      "name": "short code name",
+      "description": "why this code is useful",
+      "color": "teal",
+      "parent_temp_id": "",
+      "existing_code_id": ""
+    }}
+  ],
+  "quotations": [
+    {{
+      "segment_id": "seg-1",
+      "quote": "exact text copied from the segment",
+      "code_refs": ["c1"],
+      "comment": "brief analytic memo, or empty string"
+    }}
+  ]
+}}"""
+
 PROMPT_VOICE_NOTE_NOTES = """You are an expert study-note editor. Turn this voice-note transcript into clean, study-ready Markdown notes.
 
 GOAL:
@@ -356,6 +396,7 @@ PROMPT_RECORDS: List[PromptRecord] = [
     PromptRecord("interview_transcription", "Interview transcription", PROMPT_INTERVIEW_TRANSCRIPTION),
     PromptRecord("interview_summary", "Interview summary", PROMPT_INTERVIEW_SUMMARY),
     PromptRecord("interview_sectioned", "Interview sectioned", PROMPT_INTERVIEW_SECTIONED),
+    PromptRecord("interview_coding", "Interview AI coding", PROMPT_INTERVIEW_CODING),
     PromptRecord("voice_note_notes", "Voice note notes", PROMPT_VOICE_NOTE_NOTES),
     PromptRecord("merge_template", "Lecture merge template", PROMPT_MERGE_TEMPLATE),
     PromptRecord("merge_with_audio_markers", "Lecture merge with audio markers", PROMPT_MERGE_WITH_AUDIO_MARKERS),

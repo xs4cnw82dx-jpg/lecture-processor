@@ -5,6 +5,7 @@ import pytest
 
 from lecture_processor.domains.study import audio
 from lecture_processor.domains.study import export
+from lecture_processor.domains.study import interview_coding
 from lecture_processor.domains.study import progress
 
 
@@ -141,3 +142,61 @@ def test_annotated_notes_html_exports_to_pdf():
 
     assert pdf_bytes.startswith(b'%PDF-')
     assert len(pdf_bytes) > 800
+
+
+def test_interview_coding_parses_segments_and_ai_payload():
+    transcript = "00:01 - Speaker A - We need better follow-up care.\n00:12 - Speaker B - Follow-up is hard at home."
+    segments = interview_coding.parse_transcript_segments(transcript)
+
+    assert segments[0]["segment_id"] == "seg-1"
+    assert segments[0]["speaker"] == "Speaker A"
+    assert transcript[segments[0]["start_offset"]:segments[0]["end_offset"]] == "We need better follow-up care."
+
+    payload = interview_coding.sanitize_ai_coding_payload(
+        """
+        {
+          "codes": [{"temp_id": "c1", "name": "Follow-up care", "description": "Care after the appointment", "color": "teal"}],
+          "quotations": [{"segment_id": "seg-1", "quote": "better follow-up care", "code_refs": ["c1"], "comment": "important barrier"}]
+        }
+        """,
+        transcript,
+        segments,
+    )
+
+    assert payload["error"] is None
+    assert payload["codes"][0]["name"] == "Follow-up care"
+    assert payload["quotations"][0]["text"] == "better follow-up care"
+    assert payload["quotations"][0]["code_refs"] == ["c1"]
+
+
+def test_interview_coding_validates_multiple_code_quotation_and_pdf():
+    transcript = "00:01 - Speaker A - Patients want clear guidance."
+    code_ids = {"code-1", "code-2"}
+    start = transcript.index("Patients")
+    end = len(transcript)
+    payload = interview_coding.sanitize_quotation_payload(
+        {
+            "start_offset": start,
+            "end_offset": end,
+            "code_ids": ["code-1", "code-2"],
+            "comment": "two concepts",
+        },
+        transcript,
+        code_ids,
+        pack_id="pack-1",
+        transcript_key="pack-1:key",
+    )
+
+    assert payload["code_ids"] == ["code-1", "code-2"]
+    assert payload["text"] == "Patients want clear guidance."
+
+    pdf_buffer = interview_coding.build_interview_coding_pdf(
+        "Interview",
+        transcript,
+        [
+            {"code_id": "code-1", "name": "Patient needs", "description": "", "color": "teal"},
+            {"code_id": "code-2", "name": "Guidance", "description": "", "color": "amber"},
+        ],
+        [{**payload, "quotation_id": "q1"}],
+    )
+    assert pdf_buffer.getvalue().startswith(b"%PDF-")

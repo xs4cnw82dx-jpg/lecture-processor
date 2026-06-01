@@ -8,6 +8,7 @@ from lecture_processor.services.study_export_service import (
     export_study_pack_source,
 )
 from lecture_processor.services.study_library_service import (
+    bulk_move_study_packs,
     create_study_folder,
     create_study_pack,
     delete_study_folder,
@@ -34,6 +35,7 @@ from lecture_processor.services.study_progress_service import (
 __all__ = [
     'create_study_folder',
     'create_study_pack',
+    'bulk_move_study_packs',
     'delete_study_folder',
     'delete_study_pack',
     'export_study_pack_annotated_pdf',

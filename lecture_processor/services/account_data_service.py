@@ -416,6 +416,9 @@ def delete_account_data(app_ctx, request):
         _delete_uid_collection('analytics_events')
         _delete_uid_collection('study_folders')
         _delete_uid_collection('study_card_states')
+        _delete_uid_collection('interview_codes')
+        _delete_uid_collection('interview_quotations')
+        _delete_uid_collection('interview_ai_coding_runs')
         _delete_field_collection('study_shares', 'owner_uid', uid, deleted_key='study_shares')
         _delete_uid_collection('planner_sessions')
         _delete_uid_collection('planner_settings')
@@ -446,6 +449,9 @@ def delete_account_data(app_ctx, request):
             ('analytics_events', 'uid', uid, 'analytics_events'),
             ('study_folders', 'uid', uid, 'study_folders'),
             ('study_card_states', 'uid', uid, 'study_card_states'),
+            ('interview_codes', 'uid', uid, 'interview_codes'),
+            ('interview_quotations', 'uid', uid, 'interview_quotations'),
+            ('interview_ai_coding_runs', 'uid', uid, 'interview_ai_coding_runs'),
             ('study_shares', 'owner_uid', uid, 'study_shares'),
             ('study_packs', 'uid', uid, 'study_packs'),
             ('study_pack_sources', 'uid', uid, 'study_pack_sources'),

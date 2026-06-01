@@ -165,6 +165,8 @@ def serialize_public_folder(folder_id, folder):
     return {
         'folder_id': folder_id,
         'name': folder.get('name', ''),
+        'parent_folder_id': folder.get('parent_folder_id', ''),
+        'sort_order': float(folder.get('sort_order', 0) or 0),
         'course': folder.get('course', ''),
         'subject': folder.get('subject', ''),
         'semester': folder.get('semester', ''),
@@ -297,3 +299,50 @@ def list_pending_batches_by_folder(app_ctx, uid):
             continue
         pending_by_folder[folder_id] = int(pending_by_folder.get(folder_id, 0) or 0) + 1
     return pending_by_folder
+
+
+def normalize_virtual_or_real_folder_parent(raw_parent_id):
+    parent_id = str(raw_parent_id or '').strip()
+    if parent_id in {'__interviews__', '__voice_notes__'}:
+        return parent_id
+    return parent_id
+
+
+def build_folder_descendant_ids(folders, root_folder_id):
+    root_id = str(root_folder_id or '').strip()
+    children_by_parent = {}
+    for folder in folders or []:
+        folder_id = str(folder.get('folder_id', '') or '').strip()
+        if not folder_id:
+            continue
+        parent_id = str(folder.get('parent_folder_id', '') or '').strip()
+        children_by_parent.setdefault(parent_id, []).append(folder_id)
+    descendants = set()
+    stack = list(children_by_parent.get(root_id, []))
+    while stack:
+        folder_id = stack.pop()
+        if folder_id in descendants:
+            continue
+        descendants.add(folder_id)
+        stack.extend(children_by_parent.get(folder_id, []))
+    return descendants
+
+
+def build_folder_payloads_from_docs(folder_docs):
+    folders = []
+    for doc in folder_docs or []:
+        folder = doc.to_dict() or {}
+        folders.append({
+            'folder_id': doc.id,
+            'name': folder.get('name', ''),
+            'parent_folder_id': str(folder.get('parent_folder_id', '') or '').strip(),
+            'sort_order': float(folder.get('sort_order', 0) or 0),
+            'course': folder.get('course', ''),
+            'subject': folder.get('subject', ''),
+            'semester': folder.get('semester', ''),
+            'block': folder.get('block', ''),
+            'exam_date': folder.get('exam_date', ''),
+            'created_at': folder.get('created_at', 0),
+            'updated_at': folder.get('updated_at', 0),
+        })
+    return folders

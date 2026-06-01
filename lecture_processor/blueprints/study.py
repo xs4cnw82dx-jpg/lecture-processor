@@ -1,7 +1,7 @@
 from flask import Blueprint, request
 
 from lecture_processor.runtime.container import get_runtime
-from lecture_processor.services import planner_api_service, study_api_service, voice_note_service
+from lecture_processor.services import interview_coding_service, planner_api_service, study_api_service, voice_note_service
 
 study_bp = Blueprint('study_api', __name__)
 
@@ -64,6 +64,12 @@ def get_study_packs():
 def create_study_pack():
     runtime = get_runtime()
     return study_api_service.create_study_pack(runtime, request)
+
+
+@study_bp.route('/api/study-packs/bulk-folder', methods=['PATCH'])
+def bulk_move_study_packs():
+    runtime = get_runtime()
+    return study_api_service.bulk_move_study_packs(runtime, request)
 
 
 @study_bp.route('/api/study-packs/<pack_id>', methods=['GET'])
@@ -178,6 +184,78 @@ def export_study_pack_pdf(pack_id):
 def export_study_pack_annotated_pdf(pack_id):
     runtime = get_runtime()
     return study_api_service.export_study_pack_annotated_pdf(runtime, request, pack_id)
+
+
+@study_bp.route('/api/interview-coding/packs/<pack_id>', methods=['GET'])
+def get_interview_coding_state(pack_id):
+    runtime = get_runtime()
+    return interview_coding_service.get_coding_state(runtime, request, pack_id)
+
+
+@study_bp.route('/api/interview-coding/packs/<pack_id>/codes', methods=['POST'])
+def create_interview_code(pack_id):
+    runtime = get_runtime()
+    return interview_coding_service.create_code(runtime, request, pack_id)
+
+
+@study_bp.route('/api/interview-coding/packs/<pack_id>/codes/<code_id>', methods=['PATCH'])
+def update_interview_code(pack_id, code_id):
+    runtime = get_runtime()
+    return interview_coding_service.update_code(runtime, request, pack_id, code_id)
+
+
+@study_bp.route('/api/interview-coding/packs/<pack_id>/codes/<code_id>', methods=['DELETE'])
+def delete_interview_code(pack_id, code_id):
+    runtime = get_runtime()
+    return interview_coding_service.delete_code(runtime, request, pack_id, code_id)
+
+
+@study_bp.route('/api/interview-coding/packs/<pack_id>/codes/<code_id>/merge', methods=['POST'])
+def merge_interview_code(pack_id, code_id):
+    runtime = get_runtime()
+    return interview_coding_service.merge_code(runtime, request, pack_id, code_id)
+
+
+@study_bp.route('/api/interview-coding/packs/<pack_id>/quotations', methods=['POST'])
+def create_interview_quotation(pack_id):
+    runtime = get_runtime()
+    return interview_coding_service.create_quotation(runtime, request, pack_id)
+
+
+@study_bp.route('/api/interview-coding/packs/<pack_id>/quotations/<quotation_id>', methods=['PATCH'])
+def update_interview_quotation(pack_id, quotation_id):
+    runtime = get_runtime()
+    return interview_coding_service.update_quotation(runtime, request, pack_id, quotation_id)
+
+
+@study_bp.route('/api/interview-coding/packs/<pack_id>/quotations/<quotation_id>', methods=['DELETE'])
+def delete_interview_quotation(pack_id, quotation_id):
+    runtime = get_runtime()
+    return interview_coding_service.delete_quotation(runtime, request, pack_id, quotation_id)
+
+
+@study_bp.route('/api/interview-coding/packs/<pack_id>/ai-runs', methods=['POST'])
+def start_interview_ai_coding_run(pack_id):
+    runtime = get_runtime()
+    return interview_coding_service.start_ai_coding_run(runtime, request, pack_id)
+
+
+@study_bp.route('/api/interview-coding/packs/<pack_id>/ai-runs/<run_id>/accept', methods=['POST'])
+def accept_interview_ai_coding_run(pack_id, run_id):
+    runtime = get_runtime()
+    return interview_coding_service.accept_ai_coding_run(runtime, request, pack_id, run_id)
+
+
+@study_bp.route('/api/interview-coding/packs/<pack_id>/ai-runs/<run_id>/reject', methods=['POST'])
+def reject_interview_ai_coding_run(pack_id, run_id):
+    runtime = get_runtime()
+    return interview_coding_service.reject_ai_coding_run(runtime, request, pack_id, run_id)
+
+
+@study_bp.route('/api/interview-coding/packs/<pack_id>/export-pdf', methods=['GET'])
+def export_interview_coding_pdf(pack_id):
+    runtime = get_runtime()
+    return interview_coding_service.export_coding_pdf(runtime, request, pack_id)
 
 
 @study_bp.route('/api/voice-notes', methods=['POST'])
