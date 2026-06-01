@@ -62,7 +62,8 @@ let runtimeJobsRefreshTimer = null;
 let runtimeJobsRefreshInFlight = false;
 let shareModalEntityType = '', shareModalEntityId = '', shareModalScope = 'private', shareModalLoadedLink = '', shareModalSaving = false;
 let collapsedFolderIds = new Set();
-let codingState = null, codingLoading = false, selectedCodingCodeId = '', selectedCodingColor = 'teal', codingSelectionRange = null, codingUndoStack = [];
+let codingState = null, codingLoading = false, codingWorkspaceOpen = false, selectedCodingCodeId = '', selectedCodingColor = 'teal', codingSelectionRange = null, codingUndoStack = [], codingMergeSourceId = '';
+let codingAutosaveTimer = null, codingAutosaveInFlight = false, codingAutosaveQueued = false, codingEditorLastSavedFingerprint = '';
 const HINT_FADE_DELAY_MS = 10000;
 const NOTES_ICON_IDLE_MS = 5000;
 const HIGHLIGHT_SYNC_DELAY_MS = 450;
@@ -1401,10 +1402,11 @@ var packCourse = document.getElementById('pack-course'), packSubject = document.
 var packAdvancedMetaBtn = document.getElementById('pack-advanced-meta-btn'), packAdvancedMetaShell = document.getElementById('pack-advanced-meta-shell'), packAdvancedMetaPanel = document.getElementById('pack-advanced-meta-panel');
 var packSummary = document.getElementById('pack-summary'), packSummaryTitle = document.getElementById('pack-summary-title'), packSummaryMeta = document.getElementById('pack-summary-meta'), packStatNotes = document.getElementById('pack-stat-notes'), packStatCards = document.getElementById('pack-stat-cards'), packStatTest = document.getElementById('pack-stat-test');
 var packGoalsPanel = document.getElementById('pack-goals-panel'), packGoalCard = document.getElementById('pack-goal-card'), packGoalsStatus = document.getElementById('pack-goals-status'), overallDailyGoalInput = document.getElementById('overall-daily-goal-input'), overallDailyGoalDecrease = document.getElementById('overall-daily-goal-decrease'), overallDailyGoalIncrease = document.getElementById('overall-daily-goal-increase'), packDailyGoalInput = document.getElementById('pack-daily-goal-input'), packDailyGoalClear = document.getElementById('pack-daily-goal-clear'), packDailyGoalDecrease = document.getElementById('pack-daily-goal-decrease'), packDailyGoalIncrease = document.getElementById('pack-daily-goal-increase'), packGoalDue = document.getElementById('pack-goal-due'), packGoalUnmastered = document.getElementById('pack-goal-unmastered'), packGoalRecommendation = document.getElementById('pack-goal-recommendation'), packGoalHelper = document.getElementById('pack-goal-helper');
-var createPackBtn = document.getElementById('create-pack-btn'), importPackCsvBtn = document.getElementById('import-pack-csv-btn'), openBuilderBtn = document.getElementById('open-builder-btn'), savePackBtn = document.getElementById('save-pack-btn'), deletePackBtn = document.getElementById('delete-pack-btn'), exportPackNotesBtn = document.getElementById('export-pack-notes-btn'), packShareBtn = document.getElementById('pack-share-btn'), openLearnBtn = document.getElementById('open-learn-btn'), packSaveStatus = document.getElementById('pack-save-status');
+var createPackBtn = document.getElementById('create-pack-btn'), importPackCsvBtn = document.getElementById('import-pack-csv-btn'), openBuilderBtn = document.getElementById('open-builder-btn'), savePackBtn = document.getElementById('save-pack-btn'), deletePackBtn = document.getElementById('delete-pack-btn'), exportPackNotesBtn = document.getElementById('export-pack-notes-btn'), packShareBtn = document.getElementById('pack-share-btn'), openLearnBtn = document.getElementById('open-learn-btn'), openLearnBtnLabel = document.getElementById('open-learn-btn-label'), packSaveStatus = document.getElementById('pack-save-status');
 var exportMenu = document.getElementById('export-menu'), exportMenuBtn = document.getElementById('export-menu-btn'), exportMenuList = document.getElementById('export-menu-list'), exportPdfSubmenu = document.getElementById('export-pdf-submenu');
-var editorTabs = document.querySelectorAll('.editor-tab'), codingTab = document.getElementById('editor-tab-coding'), codingPane = document.getElementById('editor-pane-coding'), flashcardCount = document.getElementById('flashcard-count'), questionCount = document.getElementById('question-count'), addFlashcardBtn = document.getElementById('add-flashcard-btn'), addQuestionBtn = document.getElementById('add-question-btn'), flashcardEditorList = document.getElementById('flashcard-editor-list'), questionEditorList = document.getElementById('question-editor-list');
-var codingStatus = document.getElementById('coding-status'), codingAiRunBtn = document.getElementById('coding-ai-run-btn'), codingAiAcceptBtn = document.getElementById('coding-ai-accept-btn'), codingAiRejectBtn = document.getElementById('coding-ai-reject-btn'), codingExportPdfBtn = document.getElementById('coding-export-pdf-btn'), codingCodeSelect = document.getElementById('coding-code-select'), codingNewCodeInput = document.getElementById('coding-new-code-input'), codingCommentInput = document.getElementById('coding-comment-input'), codingApplyBtn = document.getElementById('coding-apply-btn'), codingInvivoBtn = document.getElementById('coding-invivo-btn'), codingUndoBtn = document.getElementById('coding-undo-btn'), codingTranscript = document.getElementById('coding-transcript'), codingSearchInput = document.getElementById('coding-search-input'), codingNewCodeBtn = document.getElementById('coding-new-code-btn'), codingCodeList = document.getElementById('coding-code-list'), codingEditName = document.getElementById('coding-edit-name'), codingEditDescription = document.getElementById('coding-edit-description'), codingPalette = document.getElementById('coding-palette'), codingSaveCodeBtn = document.getElementById('coding-save-code-btn'), codingMergeCodeBtn = document.getElementById('coding-merge-code-btn'), codingDeleteCodeBtn = document.getElementById('coding-delete-code-btn'), codingQuoteList = document.getElementById('coding-quote-list');
+var editorTabs = document.querySelectorAll('.editor-tab:not(#editor-tab-coding)'), codingTab = document.getElementById('editor-tab-coding'), codingPane = document.getElementById('editor-pane-coding'), flashcardCount = document.getElementById('flashcard-count'), questionCount = document.getElementById('question-count'), addFlashcardBtn = document.getElementById('add-flashcard-btn'), addQuestionBtn = document.getElementById('add-question-btn'), flashcardEditorList = document.getElementById('flashcard-editor-list'), questionEditorList = document.getElementById('question-editor-list');
+var codingPreviewCard = document.getElementById('coding-preview-card'), codingPreviewTitle = document.getElementById('coding-preview-title'), codingPreviewStatus = document.getElementById('coding-preview-status'), codingPreviewCodes = document.getElementById('coding-preview-codes'), codingPreviewCodeCount = document.getElementById('coding-preview-code-count'), codingPreviewQuoteCount = document.getElementById('coding-preview-quote-count');
+var codingStatus = document.getElementById('coding-status'), codingAiRunBtn = document.getElementById('coding-ai-run-btn'), codingAiAcceptBtn = document.getElementById('coding-ai-accept-btn'), codingAiRejectBtn = document.getElementById('coding-ai-reject-btn'), codingExportPdfBtn = document.getElementById('coding-export-pdf-btn'), codingCloseBtn = document.getElementById('coding-close-btn'), codingCodeSelect = document.getElementById('coding-code-select'), codingNewCodeInput = document.getElementById('coding-new-code-input'), codingCommentInput = document.getElementById('coding-comment-input'), codingApplyBtn = document.getElementById('coding-apply-btn'), codingInvivoBtn = document.getElementById('coding-invivo-btn'), codingUndoBtn = document.getElementById('coding-undo-btn'), codingTranscript = document.getElementById('coding-transcript'), codingSearchInput = document.getElementById('coding-search-input'), codingNewCodeBtn = document.getElementById('coding-new-code-btn'), codingCodeList = document.getElementById('coding-code-list'), codingEditName = document.getElementById('coding-edit-name'), codingEditDescription = document.getElementById('coding-edit-description'), codingPalette = document.getElementById('coding-palette'), codingSaveCodeBtn = document.getElementById('coding-save-code-btn'), codingMergeCodeBtn = document.getElementById('coding-merge-code-btn'), codingDeleteCodeBtn = document.getElementById('coding-delete-code-btn'), codingQuoteList = document.getElementById('coding-quote-list');
 var learnStage = document.getElementById('learn-stage'), learnTitle = document.getElementById('learn-title'), learnSub = document.getElementById('learn-sub'), learnBackAppBtn = document.getElementById('learn-back-app-btn'), learnBackLibraryBtn = document.getElementById('learn-back-library-btn'), learnFullscreenBtn = document.getElementById('learn-fullscreen-btn');
 var notesPaneShell = document.getElementById('notes-pane-shell'), notesFullscreenBtn = document.getElementById('notes-fullscreen-btn');
 var notesHighlightStatus = document.getElementById('notes-highlight-status');
@@ -1512,14 +1514,19 @@ function applyStudySignedOutState() {
   draggingFolderId = '';
   collapsedFolderIds = new Set();
   codingState = null;
+  codingWorkspaceOpen = false;
   selectedCodingCodeId = '';
   codingSelectionRange = null;
   codingUndoStack = [];
+  codingMergeSourceId = '';
+  codingEditorLastSavedFingerprint = '';
+  if (codingAutosaveTimer) { clearTimeout(codingAutosaveTimer); codingAutosaveTimer = null; }
   orderedFlashcards = [];
   remoteProgressCardStates = {};
   flashcardPeekRevealed = {};
   if (setupOverlay && setupOverlay.classList.contains('visible')) { closeSessionSetup(); }
   if (learnStage && learnStage.classList.contains('visible')) { closeLearnStage(); }
+  if (codingPane && codingPane.classList.contains('active')) { closeCodingWorkspace(); }
   if (folderModalOverlay && folderModalOverlay.classList.contains('visible')) { closeFolderModal(); }
   if (confirmModalOverlay && confirmModalOverlay.classList.contains('visible')) { closeConfirmModal(false); }
   renderFolderSelect();
@@ -2359,7 +2366,16 @@ function closeModal(ov) {
     try { restoreTarget.focus(); } catch (e) { }
   }
 }
-function openConfirmModal(title, message, confirmLabel) { confirmModalTitle.textContent = title; confirmModalMessage.textContent = message; confirmModalConfirm.textContent = confirmLabel || 'Delete'; openModal(confirmModalOverlay); return new Promise(function (r) { confirmModalResolver = r; }); }
+function openConfirmModal(title, message, confirmLabel, tone) {
+  confirmModalTitle.textContent = title;
+  confirmModalMessage.textContent = message;
+  confirmModalConfirm.textContent = confirmLabel || 'Delete';
+  var isPrimary = tone === 'primary';
+  confirmModalConfirm.classList.toggle('primary', isPrimary);
+  confirmModalConfirm.classList.toggle('danger', !isPrimary);
+  openModal(confirmModalOverlay);
+  return new Promise(function (r) { confirmModalResolver = r; });
+}
 function closeConfirmModal(c) { closeModal(confirmModalOverlay); if (confirmModalResolver) { confirmModalResolver(Boolean(c)); confirmModalResolver = null; } }
 function getShareEndpoint(entityType, entityId) {
   var safeType = String(entityType || '').trim().toLowerCase();
@@ -3911,23 +3927,21 @@ function isPracticeOnlyPack(pack) {
   return !hasReadableNotes(pack) && !hasFlashcards(pack) && hasPracticeQuestions(pack);
 }
 function getContentPreferredEditorPane(pack, currentPane) {
-  if (currentPane === 'coding' && String(pack && pack.mode || '') !== 'interview') {
-    return 'notes';
-  }
+  if (currentPane === 'coding') return 'notes';
   if (isPracticeOnlyPack(pack)) {
     return 'test';
   }
   return currentPane || 'notes';
 }
 function setEditorPane(pane) {
-  if (pane === 'coding' && (!selectedPack || String(selectedPack.mode || '') !== 'interview')) {
+  if (pane === 'coding') {
+    if (selectedPack && String(selectedPack.mode || '') === 'interview') openCodingWorkspace();
     pane = 'notes';
   }
   activeEditorPane = pane;
   syncTabSelection(editorTabs, 'editorPane', pane);
-  if (codingPane) codingPane.hidden = pane !== 'coding';
+  if (codingPane && !codingWorkspaceOpen) codingPane.hidden = true;
   exportType = (pane === 'test') ? 'test' : 'flashcards';
-  if (pane === 'coding') ensureCodingLoaded();
   if (pane === 'notes') { scheduleNotesFullscreenIdle(); }
 }
 
@@ -4501,9 +4515,21 @@ function showPackEditor(v) {
   setHidden(packEmpty, !!v);
   packEditorWrap.classList.toggle('visible', v);
   if (!v) { updatePackEmptyState(); }
+  updatePrimaryStudyAction();
   updateShareActionAvailability();
 }
+function updatePrimaryStudyAction() {
+  if (!openLearnBtn) return;
+  var isInterview = !!(selectedPack && String(selectedPack.mode || '') === 'interview');
+  if (openLearnBtnLabel) {
+    openLearnBtnLabel.textContent = isInterview ? 'Open Coding Workspace' : 'Learn Mode';
+  } else {
+    openLearnBtn.textContent = isInterview ? 'Open Coding Workspace' : 'Learn Mode';
+  }
+  openLearnBtn.setAttribute('aria-label', isInterview ? 'Open interview coding workspace' : 'Open learn mode');
+}
 function updatePackSummary() {
+  updatePrimaryStudyAction();
   if (!selectedPack) { packSummary.classList.remove('visible'); return; }
   packSummary.classList.add('visible');
   packSummaryTitle.textContent = selectedPack.title || 'Untitled pack';
@@ -5021,6 +5047,9 @@ function openPack(packId) {
     codingSelectionRange = null;
     codingUndoStack = [];
     selectedCodingCodeId = '';
+    codingMergeSourceId = '';
+    codingEditorLastSavedFingerprint = '';
+    if (codingAutosaveTimer) { clearTimeout(codingAutosaveTimer); codingAutosaveTimer = null; }
     showPackEditor(true); updatePackSummary();
     syncCodingTabAvailability();
     syncStudyPackExportMenu();
@@ -5060,11 +5089,17 @@ function openPack(packId) {
 
 function syncCodingTabAvailability() {
   var isInterview = !!(selectedPack && String(selectedPack.mode || '') === 'interview');
-  if (codingTab) codingTab.hidden = !isInterview;
-  if (codingPane) codingPane.hidden = !isInterview || activeEditorPane !== 'coding';
-  if (!isInterview && activeEditorPane === 'coding') {
-    setEditorPane('notes');
+  if (codingTab) codingTab.hidden = true;
+  if (codingPreviewCard) codingPreviewCard.hidden = !isInterview;
+  if (!isInterview) {
+    if (codingWorkspaceOpen) closeCodingWorkspace();
+    if (codingPane) codingPane.hidden = true;
+    updateCodingPreview();
+    if (activeEditorPane === 'coding') setEditorPane('notes');
+    return;
   }
+  updateCodingPreview();
+  ensureCodingLoaded().catch(function () {});
 }
 function setCodingStatus(message, tone) {
   if (!codingStatus) return;
@@ -5114,9 +5149,11 @@ function getCodingPaletteItem(color) {
   var palette = codingState && Array.isArray(codingState.palette) ? codingState.palette : [];
   return palette.find(function (item) { return String(item.key || '') === key; }) || { key: 'teal', hex: '#CCFBF1', label: 'Teal' };
 }
-function codingColorStyle(color) {
-  var item = getCodingPaletteItem(color);
-  return 'style="--code-color:' + escapeHtml(item.hex || '#CCFBF1') + '"';
+function codingColorKey(color) {
+  return getCodingPaletteItem(color).key || 'teal';
+}
+function codingColorClass(color) {
+  return ' coding-color-' + escapeHtml(codingColorKey(color));
 }
 function getCodingCodeById(codeId) {
   var id = String(codeId || '');
@@ -5128,6 +5165,69 @@ function quotationOverlapsSegment(quotation, segment) {
   var segStart = parseInt(segment.start_offset, 10) || 0;
   var segEnd = parseInt(segment.end_offset, 10) || 0;
   return quoteEnd > segStart && quoteStart < segEnd;
+}
+function updateCodingPreview() {
+  if (!codingPreviewCard) return;
+  var isInterview = !!(selectedPack && String(selectedPack.mode || '') === 'interview');
+  codingPreviewCard.hidden = !isInterview;
+  if (!isInterview) return;
+  var state = codingState || {};
+  var codes = Array.isArray(state.codes) ? state.codes : [];
+  var quotes = Array.isArray(state.quotations) ? state.quotations : [];
+  var latest = state.latest_run || null;
+  var hasDraft = !!(latest && latest.status === 'draft');
+  if (codingPreviewCodeCount) codingPreviewCodeCount.textContent = String(codes.length || 0);
+  if (codingPreviewQuoteCount) codingPreviewQuoteCount.textContent = String(quotes.length || 0);
+  if (codingPreviewTitle) {
+    codingPreviewTitle.textContent = codes.length ? 'Codebook preview' : 'No codes yet';
+  }
+  if (codingPreviewStatus) {
+    if (!codingState) {
+      codingPreviewStatus.textContent = 'Loading coding summary...';
+    } else if (hasDraft) {
+      codingPreviewStatus.textContent = 'AI draft ready for review in the coding workspace.';
+    } else if (codes.length) {
+      codingPreviewStatus.textContent = 'Open the workspace to select transcript text, add quotations, or refine codes.';
+    } else {
+      codingPreviewStatus.textContent = 'Open the coding workspace to mark transcript passages or run AI coding.';
+    }
+  }
+  if (codingPreviewCodes) {
+    var topCodes = codes.slice(0, 8).map(function (code) {
+      return '<span class="coding-preview-chip' + codingColorClass(code.color) + '">' + escapeHtml(code.name || 'Untitled code') + '</span>';
+    }).join('');
+    setSafeInnerHtml(codingPreviewCodes, topCodes || '<span class="coding-preview-empty">Codes will appear here after you create or accept them.</span>');
+  }
+}
+function openCodingWorkspace() {
+  if (!selectedPack || String(selectedPack.mode || '') !== 'interview') {
+    openSessionSetup();
+    return;
+  }
+  codingWorkspaceOpen = true;
+  if (codingPane) {
+    codingPane.hidden = false;
+    codingPane.classList.add('active');
+    codingPane.setAttribute('aria-hidden', 'false');
+  }
+  document.body.classList.add('coding-workspace-open');
+  setBodyScrollLocked(true);
+  ensureCodingLoaded(true).then(function () {
+    if (codingTranscript && typeof codingTranscript.focus === 'function') codingTranscript.focus();
+  }).catch(function () {});
+}
+function closeCodingWorkspace() {
+  codingWorkspaceOpen = false;
+  document.body.classList.remove('coding-workspace-open');
+  if (codingPane) {
+    codingPane.classList.remove('active');
+    codingPane.setAttribute('aria-hidden', 'true');
+    codingPane.hidden = true;
+  }
+  if (!learnStage || !learnStage.classList.contains('visible')) {
+    setBodyScrollLocked(false);
+  }
+  updateCodingPreview();
 }
 function renderCodingWorkspace() {
   if (!codingState || !codingTranscript) {
@@ -5148,6 +5248,7 @@ function renderCodingWorkspace() {
   renderCodingCodeList();
   renderCodingEditor();
   renderCodingQuotations();
+  updateCodingPreview();
 }
 function renderCodingCodeOptions() {
   if (!codingCodeSelect || !codingState) return;
@@ -5184,7 +5285,7 @@ function renderCodingTranscript() {
         return code ? code.name : '';
       }).filter(Boolean).join(', ');
       var firstCode = getCodingCodeById((quotation.code_ids || [])[0]);
-      return '<button type="button" class="coding-margin-chip" data-coding-quote-id="' + escapeHtml(quotation.quotation_id) + '" ' + codingColorStyle(firstCode && firstCode.color) + '>' + escapeHtml(names || 'Coding') + '</button>';
+      return '<button type="button" class="coding-margin-chip' + codingColorClass(firstCode && firstCode.color) + '" data-coding-quote-id="' + escapeHtml(quotation.quotation_id) + '">' + escapeHtml(names || 'Coding') + '</button>';
     }).join('');
     var meta = [segment.timestamp, segment.speaker].filter(Boolean).map(escapeHtml).join(' · ');
     return '<article class="coding-segment" data-segment-id="' + escapeHtml(segment.segment_id || '') + '">' +
@@ -5262,7 +5363,7 @@ function renderCodingCodeList() {
     (childrenByParent[parentId] || []).forEach(function (code) {
       var matches = !q || String(code.name || '').toLowerCase().indexOf(q) >= 0 || String(code.description || '').toLowerCase().indexOf(q) >= 0;
       if (matches) {
-        rows.push('<button type="button" class="coding-code-row' + (selectedCodingCodeId === code.code_id ? ' active' : '') + '" data-code-id="' + escapeHtml(code.code_id) + '" style="--code-depth:' + depth + ';--code-color:' + escapeHtml(getCodingPaletteItem(code.color).hex) + '"><span class="coding-code-swatch"></span><span class="coding-code-name">' + escapeHtml(code.name || 'Untitled code') + '</span><span class="coding-code-count">' + (counts[code.code_id] || 0) + '</span></button>');
+        rows.push('<button type="button" class="coding-code-row coding-depth-' + Math.min(Math.max(parseInt(depth, 10) || 0, 0), 8) + codingColorClass(code.color) + (selectedCodingCodeId === code.code_id ? ' active' : '') + (codingMergeSourceId === code.code_id ? ' merge-source' : '') + '" data-code-id="' + escapeHtml(code.code_id) + '"><span class="coding-code-swatch"></span><span class="coding-code-name">' + escapeHtml(code.name || 'Untitled code') + '</span><span class="coding-code-count">' + (counts[code.code_id] || 0) + '</span></button>');
       }
       append(code.code_id, depth + 1);
     });
@@ -5271,7 +5372,12 @@ function renderCodingCodeList() {
   setSafeInnerHtml(codingCodeList, rows.join('') || '<div class="empty">No codes yet.</div>');
   codingCodeList.querySelectorAll('[data-code-id]').forEach(function (button) {
     button.addEventListener('click', function () {
-      selectedCodingCodeId = button.getAttribute('data-code-id') || '';
+      var clickedCodeId = button.getAttribute('data-code-id') || '';
+      if (codingMergeSourceId && clickedCodeId && clickedCodeId !== codingMergeSourceId) {
+        mergeCodingCodeIntoTarget(codingMergeSourceId, clickedCodeId);
+        return;
+      }
+      selectedCodingCodeId = clickedCodeId;
       if (codingCodeSelect) codingCodeSelect.value = selectedCodingCodeId;
       renderCodingWorkspace();
     });
@@ -5283,15 +5389,20 @@ function renderCodingEditor() {
   codingEditName.value = code ? (code.name || '') : '';
   codingEditDescription.value = code ? (code.description || '') : '';
   selectedCodingColor = code ? (code.color || 'teal') : selectedCodingColor;
+  codingEditorLastSavedFingerprint = codingEditorFingerprint(getCodingEditorPayload());
+  setCodingSaveState(code ? 'Saved' : 'Autosaves', code ? 'saved' : '');
   if (codingPalette) {
     var html = (codingState.palette || []).map(function (item) {
-      return '<button type="button" class="coding-color-btn' + (item.key === selectedCodingColor ? ' active' : '') + '" data-code-color="' + escapeHtml(item.key) + '" style="--code-color:' + escapeHtml(item.hex) + '" aria-label="' + escapeHtml(item.label || item.key) + '"></button>';
+      return '<button type="button" class="coding-color-btn coding-color-' + escapeHtml(item.key) + (item.key === selectedCodingColor ? ' active' : '') + '" data-code-color="' + escapeHtml(item.key) + '" aria-label="' + escapeHtml(item.label || item.key) + '"></button>';
     }).join('');
     setSafeInnerHtml(codingPalette, html);
     codingPalette.querySelectorAll('[data-code-color]').forEach(function (button) {
       button.addEventListener('click', function () {
         selectedCodingColor = button.getAttribute('data-code-color') || 'teal';
-        renderCodingEditor();
+        codingPalette.querySelectorAll('[data-code-color]').forEach(function (paletteButton) {
+          paletteButton.classList.toggle('active', paletteButton === button);
+        });
+        scheduleCodingCodeAutosave();
       });
     });
   }
@@ -5305,7 +5416,7 @@ function renderCodingQuotations() {
     var chips = (quotation.code_ids || []).map(function (codeId) {
       var code = getCodingCodeById(codeId);
       if (!code) return '';
-      return '<span class="coding-quote-code" ' + codingColorStyle(code.color) + '>' + escapeHtml(code.name || 'Code') + '</span>';
+      return '<span class="coding-quote-code' + codingColorClass(code.color) + '">' + escapeHtml(code.name || 'Code') + '</span>';
     }).join('');
     var meta = [quotation.timestamp, quotation.speaker].filter(Boolean).map(escapeHtml).join(' · ');
     return '<article class="coding-quote-card" data-quote-id="' + escapeHtml(quotation.quotation_id) + '"><div class="coding-quote-meta">' + meta + '</div><div class="coding-quote-text">' + escapeHtml(quotation.text || '') + '</div><div class="coding-quote-codes">' + chips + '</div><div class="coding-quote-actions"><button type="button" class="btn folder-mini-btn" data-delete-quote="' + escapeHtml(quotation.quotation_id) + '">Delete</button></div></article>';
@@ -5332,28 +5443,98 @@ function cssEscape(value) {
   if (window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(value);
   return String(value || '').replace(/["\\]/g, '\\$&');
 }
-function saveCodingCodeFromEditor() {
-  if (!codingState) return;
-  var payload = {
+function getCodingEditorPayload() {
+  return {
     name: codingEditName ? codingEditName.value.trim() : '',
     description: codingEditDescription ? codingEditDescription.value.trim() : '',
     color: selectedCodingColor || 'teal',
   };
+}
+function codingEditorFingerprint(payload) {
+  var safe = payload || getCodingEditorPayload();
+  return JSON.stringify({
+    code_id: selectedCodingCodeId || '',
+    name: safe.name || '',
+    description: safe.description || '',
+    color: safe.color || 'teal',
+  });
+}
+function setCodingSaveState(label, tone) {
+  if (!codingSaveCodeBtn) return;
+  codingSaveCodeBtn.textContent = label || 'Save Now';
+  codingSaveCodeBtn.dataset.tone = tone || '';
+}
+function upsertCodingCodeLocally(code) {
+  if (!codingState || !code || !code.code_id) return;
+  var id = String(code.code_id || '');
+  var found = false;
+  codingState.codes = (codingState.codes || []).map(function (existing) {
+    if (String(existing.code_id || '') !== id) return existing;
+    found = true;
+    return Object.assign({}, existing, code);
+  });
+  if (!found) codingState.codes.push(code);
+}
+function scheduleCodingCodeAutosave() {
+  if (!codingState) return;
+  var payload = getCodingEditorPayload();
   if (!payload.name) {
-    showToast('Code name is required.', 'error');
+    setCodingSaveState('Autosaves', '');
     return;
   }
+  var nextFingerprint = codingEditorFingerprint(payload);
+  if (nextFingerprint === codingEditorLastSavedFingerprint) {
+    setCodingSaveState('Saved', 'saved');
+    return;
+  }
+  setCodingSaveState('Saving soon...', 'saving');
+  if (codingAutosaveTimer) clearTimeout(codingAutosaveTimer);
+  codingAutosaveTimer = setTimeout(function () {
+    codingAutosaveTimer = null;
+    saveCodingCodeFromEditor({ silent: true });
+  }, 520);
+}
+function saveCodingCodeFromEditor(options) {
+  if (!codingState) return;
+  var settings = options || {};
+  var payload = getCodingEditorPayload();
+  if (!payload.name) {
+    if (!settings.silent) showToast('Code name is required.', 'error');
+    return;
+  }
+  if (codingAutosaveInFlight) {
+    codingAutosaveQueued = true;
+    return;
+  }
+  codingAutosaveInFlight = true;
+  setCodingSaveState('Saving...', 'saving');
   var request = selectedCodingCodeId
     ? codingApi('/codes/' + encodeURIComponent(selectedCodingCodeId), { method: 'PATCH', body: JSON.stringify(payload) })
     : codingApi('/codes', { method: 'POST', body: JSON.stringify(payload) });
   request.then(function (response) {
     var code = response.code;
-    return ensureCodingLoaded(true).then(function () {
-      if (code && code.code_id) selectedCodingCodeId = code.code_id;
-      renderCodingWorkspace();
-      showToast('Code saved.');
-    });
-  }).catch(function (e) { showToast(e.message || 'Could not save code.', 'error'); });
+    if (code && code.code_id) {
+      selectedCodingCodeId = code.code_id;
+      upsertCodingCodeLocally(code);
+      if (codingCodeSelect) codingCodeSelect.value = selectedCodingCodeId;
+    }
+    codingEditorLastSavedFingerprint = codingEditorFingerprint(payload);
+    renderCodingCodeOptions();
+    renderCodingCodeList();
+    renderCodingQuotations();
+    updateCodingPreview();
+    setCodingSaveState('Saved', 'saved');
+    if (!settings.silent) showToast('Code saved.');
+  }).catch(function (e) {
+    setCodingSaveState('Save Now', 'error');
+    showToast(e.message || 'Could not save code.', 'error');
+  }).finally(function () {
+    codingAutosaveInFlight = false;
+    if (codingAutosaveQueued) {
+      codingAutosaveQueued = false;
+      scheduleCodingCodeAutosave();
+    }
+  });
 }
 function createCodingCode(name, color) {
   return codingApi('/codes', {
@@ -5439,21 +5620,28 @@ function runAiCoding() {
     showToast('No transcript available for AI coding.', 'error');
     return;
   }
-  if (!window.confirm('Run AI coding for ' + cost + ' text extraction credit' + (cost === 1 ? '' : 's') + '?')) return;
-  codingLoading = true;
-  if (codingAiRunBtn) codingAiRunBtn.disabled = true;
-  setCodingStatus('AI coding is running...', 'draft');
-  codingApi('/ai-runs', { method: 'POST', body: JSON.stringify({}) }).then(function (payload) {
-    codingState.latest_run = payload.run || null;
-    return ensureCodingLoaded(true);
-  }).then(function () {
-    showToast('AI coding draft ready.');
-  }).catch(function (e) {
-    showToast(e.message || 'AI coding failed.', 'error');
-    ensureCodingLoaded(true).catch(function () {});
-  }).finally(function () {
-    codingLoading = false;
-    if (codingAiRunBtn) codingAiRunBtn.disabled = false;
+  openConfirmModal(
+    'Run AI Coding',
+    'This will use ' + cost + ' text extraction credit' + (cost === 1 ? '' : 's') + ' and create a draft you can review before applying.',
+    'Run AI Coding',
+    'primary'
+  ).then(function (confirmed) {
+    if (!confirmed) return;
+    codingLoading = true;
+    if (codingAiRunBtn) codingAiRunBtn.disabled = true;
+    setCodingStatus('AI coding is running...', 'draft');
+    codingApi('/ai-runs', { method: 'POST', body: JSON.stringify({}) }).then(function (payload) {
+      codingState.latest_run = payload.run || null;
+      return ensureCodingLoaded(true);
+    }).then(function () {
+      showToast('AI coding draft ready.');
+    }).catch(function (e) {
+      showToast(e.message || 'AI coding failed.', 'error');
+      ensureCodingLoaded(true).catch(function () {});
+    }).finally(function () {
+      codingLoading = false;
+      if (codingAiRunBtn) codingAiRunBtn.disabled = false;
+    });
   });
 }
 function acceptAiCodingDraft() {
@@ -5477,6 +5665,7 @@ function deleteSelectedCodingCode() {
   openConfirmModal('Delete Code', 'Delete this code and remove it from coded quotations?', 'Delete Code').then(function (confirmed) {
     if (!confirmed) return;
     codingApi('/codes/' + encodeURIComponent(selectedCodingCodeId), { method: 'DELETE' }).then(function () {
+      codingMergeSourceId = '';
       selectedCodingCodeId = '';
       return ensureCodingLoaded(true);
     }).then(function () { showToast('Code deleted.'); }).catch(function (e) { showToast(e.message || 'Could not delete code.', 'error'); });
@@ -5484,22 +5673,48 @@ function deleteSelectedCodingCode() {
 }
 function mergeSelectedCodingCode() {
   if (!selectedCodingCodeId || !codingState) return;
-  var targetName = window.prompt('Merge into which code name?');
-  if (!targetName) return;
-  var target = codingState.codes.find(function (code) {
-    return String(code.name || '').trim().toLowerCase() === String(targetName || '').trim().toLowerCase();
-  });
-  if (!target || target.code_id === selectedCodingCodeId) {
-    showToast('Choose a different existing code name.', 'error');
+  if (codingMergeSourceId === selectedCodingCodeId) {
+    codingMergeSourceId = '';
+    renderCodingCodeList();
+    showToast('Merge cancelled.');
     return;
   }
-  codingApi('/codes/' + encodeURIComponent(selectedCodingCodeId) + '/merge', {
+  if ((codingState.codes || []).length < 2) {
+    showToast('Create another code before merging.', 'error');
+    return;
+  }
+  codingMergeSourceId = selectedCodingCodeId;
+  renderCodingCodeList();
+  showToast('Choose the code you want to merge into.');
+}
+function mergeCodingCodeIntoTarget(sourceCodeId, targetCodeId) {
+  var source = getCodingCodeById(sourceCodeId);
+  var target = getCodingCodeById(targetCodeId);
+  if (!source || !target || sourceCodeId === targetCodeId) return;
+  openConfirmModal(
+    'Merge Codes',
+    'Merge "' + (source.name || 'this code') + '" into "' + (target.name || 'the target code') + '"? Existing quotations will keep the target code.',
+    'Merge Codes',
+    'primary'
+  ).then(function (confirmed) {
+    if (!confirmed) {
+      codingMergeSourceId = '';
+      renderCodingCodeList();
+      return;
+    }
+    codingApi('/codes/' + encodeURIComponent(sourceCodeId) + '/merge', {
     method: 'POST',
-    body: JSON.stringify({ target_code_id: target.code_id })
-  }).then(function () {
-    selectedCodingCodeId = target.code_id;
-    return ensureCodingLoaded(true);
-  }).then(function () { showToast('Codes merged.'); }).catch(function (e) { showToast(e.message || 'Could not merge codes.', 'error'); });
+      body: JSON.stringify({ target_code_id: targetCodeId })
+    }).then(function () {
+      codingMergeSourceId = '';
+      selectedCodingCodeId = targetCodeId;
+      return ensureCodingLoaded(true);
+    }).then(function () { showToast('Codes merged.'); }).catch(function (e) {
+      codingMergeSourceId = '';
+      renderCodingCodeList();
+      showToast(e.message || 'Could not merge codes.', 'error');
+    });
+  });
 }
 function exportCodingPdf() {
   if (!selectedPackId) return;
@@ -6421,7 +6636,13 @@ if (exportMenuBtn && exportMenuList) {
   });
 }
 
-openLearnBtn.addEventListener('click', function () { openSessionSetup(); });
+openLearnBtn.addEventListener('click', function () {
+  if (selectedPack && String(selectedPack.mode || '') === 'interview') {
+    openCodingWorkspace();
+    return;
+  }
+  openSessionSetup();
+});
 editorTabs.forEach(function (btn) { btn.addEventListener('click', function () { setEditorPane(btn.dataset.editorPane); }); });
 bindTabKeyboard(editorTabs, 'editorPane', setEditorPane);
 if (codingTranscript) {
@@ -6431,6 +6652,7 @@ if (codingTranscript) {
 if (codingCodeSelect) {
   codingCodeSelect.addEventListener('change', function () {
     selectedCodingCodeId = codingCodeSelect.value || '';
+    codingMergeSourceId = '';
     renderCodingWorkspace();
   });
 }
@@ -6441,18 +6663,22 @@ if (codingNewCodeBtn) {
   codingNewCodeBtn.addEventListener('click', function () {
     selectedCodingCodeId = '';
     selectedCodingColor = 'teal';
+    codingEditorLastSavedFingerprint = '';
     renderCodingWorkspace();
     if (codingEditName) codingEditName.focus();
   });
 }
 if (codingSearchInput) codingSearchInput.addEventListener('input', renderCodingCodeList);
-if (codingSaveCodeBtn) codingSaveCodeBtn.addEventListener('click', saveCodingCodeFromEditor);
+if (codingEditName) codingEditName.addEventListener('input', scheduleCodingCodeAutosave);
+if (codingEditDescription) codingEditDescription.addEventListener('input', scheduleCodingCodeAutosave);
+if (codingSaveCodeBtn) codingSaveCodeBtn.addEventListener('click', function () { saveCodingCodeFromEditor({ silent: false }); });
 if (codingDeleteCodeBtn) codingDeleteCodeBtn.addEventListener('click', deleteSelectedCodingCode);
 if (codingMergeCodeBtn) codingMergeCodeBtn.addEventListener('click', mergeSelectedCodingCode);
 if (codingAiRunBtn) codingAiRunBtn.addEventListener('click', runAiCoding);
 if (codingAiAcceptBtn) codingAiAcceptBtn.addEventListener('click', acceptAiCodingDraft);
 if (codingAiRejectBtn) codingAiRejectBtn.addEventListener('click', rejectAiCodingDraft);
 if (codingExportPdfBtn) codingExportPdfBtn.addEventListener('click', exportCodingPdf);
+if (codingCloseBtn) codingCloseBtn.addEventListener('click', closeCodingWorkspace);
 
 addFlashcardBtn.addEventListener('click', function () {
   if (!selectedPack) return;
@@ -6657,6 +6883,11 @@ window.addEventListener('keydown', function (e) {
   if (builderOverlay.classList.contains('visible') && e.key === 'Escape') {
     e.preventDefault();
     handleBuilderExitRequest();
+    return;
+  }
+  if (codingWorkspaceOpen && e.key === 'Escape') {
+    e.preventDefault();
+    closeCodingWorkspace();
     return;
   }
   if (!learnStage.classList.contains('visible')) return;
