@@ -64,6 +64,7 @@ let shareModalEntityType = '', shareModalEntityId = '', shareModalScope = 'priva
 let collapsedFolderIds = new Set();
 let codingState = null, codingLoading = false, codingWorkspaceOpen = false, selectedCodingCodeId = '', selectedCodingColor = 'teal', codingSelectionRange = null, codingUndoStack = [], codingMergeSourceId = '';
 let codingAutosaveTimer = null, codingAutosaveInFlight = false, codingAutosaveQueued = false, codingEditorLastSavedFingerprint = '';
+let codingSelectionAutoApplyTimer = null, codingAutoApplyInFlight = false, codingAiProgressTimer = null, codingAiProgressStage = -1;
 const HINT_FADE_DELAY_MS = 10000;
 const NOTES_ICON_IDLE_MS = 5000;
 const HIGHLIGHT_SYNC_DELAY_MS = 450;
@@ -1406,7 +1407,7 @@ var createPackBtn = document.getElementById('create-pack-btn'), importPackCsvBtn
 var exportMenu = document.getElementById('export-menu'), exportMenuBtn = document.getElementById('export-menu-btn'), exportMenuList = document.getElementById('export-menu-list'), exportPdfSubmenu = document.getElementById('export-pdf-submenu');
 var editorTabs = document.querySelectorAll('.editor-tab:not(#editor-tab-coding)'), codingTab = document.getElementById('editor-tab-coding'), codingPane = document.getElementById('editor-pane-coding'), flashcardCount = document.getElementById('flashcard-count'), questionCount = document.getElementById('question-count'), addFlashcardBtn = document.getElementById('add-flashcard-btn'), addQuestionBtn = document.getElementById('add-question-btn'), flashcardEditorList = document.getElementById('flashcard-editor-list'), questionEditorList = document.getElementById('question-editor-list');
 var codingPreviewCard = document.getElementById('coding-preview-card'), codingPreviewTitle = document.getElementById('coding-preview-title'), codingPreviewStatus = document.getElementById('coding-preview-status'), codingPreviewCodes = document.getElementById('coding-preview-codes'), codingPreviewCodeCount = document.getElementById('coding-preview-code-count'), codingPreviewQuoteCount = document.getElementById('coding-preview-quote-count');
-var codingStatus = document.getElementById('coding-status'), codingAiRunBtn = document.getElementById('coding-ai-run-btn'), codingAiAcceptBtn = document.getElementById('coding-ai-accept-btn'), codingAiRejectBtn = document.getElementById('coding-ai-reject-btn'), codingExportPdfBtn = document.getElementById('coding-export-pdf-btn'), codingCloseBtn = document.getElementById('coding-close-btn'), codingCodeSelect = document.getElementById('coding-code-select'), codingNewCodeInput = document.getElementById('coding-new-code-input'), codingCommentInput = document.getElementById('coding-comment-input'), codingApplyBtn = document.getElementById('coding-apply-btn'), codingInvivoBtn = document.getElementById('coding-invivo-btn'), codingUndoBtn = document.getElementById('coding-undo-btn'), codingTranscript = document.getElementById('coding-transcript'), codingSearchInput = document.getElementById('coding-search-input'), codingNewCodeBtn = document.getElementById('coding-new-code-btn'), codingCodeList = document.getElementById('coding-code-list'), codingEditName = document.getElementById('coding-edit-name'), codingEditDescription = document.getElementById('coding-edit-description'), codingPalette = document.getElementById('coding-palette'), codingSaveCodeBtn = document.getElementById('coding-save-code-btn'), codingMergeCodeBtn = document.getElementById('coding-merge-code-btn'), codingDeleteCodeBtn = document.getElementById('coding-delete-code-btn'), codingQuoteList = document.getElementById('coding-quote-list');
+var codingStatus = document.getElementById('coding-status'), codingShell = document.getElementById('coding-shell'), codingAiPanel = document.getElementById('coding-ai-panel'), codingAiRunBtn = document.getElementById('coding-ai-run-btn'), codingAiAcceptBtn = document.getElementById('coding-ai-accept-btn'), codingAiRejectBtn = document.getElementById('coding-ai-reject-btn'), codingExportPdfBtn = document.getElementById('coding-export-pdf-btn'), codingResetBtn = document.getElementById('coding-reset-btn'), codingCloseBtn = document.getElementById('coding-close-btn'), codingCodePicker = document.getElementById('coding-code-picker'), codingCodePickerButton = document.getElementById('coding-code-picker-button'), codingCodePickerLabel = document.getElementById('coding-code-picker-label'), codingCodePickerSwatch = document.getElementById('coding-code-picker-swatch'), codingCodePickerMenu = document.getElementById('coding-code-picker-menu'), codingCodePickerSearch = document.getElementById('coding-code-picker-search'), codingCodePickerList = document.getElementById('coding-code-picker-list'), codingCommentInput = document.getElementById('coding-comment-input'), codingSelectionSummary = document.getElementById('coding-selection-summary'), codingApplyBtn = document.getElementById('coding-apply-btn'), codingInvivoBtn = document.getElementById('coding-invivo-btn'), codingUndoBtn = document.getElementById('coding-undo-btn'), codingTranscript = document.getElementById('coding-transcript'), codingSearchInput = document.getElementById('coding-search-input'), codingNewCodeBtn = document.getElementById('coding-new-code-btn'), codingCodeList = document.getElementById('coding-code-list'), codingEditName = document.getElementById('coding-edit-name'), codingEditDescription = document.getElementById('coding-edit-description'), codingPalette = document.getElementById('coding-palette'), codingSaveCodeBtn = document.getElementById('coding-save-code-btn'), codingMergeCodeBtn = document.getElementById('coding-merge-code-btn'), codingDeleteCodeBtn = document.getElementById('coding-delete-code-btn'), codingQuoteList = document.getElementById('coding-quote-list');
 var learnStage = document.getElementById('learn-stage'), learnTitle = document.getElementById('learn-title'), learnSub = document.getElementById('learn-sub'), learnBackAppBtn = document.getElementById('learn-back-app-btn'), learnBackLibraryBtn = document.getElementById('learn-back-library-btn'), learnFullscreenBtn = document.getElementById('learn-fullscreen-btn');
 var notesPaneShell = document.getElementById('notes-pane-shell'), notesFullscreenBtn = document.getElementById('notes-fullscreen-btn');
 var notesHighlightStatus = document.getElementById('notes-highlight-status');
@@ -1521,6 +1522,8 @@ function applyStudySignedOutState() {
   codingMergeSourceId = '';
   codingEditorLastSavedFingerprint = '';
   if (codingAutosaveTimer) { clearTimeout(codingAutosaveTimer); codingAutosaveTimer = null; }
+  if (codingSelectionAutoApplyTimer) { clearTimeout(codingSelectionAutoApplyTimer); codingSelectionAutoApplyTimer = null; }
+  stopCodingAiProgress();
   orderedFlashcards = [];
   remoteProgressCardStates = {};
   flashcardPeekRevealed = {};
@@ -5050,6 +5053,8 @@ function openPack(packId) {
     codingMergeSourceId = '';
     codingEditorLastSavedFingerprint = '';
     if (codingAutosaveTimer) { clearTimeout(codingAutosaveTimer); codingAutosaveTimer = null; }
+    if (codingSelectionAutoApplyTimer) { clearTimeout(codingSelectionAutoApplyTimer); codingSelectionAutoApplyTimer = null; }
+    stopCodingAiProgress();
     showPackEditor(true); updatePackSummary();
     syncCodingTabAvailability();
     syncStudyPackExportMenu();
@@ -5159,6 +5164,107 @@ function getCodingCodeById(codeId) {
   var id = String(codeId || '');
   return codingState && codingState.codes ? codingState.codes.find(function (code) { return String(code.code_id || '') === id; }) : null;
 }
+function truncateCodingText(text, maxLength) {
+  var clean = String(text || '').replace(/\s+/g, ' ').trim();
+  var limit = Math.max(12, parseInt(maxLength, 10) || 80);
+  return clean.length > limit ? clean.slice(0, limit - 1).trim() + '...' : clean;
+}
+function updateCodingSelectionSummary() {
+  if (!codingSelectionSummary) return;
+  var code = getCodingCodeById(selectedCodingCodeId);
+  if (codingSelectionRange && codingSelectionRange.text) {
+    codingSelectionSummary.textContent = 'Selected: "' + truncateCodingText(codingSelectionRange.text, 120) + '"';
+    codingSelectionSummary.classList.add('has-selection');
+    return;
+  }
+  codingSelectionSummary.classList.remove('has-selection');
+  codingSelectionSummary.textContent = code
+    ? 'Select transcript text to apply "' + truncateCodingText(code.name || 'this code', 36) + '" automatically.'
+    : 'Select transcript text, then choose a code or click In Vivo.';
+}
+function setCodingCodePickerOpen(open) {
+  if (!codingCodePickerMenu || !codingCodePickerButton) return;
+  var shouldOpen = !!open;
+  codingCodePickerMenu.hidden = !shouldOpen;
+  codingCodePickerButton.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+  if (shouldOpen && codingCodePickerSearch) {
+    codingCodePickerSearch.focus();
+    codingCodePickerSearch.select();
+  }
+}
+function codingCodePickerIsOpen() {
+  return !!(codingCodePickerMenu && !codingCodePickerMenu.hidden);
+}
+function selectCodingCode(codeId, options) {
+  selectedCodingCodeId = String(codeId || '');
+  codingMergeSourceId = '';
+  setCodingCodePickerOpen(false);
+  renderCodingCodeOptions();
+  updateCodingSelectionSummary();
+  if (!options || !options.skipWorkspaceRender) renderCodingWorkspace();
+}
+function renderCodingAiPanel() {
+  if (!codingAiPanel) return;
+  var latest = codingState && codingState.latest_run ? codingState.latest_run : null;
+  var isProgressing = codingAiProgressStage >= 0;
+  if (!isProgressing && !(latest && latest.status === 'draft')) {
+    codingAiPanel.hidden = true;
+    codingAiPanel.className = 'coding-ai-panel';
+    if (codingShell) codingShell.classList.remove('has-ai-panel');
+    return;
+  }
+  codingAiPanel.hidden = false;
+  if (codingShell) codingShell.classList.add('has-ai-panel');
+  if (isProgressing) {
+    var stages = ['Preparing transcript', 'Asking Gemini 3 Flash', 'Finding themes and quotations', 'Building review draft'];
+    var safeStage = Math.min(Math.max(codingAiProgressStage, 0), stages.length - 1);
+    var stageHtml = stages.map(function (stage, index) {
+      var state = index < safeStage ? 'done' : (index === safeStage ? 'active' : '');
+      return '<div class="coding-ai-stage ' + state + '"><span class="coding-ai-stage-dot"></span><span>' + escapeHtml(stage) + '</span></div>';
+    }).join('');
+    setSafeInnerHtml(codingAiPanel,
+      '<div class="coding-ai-panel-head"><div><div class="coding-ai-panel-title">AI coding is running</div><div class="coding-ai-panel-sub">You can keep this viewer open while the draft is created.</div></div><div class="coding-ai-progress-pill">' + escapeHtml(stages[safeStage]) + '</div></div>' +
+      '<div class="coding-ai-progress"><div class="coding-ai-progress-bar"><div class="coding-ai-progress-fill coding-ai-progress-step-' + safeStage + '"></div></div><div class="coding-ai-progress-list">' + stageHtml + '</div></div>'
+    );
+    return;
+  }
+  var proposedCodes = Array.isArray(latest.proposed_codes) ? latest.proposed_codes : [];
+  var proposedQuotes = Array.isArray(latest.proposed_quotations) ? latest.proposed_quotations : [];
+  var codePreview = proposedCodes.slice(0, 8).map(function (code) {
+    return '<div class="coding-ai-preview-item"><span class="coding-ai-preview-dot coding-color-' + escapeHtml(codingColorKey(code.color)) + '"></span><span class="coding-ai-preview-text">' + escapeHtml(code.name || 'Untitled code') + '</span></div>';
+  }).join('');
+  var quotePreview = proposedQuotes.slice(0, 5).map(function (quote) {
+    return '<div class="coding-ai-preview-item"><span class="coding-ai-preview-dot"></span><span class="coding-ai-preview-text">' + escapeHtml(truncateCodingText(quote.text || '', 140)) + '</span></div>';
+  }).join('');
+  setSafeInnerHtml(codingAiPanel,
+    '<div class="coding-ai-panel-head"><div><div class="coding-ai-panel-title">AI draft ready to review</div><div class="coding-ai-panel-sub">Nothing is applied until you accept it. Preview the suggested codebook and quotations below.</div></div><div class="coding-ai-counts">' + proposedCodes.length + ' codes &middot; ' + proposedQuotes.length + ' quotations</div></div>' +
+    '<div class="coding-ai-preview-grid"><div class="coding-ai-preview-box"><div class="coding-ai-preview-box-title">Suggested codes</div><div class="coding-ai-preview-list">' + (codePreview || '<div class="coding-code-picker-empty">No suggested codes.</div>') + '</div></div><div class="coding-ai-preview-box"><div class="coding-ai-preview-box-title">Suggested quotations</div><div class="coding-ai-preview-list">' + (quotePreview || '<div class="coding-code-picker-empty">No suggested quotations.</div>') + '</div></div></div>' +
+    '<div class="coding-ai-panel-actions"><button type="button" class="btn" data-ai-draft-action="reject">Reject Draft</button><button type="button" class="btn primary" data-ai-draft-action="accept">Accept Draft</button></div>'
+  );
+  codingAiPanel.querySelectorAll('[data-ai-draft-action]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      if (button.getAttribute('data-ai-draft-action') === 'accept') acceptAiCodingDraft();
+      else rejectAiCodingDraft();
+    });
+  });
+}
+function startCodingAiProgress() {
+  stopCodingAiProgress(false);
+  codingAiProgressStage = 0;
+  renderCodingAiPanel();
+  codingAiProgressTimer = window.setInterval(function () {
+    codingAiProgressStage = Math.min(codingAiProgressStage + 1, 3);
+    renderCodingAiPanel();
+  }, 3200);
+}
+function stopCodingAiProgress(renderPanel) {
+  if (codingAiProgressTimer) {
+    window.clearInterval(codingAiProgressTimer);
+    codingAiProgressTimer = null;
+  }
+  codingAiProgressStage = -1;
+  if (renderPanel !== false) renderCodingAiPanel();
+}
 function quotationOverlapsSegment(quotation, segment) {
   var quoteStart = parseInt(quotation.start_offset, 10) || 0;
   var quoteEnd = parseInt(quotation.end_offset, 10) || 0;
@@ -5243,27 +5349,42 @@ function renderCodingWorkspace() {
   setCodingStatus(codeCount + ' codes · ' + quoteCount + ' quotations' + (draftCount ? ' · AI draft ready' : ''), draftCount ? 'draft' : 'ok');
   if (codingAiAcceptBtn) codingAiAcceptBtn.hidden = !(latest && latest.status === 'draft');
   if (codingAiRejectBtn) codingAiRejectBtn.hidden = !(latest && latest.status === 'draft');
+  renderCodingAiPanel();
   renderCodingCodeOptions();
   renderCodingTranscript();
   renderCodingCodeList();
   renderCodingEditor();
   renderCodingQuotations();
+  updateCodingSelectionSummary();
   updateCodingPreview();
 }
 function renderCodingCodeOptions() {
-  if (!codingCodeSelect || !codingState) return;
-  codingCodeSelect.innerHTML = '';
-  var empty = document.createElement('option');
-  empty.value = '';
-  empty.textContent = codingState.codes.length ? 'Choose code' : 'Create first code';
-  codingCodeSelect.appendChild(empty);
-  codingState.codes.forEach(function (code) {
-    var option = document.createElement('option');
-    option.value = code.code_id;
-    option.textContent = code.name || 'Untitled code';
-    codingCodeSelect.appendChild(option);
+  if (!codingCodePickerButton || !codingCodePickerList || !codingState) return;
+  var selectedCode = getCodingCodeById(selectedCodingCodeId);
+  if (!selectedCode && selectedCodingCodeId) selectedCodingCodeId = '';
+  if (codingCodePickerLabel) codingCodePickerLabel.textContent = selectedCode ? (selectedCode.name || 'Untitled code') : (codingState.codes.length ? 'Choose code' : 'Create a code first');
+  if (codingCodePickerSwatch) {
+    codingCodePickerSwatch.className = 'coding-code-picker-swatch' + (selectedCode ? codingColorClass(selectedCode.color) : '');
+  }
+  var q = String(codingCodePickerSearch && codingCodePickerSearch.value || '').trim().toLowerCase();
+  var counts = {};
+  (codingState.quotations || []).forEach(function (quotation) {
+    (quotation.code_ids || []).forEach(function (codeId) { counts[codeId] = (counts[codeId] || 0) + 1; });
   });
-  codingCodeSelect.value = selectedCodingCodeId || '';
+  var codes = (codingState.codes || []).slice().sort(function (left, right) {
+    return String(left.name || '').localeCompare(String(right.name || ''));
+  }).filter(function (code) {
+    return !q || String(code.name || '').toLowerCase().indexOf(q) >= 0 || String(code.description || '').toLowerCase().indexOf(q) >= 0;
+  });
+  var html = codes.map(function (code) {
+    return '<button type="button" class="coding-code-picker-option' + codingColorClass(code.color) + (selectedCodingCodeId === code.code_id ? ' active' : '') + '" role="option" aria-selected="' + (selectedCodingCodeId === code.code_id ? 'true' : 'false') + '" data-picker-code-id="' + escapeHtml(code.code_id) + '"><span class="coding-code-swatch"></span><span class="coding-code-picker-option-name">' + escapeHtml(code.name || 'Untitled code') + '</span><span class="coding-code-count">' + (counts[code.code_id] || 0) + '</span></button>';
+  }).join('');
+  setSafeInnerHtml(codingCodePickerList, html || '<div class="coding-code-picker-empty">No matching codes. Use New Code in the Code Manager or click In Vivo after selecting text.</div>');
+  codingCodePickerList.querySelectorAll('[data-picker-code-id]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      selectCodingCode(button.getAttribute('data-picker-code-id') || '');
+    });
+  });
 }
 function renderCodingTranscript() {
   if (!codingTranscript || !codingState) return;
@@ -5334,12 +5455,41 @@ function getCodingSelectionOffsets() {
   if (end <= start) return null;
   return { start_offset: start, end_offset: end, text: (codingState.transcript || '').slice(start, end).trim() };
 }
-function captureCodingSelection() {
-  codingSelectionRange = getCodingSelectionOffsets();
+function captureCodingSelection(options) {
+  var settings = options || {};
+  var nextSelection = getCodingSelectionOffsets();
+  if (nextSelection && nextSelection.text) {
+    codingSelectionRange = nextSelection;
+  }
   if (codingSelectionRange && codingCommentInput && !codingCommentInput.value) {
     codingCommentInput.placeholder = 'Comment';
   }
+  updateCodingSelectionSummary();
+  if (settings.autoApply !== false && nextSelection && nextSelection.text && selectedCodingCodeId) {
+    scheduleCodingSelectionAutoApply(nextSelection);
+  }
   return codingSelectionRange;
+}
+function clearCodingSelection() {
+  codingSelectionRange = null;
+  if (window.getSelection) window.getSelection().removeAllRanges();
+  updateCodingSelectionSummary();
+}
+function scheduleCodingSelectionAutoApply(selection) {
+  if (!selection || !selection.text || !selectedCodingCodeId || codingAutoApplyInFlight) return;
+  if (codingSelectionAutoApplyTimer) clearTimeout(codingSelectionAutoApplyTimer);
+  codingSelectionAutoApplyTimer = setTimeout(function () {
+    codingSelectionAutoApplyTimer = null;
+    if (!selectedCodingCodeId || !codingSelectionRange) return;
+    codingAutoApplyInFlight = true;
+    applyCodingSelectionWithCode(codingSelectionRange, selectedCodingCodeId, {
+      auto: true,
+      comment: codingCommentInput ? codingCommentInput.value : '',
+      feedback: 'Code applied.'
+    }).catch(function () {}).finally(function () {
+      codingAutoApplyInFlight = false;
+    });
+  }, 180);
 }
 function renderCodingCodeList() {
   if (!codingCodeList || !codingState) return;
@@ -5377,9 +5527,7 @@ function renderCodingCodeList() {
         mergeCodingCodeIntoTarget(codingMergeSourceId, clickedCodeId);
         return;
       }
-      selectedCodingCodeId = clickedCodeId;
-      if (codingCodeSelect) codingCodeSelect.value = selectedCodingCodeId;
-      renderCodingWorkspace();
+      selectCodingCode(clickedCodeId);
     });
   });
 }
@@ -5516,7 +5664,6 @@ function saveCodingCodeFromEditor(options) {
     if (code && code.code_id) {
       selectedCodingCodeId = code.code_id;
       upsertCodingCodeLocally(code);
-      if (codingCodeSelect) codingCodeSelect.value = selectedCodingCodeId;
     }
     codingEditorLastSavedFingerprint = codingEditorFingerprint(payload);
     renderCodingCodeOptions();
@@ -5541,59 +5688,129 @@ function createCodingCode(name, color) {
     method: 'POST',
     body: JSON.stringify({ name: name, color: color || selectedCodingColor || 'teal' })
   }).then(function (response) {
-    return ensureCodingLoaded(true).then(function () {
-      return response.code;
-    });
+    var code = response.code || {};
+    if (code && code.code_id) {
+      selectedCodingCodeId = code.code_id;
+      upsertCodingCodeLocally(code);
+      renderCodingCodeOptions();
+      renderCodingCodeList();
+      renderCodingEditor();
+      updateCodingPreview();
+    }
+    return code;
   });
 }
-function applyCodingToSelection(useInVivo) {
-  if (!codingState) return;
-  var selection = captureCodingSelection();
-  if (!selection || !selection.text) {
-    showToast('Select transcript text first.', 'error');
-    return;
-  }
-  var newCodeName = String(codingNewCodeInput && codingNewCodeInput.value || '').trim();
-  if (useInVivo && !newCodeName) {
-    newCodeName = selection.text.replace(/\s+/g, ' ').trim().slice(0, 70);
-    if (codingNewCodeInput) codingNewCodeInput.value = newCodeName;
-  }
-  var selectedCodeId = String(codingCodeSelect && codingCodeSelect.value || selectedCodingCodeId || '').trim();
-  var codePromise = selectedCodeId
-    ? Promise.resolve({ code_id: selectedCodeId })
-    : (newCodeName ? createCodingCode(newCodeName, selectedCodingColor) : Promise.reject(new Error('Choose or create a code first.')));
-  codePromise.then(function (code) {
-    var codeId = code.code_id;
-    var existing = (codingState.quotations || []).find(function (quotation) {
-      return quotation.start_offset === selection.start_offset && quotation.end_offset === selection.end_offset;
-    });
-    if (existing) {
-      var nextIds = (existing.code_ids || []).slice();
-      if (nextIds.indexOf(codeId) < 0) nextIds.push(codeId);
-      return codingApi('/quotations/' + encodeURIComponent(existing.quotation_id), {
-        method: 'PATCH',
-        body: JSON.stringify({ code_ids: nextIds, comment: codingCommentInput ? codingCommentInput.value : '' })
-      }).then(function () { return { quotation_id: existing.quotation_id }; });
+function upsertCodingQuotationLocally(quotation) {
+  if (!codingState || !quotation) return;
+  var id = String(quotation.quotation_id || '');
+  var found = false;
+  codingState.quotations = (codingState.quotations || []).map(function (existing) {
+    if (id && String(existing.quotation_id || '') === id) {
+      found = true;
+      return Object.assign({}, existing, quotation);
     }
-    return codingApi('/quotations', {
+    if (!id && existing.start_offset === quotation.start_offset && existing.end_offset === quotation.end_offset) {
+      found = true;
+      return Object.assign({}, existing, quotation);
+    }
+    return existing;
+  });
+  if (!found) codingState.quotations.push(quotation);
+}
+function applyCodingSelectionWithCode(selection, codeId, options) {
+  var settings = options || {};
+  var safeCodeId = String(codeId || '').trim();
+  if (!codingState || !selection || !selection.text || !safeCodeId) {
+    return Promise.reject(new Error('Choose a code first.'));
+  }
+  var comment = String(settings.comment != null ? settings.comment : (codingCommentInput ? codingCommentInput.value : ''));
+  var existing = (codingState.quotations || []).find(function (quotation) {
+    return quotation.start_offset === selection.start_offset && quotation.end_offset === selection.end_offset;
+  });
+  var existingIds = existing ? (existing.code_ids || []).slice() : [];
+  if (existing && existingIds.indexOf(safeCodeId) >= 0) {
+    clearCodingSelection();
+    if (!settings.auto) showToast('That text already has this code.');
+    return Promise.resolve(existing);
+  }
+  var nextIds = existingIds.slice();
+  if (nextIds.indexOf(safeCodeId) < 0) nextIds.push(safeCodeId);
+  var optimisticQuotation = Object.assign({}, existing || {}, {
+    quotation_id: existing ? existing.quotation_id : ('pending-' + Date.now()),
+    start_offset: selection.start_offset,
+    end_offset: selection.end_offset,
+    text: selection.text,
+    code_ids: nextIds,
+    comment: comment,
+  });
+  upsertCodingQuotationLocally(optimisticQuotation);
+  renderCodingTranscript();
+  renderCodingQuotations();
+  updateCodingPreview();
+  var code = getCodingCodeById(safeCodeId);
+  setCodingStatus('Applying "' + truncateCodingText(code && code.name || 'code', 42) + '"...', 'draft');
+  var request = existing
+    ? codingApi('/quotations/' + encodeURIComponent(existing.quotation_id), {
+      method: 'PATCH',
+      body: JSON.stringify({ code_ids: nextIds, comment: comment })
+    }).then(function () { return { quotation_id: existing.quotation_id, created: false }; })
+    : codingApi('/quotations', {
       method: 'POST',
       body: JSON.stringify({
         start_offset: selection.start_offset,
         end_offset: selection.end_offset,
         text: selection.text,
-        code_ids: [codeId],
-        comment: codingCommentInput ? codingCommentInput.value : '',
+        code_ids: [safeCodeId],
+        comment: comment,
       })
-    }).then(function (payload) { return payload.quotation || {}; });
-  }).then(function (quotation) {
-    codingUndoStack.push({ type: 'quotation', quotation_id: quotation.quotation_id || '' });
-    if (codingNewCodeInput) codingNewCodeInput.value = '';
+    }).then(function (payload) {
+      var quotation = payload.quotation || {};
+      return { quotation_id: quotation.quotation_id || '', created: true };
+    });
+  return request.then(function (result) {
+    if (result.created) codingUndoStack.push({ type: 'quotation', quotation_id: result.quotation_id || '' });
     if (codingCommentInput) codingCommentInput.value = '';
-    if (window.getSelection) window.getSelection().removeAllRanges();
-    return ensureCodingLoaded(true);
-  }).then(function () {
-    showToast('Coding applied.');
-  }).catch(function (e) { showToast(e.message || 'Could not apply code.', 'error'); });
+    clearCodingSelection();
+    return ensureCodingLoaded(true).then(function () { return result; });
+  }).then(function (result) {
+    showToast(settings.feedback || 'Coding applied.');
+    return result;
+  }).catch(function (e) {
+    ensureCodingLoaded(true).catch(function () {});
+    showToast(e.message || 'Could not apply code.', 'error');
+    throw e;
+  });
+}
+function applyCodingToSelection(useInVivo) {
+  if (!codingState) return;
+  if (codingSelectionAutoApplyTimer) {
+    clearTimeout(codingSelectionAutoApplyTimer);
+    codingSelectionAutoApplyTimer = null;
+  }
+  var liveSelection = captureCodingSelection({ autoApply: false });
+  var selection = (liveSelection && liveSelection.text) ? liveSelection : codingSelectionRange;
+  if (!selection || !selection.text) {
+    showToast('Select transcript text first.', 'error');
+    return;
+  }
+  if (useInVivo) {
+    var inVivoName = selection.text.replace(/\s+/g, ' ').trim().slice(0, 70);
+    if (!inVivoName) {
+      showToast('Select transcript text first.', 'error');
+      return;
+    }
+    setCodingStatus('Creating in vivo code...', 'draft');
+    createCodingCode(inVivoName, selectedCodingColor).then(function (code) {
+      return applyCodingSelectionWithCode(selection, code.code_id, { feedback: 'In vivo code applied.' });
+    }).catch(function (e) { showToast(e.message || 'Could not create in vivo code.', 'error'); });
+    return;
+  }
+  var selectedCodeId = String(selectedCodingCodeId || '').trim();
+  if (!selectedCodeId) {
+    showToast('Choose a code first or click In Vivo.', 'error');
+    return;
+  }
+  applyCodingSelectionWithCode(selection, selectedCodeId, { feedback: 'Coding applied.' }).catch(function () {});
 }
 function deleteCodingQuotation(quotationId) {
   var id = String(quotationId || '').trim();
@@ -5628,8 +5845,9 @@ function runAiCoding() {
   ).then(function (confirmed) {
     if (!confirmed) return;
     codingLoading = true;
+    startCodingAiProgress();
     if (codingAiRunBtn) codingAiRunBtn.disabled = true;
-    setCodingStatus('AI coding is running...', 'draft');
+    setCodingStatus('AI coding is running. Draft will appear here when ready.', 'draft');
     codingApi('/ai-runs', { method: 'POST', body: JSON.stringify({}) }).then(function (payload) {
       codingState.latest_run = payload.run || null;
       return ensureCodingLoaded(true);
@@ -5640,6 +5858,7 @@ function runAiCoding() {
       ensureCodingLoaded(true).catch(function () {});
     }).finally(function () {
       codingLoading = false;
+      stopCodingAiProgress();
       if (codingAiRunBtn) codingAiRunBtn.disabled = false;
     });
   });
@@ -5647,6 +5866,7 @@ function runAiCoding() {
 function acceptAiCodingDraft() {
   var run = codingState && codingState.latest_run;
   if (!run || run.status !== 'draft') return;
+  setCodingStatus('Applying AI draft...', 'draft');
   codingApi('/ai-runs/' + encodeURIComponent(run.run_id) + '/accept', { method: 'POST', body: JSON.stringify({}) }).then(function (payload) {
     codingState = normalizeCodingState(payload.state || {});
     renderCodingWorkspace();
@@ -5656,19 +5876,74 @@ function acceptAiCodingDraft() {
 function rejectAiCodingDraft() {
   var run = codingState && codingState.latest_run;
   if (!run || run.status !== 'draft') return;
+  setCodingStatus('Rejecting AI draft...', 'draft');
   codingApi('/ai-runs/' + encodeURIComponent(run.run_id) + '/reject', { method: 'POST', body: JSON.stringify({}) }).then(function () {
     return ensureCodingLoaded(true);
   }).then(function () { showToast('AI draft rejected.'); }).catch(function (e) { showToast(e.message || 'Could not reject AI draft.', 'error'); });
 }
 function deleteSelectedCodingCode() {
   if (!selectedCodingCodeId) return;
-  openConfirmModal('Delete Code', 'Delete this code and remove it from coded quotations?', 'Delete Code').then(function (confirmed) {
+  var deletingCodeId = selectedCodingCodeId;
+  var deletingCode = getCodingCodeById(deletingCodeId);
+  openConfirmModal('Delete Code', 'Delete "' + (deletingCode && deletingCode.name ? deletingCode.name : 'this code') + '" and remove it from coded quotations?', 'Delete Code').then(function (confirmed) {
     if (!confirmed) return;
-    codingApi('/codes/' + encodeURIComponent(selectedCodingCodeId), { method: 'DELETE' }).then(function () {
+    if (codingAutosaveTimer) { clearTimeout(codingAutosaveTimer); codingAutosaveTimer = null; }
+    codingAutosaveQueued = false;
+    if (codingDeleteCodeBtn) codingDeleteCodeBtn.disabled = true;
+    setCodingStatus('Deleting code...', 'draft');
+    codingApi('/codes/' + encodeURIComponent(deletingCodeId), { method: 'DELETE' }).then(function () {
       codingMergeSourceId = '';
-      selectedCodingCodeId = '';
+      if (selectedCodingCodeId === deletingCodeId) selectedCodingCodeId = '';
       return ensureCodingLoaded(true);
-    }).then(function () { showToast('Code deleted.'); }).catch(function (e) { showToast(e.message || 'Could not delete code.', 'error'); });
+    }).then(function () { showToast('Code deleted.'); }).catch(function (e) { showToast(e.message || 'Could not delete code.', 'error'); }).finally(function () {
+      if (codingDeleteCodeBtn) codingDeleteCodeBtn.disabled = false;
+    });
+  });
+}
+function resetCodingForCurrentInterview() {
+  if (!codingState || codingLoading) return;
+  var quotations = Array.isArray(codingState.quotations) ? codingState.quotations.slice() : [];
+  var run = codingState.latest_run || null;
+  var hasDraft = !!(run && run.status === 'draft');
+  if (!quotations.length && !hasDraft) {
+    showToast('There is no interview coding to reset.');
+    return;
+  }
+  openConfirmModal(
+    'Reset Interview Coding',
+    'Remove all coded quotations from this interview' + (hasDraft ? ' and reject the current AI draft' : '') + '? Your reusable codebook stays available.',
+    'Reset Coding'
+  ).then(function (confirmed) {
+    if (!confirmed) return;
+    codingLoading = true;
+    if (codingResetBtn) codingResetBtn.disabled = true;
+    setCodingStatus('Resetting interview coding...', 'draft');
+    var chain = Promise.resolve();
+    quotations.forEach(function (quotation) {
+      var quoteId = String(quotation.quotation_id || '').trim();
+      if (!quoteId) return;
+      chain = chain.then(function () {
+        return codingApi('/quotations/' + encodeURIComponent(quoteId), { method: 'DELETE' });
+      });
+    });
+    if (hasDraft) {
+      chain = chain.then(function () {
+        return codingApi('/ai-runs/' + encodeURIComponent(run.run_id) + '/reject', { method: 'POST', body: JSON.stringify({}) });
+      });
+    }
+    chain.then(function () {
+      codingUndoStack = [];
+      codingSelectionRange = null;
+      return ensureCodingLoaded(true);
+    }).then(function () {
+      showToast('Interview coding reset.');
+    }).catch(function (e) {
+      showToast(e.message || 'Could not reset coding.', 'error');
+      ensureCodingLoaded(true).catch(function () {});
+    }).finally(function () {
+      codingLoading = false;
+      if (codingResetBtn) codingResetBtn.disabled = false;
+    });
   });
 }
 function mergeSelectedCodingCode() {
@@ -6649,13 +6924,19 @@ if (codingTranscript) {
   codingTranscript.addEventListener('mouseup', captureCodingSelection);
   codingTranscript.addEventListener('keyup', captureCodingSelection);
 }
-if (codingCodeSelect) {
-  codingCodeSelect.addEventListener('change', function () {
-    selectedCodingCodeId = codingCodeSelect.value || '';
-    codingMergeSourceId = '';
-    renderCodingWorkspace();
+if (codingCodePickerButton) {
+  codingCodePickerButton.addEventListener('click', function () {
+    setCodingCodePickerOpen(!codingCodePickerIsOpen());
   });
 }
+if (codingCodePickerSearch) codingCodePickerSearch.addEventListener('input', renderCodingCodeOptions);
+document.addEventListener('click', function (e) {
+  if (!codingCodePicker || codingCodePicker.contains(e.target)) return;
+  setCodingCodePickerOpen(false);
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && codingCodePickerIsOpen()) setCodingCodePickerOpen(false);
+});
 if (codingApplyBtn) codingApplyBtn.addEventListener('click', function () { applyCodingToSelection(false); });
 if (codingInvivoBtn) codingInvivoBtn.addEventListener('click', function () { applyCodingToSelection(true); });
 if (codingUndoBtn) codingUndoBtn.addEventListener('click', undoCodingAction);
@@ -6678,6 +6959,7 @@ if (codingAiRunBtn) codingAiRunBtn.addEventListener('click', runAiCoding);
 if (codingAiAcceptBtn) codingAiAcceptBtn.addEventListener('click', acceptAiCodingDraft);
 if (codingAiRejectBtn) codingAiRejectBtn.addEventListener('click', rejectAiCodingDraft);
 if (codingExportPdfBtn) codingExportPdfBtn.addEventListener('click', exportCodingPdf);
+if (codingResetBtn) codingResetBtn.addEventListener('click', resetCodingForCurrentInterview);
 if (codingCloseBtn) codingCloseBtn.addEventListener('click', closeCodingWorkspace);
 
 addFlashcardBtn.addEventListener('click', function () {
