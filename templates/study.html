@@ -391,25 +391,37 @@
                         <button type="button" class="btn" id="coding-ai-accept-btn" hidden>Accept Draft</button>
                         <button type="button" class="btn" id="coding-ai-reject-btn" hidden>Reject Draft</button>
                         <button type="button" class="btn" id="coding-export-pdf-btn">Export PDF</button>
+                        <button type="button" class="btn danger" id="coding-reset-btn">Reset Coding</button>
                         <button type="button" class="btn" id="coding-close-btn">Back to Library</button>
                       </div>
                     </div>
+                    <div class="coding-ai-panel" id="coding-ai-panel" hidden></div>
                     <div class="coding-grid">
                       <section class="coding-transcript-panel" aria-label="Interview transcript">
                         <div class="coding-selection-bar">
-                          <select id="coding-code-select" class="coding-select" aria-label="Code"></select>
-                          <input id="coding-new-code-input" placeholder="New code">
-                          <input id="coding-comment-input" placeholder="Comment">
+                          <div class="coding-code-picker" id="coding-code-picker">
+                            <button type="button" class="coding-code-picker-button" id="coding-code-picker-button"
+                              aria-haspopup="listbox" aria-expanded="false">
+                              <span class="coding-code-picker-swatch" id="coding-code-picker-swatch" aria-hidden="true"></span>
+                              <span class="coding-code-picker-label" id="coding-code-picker-label">Choose code</span>
+                            </button>
+                            <div class="coding-code-picker-menu" id="coding-code-picker-menu" hidden>
+                              <input id="coding-code-picker-search" placeholder="Search codes">
+                              <div class="coding-code-picker-list" id="coding-code-picker-list" role="listbox"></div>
+                            </div>
+                          </div>
+                          <input id="coding-comment-input" placeholder="Quotation comment">
                           <button type="button" class="btn primary" id="coding-apply-btn">Apply</button>
                           <button type="button" class="btn" id="coding-invivo-btn">In Vivo</button>
                           <button type="button" class="btn" id="coding-undo-btn">Undo</button>
+                          <div class="coding-selection-summary" id="coding-selection-summary" aria-live="polite">Select transcript text</div>
                         </div>
                         <div class="coding-transcript" id="coding-transcript" tabindex="0"></div>
                       </section>
                       <aside class="coding-manager-panel" aria-label="Code manager">
                         <div class="coding-manager-head">
                           <input id="coding-search-input" placeholder="Search codes">
-                          <button type="button" class="btn" id="coding-new-code-btn">New</button>
+                          <button type="button" class="btn" id="coding-new-code-btn">New Code</button>
                         </div>
                         <div class="coding-code-list" id="coding-code-list"></div>
                         <div class="coding-editor" id="coding-editor">
