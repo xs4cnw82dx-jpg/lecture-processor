@@ -279,7 +279,7 @@
                   <button class="btn primary" id="open-learn-btn"><svg viewBox="0 0 24 24" fill="none"
                       stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                    </svg>Learn Mode</button>
+                    </svg><span id="open-learn-btn-label">Learn Mode</span></button>
                 </div>
                 <div class="editor-tabs" role="tablist" aria-label="Study pack sections">
                   <button class="editor-tab active" id="editor-tab-notes" data-editor-pane="notes" role="tab"
@@ -309,6 +309,18 @@
                       <path d="M17 10l3 2-3 2"></path>
                     </svg>Coding</button>
                 </div>
+                <section class="coding-preview-card" id="coding-preview-card" hidden>
+                  <div class="coding-preview-main">
+                    <div class="coding-preview-kicker">Interview coding</div>
+                    <h3 id="coding-preview-title">No codes yet</h3>
+                    <p id="coding-preview-status">Open the coding workspace to mark transcript passages.</p>
+                    <div class="coding-preview-chips" id="coding-preview-codes"></div>
+                  </div>
+                  <div class="coding-preview-side">
+                    <div class="coding-preview-stat"><strong id="coding-preview-code-count">0</strong><span>codes</span></div>
+                    <div class="coding-preview-stat"><strong id="coding-preview-quote-count">0</strong><span>quotations</span></div>
+                  </div>
+                </section>
                 <div class="editor-pane active" id="editor-pane-notes" role="tabpanel" aria-labelledby="editor-tab-notes"
                   aria-hidden="false">
                   <div class="notes-pane-shell" id="notes-pane-shell">
@@ -379,6 +391,7 @@
                         <button type="button" class="btn" id="coding-ai-accept-btn" hidden>Accept Draft</button>
                         <button type="button" class="btn" id="coding-ai-reject-btn" hidden>Reject Draft</button>
                         <button type="button" class="btn" id="coding-export-pdf-btn">Export PDF</button>
+                        <button type="button" class="btn" id="coding-close-btn">Back to Library</button>
                       </div>
                     </div>
                     <div class="coding-grid">
