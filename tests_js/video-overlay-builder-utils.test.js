@@ -58,3 +58,8 @@ test('buildAnimationSchedule clamps delays and sorts stable by timing', () => {
   assert.equal(schedule[2].durationMs, 10000);
   assert.equal(schedule[2].animation, 'rise');
 });
+
+test('normalizeOverlayItem preserves shape and arrow overlay types', () => {
+  assert.equal(utils.normalizeOverlayItem({ type: 'shape', title: 'Circle' }).type, 'shape');
+  assert.equal(utils.normalizeOverlayItem({ type: 'arrow', title: 'Callout' }).type, 'arrow');
+});

@@ -102,7 +102,7 @@
   function normalizeOverlayItem(item) {
     var source = item && typeof item === 'object' ? item : {};
     var type = String(source.type || 'text').trim().toLowerCase();
-    if (['text', 'table', 'image', 'flow'].indexOf(type) < 0) type = 'text';
+    if (['text', 'table', 'image', 'flow', 'shape', 'arrow'].indexOf(type) < 0) type = 'text';
     return Object.assign({}, source, {
       type: type,
       x: clampNumber(source.x, 0, 96, 8),
@@ -112,7 +112,7 @@
       delay: clampNumber(source.delay, 0, 600, 0),
       duration: clampNumber(source.duration, 0.1, 10, 0.55),
       animation: normalizeAnimation(source.animation),
-      title: normalizeText(source.title, type === 'table' ? 'Table' : 'Overlay')
+      title: normalizeText(source.title, type === 'table' ? 'Table' : (type === 'shape' ? 'Shape' : (type === 'arrow' ? 'Arrow' : 'Overlay')))
     });
   }
 
@@ -144,6 +144,8 @@
       return Math.max(1, steps) + ' flow step' + (Math.max(1, steps) === 1 ? '' : 's');
     }
     if (normalized.type === 'image') return 'Image overlay';
+    if (normalized.type === 'shape') return 'Shape overlay';
+    if (normalized.type === 'arrow') return 'Arrow overlay';
     return 'Text overlay';
   }
 

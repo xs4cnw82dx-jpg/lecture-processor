@@ -62,6 +62,8 @@
             <button type="button" class="secondary-btn" id="overlay-add-table">Table</button>
             <button type="button" class="secondary-btn" id="overlay-add-image">Image</button>
             <button type="button" class="secondary-btn" id="overlay-add-flow">Flow</button>
+            <button type="button" class="secondary-btn" id="overlay-add-arrow">Arrow</button>
+            <button type="button" class="secondary-btn" id="overlay-add-shape">Shape</button>
           </div>
           <div class="overlay-table-size-row" aria-label="New table size">
             <label class="overlay-field" for="overlay-table-rows">
@@ -89,6 +91,15 @@
         <div class="overlay-stage-toolbar">
           <div class="overlay-stage-label" id="overlay-stage-label"></div>
           <div class="overlay-stage-actions">
+            <div class="overlay-zoom-controls" aria-label="Canvas zoom controls">
+              <button type="button" class="ghost-btn" id="overlay-zoom-out" aria-label="Zoom out">-</button>
+              <label for="overlay-zoom-input">
+                <span class="sr-only">Canvas zoom percent</span>
+                <input type="number" id="overlay-zoom-input" min="50" max="200" step="10" value="100">
+              </label>
+              <span aria-hidden="true">%</span>
+              <button type="button" class="ghost-btn" id="overlay-zoom-in" aria-label="Zoom in">+</button>
+            </div>
             <button type="button" class="ghost-btn" id="overlay-prev-slide">Previous</button>
             <button type="button" class="primary-btn" id="overlay-preview">Preview Slide</button>
             <button type="button" class="secondary-btn" id="overlay-next-slide">Next Slide</button>
