@@ -351,6 +351,9 @@ def test_more_tools_pages_and_links_render(client):
     assert 'href="/study?folder=video-overlays"' in overlay_html
     assert 'overlay-table-rows' in overlay_html
     assert 'overlay-record-screen' in overlay_html
+    assert 'overlay-add-arrow' in overlay_html
+    assert 'overlay-add-shape' in overlay_html
+    assert 'overlay-zoom-input' in overlay_html
     assert 'app-shell-sidebar' not in overlay_html
 
 

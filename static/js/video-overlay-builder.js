@@ -27,6 +27,22 @@
     { value: 'wipe', label: 'Wipe' },
     { value: 'none', label: 'None' }
   ];
+  var SHAPE_OPTIONS = [
+    { value: 'rounded', label: 'Rounded square' },
+    { value: 'circle', label: 'Circle' },
+    { value: 'triangle', label: 'Triangle' },
+    { value: 'pentagon', label: 'Pentagon' },
+    { value: 'square', label: 'Square' },
+    { value: 'diamond', label: 'Diamond' },
+    { value: 'pill', label: 'Pill' },
+    { value: 'parallelogram', label: 'Parallelogram' },
+    { value: 'arrow-right', label: 'Block arrow' }
+  ];
+  var ARROW_OPTIONS = [
+    { value: 'line', label: 'Line' },
+    { value: 'arrow', label: 'Arrow' },
+    { value: 'curve', label: 'Curved arrow' }
+  ];
 
   var refs = {
     authState: document.getElementById('overlay-auth-state'),
@@ -45,6 +61,8 @@
     addTable: document.getElementById('overlay-add-table'),
     addImage: document.getElementById('overlay-add-image'),
     addFlow: document.getElementById('overlay-add-flow'),
+    addArrow: document.getElementById('overlay-add-arrow'),
+    addShape: document.getElementById('overlay-add-shape'),
     tableRows: document.getElementById('overlay-table-rows'),
     tableCols: document.getElementById('overlay-table-cols'),
     imageInput: document.getElementById('overlay-image-input'),
@@ -55,6 +73,9 @@
     import: document.getElementById('overlay-import-json'),
     reset: document.getElementById('overlay-reset'),
     preview: document.getElementById('overlay-preview'),
+    zoomIn: document.getElementById('overlay-zoom-in'),
+    zoomOut: document.getElementById('overlay-zoom-out'),
+    zoomInput: document.getElementById('overlay-zoom-input'),
     prevSlide: document.getElementById('overlay-prev-slide'),
     nextSlide: document.getElementById('overlay-next-slide'),
     stopPreview: document.getElementById('overlay-stop-preview'),
@@ -84,6 +105,10 @@
   var dynamicStyleSheet = null;
   var confirmResolver = null;
   var openSelectRoot = null;
+  var stageZoom = 1;
+  var statusTimer = null;
+  var draggedSlideId = '';
+  var suppressSlideClick = false;
 
   var recording = {
     state: 'idle',
@@ -176,7 +201,13 @@
     if (result.type === 'image') {
       result.src = String(result.src || '');
       result.alt = String(result.alt || 'Overlay image');
-      result.fit = result.fit === 'cover' ? 'cover' : 'contain';
+      result.fit = result.fit === 'contain' ? 'contain' : 'cover';
+    }
+    if (result.type === 'shape') {
+      result.shape = SHAPE_OPTIONS.some(function (entry) { return entry.value === result.shape; }) ? result.shape : 'rounded';
+    }
+    if (result.type === 'arrow') {
+      result.arrow = ARROW_OPTIONS.some(function (entry) { return entry.value === result.arrow; }) ? result.arrow : 'arrow';
     }
     return result;
   }
@@ -317,10 +348,23 @@
     }, 450);
   }
 
-  function setStatus(message, type) {
+  function setStatus(message, type, autoClearMs) {
     if (!refs.status) return;
+    if (statusTimer) {
+      window.clearTimeout(statusTimer);
+      statusTimer = null;
+    }
     refs.status.textContent = String(message || '');
     refs.status.className = type ? ('status ' + type) : 'status';
+    if (message && autoClearMs) {
+      statusTimer = window.setTimeout(function () {
+        statusTimer = null;
+        if (refs.status.textContent === String(message || '')) {
+          refs.status.textContent = '';
+          refs.status.className = 'status';
+        }
+      }, autoClearMs);
+    }
   }
 
   function setRecordingStatus(message) {
@@ -383,6 +427,7 @@
     updateSlideNavigation();
     updateAuthStateText();
     updateRecordingButtons();
+    updateStageZoom();
   }
 
   function renderProjectHeader() {
@@ -437,12 +482,13 @@
     project.slides.forEach(function (slide, index) {
       var item = document.createElement('li');
       item.className = 'overlay-slide-row' + (slide.id === activeSlideId ? ' active' : '');
+      item.dataset.slideRowId = slide.id;
       var button = document.createElement('button');
       button.type = 'button';
       button.className = 'overlay-slide-main';
       button.dataset.slideId = slide.id;
       button.setAttribute('aria-current', slide.id === activeSlideId ? 'true' : 'false');
-      button.innerHTML = '<span class="overlay-slide-number"></span><span class="overlay-slide-copy"><strong></strong><span></span></span>';
+      button.innerHTML = '<span class="overlay-slide-drag" aria-hidden="true"><span></span><span></span><span></span></span><span class="overlay-slide-number"></span><span class="overlay-slide-copy"><strong></strong><span></span></span>';
       button.querySelector('.overlay-slide-number').textContent = String(index + 1);
       button.querySelector('strong').textContent = slide.title;
       button.querySelector('.overlay-slide-copy span').textContent = slide.items.length + ' overlay' + (slide.items.length === 1 ? '' : 's') + ' / ' + slide.duration + 's';
@@ -497,6 +543,10 @@
     node.dataset.stageIndex = String(index);
     node.dataset.animation = item.animation;
     node.appendChild(createStageItemBody(item));
+    var meta = document.createElement('div');
+    meta.className = 'overlay-stage-item-meta';
+    meta.textContent = formatTimingMeta(item);
+    node.appendChild(meta);
 
     var resize = document.createElement('button');
     resize.type = 'button';
@@ -517,6 +567,10 @@
       renderFlowItem(body, item);
     } else if (item.type === 'image') {
       renderImageItem(body, item);
+    } else if (item.type === 'shape') {
+      renderShapeItem(body, item);
+    } else if (item.type === 'arrow') {
+      renderArrowItem(body, item);
     } else {
       renderTextItem(body, item);
     }
@@ -532,6 +586,9 @@
     node.dataset.itemId = itemId;
     node.dataset.editField = field;
     node.setAttribute('role', 'textbox');
+    if (!String(text || '').trim()) {
+      node.dataset.placeholder = field === 'body' ? 'Type overlay text...' : 'Type here...';
+    }
     return node;
   }
 
@@ -603,6 +660,30 @@
     placeholder.className = 'overlay-image-placeholder';
     placeholder.innerHTML = iconSvg('image') + '<span>No image selected</span>';
     container.appendChild(placeholder);
+  }
+
+  function renderShapeItem(container, item) {
+    var wrap = document.createElement('div');
+    wrap.className = 'overlay-shape-wrap';
+    var shape = document.createElement('div');
+    shape.className = 'overlay-shape overlay-shape-' + (item.shape || 'rounded');
+    shape.setAttribute('aria-label', item.title || 'Shape');
+    wrap.appendChild(shape);
+    container.appendChild(wrap);
+  }
+
+  function renderArrowItem(container, item) {
+    var wrap = document.createElement('div');
+    wrap.className = 'overlay-arrow-wrap';
+    wrap.innerHTML = arrowSvg(item.arrow || 'arrow');
+    container.appendChild(wrap);
+  }
+
+  function formatTimingMeta(item) {
+    var delay = Math.round(utils.clampNumber(item.delay, 0, 600, 0) * 10) / 10;
+    var duration = Math.round(utils.clampNumber(item.duration, 0.1, 10, 0.55) * 10) / 10;
+    var animation = (ANIMATION_OPTIONS.find(function (entry) { return entry.value === item.animation; }) || ANIMATION_OPTIONS[0]).label;
+    return '+' + delay + 's / ' + duration + 's / ' + animation;
   }
 
   function renderItems() {
@@ -681,6 +762,8 @@
     if (item.type === 'table') wrap.appendChild(createTableInspector(item));
     if (item.type === 'flow') wrap.appendChild(createFlowInspector(item));
     if (item.type === 'image') wrap.appendChild(createImageInspector(item));
+    if (item.type === 'shape') wrap.appendChild(createShapeInspector(item));
+    if (item.type === 'arrow') wrap.appendChild(createArrowInspector(item));
 
     var actions = document.createElement('div');
     actions.className = 'overlay-action-row';
@@ -750,7 +833,6 @@
       '<label class="overlay-field"><span>Columns</span><input type="number" min="1" max="8" step="1" data-table-cols></label>',
       '</div>',
       '<div class="overlay-action-row wrap">',
-      '<button type="button" class="secondary-btn" data-table-apply>Apply size</button>',
       '<button type="button" class="ghost-btn" data-table-add-row>Add row</button>',
       '<button type="button" class="ghost-btn" data-table-add-col>Add column</button>',
       '<button type="button" class="ghost-btn" data-table-remove-row>Remove row</button>',
@@ -758,22 +840,36 @@
       '</div>'
     ].join('');
     wrap.querySelector('.overlay-inspector-head span').textContent = tableData.rowCount + ' x ' + tableData.colCount;
-    wrap.querySelector('[data-table-rows]').value = tableData.rowCount;
-    wrap.querySelector('[data-table-cols]').value = tableData.colCount;
-    wrap.querySelector('[data-table-apply]').addEventListener('click', function () {
-      resizeSelectedTable(item, wrap.querySelector('[data-table-rows]').value, wrap.querySelector('[data-table-cols]').value);
-    });
+    var rowInput = wrap.querySelector('[data-table-rows]');
+    var colInput = wrap.querySelector('[data-table-cols]');
+    rowInput.value = tableData.rowCount;
+    colInput.value = tableData.colCount;
+    function applyInputSize() {
+      resizeSelectedTable(item, rowInput.value, colInput.value, true);
+      var updated = utils.normalizeTableData(item.table);
+      rowInput.value = updated.rowCount;
+      colInput.value = updated.colCount;
+      wrap.querySelector('.overlay-inspector-head span').textContent = updated.rowCount + ' x ' + updated.colCount;
+    }
+    rowInput.addEventListener('input', applyInputSize);
+    colInput.addEventListener('input', applyInputSize);
+    rowInput.addEventListener('change', applyInputSize);
+    colInput.addEventListener('change', applyInputSize);
     wrap.querySelector('[data-table-add-row]').addEventListener('click', function () {
-      resizeSelectedTable(item, tableData.rowCount + 1, tableData.colCount);
+      var current = utils.normalizeTableData(item.table);
+      resizeSelectedTable(item, current.rowCount + 1, current.colCount);
     });
     wrap.querySelector('[data-table-add-col]').addEventListener('click', function () {
-      resizeSelectedTable(item, tableData.rowCount, tableData.colCount + 1);
+      var current = utils.normalizeTableData(item.table);
+      resizeSelectedTable(item, current.rowCount, current.colCount + 1);
     });
     wrap.querySelector('[data-table-remove-row]').addEventListener('click', function () {
-      resizeSelectedTable(item, tableData.rowCount - 1, tableData.colCount);
+      var current = utils.normalizeTableData(item.table);
+      resizeSelectedTable(item, current.rowCount - 1, current.colCount);
     });
     wrap.querySelector('[data-table-remove-col]').addEventListener('click', function () {
-      resizeSelectedTable(item, tableData.rowCount, tableData.colCount - 1);
+      var current = utils.normalizeTableData(item.table);
+      resizeSelectedTable(item, current.rowCount, current.colCount - 1);
     });
     return wrap;
   }
@@ -826,6 +922,58 @@
       refs.imageInput.click();
     });
     return wrap;
+  }
+
+  function createShapeInspector(item) {
+    var wrap = document.createElement('section');
+    wrap.className = 'overlay-control-section overlay-color-' + item.color;
+    wrap.innerHTML = '<div class="overlay-inspector-head"><strong>Shape</strong><span>Choose a symbol</span></div>';
+    wrap.appendChild(createChoiceGrid(SHAPE_OPTIONS, item.shape || 'rounded', 'Shape', function (entry) {
+      return '<span class="overlay-choice-swatch overlay-shape-' + entry.value + '" aria-hidden="true"></span>';
+    }, function (value) {
+      item.shape = value;
+      renderStage();
+      renderInspector();
+      queuePersist();
+    }));
+    return wrap;
+  }
+
+  function createArrowInspector(item) {
+    var wrap = document.createElement('section');
+    wrap.className = 'overlay-control-section overlay-color-' + item.color;
+    wrap.innerHTML = '<div class="overlay-inspector-head"><strong>Arrow</strong><span>Draws during preview</span></div>';
+    wrap.appendChild(createChoiceGrid(ARROW_OPTIONS, item.arrow || 'arrow', 'Arrow style', function (entry) {
+      return '<span class="overlay-choice-arrow" aria-hidden="true">' + arrowSvg(entry.value) + '</span>';
+    }, function (value) {
+      item.arrow = value;
+      renderStage();
+      renderInspector();
+      queuePersist();
+    }));
+    return wrap;
+  }
+
+  function createChoiceGrid(options, value, label, renderContent, onChange) {
+    var grid = document.createElement('div');
+    grid.className = 'overlay-choice-grid';
+    grid.setAttribute('role', 'group');
+    grid.setAttribute('aria-label', label);
+    options.forEach(function (entry) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'overlay-choice-button';
+      button.setAttribute('aria-label', entry.label);
+      button.setAttribute('aria-pressed', entry.value === value ? 'true' : 'false');
+      button.title = entry.label;
+      button.innerHTML = renderContent(entry);
+      button.addEventListener('click', function () {
+        if (entry.value === value) return;
+        onChange(entry.value);
+      });
+      grid.appendChild(button);
+    });
+    return grid;
   }
 
   function createCustomSelect(labelText, value, options, onChange) {
@@ -974,6 +1122,7 @@
   }
 
   function setItemField(item, field, value) {
+    var refreshInspector = false;
     if (field === 'x' || field === 'y' || field === 'w' || field === 'h' || field === 'delay' || field === 'duration') {
       var min = field === 'duration' ? 0.1 : 0;
       var max = field === 'duration' ? 10 : (field === 'delay' ? 600 : (field === 'h' ? 92 : 96));
@@ -986,24 +1135,30 @@
       item.animation = utils.normalizeAnimation(value);
     } else if (field === 'color') {
       item.color = COLORS.some(function (entry) { return entry.id === value; }) ? value : item.color;
+      refreshInspector = true;
     } else {
       item[field] = String(value || '').trim() || item[field];
     }
     renderStage();
     renderItems();
+    if (refreshInspector) renderInspector();
     queuePersist();
   }
 
-  function resizeSelectedTable(item, rows, cols) {
+  function resizeSelectedTable(item, rows, cols, keepInspector) {
     item.table = utils.resizeTableData(item.table, rows, cols);
     renderStage();
     renderItems();
-    renderInspector();
+    if (!keepInspector) renderInspector();
     queuePersist();
   }
 
   function roundToHalf(value) {
     return Math.round(Number(value || 0) * 2) / 2;
+  }
+
+  function roundToTenth(value) {
+    return Math.round(Number(value || 0) * 10) / 10;
   }
 
   function cssNumber(value, min, max, fallbackValue) {
@@ -1019,12 +1174,12 @@
   }
 
   function clampItemGeometry(item) {
-    item.w = roundToHalf(utils.clampNumber(item.w, 8, 96, 42));
-    item.h = roundToHalf(utils.clampNumber(item.h, 8, 92, item.type === 'table' ? 28 : 24));
-    item.x = roundToHalf(utils.clampNumber(item.x, 0, Math.max(0, 100 - item.w), 8));
-    item.y = roundToHalf(utils.clampNumber(item.y, 0, Math.max(0, 100 - item.h), 10));
-    item.w = roundToHalf(utils.clampNumber(item.w, 8, Math.max(8, 100 - item.x), item.w));
-    item.h = roundToHalf(utils.clampNumber(item.h, 8, Math.max(8, 100 - item.y), item.h));
+    item.w = roundToTenth(utils.clampNumber(item.w, 8, 96, 42));
+    item.h = roundToTenth(utils.clampNumber(item.h, 8, 92, item.type === 'table' ? 28 : 24));
+    item.x = roundToTenth(utils.clampNumber(item.x, 0, Math.max(0, 100 - item.w), 8));
+    item.y = roundToTenth(utils.clampNumber(item.y, 0, Math.max(0, 100 - item.h), 10));
+    item.w = roundToTenth(utils.clampNumber(item.w, 8, Math.max(8, 100 - item.x), item.w));
+    item.h = roundToTenth(utils.clampNumber(item.h, 8, Math.max(8, 100 - item.y), item.h));
     return item;
   }
 
@@ -1066,6 +1221,7 @@
       sheet,
       '.overlay-stage-frame{--preview-duration:' + cssSeconds(slide.duration, 1, 600, 12) + ';}'
     );
+    insertDynamicRule(sheet, getStageSizingRule());
     slide.items.forEach(function (item, index) {
       insertDynamicRule(sheet, [
         '.overlay-stage-item[data-stage-index="' + String(index) + '"]{',
@@ -1077,6 +1233,17 @@
         '}'
       ].join(''));
     });
+  }
+
+  function getStageSizingRule() {
+    if (!refs.stageFrame) return '.overlay-stage{width:min(100%,150vh);height:auto;}';
+    var frameRect = refs.stageFrame.getBoundingClientRect();
+    var availableWidth = Math.max(240, frameRect.width - 4);
+    var availableHeight = Math.max(160, frameRect.height - 4);
+    var fittedWidth = Math.min(availableWidth, availableHeight * (16 / 9));
+    var zoomedWidth = Math.max(240, fittedWidth * stageZoom);
+    var zoomedHeight = zoomedWidth * 9 / 16;
+    return '.overlay-stage{width:' + Math.round(zoomedWidth) + 'px;height:' + Math.round(zoomedHeight) + 'px;}';
   }
 
   function scheduleAutoFitAll() {
@@ -1092,6 +1259,24 @@
         renderItems();
       }
     });
+  }
+
+  function updateStageZoom() {
+    if (!refs.stage || !refs.stageFrame) return;
+    if (refs.zoomInput && String(refs.zoomInput.value) !== String(Math.round(stageZoom * 100))) {
+      refs.zoomInput.value = String(Math.round(stageZoom * 100));
+    }
+    syncDynamicRules(getActiveSlide());
+  }
+
+  function setStageZoom(percent) {
+    var next = utils.clampNumber(percent, 50, 200, 100);
+    stageZoom = Math.round(next) / 100;
+    updateStageZoom();
+  }
+
+  function adjustStageZoom(deltaPercent) {
+    setStageZoom(Math.round(stageZoom * 100) + deltaPercent);
   }
 
   function fitItemToContent(item, force) {
@@ -1218,20 +1403,129 @@
     queuePersist();
   }
 
+  function reorderSlide(sourceId, targetId) {
+    if (!sourceId || !targetId || sourceId === targetId) return;
+    var sourceIndex = project.slides.findIndex(function (slide) { return slide.id === sourceId; });
+    var targetIndex = project.slides.findIndex(function (slide) { return slide.id === targetId; });
+    if (sourceIndex < 0 || targetIndex < 0) return;
+    var moved = project.slides.splice(sourceIndex, 1)[0];
+    project.slides.splice(targetIndex, 0, moved);
+    activeSlideId = moved.id;
+    selectedItemId = '';
+    render();
+    queuePersist();
+  }
+
+  function clearSlideDropTargets() {
+    if (!refs.slideList) return;
+    Array.prototype.slice.call(refs.slideList.querySelectorAll('.is-dragging, .is-drop-target')).forEach(function (row) {
+      row.classList.remove('is-dragging', 'is-drop-target');
+    });
+  }
+
+  function getSlideRowFromPoint(x, y) {
+    var element = document.elementFromPoint(x, y);
+    return element && element.closest ? element.closest('[data-slide-row-id]') : null;
+  }
+
+  function getSlideRowByY(y, sourceId) {
+    if (!refs.slideList) return null;
+    var rows = Array.prototype.slice.call(refs.slideList.querySelectorAll('[data-slide-row-id]')).filter(function (row) {
+      return row.dataset.slideRowId !== sourceId;
+    });
+    if (!rows.length) return null;
+    var bestRow = rows[0];
+    var bestDistance = Infinity;
+    rows.forEach(function (row) {
+      var rect = row.getBoundingClientRect();
+      var center = rect.top + rect.height / 2;
+      var distance = Math.abs(center - y);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestRow = row;
+      }
+    });
+    return bestRow;
+  }
+
+  function startSlidePointerDrag(event) {
+    if (event.button !== undefined && event.button !== 0) return;
+    if (event.target.closest && event.target.closest('[data-duplicate-slide-id], [data-delete-slide-id]')) return;
+    var row = event.target.closest ? event.target.closest('[data-slide-row-id]') : null;
+    if (!row) return;
+    var sourceId = row.dataset.slideRowId;
+    var drag = {
+      sourceId: sourceId,
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false,
+      targetId: '',
+      finished: false
+    };
+
+    function markTarget(targetRow) {
+      Array.prototype.slice.call(refs.slideList.querySelectorAll('.is-drop-target')).forEach(function (entry) {
+        if (entry !== targetRow) entry.classList.remove('is-drop-target');
+      });
+      if (targetRow && targetRow.dataset.slideRowId !== drag.sourceId) {
+        targetRow.classList.add('is-drop-target');
+        drag.targetId = targetRow.dataset.slideRowId;
+      } else {
+        drag.targetId = '';
+      }
+    }
+
+    function onMove(moveEvent) {
+      var distance = Math.abs(moveEvent.clientX - drag.startX) + Math.abs(moveEvent.clientY - drag.startY);
+      if (!drag.active && distance < 6) return;
+      drag.active = true;
+      moveEvent.preventDefault();
+      row.classList.add('is-dragging');
+      markTarget(getSlideRowByY(moveEvent.clientY, drag.sourceId) || getSlideRowFromPoint(moveEvent.clientX, moveEvent.clientY));
+    }
+
+    function onUp(upEvent) {
+      if (drag.finished) return;
+      drag.finished = true;
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (drag.active) {
+        upEvent.preventDefault();
+        suppressSlideClick = true;
+        var targetRow = drag.targetId ? null : (getSlideRowByY(upEvent.clientY, drag.sourceId) || getSlideRowFromPoint(upEvent.clientX, upEvent.clientY));
+        var targetId = drag.targetId || (targetRow && targetRow.dataset.slideRowId) || '';
+        clearSlideDropTargets();
+        if (targetId && targetId !== drag.sourceId) reorderSlide(drag.sourceId, targetId);
+        window.setTimeout(function () { suppressSlideClick = false; }, 0);
+      } else {
+        clearSlideDropTargets();
+      }
+    }
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
   function addItem(type, data) {
     var slide = getActiveSlide();
     var base = {
       id: uid('item'),
       type: type,
-      title: type === 'table' ? 'Table' : (type === 'flow' ? 'Flow' : (type === 'image' ? 'Image' : 'Text card')),
+      title: type === 'table' ? 'Table' : (type === 'flow' ? 'Flow' : (type === 'image' ? 'Image' : (type === 'shape' ? 'Shape' : (type === 'arrow' ? 'Arrow' : 'Text card')))),
       x: 10 + Math.min(18, slide.items.length * 3),
       y: 12 + Math.min(18, slide.items.length * 3),
-      w: type === 'table' ? 44 : (type === 'flow' ? 62 : 38),
-      h: type === 'flow' ? 18 : (type === 'table' ? 30 : 24),
+      w: type === 'table' ? 44 : (type === 'flow' ? 62 : (type === 'arrow' ? 32 : (type === 'shape' ? 24 : 38))),
+      h: type === 'flow' ? 18 : (type === 'table' ? 30 : (type === 'arrow' ? 14 : (type === 'shape' ? 24 : 24))),
       delay: 0,
       duration: 0.55,
       animation: 'rise',
-      color: type === 'table' ? 'teal' : (type === 'flow' ? 'indigo' : 'orange')
+      color: type === 'table' ? 'teal' : (type === 'flow' || type === 'arrow' ? 'indigo' : (type === 'shape' ? 'green' : 'orange'))
     };
     var item = normalizeItem(Object.assign(base, data || {}));
     slide.items.push(item);
@@ -1327,7 +1621,7 @@
     });
     previewTimers.push(window.setTimeout(function () {
       stopPreview(false);
-      setStatus('Preview complete.', 'success');
+      setStatus('Preview complete.', 'success', 2400);
     }, Math.max(250, slide.duration * 1000)));
   }
 
@@ -1392,6 +1686,29 @@
     reader.readAsText(file);
   }
 
+  function getImageGeometry(naturalWidth, naturalHeight) {
+    var imageRatio = Math.max(0.05, Number(naturalWidth || 1) / Math.max(1, Number(naturalHeight || 1)));
+    var stageRatio = 16 / 9;
+    var width = 52;
+    var height = width * stageRatio / imageRatio;
+    if (height > 68) {
+      height = 68;
+      width = height * imageRatio / stageRatio;
+    }
+    if (width > 68) {
+      width = 68;
+      height = width * stageRatio / imageRatio;
+    }
+    width = Math.max(12, Math.min(68, width));
+    height = Math.max(12, Math.min(68, height));
+    return {
+      w: roundToTenth(width),
+      h: roundToTenth(height),
+      x: roundToTenth((100 - width) / 2),
+      y: roundToTenth((100 - height) / 2)
+    };
+  }
+
   function importImageFile(file) {
     if (!file) return;
     if (!/^image\//i.test(String(file.type || ''))) {
@@ -1404,20 +1721,28 @@
     }
     var reader = new FileReader();
     reader.onload = function () {
-      var imageData = {
-        src: String(reader.result || ''),
-        alt: String(file.name || 'Overlay image'),
-        fit: 'contain'
+      var src = String(reader.result || '');
+      var image = new Image();
+      image.onload = function () {
+        var imageData = Object.assign(getImageGeometry(image.naturalWidth, image.naturalHeight), {
+          src: src,
+          alt: String(file.name || 'Overlay image'),
+          fit: 'cover'
+        });
+        if (imageTargetItemId) {
+          var item = getActiveSlide().items.find(function (entry) { return entry.id === imageTargetItemId; });
+          if (item) Object.assign(item, imageData);
+          imageTargetItemId = '';
+          render();
+        } else {
+          addItem('image', Object.assign({ title: String(file.name || 'Image') }, imageData));
+        }
+        queuePersist();
       };
-      if (imageTargetItemId) {
-        var item = getActiveSlide().items.find(function (entry) { return entry.id === imageTargetItemId; });
-        if (item) Object.assign(item, imageData);
-        imageTargetItemId = '';
-        render();
-      } else {
-        addItem('image', Object.assign({ title: String(file.name || 'Image') }, imageData));
-      }
-      queuePersist();
+      image.onerror = function () {
+        setStatus('Could not read this image.', 'error');
+      };
+      image.src = src;
     };
     reader.readAsDataURL(file);
   }
@@ -1456,6 +1781,8 @@
       if (field === 'step') {
         var stepIndex = utils.clampInteger(target.dataset.stepIndex, 0, 99, 0);
         item.steps[stepIndex] = String(target.textContent || '').trim() || ('Step ' + String(stepIndex + 1));
+      } else if (field === 'body') {
+        item[field] = String(target.textContent || '');
       } else {
         item[field] = String(target.textContent || '').trim() || item[field];
       }
@@ -1515,26 +1842,32 @@
     var start = { x: item.x, y: item.y, w: item.w, h: item.h };
     var mode = resizeHandle ? 'resize' : 'move';
     var pointerId = event.pointerId;
+    itemNode.classList.add(mode === 'resize' ? 'is-resizing' : 'is-dragging');
     if (itemNode && itemNode.setPointerCapture) {
       try { itemNode.setPointerCapture(pointerId); } catch (_error) {}
     }
 
     function onMove(moveEvent) {
+      moveEvent.preventDefault();
       var dx = ((moveEvent.clientX - startX) / stageRect.width) * 100;
       var dy = ((moveEvent.clientY - startY) / stageRect.height) * 100;
       if (mode === 'resize') {
-        item.w = roundToHalf(utils.clampNumber(start.w + dx, 8, 96 - item.x, start.w));
-        item.h = roundToHalf(utils.clampNumber(start.h + dy, 8, 92 - item.y, start.h));
+        item.w = roundToTenth(utils.clampNumber(start.w + dx, 8, 100 - item.x, start.w));
+        item.h = roundToTenth(utils.clampNumber(start.h + dy, 8, 100 - item.y, start.h));
       } else {
-        item.x = roundToHalf(utils.clampNumber(start.x + dx, 0, 100 - item.w, start.x));
-        item.y = roundToHalf(utils.clampNumber(start.y + dy, 0, 100 - item.h, start.y));
+        item.x = roundToTenth(utils.clampNumber(start.x + dx, 0, Math.max(0, 100 - item.w), start.x));
+        item.y = roundToTenth(utils.clampNumber(start.y + dy, 0, Math.max(0, 100 - item.h), start.y));
       }
+      clampItemGeometry(item);
       syncDynamicRules(getActiveSlide());
     }
 
     function onUp() {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
+      itemNode.classList.remove('is-dragging', 'is-resizing');
+      clampItemGeometry(item);
+      syncDynamicRules(getActiveSlide());
       renderInspector();
       queuePersist();
     }
@@ -1597,7 +1930,21 @@
     recording.chunks = [];
     recording.lastBlob = null;
     setRecordingStatus('Choose a screen, window, or tab to record.');
-    navigator.mediaDevices.getDisplayMedia({ video: true, audio: false }).then(function (screenStream) {
+    var displayOptions = {
+      video: { frameRate: { ideal: 30, max: 60 } },
+      audio: false,
+      preferCurrentTab: true,
+      selfBrowserSurface: 'include',
+      surfaceSwitching: 'include',
+      systemAudio: 'include'
+    };
+    var displayRequest = navigator.mediaDevices.getDisplayMedia(displayOptions).catch(function (error) {
+      if (error && error.name === 'TypeError') {
+        return navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      }
+      throw error;
+    });
+    displayRequest.then(function (screenStream) {
       recording.screenStream = screenStream;
       if (!refs.recordVoice || !refs.recordVoice.checked) return null;
       return navigator.mediaDevices.getUserMedia({ audio: true }).catch(function () {
@@ -1750,12 +2097,21 @@
     return icons[name] || '';
   }
 
+  function arrowSvg(kind) {
+    var safeKind = ARROW_OPTIONS.some(function (entry) { return entry.value === kind; }) ? kind : 'arrow';
+    var marker = safeKind === 'line' ? '' : '<polygon class="overlay-arrow-head" points="180,60 151,45 159,60 151,75"></polygon>';
+    var path = safeKind === 'curve'
+      ? '<path class="overlay-arrow-path" d="M20 128 C48 34, 124 34, 168 60"></path>'
+      : '<path class="overlay-arrow-path" d="M22 120 L166 60"></path>';
+    return '<svg class="overlay-arrow-svg" viewBox="0 0 190 150" aria-hidden="true">' + path + marker + '</svg>';
+  }
+
   function wireEvents() {
     refs.projectTitle.addEventListener('input', function () { setProjectTitle(refs.projectTitle.value); });
     refs.newProject.addEventListener('click', addProject);
     refs.addSlide.addEventListener('click', addSlide);
     refs.addText.addEventListener('click', function () {
-      addItem('text', { body: 'Edit this overlay text.' });
+      addItem('text', { body: '' });
     });
     refs.addTable.addEventListener('click', function () {
       var table = utils.createTableData(refs.tableRows.value, refs.tableCols.value);
@@ -1763,6 +2119,12 @@
     });
     refs.addFlow.addEventListener('click', function () {
       addItem('flow', { steps: ['Start', 'Decision', 'Next step'] });
+    });
+    refs.addArrow.addEventListener('click', function () {
+      addItem('arrow', { arrow: 'arrow', animation: 'wipe' });
+    });
+    refs.addShape.addEventListener('click', function () {
+      addItem('shape', { shape: 'rounded', animation: 'scale' });
     });
     refs.addImage.addEventListener('click', function () {
       imageTargetItemId = '';
@@ -1782,6 +2144,10 @@
     refs.reset.addEventListener('click', resetProject);
     refs.preview.addEventListener('click', startPreview);
     refs.stopPreview.addEventListener('click', function () { stopPreview(true); });
+    refs.zoomOut.addEventListener('click', function () { adjustStageZoom(-10); });
+    refs.zoomIn.addEventListener('click', function () { adjustStageZoom(10); });
+    refs.zoomInput.addEventListener('input', function () { setStageZoom(refs.zoomInput.value); });
+    refs.zoomInput.addEventListener('change', function () { setStageZoom(refs.zoomInput.value); });
     refs.prevSlide.addEventListener('click', function () { goToSlideByOffset(-1); });
     refs.nextSlide.addEventListener('click', function () { goToSlideByOffset(1); });
     refs.recordScreen.addEventListener('click', startRecording);
@@ -1798,6 +2164,11 @@
     });
 
     refs.slideList.addEventListener('click', function (event) {
+      if (suppressSlideClick) {
+        suppressSlideClick = false;
+        event.preventDefault();
+        return;
+      }
       var main = event.target.closest ? event.target.closest('[data-slide-id]') : null;
       var duplicate = event.target.closest ? event.target.closest('[data-duplicate-slide-id]') : null;
       var remove = event.target.closest ? event.target.closest('[data-delete-slide-id]') : null;
@@ -1811,6 +2182,39 @@
         render();
         queuePersist();
       }
+    });
+    refs.slideList.addEventListener('pointerdown', startSlidePointerDrag);
+    refs.slideList.addEventListener('dragstart', function (event) {
+      var row = event.target.closest ? event.target.closest('[data-slide-row-id]') : null;
+      if (!row) return;
+      draggedSlideId = row.dataset.slideRowId;
+      row.classList.add('is-dragging');
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', draggedSlideId);
+      }
+    });
+    refs.slideList.addEventListener('dragover', function (event) {
+      var row = event.target.closest ? event.target.closest('[data-slide-row-id]') : null;
+      if (!row || !draggedSlideId || row.dataset.slideRowId === draggedSlideId) return;
+      event.preventDefault();
+      row.classList.add('is-drop-target');
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    });
+    refs.slideList.addEventListener('dragleave', function (event) {
+      var row = event.target.closest ? event.target.closest('[data-slide-row-id]') : null;
+      if (row) row.classList.remove('is-drop-target');
+    });
+    refs.slideList.addEventListener('drop', function (event) {
+      var row = event.target.closest ? event.target.closest('[data-slide-row-id]') : null;
+      if (!row || !draggedSlideId) return;
+      event.preventDefault();
+      reorderSlide(draggedSlideId, row.dataset.slideRowId);
+      draggedSlideId = '';
+    });
+    refs.slideList.addEventListener('dragend', function () {
+      draggedSlideId = '';
+      clearSlideDropTargets();
     });
 
     refs.itemList.addEventListener('click', function (event) {
@@ -1829,6 +2233,11 @@
     refs.stage.addEventListener('input', handleStageInput);
     refs.stage.addEventListener('click', handleStageClick);
     refs.stage.addEventListener('pointerdown', handlePointerDown);
+    refs.stageFrame.addEventListener('wheel', function (event) {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      adjustStageZoom(event.deltaY > 0 ? -10 : 10);
+    }, { passive: false });
 
     refs.confirmClose.addEventListener('click', function () { closeConfirmModal(false); });
     refs.confirmCancel.addEventListener('click', function () { closeConfirmModal(false); });
@@ -1841,7 +2250,10 @@
     document.addEventListener('click', function (event) {
       if (!event.target.closest || !event.target.closest('.app-select')) closeCustomSelects();
     });
-    window.addEventListener('resize', scheduleAutoFitAll);
+    window.addEventListener('resize', function () {
+      updateStageZoom();
+      scheduleAutoFitAll();
+    });
     window.addEventListener('beforeunload', function (event) {
       if (recording.state === 'recording') {
         event.preventDefault();

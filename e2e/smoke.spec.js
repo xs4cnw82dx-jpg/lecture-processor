@@ -93,20 +93,106 @@ test('video overlay builder creates tables and previews animations', async ({ pa
   await expect(page.getByRole('heading', { name: 'Video Overlay Builder' })).toBeVisible();
   await expect(page.locator('#overlay-stage')).toBeVisible();
 
+  const recordButtonStyle = await page.locator('#overlay-record-screen').evaluate((button) => {
+    const styles = window.getComputedStyle(button);
+    return {
+      backgroundImage: styles.backgroundImage,
+      borderRadius: styles.borderRadius,
+      alignItems: styles.alignItems,
+      justifyContent: styles.justifyContent
+    };
+  });
+  expect(recordButtonStyle.backgroundImage).toContain('linear-gradient');
+  expect(recordButtonStyle.borderRadius).toBe('8px');
+  expect(recordButtonStyle.alignItems).toBe('center');
+  expect(recordButtonStyle.justifyContent).toBe('center');
+
+  const defaultStageMetrics = await page.evaluate(() => {
+    const frame = document.querySelector('.overlay-stage-frame');
+    const stage = document.getElementById('overlay-stage');
+    const frameRect = frame.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
+    return {
+      fitsVertically: stageRect.top >= frameRect.top - 1 && stageRect.bottom <= frameRect.bottom + 1,
+      hasVerticalScroll: frame.scrollHeight > frame.clientHeight + 2,
+      stageWidth: stageRect.width
+    };
+  });
+  expect(defaultStageMetrics.fitsVertically).toBeTruthy();
+  expect(defaultStageMetrics.hasVerticalScroll).toBeFalsy();
+
+  await page.locator('#overlay-zoom-input').fill('150');
+  await expect(page.locator('#overlay-zoom-input')).toHaveValue('150');
+  const zoomedStageWidth = await page.locator('#overlay-stage').evaluate((stage) => stage.getBoundingClientRect().width);
+  expect(zoomedStageWidth).toBeGreaterThan(defaultStageMetrics.stageWidth * 1.4);
+  await page.locator('#overlay-zoom-input').fill('100');
+
+  await page.locator('#overlay-add-slide').click();
+  await page.locator('#overlay-inspector [data-slide-field="title"]').fill('Second slide');
+  await page.locator('#overlay-add-slide').click();
+  await page.locator('#overlay-inspector [data-slide-field="title"]').fill('Third slide');
+  const slideRows = page.locator('#overlay-slide-list [data-slide-row-id]');
+  await expect(slideRows).toHaveCount(3);
+  const firstSlideBox = await slideRows.nth(0).boundingBox();
+  const thirdSlideBox = await slideRows.nth(2).boundingBox();
+  await page.mouse.move(thirdSlideBox.x + thirdSlideBox.width / 2, thirdSlideBox.y + thirdSlideBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(firstSlideBox.x + firstSlideBox.width / 2, firstSlideBox.y + firstSlideBox.height / 2, { steps: 6 });
+  await page.mouse.up();
+  await expect(slideRows.nth(0).locator('strong')).toHaveText('Third slide');
+
+  await page.locator('#overlay-add-text').click();
+  const textBody = page.locator('.overlay-stage-item.is-selected [data-edit-field="body"]');
+  await expect(textBody).toHaveAttribute('data-placeholder', 'Type overlay text...');
+  await expect(textBody).toHaveText('');
+  await textBody.fill('Clean typing starts here');
+  await expect(textBody).toHaveText('Clean typing starts here');
+
   await page.locator('#overlay-table-rows').fill('0');
   await page.locator('#overlay-table-cols').fill('-2');
   await page.locator('#overlay-add-table').click();
 
   await expect(page.locator('#overlay-inspector')).toContainText('1 x 1');
-  await page.getByRole('button', { name: 'Add row' }).click();
-  await page.getByRole('button', { name: 'Add column' }).click();
-  await expect(page.locator('#overlay-inspector')).toContainText('2 x 2');
-  await expect(page.locator('.overlay-stage-item.is-selected .overlay-table tr')).toHaveCount(2);
-  await expect(page.locator('.overlay-stage-item.is-selected .overlay-table tr:first-child th')).toHaveCount(2);
+  await page.locator('#overlay-inspector [data-table-rows]').fill('5');
+  await page.locator('#overlay-inspector [data-table-cols]').fill('3');
+  await expect(page.locator('#overlay-inspector')).toContainText('5 x 3');
+  await expect(page.locator('.overlay-stage-item.is-selected .overlay-table tr')).toHaveCount(5);
+  await expect(page.locator('.overlay-stage-item.is-selected .overlay-table tr:first-child th')).toHaveCount(3);
+
+  await page.locator('#overlay-add-shape').click();
+  const selectedShape = page.locator('.overlay-stage-item.is-selected');
+  await expect(selectedShape.locator('.overlay-shape')).toBeVisible();
+  await expect(selectedShape.locator('.overlay-stage-item-meta')).toContainText(/Scale/);
+
+  const stageBox = await page.locator('#overlay-stage').boundingBox();
+  const shapeBox = await selectedShape.boundingBox();
+  await page.mouse.move(shapeBox.x + shapeBox.width / 2, shapeBox.y + shapeBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(stageBox.x - 240, stageBox.y - 240, { steps: 6 });
+  await page.mouse.up();
+  const clampedShapeRect = await selectedShape.evaluate((node) => {
+    const stage = document.getElementById('overlay-stage').getBoundingClientRect();
+    const rect = node.getBoundingClientRect();
+    return {
+      insideLeft: rect.left >= stage.left - 1,
+      insideTop: rect.top >= stage.top - 1
+    };
+  });
+  expect(clampedShapeRect.insideLeft).toBeTruthy();
+  expect(clampedShapeRect.insideTop).toBeTruthy();
+
+  await page.locator('#overlay-add-arrow').click();
+  await expect(page.locator('.overlay-stage-item.is-selected .overlay-arrow-svg')).toBeVisible();
+
+  await page.locator('#overlay-stage').click({ position: { x: stageBox.width - 8, y: stageBox.height - 8 } });
+  await page.locator('#overlay-inspector [data-slide-field="duration"]').fill('1');
 
   await page.getByRole('button', { name: 'Preview Slide' }).click();
   await expect(page.locator('#overlay-stage')).toHaveClass(/is-previewing/);
+  await expect(page.locator('.overlay-stage-item-meta').first()).toBeHidden();
   await expect(page.getByRole('button', { name: 'Stop Preview' })).toBeEnabled();
+  await expect(page.locator('#overlay-builder-status')).toContainText('Preview complete.', { timeout: 2500 });
+  await expect(page.locator('#overlay-builder-status')).toHaveText('', { timeout: 3500 });
 });
 
 test('lecture notes audio disclosures toggle open and closed', async ({ page }) => {
