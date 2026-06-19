@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Overlay Builder · Lecture Processor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/reader.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/video-overlay-builder.css') }}">
+</head>
+<body>
+  {% set shell_title = 'Video Overlay Builder' %}
+  {% include '_app_shell.html' %}
+    <main class="app-shell-page overlay-builder-page">
+      <section class="shell-panel overlay-builder-topbar">
+        <div class="overlay-builder-title">
+          <h1>Video Overlay Builder</h1>
+          <p>Create timed cards, tables, images, and flow overlays for lecture videos.</p>
+        </div>
+        <label class="overlay-project-field" for="overlay-project-title">
+          <span>Project title</span>
+          <input type="text" id="overlay-project-title" autocomplete="off">
+        </label>
+        <div class="overlay-builder-actions" aria-label="Project actions">
+          <button type="button" class="secondary-btn" id="overlay-save-draft">Save Draft</button>
+          <button type="button" class="secondary-btn" id="overlay-export-json">Export JSON</button>
+          <button type="button" class="ghost-btn" id="overlay-import-json">Import JSON</button>
+          <button type="button" class="ghost-btn danger-text" id="overlay-reset">Reset</button>
+        </div>
+      </section>
+
+      <section class="overlay-builder-workspace">
+        <aside class="shell-panel overlay-builder-sidebar" aria-label="Overlay builder controls">
+          <section class="overlay-sidebar-section">
+            <div class="overlay-section-head">
+              <h2>Slides</h2>
+              <button type="button" class="secondary-btn u-btn-compact" id="overlay-add-slide">Add Slide</button>
+            </div>
+            <ul class="overlay-slide-list" id="overlay-slide-list"></ul>
+          </section>
+
+          <section class="overlay-sidebar-section">
+            <div class="overlay-section-head">
+              <h2>Add Overlay</h2>
+            </div>
+            <div class="overlay-add-grid">
+              <button type="button" class="secondary-btn" id="overlay-add-text">Text</button>
+              <button type="button" class="secondary-btn" id="overlay-add-table">Table</button>
+              <button type="button" class="secondary-btn" id="overlay-add-image">Image</button>
+              <button type="button" class="secondary-btn" id="overlay-add-flow">Flow</button>
+            </div>
+            <div class="overlay-table-size-row" aria-label="New table size">
+              <label class="overlay-field" for="overlay-table-rows">
+                <span>Rows</span>
+                <input type="number" id="overlay-table-rows" min="1" max="8" step="1" value="3">
+              </label>
+              <label class="overlay-field" for="overlay-table-cols">
+                <span>Columns</span>
+                <input type="number" id="overlay-table-cols" min="1" max="8" step="1" value="3">
+              </label>
+            </div>
+          </section>
+
+          <section class="overlay-sidebar-section">
+            <div class="overlay-section-head">
+              <h2>Overlays</h2>
+            </div>
+            <ul class="overlay-item-list" id="overlay-item-list"></ul>
+          </section>
+
+          <section class="overlay-sidebar-section overlay-inspector" id="overlay-inspector" aria-label="Selected overlay settings"></section>
+        </aside>
+
+        <section class="shell-panel overlay-stage-panel" aria-label="Overlay preview">
+          <div class="overlay-stage-toolbar">
+            <div class="overlay-stage-label" id="overlay-stage-label"></div>
+            <div class="overlay-stage-actions">
+              <button type="button" class="primary-btn" id="overlay-preview">Preview Slide</button>
+              <button type="button" class="ghost-btn" id="overlay-stop-preview">Stop</button>
+            </div>
+          </div>
+          <div class="overlay-stage-frame">
+            <div class="overlay-preview-meter" aria-hidden="true">
+              <div class="overlay-preview-progress" id="overlay-preview-progress"></div>
+            </div>
+            <div class="overlay-stage" id="overlay-stage" tabindex="0" aria-label="Editable 16 by 9 overlay canvas">
+            </div>
+          </div>
+          <div class="status" id="overlay-builder-status" role="status" aria-live="polite" aria-atomic="true"></div>
+        </section>
+      </section>
+    </main>
+  {% include '_shell_footer.html' %}
+  </div>
+  </div>
+
+  <input type="file" id="overlay-image-input" accept="image/*" hidden>
+  <input type="file" id="overlay-import-input" accept="application/json,.json" hidden>
+
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/user-cache-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/video-overlay-builder-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename=video_overlay_builder_js_asset or 'js/video-overlay-builder.js') }}"></script>
+</body>
+</html>

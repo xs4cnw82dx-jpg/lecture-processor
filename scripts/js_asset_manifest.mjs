@@ -40,4 +40,6 @@ export const intentionallyUnminifiedScripts = [
   'static/js/ui-cache.js',
   'static/js/user-cache-utils.js',
   'static/js/ux-utils.js',
+  'static/js/video-overlay-builder-utils.js',
+  'static/js/video-overlay-builder.js',
 ];

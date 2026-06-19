@@ -210,6 +210,7 @@ def test_non_study_toasts_and_auth_messages_are_live_regions():
         'plan.html',
         'lecture_downloader.html',
         'general_transcriber.html',
+        'video_overlay_builder.html',
         'physio.html',
         '_index_footer_modals.html',
     ):
