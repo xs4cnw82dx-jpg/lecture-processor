@@ -10,93 +10,131 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/reader.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/video-overlay-builder.css') }}">
 </head>
-<body>
-  {% set shell_title = 'Video Overlay Builder' %}
-  {% include '_app_shell.html' %}
-    <main class="app-shell-page overlay-builder-page">
-      <section class="shell-panel overlay-builder-topbar">
-        <div class="overlay-builder-title">
-          <h1>Video Overlay Builder</h1>
-          <p>Create timed cards, tables, images, and flow overlays for lecture videos.</p>
-        </div>
+<body class="overlay-builder-fullscreen">
+  <main class="overlay-builder-page">
+    <header class="overlay-builder-topbar" aria-label="Video overlay builder header">
+      <div class="overlay-builder-title">
+        <a class="overlay-back-link" href="/tools">Back to tools</a>
+        <h1>Video Overlay Builder</h1>
+        <p id="overlay-auth-state">Empty local workspace. Sign in to save projects in Study Library.</p>
+      </div>
+      <div class="overlay-project-controls" aria-label="Project controls">
         <label class="overlay-project-field" for="overlay-project-title">
           <span>Project title</span>
           <input type="text" id="overlay-project-title" autocomplete="off">
         </label>
         <div class="overlay-builder-actions" aria-label="Project actions">
-          <button type="button" class="secondary-btn" id="overlay-save-draft">Save Draft</button>
+          <button type="button" class="secondary-btn" id="overlay-new-project">New Project</button>
+          <button type="button" class="secondary-btn" id="overlay-save-draft">Save Project</button>
+          <a class="ghost-btn" href="/study?folder=video-overlays">Study Library</a>
           <button type="button" class="secondary-btn" id="overlay-export-json">Export JSON</button>
           <button type="button" class="ghost-btn" id="overlay-import-json">Import JSON</button>
           <button type="button" class="ghost-btn danger-text" id="overlay-reset">Reset</button>
         </div>
-      </section>
+      </div>
+    </header>
 
-      <section class="overlay-builder-workspace">
-        <aside class="shell-panel overlay-builder-sidebar" aria-label="Overlay builder controls">
-          <section class="overlay-sidebar-section">
-            <div class="overlay-section-head">
-              <h2>Slides</h2>
-              <button type="button" class="secondary-btn u-btn-compact" id="overlay-add-slide">Add Slide</button>
-            </div>
-            <ul class="overlay-slide-list" id="overlay-slide-list"></ul>
-          </section>
-
-          <section class="overlay-sidebar-section">
-            <div class="overlay-section-head">
-              <h2>Add Overlay</h2>
-            </div>
-            <div class="overlay-add-grid">
-              <button type="button" class="secondary-btn" id="overlay-add-text">Text</button>
-              <button type="button" class="secondary-btn" id="overlay-add-table">Table</button>
-              <button type="button" class="secondary-btn" id="overlay-add-image">Image</button>
-              <button type="button" class="secondary-btn" id="overlay-add-flow">Flow</button>
-            </div>
-            <div class="overlay-table-size-row" aria-label="New table size">
-              <label class="overlay-field" for="overlay-table-rows">
-                <span>Rows</span>
-                <input type="number" id="overlay-table-rows" min="1" max="8" step="1" value="3">
-              </label>
-              <label class="overlay-field" for="overlay-table-cols">
-                <span>Columns</span>
-                <input type="number" id="overlay-table-cols" min="1" max="8" step="1" value="3">
-              </label>
-            </div>
-          </section>
-
-          <section class="overlay-sidebar-section">
-            <div class="overlay-section-head">
-              <h2>Overlays</h2>
-            </div>
-            <ul class="overlay-item-list" id="overlay-item-list"></ul>
-          </section>
-
-          <section class="overlay-sidebar-section overlay-inspector" id="overlay-inspector" aria-label="Selected overlay settings"></section>
-        </aside>
-
-        <section class="shell-panel overlay-stage-panel" aria-label="Overlay preview">
-          <div class="overlay-stage-toolbar">
-            <div class="overlay-stage-label" id="overlay-stage-label"></div>
-            <div class="overlay-stage-actions">
-              <button type="button" class="primary-btn" id="overlay-preview">Preview Slide</button>
-              <button type="button" class="ghost-btn" id="overlay-stop-preview">Stop</button>
-            </div>
+    <section class="overlay-builder-workspace">
+      <aside class="overlay-builder-sidebar" aria-label="Overlay builder controls">
+        <section class="overlay-sidebar-section">
+          <div class="overlay-section-head">
+            <h2>Projects</h2>
           </div>
-          <div class="overlay-stage-frame">
-            <div class="overlay-preview-meter" aria-hidden="true">
-              <div class="overlay-preview-progress" id="overlay-preview-progress"></div>
-            </div>
-            <div class="overlay-stage" id="overlay-stage" tabindex="0" aria-label="Editable 16 by 9 overlay canvas">
-            </div>
-          </div>
-          <div class="status" id="overlay-builder-status" role="status" aria-live="polite" aria-atomic="true"></div>
+          <ul class="overlay-project-list" id="overlay-project-list"></ul>
         </section>
+
+        <section class="overlay-sidebar-section">
+          <div class="overlay-section-head">
+            <h2>Slides</h2>
+            <button type="button" class="secondary-btn u-btn-compact" id="overlay-add-slide">Add Slide</button>
+          </div>
+          <ul class="overlay-slide-list" id="overlay-slide-list"></ul>
+        </section>
+
+        <section class="overlay-sidebar-section">
+          <div class="overlay-section-head">
+            <h2>Add Overlay</h2>
+          </div>
+          <div class="overlay-add-grid">
+            <button type="button" class="secondary-btn" id="overlay-add-text">Text</button>
+            <button type="button" class="secondary-btn" id="overlay-add-table">Table</button>
+            <button type="button" class="secondary-btn" id="overlay-add-image">Image</button>
+            <button type="button" class="secondary-btn" id="overlay-add-flow">Flow</button>
+          </div>
+          <div class="overlay-table-size-row" aria-label="New table size">
+            <label class="overlay-field" for="overlay-table-rows">
+              <span>Rows</span>
+              <input type="number" id="overlay-table-rows" min="1" max="8" step="1" value="3">
+            </label>
+            <label class="overlay-field" for="overlay-table-cols">
+              <span>Columns</span>
+              <input type="number" id="overlay-table-cols" min="1" max="8" step="1" value="3">
+            </label>
+          </div>
+        </section>
+
+        <section class="overlay-sidebar-section">
+          <div class="overlay-section-head">
+            <h2>Overlays</h2>
+          </div>
+          <ul class="overlay-item-list" id="overlay-item-list"></ul>
+        </section>
+
+        <section class="overlay-sidebar-section overlay-inspector" id="overlay-inspector" aria-label="Selected overlay settings"></section>
+      </aside>
+
+      <section class="overlay-stage-panel" aria-label="Overlay preview">
+        <div class="overlay-stage-toolbar">
+          <div class="overlay-stage-label" id="overlay-stage-label"></div>
+          <div class="overlay-stage-actions">
+            <button type="button" class="ghost-btn" id="overlay-prev-slide">Previous</button>
+            <button type="button" class="primary-btn" id="overlay-preview">Preview Slide</button>
+            <button type="button" class="secondary-btn" id="overlay-next-slide">Next Slide</button>
+            <button type="button" class="ghost-btn" id="overlay-stop-preview">Stop Preview</button>
+          </div>
+        </div>
+        <div class="overlay-recording-bar" aria-label="Screen recording controls">
+          <div class="overlay-recorder-visual" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+          <label class="overlay-record-toggle" for="overlay-record-voice">
+            <input type="checkbox" id="overlay-record-voice">
+            <span>Include microphone</span>
+          </label>
+          <button type="button" class="primary-btn" id="overlay-record-screen">Record Screen</button>
+          <button type="button" class="ghost-btn" id="overlay-stop-recording">Stop Recording</button>
+          <div class="overlay-recording-status" id="overlay-recording-status" aria-live="polite">Ready to record WebM video.</div>
+        </div>
+        <div class="overlay-stage-frame">
+          <div class="overlay-preview-meter" aria-hidden="true">
+            <div class="overlay-preview-progress" id="overlay-preview-progress"></div>
+          </div>
+          <div class="overlay-stage" id="overlay-stage" tabindex="0" aria-label="Editable 16 by 9 overlay canvas"></div>
+        </div>
+        <div class="status" id="overlay-builder-status" role="status" aria-live="polite" aria-atomic="true"></div>
       </section>
-    </main>
-  {% include '_shell_footer.html' %}
-  </div>
+    </section>
+  </main>
+
+  <div class="modal-overlay overlay-confirm-overlay" id="overlay-confirm-modal" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="overlay-confirm-title">
+      <div class="modal-header">
+        <span class="modal-title" id="overlay-confirm-title">Confirm Action</span>
+        <button class="btn" id="overlay-confirm-close" type="button" aria-label="Close confirmation dialog">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <p class="modal-message" id="overlay-confirm-message"></p>
+      <div class="modal-actions">
+        <button class="btn" id="overlay-confirm-cancel" type="button">Cancel</button>
+        <button class="btn danger" id="overlay-confirm-confirm" type="button">Reset</button>
+      </div>
+    </div>
   </div>
 
   <input type="file" id="overlay-image-input" accept="image/*" hidden>
@@ -108,7 +146,6 @@
   <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
   <script src="{{ url_for('static', filename='js/user-cache-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
   <script src="{{ url_for('static', filename='js/video-overlay-builder-utils.js') }}"></script>
   <script src="{{ url_for('static', filename=video_overlay_builder_js_asset or 'js/video-overlay-builder.js') }}"></script>
 </body>

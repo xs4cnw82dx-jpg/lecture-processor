@@ -348,8 +348,10 @@ def test_more_tools_pages_and_links_render(client):
     assert overlay_response.status_code == 200
     overlay_html = overlay_response.get_data(as_text=True)
     assert 'Video Overlay Builder' in overlay_html
-    assert 'href="/video-overlay-builder"' in overlay_html
+    assert 'href="/study?folder=video-overlays"' in overlay_html
     assert 'overlay-table-rows' in overlay_html
+    assert 'overlay-record-screen' in overlay_html
+    assert 'app-shell-sidebar' not in overlay_html
 
 
 def test_voice_notes_page_renders_pwa_assets(client):

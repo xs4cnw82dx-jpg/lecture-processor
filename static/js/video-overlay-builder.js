@@ -4,7 +4,15 @@
   var utils = window.LectureProcessorVideoOverlayBuilderUtils || {};
   if (!utils.createTableData) return;
 
-  var STORAGE_KEY = 'lecture_processor_video_overlay_builder_v1';
+  var bootstrap = window.LectureProcessorBootstrap || {};
+  var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase && window.firebase.auth ? window.firebase.auth() : null);
+  var userCache = window.LectureProcessorUserCache || {};
+  var uiCache = window.LectureProcessorUiCache || null;
+  var uxUtils = window.LectureProcessorUx || {};
+
+  var PROJECTS_CACHE_KEY = 'video_overlay_projects_v1';
+  var GUEST_STORAGE_KEY = 'lecture_processor_video_overlay_builder_guest_v2';
+  var MAX_PROJECTS = 40;
   var COLORS = [
     { id: 'orange', label: 'Orange', accent: '#f97316', soft: '#fff7ed', text: '#9a3412' },
     { id: 'teal', label: 'Teal', accent: '#0f766e', soft: '#f0fdfa', text: '#115e59' },
@@ -12,9 +20,18 @@
     { id: 'green', label: 'Green', accent: '#16a34a', soft: '#f0fdf4', text: '#166534' },
     { id: 'rose', label: 'Rose', accent: '#e11d48', soft: '#fff1f2', text: '#9f1239' }
   ];
+  var ANIMATION_OPTIONS = [
+    { value: 'rise', label: 'Rise' },
+    { value: 'fade', label: 'Fade' },
+    { value: 'scale', label: 'Scale' },
+    { value: 'wipe', label: 'Wipe' },
+    { value: 'none', label: 'None' }
+  ];
 
   var refs = {
+    authState: document.getElementById('overlay-auth-state'),
     projectTitle: document.getElementById('overlay-project-title'),
+    projectList: document.getElementById('overlay-project-list'),
     stageFrame: document.querySelector('.overlay-stage-frame'),
     stage: document.getElementById('overlay-stage'),
     stageLabel: document.getElementById('overlay-stage-label'),
@@ -32,23 +49,51 @@
     tableCols: document.getElementById('overlay-table-cols'),
     imageInput: document.getElementById('overlay-image-input'),
     importInput: document.getElementById('overlay-import-input'),
+    newProject: document.getElementById('overlay-new-project'),
     save: document.getElementById('overlay-save-draft'),
     export: document.getElementById('overlay-export-json'),
     import: document.getElementById('overlay-import-json'),
     reset: document.getElementById('overlay-reset'),
     preview: document.getElementById('overlay-preview'),
-    stopPreview: document.getElementById('overlay-stop-preview')
+    prevSlide: document.getElementById('overlay-prev-slide'),
+    nextSlide: document.getElementById('overlay-next-slide'),
+    stopPreview: document.getElementById('overlay-stop-preview'),
+    recordVoice: document.getElementById('overlay-record-voice'),
+    recordScreen: document.getElementById('overlay-record-screen'),
+    stopRecording: document.getElementById('overlay-stop-recording'),
+    recordingStatus: document.getElementById('overlay-recording-status'),
+    confirmModal: document.getElementById('overlay-confirm-modal'),
+    confirmTitle: document.getElementById('overlay-confirm-title'),
+    confirmMessage: document.getElementById('overlay-confirm-message'),
+    confirmClose: document.getElementById('overlay-confirm-close'),
+    confirmCancel: document.getElementById('overlay-confirm-cancel'),
+    confirmConfirm: document.getElementById('overlay-confirm-confirm')
   };
 
-  var project = loadProject();
-  var activeSlideId = project.activeSlideId || (project.slides[0] && project.slides[0].id);
+  var currentUser = auth && auth.currentUser ? auth.currentUser : null;
+  var projectLibrary = { activeProjectId: '', projects: [] };
+  var project = createEmptyProject();
+  var activeSlideId = project.activeSlideId;
   var selectedItemId = '';
   var previewTimers = [];
   var persistTimer = null;
+  var fitTimer = null;
   var imageTargetItemId = '';
   var isPreviewing = false;
   var dynamicCssRuleCount = 0;
   var dynamicStyleSheet = null;
+  var confirmResolver = null;
+  var openSelectRoot = null;
+
+  var recording = {
+    state: 'idle',
+    recorder: null,
+    chunks: [],
+    screenStream: null,
+    micStream: null,
+    combinedStream: null,
+    lastBlob: null
+  };
 
   function uid(prefix) {
     return String(prefix || 'id') + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
@@ -58,93 +103,38 @@
     return JSON.parse(JSON.stringify(value));
   }
 
-  function sampleProject() {
-    var table = utils.createTableData(4, 3);
-    table.cells[0] = ['Signal', 'Meaning', 'Action'];
-    table.cells[1] = ['Red flag', 'Possible serious pathology', 'Refer'];
-    table.cells[2] = ['Normal course', 'Expected recovery', 'Advice'];
-    table.cells[3] = ['Delayed course', 'Extra support needed', 'Plan'];
+  function now() {
+    return Date.now();
+  }
+
+  function getRequestedProjectId() {
+    try {
+      return String(new URLSearchParams(window.location.search).get('project_id') || '').trim();
+    } catch (_error) {
+      return '';
+    }
+  }
+
+  function createEmptyProject(title) {
+    var slideId = uid('slide');
     return {
       version: 1,
-      title: 'KNGF Video Overlay',
-      activeSlideId: 'slide-intro',
+      project_id: uid('overlay-project'),
+      title: String(title || 'Untitled overlay project').trim() || 'Untitled overlay project',
+      activeSlideId: slideId,
       slides: [
         {
-          id: 'slide-intro',
-          title: 'Intro',
+          id: slideId,
+          title: 'New slide',
           duration: 12,
-          items: [
-            {
-              id: 'item-heading',
-              type: 'text',
-              title: 'KNGF Richtlijn Nekpijn',
-              body: 'Clear chapter cards, tables, and flow steps for lecture video overlays.',
-              x: 7,
-              y: 11,
-              w: 42,
-              h: 25,
-              delay: 0.2,
-              duration: 0.55,
-              animation: 'rise',
-              color: 'orange'
-            },
-            {
-              id: 'item-table',
-              type: 'table',
-              title: 'Clinical Signals',
-              table: table,
-              x: 53,
-              y: 15,
-              w: 39,
-              h: 34,
-              delay: 1.1,
-              duration: 0.45,
-              animation: 'wipe',
-              color: 'teal'
-            },
-            {
-              id: 'item-flow',
-              type: 'flow',
-              title: 'Decision Flow',
-              steps: ['Screen', 'Classify', 'Treat', 'Evaluate'],
-              x: 12,
-              y: 57,
-              w: 74,
-              h: 20,
-              delay: 2,
-              duration: 0.55,
-              animation: 'scale',
-              color: 'indigo'
-            }
-          ]
-        },
-        {
-          id: 'slide-summary',
-          title: 'Summary',
-          duration: 10,
-          items: [
-            {
-              id: 'item-summary',
-              type: 'text',
-              title: 'Treatment Focus',
-              body: 'Education, reassurance, movement, graded activity, and reassessment.',
-              x: 22,
-              y: 20,
-              w: 56,
-              h: 30,
-              delay: 0,
-              duration: 0.5,
-              animation: 'fade',
-              color: 'green'
-            }
-          ]
+          items: []
         }
       ]
     };
   }
 
   function normalizeProject(rawProject) {
-    var source = rawProject && typeof rawProject === 'object' ? rawProject : sampleProject();
+    var source = rawProject && typeof rawProject === 'object' ? rawProject : createEmptyProject();
     var slides = Array.isArray(source.slides) ? source.slides : [];
     var normalizedSlides = slides.map(function (slide, index) {
       var safeSlide = slide && typeof slide === 'object' ? slide : {};
@@ -156,11 +146,14 @@
         items: items.map(normalizeItem)
       };
     });
-    if (!normalizedSlides.length) normalizedSlides = sampleProject().slides;
+    if (!normalizedSlides.length) normalizedSlides = createEmptyProject().slides;
+    var activeId = String(source.activeSlideId || normalizedSlides[0].id);
+    if (!normalizedSlides.some(function (slide) { return slide.id === activeId; })) activeId = normalizedSlides[0].id;
     return {
       version: 1,
-      title: String(source.title || 'Video Overlay Builder').trim() || 'Video Overlay Builder',
-      activeSlideId: String(source.activeSlideId || normalizedSlides[0].id),
+      project_id: String(source.project_id || uid('overlay-project')),
+      title: String(source.title || 'Untitled overlay project').trim() || 'Untitled overlay project',
+      activeSlideId: activeId,
       slides: normalizedSlides
     };
   }
@@ -188,29 +181,140 @@
     return result;
   }
 
-  function loadProject() {
-    try {
-      var saved = window.localStorage ? window.localStorage.getItem(STORAGE_KEY) : '';
-      if (saved) return normalizeProject(JSON.parse(saved));
-    } catch (_error) {
-      // Fall through to the starter project.
+  function normalizeProjectEntry(entry) {
+    var safeEntry = entry && typeof entry === 'object' ? entry : {};
+    var normalizedProject = normalizeProject(safeEntry.project || safeEntry);
+    var projectId = String(safeEntry.project_id || normalizedProject.project_id || uid('overlay-project'));
+    normalizedProject.project_id = projectId;
+    return {
+      project_id: projectId,
+      title: String(safeEntry.title || normalizedProject.title || 'Untitled overlay project').trim() || 'Untitled overlay project',
+      created_at: Number(safeEntry.created_at || now()),
+      updated_at: Number(safeEntry.updated_at || now()),
+      project: normalizedProject
+    };
+  }
+
+  function normalizeProjectLibrary(rawLibrary) {
+    var source = rawLibrary && typeof rawLibrary === 'object' ? rawLibrary : {};
+    var seen = {};
+    var projects = (Array.isArray(source.projects) ? source.projects : []).map(normalizeProjectEntry).filter(function (entry) {
+      if (!entry.project_id || seen[entry.project_id]) return false;
+      seen[entry.project_id] = true;
+      return true;
+    }).slice(0, MAX_PROJECTS);
+    if (!projects.length) {
+      var emptyProject = createEmptyProject();
+      projects.push(normalizeProjectEntry({
+        project_id: emptyProject.project_id,
+        title: emptyProject.title,
+        project: emptyProject,
+        created_at: now(),
+        updated_at: now()
+      }));
     }
-    return normalizeProject(sampleProject());
+    var requestedProjectId = getRequestedProjectId();
+    var activeProjectId = requestedProjectId || String(source.activeProjectId || projects[0].project_id);
+    if (!projects.some(function (entry) { return entry.project_id === activeProjectId; })) activeProjectId = projects[0].project_id;
+    return {
+      activeProjectId: activeProjectId,
+      projects: projects
+    };
+  }
+
+  function readUserProjectLibrary(user) {
+    if (!user || !user.uid) return normalizeProjectLibrary(null);
+    if (typeof userCache.getUserJson === 'function') {
+      return normalizeProjectLibrary(userCache.getUserJson(user, PROJECTS_CACHE_KEY, null, uiCache));
+    }
+    return normalizeProjectLibrary(null);
+  }
+
+  function writeUserProjectLibrary(user, library) {
+    if (!user || !user.uid) return false;
+    if (typeof userCache.setUserJson === 'function') {
+      return userCache.setUserJson(user, PROJECTS_CACHE_KEY, library, uiCache);
+    }
+    return false;
+  }
+
+  function readGuestProjectLibrary() {
+    try {
+      var saved = window.localStorage ? JSON.parse(window.localStorage.getItem(GUEST_STORAGE_KEY) || 'null') : null;
+      return normalizeProjectLibrary(saved);
+    } catch (_error) {
+      return normalizeProjectLibrary(null);
+    }
+  }
+
+  function writeGuestProjectLibrary(library) {
+    try {
+      if (!window.localStorage) return false;
+      window.localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(library));
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function getActiveProjectEntry() {
+    var entry = projectLibrary.projects.find(function (candidate) {
+      return candidate.project_id === projectLibrary.activeProjectId;
+    });
+    if (entry) return entry;
+    projectLibrary.activeProjectId = projectLibrary.projects[0].project_id;
+    return projectLibrary.projects[0];
+  }
+
+  function syncProjectFromLibrary() {
+    var entry = getActiveProjectEntry();
+    project = normalizeProject(entry.project);
+    project.project_id = entry.project_id;
+    project.title = entry.title || project.title;
+    activeSlideId = project.activeSlideId || (project.slides[0] && project.slides[0].id);
+    selectedItemId = '';
+  }
+
+  function updateCurrentProjectEntry() {
+    var entry = getActiveProjectEntry();
+    project.activeSlideId = activeSlideId;
+    entry.title = project.title;
+    entry.updated_at = now();
+    entry.project = clone(project);
+    projectLibrary.activeProjectId = entry.project_id;
+    projectLibrary.projects = [entry].concat(projectLibrary.projects.filter(function (candidate) {
+      return candidate.project_id !== entry.project_id;
+    })).slice(0, MAX_PROJECTS);
+  }
+
+  function persistProjectLibrary(silent) {
+    updateCurrentProjectEntry();
+    var ok = currentUser && currentUser.uid
+      ? writeUserProjectLibrary(currentUser, projectLibrary)
+      : writeGuestProjectLibrary(projectLibrary);
+    if (!ok) {
+      setStatus('Project is too large to save locally. Export JSON instead.', 'error');
+      return false;
+    }
+    if (!silent) setStatus(currentUser ? 'Project saved in Study Library.' : 'Local project saved on this browser.', 'success');
+    try {
+      window.dispatchEvent(new CustomEvent('video-overlay-projects-updated'));
+    } catch (_error) {}
+    return true;
   }
 
   function saveProject() {
-    try {
-      project.activeSlideId = activeSlideId;
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
-      setStatus('Draft saved.', 'success');
-    } catch (_error) {
-      setStatus('Draft is too large to save locally. Export JSON instead.', 'error');
-    }
+    persistProjectLibrary(false);
+    renderProjects();
   }
 
   function queuePersist() {
     if (persistTimer) window.clearTimeout(persistTimer);
-    persistTimer = window.setTimeout(saveProject, 350);
+    persistTimer = window.setTimeout(function () {
+      persistTimer = null;
+      persistProjectLibrary(true);
+      renderProjects();
+    }, 450);
   }
 
   function setStatus(message, type) {
@@ -219,9 +323,18 @@
     refs.status.className = type ? ('status ' + type) : 'status';
   }
 
+  function setRecordingStatus(message) {
+    if (refs.recordingStatus) refs.recordingStatus.textContent = String(message || '');
+  }
+
   function getActiveSlide() {
-    var slide = project.slides.find(function (entry) { return entry.id === activeSlideId; });
-    if (slide) return slide;
+    if (!project.slides.length) {
+      var slide = createEmptyProject().slides[0];
+      project.slides.push(slide);
+      activeSlideId = slide.id;
+    }
+    var activeSlide = project.slides.find(function (entry) { return entry.id === activeSlideId; });
+    if (activeSlide) return activeSlide;
     activeSlideId = project.slides[0].id;
     return project.slides[0];
   }
@@ -239,27 +352,84 @@
     return String(name || 'video-overlay').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'video-overlay';
   }
 
+  function formatProjectDate(timestamp) {
+    var value = Number(timestamp || 0);
+    if (!value) return 'Not saved yet';
+    try {
+      return new Date(value).toLocaleString(navigator.language || 'en-US', {
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (_error) {
+      return 'Saved locally';
+    }
+  }
+
   function setProjectTitle(value) {
-    project.title = String(value || '').trim() || 'Video Overlay Builder';
+    project.title = String(value || '').trim() || 'Untitled overlay project';
     renderStageLabel();
     queuePersist();
   }
 
   function render() {
     renderProjectHeader();
+    renderProjects();
     renderSlides();
     renderStage();
     renderItems();
     renderInspector();
+    updateSlideNavigation();
+    updateAuthStateText();
+    updateRecordingButtons();
   }
 
   function renderProjectHeader() {
     if (refs.projectTitle && refs.projectTitle.value !== project.title) refs.projectTitle.value = project.title;
   }
 
+  function updateAuthStateText() {
+    if (!refs.authState) return;
+    refs.authState.textContent = currentUser && currentUser.uid
+      ? 'Projects save to your pinned Video Overlay Projects folder in Study Library.'
+      : 'Empty local workspace. Sign in to save projects in Study Library.';
+  }
+
+  function renderProjects() {
+    if (!refs.projectList) return;
+    var fragment = document.createDocumentFragment();
+    projectLibrary.projects.forEach(function (entry, index) {
+      var li = document.createElement('li');
+      li.className = 'overlay-project-row' + (entry.project_id === projectLibrary.activeProjectId ? ' active' : '');
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'overlay-project-main';
+      button.dataset.projectId = entry.project_id;
+      button.innerHTML = '<span class="overlay-project-badge"></span><span class="overlay-project-copy"><strong></strong><span></span></span>';
+      button.querySelector('.overlay-project-badge').textContent = String(index + 1);
+      button.querySelector('strong').textContent = entry.title || 'Untitled overlay project';
+      button.querySelector('.overlay-project-copy span').textContent = formatProjectDate(entry.updated_at);
+      li.appendChild(button);
+      var remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'overlay-icon-btn danger';
+      remove.dataset.deleteProjectId = entry.project_id;
+      remove.disabled = projectLibrary.projects.length <= 1;
+      remove.setAttribute('aria-label', 'Delete project');
+      remove.innerHTML = iconSvg('trash');
+      li.appendChild(remove);
+      fragment.appendChild(li);
+    });
+    refs.projectList.replaceChildren(fragment);
+  }
+
   function renderStageLabel() {
     var slide = getActiveSlide();
-    if (refs.stageLabel) refs.stageLabel.textContent = project.title + ' / ' + slide.title;
+    if (refs.stageLabel) {
+      var slideIndex = getActiveSlideIndex() + 1;
+      refs.stageLabel.textContent = project.title + ' / Slide ' + slideIndex + ' of ' + project.slides.length + ' / ' + slide.title;
+    }
   }
 
   function renderSlides() {
@@ -310,6 +480,7 @@
     });
     refs.stage.replaceChildren(fragment);
     syncDynamicRules(slide);
+    scheduleAutoFitAll();
   }
 
   function createStageItem(item, index) {
@@ -497,6 +668,7 @@
     bindInput(wrap, '[data-slide-field="duration"]', function (value) {
       slide.duration = utils.clampNumber(value, 1, 600, slide.duration);
       renderSlides();
+      syncDynamicRules(slide);
       queuePersist();
     });
     return wrap;
@@ -512,7 +684,12 @@
 
     var actions = document.createElement('div');
     actions.className = 'overlay-action-row';
-    actions.innerHTML = '<button type="button" class="secondary-btn" data-duplicate-item>Duplicate</button><button type="button" class="ghost-btn danger-text" data-delete-selected>Delete</button>';
+    actions.innerHTML = '<button type="button" class="secondary-btn" data-fit-item>Fit to content</button><button type="button" class="secondary-btn" data-duplicate-item>Duplicate</button><button type="button" class="ghost-btn danger-text" data-delete-selected>Delete</button>';
+    actions.querySelector('[data-fit-item]').addEventListener('click', function () {
+      fitItemToContent(item, true);
+      renderInspector();
+      queuePersist();
+    });
     actions.querySelector('[data-duplicate-item]').addEventListener('click', function () {
       duplicateItem(item.id);
     });
@@ -538,19 +715,10 @@
       '<div class="overlay-field-grid">',
       '<label class="overlay-field"><span>Delay</span><input type="number" min="0" max="600" step="0.1" data-item-field="delay"></label>',
       '<label class="overlay-field"><span>Duration</span><input type="number" min="0.1" max="10" step="0.05" data-item-field="duration"></label>',
-      '</div>',
-      '<label class="overlay-field"><span>Animation</span><select data-item-field="animation"><option value="rise">Rise</option><option value="fade">Fade</option><option value="scale">Scale</option><option value="wipe">Wipe</option><option value="none">None</option></select></label>',
-      '<label class="overlay-field"><span>Color</span><select data-item-field="color"></select></label>'
+      '</div>'
     ].join('');
     wrap.querySelector('.overlay-inspector-head span').textContent = utils.summarizeItem(item);
-    var colorSelect = wrap.querySelector('[data-item-field="color"]');
-    COLORS.forEach(function (color) {
-      var option = document.createElement('option');
-      option.value = color.id;
-      option.textContent = color.label;
-      colorSelect.appendChild(option);
-    });
-    ['title', 'x', 'y', 'w', 'h', 'delay', 'duration', 'animation', 'color'].forEach(function (field) {
+    ['title', 'x', 'y', 'w', 'h', 'delay', 'duration'].forEach(function (field) {
       var input = wrap.querySelector('[data-item-field="' + field + '"]');
       input.value = item[field];
       input.addEventListener('input', function () {
@@ -560,6 +728,14 @@
         setItemField(item, field, input.value);
       });
     });
+    wrap.appendChild(createCustomSelect('Animation', item.animation, ANIMATION_OPTIONS, function (value) {
+      setItemField(item, 'animation', value);
+    }));
+    wrap.appendChild(createCustomSelect('Color', item.color, COLORS.map(function (color) {
+      return { value: color.id, label: color.label };
+    }), function (value) {
+      setItemField(item, 'color', value);
+    }));
     return wrap;
   }
 
@@ -629,26 +805,165 @@
     wrap.innerHTML = [
       '<div class="overlay-inspector-head"><strong>Image</strong><span></span></div>',
       '<label class="overlay-field"><span>Alt text</span><input type="text" data-image-alt></label>',
-      '<label class="overlay-field"><span>Fit</span><select data-image-fit><option value="contain">Contain</option><option value="cover">Cover</option></select></label>',
       '<button type="button" class="secondary-btn" data-replace-image>Replace image</button>'
     ].join('');
     wrap.querySelector('.overlay-inspector-head span').textContent = item.src ? 'Image selected' : 'No image selected';
     wrap.querySelector('[data-image-alt]').value = item.alt || '';
-    wrap.querySelector('[data-image-fit]').value = item.fit || 'contain';
     bindInput(wrap, '[data-image-alt]', function (value) {
       item.alt = value;
       queuePersist();
     });
-    bindInput(wrap, '[data-image-fit]', function (value) {
+    wrap.appendChild(createCustomSelect('Fit', item.fit || 'contain', [
+      { value: 'contain', label: 'Contain' },
+      { value: 'cover', label: 'Cover' }
+    ], function (value) {
       item.fit = value === 'cover' ? 'cover' : 'contain';
       renderStage();
       queuePersist();
-    });
+    }));
     wrap.querySelector('[data-replace-image]').addEventListener('click', function () {
       imageTargetItemId = item.id;
       refs.imageInput.click();
     });
     return wrap;
+  }
+
+  function createCustomSelect(labelText, value, options, onChange) {
+    var field = document.createElement('div');
+    field.className = 'overlay-field';
+    var label = document.createElement('span');
+    label.textContent = labelText;
+    var root = document.createElement('div');
+    root.className = 'app-select';
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'app-select-button';
+    button.setAttribute('aria-haspopup', 'listbox');
+    button.setAttribute('aria-expanded', 'false');
+    button.innerHTML = '<span class="app-select-label"></span>' + iconSvg('chevron-down');
+    var menu = document.createElement('div');
+    menu.className = 'app-select-menu';
+    menu.setAttribute('role', 'listbox');
+    root.appendChild(button);
+    root.appendChild(menu);
+    field.appendChild(label);
+    field.appendChild(root);
+
+    function selectedLabel(nextValue) {
+      var selected = options.find(function (option) { return String(option.value) === String(nextValue); }) || options[0];
+      return selected ? selected.label : '';
+    }
+    function setOpen(open, focusMode) {
+      closeCustomSelects(root);
+      var shouldOpen = !!open;
+      menu.classList.toggle('visible', shouldOpen);
+      button.classList.toggle('open', shouldOpen);
+      button.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+      openSelectRoot = shouldOpen ? root : null;
+      if (shouldOpen && focusMode) focusMenuItem(menu, '.app-select-item', focusMode);
+    }
+    function renderOptions(currentValue) {
+      menu.replaceChildren();
+      options.forEach(function (option) {
+        var item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'app-select-item' + (String(option.value) === String(currentValue) ? ' active' : '');
+        item.dataset.value = option.value;
+        item.textContent = option.label;
+        item.setAttribute('role', 'option');
+        item.setAttribute('aria-selected', String(option.value) === String(currentValue) ? 'true' : 'false');
+        item.addEventListener('click', function () {
+          button.querySelector('.app-select-label').textContent = selectedLabel(option.value);
+          setOpen(false);
+          if (typeof onChange === 'function') onChange(option.value);
+          button.focus();
+        });
+        menu.appendChild(item);
+      });
+    }
+
+    button.querySelector('.app-select-label').textContent = selectedLabel(value);
+    renderOptions(value);
+    button.addEventListener('click', function (event) {
+      event.stopPropagation();
+      setOpen(!menu.classList.contains('visible'), 'active');
+    });
+    button.addEventListener('keydown', function (event) {
+      if (event.key === 'ArrowDown') { event.preventDefault(); setOpen(true, 'first'); }
+      if (event.key === 'ArrowUp') { event.preventDefault(); setOpen(true, 'last'); }
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        setOpen(!menu.classList.contains('visible'), 'active');
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setOpen(false);
+      }
+    });
+    menu.addEventListener('keydown', function (event) {
+      if (event.key === 'ArrowDown') { event.preventDefault(); focusMenuItem(menu, '.app-select-item', 'next'); }
+      if (event.key === 'ArrowUp') { event.preventDefault(); focusMenuItem(menu, '.app-select-item', 'prev'); }
+      if (event.key === 'Home') { event.preventDefault(); focusMenuItem(menu, '.app-select-item', 'first'); }
+      if (event.key === 'End') { event.preventDefault(); focusMenuItem(menu, '.app-select-item', 'last'); }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setOpen(false);
+        button.focus();
+      }
+      if (event.key === 'Tab') setOpen(false);
+    });
+    return field;
+  }
+
+  function closeCustomSelects(exceptRoot) {
+    Array.prototype.slice.call(document.querySelectorAll('.overlay-builder-page .app-select')).forEach(function (root) {
+      if (exceptRoot && root === exceptRoot) return;
+      var button = root.querySelector('.app-select-button');
+      var menu = root.querySelector('.app-select-menu');
+      if (button) {
+        button.classList.remove('open');
+        button.setAttribute('aria-expanded', 'false');
+      }
+      if (menu) menu.classList.remove('visible');
+    });
+    if (!exceptRoot) openSelectRoot = null;
+  }
+
+  function getVisibleMenuItems(menu, selector) {
+    if (uxUtils.getVisibleMenuItems) return uxUtils.getVisibleMenuItems(menu, selector || 'button:not([disabled])');
+    if (!menu) return [];
+    return Array.prototype.slice.call(menu.querySelectorAll(selector || 'button:not([disabled])')).filter(function (item) {
+      return !item.disabled;
+    });
+  }
+
+  function focusMenuItem(menu, selector, mode) {
+    if (uxUtils.focusMenuItem) {
+      uxUtils.focusMenuItem(menu, selector, mode);
+      return;
+    }
+    var items = getVisibleMenuItems(menu, selector);
+    if (!items.length) return;
+    if (mode === 'last') {
+      items[items.length - 1].focus();
+      return;
+    }
+    var active = document.activeElement;
+    var index = items.indexOf(active);
+    if (mode === 'next') {
+      items[(index + 1 + items.length) % items.length].focus();
+      return;
+    }
+    if (mode === 'prev') {
+      items[(index - 1 + items.length) % items.length].focus();
+      return;
+    }
+    if (mode === 'active') {
+      var selected = items.find(function (item) { return item.classList.contains('active') || item.getAttribute('aria-selected') === 'true'; });
+      (selected || items[0]).focus();
+      return;
+    }
+    items[0].focus();
   }
 
   function bindInput(root, selector, handler) {
@@ -764,6 +1079,100 @@
     });
   }
 
+  function scheduleAutoFitAll() {
+    if (fitTimer) window.cancelAnimationFrame(fitTimer);
+    fitTimer = window.requestAnimationFrame(function () {
+      fitTimer = null;
+      var changed = false;
+      getActiveSlide().items.forEach(function (item) {
+        changed = fitItemToContent(item, false) || changed;
+      });
+      if (changed) {
+        syncDynamicRules(getActiveSlide());
+        renderItems();
+      }
+    });
+  }
+
+  function fitItemToContent(item, force) {
+    if (!item || item.type === 'image' || !refs.stage) return false;
+    var node = findStageItemNode(item.id);
+    var body = node ? node.querySelector('.overlay-stage-item-body') : null;
+    if (!node || !body) return false;
+    var stageRect = refs.stage.getBoundingClientRect();
+    if (!stageRect.width || !stageRect.height) return false;
+    var changed = false;
+    var heightOverflow = body.scrollHeight > node.clientHeight + 2;
+    var widthOverflow = body.scrollWidth > node.clientWidth + 2;
+    var wantedHeight = roundToHalf(((body.scrollHeight + 10) / stageRect.height) * 100);
+    var wantedWidth = roundToHalf(((body.scrollWidth + 10) / stageRect.width) * 100);
+    var maxHeight = Math.max(8, 100 - item.y);
+    var maxWidth = Math.max(8, 100 - item.x);
+    if ((force || heightOverflow) && wantedHeight > item.h + 0.25 && wantedHeight <= maxHeight) {
+      item.h = utils.clampNumber(wantedHeight, 8, Math.min(92, maxHeight), item.h);
+      changed = true;
+    } else if (heightOverflow && wantedHeight > item.h + 0.25 && item.h < maxHeight) {
+      item.h = utils.clampNumber(maxHeight, 8, Math.min(92, maxHeight), item.h);
+      changed = true;
+    }
+    if ((item.type === 'flow' || item.type === 'table') && (force || widthOverflow) && wantedWidth > item.w + 0.25 && wantedWidth <= maxWidth) {
+      item.w = utils.clampNumber(wantedWidth, 8, Math.min(96, maxWidth), item.w);
+      changed = true;
+    } else if ((item.type === 'flow' || item.type === 'table') && widthOverflow && wantedWidth > item.w + 0.25 && item.w < maxWidth) {
+      item.w = utils.clampNumber(maxWidth, 8, Math.min(96, maxWidth), item.w);
+      changed = true;
+    }
+    if (changed) clampItemGeometry(item);
+    return changed;
+  }
+
+  function addProject() {
+    persistProjectLibrary(true);
+    var nextProject = createEmptyProject('Untitled overlay project');
+    var entry = normalizeProjectEntry({
+      project_id: nextProject.project_id,
+      title: nextProject.title,
+      created_at: now(),
+      updated_at: now(),
+      project: nextProject
+    });
+    projectLibrary.projects.unshift(entry);
+    projectLibrary.activeProjectId = entry.project_id;
+    syncProjectFromLibrary();
+    render();
+    persistProjectLibrary(false);
+    if (refs.projectTitle) refs.projectTitle.focus();
+  }
+
+  function switchProject(projectId) {
+    var safeId = String(projectId || '');
+    if (!safeId || safeId === projectLibrary.activeProjectId) return;
+    persistProjectLibrary(true);
+    projectLibrary.activeProjectId = safeId;
+    syncProjectFromLibrary();
+    render();
+    persistProjectLibrary(true);
+  }
+
+  function deleteProject(projectId) {
+    var safeId = String(projectId || '');
+    if (!safeId || projectLibrary.projects.length <= 1) return;
+    var entry = projectLibrary.projects.find(function (candidate) { return candidate.project_id === safeId; });
+    openConfirmModal(
+      'Delete Project',
+      'Delete "' + (entry && entry.title ? entry.title : 'this project') + '" from this browser? This cannot be undone.',
+      'Delete Project',
+      'danger'
+    ).then(function (confirmed) {
+      if (!confirmed) return;
+      projectLibrary.projects = projectLibrary.projects.filter(function (candidate) { return candidate.project_id !== safeId; });
+      if (projectLibrary.activeProjectId === safeId) projectLibrary.activeProjectId = projectLibrary.projects[0].project_id;
+      syncProjectFromLibrary();
+      render();
+      persistProjectLibrary(false);
+    });
+  }
+
   function addSlide() {
     var slide = {
       id: uid('slide'),
@@ -817,7 +1226,7 @@
       title: type === 'table' ? 'Table' : (type === 'flow' ? 'Flow' : (type === 'image' ? 'Image' : 'Text card')),
       x: 10 + Math.min(18, slide.items.length * 3),
       y: 12 + Math.min(18, slide.items.length * 3),
-      w: type === 'table' ? 44 : 38,
+      w: type === 'table' ? 44 : (type === 'flow' ? 62 : 38),
       h: type === 'flow' ? 18 : (type === 'table' ? 30 : 24),
       delay: 0,
       duration: 0.55,
@@ -857,6 +1266,33 @@
     queuePersist();
   }
 
+  function getActiveSlideIndex() {
+    return Math.max(0, project.slides.findIndex(function (slide) { return slide.id === activeSlideId; }));
+  }
+
+  function updateSlideNavigation() {
+    var index = getActiveSlideIndex();
+    var lastIndex = Math.max(0, project.slides.length - 1);
+    if (refs.prevSlide) refs.prevSlide.disabled = index <= 0;
+    if (refs.nextSlide) {
+      refs.nextSlide.disabled = recording.state !== 'recording' && index >= lastIndex;
+      refs.nextSlide.textContent = recording.state === 'recording' && index >= lastIndex ? 'Finish & Download' : (index >= lastIndex ? 'Last Slide' : 'Next Slide');
+    }
+  }
+
+  function goToSlideByOffset(offset) {
+    var index = getActiveSlideIndex();
+    var nextIndex = utils.clampInteger(index + offset, 0, project.slides.length - 1, index);
+    if (nextIndex === index) {
+      if (offset > 0 && recording.state === 'recording' && index >= project.slides.length - 1) stopRecording(true);
+      return;
+    }
+    activeSlideId = project.slides[nextIndex].id;
+    selectedItemId = '';
+    render();
+    queuePersist();
+  }
+
   function startPreview() {
     var slide = getActiveSlide();
     stopPreview(false);
@@ -868,9 +1304,7 @@
     });
     refs.preview.disabled = true;
     refs.stopPreview.disabled = false;
-    if (refs.previewProgress) {
-      refs.previewProgress.offsetWidth;
-    }
+    if (refs.previewProgress) refs.previewProgress.offsetWidth;
     if (refs.stageFrame) refs.stageFrame.classList.add('is-previewing');
     setStatus('Previewing slide.', '');
 
@@ -926,13 +1360,7 @@
   function exportJson() {
     project.activeSlideId = activeSlideId;
     var blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
-    var link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = escapeName(project.title) + '.json';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(link.href);
+    saveBlob(blob, escapeName(project.title) + '.json');
     setStatus('JSON export started.', 'success');
   }
 
@@ -941,11 +1369,21 @@
     var reader = new FileReader();
     reader.onload = function () {
       try {
-        project = normalizeProject(JSON.parse(String(reader.result || '{}')));
-        activeSlideId = project.activeSlideId;
-        selectedItemId = '';
+        var importedProject = normalizeProject(JSON.parse(String(reader.result || '{}')));
+        importedProject.project_id = uid('overlay-project');
+        var entry = normalizeProjectEntry({
+          project_id: importedProject.project_id,
+          title: importedProject.title,
+          created_at: now(),
+          updated_at: now(),
+          project: importedProject
+        });
+        persistProjectLibrary(true);
+        projectLibrary.projects.unshift(entry);
+        projectLibrary.activeProjectId = entry.project_id;
+        syncProjectFromLibrary();
         render();
-        queuePersist();
+        persistProjectLibrary(false);
         setStatus('Project imported.', 'success');
       } catch (_error) {
         setStatus('Could not import this JSON file.', 'error');
@@ -985,12 +1423,24 @@
   }
 
   function resetProject() {
-    if (!window.confirm('Reset this overlay builder draft?')) return;
-    project = normalizeProject(sampleProject());
-    activeSlideId = project.activeSlideId;
-    selectedItemId = '';
-    render();
-    saveProject();
+    openConfirmModal(
+      'Reset Project',
+      'Reset this project to one empty slide? Saved project data for this project will be replaced.',
+      'Reset Project',
+      'danger'
+    ).then(function (confirmed) {
+      if (!confirmed) return;
+      var entry = getActiveProjectEntry();
+      var fresh = createEmptyProject(project.title || entry.title);
+      fresh.project_id = entry.project_id;
+      fresh.title = project.title || entry.title || fresh.title;
+      entry.project = fresh;
+      entry.title = fresh.title;
+      entry.updated_at = now();
+      syncProjectFromLibrary();
+      render();
+      persistProjectLibrary(false);
+    });
   }
 
   function handleStageInput(event) {
@@ -1018,6 +1468,8 @@
         item.table.cells[rowIndex][colIndex] = String(target.textContent || '');
       }
     }
+    fitItemToContent(item, false);
+    syncDynamicRules(getActiveSlide());
     renderItems();
     renderInspector();
     queuePersist();
@@ -1077,10 +1529,7 @@
         item.x = roundToHalf(utils.clampNumber(start.x + dx, 0, 100 - item.w, start.x));
         item.y = roundToHalf(utils.clampNumber(start.y + dy, 0, 100 - item.h, start.y));
       }
-      var node = findStageItemNode(item.id);
-      if (node) {
-        syncDynamicRules(getActiveSlide());
-      }
+      syncDynamicRules(getActiveSlide());
     }
 
     function onUp() {
@@ -1094,19 +1543,216 @@
     document.addEventListener('pointerup', onUp);
   }
 
+  function isTypingTarget(target) {
+    if (!target) return false;
+    var tagName = String(target.tagName || '').toUpperCase();
+    return target.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
+  }
+
+  function handleGlobalKeydown(event) {
+    if (refs.confirmModal && refs.confirmModal.classList.contains('visible')) {
+      if (event.key === 'Escape') closeConfirmModal(false);
+      return;
+    }
+    if (openSelectRoot && event.key === 'Escape') {
+      closeCustomSelects();
+      return;
+    }
+    if (isTypingTarget(event.target)) return;
+    if ((event.key === 'Backspace' || event.key === 'Delete') && selectedItemId) {
+      event.preventDefault();
+      deleteItem(selectedItemId);
+      return;
+    }
+    if (event.key === 'ArrowRight' || event.key === ' ') {
+      event.preventDefault();
+      goToSlideByOffset(1);
+      return;
+    }
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      goToSlideByOffset(-1);
+    }
+  }
+
+  function chooseRecordingMimeType() {
+    var types = [
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm'
+    ];
+    if (!window.MediaRecorder || typeof window.MediaRecorder.isTypeSupported !== 'function') return '';
+    for (var index = 0; index < types.length; index += 1) {
+      if (window.MediaRecorder.isTypeSupported(types[index])) return types[index];
+    }
+    return '';
+  }
+
+  function startRecording() {
+    if (recording.state === 'recording') return;
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) || !window.MediaRecorder) {
+      setRecordingStatus('Screen recording is not supported in this browser.');
+      return;
+    }
+    recording.chunks = [];
+    recording.lastBlob = null;
+    setRecordingStatus('Choose a screen, window, or tab to record.');
+    navigator.mediaDevices.getDisplayMedia({ video: true, audio: false }).then(function (screenStream) {
+      recording.screenStream = screenStream;
+      if (!refs.recordVoice || !refs.recordVoice.checked) return null;
+      return navigator.mediaDevices.getUserMedia({ audio: true }).catch(function () {
+        setRecordingStatus('Microphone was unavailable, so recording will continue without voice.');
+        return null;
+      });
+    }).then(function (micStream) {
+      recording.micStream = micStream || null;
+      var tracks = [];
+      if (recording.screenStream) {
+        recording.screenStream.getVideoTracks().forEach(function (track) { tracks.push(track); });
+        recording.screenStream.getAudioTracks().forEach(function (track) { tracks.push(track); });
+      }
+      if (recording.micStream) {
+        recording.micStream.getAudioTracks().forEach(function (track) { tracks.push(track); });
+      }
+      recording.combinedStream = new MediaStream(tracks);
+      var options = {};
+      var mimeType = chooseRecordingMimeType();
+      if (mimeType) options.mimeType = mimeType;
+      recording.recorder = new MediaRecorder(recording.combinedStream, options);
+      recording.recorder.addEventListener('dataavailable', function (event) {
+        if (event.data && event.data.size) recording.chunks.push(event.data);
+      });
+      recording.recorder.addEventListener('stop', function () {
+        finishRecordingDownload(true);
+      });
+      recording.combinedStream.getTracks().forEach(function (track) {
+        track.addEventListener('ended', function () {
+          if (recording.state === 'recording') stopRecording(true);
+        });
+      });
+      recording.recorder.start(250);
+      recording.state = 'recording';
+      document.body.classList.add('overlay-recording-active');
+      setRecordingStatus('Recording. Use Next Slide, arrow keys, or Space while presenting.');
+      updateRecordingButtons();
+      updateSlideNavigation();
+    }).catch(function (error) {
+      stopStreams();
+      recording.state = 'idle';
+      updateRecordingButtons();
+      setRecordingStatus(error && error.name === 'NotAllowedError' ? 'Recording permission was cancelled.' : 'Could not start screen recording.');
+    });
+  }
+
+  function stopRecording(downloadAfterStop) {
+    if (recording.state !== 'recording') {
+      if (downloadAfterStop && recording.lastBlob) downloadRecordingBlob(recording.lastBlob);
+      return;
+    }
+    recording.state = 'stopping';
+    updateRecordingButtons();
+    setRecordingStatus('Preparing download...');
+    try {
+      recording.recorder.stop();
+    } catch (_error) {
+      finishRecordingDownload(!!downloadAfterStop);
+    }
+  }
+
+  function finishRecordingDownload(download) {
+    var blob = new Blob(recording.chunks, { type: recording.recorder && recording.recorder.mimeType ? recording.recorder.mimeType : 'video/webm' });
+    recording.lastBlob = blob && blob.size ? blob : null;
+    recording.state = 'idle';
+    stopStreams();
+    document.body.classList.remove('overlay-recording-active');
+    updateRecordingButtons();
+    updateSlideNavigation();
+    if (!recording.lastBlob) {
+      setRecordingStatus('Recording stopped, but no video data was captured.');
+      return;
+    }
+    setRecordingStatus('Recording ready. Download started.');
+    if (download !== false) downloadRecordingBlob(recording.lastBlob);
+  }
+
+  function stopStreams() {
+    [recording.screenStream, recording.micStream, recording.combinedStream].forEach(function (stream) {
+      if (!stream) return;
+      stream.getTracks().forEach(function (track) {
+        try { track.stop(); } catch (_error) {}
+      });
+    });
+    recording.screenStream = null;
+    recording.micStream = null;
+    recording.combinedStream = null;
+    recording.recorder = null;
+  }
+
+  function downloadRecordingBlob(blob) {
+    if (!blob) return;
+    saveBlob(blob, escapeName(project.title) + '-recording.webm');
+  }
+
+  function updateRecordingButtons() {
+    var isRecording = recording.state === 'recording' || recording.state === 'stopping';
+    if (refs.recordScreen) {
+      refs.recordScreen.disabled = isRecording;
+      refs.recordScreen.textContent = recording.state === 'recording' ? 'Recording...' : 'Record Screen';
+    }
+    if (refs.stopRecording) refs.stopRecording.disabled = !isRecording;
+    if (refs.recordVoice) refs.recordVoice.disabled = isRecording;
+  }
+
+  function saveBlob(blob, filename) {
+    var link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+  }
+
+  function openConfirmModal(title, message, confirmLabel, tone) {
+    if (!refs.confirmModal) return Promise.resolve(false);
+    refs.confirmTitle.textContent = title || 'Confirm Action';
+    refs.confirmMessage.textContent = message || '';
+    refs.confirmConfirm.textContent = confirmLabel || 'Confirm';
+    refs.confirmConfirm.classList.toggle('danger', tone !== 'primary');
+    refs.confirmConfirm.classList.toggle('primary', tone === 'primary');
+    refs.confirmModal.classList.add('visible');
+    refs.confirmModal.setAttribute('aria-hidden', 'false');
+    if (refs.confirmCancel) refs.confirmCancel.focus();
+    return new Promise(function (resolve) {
+      confirmResolver = resolve;
+    });
+  }
+
+  function closeConfirmModal(confirmed) {
+    if (!refs.confirmModal) return;
+    refs.confirmModal.classList.remove('visible');
+    refs.confirmModal.setAttribute('aria-hidden', 'true');
+    if (confirmResolver) {
+      confirmResolver(Boolean(confirmed));
+      confirmResolver = null;
+    }
+  }
+
   function iconSvg(name) {
     var icons = {
       copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"></rect><rect x="4" y="4" width="11" height="11" rx="2"></rect></svg>',
       trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M6 6l1 15h10l1-15"></path></svg>',
       corner: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 20h6v-6"></path><path d="M20 20l-7-7"></path></svg>',
       image: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>',
-      'arrow-right': '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg>'
+      'arrow-right': '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg>',
+      'chevron-down': '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>'
     };
     return icons[name] || '';
   }
 
   function wireEvents() {
     refs.projectTitle.addEventListener('input', function () { setProjectTitle(refs.projectTitle.value); });
+    refs.newProject.addEventListener('click', addProject);
     refs.addSlide.addEventListener('click', addSlide);
     refs.addText.addEventListener('click', function () {
       addItem('text', { body: 'Edit this overlay text.' });
@@ -1136,6 +1782,20 @@
     refs.reset.addEventListener('click', resetProject);
     refs.preview.addEventListener('click', startPreview);
     refs.stopPreview.addEventListener('click', function () { stopPreview(true); });
+    refs.prevSlide.addEventListener('click', function () { goToSlideByOffset(-1); });
+    refs.nextSlide.addEventListener('click', function () { goToSlideByOffset(1); });
+    refs.recordScreen.addEventListener('click', startRecording);
+    refs.stopRecording.addEventListener('click', function () { stopRecording(true); });
+
+    refs.projectList.addEventListener('click', function (event) {
+      var remove = event.target.closest ? event.target.closest('[data-delete-project-id]') : null;
+      var main = event.target.closest ? event.target.closest('[data-project-id]') : null;
+      if (remove) {
+        deleteProject(remove.dataset.deleteProjectId);
+      } else if (main) {
+        switchProject(main.dataset.projectId);
+      }
+    });
 
     refs.slideList.addEventListener('click', function (event) {
       var main = event.target.closest ? event.target.closest('[data-slide-id]') : null;
@@ -1169,10 +1829,43 @@
     refs.stage.addEventListener('input', handleStageInput);
     refs.stage.addEventListener('click', handleStageClick);
     refs.stage.addEventListener('pointerdown', handlePointerDown);
+
+    refs.confirmClose.addEventListener('click', function () { closeConfirmModal(false); });
+    refs.confirmCancel.addEventListener('click', function () { closeConfirmModal(false); });
+    refs.confirmConfirm.addEventListener('click', function () { closeConfirmModal(true); });
+    refs.confirmModal.addEventListener('click', function (event) {
+      if (event.target === refs.confirmModal) closeConfirmModal(false);
+    });
+
+    document.addEventListener('keydown', handleGlobalKeydown);
+    document.addEventListener('click', function (event) {
+      if (!event.target.closest || !event.target.closest('.app-select')) closeCustomSelects();
+    });
+    window.addEventListener('resize', scheduleAutoFitAll);
+    window.addEventListener('beforeunload', function (event) {
+      if (recording.state === 'recording') {
+        event.preventDefault();
+        event.returnValue = '';
+      }
+    });
+  }
+
+  function hydrateForUser(user) {
+    currentUser = user || null;
+    projectLibrary = currentUser && currentUser.uid ? readUserProjectLibrary(currentUser) : readGuestProjectLibrary();
+    syncProjectFromLibrary();
+    if (getActiveSlide().items.length) selectedItemId = getActiveSlide().items[0].id;
+    render();
   }
 
   wireEvents();
-  if (getActiveSlide().items.length) selectedItemId = getActiveSlide().items[0].id;
-  render();
   refs.stopPreview.disabled = true;
+  refs.stopRecording.disabled = true;
+  if (auth && bootstrap.onAuthStateReady) {
+    bootstrap.onAuthStateReady(auth, function (user) {
+      hydrateForUser(user || null);
+    });
+  } else {
+    hydrateForUser(currentUser || null);
+  }
 })();

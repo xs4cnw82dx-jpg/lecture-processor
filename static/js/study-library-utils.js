@@ -11,6 +11,7 @@
     var allFolderId = String(settings.allFolderId == null ? '' : settings.allFolderId);
     var interviewFolderId = String(settings.interviewFolderId == null ? '__interviews__' : settings.interviewFolderId);
     var voiceNotesFolderId = String(settings.voiceNotesFolderId == null ? '__voice_notes__' : settings.voiceNotesFolderId);
+    var videoOverlayFolderId = String(settings.videoOverlayFolderId == null ? '__video_overlays__' : settings.videoOverlayFolderId);
     var pinnedSet = new Set(pinnedFolderIds.map(function (folderId) { return String(folderId || ''); }).filter(Boolean));
     var collapsedSet = new Set(collapsedFolderIds.filter(Boolean));
     var displayed = new Set();
@@ -93,15 +94,17 @@
       var parentId = String(folder && folder.parent_folder_id || '');
       if (parentId === allFolderId) parentId = '';
       if (!parentId) return true;
-      if (parentId === interviewFolderId || parentId === voiceNotesFolderId) return false;
+      if (parentId === interviewFolderId || parentId === voiceNotesFolderId || parentId === videoOverlayFolderId) return false;
       return !foldersById[parentId];
     }
 
     var output = [
       builtin(allFolderId, 'All Study Packs', 'All packs'),
       builtin(voiceNotesFolderId, 'Voice Notes', 'Quick transcriber notes'),
+      builtin(videoOverlayFolderId, 'Video Overlay Projects', 'Saved video overlay decks'),
     ];
     if (!output[1].is_collapsed) appendChildren(voiceNotesFolderId, 1, output);
+    if (!output[2].is_collapsed) appendChildren(videoOverlayFolderId, 1, output);
     var interviews = builtin(interviewFolderId, 'Interviews', 'Interview transcript packs');
     output.push(interviews);
     if (!interviews.is_collapsed) appendChildren(interviewFolderId, 1, output);
@@ -168,6 +171,7 @@
     var allFolderId = String(settings.allFolderId == null ? '' : settings.allFolderId);
     var interviewFolderId = String(settings.interviewFolderId == null ? '__interviews__' : settings.interviewFolderId);
     var voiceNotesFolderId = String(settings.voiceNotesFolderId == null ? '__voice_notes__' : settings.voiceNotesFolderId);
+    var videoOverlayFolderId = String(settings.videoOverlayFolderId == null ? '__video_overlays__' : settings.videoOverlayFolderId);
     var descendantFolderIds = Array.isArray(settings.descendantFolderIds) ? settings.descendantFolderIds.map(function (folderId) {
       return String(folderId || '');
     }) : [];
@@ -180,6 +184,8 @@
         if (String(pack && pack.mode || '') !== 'interview') return false;
       } else if (selectedFolderId === voiceNotesFolderId) {
         if (String(pack && pack.mode || '') !== 'voice-note') return false;
+      } else if (selectedFolderId === videoOverlayFolderId) {
+        return false;
       } else if (!selectedFolderId || selectedFolderId === allFolderId) {
         if (String(pack && pack.mode || '') === 'voice-note') return false;
       } else if (selectedFolderId && selectedFolderId !== allFolderId && !selectedFolderIds.has(String(pack && pack.folder_id || ''))) {

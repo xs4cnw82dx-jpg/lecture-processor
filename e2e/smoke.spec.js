@@ -106,7 +106,7 @@ test('video overlay builder creates tables and previews animations', async ({ pa
 
   await page.getByRole('button', { name: 'Preview Slide' }).click();
   await expect(page.locator('#overlay-stage')).toHaveClass(/is-previewing/);
-  await expect(page.getByRole('button', { name: 'Stop' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Stop Preview' })).toBeEnabled();
 });
 
 test('lecture notes audio disclosures toggle open and closed', async ({ page }) => {

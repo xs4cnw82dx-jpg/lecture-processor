@@ -14,19 +14,22 @@ test('buildFolderItemsForSidebar keeps built-ins first and preserves pinned orde
     allFolderId: '',
     interviewFolderId: '__interviews__',
     voiceNotesFolderId: '__voice_notes__',
+    videoOverlayFolderId: '__video_overlays__',
   });
 
   assert.deepEqual(items.map((item) => item.folder_id), [
     '',
     '__voice_notes__',
+    '__video_overlays__',
     '__interviews__',
     'folder-c',
     'folder-a',
     'folder-b',
   ]);
   assert.equal(items[1].name, 'Voice Notes');
-  assert.equal(items[3].is_pinned, true);
-  assert.equal(items[5].is_pinned, false);
+  assert.equal(items[2].name, 'Video Overlay Projects');
+  assert.equal(items[4].is_pinned, true);
+  assert.equal(items[6].is_pinned, false);
 });
 
 test('filterStudyPacks matches folder and search filters consistently', () => {
@@ -66,6 +69,15 @@ test('filterStudyPacks matches folder and search filters consistently', () => {
     interviewFolderId: '__interviews__',
     voiceNotesFolderId: '__voice_notes__',
   }).map((pack) => pack.study_pack_id), ['pack-4']);
+
+  assert.deepEqual(studyLibraryUtils.filterStudyPacks(packs, {
+    searchQuery: '',
+    selectedFolderId: '__video_overlays__',
+    allFolderId: '',
+    interviewFolderId: '__interviews__',
+    voiceNotesFolderId: '__voice_notes__',
+    videoOverlayFolderId: '__video_overlays__',
+  }).map((pack) => pack.study_pack_id), []);
 });
 
 test('buildFolderItemsForSidebar renders nested folders under built-ins and collapse state', () => {
@@ -79,11 +91,13 @@ test('buildFolderItemsForSidebar renders nested folders under built-ins and coll
     allFolderId: '',
     interviewFolderId: '__interviews__',
     voiceNotesFolderId: '__voice_notes__',
+    videoOverlayFolderId: '__video_overlays__',
   });
 
   assert.deepEqual(items.map((item) => item.folder_id), [
     '',
     '__voice_notes__',
+    '__video_overlays__',
     '__interviews__',
     'interview-child',
     'root',
