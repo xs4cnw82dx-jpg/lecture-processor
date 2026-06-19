@@ -857,6 +857,18 @@
       flex-shrink: 0;
     }
 
+    .video-overlay-project-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .video-overlay-project-item .pack-quick-learn {
+      display: inline-flex;
+      text-decoration: none;
+    }
+
     .export-notes-label-short {
       display: none;
     }

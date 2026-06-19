@@ -60,6 +60,7 @@ let goalPanelStatusText = 'Synced', goalPanelStatusTone = 'success';
 let activeRuntimeJobs = [];
 let runtimeJobsRefreshTimer = null;
 let runtimeJobsRefreshInFlight = false;
+let videoOverlayProjects = [];
 let shareModalEntityType = '', shareModalEntityId = '', shareModalScope = 'private', shareModalLoadedLink = '', shareModalSaving = false;
 let collapsedFolderIds = new Set();
 let codingState = null, codingLoading = false, codingWorkspaceOpen = false, selectedCodingCodeId = '', selectedCodingColor = 'teal', codingSelectionRange = null, codingUndoStack = [], codingMergeSourceId = '';
@@ -104,6 +105,8 @@ const MAX_BUILDER_IMPORT_FILES = 50;
 const BUILTIN_ALL_FOLDER_ID = '';
 const BUILTIN_INTERVIEWS_FOLDER_ID = '__interviews__';
 const BUILTIN_VOICE_NOTES_FOLDER_ID = '__voice_notes__';
+const BUILTIN_VIDEO_OVERLAYS_FOLDER_ID = '__video_overlays__';
+const VIDEO_OVERLAY_PROJECTS_CACHE_KEY = 'video_overlay_projects_v1';
 const MAX_PINNED_FOLDERS = 5;
 let pinnedFolderIds = [];
 const LAZY_VENDOR_ASSETS = {
@@ -132,6 +135,7 @@ let progressDetailsHydrationScheduled = false;
 function initialFolderFromUrl(value) {
   var safe = String(value || '').trim().toLowerCase();
   if (safe === 'voice-notes' || safe === 'voice_notes' || safe === BUILTIN_VOICE_NOTES_FOLDER_ID) return BUILTIN_VOICE_NOTES_FOLDER_ID;
+  if (safe === 'video-overlays' || safe === 'video_overlay' || safe === 'video-overlays-projects' || safe === BUILTIN_VIDEO_OVERLAYS_FOLDER_ID) return BUILTIN_VIDEO_OVERLAYS_FOLDER_ID;
   if (safe === 'interviews' || safe === 'interview' || safe === BUILTIN_INTERVIEWS_FOLDER_ID) return BUILTIN_INTERVIEWS_FOLDER_ID;
   return '';
 }
@@ -1502,6 +1506,7 @@ function applyStudySignedOutState() {
   setStudyLibraryVisibility(false);
   folders = [];
   packs = [];
+  videoOverlayProjects = [];
   selectedFolderId = '';
   selectedPackId = '';
   selectedPack = null;
@@ -1582,6 +1587,75 @@ function writeUiCacheJsonForUser(userOrUid, key, value) {
     return uiCache.setUserJson(safeUid, key, value);
   }
   return writeUiCacheJson('user:' + safeUid + ':' + key, value);
+}
+function normalizeVideoOverlayProjectEntry(entry) {
+  var safeEntry = entry && typeof entry === 'object' ? entry : {};
+  var project = safeEntry.project && typeof safeEntry.project === 'object' ? safeEntry.project : {};
+  var projectId = String(safeEntry.project_id || project.project_id || '').trim();
+  if (!projectId) return null;
+  var slides = Array.isArray(project.slides) ? project.slides : [];
+  var overlayCount = slides.reduce(function (total, slide) {
+    return total + (Array.isArray(slide && slide.items) ? slide.items.length : 0);
+  }, 0);
+  return {
+    project_id: projectId,
+    title: String(safeEntry.title || project.title || 'Untitled overlay project').trim() || 'Untitled overlay project',
+    updated_at: Number(safeEntry.updated_at || 0),
+    created_at: Number(safeEntry.created_at || 0),
+    slide_count: slides.length || 1,
+    overlay_count: overlayCount,
+  };
+}
+function normalizeVideoOverlayProjectCache(rawCache) {
+  var cache = rawCache && typeof rawCache === 'object' ? rawCache : {};
+  var seen = {};
+  return (Array.isArray(cache.projects) ? cache.projects : []).map(normalizeVideoOverlayProjectEntry).filter(function (entry) {
+    if (!entry || !entry.project_id || seen[entry.project_id]) return false;
+    seen[entry.project_id] = true;
+    return true;
+  }).sort(function (left, right) {
+    return Number(right.updated_at || 0) - Number(left.updated_at || 0);
+  });
+}
+function readVideoOverlayProjectsCache(userOrUid) {
+  return normalizeVideoOverlayProjectCache(readUiCacheJsonForUser(userOrUid, VIDEO_OVERLAY_PROJECTS_CACHE_KEY, null));
+}
+function writeVideoOverlayProjectsCache(projects) {
+  if (!auth.currentUser) return false;
+  var raw = readUiCacheJsonForUser(auth.currentUser, VIDEO_OVERLAY_PROJECTS_CACHE_KEY, null);
+  var cache = raw && typeof raw === 'object' ? raw : {};
+  var keepIds = new Set((projects || []).map(function (entry) { return String(entry && entry.project_id || ''); }).filter(Boolean));
+  cache.projects = (Array.isArray(cache.projects) ? cache.projects : []).filter(function (entry) {
+    return keepIds.has(String(entry && entry.project_id || ''));
+  });
+  if (cache.activeProjectId && !keepIds.has(String(cache.activeProjectId || ''))) {
+    cache.activeProjectId = cache.projects[0] ? String(cache.projects[0].project_id || '') : '';
+  }
+  return writeUiCacheJsonForUser(auth.currentUser, VIDEO_OVERLAY_PROJECTS_CACHE_KEY, cache);
+}
+function isVideoOverlayFolderSelected() {
+  return selectedFolderId === BUILTIN_VIDEO_OVERLAYS_FOLDER_ID;
+}
+function formatVideoOverlayProjectDate(value) {
+  var timestamp = Number(value || 0);
+  if (!timestamp) return 'Not saved yet';
+  try {
+    return new Date(timestamp).toLocaleString(navigator.language || 'en-US', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch (e) {
+    return 'Saved locally';
+  }
+}
+function getFilteredVideoOverlayProjects() {
+  var q = searchInput ? String(searchInput.value || '').trim().toLowerCase() : '';
+  if (!q) return videoOverlayProjects.slice();
+  return videoOverlayProjects.filter(function (projectEntry) {
+    return String(projectEntry.title || '').toLowerCase().indexOf(q) >= 0;
+  });
 }
 function mergeRuntimeJobs(currentJobs, incomingJobs) {
   if (runtimeJobUtils && typeof runtimeJobUtils.mergeActiveRuntimeJobs === 'function') {
@@ -1823,7 +1897,18 @@ function focusMenuItem(menu, selector, mode) {
   items[0].focus();
 }
 function updatePackEmptyState() {
+  if (isVideoOverlayFolderSelected()) {
+    if (packEmptyDefault) {
+      packEmptyDefault.textContent = videoOverlayProjects.length
+        ? 'Open a video overlay project from the list.'
+        : 'No video overlay projects yet. Create one in the Video Overlay Builder.';
+      packEmptyDefault.classList.add('visible');
+    }
+    if (packEmptyOnboarding) { packEmptyOnboarding.classList.remove('visible'); }
+    return;
+  }
   var hasPacks = (packs || []).length > 0;
+  if (packEmptyDefault) { packEmptyDefault.textContent = 'Select a study pack to edit and study.'; }
   if (packEmptyDefault) { packEmptyDefault.classList.toggle('visible', hasPacks); }
   if (packEmptyOnboarding) { packEmptyOnboarding.classList.toggle('visible', !hasPacks); }
 }
@@ -3953,7 +4038,7 @@ function getFolderPinsStorageKey() {
   return 'pinned_folder_ids_' + auth.currentUser.uid;
 }
 function isBuiltInFolderId(folderId) {
-  return folderId === BUILTIN_ALL_FOLDER_ID || folderId === BUILTIN_INTERVIEWS_FOLDER_ID || folderId === BUILTIN_VOICE_NOTES_FOLDER_ID;
+  return folderId === BUILTIN_ALL_FOLDER_ID || folderId === BUILTIN_INTERVIEWS_FOLDER_ID || folderId === BUILTIN_VOICE_NOTES_FOLDER_ID || folderId === BUILTIN_VIDEO_OVERLAYS_FOLDER_ID;
 }
 function sanitizePinnedFolderIds(rawIds) {
   if (!Array.isArray(rawIds)) return [];
@@ -4017,6 +4102,7 @@ function buildFolderItemsForSidebar() {
       allFolderId: BUILTIN_ALL_FOLDER_ID,
       interviewFolderId: BUILTIN_INTERVIEWS_FOLDER_ID,
       voiceNotesFolderId: BUILTIN_VOICE_NOTES_FOLDER_ID,
+      videoOverlayFolderId: BUILTIN_VIDEO_OVERLAYS_FOLDER_ID,
     });
   }
 
@@ -4034,6 +4120,7 @@ function buildFolderItemsForSidebar() {
   return [
     { folder_id: BUILTIN_ALL_FOLDER_ID, name: 'All Study Packs', course: '', subject: '', semester: '', block: '', exam_date: '', is_pinned: true, is_builtin: true, is_fixed: true, meta_default: 'All packs' },
     { folder_id: BUILTIN_VOICE_NOTES_FOLDER_ID, name: 'Voice Notes', course: '', subject: '', semester: '', block: '', exam_date: '', is_pinned: true, is_builtin: true, is_fixed: true, meta_default: 'Quick transcriber notes' },
+    { folder_id: BUILTIN_VIDEO_OVERLAYS_FOLDER_ID, name: 'Video Overlay Projects', course: '', subject: '', semester: '', block: '', exam_date: '', is_pinned: true, is_builtin: true, is_fixed: true, meta_default: 'Saved video overlay decks' },
     { folder_id: BUILTIN_INTERVIEWS_FOLDER_ID, name: 'Interviews', course: '', subject: '', semester: '', block: '', exam_date: '', is_pinned: true, is_builtin: true, is_fixed: true, meta_default: 'Interview transcript packs' },
   ].concat(pinnedFolders, remaining);
 }
@@ -4069,6 +4156,7 @@ function filteredPacks() {
       allFolderId: BUILTIN_ALL_FOLDER_ID,
       interviewFolderId: BUILTIN_INTERVIEWS_FOLDER_ID,
       voiceNotesFolderId: BUILTIN_VOICE_NOTES_FOLDER_ID,
+      videoOverlayFolderId: BUILTIN_VIDEO_OVERLAYS_FOLDER_ID,
     });
   }
 
@@ -4078,6 +4166,8 @@ function filteredPacks() {
       if ((p.mode || '') !== 'interview') return false;
     } else if (selectedFolderId === BUILTIN_VOICE_NOTES_FOLDER_ID) {
       if ((p.mode || '') !== 'voice-note') return false;
+    } else if (selectedFolderId === BUILTIN_VIDEO_OVERLAYS_FOLDER_ID) {
+      return false;
     } else if (!selectedFolderId || selectedFolderId === BUILTIN_ALL_FOLDER_ID) {
       if ((p.mode || '') === 'voice-note') return false;
     } else if (selectedFolderId && selectedFolderId !== BUILTIN_ALL_FOLDER_ID && [selectedFolderId].concat(getDescendantFolderIds(selectedFolderId)).indexOf(p.folder_id) < 0) {
@@ -4256,6 +4346,13 @@ function renderFolders() {
     );
     var activateFolder = function () {
       selectedFolderId = f.folder_id;
+      if (selectedFolderId === BUILTIN_VIDEO_OVERLAYS_FOLDER_ID) {
+        selectedPackId = '';
+        selectedPack = null;
+        clearPackSelection(false);
+        showPackEditor(false);
+        updatePackSummary();
+      }
       renderFolders();
       renderPacks();
     };
@@ -4334,6 +4431,7 @@ function getFolderNameById(id) {
   if (!id) return 'No folder';
   if (id === BUILTIN_INTERVIEWS_FOLDER_ID) return 'Interviews';
   if (id === BUILTIN_VOICE_NOTES_FOLDER_ID) return 'Voice Notes';
+  if (id === BUILTIN_VIDEO_OVERLAYS_FOLDER_ID) return 'Video Overlay Projects';
   var f = folders.find(function (x) { return x.folder_id === id; });
   return f ? f.name : 'No folder';
 }
@@ -4408,6 +4506,12 @@ function mergeStudyPackPage(currentPacks, incomingPacks) {
 
 function renderPackListActions() {
   if (!packListActions || !loadMorePacksBtn) return;
+  if (isVideoOverlayFolderSelected()) {
+    packListActions.hidden = true;
+    loadMorePacksBtn.hidden = true;
+    loadMorePacksBtn.disabled = true;
+    return;
+  }
   var shouldShow = !!packsHasMore || !!packsLoadingMore;
   packListActions.hidden = !shouldShow;
   loadMorePacksBtn.hidden = !shouldShow;
@@ -4415,7 +4519,85 @@ function renderPackListActions() {
   loadMorePacksBtn.textContent = packsLoadingMore ? 'Loading...' : 'Load more study packs';
 }
 
+function deleteVideoOverlayProject(projectId) {
+  var safeId = String(projectId || '').trim();
+  if (!safeId) return;
+  var projectEntry = videoOverlayProjects.find(function (entry) { return entry.project_id === safeId; });
+  openConfirmModal(
+    'Delete Video Overlay Project',
+    'Delete "' + (projectEntry && projectEntry.title ? projectEntry.title : 'this video overlay project') + '" permanently from this browser? This cannot be undone.',
+    'Delete Project'
+  ).then(function (confirmed) {
+    if (!confirmed) return;
+    videoOverlayProjects = videoOverlayProjects.filter(function (entry) {
+      return entry.project_id !== safeId;
+    });
+    writeVideoOverlayProjectsCache(videoOverlayProjects);
+    showToast('Video overlay project deleted.');
+    renderPacks();
+  });
+}
+
+function renderVideoOverlayProjects() {
+  var items = getFilteredVideoOverlayProjects();
+  packList.innerHTML = '';
+  clearPackSelection(false);
+  selectedPackId = '';
+  selectedPack = null;
+  setInlineAutosaveBaseline(null);
+  showPackEditor(false);
+  updatePackSummary();
+  updatePackEmptyState();
+  if (!items.length) {
+    setSafeInnerHtml(packList, '<div class="empty">No video overlay projects match this filter.<div class="builder-list-empty-actions"><a class="btn primary" href="/video-overlay-builder">Open Video Overlay Builder</a><button type="button" class="btn" id="clear-video-overlay-filters-btn">Clear filters</button></div></div>');
+    var clearFiltersBtn = document.getElementById('clear-video-overlay-filters-btn');
+    if (clearFiltersBtn) {
+      clearFiltersBtn.addEventListener('click', function () {
+        searchInput.value = '';
+        renderPacks();
+      });
+    }
+    renderPackListActions();
+    return;
+  }
+  items.forEach(function (entry) {
+    var div = document.createElement('div');
+    div.className = 'item pack-list-item video-overlay-project-item';
+    div.dataset.videoProjectId = entry.project_id;
+    div.setAttribute('role', 'button');
+    div.setAttribute('tabindex', '0');
+    var titleText = escapeHtml(entry.title || 'Untitled overlay project');
+    var countText = formatItemCount(entry.slide_count, 'slide') + ' · ' + formatItemCount(entry.overlay_count, 'overlay');
+    var updatedText = 'Updated ' + formatVideoOverlayProjectDate(entry.updated_at);
+    setSafeInnerHtml(
+      div,
+      '<div class="pack-row-main"><div class="pack-row-content"><div class="item-head"><span class="item-title">' + titleText + '</span><a class="pack-quick-learn" data-video-project-open href="/video-overlay-builder?project_id=' + encodeURIComponent(entry.project_id) + '">Open</a></div><div class="item-sub">Video Overlay Project · ' + escapeHtml(countText) + '</div><div class="item-sub">' + escapeHtml(updatedText) + '</div></div></div><button type="button" class="btn danger u-btn-compact" data-video-project-delete>Delete</button>'
+    );
+    var openProject = function () {
+      window.location.href = '/video-overlay-builder?project_id=' + encodeURIComponent(entry.project_id);
+    };
+    div.addEventListener('click', function (event) {
+      if (event.target.closest && event.target.closest('[data-video-project-delete], [data-video-project-open]')) return;
+      openProject();
+    });
+    bindKeyboardActivation(div, function () { openProject(); });
+    var deleteBtn = div.querySelector('[data-video-project-delete]');
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', function (event) {
+        event.stopPropagation();
+        deleteVideoOverlayProject(entry.project_id);
+      });
+    }
+    packList.appendChild(div);
+  });
+  renderPackListActions();
+}
+
 function renderPacks() {
+  if (isVideoOverlayFolderSelected()) {
+    renderVideoOverlayProjects();
+    return;
+  }
   var items = filteredPacks(); packList.innerHTML = '';
   prunePackSelection();
   updatePackEmptyState();
@@ -6054,6 +6236,7 @@ function loadData(preferredPackId) {
     var packPage = results[1] || {};
     folders = results[0].folders || [];
     packs = mergeStudyPackPage([], packPage.study_packs || []);
+    videoOverlayProjects = readVideoOverlayProjectsCache(auth.currentUser);
     packsHasMore = !!packPage.has_more;
     packsNextCursor = String(packPage.next_cursor || '');
     setGoalPanelStatus('Synced', 'success');
@@ -6691,6 +6874,10 @@ if (packBlock) {
 newFolderBtn.addEventListener('click', function () { openFolderModal('create', null); });
 if (newSubfolderBtn) {
   newSubfolderBtn.addEventListener('click', function () {
+    if (isVideoOverlayFolderSelected()) {
+      showToast('Video overlay projects use this fixed pinned folder.', 'error');
+      return;
+    }
     if (!selectedFolderId && selectedFolderId !== BUILTIN_ALL_FOLDER_ID) {
       showToast('Select a folder first.', 'error');
       return;
