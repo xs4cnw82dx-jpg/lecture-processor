@@ -155,6 +155,7 @@ EXPECTED_ROUTES = [
     ('GET', '/terms', 'pages.terms_of_service'),
     ('GET', '/tools', 'pages.tools_page'),
     ('GET', '/url-reader', 'pages.url_reader_page'),
+    ('GET', '/video-overlay-builder', 'pages.video_overlay_builder_page'),
     ('GET', '/voice-notes', 'pages.voice_notes_page'),
     ('POST', '/upload', 'upload_api.upload_file'),
 ]
@@ -317,6 +318,7 @@ def test_more_tools_pages_and_links_render(client):
     tools_html = tools_response.get_data(as_text=True)
     assert 'Lecture Downloader' in tools_html
     assert 'General Transcriber' in tools_html
+    assert 'Video Overlay Builder' in tools_html
     assert 'Batch Transcriber' in tools_html
     assert 'Batch Combine Text' in tools_html
     assert 'Instant Batch' in tools_html
@@ -325,6 +327,7 @@ def test_more_tools_pages_and_links_render(client):
     assert downloader_response.status_code == 200
     downloader_html = downloader_response.get_data(as_text=True)
     assert 'href="/lecture-downloader"' in downloader_html
+    assert 'href="/video-overlay-builder"' in downloader_html
     assert 'href="/general-transcriber"' in downloader_html
     assert 'href="/instant_batch_mode"' in downloader_html
     assert 'href="/batch_mode_audio_transcription"' not in downloader_html
@@ -340,6 +343,13 @@ def test_more_tools_pages_and_links_render(client):
     assert transcriber_response.status_code == 200
     transcriber_html = transcriber_response.get_data(as_text=True)
     assert 'Each run costs 1 interview credit.' in transcriber_html
+
+    overlay_response = client.get('/video-overlay-builder')
+    assert overlay_response.status_code == 200
+    overlay_html = overlay_response.get_data(as_text=True)
+    assert 'Video Overlay Builder' in overlay_html
+    assert 'href="/video-overlay-builder"' in overlay_html
+    assert 'overlay-table-rows' in overlay_html
 
 
 def test_voice_notes_page_renders_pwa_assets(client):

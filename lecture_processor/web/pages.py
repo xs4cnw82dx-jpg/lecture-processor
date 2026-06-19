@@ -370,6 +370,16 @@ def lecture_downloader_page():
     )
 
 
+@pages_bp.route('/video-overlay-builder')
+def video_overlay_builder_page():
+    runtime = get_runtime()
+    return render_template(
+        'video_overlay_builder.html',
+        video_overlay_builder_js_asset=runtime.resolve_js_asset('js/video-overlay-builder.js'),
+        **_shell_context(runtime=runtime, page_key='video-overlay-builder'),
+    )
+
+
 @pages_bp.route('/general-transcriber')
 def general_transcriber_page():
     runtime = get_runtime()

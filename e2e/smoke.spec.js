@@ -88,6 +88,27 @@ test('reader actions stay disabled until output exists', async ({ page }) => {
   await expect(page.locator('#reader-download-docx-btn')).toBeDisabled();
 });
 
+test('video overlay builder creates tables and previews animations', async ({ page }) => {
+  await page.goto('/video-overlay-builder');
+  await expect(page.getByRole('heading', { name: 'Video Overlay Builder' })).toBeVisible();
+  await expect(page.locator('#overlay-stage')).toBeVisible();
+
+  await page.locator('#overlay-table-rows').fill('0');
+  await page.locator('#overlay-table-cols').fill('-2');
+  await page.locator('#overlay-add-table').click();
+
+  await expect(page.locator('#overlay-inspector')).toContainText('1 x 1');
+  await page.getByRole('button', { name: 'Add row' }).click();
+  await page.getByRole('button', { name: 'Add column' }).click();
+  await expect(page.locator('#overlay-inspector')).toContainText('2 x 2');
+  await expect(page.locator('.overlay-stage-item.is-selected .overlay-table tr')).toHaveCount(2);
+  await expect(page.locator('.overlay-stage-item.is-selected .overlay-table tr:first-child th')).toHaveCount(2);
+
+  await page.getByRole('button', { name: 'Preview Slide' }).click();
+  await expect(page.locator('#overlay-stage')).toHaveClass(/is-previewing/);
+  await expect(page.getByRole('button', { name: 'Stop' })).toBeEnabled();
+});
+
 test('lecture notes audio disclosures toggle open and closed', async ({ page }) => {
   await page.goto('/lecture-notes');
 
