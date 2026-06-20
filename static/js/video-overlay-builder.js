@@ -43,6 +43,18 @@
     { value: 'arrow', label: 'Arrow' },
     { value: 'curve', label: 'Curved arrow' }
   ];
+  var CANVAS_ASPECT_RATIO = 16 / 9;
+  var SHAPE_ASPECT_RATIOS = {
+    rounded: 1,
+    circle: 1,
+    triangle: 1,
+    pentagon: 1,
+    square: 1,
+    diamond: 1,
+    pill: 2,
+    parallelogram: 1.6,
+    'arrow-right': 1.65
+  };
 
   var refs = {
     authState: document.getElementById('overlay-auth-state'),
@@ -1005,10 +1017,26 @@
       return '<span class="overlay-choice-swatch overlay-shape-' + entry.value + '" aria-hidden="true"></span>';
     }, function (value) {
       item.shape = value;
+      restoreShapeProportions(item);
       renderStage();
       renderInspector();
       queuePersist();
     }));
+    var actions = document.createElement('div');
+    actions.className = 'overlay-action-row wrap';
+    var restore = document.createElement('button');
+    restore.type = 'button';
+    restore.className = 'secondary-btn';
+    restore.dataset.restoreShapeProportions = '';
+    restore.textContent = 'Restore proportions';
+    restore.addEventListener('click', function () {
+      restoreShapeProportions(item);
+      renderStage();
+      renderInspector();
+      queuePersist();
+    });
+    actions.appendChild(restore);
+    wrap.appendChild(actions);
     return wrap;
   }
 
@@ -1250,6 +1278,46 @@
 
   function roundToTenth(value) {
     return Math.round(Number(value || 0) * 10) / 10;
+  }
+
+  function getShapeAspectRatio(shape) {
+    var key = String(shape || 'rounded');
+    return SHAPE_ASPECT_RATIOS[key] || 1;
+  }
+
+  function fitShapeBoxToAspect(shape, width, height) {
+    var targetPercentRatio = getShapeAspectRatio(shape) / CANVAS_ASPECT_RATIO;
+    var area = Math.max(64, Number(width || 0) * Number(height || 0));
+    var nextWidth = Math.sqrt(area * targetPercentRatio);
+    var nextHeight = Math.sqrt(area / targetPercentRatio);
+    return {
+      w: roundToTenth(nextWidth),
+      h: roundToTenth(nextHeight)
+    };
+  }
+
+  function restoreShapeProportions(item) {
+    if (!item || item.type !== 'shape') return false;
+    var centerX = Number(item.x || 0) + Number(item.w || 0) / 2;
+    var centerY = Number(item.y || 0) + Number(item.h || 0) / 2;
+    var fitted = fitShapeBoxToAspect(item.shape, item.w, item.h);
+    var maxWidth = Math.max(8, Math.min(96, 100 - Number(item.x || 0)));
+    var maxHeight = Math.max(8, Math.min(92, 100 - Number(item.y || 0)));
+    var targetPercentRatio = getShapeAspectRatio(item.shape) / CANVAS_ASPECT_RATIO;
+    if (fitted.w > maxWidth) {
+      fitted.w = maxWidth;
+      fitted.h = roundToTenth(fitted.w / targetPercentRatio);
+    }
+    if (fitted.h > maxHeight) {
+      fitted.h = maxHeight;
+      fitted.w = roundToTenth(fitted.h * targetPercentRatio);
+    }
+    item.w = fitted.w;
+    item.h = fitted.h;
+    item.x = roundToTenth(centerX - item.w / 2);
+    item.y = roundToTenth(centerY - item.h / 2);
+    clampItemGeometry(item);
+    return true;
   }
 
   function cssNumber(value, min, max, fallbackValue) {
@@ -1629,6 +1697,12 @@
       animation: 'rise',
       color: type === 'table' ? 'teal' : (type === 'flow' || type === 'arrow' ? 'indigo' : (type === 'shape' ? 'green' : 'orange'))
     };
+    if (type === 'shape' && (!data || (data.w == null && data.h == null))) {
+      var defaultShape = data && data.shape ? data.shape : 'rounded';
+      var defaultBox = fitShapeBoxToAspect(defaultShape, base.w, base.h);
+      base.w = defaultBox.w;
+      base.h = defaultBox.h;
+    }
     var item = normalizeItem(Object.assign(base, data || {}));
     slide.items.push(item);
     selectedItemId = item.id;
