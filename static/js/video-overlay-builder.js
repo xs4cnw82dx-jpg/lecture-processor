@@ -84,6 +84,7 @@
     recordScreen: document.getElementById('overlay-record-screen'),
     stopRecording: document.getElementById('overlay-stop-recording'),
     recordingStatus: document.getElementById('overlay-recording-status'),
+    recorderVisual: document.querySelector('.overlay-recorder-visual'),
     confirmModal: document.getElementById('overlay-confirm-modal'),
     confirmTitle: document.getElementById('overlay-confirm-title'),
     confirmMessage: document.getElementById('overlay-confirm-message'),
@@ -121,6 +122,18 @@
     combinedStream: null,
     lastBlob: null,
     fullscreenRequested: false
+  };
+  var micPreview = {
+    stream: null,
+    starting: false
+  };
+  var micMeter = {
+    audioContext: null,
+    analyser: null,
+    source: null,
+    data: null,
+    frame: 0,
+    level: 0
   };
 
   function uid(prefix) {
@@ -2021,6 +2034,7 @@
       setRecordingStatus('Screen recording is not supported in this browser.', 10000);
       return;
     }
+    stopMicPreview(false);
     recording.chunks = [];
     recording.lastBlob = null;
     enterRecordingPresentationMode();
@@ -2048,6 +2062,7 @@
       });
     }).then(function (micStream) {
       recording.micStream = micStream || null;
+      if (recording.micStream) startMicMeter(recording.micStream);
       var tracks = [];
       if (recording.screenStream) {
         recording.screenStream.getVideoTracks().forEach(function (track) { tracks.push(track); });
@@ -2085,6 +2100,7 @@
       exitRecordingPresentationMode();
       updateRecordingButtons();
       setRecordingStatus(error && error.name === 'NotAllowedError' ? 'Recording permission was cancelled.' : 'Could not start screen recording.', 10000);
+      if (refs.recordVoice && refs.recordVoice.checked) startMicPreview({ silent: true });
     });
   }
 
@@ -2143,6 +2159,7 @@
   }
 
   function stopStreams() {
+    stopMicMeter();
     [recording.screenStream, recording.micStream, recording.combinedStream].forEach(function (stream) {
       if (!stream) return;
       stream.getTracks().forEach(function (track) {
@@ -2153,6 +2170,110 @@
     recording.micStream = null;
     recording.combinedStream = null;
     recording.recorder = null;
+  }
+
+  function setMicMeterLevel(level) {
+    if (!refs.recorderVisual) return;
+    var next = Math.max(0, Math.min(8, Math.round(Number(level || 0) * 8)));
+    for (var index = 0; index <= 8; index += 1) {
+      refs.recorderVisual.classList.toggle('level-' + index, index === next);
+    }
+  }
+
+  function stopMicMeter() {
+    if (micMeter.frame) {
+      window.cancelAnimationFrame(micMeter.frame);
+      micMeter.frame = 0;
+    }
+    if (micMeter.source && typeof micMeter.source.disconnect === 'function') {
+      try { micMeter.source.disconnect(); } catch (_error) {}
+    }
+    if (micMeter.audioContext && typeof micMeter.audioContext.close === 'function') {
+      micMeter.audioContext.close().catch(function () {});
+    }
+    micMeter.audioContext = null;
+    micMeter.analyser = null;
+    micMeter.source = null;
+    micMeter.data = null;
+    micMeter.level = 0;
+    setMicMeterLevel(0);
+    if (refs.recorderVisual) refs.recorderVisual.classList.remove('is-live');
+  }
+
+  function startMicMeter(stream) {
+    var AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor || !stream || !refs.recorderVisual) return;
+    stopMicMeter();
+    try {
+      micMeter.audioContext = new AudioContextCtor();
+      micMeter.analyser = micMeter.audioContext.createAnalyser();
+      micMeter.analyser.fftSize = 512;
+      micMeter.data = new Uint8Array(micMeter.analyser.fftSize);
+      micMeter.source = micMeter.audioContext.createMediaStreamSource(stream);
+      micMeter.source.connect(micMeter.analyser);
+      refs.recorderVisual.classList.add('is-live');
+      if (micMeter.audioContext.state === 'suspended' && typeof micMeter.audioContext.resume === 'function') {
+        micMeter.audioContext.resume().catch(function () {});
+      }
+      var tick = function () {
+        if (!micMeter.analyser || !micMeter.data) return;
+        micMeter.analyser.getByteTimeDomainData(micMeter.data);
+        var sum = 0;
+        for (var index = 0; index < micMeter.data.length; index += 1) {
+          var normalized = (micMeter.data[index] - 128) / 128;
+          sum += normalized * normalized;
+        }
+        var targetLevel = Math.min(1, Math.sqrt(sum / micMeter.data.length) * 4.6);
+        micMeter.level = (micMeter.level * 0.65) + (targetLevel * 0.35);
+        setMicMeterLevel(micMeter.level);
+        micMeter.frame = window.requestAnimationFrame(tick);
+      };
+      tick();
+    } catch (_error) {
+      stopMicMeter();
+    }
+  }
+
+  function stopMicPreview(resetStatus) {
+    micPreview.starting = false;
+    if (micPreview.stream) {
+      micPreview.stream.getTracks().forEach(function (track) {
+        try { track.stop(); } catch (_error) {}
+      });
+    }
+    micPreview.stream = null;
+    if (recording.state !== 'recording' && recording.state !== 'stopping') stopMicMeter();
+    if (resetStatus && recording.state === 'idle') setRecordingStatus('Ready to record WebM video.');
+  }
+
+  function startMicPreview(options) {
+    var silent = !!(options && options.silent);
+    if (!refs.recordVoice || !refs.recordVoice.checked || recording.state !== 'idle') return Promise.resolve();
+    if (micPreview.stream || micPreview.starting) return Promise.resolve();
+    if (!(navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function')) {
+      refs.recordVoice.checked = false;
+      if (!silent) setRecordingStatus('Microphone testing is not supported in this browser.', 10000);
+      return Promise.resolve();
+    }
+    micPreview.starting = true;
+    if (!silent) setRecordingStatus('Starting microphone test...');
+    return navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      micPreview.starting = false;
+      if (!refs.recordVoice.checked || recording.state !== 'idle') {
+        stream.getTracks().forEach(function (track) { track.stop(); });
+        return;
+      }
+      micPreview.stream = stream;
+      startMicMeter(stream);
+      if (!silent) setRecordingStatus('Microphone test active. Speak to check your level.');
+    }).catch(function (error) {
+      micPreview.starting = false;
+      stopMicPreview(false);
+      refs.recordVoice.checked = false;
+      if (!silent) {
+        setRecordingStatus(error && error.name === 'NotAllowedError' ? 'Microphone permission was cancelled.' : 'Microphone was unavailable.', 10000);
+      }
+    });
   }
 
   function downloadRecordingBlob(blob) {
@@ -2272,6 +2393,13 @@
     refs.nextSlide.addEventListener('click', function () { goToSlideByOffset(1); });
     refs.recordScreen.addEventListener('click', startRecording);
     refs.stopRecording.addEventListener('click', function () { stopRecording(true); });
+    refs.recordVoice.addEventListener('change', function () {
+      if (refs.recordVoice.checked) {
+        startMicPreview();
+      } else {
+        stopMicPreview(true);
+      }
+    });
 
     refs.projectList.addEventListener('click', function (event) {
       var remove = event.target.closest ? event.target.closest('[data-delete-project-id]') : null;
@@ -2379,6 +2507,7 @@
         event.preventDefault();
         event.returnValue = '';
       }
+      stopMicPreview(false);
     });
   }
 

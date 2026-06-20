@@ -577,26 +577,46 @@
   width: 92px;
   height: 38px;
   border-radius: 8px;
-  background: #eef2ff;
+  background:
+    linear-gradient(135deg, rgba(79, 70, 229, 0.06), rgba(14, 165, 233, 0.05)),
+    #eef2ff;
   color: #4f46e5;
+  overflow: hidden;
 }
+
+.overlay-recorder-visual.level-0 { --voice-level: 0; }
+.overlay-recorder-visual.level-1 { --voice-level: 0.125; }
+.overlay-recorder-visual.level-2 { --voice-level: 0.25; }
+.overlay-recorder-visual.level-3 { --voice-level: 0.375; }
+.overlay-recorder-visual.level-4 { --voice-level: 0.5; }
+.overlay-recorder-visual.level-5 { --voice-level: 0.625; }
+.overlay-recorder-visual.level-6 { --voice-level: 0.75; }
+.overlay-recorder-visual.level-7 { --voice-level: 0.875; }
+.overlay-recorder-visual.level-8 { --voice-level: 1; }
 
 .overlay-recorder-visual span {
   width: 7px;
   height: 16px;
   border-radius: 999px;
-  background: currentColor;
-  opacity: 0.6;
-  animation: overlayPulseBars 1.2s ease-in-out infinite;
+  background: linear-gradient(180deg, #818cf8, #4338ca);
+  box-shadow: 0 8px 18px rgba(79, 70, 229, 0.18);
+  opacity: 0.55;
+  transform: scaleY(calc(0.68 + (var(--voice-level, 0) * 1.35)));
+  transform-origin: center;
+  transition: height 120ms ease, opacity 120ms ease, transform 120ms ease;
 }
 
+.overlay-recorder-visual span:nth-child(2),
+.overlay-recorder-visual span:nth-child(4) { height: 22px; }
+.overlay-recorder-visual span:nth-child(3) { height: 30px; }
 .overlay-recorder-visual span:nth-child(2) { animation-delay: 0.08s; }
 .overlay-recorder-visual span:nth-child(3) { animation-delay: 0.16s; }
 .overlay-recorder-visual span:nth-child(4) { animation-delay: 0.24s; }
 .overlay-recorder-visual span:nth-child(5) { animation-delay: 0.32s; }
 
-.overlay-builder-fullscreen:not(.overlay-recording-active) .overlay-recorder-visual span {
-  animation-play-state: paused;
+.overlay-recorder-visual.is-live span {
+  opacity: 1;
+  animation: overlayPulseBars 720ms ease-in-out infinite;
 }
 
 .overlay-record-toggle {
@@ -1216,8 +1236,8 @@
 }
 
 @keyframes overlayPulseBars {
-  0%, 100% { transform: scaleY(0.58); opacity: 0.42; }
-  50% { transform: scaleY(1.35); opacity: 0.9; }
+  0%, 100% { transform: scaleY(calc(0.64 + (var(--voice-level, 0) * 1.15))); }
+  50% { transform: scaleY(calc(0.9 + (var(--voice-level, 0) * 1.8))); }
 }
 
 @keyframes overlayArrowDraw {
