@@ -851,11 +851,15 @@
     wrap.appendChild(createCustomSelect('Animation', item.animation, ANIMATION_OPTIONS, function (value) {
       setItemField(item, 'animation', value);
     }));
-    wrap.appendChild(createCustomSelect('Color', item.color, COLORS.map(function (color) {
-      return { value: color.id, label: color.label };
-    }), function (value) {
-      setItemField(item, 'color', value);
-    }));
+    if (item.type === 'image' && item.edge === 'glass') {
+      wrap.appendChild(createDisabledSelectField('Color', 'Disabled for glass edge'));
+    } else {
+      wrap.appendChild(createCustomSelect('Color', item.color, COLORS.map(function (color) {
+        return { value: color.id, label: color.label };
+      }), function (value) {
+        setItemField(item, 'color', value);
+      }));
+    }
     if (item.type === 'shape' || item.type === 'arrow') {
       var rotation = document.createElement('label');
       rotation.className = 'overlay-field';
@@ -970,6 +974,7 @@
     ], function (value) {
       item.edge = value === 'glass' ? 'glass' : 'accent';
       renderStage();
+      renderInspector();
       queuePersist();
     }));
     wrap.querySelector('[data-replace-image]').addEventListener('click', function () {
@@ -1029,6 +1034,22 @@
       grid.appendChild(button);
     });
     return grid;
+  }
+
+  function createDisabledSelectField(labelText, valueText) {
+    var field = document.createElement('div');
+    field.className = 'overlay-field';
+    var label = document.createElement('span');
+    label.textContent = labelText;
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'app-select-button is-disabled';
+    button.disabled = true;
+    button.innerHTML = '<span class="app-select-label"></span>';
+    button.querySelector('.app-select-label').textContent = valueText;
+    field.appendChild(label);
+    field.appendChild(button);
+    return field;
   }
 
   function createCustomSelect(labelText, value, options, onChange) {
@@ -1294,7 +1315,7 @@
   }
 
   function getStageSizingRule() {
-    if (!refs.stageFrame) return '.overlay-stage{width:min(100%,150vh);height:auto;}';
+    if (!refs.stageFrame) return '.overlay-stage{width:min(100%,150vh);height:auto;font-size:16px;--overlay-stage-scale:1;}';
     var frameRect = refs.stageFrame.getBoundingClientRect();
     var availableWidth = Math.max(240, frameRect.width - 4);
     var availableHeight = Math.max(160, frameRect.height - 4);
@@ -1302,7 +1323,16 @@
     var presenterMode = document.body && document.body.classList.contains('overlay-recording-presenter');
     var zoomedWidth = Math.max(240, fittedWidth * (presenterMode ? 1 : stageZoom));
     var zoomedHeight = zoomedWidth * 9 / 16;
-    return '.overlay-stage{width:' + Math.round(zoomedWidth) + 'px;height:' + Math.round(zoomedHeight) + 'px;}';
+    var contentScale = Math.max(0.44, Math.min(1.08, zoomedWidth / 1600));
+    var fontSize = Math.round(16 * contentScale * 1000) / 1000;
+    return [
+      '.overlay-stage{',
+      'width:' + Math.round(zoomedWidth) + 'px;',
+      'height:' + Math.round(zoomedHeight) + 'px;',
+      'font-size:' + fontSize + 'px;',
+      '--overlay-stage-scale:' + cssNumber(contentScale, 0.3, 1.2, 1) + ';',
+      '}'
+    ].join('');
   }
 
   function scheduleAutoFitAll() {
