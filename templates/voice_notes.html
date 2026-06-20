@@ -177,6 +177,21 @@
         </div>
       </section>
     </section>
+    <div class="voice-confirm-overlay" id="voice-confirm-modal" aria-hidden="true" hidden>
+      <div class="voice-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="voice-confirm-title">
+        <div class="voice-confirm-head">
+          <h2 id="voice-confirm-title">Delete Voice Note</h2>
+          <button type="button" class="voice-confirm-close" id="voice-confirm-close" aria-label="Close confirmation dialog">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+          </button>
+        </div>
+        <p id="voice-confirm-message">Delete this voice note permanently? This also removes the synced study-pack copy.</p>
+        <div class="voice-confirm-actions">
+          <button type="button" class="voice-confirm-btn" id="voice-confirm-cancel">Cancel</button>
+          <button type="button" class="voice-confirm-btn danger" id="voice-confirm-confirm">Delete Voice Note</button>
+        </div>
+      </div>
+    </div>
     <div class="voice-toast" id="voice-toast" role="status" aria-live="polite" aria-atomic="true"></div>
   </main>
   </div>

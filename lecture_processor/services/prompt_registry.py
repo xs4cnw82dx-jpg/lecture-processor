@@ -76,11 +76,9 @@ Rules:
 Optional user instruction:
 {custom_instruction}"""
 
-PROMPT_INTERVIEW_TRANSCRIPTION = """Transcribe this interview in the format: timecode (mm:ss) - speaker - caption.
-Rules:
-- Use speaker A, speaker B, etc. to identify speakers.
-- Keep timestamps in each line.
-- Write the output fully in this language: {output_language}."""
+PROMPT_INTERVIEW_TRANSCRIPTION = """Transcribe this interview, in the format: timecode (mm:ss), speaker, transcript:
+•⁠  ⁠Use ‘Onderzoeker’ and ‘Geïnterviewde’ to identify speakers
+•⁠  ⁠Put a '-' between the time, the speaker name and the transcript"""
 
 PROMPT_INTERVIEW_SUMMARY = """You are an expert interviewer analyst.
 Create a concise summary of this interview.

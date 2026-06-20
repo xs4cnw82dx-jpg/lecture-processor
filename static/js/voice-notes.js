@@ -59,12 +59,16 @@
       'voice-note-list', 'voice-detail-empty', 'voice-detail', 'voice-detail-title', 'voice-detail-meta',
       'voice-back-btn', 'voice-share-btn', 'voice-archive-btn', 'voice-delete-btn', 'voice-audio', 'voice-transcript', 'voice-notes-surface', 'voice-highlight-toolbar',
       'voice-hl-undo', 'voice-hl-redo', 'voice-hl-clear', 'voice-download-notes', 'voice-language-select',
-      'voice-custom-input', 'voice-storage-count', 'voice-storage-size', 'voice-sync-all-btn', 'voice-toast'
+      'voice-custom-input', 'voice-storage-count', 'voice-storage-size', 'voice-sync-all-btn', 'voice-toast',
+      'voice-confirm-modal', 'voice-confirm-title', 'voice-confirm-message', 'voice-confirm-close',
+      'voice-confirm-cancel', 'voice-confirm-confirm'
     ].forEach(function (id) {
       var key = id.replace(/^voice-/, '').replace(/-([a-z])/g, function (_m, chr) { return chr.toUpperCase(); });
       els[key] = $(id);
     });
   }
+
+  var confirmResolver = null;
 
   function openDb() {
     return new Promise(function (resolve, reject) {
@@ -183,6 +187,29 @@
     showToast.timer = window.setTimeout(function () {
       els.toast.classList.remove('visible');
     }, 2600);
+  }
+
+  function openConfirmModal(title, message, confirmLabel) {
+    if (!els.confirmModal) return Promise.resolve(false);
+    if (els.confirmTitle) els.confirmTitle.textContent = title || 'Confirm Action';
+    if (els.confirmMessage) els.confirmMessage.textContent = message || '';
+    if (els.confirmConfirm) els.confirmConfirm.textContent = confirmLabel || 'Confirm';
+    els.confirmModal.hidden = false;
+    els.confirmModal.setAttribute('aria-hidden', 'false');
+    if (els.confirmCancel) els.confirmCancel.focus();
+    return new Promise(function (resolve) {
+      confirmResolver = resolve;
+    });
+  }
+
+  function closeConfirmModal(confirmed) {
+    if (!els.confirmModal) return;
+    els.confirmModal.hidden = true;
+    els.confirmModal.setAttribute('aria-hidden', 'true');
+    if (confirmResolver) {
+      confirmResolver(Boolean(confirmed));
+      confirmResolver = null;
+    }
   }
 
   function hasSignedInSession() {
@@ -942,25 +969,30 @@
   function deleteVoiceNote(note) {
     var target = note || selectedNote();
     if (!target) return;
-    var confirmed = window.confirm('Delete this voice note permanently? This also removes the synced study-pack copy.');
-    if (!confirmed) return;
-    var removeLocal = function () {
-      state.notes = state.notes.filter(function (item) { return item.id !== target.id; });
-      if (state.selectedId === target.id) state.selectedId = '';
-      return Promise.all([
-        removeNoteRow(target.id).catch(function () {}),
-        removeAudioBlob(target.local_audio_id || target.id).catch(function () {})
-      ]);
-    };
-    var remoteDelete = target.study_pack_id && navigator.onLine
-      ? apiJson('/api/study-packs/' + encodeURIComponent(target.study_pack_id), { method: 'DELETE' })
-      : Promise.resolve();
-    remoteDelete.then(removeLocal).then(function () {
-      showToast('Voice note deleted.');
-      setView('library');
-      renderAll();
-    }).catch(function (error) {
-      showToast(error && error.message ? error.message : 'Could not delete voice note.', 'error');
+    openConfirmModal(
+      'Delete Voice Note',
+      'Delete this voice note permanently? This also removes the synced study-pack copy.',
+      'Delete Voice Note'
+    ).then(function (confirmed) {
+      if (!confirmed) return;
+      var removeLocal = function () {
+        state.notes = state.notes.filter(function (item) { return item.id !== target.id; });
+        if (state.selectedId === target.id) state.selectedId = '';
+        return Promise.all([
+          removeNoteRow(target.id).catch(function () {}),
+          removeAudioBlob(target.local_audio_id || target.id).catch(function () {})
+        ]);
+      };
+      var remoteDelete = target.study_pack_id && navigator.onLine
+        ? apiJson('/api/study-packs/' + encodeURIComponent(target.study_pack_id), { method: 'DELETE' })
+        : Promise.resolve();
+      remoteDelete.then(removeLocal).then(function () {
+        showToast('Voice note deleted.');
+        setView('library');
+        renderAll();
+      }).catch(function (error) {
+        showToast(error && error.message ? error.message : 'Could not delete voice note.', 'error');
+      });
     });
   }
 
@@ -1145,6 +1177,14 @@
     if (els.shareBtn) els.shareBtn.addEventListener('click', shareSelectedNote);
     if (els.archiveBtn) els.archiveBtn.addEventListener('click', function () { toggleArchiveNote(); });
     if (els.deleteBtn) els.deleteBtn.addEventListener('click', function () { deleteVoiceNote(); });
+    if (els.confirmClose) els.confirmClose.addEventListener('click', function () { closeConfirmModal(false); });
+    if (els.confirmCancel) els.confirmCancel.addEventListener('click', function () { closeConfirmModal(false); });
+    if (els.confirmConfirm) els.confirmConfirm.addEventListener('click', function () { closeConfirmModal(true); });
+    if (els.confirmModal) {
+      els.confirmModal.addEventListener('click', function (event) {
+        if (event.target === els.confirmModal) closeConfirmModal(false);
+      });
+    }
     if (els.notesSurface) {
       els.notesSurface.addEventListener('mouseup', function () { scheduleVoiceHighlight(120); });
       els.notesSurface.addEventListener('touchend', function () {
@@ -1154,6 +1194,9 @@
     document.addEventListener('selectionchange', function () {
       if (!selectionInsideVoiceNotes()) return;
       scheduleVoiceHighlight(1000);
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && els.confirmModal && !els.confirmModal.hidden) closeConfirmModal(false);
     });
     if (els.highlightToolbar) {
       els.highlightToolbar.addEventListener('click', function (event) {

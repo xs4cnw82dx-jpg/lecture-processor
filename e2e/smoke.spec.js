@@ -107,6 +107,66 @@ test('video overlay builder creates tables and previews animations', async ({ pa
   expect(recordButtonStyle.alignItems).toBe('center');
   expect(recordButtonStyle.justifyContent).toBe('center');
 
+  await page.evaluate(() => {
+    let micCalls = 0;
+    let stoppedTracks = 0;
+    window.__overlayMicProbe = {
+      calls: () => micCalls,
+      stopped: () => stoppedTracks
+    };
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: async () => {
+          micCalls += 1;
+          return {
+            getTracks: () => [{ stop: () => { stoppedTracks += 1; } }]
+          };
+        }
+      }
+    });
+    class FakeAudioContext {
+      constructor() {
+        this.state = 'running';
+      }
+
+      createAnalyser() {
+        return {
+          fftSize: 512,
+          getByteTimeDomainData(data) {
+            for (let index = 0; index < data.length; index += 1) {
+              data[index] = index % 8 === 0 ? 174 : 128;
+            }
+          }
+        };
+      }
+
+      createMediaStreamSource() {
+        return {
+          connect() {},
+          disconnect() {}
+        };
+      }
+
+      close() {
+        return Promise.resolve();
+      }
+
+      resume() {
+        return Promise.resolve();
+      }
+    }
+    window.AudioContext = FakeAudioContext;
+    window.webkitAudioContext = FakeAudioContext;
+  });
+  await page.locator('#overlay-record-voice').check();
+  await expect(page.locator('.overlay-recorder-visual')).toHaveClass(/is-live/);
+  await expect(page.locator('#overlay-recording-status')).toContainText('Microphone test active.');
+  await expect.poll(async () => page.evaluate(() => window.__overlayMicProbe.calls())).toBe(1);
+  await page.locator('#overlay-record-voice').uncheck();
+  await expect(page.locator('.overlay-recorder-visual')).not.toHaveClass(/is-live/);
+  await expect.poll(async () => page.evaluate(() => window.__overlayMicProbe.stopped())).toBe(1);
+
   const defaultStageMetrics = await page.evaluate(() => {
     const frame = document.querySelector('.overlay-stage-frame');
     const stage = document.getElementById('overlay-stage');
@@ -342,6 +402,16 @@ test('video overlay recording switches into clean presenter mode', async ({ page
 
   await expect(page.locator('body')).not.toHaveClass(/overlay-recording-presenter/);
   await expect(page.locator('#overlay-recording-status')).toContainText('Recording ready. Download started.');
+});
+
+test('voice notes ships a native delete confirmation dialog', async ({ page }) => {
+  await page.goto('/voice-notes');
+
+  const confirmDialog = page.locator('#voice-confirm-modal');
+  await expect(confirmDialog).toBeHidden();
+  await expect(page.locator('#voice-confirm-title')).toHaveText('Delete Voice Note');
+  await expect(page.locator('#voice-confirm-confirm')).toHaveText('Delete Voice Note');
+  await expect(page.locator('#voice-confirm-cancel')).toHaveText('Cancel');
 });
 
 test('lecture notes audio disclosures toggle open and closed', async ({ page }) => {
