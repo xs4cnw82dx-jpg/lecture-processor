@@ -159,6 +159,16 @@ test('video overlay builder creates tables and previews animations', async ({ pa
   await expect(page.locator('#overlay-inspector')).toContainText('5 x 3');
   await expect(page.locator('.overlay-stage-item.is-selected .overlay-table tr')).toHaveCount(5);
   await expect(page.locator('.overlay-stage-item.is-selected .overlay-table tr:first-child th')).toHaveCount(3);
+  await expect.poll(async () => page.locator('.overlay-stage-item.is-selected').evaluate((node) => {
+    const table = node.querySelector('.overlay-table');
+    const body = node.querySelector('.overlay-stage-item-body');
+    const tableRect = table.getBoundingClientRect();
+    const bodyRect = body.getBoundingClientRect();
+    return tableRect.right <= bodyRect.right + 1
+      && tableRect.bottom <= bodyRect.bottom + 1
+      && node.scrollWidth <= node.clientWidth + 2
+      && node.scrollHeight <= node.clientHeight + 2;
+  })).toBeTruthy();
 
   await page.locator('#overlay-add-shape').click();
   const selectedShape = page.locator('.overlay-stage-item.is-selected');
@@ -228,6 +238,19 @@ test('video overlay builder creates tables and previews animations', async ({ pa
   await edgeSelect.locator('.app-select-item', { hasText: 'Glass edge' }).click();
   await expect(selectedImage).toHaveClass(/overlay-image-edge-glass/);
   await expect(page.locator('#overlay-inspector')).not.toContainText('Fit to content');
+  await expect(page.locator('#overlay-inspector')).toContainText('Disabled for glass edge');
+  const glassChrome = await selectedImage.evaluate((node) => {
+    const styles = window.getComputedStyle(node);
+    const beforeStyles = window.getComputedStyle(node, '::before');
+    return {
+      accent: styles.getPropertyValue('--overlay-accent').trim(),
+      borderColor: styles.borderColor,
+      beforeDisplay: beforeStyles.display
+    };
+  });
+  expect(glassChrome.beforeDisplay).toBe('none');
+  expect(glassChrome.accent).toContain('148, 163, 184');
+  expect(glassChrome.borderColor).not.toContain('249, 115, 22');
 
   await page.locator('#overlay-stage').click({ position: { x: stageBox.width - 8, y: stageBox.height - 8 } });
   await page.locator('#overlay-inspector [data-slide-field="duration"]').fill('1');
@@ -290,6 +313,11 @@ test('video overlay recording switches into clean presenter mode', async ({ page
   });
 
   await page.locator('#overlay-add-text').click();
+  const editorTitleRatio = await page.evaluate(() => {
+    const stage = document.getElementById('overlay-stage').getBoundingClientRect();
+    const title = document.querySelector('.overlay-card-title');
+    return parseFloat(window.getComputedStyle(title).fontSize) / stage.width;
+  });
   await page.locator('#overlay-record-screen').click();
 
   await expect(page.locator('body')).toHaveClass(/overlay-recording-presenter/);
@@ -299,13 +327,16 @@ test('video overlay recording switches into clean presenter mode', async ({ page
   await expect(page.locator('.overlay-preview-meter')).toBeHidden();
   const presenterMetrics = await page.evaluate(() => {
     const stage = document.getElementById('overlay-stage').getBoundingClientRect();
+    const title = document.querySelector('.overlay-card-title');
     return {
       stageIsLarge: stage.width > window.innerWidth * 0.82,
-      stageFitsViewport: stage.bottom <= window.innerHeight + 1
+      stageFitsViewport: stage.bottom <= window.innerHeight + 1,
+      titleRatio: parseFloat(window.getComputedStyle(title).fontSize) / stage.width
     };
   });
   expect(presenterMetrics.stageIsLarge).toBeTruthy();
   expect(presenterMetrics.stageFitsViewport).toBeTruthy();
+  expect(Math.abs(presenterMetrics.titleRatio - editorTitleRatio)).toBeLessThan(0.004);
 
   await page.keyboard.press('Escape');
 
