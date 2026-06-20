@@ -111,6 +111,7 @@
       h: clampNumber(source.h, 8, 92, type === 'table' ? 28 : 24),
       delay: clampNumber(source.delay, 0, 600, 0),
       duration: clampNumber(source.duration, 0.1, 10, 0.55),
+      rotation: clampNumber(source.rotation, -180, 180, 0),
       animation: normalizeAnimation(source.animation),
       title: normalizeText(source.title, type === 'table' ? 'Table' : (type === 'shape' ? 'Shape' : (type === 'arrow' ? 'Arrow' : 'Overlay')))
     });
