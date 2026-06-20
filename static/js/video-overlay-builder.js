@@ -49,6 +49,7 @@
     projectTitle: document.getElementById('overlay-project-title'),
     projectList: document.getElementById('overlay-project-list'),
     stageFrame: document.querySelector('.overlay-stage-frame'),
+    stagePanel: document.querySelector('.overlay-stage-panel'),
     stage: document.getElementById('overlay-stage'),
     stageLabel: document.getElementById('overlay-stage-label'),
     previewProgress: document.getElementById('overlay-preview-progress'),
@@ -107,6 +108,7 @@
   var openSelectRoot = null;
   var stageZoom = 1;
   var statusTimer = null;
+  var recordingStatusTimer = null;
   var draggedSlideId = '';
   var suppressSlideClick = false;
 
@@ -117,7 +119,8 @@
     screenStream: null,
     micStream: null,
     combinedStream: null,
-    lastBlob: null
+    lastBlob: null,
+    fullscreenRequested: false
   };
 
   function uid(prefix) {
@@ -202,12 +205,15 @@
       result.src = String(result.src || '');
       result.alt = String(result.alt || 'Overlay image');
       result.fit = result.fit === 'contain' ? 'contain' : 'cover';
+      result.edge = result.edge === 'glass' ? 'glass' : 'accent';
     }
     if (result.type === 'shape') {
       result.shape = SHAPE_OPTIONS.some(function (entry) { return entry.value === result.shape; }) ? result.shape : 'rounded';
+      result.rotation = utils.clampNumber(result.rotation, -180, 180, 0);
     }
     if (result.type === 'arrow') {
       result.arrow = ARROW_OPTIONS.some(function (entry) { return entry.value === result.arrow; }) ? result.arrow : 'arrow';
+      result.rotation = utils.clampNumber(result.rotation, -180, 180, 0);
     }
     return result;
   }
@@ -367,8 +373,19 @@
     }
   }
 
-  function setRecordingStatus(message) {
-    if (refs.recordingStatus) refs.recordingStatus.textContent = String(message || '');
+  function setRecordingStatus(message, autoClearMs) {
+    if (!refs.recordingStatus) return;
+    if (recordingStatusTimer) {
+      window.clearTimeout(recordingStatusTimer);
+      recordingStatusTimer = null;
+    }
+    refs.recordingStatus.textContent = String(message || '');
+    if (message && autoClearMs) {
+      recordingStatusTimer = window.setTimeout(function () {
+        recordingStatusTimer = null;
+        if (refs.recordingStatus.textContent === String(message || '')) refs.recordingStatus.textContent = '';
+      }, autoClearMs);
+    }
   }
 
   function getActiveSlide() {
@@ -537,6 +554,7 @@
       'overlay-type-' + item.type,
       'overlay-color-' + color.id,
       item.type === 'image' ? 'overlay-image-fit-' + (item.fit || 'contain') : '',
+      item.type === 'image' ? 'overlay-image-edge-' + (item.edge || 'accent') : '',
       item.id === selectedItemId ? 'is-selected' : ''
     ].filter(Boolean).join(' ');
     node.dataset.itemId = item.id;
@@ -767,12 +785,31 @@
 
     var actions = document.createElement('div');
     actions.className = 'overlay-action-row';
-    actions.innerHTML = '<button type="button" class="secondary-btn" data-fit-item>Fit to content</button><button type="button" class="secondary-btn" data-duplicate-item>Duplicate</button><button type="button" class="ghost-btn danger-text" data-delete-selected>Delete</button>';
-    actions.querySelector('[data-fit-item]').addEventListener('click', function () {
-      fitItemToContent(item, true);
-      renderInspector();
-      queuePersist();
-    });
+    if (['shape', 'arrow', 'image'].indexOf(item.type) < 0) {
+      var fit = document.createElement('button');
+      fit.type = 'button';
+      fit.className = 'secondary-btn';
+      fit.dataset.fitItem = '';
+      fit.textContent = 'Fit to content';
+      fit.addEventListener('click', function () {
+        fitItemToContent(item, true);
+        renderInspector();
+        queuePersist();
+      });
+      actions.appendChild(fit);
+    }
+    var duplicate = document.createElement('button');
+    duplicate.type = 'button';
+    duplicate.className = 'secondary-btn';
+    duplicate.dataset.duplicateItem = '';
+    duplicate.textContent = 'Duplicate';
+    actions.appendChild(duplicate);
+    var remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'ghost-btn danger-text';
+    remove.dataset.deleteSelected = '';
+    remove.textContent = 'Delete';
+    actions.appendChild(remove);
     actions.querySelector('[data-duplicate-item]').addEventListener('click', function () {
       duplicateItem(item.id);
     });
@@ -819,6 +856,16 @@
     }), function (value) {
       setItemField(item, 'color', value);
     }));
+    if (item.type === 'shape' || item.type === 'arrow') {
+      var rotation = document.createElement('label');
+      rotation.className = 'overlay-field';
+      rotation.innerHTML = '<span>Rotation</span><input type="number" min="-180" max="180" step="1" data-item-field="rotation">';
+      var rotationInput = rotation.querySelector('[data-item-field="rotation"]');
+      rotationInput.value = item.rotation || 0;
+      rotationInput.addEventListener('input', function () { setItemField(item, 'rotation', rotationInput.value); });
+      rotationInput.addEventListener('change', function () { setItemField(item, 'rotation', rotationInput.value); });
+      wrap.appendChild(rotation);
+    }
     return wrap;
   }
 
@@ -914,6 +961,14 @@
       { value: 'cover', label: 'Cover' }
     ], function (value) {
       item.fit = value === 'cover' ? 'cover' : 'contain';
+      renderStage();
+      queuePersist();
+    }));
+    wrap.appendChild(createCustomSelect('Edge', item.edge || 'accent', [
+      { value: 'accent', label: 'Accent edge' },
+      { value: 'glass', label: 'Glass edge' }
+    ], function (value) {
+      item.edge = value === 'glass' ? 'glass' : 'accent';
       renderStage();
       queuePersist();
     }));
@@ -1136,6 +1191,8 @@
     } else if (field === 'color') {
       item.color = COLORS.some(function (entry) { return entry.id === value; }) ? value : item.color;
       refreshInspector = true;
+    } else if (field === 'rotation') {
+      item.rotation = Math.round(utils.clampNumber(value, -180, 180, item.rotation || 0));
     } else {
       item[field] = String(value || '').trim() || item[field];
     }
@@ -1230,6 +1287,7 @@
         'width:' + cssPercent(item.w, 8, 96, 42) + ';',
         'height:' + cssPercent(item.h, 8, 92, 24) + ';',
         '--motion-duration:' + cssSeconds(item.duration, 0.1, 10, 0.55) + ';',
+        '--overlay-rotation:' + cssNumber(item.rotation, -180, 180, 0) + 'deg;',
         '}'
       ].join(''));
     });
@@ -1241,7 +1299,8 @@
     var availableWidth = Math.max(240, frameRect.width - 4);
     var availableHeight = Math.max(160, frameRect.height - 4);
     var fittedWidth = Math.min(availableWidth, availableHeight * (16 / 9));
-    var zoomedWidth = Math.max(240, fittedWidth * stageZoom);
+    var presenterMode = document.body && document.body.classList.contains('overlay-recording-presenter');
+    var zoomedWidth = Math.max(240, fittedWidth * (presenterMode ? 1 : stageZoom));
     var zoomedHeight = zoomedWidth * 9 / 16;
     return '.overlay-stage{width:' + Math.round(zoomedWidth) + 'px;height:' + Math.round(zoomedHeight) + 'px;}';
   }
@@ -1892,6 +1951,11 @@
       return;
     }
     if (isTypingTarget(event.target)) return;
+    if (event.key === 'Escape' && recording.state === 'recording') {
+      event.preventDefault();
+      stopRecording(true);
+      return;
+    }
     if ((event.key === 'Backspace' || event.key === 'Delete') && selectedItemId) {
       event.preventDefault();
       deleteItem(selectedItemId);
@@ -1924,11 +1988,12 @@
   function startRecording() {
     if (recording.state === 'recording') return;
     if (!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) || !window.MediaRecorder) {
-      setRecordingStatus('Screen recording is not supported in this browser.');
+      setRecordingStatus('Screen recording is not supported in this browser.', 10000);
       return;
     }
     recording.chunks = [];
     recording.lastBlob = null;
+    enterRecordingPresentationMode();
     setRecordingStatus('Choose a screen, window, or tab to record.');
     var displayOptions = {
       video: { frameRate: { ideal: 30, max: 60 } },
@@ -1986,8 +2051,10 @@
     }).catch(function (error) {
       stopStreams();
       recording.state = 'idle';
+      document.body.classList.remove('overlay-recording-active');
+      exitRecordingPresentationMode();
       updateRecordingButtons();
-      setRecordingStatus(error && error.name === 'NotAllowedError' ? 'Recording permission was cancelled.' : 'Could not start screen recording.');
+      setRecordingStatus(error && error.name === 'NotAllowedError' ? 'Recording permission was cancelled.' : 'Could not start screen recording.', 10000);
     });
   }
 
@@ -2012,14 +2079,37 @@
     recording.state = 'idle';
     stopStreams();
     document.body.classList.remove('overlay-recording-active');
+    exitRecordingPresentationMode();
     updateRecordingButtons();
     updateSlideNavigation();
     if (!recording.lastBlob) {
-      setRecordingStatus('Recording stopped, but no video data was captured.');
+      setRecordingStatus('Recording stopped, but no video data was captured.', 10000);
       return;
     }
-    setRecordingStatus('Recording ready. Download started.');
+    setRecordingStatus('Recording ready. Download started.', 15000);
     if (download !== false) downloadRecordingBlob(recording.lastBlob);
+  }
+
+  function enterRecordingPresentationMode() {
+    selectedItemId = '';
+    if (document.body) document.body.classList.add('overlay-recording-presenter');
+    renderStageSelectionOnly();
+    syncDynamicRules(getActiveSlide());
+    var target = refs.stagePanel || document.documentElement;
+    if (!target || !target.requestFullscreen || document.fullscreenElement) return;
+    recording.fullscreenRequested = true;
+    target.requestFullscreen().catch(function () {
+      recording.fullscreenRequested = false;
+    });
+  }
+
+  function exitRecordingPresentationMode() {
+    if (document.body) document.body.classList.remove('overlay-recording-presenter');
+    syncDynamicRules(getActiveSlide());
+    if (recording.fullscreenRequested && document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(function () {});
+    }
+    recording.fullscreenRequested = false;
   }
 
   function stopStreams() {
@@ -2099,11 +2189,11 @@
 
   function arrowSvg(kind) {
     var safeKind = ARROW_OPTIONS.some(function (entry) { return entry.value === kind; }) ? kind : 'arrow';
-    var marker = safeKind === 'line' ? '' : '<polygon class="overlay-arrow-head" points="180,60 151,45 159,60 151,75"></polygon>';
+    var head = safeKind === 'line' ? '' : '<path class="overlay-arrow-head" d="M148 39 L174 60 L148 81"></path>';
     var path = safeKind === 'curve'
-      ? '<path class="overlay-arrow-path" d="M20 128 C48 34, 124 34, 168 60"></path>'
-      : '<path class="overlay-arrow-path" d="M22 120 L166 60"></path>';
-    return '<svg class="overlay-arrow-svg" viewBox="0 0 190 150" aria-hidden="true">' + path + marker + '</svg>';
+      ? '<path class="overlay-arrow-path" d="M20 100 C56 30, 122 24, 174 60"></path>'
+      : '<path class="overlay-arrow-path" d="M18 60 L174 60"></path>';
+    return '<svg class="overlay-arrow-svg" viewBox="0 0 190 120" aria-hidden="true">' + path + head + '</svg>';
   }
 
   function wireEvents() {

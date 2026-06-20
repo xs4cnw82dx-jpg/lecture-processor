@@ -120,6 +120,7 @@ test('video overlay builder creates tables and previews animations', async ({ pa
   });
   expect(defaultStageMetrics.fitsVertically).toBeTruthy();
   expect(defaultStageMetrics.hasVerticalScroll).toBeFalsy();
+  await expect(page.locator('.overlay-preview-meter')).toBeHidden();
 
   await page.locator('#overlay-zoom-input').fill('150');
   await expect(page.locator('#overlay-zoom-input')).toHaveValue('150');
@@ -163,6 +164,25 @@ test('video overlay builder creates tables and previews animations', async ({ pa
   const selectedShape = page.locator('.overlay-stage-item.is-selected');
   await expect(selectedShape.locator('.overlay-shape')).toBeVisible();
   await expect(selectedShape.locator('.overlay-stage-item-meta')).toContainText(/Scale/);
+  await expect(page.locator('#overlay-inspector')).not.toContainText('Fit to content');
+  await page.locator('#overlay-inspector [data-item-field="rotation"]').fill('35');
+  await expect(page.locator('#overlay-inspector [data-item-field="rotation"]')).toHaveValue('35');
+  const shapeChrome = await selectedShape.evaluate((node) => {
+    const styles = window.getComputedStyle(node);
+    const bodyStyles = window.getComputedStyle(node.querySelector('.overlay-stage-item-body'));
+    return {
+      background: styles.backgroundColor,
+      borderColor: styles.borderColor,
+      boxShadow: styles.boxShadow,
+      rotation: styles.getPropertyValue('--overlay-rotation').trim(),
+      transform: bodyStyles.transform
+    };
+  });
+  expect(shapeChrome.background).toBe('rgba(0, 0, 0, 0)');
+  expect(shapeChrome.borderColor).toBe('rgba(0, 0, 0, 0)');
+  expect(shapeChrome.boxShadow).toBe('none');
+  expect(shapeChrome.rotation).toBe('35deg');
+  expect(shapeChrome.transform).not.toBe('none');
 
   const stageBox = await page.locator('#overlay-stage').boundingBox();
   const shapeBox = await selectedShape.boundingBox();
@@ -183,6 +203,31 @@ test('video overlay builder creates tables and previews animations', async ({ pa
 
   await page.locator('#overlay-add-arrow').click();
   await expect(page.locator('.overlay-stage-item.is-selected .overlay-arrow-svg')).toBeVisible();
+  await page.locator('#overlay-inspector [data-item-field="rotation"]').fill('-24');
+  const arrowPaint = await page.locator('.overlay-stage-item.is-selected .overlay-arrow-head').evaluate((node) => {
+    const styles = window.getComputedStyle(node);
+    return {
+      fill: styles.fill,
+      stroke: styles.stroke,
+      rotation: window.getComputedStyle(node.closest('.overlay-stage-item')).getPropertyValue('--overlay-rotation').trim()
+    };
+  });
+  expect(arrowPaint.fill).toBe('none');
+  expect(arrowPaint.stroke).not.toBe('none');
+  expect(arrowPaint.rotation).toBe('-24deg');
+
+  await page.locator('#overlay-image-input').setInputFiles({
+    name: 'tiny.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=', 'base64')
+  });
+  const selectedImage = page.locator('.overlay-stage-item.is-selected');
+  await expect(selectedImage.locator('img')).toBeVisible();
+  const edgeSelect = page.locator('#overlay-inspector .overlay-field').filter({ hasText: /^Edge/ });
+  await edgeSelect.locator('.app-select-button').click();
+  await edgeSelect.locator('.app-select-item', { hasText: 'Glass edge' }).click();
+  await expect(selectedImage).toHaveClass(/overlay-image-edge-glass/);
+  await expect(page.locator('#overlay-inspector')).not.toContainText('Fit to content');
 
   await page.locator('#overlay-stage').click({ position: { x: stageBox.width - 8, y: stageBox.height - 8 } });
   await page.locator('#overlay-inspector [data-slide-field="duration"]').fill('1');
@@ -190,9 +235,82 @@ test('video overlay builder creates tables and previews animations', async ({ pa
   await page.getByRole('button', { name: 'Preview Slide' }).click();
   await expect(page.locator('#overlay-stage')).toHaveClass(/is-previewing/);
   await expect(page.locator('.overlay-stage-item-meta').first()).toBeHidden();
+  await expect(page.locator('.overlay-resize-handle').first()).toBeHidden();
+  await expect(page.locator('.overlay-preview-meter')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Stop Preview' })).toBeEnabled();
   await expect(page.locator('#overlay-builder-status')).toContainText('Preview complete.', { timeout: 2500 });
   await expect(page.locator('#overlay-builder-status')).toHaveText('', { timeout: 3500 });
+});
+
+test('video overlay recording switches into clean presenter mode', async ({ page }) => {
+  await page.goto('/video-overlay-builder');
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getDisplayMedia: async () => new MediaStream(),
+        getUserMedia: async () => new MediaStream()
+      }
+    });
+    window.MediaRecorder = class FakeMediaRecorder extends EventTarget {
+      constructor(stream, options = {}) {
+        super();
+        this.stream = stream;
+        this.mimeType = options.mimeType || 'video/webm';
+      }
+
+      start() {}
+
+      stop() {
+        const dataEvent = new Event('dataavailable');
+        Object.defineProperty(dataEvent, 'data', {
+          value: new Blob(['recorded'], { type: this.mimeType })
+        });
+        this.dispatchEvent(dataEvent);
+        this.dispatchEvent(new Event('stop'));
+      }
+
+      static isTypeSupported() {
+        return true;
+      }
+    };
+    window.__overlayFullscreenElement = null;
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      get() {
+        return window.__overlayFullscreenElement;
+      }
+    });
+    Element.prototype.requestFullscreen = async function requestFullscreen() {
+      window.__overlayFullscreenElement = this;
+    };
+    document.exitFullscreen = async () => {
+      window.__overlayFullscreenElement = null;
+    };
+  });
+
+  await page.locator('#overlay-add-text').click();
+  await page.locator('#overlay-record-screen').click();
+
+  await expect(page.locator('body')).toHaveClass(/overlay-recording-presenter/);
+  await expect(page.locator('.overlay-builder-topbar')).toBeHidden();
+  await expect(page.locator('.overlay-builder-sidebar')).toBeHidden();
+  await expect(page.locator('.overlay-resize-handle').first()).toBeHidden();
+  await expect(page.locator('.overlay-preview-meter')).toBeHidden();
+  const presenterMetrics = await page.evaluate(() => {
+    const stage = document.getElementById('overlay-stage').getBoundingClientRect();
+    return {
+      stageIsLarge: stage.width > window.innerWidth * 0.82,
+      stageFitsViewport: stage.bottom <= window.innerHeight + 1
+    };
+  });
+  expect(presenterMetrics.stageIsLarge).toBeTruthy();
+  expect(presenterMetrics.stageFitsViewport).toBeTruthy();
+
+  await page.keyboard.press('Escape');
+
+  await expect(page.locator('body')).not.toHaveClass(/overlay-recording-presenter/);
+  await expect(page.locator('#overlay-recording-status')).toContainText('Recording ready. Download started.');
 });
 
 test('lecture notes audio disclosures toggle open and closed', async ({ page }) => {
