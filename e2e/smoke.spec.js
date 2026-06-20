@@ -235,6 +235,27 @@ test('video overlay builder creates tables and previews animations', async ({ pa
   await expect(selectedShape.locator('.overlay-shape')).toBeVisible();
   await expect(selectedShape.locator('.overlay-stage-item-meta')).toContainText(/Scale/);
   await expect(page.locator('#overlay-inspector')).not.toContainText('Fit to content');
+  await page.getByRole('button', { name: 'Circle' }).click();
+  await expect(selectedShape.locator('.overlay-shape-circle')).toBeVisible();
+  const circleMetrics = await selectedShape.locator('.overlay-shape').evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    return { width: rect.width, height: rect.height };
+  });
+  expect(Math.abs(circleMetrics.width - circleMetrics.height)).toBeLessThan(2);
+  await page.locator('#overlay-inspector [data-item-field="w"]').fill('50');
+  await page.locator('#overlay-inspector [data-item-field="h"]').fill('14');
+  const stretchedCircle = await selectedShape.locator('.overlay-shape').evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    return { width: rect.width, height: rect.height, area: rect.width * rect.height };
+  });
+  expect(stretchedCircle.width).toBeGreaterThan(stretchedCircle.height * 2);
+  await page.getByRole('button', { name: 'Restore proportions' }).click();
+  const restoredCircle = await selectedShape.locator('.overlay-shape').evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    return { width: rect.width, height: rect.height, area: rect.width * rect.height };
+  });
+  expect(Math.abs(restoredCircle.width - restoredCircle.height)).toBeLessThan(2);
+  expect(Math.abs(restoredCircle.area - stretchedCircle.area) / stretchedCircle.area).toBeLessThan(0.08);
   await page.locator('#overlay-inspector [data-item-field="rotation"]').fill('35');
   await expect(page.locator('#overlay-inspector [data-item-field="rotation"]')).toHaveValue('35');
   const shapeChrome = await selectedShape.evaluate((node) => {
