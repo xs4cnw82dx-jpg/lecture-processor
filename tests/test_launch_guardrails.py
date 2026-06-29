@@ -1666,8 +1666,15 @@ def test_get_study_progress_pack_returns_only_requested_pack_state(client, monke
                 exists=True,
             )
 
+    class _FakePackDoc:
+        exists = True
+
+        def to_dict(self):
+            return {"uid": "u-pack-progress", "study_pack_id": "pack-42"}
+
     runtime = get_runtime(client.application)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-pack-progress", "email": "user@gmail.com"})
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _FakePackDoc())
     monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: _FakeProgressDoc(), raising=False)
     monkeypatch.setattr(runtime, "get_study_card_state_doc", lambda _uid, pack_id: _FakeCardStateDoc(pack_id), raising=False)
 
@@ -1728,12 +1735,19 @@ def test_update_study_progress_empty_card_state_payload_does_not_delete_existing
             self.delete_calls += 1
             return None
 
+    class _FakePackDoc:
+        exists = True
+
+        def to_dict(self):
+            return {"uid": "u10", "study_pack_id": "pack-1"}
+
     fake_progress_doc = _FakeProgressDoc()
     fake_card_doc = _FakeCardStateDoc()
     runtime = get_runtime(client.application)
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u10", "email": "user@gmail.com"})
     monkeypatch.setattr(runtime, "db", object(), raising=False)
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _FakePackDoc())
     monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: fake_progress_doc, raising=False)
     monkeypatch.setattr(runtime, "get_study_card_state_doc", lambda _uid, _pack_id: fake_card_doc, raising=False)
 
@@ -1747,6 +1761,45 @@ def test_update_study_progress_empty_card_state_payload_does_not_delete_existing
     assert fake_progress_doc.set_calls, "progress doc should still be updated"
     assert fake_card_doc.delete_calls == 0
     assert fake_card_doc.set_calls == []
+
+
+def test_update_study_progress_rejects_unknown_pack_without_writes(client, monkeypatch):
+    class _FakeSnapshot:
+        exists = False
+
+        def to_dict(self):
+            return {}
+
+    class _FakeProgressDoc:
+        def __init__(self):
+            self.set_calls = []
+
+        def get(self):
+            return _FakeSnapshot()
+
+        def set(self, payload, merge=False):
+            self.set_calls.append((payload, merge))
+
+    class _MissingPackDoc:
+        exists = False
+
+    fake_progress_doc = _FakeProgressDoc()
+    runtime = get_runtime(client.application)
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-progress-unknown", "email": "user@gmail.com"})
+    monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(runtime, "db", object(), raising=False)
+    monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: fake_progress_doc, raising=False)
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _MissingPackDoc())
+
+    response = client.put(
+        "/api/study-progress",
+        json={"card_states": {"missing-pack": {"fc_1": {"seen": 1}}}},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 404
+    assert fake_progress_doc.set_calls == []
 
 
 def test_update_study_progress_invalid_card_states_returns_400_without_writes(client, monkeypatch):
@@ -1967,11 +2020,18 @@ def test_get_study_progress_summary_uses_compact_card_state_summaries(client, mo
                 },
             }
 
+    class _FakePackDoc:
+        exists = True
+
+        def to_dict(self):
+            return {"uid": "compact-u", "study_pack_id": "pack-1"}
+
     runtime = get_runtime(client.application)
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "compact-u", "email": "user@gmail.com"})
     monkeypatch.setattr(runtime, "db", object(), raising=False)
     monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: _FakeProgressDoc(), raising=False)
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _FakePackDoc())
     monkeypatch.setattr(
         core.study_repo,
         "list_study_card_state_summaries_by_uid",
@@ -1990,6 +2050,43 @@ def test_get_study_progress_summary_uses_compact_card_state_summaries(client, mo
     payload = response.get_json()
     assert payload["daily_goal"] == 30
     assert payload["due_today"] == 2
+
+
+def test_get_study_progress_summary_uses_rollup_without_scanning_pack_docs(client, monkeypatch):
+    class _FakeSnapshot:
+        def __init__(self, payload=None, exists=True):
+            self._payload = payload or {}
+            self.exists = exists
+
+        def to_dict(self):
+            return dict(self._payload)
+
+    class _FakeProgressDoc:
+        def get(self):
+            return _FakeSnapshot(
+                {
+                    "daily_goal": 30,
+                    "timezone": "UTC",
+                    "card_state_due_by_date": {
+                        "2000-01-01": 3,
+                        "2099-01-01": 10,
+                    },
+                }
+            )
+
+    runtime = get_runtime(client.application)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "rollup-u", "email": "user@gmail.com"})
+    monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: _FakeProgressDoc(), raising=False)
+    monkeypatch.setattr(
+        core.study_repo,
+        "list_study_card_state_summaries_by_uid",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("summary docs should not be scanned when rollup exists")),
+    )
+
+    response = client.get("/api/study-progress/summary", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    assert response.get_json()["due_today"] == 3
 
 
 def test_get_study_progress_summary_falls_back_for_legacy_card_state_docs(client, monkeypatch):
@@ -2022,12 +2119,19 @@ def test_get_study_progress_summary_falls_back_for_legacy_card_state_docs(client
                 }
             )
 
+    class _FakePackDoc:
+        exists = True
+
+        def to_dict(self):
+            return {"uid": "legacy-u", "study_pack_id": "pack-legacy"}
+
     runtime = get_runtime(client.application)
     loaded_pack_ids = []
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "legacy-u", "email": "user@gmail.com"})
     monkeypatch.setattr(runtime, "db", object(), raising=False)
     monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: _FakeProgressDoc(), raising=False)
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _FakePackDoc())
     monkeypatch.setattr(
         core.study_repo,
         "list_study_card_state_summaries_by_uid",
@@ -2082,8 +2186,15 @@ def test_update_study_progress_merges_cross_browser_card_states(client, monkeypa
     card_state_store = {}
     runtime = get_runtime(client.application)
 
+    class _FakePackDoc:
+        exists = True
+
+        def to_dict(self):
+            return {"uid": "u12", "study_pack_id": "pack-sync-1"}
+
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u12", "email": "user@gmail.com"})
     monkeypatch.setattr(runtime, "db", object(), raising=False)
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _FakePackDoc())
     monkeypatch.setattr(runtime, "get_study_progress_doc", lambda uid: _FakeDocRef(progress_store, uid), raising=False)
     monkeypatch.setattr(
         runtime,
@@ -2171,6 +2282,10 @@ def test_update_study_progress_merges_cross_browser_card_states(client, monkeypa
     assert saved_cards["fc_1"]["difficulty"] == "easy"
     assert saved_cards["fc_2"]["seen"] == 1
     assert card_state_store["u12:pack-sync-1"]["summary"]["due_by_date"] == {
+        "2026-02-27": 1,
+        "2026-03-01": 1,
+    }
+    assert saved_progress["card_state_due_by_date"] == {
         "2026-02-27": 1,
         "2026-03-01": 1,
     }

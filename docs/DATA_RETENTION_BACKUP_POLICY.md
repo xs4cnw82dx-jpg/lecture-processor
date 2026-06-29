@@ -31,6 +31,7 @@ This policy covers:
 
 4. Job/ops telemetry (`job_logs`, `analytics_events`, `rate_limit_logs`)
 - Retention baseline: 90 days rolling target for operational logs.
+- Enforcement: new telemetry documents include `expires_at_ts`; Firestore TTL is configured for that field in `firestore.indexes.json`.
 - Extended retention permitted for security incidents and abuse investigations.
 
 5. Temporary processing files (`uploads/` and transient processing artifacts)
@@ -100,7 +101,7 @@ This policy covers:
 
 Before public launch, complete all:
 1. Automate Firestore daily export job and document exact restore command sequence.
-2. Enforce and automate log TTL for analytics/rate-limit/job logs.
+2. Confirm Firestore TTL is enabled after deploy and backfill/delete telemetry documents created before `expires_at_ts`.
 3. Add monthly backup restore drill and sign-off checklist.
 4. Add documented incident-response owner/contact and escalation timeline.
 5. Legal review of retention windows and anonymization behavior per jurisdiction.

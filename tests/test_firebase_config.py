@@ -46,3 +46,20 @@ def test_required_firestore_composite_indexes_are_declared():
         'study_shares',
         [('owner_uid', 'ASCENDING'), ('updated_at', 'DESCENDING')],
     )
+
+
+def test_telemetry_ttl_field_overrides_are_declared():
+    config = json.loads((PROJECT_ROOT / 'firestore.indexes.json').read_text(encoding='utf-8'))
+    overrides = config.get('fieldOverrides', [])
+
+    expected = {
+        ('job_logs', 'expires_at_ts'),
+        ('analytics_events', 'expires_at_ts'),
+        ('rate_limit_logs', 'expires_at_ts'),
+    }
+    actual = {
+        (override.get('collectionGroup'), override.get('fieldPath'))
+        for override in overrides
+        if override.get('ttl') is True
+    }
+    assert expected <= actual

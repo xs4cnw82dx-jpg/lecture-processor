@@ -6,6 +6,8 @@ from lecture_processor.services import study_api_support
 
 
 UNSCHEDULED_DUE_DATE = '0001-01-01'
+CARD_STATE_DUE_ROLLUP_KEY = 'card_state_due_by_date'
+CARD_STATE_DUE_ROLLUP_UPDATED_AT_KEY = 'card_state_due_by_date_updated_at'
 
 
 def _local_today(progress_data, app_ctx):
@@ -39,6 +41,47 @@ def _card_state_summary(state, app_ctx):
     return {'due_by_date': due_by_date}
 
 
+def _sanitize_due_by_date(raw_value, app_ctx):
+    if not isinstance(raw_value, dict):
+        return {}
+    due_by_date = {}
+    for raw_due_date, raw_count in raw_value.items():
+        due_date = study_progress.sanitize_progress_date(raw_due_date, runtime=app_ctx)
+        if not due_date:
+            continue
+        count = study_progress.sanitize_int(
+            raw_count,
+            default=0,
+            min_value=0,
+            max_value=100000,
+            runtime=app_ctx,
+        )
+        if count > 0:
+            due_by_date[due_date] = due_by_date.get(due_date, 0) + count
+    return due_by_date
+
+
+def _due_by_date_from_summary(summary_payload, app_ctx):
+    if not isinstance(summary_payload, dict):
+        return {}
+    return _sanitize_due_by_date(summary_payload.get('due_by_date'), app_ctx)
+
+
+def _apply_due_by_date_delta(base, *, subtract=None, add=None):
+    next_rollup = dict(base or {})
+    for due_date, count in (subtract or {}).items():
+        next_count = max(0, int(next_rollup.get(due_date, 0) or 0) - int(count or 0))
+        if next_count:
+            next_rollup[due_date] = next_count
+        else:
+            next_rollup.pop(due_date, None)
+    for due_date, count in (add or {}).items():
+        next_count = int(count or 0)
+        if next_count > 0:
+            next_rollup[due_date] = int(next_rollup.get(due_date, 0) or 0) + next_count
+    return next_rollup
+
+
 def _due_count_from_card_state_summary(summary_payload, today_local, app_ctx):
     if not isinstance(summary_payload, dict):
         return None
@@ -60,10 +103,38 @@ def _due_count_from_card_state_summary(summary_payload, today_local, app_ctx):
     return due_today
 
 
+def _due_count_from_due_by_date(due_by_date, today_local, app_ctx):
+    due_today = 0
+    for raw_due_date, raw_count in (due_by_date or {}).items():
+        due_date = study_progress.sanitize_progress_date(raw_due_date, runtime=app_ctx)
+        if not due_date or due_date > today_local:
+            continue
+        due_today += study_progress.sanitize_int(
+            raw_count,
+            default=0,
+            min_value=0,
+            max_value=100000,
+            runtime=app_ctx,
+        )
+    return due_today
+
+
 def _summary_with_due_count(progress_data, due_today, app_ctx):
     summary = study_progress.compute_study_progress_summary(progress_data, [], runtime=app_ctx)
     summary['due_today'] = max(0, int(due_today or 0))
     return summary
+
+
+def _get_owned_pack_or_response(app_ctx, uid, pack_id):
+    pack_result, error_response, status = study_api_support.get_owned_study_pack(app_ctx, uid, pack_id)
+    if error_response is not None:
+        return None, error_response, status
+    return pack_result, None, None
+
+
+def _pack_is_owned(app_ctx, uid, pack_id):
+    pack_result, _error_response, _status = _get_owned_pack_or_response(app_ctx, uid, pack_id)
+    return pack_result is not None
 
 
 def get_study_progress(app_ctx, request):
@@ -87,6 +158,8 @@ def get_study_progress(app_ctx, request):
             data = doc.to_dict() or {}
             pack_id = study_progress.sanitize_pack_id(data.get('pack_id', ''), runtime=app_ctx)
             if not pack_id:
+                continue
+            if not _pack_is_owned(app_ctx, uid, pack_id):
                 continue
             state_map = study_progress.sanitize_card_state_map(data.get('state', {}), runtime=app_ctx)
             card_states[pack_id] = state_map
@@ -113,6 +186,9 @@ def get_study_progress_pack(app_ctx, request, pack_id):
     if not safe_pack_id:
         return app_ctx.jsonify({'error': 'Invalid pack id'}), 400
     try:
+        _pack_result, error_response, status = _get_owned_pack_or_response(app_ctx, uid, safe_pack_id)
+        if error_response is not None:
+            return error_response, status
         progress_doc = app_ctx.get_study_progress_doc(uid).get()
         progress_data = progress_doc.to_dict() if progress_doc.exists else {}
         card_doc = app_ctx.get_study_card_state_doc(uid, safe_pack_id).get()
@@ -184,9 +260,17 @@ def update_study_progress(app_ctx, request):
                 if pack_id:
                     sanitized_remove_pack_ids.append(pack_id)
         remove_pack_id_set = set(sanitized_remove_pack_ids)
+        owned_pack_cache = {}
+        for pack_id in sorted(remove_pack_id_set):
+            pack_result, error_response, status = _get_owned_pack_or_response(app_ctx, uid, pack_id)
+            if error_response is not None:
+                return error_response, status
+            owned_pack_cache[pack_id] = pack_result
 
         card_states = payload.get('card_states')
         validated_card_state_writes = []
+        due_rollup_changed = bool(remove_pack_id_set)
+        due_rollup = _sanitize_due_by_date(existing_progress_data.get(CARD_STATE_DUE_ROLLUP_KEY), app_ctx)
         if card_states is not None:
             if not isinstance(card_states, dict):
                 return app_ctx.jsonify({'error': 'card_states must be an object'}), 400
@@ -197,6 +281,11 @@ def update_study_progress(app_ctx, request):
                 pack_id = study_progress.sanitize_pack_id(raw_pack_id, runtime=app_ctx)
                 if not pack_id:
                     continue
+                if pack_id not in owned_pack_cache:
+                    pack_result, error_response, status = _get_owned_pack_or_response(app_ctx, uid, pack_id)
+                    if error_response is not None:
+                        return error_response, status
+                    owned_pack_cache[pack_id] = pack_result
                 cleaned_state = study_progress.sanitize_card_state_map(raw_state, runtime=app_ctx)
                 processed += 1
                 if not cleaned_state or pack_id in remove_pack_id_set:
@@ -204,17 +293,29 @@ def update_study_progress(app_ctx, request):
                 doc_ref = app_ctx.get_study_card_state_doc(uid, pack_id)
                 existing_pack_doc = doc_ref.get()
                 existing_pack_state = {}
+                existing_due_by_date = {}
                 if existing_pack_doc.exists:
                     existing_pack_data = existing_pack_doc.to_dict() or {}
+                    existing_due_by_date = _due_by_date_from_summary(existing_pack_data.get('summary'), app_ctx)
                     existing_pack_state = study_progress.sanitize_card_state_map(
                         existing_pack_data.get('state', {}),
                         runtime=app_ctx,
                     )
+                    if not existing_due_by_date:
+                        existing_due_by_date = _due_by_date_from_summary(_card_state_summary(existing_pack_state, app_ctx), app_ctx)
                 merged_state = study_progress.merge_card_state_maps(
                     existing_pack_state,
                     cleaned_state,
                     runtime=app_ctx,
                 )
+                next_summary = _card_state_summary(merged_state, app_ctx)
+                next_due_by_date = _due_by_date_from_summary(next_summary, app_ctx)
+                due_rollup = _apply_due_by_date_delta(
+                    due_rollup,
+                    subtract=existing_due_by_date,
+                    add=next_due_by_date,
+                )
+                due_rollup_changed = True
                 validated_card_state_writes.append(
                     (
                         doc_ref,
@@ -222,11 +323,30 @@ def update_study_progress(app_ctx, request):
                             'uid': uid,
                             'pack_id': pack_id,
                             'state': merged_state,
-                            'summary': _card_state_summary(merged_state, app_ctx),
+                            'summary': next_summary,
                             'updated_at': now_ts,
                         },
                     )
                 )
+
+        for pack_id in remove_pack_id_set:
+            doc_ref = app_ctx.get_study_card_state_doc(uid, pack_id)
+            existing_pack_doc = doc_ref.get()
+            if not existing_pack_doc.exists:
+                continue
+            existing_pack_data = existing_pack_doc.to_dict() or {}
+            existing_due_by_date = _due_by_date_from_summary(existing_pack_data.get('summary'), app_ctx)
+            if not existing_due_by_date:
+                existing_pack_state = study_progress.sanitize_card_state_map(
+                    existing_pack_data.get('state', {}),
+                    runtime=app_ctx,
+                )
+                existing_due_by_date = _due_by_date_from_summary(_card_state_summary(existing_pack_state, app_ctx), app_ctx)
+            due_rollup = _apply_due_by_date_delta(due_rollup, subtract=existing_due_by_date)
+
+        if due_rollup_changed:
+            updates[CARD_STATE_DUE_ROLLUP_KEY] = due_rollup
+            updates[CARD_STATE_DUE_ROLLUP_UPDATED_AT_KEY] = now_ts
 
         if getattr(app_ctx.db, 'batch', None):
             batch = app_ctx.db.batch()
@@ -258,18 +378,24 @@ def get_study_progress_summary(app_ctx, request):
         progress_doc = app_ctx.get_study_progress_doc(uid).get()
         progress_data = progress_doc.to_dict() if progress_doc.exists else {}
         today_local = _local_today(progress_data, app_ctx)
+        if CARD_STATE_DUE_ROLLUP_KEY in progress_data:
+            due_rollup = _sanitize_due_by_date(progress_data.get(CARD_STATE_DUE_ROLLUP_KEY), app_ctx)
+            due_today = _due_count_from_due_by_date(due_rollup, today_local, app_ctx)
+            return app_ctx.jsonify(
+                _summary_with_due_count(progress_data, due_today, app_ctx)
+            )
         due_today = 0
         docs = app_ctx.study_repo.list_study_card_state_summaries_by_uid(app_ctx.db, uid, app_ctx.MAX_PROGRESS_PACKS_PER_SYNC)
         for doc in docs:
             data = doc.to_dict() or {}
+            pack_id = _pack_id_from_summary_doc(uid, doc, data)
+            if not pack_id or not _pack_is_owned(app_ctx, uid, pack_id):
+                continue
             compact_due = _due_count_from_card_state_summary(data.get('summary'), today_local, app_ctx)
             if compact_due is not None:
                 due_today += compact_due
                 continue
 
-            pack_id = _pack_id_from_summary_doc(uid, doc, data)
-            if not pack_id:
-                continue
             full_doc = app_ctx.get_study_card_state_doc(uid, pack_id).get()
             if not full_doc.exists:
                 continue

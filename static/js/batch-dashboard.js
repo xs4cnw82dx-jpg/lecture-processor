@@ -284,6 +284,9 @@
     if (!selectEl || selectEl.dataset.enhanced === 'true') return;
     selectEl.dataset.enhanced = 'true';
     selectEl.classList.add('batch-dashboard-native-select');
+    selectEl.hidden = true;
+    selectEl.tabIndex = -1;
+    selectEl.setAttribute('aria-hidden', 'true');
 
     var wrapper = document.createElement('div');
     wrapper.className = 'app-select batch-dashboard-select';
@@ -292,9 +295,11 @@
     button.className = 'app-select-button';
     button.setAttribute('aria-haspopup', 'listbox');
     button.setAttribute('aria-expanded', 'false');
+    if (!selectEl.id) selectEl.id = 'batch-dashboard-select-' + Math.random().toString(36).slice(2, 8);
 
     var label = document.createElement('span');
     label.className = 'app-select-label';
+    label.id = selectEl.id + '-value';
     var icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     icon.setAttribute('viewBox', '0 0 24 24');
     icon.setAttribute('fill', 'none');
@@ -311,6 +316,11 @@
     var menu = document.createElement('div');
     menu.className = 'app-select-menu';
     menu.setAttribute('role', 'listbox');
+    menu.id = selectEl.id + '-menu';
+    button.id = selectEl.id + '-button';
+    button.setAttribute('aria-controls', menu.id);
+    button.setAttribute('aria-labelledby', label.id);
+    menu.setAttribute('aria-labelledby', button.id);
     wrapper.appendChild(button);
     wrapper.appendChild(menu);
     selectEl.insertAdjacentElement('afterend', wrapper);

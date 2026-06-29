@@ -37,8 +37,8 @@ Each prompt has a unique constant name (e.g. `PROMPT_SLIDE_EXTRACTION`, `PROMPT_
 | Constant | Used In | Model | Purpose |
 |----------|---------|-------|---------|
 | `PROMPT_SLIDE_EXTRACTION` | lecture-notes, slides-only | `gemini-3.1-flash-lite` | Extracts text from slide images |
-| `PROMPT_AUDIO_TRANSCRIPTION` | lecture-notes | `gemini-3-flash-preview` | Transcribes plain audio |
-| `PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED` | lecture-notes | `gemini-3-flash-preview` | Transcribes audio with timestamps |
+| `PROMPT_AUDIO_TRANSCRIPTION` | lecture-notes | `gemini-3.1-flash-lite` | Transcribes plain audio |
+| `PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED` | lecture-notes | `gemini-3.1-flash-lite` | Transcribes audio with timestamps |
 | `PROMPT_INTERVIEW_TRANSCRIPTION` | interview | `gemini-2.5-pro` | Transcribes interview audio |
 | `PROMPT_INTERVIEW_SUMMARY` | interview | `gemini-2.5-pro` | Generates interview summary |
 | `PROMPT_INTERVIEW_SECTIONED` | interview | `gemini-2.5-pro` | Creates sectioned interview output |

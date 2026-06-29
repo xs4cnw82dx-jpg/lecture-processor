@@ -15,14 +15,13 @@ def test_admin_auth_observer_survives_cached_bootstrap_helper():
     assert 'bootstrap.onAuthStateReady(auth, async (user) => {' not in admin_js
 
 
-def test_service_worker_serves_cached_static_assets_while_refreshing():
+def test_service_worker_fetches_fresh_static_assets_before_cache_fallback():
     service_worker = _read('static/service-worker.js')
 
-    assert "const VOICE_CACHE = 'lecture-processor-voice-v8';" in service_worker
-    assert "caches.match(request).then((cached) => {" in service_worker
-    assert "const refresh = fetch(request)" in service_worker
-    assert ".catch(() => cached);" in service_worker
-    assert "return cached || refresh;" in service_worker
+    assert "const VOICE_CACHE = 'lecture-processor-voice-v9';" in service_worker
+    assert "fetch(new Request(request, { cache: 'no-cache' }))" in service_worker
+    assert "caches.open(VOICE_CACHE).then((cache) => cache.put(request, copy));" in service_worker
+    assert ".catch(() => caches.match(request))" in service_worker
 
 
 def test_service_worker_precaches_one_voice_notes_script_variant():
@@ -47,3 +46,17 @@ def test_voice_notes_service_worker_is_limited_to_voice_notes_scope():
 
     assert "navigator.serviceWorker.register('/service-worker.js', { scope: '/voice-notes' })" in voice_notes_js
     assert "response.headers['Service-Worker-Allowed'] = '/voice-notes'" in pages_py
+
+
+def test_voice_notes_local_storage_is_user_scoped_and_cleared_on_signout():
+    voice_notes_js = _read('static/js/voice-notes.js')
+    app_shell_js = _read('static/js/app-shell.js')
+    index_js = _read('static/js/index-app.js')
+
+    assert 'var DB_VERSION = 2;' in voice_notes_js
+    assert "notesStore.createIndex('owner_key', 'owner_key', { unique: false })" in voice_notes_js
+    assert "return state.user && state.user.uid ? ('user:' + String(state.user.uid)) : 'anon';" in voice_notes_js
+    assert "filter(noteBelongsToCurrentOwner)" in voice_notes_js
+    assert "store.put({ id: id, owner_key: currentOwnerKey()" in voice_notes_js
+    assert "indexedDB.deleteDatabase('lecture-processor-voice-notes')" in app_shell_js
+    assert "indexedDB.deleteDatabase('lecture-processor-voice-notes')" in index_js

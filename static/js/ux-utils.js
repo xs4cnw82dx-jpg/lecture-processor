@@ -117,8 +117,29 @@
       selectEl.id = 'app-native-select-' + Math.random().toString(36).slice(2, 8);
     }
     button.id = selectEl.id + '-button';
+    label.id = selectEl.id + '-value';
     menu.id = selectEl.id + '-menu';
     button.setAttribute('aria-controls', menu.id);
+    function findFieldLabelId() {
+      var labelNode = null;
+      Array.prototype.slice.call(document.querySelectorAll('label[for]')).some(function (candidate) {
+        if (candidate.getAttribute('for') === selectEl.id) {
+          labelNode = candidate;
+          return true;
+        }
+        return false;
+      });
+      if (!labelNode) labelNode = selectEl.closest('label');
+      if (!labelNode) {
+        var host = selectEl.closest('.field, .form-field, .physio-field, .tool-field, .input-group, .select-field, .control-field');
+        labelNode = host ? host.querySelector('.field-label, .form-label, .physio-label, .select-label, label, span') : null;
+      }
+      if (!labelNode) return '';
+      if (!labelNode.id) labelNode.id = selectEl.id + '-field-label';
+      return labelNode.id;
+    }
+    var fieldLabelId = findFieldLabelId();
+    button.setAttribute('aria-labelledby', (fieldLabelId ? fieldLabelId + ' ' : '') + label.id);
     menu.setAttribute('aria-labelledby', button.id);
 
     function getItems() {

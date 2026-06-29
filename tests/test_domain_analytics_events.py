@@ -1,4 +1,7 @@
+import re
+
 from lecture_processor.domains.analytics import events
+from lecture_processor.services import analytics_service
 from lecture_processor.runtime.container import get_runtime
 
 
@@ -59,3 +62,56 @@ def test_analytics_events_use_current_app_runtime(app, monkeypatch):
     with app.app_context():
         assert events.sanitize_analytics_event_name("processing_completed") == "san:processing_completed"
         assert events.log_rate_limit_hit("tools", 11) == ("tools", 11)
+
+
+def test_analytics_payloads_include_ttl_fields():
+    added_events = []
+    added_limits = []
+    rollups = []
+
+    class _Time:
+        @staticmethod
+        def time():
+            return 100.0
+
+    class _Runtime:
+        TELEMETRY_RETENTION_SECONDS = 200
+
+    original_add_event = analytics_service.analytics_repo.add_event
+    original_add_rate_limit = analytics_service.analytics_repo.add_rate_limit_log
+    original_analytics_rollup = analytics_service.admin_rollups.increment_analytics_rollups
+    original_rate_limit_rollup = analytics_service.admin_rollups.increment_rate_limit_rollups
+    try:
+        analytics_service.analytics_repo.add_event = lambda _db, payload: added_events.append(payload)
+        analytics_service.analytics_repo.add_rate_limit_log = lambda _db, payload: added_limits.append(payload)
+        analytics_service.admin_rollups.increment_analytics_rollups = lambda payload, runtime=None: rollups.append(('event', payload))
+        analytics_service.admin_rollups.increment_rate_limit_rollups = lambda payload, runtime=None: rollups.append(('limit', payload))
+
+        assert analytics_service.log_analytics_event(
+            "auth_success",
+            db=object(),
+            name_re=re.compile(r'^[a-z_]+$'),
+            session_id_re=re.compile(r'^[a-z0-9]+$'),
+            allowed_events={"auth_success"},
+            logger=None,
+            time_module=_Time,
+            runtime=_Runtime(),
+        ) is True
+        assert analytics_service.log_rate_limit_hit(
+            "upload",
+            3,
+            db=object(),
+            logger=None,
+            time_module=_Time,
+            runtime=_Runtime(),
+        ) is True
+    finally:
+        analytics_service.analytics_repo.add_event = original_add_event
+        analytics_service.analytics_repo.add_rate_limit_log = original_add_rate_limit
+        analytics_service.admin_rollups.increment_analytics_rollups = original_analytics_rollup
+        analytics_service.admin_rollups.increment_rate_limit_rollups = original_rate_limit_rollup
+
+    assert added_events[0]["expires_at"] == 100.0 + 24 * 60 * 60
+    assert added_events[0]["expires_at_ts"].timestamp() == added_events[0]["expires_at"]
+    assert added_limits[0]["expires_at"] == 100.0 + 24 * 60 * 60
+    assert added_limits[0]["expires_at_ts"].timestamp() == added_limits[0]["expires_at"]

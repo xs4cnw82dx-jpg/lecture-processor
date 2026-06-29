@@ -153,6 +153,16 @@
     ['credits_breakdown', 'shell_profile', 'dashboard_summary:last', 'plan_summary:last', 'study_due_today:last'].forEach(removeCacheKey);
   }
 
+  function clearVoiceNotesLocalData() {
+    if (!window.indexedDB) return Promise.resolve(false);
+    return new Promise(function (resolve) {
+      var request = window.indexedDB.deleteDatabase('lecture-processor-voice-notes');
+      request.onsuccess = function () { resolve(true); };
+      request.onerror = function () { resolve(false); };
+      request.onblocked = function () { resolve(false); };
+    });
+  }
+
   function showToast(message, variant) {
     if (!shellToast || !message) return;
     shellToast.textContent = String(message);
@@ -527,6 +537,7 @@
     if (!creditsTotalLabel) return;
     if (!breakdown) {
       creditsTotalLabel.textContent = 'Loading credits';
+      if (creditsLink) creditsLink.setAttribute('aria-label', 'Buy credits, loading credits');
       if (creditsLectureValue) creditsLectureValue.textContent = '...';
       if (creditsTextValue) creditsTextValue.textContent = '...';
       if (creditsInterviewValue) creditsInterviewValue.textContent = '...';
@@ -541,6 +552,7 @@
       unlimited: breakdown.unlimited || {}
     };
     creditsTotalLabel.textContent = hasAnyUnlimitedCredits(next) ? 'Unlimited credits' : (next.total + ' credits');
+    if (creditsLink) creditsLink.setAttribute('aria-label', 'Buy credits, ' + creditsTotalLabel.textContent);
     if (creditsLectureValue) creditsLectureValue.textContent = formatShellCreditValue(next, 'lecture', next.lecture);
     if (creditsTextValue) creditsTextValue.textContent = formatShellCreditValue(next, 'slides', next.textExtraction);
     if (creditsInterviewValue) creditsInterviewValue.textContent = formatShellCreditValue(next, 'interview', next.interview);
@@ -970,6 +982,7 @@
       try {
         await auth.signOut();
       } catch (_) {}
+      await clearVoiceNotesLocalData();
       window.location.href = '/dashboard';
     });
   }
