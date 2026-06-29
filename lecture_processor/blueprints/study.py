@@ -102,6 +102,18 @@ def stream_study_pack_audio(pack_id):
     return study_api_service.stream_study_pack_audio(runtime, request, pack_id)
 
 
+@study_bp.route('/api/study-packs/<pack_id>/audio-token', methods=['POST'])
+def create_study_pack_audio_token(pack_id):
+    runtime = get_runtime()
+    return study_api_service.create_study_pack_audio_token(runtime, request, pack_id)
+
+
+@study_bp.route('/api/study-packs/<pack_id>/audio-stream', methods=['GET'])
+def stream_study_pack_audio_with_token(pack_id):
+    runtime = get_runtime()
+    return study_api_service.stream_study_pack_audio_with_token(runtime, request, pack_id)
+
+
 @study_bp.route('/api/study-packs/<pack_id>/share', methods=['GET'])
 def get_study_pack_share(pack_id):
     runtime = get_runtime()

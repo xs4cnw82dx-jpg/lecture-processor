@@ -5,6 +5,7 @@ import json
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.upload import import_audio as upload_import_audio
@@ -90,6 +91,37 @@ def attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None):
     return False, ''
 
 
+def _safe_int(value, default=0):
+    try:
+        return int(value or 0)
+    except Exception:
+        return default
+
+
+def _record_runtime_job_refund(app_ctx, job_id, credit_type, amount, *, extra_slides_increment=0, job_snapshot=None):
+    updates = {}
+    if not job_id or not credit_type or int(amount or 0) <= 0:
+        return updates
+    try:
+        if job_snapshot is None:
+            job_snapshot = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx) or {}
+        if not isinstance(job_snapshot, dict):
+            job_snapshot = {}
+        if int(extra_slides_increment or 0) > 0:
+            job_snapshot['extra_slides_refunded'] = (
+                _safe_int(job_snapshot.get('extra_slides_refunded')) + int(extra_slides_increment or 0)
+            )
+            updates['extra_slides_refunded'] = job_snapshot['extra_slides_refunded']
+        billing_receipts.add_job_credit_refund(job_snapshot, credit_type, int(amount or 0), runtime=app_ctx)
+        if isinstance(job_snapshot.get('billing_receipt'), dict):
+            updates['billing_receipt'] = job_snapshot['billing_receipt']
+    except Exception:
+        app_ctx.logger.warning('Could not record runtime-job refund receipt for %s', job_id, exc_info=True)
+        if int(extra_slides_increment or 0) > 0:
+            updates['extra_slides_refunded'] = int(extra_slides_increment or 0)
+    return updates
+
+
 def queue_full_message():
     return 'The server is busy right now. Please try again in a minute.'
 
@@ -133,6 +165,8 @@ def handle_runtime_job_queue_full(
 ):
     message = queue_full_message()
     refund_methods = []
+    refund_updates = {}
+    refund_job_snapshot = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx) or {}
     credit_refunded = False
     if credit_type:
         refunded, method = attempt_credit_refund(
@@ -143,6 +177,7 @@ def handle_runtime_job_queue_full(
         )
         if refunded:
             credit_refunded = True
+            refund_updates.update(_record_runtime_job_refund(app_ctx, job_id, credit_type, 1, job_snapshot=refund_job_snapshot))
             if method:
                 refund_methods.append(method)
     if int(extra_slides_credits or 0) > 0:
@@ -158,6 +193,16 @@ def handle_runtime_job_queue_full(
             extras_refunded = False
         if extras_refunded:
             credit_refunded = True
+            refund_updates.update(
+                _record_runtime_job_refund(
+                    app_ctx,
+                    job_id,
+                    'slides_credits',
+                    int(extra_slides_credits or 0),
+                    extra_slides_increment=int(extra_slides_credits or 0),
+                    job_snapshot=refund_job_snapshot,
+                )
+            )
             refund_methods.append('refund_slides_credits')
     runtime_jobs_store.update_job_fields(
         job_id,
@@ -169,6 +214,7 @@ def handle_runtime_job_queue_full(
         step_description='Queue full',
         credit_refunded=credit_refunded,
         credit_refund_method=', '.join(refund_methods),
+        **refund_updates,
     )
     app_ctx.cleanup_files(list(cleanup_paths or []), [])
     return queue_full_response(app_ctx, job_id=job_id)
@@ -186,6 +232,8 @@ def handle_runtime_job_setup_failure(
     error=None,
 ):
     refund_methods = []
+    refund_updates = {}
+    refund_job_snapshot = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx) or {}
     credit_refunded = False
     if credit_type:
         refunded, method = attempt_credit_refund(
@@ -196,6 +244,7 @@ def handle_runtime_job_setup_failure(
         )
         if refunded:
             credit_refunded = True
+            refund_updates.update(_record_runtime_job_refund(app_ctx, job_id, credit_type, 1, job_snapshot=refund_job_snapshot))
             if method:
                 refund_methods.append(method)
     if int(extra_slides_credits or 0) > 0:
@@ -211,6 +260,16 @@ def handle_runtime_job_setup_failure(
             extras_refunded = False
         if extras_refunded:
             credit_refunded = True
+            refund_updates.update(
+                _record_runtime_job_refund(
+                    app_ctx,
+                    job_id,
+                    'slides_credits',
+                    int(extra_slides_credits or 0),
+                    extra_slides_increment=int(extra_slides_credits or 0),
+                    job_snapshot=refund_job_snapshot,
+                )
+            )
             refund_methods.append('refund_slides_credits')
     if credit_refunded:
         message = 'Could not start processing. Your credit was refunded. Please try again.'
@@ -227,6 +286,7 @@ def handle_runtime_job_setup_failure(
             step_description='Could not start',
             credit_refunded=credit_refunded,
             credit_refund_method=', '.join(refund_methods),
+            **refund_updates,
         )
         if updated is None:
             runtime_jobs_store.delete_job(job_id, runtime=app_ctx)

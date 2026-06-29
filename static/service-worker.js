@@ -1,4 +1,4 @@
-const VOICE_CACHE = 'lecture-processor-voice-v7';
+const VOICE_CACHE = 'lecture-processor-voice-v8';
 const APP_SHELL = [
   '/voice-notes',
   '/static/manifest.webmanifest',
@@ -8,6 +8,7 @@ const APP_SHELL = [
   '/static/css/voice-notes.css',
   '/static/js/firebase-bootstrap.js',
   '/static/js/html-utils.js',
+  '/static/js/ux-utils.js',
   '/static/js/auth-utils.js',
   '/static/js/download-utils.js',
   '/static/js/topbar-utils.js',
@@ -60,15 +61,26 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (url.pathname.startsWith('/static/') || url.pathname === '/service-worker.js') {
+  if (url.pathname === '/service-worker.js') {
     event.respondWith(
       fetch(new Request(request, { cache: 'no-cache' }))
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(VOICE_CACHE).then((cache) => cache.put(request, copy));
-          return response;
-        })
         .catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  if (url.pathname.startsWith('/static/')) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        const refresh = fetch(request)
+          .then((response) => {
+            const copy = response.clone();
+            caches.open(VOICE_CACHE).then((cache) => cache.put(request, copy));
+            return response;
+          })
+          .catch(() => cached);
+        return cached || refresh;
+      })
     );
   }
 });

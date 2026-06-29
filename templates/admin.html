@@ -33,7 +33,7 @@
             <button class="btn filter" data-window="30d" type="button">Last 30d</button>
         </div>
 
-        <div id="state-area" class="loading">Loading admin dashboard...</div>
+        <div id="state-area" class="loading" role="status" aria-live="polite" aria-atomic="true">Loading admin dashboard...</div>
 
         <div id="dashboard" hidden>
             <section class="panel admin-tabs-panel">
@@ -441,7 +441,7 @@
                         <span class="admin-credit-hint">Existing users only.</span>
                     </form>
 
-                    <div class="admin-credit-state" id="admin-credit-state">Search for a user to manage credits.</div>
+                    <div class="admin-credit-state" id="admin-credit-state" role="status" aria-live="polite" aria-atomic="true">Search for a user to manage credits.</div>
 
                     <div class="admin-credit-user" id="admin-credit-user-card" hidden>
                         <div class="admin-credit-user-head">

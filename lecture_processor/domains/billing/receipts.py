@@ -70,6 +70,13 @@ def add_job_credit_refund(job_data, credit_type, amount=1, runtime=None):
     receipt['updated_at'] = resolved_runtime.time.time()
 
 
+def job_has_refunds(job_data, runtime=None):
+    if isinstance(job_data, dict) and bool(job_data.get('credit_refunded', False)):
+        return True
+    snapshot = get_billing_receipt_snapshot(job_data if isinstance(job_data, dict) else {}, runtime=runtime)
+    return any(int(amount or 0) > 0 for amount in snapshot.get('refunded', {}).values())
+
+
 def get_billing_receipt_snapshot(job_data, runtime=None):
     receipt = job_data.get('billing_receipt')
     if not isinstance(receipt, dict):

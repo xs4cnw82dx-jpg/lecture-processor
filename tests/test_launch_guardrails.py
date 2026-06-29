@@ -24,7 +24,8 @@ from lecture_processor.domains.rate_limit import quotas as rate_limit_quotas
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.upload import import_audio as upload_import_audio
-from lecture_processor.services import upload_api_service
+from lecture_processor.runtime.job_dispatcher import JobQueueFullError
+from lecture_processor.services import tools_download_service, upload_api_service
 
 pytestmark = pytest.mark.usefixtures("disable_sentry")
 
@@ -473,6 +474,11 @@ def test_tools_lecture_download_returns_zip_for_both_formats(client, monkeypatch
     audio_path = tmp_path / "lecture.mp3"
     video_path.write_bytes(b"video-bytes")
     audio_path.write_bytes(b"ID3\x03\x00\x00\x00")
+    expected_download_bytes = video_path.stat().st_size + audio_path.stat().st_size
+    quota_reservation = SimpleNamespace()
+    reserved = []
+    adjusted = []
+    committed = []
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "tool-dl-u1", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
@@ -491,6 +497,21 @@ def test_tools_lecture_download_returns_zip_for_both_formats(client, monkeypatch
     monkeypatch.setattr(core, "convert_audio_to_mp3_with_ytdlp", lambda _path: (str(audio_path), True))
     monkeypatch.setattr(core, "get_saved_file_size", lambda path: Path(path).stat().st_size)
     monkeypatch.setattr(core, "file_looks_like_audio", lambda _path: True)
+    monkeypatch.setattr(
+        tools_download_service.upload_quota_service,
+        "reserve_upload_quota",
+        lambda _app_ctx, uid, requested_bytes, **kwargs: reserved.append((uid, requested_bytes, kwargs.get("context"))) or (quota_reservation, None, 0),
+    )
+    monkeypatch.setattr(
+        tools_download_service.upload_quota_service,
+        "adjust_reserved_upload_bytes",
+        lambda _app_ctx, reservation, actual_bytes, **kwargs: adjusted.append((reservation, actual_bytes, kwargs.get("context"))) or (None, 0),
+    )
+    monkeypatch.setattr(
+        tools_download_service.upload_quota_service,
+        "commit_upload_quota",
+        lambda reservation: committed.append(reservation),
+    )
 
     response = client.post(
         "/api/tools/lecture-download",
@@ -502,6 +523,44 @@ def test_tools_lecture_download_returns_zip_for_both_formats(client, monkeypatch
     assert response.mimetype == "application/zip"
     archive = zipfile.ZipFile(io.BytesIO(response.data))
     assert sorted(archive.namelist()) == ["lecture-audio.mp3", "lecture-video.mp4"]
+    assert reserved == [("tool-dl-u1", core.MAX_AUDIO_UPLOAD_BYTES * 2, "Lecture media download")]
+    assert adjusted == [(quota_reservation, expected_download_bytes, "Lecture media download")]
+    assert committed == [quota_reservation]
+
+
+def test_tools_lecture_download_checks_quota_before_fetch(client, monkeypatch):
+    reserve_calls = []
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "tool-dl-u2", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(
+        upload_import_audio,
+        "validate_video_import_fetch_target",
+        lambda _url, runtime=None: ("https://ovp.kaltura.com/path/index.m3u8", ""),
+    )
+    monkeypatch.setattr(
+        tools_download_service.upload_quota_service,
+        "reserve_upload_quota",
+        lambda app_ctx, uid, requested_bytes, **kwargs: reserve_calls.append((uid, requested_bytes, kwargs.get("context")))
+        or (None, app_ctx.jsonify({"error": "quota reached"}), 429),
+    )
+    monkeypatch.setattr(
+        core,
+        "download_audio_from_video_url",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("download should not start after quota rejection")),
+    )
+
+    response = client.post(
+        "/api/tools/lecture-download",
+        json={"url": "https://ovp.kaltura.com/path/index.m3u8", "format": "audio"},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 429
+    assert response.get_json()["error"] == "quota reached"
+    assert reserve_calls == [("tool-dl-u2", core.MAX_AUDIO_UPLOAD_BYTES, "Lecture media download")]
 
 
 def test_upload_accepts_audio_import_token_for_lecture_mode(client, monkeypatch):
@@ -2307,6 +2366,8 @@ def test_admin_overview_and_export_forbid_non_admin(client, monkeypatch):
 
 def test_study_pack_audio_requires_auth(client):
     assert client.get("/api/study-packs/pack-audio/audio").status_code == 401
+    assert client.post("/api/study-packs/pack-audio/audio-token").status_code == 401
+    assert client.get("/api/study-packs/pack-audio/audio-stream").status_code == 401
 
 
 def test_study_pack_audio_forbidden_for_other_user(client, monkeypatch, tmp_path):
@@ -2335,3 +2396,104 @@ def test_study_pack_audio_forbidden_for_other_user(client, monkeypatch, tmp_path
 
     response = client.get("/api/study-packs/pack-audio/audio", headers={"Authorization": "Bearer dev"})
     assert response.status_code == 403
+
+
+def test_study_pack_audio_token_streams_file_without_auth_header(client, monkeypatch, tmp_path):
+    core.AUDIO_STREAM_TOKENS.clear()
+    audio_file = tmp_path / "sample.mp3"
+    audio_file.write_bytes(b"ID3\x03\x00\x00\x00audio-bytes")
+
+    class _FakeDoc:
+        exists = True
+
+        def __init__(self):
+            self.reference = self
+
+        def to_dict(self):
+            return {
+                "uid": "owner-uid",
+                "audio_storage_key": "study_audio/sample.mp3",
+            }
+
+        def set(self, *_args, **_kwargs):
+            return None
+
+    monkeypatch.setattr(core, "STUDY_AUDIO_ROOT", str(tmp_path), raising=False)
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _FakeDoc())
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "owner-uid", "email": "user@gmail.com"})
+
+    token_response = client.post(
+        "/api/study-packs/pack-audio/audio-token",
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert token_response.status_code == 200
+    token_payload = token_response.get_json()
+    assert token_payload["token"] in core.AUDIO_STREAM_TOKENS
+    assert token_payload["stream_url"].startswith("/api/study-packs/pack-audio/audio-stream?token=")
+
+    stream_response = client.get(token_payload["stream_url"])
+    assert stream_response.status_code == 200
+    assert stream_response.data == audio_file.read_bytes()
+
+
+@pytest.mark.parametrize(
+    ("raised_error", "expected_status", "expected_payload_status"),
+    [
+        (JobQueueFullError("queue full"), 503, "queue_full"),
+        (RuntimeError("dispatch failed"), 500, "setup_failed"),
+    ],
+)
+def test_voice_note_study_tools_dispatch_failure_refunds_study_credit(
+    client,
+    monkeypatch,
+    raised_error,
+    expected_status,
+    expected_payload_status,
+):
+    refunds = []
+
+    class _FakePackDoc:
+        exists = True
+
+        def to_dict(self):
+            return {
+                "uid": "voice-u1",
+                "title": "Voice lecture",
+                "output_language": "English",
+            }
+
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "voice-u1", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(core, "get_or_create_user", lambda _uid, _email: {"slides_credits": 1})
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _FakePackDoc())
+    monkeypatch.setattr(billing_credits, "has_category_credit", lambda _user, _category, runtime=None: True)
+    monkeypatch.setattr(billing_credits, "deduct_slides_credits", lambda _uid, _amount, runtime=None: True)
+    monkeypatch.setattr(
+        billing_credits,
+        "refund_slides_credits",
+        lambda uid, amount, runtime=None: refunds.append((uid, amount)) or True,
+    )
+
+    def _raise_on_submit(*_args, **_kwargs):
+        raise raised_error
+
+    monkeypatch.setattr(core, "submit_background_job", _raise_on_submit)
+
+    response = client.post(
+        "/api/voice-notes/pack-voice/study-tools",
+        json={"study_features": "both"},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == expected_status
+    body = response.get_json()
+    assert body["status"] == expected_payload_status
+    job = core.jobs[body["job_id"]]
+    assert job["status"] == "error"
+    assert job["credit_refunded"] is True
+    assert job["extra_slides_refunded"] == 1
+    assert job["billing_receipt"]["charged"] == {"slides_credits": 1}
+    assert job["billing_receipt"]["refunded"] == {"slides_credits": 1}
+    assert refunds == [("voice-u1", 1)]

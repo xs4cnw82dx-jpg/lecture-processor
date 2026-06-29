@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.runtime.container import get_runtime
 
 HOURLY_COLLECTION = 'admin_rollups_hourly'
@@ -152,12 +153,13 @@ def increment_job_rollups(job_payload, runtime=None):
     finished_at = float(payload.get('finished_at', resolved_runtime.time.time()) or resolved_runtime.time.time())
     status = str(payload.get('status', '') or '').strip().lower()
     mode = _incremented_mode(payload.get('mode', ''))
+    refunded = bool(payload.get('credit_refunded', False)) or billing_receipts.job_has_refunds(payload, runtime=resolved_runtime)
     increment_payload = {
         'jobs': {
             'total': 1,
             'complete': 1 if status == 'complete' else 0,
             'error': 1 if status == 'error' else 0,
-            'refunded': 1 if bool(payload.get('credit_refunded', False)) else 0,
+            'refunded': 1 if refunded else 0,
             'duration_sum_seconds': float(payload.get('duration_seconds', 0) or 0),
             'duration_count': 1 if isinstance(payload.get('duration_seconds'), (int, float)) else 0,
             'by_mode': {
@@ -240,7 +242,7 @@ def _aggregate_bucket_from_source(bucket_key, period, runtime=None):
         elif status == 'error':
             aggregate['jobs']['error'] += 1
             aggregate['jobs']['by_mode'][mode]['error'] += 1
-        if bool(job.get('credit_refunded', False)):
+        if bool(job.get('credit_refunded', False)) or billing_receipts.job_has_refunds(job, runtime=resolved_runtime):
             aggregate['jobs']['refunded'] += 1
         duration = job.get('duration_seconds')
         if isinstance(duration, (int, float)):

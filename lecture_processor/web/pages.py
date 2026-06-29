@@ -411,7 +411,7 @@ def service_worker():
         mimetype='application/javascript',
         max_age=0,
     )
-    response.headers['Service-Worker-Allowed'] = '/'
+    response.headers['Service-Worker-Allowed'] = '/voice-notes'
     return response
 
 

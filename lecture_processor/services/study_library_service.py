@@ -1,5 +1,8 @@
 """Study library, folder, share, and public-share routes."""
 
+import secrets
+from urllib.parse import quote
+
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.study import progress as study_progress
@@ -8,6 +11,74 @@ from lecture_processor.services import study_api_support
 
 BUILTIN_FOLDER_PARENT_IDS = {'', '__interviews__', '__voice_notes__'}
 MAX_BULK_PACK_MOVE = 100
+
+
+def _stream_token_lock(app_ctx):
+    return getattr(app_ctx, 'AUDIO_STREAM_LOCK', None)
+
+
+def _with_stream_token_lock(app_ctx):
+    lock = _stream_token_lock(app_ctx)
+    if lock is not None:
+        return lock
+
+    class _NoopLock:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    return _NoopLock()
+
+
+def _get_owned_audio_path(app_ctx, decoded_token, pack_id):
+    uid = decoded_token['uid']
+    doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
+    if not doc.exists:
+        return None, app_ctx.jsonify({'error': 'Study pack not found'}), 404
+    pack = doc.to_dict() or {}
+    if pack.get('uid', '') != uid and not app_ctx.is_admin_user(decoded_token):
+        return None, app_ctx.jsonify({'error': 'Forbidden'}), 403
+    audio_storage_key = study_audio.ensure_pack_audio_storage_key(doc.reference, pack, runtime=app_ctx)
+    audio_storage_path = study_audio.resolve_audio_storage_path_from_key(audio_storage_key, runtime=app_ctx)
+    if not audio_storage_path:
+        return None, app_ctx.jsonify({'error': 'No audio file for this study pack'}), 404
+    if not app_ctx.os.path.exists(audio_storage_path):
+        return None, app_ctx.jsonify({'error': 'Audio file not found'}), 404
+    return audio_storage_path, None, 0
+
+
+def _issue_audio_stream_token(app_ctx, *, uid, pack_id, audio_storage_path):
+    token = secrets.token_urlsafe(24)
+    now_ts = app_ctx.time.time()
+    ttl_seconds = int(getattr(app_ctx, 'AUDIO_STREAM_TOKEN_TTL_SECONDS', 3600) or 3600)
+    with _with_stream_token_lock(app_ctx):
+        app_ctx.AUDIO_STREAM_TOKENS[token] = {
+            'uid': str(uid or ''),
+            'pack_id': str(pack_id or ''),
+            'audio_storage_path': str(audio_storage_path or ''),
+            'created_at': now_ts,
+            'expires_at': now_ts + max(60, ttl_seconds),
+        }
+    return token
+
+
+def _get_audio_stream_token_payload(app_ctx, token, pack_id):
+    safe_token = str(token or '').strip()
+    if not safe_token:
+        return None
+    now_ts = app_ctx.time.time()
+    with _with_stream_token_lock(app_ctx):
+        payload = app_ctx.AUDIO_STREAM_TOKENS.get(safe_token)
+        if not isinstance(payload, dict):
+            return None
+        if now_ts > float(payload.get('expires_at', 0) or 0):
+            app_ctx.AUDIO_STREAM_TOKENS.pop(safe_token, None)
+            return None
+        if str(payload.get('pack_id', '') or '') != str(pack_id or ''):
+            return None
+        return dict(payload)
 
 
 def _sanitize_sort_order(raw_value):
@@ -497,24 +568,51 @@ def stream_study_pack_audio(app_ctx, request, pack_id):
     decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
     if error_response is not None:
         return error_response, status
-    uid = decoded_token['uid']
     try:
-        doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
-        if not doc.exists:
-            return app_ctx.jsonify({'error': 'Study pack not found'}), 404
-        pack = doc.to_dict() or {}
-        if pack.get('uid', '') != uid and not app_ctx.is_admin_user(decoded_token):
-            return app_ctx.jsonify({'error': 'Forbidden'}), 403
-        audio_storage_key = study_audio.ensure_pack_audio_storage_key(doc.reference, pack, runtime=app_ctx)
-        audio_storage_path = study_audio.resolve_audio_storage_path_from_key(audio_storage_key, runtime=app_ctx)
-        if not audio_storage_path:
-            return app_ctx.jsonify({'error': 'No audio file for this study pack'}), 404
-        if not app_ctx.os.path.exists(audio_storage_path):
-            return app_ctx.jsonify({'error': 'Audio file not found'}), 404
+        audio_storage_path, error_response, status = _get_owned_audio_path(app_ctx, decoded_token, pack_id)
+        if error_response is not None:
+            return error_response, status
         return app_ctx.send_file(audio_storage_path, mimetype=app_ctx.get_mime_type(audio_storage_path), conditional=True)
     except Exception as error:
         app_ctx.logger.error(f"Error streaming study-pack audio {pack_id}: {error}")
         return app_ctx.jsonify({'error': 'Could not stream audio'}), 500
+
+
+def create_study_pack_audio_token(app_ctx, request, pack_id):
+    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
+    try:
+        audio_storage_path, error_response, status = _get_owned_audio_path(app_ctx, decoded_token, pack_id)
+        if error_response is not None:
+            return error_response, status
+        token = _issue_audio_stream_token(
+            app_ctx,
+            uid=decoded_token['uid'],
+            pack_id=pack_id,
+            audio_storage_path=audio_storage_path,
+        )
+        safe_pack_id = quote(str(pack_id or ''), safe='')
+        safe_token = quote(str(token or ''), safe='')
+        return app_ctx.jsonify({
+            'token': token,
+            'stream_url': f'/api/study-packs/{safe_pack_id}/audio-stream?token={safe_token}',
+            'expires_in_seconds': int(getattr(app_ctx, 'AUDIO_STREAM_TOKEN_TTL_SECONDS', 3600) or 3600),
+        })
+    except Exception as error:
+        app_ctx.logger.error(f"Error creating study-pack audio token {pack_id}: {error}")
+        return app_ctx.jsonify({'error': 'Could not prepare audio playback'}), 500
+
+
+def stream_study_pack_audio_with_token(app_ctx, request, pack_id):
+    token = request.args.get('token', '')
+    payload = _get_audio_stream_token_payload(app_ctx, token, pack_id)
+    if not payload:
+        return app_ctx.jsonify({'error': 'Audio playback link expired. Please reload this study pack.'}), 401
+    audio_storage_path = str(payload.get('audio_storage_path', '') or '')
+    if not audio_storage_path or not app_ctx.os.path.exists(audio_storage_path):
+        return app_ctx.jsonify({'error': 'Audio file not found'}), 404
+    return app_ctx.send_file(audio_storage_path, mimetype=app_ctx.get_mime_type(audio_storage_path), conditional=True)
 
 
 def create_study_folder(app_ctx, request):

@@ -9,6 +9,7 @@ from lecture_processor.services.study_export_service import (
 )
 from lecture_processor.services.study_library_service import (
     bulk_move_study_packs,
+    create_study_pack_audio_token,
     create_study_folder,
     create_study_pack,
     delete_study_folder,
@@ -21,6 +22,7 @@ from lecture_processor.services.study_library_service import (
     get_study_pack_share,
     get_study_packs,
     stream_study_pack_audio,
+    stream_study_pack_audio_with_token,
     update_study_folder,
     update_study_folder_share,
     update_study_pack,
@@ -35,6 +37,7 @@ from lecture_processor.services.study_progress_service import (
 __all__ = [
     'create_study_folder',
     'create_study_pack',
+    'create_study_pack_audio_token',
     'bulk_move_study_packs',
     'delete_study_folder',
     'delete_study_pack',
@@ -53,6 +56,7 @@ __all__ = [
     'get_study_progress',
     'get_study_progress_summary',
     'stream_study_pack_audio',
+    'stream_study_pack_audio_with_token',
     'update_study_folder',
     'update_study_folder_share',
     'update_study_pack',

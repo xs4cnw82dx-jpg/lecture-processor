@@ -12,6 +12,11 @@ import threading
 import unicodedata
 from pathlib import Path
 
+try:
+    import numpy as np
+except Exception:
+    np = None
+
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.runtime.container import get_runtime
 
@@ -30,6 +35,7 @@ SUPPORTED_SOURCE_SUFFIXES = {".pdf", ".docx", ".pptx", ".txt", ".md"}
 SHARDED_INDEX_FORMAT = "sharded-gzip-v1"
 _INDEX_CACHE = {"path": "", "mtime": 0.0, "signature": "", "payload": None}
 _SHARD_DOCUMENT_CACHE = {"path": "", "signature": "", "documents": None}
+_VECTOR_SEARCH_CACHE = {"path": "", "signature": "", "records": None, "matrix": None}
 _INDEX_CACHE_LOCK = threading.RLock()
 BODY_REGION_TERMS = {
     "algemeen": ["algemeen"],
@@ -209,9 +215,15 @@ def score_index_record(query_vector, record, *, query_context=None, query_norm=N
     payload = record if isinstance(record, dict) else {}
     _prepare_record_search_cache(payload)
     base_score = _cosine_similarity_with_norm(query_vector, query_norm or _vector_norm(query_vector), payload)
-    if not query_context:
-        return float(base_score)
+    return float(base_score) + _context_score_bonus(payload, query_context)
 
+
+def _context_score_bonus(record, query_context=None):
+    if not query_context:
+        return 0.0
+
+    payload = record if isinstance(record, dict) else {}
+    _prepare_record_search_cache(payload)
     title_blob = str(payload.get("_title_search_text", "") or "")
     text_blob = str(payload.get("_body_search_text", "") or "")
     source_kind = str(payload.get("source_kind", "") or "").strip().lower()
@@ -233,7 +245,7 @@ def score_index_record(query_vector, record, *, query_context=None, query_norm=N
         bonus += min(0.04, 0.015 * text_body_hits)
     if text_complaint_hits:
         bonus += min(0.04, 0.012 * text_complaint_hits)
-    return float(base_score) + float(bonus)
+    return float(bonus)
 
 
 def _diversify_ranked_records(records, *, limit=5):
@@ -505,6 +517,98 @@ def _load_cached_sharded_documents(candidate: Path, payload: dict):
     return documents
 
 
+def _build_vector_search_cache(candidate: Path, payload: dict, documents):
+    if np is None:
+        return None
+    records = [record for record in (documents or []) if isinstance(record, dict) and isinstance(record.get("embedding"), list) and record.get("embedding")]
+    if not records:
+        return None
+    try:
+        matrix = np.asarray([record.get("embedding", []) for record in records], dtype=np.float32)
+    except Exception:
+        return None
+    if matrix.ndim != 2 or matrix.shape[0] <= 0 or matrix.shape[1] <= 0:
+        return None
+    norms = np.linalg.norm(matrix, axis=1)
+    nonzero = norms > 0
+    if not bool(np.any(nonzero)):
+        return None
+    matrix = matrix[nonzero]
+    selected_records = [record for record, keep in zip(records, nonzero.tolist()) if keep]
+    norms = norms[nonzero]
+    matrix = matrix / norms[:, None]
+    for record in selected_records:
+        _prepare_record_search_cache(record)
+    return {"records": selected_records, "matrix": matrix}
+
+
+def _load_vector_search_cache(candidate: Path, payload: dict, documents):
+    if np is None:
+        return None
+    cache_key = _index_cache_key(candidate)
+    signature = _index_cache_signature(candidate, payload)
+    with _INDEX_CACHE_LOCK:
+        if (
+            _VECTOR_SEARCH_CACHE.get("records") is not None
+            and _VECTOR_SEARCH_CACHE.get("matrix") is not None
+            and _VECTOR_SEARCH_CACHE.get("path") == cache_key
+            and _VECTOR_SEARCH_CACHE.get("signature") == signature
+        ):
+            return {"records": _VECTOR_SEARCH_CACHE["records"], "matrix": _VECTOR_SEARCH_CACHE["matrix"]}
+
+    cache = _build_vector_search_cache(candidate, payload, documents)
+    if cache is None:
+        return None
+    refreshed_signature = _index_cache_signature(candidate, payload)
+    if refreshed_signature == signature:
+        with _INDEX_CACHE_LOCK:
+            _VECTOR_SEARCH_CACHE.update({
+                "path": cache_key,
+                "signature": signature,
+                "records": cache["records"],
+                "matrix": cache["matrix"],
+            })
+    return cache
+
+
+def _rank_with_vector_cache(query_vector, vector_cache, *, limit=5, query_context=None):
+    if np is None or not vector_cache:
+        return None
+    records = vector_cache.get("records")
+    matrix = vector_cache.get("matrix")
+    if not records or matrix is None:
+        return None
+    try:
+        query = np.asarray(query_vector or [], dtype=np.float32)
+    except Exception:
+        return None
+    if query.ndim != 1 or query.shape[0] != matrix.shape[1]:
+        return None
+    query_norm = float(np.linalg.norm(query))
+    if query_norm <= 0:
+        return None
+    query = query / query_norm
+    safe_limit = max(1, int(limit or 1))
+    candidate_limit = min(len(records), max(safe_limit * 24, 120))
+    scores = matrix.dot(query)
+    if candidate_limit < len(records):
+        candidate_indexes = np.argpartition(scores, -candidate_limit)[-candidate_limit:]
+    else:
+        candidate_indexes = np.arange(len(records))
+    ranked = []
+    for index in candidate_indexes.tolist():
+        record = records[index]
+        score = float(scores[index]) + _context_score_bonus(record, query_context)
+        ranked.append((score, -int(index), record))
+    ranked.sort(reverse=True)
+    public_ranked = []
+    for score, _neg_index, record in ranked[:max(safe_limit, safe_limit * 6)]:
+        item = _public_ranked_item(record)
+        item["score"] = round(float(score), 6)
+        public_ranked.append(item)
+    return _diversify_ranked_records(public_ranked, limit=safe_limit)
+
+
 def load_knowledge_index(*, index_path=None):
     candidate = Path(index_path or PHYSIO_LIBRARY_INDEX_PATH)
     cache_key = _index_cache_key(candidate)
@@ -634,9 +738,18 @@ def rank_sharded_index_documents(query_vector, payload, *, index_path=None, limi
     safe_limit = max(1, int(limit or 1))
     candidate_limit = max(safe_limit, safe_limit * 6)
     query_norm = _vector_norm(query_vector)
+    documents = _load_cached_sharded_documents(candidate, payload)
+    vector_ranked = _rank_with_vector_cache(
+        query_vector,
+        _load_vector_search_cache(candidate, payload, documents),
+        limit=safe_limit,
+        query_context=query_context,
+    )
+    if vector_ranked is not None:
+        return vector_ranked
     top_matches = []
     record_index = 0
-    for record in _load_cached_sharded_documents(candidate, payload):
+    for record in documents:
         if not isinstance(record, dict):
             continue
         score = score_index_record(query_vector, record, query_context=query_context, query_norm=query_norm)
@@ -695,25 +808,34 @@ def query_knowledge_index(question, *, body_region="", context_text="", case_con
     if shard_names:
         ranked = rank_sharded_index_documents(query_vector, index_payload, limit=limit, query_context=query_context)
     else:
-        raw_ranked = []
-        candidate_limit = max(1, int(limit or 1)) * 6
-        query_norm = _vector_norm(query_vector)
-        top_matches = []
-        for index, record in enumerate(documents or []):
-            if not isinstance(record, dict):
-                continue
-            score = score_index_record(query_vector, record, query_context=query_context, query_norm=query_norm)
-            sortable = (float(score), -index, record)
-            if len(top_matches) < candidate_limit:
-                heapq.heappush(top_matches, sortable)
-                continue
-            if sortable > top_matches[0]:
-                heapq.heapreplace(top_matches, sortable)
-        for score, _neg_index, record in sorted(top_matches, reverse=True):
-            item = _public_ranked_item(record)
-            item["score"] = round(float(score), 6)
-            raw_ranked.append(item)
-        ranked = _diversify_ranked_records(raw_ranked, limit=limit)
+        vector_ranked = _rank_with_vector_cache(
+            query_vector,
+            _load_vector_search_cache(Path(PHYSIO_LIBRARY_INDEX_PATH), index_payload, documents),
+            limit=limit,
+            query_context=query_context,
+        )
+        if vector_ranked is not None:
+            ranked = vector_ranked
+        else:
+            raw_ranked = []
+            candidate_limit = max(1, int(limit or 1)) * 6
+            query_norm = _vector_norm(query_vector)
+            top_matches = []
+            for index, record in enumerate(documents or []):
+                if not isinstance(record, dict):
+                    continue
+                score = score_index_record(query_vector, record, query_context=query_context, query_norm=query_norm)
+                sortable = (float(score), -index, record)
+                if len(top_matches) < candidate_limit:
+                    heapq.heappush(top_matches, sortable)
+                    continue
+                if sortable > top_matches[0]:
+                    heapq.heapreplace(top_matches, sortable)
+            for score, _neg_index, record in sorted(top_matches, reverse=True):
+                item = _public_ranked_item(record)
+                item["score"] = round(float(score), 6)
+                raw_ranked.append(item)
+            ranked = _diversify_ranked_records(raw_ranked, limit=limit)
     context_blocks = []
     citations = []
     for item in ranked:

@@ -154,7 +154,7 @@ def test_recover_stale_runtime_jobs_refunds_and_marks_stale_job(monkeypatch):
     ])
     runtime.save_job_log = lambda *args, **_kwargs: logs.append(args)
 
-    monkeypatch.setattr(recovery.billing_credits, "refund_credit", lambda *args, **kwargs: refunds.append(args))
+    monkeypatch.setattr(recovery.billing_credits, "refund_credit", lambda *args, **kwargs: refunds.append(args) or True)
     monkeypatch.setattr(recovery.billing_receipts, "add_job_credit_refund", lambda *args, **kwargs: receipt_refunds.append(args))
     monkeypatch.setattr(recovery.billing_receipts, "ensure_job_billing_receipt", lambda *args, **kwargs: None)
     monkeypatch.setattr(recovery.runtime_jobs_store, "set_job", lambda *args, **kwargs: writes.append(args))
@@ -166,3 +166,63 @@ def test_recover_stale_runtime_jobs_refunds_and_marks_stale_job(monkeypatch):
     assert writes[0][1]["status"] == "error"
     assert writes[0][1]["credit_refunded"] is True
     assert logs and logs[0][0] == "job-stale"
+
+
+def test_recover_stale_runtime_jobs_refunds_study_tools_credit(monkeypatch):
+    writes = []
+    refunds = []
+    runtime = _runtime_for_recovery_docs([
+        _RuntimeJobDoc(
+            "job-stale-study-tools",
+            {
+                "status": "queued",
+                "user_id": "user-1",
+                "updated_at": 100.0,
+                "study_tools_credit_cost": 1,
+                "extra_slides_refunded": 0,
+                "billing_receipt": {"charged": {"slides_credits": 1}},
+            },
+        )
+    ])
+
+    monkeypatch.setattr(recovery.billing_credits, "refund_credit", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("primary refund should not run")))
+    monkeypatch.setattr(recovery.billing_credits, "refund_slides_credits", lambda *args, **kwargs: refunds.append(args) or True)
+    monkeypatch.setattr(recovery.runtime_jobs_store, "set_job", lambda *args, **kwargs: writes.append(args))
+
+    assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 1
+    assert refunds == [("user-1", 1)]
+    recovered = writes[0][1]
+    assert recovered["status"] == "error"
+    assert recovered["credit_refunded"] is True
+    assert recovered["extra_slides_refunded"] == 1
+    assert recovered["billing_receipt"]["refunded"]["slides_credits"] == 1
+
+
+def test_recover_stale_runtime_jobs_keeps_failed_refund_pending(monkeypatch):
+    writes = []
+    runtime = _runtime_for_recovery_docs([
+        _RuntimeJobDoc(
+            "job-stale-refund-fail",
+            {
+                "status": "processing",
+                "user_id": "user-1",
+                "credit_deducted": "lecture_credits_standard",
+                "updated_at": 100.0,
+            },
+        )
+    ])
+
+    monkeypatch.setattr(recovery.billing_credits, "refund_credit", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        recovery.billing_receipts,
+        "add_job_credit_refund",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("failed refund should not be recorded")),
+    )
+    monkeypatch.setattr(recovery.runtime_jobs_store, "set_job", lambda *args, **kwargs: writes.append(args))
+
+    assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 1
+    recovered = writes[0][1]
+    assert recovered.get("credit_refunded") is not True
+    assert recovered["credit_refund_pending"] is True
+    assert recovered["credit_refund_error"] == "runtime_recovery_refund_failed"
+    assert "contact support" in recovered["error"].lower()

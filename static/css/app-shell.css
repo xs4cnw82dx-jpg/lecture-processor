@@ -600,6 +600,13 @@ select {
   gap: 10px;
 }
 
+.shell-modal-error {
+  margin-top: 12px;
+  color: #b91c1c;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 .shell-modal-action {
   width: auto;
   border: 1px solid var(--shell-border);

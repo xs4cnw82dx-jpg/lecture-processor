@@ -182,6 +182,11 @@
     });
   }
 
+  function renderUpcomingSessionsError() {
+    if (!sessionsList) return;
+    sessionsList.innerHTML = '<div class="empty-state-card" role="status" aria-live="polite"><h3>Could not load your planner</h3><p>Your saved sessions may still exist. Check your connection, then try again.</p><div class="empty-state-actions"><button type="button" class="empty-state-link primary" data-dashboard-retry>Retry</button><a class="empty-state-link" href="/calendar">Open Calendar</a></div></div>';
+  }
+
   function renderRecentPacks(packs) {
     if (!packsList) return;
     while (packsList.firstChild) packsList.removeChild(packsList.firstChild);
@@ -209,6 +214,19 @@
     });
   }
 
+  function renderRecentPacksError() {
+    if (!packsList) return;
+    packsList.innerHTML = '<div class="empty-state-card" role="status" aria-live="polite"><h3>Could not load study packs</h3><p>Your library may still have saved lectures. Check your connection, then try again.</p><div class="empty-state-actions"><button type="button" class="empty-state-link primary" data-dashboard-retry>Retry</button><a class="empty-state-link" href="/study">Open Study Library</a></div></div>';
+  }
+
+  function bindDashboardRetry() {
+    Array.prototype.slice.call(document.querySelectorAll('[data-dashboard-retry]')).forEach(function (button) {
+      button.addEventListener('click', function () {
+        loadDashboard(currentUser);
+      }, { once: true });
+    });
+  }
+
   function dashboardVisiblePacks(packs) {
     return (Array.isArray(packs) ? packs : []).filter(function (pack) {
       return String((pack && pack.mode) || '').trim() !== 'voice-note';
@@ -233,9 +251,11 @@
       var result = await Promise.all([
         fetch('/api/study-progress/summary', { headers: headers }),
         fetch('/api/study-packs', { headers: headers }),
-        fetchUpcomingSessions(token).catch(function () { return []; })
+        fetchUpcomingSessions(token).catch(function () { return { __dashboardLoadFailed: true }; })
       ]);
-      sessions = Array.isArray(result[2]) ? result[2] : [];
+      var sessionsFailed = !!(result[2] && result[2].__dashboardLoadFailed);
+      var packsFailed = !result[1].ok;
+      sessions = sessionsFailed ? [] : (Array.isArray(result[2]) ? result[2] : []);
       var snapshot = null;
       if (result[0].ok) {
         var progressPayload = await result[0].json();
@@ -246,18 +266,20 @@
       }
       if (snapshot) applySnapshot(snapshot);
       else hydrateCachedSnapshot(user);
-      renderUpcomingSessions(user, sessions);
-      if (result[1].ok) {
+      if (sessionsFailed) renderUpcomingSessionsError();
+      else renderUpcomingSessions(user, sessions);
+      if (packsFailed) {
+        renderRecentPacksError();
+      } else {
         var packsPayload = await result[1].json();
         renderRecentPacks(dashboardVisiblePacks((packsPayload && packsPayload.study_packs) || []));
-      } else {
-        renderRecentPacks([]);
       }
     } catch (_) {
       hydrateCachedSnapshot(user);
-      renderUpcomingSessions(user, sessions);
-      renderRecentPacks([]);
+      renderUpcomingSessionsError();
+      renderRecentPacksError();
     } finally {
+      bindDashboardRetry();
       setDashboardLoading(false);
     }
   }

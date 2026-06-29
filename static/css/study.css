@@ -799,6 +799,29 @@
       min-width: 0
     }
 
+    .pack-row-open {
+      flex: 1 1 auto;
+      min-width: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      cursor: pointer
+    }
+
+    .pack-row-open .pack-row-content,
+    .pack-row-open .item-head,
+    .pack-row-open .item-sub {
+      display: block
+    }
+
+    .pack-row-open:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 3px;
+      border-radius: 8px
+    }
+
     .pack-select-control {
       flex: 0 0 auto;
       display: inline-flex;
@@ -1082,13 +1105,18 @@
       display: grid;
       grid-template-rows: 0fr;
       opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
       margin-bottom: 14px;
-      transition: grid-template-rows .26s ease, opacity .24s ease
+      transition: grid-template-rows .26s ease, opacity .24s ease, visibility 0s linear .26s
     }
 
     .meta-advanced-shell.visible {
       grid-template-rows: 1fr;
-      opacity: 1
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transition-delay: 0s
     }
 
     .meta-advanced-shell-inner {

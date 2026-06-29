@@ -58,6 +58,9 @@ let currentAdminCreditUser = null;
 
 const adminToast = document.createElement('div');
 adminToast.className = 'admin-toast';
+adminToast.setAttribute('role', 'status');
+adminToast.setAttribute('aria-live', 'polite');
+adminToast.setAttribute('aria-atomic', 'true');
 document.body.appendChild(adminToast);
 
 function authFetch(path, options) {
@@ -126,6 +129,8 @@ function showAdminToast(message, type) {
     adminToast.classList.remove('success', 'error', 'visible');
     if (type === 'success') adminToast.classList.add('success');
     if (type === 'error') adminToast.classList.add('error');
+    adminToast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    adminToast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
     adminToast.classList.add('visible');
     if (adminToastTimer) window.clearTimeout(adminToastTimer);
     adminToastTimer = window.setTimeout(() => {

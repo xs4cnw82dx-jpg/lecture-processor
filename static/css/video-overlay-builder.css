@@ -1519,10 +1519,15 @@
 }
 
 @media (max-width: 1180px) {
+  .overlay-builder-fullscreen {
+    overflow: auto;
+  }
+
   .overlay-builder-page {
     height: auto;
     min-height: 100vh;
-    overflow: auto;
+    min-height: 100dvh;
+    overflow: visible;
   }
 
   .overlay-builder-topbar,

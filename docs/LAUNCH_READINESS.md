@@ -96,7 +96,7 @@ This checklist tracks launch-critical items and current status with evidence.
 
 - [x] Test run (latest)
   - Command:
-    - `./venv/bin/python -m pytest -q tests/test_launch_guardrails.py tests/test_api_contracts.py`
+    - `.venv/bin/python -m pytest -q tests/test_launch_guardrails.py tests/test_api_contracts.py`
   - Result:
     - `47 passed`
 

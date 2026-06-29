@@ -9,6 +9,7 @@ const topbarUtils = window.LectureProcessorTopbar || {};
 const uiCache = window.LectureProcessorUiCache || null;
 const progressUtils = window.LectureProcessorStudyProgressUtils || {};
 const studyLibraryUtils = window.LectureProcessorStudyLibraryUtils || {};
+const studyAudioUtils = window.LectureProcessorStudyAudio || {};
 const studyApiUtils = window.LectureProcessorStudyApi || {};
 const studySessionUtils = window.LectureProcessorStudySessionUtils || {};
 const runtimeJobUtils = window.LectureProcessorRuntimeJobUtils || {};
@@ -1918,9 +1919,11 @@ function setAdvancedMetadataPanelState(button, panel, open, shell) {
   if (shell) {
     shell.classList.toggle('visible', isOpen);
     shell.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+    shell.inert = !isOpen;
   } else {
     panel.classList.toggle('visible', isOpen);
     panel.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+    panel.inert = !isOpen;
   }
   button.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
   button.textContent = isOpen ? 'Hide advanced metadata' : 'Show advanced metadata';
@@ -2133,17 +2136,8 @@ function initAudioForSelectedPack() {
   if (!selectedPack || !selectedPack.has_audio_playback) return;
   audioMap = (selectedPack.has_audio_sync && Array.isArray(selectedPack.notes_audio_map)) ? selectedPack.notes_audio_map.slice() : [];
   if (audioPackTitle) audioPackTitle.textContent = selectedPack.title || 'Lecture audio';
-  authenticatedFetch('/api/study-packs/' + encodeURIComponent(selectedPack.study_pack_id) + '/audio').then(function (response) {
-    if (!response.ok) {
-      return response.json().catch(function () { return {}; }).then(function (body) {
-        throw new Error((body && body.error) || 'Could not load audio');
-      });
-    }
-    return response.blob();
-  }).then(function (blob) {
-    if (!blob || !blob.size) return;
-    audioBlobUrl = URL.createObjectURL(blob);
-    audioPlayerEl.src = audioBlobUrl;
+  studyAudioUtils.fetchAudioStreamUrl(authenticatedFetch, selectedPack.study_pack_id).then(function (streamUrl) {
+    audioPlayerEl.src = streamUrl;
     audioPlayerEl.playbackRate = audioSpeeds[audioSpeedIndex];
     audioSpeedBtn.textContent = audioSpeeds[audioSpeedIndex] + 'x';
     audioReady = true;
@@ -2426,8 +2420,21 @@ function openModal(ov) {
   if (!ov) return;
   modalStateStack.push({ overlay: ov, restore: document.activeElement });
   ov.classList.add('entering');
-  ov.setAttribute('aria-hidden', 'false');
   activeModalOverlay = ov;
+  if (typeof uxUtils.openModalOverlay === 'function') {
+    uxUtils.openModalOverlay(ov, {
+      openClass: 'visible',
+      containerSelector: '.modal,.setup-modal,.builder-shell',
+      onRequestClose: closeActiveModalFromEscape
+    });
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        ov.classList.remove('entering');
+      });
+    });
+    return;
+  }
+  ov.setAttribute('aria-hidden', 'false');
   requestAnimationFrame(function () {
     requestAnimationFrame(function () {
       ov.classList.replace('entering', 'visible');
@@ -2438,9 +2445,17 @@ function openModal(ov) {
 }
 function closeModal(ov) {
   if (!ov) return;
-  ov.classList.remove('visible');
-  ov.classList.remove('entering');
-  ov.setAttribute('aria-hidden', 'true');
+  if (typeof uxUtils.closeModalOverlay === 'function') {
+    uxUtils.closeModalOverlay(ov, {
+      openClass: 'visible',
+      restoreFocus: false
+    });
+    ov.classList.remove('entering');
+  } else {
+    ov.classList.remove('visible');
+    ov.classList.remove('entering');
+    ov.setAttribute('aria-hidden', 'true');
+  }
   var restoreTarget = null;
   for (var i = modalStateStack.length - 1; i >= 0; i--) {
     if (modalStateStack[i].overlay === ov) {
@@ -4564,23 +4579,18 @@ function renderVideoOverlayProjects() {
     var div = document.createElement('div');
     div.className = 'item pack-list-item video-overlay-project-item';
     div.dataset.videoProjectId = entry.project_id;
-    div.setAttribute('role', 'button');
-    div.setAttribute('tabindex', '0');
     var titleText = escapeHtml(entry.title || 'Untitled overlay project');
     var countText = formatItemCount(entry.slide_count, 'slide') + ' · ' + formatItemCount(entry.overlay_count, 'overlay');
     var updatedText = 'Updated ' + formatVideoOverlayProjectDate(entry.updated_at);
     setSafeInnerHtml(
       div,
-      '<div class="pack-row-main"><div class="pack-row-content"><div class="item-head"><span class="item-title">' + titleText + '</span><a class="pack-quick-learn" data-video-project-open href="/video-overlay-builder?project_id=' + encodeURIComponent(entry.project_id) + '">Open</a></div><div class="item-sub">Video Overlay Project · ' + escapeHtml(countText) + '</div><div class="item-sub">' + escapeHtml(updatedText) + '</div></div></div><button type="button" class="btn danger u-btn-compact" data-video-project-delete>Delete</button>'
+      '<div class="pack-row-main"><button type="button" class="pack-row-open" data-video-project-main><span class="pack-row-content"><span class="item-head"><span class="item-title">' + titleText + '</span></span><span class="item-sub">Video Overlay Project · ' + escapeHtml(countText) + '</span><span class="item-sub">' + escapeHtml(updatedText) + '</span></span></button><a class="pack-quick-learn" data-video-project-open href="/video-overlay-builder?project_id=' + encodeURIComponent(entry.project_id) + '">Open</a></div><button type="button" class="btn danger u-btn-compact" data-video-project-delete>Delete</button>'
     );
     var openProject = function () {
       window.location.href = '/video-overlay-builder?project_id=' + encodeURIComponent(entry.project_id);
     };
-    div.addEventListener('click', function (event) {
-      if (event.target.closest && event.target.closest('[data-video-project-delete], [data-video-project-open]')) return;
-      openProject();
-    });
-    bindKeyboardActivation(div, function () { openProject(); });
+    var mainBtn = div.querySelector('[data-video-project-main]');
+    if (mainBtn) mainBtn.addEventListener('click', openProject);
     var deleteBtn = div.querySelector('[data-video-project-delete]');
     if (deleteBtn) {
       deleteBtn.addEventListener('click', function (event) {
@@ -4621,8 +4631,6 @@ function renderPacks() {
     var isCheckedForDelete = selectedPackIds.has(packId);
     div.className = 'item pack-list-item' + (selectedPackId === packId ? ' active' : '') + (isCheckedForDelete ? ' selected-for-delete' : '');
     div.draggable = true; div.dataset.packId = packId;
-    div.setAttribute('role', 'button');
-    div.setAttribute('tabindex', '0');
     if (selectedPackId === packId) {
       div.setAttribute('aria-current', 'true');
     } else {
@@ -4639,7 +4647,7 @@ function renderPacks() {
       p.folder_name ? 'Folder: ' + escapeHtml(p.folder_name) : defaultFolderText
     );
     div.setAttribute('aria-label', (isCheckedForDelete ? 'Selected for deletion, ' : '') + (p.title || 'Untitled pack'));
-    setSafeInnerHtml(div, '<div class="pack-row-main"><label class="pack-select-control"><input type="checkbox" data-pack-select aria-label="Select ' + titleText + ' for deletion"' + (isCheckedForDelete ? ' checked' : '') + '><span class="pack-select-box" aria-hidden="true"></span></label><div class="pack-row-content"><div class="item-head"><span class="item-title">' + titleText + '</span><button type="button" class="pack-quick-learn" data-pack-learn>Learn</button></div><div class="item-sub">' + modeText + ' · ' + formatPackCountSummary(p.flashcards_count, p.test_questions_count) + '</div><div class="item-sub">' + metaText + '</div></div></div>');
+    setSafeInnerHtml(div, '<div class="pack-row-main"><label class="pack-select-control"><input type="checkbox" data-pack-select aria-label="Select ' + titleText + ' for deletion"' + (isCheckedForDelete ? ' checked' : '') + '><span class="pack-select-box" aria-hidden="true"></span></label><button type="button" class="pack-row-open" data-pack-open><span class="pack-row-content"><span class="item-head"><span class="item-title">' + titleText + '</span></span><span class="item-sub">' + modeText + ' · ' + formatPackCountSummary(p.flashcards_count, p.test_questions_count) + '</span><span class="item-sub">' + metaText + '</span></span></button><button type="button" class="pack-quick-learn" data-pack-learn>Learn</button></div>');
     var activatePack = function () {
       selectedPackId = packId;
       renderPacks();
@@ -4656,16 +4664,10 @@ function renderPacks() {
         applyPackSelection(packId, checkbox.checked, e.shiftKey);
       });
     }
-    div.addEventListener('click', function (e) {
+    var openBtn = div.querySelector('[data-pack-open]');
+    if (openBtn) openBtn.addEventListener('click', function (e) {
       if (e.shiftKey || e.metaKey || e.ctrlKey) {
         e.preventDefault();
-        applyPackSelection(packId, !selectedPackIds.has(packId), e.shiftKey);
-        return;
-      }
-      activatePack();
-    });
-    bindKeyboardActivation(div, function (e) {
-      if (e && (e.shiftKey || e.metaKey || e.ctrlKey)) {
         applyPackSelection(packId, !selectedPackIds.has(packId), e.shiftKey);
         return;
       }
