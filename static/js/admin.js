@@ -1287,6 +1287,9 @@ function enhanceAdminSelect(selectEl, onChange) {
     if (!parent) return null;
     selectEl.dataset.enhanced = 'true';
     selectEl.classList.add('calculator-native-select');
+    selectEl.hidden = true;
+    selectEl.tabIndex = -1;
+    selectEl.setAttribute('aria-hidden', 'true');
 
     const wrapper = document.createElement('div');
     wrapper.className = 'app-select calculator-select calculator-select-upgraded';
@@ -1296,9 +1299,11 @@ function enhanceAdminSelect(selectEl, onChange) {
     button.className = 'app-select-button calculator-select-button';
     button.setAttribute('aria-haspopup', 'listbox');
     button.setAttribute('aria-expanded', 'false');
+    if (!selectEl.id) selectEl.id = 'admin-select-' + Math.random().toString(36).slice(2, 8);
 
     const label = document.createElement('span');
     label.className = 'app-select-label';
+    label.id = selectEl.id + '-value';
     const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     icon.setAttribute('viewBox', '0 0 24 24');
     icon.setAttribute('fill', 'none');
@@ -1315,6 +1320,11 @@ function enhanceAdminSelect(selectEl, onChange) {
     const menu = document.createElement('div');
     menu.className = 'app-select-menu calculator-select-menu';
     menu.setAttribute('role', 'listbox');
+    menu.id = selectEl.id + '-menu';
+    button.id = selectEl.id + '-button';
+    button.setAttribute('aria-controls', menu.id);
+    button.setAttribute('aria-labelledby', label.id);
+    menu.setAttribute('aria-labelledby', button.id);
     wrapper.appendChild(button);
     wrapper.appendChild(menu);
     selectEl.insertAdjacentElement('afterend', wrapper);

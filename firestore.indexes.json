@@ -255,5 +255,24 @@
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "job_logs",
+      "fieldPath": "expires_at_ts",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "analytics_events",
+      "fieldPath": "expires_at_ts",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "rate_limit_logs",
+      "fieldPath": "expires_at_ts",
+      "ttl": true,
+      "indexes": []
+    }
+  ]
 }

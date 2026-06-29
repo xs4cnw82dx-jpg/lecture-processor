@@ -12,10 +12,14 @@
   if (!auth) return;
 
   var DB_NAME = 'lecture-processor-voice-notes';
-  var DB_VERSION = 1;
+  var DB_VERSION = 2;
   var STORE_NOTES = 'notes';
   var STORE_AUDIO = 'audio';
   var STORE_SETTINGS = 'settings';
+  var DEFAULT_SETTINGS = {
+    output_language: 'english',
+    custom_instruction: ''
+  };
 
   var state = {
     user: auth.currentUser || null,
@@ -41,10 +45,7 @@
     highlightColor: 'yellow',
     highlightUndo: [],
     highlightRedo: [],
-    settings: {
-      output_language: 'english',
-      custom_instruction: ''
-    }
+    settings: Object.assign({}, DEFAULT_SETTINGS)
   };
 
   var els = {};
@@ -80,6 +81,10 @@
         if (!db.objectStoreNames.contains(STORE_NOTES)) db.createObjectStore(STORE_NOTES, { keyPath: 'id' });
         if (!db.objectStoreNames.contains(STORE_AUDIO)) db.createObjectStore(STORE_AUDIO, { keyPath: 'id' });
         if (!db.objectStoreNames.contains(STORE_SETTINGS)) db.createObjectStore(STORE_SETTINGS, { keyPath: 'key' });
+        try {
+          var notesStore = request.transaction.objectStore(STORE_NOTES);
+          if (notesStore && !notesStore.indexNames.contains('owner_key')) notesStore.createIndex('owner_key', 'owner_key', { unique: false });
+        } catch (e) {}
       };
       request.onsuccess = function () { resolve(request.result); };
       request.onerror = function () { reject(request.error || new Error('IndexedDB unavailable')); };
@@ -112,12 +117,22 @@
     });
   }
 
+  function currentOwnerKey() {
+    return state.user && state.user.uid ? ('user:' + String(state.user.uid)) : 'anon';
+  }
+
+  function noteBelongsToCurrentOwner(note) {
+    return !!note && String(note.owner_key || '') === currentOwnerKey();
+  }
+
   function getAllNotes() {
     return openDb().then(function (db) {
       return new Promise(function (resolve, reject) {
         var tx = db.transaction(STORE_NOTES, 'readonly');
         var request = tx.objectStore(STORE_NOTES).getAll();
-        request.onsuccess = function () { resolve(request.result || []); };
+        request.onsuccess = function () {
+          resolve((request.result || []).filter(noteBelongsToCurrentOwner));
+        };
         request.onerror = function () { reject(request.error || new Error('Could not load notes')); };
         tx.oncomplete = function () { db.close(); };
       });
@@ -126,6 +141,7 @@
 
   function putNote(note) {
     return withStore(STORE_NOTES, 'readwrite', function (store) {
+      note.owner_key = currentOwnerKey();
       store.put(note);
       return note;
     });
@@ -141,13 +157,13 @@
     return withStore(STORE_AUDIO, 'readonly', function (store) {
       return requestToPromise(store.get(id));
     }).then(function (row) {
-      return row && row.blob ? row.blob : null;
+      return row && row.blob && String(row.owner_key || '') === currentOwnerKey() ? row.blob : null;
     });
   }
 
   function putAudioBlob(id, blob, name) {
     return withStore(STORE_AUDIO, 'readwrite', function (store) {
-      store.put({ id: id, blob: blob, name: name || 'voice-note.webm', size: Number(blob && blob.size) || 0, updated_at: Date.now() });
+      store.put({ id: id, owner_key: currentOwnerKey(), blob: blob, name: name || 'voice-note.webm', size: Number(blob && blob.size) || 0, updated_at: Date.now() });
     });
   }
 
@@ -159,7 +175,7 @@
 
   function loadSettings() {
     return withStore(STORE_SETTINGS, 'readonly', function (store) {
-      return requestToPromise(store.get('voice-settings'));
+      return requestToPromise(store.get('voice-settings:' + currentOwnerKey()));
     }).then(function (row) {
       if (row && row.value) state.settings = Object.assign({}, state.settings, row.value);
     }).catch(function () {});
@@ -167,7 +183,7 @@
 
   function saveSettings() {
     return withStore(STORE_SETTINGS, 'readwrite', function (store) {
-      store.put({ key: 'voice-settings', value: state.settings });
+      store.put({ key: 'voice-settings:' + currentOwnerKey(), value: state.settings });
     }).catch(function () {});
   }
 
@@ -1145,6 +1161,7 @@
             var existing = state.notes.find(function (note) { return note.study_pack_id === detail.study_pack_id; });
             var note = utils.normalizePackPayload ? utils.normalizePackPayload(detail, existing || {}) : Object.assign({}, existing || {}, detail);
             note.id = existing ? existing.id : ('server-' + detail.study_pack_id);
+            note.owner_key = currentOwnerKey();
             note.local_audio_id = existing ? existing.local_audio_id : note.id;
             note.transcript = detail.source_transcript || note.transcript || '';
             note.notes_markdown = note.transcript;
@@ -1270,14 +1287,11 @@
     navigator.serviceWorker.register('/service-worker.js', { scope: '/voice-notes' }).catch(function () {});
   }
 
-  function init() {
-    cacheElements();
-    if (window.history && window.history.replaceState) {
-      window.history.replaceState({ voiceView: state.view, selectedId: state.selectedId || '' }, '', window.location.pathname + window.location.search);
-    }
-    attachEvents();
-    registerServiceWorker();
-    loadSettings()
+  function loadLocalVoiceNotesForCurrentUser() {
+    state.notes = [];
+    state.selectedId = '';
+    state.settings = Object.assign({}, DEFAULT_SETTINGS);
+    return loadSettings()
       .then(getAllNotes)
       .then(function (notes) {
         state.notes = notes;
@@ -1285,18 +1299,27 @@
       })
       .then(function () {
         renderAll();
-        if (navigator.onLine) syncAllPending();
+        if (navigator.onLine && hasSignedInSession()) syncAllPending();
       })
       .catch(function (error) {
         showToast(error && error.message ? error.message : 'Could not load voice notes.', 'error');
       });
+  }
+
+  function init() {
+    cacheElements();
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState({ voiceView: state.view, selectedId: state.selectedId || '' }, '', window.location.pathname + window.location.search);
+    }
+    attachEvents();
+    registerServiceWorker();
 
     bootstrap.onAuthStateReady(auth, function (user) {
       state.authReady = true;
       state.user = user || null;
       if (!state.user && authClient && typeof authClient.clearToken === 'function') authClient.clearToken();
       setAuthUi();
-      if (user) loadServerStudyPacks().then(renderAll);
+      loadLocalVoiceNotesForCurrentUser();
     });
     setAuthUi();
   }

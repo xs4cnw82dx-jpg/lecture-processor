@@ -158,6 +158,8 @@ BATCH_JOB_QUEUE_MAX_PENDING = safe_int_env('BATCH_JOB_QUEUE_MAX_PENDING', 24, mi
 
 ADMIN_FALLBACK_MAX_DOCS = safe_int_env('ADMIN_FALLBACK_MAX_DOCS', 5000, minimum=100, maximum=50000)
 
+TELEMETRY_RETENTION_SECONDS = safe_int_env('TELEMETRY_RETENTION_SECONDS', 90 * 24 * 60 * 60, minimum=24 * 60 * 60, maximum=2 * 365 * 24 * 60 * 60)
+
 INSTANT_BATCH_MAX_ROWS = safe_int_env('INSTANT_BATCH_MAX_ROWS', 20, minimum=2, maximum=100)
 
 BATCH_MAX_ROWS = safe_int_env('BATCH_MAX_ROWS', 100, minimum=2, maximum=499)
@@ -659,6 +661,8 @@ def get_prompt_inventory_markdown():
 
 JOB_TTL_SECONDS = safe_int_env('JOB_TTL_SECONDS', 30 * 60, minimum=5 * 60, maximum=24 * 60 * 60)
 
+UPLOAD_ARTIFACT_TTL_SECONDS = safe_int_env('UPLOAD_ARTIFACT_TTL_SECONDS', 24 * 60 * 60, minimum=60 * 60, maximum=30 * 24 * 60 * 60)
+
 JOB_CLEANUP_INTERVAL_SECONDS = 5 * 60
 
 PROCESSING_PUBLIC_ERROR_MESSAGE = 'Processing failed. Your credit has been refunded.'
@@ -688,6 +692,92 @@ def cleanup_expired_audio_stream_tokens():
         for token in expired:
             AUDIO_STREAM_TOKENS.pop(token, None)
 
+def _active_upload_artifact_paths():
+    active_paths = set()
+    with AUDIO_IMPORT_LOCK:
+        for entry in list(AUDIO_IMPORT_TOKENS.values()):
+            path = str((entry or {}).get('path', '') or '').strip()
+            if path:
+                active_paths.add(os.path.abspath(path))
+    return active_paths
+
+def _active_upload_artifact_prefixes():
+    with JOBS_LOCK:
+        return tuple(
+            f'{str(job_id).strip()}_'
+            for job_id in jobs.keys()
+            if str(job_id or '').strip()
+        )
+
+def cleanup_stale_upload_artifacts(ttl_seconds=None):
+    """Delete orphaned temporary upload files while preserving active jobs and study audio."""
+    upload_root = os.path.abspath(UPLOAD_FOLDER)
+    study_audio_root = os.path.abspath(STUDY_AUDIO_ROOT)
+    if not os.path.isdir(upload_root):
+        return {'removed_files': 0, 'removed_dirs': 0, 'skipped_active': 0, 'skipped_persisted': 0}
+
+    ttl = max(60, int(ttl_seconds or UPLOAD_ARTIFACT_TTL_SECONDS))
+    cutoff = time.time() - ttl
+    active_paths = _active_upload_artifact_paths()
+    active_prefixes = _active_upload_artifact_prefixes()
+    removed_files = 0
+    removed_dirs = 0
+    skipped_active = 0
+    skipped_persisted = 0
+
+    for root, dirs, files in os.walk(upload_root, topdown=True):
+        abs_root = os.path.abspath(root)
+        if abs_root == study_audio_root or abs_root.startswith(study_audio_root + os.sep):
+            skipped_persisted += len(files)
+            dirs[:] = []
+            continue
+        dirs[:] = [
+            dirname for dirname in dirs
+            if os.path.abspath(os.path.join(abs_root, dirname)) != study_audio_root
+            and not os.path.abspath(os.path.join(abs_root, dirname)).startswith(study_audio_root + os.sep)
+        ]
+        for filename in files:
+            file_path = os.path.abspath(os.path.join(abs_root, filename))
+            if file_path in active_paths or (active_prefixes and filename.startswith(active_prefixes)):
+                skipped_active += 1
+                continue
+            try:
+                if os.path.getmtime(file_path) > cutoff:
+                    continue
+                os.remove(file_path)
+                removed_files += 1
+            except FileNotFoundError:
+                continue
+            except Exception as error:
+                logger.warning('Warning: could not delete stale upload artifact %s: %s', file_path, error)
+
+    for root, dirs, _files in os.walk(upload_root, topdown=False):
+        abs_root = os.path.abspath(root)
+        if abs_root == upload_root or abs_root == study_audio_root or abs_root.startswith(study_audio_root + os.sep):
+            continue
+        try:
+            os.rmdir(abs_root)
+            removed_dirs += 1
+        except OSError:
+            continue
+        except Exception as error:
+            logger.warning('Warning: could not remove empty upload artifact directory %s: %s', abs_root, error)
+
+    if removed_files or removed_dirs:
+        logger.info(
+            'Cleaned stale upload artifacts: files=%s dirs=%s skipped_active=%s skipped_persisted=%s',
+            removed_files,
+            removed_dirs,
+            skipped_active,
+            skipped_persisted,
+        )
+    return {
+        'removed_files': removed_files,
+        'removed_dirs': removed_dirs,
+        'skipped_active': skipped_active,
+        'skipped_persisted': skipped_persisted,
+    }
+
 def _run_periodic_cleanup():
     """Background thread: periodically evict stale jobs and audio/import tokens."""
     while True:
@@ -696,6 +786,7 @@ def _run_periodic_cleanup():
             cleanup_old_jobs()
             cleanup_expired_audio_stream_tokens()
             upload_import_audio.cleanup_expired_audio_import_tokens(runtime=_self_runtime())
+            cleanup_stale_upload_artifacts()
         except Exception:
             logger.warning('Periodic cleanup failed', exc_info=True)
 
@@ -792,6 +883,7 @@ def save_job_log(job_id, job_data, finished_at):
 
         started_at = job_data.get('started_at', 0)
         duration = round(finished_at - started_at, 1) if started_at else 0
+        expires_at = finished_at + TELEMETRY_RETENTION_SECONDS
         payload = {
             'job_id': job_id,
             'uid': job_data.get('user_id', ''),
@@ -829,6 +921,8 @@ def save_job_log(job_id, job_data, finished_at):
             'started_at': started_at,
             'finished_at': finished_at,
             'duration_seconds': duration,
+            'expires_at': expires_at,
+            'expires_at_ts': datetime.fromtimestamp(expires_at, tz=timezone.utc),
         }
         payload = admin_metrics.add_admin_visibility_flag(payload)
         job_logs_repo.set_job_log(db, job_id, payload)

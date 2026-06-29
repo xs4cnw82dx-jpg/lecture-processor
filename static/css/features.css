@@ -121,6 +121,7 @@
     .calc-slider-row{display:flex;align-items:center;gap:16px;margin-bottom:8px}
     .calc-slider-label{font-size:.85rem;color:var(--gray-600);font-weight:600;min-width:180px;text-align:right}
     .calc-slider{flex:1;-webkit-appearance:none;appearance:none;height:6px;border-radius:3px;background:var(--gray-200);outline:none;cursor:pointer}
+    .calc-slider:focus-visible{outline:2px solid var(--primary);outline-offset:4px}
     .calc-slider::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--secondary));cursor:pointer;box-shadow:0 2px 8px rgba(79,70,229,.3)}
     .calc-slider-val{min-width:40px;font-size:.95rem;font-weight:700;color:var(--gray-900);text-align:left}
     .calc-divider{height:1px;background:var(--gray-200);margin:24px 0}

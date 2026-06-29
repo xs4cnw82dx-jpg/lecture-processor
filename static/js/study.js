@@ -884,7 +884,6 @@ function applyReviewAction(cardId, action) {
   updateTopbarDueCount();
   updateDifficultyToolbar();
   updateLearnCardStatus();
-  queueProgressSync(true);
 }
 function recordCardExposure(cardId) {
   if (!cardId) return;

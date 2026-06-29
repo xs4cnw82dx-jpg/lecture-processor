@@ -710,10 +710,12 @@ function refreshStudyHeaderMetrics() {
 async function fetchStudyProgressSummary() {
     if (!currentUser) return;
     try {
-        const response = await authenticatedFetch('/api/study-progress');
+        const response = await authenticatedFetch('/api/study-progress/summary');
         if (!response.ok) return;
         const payload = await response.json();
-        const summary = (payload && payload.summary && typeof payload.summary === 'object') ? payload.summary : null;
+        const summary = (payload && payload.summary && typeof payload.summary === 'object')
+            ? payload.summary
+            : (payload && typeof payload === 'object' ? payload : null);
         if (!summary) return;
         progressSummaryCache = summary;
         if (typeof summary.daily_goal === 'number' && summary.daily_goal > 0) {
@@ -3428,6 +3430,14 @@ async function submitDeleteAccountModal() {
         try {
             await auth.signOut();
         } catch (_) { }
+        if (window.indexedDB) {
+            await new Promise((resolve) => {
+                const request = window.indexedDB.deleteDatabase('lecture-processor-voice-notes');
+                request.onsuccess = () => resolve(true);
+                request.onerror = () => resolve(false);
+                request.onblocked = () => resolve(false);
+            });
+        }
         window.location.href = '/';
     } catch (e) {
         captureClientError(e, 'account_delete');

@@ -59,3 +59,52 @@ def test_save_job_log_redacts_sensitive_url_and_prompt(app, monkeypatch):
     assert captured["custom_prompt"] == ""
     assert captured["effective_prompt_preview"] == ""
     assert captured["custom_prompt_length"] == len("Summarize this confidential note")
+    assert captured["expires_at"] == 15 + core.TELEMETRY_RETENTION_SECONDS
+    assert captured["expires_at_ts"].timestamp() == captured["expires_at"]
+
+
+def test_cleanup_stale_upload_artifacts_preserves_active_and_persisted_files(tmp_path, monkeypatch):
+    upload_root = tmp_path / "uploads"
+    study_audio_root = upload_root / "study_audio"
+    upload_root.mkdir()
+    study_audio_root.mkdir()
+
+    stale_file = upload_root / "orphan.pdf"
+    fresh_file = upload_root / "fresh.pdf"
+    active_job_file = upload_root / "active-job_lecture.mp3"
+    active_import_file = upload_root / "pending-import.mp3"
+    study_audio_file = study_audio_root / "pack-audio.mp3"
+    for path in (stale_file, fresh_file, active_job_file, active_import_file, study_audio_file):
+        path.write_bytes(b"data")
+
+    old_time = 1000
+    fresh_time = 100000
+    for path in (stale_file, active_job_file, active_import_file, study_audio_file):
+        path.touch()
+        __import__('os').utime(path, (old_time, old_time))
+    __import__('os').utime(fresh_file, (fresh_time, fresh_time))
+
+    old_jobs = dict(core.jobs)
+    old_tokens = dict(core.AUDIO_IMPORT_TOKENS)
+    try:
+        core.jobs.clear()
+        core.jobs["active-job"] = {"status": "processing"}
+        core.AUDIO_IMPORT_TOKENS.clear()
+        core.AUDIO_IMPORT_TOKENS["token"] = {"path": str(active_import_file), "expires_at": fresh_time}
+        monkeypatch.setattr(core, "UPLOAD_FOLDER", str(upload_root))
+        monkeypatch.setattr(core, "STUDY_AUDIO_ROOT", str(study_audio_root))
+        monkeypatch.setattr(core.time, "time", lambda: fresh_time)
+
+        result = core.cleanup_stale_upload_artifacts(ttl_seconds=3600)
+    finally:
+        core.jobs.clear()
+        core.jobs.update(old_jobs)
+        core.AUDIO_IMPORT_TOKENS.clear()
+        core.AUDIO_IMPORT_TOKENS.update(old_tokens)
+
+    assert result["removed_files"] == 1
+    assert not stale_file.exists()
+    assert fresh_file.exists()
+    assert active_job_file.exists()
+    assert active_import_file.exists()
+    assert study_audio_file.exists()

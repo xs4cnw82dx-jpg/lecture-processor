@@ -148,6 +148,37 @@ def test_batch_override_panel_removes_hidden_controls_from_tab_order():
     assert "control.disabled = true;" in batch_js
 
 
+def test_custom_select_upgrades_remove_native_controls_from_tab_order():
+    batch_dashboard_js = Path('static/js/batch-dashboard.js').read_text(encoding='utf-8')
+    admin_js = Path('static/js/admin.js').read_text(encoding='utf-8')
+    ux_js = Path('static/js/ux-utils.js').read_text(encoding='utf-8')
+
+    assert "selectEl.hidden = true;" in batch_dashboard_js
+    assert "selectEl.tabIndex = -1;" in batch_dashboard_js
+    assert "selectEl.setAttribute('aria-hidden', 'true');" in batch_dashboard_js
+    assert "selectEl.hidden = true;" in admin_js
+    assert "selectEl.tabIndex = -1;" in admin_js
+    assert "selectEl.setAttribute('aria-hidden', 'true');" in admin_js
+    assert "button.setAttribute('aria-labelledby', (fieldLabelId ? fieldLabelId + ' ' : '') + label.id);" in ux_js
+
+
+def test_physio_audio_upload_input_is_not_sequentially_focusable():
+    physio_template = Path('templates/physio.html').read_text(encoding='utf-8')
+
+    assert 'id="physio-audio-input"' in physio_template
+    assert 'tabindex="-1" aria-hidden="true"' in physio_template
+
+
+def test_feature_calculator_sliders_have_labels_and_focus_style():
+    features_template = Path('templates/features.html').read_text(encoding='utf-8')
+    features_css = Path('static/css/features.css').read_text(encoding='utf-8')
+
+    assert '<label class="calc-slider-label" for="calc-lectures">Lectures per week</label>' in features_template
+    assert '<label class="calc-slider-label" for="calc-weeks">Weeks per semester</label>' in features_template
+    assert '<label class="calc-slider-label" for="calc-minutes">Minutes per lecture (manual notes)</label>' in features_template
+    assert '.calc-slider:focus-visible{outline:2px solid var(--primary);outline-offset:4px}' in features_css
+
+
 def test_calendar_validation_errors_are_field_owned():
     calendar_template = Path('templates/calendar.html').read_text(encoding='utf-8')
     calendar_js = Path('static/js/calendar.js').read_text(encoding='utf-8')
@@ -243,6 +274,7 @@ def test_shared_shell_hidden_and_live_region_contracts():
     assert "href === '/instant_batch_mode'" in app_shell_js
     assert "currentPath === '/instant_batch_mode_audio_transcription'" in app_shell_js
     assert "link.setAttribute('aria-current', 'page');" in app_shell_js
+    assert "creditsLink.setAttribute('aria-label', 'Buy credits, ' + creditsTotalLabel.textContent);" in app_shell_js
 
 
 def test_non_study_toasts_and_auth_messages_are_live_regions():

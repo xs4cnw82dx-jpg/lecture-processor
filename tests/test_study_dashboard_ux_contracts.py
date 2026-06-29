@@ -160,6 +160,13 @@ def test_dashboard_uses_progress_summary_endpoint():
     assert 'progressPayload && progressPayload.summary ? progressPayload.summary : progressPayload' in dashboard_js
 
 
+def test_upload_header_uses_progress_summary_endpoint():
+    index_js = _read('static/js/index-app.js')
+
+    assert "authenticatedFetch('/api/study-progress/summary')" in index_js
+    assert "const summary = (payload && payload.summary && typeof payload.summary === 'object')" in index_js
+
+
 def test_dashboard_hides_voice_note_packs_from_recent_list():
     dashboard_js = _read('static/js/dashboard.js')
 
