@@ -72,7 +72,7 @@
               <strong>Sign in required</strong>
               <p id="reader-auth-help">Sign in to run extraction and use your account credits on this reader.</p>
             </div>
-            <a class="primary-btn reader-auth-link" id="reader-auth-link" href="/lecture-notes?auth=signin">Sign in</a>
+            <a class="primary-btn reader-auth-link" id="reader-auth-link" href="/lecture-notes?auth=signin&amp;next={{ request.path }}">Sign in</a>
           </div>
           <div class="status" id="reader-status" role="status" aria-live="polite" aria-atomic="true"></div>
         </article>

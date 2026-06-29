@@ -609,6 +609,8 @@ def test_study_pack_get_returns_source_export_flags(client, monkeypatch):
     payload = response.get_json()
     assert payload["has_source_slides"] is True
     assert payload["has_source_transcript"] is True
+    assert "source_transcript" not in payload
+    assert "source_slides" not in payload
 
 
 def test_study_pack_list_uses_repo_order_and_count_fallback(client, monkeypatch):

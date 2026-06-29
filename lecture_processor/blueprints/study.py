@@ -54,6 +54,12 @@ def get_study_progress_summary():
     return study_api_service.get_study_progress_summary(runtime, request)
 
 
+@study_bp.route('/api/study-progress/packs/<pack_id>', methods=['GET'])
+def get_study_progress_pack(pack_id):
+    runtime = get_runtime()
+    return study_api_service.get_study_progress_pack(runtime, request, pack_id)
+
+
 @study_bp.route('/api/study-packs', methods=['GET'])
 def get_study_packs():
     runtime = get_runtime()

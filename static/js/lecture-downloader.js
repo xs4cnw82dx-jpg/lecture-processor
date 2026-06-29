@@ -74,7 +74,11 @@
     var signedIn = hasSignedInSession();
     var pending = authStateIsPending();
     if (authPanel) authPanel.hidden = signedIn || pending;
-    if (authLink) authLink.href = '/lecture-notes?auth=signin';
+    if (authLink) {
+      authLink.href = typeof authUtils.buildSignInUrl === 'function'
+        ? authUtils.buildSignInUrl()
+        : '/lecture-notes?auth=signin';
+    }
     if (pending) {
       if (statusEl && String(statusEl.textContent || '').trim() === 'Sign in to continue.') {
         setStatus('', '');

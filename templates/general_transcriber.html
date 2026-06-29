@@ -95,7 +95,7 @@
               <strong>Sign in required</strong>
               <p>Sign in to transcribe audio and use your interview credits.</p>
             </div>
-            <a class="primary-btn reader-auth-link" id="transcriber-auth-link" href="/lecture-notes?auth=signin">Sign in</a>
+            <a class="primary-btn reader-auth-link" id="transcriber-auth-link" href="/lecture-notes?auth=signin&amp;next={{ request.path }}">Sign in</a>
           </div>
           <div class="status" id="transcriber-status" role="status" aria-live="polite" aria-atomic="true"></div>
         </article>

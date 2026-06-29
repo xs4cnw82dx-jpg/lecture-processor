@@ -297,6 +297,12 @@ AUDIO_IMPORT_TOKENS = {}
 
 AUDIO_IMPORT_LOCK = threading.Lock()
 
+AUDIO_IMPORT_JOB_TTL_SECONDS = safe_int_env('AUDIO_IMPORT_JOB_TTL_SECONDS', 2 * 60 * 60, minimum=15 * 60, maximum=24 * 60 * 60)
+
+AUDIO_IMPORT_JOBS = {}
+
+AUDIO_IMPORT_JOB_LOCK = threading.Lock()
+
 FEATURE_AUDIO_SECTION_SYNC = os.getenv('FEATURE_AUDIO_SECTION_SYNC', '0').strip().lower() in {'1', 'true', 'yes', 'on'}
 
 MAX_PROGRESS_PACKS_PER_SYNC = 300

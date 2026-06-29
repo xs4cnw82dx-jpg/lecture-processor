@@ -91,7 +91,12 @@
     var signedInText = opts.signedInText || 'Dashboard';
     var signedOutText = opts.signedOutText || 'Sign in';
     var signedInHref = opts.signedInHref || '/dashboard';
-    var signedOutHref = opts.signedOutHref || '/lecture-notes?auth=signin';
+    var authUtils = global.LectureProcessorAuth || {};
+    var signedOutHref = opts.signedOutHref || (
+      typeof authUtils.buildSignInUrl === 'function'
+        ? authUtils.buildSignInUrl()
+        : '/lecture-notes?auth=signin'
+    );
 
     observeAuthState(auth, function (user) {
       if (labelEl) {

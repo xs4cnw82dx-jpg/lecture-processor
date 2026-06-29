@@ -18,6 +18,12 @@ def release_audio_import():
     return upload_api_service.release_imported_audio(runtime, request)
 
 
+@upload_bp.route('/api/import-audio-url/<job_id>', methods=['GET'])
+def get_audio_import(job_id):
+    runtime = get_runtime()
+    return upload_api_service.get_imported_audio_status(runtime, request, job_id)
+
+
 @upload_bp.route('/upload', methods=['POST'])
 def upload_file():
     runtime = get_runtime()

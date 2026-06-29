@@ -35,6 +35,11 @@ STUDY_CARD_STATE_SUMMARY_FIELDS = (
     'updated_at',
 )
 
+STUDY_PACK_SOURCE_FLAG_FIELDS = (
+    'has_source_slides',
+    'has_source_transcript',
+)
+
 
 def _apply_select(query, field_paths):
     select = getattr(query, 'select', None)
@@ -72,6 +77,10 @@ def study_pack_source_doc_ref(db, pack_id):
 
 def get_study_pack_source_doc(db, pack_id):
     return study_pack_source_doc_ref(db, pack_id).get()
+
+
+def get_study_pack_source_flags_doc(db, pack_id):
+    return _get_doc_with_fields(study_pack_source_doc_ref(db, pack_id), STUDY_PACK_SOURCE_FLAG_FIELDS)
 
 
 def list_study_pack_summaries_by_uid(db, uid, limit, after_doc=None):

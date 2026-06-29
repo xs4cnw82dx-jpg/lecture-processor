@@ -497,7 +497,9 @@
     }
     if (signInBtn) {
       signInBtn.addEventListener('click', function () {
-        window.location.href = '/lecture-notes?auth=signin';
+        window.location.href = typeof authUtils.buildSignInUrl === 'function'
+          ? authUtils.buildSignInUrl()
+          : '/lecture-notes?auth=signin';
       });
     }
     document.addEventListener('visibilitychange', function () {

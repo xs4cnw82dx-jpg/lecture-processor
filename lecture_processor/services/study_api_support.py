@@ -90,6 +90,29 @@ def get_study_pack_source_payload(app_ctx, pack_id):
     return payload if isinstance(payload, dict) else {}
 
 
+def get_study_pack_source_flags(app_ctx, pack_id):
+    try:
+        doc = app_ctx.study_repo.get_study_pack_source_flags_doc(app_ctx.db, pack_id)
+    except Exception as error:
+        app_ctx.logger.warning('Could not load source flags for study pack %s: %s', pack_id, error)
+        doc = None
+    if getattr(doc, 'exists', False):
+        flags = doc.to_dict() or {}
+        if 'has_source_slides' in flags or 'has_source_transcript' in flags:
+            return {
+                'has_source_slides': bool(flags.get('has_source_slides', False)),
+                'has_source_transcript': bool(flags.get('has_source_transcript', False)),
+            }
+
+    # Older source docs may not have compact flags yet. Fall back once, but do
+    # not expose the large source fields to the normal pack-open response.
+    payload = get_study_pack_source_payload(app_ctx, pack_id)
+    return {
+        'has_source_slides': bool(str(payload.get('slide_text', '') or '').strip()),
+        'has_source_transcript': bool(str(payload.get('transcript', '') or '').strip()),
+    }
+
+
 def get_owned_study_folder(app_ctx, uid, folder_id):
     doc = app_ctx.study_repo.get_study_folder_doc(app_ctx.db, folder_id)
     if not doc.exists:

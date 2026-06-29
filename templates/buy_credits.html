@@ -23,7 +23,7 @@
       <section class="shell-panel" id="buy-credits-auth-panel" hidden>
         <h2>Sign in to buy credits</h2>
         <p>Credit purchases are saved to your account, so sign in before choosing a bundle.</p>
-        <a class="refresh-history-btn" id="buy-credits-signin-link" href="/lecture-notes?auth=signin">Sign in</a>
+        <a class="refresh-history-btn" id="buy-credits-signin-link" href="/lecture-notes?auth=signin&amp;next={{ request.path }}">Sign in</a>
       </section>
       <section class="pricing-grid">{{ render_pricing_catalog(pricing_catalog, variant='page') }}</section>
       <section class="shell-panel purchase-history-panel" id="purchase-history">

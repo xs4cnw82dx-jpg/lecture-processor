@@ -629,10 +629,11 @@ function mergeProgressFromServer(remote) {
       saveStreakData(remote.streak_data, { sync: false });
     }
   }
-  remoteProgressCardStates = (remote.card_states && typeof remote.card_states === 'object') ? remote.card_states : {};
-  Object.keys(remoteProgressCardStates).forEach(function (packId) {
+  var incomingRemoteStates = (remote.card_states && typeof remote.card_states === 'object') ? remote.card_states : {};
+  remoteProgressCardStates = Object.assign({}, remoteProgressCardStates || {}, incomingRemoteStates);
+  Object.keys(incomingRemoteStates).forEach(function (packId) {
     if (!packId) return;
-    var remoteState = remoteProgressCardStates[packId] || {};
+    var remoteState = incomingRemoteStates[packId] || {};
     var localKey = 'card_state_' + uid + '_' + packId;
     var localState = {};
     try { localState = JSON.parse(localStorage.getItem(localKey) || '{}') || {}; } catch (e) { }
@@ -657,6 +658,18 @@ function loadRemoteProgress() {
     console.warn('Could not load remote study progress:', e && e.message ? e.message : e);
   });
 }
+function loadRemoteProgressForPack(packId) {
+  var safePackId = String(packId || '').trim();
+  if (!safePackId || !auth.currentUser || !token) { return Promise.resolve(); }
+  return apiCall('/api/study-progress/packs/' + encodeURIComponent(safePackId)).then(function (data) {
+    var scoped = Object.assign({}, data || {});
+    delete scoped.summary;
+    mergeProgressFromServer(scoped);
+    hydratePackStatesForKnownPacks();
+  }).catch(function (e) {
+    console.warn('Could not load remote study progress for pack:', e && e.message ? e.message : e);
+  });
+}
 function loadRemoteProgressSummary() {
   if (!auth.currentUser || !token) { return Promise.resolve(); }
   return apiCall('/api/study-progress/summary').then(function (summary) {
@@ -679,8 +692,7 @@ function scheduleRemoteProgressDetailsHydration() {
   if (progressDetailsHydrationScheduled || !auth.currentUser || !token) return;
   progressDetailsHydrationScheduled = true;
   var run = function () {
-    loadRemoteProgress().then(function () {
-      hydratePackStatesForKnownPacks();
+    loadRemoteProgressForPack(selectedPackId).then(function () {
       updateTopbarDueCount();
       renderGoalPanel();
       updateLearnCardStatus();
@@ -1501,7 +1513,9 @@ function openStudySignIn() {
     shellSignInBtn.click();
     return;
   }
-  window.location.href = '/lecture-notes?auth=signin';
+  window.location.href = typeof authUtils.buildSignInUrl === 'function'
+    ? authUtils.buildSignInUrl()
+    : '/lecture-notes?auth=signin';
 }
 function applyStudySignedOutState() {
   setStudyLibraryVisibility(false);
@@ -5230,49 +5244,51 @@ function openPack(packId) {
     selectedPack.has_source_slides = !!selectedPack.has_source_slides;
     selectedPack.has_source_transcript = !!selectedPack.has_source_transcript;
     selectedPack.notes_audio_map = Array.isArray(selectedPack.notes_audio_map) ? selectedPack.notes_audio_map : [];
-    codingState = null;
-    codingSelectionRange = null;
-    codingUndoStack = [];
-    selectedCodingCodeId = '';
-    codingMergeSourceId = '';
-    codingEditorLastSavedFingerprint = '';
-    if (codingAutosaveTimer) { clearTimeout(codingAutosaveTimer); codingAutosaveTimer = null; }
-    if (codingSelectionAutoApplyTimer) { clearTimeout(codingSelectionAutoApplyTimer); codingSelectionAutoApplyTimer = null; }
-    stopCodingAiProgress();
-    showPackEditor(true); updatePackSummary();
-    syncCodingTabAvailability();
-    syncStudyPackExportMenu();
-    packTitle.value = selectedPack.title || '';
-    setPackFolderSelection(selectedPack.folder_id || '');
-    if (!selectedPack.folder_id && selectedPack.mode === 'voice-note' && packFolderLabel) {
-      packFolderLabel.textContent = 'Voice Notes';
-    }
-    packCourse.value = selectedPack.course || '';
-    packSubject.value = selectedPack.subject || '';
-    packSemester.value = selectedPack.semester || '';
-    packBlock.value = selectedPack.block || '';
-    setInlineAutosaveBaseline(selectedPack);
-    packAdvancedMetadataOpen = false;
-    syncPackAdvancedMetadataState();
-    renderGoalPanel();
-    renderNotesForSelectedPackBase();
-    reapplyHighlightsForPack();
-    initAudioForSelectedPack();
-    renderFlashcardEditor(); renderQuestionEditor();
-    setEditorPane(getContentPreferredEditorPane(selectedPack, activeEditorPane));
-    updateShareActionAvailability();
-    // Deep link: auto-open learn mode if URL says so
-    if (openLearnFromUrl && !autoLearnConsumed && selectedPack.study_pack_id === learnPackFromUrl) {
-      autoLearnConsumed = true;
-      var preferMode = focusFromUrl || '';
-      if (preferMode && ['flashcards', 'test', 'write', 'match'].indexOf(preferMode) >= 0) {
-        openLearnStageWithMode(preferMode, fullscreenFromUrl);
-      } else if (isPracticeOnlyPack(selectedPack)) {
-        openLearnStageWithMode('test', fullscreenFromUrl);
-      } else {
-        openSessionSetup();
+    return loadRemoteProgressForPack(packId).then(function () {
+      codingState = null;
+      codingSelectionRange = null;
+      codingUndoStack = [];
+      selectedCodingCodeId = '';
+      codingMergeSourceId = '';
+      codingEditorLastSavedFingerprint = '';
+      if (codingAutosaveTimer) { clearTimeout(codingAutosaveTimer); codingAutosaveTimer = null; }
+      if (codingSelectionAutoApplyTimer) { clearTimeout(codingSelectionAutoApplyTimer); codingSelectionAutoApplyTimer = null; }
+      stopCodingAiProgress();
+      showPackEditor(true); updatePackSummary();
+      syncCodingTabAvailability();
+      syncStudyPackExportMenu();
+      packTitle.value = selectedPack.title || '';
+      setPackFolderSelection(selectedPack.folder_id || '');
+      if (!selectedPack.folder_id && selectedPack.mode === 'voice-note' && packFolderLabel) {
+        packFolderLabel.textContent = 'Voice Notes';
       }
-    }
+      packCourse.value = selectedPack.course || '';
+      packSubject.value = selectedPack.subject || '';
+      packSemester.value = selectedPack.semester || '';
+      packBlock.value = selectedPack.block || '';
+      setInlineAutosaveBaseline(selectedPack);
+      packAdvancedMetadataOpen = false;
+      syncPackAdvancedMetadataState();
+      renderGoalPanel();
+      renderNotesForSelectedPackBase();
+      reapplyHighlightsForPack();
+      initAudioForSelectedPack();
+      renderFlashcardEditor(); renderQuestionEditor();
+      setEditorPane(getContentPreferredEditorPane(selectedPack, activeEditorPane));
+      updateShareActionAvailability();
+      // Deep link: auto-open learn mode if URL says so
+      if (openLearnFromUrl && !autoLearnConsumed && selectedPack.study_pack_id === learnPackFromUrl) {
+        autoLearnConsumed = true;
+        var preferMode = focusFromUrl || '';
+        if (preferMode && ['flashcards', 'test', 'write', 'match'].indexOf(preferMode) >= 0) {
+          openLearnStageWithMode(preferMode, fullscreenFromUrl);
+        } else if (isPracticeOnlyPack(selectedPack)) {
+          openLearnStageWithMode('test', fullscreenFromUrl);
+        } else {
+          openSessionSetup();
+        }
+      }
+    });
   });
 }
 

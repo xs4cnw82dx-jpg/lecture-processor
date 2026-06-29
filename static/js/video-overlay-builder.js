@@ -6,6 +6,7 @@
 
   var bootstrap = window.LectureProcessorBootstrap || {};
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase && window.firebase.auth ? window.firebase.auth() : null);
+  var authUtils = window.LectureProcessorAuth || {};
   var userCache = window.LectureProcessorUserCache || {};
   var uiCache = window.LectureProcessorUiCache || null;
   var uxUtils = window.LectureProcessorUx || {};
@@ -58,6 +59,7 @@
 
   var refs = {
     authState: document.getElementById('overlay-auth-state'),
+    authLink: document.getElementById('overlay-auth-link'),
     projectTitle: document.getElementById('overlay-project-title'),
     projectList: document.getElementById('overlay-project-list'),
     stageFrame: document.querySelector('.overlay-stage-frame'),
@@ -477,10 +479,18 @@
   }
 
   function updateAuthStateText() {
-    if (!refs.authState) return;
-    refs.authState.textContent = currentUser && currentUser.uid
+    var signedIn = Boolean(currentUser && currentUser.uid);
+    if (refs.authState) {
+      refs.authState.textContent = signedIn
       ? 'Projects save to your pinned Video Overlay Projects folder in Study Library.'
       : 'Empty local workspace. Sign in to save projects in Study Library.';
+    }
+    if (refs.authLink) {
+      refs.authLink.hidden = signedIn;
+      refs.authLink.href = typeof authUtils.buildSignInUrl === 'function'
+        ? authUtils.buildSignInUrl()
+        : '/lecture-notes?auth=signin&next=' + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
+    }
   }
 
   function renderProjects() {

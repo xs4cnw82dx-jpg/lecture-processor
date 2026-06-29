@@ -294,7 +294,7 @@ def get_study_pack(app_ctx, request, pack_id):
         notes_audio_map = pack.get('notes_audio_map', []) if has_audio_sync else []
         daily_card_goal = study_progress.sanitize_daily_card_goal_value(pack.get('daily_card_goal'), runtime=app_ctx)
         notes_highlights = study_progress.sanitize_notes_highlights_payload(pack.get('notes_highlights'), runtime=app_ctx)
-        source_payload = study_api_support.get_study_pack_source_payload(app_ctx, pack_id)
+        source_flags = study_api_support.get_study_pack_source_flags(app_ctx, pack_id)
         return app_ctx.jsonify({
             'study_pack_id': pack_id,
             'title': pack.get('title', ''),
@@ -305,9 +305,8 @@ def get_study_pack(app_ctx, request, pack_id):
             'notes_audio_map': notes_audio_map,
             'has_audio_sync': has_audio_sync,
             'has_audio_playback': has_audio_playback,
-            'has_source_slides': bool(str(source_payload.get('slide_text', '') or '').strip()),
-            'has_source_transcript': bool(str(source_payload.get('transcript', '') or '').strip()),
-            'source_transcript': str(source_payload.get('transcript', '') or ''),
+            'has_source_slides': bool(source_flags.get('has_source_slides', False)),
+            'has_source_transcript': bool(source_flags.get('has_source_transcript', False)),
             'flashcards': pack.get('flashcards', []),
             'test_questions': pack.get('test_questions', []),
             'interview_summary': pack.get('interview_summary'),

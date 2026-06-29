@@ -3,6 +3,7 @@
 
   var bootstrap = window.LectureProcessorBootstrap || {};
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
+  var authUtils = window.LectureProcessorAuth || {};
   var uiCache = window.LectureProcessorUiCache || null;
   var userCache = window.LectureProcessorUserCache || {};
   var progressUtils = window.LectureProcessorStudyProgressUtils || {};
@@ -160,7 +161,10 @@
     if (!sessionsList) return;
     while (sessionsList.firstChild) sessionsList.removeChild(sessionsList.firstChild);
     if (!user) {
-      sessionsList.innerHTML = '<div class="empty-state-card"><h3>Sign in to see your planner</h3><p>Study sessions now sync with your account. Sign in to view your upcoming plan and open Calendar.</p><div class="empty-state-actions"><a class="empty-state-link primary" href="/lecture-notes?auth=signin">Sign in</a><a class="empty-state-link" href="/helpcenter">Help Center</a></div></div>';
+      var signInHref = typeof authUtils.buildSignInUrl === 'function'
+        ? authUtils.buildSignInUrl()
+        : '/lecture-notes?auth=signin';
+      sessionsList.innerHTML = '<div class="empty-state-card"><h3>Sign in to see your planner</h3><p>Study sessions now sync with your account. Sign in to view your upcoming plan and open Calendar.</p><div class="empty-state-actions"><a class="empty-state-link primary" href="' + signInHref + '">Sign in</a><a class="empty-state-link" href="/helpcenter">Help Center</a></div></div>';
       return;
     }
     var future = Array.isArray(sessions) ? sessions : [];

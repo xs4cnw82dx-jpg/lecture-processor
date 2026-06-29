@@ -251,6 +251,14 @@ def create_batch_job(app_ctx, request, *, instant=False):
     ai_unavailable = upload_batch_support.require_ai_processing_ready(app_ctx)
     if ai_unavailable is not None:
         return ai_unavailable
+    queue_stats_fn = getattr(app_ctx, 'get_batch_background_queue_stats', None)
+    if callable(queue_stats_fn):
+        try:
+            queue_stats = queue_stats_fn() or {}
+            if int(queue_stats.get('active', 0) or 0) >= int(queue_stats.get('capacity', 1) or 1):
+                return upload_batch_support.queue_full_response(app_ctx)
+        except Exception:
+            pass
 
     decoded_email = str((decoded_token or {}).get('email', '') or '').strip()
     user = app_ctx.get_or_create_user(uid, decoded_email)

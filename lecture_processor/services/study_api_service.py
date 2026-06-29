@@ -30,6 +30,7 @@ from lecture_processor.services.study_library_service import (
 )
 from lecture_processor.services.study_progress_service import (
     get_study_progress,
+    get_study_progress_pack,
     get_study_progress_summary,
     update_study_progress,
 )
@@ -54,6 +55,7 @@ __all__ = [
     'get_study_pack_share',
     'get_study_packs',
     'get_study_progress',
+    'get_study_progress_pack',
     'get_study_progress_summary',
     'stream_study_pack_audio',
     'stream_study_pack_audio_with_token',

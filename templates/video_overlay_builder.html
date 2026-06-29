@@ -18,7 +18,10 @@
       <div class="overlay-builder-title">
         <a class="overlay-back-link" href="/tools">Back to tools</a>
         <h1>Video Overlay Builder</h1>
-        <p id="overlay-auth-state">Empty local workspace. Sign in to save projects in Study Library.</p>
+        <div class="overlay-auth-row">
+          <p id="overlay-auth-state">Empty local workspace. Sign in to save projects in Study Library.</p>
+          <a class="overlay-auth-link" id="overlay-auth-link" href="/lecture-notes?auth=signin&amp;next={{ request.path }}">Sign in</a>
+        </div>
       </div>
       <div class="overlay-project-controls" aria-label="Project controls">
         <label class="overlay-project-field" for="overlay-project-title">
@@ -156,6 +159,7 @@
   <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
   <script src="{{ url_for('static', filename='js/user-cache-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/video-overlay-builder-utils.js') }}"></script>
   <script src="{{ url_for('static', filename=video_overlay_builder_js_asset or 'js/video-overlay-builder.js') }}"></script>

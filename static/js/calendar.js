@@ -84,7 +84,9 @@
     }
 
     function getSignInHref() {
-      return '/lecture-notes?auth=signin';
+      return typeof authUtils.buildSignInUrl === 'function'
+        ? authUtils.buildSignInUrl()
+        : '/lecture-notes?auth=signin';
     }
 
     function updateAddSessionButton() {

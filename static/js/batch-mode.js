@@ -656,6 +656,46 @@
     return Promise.resolve(true);
   }
 
+  function waitForAudioImport(ms) {
+    return new Promise(function (resolve) {
+      window.setTimeout(resolve, Math.max(250, Number(ms || 1000)));
+    });
+  }
+
+  function pollRowAudioImportJob(rowNode, jobId) {
+    var safeJobId = String(jobId || '').trim();
+    if (!safeJobId) return Promise.reject(new Error('Audio import did not return a job id.'));
+    var deadlineMs = Date.now() + 16 * 60 * 1000;
+    var attempt = 0;
+
+    function tick() {
+      if (Date.now() >= deadlineMs) {
+        throw new Error('Audio import is taking longer than expected. Please try again.');
+      }
+      return authFetch('/api/import-audio-url/' + encodeURIComponent(safeJobId)).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (payload) {
+          return { response: response, payload: payload };
+        });
+      }).then(function (result) {
+        if (!result.response.ok) {
+          throw new Error(String(result.payload.error || 'Could not read audio import status.'));
+        }
+        var status = String(result.payload.status || '').trim().toLowerCase();
+        if (status === 'complete' && result.payload.audio_import_token) {
+          return result.payload;
+        }
+        if (status === 'error') {
+          throw new Error(String(result.payload.error || 'Audio import failed.'));
+        }
+        setRowAudioImportStatus(rowNode, String(result.payload.step_description || 'Importing audio from URL...'), 'pending');
+        attempt += 1;
+        return waitForAudioImport(Math.min(5000, 1000 + attempt * 500)).then(tick);
+      });
+    }
+
+    return tick();
+  }
+
   function getRowM3u8Url(rowNode) {
     var urlInput = rowNode.querySelector('input[data-field="m3u8"]');
     return String((urlInput && urlInput.value) || '').trim();
@@ -719,13 +759,18 @@
           setRowAudioImportStatus(rowNode, 'Import failed: ' + String(result.payload.error || 'Could not import audio from URL.'), 'error');
           return { ok: false, reason: 'import-failed' };
         }
-      return applyRowImportedAudio(
-        rowNode,
-        result.payload,
-        previousToken,
-        url,
-        reason !== 'auto-start'
-      ).then(function () {
+      var readyPayload = result.payload.audio_import_token
+        ? Promise.resolve(result.payload)
+        : pollRowAudioImportJob(rowNode, result.payload.job_id);
+      return readyPayload.then(function (payload) {
+        return applyRowImportedAudio(
+          rowNode,
+          payload,
+          previousToken,
+          url,
+          reason !== 'auto-start'
+        );
+      }).then(function () {
         return { ok: true, reason: 'imported' };
       });
     }).catch(function () {

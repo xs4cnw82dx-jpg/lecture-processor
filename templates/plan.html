@@ -24,7 +24,7 @@
       </div>
 
       <div class="auth-required" id="auth-required" hidden>
-        You need to sign in to use the planner. <a href="/lecture-notes?auth=signin">Sign in</a>.
+        You need to sign in to use the planner. <a href="/lecture-notes?auth=signin&amp;next={{ request.path }}">Sign in</a>.
       </div>
 
       <div id="planner-content" hidden>

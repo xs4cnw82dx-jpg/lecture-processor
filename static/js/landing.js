@@ -1,6 +1,8 @@
     var bootstrap=window.LectureProcessorBootstrap||{};
     var auth=bootstrap.getAuth?bootstrap.getAuth():firebase.auth();
     var topbarUtils=window.LectureProcessorTopbar||{};
+    var authUtils=window.LectureProcessorAuth||{};
+    var signInHref=authUtils.buildSignInUrl?authUtils.buildSignInUrl():'/lecture-notes?auth=signin';
     var dashboardBtnLabel=document.getElementById('dashboard-btn-label');
     if(topbarUtils.bindAuthCta){
       topbarUtils.bindAuthCta(auth,{
@@ -9,14 +11,14 @@
         signedInText:'Dashboard',
         signedOutText:'Sign in',
         signedInHref:'/dashboard',
-        signedOutHref:'/lecture-notes?auth=signin'
+        signedOutHref:signInHref
       });
     }else{
       bootstrap.onAuthStateReady(auth,function(user){
         var dashboardBtn=document.getElementById('dashboard-btn');
         dashboardBtnLabel.textContent=user?'Dashboard':'Sign in';
         if(dashboardBtn){
-          dashboardBtn.href=user?'/dashboard':'/lecture-notes?auth=signin';
+          dashboardBtn.href=user?'/dashboard':signInHref;
         }
       });
     }

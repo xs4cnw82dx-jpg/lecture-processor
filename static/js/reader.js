@@ -102,6 +102,9 @@
   }
 
   function getSignInHref() {
+    if (typeof authUtils.buildSignInUrl === 'function') {
+      return authUtils.buildSignInUrl();
+    }
     var next = window.location.pathname + window.location.search + window.location.hash;
     return '/lecture-notes?auth=signin&next=' + encodeURIComponent(next);
   }
