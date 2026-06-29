@@ -3,7 +3,7 @@ from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 
-ACTIVE_RUNTIME_JOB_STATUSES = {'starting', 'processing'}
+ACTIVE_RUNTIME_JOB_STATUSES = {'queued', 'starting', 'processing'}
 
 
 def _resolve_runtime(runtime=None):
@@ -145,17 +145,31 @@ def recover_stale_runtime_jobs(runtime=None):
         credit_type = str(job_data.get('credit_deducted', '') or '').strip()
         already_refunded = bool(job_data.get('credit_refunded', False))
         if uid and credit_type and (not already_refunded):
-            billing_credits.refund_credit(uid, credit_type, runtime=resolved_runtime)
-            billing_receipts.add_job_credit_refund(job_data, credit_type, 1, runtime=resolved_runtime)
-            job_data['credit_refunded'] = True
+            try:
+                primary_refunded = bool(billing_credits.refund_credit(uid, credit_type, runtime=resolved_runtime))
+            except Exception:
+                primary_refunded = False
+            if primary_refunded:
+                billing_receipts.add_job_credit_refund(job_data, credit_type, 1, runtime=resolved_runtime)
+                job_data['credit_refunded'] = True
+            else:
+                job_data['credit_refund_pending'] = True
+                job_data['credit_refund_error'] = 'runtime_recovery_refund_failed'
 
-        extra_spent = int(job_data.get('interview_features_cost', 0) or 0)
+        extra_spent = int(job_data.get('interview_features_cost', 0) or 0) + int(job_data.get('study_tools_credit_cost', 0) or 0)
         extra_refunded = int(job_data.get('extra_slides_refunded', 0) or 0)
         extra_to_refund = max(0, extra_spent - extra_refunded)
         if uid and extra_to_refund > 0:
-            billing_credits.refund_slides_credits(uid, extra_to_refund, runtime=resolved_runtime)
-            job_data['extra_slides_refunded'] = extra_refunded + extra_to_refund
-            billing_receipts.add_job_credit_refund(job_data, 'slides_credits', extra_to_refund, runtime=resolved_runtime)
+            try:
+                extras_refunded = bool(billing_credits.refund_slides_credits(uid, extra_to_refund, runtime=resolved_runtime))
+            except Exception:
+                extras_refunded = False
+            if extras_refunded:
+                job_data['extra_slides_refunded'] = extra_refunded + extra_to_refund
+                billing_receipts.add_job_credit_refund(job_data, 'slides_credits', extra_to_refund, runtime=resolved_runtime)
+                job_data['credit_refunded'] = True
+            else:
+                job_data['extra_slides_refund_pending'] = extra_to_refund
 
         billing_receipts.ensure_job_billing_receipt(
             job_data,
@@ -164,7 +178,10 @@ def recover_stale_runtime_jobs(runtime=None):
         )
         job_data['status'] = 'error'
         job_data['step_description'] = 'Interrupted by server restart'
-        job_data['error'] = 'Processing was interrupted by a server restart. Your credit has been refunded.'
+        if billing_receipts.job_has_refunds(job_data, runtime=resolved_runtime):
+            job_data['error'] = 'Processing was interrupted by a server restart. Your credit has been refunded.'
+        else:
+            job_data['error'] = 'Processing was interrupted by a server restart. Please contact support if a credit was charged.'
         job_data['finished_at'] = now_ts
         job_data['job_id'] = job_id
         runtime_jobs_store.set_job(job_id, job_data, runtime=resolved_runtime)

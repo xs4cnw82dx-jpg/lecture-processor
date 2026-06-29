@@ -126,6 +126,30 @@ def test_extra_slides_refund_does_not_increment_when_refund_fails(monkeypatch):
     assert persisted[-1][0] == "job-extra-fail"
 
 
+def test_extra_slides_refund_marks_job_refunded_after_success(monkeypatch):
+    persisted = []
+    runtime = SimpleNamespace(
+        logger=SimpleNamespace(warning=lambda *args, **kwargs: None),
+        time=SimpleNamespace(time=lambda: 100.0),
+    )
+    job_data = {
+        "extra_slides_refunded": 1,
+        "credit_refunded": False,
+        "billing_receipt": {"charged": {"slides_credits": 3}},
+    }
+
+    monkeypatch.setattr(pipelines.billing_credits, "refund_slides_credits", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(pipelines.runtime_jobs_store, "set_job", lambda job_id, payload, runtime=None: persisted.append((job_id, dict(payload))))
+
+    refunded = pipelines._refund_extra_slides("job-extra-ok", job_data, "u1", 2, runtime=runtime)
+
+    assert refunded is True
+    assert job_data["credit_refunded"] is True
+    assert job_data["extra_slides_refunded"] == 3
+    assert job_data["billing_receipt"]["refunded"]["slides_credits"] == 2
+    assert persisted[-1][0] == "job-extra-ok"
+
+
 @pytest.mark.parametrize(
     ("mode", "job_data", "expected_source"),
     [

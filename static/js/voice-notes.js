@@ -7,6 +7,7 @@
   var authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
   var utils = window.LectureProcessorVoiceNotes || {};
   var downloadUtils = window.LectureProcessorDownload || {};
+  var uxUtils = window.LectureProcessorUx || {};
 
   if (!auth) return;
 
@@ -69,6 +70,7 @@
   }
 
   var confirmResolver = null;
+  var confirmReturnFocus = null;
 
   function openDb() {
     return new Promise(function (resolve, reject) {
@@ -191,12 +193,20 @@
 
   function openConfirmModal(title, message, confirmLabel) {
     if (!els.confirmModal) return Promise.resolve(false);
+    confirmReturnFocus = document.activeElement;
     if (els.confirmTitle) els.confirmTitle.textContent = title || 'Confirm Action';
     if (els.confirmMessage) els.confirmMessage.textContent = message || '';
     if (els.confirmConfirm) els.confirmConfirm.textContent = confirmLabel || 'Confirm';
-    els.confirmModal.hidden = false;
-    els.confirmModal.setAttribute('aria-hidden', 'false');
-    if (els.confirmCancel) els.confirmCancel.focus();
+    if (typeof uxUtils.openModalOverlay === 'function') {
+      uxUtils.openModalOverlay(els.confirmModal, {
+        initialFocus: els.confirmCancel,
+        onRequestClose: function () { closeConfirmModal(false); }
+      });
+    } else {
+      els.confirmModal.hidden = false;
+      els.confirmModal.setAttribute('aria-hidden', 'false');
+      if (els.confirmCancel) els.confirmCancel.focus();
+    }
     return new Promise(function (resolve) {
       confirmResolver = resolve;
     });
@@ -204,8 +214,18 @@
 
   function closeConfirmModal(confirmed) {
     if (!els.confirmModal) return;
-    els.confirmModal.hidden = true;
-    els.confirmModal.setAttribute('aria-hidden', 'true');
+    if (typeof uxUtils.closeModalOverlay === 'function') {
+      uxUtils.closeModalOverlay(els.confirmModal, {
+        returnFocus: confirmReturnFocus
+      });
+    } else {
+      els.confirmModal.hidden = true;
+      els.confirmModal.setAttribute('aria-hidden', 'true');
+      if (confirmReturnFocus && typeof confirmReturnFocus.focus === 'function') {
+        try { confirmReturnFocus.focus(); } catch (_) {}
+      }
+    }
+    confirmReturnFocus = null;
     if (confirmResolver) {
       confirmResolver(Boolean(confirmed));
       confirmResolver = null;
@@ -1247,7 +1267,7 @@
 
   function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
-    navigator.serviceWorker.register('/service-worker.js').catch(function () {});
+    navigator.serviceWorker.register('/service-worker.js', { scope: '/voice-notes' }).catch(function () {});
   }
 
   function init() {

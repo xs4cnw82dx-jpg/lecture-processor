@@ -287,6 +287,8 @@ AUDIO_STREAM_TOKEN_TTL_SECONDS = 3600
 
 AUDIO_STREAM_TOKENS = {}
 
+AUDIO_STREAM_LOCK = threading.Lock()
+
 ALLOW_LEGACY_AUDIO_STREAM_TOKENS = str(os.getenv('ALLOW_LEGACY_AUDIO_STREAM_TOKENS', '0')).strip().lower() in {'1', 'true', 'yes', 'on'}
 
 AUDIO_IMPORT_TOKEN_TTL_SECONDS = 30 * 60
@@ -675,9 +677,10 @@ def cleanup_old_jobs():
 def cleanup_expired_audio_stream_tokens():
     """Evict expired audio stream tokens to prevent unbounded memory growth."""
     now_ts = time.time()
-    expired = [t for t, d in list(AUDIO_STREAM_TOKENS.items()) if now_ts > d.get('expires_at', 0)]
-    for token in expired:
-        AUDIO_STREAM_TOKENS.pop(token, None)
+    with AUDIO_STREAM_LOCK:
+        expired = [t for t, d in list(AUDIO_STREAM_TOKENS.items()) if now_ts > d.get('expires_at', 0)]
+        for token in expired:
+            AUDIO_STREAM_TOKENS.pop(token, None)
 
 def _run_periodic_cleanup():
     """Background thread: periodically evict stale jobs and audio/import tokens."""
@@ -795,7 +798,7 @@ def save_job_log(job_id, job_data, finished_at):
             'study_features': job_data.get('study_features', 'none'),
             'interview_features_count': len(job_data.get('interview_features', [])) if isinstance(job_data.get('interview_features'), list) else 0,
             'credit_deducted': job_data.get('credit_deducted', ''),
-            'credit_refunded': job_data.get('credit_refunded', False),
+            'credit_refunded': bool(job_data.get('credit_refunded', False)) or billing_receipts.job_has_refunds(job_data, runtime=_self_runtime()),
             'error_message': job_data.get('error', ''),
             'failed_stage': job_data.get('failed_stage', ''),
             'provider_error_code': job_data.get('provider_error_code', ''),
@@ -830,7 +833,7 @@ def save_job_log(job_id, job_data, finished_at):
             backend_event = 'processing_completed_backend'
         elif status == 'error':
             backend_event = 'processing_failed_backend'
-        log_analytics_event(backend_event, source='backend', uid=job_data.get('user_id', ''), email=job_data.get('user_email', ''), session_id=job_id, properties={'job_id': job_id, 'mode': job_data.get('mode', ''), 'duration_seconds': duration, 'credit_refunded': bool(job_data.get('credit_refunded', False))}, created_at=finished_at)
+        log_analytics_event(backend_event, source='backend', uid=job_data.get('user_id', ''), email=job_data.get('user_email', ''), session_id=job_id, properties={'job_id': job_id, 'mode': job_data.get('mode', ''), 'duration_seconds': duration, 'credit_refunded': bool(payload.get('credit_refunded', False))}, created_at=finished_at)
         logger.info(f"📊 Logged job {job_id}: mode={job_data.get('mode')}, status={job_data.get('status')}, duration={duration}s")
     except Exception as e:
         logger.error(f'❌ Failed to log job {job_id}: {e}')
@@ -1365,6 +1368,9 @@ def add_job_credit_refund(job_data, credit_type, amount=1):
 
 def get_billing_receipt_snapshot(job_data):
     return billing_receipts.get_billing_receipt_snapshot(job_data, runtime=_self_runtime())
+
+def job_has_refunds(job_data):
+    return billing_receipts.job_has_refunds(job_data, runtime=_self_runtime())
 
 MODEL_THINKING_POLICY = {'gemini-3.1-flash-lite': {'thinking_level': 'minimal'}, 'gemini-2.5-pro': {'thinking_budget': 32768}, 'gemini-3-flash-preview': {'thinking_level': 'high'}}
 

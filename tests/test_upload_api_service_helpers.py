@@ -3,6 +3,7 @@ import zipfile
 from types import SimpleNamespace
 
 from lecture_processor.services import upload_api_service
+from lecture_processor.services import upload_batch_support
 from lecture_processor.services import tools_extraction_support
 from lecture_processor.services import url_security
 
@@ -140,3 +141,43 @@ def test_fetch_tools_url_text_uses_ip_bound_fetch_target(monkeypatch):
         if isinstance(handler, url_security.IPBoundHTTPSHandler)
     )
     assert https_handler.registry.resolve("example.com", 443) == ("93.184.216.34",)
+
+
+def test_runtime_job_refund_receipt_accumulates_primary_and_extra_refunds():
+    runtime = SimpleNamespace(
+        time=SimpleNamespace(time=lambda: 100.0),
+        logger=SimpleNamespace(warning=lambda *_args, **_kwargs: None),
+    )
+    job_snapshot = {
+        "billing_receipt": {
+            "charged": {
+                "lecture_credits_standard": 1,
+                "slides_credits": 2,
+            },
+            "refunded": {},
+        },
+        "extra_slides_refunded": 0,
+    }
+
+    primary_updates = upload_batch_support._record_runtime_job_refund(
+        runtime,
+        "job-1",
+        "lecture_credits_standard",
+        1,
+        job_snapshot=job_snapshot,
+    )
+    extra_updates = upload_batch_support._record_runtime_job_refund(
+        runtime,
+        "job-1",
+        "slides_credits",
+        2,
+        extra_slides_increment=2,
+        job_snapshot=job_snapshot,
+    )
+
+    assert primary_updates["billing_receipt"]["refunded"]["lecture_credits_standard"] == 1
+    assert extra_updates["billing_receipt"]["refunded"] == {
+        "lecture_credits_standard": 1,
+        "slides_credits": 2,
+    }
+    assert extra_updates["extra_slides_refunded"] == 2

@@ -63,6 +63,7 @@ def _refund_extra_slides(job_id, job_data, uid, amount, runtime=None):
     if refunded:
         job_data['extra_slides_refunded'] = already_refunded + amount_int
         billing_receipts.add_job_credit_refund(job_data, 'slides_credits', amount_int, runtime=resolved_runtime)
+        job_data['credit_refunded'] = True
         job_data.pop('extra_slides_refund_pending', None)
     else:
         job_data['extra_slides_refunded'] = already_refunded

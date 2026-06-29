@@ -1,6 +1,6 @@
 # AI Launch Handoff (Read This First)
 
-Last updated: 2026-03-01
+Last updated: 2026-06-29
 Project: `lecture-processor`
 Primary repo: `https://github.com/xs4cnw82dx-jpg/lecture-processor`
 Production URL: `https://lecture-processor-1.onrender.com`
@@ -66,7 +66,7 @@ When in doubt: choose explicitness over brevity.
 ## 3) Tech Stack and Architecture Snapshot
 
 - Backend: Flask package with app factory (`lecture_processor/__init__.py`) and WSGI/bootstrap entrypoint (`app.py`)
-- Frontend: server-rendered templates + inline JS/CSS in `templates/*.html`
+- Frontend: server-rendered templates in `templates/*.html` plus static CSS/JS in `static/`
 - Auth: Firebase Auth (Google + email/password)
 - Database: Firestore
 - Payments: Stripe Checkout + webhook
@@ -103,14 +103,14 @@ Important files:
 Owner machine assumptions:
 
 - macOS
-- Python 3.9.x
-- local venv in project folder
+- Python 3.14.3 (see `.python-version`)
+- local `.venv` in project folder
 
 Default startup commands:
 
 ```bash
 cd /Users/jaccovandermeulen/Desktop/lecture-processor
-source venv/bin/activate
+source .venv/bin/activate
 python app.py
 ```
 
@@ -261,7 +261,7 @@ Only announce publicly when all are true:
 
 ```bash
 cd /Users/jaccovandermeulen/Desktop/lecture-processor
-source venv/bin/activate
+source .venv/bin/activate
 python -m pytest -q tests/test_launch_guardrails.py
 ./scripts/run_smoke.sh
 ```
@@ -279,7 +279,7 @@ npm run e2e
 
 ```bash
 cd /Users/jaccovandermeulen/Desktop/lecture-processor
-source venv/bin/activate
+source .venv/bin/activate
 python scripts/smoke_test.py --base-url https://lecture-processor-1.onrender.com
 ```
 
@@ -287,7 +287,7 @@ python scripts/smoke_test.py --base-url https://lecture-processor-1.onrender.com
 
 ```bash
 cd /Users/jaccovandermeulen/Desktop/lecture-processor
-source venv/bin/activate
+source .venv/bin/activate
 python scripts/stripe_go_live_check.py \
   --base-url https://lecture-processor-1.onrender.com \
   --expect-mode live \

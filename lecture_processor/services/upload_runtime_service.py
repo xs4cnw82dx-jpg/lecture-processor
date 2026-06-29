@@ -76,7 +76,7 @@ def get_status(app_ctx, request, job_id):
             response['transcript'] = job.get('transcript')
     elif job['status'] == 'error':
         response['error'] = job['error']
-        response['credit_refunded'] = job.get('credit_refunded', False)
+        response['credit_refunded'] = bool(job.get('credit_refunded', False)) or billing_receipts.job_has_refunds(job, runtime=app_ctx)
     return app_ctx.jsonify(response)
 
 

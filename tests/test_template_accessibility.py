@@ -176,6 +176,49 @@ def test_study_folder_rows_do_not_nest_actions_inside_button_role():
     assert '<span class="folder-head-actions"><button type="button" class="btn folder-mini-btn" data-toggle-pin="1">' in study_js
 
 
+def test_study_pack_rows_use_real_buttons_for_main_actions():
+    study_js = Path('static/js/study.js').read_text(encoding='utf-8')
+    study_css = Path('static/css/study.css').read_text(encoding='utf-8')
+
+    assert "div.setAttribute('role', 'button')" not in study_js
+    assert "div.setAttribute('tabindex', '0')" not in study_js
+    assert '<button type="button" class="pack-row-open" data-pack-open>' in study_js
+    assert '<button type="button" class="pack-row-open" data-video-project-main>' in study_js
+    assert '.pack-row-open:focus-visible' in study_css
+
+
+def test_study_collapsed_metadata_panel_is_removed_from_focus_order():
+    study_js = Path('static/js/study.js').read_text(encoding='utf-8')
+    study_css = Path('static/css/study.css').read_text(encoding='utf-8')
+
+    assert 'shell.inert = !isOpen;' in study_js
+    assert 'panel.inert = !isOpen;' in study_js
+    assert re.search(r'\.meta-advanced-shell\s*\{[\s\S]*?visibility:\s*hidden;', study_css)
+    assert re.search(r'\.meta-advanced-shell\s*\{[\s\S]*?pointer-events:\s*none;', study_css)
+
+
+def test_physio_audio_upload_control_is_keyboard_accessible():
+    physio_template = Path('templates/physio.html').read_text(encoding='utf-8')
+    physio_js = Path('static/js/physio.js').read_text(encoding='utf-8')
+    physio_css = Path('static/css/physio.css').read_text(encoding='utf-8')
+
+    assert 'id="physio-audio-upload-btn">Upload audio</button>' in physio_template
+    assert 'class="physio-file-input" type="file" id="physio-audio-input"' in physio_template
+    assert 'var audioUploadBtn = document.getElementById(\'physio-audio-upload-btn\');' in physio_js
+    assert 'audioUploadBtn.addEventListener(\'click\'' in physio_js
+    assert '.physio-file-input' in physio_css
+    assert '.physio-upload-btn input' not in physio_css
+
+
+def test_shell_export_modal_validation_is_inside_modal_live_region():
+    shell_template = Path('templates/_app_shell.html').read_text(encoding='utf-8')
+    app_shell_js = Path('static/js/app-shell.js').read_text(encoding='utf-8')
+
+    assert 'id="shell-export-error" role="alert" aria-live="assertive" aria-atomic="true" hidden' in shell_template
+    assert "setExportError('Choose at least one export option.');" in app_shell_js
+    assert "exportError.hidden = !text;" in app_shell_js
+
+
 def test_reader_dropzone_is_keyboard_accessible_and_announced():
     reader_template = Path('templates/reader.html').read_text(encoding='utf-8')
 

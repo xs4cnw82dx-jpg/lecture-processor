@@ -404,6 +404,8 @@ def regenerate_voice_note_study_tools(app_ctx, request, pack_id):
             'job_scope': 'study',
             'user_id': uid,
             'user_email': email,
+            'credit_refunded': False,
+            'study_tools_credit_cost': 1,
             'started_at': app_ctx.time.time(),
             'finished_at': 0,
             'study_pack_id': pack_id,
@@ -441,7 +443,20 @@ def regenerate_voice_note_study_tools(app_ctx, request, pack_id):
             runtime=app_ctx,
         )
     except JobQueueFullError:
-        billing_credits.refund_slides_credits(uid, 1, runtime=app_ctx)
-        runtime_jobs_store.delete_job(job_id, runtime=app_ctx)
-        return app_ctx.jsonify({'error': upload_batch_support.queue_full_message()}), 429
+        return _handle_runtime_job_queue_full(
+            app_ctx,
+            job_id=job_id,
+            uid=uid,
+            cleanup_paths=[],
+            extra_slides_credits=1,
+        )
+    except Exception as error:
+        return _handle_runtime_job_setup_failure(
+            app_ctx,
+            job_id=job_id,
+            uid=uid,
+            cleanup_paths=[],
+            extra_slides_credits=1,
+            error=error,
+        )
     return app_ctx.jsonify({'ok': True, 'job_id': job_id, 'status': 'queued'}), 202

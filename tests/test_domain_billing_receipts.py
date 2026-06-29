@@ -21,3 +21,9 @@ def test_ensure_job_billing_receipt_and_refunds_update_receipt(app, monkeypatch)
     snapshot = receipts.get_billing_receipt_snapshot(job, runtime=runtime)
     assert snapshot["charged"] == {"slides_credits": 1}
     assert snapshot["refunded"] == {"slides_credits": 2}
+
+
+def test_job_has_refunds_reads_receipt_totals():
+    assert receipts.job_has_refunds({"credit_refunded": True}) is True
+    assert receipts.job_has_refunds({"billing_receipt": {"refunded": {"slides_credits": 1}}}) is True
+    assert receipts.job_has_refunds({"billing_receipt": {"refunded": {"slides_credits": 0}}}) is False

@@ -26,6 +26,7 @@
   var sessionNotesInput = document.getElementById('physio-session-notes');
   var transcriptInput = document.getElementById('physio-transcript');
   var audioInput = document.getElementById('physio-audio-input');
+  var audioUploadBtn = document.getElementById('physio-audio-upload-btn');
   var audioNote = document.getElementById('physio-audio-note');
   var recordStartBtn = document.getElementById('physio-record-start');
   var recordStopBtn = document.getElementById('physio-record-stop');
@@ -280,15 +281,13 @@
     var locked = !!disabled || !state.user || state.accessGranted === false;
     [
       caseSelect, bodyRegionSelect, sessionTypeSelect, sessionDateInput, nprsBeforeInput, nprsAfterInput,
-      sessionNotesInput, transcriptInput, audioInput, recordStartBtn, generateBtn, saveBtn,
+      sessionNotesInput, transcriptInput, audioInput, audioUploadBtn, recordStartBtn, generateBtn, saveBtn,
       exportDocxBtn, exportPdfBtn, knowledgeQuestionInput, knowledgeContextInput, knowledgeAskBtn,
       caseNewBtn, caseDisplayLabelInput, casePatientNameInput, caseAgeInput, caseSexInput,
       caseReferralInput, caseBodyRegionSelect, caseComplaintInput, caseTagsInput, caseNotesInput, caseSaveBtn
     ].forEach(function (node) {
       if (node) node.disabled = locked;
     });
-    var uploadLabel = audioInput ? audioInput.closest('.physio-upload-btn') : null;
-    if (uploadLabel) uploadLabel.setAttribute('aria-disabled', locked ? 'true' : 'false');
     if (recordStopBtn) recordStopBtn.disabled = locked || !state.recorder || state.recorder.state === 'inactive';
     if (transcribeBtn) {
       transcribeBtn.disabled = locked || !state.selectedAudioFile;
@@ -2180,6 +2179,12 @@
       audioInput.addEventListener('change', function () {
         state.selectedAudioFile = audioInput.files && audioInput.files[0] ? audioInput.files[0] : null;
         updateAudioNote();
+      });
+    }
+    if (audioUploadBtn && audioInput) {
+      audioUploadBtn.addEventListener('click', function () {
+        if (audioUploadBtn.disabled) return;
+        audioInput.click();
       });
     }
     if (recordStartBtn) recordStartBtn.addEventListener('click', startRecorder);

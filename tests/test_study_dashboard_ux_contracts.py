@@ -168,6 +168,18 @@ def test_dashboard_hides_voice_note_packs_from_recent_list():
     assert 'renderRecentPacks(dashboardVisiblePacks(' in dashboard_js
 
 
+def test_dashboard_distinguishes_load_failures_from_empty_state():
+    dashboard_js = _read('static/js/dashboard.js')
+
+    assert 'function renderUpcomingSessionsError()' in dashboard_js
+    assert 'function renderRecentPacksError()' in dashboard_js
+    assert 'data-dashboard-retry' in dashboard_js
+    assert 'return { __dashboardLoadFailed: true };' in dashboard_js
+    assert 'if (sessionsFailed) renderUpcomingSessionsError();' in dashboard_js
+    assert 'if (packsFailed) {' in dashboard_js
+    assert 'renderRecentPacksError();' in dashboard_js
+
+
 def test_study_supports_voice_notes_folder_deep_link():
     study_js = _read('static/js/study.js')
     voice_template = _read('templates/voice_notes.html')
@@ -176,6 +188,18 @@ def test_study_supports_voice_notes_folder_deep_link():
     assert "safe === 'voice-notes'" in study_js
     assert 'selectedFolderId = initialFolderFromUrl(folderFromUrl);' in study_js
     assert 'href="/study?folder=voice-notes"' in voice_template
+
+
+def test_study_audio_playback_uses_short_lived_stream_url():
+    study_template = _read('templates/study.html')
+    study_js = _read('static/js/study.js')
+    study_audio_utils = _read('static/js/study-audio-utils.js')
+
+    assert "filename='js/study-audio-utils.js'" in study_template
+    assert 'studyAudioUtils.fetchAudioStreamUrl(authenticatedFetch, selectedPack.study_pack_id)' in study_js
+    assert "'/audio').then(function (response)" not in study_js
+    assert "'/audio-token'" in study_audio_utils
+    assert 'payload && payload.stream_url' in study_audio_utils
 
 
 def test_study_initial_load_uses_lightweight_progress_and_folder_requests():

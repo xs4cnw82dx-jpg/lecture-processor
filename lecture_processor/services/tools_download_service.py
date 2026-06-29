@@ -10,7 +10,7 @@ from flask import after_this_request
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 
-from lecture_processor.services import access_service, upload_batch_support
+from lecture_processor.services import access_service, upload_batch_support, upload_quota_service
 
 
 def _cleanup_local_paths(app_ctx, paths):
@@ -34,6 +34,13 @@ def _download_name(kind: str) -> str:
     if kind == 'video':
         return f'lecture-video-{date_stamp}.mp4'
     return f'lecture-media-{date_stamp}.zip'
+
+
+def _reserved_download_bytes(app_ctx, requested_format: str) -> int:
+    max_bytes = upload_quota_service.max_audio_upload_bytes(app_ctx)
+    if requested_format == 'both':
+        return max_bytes * 2
+    return max_bytes
 
 
 def download_lecture_media(app_ctx, request):
@@ -79,27 +86,44 @@ def download_lecture_media(app_ctx, request):
     response_path = ''
     mimetype = 'application/octet-stream'
     download_name = _download_name(requested_format)
+    quota_reservation = None
+    downloaded_paths = []
 
     try:
+        quota_reservation, quota_response, quota_status = upload_quota_service.reserve_upload_quota(
+            app_ctx,
+            uid,
+            _reserved_download_bytes(app_ctx, requested_format),
+            context='Lecture media download',
+            analytics_limit_name='lecture_download',
+            low_disk_error='Lecture download is temporarily unavailable due to low server storage. Please try again later.',
+        )
+        if quota_response is not None:
+            return quota_response, quota_status
+
         if requested_format == 'audio':
             response_path, _internal_name, _size_bytes = app_ctx.download_audio_from_video_url(fetch_target, prefix)
             response_path = app_ctx.os.path.abspath(response_path)
             cleanup_paths.append(response_path)
+            downloaded_paths.append(response_path)
             mimetype = 'audio/mpeg'
         elif requested_format == 'video':
             response_path, _internal_name, _size_bytes = app_ctx.download_video_from_video_url(fetch_target, prefix)
             response_path = app_ctx.os.path.abspath(response_path)
             cleanup_paths.append(response_path)
+            downloaded_paths.append(response_path)
             mimetype = 'video/mp4'
         else:
             video_path, _internal_name, _size_bytes = app_ctx.download_video_from_video_url(fetch_target, prefix)
             video_path = app_ctx.os.path.abspath(video_path)
             cleanup_paths.append(video_path)
+            downloaded_paths.append(video_path)
             audio_path, converted = app_ctx.convert_audio_to_mp3_with_ytdlp(video_path)
             if not converted or not audio_path or audio_path == video_path or not app_ctx.os.path.exists(audio_path):
                 raise RuntimeError('Could not create the MP3 version of this lecture.')
             audio_path = app_ctx.os.path.abspath(audio_path)
             cleanup_paths.append(audio_path)
+            downloaded_paths.append(audio_path)
 
             audio_size = int(app_ctx.get_saved_file_size(audio_path) or 0)
             if audio_size <= 0 or audio_size > app_ctx.MAX_AUDIO_UPLOAD_BYTES:
@@ -115,6 +139,21 @@ def download_lecture_media(app_ctx, request):
             response_path = zip_path
             mimetype = 'application/zip'
 
+        actual_download_bytes = sum(int(app_ctx.get_saved_file_size(path) or 0) for path in downloaded_paths)
+        quota_error, quota_error_status = upload_quota_service.adjust_reserved_upload_bytes(
+            app_ctx,
+            quota_reservation,
+            actual_download_bytes,
+            context='Lecture media download',
+            analytics_limit_name='lecture_download',
+            low_disk_error='Lecture download is temporarily unavailable due to low server storage. Please try again later.',
+        )
+        if quota_error is not None:
+            upload_quota_service.release_uncommitted_upload_quota(app_ctx, quota_reservation)
+            _cleanup_local_paths(app_ctx, cleanup_paths)
+            return quota_error, quota_error_status
+        upload_quota_service.commit_upload_quota(quota_reservation)
+
         @after_this_request
         def _remove_temp_files(response):
             _cleanup_local_paths(app_ctx, cleanup_paths)
@@ -127,9 +166,11 @@ def download_lecture_media(app_ctx, request):
             download_name=download_name,
         )
     except RuntimeError as error:
+        upload_quota_service.release_uncommitted_upload_quota(app_ctx, quota_reservation)
         _cleanup_local_paths(app_ctx, cleanup_paths)
         return app_ctx.jsonify({'error': str(error)}), 400
     except Exception:
+        upload_quota_service.release_uncommitted_upload_quota(app_ctx, quota_reservation)
         _cleanup_local_paths(app_ctx, cleanup_paths)
         app_ctx.logger.exception('Lecture downloader failed for user %s', uid)
         return app_ctx.jsonify({'error': 'Could not download lecture media right now. Please try again.'}), 500

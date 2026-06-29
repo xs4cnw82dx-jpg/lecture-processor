@@ -45,6 +45,7 @@
   var exportCloseBtn = document.getElementById('shell-export-close');
   var exportCancelBtn = document.getElementById('shell-export-cancel');
   var exportConfirmBtn = document.getElementById('shell-export-confirm');
+  var exportError = document.getElementById('shell-export-error');
   var exportCheckboxes = Array.prototype.slice.call(document.querySelectorAll('[data-export-key]'));
   var shellToast = document.getElementById('shell-toast');
   var mobileSidebarQuery = window.matchMedia ? window.matchMedia('(max-width: 1024px)') : null;
@@ -672,6 +673,7 @@
   function setExportModalOpen(open) {
     if (!exportOverlay) return;
     if (open) {
+      setExportError('');
       setAccountMenuOpen(false);
       if (typeof uxUtils.openModalOverlay === 'function') {
         uxUtils.openModalOverlay(exportOverlay, {
@@ -713,6 +715,13 @@
     return Object.keys(include).some(function (key) { return !!include[key]; });
   }
 
+  function setExportError(message) {
+    if (!exportError) return;
+    var text = String(message || '').trim();
+    exportError.textContent = text;
+    exportError.hidden = !text;
+  }
+
   function setupRoutePrefetch() {
     var links = Array.prototype.slice.call(document.querySelectorAll('.app-shell-link[href]'));
     var prefetched = Object.create(null);
@@ -742,9 +751,10 @@
     }
     var include = readExportSelection();
     if (!hasAnySelection(include)) {
-      showToast('Choose at least one export option.', 'error');
+      setExportError('Choose at least one export option.');
       return;
     }
+    setExportError('');
     if (exportConfirmBtn) exportConfirmBtn.disabled = true;
     try {
       var response = await authFetch('/api/account/export-bundle', {
@@ -914,6 +924,12 @@
   if (exportConfirmBtn) {
     exportConfirmBtn.addEventListener('click', runBundleExport);
   }
+
+  exportCheckboxes.forEach(function (checkbox) {
+    checkbox.addEventListener('change', function () {
+      if (hasAnySelection(readExportSelection())) setExportError('');
+    });
+  });
 
   if (exportCloseBtn) {
     exportCloseBtn.addEventListener('click', function () {

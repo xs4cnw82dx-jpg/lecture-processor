@@ -92,10 +92,8 @@
             <div class="physio-recorder-actions">
               <button type="button" class="physio-btn" id="physio-record-start">Start recording</button>
               <button type="button" class="physio-btn ghost" id="physio-record-stop" disabled>Stop</button>
-              <label class="physio-upload-btn">
-                <input type="file" id="physio-audio-input" accept=".mp3,.m4a,.wav,.aac,.ogg,.flac,.webm,audio/*">
-                Upload audio
-              </label>
+              <button type="button" class="physio-upload-btn" id="physio-audio-upload-btn">Upload audio</button>
+              <input class="physio-file-input" type="file" id="physio-audio-input" accept=".mp3,.m4a,.wav,.aac,.ogg,.flac,.webm,audio/*">
             </div>
             <div class="physio-inline-note" id="physio-audio-note">No audio selected yet.</div>
             <button type="button" class="physio-btn secondary" id="physio-transcribe-btn" disabled>Create transcript</button>
