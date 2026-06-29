@@ -5,6 +5,7 @@
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
   var authUtils = window.LectureProcessorAuth || {};
   var authClient = auth && authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
+  var downloadUtils = window.LectureProcessorDownload || {};
 
   var body = document.body;
   var forcedMode = String((body && body.dataset && body.dataset.forcedMode) || 'lecture-notes').trim();
@@ -166,6 +167,68 @@
     });
   }
 
+  function saveBlobFallback(response, fallbackName) {
+    return response.blob().then(function (blob) {
+      var url = URL.createObjectURL(blob);
+      var anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = fallbackName || 'download';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+      return fallbackName;
+    });
+  }
+
+  function parseDownloadError(response) {
+    return response.json().catch(function () { return {}; }).then(function (payload) {
+      throw new Error((payload && payload.error) || 'Could not download this file.');
+    });
+  }
+
+  function downloadAuthenticatedFile(path, fallbackName, button) {
+    var originalText = button ? button.textContent : '';
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Downloading...';
+    }
+    return authFetch(path).then(function (response) {
+      if (!response.ok) return parseDownloadError(response);
+      if (downloadUtils && typeof downloadUtils.downloadResponseBlob === 'function') {
+        return downloadUtils.downloadResponseBlob(response, fallbackName);
+      }
+      return saveBlobFallback(response, fallbackName);
+    }).then(function () {
+      showShellToast('Download started.');
+    }).catch(function (error) {
+      showShellToast(error && error.message ? error.message : 'Could not download this file.', 'error');
+    }).finally(function () {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    });
+  }
+
+  function isProtectedBatchDownload(href) {
+    var value = String(href || '').trim();
+    return (
+      /^\/api\/(?:instant-)?batch\/jobs\/[^?#]+\/download\.zip(?:[?#].*)?$/.test(value) ||
+      /^\/api\/(?:instant-)?batch\/jobs\/[^?#]+\/rows\/[^?#]+\/download-docx(?:[?#].*)?$/.test(value) ||
+      /^\/api\/(?:instant-)?batch\/jobs\/[^?#]+\/rows\/[^?#]+\/download-flashcards-csv(?:[?#].*)?$/.test(value)
+    );
+  }
+
+  function openBatchActionHref(href, button) {
+    if (!href) return;
+    if (isProtectedBatchDownload(href)) {
+      downloadAuthenticatedFile(href, 'batch-download', button);
+      return;
+    }
+    window.open(href, '_blank');
+  }
+
   function rowCount() {
     return rowsWrap ? rowsWrap.querySelectorAll('.batch-row').length : 0;
   }
@@ -245,8 +308,7 @@
     Array.prototype.slice.call(statusBanner.querySelectorAll('[data-batch-action-href]')).forEach(function (button) {
       button.addEventListener('click', function () {
         var href = String(button.getAttribute('data-batch-action-href') || '').trim();
-        if (!href) return;
-        window.open(href, '_blank');
+        openBatchActionHref(href, button);
       });
     });
   }
@@ -1509,7 +1571,11 @@
         docxBtn.className = 'btn tiny';
         docxBtn.textContent = 'DOCX';
         docxBtn.addEventListener('click', function () {
-          window.open(batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-docx', '_blank');
+          downloadAuthenticatedFile(
+            batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-docx',
+            'batch-' + currentBatchId + '-' + rowId + '.docx',
+            docxBtn
+          );
         });
 
         actionsCell.appendChild(docxBtn);
@@ -1519,7 +1585,11 @@
           cardsBtn.className = 'btn tiny';
           cardsBtn.textContent = 'Flashcards CSV';
           cardsBtn.addEventListener('click', function () {
-            window.open(batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-flashcards-csv?type=flashcards', '_blank');
+            downloadAuthenticatedFile(
+              batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-flashcards-csv?type=flashcards',
+              'batch-' + currentBatchId + '-' + rowId + '-flashcards.csv',
+              cardsBtn
+            );
           });
 
           var testBtn = document.createElement('button');
@@ -1527,7 +1597,11 @@
           testBtn.className = 'btn tiny';
           testBtn.textContent = 'Test CSV';
           testBtn.addEventListener('click', function () {
-            window.open(batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-flashcards-csv?type=test', '_blank');
+            downloadAuthenticatedFile(
+              batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-flashcards-csv?type=test',
+              'batch-' + currentBatchId + '-' + rowId + '-test.csv',
+              testBtn
+            );
           });
 
           actionsCell.appendChild(cardsBtn);
@@ -1816,7 +1890,11 @@
     if (downloadZipBtn) {
       downloadZipBtn.addEventListener('click', function () {
         if (!currentBatchId) return;
-        window.open(batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/download.zip', '_blank');
+        downloadAuthenticatedFile(
+          batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/download.zip',
+          'batch-' + currentBatchId + '.zip',
+          downloadZipBtn
+        );
       });
     }
 

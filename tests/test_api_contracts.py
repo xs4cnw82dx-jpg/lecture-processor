@@ -1777,7 +1777,13 @@ def test_admin_route_requires_server_session_cookie(client):
 
 
 def test_admin_session_login_sets_cookie(client, monkeypatch):
-    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
+    revocation_checks = []
+
+    def _verify_token(_request, check_revoked=False):
+        revocation_checks.append(check_revoked)
+        return {"uid": "admin-u", "email": "admin@example.com"}
+
+    monkeypatch.setattr(core, "verify_firebase_token", _verify_token)
     monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)
     monkeypatch.setattr(core, "_extract_bearer_token", lambda _request: "id-token")
     monkeypatch.setattr(core.auth, "create_session_cookie", lambda _id_token, expires_in: "session-cookie")
@@ -1788,6 +1794,7 @@ def test_admin_session_login_sets_cookie(client, monkeypatch):
     assert response.get_json().get("ok") is True
     set_cookie = response.headers.get("Set-Cookie", "")
     assert "lp_admin_session=session-cookie" in set_cookie
+    assert revocation_checks == [True]
 
 
 def test_admin_session_login_allows_admin_page_access(client, monkeypatch):

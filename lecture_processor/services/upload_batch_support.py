@@ -9,6 +9,7 @@ from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.upload import import_audio as upload_import_audio
+from lecture_processor.services import admin_support
 
 
 def sanitize_study_pack_title(raw_title, max_chars=120):
@@ -344,8 +345,11 @@ def get_batch_with_permission(app_ctx, request, batch_id, *, batch_orchestrator_
     if not batch:
         return None, None, app_ctx.jsonify({'error': 'Batch not found'}), 404
     uid = decoded_token.get('uid', '')
-    if batch.get('uid', '') != uid and not app_ctx.is_admin_user(decoded_token):
-        return None, None, app_ctx.jsonify({'error': 'Forbidden'}), 403
+    if batch.get('uid', '') != uid:
+        admin_token, error_response, status = admin_support.require_admin(app_ctx, request)
+        if error_response is not None:
+            return None, None, error_response, status
+        decoded_token = admin_token
     return batch, decoded_token, None, None
 
 

@@ -1,9 +1,8 @@
-"""Business logic handlers for auth/account APIs."""
+"""Business logic handlers for auth APIs."""
 
 from datetime import timedelta
 import time
 
-from lecture_processor.services import account_data_service
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.auth import session as auth_session
 from lecture_processor.domains.analytics import events as analytics_events
@@ -12,6 +11,13 @@ from lecture_processor.domains.physio import access as physio_access
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.shared import parsing as shared_parsing
 from lecture_processor.services import access_service, auth_service
+
+
+def _verify_firebase_token_check_revoked(app_ctx, request):
+    try:
+        return app_ctx.verify_firebase_token(request, check_revoked=True)
+    except TypeError:
+        return app_ctx.verify_firebase_token(request)
 
 
 def _auth_failure_response(app_ctx, request, *, decoded_token=None, unauthorized_error='Unauthorized'):
@@ -28,7 +34,7 @@ def _auth_failure_response(app_ctx, request, *, decoded_token=None, unauthorized
 
 
 def create_admin_session(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
+    decoded_token = _verify_firebase_token_check_revoked(app_ctx, request)
     if not decoded_token:
         return _auth_failure_response(app_ctx, request)
     if auth_service.token_has_unverified_email(decoded_token):
@@ -107,7 +113,7 @@ def verify_email(app_ctx, request):
 def dev_sentry_test(app_ctx, request):
     if not app_ctx.is_dev_environment():
         return app_ctx.jsonify({'error': 'Not found'}), 404
-    decoded_token = app_ctx.verify_firebase_token(request)
+    decoded_token = _verify_firebase_token_check_revoked(app_ctx, request)
     if not decoded_token:
         return _auth_failure_response(app_ctx, request)
     if auth_service.token_has_unverified_email(decoded_token):
@@ -248,15 +254,3 @@ def update_user_preferences(app_ctx, request):
     except Exception as e:
         app_ctx.logger.error(f"Error updating preferences for user {uid}: {e}")
         return app_ctx.jsonify({'error': 'Could not save preferences'}), 500
-
-
-def export_account_data(app_ctx, request):
-    return account_data_service.export_account_data(app_ctx, request)
-
-
-def export_account_bundle(app_ctx, request):
-    return account_data_service.export_account_bundle(app_ctx, request)
-
-
-def delete_account_data(app_ctx, request):
-    return account_data_service.delete_account_data(app_ctx, request)

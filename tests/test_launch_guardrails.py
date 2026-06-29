@@ -48,6 +48,13 @@ def test_discontinued_gemini_flash_lite_preview_model_is_not_reintroduced():
     assert offenders == []
 
 
+def test_render_public_base_url_matches_production_host():
+    render_yaml = Path("render.yaml").read_text(encoding="utf-8")
+
+    assert 'value: "https://lecture-processor-1.onrender.com"' in render_yaml
+    assert 'value: "https://lecture-processor.onrender.com"' not in render_yaml
+
+
 def test_verify_email_allows_student_domain(client):
     response = client.post("/api/verify-email", json={"email": "student@st.hanze.nl"})
     assert response.status_code == 200
@@ -2552,10 +2559,17 @@ def test_study_folder_crud_requires_auth(client):
 
 
 def test_admin_overview_and_export_forbid_non_admin(client, monkeypatch):
-    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-non-admin", "email": "user@gmail.com"})
+    revocation_checks = []
+
+    def _verify_token(_request, check_revoked=False):
+        revocation_checks.append(check_revoked)
+        return {"uid": "u-non-admin", "email": "user@gmail.com"}
+
+    monkeypatch.setattr(core, "verify_firebase_token", _verify_token)
     monkeypatch.setattr(core, "is_admin_user", lambda _decoded: False)
     assert client.get("/api/admin/overview", headers={"Authorization": "Bearer dev"}).status_code == 403
     assert client.get("/api/admin/export?type=jobs", headers={"Authorization": "Bearer dev"}).status_code == 403
+    assert revocation_checks == [True, True]
 
 
 def test_study_pack_audio_requires_auth(client):
@@ -2583,13 +2597,20 @@ def test_study_pack_audio_forbidden_for_other_user(client, monkeypatch, tmp_path
         def set(self, *_args, **_kwargs):
             return None
 
+    revocation_checks = []
+
+    def _verify_token(_request, check_revoked=False):
+        revocation_checks.append(check_revoked)
+        return {"uid": "other-uid", "email": "user@gmail.com"}
+
     monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _FakeDoc())
-    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "other-uid", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "verify_firebase_token", _verify_token)
     monkeypatch.setattr(core, "is_admin_user", lambda _decoded: False)
     monkeypatch.setattr(study_audio, "resolve_audio_storage_path_from_key", lambda _key, runtime=None: str(audio_file))
 
     response = client.get("/api/study-packs/pack-audio/audio", headers={"Authorization": "Bearer dev"})
     assert response.status_code == 403
+    assert revocation_checks == [False, True]
 
 
 def test_study_pack_audio_token_streams_file_without_auth_header(client, monkeypatch, tmp_path):

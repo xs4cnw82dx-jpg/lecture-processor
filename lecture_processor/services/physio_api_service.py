@@ -21,6 +21,7 @@ from lecture_processor.domains.physio import prompts as physio_prompts
 from lecture_processor.domains.physio import transcription as physio_transcription
 from lecture_processor.repositories import physio_repo
 from lecture_processor.runtime.job_dispatcher import JobQueueFullError
+from lecture_processor.services import admin_support
 from lecture_processor.services import upload_quota_service
 
 
@@ -292,6 +293,11 @@ def _ensure_physio_access(app_ctx, request):
     if not decoded_token:
         return None, app_ctx.jsonify({"error": "Please sign in to continue."}), 401
     payload = physio_access.build_physio_access_payload(decoded_token, runtime=app_ctx)
+    if payload.get("reason") == "admin":
+        admin_token, error_response, status = admin_support.require_admin(app_ctx, request)
+        if error_response is not None:
+            return None, error_response, status
+        decoded_token = admin_token
     if not payload.get("allowed"):
         return decoded_token, app_ctx.jsonify({
             "error": "Physio Assistant is private and only available to the configured owner account.",

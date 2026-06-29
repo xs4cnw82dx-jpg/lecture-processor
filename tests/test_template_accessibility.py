@@ -179,6 +179,12 @@ def test_feature_calculator_sliders_have_labels_and_focus_style():
     assert '.calc-slider:focus-visible{outline:2px solid var(--primary);outline-offset:4px}' in features_css
 
 
+def test_features_heading_preserves_readable_text_boundary():
+    features_template = Path('templates/features.html').read_text(encoding='utf-8')
+
+    assert '<span class="gradient">Mastery</span> <br>' in features_template
+
+
 def test_calendar_validation_errors_are_field_owned():
     calendar_template = Path('templates/calendar.html').read_text(encoding='utf-8')
     calendar_js = Path('static/js/calendar.js').read_text(encoding='utf-8')
@@ -267,6 +273,9 @@ def test_shared_shell_hidden_and_live_region_contracts():
     assert re.search(r'\[hidden\]\s*\{\s*display:\s*none\s*!important;', app_shell_css)
     assert 'id="app-shell-overlay" aria-label="Close navigation" aria-hidden="true" tabindex="-1"' in shell_template
     assert 'id="shell-toast" role="status" aria-live="polite" aria-atomic="true"' in shell_template
+    assert 'id="shell-account-menu-wrap" aria-hidden="true" inert' in shell_template
+    assert "accountMenuWrap.setAttribute('inert', '');" in app_shell_js
+    assert "accountMenuWrap.removeAttribute('inert');" in app_shell_js
     assert "href === '/batch_mode'" in app_shell_js
     assert "currentPath === '/batch_mode_slides_extraction'" in app_shell_js
     assert "currentPath === '/batch_mode_audio_transcription'" in app_shell_js

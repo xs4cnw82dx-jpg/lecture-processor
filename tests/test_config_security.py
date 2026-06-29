@@ -86,3 +86,12 @@ def test_functions_allowlist_config_stays_in_sync_with_canonical_file():
     functions_copy = json.loads(functions_path.read_text(encoding="utf-8"))
 
     assert functions_copy == canonical
+
+
+def test_render_blueprint_declares_manual_sentry_dsn_secrets():
+    project_root = Path(__file__).resolve().parents[1]
+    render_yaml = (project_root / "render.yaml").read_text(encoding="utf-8")
+
+    assert "- key: SENTRY_ENVIRONMENT\n        value: \"production\"" in render_yaml
+    assert "- key: SENTRY_DSN_BACKEND\n        sync: false" in render_yaml
+    assert "- key: SENTRY_DSN_FRONTEND\n        sync: false" in render_yaml
