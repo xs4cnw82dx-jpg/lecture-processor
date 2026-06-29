@@ -193,6 +193,32 @@
   color: #64748b;
 }
 
+.overlay-auth-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.overlay-auth-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  border: 1px solid #c7d2fe;
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.overlay-auth-link:hover {
+  background: #e0e7ff;
+}
+
 .overlay-project-controls {
   display: grid;
   gap: 10px;
@@ -726,6 +752,7 @@
   z-index: 2;
   will-change: left, top, width, height;
   transform: translateZ(0);
+  touch-action: none;
 }
 
 .overlay-stage-item.is-dragging,
@@ -1173,6 +1200,7 @@
   justify-content: center;
   cursor: nwse-resize;
   z-index: 3;
+  touch-action: none;
 }
 
 .overlay-resize-handle:hover {
@@ -1530,13 +1558,25 @@
     overflow: visible;
   }
 
-  .overlay-builder-topbar,
-  .overlay-builder-workspace {
+  .overlay-builder-topbar {
     grid-template-columns: 1fr;
+  }
+
+  .overlay-builder-workspace {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .overlay-stage-panel {
+    order: -1;
   }
 
   .overlay-builder-sidebar {
     max-height: none;
+  }
+
+  .overlay-stage-frame {
+    min-height: min(56vw, 430px);
   }
 
   .overlay-stage {
@@ -1558,6 +1598,7 @@
 
   .overlay-builder-actions,
   .overlay-stage-toolbar,
+  .overlay-stage-actions,
   .overlay-recording-bar {
     align-items: stretch;
     flex-direction: column;
@@ -1576,6 +1617,10 @@
 
   .overlay-stage {
     min-height: 220px;
+  }
+
+  .overlay-stage-frame {
+    min-height: 260px;
   }
 
   .overlay-field-grid,

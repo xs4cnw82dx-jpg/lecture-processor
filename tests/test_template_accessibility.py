@@ -284,7 +284,7 @@ def test_buy_credits_signed_out_has_sign_in_path():
     buy_credits_template = Path('templates/buy_credits.html').read_text(encoding='utf-8')
 
     assert 'id="buy-credits-auth-panel" hidden' in buy_credits_template
-    assert 'id="buy-credits-signin-link" href="/lecture-notes?auth=signin"' in buy_credits_template
+    assert 'id="buy-credits-signin-link" href="/lecture-notes?auth=signin&amp;next={{ request.path }}"' in buy_credits_template
 
 
 def test_calendar_modal_stacks_above_shell_topbar():

@@ -73,6 +73,28 @@ def _refund_extra_slides(job_id, job_data, uid, amount, runtime=None):
     return refunded
 
 
+def _prepare_slides_pdf_for_provider(job_id, slides_path, local_paths, set_fields, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    safe_path = str(slides_path or '').strip()
+    if safe_path.lower().endswith('.pdf'):
+        return safe_path
+    if not safe_path.lower().endswith('.pptx'):
+        raise RuntimeError('Slide file must be a PDF or PPTX.')
+    set_fields(step_description='Converting PowerPoint to PDF...')
+    converted_target = resolved_runtime.os.path.join(
+        resolved_runtime.UPLOAD_FOLDER,
+        f'{job_id}_slides_converted.pdf',
+    )
+    converted_pdf_path, conversion_error = resolved_runtime.convert_pptx_to_pdf(safe_path, converted_target)
+    if conversion_error:
+        raise RuntimeError(conversion_error)
+    if converted_pdf_path and converted_pdf_path not in local_paths:
+        local_paths.append(converted_pdf_path)
+    if not converted_pdf_path or not resolved_runtime.file_has_pdf_signature(converted_pdf_path):
+        raise RuntimeError('PowerPoint conversion finished but the generated PDF was invalid.')
+    return converted_pdf_path
+
+
 def _voice_note_audio_session(job_id, job_data, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     key = study_audio.normalize_audio_storage_key(job_data.get('audio_storage_key', ''), runtime=resolved_runtime)
@@ -195,6 +217,8 @@ def save_study_pack(job_id, job_data, runtime=None):
             source_payload['slide_text'] = slide_text
         if transcript:
             source_payload['transcript'] = transcript
+        source_payload['has_source_slides'] = bool(slide_text.strip())
+        source_payload['has_source_transcript'] = bool(transcript.strip())
         if slide_text or transcript:
             resolved_runtime.study_repo.study_pack_source_doc_ref(
                 resolved_runtime.db,
@@ -232,10 +256,11 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
 
     try:
         set_fields(status='processing', step=1, step_description='Extracting text from slides...')
+        pdf_input_path = _prepare_slides_pdf_for_provider(job_id, pdf_path, local_paths, set_fields, runtime=resolved_runtime)
         failed_stage = 'slide_upload'
         pdf_file = ai_provider.run_with_provider_retry(
             'slide_upload',
-            lambda: resolved_runtime.client.files.upload(file=pdf_path, config={'mime_type': 'application/pdf'}),
+            lambda: resolved_runtime.client.files.upload(file=pdf_input_path, config={'mime_type': 'application/pdf'}),
             retry_tracker=retry_tracker,
             runtime=resolved_runtime,
         )
@@ -440,11 +465,12 @@ def process_slides_only(job_id, pdf_path, runtime=None):
 
     try:
         set_fields(status='processing', step=1, step_description='Extracting text from slides...')
+        pdf_input_path = _prepare_slides_pdf_for_provider(job_id, pdf_path, local_paths, set_fields, runtime=resolved_runtime)
 
         failed_stage = 'slide_upload'
         pdf_file = ai_provider.run_with_provider_retry(
             'slide_upload',
-            lambda: resolved_runtime.client.files.upload(file=pdf_path, config={'mime_type': 'application/pdf'}),
+            lambda: resolved_runtime.client.files.upload(file=pdf_input_path, config={'mime_type': 'application/pdf'}),
             retry_tracker=retry_tracker,
             runtime=resolved_runtime,
         )
@@ -782,6 +808,7 @@ def _append_voice_note_to_existing_pack(job_id, job_data, runtime=None):
                 'uid': uid,
                 'mode': str(pack.get('mode', '') or 'voice-note'),
                 'transcript': next_transcript[:300000],
+                'has_source_transcript': True,
                 'updated_at': resolved_runtime.time.time(),
                 'created_at': float((source_payload or {}).get('created_at', resolved_runtime.time.time()) or resolved_runtime.time.time()),
             },

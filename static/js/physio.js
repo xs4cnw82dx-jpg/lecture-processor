@@ -5,6 +5,7 @@
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
   if (!auth) return;
 
+  var authUtils = window.LectureProcessorAuth || {};
   var uxUtils = window.LectureProcessorUx || {};
   var config = window.PhysioConfig || {};
   var page = String(config.page || '').trim();
@@ -252,6 +253,8 @@
     if (!statusEl) return;
     statusEl.textContent = String(message || '');
     statusEl.className = 'physio-status' + (tone ? ' ' + tone : '');
+    statusEl.setAttribute('role', tone === 'error' ? 'alert' : 'status');
+    statusEl.setAttribute('aria-live', tone === 'error' ? 'assertive' : 'polite');
   }
 
   function setAuthBanner(message, tone) {
@@ -264,7 +267,10 @@
     }
     authBanner.hidden = false;
     authBanner.className = 'physio-auth-banner' + (tone ? ' ' + tone : '');
-    authBanner.innerHTML = '<span>' + escapeHtml(message) + '</span> <a href="/lecture-notes?auth=signin">Sign in</a>';
+    var signInHref = typeof authUtils.buildSignInUrl === 'function'
+      ? authUtils.buildSignInUrl()
+      : '/lecture-notes?auth=signin&next=' + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
+    authBanner.innerHTML = '<span>' + escapeHtml(message) + '</span> <a href="' + signInHref + '">Sign in</a>';
   }
 
   function showToast(message) {

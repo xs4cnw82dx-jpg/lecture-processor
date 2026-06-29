@@ -477,6 +477,8 @@ const pdfName = document.getElementById('pdf-name');
 const pdfSize = document.getElementById('pdf-size');
 const audioName = document.getElementById('audio-name');
 const audioSize = document.getElementById('audio-size');
+const pdfDownload = document.getElementById('pdf-download');
+const audioDownload = document.getElementById('audio-download');
 const pdfRemove = document.getElementById('pdf-remove');
 const audioRemove = document.getElementById('audio-remove');
 const audioUrlImport = document.getElementById('audio-url-import');
@@ -2359,6 +2361,33 @@ async function applyImportedAudio(payload, previousToken = '', sourceUrl = '') {
     }
     return true;
 }
+function waitForAudioImport(ms) {
+    return new Promise(resolve => window.setTimeout(resolve, Math.max(250, Number(ms || 1000))));
+}
+async function pollAudioImportJob(jobId) {
+    const safeJobId = String(jobId || '').trim();
+    if (!safeJobId) throw new Error('Audio import did not return a job id.');
+    const deadlineMs = Date.now() + 16 * 60 * 1000;
+    let attempt = 0;
+    while (Date.now() < deadlineMs) {
+        const response = await authenticatedFetch(`/api/import-audio-url/${encodeURIComponent(safeJobId)}`);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(String(payload.error || 'Could not read audio import status.'));
+        }
+        const status = String(payload.status || '').trim().toLowerCase();
+        if (status === 'complete' && payload.audio_import_token) {
+            return payload;
+        }
+        if (status === 'error') {
+            throw new Error(String(payload.error || 'Audio import failed.'));
+        }
+        setAudioImportStatus(String(payload.step_description || 'Importing audio from URL...'));
+        attempt += 1;
+        await waitForAudioImport(Math.min(5000, 1000 + attempt * 500));
+    }
+    throw new Error('Audio import is taking longer than expected. Please try again.');
+}
 function syncAudioImportStatusForUrlChange() {
     if (!((modeConfig[currentMode] || {}).needsAudio) || audioFile || audioImportInFlight) {
         updateProcessButton();
@@ -2452,7 +2481,8 @@ async function importAudioFromUrl(options = {}) {
             }
             return false;
         }
-        const applied = await applyImportedAudio(data, previousToken, url);
+        const readyPayload = data.audio_import_token ? data : await pollAudioImportJob(data.job_id);
+        const applied = await applyImportedAudio(readyPayload, previousToken, url);
         const queuedUrl = normalizeAudioImportUrl(pendingAutoImportUrl);
         if (applied) {
             if (queuedUrl && queuedUrl !== url) {
@@ -2991,12 +3021,6 @@ function downloadLocalPreviewFile(file) {
     URL.revokeObjectURL(blobUrl);
     return true;
 }
-function handleFileInfoKeydown(event, downloadFn) {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    if (event.target && event.target.closest('.file-remove')) return;
-    event.preventDefault();
-    downloadFn(event);
-}
 setupDropZone(pdfZone, pdfInput, handlePdfFile);
 setupDropZone(audioZone, audioInput, handleAudioFile);
 if (audioRecordStartBtn) {
@@ -3017,37 +3041,37 @@ if (audioRecordStopBtn) {
         stopAudioRecording();
     });
 }
-if (pdfInfo) {
-    pdfInfo.title = 'Click to download this selected file';
-    const downloadSelectedPdf = (e) => {
-        if (e.target.closest('.file-remove')) return;
-        if (downloadLocalPreviewFile(pdfFile)) {
-            showToast('Lecture slides download started.', 'success', 1600);
-        }
-    };
-    pdfInfo.addEventListener('click', downloadSelectedPdf);
-    pdfInfo.addEventListener('keydown', (e) => handleFileInfoKeydown(e, downloadSelectedPdf));
+const downloadSelectedPdf = () => {
+    if (downloadLocalPreviewFile(pdfFile)) {
+        showToast('Lecture slides download started.', 'success', 1600);
+    }
+};
+if (pdfDownload) {
+    pdfDownload.addEventListener('click', (e) => {
+        e.stopPropagation();
+        downloadSelectedPdf();
+    });
 }
-if (audioInfo) {
-    audioInfo.title = 'Click to download this selected file';
-    const downloadSelectedAudio = (e) => {
-        if (e.target.closest('.file-remove')) return;
-        if (downloadLocalPreviewFile(audioFile)) {
-            if (audioFileOrigin === 'recording') {
-                recordedAudioNeedsDownload = false;
-                syncAudioInfoUI();
-                showToast('Recording download started. Keep that file safe because the in-browser copy will disappear when you leave this page.', 'success', 4200);
-            } else {
-                showToast('Audio file download started.', 'success', 1600);
-            }
-            return;
+const downloadSelectedAudio = () => {
+    if (downloadLocalPreviewFile(audioFile)) {
+        if (audioFileOrigin === 'recording') {
+            recordedAudioNeedsDownload = false;
+            syncAudioInfoUI();
+            showToast('Recording download started. Keep that file safe because the in-browser copy will disappear when you leave this page.', 'success', 4200);
+        } else {
+            showToast('Audio file download started.', 'success', 1600);
         }
-        if (importedAudioToken) {
-            showToast('Imported audio is temporary and cannot be downloaded from this preview.', 'info', 2800);
-        }
-    };
-    audioInfo.addEventListener('click', downloadSelectedAudio);
-    audioInfo.addEventListener('keydown', (e) => handleFileInfoKeydown(e, downloadSelectedAudio));
+        return;
+    }
+    if (importedAudioToken) {
+        showToast('Imported audio is temporary and cannot be downloaded from this preview.', 'info', 2800);
+    }
+};
+if (audioDownload) {
+    audioDownload.addEventListener('click', (e) => {
+        e.stopPropagation();
+        downloadSelectedAudio();
+    });
 }
 pdfRemove.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -4299,15 +4323,20 @@ document.querySelectorAll('.password-toggle').forEach(btn => {
         const input = document.getElementById(btn.dataset.target);
         const open = btn.querySelector('.eye-open');
         const closed = btn.querySelector('.eye-closed');
+        if (!input) return;
         if (input.type === 'password') {
             input.type = 'text';
             setHidden(open, true);
             setHidden(closed, false);
+            btn.setAttribute('aria-pressed', 'true');
+            btn.setAttribute('aria-label', 'Hide password');
         }
         else {
             input.type = 'password';
             setHidden(open, false);
             setHidden(closed, true);
+            btn.setAttribute('aria-pressed', 'false');
+            btn.setAttribute('aria-label', 'Show password');
         }
     });
 });

@@ -104,6 +104,34 @@ def get_study_progress(app_ctx, request):
         return app_ctx.jsonify({'error': 'Could not load study progress'}), 500
 
 
+def get_study_progress_pack(app_ctx, request, pack_id):
+    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
+    uid = decoded_token['uid']
+    safe_pack_id = study_progress.sanitize_pack_id(pack_id, runtime=app_ctx)
+    if not safe_pack_id:
+        return app_ctx.jsonify({'error': 'Invalid pack id'}), 400
+    try:
+        progress_doc = app_ctx.get_study_progress_doc(uid).get()
+        progress_data = progress_doc.to_dict() if progress_doc.exists else {}
+        card_doc = app_ctx.get_study_card_state_doc(uid, safe_pack_id).get()
+        state_map = {}
+        if card_doc.exists:
+            data = card_doc.to_dict() or {}
+            state_map = study_progress.sanitize_card_state_map(data.get('state', {}), runtime=app_ctx)
+        return app_ctx.jsonify({
+            'daily_goal': study_progress.sanitize_daily_goal_value(progress_data.get('daily_goal'), runtime=app_ctx) or 20,
+            'streak_data': study_progress.sanitize_streak_data(progress_data.get('streak_data', {}), runtime=app_ctx),
+            'timezone': study_progress.sanitize_timezone_name(str(progress_data.get('timezone', '') or '').strip()[:80], runtime=app_ctx),
+            'card_states': {safe_pack_id: state_map},
+            'summary': study_progress.compute_study_progress_summary(progress_data, [state_map], runtime=app_ctx),
+        })
+    except Exception as error:
+        app_ctx.logger.error(f"Error fetching study progress for user {uid} pack {safe_pack_id}: {error}")
+        return app_ctx.jsonify({'error': 'Could not load study progress'}), 500
+
+
 def update_study_progress(app_ctx, request):
     decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
     if error_response is not None:

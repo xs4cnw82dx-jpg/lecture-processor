@@ -61,7 +61,7 @@
               <strong>Sign in required</strong>
               <p>Sign in to start a lecture download from a supported URL.</p>
             </div>
-            <a class="ghost-btn reader-auth-link" id="lecture-downloader-auth-link" href="/lecture-notes?auth=signin">Sign in</a>
+            <a class="ghost-btn reader-auth-link" id="lecture-downloader-auth-link" href="/lecture-notes?auth=signin&amp;next={{ request.path }}">Sign in</a>
           </div>
           <div class="status" id="lecture-downloader-status" role="status" aria-live="polite" aria-atomic="true"></div>
         </article>

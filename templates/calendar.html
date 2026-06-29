@@ -119,7 +119,7 @@
       </div>
 
       <div class="panel" id="auth-required" hidden>
-        <div class="panel-body">You need to sign in to use the calendar. <a class="calendar-auth-link" href="/lecture-notes?auth=signin">Sign in</a>.</div>
+        <div class="panel-body">You need to sign in to use the calendar. <a class="calendar-auth-link" href="/lecture-notes?auth=signin&amp;next={{ request.path }}">Sign in</a>.</div>
       </div>
     </div>
   </main>

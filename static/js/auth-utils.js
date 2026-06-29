@@ -85,7 +85,45 @@
     };
   }
 
+  function getCurrentReturnPath() {
+    var location = global.location || {};
+    var pathname = String(location.pathname || '/');
+    var search = String(location.search || '');
+    var hash = String(location.hash || '');
+    return pathname + search + hash;
+  }
+
+  function normalizeReturnPath(nextPath) {
+    var safePath = String(nextPath || getCurrentReturnPath() || '/').trim();
+    if (!safePath || safePath.charAt(0) !== '/' || safePath.indexOf('//') === 0) {
+      return '/';
+    }
+    return safePath;
+  }
+
+  function buildSignInUrl(nextPath, authView) {
+    var view = String(authView || 'signin').trim().toLowerCase();
+    if (view !== 'signin' && view !== 'signup' && view !== 'reset') {
+      view = 'signin';
+    }
+    return '/lecture-notes?auth=' + encodeURIComponent(view)
+      + '&next=' + encodeURIComponent(normalizeReturnPath(nextPath));
+  }
+
+  function updateSignInLinks(root) {
+    var container = root || global.document;
+    if (!container || typeof container.querySelectorAll !== 'function') return;
+    Array.prototype.slice.call(container.querySelectorAll('a[href="/lecture-notes?auth=signin"], a[data-sign-in-return]')).forEach(function (link) {
+      var nextPath = link.getAttribute('data-sign-in-return') || getCurrentReturnPath();
+      link.href = buildSignInUrl(nextPath, 'signin');
+    });
+  }
+
   global.LectureProcessorAuth = {
     createAuthClient: createAuthClient,
+    buildSignInUrl: buildSignInUrl,
+    getCurrentReturnPath: getCurrentReturnPath,
+    normalizeReturnPath: normalizeReturnPath,
+    updateSignInLinks: updateSignInLinks,
   };
 })(window);

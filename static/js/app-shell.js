@@ -35,10 +35,12 @@
   var shellGroups = Array.prototype.slice.call(document.querySelectorAll('.app-shell-group[data-shell-group]')).map(function (group) {
     var key = String(group.getAttribute('data-shell-group') || '').trim();
     var trigger = group.querySelector('[data-shell-group-trigger]');
+    var panelWrap = group.querySelector('.app-shell-group-panel-wrap');
     return {
       key: key,
       node: group,
-      trigger: trigger
+      trigger: trigger,
+      panelWrap: panelWrap
     };
   }).filter(function (group) { return !!group.key; });
   var exportOverlay = document.getElementById('shell-export-overlay');
@@ -351,6 +353,14 @@
     group.node.classList.toggle('is-open', !!open);
     group.trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
     group.trigger.classList.toggle('active', !!open);
+    if (group.panelWrap) {
+      group.panelWrap.setAttribute('aria-hidden', open ? 'false' : 'true');
+      if (open) {
+        group.panelWrap.removeAttribute('inert');
+      } else {
+        group.panelWrap.setAttribute('inert', '');
+      }
+    }
   }
 
   function hydrateShellGroupState(groupKey, hasActiveChild) {
@@ -431,7 +441,10 @@
 
   function openSignInPortal() {
     if (openInlineAuthModal('signin')) return;
-    window.location.href = '/lecture-notes?auth=signin';
+    var authUtils = window.LectureProcessorAuth || {};
+    window.location.href = typeof authUtils.buildSignInUrl === 'function'
+      ? authUtils.buildSignInUrl()
+      : '/lecture-notes?auth=signin';
   }
 
   function maybeOpenAuthFromQuery() {

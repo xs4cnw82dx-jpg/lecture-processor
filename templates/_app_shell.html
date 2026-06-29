@@ -42,7 +42,7 @@
             <polyline points="6 8 10 12 14 8"></polyline>
           </svg>
         </button>
-        <div class="app-shell-group-panel-wrap">
+        <div class="app-shell-group-panel-wrap" aria-hidden="{{ 'false' if shell_physio_open else 'true' }}" {% if not shell_physio_open %}inert{% endif %}>
           <div class="app-shell-group-panel" id="shell-physio-panel">
             <a href="/physio/soap" class="app-shell-link sub">SOAP Notes</a>
             <a href="/physio/rps" class="app-shell-link sub">RPS Form</a>
@@ -66,7 +66,7 @@
             <polyline points="6 8 10 12 14 8"></polyline>
           </svg>
         </button>
-        <div class="app-shell-group-panel-wrap">
+        <div class="app-shell-group-panel-wrap" aria-hidden="{{ 'false' if shell_more_tools_open else 'true' }}" {% if not shell_more_tools_open %}inert{% endif %}>
           <div class="app-shell-group-panel" id="shell-more-tools-panel">
             <a href="/lecture-downloader" class="app-shell-link sub">Lecture Downloader</a>
             <a href="/video-overlay-builder" class="app-shell-link sub">Video Overlay Builder</a>

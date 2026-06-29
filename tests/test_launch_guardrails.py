@@ -427,8 +427,9 @@ def test_import_audio_url_rejects_invalid_host(client, monkeypatch):
     assert "not allowed" in response.get_json()["error"].lower()
 
 
-def test_import_audio_url_success_returns_token(client, monkeypatch, tmp_path):
+def test_import_audio_url_success_queues_job_and_status_returns_token(client, monkeypatch, tmp_path):
     core.AUDIO_IMPORT_TOKENS.clear()
+    core.AUDIO_IMPORT_JOBS.clear()
     imported_path = tmp_path / "imported.mp3"
     imported_path.write_bytes(b"ID3\x03\x00\x00\x00")
     reserved = []
@@ -450,6 +451,7 @@ def test_import_audio_url_success_returns_token(client, monkeypatch, tmp_path):
         "download_audio_from_video_url",
         lambda _url, _prefix: (str(imported_path), "lecture.mp3", imported_path.stat().st_size),
     )
+    monkeypatch.setattr(core, "submit_background_job", lambda target, *args, **kwargs: target(*args, **kwargs))
 
     response = client.post(
         "/api/import-audio-url",
@@ -457,12 +459,23 @@ def test_import_audio_url_success_returns_token(client, monkeypatch, tmp_path):
         headers={"Authorization": "Bearer dev"},
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     body = response.get_json()
-    assert body["ok"] is True
-    token = body["audio_import_token"]
+    assert body["ok"] is False
+    assert body["status"] == "queued"
+    assert body["job_id"]
+
+    status_response = client.get(
+        f"/api/import-audio-url/{body['job_id']}",
+        headers={"Authorization": "Bearer dev"},
+    )
+    assert status_response.status_code == 200
+    status_body = status_response.get_json()
+    assert status_body["ok"] is True
+    assert status_body["status"] == "complete"
+    token = status_body["audio_import_token"]
     assert token in core.AUDIO_IMPORT_TOKENS
-    assert body["file_name"] == "lecture.mp3"
+    assert status_body["file_name"] == "lecture.mp3"
     assert core.AUDIO_IMPORT_TOKENS[token]["source_url"] == "https://ovp.kaltura.com/[redacted]"
     assert core.AUDIO_IMPORT_TOKENS[token]["quota_bytes_charged"] == imported_path.stat().st_size
     assert reserved == [("imp-u2", core.MAX_AUDIO_UPLOAD_BYTES)]
@@ -633,7 +646,7 @@ def test_upload_slides_only_accepts_pptx_after_conversion(client, monkeypatch):
             "preferred_output_language_custom": "",
         },
     )
-    monkeypatch.setattr(core, "resolve_uploaded_slides_to_pdf", lambda _file, _job_id: ("/tmp/converted-slides.pdf", ""))
+    monkeypatch.setattr(core, "file_has_pptx_signature", lambda _path: True)
     monkeypatch.setattr(billing_credits, "deduct_credit", lambda *_args, **_kwargs: "slides_credits")
     monkeypatch.setattr(ai_pipelines, "process_slides_only", lambda _job_id, _pdf_path, runtime=None: None)
 
@@ -1604,6 +1617,72 @@ def test_merge_card_state_entries_keeps_interaction_metadata_and_mastery_history
     assert merged["flip_count"] == 4
     assert merged["write_count"] == 2
     assert merged["level"] == "familiar"
+
+
+def test_get_study_progress_pack_returns_only_requested_pack_state(client, monkeypatch):
+    class _FakeSnapshot:
+        def __init__(self, payload=None, exists=True):
+            self._payload = payload or {}
+            self.exists = exists
+
+        def to_dict(self):
+            return dict(self._payload)
+
+    class _FakeProgressDoc:
+        def get(self):
+            return _FakeSnapshot(
+                {
+                    "daily_goal": 12,
+                    "timezone": "Europe/Amsterdam",
+                    "streak_data": {
+                        "last_study_date": "2026-06-28",
+                        "current_streak": 3,
+                        "longest_streak": 5,
+                    },
+                },
+                exists=True,
+            )
+
+    class _FakeCardStateDoc:
+        def __init__(self, pack_id):
+            self.pack_id = pack_id
+
+        def get(self):
+            return _FakeSnapshot(
+                {
+                    "uid": "u-pack-progress",
+                    "pack_id": self.pack_id,
+                    "state": {
+                        "fc_1": {
+                            "seen": 1,
+                            "correct": 1,
+                            "wrong": 0,
+                            "interval_days": 1,
+                            "next_review_date": "2026-06-28",
+                            "last_review_date": "2026-06-27",
+                        }
+                    },
+                },
+                exists=True,
+            )
+
+    runtime = get_runtime(client.application)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-pack-progress", "email": "user@gmail.com"})
+    monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: _FakeProgressDoc(), raising=False)
+    monkeypatch.setattr(runtime, "get_study_card_state_doc", lambda _uid, pack_id: _FakeCardStateDoc(pack_id), raising=False)
+
+    response = client.get(
+        "/api/study-progress/packs/pack-42",
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["daily_goal"] == 12
+    assert body["timezone"] == "Europe/Amsterdam"
+    assert set(body["card_states"].keys()) == {"pack-42"}
+    assert body["card_states"]["pack-42"]["fc_1"]["seen"] == 1
+    assert body["summary"]["due_today"] >= 1
 
 
 def test_update_study_progress_empty_card_state_payload_does_not_delete_existing_pack(client, monkeypatch):

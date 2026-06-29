@@ -24,6 +24,9 @@
     var next = '/buy_credits';
     var safeBundle = String(bundleId || '').trim();
     if (safeBundle) next += '?bundle_id=' + encodeURIComponent(safeBundle);
+    if (typeof authUtils.buildSignInUrl === 'function') {
+      return authUtils.buildSignInUrl(next);
+    }
     return '/lecture-notes?auth=signin&next=' + encodeURIComponent(next);
   }
 

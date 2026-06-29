@@ -165,12 +165,57 @@ def _detect_tools_source_type(app_ctx, uploaded_file, requested_source):
     return tools_extraction_support.detect_tools_source_type(app_ctx, uploaded_file, requested_source)
 
 
+def _stage_uploaded_slides_file(app_ctx, uploaded_file, job_id):
+    if not uploaded_file or not uploaded_file.filename:
+        return '', 'Slide file is required'
+    if not app_ctx.allowed_file(uploaded_file.filename, app_ctx.ALLOWED_SLIDE_EXTENSIONS):
+        return '', 'Invalid slide file. Please upload PDF or PPTX.'
+    mime_type = str(uploaded_file.mimetype or '').strip().lower()
+    if mime_type not in app_ctx.ALLOWED_SLIDE_MIME_TYPES and mime_type not in {'', 'application/octet-stream'}:
+        return '', 'Invalid slide content type'
+
+    safe_name = app_ctx.secure_filename(uploaded_file.filename)
+    source_path = app_ctx.os.path.join(app_ctx.UPLOAD_FOLDER, f"{job_id}_{safe_name}")
+    uploaded_file.save(source_path)
+    source_size = app_ctx.get_saved_file_size(source_path)
+    if source_size <= 0 or source_size > app_ctx.MAX_PDF_UPLOAD_BYTES:
+        app_ctx.cleanup_files([source_path], [])
+        return '', 'Slide file exceeds server limit (max 50MB) or is empty.'
+
+    extension = safe_name.rsplit('.', 1)[1].lower() if '.' in safe_name else ''
+    if extension == 'pdf':
+        if not app_ctx.file_has_pdf_signature(source_path):
+            app_ctx.cleanup_files([source_path], [])
+            return '', 'Uploaded PDF file is invalid.'
+        return source_path, ''
+    if extension == 'pptx' and app_ctx.file_has_pptx_signature(source_path):
+        return source_path, ''
+
+    app_ctx.cleanup_files([source_path], [])
+    return '', 'Uploaded PPTX file is invalid.'
+
+
+def _background_queue_full(app_ctx):
+    stats_fn = getattr(app_ctx, 'get_background_queue_stats', None)
+    if not callable(stats_fn):
+        return False
+    try:
+        stats = stats_fn() or {}
+        return int(stats.get('active', 0) or 0) >= int(stats.get('capacity', 1) or 1)
+    except Exception:
+        return False
+
+
 def import_audio_from_url(app_ctx, request):
     return upload_audio_import_service.import_audio_from_url(app_ctx, request)
 
 
 def release_imported_audio(app_ctx, request):
     return upload_audio_import_service.release_imported_audio(app_ctx, request)
+
+
+def get_imported_audio_status(app_ctx, request, job_id):
+    return upload_audio_import_service.get_imported_audio_status(app_ctx, request, job_id)
 
 
 def _parse_batch_rows_payload(request):
@@ -296,6 +341,8 @@ def upload_files(app_ctx, request):
     try:
         user = app_ctx.get_or_create_user(uid, email)
         mode = request.form.get('mode', 'lecture-notes')
+        if _background_queue_full(app_ctx):
+            return upload_batch_support.queue_full_response(app_ctx)
         study_pack_title = _sanitize_study_pack_title(request.form.get('study_pack_title', ''))
         if mode in {'lecture-notes', 'slides-only', 'interview'} and not study_pack_title:
             return app_ctx.jsonify({'error': 'Lecture Topic / Name is required.'}), 400
@@ -345,7 +392,7 @@ def upload_files(app_ctx, request):
             if slides_file.filename == '':
                 return app_ctx.jsonify({'error': 'Both files must be selected'}), 400
             job_id = str(app_ctx.uuid.uuid4())
-            pdf_path, slides_error = app_ctx.resolve_uploaded_slides_to_pdf(slides_file, job_id)
+            pdf_path, slides_error = _stage_uploaded_slides_file(app_ctx, slides_file, job_id)
             if slides_error:
                 return app_ctx.jsonify({'error': slides_error}), 400
             pdf_size = app_ctx.get_saved_file_size(pdf_path)
@@ -461,7 +508,7 @@ def upload_files(app_ctx, request):
             if slides_file.filename == '':
                 return app_ctx.jsonify({'error': 'Slide file must be selected'}), 400
             job_id = str(app_ctx.uuid.uuid4())
-            pdf_path, slides_error = app_ctx.resolve_uploaded_slides_to_pdf(slides_file, job_id)
+            pdf_path, slides_error = _stage_uploaded_slides_file(app_ctx, slides_file, job_id)
             if slides_error:
                 return app_ctx.jsonify({'error': slides_error}), 400
             pdf_size = app_ctx.get_saved_file_size(pdf_path)
