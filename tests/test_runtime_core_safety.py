@@ -108,3 +108,14 @@ def test_cleanup_stale_upload_artifacts_preserves_active_and_persisted_files(tmp
     assert active_job_file.exists()
     assert active_import_file.exists()
     assert study_audio_file.exists()
+
+
+def test_runtime_core_does_not_expose_legacy_account_export_helpers():
+    for name in (
+        "collect_user_export_payload",
+        "list_docs_by_uid",
+        "delete_docs_by_uid",
+        "remove_upload_artifacts_for_job_ids",
+        "anonymize_purchase_docs_by_uid",
+    ):
+        assert not hasattr(core, name)

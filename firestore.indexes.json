@@ -57,6 +57,24 @@
       ]
     },
     {
+      "collectionGroup": "study_packs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "uid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "folder_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "analytics_events",
       "queryScope": "COLLECTION",
       "fields": [

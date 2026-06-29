@@ -52,11 +52,9 @@ def _admin_custom_prompt_length(job):
 
 
 def admin_overview(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
-    if not app_ctx.is_admin_user(decoded_token):
-        return app_ctx.jsonify({'error': 'Forbidden'}), 403
+    _decoded, error_response, status = _require_admin(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
 
     try:
         window_key, window_seconds = admin_metrics.get_admin_window(
@@ -299,11 +297,9 @@ def admin_overview(app_ctx, request):
 
 
 def admin_export(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
-    if not app_ctx.is_admin_user(decoded_token):
-        return app_ctx.jsonify({'error': 'Forbidden'}), 403
+    _decoded, error_response, status = _require_admin(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
 
     export_type = request.args.get('type', 'jobs')
     if export_type not in {'jobs', 'purchases', 'funnel', 'funnel-daily'}:
@@ -499,11 +495,9 @@ def admin_export(app_ctx, request):
 
 
 def admin_prompts(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
-    if not app_ctx.is_admin_user(decoded_token):
-        return app_ctx.jsonify({'error': 'Forbidden'}), 403
+    _decoded, error_response, status = _require_admin(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
 
     fmt = request.args.get('format', 'json')
     if fmt == 'markdown':
@@ -512,11 +506,9 @@ def admin_prompts(app_ctx, request):
 
 
 def admin_model_pricing(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
-    if not app_ctx.is_admin_user(decoded_token):
-        return app_ctx.jsonify({'error': 'Forbidden'}), 403
+    _decoded, error_response, status = _require_admin(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
 
     try:
         payload = admin_metrics.get_model_pricing_config(runtime=app_ctx)

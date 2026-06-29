@@ -5,6 +5,7 @@
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
   var authUtils = window.LectureProcessorAuth || {};
   var authClient = auth && authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
+  var downloadUtils = window.LectureProcessorDownload || {};
 
   var refreshBtn = document.getElementById('batch-dashboard-refresh-btn');
   var modeFilter = document.getElementById('batch-dashboard-mode-filter');
@@ -39,6 +40,68 @@
       var headers = Object.assign({}, opts.headers || {}, { Authorization: 'Bearer ' + token });
       return fetch(path, Object.assign({}, opts, { headers: headers }));
     });
+  }
+
+  function saveBlobFallback(response, fallbackName) {
+    return response.blob().then(function (blob) {
+      var url = URL.createObjectURL(blob);
+      var anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = fallbackName || 'download';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+      return fallbackName;
+    });
+  }
+
+  function parseDownloadError(response) {
+    return response.json().catch(function () { return {}; }).then(function (payload) {
+      throw new Error((payload && payload.error) || 'Could not download this file.');
+    });
+  }
+
+  function downloadAuthenticatedFile(path, fallbackName, button) {
+    var originalText = button ? button.textContent : '';
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Downloading...';
+    }
+    return authFetch(path).then(function (response) {
+      if (!response.ok) return parseDownloadError(response);
+      if (downloadUtils && typeof downloadUtils.downloadResponseBlob === 'function') {
+        return downloadUtils.downloadResponseBlob(response, fallbackName);
+      }
+      return saveBlobFallback(response, fallbackName);
+    }).then(function () {
+      showShellToast('Download started.');
+    }).catch(function (error) {
+      showShellToast(error && error.message ? error.message : 'Could not download this file.', 'error');
+    }).finally(function () {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    });
+  }
+
+  function isProtectedBatchDownload(href) {
+    var value = String(href || '').trim();
+    return (
+      /^\/api\/(?:instant-)?batch\/jobs\/[^?#]+\/download\.zip(?:[?#].*)?$/.test(value) ||
+      /^\/api\/(?:instant-)?batch\/jobs\/[^?#]+\/rows\/[^?#]+\/download-docx(?:[?#].*)?$/.test(value) ||
+      /^\/api\/(?:instant-)?batch\/jobs\/[^?#]+\/rows\/[^?#]+\/download-flashcards-csv(?:[?#].*)?$/.test(value)
+    );
+  }
+
+  function openBatchActionHref(href, button) {
+    if (!href) return;
+    if (isProtectedBatchDownload(href)) {
+      downloadAuthenticatedFile(href, 'batch-download', button);
+      return;
+    }
+    window.open(href, '_blank');
   }
 
   function formatDate(secondsValue) {
@@ -101,7 +164,8 @@
 
   function statusPill(status) {
     var safe = String(status || 'queued').trim().toLowerCase();
-    return '<span class="batch-status-pill ' + safe + '">' + safe + '</span>';
+    var classSuffix = safe.replace(/[^a-z0-9_-]/g, '');
+    return '<span class="batch-status-pill ' + classSuffix + '">' + escapeHtml(safe) + '</span>';
   }
 
   function emptyRow(colspan, text) {
@@ -141,7 +205,7 @@
       var rowsText = String(Number(batch.completed_rows || 0)) + '/' + String(Number(batch.total_rows || 0)) + ' complete · ' + String(Number(batch.failed_rows || 0)) + ' failed';
       var actions = [];
       var viewHref = modePath(batch.mode, batch) + '?batch_id=' + encodeURIComponent(batchId);
-      actions.push('<a class="btn-link" href="' + viewHref + '">View</a>');
+      actions.push('<a class="btn-link" href="' + escapeHtml(viewHref) + '">View</a>');
       if (batch.next_action_label && batch.next_action_href && batch.next_action_href !== viewHref) {
         if (String(batch.next_action_href).indexOf('/api/batch/jobs/') === 0 || String(batch.next_action_href).indexOf('/api/instant-batch/jobs/') === 0) {
           actions.push('<button type="button" class="btn-link" data-action="open-href" data-href="' + escapeHtml(String(batch.next_action_href)) + '">' + escapeHtml(String(batch.next_action_label)) + '</button>');
@@ -150,15 +214,15 @@
         }
       }
       if (batch.can_download_zip) {
-        actions.push('<button type="button" class="btn-link" data-action="download-zip" data-batch-id="' + batchId + '" data-api-base="' + apiPath(batch) + '">Download ZIP</button>');
+        actions.push('<button type="button" class="btn-link" data-action="download-zip" data-batch-id="' + escapeHtml(batchId) + '" data-api-base="' + escapeHtml(apiPath(batch)) + '">Download ZIP</button>');
       }
       var tr = document.createElement('tr');
       if (isActiveTable) {
         tr.innerHTML =
           '<td>' + batchTitleCell(batch) + '</td>' +
-          '<td>' + modeLabel(batch.mode) + (isInstantBatch(batch) ? ' · Instant' : ' · Standard') + '</td>' +
+          '<td>' + escapeHtml(modeLabel(batch.mode) + (isInstantBatch(batch) ? ' · Instant' : ' · Standard')) + '</td>' +
           '<td>' + created + '</td>' +
-          '<td>' + stageText(batch) + '</td>' +
+          '<td>' + escapeHtml(stageText(batch)) + '</td>' +
           '<td>' + rowsText + '</td>' +
           '<td>' + updated + '</td>' +
           '<td>' + escapeHtml(String(batch.email_status_label || batch.completion_email_status || 'pending')) + '</td>' +
@@ -166,7 +230,7 @@
       } else {
         tr.innerHTML =
           '<td>' + batchTitleCell(batch) + '</td>' +
-          '<td>' + modeLabel(batch.mode) + (isInstantBatch(batch) ? ' · Instant' : ' · Standard') + '</td>' +
+          '<td>' + escapeHtml(modeLabel(batch.mode) + (isInstantBatch(batch) ? ' · Instant' : ' · Standard')) + '</td>' +
           '<td>' + statusPill(batch.status) + '</td>' +
           '<td>' + created + '</td>' +
           '<td>' + rowsText + '</td>' +
@@ -193,7 +257,7 @@
       var batchId = String(batch.batch_id || '');
       var viewHref = modePath(batch.mode, batch) + '?batch_id=' + encodeURIComponent(batchId);
       var actions = [];
-      actions.push('<a class="btn-link" href="' + viewHref + '">View</a>');
+      actions.push('<a class="btn-link" href="' + escapeHtml(viewHref) + '">View</a>');
       if (batch.next_action_label && batch.next_action_href && batch.next_action_href !== viewHref) {
         if (String(batch.next_action_href).indexOf('/api/batch/jobs/') === 0 || String(batch.next_action_href).indexOf('/api/instant-batch/jobs/') === 0) {
           actions.push('<button type="button" class="btn-link" data-action="open-href" data-href="' + escapeHtml(String(batch.next_action_href)) + '">' + escapeHtml(String(batch.next_action_label)) + '</button>');
@@ -202,7 +266,7 @@
         }
       }
       if (batch.can_download_zip) {
-        actions.push('<button type="button" class="btn-link" data-action="download-zip" data-batch-id="' + batchId + '" data-api-base="' + apiPath(batch) + '">Download ZIP</button>');
+        actions.push('<button type="button" class="btn-link" data-action="download-zip" data-batch-id="' + escapeHtml(batchId) + '" data-api-base="' + escapeHtml(apiPath(batch)) + '">Download ZIP</button>');
       }
 
       var card = document.createElement('article');
@@ -235,14 +299,13 @@
         var batchId = String(button.getAttribute('data-batch-id') || '').trim();
         if (!batchId) return;
         var apiBase = String(button.getAttribute('data-api-base') || '/api/batch/jobs');
-        window.open(apiBase + '/' + encodeURIComponent(batchId) + '/download.zip', '_blank');
+        downloadAuthenticatedFile(apiBase + '/' + encodeURIComponent(batchId) + '/download.zip', 'batch-' + batchId + '.zip', button);
       });
     });
     Array.prototype.slice.call(document.querySelectorAll('[data-action="open-href"]')).forEach(function (button) {
       button.addEventListener('click', function () {
         var href = String(button.getAttribute('data-href') || '').trim();
-        if (!href) return;
-        window.open(href, '_blank');
+        openBatchActionHref(href, button);
       });
     });
   }

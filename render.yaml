@@ -8,7 +8,7 @@ services:
       - key: FLASK_SECRET_KEY
         sync: false
       - key: PUBLIC_BASE_URL
-        value: "https://lecture-processor.onrender.com"
+        value: "https://lecture-processor-1.onrender.com"
       - key: GEMINI_API_KEY
         sync: false
       - key: FIREBASE_CREDENTIALS
@@ -23,3 +23,7 @@ services:
         value: "1"
       - key: SENTRY_ENVIRONMENT
         value: "production"
+      - key: SENTRY_DSN_BACKEND
+        sync: false
+      - key: SENTRY_DSN_FRONTEND
+        sync: false

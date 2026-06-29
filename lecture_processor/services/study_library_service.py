@@ -7,6 +7,7 @@ from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.study import progress as study_progress
 
+from lecture_processor.services import admin_support
 from lecture_processor.services import study_api_support
 
 BUILTIN_FOLDER_PARENT_IDS = {'', '__interviews__', '__voice_notes__'}
@@ -32,14 +33,16 @@ def _with_stream_token_lock(app_ctx):
     return _NoopLock()
 
 
-def _get_owned_audio_path(app_ctx, decoded_token, pack_id):
+def _get_owned_audio_path(app_ctx, request, decoded_token, pack_id):
     uid = decoded_token['uid']
     doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
     if not doc.exists:
         return None, app_ctx.jsonify({'error': 'Study pack not found'}), 404
     pack = doc.to_dict() or {}
-    if pack.get('uid', '') != uid and not app_ctx.is_admin_user(decoded_token):
-        return None, app_ctx.jsonify({'error': 'Forbidden'}), 403
+    if pack.get('uid', '') != uid:
+        _admin_token, error_response, status = admin_support.require_admin(app_ctx, request)
+        if error_response is not None:
+            return None, error_response, status
     audio_storage_key = study_audio.ensure_pack_audio_storage_key(doc.reference, pack, runtime=app_ctx)
     audio_storage_path = study_audio.resolve_audio_storage_path_from_key(audio_storage_key, runtime=app_ctx)
     if not audio_storage_path:
@@ -568,7 +571,7 @@ def stream_study_pack_audio(app_ctx, request, pack_id):
     if error_response is not None:
         return error_response, status
     try:
-        audio_storage_path, error_response, status = _get_owned_audio_path(app_ctx, decoded_token, pack_id)
+        audio_storage_path, error_response, status = _get_owned_audio_path(app_ctx, request, decoded_token, pack_id)
         if error_response is not None:
             return error_response, status
         return app_ctx.send_file(audio_storage_path, mimetype=app_ctx.get_mime_type(audio_storage_path), conditional=True)
@@ -582,7 +585,7 @@ def create_study_pack_audio_token(app_ctx, request, pack_id):
     if error_response is not None:
         return error_response, status
     try:
-        audio_storage_path, error_response, status = _get_owned_audio_path(app_ctx, decoded_token, pack_id)
+        audio_storage_path, error_response, status = _get_owned_audio_path(app_ctx, request, decoded_token, pack_id)
         if error_response is not None:
             return error_response, status
         token = _issue_audio_stream_token(

@@ -331,6 +331,11 @@
     accountBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
     if (accountMenuWrap) {
       accountMenuWrap.setAttribute('aria-hidden', open ? 'false' : 'true');
+      if (open) {
+        accountMenuWrap.removeAttribute('inert');
+      } else {
+        accountMenuWrap.setAttribute('inert', '');
+      }
     }
     if (open && focusMode) {
       focusMenuItem(accountMenu, focusMode);
@@ -633,6 +638,7 @@
     if (userInitial) userInitial.textContent = '?';
     if (signInBtn) signInBtn.hidden = false;
     if (accountWrap) accountWrap.hidden = true;
+    setAccountMenuOpen(false);
     setPhysioGroupVisible(false);
   }
 
@@ -641,6 +647,7 @@
     if (!cachedProfile || typeof cachedProfile !== 'object') return false;
     if (signInBtn) signInBtn.hidden = true;
     if (accountWrap) accountWrap.hidden = false;
+    setAccountMenuOpen(false);
     if (userEmail) userEmail.textContent = String(cachedProfile.email || 'Checking sign-in...');
     if (userName) userName.textContent = String(cachedProfile.name || 'Account');
     if (userInitial) userInitial.textContent = String(cachedProfile.initial || '?').slice(0, 1).toUpperCase();
@@ -667,6 +674,7 @@
     setAuthState(signedIn ? 'signed-in' : 'signed-out');
     if (signInBtn) signInBtn.hidden = signedIn;
     if (accountWrap) accountWrap.hidden = !signedIn;
+    setAccountMenuOpen(false);
     if (!signedIn) {
       applySignedOutState(lastSignedInUid);
       lastSignedInUid = '';
@@ -1022,6 +1030,7 @@
     hydrateCachedCredits(auth.currentUser);
     if (signInBtn) signInBtn.hidden = true;
     if (accountWrap) accountWrap.hidden = false;
+    setAccountMenuOpen(false);
     setCreditsVisible(true);
   } else {
     setCreditsVisible(false);

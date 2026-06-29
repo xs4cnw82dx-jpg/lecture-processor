@@ -7572,7 +7572,7 @@ function clearLegacyHighlightCache() {
 
 function setNotesHtml(html) {
   if (!notesView) return;
-  notesView.innerHTML = String(html || '');
+  setSafeInnerHtml(notesView, html);
 }
 function updateHighlightHistoryButtons() {
   if (hlUndoBtn) hlUndoBtn.disabled = hlUndoStack.length === 0;

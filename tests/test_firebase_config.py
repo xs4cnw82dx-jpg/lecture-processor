@@ -46,6 +46,10 @@ def test_required_firestore_composite_indexes_are_declared():
         'study_shares',
         [('owner_uid', 'ASCENDING'), ('updated_at', 'DESCENDING')],
     )
+    assert _has_index(
+        'study_packs',
+        [('uid', 'ASCENDING'), ('folder_id', 'ASCENDING'), ('created_at', 'DESCENDING')],
+    )
 
 
 def test_telemetry_ttl_field_overrides_are_declared():

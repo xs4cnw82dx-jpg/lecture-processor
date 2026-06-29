@@ -8,6 +8,11 @@ from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.shared import sanitize_csv_row
 from lecture_processor.domains.study import export as study_export
+from lecture_processor.services import admin_support
+
+
+def _require_admin_bypass(app_ctx, request):
+    return admin_support.require_admin(app_ctx, request)
 
 
 def get_status(app_ctx, request, job_id):
@@ -26,8 +31,10 @@ def get_status(app_ctx, request, job_id):
                 'job_lost': True,
                 'retryable': True,
             }), 404
-    if job.get('user_id', '') != uid and not app_ctx.is_admin_user(decoded_token):
-        return app_ctx.jsonify({'error': 'Forbidden'}), 403
+    if job.get('user_id', '') != uid:
+        _admin_token, error_response, status = _require_admin_bypass(app_ctx, request)
+        if error_response is not None:
+            return error_response, status
     response = {
         'status': job['status'],
         'step': job['step'],
@@ -155,8 +162,10 @@ def download_docx(app_ctx, request, job_id):
     job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx)
     if not job:
         return app_ctx.jsonify({'error': 'Job not found'}), 404
-    if job.get('user_id', '') != uid and not app_ctx.is_admin_user(decoded_token):
-        return app_ctx.jsonify({'error': 'Forbidden'}), 403
+    if job.get('user_id', '') != uid:
+        _admin_token, error_response, status = _require_admin_bypass(app_ctx, request)
+        if error_response is not None:
+            return error_response, status
     if job['status'] != 'complete':
         return app_ctx.jsonify({'error': 'Job not complete'}), 400
     content_type = request.args.get('type', 'result')
@@ -204,8 +213,10 @@ def download_flashcards_csv(app_ctx, request, job_id):
     job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx)
     if not job:
         return app_ctx.jsonify({'error': 'Job not found'}), 404
-    if job.get('user_id', '') != uid and not app_ctx.is_admin_user(decoded_token):
-        return app_ctx.jsonify({'error': 'Forbidden'}), 403
+    if job.get('user_id', '') != uid:
+        _admin_token, error_response, status = _require_admin_bypass(app_ctx, request)
+        if error_response is not None:
+            return error_response, status
     if job.get('status') != 'complete':
         return app_ctx.jsonify({'error': 'Job not complete'}), 400
     export_type = request.args.get('type', 'flashcards').strip().lower()

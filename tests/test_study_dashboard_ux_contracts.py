@@ -187,6 +187,38 @@ def test_dashboard_distinguishes_load_failures_from_empty_state():
     assert 'renderRecentPacksError();' in dashboard_js
 
 
+def test_batch_downloads_use_authenticated_fetch_instead_of_new_tabs():
+    batch_mode_template = _read('templates/batch_mode.html')
+    batch_dashboard_template = _read('templates/batch_dashboard.html')
+    batch_mode_js = _read('static/js/batch-mode.js')
+    batch_dashboard_js = _read('static/js/batch-dashboard.js')
+
+    assert batch_mode_template.index("filename='js/download-utils.js'") < batch_mode_template.index("batch_mode_js_asset")
+    assert batch_dashboard_template.index("filename='js/download-utils.js'") < batch_dashboard_template.index("batch_dashboard_js_asset")
+
+    for source in (batch_mode_js, batch_dashboard_js):
+        assert 'var downloadUtils = window.LectureProcessorDownload || {};' in source
+        assert 'function downloadAuthenticatedFile(path, fallbackName, button)' in source
+        assert 'return authClient.authFetch(path, options, { retryOn401: true });' in source
+        assert 'downloadUtils.downloadResponseBlob(response, fallbackName)' in source
+        assert 'function isProtectedBatchDownload(href)' in source
+
+    assert re.search(r"downloadAuthenticatedFile\(\s*apiBase \+ '/' \+ encodeURIComponent\(batchId\) \+ '/download\.zip'", batch_dashboard_js)
+    assert re.search(r"downloadAuthenticatedFile\(\s*batchApiBase \+ '/' \+ encodeURIComponent\(currentBatchId\) \+ '/download\.zip'", batch_mode_js)
+    assert re.search(r"downloadAuthenticatedFile\(\s*batchApiBase \+ '/' \+ encodeURIComponent\(currentBatchId\) \+ '/rows/' \+ encodeURIComponent\(rowId\) \+ '/download-docx'", batch_mode_js)
+    assert re.search(r"downloadAuthenticatedFile\(\s*batchApiBase \+ '/' \+ encodeURIComponent\(currentBatchId\) \+ '/rows/' \+ encodeURIComponent\(rowId\) \+ '/download-flashcards-csv\?type=flashcards'", batch_mode_js)
+    assert re.search(r"downloadAuthenticatedFile\(\s*batchApiBase \+ '/' \+ encodeURIComponent\(currentBatchId\) \+ '/rows/' \+ encodeURIComponent\(rowId\) \+ '/download-flashcards-csv\?type=test'", batch_mode_js)
+
+    forbidden_download_openers = [
+        "window.open(batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/download.zip'",
+        "window.open(batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/rows/'",
+        "window.open(apiBase + '/' + encodeURIComponent(batchId) + '/download.zip'",
+    ]
+    for snippet in forbidden_download_openers:
+        assert snippet not in batch_mode_js
+        assert snippet not in batch_dashboard_js
+
+
 def test_study_supports_voice_notes_folder_deep_link():
     study_js = _read('static/js/study.js')
     voice_template = _read('templates/voice_notes.html')
