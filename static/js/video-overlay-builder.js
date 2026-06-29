@@ -1409,12 +1409,12 @@
     if (!refs.stageFrame) return '.overlay-stage{width:min(100%,150vh);height:auto;font-size:16px;--overlay-stage-scale:1;}';
     var frameRect = refs.stageFrame.getBoundingClientRect();
     var availableWidth = Math.max(240, frameRect.width - 4);
-    var availableHeight = Math.max(160, frameRect.height - 4);
+    var availableHeight = Math.max(160, frameRect.height - 10);
     var fittedWidth = Math.min(availableWidth, availableHeight * (16 / 9));
     var presenterMode = document.body && document.body.classList.contains('overlay-recording-presenter');
     var zoomedWidth = Math.max(240, fittedWidth * (presenterMode ? 1 : stageZoom));
     var zoomedHeight = zoomedWidth * 9 / 16;
-    var contentScale = Math.max(0.44, Math.min(1.08, zoomedWidth / 1600));
+    var contentScale = Math.max(0.36, Math.min(1.08, zoomedWidth / 1600));
     var fontSize = Math.round(16 * contentScale * 1000) / 1000;
     return [
       '.overlay-stage{',
