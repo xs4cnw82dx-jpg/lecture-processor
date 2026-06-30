@@ -157,6 +157,14 @@
     return sortSessions(Array.isArray(payload.sessions) ? payload.sessions : []).slice(0, 4);
   }
 
+  function fetchProgressSummary(headers) {
+    return fetch('/api/study-progress/summary', { headers: headers });
+  }
+
+  function fetchRecentStudyPacks(headers) {
+    return fetch('/api/study-packs?limit=10', { headers: headers });
+  }
+
   function renderUpcomingSessions(user, sessions) {
     if (!sessionsList) return;
     while (sessionsList.firstChild) sessionsList.removeChild(sessionsList.firstChild);
@@ -253,8 +261,8 @@
       var token = await user.getIdToken();
       var headers = { Authorization: 'Bearer ' + token };
       var result = await Promise.all([
-        fetch('/api/study-progress/summary', { headers: headers }),
-        fetch('/api/study-packs', { headers: headers }),
+        fetchProgressSummary(headers),
+        fetchRecentStudyPacks(headers),
         fetchUpcomingSessions(token).catch(function () { return { __dashboardLoadFailed: true }; })
       ]);
       var sessionsFailed = !!(result[2] && result[2].__dashboardLoadFailed);

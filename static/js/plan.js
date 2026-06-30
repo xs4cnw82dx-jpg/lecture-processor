@@ -42,6 +42,8 @@
   var packGoalTimers = new Map();
   var packGoalSaveInFlight = new Set();
   var packGoalDraftValues = new Map();
+  var plannerLoadPromise = null;
+  var plannerRefreshTimer = null;
   var PLAN_CACHE_KEY = 'plan_summary';
   var DASHBOARD_CACHE_KEY = 'dashboard_summary';
   var PLAN_SYNC_SOURCE_ID = 'plan-' + Math.random().toString(36).slice(2, 10);
@@ -527,6 +529,80 @@
     while (node.firstChild) node.removeChild(node.firstChild);
   }
 
+  function createEmptyAction(action) {
+    var config = action && typeof action === 'object' ? action : {};
+    var node = config.href ? document.createElement('a') : document.createElement('button');
+    node.className = 'empty-link' + (config.secondary ? ' secondary' : '');
+    node.textContent = String(config.label || 'Continue');
+    if (config.href) {
+      node.href = String(config.href);
+    } else {
+      node.type = 'button';
+      if (config.retry) node.setAttribute('data-plan-retry-load', '1');
+    }
+    return node;
+  }
+
+  function renderPlannerEmptyState(container, title, message, actions) {
+    if (!container) return;
+    clearNode(container);
+    container.hidden = false;
+
+    var titleEl = document.createElement('strong');
+    titleEl.textContent = String(title || '');
+    container.appendChild(titleEl);
+
+    var messageEl = document.createElement('span');
+    messageEl.textContent = String(message || '');
+    container.appendChild(messageEl);
+
+    if (Array.isArray(actions) && actions.length) {
+      var actionWrap = document.createElement('div');
+      actionWrap.className = 'empty-actions';
+      actions.forEach(function (action) {
+        actionWrap.appendChild(createEmptyAction(action));
+      });
+      container.appendChild(actionWrap);
+    }
+  }
+
+  function bindPlannerRetryActions() {
+    Array.prototype.slice.call(document.querySelectorAll('[data-plan-retry-load]')).forEach(function (button) {
+      button.addEventListener('click', function () {
+        loadPlannerData();
+      }, { once: true });
+    });
+  }
+
+  function renderFoldersEmpty() {
+    renderPlannerEmptyState(
+      foldersEmptyEl,
+      'Create a folder in Study Library',
+      'Folders power exam-date planning and workload recommendations.',
+      [{ href: '/study', label: 'Open Study Library' }]
+    );
+  }
+
+  function renderPackGoalsEmpty() {
+    renderPlannerEmptyState(
+      packGoalsEmptyEl,
+      'No study packs yet',
+      'Create a study pack to set per-pack goals and review targets.',
+      [{ href: '/study', label: 'Open Study Library' }]
+    );
+  }
+
+  function requireOkResponse(response, fallbackMessage) {
+    if (response && response.ok) return Promise.resolve(response);
+    var message = String(fallbackMessage || 'Could not load planner data');
+    if (!response || typeof response.json !== 'function') {
+      return Promise.reject(new Error(message));
+    }
+    return response.json().catch(function () { return {}; }).then(function (body) {
+      throw new Error((body && body.error) ? body.error : message);
+    });
+  }
+
   function initFolderDatePickers() {
     if (typeof flatpickr === 'undefined') return;
     flatpickrInstances.forEach(function (instance) {
@@ -573,7 +649,7 @@
     clearNode(foldersCardsEl);
 
     if (!currentFolders.length) {
-      if (foldersEmptyEl) foldersEmptyEl.hidden = false;
+      renderFoldersEmpty();
       return;
     }
 
@@ -871,7 +947,7 @@
     if (!currentPacks.length) {
       packGoalDraftValues.clear();
       renderPackGoalsSummary([]);
-      if (packGoalsEmptyEl) packGoalsEmptyEl.hidden = false;
+      renderPackGoalsEmpty();
       return;
     }
     if (packGoalsEmptyEl) packGoalsEmptyEl.hidden = true;
@@ -1101,28 +1177,50 @@
     clearNode(packGoalsCardsEl);
     renderPackGoalsSummary([]);
     if (foldersEmptyEl) {
-      foldersEmptyEl.hidden = false;
-      foldersEmptyEl.innerHTML = '<strong>Could not load folders</strong><span>' + message + '</span>';
+      renderPlannerEmptyState(
+        foldersEmptyEl,
+        'Could not load folders',
+        message || 'Please try again.',
+        [
+          { label: 'Retry', retry: true },
+          { href: '/study', label: 'Open Study Library', secondary: true }
+        ]
+      );
     }
     if (packGoalsEmptyEl) {
-      packGoalsEmptyEl.hidden = false;
-      packGoalsEmptyEl.innerHTML = '<strong>Could not load study packs</strong><span>' + message + '</span>';
+      renderPlannerEmptyState(
+        packGoalsEmptyEl,
+        'Could not load study packs',
+        message || 'Please try again.',
+        [
+          { label: 'Retry', retry: true },
+          { href: '/study', label: 'Open Study Library', secondary: true }
+        ]
+      );
     }
+    bindPlannerRetryActions();
   }
 
   function loadPlannerData() {
     if (!currentUser) return Promise.resolve();
+    if (plannerLoadPromise) return plannerLoadPromise;
     if (!progressSummaryCache) hydrateSummaryCache(currentUser.uid);
     applyOverview(progressSummaryCache);
-    return Promise.all([
-      authFetch('/api/study-folders'),
-      authFetch('/api/study-packs'),
+    plannerLoadPromise = Promise.all([
+      authFetch('/api/study-folders?include_pending=0'),
+      authFetch('/api/study-packs?limit=50'),
       authFetch('/api/study-progress'),
     ]).then(function (responses) {
       return Promise.all([
+        requireOkResponse(responses[0], 'Could not load folders'),
+        requireOkResponse(responses[1], 'Could not load study packs'),
+        requireOkResponse(responses[2], 'Could not load progress'),
+      ]);
+    }).then(function (responses) {
+      return Promise.all([
         responses[0].json().catch(function () { return {}; }),
         responses[1].json().catch(function () { return {}; }),
-        responses[2].ok ? responses[2].json().catch(function () { return {}; }) : Promise.resolve({}),
+        responses[2].json().catch(function () { return {}; }),
       ]);
     }).then(function (payloads) {
       currentFolders = Array.isArray(payloads[0].folders) ? payloads[0].folders : [];
@@ -1134,7 +1232,10 @@
       renderPackGoals();
     }).catch(function (error) {
       handleLoadFailure((error && error.message) ? error.message : 'Please try again.');
+    }).finally(function () {
+      plannerLoadPromise = null;
     });
+    return plannerLoadPromise;
   }
 
   function handleExternalProgressEvent(payload) {
@@ -1347,11 +1448,18 @@
     });
   }
 
-  window.addEventListener('focus', function () {
-    if (currentUser) loadPlannerData();
-  });
+  function schedulePlannerRefresh() {
+    if (!currentUser) return;
+    if (plannerRefreshTimer) window.clearTimeout(plannerRefreshTimer);
+    plannerRefreshTimer = window.setTimeout(function () {
+      plannerRefreshTimer = null;
+      loadPlannerData();
+    }, 100);
+  }
+
+  window.addEventListener('focus', schedulePlannerRefresh);
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden && currentUser) loadPlannerData();
+    if (!document.hidden) schedulePlannerRefresh();
   });
 
   bootstrap.onAuthStateReady(auth, function (user) {
