@@ -5,6 +5,7 @@ import secrets
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.study import export as study_export
+from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study import progress as study_progress
 from lecture_processor.services import access_service
 
@@ -155,8 +156,12 @@ def serialize_share_state(app_ctx, request, entity_type, entity_id, share_doc=No
 
 
 def serialize_public_pack(app_ctx, pack_id, pack, *, include_folder=True):
-    has_audio_playback = bool(pack.get('has_audio_playback', False))
-    has_audio_sync = app_ctx.FEATURE_AUDIO_SECTION_SYNC and bool(pack.get('has_audio_sync', False))
+    has_audio_playback = study_audio.pack_audio_file_exists(pack, runtime=app_ctx)
+    has_audio_sync = (
+        app_ctx.FEATURE_AUDIO_SECTION_SYNC
+        and has_audio_playback
+        and bool(pack.get('has_audio_sync', False))
+    )
     return {
         'study_pack_id': pack_id,
         'title': pack.get('title', ''),

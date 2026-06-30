@@ -620,6 +620,66 @@ def test_study_pack_get_returns_source_export_flags(client, monkeypatch):
     assert "source_slides" not in payload
 
 
+def test_study_pack_get_hides_stale_audio_flags_when_file_missing(client, monkeypatch, tmp_path):
+    store = {
+        "pack-stale-audio": {
+            "uid": "study-u-audio",
+            "title": "Pack with stale audio",
+            "mode": "lecture-notes",
+            "notes_markdown": "# Notes",
+            "notes_audio_map": [{"section_index": 0, "start_ms": 0, "end_ms": 1000}],
+            "audio_storage_key": "study_audio/missing.mp3",
+            "has_audio_sync": True,
+            "has_audio_playback": True,
+            "flashcards": [],
+            "test_questions": [],
+            "created_at": 10,
+        }
+    }
+
+    monkeypatch.setattr(core, "STUDY_AUDIO_ROOT", str(tmp_path), raising=False)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u-audio", "email": "u@example.com"})
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, pack_id: _StoredDoc(pack_id, store))
+    monkeypatch.setattr(core.study_repo, "get_study_pack_source_doc", lambda _db, _pack_id: _MissingDoc())
+
+    response = client.get("/api/study-packs/pack-stale-audio", headers={"Authorization": "Bearer dev"})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["has_audio_playback"] is False
+    assert payload["has_audio_sync"] is False
+    assert payload["notes_audio_map"] == []
+
+
+def test_study_pack_update_clears_stale_audio_flags_when_file_missing(client, monkeypatch, tmp_path):
+    store = {
+        "pack-stale-audio": {
+            "uid": "study-u-audio",
+            "title": "Pack with stale audio",
+            "audio_storage_key": "study_audio/missing.mp3",
+            "has_audio_sync": True,
+            "has_audio_playback": True,
+            "notes_audio_map": [{"section_index": 0, "start_ms": 0, "end_ms": 1000}],
+        }
+    }
+
+    monkeypatch.setattr(core, "STUDY_AUDIO_ROOT", str(tmp_path), raising=False)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u-audio", "email": "u@example.com"})
+    monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(core.study_repo, "study_pack_doc_ref", lambda _db, pack_id: _StoredRef(store, pack_id))
+
+    response = client.patch(
+        "/api/study-packs/pack-stale-audio",
+        json={"title": "Renamed"},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 200
+    assert store["pack-stale-audio"]["title"] == "Renamed"
+    assert store["pack-stale-audio"]["has_audio_playback"] is False
+    assert store["pack-stale-audio"]["has_audio_sync"] is False
+
+
 def test_study_pack_list_uses_repo_order_and_count_fallback(client, monkeypatch):
     class _Doc:
         def __init__(self, doc_id, payload):
