@@ -60,3 +60,14 @@ def test_voice_notes_local_storage_is_user_scoped_and_cleared_on_signout():
     assert "store.put({ id: id, owner_key: currentOwnerKey()" in voice_notes_js
     assert "indexedDB.deleteDatabase('lecture-processor-voice-notes')" in app_shell_js
     assert "indexedDB.deleteDatabase('lecture-processor-voice-notes')" in index_js
+
+
+def test_app_shell_uses_last_known_profile_for_fast_auth_hydration():
+    app_shell_js = _read('static/js/app-shell.js')
+
+    assert "lastProfile: 'shell_profile:last'" in app_shell_js
+    assert 'function applyLastKnownProfile()' in app_shell_js
+    assert 'writeCacheJson(CACHE_KEYS.lastProfile, profile);' in app_shell_js
+    assert "applyProfileToShell(lastProfile, { pending: true, trustPermissions: false })" in app_shell_js
+    assert "if (!applyLastKnownProfile()) setCreditsVisible(false);" in app_shell_js
+    assert 'clearLegacyAccountCaches();' in app_shell_js

@@ -63,7 +63,8 @@
   var CACHE_KEYS = {
     credits: 'credits_breakdown',
     moreToolsExpanded: 'more_tools_group_expanded',
-    profile: 'shell_profile'
+    profile: 'shell_profile',
+    lastProfile: 'shell_profile:last'
   };
   var ACCOUNT_SCOPED_CACHE_KEYS = [
     CACHE_KEYS.credits,
@@ -159,7 +160,14 @@
   }
 
   function clearLegacyAccountCaches() {
-    ['credits_breakdown', 'shell_profile', 'dashboard_summary:last', 'plan_summary:last', 'study_due_today:last'].forEach(removeCacheKey);
+    [
+      'credits_breakdown',
+      'shell_profile',
+      CACHE_KEYS.lastProfile,
+      'dashboard_summary:last',
+      'plan_summary:last',
+      'study_due_today:last'
+    ].forEach(removeCacheKey);
   }
 
   function clearVoiceNotesLocalData() {
@@ -621,13 +629,18 @@
       currentUserIsAdmin = !!payload.is_admin;
       applyCreditBreakdown(breakdown);
       writeUserCacheJson(user, CACHE_KEYS.credits, breakdown);
-      writeUserCacheJson(user, CACHE_KEYS.profile, {
+      var profile = {
+        uid: String(user.uid || ''),
         email: String(user.email || payload.email || 'user'),
         name: String((payload.email || user.email || 'Account')).split('@')[0] || 'Account',
         initial: String((user.email || payload.email || '?').charAt(0) || '?').toUpperCase(),
         isAdmin: currentUserIsAdmin,
-        isPhysioAllowed: !!payload.is_physio_allowed
-      });
+        isPhysioAllowed: !!payload.is_physio_allowed,
+        credits: breakdown,
+        cachedAt: Date.now()
+      };
+      writeUserCacheJson(user, CACHE_KEYS.profile, profile);
+      writeCacheJson(CACHE_KEYS.lastProfile, profile);
       if (adminBtn) adminBtn.hidden = !currentUserIsAdmin;
       setPhysioGroupVisible(!!payload.is_physio_allowed);
       markActiveNav();
@@ -651,19 +664,59 @@
     setPhysioGroupVisible(false);
   }
 
-  function applyCachedProfile(user) {
-    var cachedProfile = readUserCacheJson(user, CACHE_KEYS.profile, null);
-    if (!cachedProfile || typeof cachedProfile !== 'object') return false;
+  function normalizeCachedProfile(profile) {
+    if (!profile || typeof profile !== 'object') return null;
+    var email = String(profile.email || '').trim();
+    var name = String(profile.name || (email ? email.split('@')[0] : '') || 'Account').trim();
+    var initial = String(profile.initial || email.charAt(0) || name.charAt(0) || '?').slice(0, 1).toUpperCase();
+    return {
+      uid: String(profile.uid || '').trim(),
+      email: email || 'Checking account...',
+      name: name || 'Account',
+      initial: initial || '?',
+      isAdmin: !!profile.isAdmin,
+      isPhysioAllowed: !!profile.isPhysioAllowed,
+      credits: profile.credits && typeof profile.credits === 'object' ? profile.credits : null
+    };
+  }
+
+  function applyProfileToShell(profile, options) {
+    var normalized = normalizeCachedProfile(profile);
+    if (!normalized) return false;
+    var settings = options || {};
     if (signInBtn) signInBtn.hidden = true;
     if (accountWrap) accountWrap.hidden = false;
     setAccountMenuOpen(false);
-    if (userEmail) userEmail.textContent = String(cachedProfile.email || 'Checking sign-in...');
-    if (userName) userName.textContent = String(cachedProfile.name || 'Account');
-    if (userInitial) userInitial.textContent = String(cachedProfile.initial || '?').slice(0, 1).toUpperCase();
-    currentUserIsAdmin = !!cachedProfile.isAdmin;
+    if (userEmail) userEmail.textContent = normalized.email;
+    if (userName) userName.textContent = normalized.name;
+    if (userInitial) userInitial.textContent = normalized.initial;
+    if (accountBtn) {
+      accountBtn.setAttribute('aria-label', settings.pending ? ('Checking account for ' + normalized.name) : ('Account menu for ' + normalized.name));
+    }
+    currentUserIsAdmin = settings.trustPermissions ? normalized.isAdmin : false;
     if (adminBtn) adminBtn.hidden = !currentUserIsAdmin;
-    setPhysioGroupVisible(!!cachedProfile.isPhysioAllowed);
+    setPhysioGroupVisible(settings.trustPermissions ? normalized.isPhysioAllowed : false);
+    if (normalized.credits) {
+      setCreditsVisible(true);
+      applyCreditBreakdown(normalized.credits);
+    }
     return true;
+  }
+
+  function applyCachedProfile(user) {
+    var cachedProfile = readUserCacheJson(user, CACHE_KEYS.profile, null);
+    if (applyProfileToShell(cachedProfile, { trustPermissions: true })) return true;
+
+    var lastProfile = normalizeCachedProfile(readCacheJson(CACHE_KEYS.lastProfile, null));
+    if (lastProfile && user && user.uid && lastProfile.uid === String(user.uid || '')) {
+      return applyProfileToShell(lastProfile, { trustPermissions: true });
+    }
+    return false;
+  }
+
+  function applyLastKnownProfile() {
+    var lastProfile = readCacheJson(CACHE_KEYS.lastProfile, null);
+    return applyProfileToShell(lastProfile, { pending: true, trustPermissions: false });
   }
 
   function applyUserIdentity(user) {
@@ -671,6 +724,7 @@
     if (userEmail) userEmail.textContent = email;
     if (userName) userName.textContent = email.split('@')[0] || 'Account';
     if (userInitial) userInitial.textContent = (email.charAt(0) || '?').toUpperCase();
+    if (accountBtn) accountBtn.setAttribute('aria-label', 'Account menu for ' + (email.split('@')[0] || 'Account'));
   }
 
   function hydrateCachedCredits(user) {
@@ -1131,6 +1185,9 @@
 
   if (signOutBtn) {
     signOutBtn.addEventListener('click', async function () {
+      var signedOutUser = auth.currentUser || lastSignedInUid;
+      clearUserScopedCaches(signedOutUser);
+      clearLegacyAccountCaches();
       try {
         await fetch('/api/session/logout', { method: 'POST', credentials: 'include' });
       } catch (_) {}
@@ -1184,7 +1241,7 @@
     setAccountMenuOpen(false);
     setCreditsVisible(true);
   } else {
-    setCreditsVisible(false);
+    if (!applyLastKnownProfile()) setCreditsVisible(false);
   }
   window.setTimeout(revealSignInIfAuthStalls, 1800);
   markActiveNav();
