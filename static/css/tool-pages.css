@@ -196,6 +196,18 @@
   color: #5f6f88;
 }
 
+.tool-retention-note {
+  margin-top: 10px;
+  padding: 10px 11px;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 12px;
+  background: rgba(239, 246, 255, 0.92);
+  color: #1e3a8a;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  text-align: left;
+}
+
 .tool-file-info {
   display: flex;
   align-items: center;
@@ -237,6 +249,14 @@
   color: #64748b;
 }
 
+.tool-file-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.tool-file-download,
 .tool-file-remove {
   width: 28px;
   height: 28px;
@@ -252,11 +272,17 @@
   flex-shrink: 0;
 }
 
+.tool-file-download:hover {
+  background: #2563eb;
+  color: #ffffff;
+}
+
 .tool-file-remove:hover {
   background: #ef4444;
   color: #ffffff;
 }
 
+.tool-file-download svg,
 .tool-file-remove svg {
   width: 16px;
   height: 16px;

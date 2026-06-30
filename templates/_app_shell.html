@@ -131,6 +131,7 @@
         <button type="button" class="shell-modal-close" id="shell-export-close" aria-label="Close export options">×</button>
         <h2 id="shell-export-title">Export Data</h2>
         <p class="shell-modal-subtitle">Choose which account data you want in your ZIP export.</p>
+        <p class="shell-modal-note">Audio files are not included in this export. Download study-pack, Voice Notes, batch, or tool audio directly from the place where it plays before deleting data or relying on a backup.</p>
         <div class="shell-export-grid" id="shell-export-grid">
           <label class="shell-export-option"><input type="checkbox" data-export-key="flashcards_csv" checked> <span>Flashcards CSV</span></label>
           <label class="shell-export-option"><input type="checkbox" data-export-key="practice_tests_csv" checked> <span>Practice Tests CSV</span></label>
@@ -151,6 +152,7 @@
         <button type="button" class="shell-modal-close" id="shell-delete-account-close" aria-label="Close delete account">×</button>
         <h2 id="shell-delete-account-title">Delete Account &amp; Data</h2>
         <p class="shell-modal-subtitle" id="shell-delete-account-subtitle">This permanently deletes your account and stored data.</p>
+        <p class="shell-modal-note">Download any audio you need first. Account deletion removes study-pack audio records, and browser-only recordings may not be recoverable after this step.</p>
         <label class="shell-modal-field" for="shell-delete-account-text">
           <span>Type DELETE MY ACCOUNT</span>
           <input id="shell-delete-account-text" autocomplete="off" spellcheck="false">

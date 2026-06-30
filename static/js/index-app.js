@@ -3023,6 +3023,43 @@ function downloadLocalPreviewFile(file) {
     URL.revokeObjectURL(blobUrl);
     return true;
 }
+function downloadImportedAudioPreview() {
+    const tokenValue = String(importedAudioToken || '').trim();
+    if (!tokenValue) return Promise.reject(new Error('No imported audio is ready to download.'));
+    const fallbackName = String(importedAudioName || 'imported-audio.mp3').trim() || 'imported-audio.mp3';
+    return authenticatedFetch('/api/import-audio-url/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            audio_import_token: tokenValue,
+            file_name: fallbackName,
+        }),
+    }).then((response) => {
+        if (!response.ok) {
+            return response.json().catch(() => ({})).then((payload) => {
+                throw new Error(payload.error || 'Could not download imported audio.');
+            });
+        }
+        if (downloadUtils.downloadResponseBlob) {
+            return downloadUtils.downloadResponseBlob(response, fallbackName);
+        }
+        return response.blob().then((blob) => {
+            if (downloadUtils.saveBlobAsFile) {
+                downloadUtils.saveBlobAsFile(blob, fallbackName);
+                return fallbackName;
+            }
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = fallbackName;
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+            URL.revokeObjectURL(url);
+            return fallbackName;
+        });
+    });
+}
 setupDropZone(pdfZone, pdfInput, handlePdfFile);
 setupDropZone(audioZone, audioInput, handleAudioFile);
 if (audioRecordStartBtn) {
@@ -3066,7 +3103,10 @@ const downloadSelectedAudio = () => {
         return;
     }
     if (importedAudioToken) {
-        showToast('Imported audio is temporary and cannot be downloaded from this preview.', 'info', 2800);
+        showToast('Imported audio download started. Keep the saved file as your backup.', 'success', 3600);
+        downloadImportedAudioPreview().catch((error) => {
+            showToast(error && error.message ? error.message : 'Could not download imported audio.', 'error');
+        });
     }
 };
 if (audioDownload) {

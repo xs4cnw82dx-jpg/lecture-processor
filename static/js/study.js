@@ -1452,7 +1452,7 @@ var folderModalOverlay = document.getElementById('folder-modal-overlay'), folder
 var confirmModalOverlay = document.getElementById('confirm-modal-overlay'), confirmModalTitle = document.getElementById('confirm-modal-title'), confirmModalMessage = document.getElementById('confirm-modal-message'), confirmModalClose = document.getElementById('confirm-modal-close'), confirmModalCancel = document.getElementById('confirm-modal-cancel'), confirmModalConfirm = document.getElementById('confirm-modal-confirm');
 var shareModalOverlay = document.getElementById('share-modal-overlay'), shareModalTitle = document.getElementById('share-modal-title'), shareModalMessage = document.getElementById('share-modal-message'), shareModalClose = document.getElementById('share-modal-close'), shareModalCancel = document.getElementById('share-modal-cancel'), shareModalSave = document.getElementById('share-modal-save'), shareModalStatus = document.getElementById('share-modal-status'), shareScopePrivate = document.getElementById('share-scope-private'), shareScopePublic = document.getElementById('share-scope-public'), shareLinkInput = document.getElementById('share-link-input'), shareCopyBtn = document.getElementById('share-copy-btn');
 var toastEl = document.getElementById('toast');
-var audioPlayerBar = document.getElementById('audio-player-bar'), audioPlayerEl = document.getElementById('audio-player-el'), audioPlayBtn = document.getElementById('audio-play-btn'), audioPlayIcon = document.getElementById('audio-play-icon'), audioPauseIcon = document.getElementById('audio-pause-icon'), audioTime = document.getElementById('audio-time'), audioProgressWrap = document.getElementById('audio-progress-wrap'), audioProgressFill = document.getElementById('audio-progress-fill'), audioSpeedBtn = document.getElementById('audio-speed-btn'), audioPackTitle = document.getElementById('audio-pack-title'), audioCloseBtn = document.getElementById('audio-close-btn'), audioUnavailableNotice = document.getElementById('notes-audio-unavailable');
+var audioPlayerBar = document.getElementById('audio-player-bar'), audioPlayerEl = document.getElementById('audio-player-el'), audioPlayBtn = document.getElementById('audio-play-btn'), audioPlayIcon = document.getElementById('audio-play-icon'), audioPauseIcon = document.getElementById('audio-pause-icon'), audioTime = document.getElementById('audio-time'), audioProgressWrap = document.getElementById('audio-progress-wrap'), audioProgressFill = document.getElementById('audio-progress-fill'), audioSpeedBtn = document.getElementById('audio-speed-btn'), audioDownloadBtn = document.getElementById('audio-download-btn'), audioPackTitle = document.getElementById('audio-pack-title'), audioCloseBtn = document.getElementById('audio-close-btn'), audioUnavailableNotice = document.getElementById('notes-audio-unavailable');
 var audioBlobUrl = '';
 var difficultyToolbar = document.getElementById('difficulty-toolbar'), difficultyButtons = document.querySelectorAll('.difficulty-btn[data-review-action]');
 var keyboardHints = document.querySelector('.keyboard-hints');
@@ -2037,6 +2037,7 @@ function updateAudioControls() {
   setHidden(audioPlayIcon, !paused);
   setHidden(audioPauseIcon, paused);
   if (audioPlayBtn) audioPlayBtn.setAttribute('aria-label', paused ? 'Play audio' : 'Pause audio');
+  if (audioDownloadBtn) audioDownloadBtn.disabled = !audioReady || !selectedPackId;
   var dur = audioPlayerEl && isFinite(audioPlayerEl.duration) ? audioPlayerEl.duration : 0;
   var cur = audioPlayerEl ? audioPlayerEl.currentTime : 0;
   if (audioTime) audioTime.textContent = fmtAudioTime(cur) + ' / ' + fmtAudioTime(dur);
@@ -2418,6 +2419,27 @@ function downloadStudyPackPdf(packId, includeAnswers) {
       var anchor = document.createElement('a');
       anchor.href = url; anchor.download = fallback;
       document.body.appendChild(anchor); anchor.click(); document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    });
+  });
+}
+function downloadStudyPackAudio(packId) {
+  var safePackId = String(packId || '').trim();
+  if (!safePackId) return Promise.reject(new Error('Select a study pack first.'));
+  var fallback = 'study-pack-' + safePackId + '-audio.mp3';
+  return authenticatedFetch('/api/study-packs/' + encodeURIComponent(safePackId) + '/audio?download=1').then(function (r) {
+    if (!r.ok) { return r.json().catch(function () { return {}; }).then(function (d) { throw new Error(d.error || 'Could not download audio'); }); }
+    if (downloadUtils.downloadResponseBlob) {
+      return downloadUtils.downloadResponseBlob(r, fallback);
+    }
+    return r.blob().then(function (blob) {
+      var url = URL.createObjectURL(blob);
+      var anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = fallback;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
       URL.revokeObjectURL(url);
     });
   });
@@ -7245,6 +7267,21 @@ audioSpeedBtn.addEventListener('click', function () {
   audioPlayerEl.playbackRate = audioSpeeds[audioSpeedIndex];
   audioSpeedBtn.textContent = audioSpeeds[audioSpeedIndex] + 'x';
 });
+if (audioDownloadBtn) {
+  audioDownloadBtn.addEventListener('click', function () {
+    if (!audioReady || !selectedPackId) {
+      showToast('Audio is not available to download.', 'error');
+      return;
+    }
+    audioDownloadBtn.disabled = true;
+    showToast('Audio download started.', 'success');
+    downloadStudyPackAudio(selectedPackId).catch(function (e) {
+      showToast(e.message || 'Could not download audio.', 'error');
+    }).finally(function () {
+      audioDownloadBtn.disabled = !audioReady || !selectedPackId;
+    });
+  });
+}
 audioProgressWrap.addEventListener('click', function (e) {
   if (!audioReady || !audioPlayerEl.duration) return;
   var rect = audioProgressWrap.getBoundingClientRect();

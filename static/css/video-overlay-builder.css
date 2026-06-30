@@ -665,6 +665,13 @@
   font-weight: 700;
 }
 
+.overlay-recording-note {
+  flex-basis: 100%;
+  color: #1e3a8a;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
 .overlay-stage-frame {
   position: relative;
   display: grid;

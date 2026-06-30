@@ -59,7 +59,7 @@
       'voice-auth', 'voice-app', 'voice-sync-pill', 'voice-record-btn', 'voice-pause-btn', 'voice-stop-btn', 'voice-time',
       'voice-meter', 'voice-record-status', 'voice-file-input', 'voice-import-btn', 'voice-search-input',
       'voice-note-list', 'voice-detail-empty', 'voice-detail', 'voice-detail-title', 'voice-detail-meta',
-      'voice-back-btn', 'voice-share-btn', 'voice-archive-btn', 'voice-delete-btn', 'voice-audio', 'voice-transcript', 'voice-notes-surface', 'voice-highlight-toolbar',
+      'voice-back-btn', 'voice-share-btn', 'voice-archive-btn', 'voice-download-audio-btn', 'voice-delete-btn', 'voice-audio', 'voice-audio-retention-note', 'voice-transcript', 'voice-notes-surface', 'voice-highlight-toolbar',
       'voice-hl-undo', 'voice-hl-redo', 'voice-hl-clear', 'voice-download-notes', 'voice-language-select',
       'voice-custom-input', 'voice-storage-count', 'voice-storage-size', 'voice-sync-all-btn', 'voice-toast',
       'voice-confirm-modal', 'voice-confirm-title', 'voice-confirm-message', 'voice-confirm-close',
@@ -358,6 +358,23 @@
     var safe = String(name || '').trim();
     if (/\.(mp3|m4a|mp4|wav|aac|ogg|flac|webm)$/i.test(safe)) return safe;
     return 'voice-note-' + Date.now() + extensionForMime(blob && blob.type);
+  }
+
+  function saveBlobAsFile(blob, filename) {
+    if (!blob) return;
+    var safeName = String(filename || 'voice-note-audio').trim() || 'voice-note-audio';
+    if (downloadUtils.saveBlobAsFile) {
+      downloadUtils.saveBlobAsFile(blob, safeName);
+      return;
+    }
+    var url = URL.createObjectURL(blob);
+    var anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = safeName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
   }
 
   function updateRecordingClock() {
@@ -877,6 +894,7 @@
       els.detailMeta.textContent = meta.join(' - ');
     }
     if (els.archiveBtn) els.archiveBtn.textContent = note.archived ? 'Restore' : 'Archive';
+    if (els.downloadAudioBtn) els.downloadAudioBtn.disabled = false;
     renderAudio(note);
     renderTranscript(note);
   }
@@ -970,6 +988,39 @@
       showToast('Copied to clipboard.');
     }).catch(function () {
       showToast('Share is unavailable.', 'error');
+    });
+  }
+
+  function downloadSelectedAudio() {
+    var note = selectedNote();
+    if (!note) return;
+    var localId = note.local_audio_id || note.id;
+    var fallbackName = audioFileName(note.audio_name || note.title || 'voice-note-audio', { type: note.audio_type || 'audio/webm' });
+    if (els.downloadAudioBtn) els.downloadAudioBtn.disabled = true;
+    getAudioBlob(localId).then(function (blob) {
+      if (blob) {
+        saveBlobAsFile(blob, audioFileName(note.audio_name || fallbackName, blob));
+        showToast('Audio download started.');
+        return null;
+      }
+      if (!note.study_pack_id || !note.has_audio_playback) {
+        throw new Error('No downloadable audio copy is available for this note.');
+      }
+      return authFetch('/api/study-packs/' + encodeURIComponent(note.study_pack_id) + '/audio?download=1').then(function (response) {
+        if (!response.ok) throw new Error('Audio is no longer available on the server.');
+        if (downloadUtils.downloadResponseBlob) {
+          return downloadUtils.downloadResponseBlob(response, fallbackName);
+        }
+        return response.blob().then(function (remoteBlob) {
+          saveBlobAsFile(remoteBlob, fallbackName);
+        });
+      }).then(function () {
+        showToast('Audio download started.');
+      });
+    }).catch(function (error) {
+      showToast(error && error.message ? error.message : 'Could not download audio.', 'error');
+    }).finally(function () {
+      if (els.downloadAudioBtn) els.downloadAudioBtn.disabled = false;
     });
   }
 
@@ -1218,6 +1269,7 @@
     if (els.detailTitle) els.detailTitle.addEventListener('change', saveSelectedTitle);
     if (els.backBtn) els.backBtn.addEventListener('click', function () { setView('library'); });
     if (els.shareBtn) els.shareBtn.addEventListener('click', shareSelectedNote);
+    if (els.downloadAudioBtn) els.downloadAudioBtn.addEventListener('click', downloadSelectedAudio);
     if (els.archiveBtn) els.archiveBtn.addEventListener('click', function () { toggleArchiveNote(); });
     if (els.deleteBtn) els.deleteBtn.addEventListener('click', function () { deleteVoiceNote(); });
     if (els.confirmClose) els.confirmClose.addEventListener('click', function () { closeConfirmModal(false); });

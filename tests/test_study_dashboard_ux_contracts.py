@@ -231,14 +231,19 @@ def test_study_supports_voice_notes_folder_deep_link():
 
 def test_study_audio_playback_uses_short_lived_stream_url():
     study_template = _read('templates/study.html')
+    dialog_template = _read('templates/_study_dialogs.html')
     study_js = _read('static/js/study.js')
     study_audio_utils = _read('static/js/study-audio-utils.js')
 
     assert "filename='js/study-audio-utils.js'" in study_template
     assert 'id="notes-audio-unavailable" role="status"' in study_template
+    assert 'id="audio-download-btn"' in dialog_template
+    assert 'id="audio-retention-note"' in dialog_template
+    assert 'share-audio-note' in dialog_template
     assert 'studyAudioUtils.fetchAudioStreamUrl(authenticatedFetch, selectedPack.study_pack_id)' in study_js
     assert 'selectedPack.audio_unavailable_message = fallbackAudioUnavailableMessage();' in study_js
     assert 'syncAudioUnavailableNotice();' in study_js
+    assert '/audio?download=1' in study_js
     assert "'/audio').then(function (response)" not in study_js
     assert "'/audio-token'" in study_audio_utils
     assert 'payload && payload.stream_url' in study_audio_utils

@@ -3072,6 +3072,7 @@
     }
 
     .audio-play-btn,
+    .audio-download-btn,
     .audio-close-btn {
       width: 34px;
       height: 34px;
@@ -3091,9 +3092,15 @@
     }
 
     .audio-play-btn svg,
+    .audio-download-btn svg,
     .audio-close-btn svg {
       width: 16px;
       height: 16px
+    }
+
+    .audio-download-btn:disabled {
+      opacity: .5;
+      cursor: not-allowed
     }
 
     .notes-audio-btn.is-playing {
@@ -3161,6 +3168,13 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+
+    .audio-retention-note {
+      color: rgba(219, 234, 254, .86);
+      font-size: .72rem;
+      line-height: 1.25;
+      max-width: 220px;
     }
 
     .export-menu {

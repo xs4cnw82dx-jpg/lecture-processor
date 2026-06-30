@@ -90,6 +90,7 @@
       </div>
     </div>
     <p class="modal-message u-mt-12" id="share-modal-status" role="status" aria-live="polite" aria-atomic="true">Private links are disabled for everyone except you inside the app.</p>
+    <p class="modal-message u-mt-12 share-audio-note" id="share-audio-note">Shared links include notes, flashcards, and practice tests. Generated audio is not included, so download the audio from Study Library first if someone needs it.</p>
     <div class="actions u-justify-end">
       <button class="btn" id="share-modal-cancel" type="button">Cancel</button>
       <button class="btn primary" id="share-modal-save" type="button">Create Link</button>
@@ -113,7 +114,16 @@
     <progress class="audio-progress-fill" id="audio-progress-fill" max="100" value="0">0%</progress>
   </div>
   <button class="audio-speed-btn" id="audio-speed-btn">1x</button>
+  <button class="audio-download-btn" id="audio-download-btn" type="button" aria-label="Download audio">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+      stroke-linejoin="round" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+      <polyline points="7 10 12 15 17 10"></polyline>
+      <line x1="12" y1="15" x2="12" y2="3"></line>
+    </svg>
+  </button>
   <span class="audio-pack-title" id="audio-pack-title"></span>
+  <span class="audio-retention-note" id="audio-retention-note">Temporary on free Render. Download a copy.</span>
   <button class="audio-close-btn" id="audio-close-btn" aria-label="Close audio player">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <line x1="18" y1="6" x2="6" y2="18"></line>

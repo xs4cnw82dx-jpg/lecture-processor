@@ -35,6 +35,7 @@ EXPECTED_ROUTES = [
     ('POST', '/api/create-checkout-session', 'payments_api.create_checkout_session'),
     ('POST', '/api/dev/sentry-test', 'auth_api.dev_sentry_test'),
     ('POST', '/api/import-audio-url', 'upload_api.import_audio_url'),
+    ('POST', '/api/import-audio-url/download', 'upload_api.download_audio_import'),
     ('GET', '/api/import-audio-url/<job_id>', 'upload_api.get_audio_import'),
     ('POST', '/api/import-audio-url/release', 'upload_api.release_audio_import'),
     ('POST', '/api/lp-event', 'auth_api.ingest_analytics_event'),

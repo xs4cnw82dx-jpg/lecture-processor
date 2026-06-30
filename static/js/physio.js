@@ -28,6 +28,7 @@
   var transcriptInput = document.getElementById('physio-transcript');
   var audioInput = document.getElementById('physio-audio-input');
   var audioUploadBtn = document.getElementById('physio-audio-upload-btn');
+  var audioDownloadBtn = document.getElementById('physio-audio-download-btn');
   var audioNote = document.getElementById('physio-audio-note');
   var recordStartBtn = document.getElementById('physio-record-start');
   var recordStopBtn = document.getElementById('physio-record-stop');
@@ -249,6 +250,18 @@
     return year + '-' + month + '-' + day;
   }
 
+  function saveBlobAsFile(blob, filename) {
+    if (!blob) return false;
+    var link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = String(filename || 'physio-audio.webm').trim() || 'physio-audio.webm';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+    return true;
+  }
+
   function setStatus(message, tone) {
     if (!statusEl) return;
     statusEl.textContent = String(message || '');
@@ -297,6 +310,9 @@
     if (recordStopBtn) recordStopBtn.disabled = locked || !state.recorder || state.recorder.state === 'inactive';
     if (transcribeBtn) {
       transcribeBtn.disabled = locked || !state.selectedAudioFile;
+    }
+    if (audioDownloadBtn) {
+      audioDownloadBtn.disabled = locked || !state.selectedAudioFile;
     }
   }
 
@@ -2038,12 +2054,14 @@
   function updateAudioNote() {
     if (!audioNote) return;
     if (state.selectedAudioFile) {
-      audioNote.textContent = state.selectedAudioFile.name + ' selected.';
+      audioNote.textContent = state.selectedAudioFile.name + ' selected. Download it if you need to keep the raw audio.';
       if (transcribeBtn) transcribeBtn.disabled = false;
+      if (audioDownloadBtn) audioDownloadBtn.disabled = !state.user || state.accessGranted === false;
       return;
     }
     audioNote.textContent = 'No audio selected yet.';
     if (transcribeBtn) transcribeBtn.disabled = true;
+    if (audioDownloadBtn) audioDownloadBtn.disabled = true;
   }
 
   function getMicrophonePermissionState() {
@@ -2106,6 +2124,17 @@
       state.recorder.stop();
       setStatus('Finishing recording...', '');
     }
+  }
+
+  function downloadSelectedAudio() {
+    if (!state.selectedAudioFile) {
+      setStatus('Choose or record audio first.', 'error');
+      return;
+    }
+    var fileName = state.selectedAudioFile.name || 'physio-audio.webm';
+    saveBlobAsFile(state.selectedAudioFile, fileName);
+    setStatus('Audio download started. Keep that file as your backup.', 'success');
+    showToast('Audio download started');
   }
 
   function handleTranscribe() {
@@ -2199,6 +2228,7 @@
     }
     if (recordStartBtn) recordStartBtn.addEventListener('click', startRecorder);
     if (recordStopBtn) recordStopBtn.addEventListener('click', stopRecorder);
+    if (audioDownloadBtn) audioDownloadBtn.addEventListener('click', downloadSelectedAudio);
     if (transcribeBtn) transcribeBtn.addEventListener('click', handleTranscribe);
     if (generateBtn) generateBtn.addEventListener('click', handleGenerate);
     if (saveBtn) saveBtn.addEventListener('click', handleSaveSession);

@@ -181,6 +181,22 @@
     });
   }
 
+  function saveBlobAsFile(blob, fallbackName) {
+    if (downloadUtils && typeof downloadUtils.saveBlobAsFile === 'function') {
+      downloadUtils.saveBlobAsFile(blob, fallbackName);
+      return fallbackName;
+    }
+    var url = URL.createObjectURL(blob);
+    var anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fallbackName || 'download';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+    return fallbackName;
+  }
+
   function parseDownloadError(response) {
     return response.json().catch(function () { return {}; }).then(function (payload) {
       throw new Error((payload && payload.error) || 'Could not download this file.');
@@ -673,6 +689,56 @@
     });
   }
 
+  function downloadImportedAudioToken(token, fallbackName) {
+    var safeToken = String(token || '').trim();
+    var safeName = String(fallbackName || 'imported-audio.mp3').trim() || 'imported-audio.mp3';
+    if (!safeToken) return Promise.reject(new Error('No imported audio is ready to download.'));
+    return authFetch('/api/import-audio-url/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        audio_import_token: safeToken,
+        file_name: safeName,
+      }),
+    }).then(function (response) {
+      if (!response.ok) return parseDownloadError(response);
+      if (downloadUtils && typeof downloadUtils.downloadResponseBlob === 'function') {
+        return downloadUtils.downloadResponseBlob(response, safeName);
+      }
+      return response.blob().then(function (blob) {
+        return saveBlobAsFile(blob, safeName);
+      });
+    });
+  }
+
+  function downloadRowAudio(rowNode, button) {
+    var input = rowNode.querySelector('input[data-field="audio"]');
+    var file = input && input.files && input.files[0] ? input.files[0] : null;
+    var state = getRowState(rowNode);
+    var originalText = button ? button.getAttribute('aria-label') || 'Download audio file' : '';
+    if (button) button.disabled = true;
+    var done = Promise.resolve();
+    if (file) {
+      saveBlobAsFile(file, file.name || 'batch-audio');
+      showShellToast('Audio download started.', 'success');
+    } else if (state.importedAudioToken) {
+      done = downloadImportedAudioToken(state.importedAudioToken, state.importedAudioName || 'imported-audio.mp3')
+        .then(function () {
+          showShellToast('Imported audio download started.', 'success');
+        });
+    } else {
+      done = Promise.reject(new Error('No audio file is ready to download.'));
+    }
+    return done.catch(function (error) {
+      showShellToast(error && error.message ? error.message : 'Could not download audio.', 'error');
+    }).finally(function () {
+      if (button) {
+        button.disabled = false;
+        if (originalText) button.setAttribute('aria-label', originalText);
+      }
+    });
+  }
+
   function applyRowImportedAudio(rowNode, payload, previousToken, importedUrl, announceToast) {
     var state = getRowState(rowNode);
     var token = String(payload && payload.audio_import_token ? payload.audio_import_token : '').trim();
@@ -889,6 +955,7 @@
     var zone = rowNode.querySelector('[data-upload-zone="' + fieldName + '"]');
     var input = rowNode.querySelector('input[data-field="' + fieldName + '"]');
     var removeBtn = rowNode.querySelector('[data-remove-file="' + fieldName + '"]');
+    var downloadBtn = rowNode.querySelector('[data-download-file="' + fieldName + '"]');
     if (!zone || !input) return;
 
     var applyDroppedFiles = function (files) {
@@ -910,7 +977,7 @@
     };
 
     zone.addEventListener('click', function (event) {
-      if (event.target && event.target.closest('[data-remove-file]')) return;
+      if (event.target && event.target.closest('[data-remove-file], [data-download-file]')) return;
       input.click();
     });
     zone.addEventListener('keydown', function (event) {
@@ -953,6 +1020,13 @@
         }
         input.value = '';
         syncRowFileUI(rowNode, fieldName);
+      });
+    }
+    if (downloadBtn && fieldName === 'audio') {
+      downloadBtn.addEventListener('click', function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        downloadRowAudio(rowNode, downloadBtn);
       });
     }
 
@@ -1223,6 +1297,9 @@
       '        <div class="row-file-name" data-file-name="audio"></div>' +
       '        <div class="row-file-meta" data-file-meta="audio"></div>' +
       '      </div>' +
+      '      <button type="button" class="file-download" data-download-file="audio" aria-label="Download audio file">' +
+      '        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>' +
+      '      </button>' +
       '      <button type="button" class="file-remove" data-remove-file="audio" aria-label="Remove audio file">' +
       '        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>' +
       '      </button>' +
