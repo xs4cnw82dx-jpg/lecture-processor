@@ -190,6 +190,26 @@ test('getProcessReadinessSummary explains missing lecture-note requirements in p
   );
 });
 
+test('getProcessReadinessSummary does not show sign-in copy while auth is still resolving', () => {
+  assert.equal(
+    processingUi.getProcessReadinessSummary({
+      signedIn: false,
+      authPending: true,
+      currentMode: 'lecture-notes',
+      modeConfig: {
+        'lecture-notes': {
+          needsPdf: true,
+          needsAudio: true,
+        },
+      },
+      pdfReady: false,
+      audioReady: false,
+      hasCredits: true,
+    }),
+    'Checking your account...'
+  );
+});
+
 test('getProcessReadinessSummary reports the ready state for imported lecture audio', () => {
   assert.equal(
     processingUi.getProcessReadinessSummary({

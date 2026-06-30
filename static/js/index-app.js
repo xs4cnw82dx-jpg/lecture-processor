@@ -107,6 +107,7 @@ const AUTH_RETURN_STORAGE_KEY = 'lectureProcessorAuthReturnUrl';
 let userCredits = null;
 let idToken = null;
 let currentUserIsAdmin = false;
+let authStateResolved = Boolean(auth && auth.currentUser);
 let pdfFile = null;
 let audioFile = null;
 let audioFileOrigin = 'upload';
@@ -1879,6 +1880,7 @@ function updateUIForAuthState(user) {
         updateInterviewOptionAvailability();
         updateModeCostSummary();
         if (processButton) processButton.disabled = true;
+        updateProcessButton();
         showProgressSafeBanner(false);
         setQuickstartVisible(false);
         syncProcessingLayout();
@@ -1916,6 +1918,7 @@ async function activateVerifiedUser(user) {
 let handlingDisallowedAuthState = false;
 bootstrap.onAuthStateReady(auth, async (user) => {
     if (handlingDisallowedAuthState) return;
+    authStateResolved = true;
     currentUser = user;
     if (user) {
         const check = await checkEmailAllowed(user.email || '');
@@ -2779,6 +2782,7 @@ function updateMobileProcessSummary(options = {}) {
     if (processingUi && typeof processingUi.getProcessReadinessSummary === 'function') {
         mobileProcessSummary.textContent = processingUi.getProcessReadinessSummary({
             signedIn: Boolean(currentUser),
+            authPending: !authStateResolved && !currentUser,
             currentMode,
             modeConfig,
             pdfReady,

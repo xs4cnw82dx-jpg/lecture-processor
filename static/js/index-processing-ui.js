@@ -89,6 +89,7 @@
             ? safeState.modeConfig[safeState.currentMode]
             : {};
         const signedIn = Boolean(safeState.signedIn);
+        const authPending = Boolean(safeState.authPending);
         const hasCredits = safeState.hasCredits !== false;
         const pdfReady = !config.needsPdf || Boolean(safeState.pdfReady);
         const audioReady = !config.needsAudio || Boolean(safeState.audioReady);
@@ -97,6 +98,7 @@
             ? safeState.formatRetryDelay
             : function (seconds) { return String(seconds) + ' seconds'; };
 
+        if (!signedIn && authPending) return 'Checking your account...';
         if (!signedIn) return 'Sign in to check your credits and start processing.';
         if (safeState.currentJobActive) return 'This lecture is already processing in the background.';
         if (uploadCooldown > 0) {
