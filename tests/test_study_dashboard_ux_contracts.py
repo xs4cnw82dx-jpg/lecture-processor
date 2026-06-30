@@ -155,9 +155,18 @@ def test_dashboard_auth_unavailable_reaches_ready_signed_out_state():
 def test_dashboard_uses_progress_summary_endpoint():
     dashboard_js = _read('static/js/dashboard.js')
 
+    assert 'function fetchProgressSummary(headers)' in dashboard_js
     assert "fetch('/api/study-progress/summary', { headers: headers })" in dashboard_js
     assert "fetch('/api/study-progress', { headers: headers })" not in dashboard_js
     assert 'progressPayload && progressPayload.summary ? progressPayload.summary : progressPayload' in dashboard_js
+
+
+def test_dashboard_limits_recent_pack_fetch():
+    dashboard_js = _read('static/js/dashboard.js')
+
+    assert 'function fetchRecentStudyPacks(headers)' in dashboard_js
+    assert "fetch('/api/study-packs?limit=10', { headers: headers })" in dashboard_js
+    assert "fetch('/api/study-packs', { headers: headers })" not in dashboard_js
 
 
 def test_upload_header_uses_progress_summary_endpoint():
@@ -270,6 +279,25 @@ def test_study_initial_load_uses_lightweight_progress_and_folder_requests():
     assert "      queueProgressSync(false);\n      return refreshActiveRuntimeJobs(true);" not in study_js
     assert "queueProgressSync(false, { markDirty: false });" in study_js
     assert "if (hasProgressDirty())" in study_js
+
+
+def test_planner_loads_bounded_data_and_has_safe_error_states():
+    plan_template = _read('templates/plan.html')
+    plan_js = _read('static/js/plan.js')
+
+    assert 'id="folders-empty" hidden role="status" aria-live="polite" aria-atomic="true"' in plan_template
+    assert 'id="pack-goals-empty" hidden role="status" aria-live="polite" aria-atomic="true"' in plan_template
+    assert "authFetch('/api/study-folders?include_pending=0')" in plan_js
+    assert "authFetch('/api/study-packs?limit=50')" in plan_js
+    assert "authFetch('/api/study-progress')" in plan_js
+    assert 'function requireOkResponse(response, fallbackMessage)' in plan_js
+    assert 'function renderPlannerEmptyState(container, title, message, actions)' in plan_js
+    assert 'messageEl.textContent = String(message || \'\');' in plan_js
+    assert 'data-plan-retry-load' in plan_js
+    assert 'foldersEmptyEl.innerHTML' not in plan_js
+    assert 'packGoalsEmptyEl.innerHTML' not in plan_js
+    assert 'var plannerLoadPromise = null;' in plan_js
+    assert 'function schedulePlannerRefresh()' in plan_js
 
 
 def test_study_inline_autosave_sends_dirty_fields_only():
