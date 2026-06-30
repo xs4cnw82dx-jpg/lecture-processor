@@ -116,6 +116,12 @@ def test_audio_storage_round_trip_and_persist(tmp_path):
     assert saved_path
     assert (root / 'job-1.mp3').exists()
     assert audio.infer_audio_storage_key_from_path(saved_path, runtime=runtime) == key
+    assert audio.audio_storage_key_has_file(key, runtime=runtime) is True
+    assert audio.pack_audio_file_exists({'audio_storage_key': key}, runtime=runtime) is True
+
+    (root / 'job-1.mp3').unlink()
+    assert audio.audio_storage_key_has_file(key, runtime=runtime) is False
+    assert audio.pack_audio_file_exists({'audio_storage_key': key}, runtime=runtime) is False
 
 
 def test_export_helpers_handle_dates_markdown_and_html():

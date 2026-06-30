@@ -288,12 +288,13 @@ def get_study_pack(app_ctx, request, pack_id):
         if error_response is not None:
             return error_response, status
         doc, pack = pack_result
-        study_audio.ensure_pack_audio_storage_key(doc.reference, pack, runtime=app_ctx)
-        has_audio_playback = bool(
-            pack.get('has_audio_playback', False)
-            or study_audio.get_audio_storage_key_from_pack(pack, runtime=app_ctx)
+        audio_storage_key = study_audio.ensure_pack_audio_storage_key(doc.reference, pack, runtime=app_ctx)
+        has_audio_playback = study_audio.audio_storage_key_has_file(audio_storage_key, runtime=app_ctx)
+        has_audio_sync = (
+            app_ctx.FEATURE_AUDIO_SECTION_SYNC
+            and has_audio_playback
+            and bool(pack.get('has_audio_sync', False))
         )
-        has_audio_sync = app_ctx.FEATURE_AUDIO_SECTION_SYNC and bool(pack.get('has_audio_sync', False))
         notes_audio_map = pack.get('notes_audio_map', []) if has_audio_sync else []
         daily_card_goal = study_progress.sanitize_daily_card_goal_value(pack.get('daily_card_goal'), runtime=app_ctx)
         notes_highlights = study_progress.sanitize_notes_highlights_payload(pack.get('notes_highlights'), runtime=app_ctx)
@@ -357,7 +358,8 @@ def update_study_pack(app_ctx, request, pack_id):
         pack = doc.to_dict()
         if pack.get('uid', '') != uid:
             return app_ctx.jsonify({'error': 'Forbidden'}), 403
-        study_audio.ensure_pack_audio_storage_key(pack_ref, pack, runtime=app_ctx)
+        audio_storage_key = study_audio.ensure_pack_audio_storage_key(pack_ref, pack, runtime=app_ctx)
+        has_audio_file = study_audio.audio_storage_key_has_file(audio_storage_key, runtime=app_ctx)
 
         updates = {'updated_at': app_ctx.time.time()}
         if 'title' in payload:
@@ -415,15 +417,17 @@ def update_study_pack(app_ctx, request, pack_id):
             updates['notes_audio_map'] = notes_audio_map
             updates['has_audio_sync'] = (
                 app_ctx.FEATURE_AUDIO_SECTION_SYNC
-                and bool(study_audio.get_audio_storage_key_from_pack(pack, runtime=app_ctx))
+                and has_audio_file
                 and bool(notes_audio_map)
             )
+        elif not has_audio_file:
+            updates['has_audio_sync'] = False
         if 'notes_highlights' in payload:
             notes_highlights_action, notes_highlights = study_api_support.parse_notes_highlights_input(payload.get('notes_highlights'), runtime=app_ctx)
             if notes_highlights_action == 'invalid':
                 return app_ctx.jsonify({'error': 'notes_highlights must contain valid ranges and allowed colors'}), 400
             updates['notes_highlights'] = notes_highlights if notes_highlights_action == 'set' else None
-        updates['has_audio_playback'] = bool(study_audio.get_audio_storage_key_from_pack(pack, runtime=app_ctx))
+        updates['has_audio_playback'] = has_audio_file
 
         pack_ref.update(updates)
         return app_ctx.jsonify({'ok': True})

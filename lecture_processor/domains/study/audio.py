@@ -139,6 +139,18 @@ def get_audio_storage_path_from_pack(pack, runtime=None):
     return ''
 
 
+def audio_storage_key_has_file(raw_key, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    path = resolve_audio_storage_path_from_key(raw_key, runtime=resolved_runtime)
+    return bool(path and os.path.exists(path))
+
+
+def pack_audio_file_exists(pack, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    key = get_audio_storage_key_from_pack(pack, runtime=resolved_runtime)
+    return audio_storage_key_has_file(key, runtime=resolved_runtime)
+
+
 def ensure_pack_audio_storage_key(pack_ref, pack, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     key = get_audio_storage_key_from_pack(pack, runtime=resolved_runtime)
