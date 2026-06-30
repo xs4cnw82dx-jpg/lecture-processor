@@ -283,6 +283,38 @@ th {
   color: #60708a;
 }
 
+.batch-empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 18px 12px;
+  text-align: center;
+}
+
+.batch-empty-state strong {
+  color: #1b2740;
+  font-size: 0.98rem;
+}
+
+.batch-empty-state span {
+  max-width: 420px;
+  color: #60708a;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.batch-empty-state.error {
+  color: #991b1b;
+}
+
+.batch-empty-state.error strong {
+  color: #991b1b;
+}
+
+.batch-empty-state.error span {
+  color: #7f1d1d;
+}
+
 .batch-dashboard-auth-gate {
   text-align: center;
 }
@@ -400,7 +432,7 @@ th {
 .batch-card-empty {
   border: 1px dashed #d7e2f0;
   border-radius: 14px;
-  padding: 14px;
+  padding: 6px;
   color: #60708a;
   background: #fbfdff;
 }

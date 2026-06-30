@@ -187,6 +187,19 @@ def test_dashboard_distinguishes_load_failures_from_empty_state():
     assert 'renderRecentPacksError();' in dashboard_js
 
 
+def test_batch_dashboard_has_clear_empty_and_error_states():
+    batch_dashboard_js = _read('static/js/batch-dashboard.js')
+    batch_dashboard_css = _read('static/css/batch-dashboard.css')
+
+    assert 'function emptyStateCopy(isActiveTable)' in batch_dashboard_js
+    assert 'Running batches will appear here while they process.' in batch_dashboard_js
+    assert 'Completed and failed batches will appear here after you run one.' in batch_dashboard_js
+    assert 'function renderLoadError(message)' in batch_dashboard_js
+    assert 'data-action="retry-load"' in batch_dashboard_js
+    assert 'renderLoadError(message);' in batch_dashboard_js
+    assert '.batch-empty-state.error' in batch_dashboard_css
+
+
 def test_batch_downloads_use_authenticated_fetch_instead_of_new_tabs():
     batch_mode_template = _read('templates/batch_mode.html')
     batch_dashboard_template = _read('templates/batch_dashboard.html')

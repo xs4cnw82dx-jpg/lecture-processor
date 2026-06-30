@@ -78,7 +78,7 @@ test('calendar signed-out CTA redirects to a working sign-in entry point', async
 
   await page.locator('#add-session-btn').click();
 
-  await page.waitForURL(/\/lecture-notes(?:\?auth=signin)?/);
+  await page.waitForURL(/\/lecture-notes\?auth=signin(?:&next=[^#]+)?$/);
   await expect(page.locator('body')).toContainText(/Lecture Notes|Sign in/i);
 });
 

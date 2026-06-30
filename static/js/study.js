@@ -120,8 +120,7 @@ const LAZY_VENDOR_ASSETS = {
     integrity: 'sha384-5JqMv4L/Xa0hfvtF06qboNdhvuYXUku9ZrhZh3bSk8VXF0A/RuSLHpLsSV9Zqhl6'
   },
   marked: {
-    src: 'https://cdn.jsdelivr.net/npm/marked@17.0.4/lib/marked.umd.js',
-    integrity: 'sha384-aLjW8wZKyOuTOcURHHubORbxQvuyZMLWE2b70jrYAHM0r11vW/KII2EqaifKahR4'
+    src: '/static/js/marked-lite.js'
   },
   papa: {
     src: 'https://cdn.jsdelivr.net/npm/papaparse@5.5.3/papaparse.min.js',
@@ -2108,7 +2107,7 @@ function closeAudioPlayer() {
   audioReady = false; audioMap = []; audioSections = [];
 }
 function fallbackAudioUnavailableMessage() {
-  return 'Audio playback is unavailable because the generated audio file is no longer stored on this server. On the free Render plan, this can happen after a restart.';
+  return 'Audio playback is unavailable because this temporary audio file has been deleted.';
 }
 function syncAudioUnavailableNotice() {
   if (!audioUnavailableNotice) return;

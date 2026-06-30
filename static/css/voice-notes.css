@@ -741,6 +741,13 @@ body {
   padding: 0 10px;
 }
 
+.voice-mini-action:disabled,
+.voice-icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  background: #f1f5f9;
+}
+
 .voice-mini-action.danger,
 .voice-note-action.danger {
   color: #991b1b;
@@ -792,6 +799,24 @@ body {
   color: #1e3a8a;
   font-size: 0.8rem;
   line-height: 1.45;
+}
+
+.voice-audio-status {
+  margin: -6px 14px 14px;
+  padding: 9px 11px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #f8fbff;
+  color: #334155;
+  font-size: 0.8rem;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.voice-audio-status.error {
+  border-color: #fecaca;
+  background: #fff1f2;
+  color: #991b1b;
 }
 
 .voice-tabs {
@@ -1231,6 +1256,16 @@ body {
 
   .voice-detail-actions {
     justify-content: flex-start;
+    width: 100%;
+  }
+
+  .voice-detail-actions .voice-mini-action {
+    flex: 1 1 calc(50% - 6px);
+    min-width: 128px;
+  }
+
+  .voice-detail-actions .voice-icon-btn {
+    flex: 0 0 42px;
   }
 
   .voice-back-btn {

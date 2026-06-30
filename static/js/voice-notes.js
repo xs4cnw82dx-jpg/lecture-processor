@@ -59,7 +59,7 @@
       'voice-auth', 'voice-app', 'voice-sync-pill', 'voice-record-btn', 'voice-pause-btn', 'voice-stop-btn', 'voice-time',
       'voice-meter', 'voice-record-status', 'voice-file-input', 'voice-import-btn', 'voice-search-input',
       'voice-note-list', 'voice-detail-empty', 'voice-detail', 'voice-detail-title', 'voice-detail-meta',
-      'voice-back-btn', 'voice-share-btn', 'voice-archive-btn', 'voice-download-audio-btn', 'voice-delete-btn', 'voice-audio', 'voice-audio-retention-note', 'voice-transcript', 'voice-notes-surface', 'voice-highlight-toolbar',
+      'voice-back-btn', 'voice-share-btn', 'voice-archive-btn', 'voice-download-audio-btn', 'voice-delete-btn', 'voice-audio', 'voice-audio-retention-note', 'voice-audio-status', 'voice-transcript', 'voice-notes-surface', 'voice-highlight-toolbar',
       'voice-hl-undo', 'voice-hl-redo', 'voice-hl-clear', 'voice-download-notes', 'voice-language-select',
       'voice-custom-input', 'voice-storage-count', 'voice-storage-size', 'voice-sync-all-btn', 'voice-toast',
       'voice-confirm-modal', 'voice-confirm-title', 'voice-confirm-message', 'voice-confirm-close',
@@ -205,6 +205,22 @@
     showToast.timer = window.setTimeout(function () {
       els.toast.classList.remove('visible');
     }, 2600);
+  }
+
+  function setAudioStatus(message, type) {
+    if (!els.audioStatus) return;
+    var text = String(message || '').trim();
+    els.audioStatus.textContent = text;
+    els.audioStatus.hidden = !text;
+    els.audioStatus.classList.toggle('error', type === 'error');
+    els.audioStatus.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    els.audioStatus.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+  }
+
+  function setAudioDownloadReady(isReady) {
+    if (!els.downloadAudioBtn) return;
+    els.downloadAudioBtn.disabled = !isReady;
+    els.downloadAudioBtn.setAttribute('aria-disabled', isReady ? 'false' : 'true');
   }
 
   function openConfirmModal(title, message, confirmLabel) {
@@ -882,6 +898,8 @@
     if (!note) {
       els.detail.hidden = true;
       els.detailEmpty.hidden = false;
+      setAudioStatus('');
+      setAudioDownloadReady(false);
       return;
     }
     els.detail.hidden = false;
@@ -894,9 +912,32 @@
       els.detailMeta.textContent = meta.join(' - ');
     }
     if (els.archiveBtn) els.archiveBtn.textContent = note.archived ? 'Restore' : 'Archive';
-    if (els.downloadAudioBtn) els.downloadAudioBtn.disabled = false;
+    setAudioDownloadReady(false);
+    setAudioStatus('');
     renderAudio(note);
+    updateAudioDownloadAvailability(note);
     renderTranscript(note);
+  }
+
+  function updateAudioDownloadAvailability(note) {
+    if (!note) {
+      setAudioDownloadReady(false);
+      return;
+    }
+    var noteId = note.id;
+    var localId = note.local_audio_id || note.id;
+    return getAudioBlob(localId).then(function (blob) {
+      if (!selectedNote() || selectedNote().id !== noteId) return;
+      var hasServerAudio = !!(note.study_pack_id && note.has_audio_playback);
+      var isReady = !!blob || hasServerAudio;
+      setAudioDownloadReady(isReady);
+      if (!isReady) {
+        setAudioStatus('No downloadable audio copy is available for this note.', 'error');
+      }
+    }).catch(function () {
+      if (!selectedNote() || selectedNote().id !== noteId) return;
+      setAudioDownloadReady(!!(note.study_pack_id && note.has_audio_playback));
+    });
   }
 
   function renderAudio(note) {
@@ -904,18 +945,40 @@
     var current = els.audio.getAttribute('data-note-id') || '';
     if (current === note.id) return;
     els.audio.removeAttribute('src');
+    els.audio.hidden = true;
     els.audio.setAttribute('data-note-id', note.id);
     getAudioBlob(note.local_audio_id || note.id).then(function (blob) {
       if (blob && selectedNote() && selectedNote().id === note.id) {
         els.audio.src = URL.createObjectURL(blob);
+        els.audio.hidden = false;
+        setAudioStatus('');
       } else if (note.study_pack_id && note.has_audio_playback) {
         authFetch('/api/study-packs/' + encodeURIComponent(note.study_pack_id) + '/audio').then(function (response) {
           if (!response.ok) throw new Error('Audio unavailable');
           return response.blob();
         }).then(function (remoteBlob) {
           putAudioBlob(note.local_audio_id || note.id, remoteBlob, note.audio_name || 'voice-note.mp3');
-          if (selectedNote() && selectedNote().id === note.id) els.audio.src = URL.createObjectURL(remoteBlob);
-        }).catch(function () {});
+          if (selectedNote() && selectedNote().id === note.id) {
+            els.audio.src = URL.createObjectURL(remoteBlob);
+            els.audio.hidden = false;
+            setAudioStatus('');
+            setAudioDownloadReady(true);
+          }
+        }).catch(function () {
+          if (selectedNote() && selectedNote().id === note.id) {
+            note.has_audio_playback = false;
+            setAudioDownloadReady(false);
+            setAudioStatus('Audio playback is unavailable because this temporary audio file has been deleted.', 'error');
+          }
+        });
+      } else {
+        setAudioDownloadReady(false);
+        setAudioStatus('No downloadable audio copy is available for this note.', 'error');
+      }
+    }).catch(function () {
+      if (selectedNote() && selectedNote().id === note.id) {
+        setAudioDownloadReady(false);
+        setAudioStatus('Could not check audio on this device.', 'error');
       }
     });
   }
@@ -1000,6 +1063,7 @@
     getAudioBlob(localId).then(function (blob) {
       if (blob) {
         saveBlobAsFile(blob, audioFileName(note.audio_name || fallbackName, blob));
+        setAudioStatus('');
         showToast('Audio download started.');
         return null;
       }
@@ -1015,12 +1079,15 @@
           saveBlobAsFile(remoteBlob, fallbackName);
         });
       }).then(function () {
+        setAudioStatus('');
         showToast('Audio download started.');
       });
     }).catch(function (error) {
-      showToast(error && error.message ? error.message : 'Could not download audio.', 'error');
+      var message = error && error.message ? error.message : 'Could not download audio.';
+      setAudioStatus(message, 'error');
+      showToast(message, 'error');
     }).finally(function () {
-      if (els.downloadAudioBtn) els.downloadAudioBtn.disabled = false;
+      updateAudioDownloadAvailability(note);
     });
   }
 

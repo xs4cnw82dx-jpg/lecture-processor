@@ -308,10 +308,7 @@ def get_study_pack(app_ctx, request, pack_id):
         has_audio_playback = study_audio.audio_storage_key_has_file(audio_storage_key, runtime=app_ctx)
         audio_unavailable_message = ''
         if audio_storage_key and not has_audio_playback:
-            audio_unavailable_message = (
-                'Audio playback is unavailable because the generated audio file is no longer stored on this server. '
-                'On the free Render plan, this can happen after a restart.'
-            )
+            audio_unavailable_message = study_api_support.build_audio_unavailable_message()
         has_audio_sync = (
             app_ctx.FEATURE_AUDIO_SECTION_SYNC
             and has_audio_playback
