@@ -256,6 +256,57 @@ def test_shell_export_modal_validation_is_inside_modal_live_region():
     assert "exportError.hidden = !text;" in app_shell_js
 
 
+def test_shell_account_delete_is_reachable_and_announced():
+    shell_template = Path('templates/_app_shell.html').read_text(encoding='utf-8')
+    app_shell_js = Path('static/js/app-shell.js').read_text(encoding='utf-8')
+    app_shell_css = Path('static/css/app-shell.css').read_text(encoding='utf-8')
+
+    assert 'id="shell-delete-account-btn" role="menuitem">Delete account</button>' in shell_template
+    assert 'id="shell-delete-account-overlay" hidden aria-hidden="true"' in shell_template
+    assert 'id="shell-delete-account-error" role="alert" aria-live="assertive" aria-atomic="true" hidden' in shell_template
+    assert "setDeleteAccountModalOpen(true);" in app_shell_js
+    assert "authFetch('/api/account/delete'" in app_shell_js
+    assert "setDeleteAccountError('Type DELETE MY ACCOUNT exactly to continue.');" in app_shell_js
+    assert "await clearVoiceNotesLocalData();" in app_shell_js
+    assert ".shell-modal-primary.danger" in app_shell_css
+
+
+def test_admin_tabs_expose_tab_semantics_and_keyboard_navigation():
+    admin_template = Path('templates/admin.html').read_text(encoding='utf-8')
+    admin_js = Path('static/js/admin.js').read_text(encoding='utf-8')
+
+    assert 'class="admin-tabs" role="tablist" aria-label="Admin sections"' in admin_template
+    assert 'id="admin-tab-overview" data-admin-tab="overview" type="button" role="tab" aria-selected="true"' in admin_template
+    assert 'id="admin-tab-batch-jobs" data-admin-tab="batch-jobs" type="button" role="tab" aria-selected="false"' in admin_template
+    assert 'id="admin-tab-overview-content" role="tabpanel" aria-labelledby="admin-tab-overview" aria-hidden="false"' in admin_template
+    assert 'id="admin-tab-batch-content" role="tabpanel" aria-labelledby="admin-tab-batch-jobs" aria-hidden="true" hidden' in admin_template
+    assert "btn.setAttribute('aria-selected', isActive ? 'true' : 'false');" in admin_js
+    assert 'btn.tabIndex = isActive ? 0 : -1;' in admin_js
+    assert "panel.setAttribute('aria-hidden', isActive ? 'false' : 'true');" in admin_js
+    assert "event.key === 'ArrowRight' || event.key === 'ArrowDown'" in admin_js
+    assert "event.key === 'Home'" in admin_js
+    assert "event.key === 'End'" in admin_js
+
+
+def test_voice_note_filters_and_actions_have_programmatic_names():
+    voice_template = Path('templates/voice_notes.html').read_text(encoding='utf-8')
+    voice_js = Path('static/js/voice-notes.js').read_text(encoding='utf-8')
+
+    assert 'data-filter="all" aria-pressed="true"' in voice_template
+    assert 'data-filter="pending" aria-pressed="false"' in voice_template
+    assert "btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');" in voice_js
+    assert 'Open voice note "' in voice_js
+    assert 'Archive voice note "' in voice_js
+    assert 'Restore voice note "' in voice_js
+    assert 'Delete voice note "' in voice_js
+
+
+def test_physio_case_and_session_selection_exposes_current_state():
+    physio_js = Path('static/js/physio.js').read_text(encoding='utf-8')
+
+    assert physio_js.count("button.setAttribute('aria-current', 'true');") >= 2
+
+
 def test_reader_dropzone_is_keyboard_accessible_and_announced():
     reader_template = Path('templates/reader.html').read_text(encoding='utf-8')
 

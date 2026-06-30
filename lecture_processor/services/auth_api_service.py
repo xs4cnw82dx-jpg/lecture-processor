@@ -95,6 +95,7 @@ def verify_email(app_ctx, request):
         runtime=app_ctx,
     )
     if not allowed_rl:
+        analytics_events.log_rate_limit_hit('verify_email', retry_after_rl, runtime=app_ctx)
         return rate_limiter.build_rate_limited_response(
             'Too many verification requests. Please wait.',
             retry_after_rl,

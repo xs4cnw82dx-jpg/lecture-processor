@@ -37,14 +37,14 @@
 
         <div id="dashboard" hidden>
             <section class="panel admin-tabs-panel">
-                <div class="admin-tabs">
-                    <button class="btn admin-tab active" data-admin-tab="overview" type="button">Overview</button>
-                    <button class="btn admin-tab" data-admin-tab="batch-jobs" type="button">Batch Jobs</button>
-                    <button class="btn admin-tab" data-admin-tab="credits" type="button">Credits</button>
+                <div class="admin-tabs" role="tablist" aria-label="Admin sections">
+                    <button class="btn admin-tab active" id="admin-tab-overview" data-admin-tab="overview" type="button" role="tab" aria-selected="true" aria-controls="admin-tab-overview-content" tabindex="0">Overview</button>
+                    <button class="btn admin-tab" id="admin-tab-batch-jobs" data-admin-tab="batch-jobs" type="button" role="tab" aria-selected="false" aria-controls="admin-tab-batch-content" tabindex="-1">Batch Jobs</button>
+                    <button class="btn admin-tab" id="admin-tab-credits" data-admin-tab="credits" type="button" role="tab" aria-selected="false" aria-controls="admin-tab-credits-content" tabindex="-1">Credits</button>
                 </div>
             </section>
 
-            <div id="admin-tab-overview-content">
+            <div id="admin-tab-overview-content" role="tabpanel" aria-labelledby="admin-tab-overview" aria-hidden="false">
             <section class="metrics">
                 <article class="metric">
                     <div class="label">Total users</div>
@@ -368,7 +368,7 @@
             </section>
             </div>
 
-            <div id="admin-tab-batch-content" hidden>
+            <div id="admin-tab-batch-content" role="tabpanel" aria-labelledby="admin-tab-batch-jobs" aria-hidden="true" hidden>
                 <section class="panel">
                     <div class="analyzer-head">
                         <h2>Batch Jobs</h2>
@@ -420,7 +420,7 @@
                 </section>
             </div>
 
-            <div id="admin-tab-credits-content" hidden>
+            <div id="admin-tab-credits-content" role="tabpanel" aria-labelledby="admin-tab-credits" aria-hidden="true" hidden>
                 <section class="panel">
                     <div class="analyzer-head">
                         <div>

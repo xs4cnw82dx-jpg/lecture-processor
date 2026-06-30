@@ -312,6 +312,8 @@ def test_admin_overview_uses_rollups_and_limited_recent_queries(client, monkeypa
     rollups = []
     for index, bucket_key in enumerate(bucket_keys, start=1):
         funnel_counts = {stage["event"]: index for stage in core.ANALYTICS_FUNNEL_STAGES}
+        rate_limits = {name: 0 for name in admin_rollups.KNOWN_RATE_LIMITS}
+        rate_limits.update({"upload": 1, "voice_notes": 2, "lecture_download": 3, "verify_email": 4})
         rollups.append({
             "bucket_key": bucket_key,
             "purchases": {"count": 1, "total_revenue_cents": index * 100},
@@ -333,7 +335,7 @@ def test_admin_overview_uses_rollups_and_limited_recent_queries(client, monkeypa
                 "event_count": 5,
                 "funnel_counts": funnel_counts,
             },
-            "rate_limits": {"upload": 1, "checkout": 0, "analytics": 0, "tools": 0},
+            "rate_limits": rate_limits,
         })
     monkeypatch.setattr(admin_rollups, "load_window_rollups", lambda *_args, **_kwargs: rollups)
 
@@ -361,7 +363,7 @@ def test_admin_overview_uses_rollups_and_limited_recent_queries(client, monkeypa
         if collection_name == "purchases":
             return [_Doc({"uid": "admin-u1", "bundle_name": "Lecture 5", "price_cents": 999, "currency": "eur", "created_at": now_ts})]
         if collection_name == "rate_limit_logs":
-            return [_Doc({"created_at": now_ts, "limit_name": "upload", "retry_after_seconds": 30})]
+            return [_Doc({"created_at": now_ts, "limit_name": "lecture_download", "retry_after_seconds": 30})]
         return []
 
     monkeypatch.setattr(admin_metrics, "safe_query_docs_in_window", _safe_query_docs_in_window)
@@ -375,14 +377,19 @@ def test_admin_overview_uses_rollups_and_limited_recent_queries(client, monkeypa
     assert payload["metrics"]["total_revenue_cents"] == 2800
     assert payload["metrics"]["success_jobs"] == 7
     assert payload["metrics"]["failed_jobs"] == 7
-    assert payload["metrics"]["rate_limit_429_total"] == 7
+    assert payload["metrics"]["rate_limit_upload_429"] == 7
+    assert payload["metrics"]["rate_limit_voice_notes_429"] == 14
+    assert payload["metrics"]["rate_limit_lecture_download_429"] == 21
+    assert payload["metrics"]["rate_limit_verify_email_429"] == 28
+    assert payload["metrics"]["rate_limit_429_total"] == 70
+    assert payload["metrics"]["rate_limit_by_name"]["lecture_download"] == 21
     assert payload["trends"]["revenue_cents"][0] == 100
     assert payload["recent_jobs"][0]["job_id"] == "job-1"
     assert payload["recent_jobs"][0]["source_url"] == "https://example.com/[redacted]"
     assert payload["recent_jobs"][0]["custom_prompt"] == ""
     assert payload["recent_jobs"][0]["custom_prompt_length"] == len("private prompt text")
     assert payload["recent_purchases"][0]["bundle_name"] == "Lecture 5"
-    assert payload["recent_rate_limits"][0]["limit_name"] == "upload"
+    assert payload["recent_rate_limits"][0]["limit_name"] == "lecture_download"
     assert len(query_calls) == 3
     assert all(call["limit"] == 20 for call in query_calls)
     assert all(call["order_desc"] is True for call in query_calls)

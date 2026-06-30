@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from lecture_processor.domains.account import lifecycle as account_lifecycle
+from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.ai import pipelines as ai_pipelines
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import receipts as billing_receipts
@@ -157,6 +158,7 @@ def create_voice_note(app_ctx, request):
     email = decoded_token.get('email', '')
     active_jobs = account_lifecycle.count_active_jobs_for_user(uid, runtime=app_ctx)
     if active_jobs >= app_ctx.MAX_ACTIVE_JOBS_PER_USER:
+        analytics_events.log_rate_limit_hit('voice_notes', 10, runtime=app_ctx)
         return app_ctx.jsonify({
             'error': f'You already have {active_jobs} active processing job(s). Please wait for one to finish before starting another.'
         }), 429
@@ -168,6 +170,7 @@ def create_voice_note(app_ctx, request):
         runtime=app_ctx,
     )
     if not allowed:
+        analytics_events.log_rate_limit_hit('voice_notes', retry_after, runtime=app_ctx)
         return rate_limiter.build_rate_limited_response(
             'Too many voice-note sync attempts right now. Please wait and try again.',
             retry_after,
@@ -179,6 +182,7 @@ def create_voice_note(app_ctx, request):
         uid,
         upload_quota_service.request_content_length(request),
         context='Voice-note upload',
+        analytics_limit_name='voice_notes',
     )
     if quota_response is not None:
         return quota_response, quota_status
@@ -215,6 +219,7 @@ def create_voice_note(app_ctx, request):
             quota_reservation,
             audio_size,
             context='Voice-note upload',
+            analytics_limit_name='voice_notes',
         )
         if quota_error is not None:
             app_ctx.cleanup_files([audio_path], [])

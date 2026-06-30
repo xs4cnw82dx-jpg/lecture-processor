@@ -774,7 +774,8 @@
         '<button type="button" class="voice-note-action danger" data-note-delete>Delete</button>',
         '</div>'
       ].join('');
-      item.querySelector('.voice-note-title').textContent = note.title || 'Voice note';
+      var noteTitle = note.title || 'Voice note';
+      item.querySelector('.voice-note-title').textContent = noteTitle;
       item.querySelector('.voice-note-status').textContent = status === 'syncing' ? 'transcribing' : status;
       item.querySelector('[data-note-archive]').textContent = note.archived ? 'Restore' : 'Archive';
       var pieces = [formatDate(note.created_at)];
@@ -789,6 +790,7 @@
         tagRow.appendChild(span);
       });
       var openButton = item.querySelector('[data-note-open]');
+      openButton.setAttribute('aria-label', 'Open voice note "' + noteTitle + '"');
       openButton.addEventListener('click', function () {
         state.selectedId = note.id;
         setView('detail');
@@ -796,6 +798,7 @@
       });
       var archiveButton = item.querySelector('[data-note-archive]');
       if (archiveButton) {
+        archiveButton.setAttribute('aria-label', (note.archived ? 'Restore voice note "' : 'Archive voice note "') + noteTitle + '"');
         archiveButton.addEventListener('click', function (event) {
           event.stopPropagation();
           toggleArchiveNote(note);
@@ -803,6 +806,7 @@
       }
       var deleteButton = item.querySelector('[data-note-delete]');
       if (deleteButton) {
+        deleteButton.setAttribute('aria-label', 'Delete voice note "' + noteTitle + '"');
         deleteButton.addEventListener('click', function (event) {
           event.stopPropagation();
           deleteVoiceNote(note);
@@ -1186,7 +1190,9 @@
       button.addEventListener('click', function () {
         state.filter = button.getAttribute('data-filter') || 'all';
         Array.prototype.slice.call(document.querySelectorAll('[data-filter]')).forEach(function (btn) {
-          btn.classList.toggle('active', btn === button);
+          var isActive = btn === button;
+          btn.classList.toggle('active', isActive);
+          btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         });
         renderList();
       });

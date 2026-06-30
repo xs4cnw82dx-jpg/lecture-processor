@@ -1,5 +1,6 @@
 """Audio import routes extracted from upload API service."""
 
+from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.upload import import_audio as upload_import_audio
@@ -104,6 +105,7 @@ def _run_audio_import_job(app_ctx, job_id, uid, fetch_target, prefix, quota_rese
             quota_reservation,
             actual_size,
             context='Audio URL import',
+            analytics_limit_name='audio_import',
         )
         if quota_error is not None:
             app_ctx.cleanup_files([audio_path], [])
@@ -177,6 +179,7 @@ def import_audio_from_url(app_ctx, request):
         runtime=app_ctx,
     )
     if not allowed_import:
+        analytics_events.log_rate_limit_hit('audio_import', retry_after, runtime=app_ctx)
         return rate_limiter.build_rate_limited_response(
             'Too many video import attempts right now. Please wait and try again.',
             retry_after,
@@ -198,6 +201,7 @@ def import_audio_from_url(app_ctx, request):
         uid,
         upload_quota_service.max_audio_upload_bytes(app_ctx),
         context='Audio URL import',
+        analytics_limit_name='audio_import',
     )
     if quota_response is not None:
         return quota_response, quota_status

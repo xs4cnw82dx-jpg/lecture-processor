@@ -70,6 +70,19 @@ def test_verify_email_blocks_unknown_domain(client):
     assert "university email" in body["message"].lower()
 
 
+def test_verify_email_rate_limited_returns_retry_after(client, monkeypatch):
+    captured = []
+    monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (False, 9))
+    monkeypatch.setattr(analytics_events, "log_rate_limit_hit", lambda name, retry, runtime=None: captured.append((name, retry)) or True)
+
+    response = client.post("/api/verify-email", json={"email": "student@st.hanze.nl"})
+
+    assert response.status_code == 429
+    assert response.headers.get("Retry-After") == "9"
+    assert response.get_json()["retry_after_seconds"] == 9
+    assert captured == [("verify_email", 9)]
+
+
 def test_build_admin_deployment_info_detects_render_host(monkeypatch):
     monkeypatch.setenv("RENDER", "true")
     monkeypatch.setenv("RENDER_SERVICE_NAME", "lecture-processor")
@@ -434,6 +447,25 @@ def test_import_audio_url_rejects_invalid_host(client, monkeypatch):
     assert "not allowed" in response.get_json()["error"].lower()
 
 
+def test_import_audio_url_rate_limited_returns_retry_after(client, monkeypatch):
+    captured = []
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "imp-limited", "email": "user@gmail.com"})
+    monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: True)
+    monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (False, 17))
+    monkeypatch.setattr(analytics_events, "log_rate_limit_hit", lambda name, retry, runtime=None: captured.append((name, retry)) or True)
+
+    response = client.post(
+        "/api/import-audio-url",
+        json={"url": "https://ovp.kaltura.com/path/index.m3u8"},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 429
+    assert response.headers.get("Retry-After") == "17"
+    assert response.get_json()["retry_after_seconds"] == 17
+    assert captured == [("audio_import", 17)]
+
+
 def test_import_audio_url_success_queues_job_and_status_returns_token(client, monkeypatch, tmp_path):
     core.AUDIO_IMPORT_TOKENS.clear()
     core.AUDIO_IMPORT_JOBS.clear()
@@ -520,12 +552,16 @@ def test_tools_lecture_download_returns_zip_for_both_formats(client, monkeypatch
     monkeypatch.setattr(
         tools_download_service.upload_quota_service,
         "reserve_upload_quota",
-        lambda _app_ctx, uid, requested_bytes, **kwargs: reserved.append((uid, requested_bytes, kwargs.get("context"))) or (quota_reservation, None, 0),
+        lambda _app_ctx, uid, requested_bytes, **kwargs: reserved.append(
+            (uid, requested_bytes, kwargs.get("context"), kwargs.get("analytics_limit_name"))
+        ) or (quota_reservation, None, 0),
     )
     monkeypatch.setattr(
         tools_download_service.upload_quota_service,
         "adjust_reserved_upload_bytes",
-        lambda _app_ctx, reservation, actual_bytes, **kwargs: adjusted.append((reservation, actual_bytes, kwargs.get("context"))) or (None, 0),
+        lambda _app_ctx, reservation, actual_bytes, **kwargs: adjusted.append(
+            (reservation, actual_bytes, kwargs.get("context"), kwargs.get("analytics_limit_name"))
+        ) or (None, 0),
     )
     monkeypatch.setattr(
         tools_download_service.upload_quota_service,
@@ -543,9 +579,29 @@ def test_tools_lecture_download_returns_zip_for_both_formats(client, monkeypatch
     assert response.mimetype == "application/zip"
     archive = zipfile.ZipFile(io.BytesIO(response.data))
     assert sorted(archive.namelist()) == ["lecture-audio.mp3", "lecture-video.mp4"]
-    assert reserved == [("tool-dl-u1", core.MAX_AUDIO_UPLOAD_BYTES * 2, "Lecture media download")]
-    assert adjusted == [(quota_reservation, expected_download_bytes, "Lecture media download")]
+    assert reserved == [("tool-dl-u1", core.MAX_AUDIO_UPLOAD_BYTES * 2, "Lecture media download", "lecture_download")]
+    assert adjusted == [(quota_reservation, expected_download_bytes, "Lecture media download", "lecture_download")]
     assert committed == [quota_reservation]
+
+
+def test_tools_lecture_download_rate_limited_returns_retry_after(client, monkeypatch):
+    captured = []
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "tool-dl-limited", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (False, 19))
+    monkeypatch.setattr(analytics_events, "log_rate_limit_hit", lambda name, retry, runtime=None: captured.append((name, retry)) or True)
+
+    response = client.post(
+        "/api/tools/lecture-download",
+        json={"url": "https://ovp.kaltura.com/path/index.m3u8", "format": "audio"},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 429
+    assert response.headers.get("Retry-After") == "19"
+    assert response.get_json()["retry_after_seconds"] == 19
+    assert captured == [("lecture_download", 19)]
 
 
 def test_tools_lecture_download_checks_quota_before_fetch(client, monkeypatch):
@@ -563,7 +619,9 @@ def test_tools_lecture_download_checks_quota_before_fetch(client, monkeypatch):
     monkeypatch.setattr(
         tools_download_service.upload_quota_service,
         "reserve_upload_quota",
-        lambda app_ctx, uid, requested_bytes, **kwargs: reserve_calls.append((uid, requested_bytes, kwargs.get("context")))
+        lambda app_ctx, uid, requested_bytes, **kwargs: reserve_calls.append(
+            (uid, requested_bytes, kwargs.get("context"), kwargs.get("analytics_limit_name"))
+        )
         or (None, app_ctx.jsonify({"error": "quota reached"}), 429),
     )
     monkeypatch.setattr(
@@ -580,7 +638,7 @@ def test_tools_lecture_download_checks_quota_before_fetch(client, monkeypatch):
 
     assert response.status_code == 429
     assert response.get_json()["error"] == "quota reached"
-    assert reserve_calls == [("tool-dl-u2", core.MAX_AUDIO_UPLOAD_BYTES, "Lecture media download")]
+    assert reserve_calls == [("tool-dl-u2", core.MAX_AUDIO_UPLOAD_BYTES, "Lecture media download", "lecture_download")]
 
 
 def test_upload_accepts_audio_import_token_for_lecture_mode(client, monkeypatch):
@@ -951,10 +1009,12 @@ def test_tools_transcribe_rejects_low_disk_before_saving_audio(client, monkeypat
 
 
 def test_tools_transcribe_rejects_when_user_has_too_many_active_jobs(client, monkeypatch):
+    captured = []
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "tools-busy", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: core.MAX_ACTIVE_JOBS_PER_USER)
+    monkeypatch.setattr(analytics_events, "log_rate_limit_hit", lambda name, retry, runtime=None: captured.append((name, retry)) or True)
     monkeypatch.setattr(
         rate_limiter,
         "check_rate_limit",
@@ -970,6 +1030,76 @@ def test_tools_transcribe_rejects_when_user_has_too_many_active_jobs(client, mon
 
     assert response.status_code == 429
     assert "active processing job" in response.get_json()["error"]
+    assert captured == [("tools_transcribe", 10)]
+
+
+def test_tools_transcribe_rate_limited_returns_retry_after(client, monkeypatch):
+    captured = []
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "tools-tr-limited", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
+    monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (False, 27))
+    monkeypatch.setattr(analytics_events, "log_rate_limit_hit", lambda name, retry, runtime=None: captured.append((name, retry)) or True)
+
+    response = client.post(
+        "/api/tools/transcribe",
+        data={"audio": (io.BytesIO(b"ID3\x03\x00\x00\x00"), "lecture.mp3", "audio/mpeg")},
+        content_type="multipart/form-data",
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 429
+    assert response.headers.get("Retry-After") == "27"
+    assert response.get_json()["retry_after_seconds"] == 27
+    assert captured == [("tools_transcribe", 27)]
+
+
+def test_voice_note_rate_limited_returns_retry_after(client, monkeypatch):
+    captured = []
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "voice-limited", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
+    monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (False, 31))
+    monkeypatch.setattr(analytics_events, "log_rate_limit_hit", lambda name, retry, runtime=None: captured.append((name, retry)) or True)
+
+    response = client.post(
+        "/api/voice-notes",
+        data={"audio": (io.BytesIO(b"ID3\x03\x00\x00\x00"), "voice.webm", "audio/webm")},
+        content_type="multipart/form-data",
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 429
+    assert response.headers.get("Retry-After") == "31"
+    assert response.get_json()["retry_after_seconds"] == 31
+    assert captured == [("voice_notes", 31)]
+
+
+def test_voice_note_active_jobs_returns_429(client, monkeypatch):
+    captured = []
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "voice-busy", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
+    monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
+    monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: core.MAX_ACTIVE_JOBS_PER_USER)
+    monkeypatch.setattr(analytics_events, "log_rate_limit_hit", lambda name, retry, runtime=None: captured.append((name, retry)) or True)
+    monkeypatch.setattr(
+        rate_limiter,
+        "check_rate_limit",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("rate limit should not run after active job cap")),
+    )
+
+    response = client.post(
+        "/api/voice-notes",
+        data={"audio": (io.BytesIO(b"ID3\x03\x00\x00\x00"), "voice.webm", "audio/webm")},
+        content_type="multipart/form-data",
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 429
+    assert "active processing job" in response.get_json()["error"]
+    assert captured == [("voice_notes", 10)]
 
 
 def test_tools_transcribe_audio_allows_per_run_output_language_override(client, monkeypatch):

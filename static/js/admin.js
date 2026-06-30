@@ -19,6 +19,12 @@ const adminTabButtons = Array.from(document.querySelectorAll('[data-admin-tab]')
 const adminOverviewContent = document.getElementById('admin-tab-overview-content');
 const adminBatchContent = document.getElementById('admin-tab-batch-content');
 const adminCreditsContent = document.getElementById('admin-tab-credits-content');
+const adminTabKeys = ['overview', 'batch-jobs', 'credits'];
+const adminTabPanels = {
+    'overview': adminOverviewContent,
+    'batch-jobs': adminBatchContent,
+    'credits': adminCreditsContent,
+};
 const adminBatchRefreshBtn = document.getElementById('admin-batch-refresh-btn');
 const adminBatchMode = document.getElementById('admin-batch-mode');
 const adminBatchStatus = document.getElementById('admin-batch-status');
@@ -112,8 +118,29 @@ function formatRateLimitLabel(limitName) {
         'checkout': 'Checkout',
         'analytics': 'Analytics',
         'tools': 'Tools',
+        'physio_transcription': 'Physio transcription',
+        'voice_notes': 'Voice notes',
+        'audio_import': 'Audio import',
+        'lecture_download': 'Lecture download',
+        'tools_transcribe': 'Tools transcriber',
+        'verify_email': 'Email verification',
     };
     return labels[limitName] || limitName;
+}
+
+function summarizeRateLimits(metrics) {
+    const counts = metrics.rate_limit_by_name || {};
+    const entries = Object.entries(counts)
+        .map(([name, count]) => [name, Number(count || 0)])
+        .filter(([, count]) => count > 0)
+        .sort((a, b) => b[1] - a[1]);
+    if (!entries.length) {
+        return 'No recent 429s';
+    }
+    return entries
+        .slice(0, 3)
+        .map(([name, count]) => `${formatRateLimitLabel(name)}: ${count}`)
+        .join(' · ');
 }
 
 function formatTokenCount(count) {
@@ -139,14 +166,45 @@ function showAdminToast(message, type) {
 }
 
 function setAdminTab(tabKey) {
-    const next = ['overview', 'batch-jobs', 'credits'].includes(tabKey) ? tabKey : 'overview';
+    const next = adminTabKeys.includes(tabKey) ? tabKey : 'overview';
     activeAdminTab = next;
     adminTabButtons.forEach((btn) => {
-        btn.classList.toggle('active', btn.dataset.adminTab === next);
+        const isActive = btn.dataset.adminTab === next;
+        btn.classList.toggle('active', isActive);
+        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        btn.tabIndex = isActive ? 0 : -1;
     });
-    if (adminOverviewContent) adminOverviewContent.hidden = next !== 'overview';
-    if (adminBatchContent) adminBatchContent.hidden = next !== 'batch-jobs';
-    if (adminCreditsContent) adminCreditsContent.hidden = next !== 'credits';
+    Object.entries(adminTabPanels).forEach(([key, panel]) => {
+        if (!panel) return;
+        const isActive = key === next;
+        panel.hidden = !isActive;
+        panel.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+    });
+}
+
+async function loadAdminTabData(tabKey) {
+    if (tabKey === 'batch-jobs' && auth.currentUser) {
+        await loadAdminBatchJobs(false);
+    }
+    if (tabKey === 'credits' && auth.currentUser) {
+        await loadAdminCreditGrants(false);
+    }
+}
+
+async function activateAdminTab(tabKey, { focus = false } = {}) {
+    const next = adminTabKeys.includes(tabKey) ? tabKey : 'overview';
+    setAdminTab(next);
+    if (focus) {
+        const nextButton = adminTabButtons.find((btn) => btn.dataset.adminTab === next);
+        if (nextButton) nextButton.focus();
+    }
+    await loadAdminTabData(next);
+}
+
+function nextAdminTabKey(currentKey, direction) {
+    const currentIndex = Math.max(0, adminTabKeys.indexOf(currentKey));
+    const nextIndex = (currentIndex + direction + adminTabKeys.length) % adminTabKeys.length;
+    return adminTabKeys[nextIndex];
 }
 
 function renderAdminBatchJobs(rows) {
@@ -920,7 +978,7 @@ function renderDashboard(data) {
     document.getElementById('m-success-jobs').textContent = m.success_jobs || 0;
     document.getElementById('m-failed-jobs').textContent = m.failed_jobs || 0;
     document.getElementById('m-rate-limit-total').textContent = m.rate_limit_429_total || 0;
-    document.getElementById('m-rate-limit-sub').textContent = `U: ${m.rate_limit_upload_429 || 0} · C: ${m.rate_limit_checkout_429 || 0} · A: ${m.rate_limit_analytics_429 || 0}`;
+    document.getElementById('m-rate-limit-sub').textContent = summarizeRateLimits(m);
 
     const labels = t.labels || [];
     const successTrend = t.success_rate || [];
@@ -1176,14 +1234,22 @@ document.querySelectorAll('.mode-view').forEach((btn) => {
 
 adminTabButtons.forEach((btn) => {
     btn.addEventListener('click', async () => {
-        const tabKey = btn.dataset.adminTab || 'overview';
-        setAdminTab(tabKey);
-        if (tabKey === 'batch-jobs' && auth.currentUser) {
-            await loadAdminBatchJobs(false);
+        await activateAdminTab(btn.dataset.adminTab || 'overview');
+    });
+    btn.addEventListener('keydown', async (event) => {
+        let nextKey = '';
+        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+            nextKey = nextAdminTabKey(btn.dataset.adminTab || 'overview', 1);
+        } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+            nextKey = nextAdminTabKey(btn.dataset.adminTab || 'overview', -1);
+        } else if (event.key === 'Home') {
+            nextKey = adminTabKeys[0];
+        } else if (event.key === 'End') {
+            nextKey = adminTabKeys[adminTabKeys.length - 1];
         }
-        if (tabKey === 'credits' && auth.currentUser) {
-            await loadAdminCreditGrants(false);
-        }
+        if (!nextKey) return;
+        event.preventDefault();
+        await activateAdminTab(nextKey, { focus: true });
     });
 });
 

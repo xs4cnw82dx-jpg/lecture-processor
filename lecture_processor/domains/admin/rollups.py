@@ -9,7 +9,18 @@ from lecture_processor.runtime.container import get_runtime
 
 HOURLY_COLLECTION = 'admin_rollups_hourly'
 DAILY_COLLECTION = 'admin_rollups_daily'
-KNOWN_RATE_LIMITS = ('upload', 'checkout', 'analytics', 'tools')
+KNOWN_RATE_LIMITS = (
+    'upload',
+    'checkout',
+    'analytics',
+    'tools',
+    'physio_transcription',
+    'voice_notes',
+    'audio_import',
+    'lecture_download',
+    'tools_transcribe',
+    'verify_email',
+)
 KNOWN_MODES = ('lecture-notes', 'slides-only', 'interview', 'audio-transcription', 'other')
 
 
