@@ -290,6 +290,12 @@ def get_study_pack(app_ctx, request, pack_id):
         doc, pack = pack_result
         audio_storage_key = study_audio.ensure_pack_audio_storage_key(doc.reference, pack, runtime=app_ctx)
         has_audio_playback = study_audio.audio_storage_key_has_file(audio_storage_key, runtime=app_ctx)
+        audio_unavailable_message = ''
+        if audio_storage_key and not has_audio_playback:
+            audio_unavailable_message = (
+                'Audio playback is unavailable because the generated audio file is no longer stored on this server. '
+                'On the free Render plan, this can happen after a restart.'
+            )
         has_audio_sync = (
             app_ctx.FEATURE_AUDIO_SECTION_SYNC
             and has_audio_playback
@@ -309,6 +315,8 @@ def get_study_pack(app_ctx, request, pack_id):
             'notes_audio_map': notes_audio_map,
             'has_audio_sync': has_audio_sync,
             'has_audio_playback': has_audio_playback,
+            'audio_unavailable_reason': 'missing_audio_file' if audio_unavailable_message else '',
+            'audio_unavailable_message': audio_unavailable_message,
             'has_source_slides': bool(source_flags.get('has_source_slides', False)),
             'has_source_transcript': bool(source_flags.get('has_source_transcript', False)),
             'flashcards': pack.get('flashcards', []),

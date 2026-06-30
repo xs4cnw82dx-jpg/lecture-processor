@@ -15,6 +15,8 @@ const exportJobsBtn = document.getElementById('export-jobs-btn');
 const exportPurchasesBtn = document.getElementById('export-purchases-btn');
 const exportFunnelBtn = document.getElementById('export-funnel-btn');
 const exportFunnelDailyBtn = document.getElementById('export-funnel-daily-btn');
+const adminCleanStaleAudioBtn = document.getElementById('admin-clean-stale-audio-btn');
+const adminCleanStaleAudioStatus = document.getElementById('admin-clean-stale-audio-status');
 const adminTabButtons = Array.from(document.querySelectorAll('[data-admin-tab]'));
 const adminOverviewContent = document.getElementById('admin-tab-overview-content');
 const adminBatchContent = document.getElementById('admin-tab-batch-content');
@@ -163,6 +165,14 @@ function showAdminToast(message, type) {
     adminToastTimer = window.setTimeout(() => {
         adminToast.classList.remove('visible');
     }, 2400);
+}
+
+function setAdminMaintenanceStatus(message, type) {
+    if (!adminCleanStaleAudioStatus) return;
+    adminCleanStaleAudioStatus.textContent = String(message || '');
+    adminCleanStaleAudioStatus.classList.remove('success', 'error');
+    if (type === 'success') adminCleanStaleAudioStatus.classList.add('success');
+    if (type === 'error') adminCleanStaleAudioStatus.classList.add('error');
 }
 
 function setAdminTab(tabKey) {
@@ -1126,6 +1136,50 @@ async function exportCsv(type) {
     }
 }
 
+async function cleanupStaleStudyAudio() {
+    if (!auth.currentUser) {
+        setAdminMaintenanceStatus('Please sign in as an admin first.', 'error');
+        return;
+    }
+    const confirmed = window.confirm('Clean stale study audio flags for up to 250 packs? This does not delete notes, cards, or saved audio metadata.');
+    if (!confirmed) return;
+    if (adminCleanStaleAudioBtn) {
+        adminCleanStaleAudioBtn.disabled = true;
+        adminCleanStaleAudioBtn.textContent = 'Cleaning...';
+    }
+    setAdminMaintenanceStatus('Scanning study packs...', '');
+    try {
+        const res = await authFetch('/api/admin/maintenance/study-audio/cleanup-stale', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ limit: 250 }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok && res.status !== 207) {
+            throw new Error(payload.error || 'Could not clean stale audio flags.');
+        }
+        const checked = Number(payload.checked || 0);
+        const updated = Number(payload.updated || 0);
+        const failed = Number(payload.failed || 0);
+        const stale = Number(payload.stale || 0);
+        const message = failed > 0
+            ? `${checked} checked, ${updated} cleaned, ${failed} failed.`
+            : `${checked} checked, ${updated} cleaned, ${stale} stale found.`;
+        setAdminMaintenanceStatus(message, failed > 0 ? 'error' : 'success');
+        showAdminToast(message, failed > 0 ? 'error' : 'success');
+    } catch (error) {
+        console.error(error);
+        const message = error && error.message ? error.message : 'Could not clean stale audio flags.';
+        setAdminMaintenanceStatus(message, 'error');
+        showAdminToast(message, 'error');
+    } finally {
+        if (adminCleanStaleAudioBtn) {
+            adminCleanStaleAudioBtn.disabled = false;
+            adminCleanStaleAudioBtn.textContent = 'Clean stale audio flags';
+        }
+    }
+}
+
 function setActiveFilterButton() {
     document.querySelectorAll('.filter').forEach((btn) => {
         btn.classList.toggle('active', btn.dataset.window === currentWindow);
@@ -1213,6 +1267,12 @@ exportFunnelBtn.addEventListener('click', async () => {
 exportFunnelDailyBtn.addEventListener('click', async () => {
     await exportCsv('funnel-daily');
 });
+
+if (adminCleanStaleAudioBtn) {
+    adminCleanStaleAudioBtn.addEventListener('click', async () => {
+        await cleanupStaleStudyAudio();
+    });
+}
 
 document.querySelectorAll('.filter').forEach((btn) => {
     btn.addEventListener('click', async () => {

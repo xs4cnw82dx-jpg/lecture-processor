@@ -649,6 +649,8 @@ def test_study_pack_get_hides_stale_audio_flags_when_file_missing(client, monkey
     assert payload["has_audio_playback"] is False
     assert payload["has_audio_sync"] is False
     assert payload["notes_audio_map"] == []
+    assert payload["audio_unavailable_reason"] == "missing_audio_file"
+    assert "free Render plan" in payload["audio_unavailable_message"]
 
 
 def test_study_pack_update_clears_stale_audio_flags_when_file_missing(client, monkeypatch, tmp_path):
@@ -678,6 +680,61 @@ def test_study_pack_update_clears_stale_audio_flags_when_file_missing(client, mo
     assert store["pack-stale-audio"]["title"] == "Renamed"
     assert store["pack-stale-audio"]["has_audio_playback"] is False
     assert store["pack-stale-audio"]["has_audio_sync"] is False
+
+
+def test_admin_cleanup_stale_study_audio_flags(client, monkeypatch, tmp_path):
+    audio_file = tmp_path / "present.mp3"
+    audio_file.write_bytes(b"audio")
+    store = {
+        "pack-stale": {
+            "uid": "u1",
+            "audio_storage_key": "study_audio/missing.mp3",
+            "has_audio_playback": True,
+            "has_audio_sync": True,
+        },
+        "pack-live": {
+            "uid": "u1",
+            "audio_storage_key": "study_audio/present.mp3",
+            "has_audio_playback": True,
+            "has_audio_sync": True,
+        },
+        "pack-no-key": {
+            "uid": "u1",
+            "has_audio_playback": True,
+            "has_audio_sync": False,
+        },
+    }
+
+    monkeypatch.setattr(core, "STUDY_AUDIO_ROOT", str(tmp_path), raising=False)
+    monkeypatch.setattr(core, "db", object())
+    monkeypatch.setattr(core.time, "time", lambda: 789.0)
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "admin-u", "email": "admin@example.com"})
+    monkeypatch.setattr(core, "is_admin_user", lambda _decoded: True)
+    monkeypatch.setattr(
+        core.study_repo,
+        "list_study_packs_with_audio_flags",
+        lambda _db, limit=250: [_StoredDoc("pack-stale", store), _StoredDoc("pack-live", store), _StoredDoc("pack-no-key", store)],
+    )
+
+    response = client.post(
+        "/api/admin/maintenance/study-audio/cleanup-stale",
+        json={"limit": 250},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["checked"] == 3
+    assert payload["stale"] == 2
+    assert payload["updated"] == 2
+    assert payload["failed"] == 0
+    assert payload["stale_pack_ids"] == ["pack-stale", "pack-no-key"]
+    assert store["pack-stale"]["has_audio_playback"] is False
+    assert store["pack-stale"]["has_audio_sync"] is False
+    assert store["pack-stale"]["updated_at"] == 789.0
+    assert store["pack-no-key"]["has_audio_playback"] is False
+    assert store["pack-live"]["has_audio_playback"] is True
+    assert store["pack-live"]["has_audio_sync"] is True
 
 
 def test_study_pack_list_uses_repo_order_and_count_fallback(client, monkeypatch):

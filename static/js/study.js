@@ -1452,7 +1452,7 @@ var folderModalOverlay = document.getElementById('folder-modal-overlay'), folder
 var confirmModalOverlay = document.getElementById('confirm-modal-overlay'), confirmModalTitle = document.getElementById('confirm-modal-title'), confirmModalMessage = document.getElementById('confirm-modal-message'), confirmModalClose = document.getElementById('confirm-modal-close'), confirmModalCancel = document.getElementById('confirm-modal-cancel'), confirmModalConfirm = document.getElementById('confirm-modal-confirm');
 var shareModalOverlay = document.getElementById('share-modal-overlay'), shareModalTitle = document.getElementById('share-modal-title'), shareModalMessage = document.getElementById('share-modal-message'), shareModalClose = document.getElementById('share-modal-close'), shareModalCancel = document.getElementById('share-modal-cancel'), shareModalSave = document.getElementById('share-modal-save'), shareModalStatus = document.getElementById('share-modal-status'), shareScopePrivate = document.getElementById('share-scope-private'), shareScopePublic = document.getElementById('share-scope-public'), shareLinkInput = document.getElementById('share-link-input'), shareCopyBtn = document.getElementById('share-copy-btn');
 var toastEl = document.getElementById('toast');
-var audioPlayerBar = document.getElementById('audio-player-bar'), audioPlayerEl = document.getElementById('audio-player-el'), audioPlayBtn = document.getElementById('audio-play-btn'), audioPlayIcon = document.getElementById('audio-play-icon'), audioPauseIcon = document.getElementById('audio-pause-icon'), audioTime = document.getElementById('audio-time'), audioProgressWrap = document.getElementById('audio-progress-wrap'), audioProgressFill = document.getElementById('audio-progress-fill'), audioSpeedBtn = document.getElementById('audio-speed-btn'), audioPackTitle = document.getElementById('audio-pack-title'), audioCloseBtn = document.getElementById('audio-close-btn');
+var audioPlayerBar = document.getElementById('audio-player-bar'), audioPlayerEl = document.getElementById('audio-player-el'), audioPlayBtn = document.getElementById('audio-play-btn'), audioPlayIcon = document.getElementById('audio-play-icon'), audioPauseIcon = document.getElementById('audio-pause-icon'), audioTime = document.getElementById('audio-time'), audioProgressWrap = document.getElementById('audio-progress-wrap'), audioProgressFill = document.getElementById('audio-progress-fill'), audioSpeedBtn = document.getElementById('audio-speed-btn'), audioPackTitle = document.getElementById('audio-pack-title'), audioCloseBtn = document.getElementById('audio-close-btn'), audioUnavailableNotice = document.getElementById('notes-audio-unavailable');
 var audioBlobUrl = '';
 var difficultyToolbar = document.getElementById('difficulty-toolbar'), difficultyButtons = document.querySelectorAll('.difficulty-btn[data-review-action]');
 var keyboardHints = document.querySelector('.keyboard-hints');
@@ -2106,6 +2106,18 @@ function closeAudioPlayer() {
   document.querySelectorAll('.notes-audio-section.audio-active').forEach(function (el) { el.classList.remove('audio-active'); });
   audioReady = false; audioMap = []; audioSections = [];
 }
+function fallbackAudioUnavailableMessage() {
+  return 'Audio playback is unavailable because the generated audio file is no longer stored on this server. On the free Render plan, this can happen after a restart.';
+}
+function syncAudioUnavailableNotice() {
+  if (!audioUnavailableNotice) return;
+  var message = '';
+  if (selectedPack && !selectedPack.has_audio_playback) {
+    message = String(selectedPack.audio_unavailable_message || '').trim();
+  }
+  audioUnavailableNotice.textContent = message;
+  audioUnavailableNotice.hidden = !message;
+}
 function decorateNotesWithAudio(container) {
   if (!container || !audioMap.length) return;
   var mapByIdx = {};
@@ -2146,6 +2158,7 @@ function decorateNotesWithAudio(container) {
 }
 function initAudioForSelectedPack() {
   closeAudioPlayer();
+  syncAudioUnavailableNotice();
   if (!selectedPack || !selectedPack.has_audio_playback) return;
   audioMap = (selectedPack.has_audio_sync && Array.isArray(selectedPack.notes_audio_map)) ? selectedPack.notes_audio_map.slice() : [];
   if (audioPackTitle) audioPackTitle.textContent = selectedPack.title || 'Lecture audio';
@@ -2157,6 +2170,15 @@ function initAudioForSelectedPack() {
     updateAudioBarVisibility();
     updateAudioControls();
   }).catch(function (e) {
+    if (selectedPack) {
+      selectedPack.has_audio_playback = false;
+      selectedPack.has_audio_sync = false;
+      selectedPack.audio_unavailable_reason = 'missing_audio_file';
+      selectedPack.audio_unavailable_message = fallbackAudioUnavailableMessage();
+      renderNotesForSelectedPackBase();
+      reapplyHighlightsForPack();
+      syncAudioUnavailableNotice();
+    }
     console.warn('Audio sync unavailable:', e && e.message ? e.message : e);
   });
 }
@@ -5240,6 +5262,8 @@ function openPack(packId) {
     selectedPack.test_questions = Array.isArray(selectedPack.test_questions) ? selectedPack.test_questions.map(normalizeQuestion) : [];
     selectedPack.has_audio_playback = !!selectedPack.has_audio_playback;
     selectedPack.has_audio_sync = !!selectedPack.has_audio_sync;
+    selectedPack.audio_unavailable_reason = String(selectedPack.audio_unavailable_reason || '');
+    selectedPack.audio_unavailable_message = String(selectedPack.audio_unavailable_message || '');
     selectedPack.has_source_slides = !!selectedPack.has_source_slides;
     selectedPack.has_source_transcript = !!selectedPack.has_source_transcript;
     selectedPack.notes_audio_map = Array.isArray(selectedPack.notes_audio_map) ? selectedPack.notes_audio_map : [];
@@ -7448,6 +7472,7 @@ var hlRedoStack = [];
 var hlSelectionTimer = null;
 
 function renderNotesForSelectedPackBase() {
+  syncAudioUnavailableNotice();
   if (!notesView || !selectedPack) return;
   var renderKey = getSelectedNotesRenderKey();
   setSafeInnerHtml(notesView, mdToHtml(selectedPack.notes_markdown || ''));

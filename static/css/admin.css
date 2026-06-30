@@ -111,7 +111,7 @@
         }
         .admin-status-grid {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 12px;
         }
         .admin-status-card {
@@ -167,6 +167,25 @@
             text-align: right;
             color: var(--text);
             word-break: break-word;
+        }
+        .admin-maintenance-card {
+            display: grid;
+            align-content: start;
+            gap: 10px;
+        }
+        .admin-maintenance-copy,
+        .admin-maintenance-status {
+            color: var(--muted);
+            font-size: 0.84rem;
+            line-height: 1.45;
+        }
+        .admin-maintenance-status.success {
+            color: var(--success-ink);
+            font-weight: 700;
+        }
+        .admin-maintenance-status.error {
+            color: #b91c1c;
+            font-weight: 700;
         }
         .chart-panel {
             background: var(--card);
