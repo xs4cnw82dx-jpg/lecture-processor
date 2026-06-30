@@ -70,3 +70,9 @@ def admin_update_user_unlimited(uid):
 def admin_credit_grants():
     runtime = get_runtime()
     return admin_api_service.admin_credit_grants(runtime, request)
+
+
+@admin_bp.route('/api/admin/maintenance/study-audio/cleanup-stale', methods=['POST'])
+def admin_cleanup_stale_study_audio():
+    runtime = get_runtime()
+    return admin_api_service.admin_cleanup_stale_study_audio(runtime, request)

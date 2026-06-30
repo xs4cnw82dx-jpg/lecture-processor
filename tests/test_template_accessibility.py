@@ -288,6 +288,17 @@ def test_admin_tabs_expose_tab_semantics_and_keyboard_navigation():
     assert "event.key === 'End'" in admin_js
 
 
+def test_admin_stale_audio_cleanup_control_is_accessible():
+    admin_template = Path('templates/admin.html').read_text(encoding='utf-8')
+    admin_js = Path('static/js/admin.js').read_text(encoding='utf-8')
+
+    assert 'id="admin-clean-stale-audio-btn" type="button"' in admin_template
+    assert 'id="admin-clean-stale-audio-status" role="status"' in admin_template
+    assert 'aria-live="polite" aria-atomic="true"' in admin_template
+    assert "'/api/admin/maintenance/study-audio/cleanup-stale'" in admin_js
+    assert 'setAdminMaintenanceStatus(message, failed > 0 ?' in admin_js
+
+
 def test_voice_note_filters_and_actions_have_programmatic_names():
     voice_template = Path('templates/voice_notes.html').read_text(encoding='utf-8')
     voice_js = Path('static/js/voice-notes.js').read_text(encoding='utf-8')

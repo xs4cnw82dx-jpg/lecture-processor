@@ -12,6 +12,7 @@ from lecture_processor.services import admin_support
 from lecture_processor.domains.admin import metrics as admin_metrics
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.shared import sanitize_excel_cell
+from lecture_processor.domains.study import audio as study_audio
 
 ADMIN_CREDIT_GRANT_MAX = 10000
 ADMIN_CREDIT_FIELDS_BY_CATEGORY = {
@@ -849,6 +850,71 @@ def admin_update_user_unlimited(app_ctx, request, uid):
         'user': _serialize_admin_credit_user(app_ctx, safe_uid, updated_user),
         'grant': _serialize_admin_credit_record(grant_id, record),
     })
+
+
+def admin_cleanup_stale_study_audio(app_ctx, request):
+    _decoded, error_response, status = _require_admin(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
+    if app_ctx.db is None:
+        return app_ctx.jsonify({'error': 'Database is unavailable'}), 503
+
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        payload = {}
+    limit = max(1, min(_to_non_negative_int(payload.get('limit'), default=250), 500))
+    dry_run = bool(payload.get('dry_run', False))
+    now_ts = app_ctx.time.time()
+
+    try:
+        docs = app_ctx.study_repo.list_study_packs_with_audio_flags(app_ctx.db, limit=limit)
+    except Exception as error:
+        app_ctx.logger.error('Admin stale study audio scan failed: %s', error)
+        return app_ctx.jsonify({'error': 'Could not scan study packs'}), 500
+
+    checked = 0
+    stale = 0
+    updated = 0
+    failed = 0
+    stale_pack_ids = []
+    for doc in docs:
+        checked += 1
+        pack = doc.to_dict() or {}
+        has_audio_flag = bool(pack.get('has_audio_playback', False) or pack.get('has_audio_sync', False))
+        if not has_audio_flag:
+            continue
+        audio_key = study_audio.get_audio_storage_key_from_pack(pack, runtime=app_ctx)
+        if audio_key and study_audio.audio_storage_key_has_file(audio_key, runtime=app_ctx):
+            continue
+        stale += 1
+        pack_id = str(getattr(doc, 'id', '') or pack.get('study_pack_id', '') or '')
+        if pack_id and len(stale_pack_ids) < 20:
+            stale_pack_ids.append(pack_id)
+        if dry_run:
+            continue
+        try:
+            doc.reference.update(
+                {
+                    'has_audio_playback': False,
+                    'has_audio_sync': False,
+                    'updated_at': now_ts,
+                }
+            )
+            updated += 1
+        except Exception as error:
+            failed += 1
+            app_ctx.logger.warning('Admin stale study audio cleanup failed for %s: %s', pack_id or '<unknown>', error)
+
+    return app_ctx.jsonify({
+        'ok': failed == 0,
+        'dry_run': dry_run,
+        'limit': limit,
+        'checked': checked,
+        'stale': stale,
+        'updated': updated,
+        'failed': failed,
+        'stale_pack_ids': stale_pack_ids,
+    }), 200 if failed == 0 else 207
 
 
 def admin_batch_jobs(app_ctx, request):

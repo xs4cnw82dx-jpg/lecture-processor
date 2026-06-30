@@ -235,7 +235,10 @@ def test_study_audio_playback_uses_short_lived_stream_url():
     study_audio_utils = _read('static/js/study-audio-utils.js')
 
     assert "filename='js/study-audio-utils.js'" in study_template
+    assert 'id="notes-audio-unavailable" role="status"' in study_template
     assert 'studyAudioUtils.fetchAudioStreamUrl(authenticatedFetch, selectedPack.study_pack_id)' in study_js
+    assert 'selectedPack.audio_unavailable_message = fallbackAudioUnavailableMessage();' in study_js
+    assert 'syncAudioUnavailableNotice();' in study_js
     assert "'/audio').then(function (response)" not in study_js
     assert "'/audio-token'" in study_audio_utils
     assert 'payload && payload.stream_url' in study_audio_utils

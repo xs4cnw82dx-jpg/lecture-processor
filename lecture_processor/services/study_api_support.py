@@ -156,7 +156,14 @@ def serialize_share_state(app_ctx, request, entity_type, entity_id, share_doc=No
 
 
 def serialize_public_pack(app_ctx, pack_id, pack, *, include_folder=True):
-    has_audio_playback = study_audio.pack_audio_file_exists(pack, runtime=app_ctx)
+    audio_storage_key = study_audio.get_audio_storage_key_from_pack(pack, runtime=app_ctx)
+    has_audio_playback = study_audio.audio_storage_key_has_file(audio_storage_key, runtime=app_ctx)
+    audio_unavailable_message = ''
+    if audio_storage_key and not has_audio_playback:
+        audio_unavailable_message = (
+            'Audio playback is unavailable because the generated audio file is no longer stored on this server. '
+            'On the free Render plan, this can happen after a restart.'
+        )
     has_audio_sync = (
         app_ctx.FEATURE_AUDIO_SECTION_SYNC
         and has_audio_playback
@@ -172,6 +179,8 @@ def serialize_public_pack(app_ctx, pack_id, pack, *, include_folder=True):
         'notes_audio_map': pack.get('notes_audio_map', []) if has_audio_sync else [],
         'has_audio_sync': has_audio_sync,
         'has_audio_playback': has_audio_playback,
+        'audio_unavailable_reason': 'missing_audio_file' if audio_unavailable_message else '',
+        'audio_unavailable_message': audio_unavailable_message,
         'flashcards': pack.get('flashcards', []),
         'test_questions': pack.get('test_questions', []),
         'interview_summary': pack.get('interview_summary'),

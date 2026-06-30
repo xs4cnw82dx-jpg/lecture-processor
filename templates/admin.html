@@ -113,6 +113,13 @@
                         <h2>Runtime Checks</h2>
                         <dl class="status-pairs" id="admin-runtime-checks"></dl>
                     </article>
+                    <article class="admin-status-card admin-maintenance-card">
+                        <h2>Maintenance</h2>
+                        <p class="admin-maintenance-copy">Clear stale study audio flags after temporary storage resets.</p>
+                        <button class="btn" id="admin-clean-stale-audio-btn" type="button">Clean stale audio flags</button>
+                        <div class="admin-maintenance-status" id="admin-clean-stale-audio-status" role="status"
+                            aria-live="polite" aria-atomic="true">Not run this session.</div>
+                    </article>
                 </div>
             </section>
 

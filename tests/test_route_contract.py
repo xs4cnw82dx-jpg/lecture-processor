@@ -10,6 +10,7 @@ EXPECTED_ROUTES = [
     ('POST', '/api/admin/cost-analysis/export', 'admin_api.admin_cost_analysis_export'),
     ('GET', '/api/admin/export', 'admin_api.admin_export'),
     ('GET', '/api/admin/model-pricing', 'admin_api.admin_model_pricing'),
+    ('POST', '/api/admin/maintenance/study-audio/cleanup-stale', 'admin_api.admin_cleanup_stale_study_audio'),
     ('GET', '/api/admin/overview', 'admin_api.admin_overview'),
     ('GET', '/api/admin/prompts', 'admin_api.admin_prompts'),
     ('POST', '/api/admin/users/<uid>/credits/grant', 'admin_api.admin_grant_user_credits'),

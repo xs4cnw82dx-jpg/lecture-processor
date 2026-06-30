@@ -96,6 +96,27 @@ def list_study_packs_by_uid(db, uid, limit):
     return list(query.stream())
 
 
+def list_study_packs_with_audio_flags(db, limit=250):
+    try:
+        safe_limit = int(limit or 250)
+    except Exception:
+        safe_limit = 250
+    safe_limit = max(1, min(safe_limit, 500))
+    docs = []
+    seen = set()
+    for field_name in ('has_audio_playback', 'has_audio_sync'):
+        query = apply_where(db.collection('study_packs'), field_name, '==', True).limit(safe_limit)
+        for doc in query.stream():
+            doc_id = str(getattr(doc, 'id', '') or '')
+            if doc_id in seen:
+                continue
+            seen.add(doc_id)
+            docs.append(doc)
+            if len(docs) >= safe_limit:
+                return docs
+    return docs
+
+
 def list_study_packs_by_uid_and_folder(db, uid, folder_id):
     return list(apply_where(apply_where(db.collection('study_packs'), 'uid', '==', uid), 'folder_id', '==', folder_id).stream())
 
