@@ -7,6 +7,7 @@ import zipfile
 
 from flask import after_this_request
 
+from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 
@@ -63,6 +64,7 @@ def download_lecture_media(app_ctx, request):
         runtime=app_ctx,
     )
     if not allowed:
+        analytics_events.log_rate_limit_hit('lecture_download', retry_after, runtime=app_ctx)
         return rate_limiter.build_rate_limited_response(
             'Too many lecture download attempts right now. Please wait and try again.',
             retry_after,

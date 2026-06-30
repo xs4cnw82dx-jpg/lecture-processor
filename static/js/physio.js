@@ -1386,8 +1386,10 @@
     sessionListEl.hidden = false;
     sessions.forEach(function (session) {
       var button = document.createElement('button');
+      var isActive = String(session.session_id || '') === state.selectedSessionId;
       button.type = 'button';
-      button.className = 'physio-session-item' + (String(session.session_id || '') === state.selectedSessionId ? ' active' : '');
+      button.className = 'physio-session-item' + (isActive ? ' active' : '');
+      if (isActive) button.setAttribute('aria-current', 'true');
       button.innerHTML = sessionSummaryHtml(session);
       button.addEventListener('click', function () {
         state.selectedSessionId = String(session.session_id || '');
@@ -1460,8 +1462,10 @@
     }
     state.cases.forEach(function (item) {
       var button = document.createElement('button');
+      var isActive = String(item.case_id || '') === state.selectedCaseId;
       button.type = 'button';
-      button.className = 'physio-case-item' + (String(item.case_id || '') === state.selectedCaseId ? ' active' : '');
+      button.className = 'physio-case-item' + (isActive ? ' active' : '');
+      if (isActive) button.setAttribute('aria-current', 'true');
       button.innerHTML = '<strong>' + escapeHtml(item.display_label || item.patient_name || 'Case') + '</strong>'
         + '<div>' + escapeHtml(item.primary_complaint || bodyRegionLabel(item.body_region || '')) + '</div>'
         + '<div class="physio-inline-note">' + escapeHtml(item.patient_name || '') + '</div>';

@@ -30,6 +30,7 @@
   var purchaseHistoryBtn = document.getElementById('shell-purchase-history-btn');
   var adminBtn = document.getElementById('shell-admin-btn');
   var exportDataBtn = document.getElementById('shell-export-data-btn');
+  var deleteAccountBtn = document.getElementById('shell-delete-account-btn');
   var signOutBtn = document.getElementById('signout-btn');
   var physioGroup = document.getElementById('shell-physio-group');
   var shellGroups = Array.prototype.slice.call(document.querySelectorAll('.app-shell-group[data-shell-group]')).map(function (group) {
@@ -49,6 +50,13 @@
   var exportConfirmBtn = document.getElementById('shell-export-confirm');
   var exportError = document.getElementById('shell-export-error');
   var exportCheckboxes = Array.prototype.slice.call(document.querySelectorAll('[data-export-key]'));
+  var deleteAccountOverlay = document.getElementById('shell-delete-account-overlay');
+  var deleteAccountCloseBtn = document.getElementById('shell-delete-account-close');
+  var deleteAccountCancelBtn = document.getElementById('shell-delete-account-cancel');
+  var deleteAccountConfirmBtn = document.getElementById('shell-delete-account-confirm');
+  var deleteAccountTextInput = document.getElementById('shell-delete-account-text');
+  var deleteAccountEmailInput = document.getElementById('shell-delete-account-email');
+  var deleteAccountError = document.getElementById('shell-delete-account-error');
   var shellToast = document.getElementById('shell-toast');
   var mobileSidebarQuery = window.matchMedia ? window.matchMedia('(max-width: 1024px)') : null;
   var sidebarControlsInitialized = false;
@@ -70,6 +78,7 @@
   var authStateResolved = !!(auth && auth.currentUser);
   var authObserverStartedAt = Date.now();
   var toastTimer = null;
+  var deleteAccountInFlight = false;
   var SIDEBAR_FOCUSABLE_SELECTOR = [
     'a[href]',
     'button:not([disabled])',
@@ -734,6 +743,52 @@
     }
   }
 
+  function setDeleteAccountError(message) {
+    if (!deleteAccountError) return;
+    var text = String(message || '').trim();
+    deleteAccountError.textContent = text;
+    deleteAccountError.hidden = !text;
+  }
+
+  function setDeleteAccountModalOpen(open) {
+    if (!deleteAccountOverlay) return;
+    if (open) {
+      var expectedEmail = String((auth.currentUser && auth.currentUser.email) || '').trim();
+      if (deleteAccountTextInput) deleteAccountTextInput.value = '';
+      if (deleteAccountEmailInput) deleteAccountEmailInput.value = expectedEmail;
+      setDeleteAccountError('');
+      if (deleteAccountConfirmBtn) {
+        deleteAccountConfirmBtn.disabled = false;
+        deleteAccountConfirmBtn.textContent = 'Delete permanently';
+      }
+      setAccountMenuOpen(false);
+      if (typeof uxUtils.openModalOverlay === 'function') {
+        uxUtils.openModalOverlay(deleteAccountOverlay, {
+          scopeRoot: shell,
+          initialFocus: deleteAccountTextInput || deleteAccountConfirmBtn,
+          onRequestClose: function () {
+            setDeleteAccountModalOpen(false);
+          }
+        });
+      } else {
+        deleteAccountOverlay.hidden = false;
+        deleteAccountOverlay.setAttribute('aria-hidden', 'false');
+        if (deleteAccountTextInput) deleteAccountTextInput.focus();
+      }
+      return;
+    }
+    if (typeof uxUtils.closeModalOverlay === 'function') {
+      uxUtils.closeModalOverlay(deleteAccountOverlay, {
+        returnFocus: deleteAccountBtn
+      });
+    } else {
+      deleteAccountOverlay.hidden = true;
+      deleteAccountOverlay.setAttribute('aria-hidden', 'true');
+      if (deleteAccountBtn) deleteAccountBtn.focus();
+    }
+    setDeleteAccountError('');
+  }
+
   function readExportSelection() {
     var include = {};
     exportCheckboxes.forEach(function (item) {
@@ -818,6 +873,65 @@
       showToast('Could not export data right now.', 'error');
     } finally {
       if (exportConfirmBtn) exportConfirmBtn.disabled = false;
+    }
+  }
+
+  async function runAccountDeletion() {
+    if (!auth.currentUser || deleteAccountInFlight) return;
+    var expectedEmail = String(auth.currentUser.email || '').trim();
+    if (!expectedEmail) {
+      setDeleteAccountError('Could not verify account email. Please sign in again.');
+      return;
+    }
+    var confirmText = String((deleteAccountTextInput && deleteAccountTextInput.value) || '').trim().toUpperCase();
+    if (confirmText !== 'DELETE MY ACCOUNT') {
+      setDeleteAccountError('Type DELETE MY ACCOUNT exactly to continue.');
+      return;
+    }
+    var confirmEmail = String((deleteAccountEmailInput && deleteAccountEmailInput.value) || '').trim().toLowerCase();
+    if (confirmEmail !== expectedEmail.toLowerCase()) {
+      setDeleteAccountError('Email does not match your signed-in account.');
+      return;
+    }
+
+    deleteAccountInFlight = true;
+    if (deleteAccountConfirmBtn) {
+      deleteAccountConfirmBtn.disabled = true;
+      deleteAccountConfirmBtn.textContent = 'Deleting...';
+    }
+    try {
+      var response = await authFetch('/api/account/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          confirm_text: 'DELETE MY ACCOUNT',
+          confirm_email: confirmEmail
+        })
+      });
+      var payload = await response.json().catch(function () { return {}; });
+      if (!response.ok) throw new Error(payload.error || 'Could not delete account data.');
+
+      var deletedUser = auth.currentUser;
+      setDeleteAccountModalOpen(false);
+      showToast('Account deleted. Signing out...', 'success');
+      try {
+        await fetch('/api/session/logout', { method: 'POST', credentials: 'include' });
+      } catch (_) {}
+      clearUserScopedCaches(deletedUser || lastSignedInUid);
+      clearLegacyAccountCaches();
+      try {
+        await auth.signOut();
+      } catch (_) {}
+      await clearVoiceNotesLocalData();
+      window.location.href = '/';
+    } catch (error) {
+      setDeleteAccountError(error.message || 'Could not delete account data.');
+    } finally {
+      deleteAccountInFlight = false;
+      if (deleteAccountConfirmBtn) {
+        deleteAccountConfirmBtn.disabled = false;
+        deleteAccountConfirmBtn.textContent = 'Delete permanently';
+      }
     }
   }
 
@@ -954,6 +1068,39 @@
     });
   }
 
+  if (deleteAccountBtn) {
+    deleteAccountBtn.addEventListener('click', function () {
+      if (!auth.currentUser) {
+        setAccountMenuOpen(false);
+        showToast('Please sign in to delete your account.', 'error');
+        return;
+      }
+      setDeleteAccountModalOpen(true);
+    });
+  }
+
+  if (deleteAccountConfirmBtn) {
+    deleteAccountConfirmBtn.addEventListener('click', runAccountDeletion);
+  }
+
+  if (deleteAccountCloseBtn) {
+    deleteAccountCloseBtn.addEventListener('click', function () {
+      setDeleteAccountModalOpen(false);
+    });
+  }
+
+  if (deleteAccountCancelBtn) {
+    deleteAccountCancelBtn.addEventListener('click', function () {
+      setDeleteAccountModalOpen(false);
+    });
+  }
+
+  if (deleteAccountOverlay) {
+    deleteAccountOverlay.addEventListener('click', function (event) {
+      if (event.target === deleteAccountOverlay && !deleteAccountInFlight) setDeleteAccountModalOpen(false);
+    });
+  }
+
   if (exportConfirmBtn) {
     exportConfirmBtn.addEventListener('click', runBundleExport);
   }
@@ -1001,6 +1148,10 @@
       if (exportOverlay && !exportOverlay.hidden) {
         event.preventDefault();
         setExportModalOpen(false);
+      }
+      if (deleteAccountOverlay && !deleteAccountOverlay.hidden && !deleteAccountInFlight) {
+        event.preventDefault();
+        setDeleteAccountModalOpen(false);
       }
       setAccountMenuOpen(false);
       if (creditsLink) creditsLink.classList.remove('is-open');

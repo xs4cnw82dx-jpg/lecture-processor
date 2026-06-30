@@ -593,6 +593,30 @@ select {
   height: 16px;
 }
 
+.shell-modal-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  color: var(--shell-text);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.shell-modal-field input {
+  width: 100%;
+  border: 1px solid var(--shell-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--shell-text);
+  background: #fff;
+  font-size: 0.95rem;
+}
+
+.shell-modal-field input:focus {
+  outline: 2px solid rgba(37, 99, 235, 0.22);
+  border-color: var(--shell-accent);
+}
+
 .shell-modal-actions {
   margin-top: 16px;
   display: flex;
@@ -1026,6 +1050,15 @@ body {
 .app-shell-credits:hover,
 .shell-modal-primary:hover {
   background: var(--shell-accent-hover);
+}
+
+.shell-modal-primary.danger {
+  background: #b91c1c;
+  box-shadow: 0 10px 20px rgba(185, 28, 28, 0.18);
+}
+
+.shell-modal-primary.danger:hover {
+  background: #991b1b;
 }
 
 .app-shell-page {

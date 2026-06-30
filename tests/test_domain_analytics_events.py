@@ -105,6 +105,30 @@ def test_analytics_payloads_include_ttl_fields():
             time_module=_Time,
             runtime=_Runtime(),
         ) is True
+        for limit_name in (
+            "physio_transcription",
+            "voice_notes",
+            "audio_import",
+            "lecture_download",
+            "tools_transcribe",
+            "verify_email",
+        ):
+            assert analytics_service.log_rate_limit_hit(
+                limit_name,
+                4,
+                db=object(),
+                logger=None,
+                time_module=_Time,
+                runtime=_Runtime(),
+            ) is True
+        assert analytics_service.log_rate_limit_hit(
+            "not_a_real_limit",
+            4,
+            db=object(),
+            logger=None,
+            time_module=_Time,
+            runtime=_Runtime(),
+        ) is False
     finally:
         analytics_service.analytics_repo.add_event = original_add_event
         analytics_service.analytics_repo.add_rate_limit_log = original_add_rate_limit
@@ -115,3 +139,12 @@ def test_analytics_payloads_include_ttl_fields():
     assert added_events[0]["expires_at_ts"].timestamp() == added_events[0]["expires_at"]
     assert added_limits[0]["expires_at"] == 100.0 + 24 * 60 * 60
     assert added_limits[0]["expires_at_ts"].timestamp() == added_limits[0]["expires_at"]
+    assert [payload["limit_name"] for payload in added_limits] == [
+        "upload",
+        "physio_transcription",
+        "voice_notes",
+        "audio_import",
+        "lecture_download",
+        "tools_transcribe",
+        "verify_email",
+    ]

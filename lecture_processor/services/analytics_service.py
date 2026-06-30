@@ -105,7 +105,7 @@ def log_analytics_event(
 
 def log_rate_limit_hit(limit_name, retry_after=0, *, db, logger, time_module, runtime=None):
     safe_name = str(limit_name or '').strip().lower()
-    if safe_name not in {'upload', 'checkout', 'analytics', 'tools'}:
+    if safe_name not in admin_rollups.KNOWN_RATE_LIMITS:
         return False
     try:
         retry_after_seconds = int(float(retry_after))
