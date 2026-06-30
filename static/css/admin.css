@@ -889,6 +889,23 @@
         .status.queued, .status.processing { color: #1d4ed8; background: #dbeafe; }
         .status.partial { color: #92400e; background: #fef3c7; }
         .empty { color: var(--muted); font-size: 0.9rem; padding: 6px 0; }
+        .admin-table-empty-cell {
+            padding: 14px 6px;
+        }
+        .admin-table-empty-state {
+            display: grid;
+            gap: 4px;
+            max-width: 420px;
+            color: var(--muted);
+            line-height: 1.35;
+        }
+        .admin-table-empty-state strong {
+            color: var(--text);
+            font-size: 0.92rem;
+        }
+        .admin-table-empty-state span {
+            font-size: 0.84rem;
+        }
         .admin-toast {
             position: fixed;
             left: 50%;
@@ -977,6 +994,13 @@
                 padding: 4px 0;
                 border-bottom: 0;
                 word-break: break-word;
+            }
+            .admin-credit-grants-table td.admin-table-empty-cell {
+                display: block;
+                padding: 4px 0;
+            }
+            .admin-credit-grants-table td.admin-table-empty-cell::before {
+                content: none;
             }
             .admin-credit-grants-table td::before {
                 color: var(--muted);

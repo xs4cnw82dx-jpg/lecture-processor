@@ -14,6 +14,7 @@
 </head>
 <body>
   {% set shell_title = 'Shared Study' %}
+  {% set shared_audio_note = 'Generated audio is not included in shared links. Ask the owner for a downloaded audio copy if you need it.' %}
   {% include '_app_shell.html' %}
   <main class="app-shell-page shared-study-page">
     <div class="container">
@@ -41,7 +42,7 @@
           <div class="shared-pack-pill" id="shared-pack-mode">Study Pack</div>
           <div class="shared-pack-meta" id="shared-pack-meta"></div>
         </div>
-        <div class="shared-audio-note" role="note">Shared links include notes, flashcards, and practice tests. Generated audio is not included, so ask the owner for a downloaded audio copy if you need it.</div>
+        <div class="shared-audio-note" role="note">{{ shared_audio_note }}</div>
         <div class="shared-pack-sections">
           <section class="panel">
             <div class="panel-head"><span class="panel-title">Notes</span></div>
@@ -75,13 +76,16 @@
           <section class="panel">
             <div class="panel-head"><span class="panel-title">Pack Preview</span></div>
             <div class="panel-body">
-              <div class="shared-folder-empty" id="shared-folder-empty">Select a pack to preview its study content.</div>
+              <div class="shared-folder-empty" id="shared-folder-empty" role="status" aria-live="polite">
+                <div class="shared-empty-title">Select a pack</div>
+                <div class="shared-empty-copy">Choose a shared pack from the list to preview its notes, flashcards, and practice questions.</div>
+              </div>
               <div id="shared-folder-pack-preview" hidden>
                 <div class="shared-pack-summary">
                   <div class="shared-pack-pill" id="shared-folder-pack-mode">Study Pack</div>
                   <div class="shared-pack-meta" id="shared-folder-pack-meta"></div>
                 </div>
-                <div class="shared-audio-note" role="note">Generated audio is not included in shared links. Ask the owner for a downloaded audio copy if you need it.</div>
+                <div class="shared-audio-note" role="note">{{ shared_audio_note }}</div>
                 <div class="shared-pack-sections">
                   <section class="panel shared-inner-panel">
                     <div class="panel-head"><span class="panel-title">Notes</span></div>

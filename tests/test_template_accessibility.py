@@ -225,6 +225,8 @@ def test_audio_retention_warnings_and_download_controls_are_present():
     assert 'Render' not in study_dialogs
     assert 'share-audio-note' in study_dialogs
     assert 'Generated audio is not included' in shared_study_template
+    assert shared_study_template.count('shared_audio_note') >= 2
+    assert 'id="shared-folder-empty" role="status" aria-live="polite"' in shared_study_template
 
     assert 'Audio files are not included in this export.' in app_shell_template
     assert 'Download any audio you need first.' in app_shell_template
@@ -360,6 +362,19 @@ def test_admin_stale_audio_cleanup_control_is_accessible():
     assert 'aria-live="polite" aria-atomic="true"' in admin_template
     assert "'/api/admin/maintenance/study-audio/cleanup-stale'" in admin_js
     assert 'setAdminMaintenanceStatus(message, failed > 0 ?' in admin_js
+
+
+def test_admin_tables_use_clear_empty_states():
+    admin_js = Path('static/js/admin.js').read_text(encoding='utf-8')
+    admin_css = Path('static/css/admin.css').read_text(encoding='utf-8')
+
+    assert 'function appendAdminEmptyTableRow(tbody, colspan, title, copy)' in admin_js
+    assert "wrapper.setAttribute('role', 'status');" in admin_js
+    assert 'No batch jobs match these filters' in admin_js
+    assert 'No admin grants found' in admin_js
+    assert 'No jobs match these filters' in admin_js
+    assert '.admin-table-empty-state' in admin_css
+    assert '.admin-credit-grants-table td.admin-table-empty-cell::before' in admin_css
 
 
 def test_voice_note_filters_and_actions_have_programmatic_names():
