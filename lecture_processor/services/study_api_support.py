@@ -10,6 +10,13 @@ from lecture_processor.domains.study import progress as study_progress
 from lecture_processor.services import access_service
 
 
+def build_audio_unavailable_message():
+    # Developer note: generated audio is intentionally stored on app-local temporary disk
+    # so the deployed app can stay on Render's free plan. Keep that infrastructure detail
+    # out of user-facing copy; users only need to know the audio is temporary.
+    return 'Audio playback is unavailable because this temporary audio file has been deleted.'
+
+
 def pack_item_count(pack, count_key, items_key):
     if count_key in pack and pack.get(count_key) is not None:
         try:
@@ -160,10 +167,7 @@ def serialize_public_pack(app_ctx, pack_id, pack, *, include_folder=True):
     has_audio_playback = study_audio.audio_storage_key_has_file(audio_storage_key, runtime=app_ctx)
     audio_unavailable_message = ''
     if audio_storage_key and not has_audio_playback:
-        audio_unavailable_message = (
-            'Audio playback is unavailable because the generated audio file is no longer stored on this server. '
-            'On the free Render plan, this can happen after a restart.'
-        )
+        audio_unavailable_message = build_audio_unavailable_message()
     has_audio_sync = (
         app_ctx.FEATURE_AUDIO_SECTION_SYNC
         and has_audio_playback

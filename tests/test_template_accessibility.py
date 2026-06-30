@@ -188,12 +188,17 @@ def test_audio_retention_warnings_and_download_controls_are_present():
     voice_js = Path('static/js/voice-notes.js').read_text(encoding='utf-8')
 
     assert 'id="audio-storage-note"' in index_template
-    assert 'free Render plan' in index_template
+    assert 'Generated playback audio is temporary and can be deleted.' in index_template
+    assert 'Render' not in index_template
     assert '/api/import-audio-url/download' in index_js
     assert 'id="audio-download"' in index_template
 
     assert 'batch-audio-retention-note' in batch_template
+    assert 'generated playback audio are temporary and can be deleted' in batch_template
+    assert 'Render' not in batch_template
     assert 'batch-dashboard-retention-note' in batch_dashboard_template
+    assert 'temporary audio is deleted' in batch_dashboard_template
+    assert 'free-plan' not in batch_dashboard_template
     assert 'data-download-file="audio"' in batch_js
     assert '/api/import-audio-url/download' in batch_js
 
@@ -207,10 +212,17 @@ def test_audio_retention_warnings_and_download_controls_are_present():
 
     assert 'id="voice-download-audio-btn"' in voice_template
     assert 'voice-audio-retention-note' in voice_template
+    assert 'id="voice-audio-status" role="status" aria-live="polite" hidden' in voice_template
+    assert 'server playback copies are temporary and can be deleted' in voice_template
+    assert 'Render' not in voice_template
+    assert 'setAudioDownloadReady(false);' in voice_js
+    assert 'No downloadable audio copy is available for this note.' in voice_js
     assert '/api/study-packs/\' + encodeURIComponent(note.study_pack_id) + \'/audio?download=1' in voice_js
 
     assert 'id="audio-download-btn"' in study_dialogs
     assert 'audio-retention-note' in study_dialogs
+    assert 'Temporary audio. Download a copy.' in study_dialogs
+    assert 'Render' not in study_dialogs
     assert 'share-audio-note' in study_dialogs
     assert 'Generated audio is not included' in shared_study_template
 

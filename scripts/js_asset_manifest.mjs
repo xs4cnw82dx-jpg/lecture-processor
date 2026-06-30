@@ -30,6 +30,7 @@ export const intentionallyUnminifiedScripts = [
   'static/js/index-progress-utils.js',
   'static/js/lecture-audio-import-utils.js',
   'static/js/lecture-downloader.js',
+  'static/js/marked-lite.js',
   'static/js/markdown-utils.js',
   'static/js/plan.js',
   'static/js/runtime-job-utils.js',

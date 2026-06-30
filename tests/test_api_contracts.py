@@ -650,7 +650,7 @@ def test_study_pack_get_hides_stale_audio_flags_when_file_missing(client, monkey
     assert payload["has_audio_sync"] is False
     assert payload["notes_audio_map"] == []
     assert payload["audio_unavailable_reason"] == "missing_audio_file"
-    assert "free Render plan" in payload["audio_unavailable_message"]
+    assert payload["audio_unavailable_message"] == "Audio playback is unavailable because this temporary audio file has been deleted."
 
 
 def test_study_pack_update_clears_stale_audio_flags_when_file_missing(client, monkeypatch, tmp_path):

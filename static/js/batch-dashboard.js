@@ -168,14 +168,73 @@
     return '<span class="batch-status-pill ' + classSuffix + '">' + escapeHtml(safe) + '</span>';
   }
 
-  function emptyRow(colspan, text) {
+  function emptyStateCopy(isActiveTable) {
+    return isActiveTable
+      ? {
+          title: 'No active batches',
+          detail: 'Running batches will appear here while they process.',
+          action: 'Start a batch'
+        }
+      : {
+          title: 'No recent batches',
+          detail: 'Completed and failed batches will appear here after you run one.',
+          action: 'Start a batch'
+        };
+  }
+
+  function emptyStateHtml(isActiveTable) {
+    var copy = emptyStateCopy(isActiveTable);
+    return '<div class="batch-empty-state">' +
+      '<strong>' + escapeHtml(copy.title) + '</strong>' +
+      '<span>' + escapeHtml(copy.detail) + '</span>' +
+      '<a class="btn-link" href="/batch_mode">' + escapeHtml(copy.action) + '</a>' +
+      '</div>';
+  }
+
+  function errorStateHtml(message) {
+    return '<div class="batch-empty-state error">' +
+      '<strong>Could not load batches</strong>' +
+      '<span>' + escapeHtml(message || 'Check your connection, then refresh this page.') + '</span>' +
+      '<button type="button" class="btn-link" data-action="retry-load">Retry</button>' +
+      '</div>';
+  }
+
+  function emptyRow(colspan, isActiveTable) {
     var tr = document.createElement('tr');
     var td = document.createElement('td');
     td.colSpan = colspan;
     td.className = 'table-empty';
-    td.textContent = text;
+    td.innerHTML = emptyStateHtml(isActiveTable);
     tr.appendChild(td);
     return tr;
+  }
+
+  function errorRow(colspan, message) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td');
+    td.colSpan = colspan;
+    td.className = 'table-empty';
+    td.innerHTML = errorStateHtml(message);
+    tr.appendChild(td);
+    return tr;
+  }
+
+  function renderLoadError(message) {
+    var safeMessage = message || 'Check your connection, then try again.';
+    [activeBody, recentBody].forEach(function (body) {
+      if (!body) return;
+      body.innerHTML = '';
+      body.appendChild(errorRow(8, safeMessage));
+    });
+    [activeCards, recentCards].forEach(function (container) {
+      if (!container) return;
+      container.innerHTML = '';
+      var empty = document.createElement('div');
+      empty.className = 'batch-card-empty';
+      empty.innerHTML = errorStateHtml(safeMessage);
+      container.appendChild(empty);
+    });
+    attachTableActions();
   }
 
   function setSignedInView(signedIn) {
@@ -194,7 +253,7 @@
     if (!body) return;
     body.innerHTML = '';
     if (!rows.length) {
-      body.appendChild(emptyRow(8, isActiveTable ? 'No active batches.' : 'No recent batches.'));
+      body.appendChild(emptyRow(8, isActiveTable));
       return;
     }
 
@@ -248,7 +307,7 @@
     if (!rows.length) {
       var empty = document.createElement('div');
       empty.className = 'batch-card-empty';
-      empty.textContent = isActiveTable ? 'No active batches.' : 'No recent batches.';
+      empty.innerHTML = emptyStateHtml(isActiveTable);
       container.appendChild(empty);
       return;
     }
@@ -306,6 +365,11 @@
       button.addEventListener('click', function () {
         var href = String(button.getAttribute('data-href') || '').trim();
         openBatchActionHref(href, button);
+      });
+    });
+    Array.prototype.slice.call(document.querySelectorAll('[data-action="retry-load"]')).forEach(function (button) {
+      button.addEventListener('click', function () {
+        loadBatches(true);
       });
     });
   }
@@ -532,7 +596,9 @@
       })
       .catch(function (error) {
         console.error('Could not load batch dashboard:', error);
-        showShellToast(String((error && error.message) || 'Could not load batch dashboard.'), 'error');
+        var message = String((error && error.message) || 'Could not load batch dashboard.');
+        renderLoadError(message);
+        showShellToast(message, 'error');
       });
   }
 
