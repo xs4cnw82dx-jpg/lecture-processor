@@ -162,8 +162,25 @@
   color: var(--gray-600);
 }
 
-.shared-empty {
+.shared-empty-card {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border: 1px dashed rgba(148, 163, 184, 0.45);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.82);
+}
+
+.shared-empty-title {
+  color: var(--gray-800);
+  font-size: 0.94rem;
+  font-weight: 800;
+}
+
+.shared-empty-copy {
   color: var(--gray-500);
+  font-size: 0.88rem;
+  line-height: 1.45;
 }
 
 .shared-folder-grid {
@@ -174,13 +191,28 @@
   color: var(--gray-500);
 }
 
+.shared-folder-empty .shared-empty-card {
+  min-height: 160px;
+  align-content: center;
+}
+
 @media (max-width: 900px) {
   .shared-study-hero {
     flex-direction: column;
   }
 
+  .shared-study-library-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
   .shared-folder-grid {
     display: grid;
     gap: 18px;
+  }
+
+  .shared-pack-summary {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

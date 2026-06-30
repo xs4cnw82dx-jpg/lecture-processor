@@ -36,3 +36,15 @@ def test_study_legacy_highlight_html_uses_shared_sanitizer():
     assert "function setNotesHtml(html)" in study_js
     assert "setSafeInnerHtml(notesView, html);" in study_js
     assert "notesView.innerHTML = String(html || '');" not in study_js
+
+
+def test_shared_study_has_clear_empty_states():
+    shared_js = Path('static/js/shared-study.js').read_text(encoding='utf-8')
+    shared_css = Path('static/css/shared-study.css').read_text(encoding='utf-8')
+
+    assert 'function emptyStateHtml(title, copy)' in shared_js
+    assert 'No packs in this shared folder' in shared_js
+    assert 'Nothing to preview yet' in shared_js
+    assert 'No flashcards shared' in shared_js
+    assert '.shared-empty-card' in shared_css
+    assert '.shared-empty-title' in shared_css

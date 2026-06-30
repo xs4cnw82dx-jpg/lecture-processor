@@ -108,11 +108,22 @@
     return cards + ' card' + (cards === 1 ? '' : 's') + ' · ' + questions + ' question' + (questions === 1 ? '' : 's');
   }
 
+  function emptyStateHtml(title, copy) {
+    return ''
+      + '<div class="shared-empty-card">'
+      + '<div class="shared-empty-title">' + escapeHtml(title || 'Nothing here yet') + '</div>'
+      + '<div class="shared-empty-copy">' + escapeHtml(copy || 'There is no shared content to show here.') + '</div>'
+      + '</div>';
+  }
+
   function renderFlashcards(target, cards) {
     if (!target) return;
     const items = Array.isArray(cards) ? cards : [];
     if (!items.length) {
-      target.innerHTML = '<div class="shared-empty">No flashcards in this shared pack.</div>';
+      target.innerHTML = emptyStateHtml(
+        'No flashcards shared',
+        'This pack can still include notes or practice questions.'
+      );
       return;
     }
     target.innerHTML = items.map(function (card) {
@@ -130,7 +141,10 @@
     if (!target) return;
     const items = Array.isArray(questions) ? questions : [];
     if (!items.length) {
-      target.innerHTML = '<div class="shared-empty">No practice questions in this shared pack.</div>';
+      target.innerHTML = emptyStateHtml(
+        'No practice questions shared',
+        'This pack can still include notes or flashcards.'
+      );
       return;
     }
     target.innerHTML = items.map(function (question, index) {
@@ -160,7 +174,10 @@
         const fragments = [pack.interview_combined, pack.interview_summary, pack.interview_sections].filter(Boolean);
         resolvedTargets.notesEl.innerHTML = notesToHtml(fragments.join('\n\n'));
       } else {
-        resolvedTargets.notesEl.innerHTML = '<div class="shared-empty">No notes in this shared pack.</div>';
+        resolvedTargets.notesEl.innerHTML = emptyStateHtml(
+          'No notes shared',
+          'This shared pack does not include notes yet.'
+        );
       }
     }
     renderFlashcards(resolvedTargets.flashcardsEl, pack.flashcards || []);
@@ -201,6 +218,21 @@
     if (folderShell) folderShell.hidden = false;
     if (!folderPackListEl) return;
     folderPackListEl.innerHTML = '';
+    if (!packs.length) {
+      folderPackListEl.innerHTML = emptyStateHtml(
+        'No packs in this shared folder',
+        'Ask the owner to add packs or share a different folder.'
+      );
+      if (folderEmptyEl) {
+        folderEmptyEl.hidden = false;
+        folderEmptyEl.innerHTML = emptyStateHtml(
+          'Nothing to preview yet',
+          'This shared folder is available, but it does not contain any visible study packs.'
+        );
+      }
+      if (folderPackPreviewEl) folderPackPreviewEl.hidden = true;
+      return;
+    }
     packs.forEach(function (pack) {
       const item = document.createElement('div');
       item.className = 'item';

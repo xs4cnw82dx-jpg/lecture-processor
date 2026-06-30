@@ -222,13 +222,12 @@ function renderAdminBatchJobs(rows) {
     adminBatchJobsBody.innerHTML = '';
     const batches = Array.isArray(rows) ? rows : [];
     if (!batches.length) {
-        const tr = document.createElement('tr');
-        const td = document.createElement('td');
-        td.colSpan = 9;
-        td.className = 'empty';
-        td.textContent = 'No batch jobs found for this filter.';
-        tr.appendChild(td);
-        adminBatchJobsBody.appendChild(tr);
+        appendAdminEmptyTableRow(
+            adminBatchJobsBody,
+            9,
+            'No batch jobs match these filters',
+            'Try a wider status or mode filter to see more batch activity.'
+        );
         return;
     }
     batches.forEach((batch) => {
@@ -403,13 +402,12 @@ function renderAdminCreditGrants(rows) {
     adminCreditGrantsBody.innerHTML = '';
     const grants = Array.isArray(rows) ? rows : [];
     if (!grants.length) {
-        const tr = document.createElement('tr');
-        const td = document.createElement('td');
-        td.colSpan = 6;
-        td.className = 'empty';
-        td.textContent = 'No admin grants found.';
-        tr.appendChild(td);
-        adminCreditGrantsBody.appendChild(tr);
+        appendAdminEmptyTableRow(
+            adminCreditGrantsBody,
+            6,
+            'No admin grants found',
+            'Recent credit grants and unlimited-access changes will appear here.'
+        );
         return;
     }
     grants.forEach((grant) => {
@@ -627,17 +625,34 @@ function clearChildren(node) {
     while (node.firstChild) node.removeChild(node.firstChild);
 }
 
+function appendAdminEmptyTableRow(tbody, colspan, title, copy) {
+    if (!tbody) return;
+    const tr = document.createElement('tr');
+    tr.className = 'admin-empty-row';
+    const td = document.createElement('td');
+    td.colSpan = colspan;
+    td.className = 'empty admin-table-empty-cell';
+    const wrapper = document.createElement('div');
+    wrapper.className = 'admin-table-empty-state';
+    wrapper.setAttribute('role', 'status');
+    wrapper.setAttribute('aria-live', 'polite');
+    wrapper.setAttribute('aria-atomic', 'true');
+    const titleNode = document.createElement('strong');
+    titleNode.textContent = String(title || 'No results found');
+    const copyNode = document.createElement('span');
+    copyNode.textContent = String(copy || 'Change the filters and try again.');
+    wrapper.appendChild(titleNode);
+    wrapper.appendChild(copyNode);
+    td.appendChild(wrapper);
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+}
+
 function renderRows(tbodyId, rows, emptyText, colspan = 8) {
     const tbody = document.getElementById(tbodyId);
     clearChildren(tbody);
     if (!rows.length) {
-        const tr = document.createElement('tr');
-        const td = document.createElement('td');
-        td.colSpan = colspan;
-        td.className = 'empty';
-        td.textContent = emptyText;
-        tr.appendChild(td);
-        tbody.appendChild(tr);
+        appendAdminEmptyTableRow(tbody, colspan, emptyText, 'Try another time window or export the current view later.');
         return;
     }
     rows.forEach((row) => {
@@ -2025,13 +2040,12 @@ function renderActualCostJobs() {
     const payload = analyzerPayload || {};
     const rows = Array.isArray(payload.jobs) ? payload.jobs : [];
     if (!rows.length) {
-        const tr = document.createElement('tr');
-        const td = document.createElement('td');
-        td.colSpan = 11;
-        td.className = 'empty';
-        td.textContent = 'No jobs found for the selected filters.';
-        tr.appendChild(td);
-        analyzerJobsBody.appendChild(tr);
+        appendAdminEmptyTableRow(
+            analyzerJobsBody,
+            11,
+            'No jobs match these filters',
+            'Try widening the period, mode, status, or user filter.'
+        );
         recomputeAnalyzerSummary();
         return;
     }
