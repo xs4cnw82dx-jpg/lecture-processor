@@ -39,6 +39,17 @@
   grid-template-columns: repeat(3, minmax(0, 220px));
 }
 
+.batch-dashboard-retention-note {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 12px;
+  background: rgba(239, 246, 255, 0.92);
+  color: #1e3a8a;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
 .batch-dashboard-filters label {
   display: grid;
   gap: 6px;

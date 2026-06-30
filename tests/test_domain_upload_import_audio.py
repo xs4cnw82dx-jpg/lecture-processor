@@ -66,6 +66,36 @@ def test_audio_import_token_lifecycle(app, tmp_path, monkeypatch):
     assert not audio_file.exists()
 
 
+def test_imported_audio_token_can_be_downloaded_without_consuming(client, app, tmp_path, monkeypatch):
+    runtime = get_runtime(app)
+    monkeypatch.setattr(runtime, "VIDEO_IMPORT_MAX_URL_LENGTH", 4096)
+    monkeypatch.setattr(runtime, "AUDIO_IMPORT_TOKEN_TTL_SECONDS", 600)
+    runtime.AUDIO_IMPORT_TOKENS.clear()
+
+    audio_file = Path(tmp_path / "imported.mp3")
+    audio_file.write_bytes(b"ID3\x03\x00\x00imported-audio")
+    token = import_audio.register_audio_import_token(
+        "u-download",
+        str(audio_file),
+        original_name="Lecture Imported.mp3",
+        runtime=runtime,
+    )
+    monkeypatch.setattr(runtime.core, "verify_firebase_token", lambda _request: {"uid": "u-download", "email": "user@example.com"})
+
+    response = client.post(
+        "/api/import-audio-url/download",
+        json={"audio_import_token": token, "file_name": "backup.mp3"},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 200
+    assert response.data == audio_file.read_bytes()
+    assert "attachment" in response.headers.get("Content-Disposition", "")
+    assert "backup.mp3" in response.headers.get("Content-Disposition", "")
+    assert token in runtime.AUDIO_IMPORT_TOKENS
+    assert audio_file.exists()
+
+
 def test_release_audio_import_tokens_for_uid_removes_only_matching_user_files(app, tmp_path, monkeypatch):
     runtime = get_runtime(app)
     monkeypatch.setattr(runtime, "VIDEO_IMPORT_MAX_URL_LENGTH", 4096)

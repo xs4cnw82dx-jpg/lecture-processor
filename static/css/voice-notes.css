@@ -783,6 +783,17 @@ body {
   margin: 14px;
 }
 
+.voice-audio-retention-note {
+  margin: -4px 14px 14px;
+  padding: 10px 11px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
 .voice-tabs {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

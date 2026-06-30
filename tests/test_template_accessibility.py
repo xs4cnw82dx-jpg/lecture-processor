@@ -169,6 +169,57 @@ def test_physio_audio_upload_input_is_not_sequentially_focusable():
     assert 'tabindex="-1" aria-hidden="true"' in physio_template
 
 
+def test_audio_retention_warnings_and_download_controls_are_present():
+    index_template = Path('templates/index.html').read_text(encoding='utf-8')
+    batch_template = Path('templates/batch_mode.html').read_text(encoding='utf-8')
+    batch_dashboard_template = Path('templates/batch_dashboard.html').read_text(encoding='utf-8')
+    transcriber_template = Path('templates/general_transcriber.html').read_text(encoding='utf-8')
+    physio_template = Path('templates/physio.html').read_text(encoding='utf-8')
+    voice_template = Path('templates/voice_notes.html').read_text(encoding='utf-8')
+    study_dialogs = Path('templates/_study_dialogs.html').read_text(encoding='utf-8')
+    shared_study_template = Path('templates/shared_study.html').read_text(encoding='utf-8')
+    app_shell_template = Path('templates/_app_shell.html').read_text(encoding='utf-8')
+    lecture_downloader_template = Path('templates/lecture_downloader.html').read_text(encoding='utf-8')
+    video_overlay_template = Path('templates/video_overlay_builder.html').read_text(encoding='utf-8')
+    index_js = Path('static/js/index-app.js').read_text(encoding='utf-8')
+    batch_js = Path('static/js/batch-mode.js').read_text(encoding='utf-8')
+    transcriber_js = Path('static/js/general-transcriber.js').read_text(encoding='utf-8')
+    physio_js = Path('static/js/physio.js').read_text(encoding='utf-8')
+    voice_js = Path('static/js/voice-notes.js').read_text(encoding='utf-8')
+
+    assert 'id="audio-storage-note"' in index_template
+    assert 'free Render plan' in index_template
+    assert '/api/import-audio-url/download' in index_js
+    assert 'id="audio-download"' in index_template
+
+    assert 'batch-audio-retention-note' in batch_template
+    assert 'batch-dashboard-retention-note' in batch_dashboard_template
+    assert 'data-download-file="audio"' in batch_js
+    assert '/api/import-audio-url/download' in batch_js
+
+    assert 'id="transcriber-audio-retention-note"' in transcriber_template
+    assert 'id="transcriber-file-download"' in transcriber_template
+    assert 'saveBlobAsFile(selectedFile' in transcriber_js
+
+    assert 'id="physio-audio-download-btn"' in physio_template
+    assert 'raw audio is removed after transcription' in physio_template
+    assert 'downloadSelectedAudio' in physio_js
+
+    assert 'id="voice-download-audio-btn"' in voice_template
+    assert 'voice-audio-retention-note' in voice_template
+    assert '/api/study-packs/\' + encodeURIComponent(note.study_pack_id) + \'/audio?download=1' in voice_js
+
+    assert 'id="audio-download-btn"' in study_dialogs
+    assert 'audio-retention-note' in study_dialogs
+    assert 'share-audio-note' in study_dialogs
+    assert 'Generated audio is not included' in shared_study_template
+
+    assert 'Audio files are not included in this export.' in app_shell_template
+    assert 'Download any audio you need first.' in app_shell_template
+    assert 'does not preserve lecture media on the server' in lecture_downloader_template
+    assert 'Screen and microphone recordings are created in your browser and are not stored on the server.' in video_overlay_template
+
+
 def test_feature_calculator_sliders_have_labels_and_focus_style():
     features_template = Path('templates/features.html').read_text(encoding='utf-8')
     features_css = Path('static/css/features.css').read_text(encoding='utf-8')

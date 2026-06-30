@@ -271,6 +271,34 @@ def get_imported_audio_status(app_ctx, request, job_id):
     return app_ctx.jsonify(_audio_import_job_payload(job))
 
 
+def download_imported_audio(app_ctx, request):
+    decoded_token = app_ctx.verify_firebase_token(request)
+    if not decoded_token:
+        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    uid = decoded_token['uid']
+    payload = request.get_json(silent=True) or {}
+    token = str(payload.get('audio_import_token', '') or '').strip()
+    audio_path, error_message = upload_import_audio.get_audio_import_token_path(
+        uid,
+        token,
+        consume=False,
+        runtime=app_ctx,
+    )
+    if error_message:
+        status_code = 400 if 'Missing' in error_message else 404
+        return app_ctx.jsonify({'error': error_message}), status_code
+    filename = app_ctx.secure_filename(str(payload.get('file_name', '') or '').strip())
+    if not filename:
+        filename = app_ctx.secure_filename(app_ctx.os.path.basename(audio_path) or 'imported-audio.mp3')
+    return app_ctx.send_file(
+        audio_path,
+        mimetype=app_ctx.get_mime_type(audio_path),
+        as_attachment=True,
+        download_name=filename or 'imported-audio.mp3',
+        conditional=True,
+    )
+
+
 def release_imported_audio(app_ctx, request):
     decoded_token = app_ctx.verify_firebase_token(request)
     if not decoded_token:

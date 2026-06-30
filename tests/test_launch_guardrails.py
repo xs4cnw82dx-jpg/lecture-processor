@@ -2782,6 +2782,42 @@ def test_study_pack_audio_token_streams_file_without_auth_header(client, monkeyp
     assert stream_response.data == audio_file.read_bytes()
 
 
+def test_study_pack_audio_download_uses_attachment_filename(client, monkeypatch, tmp_path):
+    audio_file = tmp_path / "sample.mp3"
+    audio_file.write_bytes(b"ID3\x03\x00\x00download-audio-bytes")
+
+    class _FakeDoc:
+        exists = True
+
+        def __init__(self):
+            self.reference = self
+
+        def to_dict(self):
+            return {
+                "uid": "owner-uid",
+                "title": "My Lecture: Week 1",
+                "audio_storage_key": "study_audio/sample.mp3",
+            }
+
+        def set(self, *_args, **_kwargs):
+            return None
+
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _FakeDoc())
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "owner-uid", "email": "user@gmail.com"})
+    monkeypatch.setattr(study_audio, "resolve_audio_storage_path_from_key", lambda _key, runtime=None: str(audio_file))
+
+    response = client.get(
+        "/api/study-packs/pack-audio/audio?download=1",
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 200
+    assert response.data == audio_file.read_bytes()
+    content_disposition = response.headers.get("Content-Disposition", "")
+    assert "attachment" in content_disposition
+    assert "My_Lecture_Week_1.mp3" in content_disposition
+
+
 @pytest.mark.parametrize(
     ("raised_error", "expected_status", "expected_payload_status"),
     [

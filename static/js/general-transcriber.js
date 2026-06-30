@@ -24,6 +24,7 @@
   var fileInfo = document.getElementById('transcriber-file-info');
   var fileNameEl = document.getElementById('transcriber-file-name');
   var fileSizeEl = document.getElementById('transcriber-file-size');
+  var fileDownloadBtn = document.getElementById('transcriber-file-download');
   var fileRemoveBtn = document.getElementById('transcriber-file-remove');
   var outputLanguageInput = document.getElementById('transcriber-output-language');
   var outputLanguagePicker = document.getElementById('transcriber-output-language-picker');
@@ -208,6 +209,18 @@
     return (value / (1024 * 1024)).toFixed(1) + ' MB';
   }
 
+  function saveBlobAsFile(blob, filename) {
+    if (!blob) return false;
+    var link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = String(filename || 'audio-file.webm').trim() || 'audio-file.webm';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+    return true;
+  }
+
   function validateAudioFile(file) {
     if (!file) return 'No file selected.';
     var lower = String(file.name || '').toLowerCase();
@@ -222,12 +235,14 @@
       if (fileInfo) fileInfo.hidden = true;
       if (fileNameEl) fileNameEl.textContent = '';
       if (fileSizeEl) fileSizeEl.textContent = '';
+      if (fileDownloadBtn) fileDownloadBtn.disabled = true;
       return;
     }
     if (dropzone) dropzone.classList.add('has-file');
     if (fileInfo) fileInfo.hidden = false;
     if (fileNameEl) fileNameEl.textContent = String(selectedFile.name || '');
     if (fileSizeEl) fileSizeEl.textContent = formatBytes(selectedFile.size);
+    if (fileDownloadBtn) fileDownloadBtn.disabled = false;
   }
 
   function updateOutputActionState() {
@@ -481,6 +496,20 @@
       event.stopPropagation();
       clearSelectedFile();
       setStatus('', '');
+    });
+  }
+
+  if (fileDownloadBtn) {
+    fileDownloadBtn.addEventListener('click', function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!selectedFile) {
+        setStatus('Select an audio file first.', 'error');
+        return;
+      }
+      saveBlobAsFile(selectedFile, selectedFile.name || 'transcriber-audio.webm');
+      setStatus('Audio download started. Keep that file as your backup.', 'success');
+      showToast('Audio download started.', 'success');
     });
   }
 

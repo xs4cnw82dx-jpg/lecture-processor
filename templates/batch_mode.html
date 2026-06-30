@@ -149,6 +149,11 @@
             <span id="add-row-label">Add lecture</span>
           </button>
         </div>
+        {% if forced_mode in ['lecture-notes', 'interview', 'audio-transcription'] %}
+        <div class="batch-audio-retention-note" role="note">
+          Keep your original audio files. Batch audio inputs and imported URL audio are temporary processing files, and generated playback audio in Study Library can disappear after a free Render restart unless you download it.
+        </div>
+        {% endif %}
         <div id="rows-wrap" class="rows-wrap"></div>
         <div class="rows-foot">
           <small id="rows-minimum-note">Minimum 2 lectures required for batch mode.</small>

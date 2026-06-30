@@ -453,6 +453,16 @@
   margin-top: 2px;
 }
 
+.batch-audio-retention-note {
+  padding: 11px 12px;
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
 .rows-head h2 {
   margin: 0;
   font-size: 2rem;
@@ -569,19 +579,30 @@
   color: #64748b;
 }
 
+.file-download,
 .file-remove {
   width: 30px;
   height: 30px;
   border-radius: 999px;
-  border: 1px solid #fac3c3;
-  background: #fff5f5;
-  color: #b91c1c;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
+.file-download {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.file-remove {
+  border: 1px solid #fac3c3;
+  background: #fff5f5;
+  color: #b91c1c;
+}
+
+.file-download svg,
 .file-remove svg {
   width: 16px;
   height: 16px;

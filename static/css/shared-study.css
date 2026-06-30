@@ -81,6 +81,17 @@
   font-size: 0.93rem;
 }
 
+.shared-audio-note {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 12px;
+  background: rgba(239, 246, 255, 0.92);
+  color: #1e3a8a;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
 .shared-pack-sections {
   display: grid;
   gap: 18px;

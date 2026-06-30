@@ -214,6 +214,10 @@ def release_imported_audio(app_ctx, request):
     return upload_audio_import_service.release_imported_audio(app_ctx, request)
 
 
+def download_imported_audio(app_ctx, request):
+    return upload_audio_import_service.download_imported_audio(app_ctx, request)
+
+
 def get_imported_audio_status(app_ctx, request, job_id):
     return upload_audio_import_service.get_imported_audio_status(app_ctx, request, job_id)
 
