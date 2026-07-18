@@ -4,6 +4,7 @@ from flask import Blueprint, abort, redirect, render_template, request, send_fro
 
 from lecture_processor.domains.auth import session as auth_session
 from lecture_processor.runtime.container import get_runtime
+from lecture_processor.services import workout_service
 
 
 pages_bp = Blueprint('pages', __name__)
@@ -471,6 +472,8 @@ def workout_share_page(token):
     if len(safe_token) < 20 or len(safe_token) > 128:
         abort(404)
     runtime = get_runtime()
+    if workout_service.resolve_public_share(runtime, safe_token) is None:
+        abort(404)
     return render_template(
         'workout_share.html',
         share_token=safe_token,
