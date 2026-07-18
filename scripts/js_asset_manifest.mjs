@@ -13,6 +13,9 @@ export const minifiedTargets = [
   { entry: 'static/js/study.js', out: 'static/js/study.min.js' },
   { entry: 'static/js/voice-notes-utils.js', out: 'static/js/voice-notes-utils.min.js' },
   { entry: 'static/js/voice-notes.js', out: 'static/js/voice-notes.min.js' },
+  { entry: 'static/js/workout-utils.js', out: 'static/js/workout-utils.min.js' },
+  { entry: 'static/js/workout.js', out: 'static/js/workout.min.js' },
+  { entry: 'static/js/workout-share.js', out: 'static/js/workout-share.min.js' },
 ];
 
 export const intentionallyUnminifiedScripts = [

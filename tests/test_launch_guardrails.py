@@ -1492,6 +1492,14 @@ def test_account_delete_exhaustively_deletes_paginated_docs(client, monkeypatch)
         "physio_case_sessions": {
             "physio-session-1": {"uid": "u-delete", "case_id": "physio-case-1", "session_id": "physio-session-1"},
         },
+        "workout_profiles": {"u-delete": {"uid": "u-delete", "setup_completed": True}},
+        "workout_exercises": {"exercise-1": {"uid": "u-delete", "id": "exercise-1"}},
+        "workout_routines": {"routine-1": {"uid": "u-delete", "id": "routine-1"}},
+        "workout_cycles": {"cycle-1": {"uid": "u-delete", "id": "cycle-1"}},
+        "workout_occurrences": {"occurrence-1": {"uid": "u-delete", "id": "occurrence-1"}},
+        "workout_sessions": {"session-1": {"uid": "u-delete", "id": "session-1"}},
+        "workout_bodyweight": {"weight-1": {"uid": "u-delete", "id": "weight-1"}},
+        "workout_shares": {"share-workout-1": {"uid": "u-delete", "token": "share-workout-1"}},
         core.RUNTIME_JOBS_COLLECTION: {},
         "batch_jobs": {},
     }
@@ -1577,6 +1585,18 @@ def test_account_delete_exhaustively_deletes_paginated_docs(client, monkeypatch)
     assert body["deleted"]["physio_cases"] == 1
     assert body["deleted"]["physio_case_sessions"] == 1
     assert body["deleted"]["study_shares"] == 1
+    for workout_collection in (
+        "workout_profiles",
+        "workout_exercises",
+        "workout_routines",
+        "workout_cycles",
+        "workout_occurrences",
+        "workout_sessions",
+        "workout_bodyweight",
+        "workout_shares",
+    ):
+        assert body["deleted"][workout_collection] == 1
+        assert store[workout_collection] == {}
     assert store["job_logs"] == {}
     assert store["planner_sessions"] == {}
     assert store["planner_settings"] == {}

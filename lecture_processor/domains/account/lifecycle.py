@@ -297,6 +297,27 @@ def collect_user_export_payload(uid, email, runtime=None):
     planner_sessions, planner_sessions_truncated = list_docs_by_uid('planner_sessions', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     physio_cases, physio_cases_truncated = list_docs_by_uid('physio_cases', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     physio_case_sessions, physio_case_sessions_truncated = list_docs_by_uid('physio_case_sessions', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
+    workout_collection_names = (
+        'workout_profiles',
+        'workout_exercises',
+        'workout_routines',
+        'workout_cycles',
+        'workout_occurrences',
+        'workout_sessions',
+        'workout_bodyweight',
+        'workout_shares',
+    )
+    workout_collections = {}
+    workout_truncated = {}
+    for collection_name in workout_collection_names:
+        records, truncated = list_docs_by_uid(
+            collection_name,
+            uid,
+            resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION,
+            runtime=resolved_runtime,
+        )
+        workout_collections[collection_name] = records
+        workout_truncated[collection_name] = truncated
     share_docs = query_docs_by_field('study_shares', 'owner_uid', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION + 1, runtime=resolved_runtime)
     shares_truncated = len(share_docs) > resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION
     study_shares = []
@@ -337,6 +358,7 @@ def collect_user_export_payload(uid, email, runtime=None):
                 'planner_sessions': planner_sessions_truncated,
                 'physio_cases': physio_cases_truncated,
                 'physio_case_sessions': physio_case_sessions_truncated,
+                **workout_truncated,
             },
         },
         'account': {
@@ -359,6 +381,7 @@ def collect_user_export_payload(uid, email, runtime=None):
             'planner_sessions': planner_sessions,
             'physio_cases': physio_cases,
             'physio_case_sessions': physio_case_sessions,
+            **workout_collections,
         },
     }
 

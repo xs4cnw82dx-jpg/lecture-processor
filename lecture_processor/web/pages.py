@@ -437,6 +437,47 @@ def admin_dashboard():
     return render_template('admin.html', admin_js_asset=runtime.resolve_js_asset('js/admin.js'))
 
 
+@pages_bp.route('/admin/workout')
+def admin_workout_page():
+    runtime = get_runtime()
+    decoded_token = auth_session.verify_admin_session_cookie(request, runtime=runtime)
+    if not decoded_token:
+        if runtime.ADMIN_PAGE_UNAUTHORIZED_MODE == '404':
+            abort(404)
+        return redirect('/lecture-notes?auth=signin&next=/admin/workout')
+    return render_template(
+        'workout.html',
+        workout_utils_js_asset=runtime.resolve_js_asset('js/workout-utils.js'),
+        workout_js_asset=runtime.resolve_js_asset('js/workout.js'),
+    )
+
+
+@pages_bp.route('/admin/workout/service-worker.js')
+def workout_service_worker():
+    runtime = get_runtime()
+    response = send_from_directory(
+        runtime.os.path.join(runtime.PROJECT_ROOT_DIR, 'static'),
+        'workout-service-worker.js',
+        mimetype='application/javascript',
+        max_age=0,
+    )
+    response.headers['Service-Worker-Allowed'] = '/admin/workout'
+    return response
+
+
+@pages_bp.route('/workout-shares/<token>')
+def workout_share_page(token):
+    safe_token = str(token or '').strip()
+    if len(safe_token) < 20 or len(safe_token) > 128:
+        abort(404)
+    runtime = get_runtime()
+    return render_template(
+        'workout_share.html',
+        share_token=safe_token,
+        workout_share_js_asset=runtime.resolve_js_asset('js/workout-share.js'),
+    )
+
+
 @pages_bp.route('/study')
 def study_dashboard():
     return _render_study_page(
