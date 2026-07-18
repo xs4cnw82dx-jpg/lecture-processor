@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#312e81">
+  <title>Shared Workout</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/workout-share.css') }}">
+</head>
+<body data-workout-share-token="{{ share_token|e }}">
+  <main class="share-workout-shell">
+    <header class="share-workout-brand"><span aria-hidden="true">W</span><div><strong>Workout</strong><small>Shared read-only snapshot</small></div></header>
+    <section class="share-workout-loading" id="share-workout-loading"><div></div><p>Loading workout…</p></section>
+    <article class="share-workout-card" id="share-workout-card" hidden>
+      <p class="share-workout-eyebrow" id="share-workout-kind">Shared routine</p>
+      <h1 id="share-workout-title">Workout</h1>
+      <p class="share-workout-copy" id="share-workout-copy"></p>
+      <div class="share-workout-metrics" id="share-workout-metrics" hidden></div>
+      <div class="share-workout-exercises" id="share-workout-exercises"></div>
+    </article>
+    <section class="share-workout-error" id="share-workout-error" hidden><h1>This share is unavailable</h1><p>It may have been revoked or the link may be incorrect.</p></section>
+    <footer>Private notes, bodyweight, identity, start weights, and progression guidance are never included.</footer>
+  </main>
+  <script src="{{ url_for('static', filename='js/html-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename=workout_share_js_asset or 'js/workout-share.js') }}"></script>
+</body>
+</html>

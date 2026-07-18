@@ -1,0 +1,35 @@
+* { box-sizing: border-box; }
+html { min-height: 100%; background: #f8fafc; color: #111827; font-family: Inter, system-ui, -apple-system, sans-serif; }
+body { margin: 0; min-height: 100dvh; background: radial-gradient(circle at 50% 0, #eef2ff, #f8fafc 420px); }
+[hidden] { display: none !important; }
+.share-workout-shell { width: min(100%, 680px); margin: 0 auto; padding: calc(24px + env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom)); }
+.share-workout-brand { display: flex; align-items: center; gap: 11px; margin-bottom: 22px; }
+.share-workout-brand > span { display: grid; place-content: center; width: 42px; height: 42px; border-radius: 13px; background: #4f46e5; color: #fff; font-weight: 800; }
+.share-workout-brand strong, .share-workout-brand small { display: block; }
+.share-workout-brand strong { font-size: 14px; }
+.share-workout-brand small { margin-top: 2px; color: #64748b; font-size: 10px; }
+.share-workout-card { padding: 24px; border: 1px solid #e5e7eb; border-radius: 24px; background: #fff; box-shadow: 0 18px 55px rgba(15,23,42,.09); }
+.share-workout-eyebrow { margin: 0; color: #4f46e5; font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.share-workout-card h1 { margin: 7px 0 5px; font-size: clamp(25px, 8vw, 38px); letter-spacing: -.045em; }
+.share-workout-copy { margin: 0; color: #64748b; font-size: 13px; line-height: 1.5; }
+.share-workout-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 18px 0 0; }
+.share-workout-metric { padding: 12px 8px; border-radius: 14px; background: #eef2ff; text-align: center; }
+.share-workout-metric span, .share-workout-metric strong { display: block; }
+.share-workout-metric span { color: #6366f1; font-size: 8px; font-weight: 800; text-transform: uppercase; }
+.share-workout-metric strong { margin-top: 4px; color: #312e81; font-size: 13px; }
+.share-workout-exercises { display: grid; gap: 11px; margin-top: 20px; }
+.share-workout-exercise { padding: 15px; border: 1px solid #e5e7eb; border-radius: 16px; }
+.share-workout-exercise h2 { margin: 0; font-size: 14px; }
+.share-workout-exercise > p { margin: 4px 0 0; color: #64748b; font-size: 10px; }
+.share-workout-target { display: inline-flex; margin-top: 10px; padding: 5px 8px; border-radius: 999px; background: #eef2ff; color: #3730a3; font-size: 9px; font-weight: 800; }
+.share-workout-sets { width: 100%; margin-top: 10px; border-collapse: collapse; font-size: 10px; }
+.share-workout-sets th, .share-workout-sets td { padding: 7px 4px; border-top: 1px solid #f1f5f9; text-align: left; }
+.share-workout-sets th { color: #94a3b8; font-size: 8px; text-transform: uppercase; }
+.share-workout-cues { margin-top: 10px; padding: 9px 10px; border-radius: 10px; background: #f8fafc; color: #475569; font-size: 9px; line-height: 1.55; }
+.share-workout-loading, .share-workout-error { min-height: 55dvh; display: grid; place-content: center; justify-items: center; text-align: center; color: #64748b; }
+.share-workout-loading > div { width: 38px; height: 38px; border: 3px solid #e0e7ff; border-top-color: #4f46e5; border-radius: 50%; animation: share-spin .7s linear infinite; }
+@keyframes share-spin { to { transform: rotate(360deg); } }
+.share-workout-error h1 { margin: 0; color: #111827; font-size: 24px; }
+.share-workout-error p { font-size: 12px; }
+footer { max-width: 500px; margin: 18px auto 0; color: #94a3b8; font-size: 9px; line-height: 1.5; text-align: center; }
+@media (max-width: 390px) { .share-workout-card { padding: 20px 16px; } }

@@ -424,6 +424,17 @@ def delete_account_data(app_ctx, request):
         _delete_uid_collection('planner_settings')
         _delete_uid_collection('physio_case_sessions')
         _delete_uid_collection('physio_cases')
+        for workout_collection in (
+            'workout_profiles',
+            'workout_exercises',
+            'workout_routines',
+            'workout_cycles',
+            'workout_occurrences',
+            'workout_sessions',
+            'workout_bodyweight',
+            'workout_shares',
+        ):
+            _delete_uid_collection(workout_collection)
         _delete_study_packs()
         deleted_sources_from_packs = int(deleted.get('study_pack_sources', 0) or 0)
         _delete_uid_collection('study_pack_sources')
@@ -459,6 +470,14 @@ def delete_account_data(app_ctx, request):
             ('planner_settings', 'uid', uid, 'planner_settings'),
             ('physio_cases', 'uid', uid, 'physio_cases'),
             ('physio_case_sessions', 'uid', uid, 'physio_case_sessions'),
+            ('workout_profiles', 'uid', uid, 'workout_profiles'),
+            ('workout_exercises', 'uid', uid, 'workout_exercises'),
+            ('workout_routines', 'uid', uid, 'workout_routines'),
+            ('workout_cycles', 'uid', uid, 'workout_cycles'),
+            ('workout_occurrences', 'uid', uid, 'workout_occurrences'),
+            ('workout_sessions', 'uid', uid, 'workout_sessions'),
+            ('workout_bodyweight', 'uid', uid, 'workout_bodyweight'),
+            ('workout_shares', 'uid', uid, 'workout_shares'),
             ('purchases', 'uid', uid, 'purchases'),
             (app_ctx.RUNTIME_JOBS_COLLECTION, 'user_id', uid, 'runtime_jobs'),
             ('batch_jobs', 'uid', uid, 'batch_jobs'),

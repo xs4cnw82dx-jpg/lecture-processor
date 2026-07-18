@@ -147,6 +147,10 @@ def test_collect_user_export_payload_returns_expected_shape(app, monkeypatch):
             return ([{"display_label": "Casus 1", "body_region": "knie", "_id": "physio-case-1"}], False)
         if collection_name == "physio_case_sessions":
             return ([{"case_id": "physio-case-1", "session_date": "2026-03-15", "_id": "physio-session-1"}], False)
+        if collection_name == "workout_profiles":
+            return ([{"uid": "u1", "bodyweight_kg": 62.5, "_id": "u1"}], False)
+        if collection_name == "workout_sessions":
+            return ([{"id": "workout-session-1", "status": "completed", "_id": "u1__workout-session-1"}], False)
         return ([], False)
 
     class _ShareDoc:
@@ -178,6 +182,8 @@ def test_collect_user_export_payload_returns_expected_shape(app, monkeypatch):
     assert payload["collections"]["study_shares"] == [{"owner_uid": "u1", "entity_type": "pack", "entity_id": "pack-1", "access_scope": "public", "_id": "share-1"}]
     assert payload["collections"]["physio_cases"] == [{"display_label": "Casus 1", "body_region": "knie", "_id": "physio-case-1"}]
     assert payload["collections"]["physio_case_sessions"] == [{"case_id": "physio-case-1", "session_date": "2026-03-15", "_id": "physio-session-1"}]
+    assert payload["collections"]["workout_profiles"] == [{"uid": "u1", "bodyweight_kg": 62.5, "_id": "u1"}]
+    assert payload["collections"]["workout_sessions"] == [{"id": "workout-session-1", "status": "completed", "_id": "u1__workout-session-1"}]
     assert "collections" in payload
 
 

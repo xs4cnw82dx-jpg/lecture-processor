@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#312e81">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Workout">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Workout · Private Admin</title>
+  <link rel="manifest" href="{{ url_for('static', filename='workout-manifest.webmanifest') }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/workout-touch-180.png') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/workout.css') }}">
+</head>
+<body class="workout-body">
+  <div class="workout-offline-banner" id="workout-offline-banner" role="status" hidden>Offline · changes will sync automatically</div>
+
+  <main class="workout-app" id="workout-app" aria-busy="true">
+    <header class="workout-topbar">
+      <div>
+        <p class="workout-eyebrow">Private admin</p>
+        <h1>Workout</h1>
+      </div>
+      <div class="workout-topbar-actions">
+        <span class="workout-sync-pill" id="workout-sync-pill" role="status" aria-live="polite">Loading</span>
+        <a class="workout-icon-btn" href="/admin" aria-label="Back to admin dashboard">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+        </a>
+      </div>
+    </header>
+
+    <section class="workout-loading" id="workout-loading">
+      <div class="workout-spinner" aria-hidden="true"></div>
+      <p>Loading your program…</p>
+    </section>
+
+    <section class="workout-view is-active" data-workout-view="today" id="workout-view-today" hidden>
+      <div class="workout-hero">
+        <div>
+          <p class="workout-eyebrow" id="workout-cycle-label">10-week program</p>
+          <h2 id="workout-greeting">Ready to train?</h2>
+          <p id="workout-week-copy">Your next workout will appear here.</p>
+        </div>
+        <div class="workout-week-ring" id="workout-week-ring"><strong>–</strong><span>week</span></div>
+      </div>
+
+      <button class="workout-resume-card" id="workout-resume-card" type="button" hidden>
+        <span class="workout-resume-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7Z"></path></svg></span>
+        <span><strong>Resume workout</strong><small id="workout-resume-copy">Active workout</small></span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+      </button>
+
+      <section class="workout-section">
+        <div class="workout-section-head">
+          <div><p class="workout-eyebrow">This week</p><h2>Scheduled</h2></div>
+          <button class="workout-text-btn" type="button" data-open-cycle>Cycle</button>
+        </div>
+        <div class="workout-schedule" id="workout-schedule"></div>
+      </section>
+
+      <section class="workout-section">
+        <div class="workout-section-head">
+          <div><p class="workout-eyebrow">Quick start</p><h2>Train your way</h2></div>
+        </div>
+        <div class="workout-quick-grid">
+          <button class="workout-quick-card" type="button" id="workout-empty-btn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+            <span><strong>Empty workout</strong><small>Build as you go</small></span>
+          </button>
+          <button class="workout-quick-card" type="button" data-workout-nav="routines">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16H6z"></path><path d="M9 8h6M9 12h6M9 16h4"></path></svg>
+            <span><strong>Routines</strong><small>All 8 templates</small></span>
+          </button>
+        </div>
+      </section>
+    </section>
+
+    <section class="workout-view" data-workout-view="routines" id="workout-view-routines" hidden>
+      <div class="workout-page-head">
+        <div><p class="workout-eyebrow">Program builder</p><h2>Routines</h2><p>Edit future workouts without changing active or completed logs.</p></div>
+        <button class="workout-primary-small" id="workout-new-routine" type="button">New</button>
+      </div>
+      <label class="workout-search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+        <span class="sr-only">Search routines</span>
+        <input id="workout-routine-search" type="search" placeholder="Search routines" autocomplete="off">
+      </label>
+      <div class="workout-routine-list" id="workout-routine-list"></div>
+      <section class="workout-section workout-library-section">
+        <div class="workout-section-head">
+          <div><p class="workout-eyebrow">Exercise library</p><h2>Exercises</h2></div>
+          <button class="workout-text-btn" id="workout-new-exercise" type="button">Create</button>
+        </div>
+        <div class="workout-library-summary" id="workout-library-summary"></div>
+      </section>
+    </section>
+
+    <section class="workout-view" data-workout-view="progress" id="workout-view-progress" hidden>
+      <div class="workout-page-head">
+        <div><p class="workout-eyebrow">Coach overview</p><h2>Progress</h2><p>Adherence, volume, records, bodyweight, and exercise trends.</p></div>
+      </div>
+      <div class="workout-kpi-grid" id="workout-kpi-grid"></div>
+      <section class="workout-panel">
+        <div class="workout-panel-head"><h3>Weekly sets</h3><span>Required A/B/C</span></div>
+        <div class="workout-bars" id="workout-weekly-bars"></div>
+      </section>
+      <section class="workout-panel">
+        <div class="workout-panel-head"><h3>Muscle groups</h3><span>Current week</span></div>
+        <div class="workout-bars" id="workout-muscle-bars"></div>
+      </section>
+      <section class="workout-panel">
+        <div class="workout-panel-head"><h3>Exercise trend</h3><select id="workout-trend-select" aria-label="Exercise trend"></select></div>
+        <div class="workout-line-chart" id="workout-exercise-chart"></div>
+      </section>
+      <section class="workout-panel">
+        <div class="workout-panel-head"><h3>Bodyweight</h3><button class="workout-text-btn" id="workout-add-weight" type="button">Log</button></div>
+        <div class="workout-line-chart" id="workout-weight-chart"></div>
+      </section>
+      <section class="workout-panel">
+        <div class="workout-panel-head"><h3>Personal records</h3><span>Epley estimate</span></div>
+        <div class="workout-record-list" id="workout-record-list"></div>
+      </section>
+      <section class="workout-panel">
+        <div class="workout-panel-head"><h3>History</h3><span id="workout-history-count">0 workouts</span></div>
+        <div class="workout-history-list" id="workout-history-list"></div>
+      </section>
+    </section>
+
+    <section class="workout-view" data-workout-view="settings" id="workout-view-settings" hidden>
+      <div class="workout-page-head">
+        <div><p class="workout-eyebrow">Your preferences</p><h2>Settings</h2><p>Every selector uses the same native site control as the rest of Lecture Processor.</p></div>
+      </div>
+      <form class="workout-settings-form" id="workout-settings-form">
+        <section class="workout-panel workout-settings-group">
+          <h3>Workout</h3>
+          <label class="workout-setting-select"><span><strong>Default rest timer</strong><small>Used for custom exercises</small></span><select id="workout-default-rest"><option value="0">Off</option><option value="60">1:00</option><option value="90">1:30</option><option value="120">2:00</option><option value="150">2:30</option><option value="180">3:00</option><option value="210">3:30</option><option value="300">5:00</option></select></label>
+          <label class="workout-setting-select"><span><strong>Previous values</strong><small>Which prior set values appear</small></span><select id="workout-previous-scope"><option value="same_routine">Same routine</option><option value="any_workout">Any workout</option></select></label>
+          <label class="workout-toggle-row"><span><strong>RPE tracking</strong><small>Log effort from 1–10 for each set</small></span><input id="workout-rpe-toggle" type="checkbox" role="switch"></label>
+          <label class="workout-toggle-row"><span><strong>Warm-up sets in statistics</strong><small>Count completed warm-ups in set totals</small></span><input id="workout-warmup-stats-toggle" type="checkbox" role="switch"></label>
+          <label class="workout-toggle-row"><span><strong>Smart superset scrolling</strong><small>Advance to the paired exercise</small></span><input id="workout-superset-toggle" type="checkbox" role="switch"></label>
+          <label class="workout-toggle-row"><span><strong>Keep awake</strong><small>Use Screen Wake Lock while logging</small></span><input id="workout-wake-toggle" type="checkbox" role="switch"></label>
+          <label class="workout-toggle-row"><span><strong>Live PR alerts</strong><small>Celebrate records after finishing</small></span><input id="workout-pr-toggle" type="checkbox" role="switch"></label>
+          <div class="workout-warmup-settings">
+            <strong>Warm-up calculator</strong>
+            <small>Percentage and reps; loads round down to available equipment.</small>
+            <div class="workout-warmup-grid">
+              <label><span>Step 1</span><input id="workout-warmup-percent-1" type="number" min="1" max="100" inputmode="numeric" aria-label="Warm-up step 1 percent"><input id="workout-warmup-reps-1" type="number" min="1" max="50" inputmode="numeric" aria-label="Warm-up step 1 reps"></label>
+              <label><span>Step 2</span><input id="workout-warmup-percent-2" type="number" min="1" max="100" inputmode="numeric" aria-label="Warm-up step 2 percent"><input id="workout-warmup-reps-2" type="number" min="1" max="50" inputmode="numeric" aria-label="Warm-up step 2 reps"></label>
+              <label><span>Step 3</span><input id="workout-warmup-percent-3" type="number" min="1" max="100" inputmode="numeric" aria-label="Warm-up step 3 percent"><input id="workout-warmup-reps-3" type="number" min="1" max="50" inputmode="numeric" aria-label="Warm-up step 3 reps"></label>
+            </div>
+          </div>
+        </section>
+        <section class="workout-panel workout-settings-group">
+          <h3>Timer alerts</h3>
+          <label class="workout-toggle-row"><span><strong>Timer sound</strong><small>Play while this PWA is active</small></span><input id="workout-sound-toggle" type="checkbox" role="switch"></label>
+          <label class="workout-setting-slider"><span><strong>Volume</strong><output id="workout-volume-output">75%</output></span><input id="workout-volume" type="range" min="0" max="1" step="0.05"></label>
+          <label class="workout-toggle-row"><span><strong>Rest notification</strong><small>Best effort on iOS; suspension can delay it</small></span><input id="workout-notification-toggle" type="checkbox" role="switch"></label>
+        </section>
+        <section class="workout-panel workout-settings-group">
+          <h3>Profile & equipment</h3>
+          <label class="workout-inline-field"><span>Bodyweight</span><span><input id="workout-profile-weight" type="number" min="20" max="400" step="0.1" inputmode="decimal"><em>kg</em></span></label>
+          <label class="workout-inline-field"><span>Dumbbell handle</span><span><input id="workout-handle-weight" type="number" min="0" max="10" step="0.1" inputmode="decimal"><em>kg</em></span></label>
+          <label class="workout-toggle-row"><span><strong>Optional day D</strong><small>Arms, shoulders, and weak points</small></span><input id="workout-optional-toggle" type="checkbox" role="switch"></label>
+        </section>
+        <button class="workout-primary-btn" type="submit">Save settings</button>
+      </form>
+      <section class="workout-panel workout-danger-zone">
+        <h3>Program cycle</h3>
+        <p>Resetting archives the current cycle. Completed workout history and analytics stay available.</p>
+        <button class="workout-secondary-btn" type="button" data-open-cycle>Reset 10-week calendar</button>
+        <button class="workout-danger-btn" type="button" id="workout-restore-baseline">Restore Excel baseline for future workouts</button>
+      </section>
+      <p class="workout-pwa-note">Install from Safari’s Share menu → Add to Home Screen. A cold offline launch shows only a reconnect page; loaded workout drafts remain available offline.</p>
+    </section>
+
+    <nav class="workout-bottom-nav" aria-label="Workout navigation">
+      <button type="button" class="is-active" data-workout-nav="today" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"></path><path d="M9 20v-6h6v6"></path></svg><span>Today</span></button>
+      <button type="button" data-workout-nav="routines" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3M17 8h3M7 5v6M17 5v6M7 8h10M4 16h3M17 16h3M7 13v6M17 13v6M7 16h10"></path></svg><span>Routines</span></button>
+      <button type="button" data-workout-nav="progress" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19V3"></path></svg><span>Progress</span></button>
+      <button type="button" data-workout-nav="settings" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.1A1.7 1.7 0 0 0 8 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 3.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2V9.6h.1A1.7 1.7 0 0 0 3.6 8a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8 3.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V2h4v.1A1.7 1.7 0 0 0 15 3.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 8a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.1v4h-.1A1.7 1.7 0 0 0 19.4 15Z"></path></svg><span>Settings</span></button>
+    </nav>
+  </main>
+
+  <section class="workout-logger" id="workout-logger" aria-label="Active workout" hidden>
+    <header class="workout-logger-header">
+      <button class="workout-icon-btn" id="workout-close-logger" type="button" aria-label="Minimize workout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+      <div><p id="workout-logger-status">Active workout</p><h1 id="workout-logger-title">Workout</h1></div>
+      <button class="workout-finish-btn" id="workout-finish-btn" type="button">Finish</button>
+    </header>
+    <div class="workout-logger-metrics">
+      <button type="button" id="workout-pause-btn"><span>Duration</span><strong id="workout-duration">00:00</strong></button>
+      <div><span>Volume</span><strong id="workout-volume-total">0 kg</strong></div>
+      <div><span>Sets</span><strong id="workout-set-count">0</strong></div>
+    </div>
+    <div class="workout-exercise-stack" id="workout-exercise-stack"></div>
+    <div class="workout-logger-actions">
+      <button class="workout-add-exercise" id="workout-add-exercise" type="button">+ Add exercise</button>
+      <button class="workout-secondary-btn" id="workout-logger-settings" type="button">Settings</button>
+      <button class="workout-danger-btn" id="workout-discard-btn" type="button">Discard workout</button>
+    </div>
+    <div class="workout-rest-drawer" id="workout-rest-drawer" hidden>
+      <div><span>Rest timer</span><strong id="workout-rest-time">01:30</strong></div>
+      <button type="button" data-rest-adjust="-15">−15</button><button type="button" data-rest-adjust="15">+15</button><button class="is-primary" type="button" id="workout-rest-skip">Skip</button>
+    </div>
+  </section>
+
+  <div class="workout-sheet-overlay" id="workout-sheet-overlay" hidden aria-hidden="true">
+    <section class="workout-sheet" role="dialog" aria-modal="true" aria-labelledby="workout-sheet-title">
+      <div class="workout-sheet-handle" aria-hidden="true"></div>
+      <header><div><p class="workout-eyebrow" id="workout-sheet-eyebrow">Workout</p><h2 id="workout-sheet-title">Options</h2></div><button class="workout-icon-btn" type="button" id="workout-sheet-close" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg></button></header>
+      <div class="workout-sheet-content" id="workout-sheet-content"></div>
+    </section>
+  </div>
+
+  <div class="workout-toast" id="workout-toast" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/html-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename=workout_utils_js_asset or 'js/workout-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename=workout_js_asset or 'js/workout.js') }}"></script>
+</body>
+</html>
