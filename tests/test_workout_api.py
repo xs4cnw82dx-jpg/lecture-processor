@@ -13,6 +13,9 @@ def test_workout_page_requires_admin_cookie_and_renders_pwa(client, monkeypatch)
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert 'workout-manifest.webmanifest' in html
+    assert 'rel="apple-touch-icon"' in html
+    assert 'rel="apple-touch-icon-precomposed"' in html
+    assert 'workout-touch-v2-180.png' in html
     assert 'viewport-fit=cover' in html
     assert 'workout-bottom-nav' in html
     assert 'Workout · Private Admin' in html

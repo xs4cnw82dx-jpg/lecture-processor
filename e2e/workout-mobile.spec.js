@@ -32,4 +32,12 @@ test('workout mobile shell fits iPhone 13 and keeps primary targets tappable', a
   expect(manifestResponse.ok()).toBeTruthy();
   const manifest = await manifestResponse.json();
   expect(manifest).toMatchObject({ id: '/admin/workout', start_url: '/admin/workout', scope: '/admin/workout', display: 'standalone', orientation: 'portrait' });
+  expect(manifest.icons).toEqual(expect.arrayContaining([
+    expect.objectContaining({ src: '/static/icons/workout-icon-v2-192.png', sizes: '192x192', type: 'image/png' }),
+    expect.objectContaining({ src: '/static/icons/workout-icon-v2-512.png', sizes: '512x512', type: 'image/png' }),
+  ]));
+
+  const touchIconResponse = await request.get('/static/icons/workout-touch-v2-180.png');
+  expect(touchIconResponse.ok()).toBeTruthy();
+  expect(touchIconResponse.headers()['content-type']).toContain('image/png');
 });

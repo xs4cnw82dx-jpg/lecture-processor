@@ -1,4 +1,4 @@
-const WORKOUT_CACHE = 'lecture-processor-workout-static-v1';
+const WORKOUT_CACHE = 'lecture-processor-workout-static-v2';
 const WORKOUT_CACHE_PREFIX = 'lecture-processor-workout-';
 const OFFLINE_PAGE = '/static/workout-offline.html';
 const STATIC_ASSETS = [
@@ -15,9 +15,9 @@ const STATIC_ASSETS = [
   '/static/js/workout-utils.min.js',
   '/static/js/workout.min.js',
   '/static/workout-manifest.webmanifest',
-  '/static/icons/workout-icon-192.svg',
-  '/static/icons/workout-icon-512.svg',
-  '/static/icons/workout-touch-180.png'
+  '/static/icons/workout-icon-v2-192.png',
+  '/static/icons/workout-icon-v2-512.png',
+  '/static/icons/workout-touch-v2-180.png'
 ];
 
 self.addEventListener('install', (event) => {
