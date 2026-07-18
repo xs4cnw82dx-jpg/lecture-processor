@@ -774,14 +774,21 @@ def revoke_share(app_ctx, request, token):
     return app_ctx.jsonify({'ok': True})
 
 
-def public_share(app_ctx, token):
+def resolve_public_share(app_ctx, token):
     safe_token = str(token or '').strip()
     if len(safe_token) < 20 or len(safe_token) > 128:
-        return app_ctx.jsonify({'error': 'Share not found'}), 404
+        return None
     snapshot = workout_repo.get_share(app_ctx.db, safe_token)
     if not snapshot.exists:
-        return app_ctx.jsonify({'error': 'Share not found'}), 404
+        return None
     share = snapshot.to_dict()
     if share.get('revoked') or not isinstance(share.get('snapshot'), dict):
+        return None
+    return {'share': share['snapshot'], 'created_at': share.get('created_at', '')}
+
+
+def public_share(app_ctx, token):
+    share = resolve_public_share(app_ctx, token)
+    if share is None:
         return app_ctx.jsonify({'error': 'Share not found'}), 404
-    return app_ctx.jsonify({'share': share['snapshot'], 'created_at': share.get('created_at', '')})
+    return app_ctx.jsonify(share)

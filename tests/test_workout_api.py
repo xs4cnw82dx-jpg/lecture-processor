@@ -69,6 +69,7 @@ def test_workout_cycle_session_and_sanitized_share_flow(client, monkeypatch, run
     token = share.get_json()['share']['token']
     public = client.get(f'/api/workout-shares/{token}')
     assert public.status_code == 200
+    assert client.get(f'/workout-shares/{token}').status_code == 200
     serialized = str(public.get_json())
     assert 'keep this private' not in serialized
     assert 'bodyweight_kg' not in serialized
@@ -77,9 +78,19 @@ def test_workout_cycle_session_and_sanitized_share_flow(client, monkeypatch, run
     revoked = client.delete(f'/api/admin/workout/shares/{token}')
     assert revoked.status_code == 200
     assert client.get(f'/api/workout-shares/{token}').status_code == 404
+    assert client.get(f'/workout-shares/{token}').status_code == 404
     rotated = client.post('/api/admin/workout/shares', json={'kind': 'workout', 'source_id': session['id'], 'token': token})
     assert rotated.status_code == 201
     assert rotated.get_json()['share']['token'] != token
+
+
+def test_missing_workout_share_page_returns_not_found(client, monkeypatch, runtime):
+    monkeypatch.setattr(runtime, 'db', None, raising=False)
+    workout_repo.clear_memory_state()
+
+    response = client.get('/workout-shares/this-token-does-not-exist')
+
+    assert response.status_code == 404
 
 
 def test_workout_session_revision_conflict_returns_current_state(client, monkeypatch, runtime):
