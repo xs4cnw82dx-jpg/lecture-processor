@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#312e81">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Workout">
@@ -21,7 +21,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/workout.css') }}">
 </head>
 <body class="workout-body">
-  <div class="workout-offline-banner" id="workout-offline-banner" role="status" hidden>Offline · changes will sync automatically</div>
+  <div class="workout-offline-banner" id="workout-offline-banner" role="status" aria-live="polite" hidden>Offline · active workout logging remains available. Other changes need a connection.</div>
 
   <main class="workout-app" id="workout-app" aria-busy="true">
     <header class="workout-topbar">
@@ -61,7 +61,7 @@
       <section class="workout-section">
         <div class="workout-section-head">
           <div><p class="workout-eyebrow">This week</p><h2>Scheduled</h2></div>
-          <button class="workout-text-btn" type="button" data-open-cycle>Cycle</button>
+          <button class="workout-text-btn" type="button" data-open-cycle>Manage plan</button>
         </div>
         <div class="workout-schedule" id="workout-schedule"></div>
       </section>
@@ -77,7 +77,7 @@
           </button>
           <button class="workout-quick-card" type="button" data-workout-nav="routines">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16H6z"></path><path d="M9 8h6M9 12h6M9 16h4"></path></svg>
-            <span><strong>Routines</strong><small>All 8 templates</small></span>
+            <span><strong>Routines</strong><small id="workout-routine-count" aria-live="polite">Loading saved templates…</small></span>
           </button>
         </div>
       </section>
@@ -109,7 +109,7 @@
       </div>
       <div class="workout-kpi-grid" id="workout-kpi-grid"></div>
       <section class="workout-panel">
-        <div class="workout-panel-head"><h3>Weekly sets</h3><span>Required A/B/C</span></div>
+        <div class="workout-panel-head"><h3>Weekly sets</h3><span>Three planned workouts</span></div>
         <div class="workout-bars" id="workout-weekly-bars"></div>
       </section>
       <section class="workout-panel">
@@ -125,7 +125,7 @@
         <div class="workout-line-chart" id="workout-weight-chart"></div>
       </section>
       <section class="workout-panel">
-        <div class="workout-panel-head"><h3>Personal records</h3><span>Epley estimate</span></div>
+        <div class="workout-panel-head"><h3>Personal records</h3><span>Estimated one-rep max · Epley formula</span></div>
         <div class="workout-record-list" id="workout-record-list"></div>
       </section>
       <section class="workout-panel">
@@ -136,7 +136,7 @@
 
     <section class="workout-view" data-workout-view="settings" id="workout-view-settings" hidden>
       <div class="workout-page-head">
-        <div><p class="workout-eyebrow">Your preferences</p><h2>Settings</h2><p>Every selector uses the same native site control as the rest of Lecture Processor.</p></div>
+        <div><p class="workout-eyebrow">Your preferences</p><h2>Settings</h2><p>Adjust workout logging, timers, notifications, and equipment defaults.</p></div>
       </div>
       <form class="workout-settings-form" id="workout-settings-form">
         <section class="workout-panel workout-settings-group">
@@ -168,17 +168,26 @@
           <h3>Profile & equipment</h3>
           <label class="workout-inline-field"><span>Bodyweight</span><span><input id="workout-profile-weight" type="number" min="20" max="400" step="0.1" inputmode="decimal"><em>kg</em></span></label>
           <label class="workout-inline-field"><span>Dumbbell handle</span><span><input id="workout-handle-weight" type="number" min="0" max="10" step="0.1" inputmode="decimal"><em>kg</em></span></label>
-          <label class="workout-toggle-row"><span><strong>Optional day D</strong><small>Arms, shoulders, and weak points</small></span><input id="workout-optional-toggle" type="checkbox" role="switch"></label>
+          <label class="workout-toggle-row"><span><strong>Optional fourth workout</strong><small>Arms, shoulders, and weak points</small></span><input id="workout-optional-toggle" type="checkbox" role="switch"></label>
         </section>
         <button class="workout-primary-btn" type="submit">Save settings</button>
       </form>
       <section class="workout-panel workout-danger-zone">
-        <h3>Program cycle</h3>
-        <p>Resetting archives the current cycle. Completed workout history and analytics stay available.</p>
+        <h3>Training plan</h3>
+        <p>Resetting archives the current 10-week plan. Completed workout history and progress statistics stay available.</p>
         <button class="workout-secondary-btn" type="button" data-open-cycle>Reset 10-week calendar</button>
-        <button class="workout-danger-btn" type="button" id="workout-restore-baseline">Restore Excel baseline for future workouts</button>
+        <button class="workout-secondary-btn" type="button" id="workout-manage-shares">Manage shared links</button>
+        <button class="workout-danger-btn" type="button" id="workout-restore-baseline" aria-describedby="workout-restore-baseline-help">Restore original training plan</button>
+        <p id="workout-restore-baseline-help">Replaces only future workouts with the original imported plan. Active and completed workouts are not changed.</p>
       </section>
-      <p class="workout-pwa-note">Install from Safari’s Share menu → Add to Home Screen. A cold offline launch shows only a reconnect page; loaded workout drafts remain available offline.</p>
+      <section class="workout-panel workout-pwa-panel" aria-labelledby="workout-pwa-title">
+        <h3 id="workout-pwa-title">Workout app</h3>
+        <p class="workout-pwa-note" id="workout-pwa-status" role="status" aria-live="polite">Install from your browser menu for faster access. Once this screen has loaded online, active workout logging can continue offline; other pages and account changes still require a connection.</p>
+        <div class="workout-pwa-actions">
+          <button class="workout-secondary-btn" id="workout-install-btn" type="button" hidden>Install Workout</button>
+          <button class="workout-primary-btn" id="workout-update-btn" type="button" hidden>Update Workout</button>
+        </div>
+      </section>
     </section>
 
     <nav class="workout-bottom-nav" aria-label="Workout navigation">

@@ -2,7 +2,7 @@
   "id": "/admin/workout",
   "name": "Workout · Private Admin",
   "short_name": "Workout",
-  "description": "Private mobile workout tracker for the 10-week dumbbell hypertrophy program.",
+  "description": "Private workout tracker with an offline app shell and local active-draft support. Account data and syncing require a connection.",
   "start_url": "/admin/workout",
   "scope": "/admin/workout",
   "display": "standalone",

@@ -109,11 +109,26 @@ def test_workout_session_revision_conflict_returns_current_state(client, monkeyp
     assert conflict.get_json()['current']['id'] == session['id']
 
 
-def test_workout_service_worker_is_narrow_and_never_caches_private_page(client):
+def test_workout_service_worker_only_caches_verified_workout_shell(client):
     response = client.get('/admin/workout/service-worker.js')
     assert response.status_code == 200
     assert response.headers['Service-Worker-Allowed'] == '/admin/workout'
     source = response.get_data(as_text=True)
     assert "'/admin/workout'" not in source.split('STATIC_ASSETS', 1)[1].split('];', 1)[0]
     assert "url.pathname.startsWith('/api/')" in source
+    assert "url.pathname.includes('/shares/')" in source
     assert "cache: 'no-store'" in source
+    assert "response.ok" in source
+    assert "response.redirected" in source
+    assert "responseUrl.origin === self.location.origin" in source
+    assert "responseUrl.pathname === WORKOUT_SHELL" in source
+    assert "contentType.includes('text/html')" in source
+    assert "cache.put(WORKOUT_SHELL, response.clone())" in source
+    assert "cachedShell || caches.match(OFFLINE_PAGE)" in source
+    assert "FIREBASE_ASSETS.includes(url.href)" in source
+    assert "Promise.allSettled(FIREBASE_ASSETS.map" in source
+    assert "event.data.type === 'SKIP_WAITING'" in source
+    assert "event.data.type === 'CACHE_WORKOUT_SHELL'" in source
+    assert "credentials: 'same-origin'" in source
+    install_handler = source.split("self.addEventListener('install'", 1)[1].split("self.addEventListener('message'", 1)[0]
+    assert "skipWaiting" not in install_handler

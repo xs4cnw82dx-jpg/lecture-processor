@@ -108,6 +108,10 @@ let userCredits = null;
 let idToken = null;
 let currentUserIsAdmin = false;
 let authStateResolved = Boolean(auth && auth.currentUser);
+let authReturnResumePromise = null;
+let authReturnRedirectStarted = false;
+let verifiedUserActivationPromise = null;
+let verifiedUserActivationUid = '';
 let pdfFile = null;
 let audioFile = null;
 let audioFileOrigin = 'upload';
@@ -950,23 +954,84 @@ function setPendingAuthReturnUrl(rawValue) {
         sessionStorage.setItem(AUTH_RETURN_STORAGE_KEY, safeUrl);
     } catch (_) { }
 }
-function consumePendingAuthReturnUrl() {
+function getPendingAuthReturnUrl() {
     let safeUrl = '';
     try {
         safeUrl = sanitizeAuthReturnUrl(sessionStorage.getItem(AUTH_RETURN_STORAGE_KEY) || '');
-        sessionStorage.removeItem(AUTH_RETURN_STORAGE_KEY);
     } catch (_) {
         safeUrl = '';
     }
     return safeUrl;
 }
-function resumePendingAuthReturnIfNeeded() {
-    const returnUrl = consumePendingAuthReturnUrl();
-    if (!returnUrl) return false;
+function clearPendingAuthReturnUrl() {
+    try {
+        sessionStorage.removeItem(AUTH_RETURN_STORAGE_KEY);
+    } catch (_) { }
+}
+function isAdminAuthReturnUrl(returnUrl) {
+    const safeUrl = sanitizeAuthReturnUrl(returnUrl);
+    if (!safeUrl) return false;
+    try {
+        const pathname = new URL(safeUrl, window.location.origin).pathname;
+        return pathname === '/admin' || pathname.startsWith('/admin/');
+    } catch (_) {
+        return false;
+    }
+}
+function redirectToPendingAuthReturn(returnUrl) {
+    if (authReturnRedirectStarted) return true;
     const currentUrl = window.location.pathname + window.location.search + window.location.hash;
+    clearPendingAuthReturnUrl();
     if (returnUrl === currentUrl) return false;
+    authReturnRedirectStarted = true;
     window.location.assign(returnUrl);
     return true;
+}
+function resumePendingNonAdminAuthReturnIfNeeded() {
+    const returnUrl = getPendingAuthReturnUrl();
+    if (!returnUrl || isAdminAuthReturnUrl(returnUrl)) return false;
+    return redirectToPendingAuthReturn(returnUrl);
+}
+async function performPendingAuthReturn() {
+    const returnUrl = getPendingAuthReturnUrl();
+    if (!returnUrl) return false;
+    if (!isAdminAuthReturnUrl(returnUrl)) {
+        return redirectToPendingAuthReturn(returnUrl);
+    }
+    if (!currentUser) return false;
+    if (!userProfileLoaded) {
+        showToast('Could not verify admin access. Please retry after your account finishes loading.', 'error', 5200);
+        return false;
+    }
+    if (!currentUserIsAdmin) {
+        showToast('This account does not have admin access. Sign out and retry with an admin account.', 'error', 5600);
+        return false;
+    }
+
+    try {
+        const sessionResponse = await authenticatedFetch('/api/session/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        if (!sessionResponse.ok) {
+            throw new Error('Could not create the secure admin session.');
+        }
+        return redirectToPendingAuthReturn(returnUrl);
+    } catch (error) {
+        captureClientError(error, 'admin_auth_return_session');
+        showToast('Could not open the admin page. Your destination is saved; please retry sign-in.', 'error', 5600);
+        return false;
+    }
+}
+function resumePendingAuthReturnIfNeeded() {
+    if (authReturnRedirectStarted) return Promise.resolve(true);
+    if (authReturnResumePromise) return authReturnResumePromise;
+    const operation = performPendingAuthReturn();
+    authReturnResumePromise = operation;
+    return operation.finally(() => {
+        if (authReturnResumePromise === operation) authReturnResumePromise = null;
+    });
 }
 function showAuthView(view) {
     signinView.classList.remove('active');
@@ -1059,9 +1124,9 @@ function showEmailVerificationPrompt(user, options = {}) {
                 status.textContent = 'Email is not verified yet. Open the link from your inbox, then try again.';
                 return;
             }
-            await activateVerifiedUser(refreshedUser);
+            const redirected = await activateVerifiedUser(refreshedUser);
             hideAuthModal();
-            if (resumePendingAuthReturnIfNeeded()) return;
+            if (redirected) return;
             showToast('Email verified. You are signed in.', 'success');
         } catch (error) {
             captureClientError(error, 'check_email_verification');
@@ -1169,7 +1234,8 @@ async function signInWithEmail(email, password) {
             return;
         }
         hideAuthModal();
-        if (resumePendingAuthReturnIfNeeded()) return;
+        if (resumePendingNonAdminAuthReturnIfNeeded()) return;
+        if (await activateVerifiedUser(credential.user)) return;
         showToast('Signed in successfully!', 'success');
         trackEvent('auth_success', { method: 'email' });
     } catch (e) {
@@ -1232,7 +1298,8 @@ async function signInWithGoogle() {
             return;
         }
         hideAuthModal();
-        if (resumePendingAuthReturnIfNeeded()) return;
+        if (resumePendingNonAdminAuthReturnIfNeeded()) return;
+        if (await activateVerifiedUser(result.user)) return;
         showToast('Signed in successfully!', 'success');
         trackEvent('auth_success', { method: 'google' });
     } catch (e) {
@@ -1901,19 +1968,33 @@ function handleUnverifiedEmailUser(user, options = {}) {
         verificationEmailSent: Boolean(options.verificationEmailSent),
     });
 }
-async function activateVerifiedUser(user) {
-    if (!user) return;
-    unverifiedEmailUser = null;
-    currentUser = user;
-    idToken = await user.getIdToken(true);
-    if (authClient && typeof authClient.setToken === 'function') authClient.setToken(idToken);
-    updateUIForAuthState(user);
-    setActiveRuntimeJobs(readActiveRuntimeJobsCache(user));
-    resumeLatestRuntimeJob(activeRuntimeJobs, { startPolling: true });
-    await fetchUserData();
-    await checkPaymentResult();
-    await refreshActiveRuntimeJobs(true);
-    resumePendingAuthReturnIfNeeded();
+function activateVerifiedUser(user) {
+    if (!user) return Promise.resolve(false);
+    const uid = String(user.uid || user.email || '').trim();
+    if (verifiedUserActivationPromise && verifiedUserActivationUid === uid) {
+        return verifiedUserActivationPromise;
+    }
+    const operation = (async () => {
+        unverifiedEmailUser = null;
+        currentUser = user;
+        idToken = await user.getIdToken(true);
+        if (authClient && typeof authClient.setToken === 'function') authClient.setToken(idToken);
+        updateUIForAuthState(user);
+        setActiveRuntimeJobs(readActiveRuntimeJobsCache(user));
+        resumeLatestRuntimeJob(activeRuntimeJobs, { startPolling: true });
+        await fetchUserData();
+        await checkPaymentResult();
+        await refreshActiveRuntimeJobs(true);
+        return resumePendingAuthReturnIfNeeded();
+    })();
+    verifiedUserActivationUid = uid;
+    verifiedUserActivationPromise = operation;
+    return operation.finally(() => {
+        if (verifiedUserActivationPromise === operation) {
+            verifiedUserActivationPromise = null;
+            verifiedUserActivationUid = '';
+        }
+    });
 }
 let handlingDisallowedAuthState = false;
 bootstrap.onAuthStateReady(auth, async (user) => {
