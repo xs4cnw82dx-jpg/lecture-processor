@@ -9,6 +9,12 @@ except Exception:
     ZoneInfo = None
 
 
+CARD_COUNTER_FIELDS = ('seen', 'correct', 'wrong', 'flip_count', 'write_count')
+LEGACY_DEVICE_ID = 'legacy'
+MAX_PROGRESS_DEVICES = 32
+MAX_DAILY_PROGRESS_DATES = 90
+
+
 def _resolve_runtime(runtime=None):
     if runtime is not None:
         return runtime
@@ -61,6 +67,162 @@ def default_streak_data(runtime=None):
         'daily_progress_date': '',
         'daily_progress_count': 0,
     }
+
+
+def sanitize_progress_device_id(value, runtime=None):
+    _ = runtime
+    device_id = str(value or '').strip()
+    if not device_id or len(device_id) > 80:
+        return ''
+    return device_id if re.match(r'^[A-Za-z0-9_-]+$', device_id) else ''
+
+
+def _sanitize_device_counter_entry(payload, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    if not isinstance(payload, dict):
+        return None
+    return {
+        field: sanitize_int(
+            payload.get(field, 0),
+            default=0,
+            min_value=0,
+            max_value=100000,
+            runtime=resolved_runtime,
+        )
+        for field in CARD_COUNTER_FIELDS
+    }
+
+
+def sanitize_device_counter_map(payload, fallback_entry=None, runtime=None):
+    """Normalize retry-safe per-device counters while preserving legacy totals."""
+    resolved_runtime = _resolve_runtime(runtime)
+    cleaned = {}
+    if isinstance(payload, dict):
+        for raw_device_id, raw_counters in payload.items():
+            device_id = sanitize_progress_device_id(raw_device_id, runtime=resolved_runtime)
+            counters = _sanitize_device_counter_entry(raw_counters, runtime=resolved_runtime)
+            if not device_id or counters is None:
+                continue
+            cleaned[device_id] = counters
+            if len(cleaned) >= MAX_PROGRESS_DEVICES:
+                break
+
+    fallback = fallback_entry if isinstance(fallback_entry, dict) else {}
+    totals = {
+        field: sum(int(counters.get(field, 0) or 0) for counters in cleaned.values())
+        for field in CARD_COUNTER_FIELDS
+    }
+    legacy = dict(cleaned.get(LEGACY_DEVICE_ID, {field: 0 for field in CARD_COUNTER_FIELDS}))
+    changed = False
+    for field in CARD_COUNTER_FIELDS:
+        fallback_value = sanitize_int(
+            fallback.get(field, 0),
+            default=0,
+            min_value=0,
+            max_value=100000,
+            runtime=resolved_runtime,
+        )
+        missing = max(0, fallback_value - totals[field])
+        if missing:
+            legacy[field] = min(100000, int(legacy.get(field, 0) or 0) + missing)
+            changed = True
+    if changed:
+        cleaned[LEGACY_DEVICE_ID] = legacy
+    return cleaned
+
+
+def sum_device_counter_map(payload, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    cleaned = sanitize_device_counter_map(payload, runtime=resolved_runtime)
+    return {
+        field: min(100000, sum(int(counters.get(field, 0) or 0) for counters in cleaned.values()))
+        for field in CARD_COUNTER_FIELDS
+    }
+
+
+def merge_device_counter_maps(server_payload, incoming_payload, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    server = sanitize_device_counter_map(server_payload, runtime=resolved_runtime)
+    incoming = sanitize_device_counter_map(incoming_payload, runtime=resolved_runtime)
+    merged = {}
+    for device_id in sorted(set(server) | set(incoming))[:MAX_PROGRESS_DEVICES]:
+        server_counters = server.get(device_id, {})
+        incoming_counters = incoming.get(device_id, {})
+        merged[device_id] = {
+            field: max(
+                int(server_counters.get(field, 0) or 0),
+                int(incoming_counters.get(field, 0) or 0),
+            )
+            for field in CARD_COUNTER_FIELDS
+        }
+    return merged
+
+
+def sanitize_daily_progress_by_device(payload, fallback_date='', fallback_count=0, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    cleaned = {}
+    if isinstance(payload, dict):
+        for raw_date in sorted(payload.keys(), reverse=True):
+            date_value = sanitize_progress_date(raw_date, runtime=resolved_runtime)
+            if not date_value or len(cleaned) >= MAX_DAILY_PROGRESS_DATES:
+                continue
+            raw_devices = payload.get(raw_date)
+            if not isinstance(raw_devices, dict):
+                continue
+            devices = {}
+            for raw_device_id, raw_count in raw_devices.items():
+                device_id = sanitize_progress_device_id(raw_device_id, runtime=resolved_runtime)
+                if not device_id:
+                    continue
+                devices[device_id] = sanitize_int(
+                    raw_count,
+                    default=0,
+                    min_value=0,
+                    max_value=100000,
+                    runtime=resolved_runtime,
+                )
+                if len(devices) >= MAX_PROGRESS_DEVICES:
+                    break
+            if devices:
+                cleaned[date_value] = devices
+
+    safe_fallback_date = sanitize_progress_date(fallback_date, runtime=resolved_runtime)
+    safe_fallback_count = sanitize_int(
+        fallback_count,
+        default=0,
+        min_value=0,
+        max_value=100000,
+        runtime=resolved_runtime,
+    )
+    if safe_fallback_date and safe_fallback_count:
+        devices = cleaned.setdefault(safe_fallback_date, {})
+        existing_total = sum(int(value or 0) for value in devices.values())
+        missing = max(0, safe_fallback_count - existing_total)
+        if missing:
+            devices[LEGACY_DEVICE_ID] = min(
+                100000,
+                int(devices.get(LEGACY_DEVICE_ID, 0) or 0) + missing,
+            )
+    return dict(sorted(cleaned.items(), reverse=True)[:MAX_DAILY_PROGRESS_DATES])
+
+
+def merge_daily_progress_by_device(server_payload, incoming_payload, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    server = sanitize_daily_progress_by_device(server_payload, runtime=resolved_runtime)
+    incoming = sanitize_daily_progress_by_device(incoming_payload, runtime=resolved_runtime)
+    merged = {}
+    for date_value in sorted(set(server) | set(incoming), reverse=True)[:MAX_DAILY_PROGRESS_DATES]:
+        server_devices = server.get(date_value, {})
+        incoming_devices = incoming.get(date_value, {})
+        devices = {}
+        for device_id in sorted(set(server_devices) | set(incoming_devices))[:MAX_PROGRESS_DEVICES]:
+            devices[device_id] = max(
+                int(server_devices.get(device_id, 0) or 0),
+                int(incoming_devices.get(device_id, 0) or 0),
+            )
+        if devices:
+            merged[date_value] = devices
+    return merged
 
 
 def sanitize_progress_date(value, runtime=None):
@@ -122,6 +284,21 @@ def sanitize_streak_data(payload, runtime=None):
         max_value=100000,
         runtime=resolved_runtime,
     )
+    if isinstance(payload.get('daily_progress_by_device'), dict):
+        daily_by_device = sanitize_daily_progress_by_device(
+            payload.get('daily_progress_by_device'),
+            fallback_date=base['daily_progress_date'],
+            fallback_count=base['daily_progress_count'],
+            runtime=resolved_runtime,
+        )
+        base['daily_progress_by_device'] = daily_by_device
+        if daily_by_device:
+            latest_date = max(daily_by_device)
+            base['daily_progress_date'] = latest_date
+            base['daily_progress_count'] = min(
+                100000,
+                sum(int(value or 0) for value in daily_by_device[latest_date].values()),
+            )
     return base
 
 
@@ -218,7 +395,7 @@ def sanitize_card_state_entry(payload, runtime=None):
 
     last_action = sanitize_review_action(payload.get('last_action', ''), runtime=resolved_runtime)
 
-    return {
+    cleaned = {
         'seen': seen,
         'correct': correct,
         'wrong': wrong,
@@ -232,6 +409,25 @@ def sanitize_card_state_entry(payload, runtime=None):
         'flip_count': flip_count,
         'write_count': write_count,
     }
+    if isinstance(payload.get('device_counters'), dict):
+        device_counters = sanitize_device_counter_map(
+            payload.get('device_counters'),
+            fallback_entry=cleaned,
+            runtime=resolved_runtime,
+        )
+        totals = sum_device_counter_map(device_counters, runtime=resolved_runtime)
+        cleaned.update(totals)
+        cleaned['device_counters'] = device_counters
+    updated_at = sanitize_float(
+        payload.get('updated_at', 0),
+        default=0.0,
+        min_value=0.0,
+        max_value=9999999999999999.0,
+        runtime=resolved_runtime,
+    )
+    if updated_at > 0:
+        cleaned['updated_at'] = updated_at
+    return cleaned
 
 
 def sanitize_card_state_map(payload, runtime=None):
@@ -366,44 +562,73 @@ def merge_streak_data(server_payload, incoming_payload, runtime=None):
             sanitize_int(incoming.get('current_streak', 0), default=0, min_value=0, max_value=36500, runtime=resolved_runtime),
         )
 
-    merged_daily_progress_date = max(
-        server.get('daily_progress_date', ''),
-        incoming.get('daily_progress_date', ''),
+    has_device_progress = (
+        isinstance(server.get('daily_progress_by_device'), dict)
+        or isinstance(incoming.get('daily_progress_by_device'), dict)
     )
-    if merged_daily_progress_date == server.get('daily_progress_date', '') and merged_daily_progress_date != incoming.get('daily_progress_date', ''):
-        merged_daily_progress_count = sanitize_int(
-            server.get('daily_progress_count', 0),
-            default=0,
-            min_value=0,
-            max_value=100000,
+    merged_daily_by_device = {}
+    if has_device_progress:
+        server_daily = sanitize_daily_progress_by_device(
+            server.get('daily_progress_by_device'),
+            fallback_date=server.get('daily_progress_date', ''),
+            fallback_count=server.get('daily_progress_count', 0),
             runtime=resolved_runtime,
         )
-    elif merged_daily_progress_date == incoming.get('daily_progress_date', '') and merged_daily_progress_date != server.get('daily_progress_date', ''):
-        merged_daily_progress_count = sanitize_int(
-            incoming.get('daily_progress_count', 0),
-            default=0,
-            min_value=0,
-            max_value=100000,
+        incoming_daily = sanitize_daily_progress_by_device(
+            incoming.get('daily_progress_by_device'),
+            fallback_date=incoming.get('daily_progress_date', ''),
+            fallback_count=incoming.get('daily_progress_count', 0),
             runtime=resolved_runtime,
+        )
+        merged_daily_by_device = merge_daily_progress_by_device(
+            server_daily,
+            incoming_daily,
+            runtime=resolved_runtime,
+        )
+        merged_daily_progress_date = max(merged_daily_by_device) if merged_daily_by_device else ''
+        merged_daily_progress_count = min(
+            100000,
+            sum(int(value or 0) for value in merged_daily_by_device.get(merged_daily_progress_date, {}).values()),
         )
     else:
-        merged_daily_progress_count = max(
-            sanitize_int(server.get('daily_progress_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime),
-            sanitize_int(incoming.get('daily_progress_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime),
+        merged_daily_progress_date = max(
+            server.get('daily_progress_date', ''),
+            incoming.get('daily_progress_date', ''),
         )
+        if merged_daily_progress_date == server.get('daily_progress_date', '') and merged_daily_progress_date != incoming.get('daily_progress_date', ''):
+            merged_daily_progress_count = sanitize_int(
+                server.get('daily_progress_count', 0),
+                default=0,
+                min_value=0,
+                max_value=100000,
+                runtime=resolved_runtime,
+            )
+        elif merged_daily_progress_date == incoming.get('daily_progress_date', '') and merged_daily_progress_date != server.get('daily_progress_date', ''):
+            merged_daily_progress_count = sanitize_int(
+                incoming.get('daily_progress_count', 0),
+                default=0,
+                min_value=0,
+                max_value=100000,
+                runtime=resolved_runtime,
+            )
+        else:
+            merged_daily_progress_count = max(
+                sanitize_int(server.get('daily_progress_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime),
+                sanitize_int(incoming.get('daily_progress_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime),
+            )
 
     if not merged_daily_progress_date:
         merged_daily_progress_count = 0
 
-    return sanitize_streak_data(
-        {
-            'last_study_date': merged_last_study_date,
-            'current_streak': merged_current_streak,
-            'daily_progress_date': merged_daily_progress_date,
-            'daily_progress_count': merged_daily_progress_count,
-        },
-        runtime=resolved_runtime,
-    )
+    merged_payload = {
+        'last_study_date': merged_last_study_date,
+        'current_streak': merged_current_streak,
+        'daily_progress_date': merged_daily_progress_date,
+        'daily_progress_count': merged_daily_progress_count,
+    }
+    if has_device_progress:
+        merged_payload['daily_progress_by_device'] = merged_daily_by_device
+    return sanitize_streak_data(merged_payload, runtime=resolved_runtime)
 
 
 def merge_timezone_value(server_timezone, incoming_timezone, runtime=None):
@@ -467,6 +692,7 @@ def card_state_entry_rank(entry, runtime=None):
     if not isinstance(entry, dict):
         return ('', 0, 0, 0, 0, '')
     return (
+        sanitize_float(entry.get('updated_at', 0), default=0.0, min_value=0.0, max_value=9999999999999999.0, runtime=resolved_runtime),
         sanitize_progress_date(entry.get('last_review_date', ''), runtime=resolved_runtime),
         sanitize_int(entry.get('seen', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime),
         sanitize_int(entry.get('correct', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime),
@@ -489,7 +715,11 @@ def merge_card_state_entries(server_entry, incoming_entry, runtime=None):
     incoming_last = sanitize_progress_date(cleaned_incoming.get('last_review_date', ''), runtime=resolved_runtime)
     merged_last = max(server_last, incoming_last)
 
-    if merged_last == server_last and merged_last != incoming_last:
+    server_updated_at = sanitize_float(cleaned_server.get('updated_at', 0), default=0.0, min_value=0.0, max_value=9999999999999999.0, runtime=resolved_runtime)
+    incoming_updated_at = sanitize_float(cleaned_incoming.get('updated_at', 0), default=0.0, min_value=0.0, max_value=9999999999999999.0, runtime=resolved_runtime)
+    if server_updated_at != incoming_updated_at:
+        source_for_schedule = cleaned_server if server_updated_at > incoming_updated_at else cleaned_incoming
+    elif merged_last == server_last and merged_last != incoming_last:
         source_for_schedule = cleaned_server
     elif merged_last == incoming_last and merged_last != server_last:
         source_for_schedule = cleaned_incoming
@@ -501,9 +731,35 @@ def merge_card_state_entries(server_entry, incoming_entry, runtime=None):
             else cleaned_incoming
         )
 
-    merged_seen = max(cleaned_server.get('seen', 0), cleaned_incoming.get('seen', 0))
-    merged_correct = max(cleaned_server.get('correct', 0), cleaned_incoming.get('correct', 0))
-    merged_wrong = max(cleaned_server.get('wrong', 0), cleaned_incoming.get('wrong', 0))
+    has_device_counters = (
+        isinstance(cleaned_server.get('device_counters'), dict)
+        or isinstance(cleaned_incoming.get('device_counters'), dict)
+    )
+    merged_device_counters = {}
+    if has_device_counters:
+        server_device_counters = sanitize_device_counter_map(
+            cleaned_server.get('device_counters'),
+            fallback_entry=cleaned_server,
+            runtime=resolved_runtime,
+        )
+        incoming_device_counters = sanitize_device_counter_map(
+            cleaned_incoming.get('device_counters'),
+            fallback_entry=cleaned_incoming,
+            runtime=resolved_runtime,
+        )
+        merged_device_counters = merge_device_counter_maps(
+            server_device_counters,
+            incoming_device_counters,
+            runtime=resolved_runtime,
+        )
+        merged_totals = sum_device_counter_map(merged_device_counters, runtime=resolved_runtime)
+        merged_seen = merged_totals['seen']
+        merged_correct = merged_totals['correct']
+        merged_wrong = merged_totals['wrong']
+    else:
+        merged_seen = max(cleaned_server.get('seen', 0), cleaned_incoming.get('seen', 0))
+        merged_correct = max(cleaned_server.get('correct', 0), cleaned_incoming.get('correct', 0))
+        merged_wrong = max(cleaned_server.get('wrong', 0), cleaned_incoming.get('wrong', 0))
 
     minimum_seen = merged_correct + merged_wrong
     if merged_seen < minimum_seen:
@@ -532,14 +788,18 @@ def merge_card_state_entries(server_entry, incoming_entry, runtime=None):
     if merged_difficulty not in {'easy', 'medium', 'hard'}:
         merged_difficulty = 'medium'
     merged_last_action = sanitize_review_action(source_for_schedule.get('last_action', ''), runtime=resolved_runtime)
-    merged_flip_count = max(
-        sanitize_int(cleaned_server.get('flip_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime),
-        sanitize_int(cleaned_incoming.get('flip_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime),
-    )
-    merged_write_count = max(
-        sanitize_int(cleaned_server.get('write_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime),
-        sanitize_int(cleaned_incoming.get('write_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime),
-    )
+    if has_device_counters:
+        merged_flip_count = merged_totals['flip_count']
+        merged_write_count = merged_totals['write_count']
+    else:
+        merged_flip_count = max(
+            sanitize_int(cleaned_server.get('flip_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime),
+            sanitize_int(cleaned_incoming.get('flip_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime),
+        )
+        merged_write_count = max(
+            sanitize_int(cleaned_server.get('write_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime),
+            sanitize_int(cleaned_incoming.get('write_count', 0), default=0, min_value=0, max_value=100000, runtime=resolved_runtime),
+        )
 
     merged_entry = {
         'seen': merged_seen,
@@ -561,6 +821,11 @@ def merge_card_state_entries(server_entry, incoming_entry, runtime=None):
             runtime=resolved_runtime,
         ),
     }
+    if has_device_counters:
+        merged_entry['device_counters'] = merged_device_counters
+    merged_updated_at = max(server_updated_at, incoming_updated_at)
+    if merged_updated_at > 0:
+        merged_entry['updated_at'] = merged_updated_at
     return sanitize_card_state_entry(merged_entry, runtime=resolved_runtime)
 
 

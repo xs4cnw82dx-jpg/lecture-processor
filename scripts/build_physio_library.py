@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import numpy as np
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -215,6 +217,35 @@ def write_manifest(manifest: dict, index_path: Path):
     index_path.parent.mkdir(parents=True, exist_ok=True)
     for stale_path in index_path.parent.glob(f"{index_path.stem}.documents-*.json.gz"):
         stale_path.unlink(missing_ok=True)
+    for stale_path in index_path.parent.glob(f"{index_path.stem}.embeddings*.npy"):
+        stale_path.unlink(missing_ok=True)
+
+    index_records = []
+    vectors = []
+    expected_dimension = 0
+    for raw_record in manifest.get("documents", []) or []:
+        if not isinstance(raw_record, dict):
+            continue
+        try:
+            vector = np.asarray(raw_record.get("embedding", []), dtype=np.float32)
+        except Exception:
+            continue
+        if vector.ndim != 1 or vector.size <= 0:
+            continue
+        if expected_dimension and vector.size != expected_dimension:
+            continue
+        norm = float(np.linalg.norm(vector))
+        if norm <= 0:
+            continue
+        expected_dimension = expected_dimension or int(vector.size)
+        vectors.append(vector / norm)
+        index_records.append({key: value for key, value in raw_record.items() if key != "embedding"})
+
+    matrix_name = ""
+    if vectors:
+        matrix_name = f"{index_path.stem}.embeddings.npy"
+        matrix = np.asarray(vectors, dtype=np.float32)
+        np.save(index_path.parent / matrix_name, matrix, allow_pickle=False)
 
     document_shards = []
     current_records = []
@@ -239,7 +270,7 @@ def write_manifest(manifest: dict, index_path: Path):
         current_records = []
         current_size = 2
 
-    for record in manifest.get("documents", []) or []:
+    for record in index_records:
         payload = _serialized_json_bytes(record)
         separator_size = 1 if current_records else 0
         if current_records and current_size + separator_size + len(payload) > MAX_INDEX_SHARD_BYTES:
@@ -252,6 +283,11 @@ def write_manifest(manifest: dict, index_path: Path):
         "meta": {
             **(manifest.get("meta", {}) or {}),
             "format": physio_knowledge.SHARDED_INDEX_FORMAT,
+            "document_count": len(index_records),
+            "embedding_dimension": int(expected_dimension or physio_knowledge.DEFAULT_EMBED_DIMENSION),
+            "embedding_matrix": matrix_name,
+            "embedding_dtype": "float32" if matrix_name else "",
+            "embeddings_normalized": bool(matrix_name),
             "document_shards": document_shards,
             "document_shard_count": len(document_shards),
         },

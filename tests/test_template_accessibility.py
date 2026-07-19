@@ -116,6 +116,19 @@ def test_batch_submit_feedback_is_live_region():
     assert 'id="batch-submit-feedback" role="status" aria-live="polite" aria-atomic="true" hidden' in batch_template
 
 
+def test_batch_output_language_listbox_has_keyboard_and_focus_management():
+    batch_template = Path('templates/batch_mode.html').read_text(encoding='utf-8')
+    batch_js = Path('static/js/batch-mode.js').read_text(encoding='utf-8')
+
+    assert 'id="output-language-field-label"' in batch_template
+    assert 'role="listbox" aria-labelledby="output-language-field-label"' in batch_template
+    assert 'aria-labelledby="output-language-field-label output-language-label"' in batch_template
+    assert "outputLanguageButton.addEventListener('keydown'" in batch_js
+    assert "outputLanguageMenu.addEventListener('keydown'" in batch_js
+    for key in ('ArrowDown', 'ArrowUp', 'Home', 'End', 'Escape', 'Tab'):
+        assert key in batch_js
+
+
 def test_batch_and_study_generated_dropzones_are_keyboard_accessible():
     batch_js = Path('static/js/batch-mode.js').read_text(encoding='utf-8')
     study_template = Path('templates/study.html').read_text(encoding='utf-8')

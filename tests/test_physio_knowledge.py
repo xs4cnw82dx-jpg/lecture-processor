@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import numpy as np
 
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.physio import access as physio_access
@@ -15,6 +16,8 @@ pytestmark = pytest.mark.usefixtures("disable_sentry")
 
 
 def _allow_physio(monkeypatch, core, *, uid="physio-u1", email="owner@example.com"):
+    # Keep async runtime jobs and limiter counters local to the test process.
+    monkeypatch.setattr(core, "db", None)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": uid, "email": email})
     monkeypatch.setattr(
         physio_access,
@@ -27,9 +30,11 @@ def _allow_physio(monkeypatch, core, *, uid="physio-u1", email="owner@example.co
 def clear_knowledge_cache():
     physio_knowledge._INDEX_CACHE.update({"path": "", "mtime": 0.0, "signature": "", "payload": None})
     physio_knowledge._SHARD_DOCUMENT_CACHE.update({"path": "", "signature": "", "documents": None})
+    physio_knowledge._VECTOR_SEARCH_CACHE.update({"path": "", "signature": "", "records": None, "matrix": None})
     yield
     physio_knowledge._INDEX_CACHE.update({"path": "", "mtime": 0.0, "signature": "", "payload": None})
     physio_knowledge._SHARD_DOCUMENT_CACHE.update({"path": "", "signature": "", "documents": None})
+    physio_knowledge._VECTOR_SEARCH_CACHE.update({"path": "", "signature": "", "records": None, "matrix": None})
 
 
 def test_rank_index_documents_orders_by_similarity():
@@ -485,6 +490,12 @@ def test_load_knowledge_index_reads_gzip_shards(tmp_path):
 def test_knowledge_query_endpoint_uses_manifest(client, monkeypatch, core, tmp_path):
     _allow_physio(monkeypatch, core)
     monkeypatch.setattr(core, "client", object())
+    captured = []
+    monkeypatch.setattr(
+        core,
+        "submit_background_job",
+        lambda func, *args, **kwargs: captured.append((func, args, kwargs)),
+    )
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(
         json.dumps(
@@ -523,8 +534,14 @@ def test_knowledge_query_endpoint_uses_manifest(client, monkeypatch, core, tmp_p
         headers={"Authorization": "Bearer dev"},
     )
 
-    assert response.status_code == 200
-    body = response.get_json()
+    assert response.status_code == 202
+    job_id = response.get_json()["job_id"]
+    assert len(captured) == 1
+    func, args, kwargs = captured[0]
+    func(*args, **kwargs)
+    status = client.get(f"/api/physio/jobs/{job_id}", headers={"Authorization": "Bearer dev"})
+    assert status.status_code == 200
+    body = status.get_json()["result"]
     assert body["citations"][0]["label"] == "Heupartrose Richtlijn (pagina 8)"
     assert body["citations"][0]["source_kind"] == "guidelines"
     assert body["retrieved_sources"][0]["source_name"] == "heup.pdf"
@@ -575,5 +592,11 @@ def test_build_physio_library_script_writes_manifest_from_text_source(tmp_path):
     assert written["meta"]["format"] == physio_knowledge.SHARDED_INDEX_FORMAT
     assert written["meta"]["indexed_source_paths"] == [str(forms_dir / "notes.md")]
     assert written["meta"]["document_shards"]
+    assert written["meta"]["embedding_matrix"] == "manifest.embeddings.npy"
+    assert written["meta"]["embeddings_normalized"] is True
     assert manifest["documents"][0]["source_kind"] == "forms"
-    assert loaded["documents"][0]["embedding"][1] == 1.0
+    assert "embedding" not in loaded["documents"][0]
+    cache = physio_knowledge._build_vector_search_cache(index_path, written, loaded["documents"])
+    assert isinstance(cache["matrix"], np.memmap)
+    assert cache["matrix"].dtype == np.float32
+    assert np.isclose(float(np.linalg.norm(cache["matrix"][0])), 1.0)

@@ -63,6 +63,50 @@ test('lecture and batch pages show updated labels', async ({ page }) => {
   await expect(page.locator('body')).not.toContainText(/Batch Mode Lectures/i);
 });
 
+test('batch output language listbox supports keyboard selection', async ({ page }) => {
+  await page.goto('/batch_mode');
+  const trigger = page.locator('#output-language-button');
+  await trigger.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('#output-language-menu [data-value="english"]')).toBeFocused();
+
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('#output-language-menu [data-value="dutch"]')).toBeFocused();
+  await page.keyboard.press('Enter');
+
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(trigger).toBeFocused();
+  await expect(page.locator('#output-language')).toHaveValue('dutch');
+  await expect(page.locator('#output-language-label')).toContainText('Dutch');
+});
+
+test('mobile pack builder keeps actions visible and option typing focused', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/study-pack-builder');
+  await page.evaluate(() => window.openBuilderOverlay('create', null));
+
+  await expect(page.locator('#builder-stat-dirty')).toHaveText('Not saved yet');
+  await expect(page.locator('#builder-save-btn')).toBeInViewport();
+  const mainTop = await page.locator('.builder-main').evaluate((element) => element.getBoundingClientRect().top);
+  expect(mainTop).toBeLessThan(180);
+
+  await page.locator('#builder-tab-test').click();
+  await page.locator('#builder-add-question-btn').click();
+  const answer = page.locator('[data-q-answer="0"]');
+  await answer.selectOption({ label: 'C: Option C' });
+  const option = page.locator('#builder-q-option-0-2');
+  await option.focus();
+  await option.selectText();
+  await option.pressSequentially('Pulmonary artery');
+
+  await expect(option).toBeFocused();
+  await expect(option).toHaveValue('Pulmonary artery');
+  await expect(answer).toHaveValue('Pulmonary artery');
+  await page.locator('.builder-main').evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await expect(page.locator('#builder-save-btn')).toBeInViewport();
+});
+
 test('dashboard shell loads for unauthenticated user', async ({ page }) => {
   await page.goto('/dashboard');
   await expect(page.locator('#dash-streak')).toContainText('Sign in to track');

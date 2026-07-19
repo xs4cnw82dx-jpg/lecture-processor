@@ -30,6 +30,12 @@ def generate_physio_reasoning():
     return physio_api_service.generate_reasoning(runtime, request)
 
 
+@physio_bp.route("/api/physio/jobs/<job_id>", methods=["GET"])
+def get_physio_generation_job(job_id):
+    runtime = get_runtime()
+    return physio_api_service.get_generation_job_status(runtime, request, job_id)
+
+
 @physio_bp.route("/api/physio/knowledge/query", methods=["POST"])
 def query_physio_knowledge():
     runtime = get_runtime()

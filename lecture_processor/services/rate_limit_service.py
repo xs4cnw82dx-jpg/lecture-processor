@@ -1,6 +1,7 @@
 """Rate limiting helpers with Firestore-first fallback strategy."""
 
 import hashlib
+from datetime import datetime, timezone
 
 from lecture_processor.repositories import rate_limit_repo
 
@@ -38,13 +39,15 @@ def check_rate_limit_firestore(
                 count = int((snapshot.to_dict() or {}).get('count', 0) or 0)
             if count >= limit:
                 return False, retry_after
+            expires_at = window_start + (window_seconds * 3)
             txn.set(counter_ref, {
                 'key': key,
                 'count': count + 1,
                 'window_start': window_start,
                 'window_seconds': int(window_seconds),
                 'updated_at': now_ts,
-                'expires_at': window_start + (window_seconds * 3),
+                'expires_at': expires_at,
+                'expires_at_ts': datetime.fromtimestamp(expires_at, tz=timezone.utc),
             }, merge=True)
             return True, 0
 

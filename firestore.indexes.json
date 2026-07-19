@@ -327,6 +327,12 @@
       "fieldPath": "expires_at_ts",
       "ttl": true,
       "indexes": []
+    },
+    {
+      "collectionGroup": "rate_limit_counters",
+      "fieldPath": "expires_at_ts",
+      "ttl": true,
+      "indexes": []
     }
   ]
 }

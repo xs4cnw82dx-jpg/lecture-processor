@@ -43,7 +43,7 @@ let learnSessionRecorded = false;
 let audioSections = [], audioMap = [], audioReady = false, audioSpeedIndex = 1, audioHiddenForLearn = false;
 let remoteProgressCardStates = {};
 let progressTimezone = (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
-let progressSyncTimer = null, progressSyncInFlight = false;
+let progressSyncTimer = null, progressSyncController = null;
 let creatingDemoPack = false;
 let progressHydrationDone = false;
 let progressSummaryCache = null;
@@ -92,6 +92,9 @@ let resetStudyEntryAfterBuilderClose = initialStudyEntryMode === 'create-pack' &
   normalizeUrlPath(window.location.pathname) !== STUDY_LIBRARY_PATH || actionFromUrl === 'create-pack'
 );
 const progressSyncSourceId = 'study-' + Math.random().toString(36).slice(2, 10);
+const progressSyncDeviceId = progressUtils && typeof progressUtils.getOrCreateProgressDeviceId === 'function'
+  ? progressUtils.getOrCreateProgressDeviceId()
+  : progressSyncSourceId;
 const PROGRESS_DIRTY_SUMMARY_KEY = '__summary__';
 
 /* Write mode state */
@@ -432,6 +435,8 @@ function markProgressDirty(packId) {
   var next = readProgressDirtyKeys();
   if (next.indexOf(marker) < 0) next.push(marker);
   writeProgressDirtyKeys(next);
+  var controller = getProgressSyncController();
+  if (controller) controller.mark(marker);
 }
 function clearProgressDirty(packIds) {
   if (!Array.isArray(packIds)) {
@@ -447,6 +452,12 @@ function clearProgressDirty(packIds) {
 }
 function hasProgressDirty() {
   return readProgressDirtyKeys().length > 0;
+}
+function mergeLocalAndRemoteCardState(localState, remoteState) {
+  if (progressUtils && typeof progressUtils.mergeCardStateMaps === 'function') {
+    return progressUtils.mergeCardStateMaps(localState || {}, remoteState || {});
+  }
+  return Object.keys(localState || {}).length ? localState : (remoteState || {});
 }
 function addPackToCardStateIndex(packId) {
   var id = String(packId || '').trim();
@@ -517,16 +528,19 @@ function getStreakKey() { return 'study_streak_' + (auth.currentUser ? auth.curr
 function loadStreakData() {
   try {
     var raw = localStorage.getItem(getStreakKey());
-    if (!raw) return { last_study_date: '', current_streak: 0, daily_progress_date: '', daily_progress_count: 0 };
+    if (!raw) return { last_study_date: '', current_streak: 0, daily_progress_date: '', daily_progress_count: 0, daily_progress_by_device: {} };
     var parsed = JSON.parse(raw) || {};
     return {
       last_study_date: parsed.last_study_date || '',
       current_streak: parseInt(parsed.current_streak, 10) || 0,
       daily_progress_date: parsed.daily_progress_date || '',
-      daily_progress_count: parseInt(parsed.daily_progress_count, 10) || 0
+      daily_progress_count: parseInt(parsed.daily_progress_count, 10) || 0,
+      daily_progress_by_device: parsed.daily_progress_by_device && typeof parsed.daily_progress_by_device === 'object'
+        ? parsed.daily_progress_by_device
+        : {}
     };
   } catch (e) {
-    return { last_study_date: '', current_streak: 0, daily_progress_date: '', daily_progress_count: 0 };
+    return { last_study_date: '', current_streak: 0, daily_progress_date: '', daily_progress_count: 0, daily_progress_by_device: {} };
   }
 }
 function saveStreakData(data, options) {
@@ -620,26 +634,22 @@ function mergeProgressFromServer(remote) {
   }
   if (remote.streak_data && typeof remote.streak_data === 'object') {
     var local = loadStreakData();
-    var remoteSeen = parseInt(remote.streak_data.daily_progress_count, 10) || 0;
-    var localSeen = parseInt(local.daily_progress_count, 10) || 0;
-    var localDate = String(local.daily_progress_date || '');
-    var remoteDate = String(remote.streak_data.daily_progress_date || '');
-    if (!local.last_study_date || (remoteDate && remoteDate >= localDate && remoteSeen >= localSeen)) {
-      saveStreakData(remote.streak_data, { sync: false });
-    }
+    var mergedStreak = progressUtils && typeof progressUtils.mergeStreakData === 'function'
+      ? progressUtils.mergeStreakData(local, remote.streak_data)
+      : remote.streak_data;
+    saveStreakData(mergedStreak, { sync: false });
   }
   var incomingRemoteStates = (remote.card_states && typeof remote.card_states === 'object') ? remote.card_states : {};
-  remoteProgressCardStates = Object.assign({}, remoteProgressCardStates || {}, incomingRemoteStates);
   Object.keys(incomingRemoteStates).forEach(function (packId) {
     if (!packId) return;
     var remoteState = incomingRemoteStates[packId] || {};
     var localKey = 'card_state_' + uid + '_' + packId;
     var localState = {};
     try { localState = JSON.parse(localStorage.getItem(localKey) || '{}') || {}; } catch (e) { }
-    if (!Object.keys(localState).length && Object.keys(remoteState).length) {
-      try { localStorage.setItem(localKey, JSON.stringify(remoteState)); } catch (e) { }
-    }
-    if (Object.keys(remoteState).length || Object.keys(localState).length) {
+    var mergedState = mergeLocalAndRemoteCardState(localState, remoteState);
+    remoteProgressCardStates[packId] = mergedState;
+    if (Object.keys(mergedState).length) {
+      try { localStorage.setItem(localKey, JSON.stringify(mergedState)); } catch (e) { }
       addPackToCardStateIndex(packId);
     }
   });
@@ -703,24 +713,51 @@ function scheduleRemoteProgressDetailsHydration() {
     window.setTimeout(run, 1200);
   }
 }
-function flushProgressSync(forceAllPacks) {
-  if (progressSyncInFlight || !auth.currentUser || !token) return;
-  progressSyncInFlight = true;
+function createProgressSyncRequestSnapshot(forceAllPacks, dirtyMarkers) {
+  var markerMap = {};
+  (dirtyMarkers || []).forEach(function (marker) { markerMap[marker] = true; });
   var snapshot = readLocalProgressSnapshot();
-  var payload = { streak_data: snapshot.streak_data, timezone: progressTimezone || getBrowserTimezone() };
+  var payload = {
+    streak_data: snapshot.streak_data,
+    timezone: progressTimezone || getBrowserTimezone(),
+    device_id: progressSyncDeviceId
+  };
   if (forceAllPacks) {
     payload.card_states = snapshot.card_states;
-  } else if (selectedPackId) {
+  } else {
     payload.card_states = {};
-    payload.card_states[selectedPackId] = loadCardState();
+    Object.keys(markerMap).forEach(function (marker) {
+      if (marker === PROGRESS_DIRTY_SUMMARY_KEY) return;
+      payload.card_states[marker] = loadCardStateForPack(marker);
+    });
   }
-  apiCall('/api/study-progress', { method: 'PUT', body: JSON.stringify(payload) }).then(function () {
-    if (forceAllPacks) clearProgressDirty();
-    else clearProgressDirty([selectedPackId, PROGRESS_DIRTY_SUMMARY_KEY]);
-  }).catch(function (e) {
+  return { payload: payload, markers: Object.keys(markerMap) };
+}
+function getProgressSyncController() {
+  if (progressSyncController) return progressSyncController;
+  if (!progressUtils || typeof progressUtils.createRevisionedSyncController !== 'function') return null;
+  progressSyncController = progressUtils.createRevisionedSyncController({
+    createSnapshot: createProgressSyncRequestSnapshot,
+    transport: function (payload) {
+      return apiCall('/api/study-progress', { method: 'PUT', body: JSON.stringify(payload) });
+    },
+    onAcknowledge: function (markers) {
+      clearProgressDirty(markers);
+    },
+    onError: function (error) {
+      console.warn('Could not sync queued study progress:', error && error.message ? error.message : error);
+    }
+  });
+  return progressSyncController;
+}
+function flushProgressSync(forceAllPacks) {
+  if (!auth.currentUser || !token) return Promise.resolve(false);
+  var controller = getProgressSyncController();
+  if (!controller) return Promise.resolve(false);
+  readProgressDirtyKeys().forEach(function (marker) { controller.ensureMarker(marker); });
+  return controller.flush(!!forceAllPacks).catch(function (e) {
     console.warn('Could not sync study progress:', e && e.message ? e.message : e);
-  }).finally(function () {
-    progressSyncInFlight = false;
+    return false;
   });
 }
 function queueProgressSync(currentPackOnly, options) {
@@ -728,6 +765,11 @@ function queueProgressSync(currentPackOnly, options) {
   var opts = options || {};
   if (opts.markDirty !== false) {
     markProgressDirty(currentPackOnly ? selectedPackId : PROGRESS_DIRTY_SUMMARY_KEY);
+  }
+  var controller = getProgressSyncController();
+  if (controller && controller.isInFlight()) {
+    if (progressSyncTimer) { clearTimeout(progressSyncTimer); progressSyncTimer = null; }
+    return;
   }
   if (progressSyncTimer) { clearTimeout(progressSyncTimer); }
   progressSyncTimer = setTimeout(function () {
@@ -764,7 +806,9 @@ function createEmptyCardStateEntry() {
     last_review_date: '',
     last_action: '',
     flip_count: 0,
-    write_count: 0
+    write_count: 0,
+    device_counters: {},
+    updated_at: 0
   };
 }
 function ensureCardStateEntry(state, cardId) {
@@ -834,7 +878,11 @@ function ensureStudyActivityRecorded() {
 }
 function recordStudyActivity() {
   var data = ensureStudyActivityRecorded();
-  data.daily_progress_count = Math.max(0, parseInt(data.daily_progress_count, 10) || 0) + 1;
+  if (progressUtils && typeof progressUtils.incrementDailyProgressForDevice === 'function') {
+    data = progressUtils.incrementDailyProgressForDevice(data, data.daily_progress_date, progressSyncDeviceId);
+  } else {
+    data.daily_progress_count = Math.max(0, parseInt(data.daily_progress_count, 10) || 0) + 1;
+  }
   saveStreakData(data);
   updateDailyGoalDisplays();
   return data;
@@ -849,6 +897,7 @@ function setCardReviewAction(cardId, action) {
   var state = loadCardState();
   var entry = ensureCardStateEntry(state, cardId);
   entry.last_action = value;
+  entry.updated_at = Date.now();
   if (value === 'hard') entry.difficulty = 'hard';
   else if (value === 'easy') entry.difficulty = 'easy';
   else entry.difficulty = 'medium';
@@ -862,9 +911,15 @@ function applyReviewAction(cardId, action) {
   var state = loadCardState();
   var entry = ensureCardStateEntry(state, cardId);
   var reviewAction = normalizeReviewAction(action);
-  entry.seen = (entry.seen || 0) + 1;
-  if (reviewAction === 'retry') { entry.wrong = (entry.wrong || 0) + 1; }
-  else { entry.correct = (entry.correct || 0) + 1; }
+  var reviewCounters = { seen: 1 };
+  reviewCounters[reviewAction === 'retry' ? 'wrong' : 'correct'] = 1;
+  if (progressUtils && typeof progressUtils.incrementCardDeviceCounters === 'function') {
+    entry = progressUtils.incrementCardDeviceCounters(entry, progressSyncDeviceId, reviewCounters);
+  } else {
+    entry.seen = (entry.seen || 0) + 1;
+    if (reviewAction === 'retry') entry.wrong = (entry.wrong || 0) + 1;
+    else entry.correct = (entry.correct || 0) + 1;
+  }
   entry.interval_days = getNextIntervalDaysForReviewAction(entry.interval_days, reviewAction);
   entry.max_interval_days = Math.max(entry.max_interval_days || 0, entry.interval_days || 0);
   entry.last_review_date = todayLocalDateString();
@@ -876,6 +931,7 @@ function applyReviewAction(cardId, action) {
   else entry.difficulty = 'medium';
   entry.last_action = reviewAction;
   entry.level = deriveCardLevelForEntry(entry);
+  entry.updated_at = Date.now();
   state[cardId] = entry;
   saveCardState(state);
   recordStudyActivity();
@@ -888,8 +944,13 @@ function recordCardExposure(cardId) {
   if (!cardId) return;
   var state = loadCardState();
   var entry = ensureCardStateEntry(state, cardId);
-  entry.flip_count = (entry.flip_count || 0) + 1;
+  if (progressUtils && typeof progressUtils.incrementCardDeviceCounters === 'function') {
+    entry = progressUtils.incrementCardDeviceCounters(entry, progressSyncDeviceId, { flip_count: 1 });
+  } else {
+    entry.flip_count = (entry.flip_count || 0) + 1;
+  }
   entry.level = deriveCardLevelForEntry(entry);
+  entry.updated_at = Date.now();
   state[cardId] = entry;
   saveCardState(state);
   renderMasteryGauge();
@@ -900,8 +961,13 @@ function recordWriteAttempt(cardId) {
   if (!cardId) return;
   var state = loadCardState();
   var entry = ensureCardStateEntry(state, cardId);
-  entry.write_count = (entry.write_count || 0) + 1;
+  if (progressUtils && typeof progressUtils.incrementCardDeviceCounters === 'function') {
+    entry = progressUtils.incrementCardDeviceCounters(entry, progressSyncDeviceId, { write_count: 1 });
+  } else {
+    entry.write_count = (entry.write_count || 0) + 1;
+  }
   entry.level = deriveCardLevelForEntry(entry);
+  entry.updated_at = Date.now();
   state[cardId] = entry;
   saveCardState(state);
   renderMasteryGauge();
@@ -2785,6 +2851,11 @@ function updateBuilderDirtyIndicator() {
     builderStatDirty.className = 'builder-status saving';
     return;
   }
+  if (builderMode === 'create' && !builderPackId) {
+    builderStatDirty.textContent = 'Not saved yet';
+    builderStatDirty.className = 'builder-status pending';
+    return;
+  }
   if (builderDirty) {
     builderStatDirty.textContent = 'Auto-save pending';
     builderStatDirty.className = 'builder-status pending';
@@ -2916,6 +2987,17 @@ function renderBuilderQuestions() {
       + '</div><div class="field u-mt-8"><label for="' + explanationId + '">Explanation (optional)</label><textarea id="' + explanationId + '" class="u-min-h-72" data-q-field="explanation" data-q-index="' + index + '">' + escapeHtml(question.explanation || '') + '</textarea></div></div>';
   }).join(''));
   updateBuilderStats();
+}
+function syncBuilderQuestionAnswerSelect(row, question) {
+  if (!row || !question) return;
+  var select = row.querySelector('[data-q-answer]');
+  if (!select) return;
+  Array.prototype.slice.call(select.options || []).forEach(function (option, optionIndex) {
+    var optionValue = question.options[optionIndex] || '';
+    option.value = optionValue;
+    option.textContent = (['A', 'B', 'C', 'D'][optionIndex] || 'A') + ': ' + (optionValue || '(empty)');
+    option.selected = question.answer === optionValue;
+  });
 }
 function setBuilderPane(nextPane) {
   builderPane = nextPane;
@@ -4839,6 +4921,32 @@ function getAnswerDisplay(q) {
   return 'A: (empty)';
 }
 
+function updateQuestionOptionValue(question, optionIndex, value) {
+  if (studySessionUtils && typeof studySessionUtils.updateQuestionOption === 'function') {
+    return studySessionUtils.updateQuestionOption(question, optionIndex, value);
+  }
+  var updated = normalizeQuestion(question || {});
+  var previousCorrectIndex = updated.options.indexOf(updated.answer);
+  updated.options[optionIndex] = value;
+  if (previousCorrectIndex === optionIndex) updated.answer = value;
+  else if (updated.options.indexOf(updated.answer) < 0) updated.answer = updated.options[0] || '';
+  return updated;
+}
+
+function syncQuestionAnswerPicker(row, question) {
+  if (!row || !question) return;
+  var label = row.querySelector('[data-answer-button] .app-select-label');
+  if (label) label.textContent = getAnswerDisplay(question);
+  row.querySelectorAll('[data-answer-item]').forEach(function (item) {
+    var optionIndex = parseInt(item.dataset.optionIndex, 10);
+    var optionValue = question.options[optionIndex] || '';
+    var active = question.answer === optionValue;
+    item.textContent = (['A', 'B', 'C', 'D'][optionIndex] || 'A') + ': ' + (optionValue || '(empty)');
+    item.classList.toggle('active', active);
+    item.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+}
+
 function renderQuestionEditor(hi) {
   var idx = typeof hi === 'number' ? hi : -1;
   selectedPack.test_questions = (selectedPack.test_questions || []).map(normalizeQuestion);
@@ -4884,9 +4992,9 @@ function renderQuestionEditor(hi) {
   questionEditorList.querySelectorAll('input[data-option-index]').forEach(function (el) {
     el.addEventListener('input', function () {
       var qi2 = parseInt(el.dataset.questionIndex, 10), oi2 = parseInt(el.dataset.optionIndex, 10);
-      var qn = selectedPack.test_questions[qi2]; qn.options[oi2] = el.value;
-      if (qn.options.indexOf(qn.answer) < 0) { qn.answer = qn.options[0] || ''; }
-      renderQuestionEditor(qi2);
+      var qn = updateQuestionOptionValue(selectedPack.test_questions[qi2], oi2, el.value);
+      selectedPack.test_questions[qi2] = qn;
+      syncQuestionAnswerPicker(el.closest('[data-row-index]'), qn);
       queueInlineAutosave();
     });
   });
@@ -6269,10 +6377,10 @@ function hydratePackStatesForKnownPacks() {
     var localState = {};
     try { localState = JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch (e) { localState = {}; }
     var remoteState = remoteStates[packId] || {};
-    if (!Object.keys(localState).length && Object.keys(remoteState).length) {
-      try { localStorage.setItem(key, JSON.stringify(remoteState)); } catch (e) { }
-    }
-    if (Object.keys(remoteState).length || Object.keys(localState).length) {
+    var mergedState = mergeLocalAndRemoteCardState(localState, remoteState);
+    remoteProgressCardStates[packId] = mergedState;
+    if (Object.keys(mergedState).length) {
+      try { localStorage.setItem(key, JSON.stringify(mergedState)); } catch (e) { }
       addPackToCardStateIndex(packId);
     }
   });
@@ -6534,7 +6642,7 @@ bootstrap.onAuthStateReady(auth, function (user) {
     clearRuntimeJobsRefreshTimer();
     runtimeJobsRefreshInFlight = false;
     if (progressSyncTimer) { clearTimeout(progressSyncTimer); progressSyncTimer = null; }
-    progressSyncInFlight = false;
+    if (progressSyncController) progressSyncController.reset();
     if (highlightSyncTimer) { clearTimeout(highlightSyncTimer); highlightSyncTimer = null; }
     highlightSyncInFlight = false;
     pendingHighlightPayload = undefined;
@@ -6754,11 +6862,9 @@ builderQuestionList.addEventListener('input', function (event) {
     var optIndex = parseInt(target.dataset.qOption, 10);
     var question = builderDraft.test_questions[qIndex];
     if (question) {
-      question.options[optIndex] = target.value;
-      if (question.options.indexOf(question.answer) < 0) {
-        question.answer = question.options[0] || '';
-      }
-      renderBuilderQuestions();
+      question = updateQuestionOptionValue(question, optIndex, target.value);
+      builderDraft.test_questions[qIndex] = question;
+      syncBuilderQuestionAnswerSelect(target.closest('[data-q-row]'), question);
       markBuilderDirty(true);
     }
   }

@@ -94,6 +94,65 @@ def test_progress_helpers_count_viewed_cards_as_familiar_and_due():
     assert summary['due_today'] == 1
 
 
+def test_progress_device_counters_sum_distinct_devices_and_dedupe_retries():
+    server = {
+        'seen': 2,
+        'correct': 2,
+        'device_counters': {
+            'browser-a': {'seen': 2, 'correct': 2},
+        },
+        'last_review_date': '2026-07-18',
+        'updated_at': 100,
+    }
+    incoming = {
+        'seen': 3,
+        'correct': 2,
+        'wrong': 1,
+        'device_counters': {
+            'browser-b': {'seen': 3, 'correct': 2, 'wrong': 1},
+        },
+        'last_review_date': '2026-07-19',
+        'updated_at': 200,
+    }
+
+    merged = progress.merge_card_state_entries(server, incoming, runtime=SimpleNamespace())
+    retried = progress.merge_card_state_entries(merged, incoming, runtime=SimpleNamespace())
+
+    assert merged['seen'] == 5
+    assert merged['correct'] == 4
+    assert merged['wrong'] == 1
+    assert merged['device_counters']['browser-a']['seen'] == 2
+    assert merged['device_counters']['browser-b']['seen'] == 3
+    assert retried['seen'] == 5
+
+
+def test_daily_progress_device_counters_sum_devices_and_dedupe_retries():
+    server = {
+        'last_study_date': '2026-07-19',
+        'current_streak': 3,
+        'daily_progress_date': '2026-07-19',
+        'daily_progress_count': 2,
+        'daily_progress_by_device': {'2026-07-19': {'browser-a': 2}},
+    }
+    incoming = {
+        'last_study_date': '2026-07-19',
+        'current_streak': 3,
+        'daily_progress_date': '2026-07-19',
+        'daily_progress_count': 4,
+        'daily_progress_by_device': {'2026-07-19': {'browser-b': 4}},
+    }
+
+    merged = progress.merge_streak_data(server, incoming, runtime=SimpleNamespace())
+    retried = progress.merge_streak_data(merged, incoming, runtime=SimpleNamespace())
+
+    assert merged['daily_progress_count'] == 6
+    assert merged['daily_progress_by_device']['2026-07-19'] == {
+        'browser-a': 2,
+        'browser-b': 4,
+    }
+    assert retried['daily_progress_count'] == 6
+
+
 def test_audio_storage_round_trip_and_persist(tmp_path):
     root = tmp_path / 'uploads' / 'study_audio'
     runtime = SimpleNamespace(

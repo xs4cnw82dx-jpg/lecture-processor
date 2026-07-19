@@ -132,6 +132,7 @@
   var activeSubmissionId = '';
   var pendingStartRequest = false;
   var startLockedByBatchState = false;
+  var outputLanguageUserTouched = false;
   var BATCH_CACHE_KEY_PREFIX = isInstantBatch ? 'instant_batch_mode_last_batch_' : 'batch_mode_last_batch_';
 
   function modeMeta() {
@@ -432,11 +433,21 @@
     return 'row-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
   }
 
-  function setOutputLanguageMenuVisible(visible) {
+  function focusOutputLanguageItem(strategy) {
+    if (!outputLanguageItems.length) return;
+    var target = null;
+    if (strategy === 'first') target = outputLanguageItems[0];
+    else if (strategy === 'last') target = outputLanguageItems[outputLanguageItems.length - 1];
+    else target = outputLanguageItems.find(function (item) { return item.getAttribute('aria-selected') === 'true'; }) || outputLanguageItems[0];
+    if (target) target.focus();
+  }
+
+  function setOutputLanguageMenuVisible(visible, focusStrategy) {
     if (!outputLanguageMenu || !outputLanguageButton) return;
     outputLanguageMenu.classList.toggle('visible', !!visible);
     outputLanguageButton.classList.toggle('open', !!visible);
     outputLanguageButton.setAttribute('aria-expanded', visible ? 'true' : 'false');
+    if (visible && focusStrategy) focusOutputLanguageItem(focusStrategy);
   }
 
   function getLanguageLabel(value, customValue) {
@@ -448,19 +459,35 @@
     return OUTPUT_LANGUAGE_LABELS[key] || OUTPUT_LANGUAGE_LABELS.english;
   }
 
-  function setOutputLanguage(value) {
+  function setOutputLanguage(value, customValue) {
     var key = Object.prototype.hasOwnProperty.call(OUTPUT_LANGUAGE_LABELS, value) ? value : 'english';
+    if (outputLanguageCustom) {
+      outputLanguageCustom.hidden = key !== 'other';
+      outputLanguageCustom.value = key === 'other' ? String(customValue || '') : '';
+    }
     if (outputLanguageInput) outputLanguageInput.value = key;
     if (outputLanguageLabel) outputLanguageLabel.textContent = getLanguageLabel(key, outputLanguageCustom ? outputLanguageCustom.value : '');
     outputLanguageItems.forEach(function (item) {
       var active = item.dataset.value === key;
       item.classList.toggle('active', active);
       item.setAttribute('aria-selected', active ? 'true' : 'false');
+      item.tabIndex = active ? 0 : -1;
     });
-    if (outputLanguageCustom) {
-      outputLanguageCustom.hidden = key !== 'other';
-      if (key !== 'other') outputLanguageCustom.value = '';
-    }
+  }
+
+  function loadOutputLanguagePreference() {
+    return authFetch('/api/user-preferences').then(function (response) {
+      if (!response.ok) throw new Error('Could not load output language preference.');
+      return response.json();
+    }).then(function (payload) {
+      if (outputLanguageUserTouched) return false;
+      var preferences = payload && payload.preferences ? payload.preferences : {};
+      setOutputLanguage(preferences.output_language || 'english', preferences.output_language_custom || '');
+      return true;
+    }).catch(function () {
+      // Keep the visible default when preferences are temporarily unavailable.
+      return false;
+    });
   }
 
   function setStudyFeature(value) {
@@ -1933,18 +1960,59 @@
       outputLanguageButton.addEventListener('click', function (event) {
         event.stopPropagation();
         var isVisible = outputLanguageMenu.classList.contains('visible');
-        setOutputLanguageMenuVisible(!isVisible);
+        setOutputLanguageMenuVisible(!isVisible, !isVisible ? 'active' : null);
+      });
+      outputLanguageButton.addEventListener('keydown', function (event) {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          setOutputLanguageMenuVisible(true, event.key === 'ArrowDown' ? 'first' : 'last');
+        } else if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          var isVisible = outputLanguageMenu.classList.contains('visible');
+          setOutputLanguageMenuVisible(!isVisible, !isVisible ? 'active' : null);
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          setOutputLanguageMenuVisible(false);
+        }
       });
       outputLanguageItems.forEach(function (item) {
         item.addEventListener('click', function () {
+          outputLanguageUserTouched = true;
           setOutputLanguage(item.dataset.value || 'english');
           setOutputLanguageMenuVisible(false);
+          outputLanguageButton.focus();
         });
+      });
+      outputLanguageMenu.addEventListener('keydown', function (event) {
+        var currentIndex = outputLanguageItems.indexOf(document.activeElement);
+        var targetIndex = currentIndex;
+        if (event.key === 'ArrowDown') targetIndex = (Math.max(currentIndex, -1) + 1) % outputLanguageItems.length;
+        else if (event.key === 'ArrowUp') targetIndex = (currentIndex <= 0 ? outputLanguageItems.length : currentIndex) - 1;
+        else if (event.key === 'Home') targetIndex = 0;
+        else if (event.key === 'End') targetIndex = outputLanguageItems.length - 1;
+        else if (event.key === 'Escape') {
+          event.preventDefault();
+          setOutputLanguageMenuVisible(false);
+          outputLanguageButton.focus();
+          return;
+        } else if (event.key === 'Tab') {
+          setOutputLanguageMenuVisible(false);
+          return;
+        } else if ((event.key === 'Enter' || event.key === ' ') && currentIndex >= 0) {
+          event.preventDefault();
+          outputLanguageItems[currentIndex].click();
+          return;
+        } else {
+          return;
+        }
+        event.preventDefault();
+        if (outputLanguageItems[targetIndex]) outputLanguageItems[targetIndex].focus();
       });
     }
 
     if (outputLanguageCustom) {
       outputLanguageCustom.addEventListener('input', function () {
+        outputLanguageUserTouched = true;
         if (outputLanguageInput && outputLanguageInput.value === 'other' && outputLanguageLabel) {
           outputLanguageLabel.textContent = getLanguageLabel('other', outputLanguageCustom.value);
         }
@@ -2036,6 +2104,7 @@
 
     if (auth) {
       bootstrap.onAuthStateReady(auth, function (user) {
+        if (user) loadOutputLanguagePreference();
         if (user && queryBatchId) {
           currentBatchId = queryBatchId;
           startPollingForBatch();

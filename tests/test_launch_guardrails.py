@@ -244,6 +244,40 @@ def test_analytics_rate_limited_returns_retry_after(client, monkeypatch):
     assert captured == [("analytics", 12)]
 
 
+def test_anonymous_analytics_always_enforces_ip_limit_before_session_id(client, monkeypatch):
+    keys = []
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request, **_kwargs: None)
+    monkeypatch.setattr(core, "get_client_ip", lambda _request: "203.0.113.7")
+
+    def _limit(**kwargs):
+        keys.append(kwargs['key'])
+        return (True, 0)
+
+    monkeypatch.setattr(rate_limiter, "check_rate_limit", _limit)
+    monkeypatch.setattr(analytics_events, "log_analytics_event", lambda *_args, **_kwargs: True)
+
+    first = client.post('/api/lp-event', json={'event': 'auth_success', 'session_id': 'caller-one'})
+    second = client.post('/api/lp-event', json={'event': 'auth_success', 'session_id': 'caller-two'})
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert keys[0] == keys[2]
+    assert keys[0].startswith('analytics:ip:')
+    assert keys[1] != keys[3]
+
+
+def test_runtime_token_verification_checks_revocation_by_default(monkeypatch):
+    captured = []
+    monkeypatch.setattr(
+        core.auth_service,
+        'verify_firebase_token',
+        lambda _request, auth_module, logger, check_revoked=False: captured.append(check_revoked) or {'uid': 'u1'},
+    )
+
+    assert core.verify_firebase_token(object()) == {'uid': 'u1'}
+    assert captured == [True]
+
+
 def test_checkout_rate_limited_returns_retry_after(client, monkeypatch):
     captured = []
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u2", "email": "user@example.com"})
@@ -2186,6 +2220,8 @@ def test_get_study_progress_summary_uses_compact_card_state_summaries(client, mo
     runtime = get_runtime(client.application)
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "compact-u", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
+    monkeypatch.setattr("lecture_processor.runtime.hooks.batch_orchestrator.run_startup_batch_recovery_once", lambda runtime=None: None)
     monkeypatch.setattr(runtime, "db", object(), raising=False)
     monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: _FakeProgressDoc(), raising=False)
     monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _FakePackDoc())
@@ -2233,6 +2269,8 @@ def test_get_study_progress_summary_uses_rollup_without_scanning_pack_docs(clien
 
     runtime = get_runtime(client.application)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "rollup-u", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
+    monkeypatch.setattr("lecture_processor.runtime.hooks.batch_orchestrator.run_startup_batch_recovery_once", lambda runtime=None: None)
     monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: _FakeProgressDoc(), raising=False)
     monkeypatch.setattr(
         core.study_repo,
@@ -2256,8 +2294,14 @@ def test_get_study_progress_summary_falls_back_for_legacy_card_state_docs(client
             return dict(self._payload)
 
     class _FakeProgressDoc:
+        def __init__(self):
+            self.writes = []
+
         def get(self):
             return _FakeSnapshot({"daily_goal": 20, "timezone": "UTC"})
+
+        def set(self, payload, merge=False):
+            self.writes.append((dict(payload), merge))
 
     class _LegacySummaryDoc:
         id = "legacy-u__pack-legacy"
@@ -2266,46 +2310,51 @@ def test_get_study_progress_summary_falls_back_for_legacy_card_state_docs(client
             return {"pack_id": "pack-legacy"}
 
     class _FakeCardStateDoc:
-        def get(self):
-            return _FakeSnapshot(
-                {
-                    "state": {
-                        "fc_1": {"seen": 1, "next_review_date": "2000-01-01"},
-                        "fc_2": {"seen": 1, "next_review_date": "2099-01-01"},
-                    }
-                }
-            )
-
-    class _FakePackDoc:
-        exists = True
-
         def to_dict(self):
-            return {"uid": "legacy-u", "study_pack_id": "pack-legacy"}
+            return {
+                "uid": "legacy-u",
+                "pack_id": "pack-legacy",
+                "state": {
+                    "fc_1": {"seen": 1, "next_review_date": "2000-01-01"},
+                    "fc_2": {"seen": 1, "next_review_date": "2099-01-01"},
+                },
+            }
 
     runtime = get_runtime(client.application)
-    loaded_pack_ids = []
+    progress_doc = _FakeProgressDoc()
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "legacy-u", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
+    monkeypatch.setattr("lecture_processor.runtime.hooks.batch_orchestrator.run_startup_batch_recovery_once", lambda runtime=None: None)
     monkeypatch.setattr(runtime, "db", object(), raising=False)
-    monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: _FakeProgressDoc(), raising=False)
-    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _FakePackDoc())
+    monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: progress_doc, raising=False)
     monkeypatch.setattr(
         core.study_repo,
         "list_study_card_state_summaries_by_uid",
         lambda _db, _uid, _limit: [_LegacySummaryDoc()],
     )
 
-    def _get_card_doc(_uid, pack_id):
-        loaded_pack_ids.append(pack_id)
-        return _FakeCardStateDoc()
-
-    monkeypatch.setattr(runtime, "get_study_card_state_doc", _get_card_doc, raising=False)
+    monkeypatch.setattr(
+        core.study_repo,
+        "list_study_card_states_by_uid",
+        lambda _db, _uid, _limit: [_FakeCardStateDoc()],
+    )
+    monkeypatch.setattr(
+        runtime,
+        "get_study_card_state_doc",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("legacy fallback must not perform per-pack reads")),
+        raising=False,
+    )
 
     response = client.get("/api/study-progress/summary", headers={"Authorization": "Bearer dev"})
 
     assert response.status_code == 200
     assert response.get_json()["due_today"] == 1
-    assert loaded_pack_ids == ["pack-legacy"]
+    assert progress_doc.writes
+    assert progress_doc.writes[0][0]["card_state_due_by_date"] == {
+        "2000-01-01": 1,
+        "2099-01-01": 1,
+    }
 
 
 def test_update_study_progress_merges_cross_browser_card_states(client, monkeypatch):
@@ -2322,7 +2371,8 @@ def test_update_study_progress_merges_cross_browser_card_states(client, monkeypa
             self.store = store
             self.key = key
 
-        def get(self):
+        def get(self, transaction=None):
+            _ = transaction
             payload = self.store.get(self.key)
             return _FakeSnapshot(payload, exists=payload is not None)
 
@@ -2339,9 +2389,25 @@ def test_update_study_progress_merges_cross_browser_card_states(client, monkeypa
             self.store.pop(self.key, None)
             return None
 
+    class _FakeTransaction:
+        def set(self, doc_ref, payload, merge=False):
+            return doc_ref.set(payload, merge=merge)
+
+        def delete(self, doc_ref):
+            return doc_ref.delete()
+
+    class _FakeDb:
+        def __init__(self):
+            self.transaction_count = 0
+
+        def transaction(self):
+            self.transaction_count += 1
+            return _FakeTransaction()
+
     progress_store = {}
     card_state_store = {}
     runtime = get_runtime(client.application)
+    fake_db = _FakeDb()
 
     class _FakePackDoc:
         exists = True
@@ -2350,7 +2416,10 @@ def test_update_study_progress_merges_cross_browser_card_states(client, monkeypa
             return {"uid": "u12", "study_pack_id": "pack-sync-1"}
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u12", "email": "user@gmail.com"})
-    monkeypatch.setattr(runtime, "db", object(), raising=False)
+    monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
+    monkeypatch.setattr("lecture_processor.runtime.hooks.batch_orchestrator.run_startup_batch_recovery_once", lambda runtime=None: None)
+    monkeypatch.setattr(runtime, "db", fake_db, raising=False)
+    monkeypatch.setattr(core.firestore, "transactional", lambda fn: fn, raising=False)
     monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _FakePackDoc())
     monkeypatch.setattr(runtime, "get_study_progress_doc", lambda uid: _FakeDocRef(progress_store, uid), raising=False)
     monkeypatch.setattr(
@@ -2420,6 +2489,7 @@ def test_update_study_progress_merges_cross_browser_card_states(client, monkeypa
 
     assert r1.status_code == 200
     assert r2.status_code == 200
+    assert fake_db.transaction_count == 2
 
     saved_progress = progress_store["u12"]
     assert saved_progress["daily_goal"] == 20

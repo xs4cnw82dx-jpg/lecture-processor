@@ -28,19 +28,52 @@ class _Env:
 
 
 @pytest.fixture(autouse=True)
-def clear_physio_state():
+def clear_physio_state(core, monkeypatch):
+    # Physio endpoint tests must never persist jobs or limiter counters to the
+    # configured Firestore project.
+    monkeypatch.setattr(core, "db", None)
     physio_repo.clear_memory_state()
+    with core.JOBS_LOCK:
+        for job_id, job in list(core.jobs.items()):
+            if str((job or {}).get("mode", "") or "").startswith("physio-"):
+                core.jobs.pop(job_id, None)
+    with core.RATE_LIMIT_LOCK:
+        core.RATE_LIMIT_EVENTS.clear()
     yield
     physio_repo.clear_memory_state()
+    with core.JOBS_LOCK:
+        for job_id, job in list(core.jobs.items()):
+            if str((job or {}).get("mode", "") or "").startswith("physio-"):
+                core.jobs.pop(job_id, None)
+    with core.RATE_LIMIT_LOCK:
+        core.RATE_LIMIT_EVENTS.clear()
 
 
 def _allow_physio(monkeypatch, core, *, uid="physio-u1", email="owner@example.com"):
+    monkeypatch.setattr(core, "db", None)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": uid, "email": email})
     monkeypatch.setattr(
         physio_access,
         "build_physio_access_payload",
         lambda _decoded_token, runtime=None: {"allowed": True, "reason": "test"},
     )
+
+
+def _capture_background_jobs(monkeypatch, core):
+    captured = []
+
+    def _submit_background_job(func, *args, **kwargs):
+        captured.append((func, args, kwargs))
+        return None
+
+    monkeypatch.setattr(core, "submit_background_job", _submit_background_job)
+    return captured
+
+
+def _run_captured_job(captured):
+    assert len(captured) == 1
+    func, args, kwargs = captured[0]
+    func(*args, **kwargs)
 
 
 def test_physio_api_rejects_non_allowed_user(client, monkeypatch, core):
@@ -358,6 +391,7 @@ def test_physio_session_patch_empty_strings_clear_existing_fields(client, monkey
 def test_physio_soap_endpoint_normalizes_partial_json(client, monkeypatch, core):
     _allow_physio(monkeypatch, core)
     monkeypatch.setattr(core, "client", object())
+    captured = _capture_background_jobs(monkeypatch, core)
     monkeypatch.setattr(
         ai_provider,
         "run_with_provider_retry",
@@ -370,8 +404,14 @@ def test_physio_soap_endpoint_normalizes_partial_json(client, monkeypatch, core)
         headers={"Authorization": "Bearer dev"},
     )
 
-    assert response.status_code == 200
-    soap = response.get_json()["soap"]
+    assert response.status_code == 202
+    job_id = response.get_json()["job_id"]
+    assert core.jobs[job_id]["status"] == "queued"
+    _run_captured_job(captured)
+    status = client.get(f"/api/physio/jobs/{job_id}", headers={"Authorization": "Bearer dev"})
+    assert status.status_code == 200
+    assert status.get_json()["status"] == "complete"
+    soap = status.get_json()["result"]["soap"]
     assert soap["subjective"]["hulpvraag"] == "Traplopen zonder pijn"
     assert soap["objective"]["inspectie"] is None
     assert soap["assessment"]["prognose"] is None
@@ -382,12 +422,13 @@ def test_physio_soap_endpoint_normalizes_partial_json(client, monkeypatch, core)
     ("/api/physio/soap", "/api/physio/rps", "/api/physio/reasoning"),
 )
 @pytest.mark.parametrize(
-    ("provider_error", "expected_status"),
-    ((RuntimeError("provider down"), 500), (SystemExit("provider exited"), 502)),
+    "provider_error",
+    (RuntimeError("provider down"), SystemExit("provider exited")),
 )
-def test_physio_generation_endpoints_return_json_errors(client, monkeypatch, core, endpoint, provider_error, expected_status):
+def test_physio_generation_jobs_finish_with_scoped_json_errors(client, monkeypatch, core, endpoint, provider_error):
     _allow_physio(monkeypatch, core)
     monkeypatch.setattr(core, "client", object())
+    captured = _capture_background_jobs(monkeypatch, core)
 
     def _raise_provider_error(*_args, **_kwargs):
         raise provider_error
@@ -400,14 +441,20 @@ def test_physio_generation_endpoints_return_json_errors(client, monkeypatch, cor
         headers={"Authorization": "Bearer dev"},
     )
 
-    assert response.status_code == expected_status
-    assert response.is_json
-    assert response.get_json()["error"] == "Physio generation failed."
+    assert response.status_code == 202
+    job_id = response.get_json()["job_id"]
+    _run_captured_job(captured)
+    status = client.get(f"/api/physio/jobs/{job_id}", headers={"Authorization": "Bearer dev"})
+    assert status.status_code == 200
+    assert status.is_json
+    assert status.get_json()["status"] == "error"
+    assert status.get_json()["error"] == "Physio generation failed."
 
 
 def test_physio_reasoning_endpoint_handles_malformed_model_output(client, monkeypatch, core):
     _allow_physio(monkeypatch, core)
     monkeypatch.setattr(core, "client", object())
+    captured = _capture_background_jobs(monkeypatch, core)
 
     def _fake_provider(operation_name, fn, runtime=None):
         if operation_name == "physio_generate_reasoning":
@@ -426,8 +473,12 @@ def test_physio_reasoning_endpoint_handles_malformed_model_output(client, monkey
         headers={"Authorization": "Bearer dev"},
     )
 
-    assert response.status_code == 200
-    body = response.get_json()
+    assert response.status_code == 202
+    job_id = response.get_json()["job_id"]
+    _run_captured_job(captured)
+    status = client.get(f"/api/physio/jobs/{job_id}", headers={"Authorization": "Bearer dev"})
+    assert status.status_code == 200
+    body = status.get_json()["result"]
     assert body["seven_step"]["stap_5_diagnostisch_proces"]["screening"]["rode_vlaggen"] is None
     assert body["differential_diagnosis"]["hypothesen"][0]["titel"] == "Artrose"
     assert body["red_flags"] == []
@@ -436,6 +487,7 @@ def test_physio_reasoning_endpoint_handles_malformed_model_output(client, monkey
 def test_physio_knowledge_endpoint_handles_unexpected_system_exit(client, monkeypatch, core):
     _allow_physio(monkeypatch, core)
     monkeypatch.setattr(core, "client", object())
+    captured = _capture_background_jobs(monkeypatch, core)
     monkeypatch.setattr(physio_knowledge, "query_knowledge_index", lambda *args, **kwargs: (_ for _ in ()).throw(SystemExit("boom")))
 
     response = client.post(
@@ -444,8 +496,13 @@ def test_physio_knowledge_endpoint_handles_unexpected_system_exit(client, monkey
         headers={"Authorization": "Bearer dev"},
     )
 
-    assert response.status_code == 502
-    assert response.get_json()["error"] == "Kennisbank antwoord genereren mislukt."
+    assert response.status_code == 202
+    job_id = response.get_json()["job_id"]
+    _run_captured_job(captured)
+    status = client.get(f"/api/physio/jobs/{job_id}", headers={"Authorization": "Bearer dev"})
+    assert status.status_code == 200
+    assert status.get_json()["status"] == "error"
+    assert status.get_json()["error"] == "Physio generation failed."
 
 
 @pytest.mark.parametrize(

@@ -168,6 +168,28 @@ def test_unlimited_slides_extra_charge_and_refund_are_noops_for_balance(app, mon
     assert store['u1']['slides_credits'] == 0
 
 
+def test_credit_deductions_reject_deleting_account_inside_transaction(app, monkeypatch):
+    runtime = get_runtime(app)
+    user_store = {
+        'u1': {
+            'uid': 'u1',
+            'account_status': 'deleting',
+            'lecture_credits_standard': 5,
+            'interview_credits_short': 5,
+            'slides_credits': 5,
+            'total_processed': 0,
+        }
+    }
+    _configure_credit_transaction_runtime(runtime, monkeypatch, user_store)
+
+    assert credits.deduct_credit('u1', 'lecture_credits_standard', runtime=runtime) is None
+    assert credits.deduct_interview_credit('u1', runtime=runtime) is None
+    assert credits.deduct_slides_credits('u1', 2, runtime=runtime) is False
+    assert user_store['u1']['lecture_credits_standard'] == 5
+    assert user_store['u1']['interview_credits_short'] == 5
+    assert user_store['u1']['slides_credits'] == 5
+
+
 def test_process_checkout_session_credits_returns_already_processed(app, monkeypatch):
     runtime = get_runtime(app)
     monkeypatch.setattr(

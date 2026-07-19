@@ -14,9 +14,8 @@ if [[ -z "$PYTHON_BIN" ]]; then
   exit 1
 fi
 
-ARGS=("$@")
 if [[ -n "$DEFAULT_BASE_URL" ]]; then
-  ARGS=(--base-url "$DEFAULT_BASE_URL" "${ARGS[@]}")
+  exec "$PYTHON_BIN" "$ROOT_DIR/scripts/smoke_test.py" --base-url "$DEFAULT_BASE_URL" "$@"
 fi
 
-exec "$PYTHON_BIN" "$ROOT_DIR/scripts/smoke_test.py" "${ARGS[@]}"
+exec "$PYTHON_BIN" "$ROOT_DIR/scripts/smoke_test.py" "$@"

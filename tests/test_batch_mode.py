@@ -16,6 +16,7 @@ from lecture_processor.domains.rate_limit import quotas as rate_limit_quotas
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 from lecture_processor.runtime.job_dispatcher import JobQueueFullError
+from lecture_processor.services import upload_batch_service
 from tests.runtime_test_support import get_test_core
 
 core = get_test_core()
@@ -327,6 +328,42 @@ def test_batch_create_deduplicates_client_submission_id(client, monkeypatch):
     assert payload.get('batch_id') == 'existing-batch-1'
     assert payload.get('deduplicated') is True
     assert payload.get('status') == 'processing'
+
+
+def test_batch_submission_claim_is_atomic_for_same_client_token(app):
+    runtime = app.extensions['lecture_processor']['runtime']
+    runtime.db = None
+    runtime._BATCH_JOBS_MEMORY = {}
+    runtime._BATCH_ROWS_MEMORY = {}
+    submission_id = 'same-browser-submit'
+    batch_id = batch_orchestrator.batch_id_for_submission('u-batch', submission_id)
+
+    first = batch_orchestrator.claim_batch_submission(
+        'u-batch', submission_id, batch_id, created_at=100, runtime=runtime,
+    )
+    second = batch_orchestrator.claim_batch_submission(
+        'u-batch', submission_id, batch_id, created_at=101, runtime=runtime,
+    )
+
+    assert first[0] is True
+    assert second[0] is False
+    assert second[1]['batch_id'] == batch_id
+    assert len(runtime._BATCH_JOBS_MEMORY) == 1
+    assert batch_orchestrator.release_batch_submission_claim(
+        'u-batch', submission_id, batch_id, runtime=runtime,
+    ) is True
+
+
+def test_submission_resource_ledger_rolls_back_once():
+    calls = []
+    ledger = upload_batch_service._SubmissionResourceLedger(core.logger)
+    ledger.register('credits', lambda: calls.append('credits'))
+    ledger.register('files', lambda: calls.append('files'))
+
+    ledger.rollback()
+    ledger.rollback()
+
+    assert calls == ['files', 'credits']
 
 
 def test_batch_create_slides_only_contract(client, monkeypatch):

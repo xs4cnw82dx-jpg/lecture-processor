@@ -32,7 +32,8 @@ DEFAULT_EMBED_DIMENSION = 256
 DEFAULT_CHUNK_SIZE = 1100
 DEFAULT_CHUNK_OVERLAP = 180
 SUPPORTED_SOURCE_SUFFIXES = {".pdf", ".docx", ".pptx", ".txt", ".md"}
-SHARDED_INDEX_FORMAT = "sharded-gzip-v1"
+SHARDED_INDEX_FORMAT = "sharded-gzip-npy-v2"
+LEGACY_SHARDED_INDEX_FORMAT = "sharded-gzip-v1"
 _INDEX_CACHE = {"path": "", "mtime": 0.0, "signature": "", "payload": None}
 _SHARD_DOCUMENT_CACHE = {"path": "", "signature": "", "documents": None}
 _VECTOR_SEARCH_CACHE = {"path": "", "signature": "", "records": None, "matrix": None}
@@ -463,6 +464,14 @@ def _index_cache_signature(candidate: Path, payload: dict):
             parts.append(f"{shard_path.resolve()}:{stat.st_mtime_ns}:{stat.st_size}")
         except Exception:
             parts.append(f"{shard_path}:missing")
+    matrix_name = str((payload.get("meta", {}) or {}).get("embedding_matrix", "") or "").strip()
+    if matrix_name:
+        matrix_path = candidate.parent / matrix_name
+        try:
+            stat = matrix_path.stat()
+            parts.append(f"{matrix_path.resolve()}:{stat.st_mtime_ns}:{stat.st_size}")
+        except Exception:
+            parts.append(f"{matrix_path}:missing")
     return "|".join(parts)
 
 
@@ -520,6 +529,34 @@ def _load_cached_sharded_documents(candidate: Path, payload: dict):
 def _build_vector_search_cache(candidate: Path, payload: dict, documents):
     if np is None:
         return None
+    meta = payload.get("meta", {}) or {}
+    matrix_name = str(meta.get("embedding_matrix", "") or "").strip()
+    if matrix_name:
+        try:
+            # mmap keeps the embedding matrix out of Python's object heap and
+            # lets the OS page only the rows needed by a search.
+            matrix = np.load(candidate.parent / matrix_name, mmap_mode="r")
+        except Exception:
+            return None
+        records = [record for record in (documents or []) if isinstance(record, dict)]
+        if matrix.ndim != 2 or matrix.shape[0] != len(records) or matrix.shape[1] <= 0:
+            return None
+        if str(matrix.dtype) != "float32":
+            return None
+        if not bool(meta.get("embeddings_normalized", False)):
+            # Backward compatibility for an early v2 development artifact.
+            # Production-built indexes are normalized offline and avoid this
+            # allocation entirely.
+            copied = np.asarray(matrix, dtype=np.float32)
+            norms = np.linalg.norm(copied, axis=1)
+            nonzero = norms > 0
+            if not bool(np.all(nonzero)):
+                return None
+            matrix = copied / norms[:, None]
+        for record in records:
+            _prepare_record_search_cache(record)
+        return {"records": records, "matrix": matrix}
+
     records = [record for record in (documents or []) if isinstance(record, dict) and isinstance(record.get("embedding"), list) and record.get("embedding")]
     if not records:
         return None

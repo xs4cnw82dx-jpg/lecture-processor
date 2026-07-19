@@ -235,6 +235,7 @@ def delete_account_data(app_ctx, request):
         }), 409
 
     deletion_started = False
+    auth_user_deleted = False
     original_user_state = account_lifecycle.get_user_account_state(uid, runtime=app_ctx)
 
     try:
@@ -248,6 +249,22 @@ def delete_account_data(app_ctx, request):
         deletion_started = bool(account_lifecycle.mark_account_deletion_requested(uid, email=email, runtime=app_ctx))
         if not deletion_started:
             raise RuntimeError('Could not mark account deletion as started.')
+        # Close the check/mark race: a job may have passed its initial guard
+        # just before the tombstone was written. Credit transactions now reject
+        # the tombstone, and this second check catches already-created work.
+        active_jobs = account_lifecycle.count_active_jobs_for_user(uid, runtime=app_ctx)
+        if active_jobs > 0:
+            account_lifecycle.restore_account_after_failed_deletion(
+                uid,
+                email=email,
+                reason='Deletion postponed because active work started concurrently.',
+                runtime=app_ctx,
+                existing_state=original_user_state,
+            )
+            deletion_started = False
+            return app_ctx.jsonify({
+                'error': f'Cannot delete account while {active_jobs} queued or processing job(s) are still active. Please wait until all work finishes.'
+            }), 409
         deleted['pending_audio_import_tokens'] = account_lifecycle.remove_pending_audio_imports_for_uid(uid, runtime=app_ctx)
 
         def _delete_field_collection(collection_name, field_name, field_value, deleted_key=None):
@@ -517,13 +534,17 @@ def delete_account_data(app_ctx, request):
         upload_prefixes = set(job_ids) | batch_row_prefixes
         deleted['upload_artifacts'] = account_lifecycle.remove_upload_artifacts_for_job_ids(upload_prefixes, runtime=app_ctx)
 
+        # Keep the deleting tombstone until Auth deletion succeeds. A request
+        # carrying an older ID token is rejected by revocation-aware API auth
+        # and cannot recreate the profile after this point.
+        app_ctx.auth.delete_user(uid)
+        auth_user_deleted = True
+
         try:
             app_ctx.users_repo.delete_doc(app_ctx.db, uid)
             deleted['user_profile_doc'] = 1
         except Exception as error:
             raise RuntimeError(f"Could not delete user profile document: {error}")
-
-        app_ctx.auth.delete_user(uid)
 
         return app_ctx.jsonify({
             'ok': True,
@@ -533,7 +554,7 @@ def delete_account_data(app_ctx, request):
         })
     except Exception as e:
         app_ctx.logger.error(f"Error deleting account data for {uid}: {e}")
-        if deletion_started:
+        if deletion_started and not auth_user_deleted:
             try:
                 account_lifecycle.restore_account_after_failed_deletion(
                     uid,
