@@ -1520,6 +1520,11 @@ def test_account_delete_exhaustively_deletes_paginated_docs(client, monkeypatch)
         "planner_settings": {
             "planner-settings": {"uid": "u-delete", "enabled": "on", "offset": "15"},
         },
+        "study_plan_preferences": {"u-delete": {"uid": "u-delete", "timezone": "UTC"}},
+        "study_goals": {"goal-1": {"uid": "u-delete", "goal_id": "goal-1"}},
+        "study_plan_proposals": {"u-delete": {"uid": "u-delete", "proposal_id": "proposal-1"}},
+        "study_activity_sessions": {"activity-1": {"uid": "u-delete", "activity_id": "activity-1"}},
+        "study_calendar_feeds": {"feed-1": {"uid": "u-delete", "feed_id": "feed-1", "secret_hash": "hash"}},
         "physio_cases": {
             "physio-case-1": {"uid": "u-delete", "case_id": "physio-case-1", "display_label": "Casus 1"},
         },
@@ -1616,6 +1621,11 @@ def test_account_delete_exhaustively_deletes_paginated_docs(client, monkeypatch)
     assert body["deleted"]["job_logs"] == 101
     assert body["deleted"]["planner_sessions"] == 1
     assert body["deleted"]["planner_settings"] == 1
+    assert body["deleted"]["study_plan_preferences"] == 1
+    assert body["deleted"]["study_goals"] == 1
+    assert body["deleted"]["study_plan_proposals"] == 1
+    assert body["deleted"]["study_activity_sessions"] == 1
+    assert body["deleted"]["study_calendar_feeds"] == 1
     assert body["deleted"]["physio_cases"] == 1
     assert body["deleted"]["physio_case_sessions"] == 1
     assert body["deleted"]["study_shares"] == 1
@@ -1634,6 +1644,11 @@ def test_account_delete_exhaustively_deletes_paginated_docs(client, monkeypatch)
     assert store["job_logs"] == {}
     assert store["planner_sessions"] == {}
     assert store["planner_settings"] == {}
+    assert store["study_plan_preferences"] == {}
+    assert store["study_goals"] == {}
+    assert store["study_plan_proposals"] == {}
+    assert store["study_activity_sessions"] == {}
+    assert store["study_calendar_feeds"] == {}
     assert store["physio_cases"] == {}
     assert store["physio_case_sessions"] == {}
     assert store["study_shares"] == {}

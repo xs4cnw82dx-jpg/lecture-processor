@@ -143,6 +143,16 @@ def test_collect_user_export_payload_returns_expected_shape(app, monkeypatch):
             return ([{"uid": "u1", "enabled": "on", "_id": "planner-settings"}], False)
         if collection_name == "planner_sessions":
             return ([{"id": "session-1", "title": "Review", "_id": "planner-session-1"}], False)
+        if collection_name == "study_plan_preferences":
+            return ([{"uid": "u1", "timezone": "Europe/Amsterdam", "_id": "u1"}], False)
+        if collection_name == "study_goals":
+            return ([{"uid": "u1", "goal_id": "goal-1", "title": "Exam", "_id": "goal-1"}], False)
+        if collection_name == "study_plan_proposals":
+            return ([{"uid": "u1", "proposal_id": "proposal-1", "_id": "u1"}], False)
+        if collection_name == "study_activity_sessions":
+            return ([{"uid": "u1", "activity_id": "activity-1", "_id": "u1__activity-1"}], False)
+        if collection_name == "study_calendar_feeds":
+            return ([{"uid": "u1", "feed_id": "feed-1", "name": "Phone", "secret_hash": "private", "_id": "feed-1"}], False)
         if collection_name == "physio_cases":
             return ([{"display_label": "Casus 1", "body_region": "knie", "_id": "physio-case-1"}], False)
         if collection_name == "physio_case_sessions":
@@ -178,6 +188,11 @@ def test_collect_user_export_payload_returns_expected_shape(app, monkeypatch):
     assert payload["meta"]["truncated"]["study_shares"] is False
     assert payload["meta"]["truncated"]["physio_cases"] is False
     assert payload["collections"]["planner_sessions"] == [{"id": "session-1", "title": "Review", "_id": "planner-session-1"}]
+    assert payload["account"]["study_plan_preferences"]["timezone"] == "Europe/Amsterdam"
+    assert payload["collections"]["study_goals"][0]["goal_id"] == "goal-1"
+    assert payload["collections"]["study_plan_proposals"][0]["proposal_id"] == "proposal-1"
+    assert payload["collections"]["study_activity_sessions"][0]["activity_id"] == "activity-1"
+    assert payload["collections"]["study_calendar_feeds"] == [{"uid": "u1", "feed_id": "feed-1", "name": "Phone", "_id": "feed-1"}]
     assert payload["collections"]["study_pack_sources"] == []
     assert payload["collections"]["study_shares"] == [{"owner_uid": "u1", "entity_type": "pack", "entity_id": "pack-1", "access_scope": "public", "_id": "share-1"}]
     assert payload["collections"]["physio_cases"] == [{"display_label": "Casus 1", "body_region": "knie", "_id": "physio-case-1"}]

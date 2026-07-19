@@ -21,6 +21,8 @@ services:
         sync: false
       - key: USE_MINIFIED_JS_ASSETS
         value: "1"
+      - key: STUDY_PLAN_V2
+        value: "1"
       - key: SENTRY_ENVIRONMENT
         value: "production"
       - key: SENTRY_DSN_BACKEND

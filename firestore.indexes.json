@@ -139,6 +139,20 @@
       ]
     },
     {
+      "collectionGroup": "study_activity_sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "uid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "started_at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "batch_jobs",
       "queryScope": "COLLECTION",
       "fields": [

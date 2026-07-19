@@ -303,6 +303,11 @@ def collect_user_export_payload(uid, email, runtime=None):
     interview_ai_coding_runs, interview_ai_coding_runs_truncated = list_docs_by_uid('interview_ai_coding_runs', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     planner_settings_docs, planner_settings_truncated = list_docs_by_uid('planner_settings', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     planner_sessions, planner_sessions_truncated = list_docs_by_uid('planner_sessions', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
+    study_plan_preferences_docs, study_plan_preferences_truncated = list_docs_by_uid('study_plan_preferences', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
+    study_goals, study_goals_truncated = list_docs_by_uid('study_goals', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
+    study_plan_proposals, study_plan_proposals_truncated = list_docs_by_uid('study_plan_proposals', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
+    study_activity_sessions, study_activity_sessions_truncated = list_docs_by_uid('study_activity_sessions', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
+    study_calendar_feeds, study_calendar_feeds_truncated = list_docs_by_uid('study_calendar_feeds', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     physio_cases, physio_cases_truncated = list_docs_by_uid('physio_cases', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     physio_case_sessions, physio_case_sessions_truncated = list_docs_by_uid('physio_case_sessions', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     workout_collection_names = (
@@ -334,6 +339,10 @@ def collect_user_export_payload(uid, email, runtime=None):
         data['_id'] = doc.id
         study_shares.append(data)
     planner_settings = planner_settings_docs[0] if planner_settings_docs else {}
+    study_plan_preferences = study_plan_preferences_docs[0] if study_plan_preferences_docs else {}
+
+    for feed in study_calendar_feeds:
+        feed.pop('secret_hash', None)
 
     for pack in study_packs:
         audio_key = study_audio.get_audio_storage_key_from_pack(pack, runtime=resolved_runtime)
@@ -364,6 +373,11 @@ def collect_user_export_payload(uid, email, runtime=None):
                 'study_shares': shares_truncated,
                 'planner_settings': planner_settings_truncated,
                 'planner_sessions': planner_sessions_truncated,
+                'study_plan_preferences': study_plan_preferences_truncated,
+                'study_goals': study_goals_truncated,
+                'study_plan_proposals': study_plan_proposals_truncated,
+                'study_activity_sessions': study_activity_sessions_truncated,
+                'study_calendar_feeds': study_calendar_feeds_truncated,
                 'physio_cases': physio_cases_truncated,
                 'physio_case_sessions': physio_case_sessions_truncated,
                 **workout_truncated,
@@ -373,6 +387,7 @@ def collect_user_export_payload(uid, email, runtime=None):
             'profile': user_profile,
             'study_progress': study_progress,
             'planner_settings': planner_settings,
+            'study_plan_preferences': study_plan_preferences,
         },
         'collections': {
             'purchases': purchases,
@@ -387,6 +402,10 @@ def collect_user_export_payload(uid, email, runtime=None):
             'interview_ai_coding_runs': interview_ai_coding_runs,
             'study_shares': study_shares,
             'planner_sessions': planner_sessions,
+            'study_goals': study_goals,
+            'study_plan_proposals': study_plan_proposals,
+            'study_activity_sessions': study_activity_sessions,
+            'study_calendar_feeds': study_calendar_feeds,
             'physio_cases': physio_cases,
             'physio_case_sessions': physio_case_sessions,
             **workout_collections,

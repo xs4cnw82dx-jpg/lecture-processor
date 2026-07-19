@@ -1,9 +1,105 @@
 from flask import Blueprint, request
 
 from lecture_processor.runtime.container import get_runtime
-from lecture_processor.services import interview_coding_service, planner_api_service, study_api_service, voice_note_service
+from lecture_processor.services import (
+    interview_coding_service,
+    planner_api_service,
+    study_api_service,
+    study_plan_service,
+    voice_note_service,
+)
 
 study_bp = Blueprint('study_api', __name__)
+
+
+@study_bp.route('/api/study-plan', methods=['GET'])
+def get_study_plan():
+    runtime = get_runtime()
+    return study_plan_service.get_bootstrap(runtime, request)
+
+
+@study_bp.route('/api/study-plan/membership', methods=['GET'])
+def get_study_plan_membership():
+    runtime = get_runtime()
+    return study_plan_service.get_membership(runtime, request)
+
+
+@study_bp.route('/api/study-plan/library', methods=['GET'])
+def get_study_plan_library():
+    runtime = get_runtime()
+    return study_plan_service.get_library_page(runtime, request)
+
+
+@study_bp.route('/api/study-plan/preferences', methods=['PUT'])
+def update_study_plan_preferences():
+    runtime = get_runtime()
+    return study_plan_service.update_preferences(runtime, request)
+
+
+@study_bp.route('/api/study-plan/goals', methods=['POST'])
+def create_study_plan_goal():
+    runtime = get_runtime()
+    return study_plan_service.create_goal(runtime, request)
+
+
+@study_bp.route('/api/study-plan/goals/<goal_id>', methods=['PATCH'])
+def update_study_plan_goal(goal_id):
+    runtime = get_runtime()
+    return study_plan_service.update_goal(runtime, request, goal_id)
+
+
+@study_bp.route('/api/study-plan/goals/<goal_id>', methods=['DELETE'])
+def archive_study_plan_goal(goal_id):
+    runtime = get_runtime()
+    return study_plan_service.archive_goal(runtime, request, goal_id)
+
+
+@study_bp.route('/api/study-plan/preview', methods=['POST'])
+def preview_study_plan():
+    runtime = get_runtime()
+    return study_plan_service.preview_plan(runtime, request)
+
+
+@study_bp.route('/api/study-plan/apply', methods=['POST'])
+def apply_study_plan():
+    runtime = get_runtime()
+    return study_plan_service.apply_plan(runtime, request)
+
+
+@study_bp.route('/api/study-plan/items/<session_id>', methods=['PUT'])
+def update_study_plan_item(session_id):
+    runtime = get_runtime()
+    return study_plan_service.update_plan_item(runtime, request, session_id)
+
+
+@study_bp.route('/api/study-activity/sessions/<activity_id>', methods=['PUT'])
+def update_study_activity(activity_id):
+    runtime = get_runtime()
+    return study_plan_service.update_activity(runtime, request, activity_id)
+
+
+@study_bp.route('/api/study-plan/calendar-feeds', methods=['POST'])
+def create_study_plan_calendar_feed():
+    runtime = get_runtime()
+    return study_plan_service.create_calendar_feed(runtime, request)
+
+
+@study_bp.route('/api/study-plan/calendar-feeds/<feed_id>', methods=['DELETE'])
+def revoke_study_plan_calendar_feed(feed_id):
+    runtime = get_runtime()
+    return study_plan_service.revoke_calendar_feed(runtime, request, feed_id)
+
+
+@study_bp.route('/api/study-plan/calendar-feeds/<feed_id>/rotate', methods=['POST'])
+def rotate_study_plan_calendar_feed(feed_id):
+    runtime = get_runtime()
+    return study_plan_service.rotate_calendar_feed(runtime, request, feed_id)
+
+
+@study_bp.route('/calendar/feed/<path:token>.ics', methods=['GET'])
+def get_study_plan_calendar_feed(token):
+    runtime = get_runtime()
+    return study_plan_service.get_calendar_feed(runtime, request, token)
 
 
 @study_bp.route('/api/study-progress', methods=['GET'])

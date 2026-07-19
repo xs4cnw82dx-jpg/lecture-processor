@@ -29,6 +29,8 @@ const setBodyScrollLocked = typeof uxUtils.setBodyScrollLocked === 'function'
 /* ── State ── */
 let token = null, folders = [], packs = [], selectedFolderId = '', selectedPackId = '', selectedPack = null;
 let selectedPackIds = new Set(), packSelectionAnchorId = '';
+let plannedPackIds = new Set();
+let plannerActivity = null, plannerActivitySyncTimer = null;
 let packsHasMore = false, packsNextCursor = '', packsLoadingMore = false;
 let activeEditorPane = 'notes', exportType = 'flashcards', draggedPackId = '', draggedPackIds = [], draggingFolderId = '';
 let folderModalMode = 'create', editingFolderId = '', folderModalParentId = '', pendingOpenPackId = '', confirmModalResolver = null;
@@ -80,6 +82,7 @@ const STUDY_LIBRARY_TITLE = 'Study Library';
 const urlParams = new URLSearchParams(window.location.search);
 const learnPackFromUrl = urlParams.get('pack_id') || '';
 const openLearnFromUrl = urlParams.get('mode') === 'learn';
+const plannerSessionFromUrl = String(urlParams.get('plan_item_id') || '').trim();
 const fullscreenFromUrl = urlParams.get('fullscreen') === '1';
 const focusFromUrl = urlParams.get('focus') || '';
 const folderFromUrl = String(urlParams.get('folder') || '').trim().toLowerCase();
@@ -887,6 +890,73 @@ function recordStudyActivity() {
   updateDailyGoalDisplays();
   return data;
 }
+
+function startPlannerActivity(mode) {
+  if (!auth.currentUser || !selectedPackId) return;
+  if (plannerActivitySyncTimer) { clearTimeout(plannerActivitySyncTimer); plannerActivitySyncTimer = null; }
+  plannerActivity = {
+    activity_id: 'activity_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10),
+    pack_id: String(selectedPackId || ''),
+    plan_item_id: plannerSessionFromUrl,
+    mode: String(mode || 'study'),
+    started_at: Date.now() / 1000,
+    metrics: { minutes: 0, cards_reviewed: 0, questions_answered: 0, correct: 0, incorrect: 0 }
+  };
+}
+
+function plannerActivityPayload(finalize) {
+  if (!plannerActivity) return null;
+  var elapsedSeconds = Math.max(0, (Date.now() / 1000) - plannerActivity.started_at);
+  var outcomes = plannerActivity.metrics.cards_reviewed + plannerActivity.metrics.questions_answered;
+  var shouldCreditTime = outcomes > 0 || elapsedSeconds >= 30;
+  plannerActivity.metrics.minutes = shouldCreditTime ? Math.max(1, Math.round(elapsedSeconds / 60)) : 0;
+  var payload = {
+    pack_id: plannerActivity.pack_id,
+    plan_item_id: plannerActivity.plan_item_id,
+    mode: plannerActivity.mode,
+    started_at: plannerActivity.started_at,
+    metrics: Object.assign({}, plannerActivity.metrics)
+  };
+  if (finalize && shouldCreditTime) payload.ended_at = Date.now() / 1000;
+  return payload;
+}
+
+function syncPlannerActivity(finalize) {
+  if (!plannerActivity || !token) return Promise.resolve();
+  var activity = plannerActivity;
+  var payload = plannerActivityPayload(!!finalize);
+  if (!payload) return Promise.resolve();
+  if (finalize && !payload.ended_at && !payload.metrics.cards_reviewed && !payload.metrics.questions_answered) {
+    plannerActivity = null;
+    return Promise.resolve();
+  }
+  return apiCall('/api/study-activity/sessions/' + encodeURIComponent(activity.activity_id), {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  }).catch(function () {
+    if (finalize) showToast('Your study progress could not be linked to the plan. You can mark the session complete from Study Plan.', 'error');
+  }).finally(function () {
+    if (finalize && plannerActivity === activity) plannerActivity = null;
+  });
+}
+
+function queuePlannerActivitySync() {
+  if (!plannerActivity) return;
+  if (plannerActivitySyncTimer) clearTimeout(plannerActivitySyncTimer);
+  plannerActivitySyncTimer = setTimeout(function () {
+    plannerActivitySyncTimer = null;
+    syncPlannerActivity(false);
+  }, 1200);
+}
+
+function recordPlannerOutcome(cardId, correct) {
+  if (!plannerActivity) return;
+  if (String(cardId || '').indexOf('q_') === 0) plannerActivity.metrics.questions_answered += 1;
+  else plannerActivity.metrics.cards_reviewed += 1;
+  if (correct) plannerActivity.metrics.correct += 1;
+  else plannerActivity.metrics.incorrect += 1;
+  queuePlannerActivitySync();
+}
 function setCardDifficulty(cardId, difficulty) {
   var action = mapLegacyDifficultyToAction(difficulty);
   setCardReviewAction(cardId, action);
@@ -935,6 +1005,7 @@ function applyReviewAction(cardId, action) {
   state[cardId] = entry;
   saveCardState(state);
   recordStudyActivity();
+  recordPlannerOutcome(cardId, reviewAction !== 'retry');
   renderMasteryGauge();
   updateTopbarDueCount();
   updateDifficultyToolbar();
@@ -1478,11 +1549,12 @@ function gradeAnswer(userAnswer, correctAnswer) {
 var userMeta = document.getElementById('user-meta'), backAppBtn = document.getElementById('back-app-btn'), fullscreenBtn = document.getElementById('fullscreen-btn'), topbarDueText = document.getElementById('topbar-due-text');
 var studyAuthGate = document.getElementById('study-auth-gate'), studyLibraryShell = document.getElementById('study-library-shell'), studyAuthSignInBtn = document.getElementById('study-auth-signin-btn');
 var processingNowPanel = document.getElementById('processing-now-panel'), processingNowList = document.getElementById('processing-now-list');
-var searchInput = document.getElementById('search-input'), folderList = document.getElementById('folder-list'), packList = document.getElementById('pack-list'), packSelectionBar = document.getElementById('pack-selection-bar'), packSelectionCount = document.getElementById('pack-selection-count'), clearPackSelectionBtn = document.getElementById('clear-pack-selection-btn'), packListActions = document.getElementById('pack-list-actions'), loadMorePacksBtn = document.getElementById('load-more-packs-btn'), newFolderBtn = document.getElementById('new-folder-btn'), newSubfolderBtn = document.getElementById('new-subfolder-btn'), deleteFolderBtn = document.getElementById('delete-folder-btn');
+var searchInput = document.getElementById('search-input'), folderList = document.getElementById('folder-list'), packList = document.getElementById('pack-list'), packSelectionBar = document.getElementById('pack-selection-bar'), packSelectionCount = document.getElementById('pack-selection-count'), clearPackSelectionBtn = document.getElementById('clear-pack-selection-btn'), addSelectedToPlanBtn = document.getElementById('add-selected-to-plan-btn'), packListActions = document.getElementById('pack-list-actions'), loadMorePacksBtn = document.getElementById('load-more-packs-btn'), newFolderBtn = document.getElementById('new-folder-btn'), newSubfolderBtn = document.getElementById('new-subfolder-btn'), deleteFolderBtn = document.getElementById('delete-folder-btn');
 var packEmpty = document.getElementById('pack-empty'), packEmptyDefault = document.getElementById('pack-empty-default'), packEmptyOnboarding = document.getElementById('pack-empty-onboarding'), packEmptyCreateBtn = document.getElementById('pack-empty-create-btn'), packEmptyImportCsvBtn = document.getElementById('pack-empty-import-csv-btn'), packEmptyDemoBtn = document.getElementById('pack-empty-demo-btn'), packEditorWrap = document.getElementById('pack-editor-wrap'), packTitle = document.getElementById('pack-title'), packFolderSelect = document.getElementById('pack-folder-select'), packFolderPicker = document.getElementById('pack-folder-picker'), packFolderButton = document.getElementById('pack-folder-button'), packFolderLabel = document.getElementById('pack-folder-label'), packFolderMenu = document.getElementById('pack-folder-menu');
 var packCourse = document.getElementById('pack-course'), packSubject = document.getElementById('pack-subject'), packSemester = document.getElementById('pack-semester'), packBlock = document.getElementById('pack-block'), notesView = document.getElementById('notes-view');
 var packAdvancedMetaBtn = document.getElementById('pack-advanced-meta-btn'), packAdvancedMetaShell = document.getElementById('pack-advanced-meta-shell'), packAdvancedMetaPanel = document.getElementById('pack-advanced-meta-panel');
 var packSummary = document.getElementById('pack-summary'), packSummaryTitle = document.getElementById('pack-summary-title'), packSummaryMeta = document.getElementById('pack-summary-meta'), packStatNotes = document.getElementById('pack-stat-notes'), packStatCards = document.getElementById('pack-stat-cards'), packStatTest = document.getElementById('pack-stat-test');
+var addPackToPlanBtn = document.getElementById('add-pack-to-plan-btn'), packPlanStatus = document.getElementById('pack-plan-status');
 var packGoalsPanel = document.getElementById('pack-goals-panel'), packGoalCard = document.getElementById('pack-goal-card'), packGoalsStatus = document.getElementById('pack-goals-status'), overallDailyGoalInput = document.getElementById('overall-daily-goal-input'), overallDailyGoalDecrease = document.getElementById('overall-daily-goal-decrease'), overallDailyGoalIncrease = document.getElementById('overall-daily-goal-increase'), packDailyGoalInput = document.getElementById('pack-daily-goal-input'), packDailyGoalClear = document.getElementById('pack-daily-goal-clear'), packDailyGoalDecrease = document.getElementById('pack-daily-goal-decrease'), packDailyGoalIncrease = document.getElementById('pack-daily-goal-increase'), packGoalDue = document.getElementById('pack-goal-due'), packGoalUnmastered = document.getElementById('pack-goal-unmastered'), packGoalRecommendation = document.getElementById('pack-goal-recommendation'), packGoalHelper = document.getElementById('pack-goal-helper');
 var createPackBtn = document.getElementById('create-pack-btn'), importPackCsvBtn = document.getElementById('import-pack-csv-btn'), openBuilderBtn = document.getElementById('open-builder-btn'), savePackBtn = document.getElementById('save-pack-btn'), deletePackBtn = document.getElementById('delete-pack-btn'), exportPackNotesBtn = document.getElementById('export-pack-notes-btn'), packShareBtn = document.getElementById('pack-share-btn'), openLearnBtn = document.getElementById('open-learn-btn'), openLearnBtnLabel = document.getElementById('open-learn-btn-label'), packSaveStatus = document.getElementById('pack-save-status');
 var exportMenu = document.getElementById('export-menu'), exportMenuBtn = document.getElementById('export-menu-btn'), exportMenuList = document.getElementById('export-menu-list'), exportPdfSubmenu = document.getElementById('export-pdf-submenu');
@@ -4347,6 +4419,10 @@ function syncPackSelectionControls() {
   if (packSelectionCount) {
     packSelectionCount.textContent = count === 1 ? '1 pack selected' : count + ' packs selected';
   }
+  if (addSelectedToPlanBtn) {
+    var allInPlan = count > 0 && getSelectedPackIds().every(function (packId) { return plannedPackIds.has(packId); });
+    addSelectedToPlanBtn.textContent = allInPlan ? 'Open Study Plan' : 'Add to Study Plan';
+  }
   if (deletePackBtn) {
     deletePackBtn.textContent = count > 0 ? 'Delete selected (' + count + ')' : 'Delete Pack';
     deletePackBtn.setAttribute('aria-label', count > 0 ? 'Delete selected study packs' : 'Delete current study pack');
@@ -4373,6 +4449,13 @@ function clearPackSelection(shouldRender) {
   if (shouldRender) {
     renderPacks();
   }
+}
+
+function openStudyPlanForPacks(packIds) {
+  var ids = (packIds || []).map(function (packId) { return String(packId || '').trim(); }).filter(Boolean);
+  if (!ids.length) { showToast('Select at least one study pack.', 'error'); return; }
+  var allInPlan = ids.every(function (packId) { return plannedPackIds.has(packId); });
+  window.location.href = allInPlan ? '/plan' : '/plan?add_packs=' + encodeURIComponent(ids.join(','));
 }
 
 function applyPackSelection(packId, checked, useRange) {
@@ -4785,7 +4868,8 @@ function renderPacks() {
       p.folder_name ? 'Folder: ' + escapeHtml(p.folder_name) : defaultFolderText
     );
     div.setAttribute('aria-label', (isCheckedForDelete ? 'Selected for deletion, ' : '') + (p.title || 'Untitled pack'));
-    setSafeInnerHtml(div, '<div class="pack-row-main"><label class="pack-select-control"><input type="checkbox" data-pack-select aria-label="Select ' + titleText + ' for deletion"' + (isCheckedForDelete ? ' checked' : '') + '><span class="pack-select-box" aria-hidden="true"></span></label><button type="button" class="pack-row-open" data-pack-open><span class="pack-row-content"><span class="item-head"><span class="item-title">' + titleText + '</span></span><span class="item-sub">' + modeText + ' · ' + formatPackCountSummary(p.flashcards_count, p.test_questions_count) + '</span><span class="item-sub">' + metaText + '</span></span></button><button type="button" class="pack-quick-learn" data-pack-learn>Learn</button></div>');
+    var planBadge = plannedPackIds.has(packId) ? '<span class="pack-in-plan-badge">In plan</span>' : '';
+    setSafeInnerHtml(div, '<div class="pack-row-main"><label class="pack-select-control"><input type="checkbox" data-pack-select aria-label="Select ' + titleText + '"' + (isCheckedForDelete ? ' checked' : '') + '><span class="pack-select-box" aria-hidden="true"></span></label><button type="button" class="pack-row-open" data-pack-open><span class="pack-row-content"><span class="item-head"><span class="item-title">' + titleText + planBadge + '</span></span><span class="item-sub">' + modeText + ' · ' + formatPackCountSummary(p.flashcards_count, p.test_questions_count) + '</span><span class="item-sub">' + metaText + '</span></span></button><button type="button" class="pack-quick-learn" data-pack-learn>Learn</button></div>');
     var activatePack = function () {
       selectedPackId = packId;
       renderPacks();
@@ -4855,7 +4939,11 @@ function updatePrimaryStudyAction() {
 }
 function updatePackSummary() {
   updatePrimaryStudyAction();
-  if (!selectedPack) { packSummary.classList.remove('visible'); return; }
+  if (!selectedPack) {
+    packSummary.classList.remove('visible');
+    if (packPlanStatus) { packPlanStatus.textContent = 'Not in a study plan'; packPlanStatus.classList.remove('is-in-plan'); }
+    return;
+  }
   packSummary.classList.add('visible');
   packSummaryTitle.textContent = selectedPack.title || 'Untitled pack';
   packSummaryMeta.textContent = buildMetadataText(
@@ -4865,6 +4953,12 @@ function updatePackSummary() {
   packStatNotes.textContent = selectedPack.notes_markdown ? 'Has notes' : 'No notes';
   packStatCards.textContent = formatItemCount((selectedPack.flashcards || []).length, 'flashcard');
   packStatTest.textContent = formatItemCount((selectedPack.test_questions || []).length, 'question');
+  var isInPlan = plannedPackIds.has(String(selectedPack.study_pack_id || selectedPackId || ''));
+  if (packPlanStatus) {
+    packPlanStatus.textContent = isInPlan ? 'In Study Plan' : 'Not in a study plan';
+    packPlanStatus.classList.toggle('is-in-plan', isInPlan);
+  }
+  if (addPackToPlanBtn) addPackToPlanBtn.textContent = isInPlan ? 'Open Study Plan' : 'Add to Study Plan';
   /* Informative images tip */
   var imagesTipEl = document.getElementById('pack-images-tip');
   if (imagesTipEl) {
@@ -5263,6 +5357,7 @@ function openLearnStageWithMode(mode, requestFullscreen) {
   if (!selectedPack) { showToast('Select a study pack first.', 'error'); return; }
   learnSessionRecorded = false;
   activeLearnMode = mode;
+  startPlannerActivity(mode);
   setAudioHiddenForLearn(true);
   learnTitle.textContent = selectedPack.title || 'Learn Mode';
   learnSub.textContent = (MODE_NAMES[mode] || mode) + ' · Focused session';
@@ -5324,6 +5419,8 @@ function openLearnStageWithMode(mode, requestFullscreen) {
 
 function closeLearnStage() {
   recordLearnSessionCompletion();
+  if (plannerActivitySyncTimer) { clearTimeout(plannerActivitySyncTimer); plannerActivitySyncTimer = null; }
+  syncPlannerActivity(true);
   learnStage.classList.remove('visible');
   setFlashcardListMode(false);
   orderedFlashcards = [];
@@ -5432,7 +5529,7 @@ function openPack(packId) {
       if (openLearnFromUrl && !autoLearnConsumed && selectedPack.study_pack_id === learnPackFromUrl) {
         autoLearnConsumed = true;
         var preferMode = focusFromUrl || '';
-        if (preferMode && ['flashcards', 'test', 'write', 'match'].indexOf(preferMode) >= 0) {
+        if (preferMode && ['flashcards', 'test', 'write', 'match', 'notes'].indexOf(preferMode) >= 0) {
           openLearnStageWithMode(preferMode, fullscreenFromUrl);
         } else if (isPracticeOnlyPack(selectedPack)) {
           openLearnStageWithMode('test', fullscreenFromUrl);
@@ -6399,13 +6496,22 @@ function fetchStudyPackPage(afterCursor) {
   });
 }
 
+function fetchStudyPlanMembership() {
+  return apiCall('/api/study-plan/membership').then(function (data) {
+    return Array.isArray(data && data.pack_ids) ? data.pack_ids : [];
+  }).catch(function () {
+    return [];
+  });
+}
+
 function loadData(preferredPackId) {
   var prefId = preferredPackId || '';
   packsLoadingMore = false;
-  return Promise.all([apiCall('/api/study-folders?include_pending=0'), fetchStudyPackPage('')]).then(function (results) {
+  return Promise.all([apiCall('/api/study-folders?include_pending=0'), fetchStudyPackPage(''), fetchStudyPlanMembership()]).then(function (results) {
     var packPage = results[1] || {};
     folders = results[0].folders || [];
     packs = mergeStudyPackPage([], packPage.study_packs || []);
+    plannedPackIds = new Set(results[2] || []);
     videoOverlayProjects = readVideoOverlayProjectsCache(auth.currentUser);
     packsHasMore = !!packPage.has_more;
     packsNextCursor = String(packPage.next_cursor || '');
@@ -6948,6 +7054,12 @@ if (fullscreenBtn) {
 searchInput.addEventListener('input', renderPacks);
 if (clearPackSelectionBtn) {
   clearPackSelectionBtn.addEventListener('click', function () { clearPackSelection(true); });
+}
+if (addSelectedToPlanBtn) {
+  addSelectedToPlanBtn.addEventListener('click', function () { openStudyPlanForPacks(getSelectedPackIds()); });
+}
+if (addPackToPlanBtn) {
+  addPackToPlanBtn.addEventListener('click', function () { openStudyPlanForPacks([selectedPackId]); });
 }
 if (loadMorePacksBtn) {
   loadMorePacksBtn.addEventListener('click', function () {
