@@ -308,6 +308,8 @@ AUDIO_IMPORT_JOB_LOCK = threading.Lock()
 
 FEATURE_AUDIO_SECTION_SYNC = os.getenv('FEATURE_AUDIO_SECTION_SYNC', '0').strip().lower() in {'1', 'true', 'yes', 'on'}
 
+STUDY_PLAN_V2 = os.getenv('STUDY_PLAN_V2', '1').strip().lower() in {'1', 'true', 'yes', 'on'}
+
 MAX_PROGRESS_PACKS_PER_SYNC = 300
 
 MAX_PROGRESS_CARDS_PER_PACK = 2500

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Study Plan - Lecture Processor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/study-plan.css') }}">
+</head>
+<body>
+  {% set shell_title = 'Study Plan' %}
+  {% include '_app_shell.html' %}
+  <main class="app-shell-page study-plan-page">
+    <div class="study-plan-container">
+      <header class="study-plan-header">
+        <div>
+          <p class="study-plan-eyebrow">Your study workspace</p>
+          <h1>Study Plan</h1>
+          <p class="study-plan-lead">Know what to study next, keep your week realistic, and see whether you are on track.</p>
+        </div>
+        <div class="study-plan-header-actions">
+          <span class="save-state" id="study-plan-save-state" role="status" aria-live="polite">Saved</span>
+          <button type="button" class="btn primary" id="new-study-goal-btn">Create study plan</button>
+        </div>
+      </header>
+
+      <div class="study-plan-offline" id="study-plan-offline" role="status" hidden>
+        You are offline. Your last saved plan is available to read, but changes are paused until you reconnect.
+      </div>
+
+      <section class="study-plan-auth" id="study-plan-auth" hidden>
+        <h2>Sign in to plan your studying</h2>
+        <p>Your schedule and progress sync safely across your devices.</p>
+        <a class="btn primary" href="/lecture-notes?auth=signin&amp;next=/plan">Sign in</a>
+      </section>
+
+      <section class="study-plan-loading" id="study-plan-loading" aria-live="polite">
+        <div class="study-plan-spinner" aria-hidden="true"></div>
+        <span>Loading your study plan…</span>
+      </section>
+
+      <section id="study-plan-workspace" hidden>
+        <nav class="study-plan-tabs" aria-label="Study Plan views">
+          <button type="button" class="study-plan-tab is-active" data-plan-view="today" aria-selected="true">Today</button>
+          <button type="button" class="study-plan-tab" data-plan-view="schedule" aria-selected="false">Schedule</button>
+          <button type="button" class="study-plan-tab" data-plan-view="progress" aria-selected="false">Progress</button>
+        </nav>
+
+        <section class="study-plan-view" id="study-plan-view-today" data-view="today">
+          <div class="today-grid">
+            <article class="next-session-card" id="next-session-card">
+              <div class="next-session-topline">
+                <span class="study-plan-kicker">Up next</span>
+                <span class="session-time-pill" id="next-session-time"></span>
+              </div>
+              <div id="next-session-content"></div>
+            </article>
+
+            <aside class="goal-health-card" id="goal-health-card">
+              <div class="study-plan-kicker">Goal health</div>
+              <div id="goal-health-content"></div>
+            </aside>
+          </div>
+
+          <article class="rebalance-card" id="rebalance-card" hidden>
+            <div>
+              <span class="study-plan-kicker">Catch-up suggested</span>
+              <h2>Your accepted plan has not changed</h2>
+              <p id="rebalance-message">A session was missed or your progress changed. Review a safe catch-up proposal before changing anything.</p>
+            </div>
+            <button type="button" class="btn primary" id="review-rebalance-btn">Review catch-up</button>
+          </article>
+
+          <section class="study-plan-section">
+            <div class="study-plan-section-head">
+              <div>
+                <span class="study-plan-kicker">Today</span>
+                <h2>Your schedule</h2>
+              </div>
+              <button type="button" class="btn" id="today-add-session-btn">Add session</button>
+            </div>
+            <div class="session-list" id="today-session-list"></div>
+          </section>
+        </section>
+
+        <section class="study-plan-view" id="study-plan-view-schedule" data-view="schedule" hidden>
+          <div class="schedule-toolbar">
+            <div class="schedule-nav">
+              <button type="button" class="btn" id="schedule-prev-week" aria-label="Previous week">←</button>
+              <button type="button" class="btn" id="schedule-this-week">This week</button>
+              <button type="button" class="btn" id="schedule-next-week" aria-label="Next week">→</button>
+            </div>
+            <div>
+              <h2 id="schedule-week-title">This week</h2>
+              <p id="schedule-week-summary"></p>
+            </div>
+            <div class="schedule-actions">
+              <button type="button" class="btn" id="calendar-connections-btn">Device calendar</button>
+              <button type="button" class="btn primary" id="schedule-add-session-btn">Add session</button>
+            </div>
+          </div>
+          <p class="schedule-help">Select a session to complete, skip, lock, or move it. Automatic sessions only change after you accept a new proposal.</p>
+          <div class="week-calendar" id="week-calendar" aria-label="Weekly study schedule"></div>
+          <div class="mobile-agenda" id="mobile-agenda"></div>
+        </section>
+
+        <section class="study-plan-view" id="study-plan-view-progress" data-view="progress" hidden>
+          <div class="progress-summary-grid" id="progress-summary-grid"></div>
+          <div class="progress-detail-grid">
+            <article class="study-plan-section">
+              <div class="study-plan-section-head">
+                <div>
+                  <span class="study-plan-kicker">This week</span>
+                  <h2>Planned vs completed</h2>
+                </div>
+              </div>
+              <div id="time-progress-chart"></div>
+            </article>
+            <article class="study-plan-section">
+              <div class="study-plan-section-head">
+                <div>
+                  <span class="study-plan-kicker">Readiness</span>
+                  <h2>Goals</h2>
+                </div>
+              </div>
+              <div class="goal-progress-list" id="goal-progress-list"></div>
+            </article>
+          </div>
+          <article class="study-plan-section calendar-settings-inline">
+            <div>
+              <span class="study-plan-kicker">Reliable reminders</span>
+              <h2>Subscribe on your device</h2>
+              <p>One-way calendar subscriptions keep reminders working while Lecture Processor is closed. External edits do not change your study plan.</p>
+            </div>
+            <button type="button" class="btn" id="progress-calendar-connections-btn">Manage subscriptions</button>
+          </article>
+        </section>
+      </section>
+    </div>
+  </main>
+  {% include '_shell_footer.html' %}
+  </div>
+  </div>
+
+  <div class="plan-overlay" id="plan-wizard-overlay" hidden aria-hidden="true">
+    <div class="plan-dialog wizard-dialog" role="dialog" aria-modal="true" aria-labelledby="plan-wizard-title">
+      <button type="button" class="plan-dialog-close" id="plan-wizard-close" aria-label="Close setup">×</button>
+      <div class="wizard-progress" aria-label="Setup progress">
+        <span class="is-active" data-wizard-marker="1">1</span><i></i><span data-wizard-marker="2">2</span><i></i><span data-wizard-marker="3">3</span><i></i><span data-wizard-marker="4">4</span>
+      </div>
+      <section class="wizard-step" data-wizard-step="1">
+        <p class="study-plan-kicker">Step 1 of 4</p>
+        <h2 id="plan-wizard-title">What do you need to study?</h2>
+        <p>Select one or more packs. Packs do not need to be in a folder.</p>
+        <div class="wizard-pack-list" id="wizard-pack-list"></div>
+        <div class="field-error" id="wizard-pack-error" role="alert" hidden></div>
+      </section>
+      <section class="wizard-step" data-wizard-step="2" hidden>
+        <p class="study-plan-kicker">Step 2 of 4</p>
+        <h2>Name the goal and choose the deadline</h2>
+        <label class="plan-field" for="wizard-goal-title"><span>Goal name</span><input id="wizard-goal-title" maxlength="120" placeholder="Anatomy final"></label>
+        <label class="plan-field" for="wizard-exam-date"><span>Exam or deadline</span><input id="wizard-exam-date" type="date"></label>
+        <div class="field-error" id="wizard-goal-error" role="alert" hidden></div>
+      </section>
+      <section class="wizard-step" data-wizard-step="3" hidden>
+        <p class="study-plan-kicker">Step 3 of 4</p>
+        <h2>When can you study?</h2>
+        <div class="availability-presets" role="group" aria-label="Availability preset">
+          <button type="button" class="availability-preset is-active" data-availability-preset="weekday-evenings">Weekday evenings<span>Mon–Fri, 19:00–21:00</span></button>
+          <button type="button" class="availability-preset" data-availability-preset="daily">Every day<span>18:00–20:00</span></button>
+          <button type="button" class="availability-preset" data-availability-preset="custom">Custom<span>Choose each day</span></button>
+        </div>
+        <div class="custom-availability" id="custom-availability" hidden></div>
+        <label class="plan-field compact" for="wizard-session-length"><span>Session length</span><select id="wizard-session-length"><option value="30">30 minutes</option><option value="45" selected>45 minutes</option><option value="60">60 minutes</option><option value="90">90 minutes</option></select></label>
+        <div class="field-error" id="wizard-availability-error" role="alert" hidden></div>
+      </section>
+      <section class="wizard-step" data-wizard-step="4" hidden>
+        <p class="study-plan-kicker">Step 4 of 4</p>
+        <h2>Review before anything changes</h2>
+        <div class="preview-summary" id="wizard-preview-summary"></div>
+        <div class="capacity-warning" id="wizard-capacity-warning" hidden></div>
+        <div class="preview-session-list" id="wizard-preview-sessions"></div>
+      </section>
+      <div class="wizard-actions">
+        <button type="button" class="btn" id="wizard-back-btn" hidden>Back</button>
+        <button type="button" class="btn primary" id="wizard-next-btn">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="plan-overlay" id="session-editor-overlay" hidden aria-hidden="true">
+    <div class="plan-dialog" role="dialog" aria-modal="true" aria-labelledby="session-editor-title">
+      <button type="button" class="plan-dialog-close" id="session-editor-close" aria-label="Close session editor">×</button>
+      <p class="study-plan-kicker">Study session</p>
+      <h2 id="session-editor-title">Edit session</h2>
+      <input type="hidden" id="session-editor-id">
+      <label class="plan-field" for="session-editor-name"><span>Title</span><input id="session-editor-name" maxlength="160"></label>
+      <label class="plan-field" for="session-editor-pack"><span>Study pack</span><select id="session-editor-pack"><option value="">No linked pack</option></select></label>
+      <div class="plan-field-row">
+        <label class="plan-field" for="session-editor-date"><span>Date</span><input id="session-editor-date" type="date"></label>
+        <label class="plan-field" for="session-editor-time"><span>Start</span><input id="session-editor-time" type="time"></label>
+        <label class="plan-field" for="session-editor-duration"><span>Minutes</span><input id="session-editor-duration" type="number" min="5" max="360"></label>
+      </div>
+      <label class="plan-check"><input id="session-editor-locked" type="checkbox"> <span>Lock this session so automatic proposals cannot move it</span></label>
+      <div class="field-error" id="session-editor-error" role="alert" hidden></div>
+      <div class="session-editor-status-actions" id="session-editor-status-actions">
+        <button type="button" class="btn" data-session-status="completed">Complete</button>
+        <button type="button" class="btn" data-session-status="skipped">Skip</button>
+      </div>
+      <div class="plan-dialog-actions">
+        <button type="button" class="btn" id="session-editor-cancel">Cancel</button>
+        <button type="button" class="btn primary" id="session-editor-save">Save session</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="plan-overlay" id="calendar-feeds-overlay" hidden aria-hidden="true">
+    <div class="plan-dialog calendar-dialog" role="dialog" aria-modal="true" aria-labelledby="calendar-feeds-title">
+      <button type="button" class="plan-dialog-close" id="calendar-feeds-close" aria-label="Close calendar subscriptions">×</button>
+      <p class="study-plan-kicker">One-way calendar sync</p>
+      <h2 id="calendar-feeds-title">Device calendar subscriptions</h2>
+      <p>Lecture Processor publishes your sessions and deadlines to a private calendar URL. The URL is shown only when it is created or rotated.</p>
+      <div class="calendar-feed-create">
+        <label class="plan-field" for="calendar-feed-name"><span>Name</span><input id="calendar-feed-name" maxlength="80" placeholder="My iPhone"></label>
+        <label class="plan-field" for="calendar-feed-reminder"><span>Reminder</span><select id="calendar-feed-reminder"><option value="10">10 minutes before</option><option value="30" selected>30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option><option value="0">No reminder</option></select></label>
+        <button type="button" class="btn primary" id="calendar-feed-create-btn">Create private URL</button>
+      </div>
+      <div class="calendar-feed-once" id="calendar-feed-once" hidden>
+        <strong>Copy this URL now—it will not be shown again.</strong>
+        <div class="calendar-feed-url-row"><input id="calendar-feed-url" aria-label="New private calendar subscription URL" readonly><button type="button" class="btn" id="calendar-feed-copy">Copy</button></div>
+      </div>
+      <div class="calendar-feed-list" id="calendar-feed-list"></div>
+      <details class="calendar-help"><summary>How to subscribe</summary><div><strong>Google Calendar:</strong> Other calendars → From URL. <strong>Apple Calendar:</strong> File → New Calendar Subscription. <strong>Outlook:</strong> Add calendar → Subscribe from web.</div></details>
+      <p class="calendar-privacy-note">Anyone with a private URL can read that calendar. Revoke it immediately if it is shared accidentally.</p>
+    </div>
+  </div>
+
+  <div class="toast" id="study-plan-toast" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/html-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/topbar-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/user-cache-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+  <script src="{{ url_for('static', filename=study_plan_js_asset or 'js/study-plan.js') }}"></script>
+</body>
+</html>

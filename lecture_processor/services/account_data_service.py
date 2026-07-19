@@ -439,6 +439,11 @@ def delete_account_data(app_ctx, request):
         _delete_field_collection('study_shares', 'owner_uid', uid, deleted_key='study_shares')
         _delete_uid_collection('planner_sessions')
         _delete_uid_collection('planner_settings')
+        _delete_uid_collection('study_plan_preferences')
+        _delete_uid_collection('study_goals')
+        _delete_uid_collection('study_plan_proposals')
+        _delete_uid_collection('study_activity_sessions')
+        _delete_uid_collection('study_calendar_feeds')
         _delete_uid_collection('physio_case_sessions')
         _delete_uid_collection('physio_cases')
         for workout_collection in (
@@ -485,6 +490,11 @@ def delete_account_data(app_ctx, request):
             ('study_pack_sources', 'uid', uid, 'study_pack_sources'),
             ('planner_sessions', 'uid', uid, 'planner_sessions'),
             ('planner_settings', 'uid', uid, 'planner_settings'),
+            ('study_plan_preferences', 'uid', uid, 'study_plan_preferences'),
+            ('study_goals', 'uid', uid, 'study_goals'),
+            ('study_plan_proposals', 'uid', uid, 'study_plan_proposals'),
+            ('study_activity_sessions', 'uid', uid, 'study_activity_sessions'),
+            ('study_calendar_feeds', 'uid', uid, 'study_calendar_feeds'),
             ('physio_cases', 'uid', uid, 'physio_cases'),
             ('physio_case_sessions', 'uid', uid, 'physio_case_sessions'),
             ('workout_profiles', 'uid', uid, 'workout_profiles'),

@@ -11,6 +11,7 @@ export const minifiedTargets = [
   { entry: 'static/js/shared-study.js', out: 'static/js/shared-study.min.js' },
   { entry: 'static/js/study-api-utils.js', out: 'static/js/study-api-utils.min.js' },
   { entry: 'static/js/study.js', out: 'static/js/study.min.js' },
+  { entry: 'static/js/study-plan.js', out: 'static/js/study-plan.min.js' },
   { entry: 'static/js/voice-notes-utils.js', out: 'static/js/voice-notes-utils.min.js' },
   { entry: 'static/js/voice-notes.js', out: 'static/js/voice-notes.min.js' },
   { entry: 'static/js/workout-utils.js', out: 'static/js/workout-utils.min.js' },

@@ -86,6 +86,7 @@ class SmokeRunner:
         # Public pages
         self._expect_status("Home page reachable", "GET", "/", 200)
         self._expect_status("Dashboard page reachable", "GET", "/dashboard", 200)
+        self._expect_status("Study Plan page reachable", "GET", "/plan", 200)
         self._expect_status("Privacy page reachable", "GET", "/privacy", 200)
         self._expect_status("Terms page reachable", "GET", "/terms", 200)
 
@@ -123,6 +124,7 @@ class SmokeRunner:
         # Unauthorized guardrails
         self._expect_status("Account export requires auth", "GET", "/api/account/export", 401)
         self._expect_status("Account delete requires auth", "POST", "/api/account/delete", 401, json_body={})
+        self._expect_status("Study Plan requires auth", "GET", "/api/study-plan", 401)
         self._expect_status(
             "Checkout create requires auth",
             "POST",
@@ -150,6 +152,7 @@ class SmokeRunner:
         if self.bearer_token:
             auth_headers = {"Authorization": f"Bearer {self.bearer_token}"}
             self._expect_status("Authenticated /api/auth/user", "GET", "/api/auth/user", 200, headers=auth_headers)
+            self._expect_status("Authenticated Study Plan bootstrap", "GET", "/api/study-plan", 200, headers=auth_headers)
             self._expect_status("Authenticated account export", "GET", "/api/account/export", 200, headers=auth_headers)
         else:
             print("")

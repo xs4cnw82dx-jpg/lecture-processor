@@ -37,7 +37,6 @@ def test_study_static_form_labels_have_programmatic_targets():
         'folder-subject-input',
         'folder-semester-input',
         'folder-block-input',
-        'folder-exam-date-input',
     ]
     for control_id in dialog_controls:
         assert f'for="{control_id}"' in dialog_template

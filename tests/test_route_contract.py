@@ -91,6 +91,20 @@ EXPECTED_ROUTES = [
     ('PUT', '/api/planner/sessions/<session_id>', 'study_api.upsert_planner_session'),
     ('GET', '/api/planner/settings', 'study_api.get_planner_settings'),
     ('PUT', '/api/planner/settings', 'study_api.update_planner_settings'),
+    ('GET', '/api/study-plan', 'study_api.get_study_plan'),
+    ('POST', '/api/study-plan/apply', 'study_api.apply_study_plan'),
+    ('POST', '/api/study-plan/calendar-feeds', 'study_api.create_study_plan_calendar_feed'),
+    ('DELETE', '/api/study-plan/calendar-feeds/<feed_id>', 'study_api.revoke_study_plan_calendar_feed'),
+    ('POST', '/api/study-plan/calendar-feeds/<feed_id>/rotate', 'study_api.rotate_study_plan_calendar_feed'),
+    ('POST', '/api/study-plan/goals', 'study_api.create_study_plan_goal'),
+    ('DELETE', '/api/study-plan/goals/<goal_id>', 'study_api.archive_study_plan_goal'),
+    ('PATCH', '/api/study-plan/goals/<goal_id>', 'study_api.update_study_plan_goal'),
+    ('PUT', '/api/study-plan/items/<session_id>', 'study_api.update_study_plan_item'),
+    ('GET', '/api/study-plan/library', 'study_api.get_study_plan_library'),
+    ('GET', '/api/study-plan/membership', 'study_api.get_study_plan_membership'),
+    ('PUT', '/api/study-plan/preferences', 'study_api.update_study_plan_preferences'),
+    ('POST', '/api/study-plan/preview', 'study_api.preview_study_plan'),
+    ('PUT', '/api/study-activity/sessions/<activity_id>', 'study_api.update_study_activity'),
     ('POST', '/api/session/login', 'auth_api.create_admin_session'),
     ('POST', '/api/session/logout', 'auth_api.clear_admin_session'),
     ('POST', '/api/stripe-webhook', 'payments_api.stripe_webhook'),
@@ -160,6 +174,7 @@ EXPECTED_ROUTES = [
     ('GET', '/instant_batch_mode_slides_extraction', 'pages.instant_batch_mode_slides_page'),
     ('GET', '/instant_batch_mode_text_combine', 'pages.instant_batch_mode_text_combine_page'),
     ('GET', '/calendar', 'pages.calendar_dashboard'),
+    ('GET', '/calendar/feed/<path:token>.ics', 'study_api.get_study_plan_calendar_feed'),
     ('GET', '/dashboard', 'pages.dashboard'),
     ('GET', '/download-docx/<job_id>', 'upload_api.download_docx'),
     ('GET', '/download-flashcards-csv/<job_id>', 'upload_api.download_flashcards_csv'),
@@ -183,7 +198,7 @@ EXPECTED_ROUTES = [
     ('GET', '/physio/rps', 'pages.physio_rps_page'),
     ('GET', '/physio/soap', 'pages.physio_soap_page'),
     ('GET', '/slides-extraction', 'pages.slides_extraction_page'),
-    ('GET', '/stats', 'pages.plan_dashboard'),
+    ('GET', '/stats', 'pages.stats_dashboard'),
     ('GET', '/status/<job_id>', 'upload_api.get_status'),
     ('GET', '/study', 'pages.study_dashboard'),
     ('GET', '/study-pack-builder', 'pages.study_pack_builder_page'),
@@ -421,16 +436,18 @@ def test_study_pack_builder_page_primes_direct_builder_entry(client):
     assert 'href="/study-pack-builder"' in html
 
 
-def test_shell_and_calendar_modal_overlays_start_hidden(client):
+def test_shell_overlay_and_study_plan_redirects(client):
     buy_response = client.get('/buy_credits')
     assert buy_response.status_code == 200
     buy_html = buy_response.get_data(as_text=True)
     assert 'id="shell-export-overlay" hidden aria-hidden="true"' in buy_html
 
     calendar_response = client.get('/calendar')
-    assert calendar_response.status_code == 200
-    calendar_html = calendar_response.get_data(as_text=True)
-    assert 'id="session-modal-overlay" hidden aria-hidden="true"' in calendar_html
+    stats_response = client.get('/stats')
+    assert calendar_response.status_code == 302
+    assert calendar_response.headers['Location'].endswith('/plan?view=schedule')
+    assert stats_response.status_code == 302
+    assert stats_response.headers['Location'].endswith('/plan?view=progress')
 
 
 def test_physio_pages_render_open_physio_sidebar_group(client):

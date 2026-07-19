@@ -18,6 +18,14 @@ DEFAULT_SETTINGS = {
 ALLOWED_OFFSETS = {'5', '10', '15', '30', '60'}
 
 
+def _safe_outcome_int(value):
+    try:
+        parsed = int(value or 0)
+    except Exception:
+        parsed = 0
+    return max(0, min(5000, parsed))
+
+
 def sanitize_session_id(value, runtime=None):
     _ = runtime
     safe = str(value or '').strip()
@@ -74,6 +82,18 @@ def sanitize_session_payload(payload, *, session_id='', existing=None, now_ts=0.
     pack_id = str(source.get('pack_id', current.get('pack_id', '')) or '').strip()[:120]
     pack_title = ' '.join(str(source.get('pack_title', current.get('pack_title', '')) or '').split()).strip()[:160]
     created_at = float(current.get('created_at', now_ts) or now_ts)
+    planned_source = source.get('planned_outcomes', current.get('planned_outcomes', {}))
+    planned_source = planned_source if isinstance(planned_source, dict) else {}
+    status = str(source.get('status', current.get('status', 'planned')) or '').strip().lower()
+    if status not in {'planned', 'completed', 'skipped', 'cancelled'}:
+        status = 'planned'
+    origin = str(source.get('origin', current.get('origin', 'manual')) or '').strip().lower()
+    if origin not in {'automatic', 'manual', 'legacy'}:
+        origin = 'manual'
+    try:
+        revision = max(0, int(current.get('revision', 0) or 0))
+    except Exception:
+        revision = 0
     return (
         {
             'id': safe_id,
@@ -84,6 +104,18 @@ def sanitize_session_payload(payload, *, session_id='', existing=None, now_ts=0.
             'notes': notes,
             'pack_id': pack_id,
             'pack_title': pack_title,
+            'goal_id': str(source.get('goal_id', current.get('goal_id', '')) or '').strip()[:120],
+            'planned_outcomes': {
+                'flashcards': _safe_outcome_int(planned_source.get('flashcards', 0)),
+                'questions': _safe_outcome_int(planned_source.get('questions', 0)),
+                'notes_minutes': _safe_outcome_int(planned_source.get('notes_minutes', 0)),
+            },
+            'origin': origin,
+            'locked': bool(source.get('locked', current.get('locked', origin in {'legacy', 'manual'}))),
+            'status': status,
+            'proposal_id': str(source.get('proposal_id', current.get('proposal_id', '')) or '').strip()[:120],
+            'revision': revision,
+            'starts_at_utc': str(source.get('starts_at_utc', current.get('starts_at_utc', '')) or '').strip()[:40],
             'created_at': created_at,
             'updated_at': float(now_ts or created_at or 0.0),
         },

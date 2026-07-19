@@ -731,6 +731,39 @@
       font-size: .76rem
     }
 
+    .pack-plan-actions {
+      align-items: center;
+      border-top: 1px solid var(--gray-200);
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      margin-top: 14px;
+      padding-top: 14px
+    }
+
+    .pack-plan-status {
+      color: var(--gray-500);
+      font-size: .78rem;
+      font-weight: 700;
+      margin-right: auto
+    }
+
+    .pack-plan-status.is-in-plan {
+      color: #187052
+    }
+
+    .pack-in-plan-badge {
+      background: #e8f7f1;
+      border-radius: 999px;
+      color: #187052;
+      display: inline-flex;
+      font-size: .65rem;
+      font-weight: 800;
+      margin-left: 7px;
+      padding: 3px 6px;
+      vertical-align: middle
+    }
+
     .list {
       display: flex;
       flex-direction: column;

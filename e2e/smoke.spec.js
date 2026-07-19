@@ -115,15 +115,11 @@ test('dashboard shell loads for unauthenticated user', async ({ page }) => {
   await expect(page.locator('#dash-goal-fill')).toBeHidden();
 });
 
-test('calendar signed-out CTA redirects to a working sign-in entry point', async ({ page }) => {
+test('legacy calendar redirects to the signed-out Study Plan schedule', async ({ page }) => {
   await page.goto('/calendar');
-  await expect(page.locator('#auth-required')).toBeVisible();
-  await expect(page.locator('#add-session-btn')).toContainText('Sign in to add sessions');
-
-  await page.locator('#add-session-btn').click();
-
-  await page.waitForURL(/\/lecture-notes\?auth=signin(?:&next=[^#]+)?$/);
-  await expect(page.locator('body')).toContainText(/Lecture Notes|Sign in/i);
+  await page.waitForURL(/\/plan\?view=schedule$/);
+  await expect(page.locator('#study-plan-auth')).toBeVisible();
+  await expect(page.locator('#study-plan-auth')).toContainText('Sign in to plan your studying');
 });
 
 test('reader actions stay disabled until output exists', async ({ page }) => {
