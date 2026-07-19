@@ -18,7 +18,12 @@
     db: null,
     dbName: '',
     sheetReturnFocus: null,
+    sheetDirtyCheck: null,
     syncInProgress: false,
+    settingsDirty: false,
+    installPrompt: null,
+    serviceWorkerRegistration: null,
+    offlineFallback: false,
   };
 
   var elements = {};
@@ -54,6 +59,79 @@
     elements.toast._timer = global.setTimeout(function () { elements.toast.classList.remove('is-visible'); }, 3000);
   }
   function setSync(message) { elements.syncPill.textContent = message; }
+
+  function isAbortError(error) {
+    return !!error && (error.name === 'AbortError' || error.code === 20);
+  }
+
+  function isOnline() { return navigator.onLine !== false && !state.offlineFallback; }
+
+  function requireOnline(actionLabel) {
+    if (isOnline()) return true;
+    toast((actionLabel || 'This change') + ' needs an internet connection. Your active workout draft is still saved offline.');
+    setSync('Offline');
+    return false;
+  }
+
+  function withBusy(control, task, busyLabel) {
+    var target = control && control.nodeType === 1 ? control : null;
+    var originalText = target ? target.textContent : '';
+    if (target) {
+      target.disabled = true;
+      target.setAttribute('aria-busy', 'true');
+      if (busyLabel) target.textContent = busyLabel;
+    }
+    var promise;
+    try { promise = typeof task === 'function' ? task() : task; }
+    catch (error) { promise = Promise.reject(error); }
+    return Promise.resolve(promise).finally(function () {
+      if (!target || !document.contains(target)) return;
+      target.disabled = false;
+      target.removeAttribute('aria-busy');
+      if (busyLabel) target.textContent = originalText;
+      applyConnectivityState();
+    });
+  }
+
+  function activeRoutines() {
+    return (state.data && state.data.routines || []).filter(function (item) { return !item.archived; });
+  }
+
+  function trendModel(entries, valueAccessor) {
+    var recent = (entries || []).slice(-16);
+    var values = recent.map(function (item) { return Number(valueAccessor(item) || 0); });
+    if (!values.length) return null;
+    var dates = recent.map(function (item) { return String(item.date || item.session_date || item.completed_at || '').slice(0, 10); });
+    var minimum = Math.min.apply(Math, values);
+    var maximum = Math.max.apply(Math, values);
+    var latest = values[values.length - 1];
+    var previous = values.length > 1 ? values[values.length - 2] : latest;
+    return { entries: recent, values: values, dates: dates, min: minimum, max: maximum, latest: latest, change: latest - previous };
+  }
+
+  function trendChartMarkup(model, options) {
+    var opts = options || {};
+    var unit = opts.unit || '';
+    var paddedMin = model.min - 1;
+    var paddedMax = model.max + 1;
+    var range = Math.max(1, paddedMax - paddedMin);
+    var coordinates = model.values.map(function (value, index) {
+      return {
+        x: model.values.length === 1 ? 50 : (index / (model.values.length - 1) * 100),
+        y: 88 - ((value - paddedMin) / range * 70),
+        value: value,
+        date: model.dates[index],
+      };
+    });
+    var points = coordinates.map(function (point) { return point.x.toFixed(1) + ',' + point.y.toFixed(1); }).join(' ');
+    var circles = coordinates.map(function (point) {
+      return '<circle cx="' + point.x.toFixed(1) + '" cy="' + point.y.toFixed(1) + '" r="2.5" fill="#4f46e5" vector-effect="non-scaling-stroke"><title>' + escapeHtml(formatDate(point.date) + ': ' + formatNumber(point.value, 1) + unit) + '</title></circle>';
+    }).join('');
+    var changePrefix = model.change > 0 ? '+' : '';
+    var summary = 'From ' + (formatDate(model.dates[0]) || 'first entry') + ' to ' + (formatDate(model.dates[model.dates.length - 1]) || 'latest entry') + '. Minimum ' + formatNumber(model.min, 1) + unit + ', maximum ' + formatNumber(model.max, 1) + unit + ', latest ' + formatNumber(model.latest, 1) + unit + ', latest change ' + changePrefix + formatNumber(model.change, 1) + unit + '.';
+    var rows = coordinates.map(function (point) { return '<li>' + escapeHtml(formatDate(point.date) || 'Entry') + ': ' + escapeHtml(formatNumber(point.value, 1) + unit) + '</li>'; }).join('');
+    return '<p class="workout-chart-summary">' + escapeHtml(summary) + '</p><svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="' + escapeHtml(opts.label || 'Progress trend') + '"><title>' + escapeHtml(summary) + '</title><polyline points="' + points + '" fill="none" stroke="#4f46e5" stroke-width="3" vector-effect="non-scaling-stroke"></polyline>' + circles + '</svg><ol class="sr-only" aria-label="' + escapeHtml((opts.label || 'Progress trend') + ' data') + '">' + rows + '</ol>';
+  }
 
   function parseJson(response) {
     return response.json().catch(function () { return {}; }).then(function (payload) {
@@ -104,6 +182,8 @@
   }
   function loadDraft() { return idbRequest('drafts', 'readonly', function (store) { return store.get('active'); }); }
   function clearDraft() { return idbRequest('drafts', 'readwrite', function (store) { return store.delete('active'); }).catch(function () {}); }
+  function saveBootstrap(payload) { return idbRequest('drafts', 'readwrite', function (store) { return store.put({ id: 'bootstrap', updated_at: Date.now(), payload: clone(payload) }); }).catch(function () {}); }
+  function loadBootstrap() { return idbRequest('drafts', 'readonly', function (store) { return store.get('bootstrap'); }); }
   function queueMutation(key, method, url, body) {
     return idbRequest('mutations', 'readwrite', function (store) {
       return store.put({ key: key, method: method, url: url, body: clone(body || {}), created_at: Date.now() });
@@ -113,7 +193,7 @@
   function removeMutation(key) { return idbRequest('mutations', 'readwrite', function (store) { return store.delete(key); }); }
 
   function flushMutations() {
-    if (!navigator.onLine || state.syncInProgress || !state.authClient) return Promise.resolve();
+    if (!isOnline() || state.syncInProgress || !state.authClient) return Promise.resolve();
     state.syncInProgress = true;
     setSync('Syncing');
     return listMutations().then(function (items) {
@@ -141,6 +221,10 @@
   }
 
   function showView(viewName) {
+    if (state.currentView === 'settings' && viewName !== 'settings' && state.settingsDirty) {
+      if (!global.confirm('You have unsaved workout settings. Leave without saving them?')) return;
+      state.settingsDirty = false;
+    }
     state.currentView = viewName;
     document.querySelectorAll('[data-workout-view]').forEach(function (view) {
       var active = view.dataset.workoutView === viewName;
@@ -170,7 +254,7 @@
     elements.weekRing.querySelector('strong').textContent = week || '–';
     elements.cycleLabel.textContent = cycle ? (cycle.name || '10-week program') : '10-week program';
     elements.greeting.textContent = cycle ? ('Week ' + week + ' · ' + (week <= 4 ? 'Build' : (week === 5 ? 'Semi-deload' : 'Novelty'))) : 'Set up your program';
-    elements.weekCopy.textContent = cycle ? 'A/B/C build adherence. Day D stays optional and recovery-led.' : 'Choose a start Monday and your exact Excel plan will be scheduled.';
+    elements.weekCopy.textContent = cycle ? 'Complete the three planned workouts. The fourth day stays optional and recovery-led.' : 'Choose a start Monday to schedule your original training plan.';
     elements.resumeCard.hidden = !state.activeSession;
     if (state.activeSession) elements.resumeCopy.textContent = state.activeSession.name + ' · ' + Utils.formatDuration(state.activeSession.elapsed_seconds || 0);
     var occurrences = (state.data.occurrences || []).filter(function (item) { return Number(item.week) === week; });
@@ -195,25 +279,28 @@
 
   function renderRoutines() {
     var query = String(elements.routineSearch.value || '').trim().toLowerCase();
-    var routines = (state.data.routines || []).filter(function (item) { return !item.archived && (!query || (item.name + ' ' + routineExerciseNames(item)).toLowerCase().indexOf(query) >= 0); });
+    var allRoutines = activeRoutines();
+    var routines = allRoutines.filter(function (item) { return !query || (item.name + ' ' + routineExerciseNames(item)).toLowerCase().indexOf(query) >= 0; });
     setHtml(elements.routineList, routines.map(function (routine) {
       return '<article class="workout-routine-card"><div class="workout-routine-head"><div><h3>' + escapeHtml(routine.name) + '</h3><p>' + escapeHtml(routineExerciseNames(routine)) + '</p></div>' +
         '<button class="workout-menu-btn" type="button" data-routine-menu="' + escapeHtml(routine.id) + '" aria-label="Routine options"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg></button></div>' +
         '<div class="workout-routine-actions"><button class="workout-start-btn" type="button" data-start-routine="' + escapeHtml(routine.id) + '">Start routine</button><button class="workout-share-btn" type="button" data-share-routine="' + escapeHtml(routine.id) + '" aria-label="Share routine"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"></path></svg></button></div></article>';
     }).join('') || '<div class="workout-empty-state">No routines match your search.</div>');
+    if (elements.routineCount) elements.routineCount.textContent = allRoutines.length + ' routine' + (allRoutines.length === 1 ? '' : 's');
     var activeExercises = (state.data.exercises || []).filter(function (item) { return !item.archived; });
     var custom = activeExercises.filter(function (item) { return !item.seeded; }).length;
-    elements.librarySummary.textContent = activeExercises.length + ' exercises available · ' + custom + ' custom. The seeded library contains only exercises from your Excel program.';
+    elements.librarySummary.textContent = activeExercises.length + ' exercises available · ' + custom + ' custom. Built-in exercises come from your original training plan.';
   }
 
   function renderProgress() {
     var stats = state.data.statistics || { summary: {}, weekly: {}, records: {}, bodyweight: [] };
     var summary = stats.summary || {};
     var durationHours = Number(summary.total_duration_seconds || 0) / 3600;
+    var optionalWorkoutCount = Number(summary.optional_d_completed || 0);
     setHtml(elements.kpis, [
-      ['Adherence', formatNumber(summary.adherence_percent || 0, 1) + '%', 'Required A/B/C'],
-      ['Workouts', summary.completed_workouts || 0, (summary.optional_d_completed || 0) + ' optional D'],
-      ['Volume', formatNumber((summary.total_volume_kg || 0) / 1000, 1) + 't', 'Equipment-aware'],
+      ['Adherence', formatNumber(summary.adherence_percent || 0, 1) + '%', 'Three planned workouts'],
+      ['Workouts', summary.completed_workouts || 0, optionalWorkoutCount + ' optional fourth workout' + (optionalWorkoutCount === 1 ? '' : 's')],
+      ['Volume', formatNumber((summary.total_volume_kg || 0) / 1000, 1) + 't', 'Adjusted for your equipment'],
       ['Training time', formatNumber(durationHours, 1) + 'h', 'Completed sessions'],
     ].map(function (item) { return '<article class="workout-kpi"><span>' + escapeHtml(item[0]) + '</span><strong>' + escapeHtml(item[1]) + '</strong><small>' + escapeHtml(item[2]) + '</small></article>'; }).join(''));
     var weeks = Object.keys(stats.weekly || {}).sort(function (a, b) { return Number(a) - Number(b); });
@@ -226,7 +313,8 @@
     setHtml(elements.muscleBars, (stats.muscle_targets || []).map(function (target) {
       var planned = Number((target.weekly_sets || [])[currentWeek - 1] || 0);
       var done = Number(currentMuscles[target.muscle_group] || 0);
-      return '<div class="workout-bar-row"><span>' + escapeHtml(String(target.muscle_group || '').replace('/Glutes', '').slice(0, 5)) + '</span><progress max="' + Math.max(1, planned) + '" value="' + done + '"></progress><strong>' + done + '/' + planned + '</strong></div>';
+      var muscleLabel = String(target.muscle_group || '').replace('/Glutes', '');
+      return '<div class="workout-bar-row"><span title="' + escapeHtml(muscleLabel) + '">' + escapeHtml(muscleLabel) + '</span><progress aria-label="' + escapeHtml(muscleLabel + ': ' + done + ' of ' + planned + ' sets') + '" max="' + Math.max(1, planned) + '" value="' + done + '"></progress><strong>' + done + '/' + planned + '</strong></div>';
     }).join(''));
     var historyMap = stats.exercise_history || {};
     var historyIds = Object.keys(historyMap).filter(function (key) { return historyMap[key] && historyMap[key].length; });
@@ -248,26 +336,12 @@
 
   function renderWeightChart(entries) {
     if (!entries.length) { setHtml(elements.weightChart, '<div class="workout-weight-empty">No bodyweight entries yet.</div>'); return; }
-    var values = entries.slice(-16).map(function (item) { return Number(item.weight_kg || 0); });
-    var min = Math.min.apply(Math, values) - 1;
-    var max = Math.max.apply(Math, values) + 1;
-    var range = Math.max(1, max - min);
-    var points = values.map(function (value, index) {
-      var x = values.length === 1 ? 50 : (index / (values.length - 1) * 100);
-      var y = 90 - ((value - min) / range * 75);
-      return x.toFixed(1) + ',' + y.toFixed(1);
-    }).join(' ');
-    setHtml(elements.weightChart, '<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="Bodyweight trend"><polyline points="' + points + '" fill="none" stroke="#4f46e5" stroke-width="3" vector-effect="non-scaling-stroke"></polyline></svg>');
+    setHtml(elements.weightChart, trendChartMarkup(trendModel(entries, function (item) { return item.weight_kg; }), { label: 'Bodyweight trend', unit: ' kg' }));
   }
 
   function renderExerciseChart(entries) {
     if (!entries.length) { setHtml(elements.exerciseChart, '<div class="workout-weight-empty">Complete repeated exercises to see a trend.</div>'); return; }
-    var values = entries.slice(-16).map(function (item) { return Number(item.estimated_1rm || item.best_weight || 0); });
-    var min = Math.min.apply(Math, values) - 1;
-    var max = Math.max.apply(Math, values) + 1;
-    var range = Math.max(1, max - min);
-    var points = values.map(function (value, index) { var x = values.length === 1 ? 50 : index / (values.length - 1) * 100; var y = 90 - ((value - min) / range * 75); return x.toFixed(1) + ',' + y.toFixed(1); }).join(' ');
-    setHtml(elements.exerciseChart, '<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="Estimated one rep max trend"><polyline points="' + points + '" fill="none" stroke="#4f46e5" stroke-width="3" vector-effect="non-scaling-stroke"></polyline></svg>');
+    setHtml(elements.exerciseChart, trendChartMarkup(trendModel(entries, function (item) { return item.estimated_1rm || item.best_weight; }), { label: 'Estimated one rep max trend', unit: ' kg' }));
   }
 
   function renderSettings() {
@@ -295,6 +369,15 @@
     }
     enhanceSelects(elements.settingsForm);
     ['workout-default-rest', 'workout-previous-scope'].forEach(function (id) { var select = byId(id); if (select._appSelectInstance) select._appSelectInstance.sync(); });
+    state.settingsDirty = false;
+    updateSettingsSaveState();
+  }
+
+  function updateSettingsSaveState() {
+    var saveButton = elements.settingsForm && elements.settingsForm.querySelector('[type="submit"]');
+    if (!saveButton) return;
+    saveButton.textContent = state.settingsDirty ? 'Save settings · unsaved changes' : 'Save settings';
+    saveButton.classList.toggle('is-sticky', state.settingsDirty);
   }
 
   function renderAll() {
@@ -303,6 +386,20 @@
     renderProgress();
     renderSettings();
     if (state.activeSession) renderLogger();
+    applyConnectivityState();
+  }
+
+  function applyConnectivityState() {
+    var online = isOnline();
+    if (elements.offlineBanner) elements.offlineBanner.hidden = online;
+    var selectors = '[data-start-occurrence],[data-start-routine],[data-share-routine],[data-share-workout],[data-open-cycle],#workout-empty-btn,#workout-new-routine,#workout-new-exercise,#workout-add-weight,#workout-restore-baseline,#workout-manage-shares,#workout-settings-form button[type="submit"]';
+    document.querySelectorAll(selectors).forEach(function (control) {
+      if (control.getAttribute('aria-busy') === 'true') return;
+      control.disabled = !online;
+      control.setAttribute('aria-disabled', online ? 'false' : 'true');
+      if (!online) control.title = 'Connect to the internet to use this action.';
+      else if (control.title === 'Connect to the internet to use this action.') control.removeAttribute('title');
+    });
   }
 
   function sessionExerciseHtml(exercise, exerciseIndex) {
@@ -379,7 +476,7 @@
     if (!state.activeSession || state.activeSession.status === 'completed') return;
     saveDraft(state.activeSession);
     global.clearTimeout(state.saveTimer);
-    setSync(navigator.onLine ? 'Saving' : 'Queued');
+    setSync(isOnline() ? 'Saving' : 'Queued');
     state.saveTimer = global.setTimeout(saveSessionNow, 700);
   }
 
@@ -387,7 +484,7 @@
     if (!state.activeSession || state.activeSession.status === 'completed') return Promise.resolve();
     var session = clone(state.activeSession);
     var body = { base_revision: Number(session.revision || 0), name: session.name, notes: session.notes, elapsed_seconds: session.elapsed_seconds, status: session.status, exercises: session.exercises };
-    if (!navigator.onLine) {
+    if (!isOnline()) {
       return queueMutation('session:' + session.id, 'PATCH', '/api/admin/workout/sessions/' + encodeURIComponent(session.id), body).then(function () { setSync('Queued'); });
     }
     return api('/api/admin/workout/sessions/' + encodeURIComponent(session.id), { method: 'PATCH', body: body }).then(function (payload) {
@@ -395,7 +492,7 @@
       setSync('Synced');
       return removeMutation('session:' + session.id);
     }).catch(function (error) {
-      if (!navigator.onLine || !error.status) return queueMutation('session:' + session.id, 'PATCH', '/api/admin/workout/sessions/' + encodeURIComponent(session.id), body).then(function () { setSync('Queued'); });
+      if (!isOnline() || !error.status) return queueMutation('session:' + session.id, 'PATCH', '/api/admin/workout/sessions/' + encodeURIComponent(session.id), body).then(function () { setSync('Queued'); });
       if (error.status === 409) { setSync('Conflict'); toast('Workout changed in another tab. Reload to resolve it.'); return; }
       setSync('Save failed'); toast(error.message);
     });
@@ -444,23 +541,41 @@
     } catch (_error) {}
   }
 
-  function openSheet(title, eyebrow, content, onReady) {
+  function openSheet(title, eyebrow, content, onReady, options) {
+    var sheetOptions = options || {};
     state.sheetReturnFocus = document.activeElement;
+    state.sheetDirtyCheck = null;
     byId('workout-sheet-title').textContent = title;
     byId('workout-sheet-eyebrow').textContent = eyebrow || 'Workout';
     setHtml(elements.sheetContent, content);
-    elements.sheetOverlay.hidden = false;
-    elements.sheetOverlay.setAttribute('aria-hidden', 'false');
     enhanceSelects(elements.sheetContent);
     if (typeof onReady === 'function') onReady(elements.sheetContent);
-    var focusable = elements.sheetContent.querySelector('input,button,select,textarea');
-    if (focusable) focusable.focus();
+    if (sheetOptions.confirmDirty) {
+      var dirty = false;
+      elements.sheetContent.addEventListener('input', function () { dirty = true; });
+      elements.sheetContent.addEventListener('change', function () { dirty = true; });
+      state.sheetDirtyCheck = function () { return dirty; };
+    }
+    var focusable = elements.sheetContent.querySelector('input:not([disabled]),button:not([disabled]),select:not([disabled]),textarea:not([disabled])') || byId('workout-sheet-close');
+    if (ux && typeof ux.openModalOverlay === 'function') {
+      ux.openModalOverlay(elements.sheetOverlay, { initialFocus: focusable, returnFocus: state.sheetReturnFocus, onRequestClose: function () { closeSheet(); } });
+    } else {
+      elements.sheetOverlay.hidden = false;
+      elements.sheetOverlay.setAttribute('aria-hidden', 'false');
+      if (focusable) focusable.focus();
+    }
   }
-  function closeSheet() {
-    elements.sheetOverlay.hidden = true;
-    elements.sheetOverlay.setAttribute('aria-hidden', 'true');
+  function closeSheet(force) {
+    if (!force && state.sheetDirtyCheck && state.sheetDirtyCheck() && !global.confirm('Discard the unsaved changes in this form?')) return false;
+    if (ux && typeof ux.closeModalOverlay === 'function') ux.closeModalOverlay(elements.sheetOverlay, { returnFocus: state.sheetReturnFocus });
+    else {
+      elements.sheetOverlay.hidden = true;
+      elements.sheetOverlay.setAttribute('aria-hidden', 'true');
+      if (state.sheetReturnFocus && document.contains(state.sheetReturnFocus)) state.sheetReturnFocus.focus();
+    }
     setHtml(elements.sheetContent, '');
-    if (state.sheetReturnFocus && document.contains(state.sheetReturnFocus)) state.sheetReturnFocus.focus();
+    state.sheetDirtyCheck = null;
+    return true;
   }
 
   function cycleSheet() {
@@ -474,21 +589,23 @@
     var tests = state.data.seed.start_tests || [];
     var stored = {};
     (profile.start_tests || []).forEach(function (item) { stored[item.exercise_id] = item; });
-    var content = '<form class="workout-sheet-form" id="workout-cycle-form"><p class="workout-sheet-help">Starting or resetting archives the current cycle while preserving all completed workout history. The workbook remains the baseline source.</p>' +
+    var content = '<form class="workout-sheet-form" id="workout-cycle-form"><p class="workout-sheet-help">Starting or resetting archives the current plan while preserving all completed workout history. Your original imported plan remains available if you want to restore it later.</p>' +
       '<label class="workout-sheet-field">Start Monday<input type="date" id="workout-cycle-start" required value="' + escapeHtml(state.data.active_cycle ? state.data.active_cycle.start_monday : mondayIso()) + '"></label>' +
       '<div class="workout-sheet-row">' + weekdayField('A') + weekdayField('B') + '</div><div class="workout-sheet-row">' + weekdayField('C') + weekdayField('D') + '</div>' +
       '<div class="workout-sheet-row"><label class="workout-sheet-field">Bodyweight (kg)<input type="number" id="workout-cycle-weight" min="20" max="400" step="0.1" inputmode="decimal" value="' + Number(profile.bodyweight_kg || 62.5) + '"></label><label class="workout-sheet-field">Handle weight (kg)<input type="number" id="workout-cycle-handle" min="0" max="10" step="0.1" inputmode="decimal" value="' + Number(profile.handle_weight_kg || 0) + '"></label></div>' +
-      '<label class="workout-toggle-row"><span><strong>Include optional D</strong><small>Saturday by default; excluded from adherence</small></span><input id="workout-cycle-optional" type="checkbox" role="switch"' + (profile.optional_day_enabled !== false ? ' checked' : '') + '></label>' +
-      '<label class="workout-toggle-row"><span><strong>Restore Excel baseline</strong><small>Ignore routine edits for the new cycle</small></span><input id="workout-cycle-baseline" type="checkbox" role="switch"></label>' +
+      '<label class="workout-toggle-row"><span><strong>Include an optional fourth workout</strong><small>Saturday by default; does not affect your adherence score</small></span><input id="workout-cycle-optional" type="checkbox" role="switch"' + (profile.optional_day_enabled !== false ? ' checked' : '') + '></label>' +
+      '<label class="workout-toggle-row"><span><strong>Restore original plan</strong><small>Ignore routine edits for the new 10-week plan</small></span><input id="workout-cycle-baseline" type="checkbox" role="switch"></label>' +
       '<details><summary>Start tests (optional)</summary><div class="workout-start-test-list">' + tests.map(function (test) { var saved = stored[test.exercise_id] || {}; var savedReps = saved.test_reps == null ? '' : saved.test_reps; return '<div class="workout-start-test" data-start-test="' + escapeHtml(test.exercise_id) + '"><strong>' + escapeHtml(test.exercise_name) + '</strong><div class="workout-start-test-grid"><label>Test kg<input type="number" inputmode="decimal" step="0.5" data-test-kg value="' + Number(saved.test_kg == null ? test.test_kg : saved.test_kg) + '"></label><label>Test reps<input type="number" inputmode="numeric" data-test-reps value="' + escapeHtml(savedReps) + '"></label></div></div>'; }).join('') + '</div></details>' +
       '<button class="workout-primary-btn" type="submit">' + (state.data.active_cycle ? 'Archive & start new cycle' : 'Start 10-week program') + '</button></form>';
     openSheet(state.data.active_cycle ? 'Reset calendar' : 'Set up program', '10-week cycle', content, function (root) {
       byId('workout-cycle-form').addEventListener('submit', function (event) {
         event.preventDefault();
+        if (!requireOnline('Starting a program cycle')) return;
+        var submitButton = event.submitter || event.currentTarget.querySelector('[type="submit"]');
         var startMonday = byId('workout-cycle-start').value;
         var profileBody = { base_revision: Number(state.data.profile.revision || 0), bodyweight_kg: Number(byId('workout-cycle-weight').value), handle_weight_kg: Number(byId('workout-cycle-handle').value), optional_day_enabled: byId('workout-cycle-optional').checked, setup_completed: true, training_days: { A: Number(byId('workout-cycle-day-a').value), B: Number(byId('workout-cycle-day-b').value), C: Number(byId('workout-cycle-day-c').value), D: Number(byId('workout-cycle-day-d').value) } };
         setSync('Saving');
-        api('/api/admin/workout/profile', { method: 'PUT', body: profileBody }).then(function (profilePayload) {
+        withBusy(submitButton, function () { return api('/api/admin/workout/profile', { method: 'PUT', body: profileBody }).then(function (profilePayload) {
           state.data.profile = profilePayload.profile;
           var testPayload = Array.prototype.slice.call(root.querySelectorAll('[data-start-test]')).map(function (row) { var repsValue = row.querySelector('[data-test-reps]').value; return { exercise_id: row.dataset.startTest, test_kg: Number(row.querySelector('[data-test-kg]').value), test_reps: repsValue === '' ? null : Number(repsValue) }; });
           return api('/api/admin/workout/start-tests', { method: 'PUT', body: { base_revision: Number(state.data.profile.revision || 0), tests: testPayload } });
@@ -496,18 +613,19 @@
           state.data.profile = testResult.profile;
           return api('/api/admin/workout/cycles', { method: 'POST', body: { start_monday: startMonday, restore_excel_baseline: byId('workout-cycle-baseline').checked } });
         }).then(function (payload) {
-          state.data.active_cycle = payload.cycle; state.data.occurrences = payload.occurrences; state.data.profile = payload.profile; closeSheet(); renderAll(); setSync('Synced'); toast('10-week calendar ready.');
-        }).catch(function (error) { setSync('Error'); toast(error.message); });
+          state.data.active_cycle = payload.cycle; state.data.occurrences = payload.occurrences; state.data.profile = payload.profile; closeSheet(true); renderAll(); setSync('Synced'); toast('10-week calendar ready.');
+        }); }, 'Saving…').catch(function (error) { setSync('Error'); toast(error.message); });
       });
-    });
+    }, { confirmDirty: true });
   }
 
-  function startSession(body) {
+  function startSession(body, trigger) {
+    if (!requireOnline('Starting a workout')) return Promise.resolve(false);
     setSync('Starting');
-    return api('/api/admin/workout/sessions', { method: 'POST', body: body || {} }).then(function (payload) {
+    return withBusy(trigger, function () { return api('/api/admin/workout/sessions', { method: 'POST', body: body || {} }).then(function (payload) {
       state.activeSession = payload.session; state.data.active_session = payload.session;
       saveDraft(state.activeSession); renderAll(); openLogger(); setSync('Synced');
-    }).catch(function (error) { setSync('Error'); toast(error.message); });
+    }); }, 'Starting…').catch(function (error) { setSync('Error'); toast(error.message); return false; });
   }
 
   function exercisePicker(onPick, title) {
@@ -556,7 +674,7 @@
     var exercise = state.activeSession.exercises[index];
     var values = [0, 60, 90, 120, 150, 180, 210, 300];
     var options = values.map(function (value) { return '<option value="' + value + '"' + (Number(exercise.rest_seconds) === value ? ' selected' : '') + '>' + (value ? Utils.formatDuration(value) : 'Off') + '</option>'; }).join('');
-    openSheet('Rest timer', exercise.exercise_name, '<form class="workout-sheet-form" id="workout-rest-form"><p class="workout-sheet-help">Workbook range: ' + escapeHtml(exercise.rest_range || 'Custom') + '. Midpoints map 1–2 → 1:30, 2–3 → 2:30, and 3–4 → 3:30.</p><label class="workout-sheet-field">Timer<select id="workout-rest-select">' + options + '</select></label><button class="workout-primary-btn" type="submit">Save timer</button></form>', function () {
+    openSheet('Rest timer', exercise.exercise_name, '<form class="workout-sheet-form" id="workout-rest-form"><p class="workout-sheet-help">Recommended range: ' + escapeHtml(exercise.rest_range || 'Custom') + '. Suggested timers use the midpoint of that range.</p><label class="workout-sheet-field">Timer<select id="workout-rest-select">' + options + '</select></label><button class="workout-primary-btn" type="submit">Save timer</button></form>', function () {
       byId('workout-rest-form').addEventListener('submit', function (event) { event.preventDefault(); exercise.rest_seconds = Number(byId('workout-rest-select').value); closeSheet(); renderLogger(); scheduleSave(); });
     });
   }
@@ -573,86 +691,131 @@
   function loadGuide(index) {
     var exercise = state.activeSession.exercises[index];
     var loads = exercise.load_type === 'Backpack/BW' ? state.data.seed.available_loads.backpack_kg : state.data.seed.available_loads.dumbbell_per_hand_kg;
-    openSheet('Load guide', exercise.exercise_name, '<p class="workout-sheet-help">Available ' + escapeHtml(exercise.load_type || 'load') + ' values from the workbook. Dumbbell numbers are per hand. DB-pair volume is doubled; seeded weighted pull-up/chin-up volume also adds bodyweight.</p><div class="workout-library-summary">' + loads.map(function (value) { return escapeHtml(Utils.formatWeight(value)) + ' kg'; }).join(' · ') + '</div>');
+    openSheet('Load guide', exercise.exercise_name, '<p class="workout-sheet-help">Available ' + escapeHtml(exercise.load_type || 'load') + ' values from your equipment settings. Dumbbell numbers are per hand. Two-dumbbell volume counts both hands, and weighted pull-ups or chin-ups can include bodyweight.</p><div class="workout-library-summary">' + loads.map(function (value) { return escapeHtml(Utils.formatWeight(value)) + ' kg'; }).join(' · ') + '</div>');
   }
 
   function routineMenu(routineId) {
     var routine = getRoutine(routineId); if (!routine) return;
-    var deleteLabel = routine.seeded ? 'Restore Excel baseline instead' : 'Archive routine';
+    var deleteLabel = routine.seeded ? 'Restore original plan instead' : 'Archive routine';
     openSheet(routine.name, 'Routine options', '<div class="workout-sheet-list"><button class="workout-sheet-action" type="button" data-routine-action="share">Share routine<span>↗</span></button><button class="workout-sheet-action" type="button" data-routine-action="duplicate">Duplicate routine<span>⧉</span></button><button class="workout-sheet-action" type="button" data-routine-action="edit">Edit routine<span>✎</span></button><button class="workout-sheet-action ' + (routine.seeded ? '' : 'is-danger') + '" type="button" data-routine-action="delete">' + escapeHtml(deleteLabel) + '<span>×</span></button></div>', function (root) {
       root.addEventListener('click', function (event) {
         var button = event.target.closest('[data-routine-action]'); if (!button) return;
-        var action = button.dataset.routineAction; closeSheet();
+        var action = button.dataset.routineAction; closeSheet(true);
         if (action === 'share') shareItem('routine', routine.id);
-        if (action === 'duplicate') api('/api/admin/workout/routines/' + encodeURIComponent(routine.id) + '/duplicate', { method: 'POST', body: {} }).then(function (payload) { state.data.routines.push(payload.routine); renderRoutines(); toast('Routine duplicated.'); }).catch(function (error) { toast(error.message); });
+        if (action === 'duplicate' && requireOnline('Duplicating a routine')) withBusy(button, function () { return api('/api/admin/workout/routines/' + encodeURIComponent(routine.id) + '/duplicate', { method: 'POST', body: {} }); }, 'Duplicating…').then(function (payload) { state.data.routines.push(payload.routine); renderRoutines(); toast('Routine duplicated.'); }).catch(function (error) { toast(error.message); });
         if (action === 'edit') routineEditor(routine);
-        if (action === 'delete') { if (routine.seeded) restoreBaseline(); else api('/api/admin/workout/routines/' + encodeURIComponent(routine.id), { method: 'DELETE' }).then(function () { routine.archived = true; renderRoutines(); toast('Routine archived.'); }).catch(function (error) { toast(error.message); }); }
+        if (action === 'delete') { if (routine.seeded) restoreBaseline(); else if (requireOnline('Archiving a routine') && global.confirm('Archive “' + routine.name + '”? Completed workout history will be kept.')) api('/api/admin/workout/routines/' + encodeURIComponent(routine.id), { method: 'DELETE' }).then(function () { routine.archived = true; renderRoutines(); toast('Routine archived.'); }).catch(function (error) { toast(error.message); }); }
       });
     });
   }
 
   function routineEditor(routine) {
     var draft = clone(routine);
-    var rows = (draft.exercises || []).map(function (item, index) { return '<div class="workout-sheet-exercise-row" data-routine-row="' + index + '"><div class="workout-routine-edit-head"><h4>' + escapeHtml(getExercise(item.exercise_id).name || item.exercise_id) + '</h4><div><button type="button" data-routine-move="up" data-index="' + index + '" aria-label="Move earlier">↑</button><button type="button" data-routine-move="down" data-index="' + index + '" aria-label="Move later">↓</button><button type="button" data-routine-remove="' + index + '" aria-label="Remove exercise">×</button></div></div><div class="workout-sheet-exercise-grid"><label>Sets<input data-routine-field="sets" type="number" min="1" max="12" value="' + Number(item.sets || 3) + '"></label><label>Rep min<input data-routine-field="rep_min" type="number" min="0" max="1000" value="' + Number(item.rep_min || 0) + '"></label><label>Rep max<input data-routine-field="rep_max" type="number" min="0" max="1000" value="' + Number(item.rep_max || 0) + '"></label></div></div>'; }).join('');
-    var addOptions = (state.data.exercises || []).filter(function (item) { return !item.archived; }).map(function (item) { return '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(item.name) + '</option>'; }).join('');
-    openSheet('Edit routine', draft.name, '<form class="workout-sheet-form" id="workout-routine-form"><label class="workout-sheet-field">Name<input id="workout-routine-name" maxlength="100" value="' + escapeHtml(draft.name) + '"></label>' + rows + '<div class="workout-sheet-row"><label class="workout-sheet-field">Add exercise<select id="workout-routine-add-exercise">' + addOptions + '</select></label><button class="workout-secondary-btn" id="workout-routine-add-btn" type="button">Add</button></div><button class="workout-primary-btn" type="submit">Save future workouts</button></form>', function (root) {
+    function rowsMarkup() { return (draft.exercises || []).map(function (item, index) { return '<div class="workout-sheet-exercise-row" data-routine-row="' + index + '"><div class="workout-routine-edit-head"><h4>' + escapeHtml(getExercise(item.exercise_id).name || item.exercise_id) + '</h4><div><button type="button" data-routine-move="up" data-index="' + index + '" aria-label="Move ' + escapeHtml(getExercise(item.exercise_id).name || item.exercise_id) + ' earlier">↑</button><button type="button" data-routine-move="down" data-index="' + index + '" aria-label="Move ' + escapeHtml(getExercise(item.exercise_id).name || item.exercise_id) + ' later">↓</button><button type="button" data-routine-remove="' + index + '" aria-label="Remove ' + escapeHtml(getExercise(item.exercise_id).name || item.exercise_id) + '">×</button></div></div><div class="workout-sheet-exercise-grid"><label>Sets<input data-routine-field="sets" type="number" min="1" max="12" value="' + Number(item.sets || 3) + '"></label><label>Rep min<input data-routine-field="rep_min" type="number" min="0" max="1000" value="' + Number(item.rep_min || 0) + '"></label><label>Rep max<input data-routine-field="rep_max" type="number" min="0" max="1000" value="' + Number(item.rep_max || 0) + '"></label></div></div>'; }).join(''); }
+    var addExercises = (state.data.exercises || []).filter(function (item) { return !item.archived; });
+    function addOptionsMarkup(items) { return items.map(function (item) { return '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(item.name) + '</option>'; }).join(''); }
+    var addOptions = addOptionsMarkup(addExercises);
+    openSheet('Edit routine', draft.name, '<form class="workout-sheet-form" id="workout-routine-form"><label class="workout-sheet-field">Name<input id="workout-routine-name" maxlength="100" value="' + escapeHtml(draft.name) + '"></label><div id="workout-routine-rows">' + rowsMarkup() + '</div><label class="workout-sheet-field">Find exercise<input id="workout-routine-add-search" type="search" placeholder="Search exercise"></label><div class="workout-sheet-row"><label class="workout-sheet-field">Add exercise<select id="workout-routine-add-exercise">' + addOptions + '</select></label><button class="workout-secondary-btn" id="workout-routine-add-btn" type="button">Add</button></div><button class="workout-primary-btn" type="submit">Save future workouts</button></form>', function (root) {
       function captureDraft() {
         draft.name = byId('workout-routine-name').value;
         root.querySelectorAll('[data-routine-row]').forEach(function (row) { var index = Number(row.dataset.routineRow); row.querySelectorAll('[data-routine-field]').forEach(function (input) { draft.exercises[index][input.dataset.routineField] = Number(input.value); }); });
+      }
+      function renderDraftRows(focusIndex, focusAction) {
+        var scrollTop = elements.sheetContent.scrollTop;
+        setHtml(byId('workout-routine-rows'), rowsMarkup());
+        elements.sheetContent.scrollTop = scrollTop;
+        var selector = focusAction === 'remove' ? '[data-routine-remove="' + focusIndex + '"]' : '[data-routine-move="' + focusAction + '"][data-index="' + focusIndex + '"]';
+        var focusTarget = root.querySelector(selector) || root.querySelector('[data-routine-row="' + focusIndex + '"] button');
+        if (focusTarget) focusTarget.focus();
       }
       root.addEventListener('click', function (event) {
         var remove = event.target.closest('[data-routine-remove]');
         var move = event.target.closest('[data-routine-move]');
         if (!remove && !move) return;
         captureDraft();
-        if (remove && draft.exercises.length > 1) draft.exercises.splice(Number(remove.dataset.routineRemove), 1);
-        if (move) { var index = Number(move.dataset.index); var next = move.dataset.routineMove === 'up' ? index - 1 : index + 1; if (next >= 0 && next < draft.exercises.length) { var swap = draft.exercises[next]; draft.exercises[next] = draft.exercises[index]; draft.exercises[index] = swap; } }
-        closeSheet(); routineEditor(draft);
+        if (remove && draft.exercises.length > 1) { var removedIndex = Number(remove.dataset.routineRemove); draft.exercises.splice(removedIndex, 1); renderDraftRows(Math.min(removedIndex, draft.exercises.length - 1), 'remove'); root.dispatchEvent(new Event('input', { bubbles: true })); }
+        if (move) { var index = Number(move.dataset.index); var next = move.dataset.routineMove === 'up' ? index - 1 : index + 1; if (next >= 0 && next < draft.exercises.length) { var swap = draft.exercises[next]; draft.exercises[next] = draft.exercises[index]; draft.exercises[index] = swap; renderDraftRows(next, move.dataset.routineMove); root.dispatchEvent(new Event('input', { bubbles: true })); } }
+      });
+      byId('workout-routine-add-search').addEventListener('input', function () {
+        var query = this.value.trim().toLowerCase();
+        var select = byId('workout-routine-add-exercise');
+        var matches = addExercises.filter(function (item) { return !query || (item.name + ' ' + (item.muscle_group || '')).toLowerCase().indexOf(query) >= 0; });
+        setHtml(select, addOptionsMarkup(matches));
+        if (select._appSelectInstance) select._appSelectInstance.rebuild({ value: select.value });
       });
       byId('workout-routine-add-btn').addEventListener('click', function () {
         captureDraft(); var exercise = getExercise(byId('workout-routine-add-exercise').value); if (!exercise.id) return;
         draft.exercises.push({ exercise_id: exercise.id, sets: 3, rep_min: 8, rep_max: 12, start_kg: 0, rest_seconds: exercise.default_rest_seconds || 150, rest_range: '', load_type: exercise.load_type || '', early_rpe: 8, last_rpe: 9, technique: exercise.technique || '', cues: exercise.cues || '', superset_id: '' });
-        closeSheet(); routineEditor(draft);
+        renderDraftRows(draft.exercises.length - 1, 'remove');
+        root.dispatchEvent(new Event('input', { bubbles: true }));
       });
       byId('workout-routine-form').addEventListener('submit', function (event) {
         event.preventDefault();
         captureDraft();
-        api('/api/admin/workout/routines/' + encodeURIComponent(draft.id), { method: 'PATCH', body: { base_revision: Number(draft.revision || 0), name: draft.name, focus: draft.focus, block: draft.block, day: draft.day, optional: draft.optional, exercises: draft.exercises } }).then(function (payload) {
-          var index = state.data.routines.findIndex(function (item) { return item.id === draft.id; }); state.data.routines[index] = payload.routine; closeSheet(); renderRoutines(); toast('Routine saved · ' + payload.propagated_occurrences + ' future workout(s) updated.');
+        if (!requireOnline('Saving a routine')) return;
+        var submitButton = event.submitter || event.currentTarget.querySelector('[type="submit"]');
+        withBusy(submitButton, function () { return api('/api/admin/workout/routines/' + encodeURIComponent(draft.id), { method: 'PATCH', body: { base_revision: Number(draft.revision || 0), name: draft.name, focus: draft.focus, block: draft.block, day: draft.day, optional: draft.optional, exercises: draft.exercises } }); }, 'Saving…').then(function (payload) {
+          var index = state.data.routines.findIndex(function (item) { return item.id === draft.id; }); state.data.routines[index] = payload.routine; closeSheet(true); renderRoutines(); toast('Routine saved · ' + payload.propagated_occurrences + ' future workout(s) updated.');
         }).catch(function (error) { toast(error.message); });
       });
-    });
+    }, { confirmDirty: true });
   }
 
   function newRoutineSheet() {
     var exercises = (state.data.exercises || []).filter(function (item) { return !item.archived; }).slice(0, 60);
-    openSheet('New routine', 'Program builder', '<form class="workout-sheet-form" id="workout-new-routine-form"><label class="workout-sheet-field">Name<input id="workout-new-routine-name" maxlength="100" required placeholder="My routine"></label><p class="workout-sheet-help">Select exercises. You can edit targets after creation.</p><div class="workout-exercise-picker">' + exercises.map(function (item) { return '<label class="workout-exercise-option"><span><strong>' + escapeHtml(item.name) + '</strong><small>' + escapeHtml(item.muscle_group || 'Custom') + '</small></span><input type="checkbox" value="' + escapeHtml(item.id) + '" data-new-routine-exercise></label>'; }).join('') + '</div><button class="workout-primary-btn" type="submit">Create routine</button></form>', function (root) {
-      byId('workout-new-routine-form').addEventListener('submit', function (event) { event.preventDefault(); var chosen = Array.prototype.slice.call(root.querySelectorAll('[data-new-routine-exercise]:checked')).map(function (input) { return { exercise_id: input.value, sets: 3, rep_min: 8, rep_max: 12, start_kg: 0, rest_seconds: getExercise(input.value).default_rest_seconds || 150, load_type: getExercise(input.value).load_type || '', technique: '', cues: '' }; }); if (!chosen.length) { toast('Select at least one exercise.'); return; } api('/api/admin/workout/routines', { method: 'POST', body: { name: byId('workout-new-routine-name').value, exercises: chosen } }).then(function (payload) { state.data.routines.push(payload.routine); closeSheet(); renderRoutines(); toast('Routine created.'); }).catch(function (error) { toast(error.message); }); });
-    });
+    openSheet('New routine', 'Program builder', '<form class="workout-sheet-form" id="workout-new-routine-form"><label class="workout-sheet-field">Name<input id="workout-new-routine-name" maxlength="100" required placeholder="My routine"></label><label class="workout-sheet-field">Find exercises<input id="workout-new-routine-search" type="search" placeholder="Search by name or muscle group"></label><p class="workout-sheet-help">Select exercises. You can edit targets after creation.</p><div class="workout-exercise-picker">' + exercises.map(function (item) { return '<label class="workout-exercise-option" data-new-routine-option data-search="' + escapeHtml((item.name + ' ' + (item.muscle_group || '')).toLowerCase()) + '"><span><strong>' + escapeHtml(item.name) + '</strong><small>' + escapeHtml(item.muscle_group || 'Custom') + '</small></span><input type="checkbox" value="' + escapeHtml(item.id) + '" data-new-routine-exercise></label>'; }).join('') + '</div><button class="workout-primary-btn" type="submit">Create routine</button></form>', function (root) {
+      byId('workout-new-routine-search').addEventListener('input', function () { var query = this.value.trim().toLowerCase(); root.querySelectorAll('[data-new-routine-option]').forEach(function (option) { option.hidden = !!query && String(option.dataset.search || '').indexOf(query) < 0; }); });
+      byId('workout-new-routine-form').addEventListener('submit', function (event) { event.preventDefault(); if (!requireOnline('Creating a routine')) return; var chosen = Array.prototype.slice.call(root.querySelectorAll('[data-new-routine-exercise]:checked')).map(function (input) { return { exercise_id: input.value, sets: 3, rep_min: 8, rep_max: 12, start_kg: 0, rest_seconds: getExercise(input.value).default_rest_seconds || 150, load_type: getExercise(input.value).load_type || '', technique: '', cues: '' }; }); if (!chosen.length) { toast('Select at least one exercise.'); return; } var submitButton = event.submitter || event.currentTarget.querySelector('[type="submit"]'); withBusy(submitButton, function () { return api('/api/admin/workout/routines', { method: 'POST', body: { name: byId('workout-new-routine-name').value, exercises: chosen } }); }, 'Creating…').then(function (payload) { state.data.routines.push(payload.routine); closeSheet(true); renderRoutines(); toast('Routine created.'); }).catch(function (error) { toast(error.message); }); });
+    }, { confirmDirty: true });
   }
 
   function newExerciseSheet() {
     openSheet('Create exercise', 'Exercise library', '<form class="workout-sheet-form" id="workout-new-exercise-form"><label class="workout-sheet-field">Name<input id="workout-exercise-name" maxlength="100" required></label><div class="workout-sheet-row"><label class="workout-sheet-field">Tracking<select id="workout-exercise-type"><option value="weight_reps">Weight & reps</option><option value="bodyweight">Bodyweight</option><option value="weighted_bodyweight">Weighted bodyweight</option><option value="assisted_bodyweight">Assisted bodyweight</option><option value="duration">Duration</option></select></label><label class="workout-sheet-field">Default rest<select id="workout-exercise-rest"><option value="0">Off</option><option value="90">1:30</option><option value="150" selected>2:30</option><option value="210">3:30</option></select></label></div><label class="workout-sheet-field">Equipment<input id="workout-exercise-equipment" maxlength="120"></label><label class="workout-sheet-field">Muscle group<input id="workout-exercise-muscle" maxlength="80"></label><label class="workout-toggle-row"><span><strong>Pair load</strong><small>Double per-hand load for volume</small></span><input id="workout-exercise-pair" type="checkbox" role="switch"></label><label class="workout-toggle-row"><span><strong>Bodyweight contributes</strong><small>Add bodyweight to load volume</small></span><input id="workout-exercise-bodyweight" type="checkbox" role="switch"></label><button class="workout-primary-btn" type="submit">Create exercise</button></form>', function () {
-      byId('workout-new-exercise-form').addEventListener('submit', function (event) { event.preventDefault(); api('/api/admin/workout/exercises', { method: 'POST', body: { name: byId('workout-exercise-name').value, tracking_type: byId('workout-exercise-type').value, default_rest_seconds: Number(byId('workout-exercise-rest').value), equipment: byId('workout-exercise-equipment').value, muscle_group: byId('workout-exercise-muscle').value, pair_multiplier: byId('workout-exercise-pair').checked ? 2 : 1, bodyweight_contributes: byId('workout-exercise-bodyweight').checked } }).then(function (payload) { state.data.exercises.push(payload.exercise); closeSheet(); renderRoutines(); toast('Custom exercise created.'); }).catch(function (error) { toast(error.message); }); });
-    });
+      byId('workout-new-exercise-form').addEventListener('submit', function (event) { event.preventDefault(); if (!requireOnline('Creating an exercise')) return; var submitButton = event.submitter || event.currentTarget.querySelector('[type="submit"]'); withBusy(submitButton, function () { return api('/api/admin/workout/exercises', { method: 'POST', body: { name: byId('workout-exercise-name').value, tracking_type: byId('workout-exercise-type').value, default_rest_seconds: Number(byId('workout-exercise-rest').value), equipment: byId('workout-exercise-equipment').value, muscle_group: byId('workout-exercise-muscle').value, pair_multiplier: byId('workout-exercise-pair').checked ? 2 : 1, bodyweight_contributes: byId('workout-exercise-bodyweight').checked } }); }, 'Creating…').then(function (payload) { state.data.exercises.push(payload.exercise); closeSheet(true); renderRoutines(); toast('Custom exercise created.'); }).catch(function (error) { toast(error.message); }); });
+    }, { confirmDirty: true });
   }
 
-  function shareItem(kind, sourceId) {
-    api('/api/admin/workout/shares', { method: 'POST', body: { kind: kind, source_id: sourceId } }).then(function (payload) {
+  function shareItem(kind, sourceId, trigger) {
+    if (!requireOnline('Creating a share link')) return Promise.resolve(false);
+    if (!global.confirm('Create a read-only public link for this ' + (kind === 'routine' ? 'routine' : 'completed workout') + '? Anyone with the link can view the snapshot until you revoke it.')) return Promise.resolve(false);
+    return withBusy(trigger, function () { return api('/api/admin/workout/shares', { method: 'POST', body: { kind: kind, source_id: sourceId } }); }, 'Creating link…').then(function (payload) {
+      state.data.shares = state.data.shares || [];
+      state.data.shares.unshift(Object.assign({ revoked: false }, payload.share));
       var url = global.location.origin + payload.share.url;
-      if (navigator.share) return navigator.share({ title: 'Workout', text: 'Shared workout', url: url }).catch(function () { return copyShare(url); });
+      if (navigator.share) return navigator.share({ title: 'Workout', text: 'Shared workout', url: url }).catch(function (error) { if (isAbortError(error)) { toast('Sharing cancelled.'); return false; } return copyShare(url); });
       return copyShare(url);
     }).catch(function (error) { toast(error.message); });
   }
   function copyShare(url) { return navigator.clipboard.writeText(url).then(function () { toast('Share link copied.'); }).catch(function () { openSheet('Share link', 'Read-only snapshot', '<label class="workout-sheet-field">Link<input readonly value="' + escapeHtml(url) + '"></label>'); }); }
 
+  function manageShares() {
+    var shares = (state.data.shares || []).filter(function (item) { return !item.revoked; });
+    var content = '<div class="workout-sheet-list">' + shares.map(function (share) {
+      var source = share.kind === 'routine' ? getRoutine(share.source_id) : (state.data.history || []).find(function (item) { return item.id === share.source_id; });
+      var label = source && source.name ? source.name : (share.kind === 'routine' ? 'Routine' : 'Workout');
+      return '<div class="workout-sheet-action"><span><strong>' + escapeHtml(label) + '</strong><small>' + escapeHtml(formatDate(share.created_at) || 'Shared link') + '</small></span><button class="workout-danger-btn" type="button" data-revoke-share="' + escapeHtml(share.token) + '">Revoke</button></div>';
+    }).join('') + '</div>';
+    openSheet('Manage shared links', 'Privacy', shares.length ? content : '<p class="workout-sheet-help">You have no active shared links.</p>', function (root) {
+      root.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-revoke-share]');
+        if (!button || !requireOnline('Revoking a share link') || !global.confirm('Revoke this public link? It will stop working immediately.')) return;
+        var token = button.dataset.revokeShare;
+        withBusy(button, function () { return api('/api/admin/workout/shares/' + encodeURIComponent(token), { method: 'DELETE' }); }, 'Revoking…').then(function () {
+          var share = (state.data.shares || []).find(function (item) { return item.token === token; });
+          if (share) share.revoked = true;
+          closeSheet(true); manageShares(); toast('Shared link revoked.');
+        }).catch(function (error) { toast(error.message); });
+      });
+    });
+  }
+
   function logBodyweight() {
-    openSheet('Log bodyweight', 'Progress', '<form class="workout-sheet-form" id="workout-weight-form"><label class="workout-sheet-field">Date<input id="workout-weight-date" type="date" value="' + new Date().toISOString().slice(0, 10) + '"></label><label class="workout-sheet-field">Weight (kg)<input id="workout-weight-value" type="number" min="20" max="400" step="0.1" inputmode="decimal" value="' + Number(state.data.profile.bodyweight_kg || 0) + '"></label><button class="workout-primary-btn" type="submit">Save entry</button></form>', function () { byId('workout-weight-form').addEventListener('submit', function (event) { event.preventDefault(); api('/api/admin/workout/bodyweight', { method: 'PUT', body: { date: byId('workout-weight-date').value, weight_kg: Number(byId('workout-weight-value').value) } }).then(function (payload) { var existing = (state.data.bodyweight || []).findIndex(function (item) { return item.date === payload.entry.date; }); if (existing >= 0) state.data.bodyweight[existing] = payload.entry; else state.data.bodyweight.push(payload.entry); state.data.profile = payload.profile; return refreshStatistics(); }).then(function () { closeSheet(); renderProgress(); toast('Bodyweight saved.'); }).catch(function (error) { toast(error.message); }); }); });
+    openSheet('Log bodyweight', 'Progress', '<form class="workout-sheet-form" id="workout-weight-form"><label class="workout-sheet-field">Date<input id="workout-weight-date" type="date" value="' + new Date().toISOString().slice(0, 10) + '"></label><label class="workout-sheet-field">Weight (kg)<input id="workout-weight-value" type="number" min="20" max="400" step="0.1" inputmode="decimal" value="' + Number(state.data.profile.bodyweight_kg || 0) + '"></label><button class="workout-primary-btn" type="submit">Save entry</button></form>', function () { byId('workout-weight-form').addEventListener('submit', function (event) { event.preventDefault(); if (!requireOnline('Saving bodyweight')) return; var button = event.submitter || event.currentTarget.querySelector('[type="submit"]'); withBusy(button, function () { return api('/api/admin/workout/bodyweight', { method: 'PUT', body: { date: byId('workout-weight-date').value, weight_kg: Number(byId('workout-weight-value').value) } }).then(function (payload) { var existing = (state.data.bodyweight || []).findIndex(function (item) { return item.date === payload.entry.date; }); if (existing >= 0) state.data.bodyweight[existing] = payload.entry; else state.data.bodyweight.push(payload.entry); state.data.profile = payload.profile; return refreshStatistics(); }); }, 'Saving…').then(function () { closeSheet(true); renderProgress(); toast('Bodyweight saved.'); }).catch(function (error) { toast(error.message); }); }); }, { confirmDirty: true });
   }
   function refreshStatistics() { return api('/api/admin/workout/statistics').then(function (payload) { state.data.statistics = payload; }); }
 
   function restoreBaseline() {
-    openSheet('Restore Excel baseline?', 'Future workouts only', '<p class="workout-sheet-help">Active and completed workouts stay frozen. Unstarted prescriptions return to the selected Excel workbook.</p><button class="workout-danger-btn" id="workout-confirm-restore" type="button">Restore future program</button>', function () { byId('workout-confirm-restore').addEventListener('click', function () { api('/api/admin/workout/program/restore', { method: 'POST', body: {} }).then(function (payload) { state.data.routines = state.data.routines.filter(function (item) { return !item.seeded; }).concat(payload.routines); closeSheet(); return reloadBootstrap(); }).then(function () { toast('Excel baseline restored for future workouts.'); }).catch(function (error) { toast(error.message); }); }); });
+    openSheet('Restore original plan?', 'Future workouts only', '<p class="workout-sheet-help">Active and completed workouts stay unchanged. Only future workouts return to the original imported plan.</p><button class="workout-danger-btn" id="workout-confirm-restore" type="button">Restore future workouts</button>', function () { byId('workout-confirm-restore').addEventListener('click', function () { var button = this; if (!requireOnline('Restoring the original plan')) return; withBusy(button, function () { return api('/api/admin/workout/program/restore', { method: 'POST', body: {} }).then(function (payload) { state.data.routines = state.data.routines.filter(function (item) { return !item.seeded; }).concat(payload.routines); closeSheet(true); return reloadBootstrap(); }); }, 'Restoring…').then(function () { toast('Original plan restored for future workouts.'); }).catch(function (error) { toast(error.message); }); }); });
   }
 
   function finishWorkout() {
@@ -660,21 +823,31 @@
     var completed = Utils.sessionMetrics(session, false).completed_sets;
     openSheet('Finish workout?', session.name, '<p class="workout-sheet-help">' + completed + ' sets are complete. Finishing freezes this workout and updates progression, records, and analytics.</p><button class="workout-primary-btn" id="workout-confirm-finish" type="button">Finish workout</button>', function () {
       byId('workout-confirm-finish').addEventListener('click', function () {
+        var finishButton = this;
         var body = { base_revision: Number(session.revision || 0), elapsed_seconds: session.elapsed_seconds, status: 'completed', exercises: session.exercises };
-        closeSheet();
-        if (!navigator.onLine) { session.status = 'completed'; queueMutation('finish:' + session.id, 'POST', '/api/admin/workout/sessions/' + encodeURIComponent(session.id) + '/finish', body).then(function () { clearDraft(); closeLogger(); state.activeSession = null; setSync('Queued'); toast('Workout finished offline and queued for sync.'); }); return; }
-        api('/api/admin/workout/sessions/' + encodeURIComponent(session.id) + '/finish', { method: 'POST', body: body }).then(function (payload) { clearDraft(); releaseWakeLock(); state.activeSession = null; state.data.active_session = null; state.data.history.unshift(payload.session); return reloadBootstrap().then(function () { if (payload.personal_records && payload.personal_records.length && state.data.profile.settings.live_pr_notifications) toast(payload.personal_records.length + ' new personal record' + (payload.personal_records.length === 1 ? '!' : 's!')); else toast('Workout complete.'); closeLogger(); }); }).catch(function (error) { toast(error.message); });
+        if (!isOnline()) { withBusy(finishButton, function () {
+          session.status = 'completed';
+          return queueMutation('finish:' + session.id, 'POST', '/api/admin/workout/sessions/' + encodeURIComponent(session.id) + '/finish', body).then(function () {
+            state.data.active_session = null;
+            state.data.history = state.data.history || [];
+            state.data.history.unshift(clone(session));
+            state.activeSession = null;
+            return Promise.all([clearDraft(), saveBootstrap(state.data)]);
+          }).then(function () { closeSheet(true); closeLogger(); setSync('Queued'); toast('Workout finished offline and queued for sync.'); });
+        }, 'Queuing…'); return; }
+        withBusy(finishButton, function () { return api('/api/admin/workout/sessions/' + encodeURIComponent(session.id) + '/finish', { method: 'POST', body: body }).then(function (payload) { clearDraft(); releaseWakeLock(); state.activeSession = null; state.data.active_session = null; state.data.history.unshift(payload.session); return reloadBootstrap().then(function () { closeSheet(true); if (payload.personal_records && payload.personal_records.length && state.data.profile.settings.live_pr_notifications) toast(payload.personal_records.length + ' new personal record' + (payload.personal_records.length === 1 ? '!' : 's!')); else toast('Workout complete.'); closeLogger(); }); }); }, 'Finishing…').catch(function (error) { toast(error.message); });
       });
     });
   }
 
   function discardWorkout() {
     var session = state.activeSession; if (!session) return;
-    openSheet('Discard workout?', 'This draft will be removed', '<button class="workout-danger-btn" id="workout-confirm-discard" type="button">Discard workout</button>', function () { byId('workout-confirm-discard').addEventListener('click', function () { api('/api/admin/workout/sessions/' + encodeURIComponent(session.id) + '/discard', { method: 'POST', body: { base_revision: Number(session.revision || 0) } }).then(function () { clearDraft(); state.activeSession = null; closeSheet(); closeLogger(); return reloadBootstrap(); }).then(function () { toast('Workout discarded.'); }).catch(function (error) { toast(error.message); }); }); });
+    openSheet('Discard workout?', 'This draft will be removed', '<button class="workout-danger-btn" id="workout-confirm-discard" type="button">Discard workout</button>', function () { byId('workout-confirm-discard').addEventListener('click', function () { var button = this; if (!requireOnline('Discarding a workout')) return; withBusy(button, function () { return api('/api/admin/workout/sessions/' + encodeURIComponent(session.id) + '/discard', { method: 'POST', body: { base_revision: Number(session.revision || 0) } }).then(function () { clearDraft(); state.activeSession = null; closeSheet(true); closeLogger(); return reloadBootstrap(); }); }, 'Discarding…').then(function () { toast('Workout discarded.'); }).catch(function (error) { toast(error.message); }); }); });
   }
 
   function saveSettings(event) {
     event.preventDefault();
+    if (!requireOnline('Saving settings')) return;
     var settings = clone(state.data.profile.settings || {});
     settings.default_rest_seconds = Number(byId('workout-default-rest').value);
     settings.previous_values_scope = byId('workout-previous-scope').value;
@@ -687,7 +860,8 @@
     settings.timer_volume = Number(byId('workout-volume').value);
     settings.rest_notifications = byId('workout-notification-toggle').checked;
     settings.warmup_steps = [1, 2, 3].map(function (step) { return { percent: Number(byId('workout-warmup-percent-' + step).value), reps: Number(byId('workout-warmup-reps-' + step).value) }; });
-    api('/api/admin/workout/profile', { method: 'PUT', body: { base_revision: Number(state.data.profile.revision || 0), bodyweight_kg: Number(byId('workout-profile-weight').value), handle_weight_kg: Number(byId('workout-handle-weight').value), optional_day_enabled: byId('workout-optional-toggle').checked, settings: settings } }).then(function (payload) { state.data.profile = payload.profile; renderSettings(); toast('Workout settings saved.'); }).catch(function (error) { toast(error.message); });
+    var submitButton = event.submitter || elements.settingsForm.querySelector('[type="submit"]');
+    withBusy(submitButton, function () { return api('/api/admin/workout/profile', { method: 'PUT', body: { base_revision: Number(state.data.profile.revision || 0), bodyweight_kg: Number(byId('workout-profile-weight').value), handle_weight_kg: Number(byId('workout-handle-weight').value), optional_day_enabled: byId('workout-optional-toggle').checked, settings: settings } }); }, 'Saving…').then(function (payload) { state.data.profile = payload.profile; state.settingsDirty = false; renderSettings(); toast('Workout settings saved.'); }).catch(function (error) { toast(error.message); });
   }
 
   function handleLoggerInput(event) {
@@ -707,7 +881,14 @@
     if (target.dataset.completeSet) {
       var exercise = state.activeSession.exercises[Number(target.dataset.exerciseIndex)]; var setItem = exercise.sets[Number(target.dataset.setIndex)]; setItem.completed = !setItem.completed; setItem.completed_at = setItem.completed ? nowIso() : '';
       if (setItem.completed && setItem.type !== 'drop') { startRestTimer(exercise.rest_seconds); if (exercise.superset_id && state.data.profile.settings.smart_superset_scrolling) { var nextIndex = state.activeSession.exercises.findIndex(function (item, idx) { return idx !== Number(target.dataset.exerciseIndex) && item.superset_id === exercise.superset_id; }); global.setTimeout(function () { var card = document.querySelector('[data-exercise-card="' + nextIndex + '"]'); if (card) card.scrollIntoView({ behavior: 'smooth' }); }, 120); } }
-      renderLogger(); scheduleSave(); return;
+      var row = target.closest('tr');
+      target.classList.toggle('is-complete', setItem.completed);
+      target.setAttribute('aria-label', setItem.completed ? 'Uncomplete set' : 'Complete set');
+      if (row) row.classList.toggle('is-complete', setItem.completed);
+      var card = target.closest('[data-exercise-card]');
+      var advice = card && card.querySelector('.workout-progress-advice strong');
+      if (advice) advice.textContent = Utils.progression(exercise, state.activeSession.phase).next_action;
+      updateMetrics(); scheduleSave(); return;
     }
     if (target.dataset.addSet != null) { var ex = state.activeSession.exercises[Number(target.dataset.addSet)]; ex.sets.push({ id: 'set-' + (ex.sets.length + 1) + '-' + Date.now(), type: 'normal', kg: ex.sets.length ? ex.sets[ex.sets.length - 1].kg : 0, reps: 0, rpe: ex.last_rpe || 9, duration_seconds: 0, completed: false, completed_at: '' }); renderLogger(); scheduleSave(); }
     if (target.dataset.exerciseMenu != null) exerciseMenu(Number(target.dataset.exerciseMenu));
@@ -720,20 +901,22 @@
     document.addEventListener('click', function (event) {
       var nav = event.target.closest('[data-workout-nav]'); if (nav) showView(nav.dataset.workoutNav);
       var cycle = event.target.closest('[data-open-cycle]'); if (cycle) cycleSheet();
-      var startOccurrence = event.target.closest('[data-start-occurrence]'); if (startOccurrence) startSession({ occurrence_id: startOccurrence.dataset.startOccurrence });
-      var startRoutine = event.target.closest('[data-start-routine]'); if (startRoutine) startSession({ routine_id: startRoutine.dataset.startRoutine });
+      var startOccurrence = event.target.closest('[data-start-occurrence]'); if (startOccurrence) startSession({ occurrence_id: startOccurrence.dataset.startOccurrence }, startOccurrence);
+      var startRoutine = event.target.closest('[data-start-routine]'); if (startRoutine) startSession({ routine_id: startRoutine.dataset.startRoutine }, startRoutine);
       var routineMenuButton = event.target.closest('[data-routine-menu]'); if (routineMenuButton) routineMenu(routineMenuButton.dataset.routineMenu);
-      var shareRoutineButton = event.target.closest('[data-share-routine]'); if (shareRoutineButton) shareItem('routine', shareRoutineButton.dataset.shareRoutine);
-      var shareWorkoutButton = event.target.closest('[data-share-workout]'); if (shareWorkoutButton) shareItem('workout', shareWorkoutButton.dataset.shareWorkout);
+      var shareRoutineButton = event.target.closest('[data-share-routine]'); if (shareRoutineButton) shareItem('routine', shareRoutineButton.dataset.shareRoutine, shareRoutineButton);
+      var shareWorkoutButton = event.target.closest('[data-share-workout]'); if (shareWorkoutButton) shareItem('workout', shareWorkoutButton.dataset.shareWorkout, shareWorkoutButton);
     });
     elements.routineSearch.addEventListener('input', renderRoutines);
     elements.trendSelect.addEventListener('change', function () { renderExerciseChart(((state.data.statistics || {}).exercise_history || {})[this.value] || []); });
     elements.resumeCard.addEventListener('click', openLogger);
-    elements.emptyBtn.addEventListener('click', function () { startSession({}); });
+    elements.emptyBtn.addEventListener('click', function () { startSession({}, elements.emptyBtn); });
     byId('workout-new-routine').addEventListener('click', newRoutineSheet);
     byId('workout-new-exercise').addEventListener('click', newExerciseSheet);
     byId('workout-add-weight').addEventListener('click', logBodyweight);
     elements.settingsForm.addEventListener('submit', saveSettings);
+    elements.settingsForm.addEventListener('input', function () { state.settingsDirty = true; updateSettingsSaveState(); });
+    elements.settingsForm.addEventListener('change', function () { state.settingsDirty = true; updateSettingsSaveState(); });
     byId('workout-volume').addEventListener('input', function () { byId('workout-volume-output').textContent = Math.round(Number(this.value) * 100) + '%'; });
     byId('workout-notification-toggle').addEventListener('change', function () {
       if (!this.checked) return;
@@ -753,16 +936,32 @@
     elements.exerciseStack.addEventListener('click', handleLoggerClick);
     byId('workout-rest-skip').addEventListener('click', function () { global.clearInterval(state.restTimer); elements.restDrawer.hidden = true; });
     elements.restDrawer.addEventListener('click', function (event) { var button = event.target.closest('[data-rest-adjust]'); if (button) { state.restEndsAt += Number(button.dataset.restAdjust) * 1000; updateRestTimer(); } });
-    byId('workout-sheet-close').addEventListener('click', closeSheet);
+    byId('workout-sheet-close').addEventListener('click', function () { closeSheet(); });
     elements.sheetOverlay.addEventListener('click', function (event) { if (event.target === elements.sheetOverlay) closeSheet(); });
-    document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && !elements.sheetOverlay.hidden) closeSheet(); });
-    global.addEventListener('online', function () { elements.offlineBanner.hidden = true; flushMutations().then(reloadBootstrap); });
-    global.addEventListener('offline', function () { elements.offlineBanner.hidden = false; setSync('Queued'); });
-    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { requestWakeLock(); flushMutations(); } });
+    global.addEventListener('online', function () { state.offlineFallback = false; applyConnectivityState(); flushMutations().then(reloadBootstrap); });
+    global.addEventListener('offline', function () { applyConnectivityState(); setSync('Offline'); });
+    global.addEventListener('beforeunload', function (event) { if (!state.settingsDirty) return; event.preventDefault(); event.returnValue = ''; });
+    if (elements.manageShares) elements.manageShares.addEventListener('click', manageShares);
+    if (elements.installButton) elements.installButton.addEventListener('click', function () {
+      if (!state.installPrompt) { toast('Use your browser menu to install Workout on this device.'); return; }
+      var promptEvent = state.installPrompt;
+      state.installPrompt = null;
+      promptEvent.prompt();
+      Promise.resolve(promptEvent.userChoice).then(function (choice) { if (choice && choice.outcome === 'accepted') elements.installButton.hidden = true; });
+    });
+    if (elements.updateButton) elements.updateButton.addEventListener('click', function () {
+      var waiting = state.serviceWorkerRegistration && state.serviceWorkerRegistration.waiting;
+      if (!waiting) { global.location.reload(); return; }
+      elements.updateButton.setAttribute('aria-busy', 'true');
+      waiting.postMessage({ type: 'SKIP_WAITING' });
+    });
+    global.addEventListener('beforeinstallprompt', function (event) { event.preventDefault(); state.installPrompt = event; if (elements.installButton) elements.installButton.hidden = false; });
+    global.addEventListener('appinstalled', function () { state.installPrompt = null; if (elements.installButton) elements.installButton.hidden = true; });
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { requestWakeLock(); if (state.offlineFallback && navigator.onLine !== false) reloadBootstrap().then(flushMutations).catch(function () {}); else flushMutations(); } });
   }
 
   function cacheElements() {
-    elements = { app: byId('workout-app'), loading: byId('workout-loading'), syncPill: byId('workout-sync-pill'), offlineBanner: byId('workout-offline-banner'), cycleLabel: byId('workout-cycle-label'), greeting: byId('workout-greeting'), weekCopy: byId('workout-week-copy'), weekRing: byId('workout-week-ring'), resumeCard: byId('workout-resume-card'), resumeCopy: byId('workout-resume-copy'), schedule: byId('workout-schedule'), emptyBtn: byId('workout-empty-btn'), routineSearch: byId('workout-routine-search'), routineList: byId('workout-routine-list'), librarySummary: byId('workout-library-summary'), kpis: byId('workout-kpi-grid'), weeklyBars: byId('workout-weekly-bars'), muscleBars: byId('workout-muscle-bars'), trendSelect: byId('workout-trend-select'), exerciseChart: byId('workout-exercise-chart'), weightChart: byId('workout-weight-chart'), recordList: byId('workout-record-list'), historyList: byId('workout-history-list'), historyCount: byId('workout-history-count'), settingsForm: byId('workout-settings-form'), logger: byId('workout-logger'), loggerTitle: byId('workout-logger-title'), loggerStatus: byId('workout-logger-status'), duration: byId('workout-duration'), volumeTotal: byId('workout-volume-total'), setCount: byId('workout-set-count'), pauseBtn: byId('workout-pause-btn'), exerciseStack: byId('workout-exercise-stack'), restDrawer: byId('workout-rest-drawer'), restTime: byId('workout-rest-time'), sheetOverlay: byId('workout-sheet-overlay'), sheetContent: byId('workout-sheet-content'), toast: byId('workout-toast') };
+    elements = { app: byId('workout-app'), loading: byId('workout-loading'), syncPill: byId('workout-sync-pill'), offlineBanner: byId('workout-offline-banner'), cycleLabel: byId('workout-cycle-label'), greeting: byId('workout-greeting'), weekCopy: byId('workout-week-copy'), weekRing: byId('workout-week-ring'), resumeCard: byId('workout-resume-card'), resumeCopy: byId('workout-resume-copy'), schedule: byId('workout-schedule'), emptyBtn: byId('workout-empty-btn'), routineSearch: byId('workout-routine-search'), routineList: byId('workout-routine-list'), routineCount: byId('workout-routine-count'), librarySummary: byId('workout-library-summary'), kpis: byId('workout-kpi-grid'), weeklyBars: byId('workout-weekly-bars'), muscleBars: byId('workout-muscle-bars'), trendSelect: byId('workout-trend-select'), exerciseChart: byId('workout-exercise-chart'), weightChart: byId('workout-weight-chart'), recordList: byId('workout-record-list'), historyList: byId('workout-history-list'), historyCount: byId('workout-history-count'), settingsForm: byId('workout-settings-form'), logger: byId('workout-logger'), loggerTitle: byId('workout-logger-title'), loggerStatus: byId('workout-logger-status'), duration: byId('workout-duration'), volumeTotal: byId('workout-volume-total'), setCount: byId('workout-set-count'), pauseBtn: byId('workout-pause-btn'), exerciseStack: byId('workout-exercise-stack'), restDrawer: byId('workout-rest-drawer'), restTime: byId('workout-rest-time'), sheetOverlay: byId('workout-sheet-overlay'), sheetContent: byId('workout-sheet-content'), toast: byId('workout-toast'), installButton: byId('workout-install-btn'), updateButton: byId('workout-update-btn'), manageShares: byId('workout-manage-shares') };
   }
 
   function mergeDraft() {
@@ -775,14 +974,37 @@
 
   function reloadBootstrap() {
     return api('/api/admin/workout/bootstrap').then(function (payload) {
-      state.data = payload; state.activeSession = payload.active_session || null;
-      return mergeDraft().then(function () { elements.loading.hidden = true; document.querySelectorAll('.workout-view').forEach(function (view) { view.hidden = view.dataset.workoutView !== state.currentView; }); elements.app.setAttribute('aria-busy', 'false'); renderAll(); if (state.activeSession && !elements.logger.hidden) openLogger(); });
+      state.offlineFallback = false;
+      return saveBootstrap(payload).then(function () { return { payload: payload, offline: false }; });
+    }).catch(function (error) {
+      if (error && error.status) throw error;
+      return loadBootstrap().then(function (cached) {
+        if (!cached || !cached.payload) throw error;
+        state.offlineFallback = true;
+        return { payload: cached.payload, offline: true };
+      });
+    }).then(function (result) {
+      state.data = result.payload; state.activeSession = result.payload.active_session || null;
+      return mergeDraft().then(function () { elements.loading.hidden = true; document.querySelectorAll('.workout-view').forEach(function (view) { view.hidden = view.dataset.workoutView !== state.currentView; }); elements.app.setAttribute('aria-busy', 'false'); renderAll(); if (result.offline) { elements.offlineBanner.hidden = false; setSync('Offline'); if (state.activeSession) openLogger(); } else if (state.activeSession && !elements.logger.hidden) openLogger(); });
     });
   }
 
   function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
-    navigator.serviceWorker.register('/admin/workout/service-worker.js', { scope: '/admin/workout' }).catch(function () {});
+    navigator.serviceWorker.addEventListener('controllerchange', function () { global.location.reload(); });
+    return navigator.serviceWorker.register('/admin/workout/service-worker.js', { scope: '/admin/workout' }).then(function (registration) {
+      state.serviceWorkerRegistration = registration;
+      if (registration.waiting && elements.updateButton) elements.updateButton.hidden = false;
+      registration.addEventListener('updatefound', function () {
+        var worker = registration.installing;
+        if (!worker) return;
+        worker.addEventListener('statechange', function () { if (worker.state === 'installed' && navigator.serviceWorker.controller && elements.updateButton) elements.updateButton.hidden = false; });
+      });
+      navigator.serviceWorker.ready.then(function (readyRegistration) {
+        if (readyRegistration.active) readyRegistration.active.postMessage({ type: 'CACHE_WORKOUT_SHELL' });
+      }).catch(function () {});
+      return registration;
+    }).catch(function () {});
   }
 
   function init() {
@@ -796,5 +1018,9 @@
     });
   }
 
+  global.WorkoutBehaviorUtils = {
+    isAbortError: isAbortError,
+    trendModel: trendModel,
+  };
   document.addEventListener('DOMContentLoaded', init);
 })(window);
