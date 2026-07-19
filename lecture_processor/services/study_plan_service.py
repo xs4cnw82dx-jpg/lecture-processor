@@ -69,6 +69,7 @@ def _preferences(app_ctx, uid):
     safe_revision = _safe_revision(raw.get('revision', 0))
     safe['revision'] = safe_revision if safe_revision >= 0 else 0
     safe['migration_v1_complete'] = bool(raw.get('migration_v1_complete', False))
+    safe['availability_configured'] = bool(raw.get('availability_configured', False))
     safe['updated_at'] = _safe_float(raw.get('updated_at', 0))
     return safe
 
@@ -95,6 +96,7 @@ def _pack_summary(raw, doc_id=''):
     return {
         'study_pack_id': str(doc_id or source.get('study_pack_id', '')),
         'title': str(source.get('title', '') or 'Untitled pack'),
+        'mode': str(source.get('mode', '') or ''),
         'flashcards_count': int(source.get('flashcards_count', len(source.get('flashcards', []) if isinstance(source.get('flashcards'), list) else [])) or 0),
         'test_questions_count': int(source.get('test_questions_count', len(source.get('test_questions', []) if isinstance(source.get('test_questions'), list) else [])) or 0),
         'folder_id': str(source.get('folder_id', '') or ''),
@@ -114,7 +116,7 @@ def _pack_summary_page(app_ctx, uid, limit=100, after_doc=None):
     for doc in page_docs:
         raw = doc.to_dict() or {}
         summary = _pack_summary(raw, getattr(doc, 'id', ''))
-        if not summary['archived']:
+        if not summary['archived'] and summary['mode'].strip().lower() != 'voice-note':
             packs.append(summary)
     next_cursor = str(getattr(page_docs[-1], 'id', '') or '') if has_more and page_docs else ''
     return packs, next_cursor
@@ -174,9 +176,28 @@ def _owned_pack_ids(app_ctx, uid, pack_ids):
     for pack_id in study_plan.sanitize_pack_ids(pack_ids):
         doc = app_ctx.study_repo.get_study_pack_summary_doc(app_ctx.db, pack_id)
         raw = doc.to_dict() if getattr(doc, 'exists', False) else {}
-        if getattr(doc, 'exists', False) and str(raw.get('uid', '') or '') == uid:
+        if (
+            getattr(doc, 'exists', False)
+            and str(raw.get('uid', '') or '') == uid
+            and str(raw.get('mode', '') or '').strip().lower() != 'voice-note'
+            and not bool(raw.get('archived', False))
+        ):
             owned.add(pack_id)
     return owned
+
+
+def _owned_pack_summaries(app_ctx, uid, pack_ids):
+    summaries = {}
+    for pack_id in study_plan.sanitize_pack_ids(pack_ids):
+        doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
+        raw = doc.to_dict() if getattr(doc, 'exists', False) else {}
+        if not getattr(doc, 'exists', False) or str(raw.get('uid', '') or '') != uid:
+            continue
+        summary = _pack_summary(raw, pack_id)
+        if summary['archived'] or summary['mode'].strip().lower() == 'voice-note':
+            continue
+        summaries[pack_id] = summary
+    return summaries
 
 
 def _migrate_legacy_folder_goals(app_ctx, uid, preferences):
@@ -215,6 +236,7 @@ def _migrate_legacy_folder_goals(app_ctx, uid, preferences):
         app_ctx.planner_repo.set_study_goal(app_ctx.db, uid, goal_id, payload, merge=False)
     updated = dict(preferences)
     updated['migration_v1_complete'] = True
+    updated['availability_configured'] = bool(preferences.get('availability_configured', False))
     updated['revision'] = max(1, int(updated.get('revision', 0) or 0))
     updated['updated_at'] = now_ts
     app_ctx.planner_repo.set_study_plan_preferences(app_ctx.db, uid, updated, merge=False)
@@ -479,7 +501,7 @@ def update_preferences(app_ctx, request):
     if requested_revision is not None and _safe_revision(requested_revision) != _safe_revision(current.get('revision', 0)):
         return app_ctx.jsonify({'error': 'Planning settings changed in another tab.', 'code': 'revision_conflict', 'preferences': current}), 409
     safe = study_plan.sanitize_preferences(incoming, existing=current)
-    safe.update({'uid': uid, 'revision': int(current.get('revision', 0)) + 1, 'migration_v1_complete': True, 'updated_at': app_ctx.time.time()})
+    safe.update({'uid': uid, 'revision': int(current.get('revision', 0)) + 1, 'migration_v1_complete': True, 'availability_configured': 'availability' in incoming or bool(current.get('availability_configured', False)), 'updated_at': app_ctx.time.time()})
     app_ctx.planner_repo.set_study_plan_preferences(app_ctx.db, uid, safe, merge=False)
     return app_ctx.jsonify({'ok': True, 'preferences': safe})
 
@@ -582,10 +604,11 @@ def preview_plan(app_ctx, request):
     current_preferences = _preferences(app_ctx, uid)
     requested_preferences = body.get('preferences') if isinstance(body.get('preferences'), dict) else {}
     preferences = study_plan.sanitize_preferences(requested_preferences, existing=current_preferences)
+    preferences['availability_configured'] = True
     today = _today_for_timezone(preferences['timezone'])
     if goal['exam_date'] <= today:
         return app_ctx.jsonify({'error': 'The exam date must be after today.'}), 400
-    packs_by_id = {item['study_pack_id']: item for item in _pack_summaries(app_ctx, uid, 100)}
+    packs_by_id = _owned_pack_summaries(app_ctx, uid, goal['pack_ids'])
     states = _pack_states(app_ctx, uid, goal['pack_ids'])
     pace, completed_notes = _recent_activity_context(app_ctx, uid)
     workloads = [
@@ -670,7 +693,7 @@ def apply_plan(app_ctx, request):
     now_ts = app_ctx.time.time()
     goal.update({'uid': uid, 'revision': int(current_goal.get('revision', 0) or 0) + 1, 'updated_at': now_ts})
     preferences = dict(proposal.get('preferences') or {})
-    preferences.update({'uid': uid, 'revision': int(current_preferences.get('revision', 0) or 0) + 1, 'migration_v1_complete': True, 'updated_at': now_ts})
+    preferences.update({'uid': uid, 'revision': int(current_preferences.get('revision', 0) or 0) + 1, 'migration_v1_complete': True, 'availability_configured': True, 'updated_at': now_ts})
     today = _today_for_timezone(preferences['timezone'])
     cancellations = []
     for existing in _session_records(app_ctx, uid, today, goal['exam_date'], 250):

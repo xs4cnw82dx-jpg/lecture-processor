@@ -22,13 +22,18 @@
     wizardGoalId: '',
     proposal: null,
     applyIdempotencyKey: '',
-    availabilityPreset: 'weekday-evenings',
+    availabilityPreset: '',
+    wizardSelectedPackIds: new Set(),
+    wizardNotesMinutesByPack: {},
+    packFilter: 'all',
+    packSearch: '',
     online: navigator.onLine !== false,
     queryPacksConsumed: false,
     lastFocusedElement: null
   };
 
   var els = {};
+  var activeControlPopover = null;
 
   function byId(id) { return document.getElementById(id); }
   function queryAll(selector, root) { return Array.prototype.slice.call((root || document).querySelectorAll(selector)); }
@@ -100,8 +105,15 @@
   }
   function setSaving(kind, message) {
     if (!els.saveState) return;
+    if (!kind) {
+      els.saveState.hidden = true;
+      els.saveState.className = 'save-state';
+      els.saveState.textContent = '';
+      return;
+    }
+    els.saveState.hidden = false;
     els.saveState.className = 'save-state' + (kind ? ' is-' + kind : '');
-    els.saveState.textContent = message || (kind === 'saving' ? 'Saving…' : kind === 'failed' ? 'Failed' : 'Saved');
+    els.saveState.textContent = message || (kind === 'saving' ? 'Saving…' : 'Could not save');
   }
   function setOfflineState() {
     state.online = navigator.onLine !== false;
@@ -155,6 +167,7 @@
       var payload = await api('/api/study-plan' + bootstrapRange());
       state.data = payload;
       cacheData();
+      setSaving('');
       els.loading.hidden = true;
       els.workspace.hidden = false;
       renderAll();
@@ -191,6 +204,7 @@
     }
     state.data.next_pack_cursor = cursor;
     cacheData();
+    if (els.wizardOverlay && !els.wizardOverlay.hidden) renderWizardPacks();
   }
 
   function setView(view, updateUrl) {
@@ -224,6 +238,18 @@
     var focus = Number(outcomes.questions || 0) > 0 && Number(outcomes.flashcards || 0) === 0 ? '&focus=test' : (Number(outcomes.notes_minutes || 0) > 0 && Number(outcomes.flashcards || 0) === 0 && Number(outcomes.questions || 0) === 0 ? '&focus=notes' : '');
     return '/study?pack_id=' + encodeURIComponent(session.pack_id) + '&mode=learn' + focus + '&plan_item_id=' + encodeURIComponent(session.id);
   }
+  function hasPersonalPace() {
+    return !!(state.data && state.data.pace && state.data.pace.personalized);
+  }
+  function bindSetupButtons(root) {
+    queryAll('[data-setup-plan]', root || document).forEach(function (button) {
+      button.addEventListener('click', function () { openWizard(); });
+    });
+  }
+  function renderHeaderAction() {
+    var label = byId('new-study-goal-label');
+    if (label) label.textContent = activeGoals().length ? 'New study goal' : 'Set up my plan';
+  }
   function renderNextSession() {
     var today = todayInTimezone();
     var nowTime = currentTimeInTimezone();
@@ -233,7 +259,7 @@
     var next = sessions[0];
     if (!next) {
       els.nextTime.textContent = '';
-      els.nextContent.innerHTML = '<h2>' + (activeGoals().length ? 'You are clear for now' : 'Build your first realistic study plan') + '</h2><p>' + (activeGoals().length ? 'There is no upcoming session in the current plan. You can add one manually or review your schedule.' : 'Choose any packs—including unfiled or question-only packs—and Study Plan will do the scheduling.') + '</p><div class="next-session-actions"><button type="button" class="btn" data-next-empty-action>' + (activeGoals().length ? 'Add a session' : 'Create study plan') + '</button></div>';
+      els.nextContent.innerHTML = '<h2>' + (activeGoals().length ? 'You are clear for now' : 'Let’s build your first study plan') + '</h2><p>' + (activeGoals().length ? 'There is no upcoming session in the current plan. You can add one manually or review your schedule.' : 'Pick what you need to study, choose your deadline and available times, then approve the schedule.') + '</p><div class="next-session-actions"><button type="button" class="btn" data-next-empty-action>' + (activeGoals().length ? 'Add a session' : 'Set up my plan') + '</button></div>';
       var emptyAction = els.nextContent.querySelector('[data-next-empty-action]');
       if (emptyAction) emptyAction.addEventListener('click', function () { activeGoals().length ? openSessionEditor(null) : openWizard(); });
       return;
@@ -248,12 +274,14 @@
     var goals = activeGoals().slice().sort(function (a, b) { return a.exam_date.localeCompare(b.exam_date); });
     var goal = goals[0];
     if (!goal) {
-      els.goalHealth.innerHTML = '<h2>No active goal yet</h2><p>A goal links your chosen packs to a deadline and an accepted schedule.</p><span class="health-badge warning">Setup needed</span>';
+      els.goalHealth.innerHTML = '<h2>Start with a study goal</h2><p>Choose the packs you want to study and the date you want to be ready. We will guide you through the rest.</p><button type="button" class="btn primary" data-setup-plan>Set up a goal</button>';
+      bindSetupButtons(els.goalHealth);
       return;
     }
     var progressGoal = (((state.data || {}).progress || {}).goals || []).find(function (item) { return item.goal_id === goal.goal_id; }) || {};
     var days = Math.max(0, Math.ceil((parseDate(goal.exam_date) - parseDate(todayInTimezone())) / 86400000));
-    els.goalHealth.innerHTML = '<div class="goal-countdown">' + days + ' <span>days left</span></div><h2>' + escapeHtml(goal.title) + '</h2><p>' + minutesLabel(progressGoal.remaining_minutes || 0) + ' estimated work remaining before ' + escapeHtml(formatDate(goal.exam_date, { day: 'numeric', month: 'long' })) + '.</p><span class="health-badge ' + (progressGoal.on_track ? 'good' : 'warning') + '">' + (progressGoal.on_track ? 'On track' : 'Needs attention') + '</span>';
+    var paceCopy = hasPersonalPace() ? minutesLabel(progressGoal.remaining_minutes || 0) + ' remaining at your recent pace. ' : '';
+    els.goalHealth.innerHTML = '<div class="goal-countdown">' + days + ' <span>days left</span></div><h2>' + escapeHtml(goal.title) + '</h2><p>' + escapeHtml(paceCopy) + 'Deadline: ' + escapeHtml(formatDate(goal.exam_date, { day: 'numeric', month: 'long' })) + '.</p><span class="health-badge ' + (progressGoal.on_track ? 'good' : 'warning') + '">' + (progressGoal.on_track ? 'On track' : 'Needs attention') + '</span>';
   }
   function sessionRow(session) {
     var statusLabel = session.status === 'completed' ? 'Completed' : session.status === 'skipped' ? 'Skipped' : '';
@@ -285,6 +313,15 @@
     var sessions = plannedSessions().filter(function (item) { return item.date >= from && item.date <= to && item.status !== 'cancelled'; }).sort(sortSessions);
     els.weekTitle.textContent = formatDate(from, { day: 'numeric', month: 'short' }) + ' – ' + formatDate(to, { day: 'numeric', month: 'short', year: 'numeric' });
     els.weekSummary.textContent = minutesLabel(sessions.filter(function (item) { return item.status !== 'skipped'; }).reduce(function (total, item) { return total + Number(item.duration || 0); }, 0)) + ' planned across ' + sessions.length + ' session' + (sessions.length === 1 ? '' : 's');
+    var noPlanYet = activeGoals().length === 0 && plannedSessions().length === 0;
+    els.scheduleHelp.hidden = noPlanYet;
+    els.weekCalendar.classList.toggle('is-empty-workspace', noPlanYet);
+    if (noPlanYet) {
+      els.weekCalendar.innerHTML = '<div class="empty-workspace-panel"><div class="empty-workspace-icon" aria-hidden="true">◇</div><h3>Your schedule begins with a goal</h3><p>Tell us what you are studying, your deadline, and when you are free. You will review the proposed schedule before anything is added.</p><button type="button" class="btn primary" data-setup-plan>Set up my study plan</button></div>';
+      els.mobileAgenda.innerHTML = '';
+      bindSetupButtons(els.weekCalendar);
+      return;
+    }
     var today = todayInTimezone();
     var daysHtml = [];
     var agendaHtml = [];
@@ -327,11 +364,16 @@
     var percent = planned ? Math.min(100, Math.round(completed / planned * 100)) : 0;
     els.timeChart.innerHTML = '<progress class="time-progress-bar" max="100" value="' + percent + '">' + percent + '%</progress><div class="time-progress-labels"><span>' + escapeHtml(minutesLabel(completed)) + ' completed</span><span>' + escapeHtml(minutesLabel(planned)) + ' planned</span></div>';
     var goals = Array.isArray(progress.goals) ? progress.goals : [];
-    els.goalProgress.innerHTML = goals.length ? goals.map(function (goal) { return '<div class="goal-progress-item"><div class="goal-progress-item-head"><h3>' + escapeHtml(goal.title) + '</h3><span class="health-badge ' + (goal.on_track ? 'good' : 'warning') + '">' + escapeHtml(String(goal.readiness_percent || 0)) + '% ready</span></div><p>' + escapeHtml(minutesLabel(goal.remaining_minutes)) + ' remaining · ' + escapeHtml(minutesLabel(goal.scheduled_minutes)) + ' scheduled · ' + escapeHtml(String(goal.mastery_percent || 0)) + '% mastered</p></div>'; }).join('') : '<div class="empty-plan-state">Create a goal to see exam readiness.</div>';
+    els.goalProgress.innerHTML = goals.length ? goals.map(function (goal) {
+      var detail = (hasPersonalPace() ? minutesLabel(goal.remaining_minutes) + ' remaining at your pace · ' : '') + minutesLabel(goal.scheduled_minutes) + ' scheduled · ' + String(goal.mastery_percent || 0) + '% mastered';
+      return '<div class="goal-progress-item"><div class="goal-progress-item-head"><h3>' + escapeHtml(goal.title) + '</h3><span class="health-badge ' + (goal.on_track ? 'good' : 'warning') + '">' + escapeHtml(String(goal.readiness_percent || 0)) + '% ready</span></div><p>' + escapeHtml(detail) + '</p></div>';
+    }).join('') : '<div class="empty-plan-state"><strong>No goal yet</strong>Set up a goal to connect your packs, deadline, schedule, and readiness.<button type="button" class="btn primary" data-setup-plan>Create my first goal</button></div>';
+    bindSetupButtons(els.goalProgress);
   }
 
   function renderAll() {
     if (!state.data) return;
+    renderHeaderAction();
     renderNextSession();
     renderGoalHealth();
     renderToday();
@@ -340,6 +382,186 @@
     renderFeeds();
     setView(state.view, false);
     setOfflineState();
+  }
+
+  function controlLabel(control) {
+    var explicit = control.getAttribute('aria-label');
+    if (explicit) return explicit;
+    var label = control.labels && control.labels[0];
+    var heading = label && label.querySelector(':scope > span');
+    return (heading ? heading.textContent : (label ? label.textContent : 'Choose an option')).trim();
+  }
+  function closeControlPopover(restoreFocus) {
+    if (!activeControlPopover) return false;
+    var current = activeControlPopover;
+    activeControlPopover = null;
+    if (current.anchor) current.anchor.setAttribute('aria-expanded', 'false');
+    if (current.panel && current.panel.parentNode) current.panel.parentNode.removeChild(current.panel);
+    if (restoreFocus && current.anchor && typeof current.anchor.focus === 'function') current.anchor.focus();
+    return true;
+  }
+  function positionControlPopover(panel, anchor) {
+    var rect = anchor.getBoundingClientRect();
+    panel.classList.toggle('is-lower-anchor', rect.top > window.innerHeight * .55);
+  }
+  function showControlPopover(panel, anchor) {
+    closeControlPopover(false);
+    panel.classList.add('plan-control-popover');
+    document.body.appendChild(panel);
+    anchor.setAttribute('aria-expanded', 'true');
+    activeControlPopover = { panel: panel, anchor: anchor };
+    positionControlPopover(panel, anchor);
+  }
+  function refreshPrettySelect(select) {
+    if (!select || !select._prettyButton) return;
+    var option = select.options[select.selectedIndex] || select.options[0];
+    var text = option ? option.textContent : 'Choose an option';
+    select._prettyButton.querySelector('[data-pretty-select-label]').textContent = text;
+    select._prettyButton.setAttribute('aria-label', controlLabel(select) + ': ' + text);
+  }
+  function openPrettySelect(select) {
+    var button = select._prettyButton;
+    var panel = document.createElement('div');
+    panel.className = 'select-popover';
+    panel.setAttribute('role', 'listbox');
+    panel.setAttribute('aria-label', controlLabel(select));
+    Array.prototype.forEach.call(select.options, function (option) {
+      var optionButton = document.createElement('button');
+      optionButton.type = 'button';
+      optionButton.className = 'pretty-option' + (option.selected ? ' is-selected' : '');
+      optionButton.textContent = option.textContent;
+      optionButton.setAttribute('role', 'option');
+      optionButton.setAttribute('aria-selected', option.selected ? 'true' : 'false');
+      optionButton.disabled = option.disabled;
+      optionButton.addEventListener('click', function () {
+        select.value = option.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        refreshPrettySelect(select);
+        closeControlPopover(false);
+        button.focus();
+      });
+      panel.appendChild(optionButton);
+    });
+    showControlPopover(panel, button);
+    var selectedButton = panel.querySelector('.pretty-option.is-selected');
+    if (selectedButton) selectedButton.focus();
+  }
+  function enhancePrettySelects(root) {
+    queryAll('select[data-pretty-select]', root || document).forEach(function (select) {
+      if (select.dataset.prettySelectReady === 'true') { refreshPrettySelect(select); return; }
+      select.dataset.prettySelectReady = 'true';
+      var wrapper = document.createElement('span');
+      wrapper.className = 'pretty-select';
+      select.parentNode.insertBefore(wrapper, select);
+      wrapper.appendChild(select);
+      select.classList.add('plan-native-control-hidden');
+      select.tabIndex = -1;
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'pretty-select-button';
+      button.setAttribute('aria-haspopup', 'listbox');
+      button.setAttribute('aria-expanded', 'false');
+      button.innerHTML = '<span data-pretty-select-label></span>';
+      wrapper.appendChild(button);
+      select._prettyButton = button;
+      refreshPrettySelect(select);
+      select.addEventListener('change', function () { refreshPrettySelect(select); });
+      button.addEventListener('click', function (event) { event.stopPropagation(); if (activeControlPopover && activeControlPopover.anchor === button) closeControlPopover(false); else openPrettySelect(select); });
+      button.addEventListener('keydown', function (event) { if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openPrettySelect(select); } });
+    });
+  }
+  function pickerIcon(kind) {
+    if (kind === 'time') return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="M12 7v5l3 2"></path></svg>';
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="6" width="16" height="14" rx="2"></rect><path d="M8 3v6M16 3v6M4 10h16"></path></svg>';
+  }
+  function setPickerValue(input, value) {
+    input.value = value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  function validPickerDate(value) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) return null;
+    var parsed = parseDate(value);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  }
+  function openDatePicker(input, anchor) {
+    var chosen = validPickerDate(input.value);
+    var cursor = chosen || new Date();
+    var monthCursor = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+    var panel = document.createElement('div');
+    panel.className = 'date-picker-popover';
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-label', 'Choose ' + controlLabel(input).toLowerCase());
+    function allowed(value) { return (!input.min || value >= input.min) && (!input.max || value <= input.max); }
+    function renderMonth() {
+      var year = monthCursor.getFullYear();
+      var month = monthCursor.getMonth();
+      var offset = (new Date(year, month, 1).getDay() + 6) % 7;
+      var days = new Date(year, month + 1, 0).getDate();
+      var today = localDate(new Date());
+      var selected = input.value;
+      var cells = '';
+      for (var spacer = 0; spacer < offset; spacer += 1) cells += '<span class="date-picker-spacer" aria-hidden="true"></span>';
+      for (var day = 1; day <= days; day += 1) {
+        var value = year + '-' + pad(month + 1) + '-' + pad(day);
+        cells += '<button type="button" class="date-picker-day' + (value === today ? ' is-today' : '') + (value === selected ? ' is-selected' : '') + '" data-picker-date="' + value + '"' + (allowed(value) ? '' : ' disabled') + ' aria-label="' + escapeHtml(formatDate(value, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })) + '">' + day + '</button>';
+      }
+      var todayDisabled = allowed(today) ? '' : ' disabled';
+      panel.innerHTML = '<div class="date-picker-header"><button type="button" class="date-picker-nav" data-month-step="-1" aria-label="Previous month">‹</button><div class="date-picker-title">' + escapeHtml(new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' }).format(monthCursor)) + '</div><button type="button" class="date-picker-nav" data-month-step="1" aria-label="Next month">›</button></div><div class="date-picker-weekdays"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div><div class="date-picker-grid">' + cells + '</div><div class="date-picker-footer"><button type="button" class="picker-text-button" data-picker-clear>Clear</button><button type="button" class="picker-text-button" data-picker-today' + todayDisabled + '>Today</button></div>';
+      queryAll('[data-month-step]', panel).forEach(function (button) { button.addEventListener('click', function () { monthCursor = new Date(year, month + Number(button.dataset.monthStep), 1); renderMonth(); positionControlPopover(panel, anchor); }); });
+      queryAll('[data-picker-date]', panel).forEach(function (button) { button.addEventListener('click', function () { setPickerValue(input, button.dataset.pickerDate); closeControlPopover(false); input.focus(); }); });
+      panel.querySelector('[data-picker-clear]').addEventListener('click', function () { setPickerValue(input, ''); closeControlPopover(false); input.focus(); });
+      var todayButton = panel.querySelector('[data-picker-today]');
+      todayButton.addEventListener('click', function () { if (!todayButton.disabled) { setPickerValue(input, today); closeControlPopover(false); input.focus(); } });
+    }
+    renderMonth();
+    showControlPopover(panel, anchor);
+  }
+  function openTimePicker(input, anchor) {
+    var panel = document.createElement('div');
+    panel.className = 'time-picker-popover';
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-label', 'Choose ' + controlLabel(input).toLowerCase());
+    panel.innerHTML = '<div class="time-picker-title">Choose a time</div><div class="time-picker-grid"></div>';
+    var grid = panel.querySelector('.time-picker-grid');
+    var values = [];
+    for (var minutes = 0; minutes < 24 * 60; minutes += 30) values.push(pad(Math.floor(minutes / 60)) + ':' + pad(minutes % 60));
+    if (/^([01]\d|2[0-3]):[0-5]\d$/.test(input.value) && values.indexOf(input.value) < 0) values.push(input.value);
+    values.sort();
+    values.forEach(function (value) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'time-picker-option' + (value === input.value ? ' is-selected' : '');
+      button.textContent = value;
+      button.addEventListener('click', function () { setPickerValue(input, value); closeControlPopover(false); input.focus(); });
+      grid.appendChild(button);
+    });
+    showControlPopover(panel, anchor);
+    var selected = grid.querySelector('.is-selected');
+    if (selected) selected.scrollIntoView({ block: 'center' });
+  }
+  function enhancePlanPickers(root) {
+    queryAll('input[data-plan-picker]', root || document).forEach(function (input) {
+      if (input.dataset.planPickerReady === 'true') return;
+      input.dataset.planPickerReady = 'true';
+      var kind = input.dataset.planPicker;
+      var wrapper = document.createElement('span');
+      wrapper.className = 'plan-picker-control';
+      input.parentNode.insertBefore(wrapper, input);
+      wrapper.appendChild(input);
+      var trigger = document.createElement('button');
+      trigger.type = 'button';
+      trigger.className = 'plan-picker-trigger';
+      trigger.setAttribute('aria-label', 'Open ' + controlLabel(input).toLowerCase());
+      trigger.setAttribute('aria-haspopup', 'dialog');
+      trigger.setAttribute('aria-expanded', 'false');
+      trigger.innerHTML = pickerIcon(kind);
+      wrapper.appendChild(trigger);
+      function openPicker(event) { event.stopPropagation(); if (activeControlPopover && activeControlPopover.anchor === trigger) closeControlPopover(false); else if (kind === 'time') openTimePicker(input, trigger); else openDatePicker(input, trigger); }
+      trigger.addEventListener('click', openPicker);
+      input.addEventListener('click', function (event) { if (!activeControlPopover || activeControlPopover.anchor !== trigger) openPicker(event); });
+      input.addEventListener('keydown', function (event) { if (event.key === 'ArrowDown') { event.preventDefault(); if (kind === 'time') openTimePicker(input, trigger); else openDatePicker(input, trigger); } });
+    });
   }
 
   function openOverlay(element) {
@@ -355,6 +577,7 @@
   }
   function closeOverlay(element) {
     if (!element) return;
+    closeControlPopover(false);
     element.hidden = true;
     element.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('plan-modal-open');
@@ -372,23 +595,62 @@
     state.queryPacksConsumed = true;
     openWizard({ packIds: requestedPackIds() });
   }
-  function renderWizardPacks(selectedIds, notesMinutesByPack) {
-    var selected = new Set(selectedIds || []);
-    var notesEstimates = notesMinutesByPack || {};
-    var packs = (state.data && state.data.study_packs) || [];
-    els.wizardPackList.innerHTML = packs.length ? packs.map(function (pack) {
-      var counts = Number(pack.flashcards_count || 0) + ' cards · ' + Number(pack.test_questions_count || 0) + ' questions';
-      var notesOnly = Number(pack.flashcards_count || 0) === 0 && Number(pack.test_questions_count || 0) === 0;
-      var estimate = Number(notesEstimates[pack.study_pack_id] || 45);
-      return '<div class="wizard-pack-option"><label class="wizard-pack-select"><input type="checkbox" value="' + escapeHtml(pack.study_pack_id) + '"' + (selected.has(pack.study_pack_id) ? ' checked' : '') + '><span class="wizard-pack-copy"><strong>' + escapeHtml(pack.title) + '</strong><span>' + escapeHtml((notesOnly ? 'Notes-only pack' : counts) + (pack.folder_name ? ' · ' + pack.folder_name : ' · Unfiled')) + '</span></span></label>' + (notesOnly ? '<label class="notes-estimate">Estimated study time<input type="number" min="15" max="5000" step="15" value="' + escapeHtml(estimate) + '" data-notes-minutes="' + escapeHtml(pack.study_pack_id) + '"><span>minutes</span></label>' : '') + (pack.in_plan ? '<span class="in-plan-tag">In plan</span>' : '') + '</div>';
-    }).join('') : '<div class="empty-plan-state"><strong>No study packs yet</strong>Create a pack in Study Library first.</div>';
+  function eligibleStudyPacks() {
+    return ((state.data && state.data.study_packs) || []).filter(function (pack) {
+      return String(pack.mode || '').toLowerCase() !== 'voice-note';
+    });
   }
-  function selectedWizardPacks() { return queryAll('input[type="checkbox"]:checked', els.wizardPackList).map(function (input) { return input.value; }); }
+  function packMatchesFilter(pack) {
+    var cards = Number(pack.flashcards_count || 0);
+    var questions = Number(pack.test_questions_count || 0);
+    if (state.packFilter === 'flashcards' && cards <= 0) return false;
+    if (state.packFilter === 'questions' && questions <= 0) return false;
+    if (state.packFilter === 'notes' && (cards > 0 || questions > 0)) return false;
+    var search = String(state.packSearch || '').trim().toLowerCase();
+    if (!search) return true;
+    return [pack.title, pack.folder_name, pack.course, pack.subject].join(' ').toLowerCase().indexOf(search) >= 0;
+  }
+  function packMaterialBadges(pack) {
+    var cards = Number(pack.flashcards_count || 0);
+    var questions = Number(pack.test_questions_count || 0);
+    var badges = [];
+    if (cards > 0) badges.push('<span class="material-badge flashcards">▱ ' + escapeHtml(String(cards)) + ' flashcard' + (cards === 1 ? '' : 's') + '</span>');
+    if (questions > 0) badges.push('<span class="material-badge questions">? ' + escapeHtml(String(questions)) + ' question' + (questions === 1 ? '' : 's') + '</span>');
+    if (!badges.length) badges.push('<span class="material-badge notes">≡ Notes</span>');
+    return badges.join('');
+  }
+  function updatePackSelectionSummary() {
+    var packs = eligibleStudyPacks();
+    var cards = packs.filter(function (pack) { return Number(pack.flashcards_count || 0) > 0; }).length;
+    var questions = packs.filter(function (pack) { return Number(pack.test_questions_count || 0) > 0; }).length;
+    els.wizardPackSelectionSummary.textContent = state.wizardSelectedPackIds.size + ' selected · ' + cards + ' flashcard pack' + (cards === 1 ? '' : 's') + ' · ' + questions + ' question pack' + (questions === 1 ? '' : 's');
+  }
+  function renderWizardPacks(selectedIds, notesMinutesByPack) {
+    if (selectedIds) {
+      var eligibleIds = new Set(eligibleStudyPacks().map(function (pack) { return pack.study_pack_id; }));
+      state.wizardSelectedPackIds = new Set(selectedIds.filter(function (packId) { return eligibleIds.has(packId); }));
+    }
+    if (notesMinutesByPack) state.wizardNotesMinutesByPack = Object.assign({}, notesMinutesByPack);
+    var packs = eligibleStudyPacks().filter(packMatchesFilter);
+    els.wizardPackList.innerHTML = packs.length ? packs.map(function (pack) {
+      var folder = pack.folder_name ? pack.folder_name : 'Unfiled';
+      return '<div class="wizard-pack-option"><label class="wizard-pack-select"><input type="checkbox" value="' + escapeHtml(pack.study_pack_id) + '"' + (state.wizardSelectedPackIds.has(pack.study_pack_id) ? ' checked' : '') + '><span class="wizard-pack-copy"><strong>' + escapeHtml(pack.title) + '</strong><span class="pack-materials">' + packMaterialBadges(pack) + '</span><span>' + escapeHtml(folder) + '</span></span></label>' + (pack.in_plan ? '<span class="in-plan-tag">In plan</span>' : '') + '</div>';
+    }).join('') : '<div class="empty-plan-state"><strong>' + (eligibleStudyPacks().length ? 'No packs match this filter' : 'No study packs yet') + '</strong>' + (eligibleStudyPacks().length ? 'Try another search or material type.' : 'Create flashcards, questions, or notes in Study Library first.') + '</div>';
+    queryAll('.wizard-pack-select input[type="checkbox"]', els.wizardPackList).forEach(function (input) {
+      input.addEventListener('change', function () {
+        if (input.checked) state.wizardSelectedPackIds.add(input.value);
+        else state.wizardSelectedPackIds.delete(input.value);
+        updatePackSelectionSummary();
+      });
+    });
+    updatePackSelectionSummary();
+  }
+  function selectedWizardPacks() { return Array.from(state.wizardSelectedPackIds); }
   function wizardNotesMinutes(packIds) {
     var selected = new Set(packIds || []);
     var result = {};
-    queryAll('[data-notes-minutes]', els.wizardPackList).forEach(function (input) {
-      if (selected.has(input.dataset.notesMinutes)) result[input.dataset.notesMinutes] = Math.max(15, Math.min(5000, Number(input.value || 45)));
+    Object.keys(state.wizardNotesMinutesByPack || {}).forEach(function (packId) {
+      if (selected.has(packId)) result[packId] = Math.max(15, Math.min(5000, Number(state.wizardNotesMinutesByPack[packId] || 45)));
     });
     return result;
   }
@@ -401,13 +663,21 @@
     state.proposal = null;
     state.applyIdempotencyKey = '';
     state.wizardStep = 1;
+    state.packFilter = 'all';
+    state.packSearch = '';
+    els.wizardPackSearch.value = '';
+    queryAll('[data-pack-filter]').forEach(function (button) { var active = button.dataset.packFilter === 'all'; button.classList.toggle('is-active', active); button.setAttribute('aria-pressed', active ? 'true' : 'false'); });
     var existing = activeGoals().find(function (goal) { return goal.goal_id === state.wizardGoalId; });
     renderWizardPacks(settings.packIds || (existing ? existing.pack_ids : []), existing ? existing.notes_minutes_by_pack : {});
+    els.wizardPersonalPaceNote.hidden = !hasPersonalPace();
     els.wizardTitle.value = existing ? existing.title : '';
     els.wizardDate.value = existing ? existing.exam_date : defaultExamDate();
+    els.wizardDate.min = localDate(addDays(new Date(), 1));
     els.wizardSessionLength.value = String((state.data.preferences || {}).default_session_minutes || 45);
+    refreshPrettySelect(els.wizardSessionLength);
     renderCustomAvailability();
-    chooseAvailabilityPreset(existing ? 'custom' : 'weekday-evenings', true);
+    var configured = !!((state.data.preferences || {}).availability_configured);
+    chooseAvailabilityPreset(existing || configured ? 'custom' : '', true);
     renderWizardStep();
     openOverlay(els.wizardOverlay);
   }
@@ -420,20 +690,28 @@
   }
   function clearWizardErrors() { [els.wizardPackError, els.wizardGoalError, els.wizardAvailabilityError].forEach(function (item) { item.hidden = true; item.textContent = ''; }); }
   function availabilityForPreset() {
+    if (state.availabilityPreset === 'balanced') return [
+      { weekday: 0, start: '17:00', end: '19:00' },
+      { weekday: 2, start: '17:00', end: '19:00' },
+      { weekday: 5, start: '10:00', end: '12:00' }
+    ];
     if (state.availabilityPreset === 'weekday-evenings') return [0,1,2,3,4].map(function (weekday) { return { weekday: weekday, start: '19:00', end: '21:00' }; });
-    if (state.availabilityPreset === 'daily') return [0,1,2,3,4,5,6].map(function (weekday) { return { weekday: weekday, start: '18:00', end: '20:00' }; });
+    if (state.availabilityPreset === 'daily') return [0,1,2,3,4,5,6].map(function (weekday) { return { weekday: weekday, start: '17:00', end: '19:00' }; });
+    if (state.availabilityPreset !== 'custom') return [];
     return queryAll('.custom-day', els.customAvailability).filter(function (row) { return row.querySelector('input[type="checkbox"]').checked; }).map(function (row) { return { weekday: Number(row.dataset.weekday), start: row.querySelector('[data-start]').value, end: row.querySelector('[data-end]').value }; }).filter(function (item) { return item.start && item.end && item.end > item.start; });
   }
   function renderCustomAvailability() {
-    var current = ((state.data || {}).preferences || {}).availability || [];
+    var preferences = ((state.data || {}).preferences || {});
+    var current = preferences.availability_configured ? (preferences.availability || []) : [];
     els.customAvailability.innerHTML = DAY_NAMES.map(function (name, weekday) {
       var existing = current.find(function (item) { return Number(item.weekday) === weekday; });
-      return '<label class="custom-day" data-weekday="' + weekday + '"><span><input type="checkbox" aria-label="Study on ' + escapeHtml(name) + '"' + (existing ? ' checked' : '') + '> ' + escapeHtml(name) + '</span><input type="time" data-start aria-label="' + escapeHtml(name) + ' start time" value="' + escapeHtml(existing ? existing.start : '18:00') + '"><span>to</span><input type="time" data-end aria-label="' + escapeHtml(name) + ' end time" value="' + escapeHtml(existing ? existing.end : '20:00') + '"></label>';
+      return '<div class="custom-day" data-weekday="' + weekday + '"><label><input type="checkbox" aria-label="Study on ' + escapeHtml(name) + '"' + (existing ? ' checked' : '') + '> ' + escapeHtml(name) + '</label><input type="text" inputmode="numeric" autocomplete="off" data-plan-picker="time" data-start aria-label="' + escapeHtml(name) + ' start time" value="' + escapeHtml(existing ? existing.start : '17:00') + '"><span>to</span><input type="text" inputmode="numeric" autocomplete="off" data-plan-picker="time" data-end aria-label="' + escapeHtml(name) + ' end time" value="' + escapeHtml(existing ? existing.end : '19:00') + '"></div>';
     }).join('');
+    enhancePlanPickers(els.customAvailability);
   }
   function chooseAvailabilityPreset(preset, skipRender) {
     state.availabilityPreset = preset;
-    queryAll('[data-availability-preset]').forEach(function (button) { button.classList.toggle('is-active', button.dataset.availabilityPreset === preset); });
+    queryAll('[data-availability-preset]').forEach(function (button) { var active = button.dataset.availabilityPreset === preset; button.classList.toggle('is-active', active); button.setAttribute('aria-pressed', active ? 'true' : 'false'); });
     els.customAvailability.hidden = preset !== 'custom';
     if (preset === 'custom' && !skipRender) renderCustomAvailability();
     if (preset === 'custom' && !els.customAvailability.children.length) renderCustomAvailability();
@@ -475,7 +753,11 @@
   function renderPreview() {
     var proposal = state.proposal || {};
     var summary = proposal.summary || {};
-    els.previewSummary.innerHTML = '<div class="preview-stat"><strong>' + escapeHtml(minutesLabel(summary.required_minutes)) + '</strong><span>estimated work</span></div><div class="preview-stat"><strong>' + escapeHtml(String((proposal.sessions || []).length)) + '</strong><span>study sessions</span></div><div class="preview-stat"><strong>' + escapeHtml(minutesLabel(summary.scheduled_minutes)) + '</strong><span>scheduled</span></div>';
+    var sessionDates = new Set((proposal.sessions || []).map(function (session) { return session.date; })).size;
+    var personalized = !!(proposal.pace && proposal.pace.personalized);
+    var paceStat = personalized ? '<div class="preview-stat"><strong>' + escapeHtml(minutesLabel(summary.required_minutes)) + '</strong><span>at your recent pace</span></div>' : '';
+    els.previewSummary.classList.toggle('has-two-stats', !personalized);
+    els.previewSummary.innerHTML = paceStat + '<div class="preview-stat"><strong>' + escapeHtml(String((proposal.sessions || []).length)) + '</strong><span>study sessions</span></div><div class="preview-stat"><strong>' + escapeHtml(String(sessionDates)) + '</strong><span>study day' + (sessionDates === 1 ? '' : 's') + '</span></div>';
     var shortage = Number(summary.shortage_minutes || 0);
     els.capacityWarning.hidden = shortage <= 0;
     if (shortage > 0) {
@@ -510,7 +792,7 @@
       if (!selectedWizardPacks().length) { els.wizardPackError.textContent = 'Select at least one study pack.'; els.wizardPackError.hidden = false; return; }
       state.wizardStep = 2;
     } else if (state.wizardStep === 2) {
-      if (!els.wizardTitle.value.trim() || !els.wizardDate.value || els.wizardDate.value <= todayInTimezone()) { els.wizardGoalError.textContent = 'Enter a goal name and choose a future date.'; els.wizardGoalError.hidden = false; return; }
+      if (!els.wizardTitle.value.trim() || !validPickerDate(els.wizardDate.value) || els.wizardDate.value <= todayInTimezone()) { els.wizardGoalError.textContent = 'Enter a goal name and choose a future date.'; els.wizardGoalError.hidden = false; return; }
       state.wizardStep = 3;
     } else if (state.wizardStep === 3) {
       if (!availabilityForPreset().length) { els.wizardAvailabilityError.textContent = 'Add at least one availability window.'; els.wizardAvailabilityError.hidden = false; return; }
@@ -520,7 +802,8 @@
   }
 
   function populateSessionEditorPacks(selected) {
-    els.sessionPack.innerHTML = '<option value="">No linked pack</option>' + (((state.data || {}).study_packs || []).map(function (pack) { return '<option value="' + escapeHtml(pack.study_pack_id) + '"' + (pack.study_pack_id === selected ? ' selected' : '') + '>' + escapeHtml(pack.title) + '</option>'; }).join(''));
+    els.sessionPack.innerHTML = '<option value="">No linked pack</option>' + eligibleStudyPacks().map(function (pack) { return '<option value="' + escapeHtml(pack.study_pack_id) + '"' + (pack.study_pack_id === selected ? ' selected' : '') + '>' + escapeHtml(pack.title) + '</option>'; }).join('');
+    refreshPrettySelect(els.sessionPack);
   }
   function openSessionEditor(session) {
     if (!isEditable()) { toast('Reconnect before changing a session.', 'error'); return; }
@@ -555,7 +838,7 @@
       origin: existing ? existing.origin : 'manual',
       goal_id: existing ? existing.goal_id : ''
     };
-    if (!payload.title || !payload.date || !payload.time || payload.duration < 5 || payload.duration > 360) {
+    if (!payload.title || !validPickerDate(payload.date) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(payload.time) || payload.duration < 5 || payload.duration > 360) {
       els.sessionError.textContent = 'Add a title, valid date, time, and duration between 5 and 360 minutes.';
       els.sessionError.hidden = false;
       return;
@@ -637,9 +920,9 @@
   function bindElements() {
     els.loading = byId('study-plan-loading'); els.workspace = byId('study-plan-workspace'); els.authGate = byId('study-plan-auth'); els.offline = byId('study-plan-offline'); els.saveState = byId('study-plan-save-state'); els.toast = byId('study-plan-toast');
     els.nextTime = byId('next-session-time'); els.nextContent = byId('next-session-content'); els.goalHealth = byId('goal-health-content'); els.todayList = byId('today-session-list'); els.rebalance = byId('rebalance-card'); els.rebalanceMessage = byId('rebalance-message');
-    els.weekTitle = byId('schedule-week-title'); els.weekSummary = byId('schedule-week-summary'); els.weekCalendar = byId('week-calendar'); els.mobileAgenda = byId('mobile-agenda');
+    els.weekTitle = byId('schedule-week-title'); els.weekSummary = byId('schedule-week-summary'); els.scheduleHelp = byId('schedule-help'); els.weekCalendar = byId('week-calendar'); els.mobileAgenda = byId('mobile-agenda');
     els.progressSummary = byId('progress-summary-grid'); els.timeChart = byId('time-progress-chart'); els.goalProgress = byId('goal-progress-list');
-    els.wizardOverlay = byId('plan-wizard-overlay'); els.wizardPackList = byId('wizard-pack-list'); els.wizardPackError = byId('wizard-pack-error'); els.wizardGoalError = byId('wizard-goal-error'); els.wizardAvailabilityError = byId('wizard-availability-error'); els.wizardTitle = byId('wizard-goal-title'); els.wizardDate = byId('wizard-exam-date'); els.wizardSessionLength = byId('wizard-session-length'); els.customAvailability = byId('custom-availability'); els.wizardBack = byId('wizard-back-btn'); els.wizardNext = byId('wizard-next-btn'); els.previewSummary = byId('wizard-preview-summary'); els.capacityWarning = byId('wizard-capacity-warning'); els.previewSessions = byId('wizard-preview-sessions');
+    els.wizardOverlay = byId('plan-wizard-overlay'); els.wizardPackList = byId('wizard-pack-list'); els.wizardPackSearch = byId('wizard-pack-search'); els.wizardPackSelectionSummary = byId('wizard-pack-selection-summary'); els.wizardPersonalPaceNote = byId('wizard-personal-pace-note'); els.wizardPackError = byId('wizard-pack-error'); els.wizardGoalError = byId('wizard-goal-error'); els.wizardAvailabilityError = byId('wizard-availability-error'); els.wizardTitle = byId('wizard-goal-title'); els.wizardDate = byId('wizard-exam-date'); els.wizardSessionLength = byId('wizard-session-length'); els.customAvailability = byId('custom-availability'); els.wizardBack = byId('wizard-back-btn'); els.wizardNext = byId('wizard-next-btn'); els.previewSummary = byId('wizard-preview-summary'); els.capacityWarning = byId('wizard-capacity-warning'); els.previewSessions = byId('wizard-preview-sessions');
     els.sessionOverlay = byId('session-editor-overlay'); els.sessionId = byId('session-editor-id'); els.sessionName = byId('session-editor-name'); els.sessionPack = byId('session-editor-pack'); els.sessionDate = byId('session-editor-date'); els.sessionTime = byId('session-editor-time'); els.sessionDuration = byId('session-editor-duration'); els.sessionLocked = byId('session-editor-locked'); els.sessionError = byId('session-editor-error'); els.sessionStatusActions = byId('session-editor-status-actions');
     els.feedsOverlay = byId('calendar-feeds-overlay'); els.feedName = byId('calendar-feed-name'); els.feedReminder = byId('calendar-feed-reminder'); els.feedCreate = byId('calendar-feed-create-btn'); els.feedOnce = byId('calendar-feed-once'); els.feedUrl = byId('calendar-feed-url'); els.feedList = byId('calendar-feed-list');
   }
@@ -656,6 +939,8 @@
     byId('plan-wizard-close').addEventListener('click', function () { closeOverlay(els.wizardOverlay); });
     els.wizardBack.addEventListener('click', function () { if (state.wizardStep > 1) { state.wizardStep -= 1; renderWizardStep(); } });
     els.wizardNext.addEventListener('click', nextWizardStep);
+    els.wizardPackSearch.addEventListener('input', function () { state.packSearch = els.wizardPackSearch.value; renderWizardPacks(); });
+    queryAll('[data-pack-filter]').forEach(function (button) { button.addEventListener('click', function () { state.packFilter = button.dataset.packFilter; queryAll('[data-pack-filter]').forEach(function (candidate) { var active = candidate === button; candidate.classList.toggle('is-active', active); candidate.setAttribute('aria-pressed', active ? 'true' : 'false'); }); renderWizardPacks(); }); });
     queryAll('[data-availability-preset]').forEach(function (button) { button.addEventListener('click', function () { chooseAvailabilityPreset(button.dataset.availabilityPreset); }); });
     [byId('session-editor-close'), byId('session-editor-cancel')].forEach(function (button) { button.addEventListener('click', function () { closeOverlay(els.sessionOverlay); }); });
     byId('session-editor-save').addEventListener('click', function () { saveSession(); });
@@ -664,17 +949,21 @@
     els.feedCreate.addEventListener('click', createFeed);
     byId('calendar-feed-copy').addEventListener('click', async function () { try { await navigator.clipboard.writeText(els.feedUrl.value); toast('Calendar URL copied.'); } catch (_) { els.feedUrl.select(); toast('Select and copy the URL.'); } });
     [els.wizardOverlay, els.sessionOverlay, els.feedsOverlay].forEach(function (overlay) { overlay.addEventListener('click', function (event) { if (event.target === overlay) closeOverlay(overlay); }); });
+    document.addEventListener('click', function (event) { if (activeControlPopover && !activeControlPopover.panel.contains(event.target) && !activeControlPopover.anchor.contains(event.target)) closeControlPopover(false); });
+    window.addEventListener('resize', function () { closeControlPopover(false); });
+    window.addEventListener('scroll', function (event) { if (activeControlPopover && !activeControlPopover.panel.contains(event.target)) closeControlPopover(false); }, true);
     window.addEventListener('online', function () { setOfflineState(); loadData({ useCache: false }); });
     window.addEventListener('offline', setOfflineState);
     document.addEventListener('keydown', function (event) {
       if (event.key !== 'Escape') return;
+      if (closeControlPopover(true)) { event.preventDefault(); return; }
       var open = [els.feedsOverlay, els.sessionOverlay, els.wizardOverlay].find(function (overlay) { return overlay && !overlay.hidden; });
       if (open) { event.preventDefault(); closeOverlay(open); }
     });
   }
 
   function init() {
-    bindElements(); bindActions(); renderCustomAvailability();
+    bindElements(); enhancePrettySelects(document); enhancePlanPickers(document); bindActions(); renderCustomAvailability();
     var requestedView = new URLSearchParams(window.location.search).get('view');
     state.view = ['today', 'schedule', 'progress'].indexOf(requestedView) >= 0 ? requestedView : 'today';
     setOfflineState();

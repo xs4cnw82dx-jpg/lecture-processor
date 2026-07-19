@@ -31,6 +31,7 @@ def study_plan_runtime(monkeypatch):
         'uid': uid,
         'study_pack_id': pack_id,
         'title': 'Question-only pack',
+        'mode': 'study-pack',
         'flashcards_count': 0,
         'test_questions_count': 12,
         'folder_id': '',
@@ -43,6 +44,7 @@ def study_plan_runtime(monkeypatch):
     monkeypatch.setattr(account_lifecycle, 'ensure_account_allows_writes', lambda _uid, runtime=None: (True, ''))
     monkeypatch.setattr(core.study_repo, 'list_study_pack_summaries_by_uid', lambda _db, _uid, _limit, after_doc=None: [_Snapshot(pack, pack_id)] if after_doc is None else [])
     monkeypatch.setattr(core.study_repo, 'get_study_pack_summary_doc', lambda _db, requested: _Snapshot(pack, requested) if requested == pack_id else _Snapshot())
+    monkeypatch.setattr(core.study_repo, 'get_study_pack_doc', lambda _db, requested: _Snapshot(pack, requested) if requested == pack_id else _Snapshot())
     monkeypatch.setattr(core.study_repo, 'list_study_folders_by_uid', lambda _db, _uid: [])
     monkeypatch.setattr(core, 'get_study_card_state_doc', lambda _uid, _pack_id: type('Ref', (), {'get': lambda self: _Snapshot({'state': {}})})())
     monkeypatch.setattr(core, 'get_study_progress_doc', lambda _uid: type('Ref', (), {'get': lambda self: _Snapshot()})())
@@ -121,6 +123,29 @@ def test_question_only_unfiled_pack_bootstrap_preview_and_idempotent_apply(clien
     assert conflict.status_code == 409
     membership = client.get('/api/study-plan/membership', headers=_headers()).get_json()
     assert membership['pack_ids'] == [study_plan_runtime['pack_id']]
+
+
+def test_voice_notes_are_not_selectable_or_accepted_by_study_plan(client, study_plan_runtime, monkeypatch):
+    voice_pack = {
+        **study_plan_runtime['pack'],
+        'study_pack_id': 'pack_voice_note',
+        'title': 'Recorded thought',
+        'mode': 'voice-note',
+        'test_questions_count': 0,
+    }
+    regular_doc = _Snapshot(study_plan_runtime['pack'], study_plan_runtime['pack_id'])
+    voice_doc = _Snapshot(voice_pack, voice_pack['study_pack_id'])
+    monkeypatch.setattr(core.study_repo, 'list_study_pack_summaries_by_uid', lambda _db, _uid, _limit, after_doc=None: [voice_doc, regular_doc] if after_doc is None else [])
+    monkeypatch.setattr(core.study_repo, 'get_study_pack_summary_doc', lambda _db, pack_id: voice_doc if pack_id == voice_pack['study_pack_id'] else regular_doc)
+    monkeypatch.setattr(core.study_repo, 'get_study_pack_doc', lambda _db, pack_id: voice_doc if pack_id == voice_pack['study_pack_id'] else regular_doc)
+
+    bootstrap = client.get('/api/study-plan', headers=_headers())
+    assert bootstrap.status_code == 200
+    assert [pack['study_pack_id'] for pack in bootstrap.get_json()['study_packs']] == [study_plan_runtime['pack_id']]
+
+    rejected = client.post('/api/study-plan/preview', json=_preview_body(voice_pack['study_pack_id']), headers=_headers())
+    assert rejected.status_code == 400
+    assert 'could not be found' in rejected.get_json()['error']
 
 
 def test_study_plan_library_pages_are_bounded_and_cursor_owned(client, study_plan_runtime, monkeypatch):

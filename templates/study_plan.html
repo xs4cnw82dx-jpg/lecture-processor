@@ -24,8 +24,10 @@
           <p class="study-plan-lead">Know what to study next, keep your week realistic, and see whether you are on track.</p>
         </div>
         <div class="study-plan-header-actions">
-          <span class="save-state" id="study-plan-save-state" role="status" aria-live="polite">Saved</span>
-          <button type="button" class="btn primary" id="new-study-goal-btn">Create study plan</button>
+          <span class="save-state" id="study-plan-save-state" role="status" aria-live="polite" hidden></span>
+          <button type="button" class="btn primary" id="new-study-goal-btn">
+            <span class="btn-icon" aria-hidden="true">+</span><span id="new-study-goal-label">Set up my plan</span>
+          </button>
         </div>
       </header>
 
@@ -104,7 +106,7 @@
               <button type="button" class="btn primary" id="schedule-add-session-btn">Add session</button>
             </div>
           </div>
-          <p class="schedule-help">Select a session to complete, skip, lock, or move it. Automatic sessions only change after you accept a new proposal.</p>
+          <p class="schedule-help" id="schedule-help">Select a session to complete, skip, lock, or move it. Automatic sessions only change after you accept a new proposal.</p>
           <div class="week-calendar" id="week-calendar" aria-label="Weekly study schedule"></div>
           <div class="mobile-agenda" id="mobile-agenda"></div>
         </section>
@@ -156,27 +158,47 @@
       <section class="wizard-step" data-wizard-step="1">
         <p class="study-plan-kicker">Step 1 of 4</p>
         <h2 id="plan-wizard-title">What do you need to study?</h2>
-        <p>Select one or more packs. Packs do not need to be in a folder.</p>
+        <p>Select one or more study packs. Flashcards, practice questions, and regular notes can all be planned—folders are optional.</p>
+        <div class="pack-picker-toolbar">
+          <label class="pack-search" for="wizard-pack-search">
+            <span class="sr-only">Search study packs</span>
+            <span class="pack-search-icon" aria-hidden="true">⌕</span>
+            <input id="wizard-pack-search" type="search" autocomplete="off" placeholder="Search your study packs">
+          </label>
+          <div class="pack-filter-group" role="group" aria-label="Filter study packs">
+            <button type="button" class="pack-filter is-active" data-pack-filter="all" aria-pressed="true">All</button>
+            <button type="button" class="pack-filter" data-pack-filter="flashcards" aria-pressed="false">Flashcards</button>
+            <button type="button" class="pack-filter" data-pack-filter="questions" aria-pressed="false">Questions</button>
+            <button type="button" class="pack-filter" data-pack-filter="notes" aria-pressed="false">Notes</button>
+          </div>
+        </div>
+        <div class="pack-selection-summary" id="wizard-pack-selection-summary" aria-live="polite"></div>
+        <div class="personal-pace-note" id="wizard-personal-pace-note" hidden>
+          <span aria-hidden="true">✦</span>
+          Timing will use your recent study pace instead of a generic estimate.
+        </div>
         <div class="wizard-pack-list" id="wizard-pack-list"></div>
         <div class="field-error" id="wizard-pack-error" role="alert" hidden></div>
       </section>
       <section class="wizard-step" data-wizard-step="2" hidden>
         <p class="study-plan-kicker">Step 2 of 4</p>
         <h2>Name the goal and choose the deadline</h2>
-        <label class="plan-field" for="wizard-goal-title"><span>Goal name</span><input id="wizard-goal-title" maxlength="120" placeholder="Anatomy final"></label>
-        <label class="plan-field" for="wizard-exam-date"><span>Exam or deadline</span><input id="wizard-exam-date" type="date"></label>
+        <div class="plan-field"><label for="wizard-goal-title">Goal name</label><input id="wizard-goal-title" maxlength="120" placeholder="Anatomy final"></div>
+        <div class="plan-field"><label for="wizard-exam-date">Exam or deadline</label><input id="wizard-exam-date" type="text" inputmode="numeric" autocomplete="off" placeholder="Choose a date" data-plan-picker="date"></div>
         <div class="field-error" id="wizard-goal-error" role="alert" hidden></div>
       </section>
       <section class="wizard-step" data-wizard-step="3" hidden>
         <p class="study-plan-kicker">Step 3 of 4</p>
         <h2>When can you study?</h2>
+        <p class="availability-intro">Nothing is chosen for you. Pick the option that is closest to your week, or set the exact days and times yourself.</p>
         <div class="availability-presets" role="group" aria-label="Availability preset">
-          <button type="button" class="availability-preset is-active" data-availability-preset="weekday-evenings">Weekday evenings<span>Mon–Fri, 19:00–21:00</span></button>
-          <button type="button" class="availability-preset" data-availability-preset="daily">Every day<span>18:00–20:00</span></button>
-          <button type="button" class="availability-preset" data-availability-preset="custom">Custom<span>Choose each day</span></button>
+          <button type="button" class="availability-preset" data-availability-preset="balanced" aria-pressed="false"><span class="preset-check" aria-hidden="true">✓</span>Balanced week<span>Mon, Wed &amp; Sat · mixed times</span></button>
+          <button type="button" class="availability-preset" data-availability-preset="weekday-evenings" aria-pressed="false"><span class="preset-check" aria-hidden="true">✓</span>Weekday evenings<span>Mon–Fri · 19:00–21:00</span></button>
+          <button type="button" class="availability-preset" data-availability-preset="daily" aria-pressed="false"><span class="preset-check" aria-hidden="true">✓</span>A little every day<span>Every day · 17:00–19:00</span></button>
+          <button type="button" class="availability-preset" data-availability-preset="custom" aria-pressed="false"><span class="preset-check" aria-hidden="true">✓</span>Choose exact times<span>Set each day yourself</span></button>
         </div>
         <div class="custom-availability" id="custom-availability" hidden></div>
-        <label class="plan-field compact" for="wizard-session-length"><span>Session length</span><select id="wizard-session-length"><option value="30">30 minutes</option><option value="45" selected>45 minutes</option><option value="60">60 minutes</option><option value="90">90 minutes</option></select></label>
+        <div class="plan-field compact"><label for="wizard-session-length">Session length</label><select id="wizard-session-length" data-pretty-select><option value="30">30 minutes</option><option value="45" selected>45 minutes</option><option value="60">60 minutes</option><option value="90">90 minutes</option></select></div>
         <div class="field-error" id="wizard-availability-error" role="alert" hidden></div>
       </section>
       <section class="wizard-step" data-wizard-step="4" hidden>
@@ -199,12 +221,12 @@
       <p class="study-plan-kicker">Study session</p>
       <h2 id="session-editor-title">Edit session</h2>
       <input type="hidden" id="session-editor-id">
-      <label class="plan-field" for="session-editor-name"><span>Title</span><input id="session-editor-name" maxlength="160"></label>
-      <label class="plan-field" for="session-editor-pack"><span>Study pack</span><select id="session-editor-pack"><option value="">No linked pack</option></select></label>
+      <div class="plan-field"><label for="session-editor-name">Title</label><input id="session-editor-name" maxlength="160"></div>
+      <div class="plan-field"><label for="session-editor-pack">Study pack</label><select id="session-editor-pack" data-pretty-select><option value="">No linked pack</option></select></div>
       <div class="plan-field-row">
-        <label class="plan-field" for="session-editor-date"><span>Date</span><input id="session-editor-date" type="date"></label>
-        <label class="plan-field" for="session-editor-time"><span>Start</span><input id="session-editor-time" type="time"></label>
-        <label class="plan-field" for="session-editor-duration"><span>Minutes</span><input id="session-editor-duration" type="number" min="5" max="360"></label>
+        <div class="plan-field"><label for="session-editor-date">Date</label><input id="session-editor-date" type="text" inputmode="numeric" autocomplete="off" placeholder="Choose a date" data-plan-picker="date"></div>
+        <div class="plan-field"><label for="session-editor-time">Start</label><input id="session-editor-time" type="text" inputmode="numeric" autocomplete="off" placeholder="Choose a time" data-plan-picker="time"></div>
+        <div class="plan-field"><label for="session-editor-duration">Minutes</label><input id="session-editor-duration" type="number" min="5" max="360"></div>
       </div>
       <label class="plan-check"><input id="session-editor-locked" type="checkbox"> <span>Lock this session so automatic proposals cannot move it</span></label>
       <div class="field-error" id="session-editor-error" role="alert" hidden></div>
@@ -226,8 +248,8 @@
       <h2 id="calendar-feeds-title">Device calendar subscriptions</h2>
       <p>Lecture Processor publishes your sessions and deadlines to a private calendar URL. The URL is shown only when it is created or rotated.</p>
       <div class="calendar-feed-create">
-        <label class="plan-field" for="calendar-feed-name"><span>Name</span><input id="calendar-feed-name" maxlength="80" placeholder="My iPhone"></label>
-        <label class="plan-field" for="calendar-feed-reminder"><span>Reminder</span><select id="calendar-feed-reminder"><option value="10">10 minutes before</option><option value="30" selected>30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option><option value="0">No reminder</option></select></label>
+        <div class="plan-field"><label for="calendar-feed-name">Name</label><input id="calendar-feed-name" maxlength="80" placeholder="My iPhone"></div>
+        <div class="plan-field"><label for="calendar-feed-reminder">Reminder</label><select id="calendar-feed-reminder" data-pretty-select><option value="10">10 minutes before</option><option value="30" selected>30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option><option value="0">No reminder</option></select></div>
         <button type="button" class="btn primary" id="calendar-feed-create-btn">Create private URL</button>
       </div>
       <div class="calendar-feed-once" id="calendar-feed-once" hidden>

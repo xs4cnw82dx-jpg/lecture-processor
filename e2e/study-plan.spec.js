@@ -23,6 +23,7 @@ async function installSignedInPlanner(page, options = {}) {
   const packs = Array.from({ length: options.packCount || 18 }, (_, index) => ({
     study_pack_id: `pack_question_${index + 1}`,
     title: `Question pack ${index + 1}`,
+    mode: 'study-pack',
     flashcards_count: 0,
     test_questions_count: 40 + index,
     folder_id: '',
@@ -30,11 +31,15 @@ async function installSignedInPlanner(page, options = {}) {
     in_plan: false,
     workload: { questions_remaining: 40 + index, total_minutes: 92 }
   }));
+  if (options.mixedMaterials) {
+    packs.push({ study_pack_id: 'pack_flashcards', title: 'Anatomy flashcards', mode: 'study-pack', flashcards_count: 80, test_questions_count: 0, folder_id: '', folder_name: '', in_plan: false, workload: { cards_remaining: 80, total_minutes: 92 } });
+    packs.push({ study_pack_id: 'pack_voice_note', title: 'Recorded reminder', mode: 'voice-note', flashcards_count: 0, test_questions_count: 0, folder_id: '', folder_name: '', in_plan: false, workload: { total_minutes: 45 } });
+  }
   const today = isoDate(0);
   const tomorrow = isoDate(1);
   const missed = isoDate(-1);
   const fixture = {
-    preferences: { timezone: 'UTC', availability: [0, 1, 2, 3, 4].map(weekday => ({ weekday, start: '19:00', end: '21:00' })), default_session_minutes: 45, reminder_offset_minutes: 30, revision: 1 },
+    preferences: { timezone: 'UTC', availability: options.withGoal === false ? [] : [0, 1, 2, 3, 4].map(weekday => ({ weekday, start: '19:00', end: '21:00' })), availability_configured: options.withGoal !== false, default_session_minutes: 45, reminder_offset_minutes: 30, revision: 1 },
     goals: options.withGoal === false ? [] : [{ goal_id: 'goal_e2e', title: 'Question final', exam_date: isoDate(21), pack_ids: ['pack_question_1'], status: 'active', revision: 1 }],
     sessions: options.sessions || [
       { id: 'session_today', title: 'Practice Question pack 1', date: today, time: '19:00', duration: 45, pack_id: 'pack_question_1', pack_title: 'Question pack 1', goal_id: 'goal_e2e', origin: 'automatic', locked: false, status: 'planned', revision: 1, planned_outcomes: { flashcards: 0, questions: 20, notes_minutes: 0 } },
@@ -98,17 +103,35 @@ async function installSignedInPlanner(page, options = {}) {
 }
 
 test('signed-in user creates a useful plan from many unfiled question-only packs', async ({ page }) => {
-  await installSignedInPlanner(page, { withGoal: false, packCount: 24 });
+  await installSignedInPlanner(page, { withGoal: false, packCount: 24, mixedMaterials: true });
   await page.goto('/plan?add_pack=pack_question_1');
 
   await expect(page.locator('#plan-wizard-overlay')).toBeVisible();
-  await expect(page.locator('#wizard-pack-list .wizard-pack-option')).toHaveCount(24);
+  await expect(page.locator('#wizard-pack-list .wizard-pack-option')).toHaveCount(25);
+  await expect(page.locator('#wizard-pack-list')).not.toContainText('Recorded reminder');
+  await expect(page.locator('#wizard-pack-list')).toContainText('80 flashcards');
+  await expect(page.locator('#wizard-pack-list')).not.toContainText('Estimated study time');
   await expect(page.locator('#wizard-pack-list input[value="pack_question_1"]')).toBeChecked();
+  await page.locator('[data-pack-filter="flashcards"]').click();
+  await expect(page.locator('#wizard-pack-list .wizard-pack-option')).toHaveCount(1);
+  await expect(page.locator('#wizard-pack-list')).toContainText('Anatomy flashcards');
+  await page.locator('[data-pack-filter="all"]').click();
   await page.locator('#wizard-next-btn').click();
   await page.locator('#wizard-goal-title').fill('Question exam');
   await page.locator('#wizard-exam-date').fill(isoDate(30));
+  await page.locator('label[for="wizard-exam-date"] + .plan-picker-control .plan-picker-trigger').click();
+  await expect(page.locator('.date-picker-popover')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#plan-wizard-overlay')).toBeVisible();
   await page.locator('#wizard-next-btn').click();
+  await expect(page.locator('.availability-preset.is-active')).toHaveCount(0);
+  await page.locator('[data-availability-preset="custom"]').click();
+  await page.locator('.custom-day[data-weekday="0"] .plan-picker-trigger').first().click();
+  await expect(page.locator('.time-picker-popover')).toBeVisible();
+  await page.keyboard.press('Escape');
   await page.locator('[data-availability-preset="daily"]').click();
+  await page.locator('label[for="wizard-session-length"] + .pretty-select .pretty-select-button').click();
+  await page.locator('.select-popover .pretty-option', { hasText: '60 minutes' }).click();
   await page.locator('#wizard-next-btn').click();
 
   await expect(page.locator('#wizard-preview-sessions')).toContainText('Question pack 1');
