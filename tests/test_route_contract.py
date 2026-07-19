@@ -133,6 +133,7 @@ EXPECTED_ROUTES = [
     ('GET', '/api/study-progress/summary', 'study_api.get_study_progress_summary'),
     ('GET', '/api/shared/<share_token>', 'study_api.get_public_study_share'),
     ('GET', '/api/shared/<share_token>/packs/<pack_id>', 'study_api.get_public_shared_folder_pack'),
+    ('GET', '/api/voice-notes', 'study_api.list_voice_notes'),
     ('POST', '/api/voice-notes', 'study_api.create_voice_note'),
     ('GET', '/api/voice-notes/jobs/<job_id>', 'study_api.get_voice_note_job_status'),
     ('PATCH', '/api/voice-notes/<pack_id>/metadata', 'study_api.update_voice_note_metadata'),

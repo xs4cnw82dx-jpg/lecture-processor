@@ -25,7 +25,23 @@ STUDY_PACK_SUMMARY_FIELDS = (
 
 STUDY_PACK_CURSOR_FIELDS = (
     'uid',
+    'mode',
     'created_at',
+)
+
+VOICE_NOTE_HYDRATION_FIELDS = (
+    'uid',
+    'mode',
+    'title',
+    'notes_markdown',
+    'notes_highlights',
+    'tags',
+    'pinned',
+    'archived',
+    'custom_instruction',
+    'has_audio_playback',
+    'created_at',
+    'updated_at',
 )
 
 STUDY_CARD_STATE_SUMMARY_FIELDS = (
@@ -88,6 +104,16 @@ def list_study_pack_summaries_by_uid(db, uid, limit, after_doc=None):
     if after_doc is not None:
         query = query.start_after(after_doc)
     query = _apply_select(query, STUDY_PACK_SUMMARY_FIELDS)
+    return list(query.stream())
+
+
+def list_voice_note_packs_by_uid(db, uid, limit, after_doc=None):
+    query = apply_where(db.collection('study_packs'), 'uid', '==', uid)
+    query = apply_where(query, 'mode', '==', 'voice-note')
+    query = query.order_by('created_at', direction='DESCENDING').limit(max(1, int(limit or 1)))
+    if after_doc is not None:
+        query = query.start_after(after_doc)
+    query = _apply_select(query, VOICE_NOTE_HYDRATION_FIELDS)
     return list(query.stream())
 
 
