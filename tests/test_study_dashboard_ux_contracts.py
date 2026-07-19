@@ -125,6 +125,50 @@ def test_study_tabs_expose_tab_roles_and_keyboard_support():
     assert "button.setAttribute('aria-selected', isActive ? 'true' : 'false');" in study_js
 
 
+def test_study_question_option_typing_updates_in_place_without_rerendering_editor():
+    study_js = _read('static/js/study.js')
+
+    inline_handler = re.search(
+        r"questionEditorList\.querySelectorAll\('input\[data-option-index\]'\)[\s\S]*?\n  \}\);\n  questionEditorList\.querySelectorAll\('\[data-answer-button\]'\)",
+        study_js,
+    )
+    assert inline_handler
+    assert 'updateQuestionOptionValue' in inline_handler.group(0)
+    assert 'syncQuestionAnswerPicker' in inline_handler.group(0)
+    assert 'renderQuestionEditor' not in inline_handler.group(0)
+
+    builder_handler = re.search(
+        r"builderQuestionList\.addEventListener\('input'[\s\S]*?\n\}\);\nbuilderQuestionList\.addEventListener\('change'",
+        study_js,
+    )
+    assert builder_handler
+    assert 'updateQuestionOptionValue' in builder_handler.group(0)
+    assert 'syncBuilderQuestionAnswerSelect' in builder_handler.group(0)
+    assert 'renderBuilderQuestions' not in builder_handler.group(0)
+
+
+def test_new_builder_has_distinct_unsaved_status_and_compact_mobile_header():
+    study_template = _read('templates/study.html')
+    study_js = _read('static/js/study.js')
+    study_css = _read('static/css/study.css')
+
+    assert 'id="builder-stat-dirty" class="builder-status pending" role="status" aria-live="polite">Not saved yet<' in study_template
+    assert "if (builderMode === 'create' && !builderPackId)" in study_js
+    assert "builderStatDirty.textContent = 'Not saved yet';" in study_js
+    assert 'grid-template-rows: auto minmax(0, 1fr)' in study_css
+    assert 'overscroll-behavior-inline: contain' in study_css
+    assert '.builder-mini-stats .builder-stat:last-child' in study_css
+
+
+def test_batch_mode_loads_saved_language_without_overriding_user_interaction():
+    batch_mode_js = _read('static/js/batch-mode.js')
+
+    assert "authFetch('/api/user-preferences')" in batch_mode_js
+    assert 'if (outputLanguageUserTouched) return false;' in batch_mode_js
+    assert "setOutputLanguage(preferences.output_language || 'english', preferences.output_language_custom || '')" in batch_mode_js
+    assert 'if (user) loadOutputLanguagePreference();' in batch_mode_js
+
+
 def test_study_initial_pack_load_preserves_pagination():
     study_template = _read('templates/study.html')
     study_js = _read('static/js/study.js')

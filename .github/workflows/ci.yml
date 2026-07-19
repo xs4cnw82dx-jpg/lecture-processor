@@ -78,6 +78,9 @@ jobs:
       - name: Load Functions module
         run: node -e "require('./functions/index.js')"
 
+      - name: Audit production Functions dependencies
+        run: npm audit --omit=dev --audit-level=high --prefix functions
+
   smoke-tests:
     name: Smoke Tests
     runs-on: ubuntu-latest

@@ -15,6 +15,11 @@ def create_batch_job_doc_ref(db):
     return batch_jobs_collection(db).document()
 
 
+def create_batch_job_if_absent(db, batch_id, payload):
+    """Atomically create a batch document, failing when the ID already exists."""
+    return batch_job_doc_ref(db, batch_id).create(payload)
+
+
 def set_batch_job(db, batch_id, payload, merge=True):
     return batch_job_doc_ref(db, batch_id).set(payload, merge=merge)
 
@@ -39,6 +44,10 @@ def update_batch_job_fields(db, batch_id, payload):
 
 def get_batch_job_doc(db, batch_id):
     return batch_job_doc_ref(db, batch_id).get()
+
+
+def delete_batch_job(db, batch_id):
+    return batch_job_doc_ref(db, batch_id).delete()
 
 
 def list_batch_jobs_by_uid(db, uid, limit=100):

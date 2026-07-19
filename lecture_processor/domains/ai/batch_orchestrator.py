@@ -26,7 +26,7 @@ TERMINAL_BATCH_STATES = {
     'JOB_STATE_EXPIRED',
 }
 
-ACTIVE_BATCH_STATUSES = {'queued', 'processing'}
+ACTIVE_BATCH_STATUSES = {'preparing', 'queued', 'processing'}
 ACTIVE_ROW_STATUSES = {'queued', 'processing'}
 SAFE_BATCH_ROW_ID_CHARS = frozenset('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-')
 
@@ -2484,6 +2484,110 @@ def list_batch_rows(batch_id, runtime=None):
 
 def get_batch(batch_id, runtime=None):
     return _get_batch(batch_id, runtime=runtime)
+
+
+def batch_id_for_submission(uid, client_submission_id):
+    identity = f"{str(uid or '').strip()}\0{str(client_submission_id or '').strip()}"
+    return f"submission-{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:40]}"
+
+
+def claim_batch_submission(uid, client_submission_id, batch_id, *, created_at, runtime=None):
+    """Atomically reserve one batch ID for a client submission token."""
+    resolved_runtime = _resolve_runtime(runtime)
+    safe_uid = str(uid or '').strip()
+    safe_submission_id = str(client_submission_id or '').strip()
+    safe_batch_id = str(batch_id or '').strip()
+    if not safe_uid or not safe_submission_id or not safe_batch_id:
+        return True, None
+
+    payload = {
+        'batch_id': safe_batch_id,
+        'uid': safe_uid,
+        'client_submission_id': safe_submission_id,
+        'status': 'preparing',
+        'created_at': float(created_at or 0),
+        'updated_at': float(created_at or 0),
+        'submission_locked': True,
+    }
+    db = getattr(resolved_runtime, 'db', None)
+    if db is not None:
+        try:
+            resolved_runtime.batch_repo.create_batch_job_if_absent(db, safe_batch_id, payload)
+            return True, dict(payload)
+        except Exception as create_error:
+            existing_doc = resolved_runtime.batch_repo.get_batch_job_doc(db, safe_batch_id)
+            if not getattr(existing_doc, 'exists', False):
+                raise create_error
+            existing = existing_doc.to_dict() or {}
+            existing.setdefault('batch_id', existing_doc.id)
+            return False, existing
+
+    batch_jobs, _rows = _memory_store(resolved_runtime)
+    lock = getattr(resolved_runtime, 'JOBS_LOCK', None)
+    if lock is None:
+        existing = find_batch_by_submission_id(safe_uid, safe_submission_id, runtime=resolved_runtime)
+        if existing:
+            return False, existing
+        batch_jobs[safe_batch_id] = dict(payload)
+        return True, dict(payload)
+    with lock:
+        for existing_batch_id, existing_value in batch_jobs.items():
+            existing = existing_value if isinstance(existing_value, dict) else {}
+            if str(existing.get('uid', '') or '') != safe_uid:
+                continue
+            if str(existing.get('client_submission_id', '') or '') != safe_submission_id:
+                continue
+            result = dict(existing)
+            result.setdefault('batch_id', existing_batch_id)
+            return False, result
+        batch_jobs[safe_batch_id] = dict(payload)
+    return True, dict(payload)
+
+
+def release_batch_submission_claim(uid, client_submission_id, batch_id, runtime=None):
+    """Remove only an unfinished reservation; completed batch documents are retained."""
+    resolved_runtime = _resolve_runtime(runtime)
+    safe_uid = str(uid or '').strip()
+    safe_submission_id = str(client_submission_id or '').strip()
+    safe_batch_id = str(batch_id or '').strip()
+    if not safe_uid or not safe_submission_id or not safe_batch_id:
+        return False
+
+    db = getattr(resolved_runtime, 'db', None)
+    if db is not None:
+        doc = resolved_runtime.batch_repo.get_batch_job_doc(db, safe_batch_id)
+        data = doc.to_dict() if getattr(doc, 'exists', False) else {}
+        if (
+            str((data or {}).get('uid', '') or '') == safe_uid
+            and str((data or {}).get('client_submission_id', '') or '') == safe_submission_id
+            and str((data or {}).get('status', '') or '') == 'preparing'
+        ):
+            resolved_runtime.batch_repo.delete_batch_job(db, safe_batch_id)
+            return True
+        return False
+
+    batch_jobs, _rows = _memory_store(resolved_runtime)
+    lock = getattr(resolved_runtime, 'JOBS_LOCK', None)
+    if lock is None:
+        lock_context = None
+    else:
+        lock_context = lock
+
+    def _release():
+        data = batch_jobs.get(safe_batch_id) or {}
+        if (
+            str(data.get('uid', '') or '') == safe_uid
+            and str(data.get('client_submission_id', '') or '') == safe_submission_id
+            and str(data.get('status', '') or '') == 'preparing'
+        ):
+            batch_jobs.pop(safe_batch_id, None)
+            return True
+        return False
+
+    if lock_context is None:
+        return _release()
+    with lock_context:
+        return _release()
 
 
 def find_batch_by_submission_id(uid, client_submission_id, runtime=None):

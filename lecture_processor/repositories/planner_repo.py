@@ -92,12 +92,29 @@ def delete_planner_session(db, uid, session_id):
     planner_session_doc_ref(db, uid, session_id).delete()
 
 
-def list_planner_sessions_by_uid(db, uid, limit):
+def list_planner_sessions_by_uid(db, uid, limit, *, start_date=None):
     safe_limit = max(1, int(limit or 1))
+    safe_start_date = str(start_date or '').strip()
     if db is None:
         sessions = list(_SESSIONS_STORE.get(uid, {}).values())
+        if safe_start_date:
+            sessions = [
+                item for item in sessions
+                if str(item.get('date', '') or '') >= safe_start_date
+            ]
+            sessions.sort(
+                key=lambda item: (
+                    str(item.get('date', '') or ''),
+                    str(item.get('time', '') or ''),
+                    str(item.get('id', '') or ''),
+                )
+            )
         return [dict(item) for item in sessions[:safe_limit]]
-    query = apply_where(db.collection('planner_sessions'), 'uid', '==', uid).limit(safe_limit)
+    query = apply_where(db.collection('planner_sessions'), 'uid', '==', uid)
+    if safe_start_date:
+        query = apply_where(query, 'date', '>=', safe_start_date)
+        query = query.order_by('date', direction='ASCENDING').order_by('time', direction='ASCENDING')
+    query = query.limit(safe_limit)
     records = []
     for doc in query.stream():
         payload = doc.to_dict() or {}

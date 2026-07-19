@@ -84,6 +84,7 @@ from lecture_processor.domains.shared import parsing as shared_parsing
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.study import progress as study_progress
+from lecture_processor.domains.runtime_jobs.schema import PERSISTED_RUNTIME_JOB_FIELDS
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 from lecture_processor.services import analytics_service, auth_service, file_service, job_state_service, prompt_registry, rate_limit_service, url_security
 
@@ -281,7 +282,7 @@ BATCH_JOB_RECOVERY_LOCK = threading.Lock()
 
 BATCH_JOB_RECOVERY_DONE = False
 
-RUNTIME_JOB_PERSISTED_FIELDS = {'status', 'step', 'step_description', 'total_steps', 'mode', 'job_scope', 'tool_source_type', 'tool_input_name', 'user_id', 'user_email', 'credit_deducted', 'credit_refunded', 'started_at', 'finished_at', 'result', 'slide_text', 'transcript', 'flashcards', 'test_questions', 'flashcard_selection', 'question_selection', 'study_features', 'output_language', 'study_generation_error', 'study_pack_id', 'study_pack_title', 'folder_id', 'folder_name', 'error', 'billing_receipt', 'interview_features', 'interview_features_successful', 'interview_summary', 'interview_sections', 'interview_combined', 'interview_features_cost', 'extra_slides_refunded', 'audio_storage_key', 'notes_audio_map', 'transcript_segments', 'token_usage_by_stage', 'token_input_total', 'token_output_total', 'token_total', 'export_manifest', 'is_batch', 'batch_parent_id', 'batch_row_id', 'processing_strategy', 'billing_mode', 'billing_multiplier', 'stage_costs', 'voice_note_tags', 'voice_note_pinned', 'voice_note_archived', 'voice_note_custom_instruction', 'voice_note_append_to_pack_id', 'study_tools_credit_cost'}
+RUNTIME_JOB_PERSISTED_FIELDS = PERSISTED_RUNTIME_JOB_FIELDS
 
 RUNTIME_JOB_MAX_STRING_LENGTH = 200000
 
@@ -986,7 +987,7 @@ def run_startup_recovery_once():
         return
     recover_stale_runtime_jobs()
 
-def verify_firebase_token(request, *, check_revoked=False):
+def verify_firebase_token(request, *, check_revoked=True):
     return auth_service.verify_firebase_token(
         request,
         auth_module=auth,
@@ -1072,104 +1073,42 @@ def build_admin_funnel_daily_rows(analytics_docs, window_start, window_key, now_
         runtime=_self_runtime(),
     )
 
-def _runtime_job_storage_enabled():
-    return db is not None
-
-def _runtime_job_sanitize_value(value):
-    if isinstance(value, str):
-        if len(value) > RUNTIME_JOB_MAX_STRING_LENGTH:
-            return value[:RUNTIME_JOB_MAX_STRING_LENGTH]
-        return value
-    if isinstance(value, list):
-        return [_runtime_job_sanitize_value(v) for v in value]
-    if isinstance(value, dict):
-        return {str(k): _runtime_job_sanitize_value(v) for k, v in value.items()}
-    return value
-
-def _build_runtime_job_payload(job_id, job_data, changed_fields=None):
-    payload = {'job_id': job_id, 'updated_at': time.time()}
-    if not isinstance(job_data, dict):
-        payload['status'] = 'unknown'
-        return payload
-    persisted_fields = set(RUNTIME_JOB_PERSISTED_FIELDS)
-    if changed_fields is not None:
-        persisted_fields &= {str(field) for field in changed_fields}
-    for field in persisted_fields:
-        if field in job_data:
-            payload[field] = _runtime_job_sanitize_value(job_data.get(field))
-    return payload
-
 def persist_runtime_job_snapshot(job_id, job_data, changed_fields=None):
-    if not _runtime_job_storage_enabled() or not job_id:
-        return
-    try:
-        runtime_jobs_repo.set_doc(db, RUNTIME_JOBS_COLLECTION, job_id, _build_runtime_job_payload(job_id, job_data, changed_fields=changed_fields), merge=True)
-    except Exception:
-        logger.warning('Failed to persist runtime job snapshot for %s', job_id, exc_info=True)
+    from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
+    return runtime_jobs_store.persist_runtime_job_snapshot(
+        job_id,
+        job_data,
+        runtime=_self_runtime(),
+        changed_fields=changed_fields,
+    )
 
 def load_runtime_job_snapshot(job_id):
-    if not _runtime_job_storage_enabled() or not job_id:
-        return None
-    try:
-        doc = runtime_jobs_repo.get_doc(db, RUNTIME_JOBS_COLLECTION, job_id)
-        if not doc.exists:
-            return None
-        data = doc.to_dict() or {}
-        if not isinstance(data, dict):
-            return None
-        data.setdefault('job_id', job_id)
-        return data
-    except Exception:
-        logger.warning('Failed to load runtime job snapshot for %s', job_id, exc_info=True)
-        return None
+    from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
+    return runtime_jobs_store.load_runtime_job_snapshot(job_id, runtime=_self_runtime())
 
 def delete_runtime_job_snapshot(job_id):
-    if not _runtime_job_storage_enabled() or not job_id:
-        return
-    try:
-        runtime_jobs_repo.delete_doc(db, RUNTIME_JOBS_COLLECTION, job_id)
-    except Exception:
-        logger.warning('Failed to delete runtime job snapshot for %s', job_id, exc_info=True)
+    from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
+    return runtime_jobs_store.delete_runtime_job_snapshot(job_id, runtime=_self_runtime())
 
 def update_job_fields(job_id, **fields):
-    if not fields:
-        return get_job_snapshot(job_id)
-
-    def _mutator(job):
-        job.update(fields)
-    snapshot = mutate_job(job_id, _mutator)
-    return snapshot
+    from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
+    return runtime_jobs_store.update_job_fields(job_id, runtime=_self_runtime(), **fields)
 
 def get_job_snapshot(job_id):
-    snapshot = job_state_service.get_job_snapshot(job_id, jobs_store=jobs, lock=JOBS_LOCK)
-    if snapshot is not None:
-        return snapshot
-    runtime_snapshot = load_runtime_job_snapshot(job_id)
-    if runtime_snapshot is not None:
-        job_state_service.set_job(job_id, dict(runtime_snapshot), jobs_store=jobs, lock=JOBS_LOCK)
-        return runtime_snapshot
-    return None
+    from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
+    return runtime_jobs_store.get_job_snapshot(job_id, runtime=_self_runtime())
 
 def mutate_job(job_id, mutator_fn):
-    before = job_state_service.get_job_snapshot(job_id, jobs_store=jobs, lock=JOBS_LOCK)
-    snapshot = job_state_service.mutate_job(job_id, mutator_fn, jobs_store=jobs, lock=JOBS_LOCK)
-    if snapshot is not None:
-        changed_fields = None
-        if isinstance(before, dict):
-            changed_fields = {field for field in RUNTIME_JOB_PERSISTED_FIELDS if before.get(field) != snapshot.get(field)}
-        persist_runtime_job_snapshot(job_id, snapshot, changed_fields=changed_fields)
-    return snapshot
+    from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
+    return runtime_jobs_store.mutate_job(job_id, mutator_fn, runtime=_self_runtime())
 
 def set_job(job_id, value):
-    snapshot = job_state_service.set_job(job_id, value, jobs_store=jobs, lock=JOBS_LOCK)
-    if isinstance(snapshot, dict):
-        persist_runtime_job_snapshot(job_id, snapshot)
-    return snapshot
+    from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
+    return runtime_jobs_store.set_job(job_id, value, runtime=_self_runtime())
 
 def delete_job(job_id):
-    deleted = job_state_service.delete_job(job_id, jobs_store=jobs, lock=JOBS_LOCK)
-    delete_runtime_job_snapshot(job_id)
-    return deleted
+    from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
+    return runtime_jobs_store.delete_job(job_id, runtime=_self_runtime())
 
 def _window_counter_id(key, window_seconds, window_start):
     return rate_limit_service.window_counter_id(key, window_seconds, window_start)

@@ -20,6 +20,13 @@ def _verify_firebase_token_check_revoked(app_ctx, request):
         return app_ctx.verify_firebase_token(request)
 
 
+def _verify_optional_firebase_token(app_ctx, request):
+    try:
+        return app_ctx.verify_firebase_token(request, check_revoked=False)
+    except TypeError:
+        return app_ctx.verify_firebase_token(request)
+
+
 def _auth_failure_response(app_ctx, request, *, decoded_token=None, unauthorized_error='Unauthorized'):
     if (
         auth_service.get_request_auth_error(request) == auth_service.EMAIL_NOT_VERIFIED_AUTH_ERROR
@@ -139,7 +146,9 @@ def dev_sentry_test(app_ctx, request):
 
 def ingest_analytics_event(app_ctx, request):
     data = request.get_json(silent=True) or {}
-    decoded_token = app_ctx.verify_firebase_token(request)
+    # Authentication is optional for this public telemetry endpoint. Revocation
+    # is enforced by all normal API calls through the runtime default.
+    decoded_token = _verify_optional_firebase_token(app_ctx, request)
     uid = decoded_token.get('uid', '') if decoded_token else ''
     email = decoded_token.get('email', '') if decoded_token else ''
     session_id = analytics_events.sanitize_analytics_session_id(
@@ -149,21 +158,30 @@ def ingest_analytics_event(app_ctx, request):
     if not session_id and uid:
         session_id = uid[:80]
 
-    actor_token = uid or session_id or app_ctx.get_client_ip(request)
-    actor_key = rate_limiter.normalize_rate_limit_key_part(actor_token, fallback='anon', runtime=app_ctx)
-    allowed_analytics, retry_after = rate_limiter.check_rate_limit(
-        key=f"analytics:{actor_key}",
-        limit=app_ctx.ANALYTICS_RATE_LIMIT_MAX_REQUESTS,
-        window_seconds=app_ctx.ANALYTICS_RATE_LIMIT_WINDOW_SECONDS,
-        runtime=app_ctx,
-    )
-    if not allowed_analytics:
-        analytics_events.log_rate_limit_hit('analytics', retry_after, runtime=app_ctx)
-        return rate_limiter.build_rate_limited_response(
-            'Too many analytics events from this client. Please retry shortly.',
-            retry_after,
+    if uid:
+        actor_tokens = [('user', uid)]
+    else:
+        # A caller controls session_id, so it can only be a second limit. The
+        # IP-based allowance is always enforced for anonymous telemetry.
+        actor_tokens = [('ip', app_ctx.get_client_ip(request))]
+        if session_id:
+            actor_tokens.append(('session', session_id))
+
+    for actor_kind, actor_token in actor_tokens:
+        actor_key = rate_limiter.normalize_rate_limit_key_part(actor_token, fallback='anon', runtime=app_ctx)
+        allowed_analytics, retry_after = rate_limiter.check_rate_limit(
+            key=f"analytics:{actor_kind}:{actor_key}",
+            limit=app_ctx.ANALYTICS_RATE_LIMIT_MAX_REQUESTS,
+            window_seconds=app_ctx.ANALYTICS_RATE_LIMIT_WINDOW_SECONDS,
             runtime=app_ctx,
         )
+        if not allowed_analytics:
+            analytics_events.log_rate_limit_hit('analytics', retry_after, runtime=app_ctx)
+            return rate_limiter.build_rate_limited_response(
+                'Too many analytics events from this client. Please retry shortly.',
+                retry_after,
+                runtime=app_ctx,
+            )
 
     event_name = analytics_events.sanitize_analytics_event_name(data.get('event', ''), runtime=app_ctx)
     if not event_name:
@@ -229,6 +247,11 @@ def update_user_preferences(app_ctx, request):
 
     payload = request.get_json(silent=True) or {}
     user = app_ctx.get_or_create_user(uid, email)
+    if str(user.get('account_status', '') or '').strip().lower() == 'deleting':
+        return app_ctx.jsonify({
+            'error': 'Account deletion is in progress. Preferences can no longer be changed.',
+            'status': 'account_deletion_in_progress',
+        }), 409
 
     raw_key = payload.get('output_language', user.get('preferred_output_language', app_ctx.DEFAULT_OUTPUT_LANGUAGE_KEY))
     raw_custom = payload.get('output_language_custom', user.get('preferred_output_language_custom', ''))

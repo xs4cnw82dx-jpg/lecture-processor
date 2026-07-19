@@ -12,7 +12,7 @@ def _resolve_runtime(runtime=None):
     return get_runtime()
 
 
-ACTIVE_ACCOUNT_JOB_STATES = {'queued', 'starting', 'processing'}
+ACTIVE_ACCOUNT_JOB_STATES = {'preparing', 'queued', 'starting', 'processing'}
 DELETION_FAILURE_REASON_MAX_LENGTH = 300
 STUCK_DELETION_AFTER_SECONDS = 60 * 60
 
@@ -59,10 +59,18 @@ def mark_account_deletion_requested(uid, email='', runtime=None):
     if db is None or not uid:
         return False
     now_ts = float(resolved_runtime.time.time())
-    resolved_runtime.users_repo.set_doc(
-        db,
-        uid,
-        {
+    user_ref = resolved_runtime.users_repo.doc_ref(db, uid)
+    transaction = db.transaction()
+
+    @resolved_runtime.firestore.transactional
+    def _mark(txn):
+        snapshot = user_ref.get(transaction=txn)
+        if not getattr(snapshot, 'exists', False):
+            return False
+        current = snapshot.to_dict() or {}
+        if str(current.get('account_status', '') or '').strip().lower() == 'deleting':
+            return True
+        txn.set(user_ref, {
             'uid': uid,
             'email': str(email or '').strip(),
             'account_status': 'deleting',
@@ -71,10 +79,10 @@ def mark_account_deletion_requested(uid, email='', runtime=None):
             'last_delete_failure_at': 0,
             'last_delete_failure_reason': '',
             'updated_at': now_ts,
-        },
-        merge=True,
-    )
-    return True
+        }, merge=True)
+        return True
+
+    return bool(_mark(transaction))
 
 
 def restore_account_after_failed_deletion(uid, email='', reason='', runtime=None, existing_state=None):

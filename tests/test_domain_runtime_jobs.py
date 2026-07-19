@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from lecture_processor.domains.runtime_jobs import recovery
 from lecture_processor.domains.runtime_jobs import store
+from lecture_processor.domains.runtime_jobs.schema import PERSISTED_RUNTIME_JOB_FIELDS
 from lecture_processor.runtime.container import get_runtime
 
 
@@ -42,6 +43,40 @@ def test_runtime_job_snapshot_persist_uses_repo(app, monkeypatch):
     assert captured["collection"] == "runtime_jobs"
     assert captured["payload"]["status"] == "processing"
     assert "ignored" not in captured["payload"]
+
+
+def test_runtime_job_schema_persists_operational_fields_after_restart(app, monkeypatch):
+    runtime = get_runtime(app)
+    monkeypatch.setattr(runtime, "db", object())
+    monkeypatch.setattr(runtime.time, "time", lambda: 100.0)
+    captured = {}
+    monkeypatch.setattr(
+        runtime.runtime_jobs_repo,
+        "set_doc",
+        lambda _db, _collection, _job_id, payload, merge=True: captured.update(payload),
+    )
+
+    operational = {
+        "failed_stage": "audio_transcription",
+        "provider_error_code": "HTTP_503",
+        "retry_attempts": 2,
+        "file_size_mb": 12.5,
+        "source_type": "url",
+        "source_name": "lecture.mp3",
+        "prompt_template_key": "lecture-notes",
+        "prompt_source": "registry",
+        "custom_prompt_length": 42,
+    }
+    store.persist_runtime_job_snapshot("job-operational", operational, runtime=runtime)
+
+    assert set(operational).issubset(PERSISTED_RUNTIME_JOB_FIELDS)
+    assert {field: captured[field] for field in operational} == operational
+
+
+def test_runtime_exposes_explicit_runtime_jobs_capability(app):
+    runtime = get_runtime(app)
+    assert callable(runtime.runtime_jobs.get_job_snapshot)
+    assert callable(runtime.runtime_jobs.update_job_fields)
 
 
 def test_runtime_job_update_persists_only_changed_fields(app, monkeypatch):

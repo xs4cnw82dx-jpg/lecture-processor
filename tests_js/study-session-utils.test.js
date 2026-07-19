@@ -124,3 +124,17 @@ test('getAnswerDisplay formats the matching option label and fallback text', () 
 
   assert.equal(studySessionUtils.getAnswerDisplay({ options: [], answer: 'Missing' }), 'A: (empty)');
 });
+
+test('updateQuestionOption preserves the selected correct option while its text changes', () => {
+  const original = {
+    question: 'Which vessel?',
+    options: ['Aorta', 'Atrium', 'Artery', 'Ventricle'],
+    answer: 'Artery',
+  };
+
+  const updated = studySessionUtils.updateQuestionOption(original, 2, 'Pulmonary artery');
+
+  assert.deepEqual(updated.options, ['Aorta', 'Atrium', 'Pulmonary artery', 'Ventricle']);
+  assert.equal(updated.answer, 'Pulmonary artery');
+  assert.equal(original.answer, 'Artery');
+});

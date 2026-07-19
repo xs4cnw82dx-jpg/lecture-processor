@@ -149,6 +149,68 @@ def _authorized_user(app_ctx, request):
     return decoded_token, None, None
 
 
+def list_voice_notes(app_ctx, request):
+    decoded_token, error_response, status = access_service.require_allowed_user(
+        app_ctx,
+        request,
+        unauthorized_error='Please sign in to continue',
+    )
+    if error_response is not None:
+        return error_response, status
+
+    uid = decoded_token['uid']
+    try:
+        limit = int(request.args.get('limit', 100) or 100)
+    except Exception:
+        limit = 100
+    limit = max(1, min(100, limit))
+
+    after_cursor = str(request.args.get('after', '') or '').strip()
+    after_doc = None
+    if after_cursor:
+        after_doc = app_ctx.study_repo.get_study_pack_summary_doc(app_ctx.db, after_cursor)
+        if not getattr(after_doc, 'exists', False):
+            return app_ctx.jsonify({'error': 'Invalid voice-note cursor'}), 400
+        cursor_payload = after_doc.to_dict() or {}
+        if (
+            str(cursor_payload.get('uid', '') or '').strip() != uid
+            or str(cursor_payload.get('mode', '') or '').strip() != 'voice-note'
+        ):
+            return app_ctx.jsonify({'error': 'Invalid voice-note cursor'}), 400
+
+    docs = app_ctx.study_repo.list_voice_note_packs_by_uid(
+        app_ctx.db,
+        uid,
+        limit + 1,
+        after_doc=after_doc,
+    )
+    has_more = len(docs) > limit
+    notes = []
+    for doc in docs[:limit]:
+        pack = doc.to_dict() or {}
+        transcript = str(pack.get('notes_markdown', '') or '')
+        notes.append({
+            'study_pack_id': doc.id,
+            'title': str(pack.get('title', '') or ''),
+            'mode': 'voice-note',
+            'transcript': transcript,
+            'notes_markdown': transcript,
+            'notes_highlights': pack.get('notes_highlights'),
+            'tags': pack.get('tags', []) if isinstance(pack.get('tags', []), list) else [],
+            'pinned': bool(pack.get('pinned', False)),
+            'archived': bool(pack.get('archived', False)),
+            'custom_instruction': str(pack.get('custom_instruction', '') or ''),
+            'has_audio_playback': bool(pack.get('has_audio_playback', False)),
+            'created_at': float(pack.get('created_at', 0) or 0),
+            'updated_at': float(pack.get('updated_at', 0) or 0),
+        })
+    return app_ctx.jsonify({
+        'voice_notes': notes,
+        'has_more': has_more,
+        'next_cursor': notes[-1]['study_pack_id'] if has_more and notes else '',
+    })
+
+
 def create_voice_note(app_ctx, request):
     decoded_token, error_response, status = _authorized_user(app_ctx, request)
     if error_response is not None:

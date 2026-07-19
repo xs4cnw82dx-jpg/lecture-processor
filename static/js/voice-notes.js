@@ -1272,32 +1272,34 @@
 
   function loadServerStudyPacks() {
     if (!hasSignedInSession()) return Promise.resolve();
-    return apiJson('/api/study-packs?limit=100').then(function (payload) {
-      var packs = Array.isArray(payload.study_packs) ? payload.study_packs : [];
-      var chain = Promise.resolve();
-      packs.filter(function (pack) {
-        return pack.mode === 'voice-note';
-      }).forEach(function (pack) {
-        chain = chain.then(function () {
-          return apiJson('/api/study-packs/' + encodeURIComponent(pack.study_pack_id)).then(function (detail) {
-            var existing = state.notes.find(function (note) { return note.study_pack_id === detail.study_pack_id; });
-            var note = utils.normalizePackPayload ? utils.normalizePackPayload(detail, existing || {}) : Object.assign({}, existing || {}, detail);
-            note.id = existing ? existing.id : ('server-' + detail.study_pack_id);
-            note.owner_key = currentOwnerKey();
-            note.local_audio_id = existing ? existing.local_audio_id : note.id;
-            note.transcript = detail.source_transcript || note.transcript || '';
-            note.notes_markdown = note.transcript;
-            note.created_at = Number(detail.created_at || note.created_at || nowSeconds());
-            note.flashcards = [];
-            note.test_questions = [];
-            if (existing) Object.assign(existing, note);
-            else state.notes.push(note);
-            return putNote(existing || note);
-          });
+    function loadPage(afterCursor) {
+      var endpoint = '/api/voice-notes?limit=100';
+      if (afterCursor) endpoint += '&after=' + encodeURIComponent(afterCursor);
+      return apiJson(endpoint).then(function (payload) {
+        var notes = Array.isArray(payload.voice_notes) ? payload.voice_notes : [];
+        var writes = notes.map(function (detail) {
+          var existing = state.notes.find(function (note) { return note.study_pack_id === detail.study_pack_id; });
+          var note = utils.normalizePackPayload ? utils.normalizePackPayload(detail, existing || {}) : Object.assign({}, existing || {}, detail);
+          note.id = existing ? existing.id : ('server-' + detail.study_pack_id);
+          note.owner_key = currentOwnerKey();
+          note.local_audio_id = existing ? existing.local_audio_id : note.id;
+          note.transcript = detail.transcript || detail.notes_markdown || note.transcript || '';
+          note.notes_markdown = note.transcript;
+          note.created_at = Number(detail.created_at || note.created_at || nowSeconds());
+          note.flashcards = [];
+          note.test_questions = [];
+          if (existing) Object.assign(existing, note);
+          else state.notes.push(note);
+          return putNote(existing || note);
+        });
+        return Promise.all(writes).then(function () {
+          var nextCursor = String(payload.next_cursor || '');
+          if (payload.has_more && nextCursor) return loadPage(nextCursor);
+          return null;
         });
       });
-      return chain;
-    }).catch(function () {});
+    }
+    return loadPage('').catch(function () {});
   }
 
   function attachEvents() {

@@ -282,6 +282,12 @@ def create_voice_note():
     return voice_note_service.create_voice_note(runtime, request)
 
 
+@study_bp.route('/api/voice-notes', methods=['GET'])
+def list_voice_notes():
+    runtime = get_runtime()
+    return voice_note_service.list_voice_notes(runtime, request)
+
+
 @study_bp.route('/api/voice-notes/jobs/<job_id>', methods=['GET'])
 def get_voice_note_job_status(job_id):
     runtime = get_runtime()

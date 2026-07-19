@@ -301,6 +301,22 @@
     return (['A', 'B', 'C', 'D'][answerIndex] || 'A') + ': ' + (options[answerIndex] || '(empty)');
   }
 
+  function updateQuestionOption(question, optionIndex, value) {
+    var source = question && typeof question === 'object' ? question : {};
+    var options = Array.isArray(source.options) ? source.options.slice(0, 4) : [];
+    while (options.length < 4) options.push('');
+    var safeIndex = Math.max(0, Math.min(3, toInteger(optionIndex, 0)));
+    var previousCorrectIndex = options.indexOf(source.answer);
+    options[safeIndex] = String(value == null ? '' : value);
+    var answer = source.answer || '';
+    if (previousCorrectIndex === safeIndex) {
+      answer = options[safeIndex];
+    } else if (options.indexOf(answer) < 0) {
+      answer = options[0] || '';
+    }
+    return Object.assign({}, source, { options: options, answer: answer });
+  }
+
   var exported = {
     deriveCardLevel: deriveCardLevel,
     getAnswerDisplay: getAnswerDisplay,
@@ -311,6 +327,7 @@
     hasCardInteraction: hasCardInteraction,
     normalizeAnswer: normalizeAnswer,
     orderCardsByAlgo: orderCardsByAlgo,
+    updateQuestionOption: updateQuestionOption,
   };
 
   if (typeof module !== 'undefined' && module.exports) {

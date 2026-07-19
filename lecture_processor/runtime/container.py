@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from flask import current_app
 
 from .clients import RuntimeClients, build_clients
 from .settings import AppSettings
+
+if TYPE_CHECKING:
+    from lecture_processor.domains.runtime_jobs.schema import RuntimeJobsCapability
 
 
 @dataclass
@@ -16,6 +20,24 @@ class AppRuntime:
     settings: AppSettings
     clients: RuntimeClients
     core: object
+    runtime_jobs: RuntimeJobsCapability = field(init=False)
+
+    def __post_init__(self):
+        # Import only after runtime.core has finished initializing. Importing
+        # the runtime_jobs package at module load time creates a container/store
+        # cycle because the store also resolves the active runtime.
+        from lecture_processor.domains.runtime_jobs.capability import RuntimeJobsCapabilityAdapter
+
+        self.runtime_jobs = RuntimeJobsCapabilityAdapter(self.core)
+
+    @property
+    def db(self):
+        """Keep the legacy database binding live instead of shadowing it."""
+        return self.core.db
+
+    @db.setter
+    def db(self, value):
+        self.core.db = value
 
     def __getattr__(self, name):
         return getattr(self.core, name)

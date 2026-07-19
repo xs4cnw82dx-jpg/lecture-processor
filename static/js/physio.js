@@ -1627,6 +1627,31 @@
     return tick();
   }
 
+  function pollPhysioGeneration(jobId) {
+    if (!jobId) return Promise.reject(new Error('The generation job could not be started.'));
+    var attempts = 0;
+    function tick() {
+      attempts += 1;
+      return authFetch('/api/physio/jobs/' + encodeURIComponent(jobId))
+        .then(function (response) {
+          return response.json().then(function (body) {
+            if (!response.ok) throw new Error(body.error || 'Could not load generation status.');
+            return body;
+          });
+        })
+        .then(function (body) {
+          if (body.status === 'complete') return body.result || {};
+          if (body.status === 'error') throw new Error(body.error || 'Physio generation failed.');
+          if (attempts >= 240) throw new Error('Generation is taking longer than expected. Please try again.');
+          setStatus(String(body.step_description || 'Generating AI output...'), '');
+          return new Promise(function (resolve) {
+            window.setTimeout(resolve, 1250);
+          }).then(tick);
+        });
+    }
+    return tick();
+  }
+
   function loadCases() {
     return authFetch('/api/physio/cases')
       .then(function (response) {
@@ -1814,6 +1839,9 @@
         });
       })
       .then(function (body) {
+        return pollPhysioGeneration(body.job_id);
+      })
+      .then(function (body) {
         if (page === 'soap') {
           state.currentOutput.soap = body.soap || {};
           renderAlerts([]);
@@ -1975,6 +2003,9 @@
           if (!response.ok) throw body;
           return body;
         });
+      })
+      .then(function (body) {
+        return pollPhysioGeneration(body.job_id);
       })
       .then(function (body) {
         state.hasKnowledgeResult = true;

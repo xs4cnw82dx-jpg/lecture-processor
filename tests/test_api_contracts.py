@@ -1775,6 +1775,7 @@ def test_study_pack_share_requires_ownership(client, monkeypatch):
 
 def test_study_folder_public_share_contract_and_membership_guard(client, monkeypatch):
     share_store = {}
+    public_share_summary_limits = []
     pack_docs = {
         "pack-1": {
             "uid": "user-1",
@@ -1815,6 +1816,8 @@ def test_study_folder_public_share_contract_and_membership_guard(client, monkeyp
         return None
 
     monkeypatch.setattr(core, "db", object())
+    monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
+    monkeypatch.setattr(batch_orchestrator, "run_startup_batch_recovery_once", lambda runtime=None: None)
     monkeypatch.setattr(core, "PUBLIC_BASE_URL", "https://share.example")
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "user-1", "email": "owner@example.com"})
     monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
@@ -1842,6 +1845,18 @@ def test_study_folder_public_share_contract_and_membership_guard(client, monkeyp
             _StaticDoc("pack-2", pack_docs["pack-2"]),
         ],
     )
+    monkeypatch.setattr(core.study_repo, "list_study_folders_by_uid", lambda _db, _uid: [])
+    monkeypatch.setattr(
+        core.study_repo,
+        "list_study_pack_summaries_by_uid_and_folder",
+        lambda _db, _uid, _folder_id, limit=None: (
+            public_share_summary_limits.append(limit)
+            or [
+                _StaticDoc("pack-1", pack_docs["pack-1"]),
+                _StaticDoc("pack-2", pack_docs["pack-2"]),
+            ]
+        ),
+    )
     monkeypatch.setattr(
         core.study_repo,
         "get_study_pack_doc",
@@ -1867,6 +1882,7 @@ def test_study_folder_public_share_contract_and_membership_guard(client, monkeyp
     assert folder_payload["entity_type"] == "folder"
     assert folder_payload["folder"]["folder_id"] == "folder-1"
     assert [item["study_pack_id"] for item in folder_payload["study_packs"]] == ["pack-2", "pack-1"]
+    assert public_share_summary_limits == [None]
 
     nested_pack_response = client.get(f"/api/shared/{folder_share_token}/packs/pack-2")
     assert nested_pack_response.status_code == 200

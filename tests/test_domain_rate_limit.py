@@ -1,4 +1,5 @@
 from lecture_processor.domains.rate_limit import limiter
+from lecture_processor.services import rate_limit_service
 from lecture_processor.runtime.container import get_runtime
 
 
@@ -53,3 +54,50 @@ def test_rate_limit_uses_current_app_runtime(app, monkeypatch):
         assert response.status_code == 429
         assert response.get_json()["error"] == "limited"
         assert limiter.normalize_rate_limit_key_part("abc", fallback="dev") == "abc"
+
+
+def test_firestore_rate_limit_counter_includes_ttl_timestamp():
+    writes = []
+
+    class _Snapshot:
+        exists = False
+
+        @staticmethod
+        def to_dict():
+            return {}
+
+    class _Ref:
+        def get(self, transaction=None):
+            return _Snapshot()
+
+    class _Transaction:
+        def set(self, _ref, payload, merge=True):
+            writes.append(dict(payload))
+
+    class _DB:
+        def transaction(self):
+            return _Transaction()
+
+    class _Firestore:
+        @staticmethod
+        def transactional(fn):
+            return fn
+
+    original = rate_limit_service.rate_limit_repo.counter_doc_ref
+    rate_limit_service.rate_limit_repo.counter_doc_ref = lambda *_args: _Ref()
+    try:
+        result = rate_limit_service.check_rate_limit_firestore(
+            'analytics:ip:127.0.0.1',
+            10,
+            60,
+            120.0,
+            firestore_enabled=True,
+            db=_DB(),
+            firestore_module=_Firestore(),
+            counter_collection='rate_limit_counters',
+        )
+    finally:
+        rate_limit_service.rate_limit_repo.counter_doc_ref = original
+
+    assert result == (True, 0)
+    assert writes[0]['expires_at_ts'].timestamp() == writes[0]['expires_at']

@@ -180,6 +180,8 @@ def deduct_credit(uid, credit_type_primary, credit_type_fallback=None, runtime=N
         if not snapshot.exists:
             return None
         data = snapshot.to_dict()
+        if str(data.get('account_status', '') or '').strip().lower() == 'deleting':
+            return None
         if is_unlimited_for_credit_type(data, credit_type_primary, runtime=resolved_runtime):
             transaction.update(user_ref, {
                 'total_processed': resolved_runtime.firestore.Increment(1),
@@ -214,6 +216,8 @@ def deduct_interview_credit(uid, runtime=None):
         if not snapshot.exists:
             return None
         data = snapshot.to_dict()
+        if str(data.get('account_status', '') or '').strip().lower() == 'deleting':
+            return None
         if is_unlimited_for_category(data, 'interview', runtime=resolved_runtime):
             transaction.update(user_ref, {
                 'total_processed': resolved_runtime.firestore.Increment(1),
@@ -278,6 +282,8 @@ def deduct_slides_credits(uid, amount, runtime=None):
         if not snapshot.exists:
             return False
         data = snapshot.to_dict()
+        if str(data.get('account_status', '') or '').strip().lower() == 'deleting':
+            return False
         if is_unlimited_for_category(data, 'slides', runtime=resolved_runtime):
             transaction.update(user_ref, {'last_unlimited_credit_used_at': resolved_runtime.time.time()})
             return True

@@ -19,6 +19,10 @@ def get_or_create_user(uid, email, runtime=None):
     user_doc = user_ref.get()
     if user_doc.exists:
         user_data = user_doc.to_dict()
+        # A deletion tombstone must remain immutable until Firebase Auth is
+        # deleted; otherwise ordinary reads can mutate or revive the profile.
+        if str(user_data.get('account_status', '') or '').strip().lower() == 'deleting':
+            return user_data
         updates = {}
         if user_data.get('email') != email and email:
             updates['email'] = email

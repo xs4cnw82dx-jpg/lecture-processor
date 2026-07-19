@@ -30,6 +30,29 @@ BATCH_MAX_ROWS_DEFAULT = 100
 SAFE_BATCH_ROW_ID_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
 
 
+class _SubmissionResourceLedger:
+    """Small idempotent rollback ledger for batch submission resources."""
+
+    def __init__(self, logger):
+        self._logger = logger
+        self._rollbacks = {}
+
+    def register(self, name, rollback):
+        self._rollbacks[str(name)] = rollback
+
+    def commit(self, name):
+        self._rollbacks.pop(str(name), None)
+
+    def rollback(self):
+        pending = list(self._rollbacks.items())
+        self._rollbacks.clear()
+        for name, rollback in reversed(pending):
+            try:
+                rollback()
+            except Exception:
+                self._logger.warning('Could not roll back batch submission resource %s', name, exc_info=True)
+
+
 def _safe_int(value, default=0):
     try:
         return int(value or default)
@@ -290,7 +313,11 @@ def create_batch_job(app_ctx, request, *, instant=False):
     )
     include_combined_docx = upload_batch_support.parse_checkbox_value(request.form.get('include_combined_docx', '0'))
 
-    batch_id = str(app_ctx.uuid.uuid4())
+    batch_id = (
+        batch_orchestrator.batch_id_for_submission(uid, client_submission_id)
+        if client_submission_id
+        else str(app_ctx.uuid.uuid4())
+    )
     row_plans = []
     prepared_rows = []
     cleanup_paths = []
@@ -302,6 +329,41 @@ def create_batch_job(app_ctx, request, *, instant=False):
     quota_reservation = None
     actual_upload_bytes = 0
     now_ts = app_ctx.time.time()
+    resources = _SubmissionResourceLedger(app_ctx.logger)
+
+    if client_submission_id:
+        claimed, existing = batch_orchestrator.claim_batch_submission(
+            uid,
+            client_submission_id,
+            batch_id,
+            created_at=now_ts,
+            runtime=app_ctx,
+        )
+        if not claimed:
+            existing_batch_id = str((existing or {}).get('batch_id', '') or '').strip()
+            return app_ctx.jsonify({
+                'batch_id': existing_batch_id,
+                'deduplicated': True,
+                'status': str((existing or {}).get('status', 'preparing') or 'preparing'),
+            })
+        resources.register(
+            'submission_claim',
+            lambda: batch_orchestrator.release_batch_submission_claim(
+                uid,
+                client_submission_id,
+                batch_id,
+                runtime=app_ctx,
+            ),
+        )
+    resources.register(
+        'local_files',
+        lambda: _cleanup_batch_local_files(app_ctx, cleanup_paths, consumed_import_paths),
+    )
+    resources.register(
+        'pending_import_tokens',
+        lambda: _release_pending_import_tokens(app_ctx, uid, pending_import_token_paths),
+    )
+    resources.register('credits', lambda: _refund_batch_charges(app_ctx, uid, charged_rows))
 
     try:
         upload_import_audio.cleanup_expired_audio_import_tokens(runtime=app_ctx)
@@ -424,6 +486,10 @@ def create_batch_job(app_ctx, request, *, instant=False):
         )
         if quota_response is not None:
             return quota_response, quota_status
+        resources.register(
+            'upload_quota',
+            lambda: upload_quota_service.release_uncommitted_upload_quota(app_ctx, quota_reservation),
+        )
 
         for plan in row_plans:
             idx = plan['ordinal']
@@ -648,10 +714,6 @@ def create_batch_job(app_ctx, request, *, instant=False):
             context='Batch upload',
         )
         if quota_error is not None:
-            _refund_batch_charges(app_ctx, uid, charged_rows)
-            _release_pending_import_tokens(app_ctx, uid, pending_import_token_paths)
-            pending_import_token_paths.clear()
-            _cleanup_batch_local_files(app_ctx, cleanup_paths, consumed_import_paths)
             return quota_error, quota_error_status
 
         folder_name = batch_title
@@ -671,6 +733,7 @@ def create_batch_job(app_ctx, request, *, instant=False):
                 'updated_at': now_ts,
             })
             folder_id = created_folder_ref.id
+            resources.register('study_folder', created_folder_ref.delete)
 
         batch_payload = {
             'batch_id': batch_id,
@@ -722,6 +785,8 @@ def create_batch_job(app_ctx, request, *, instant=False):
         }
         batch_orchestrator.create_batch_job(batch_payload, prepared_rows, runtime=app_ctx)
         batch_created = True
+        resources.commit('submission_claim')
+        resources.commit('credits')
 
         try:
             submit_batch = getattr(app_ctx, 'submit_batch_background_job', None)
@@ -739,19 +804,15 @@ def create_batch_job(app_ctx, request, *, instant=False):
                 runtime=app_ctx,
                 mark_audio_quota_released=True,
             )
-            _release_pending_import_tokens(app_ctx, uid, pending_import_token_paths)
-            pending_import_token_paths.clear()
-            _cleanup_batch_local_files(app_ctx, cleanup_paths, consumed_import_paths)
             batch_orchestrator.clear_batch_audio_fetch_targets(batch_id, runtime=app_ctx)
             return upload_batch_support.queue_full_response(app_ctx, batch_id=batch_id)
         upload_quota_service.commit_upload_quota(quota_reservation)
+        resources.commit('upload_quota')
+        resources.commit('pending_import_tokens')
+        resources.commit('local_files')
+        resources.commit('study_folder')
         return app_ctx.jsonify({'batch_id': batch_id})
     except Exception as error:
-        if created_folder_ref is not None:
-            try:
-                created_folder_ref.delete()
-            except Exception:
-                pass
         try:
             batch_exists = batch_created or bool(batch_orchestrator.get_batch(batch_id, runtime=app_ctx))
         except Exception:
@@ -763,15 +824,10 @@ def create_batch_job(app_ctx, request, *, instant=False):
                 runtime=app_ctx,
                 mark_audio_quota_released=True,
             )
-        else:
-            _refund_batch_charges(app_ctx, uid, charged_rows)
-        _release_pending_import_tokens(app_ctx, uid, pending_import_token_paths)
-        pending_import_token_paths.clear()
-        _cleanup_batch_local_files(app_ctx, cleanup_paths, consumed_import_paths)
         batch_orchestrator.clear_batch_audio_fetch_targets(batch_id, runtime=app_ctx)
         return app_ctx.jsonify({'error': upload_redaction_service.redact_exception(error, max_chars=500)}), 400
     finally:
-        upload_quota_service.release_uncommitted_upload_quota(app_ctx, quota_reservation)
+        resources.rollback()
 
 
 def create_instant_batch_job(app_ctx, request):

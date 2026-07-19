@@ -6,7 +6,9 @@ import io
 import json
 import os
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 from lecture_processor.domains.account import lifecycle as account_lifecycle
@@ -50,6 +52,21 @@ SESSION_FIELDS = (
     "differential_diagnosis",
     "metrics",
 )
+
+# Model calls happen outside Flask request threads.  The semaphore is shared by
+# every Physio generation kind so one reasoning request (three independent
+# model calls) cannot create unbounded provider concurrency.
+_PHYSIO_PROVIDER_SLOTS = threading.BoundedSemaphore(3)
+_PHYSIO_REASONING_EXECUTOR = ThreadPoolExecutor(
+    max_workers=3,
+    thread_name_prefix="physio-reasoning",
+)
+_PHYSIO_GENERATION_MODES = {
+    "soap": "physio-soap",
+    "rps": "physio-rps",
+    "reasoning": "physio-reasoning",
+    "knowledge": "physio-knowledge",
+}
 
 
 def _extract_json_fragment(raw_text):
@@ -99,15 +116,16 @@ def _generate_json_payload(prompt_text, default_shape, *, operation_name, runtim
             )
         except Exception:
             config = types_module.GenerateContentConfig(max_output_tokens=65536)
-    response = ai_provider.run_with_provider_retry(
-        operation_name,
-        lambda: runtime.client.models.generate_content(
-            model=getattr(runtime, "MODEL_TOOLS", "gemini-3.1-flash-lite"),
-            contents=[prompt_text],
-            config=config or {"max_output_tokens": 65536},
-        ),
-        runtime=runtime,
-    )
+    with _PHYSIO_PROVIDER_SLOTS:
+        response = ai_provider.run_with_provider_retry(
+            operation_name,
+            lambda: runtime.client.models.generate_content(
+                model=getattr(runtime, "MODEL_TOOLS", "gemini-3.1-flash-lite"),
+                contents=[prompt_text],
+                config=config or {"max_output_tokens": 65536},
+            ),
+            runtime=runtime,
+        )
     raw_text = str(getattr(response, "text", "") or "").strip()
     try:
         payload = json.loads(_extract_json_fragment(raw_text))
@@ -127,15 +145,16 @@ def _generate_array_payload(prompt_text, *, operation_name, runtime):
             )
         except Exception:
             config = types_module.GenerateContentConfig(max_output_tokens=32768)
-    response = ai_provider.run_with_provider_retry(
-        operation_name,
-        lambda: runtime.client.models.generate_content(
-            model=getattr(runtime, "MODEL_TOOLS", "gemini-3.1-flash-lite"),
-            contents=[prompt_text],
-            config=config or {"max_output_tokens": 32768},
-        ),
-        runtime=runtime,
-    )
+    with _PHYSIO_PROVIDER_SLOTS:
+        response = ai_provider.run_with_provider_retry(
+            operation_name,
+            lambda: runtime.client.models.generate_content(
+                model=getattr(runtime, "MODEL_TOOLS", "gemini-3.1-flash-lite"),
+                contents=[prompt_text],
+                config=config or {"max_output_tokens": 32768},
+            ),
+            runtime=runtime,
+        )
     raw_text = str(getattr(response, "text", "") or "").strip()
     try:
         payload = json.loads(_extract_json_fragment(raw_text))
@@ -444,73 +463,211 @@ def create_transcription_job(app_ctx, request):
         upload_quota_service.release_uncommitted_upload_quota(app_ctx, quota_reservation)
 
 
-def generate_soap(app_ctx, request):
-    decoded_token, error_response, status_code = _ensure_physio_access(app_ctx, request)
-    if error_response is not None:
-        return error_response, status_code
-    unavailable = _require_ready_runtime(app_ctx)
-    if unavailable is not None:
-        return unavailable
-    payload = _parse_payload(request)
+def _run_physio_generation(kind, payload, *, runtime):
     transcript = _normalize_string(payload.get("transcript"), 180000)
-    if not transcript:
-        return app_ctx.jsonify({"error": "Transcript is required."}), 400
-    case_context = payload.get("case_context")
-    if not isinstance(case_context, dict):
-        case_context = _case_context_for_uid(app_ctx, decoded_token["uid"], payload.get("case_id"))
-    try:
+    body_region = _normalize_string(payload.get("body_region"), 80)
+    session_type = _normalize_string(payload.get("session_type"), 80)
+    case_context = payload.get("case_context") if isinstance(payload.get("case_context"), dict) else {}
+
+    if kind == "soap":
         soap = _generate_json_payload(
             physio_prompts.soap_prompt(
                 transcript,
-                body_region=_normalize_string(payload.get("body_region"), 80),
-                session_type=_normalize_string(payload.get("session_type"), 80),
+                body_region=body_region,
+                session_type=session_type,
                 case_context=case_context,
             ),
             physio_prompts.SOAP_RESPONSE_SHAPE,
             operation_name="physio_generate_soap",
-            runtime=app_ctx,
+            runtime=runtime,
         )
-    except SystemExit as error:
-        return _generation_error_response(app_ctx, "soap", error, 502)
-    except Exception as error:
-        return _generation_error_response(app_ctx, "soap", error, 500)
-    return app_ctx.jsonify({"soap": soap, "warnings": []})
+        return {"soap": soap, "warnings": []}
 
-
-def generate_rps(app_ctx, request):
-    decoded_token, error_response, status_code = _ensure_physio_access(app_ctx, request)
-    if error_response is not None:
-        return error_response, status_code
-    unavailable = _require_ready_runtime(app_ctx)
-    if unavailable is not None:
-        return unavailable
-    payload = _parse_payload(request)
-    transcript = _normalize_string(payload.get("transcript"), 180000)
-    if not transcript:
-        return app_ctx.jsonify({"error": "Transcript is required."}), 400
-    case_context = payload.get("case_context")
-    if not isinstance(case_context, dict):
-        case_context = _case_context_for_uid(app_ctx, decoded_token["uid"], payload.get("case_id"))
-    try:
+    if kind == "rps":
         rps = _generate_json_payload(
             physio_prompts.rps_prompt(
                 transcript,
-                body_region=_normalize_string(payload.get("body_region"), 80),
-                session_type=_normalize_string(payload.get("session_type"), 80),
+                body_region=body_region,
+                session_type=session_type,
                 case_context=case_context,
             ),
             physio_prompts.RPS_RESPONSE_SHAPE,
             operation_name="physio_generate_rps",
+            runtime=runtime,
+        )
+        return {"rps": rps}
+
+    if kind == "reasoning":
+        # These prompts are independent.  Running them concurrently cuts total
+        # job time while the shared provider semaphore caps process-wide calls.
+        futures = {
+            "seven_step": _PHYSIO_REASONING_EXECUTOR.submit(
+                _generate_json_payload,
+                physio_prompts.reasoning_prompt(
+                    transcript,
+                    body_region=body_region,
+                    session_type=session_type,
+                    case_context=case_context,
+                ),
+                physio_prompts.REASONING_RESPONSE_SHAPE,
+                operation_name="physio_generate_reasoning",
+                runtime=runtime,
+            ),
+            "differential_diagnosis": _PHYSIO_REASONING_EXECUTOR.submit(
+                _generate_json_payload,
+                physio_prompts.differential_prompt(
+                    transcript,
+                    body_region=body_region,
+                    session_type=session_type,
+                    case_context=case_context,
+                ),
+                physio_prompts.DIFFERENTIAL_RESPONSE_SHAPE,
+                operation_name="physio_generate_differential",
+                runtime=runtime,
+            ),
+            "red_flags": _PHYSIO_REASONING_EXECUTOR.submit(
+                _generate_array_payload,
+                physio_prompts.red_flags_prompt(
+                    transcript,
+                    body_region=body_region,
+                    session_type=session_type,
+                    case_context=case_context,
+                ),
+                operation_name="physio_generate_red_flags",
+                runtime=runtime,
+            ),
+        }
+        return {name: future.result() for name, future in futures.items()}
+
+    if kind == "knowledge":
+        return physio_knowledge.query_knowledge_index(
+            _normalize_string(payload.get("question"), 5000),
+            body_region=body_region,
+            context_text=_normalize_string(payload.get("context_text"), 8000),
+            case_context=case_context,
+            runtime=runtime,
+        )
+
+    raise ValueError("Unsupported Physio generation kind.")
+
+
+def process_physio_generation(job_id, kind, payload, *, runtime):
+    """Run a Physio AI operation in the bounded background dispatcher."""
+    runtime_jobs_store.update_job_fields(
+        job_id,
+        runtime=runtime,
+        status="processing",
+        step=1,
+        step_description="Generating AI output...",
+    )
+    try:
+        result = _run_physio_generation(kind, payload, runtime=runtime)
+    except SystemExit as error:
+        runtime.logger.error("Physio %s generation exited unexpectedly: %s", kind, error)
+        runtime_jobs_store.update_job_fields(
+            job_id,
+            runtime=runtime,
+            status="error",
+            step_description="Generation failed.",
+            finished_at=runtime.time.time(),
+            error="Physio generation failed.",
+            failed_stage=f"physio_{kind}",
+        )
+        return
+    except Exception as error:
+        runtime.logger.exception("Physio %s generation failed: %s", kind, error)
+        runtime_jobs_store.update_job_fields(
+            job_id,
+            runtime=runtime,
+            status="error",
+            step_description="Generation failed.",
+            finished_at=runtime.time.time(),
+            error="Physio generation failed.",
+            failed_stage=f"physio_{kind}",
+        )
+        return
+
+    runtime_jobs_store.update_job_fields(
+        job_id,
+        runtime=runtime,
+        status="complete",
+        step=2,
+        step_description="Complete",
+        finished_at=runtime.time.time(),
+        result=result,
+        error="",
+    )
+
+
+def _start_physio_generation(app_ctx, decoded_token, kind, payload):
+    uid = str(decoded_token.get("uid", "") or "").strip()
+    write_guard = account_lifecycle.ensure_account_allows_writes(uid, runtime=app_ctx)
+    if not write_guard[0]:
+        return app_ctx.jsonify({"error": write_guard[1], "status": "account_deletion_in_progress"}), 409
+
+    active_jobs = account_lifecycle.count_active_jobs_for_user(uid, runtime=app_ctx)
+    if active_jobs >= app_ctx.MAX_ACTIVE_JOBS_PER_USER:
+        analytics_events.log_rate_limit_hit("physio_generation", 10, runtime=app_ctx)
+        return app_ctx.jsonify({
+            "error": f"You already have {active_jobs} active processing job(s). Please wait for one to finish before starting another."
+        }), 429
+
+    allowed, retry_after = rate_limiter.check_rate_limit(
+        key=f"physio_generation:{rate_limiter.normalize_rate_limit_key_part(uid, fallback='anon_uid', runtime=app_ctx)}",
+        limit=getattr(app_ctx, "TOOLS_RATE_LIMIT_MAX_REQUESTS", 12),
+        window_seconds=getattr(app_ctx, "TOOLS_RATE_LIMIT_WINDOW_SECONDS", 60),
+        runtime=app_ctx,
+    )
+    if not allowed:
+        analytics_events.log_rate_limit_hit("physio_generation", retry_after, runtime=app_ctx)
+        return rate_limiter.build_rate_limited_response(
+            "Too many Physio generation attempts right now. Please wait and try again.",
+            retry_after,
             runtime=app_ctx,
         )
-    except SystemExit as error:
-        return _generation_error_response(app_ctx, "rps", error, 502)
-    except Exception as error:
-        return _generation_error_response(app_ctx, "rps", error, 500)
-    return app_ctx.jsonify({"rps": rps})
+
+    job_id = str(app_ctx.uuid.uuid4())
+    runtime_jobs_store.set_job(
+        job_id,
+        {
+            "status": "queued",
+            "step": 0,
+            "step_description": "Queued...",
+            "total_steps": 2,
+            "mode": _PHYSIO_GENERATION_MODES[kind],
+            "job_scope": "physio",
+            "user_id": uid,
+            "user_email": decoded_token.get("email", ""),
+            "started_at": app_ctx.time.time(),
+            "finished_at": 0,
+            "result": None,
+            "error": "",
+            "failed_stage": "",
+            "provider_error_code": "",
+            "retry_attempts": 0,
+            "billing_mode": "internal",
+        },
+        runtime=app_ctx,
+    )
+    try:
+        app_ctx.submit_background_job(
+            process_physio_generation,
+            job_id,
+            kind,
+            payload,
+            runtime=app_ctx,
+        )
+    except JobQueueFullError:
+        runtime_jobs_store.delete_job(job_id, runtime=app_ctx)
+        return app_ctx.jsonify({"error": "The server is busy. Please retry in a moment."}), 503
+    except Exception:
+        runtime_jobs_store.delete_job(job_id, runtime=app_ctx)
+        app_ctx.logger.exception("Physio %s job setup failed for %s", kind, job_id)
+        return app_ctx.jsonify({"error": "Could not start Physio generation. Please try again."}), 500
+    return app_ctx.jsonify({"ok": True, "job_id": job_id, "status": "queued"}), 202
 
 
-def generate_reasoning(app_ctx, request):
+def _generation_request(app_ctx, request, kind):
     decoded_token, error_response, status_code = _ensure_physio_access(app_ctx, request)
     if error_response is not None:
         return error_response, status_code
@@ -518,58 +675,33 @@ def generate_reasoning(app_ctx, request):
     if unavailable is not None:
         return unavailable
     payload = _parse_payload(request)
+    if not isinstance(payload, dict):
+        return app_ctx.jsonify({"error": "Invalid payload."}), 400
     transcript = _normalize_string(payload.get("transcript"), 180000)
     if not transcript:
         return app_ctx.jsonify({"error": "Transcript is required."}), 400
-    body_region = _normalize_string(payload.get("body_region"), 80)
-    session_type = _normalize_string(payload.get("session_type"), 80)
     case_context = payload.get("case_context")
     if not isinstance(case_context, dict):
         case_context = _case_context_for_uid(app_ctx, decoded_token["uid"], payload.get("case_id"))
-    try:
-        reasoning = _generate_json_payload(
-            physio_prompts.reasoning_prompt(
-                transcript,
-                body_region=body_region,
-                session_type=session_type,
-                case_context=case_context,
-            ),
-            physio_prompts.REASONING_RESPONSE_SHAPE,
-            operation_name="physio_generate_reasoning",
-            runtime=app_ctx,
-        )
-        differential = _generate_json_payload(
-            physio_prompts.differential_prompt(
-                transcript,
-                body_region=body_region,
-                session_type=session_type,
-                case_context=case_context,
-            ),
-            physio_prompts.DIFFERENTIAL_RESPONSE_SHAPE,
-            operation_name="physio_generate_differential",
-            runtime=app_ctx,
-        )
-        red_flags = _generate_array_payload(
-            physio_prompts.red_flags_prompt(
-                transcript,
-                body_region=body_region,
-                session_type=session_type,
-                case_context=case_context,
-            ),
-            operation_name="physio_generate_red_flags",
-            runtime=app_ctx,
-        )
-    except SystemExit as error:
-        return _generation_error_response(app_ctx, "reasoning", error, 502)
-    except Exception as error:
-        return _generation_error_response(app_ctx, "reasoning", error, 500)
-    return app_ctx.jsonify(
-        {
-            "seven_step": reasoning,
-            "differential_diagnosis": differential,
-            "red_flags": red_flags,
-        }
-    )
+    job_payload = {
+        "transcript": transcript,
+        "body_region": _normalize_string(payload.get("body_region"), 80),
+        "session_type": _normalize_string(payload.get("session_type"), 80),
+        "case_context": case_context,
+    }
+    return _start_physio_generation(app_ctx, decoded_token, kind, job_payload)
+
+
+def generate_soap(app_ctx, request):
+    return _generation_request(app_ctx, request, "soap")
+
+
+def generate_rps(app_ctx, request):
+    return _generation_request(app_ctx, request, "rps")
+
+
+def generate_reasoning(app_ctx, request):
+    return _generation_request(app_ctx, request, "reasoning")
 
 
 def knowledge_query(app_ctx, request):
@@ -580,6 +712,8 @@ def knowledge_query(app_ctx, request):
     if unavailable is not None:
         return unavailable
     payload = _parse_payload(request)
+    if not isinstance(payload, dict):
+        return app_ctx.jsonify({"error": "Invalid payload."}), 400
     question = _normalize_string(payload.get("question"), 5000)
     if not question:
         return app_ctx.jsonify({"error": "Vraag is verplicht."}), 400
@@ -593,21 +727,35 @@ def knowledge_query(app_ctx, request):
                 case_lines.append(f"{key}: {value}")
         if case_lines:
             context_text = (context_text + "\n" + "\n".join(case_lines)).strip()
-    try:
-        response_payload = physio_knowledge.query_knowledge_index(
-            question,
-            body_region=_normalize_string(payload.get("body_region"), 80),
-            context_text=context_text,
-            case_context=case_context,
-            runtime=app_ctx,
-        )
-    except SystemExit as error:
-        app_ctx.logger.error("Physio knowledge query exited unexpectedly: %s", error)
-        return app_ctx.jsonify({"error": "Kennisbank antwoord genereren mislukt."}), 502
-    except Exception as error:
-        app_ctx.logger.error("Physio knowledge query failed: %s", error)
-        return app_ctx.jsonify({"error": "Kennisbank antwoord genereren mislukt."}), 500
-    return app_ctx.jsonify(response_payload)
+    job_payload = {
+        "question": question,
+        "body_region": _normalize_string(payload.get("body_region"), 80),
+        "context_text": context_text,
+        "case_context": case_context,
+    }
+    return _start_physio_generation(app_ctx, decoded_token, "knowledge", job_payload)
+
+
+def get_generation_job_status(app_ctx, request, job_id):
+    decoded_token, error_response, status_code = _ensure_physio_access(app_ctx, request)
+    if error_response is not None:
+        return error_response, status_code
+    job = runtime_jobs_store.get_job_snapshot(str(job_id or "").strip(), runtime=app_ctx)
+    if not job or str(job.get("job_scope", "") or "") != "physio":
+        return app_ctx.jsonify({"error": "Physio generation job not found."}), 404
+    if str(job.get("user_id", "") or "") != str(decoded_token.get("uid", "") or ""):
+        return app_ctx.jsonify({"error": "Forbidden"}), 403
+    response = {
+        "status": str(job.get("status", "") or "unknown"),
+        "step": int(job.get("step", 0) or 0),
+        "step_description": str(job.get("step_description", "") or ""),
+        "total_steps": int(job.get("total_steps", 2) or 2),
+    }
+    if response["status"] == "complete":
+        response["result"] = job.get("result") or {}
+    elif response["status"] == "error":
+        response["error"] = str(job.get("error", "") or "Physio generation failed.")
+    return app_ctx.jsonify(response)
 
 
 def knowledge_status(app_ctx, request):
