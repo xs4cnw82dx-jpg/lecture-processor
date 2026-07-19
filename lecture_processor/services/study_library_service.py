@@ -961,7 +961,7 @@ def get_public_study_share(app_ctx, request, share_token):
                             app_ctx.db,
                             owner_uid,
                             folder_id,
-                            limit=100,
+                            limit=None,
                         )
                     )
             except Exception:
