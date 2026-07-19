@@ -66,7 +66,12 @@ def list_planner_sessions(app_ctx, request):
     future_only = str(request.args.get('future_only', '0') or '0').strip().lower() in {'1', 'true', 'yes', 'on'}
     tzinfo, _timezone_name = study_progress.resolve_user_timezone(uid, runtime=app_ctx)
     today = study_progress.to_timezone_now(None, tzinfo, runtime=app_ctx).strftime('%Y-%m-%d')
-    records = app_ctx.planner_repo.list_planner_sessions_by_uid(app_ctx.db, uid, 400)
+    records = app_ctx.planner_repo.list_planner_sessions_by_uid(
+        app_ctx.db,
+        uid,
+        limit if future_only else 400,
+        start_date=today if future_only else None,
+    )
     sessions = []
     for record in records:
         safe_payload, error = planner_models.sanitize_session_payload(
@@ -81,6 +86,8 @@ def list_planner_sessions(app_ctx, request):
         sessions.append(safe_payload)
     ordered = planner_models.sort_sessions(sessions, runtime=app_ctx)
     if future_only:
+        # Keep this defensive filter for in-memory/test repositories and legacy
+        # records, while Firestore performs the indexed filter before its limit.
         ordered = [item for item in ordered if str(item.get('date', '') or '') >= today]
     return app_ctx.jsonify({'sessions': ordered[:limit]})
 
