@@ -19,10 +19,7 @@ ACTIVE_GOAL_STATUSES = {'active', 'completed', 'archived'}
 SESSION_STATUSES = {'planned', 'completed', 'skipped', 'cancelled'}
 SESSION_ORIGINS = {'automatic', 'manual', 'legacy'}
 DEFAULT_SESSION_MINUTES = 45
-DEFAULT_AVAILABILITY = [
-    {'weekday': weekday, 'start': '19:00', 'end': '21:00'}
-    for weekday in range(5)
-]
+DEFAULT_AVAILABILITY = []
 
 
 def sanitize_id(value):

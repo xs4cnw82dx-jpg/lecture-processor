@@ -22,7 +22,7 @@ def test_unified_study_plan_contains_guided_views_and_reliable_states(client):
     assert 'data-wizard-step="1"' in html
     assert 'data-wizard-step="4"' in html
     assert 'id="study-plan-offline"' in html
-    assert 'id="study-plan-save-state"' in html
+    assert 'id="study-plan-save-state" role="status" aria-live="polite" hidden' in html
     assert 'id="rebalance-card" hidden' in html
     assert 'id="calendar-feeds-overlay" hidden aria-hidden="true"' in html
     assert 'browser notifications' not in html.lower()
@@ -42,7 +42,26 @@ def test_study_plan_client_has_approval_rebalance_and_failed_save_rollback():
     assert "readCache()" in script
     assert "nothing moves until you accept it" in script
     assert 'notes_minutes_by_pack: wizardNotesMinutes(packIds)' in script
-    assert 'data-notes-minutes' in script
+    assert 'data-notes-minutes' not in script
+    assert "String(pack.mode || '').toLowerCase() !== 'voice-note'" in script
+    assert "availabilityPreset: ''" in script
+    assert "proposal.pace && proposal.pace.personalized" in script
+
+
+def test_study_plan_uses_polished_native_controls_and_actionable_empty_states():
+    template = _read('templates/study_plan.html')
+    styles = _read('static/css/study-plan.css')
+    script = _read('static/js/study-plan.js')
+
+    assert 'data-plan-picker="date"' in template
+    assert 'data-plan-picker="time"' in template
+    assert 'data-pretty-select' in template
+    assert 'data-pack-filter="flashcards"' in template
+    assert 'Set up a goal' in script
+    assert 'Create my first goal' in script
+    assert '.study-plan-page .btn' in styles
+    assert '.plan-overlay input[type="checkbox"]' in styles
+    assert '.plan-control-popover' in styles
 
 
 def test_study_library_removes_duplicate_goals_and_adds_plan_actions():
@@ -59,6 +78,7 @@ def test_study_library_removes_duplicate_goals_and_adds_plan_actions():
     assert 'Add to Study Plan' in template
     assert "apiCall('/api/study-plan/membership')" in script
     assert "'/plan?add_packs='" in script
+    assert 'Voice notes are kept outside Study Plan' in script
     assert 'plannerSessionFromUrl' in script
     assert "'/api/study-activity/sessions/'" in script
 

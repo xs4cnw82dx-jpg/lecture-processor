@@ -4420,7 +4420,12 @@ function syncPackSelectionControls() {
     packSelectionCount.textContent = count === 1 ? '1 pack selected' : count + ' packs selected';
   }
   if (addSelectedToPlanBtn) {
-    var allInPlan = count > 0 && getSelectedPackIds().every(function (packId) { return plannedPackIds.has(packId); });
+    var selectedPlanIds = getSelectedPackIds().filter(function (packId) {
+      var pack = (packs || []).find(function (item) { return String(item.study_pack_id || '') === packId; });
+      return !pack || String(pack.mode || '') !== 'voice-note';
+    });
+    var allInPlan = selectedPlanIds.length > 0 && selectedPlanIds.every(function (packId) { return plannedPackIds.has(packId); });
+    addSelectedToPlanBtn.hidden = selectedPlanIds.length === 0;
     addSelectedToPlanBtn.textContent = allInPlan ? 'Open Study Plan' : 'Add to Study Plan';
   }
   if (deletePackBtn) {
@@ -4452,8 +4457,11 @@ function clearPackSelection(shouldRender) {
 }
 
 function openStudyPlanForPacks(packIds) {
-  var ids = (packIds || []).map(function (packId) { return String(packId || '').trim(); }).filter(Boolean);
-  if (!ids.length) { showToast('Select at least one study pack.', 'error'); return; }
+  var ids = (packIds || []).map(function (packId) { return String(packId || '').trim(); }).filter(Boolean).filter(function (packId) {
+    var pack = (packs || []).find(function (item) { return String(item.study_pack_id || '') === packId; });
+    return !pack || String(pack.mode || '') !== 'voice-note';
+  });
+  if (!ids.length) { showToast('Voice notes are kept outside Study Plan. Select a study pack with flashcards, questions, or regular notes.', 'error'); return; }
   var allInPlan = ids.every(function (packId) { return plannedPackIds.has(packId); });
   window.location.href = allInPlan ? '/plan' : '/plan?add_packs=' + encodeURIComponent(ids.join(','));
 }
@@ -4954,11 +4962,15 @@ function updatePackSummary() {
   packStatCards.textContent = formatItemCount((selectedPack.flashcards || []).length, 'flashcard');
   packStatTest.textContent = formatItemCount((selectedPack.test_questions || []).length, 'question');
   var isInPlan = plannedPackIds.has(String(selectedPack.study_pack_id || selectedPackId || ''));
+  var isVoiceNote = String(selectedPack.mode || '') === 'voice-note';
   if (packPlanStatus) {
-    packPlanStatus.textContent = isInPlan ? 'In Study Plan' : 'Not in a study plan';
+    packPlanStatus.textContent = isVoiceNote ? 'Voice notes stay outside Study Plan' : (isInPlan ? 'In Study Plan' : 'Not in a study plan');
     packPlanStatus.classList.toggle('is-in-plan', isInPlan);
   }
-  if (addPackToPlanBtn) addPackToPlanBtn.textContent = isInPlan ? 'Open Study Plan' : 'Add to Study Plan';
+  if (addPackToPlanBtn) {
+    addPackToPlanBtn.hidden = isVoiceNote;
+    addPackToPlanBtn.textContent = isInPlan ? 'Open Study Plan' : 'Add to Study Plan';
+  }
   /* Informative images tip */
   var imagesTipEl = document.getElementById('pack-images-tip');
   if (imagesTipEl) {

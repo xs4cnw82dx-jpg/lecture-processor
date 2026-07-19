@@ -3,6 +3,10 @@ from datetime import date
 from lecture_processor.domains.planner import study_plan
 
 
+def test_new_planners_do_not_assume_weekday_evening_availability():
+    assert study_plan.sanitize_preferences({})['availability'] == []
+
+
 def _preferences(timezone='Europe/Amsterdam', availability=None, duration=45):
     return {
         'timezone': timezone,
