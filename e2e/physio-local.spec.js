@@ -2,11 +2,23 @@ const { test, expect } = require('@playwright/test');
 
 const companionUrl = process.env.PHYSIO_COMPANION_URL || 'http://127.0.0.1:8765/physio';
 const ownerToken = process.env.PHYSIO_COMPANION_OWNER_TOKEN || '';
+const companionBaseUrl = new URL(companionUrl).origin;
+
+function authorizedCompanionUrl() {
+  return companionUrl + (ownerToken ? `#owner_token=${encodeURIComponent(ownerToken)}` : '');
+}
+
+async function authorizeRequest(request) {
+  const response = await request.post(`${companionBaseUrl}/owner-session`, {
+    data: { owner_token: ownerToken }
+  });
+  expect(response.ok()).toBeTruthy();
+}
 
 test('local Physio workspace supports shoulder lookup, graph, case workflow and source links', async ({ page }) => {
   const browserErrors = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));
-  await page.goto(companionUrl + (ownerToken ? `#owner_token=${encodeURIComponent(ownerToken)}` : ''));
+  await page.goto(authorizedCompanionUrl());
 
   await expect(page.locator('#portal-hero h1')).toHaveText('Schouder');
   await expect(page.locator('#clinical-connection')).toHaveClass(/is-online/);
@@ -86,7 +98,7 @@ test('portal shortcuts, search results and styled controls stay usable in a comp
   const browserErrors = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));
   await page.setViewportSize({ width: 885, height: 850 });
-  await page.goto(companionUrl);
+  await page.goto(authorizedCompanionUrl());
 
   await page.locator('#clinical-search-input').fill('scapula');
   const result = page.locator('#search-results [data-note-id="structure-scapula"]').first();
@@ -127,12 +139,13 @@ test('portal shortcuts, search results and styled controls stay usable in a comp
 });
 
 test('local source endpoint supports browser range requests', async ({ request }) => {
-  const media = await request.get('http://127.0.0.1:8765/api/local/physio/media');
+  await authorizeRequest(request);
+  const media = await request.get(`${companionBaseUrl}/api/local/physio/media`);
   expect(media.ok()).toBeTruthy();
   const entries = (await media.json()).media;
   const atlas = entries.find((entry) => /atlas-of-anatomy/i.test(entry.title));
   expect(atlas).toBeTruthy();
-  const partial = await request.get(`http://127.0.0.1:8765/api/local/physio/media/${atlas.id}`, {
+  const partial = await request.get(`${companionBaseUrl}/api/local/physio/media/${atlas.id}`, {
     headers: { Range: 'bytes=0-1023' }
   });
   expect(partial.status()).toBe(206);
@@ -140,7 +153,7 @@ test('local source endpoint supports browser range requests', async ({ request }
 });
 
 test('source manager imports, edits, activates and removes a managed source copy', async ({ page }) => {
-  await page.goto(companionUrl);
+  await page.goto(authorizedCompanionUrl());
   await page.getByRole('tab', { name: 'Bronnen beheren' }).click();
   await expect(page.locator('#source-dropzone')).toBeVisible();
 
