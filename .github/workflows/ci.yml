@@ -32,6 +32,12 @@ jobs:
           chmod +x scripts/check_no_tracked_secrets.sh
           ./scripts/check_no_tracked_secrets.sh
 
+      - name: Check repository data and file-size hygiene
+        run: python scripts/check_repository_hygiene.py
+
+      - name: Run Python correctness lint
+        run: ruff check .
+
       - name: Run full pytest suite
         run: |
           python -m pytest -q
@@ -54,6 +60,9 @@ jobs:
 
       - name: Run client-side tests
         run: npm run test:client-goals
+
+      - name: Run JavaScript correctness lint
+        run: npm run lint:js
 
       - name: Verify generated assets
         run: npm run check:assets

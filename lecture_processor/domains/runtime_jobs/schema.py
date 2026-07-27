@@ -31,6 +31,8 @@ class RuntimeJobRecord(TypedDict, total=False):
     prompt_source: str
     custom_prompt_length: int
     billing_receipt: dict[str, Any]
+    export_path: str
+    download_name: str
 
 
 class RuntimeJobsCapability(Protocol):
@@ -67,4 +69,5 @@ PERSISTED_RUNTIME_JOB_FIELDS = frozenset({
     'failed_stage', 'provider_error_code', 'retry_attempts', 'file_size_mb',
     'source_type', 'source_name', 'prompt_template_key', 'prompt_source',
     'custom_prompt_length', 'last_heartbeat_at', 'recovery_claimed_at',
+    'export_path', 'download_name',
 })

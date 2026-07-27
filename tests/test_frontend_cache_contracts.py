@@ -24,6 +24,14 @@ def test_service_worker_fetches_fresh_static_assets_before_cache_fallback():
     assert ".catch(() => caches.match(request))" in service_worker
 
 
+def test_voice_service_worker_only_deletes_its_own_old_caches():
+    service_worker = _read('static/service-worker.js')
+
+    assert "const VOICE_CACHE_PREFIX = 'lecture-processor-voice-';" in service_worker
+    assert 'key.startsWith(VOICE_CACHE_PREFIX) && key !== VOICE_CACHE' in service_worker
+    assert 'keys.filter((key) => key !== VOICE_CACHE)' not in service_worker
+
+
 def test_service_worker_precaches_one_voice_notes_script_variant():
     service_worker = _read('static/service-worker.js')
 
@@ -59,7 +67,7 @@ def test_voice_notes_local_storage_is_user_scoped_and_cleared_on_signout():
     assert "filter(noteBelongsToCurrentOwner)" in voice_notes_js
     assert "store.put({ id: id, owner_key: currentOwnerKey()" in voice_notes_js
     assert "indexedDB.deleteDatabase('lecture-processor-voice-notes')" in app_shell_js
-    assert "indexedDB.deleteDatabase('lecture-processor-voice-notes')" in index_js
+    assert "indexedDB.deleteDatabase('lecture-processor-voice-notes')" not in index_js
 
 
 def test_app_shell_uses_last_known_profile_for_fast_auth_hydration():
@@ -71,3 +79,11 @@ def test_app_shell_uses_last_known_profile_for_fast_auth_hydration():
     assert "applyProfileToShell(lastProfile, { pending: true, trustPermissions: false })" in app_shell_js
     assert "if (!applyLastKnownProfile()) setCreditsVisible(false);" in app_shell_js
     assert 'clearLegacyAccountCaches();' in app_shell_js
+
+
+def test_expired_admin_navigation_explains_the_redirect_once():
+    app_shell_js = _read('static/js/app-shell.js')
+
+    assert "params.get('notice') !== 'admin-session-required'" in app_shell_js
+    assert 'Your admin session expired. Open Admin again to reconnect.' in app_shell_js
+    assert "params.delete('notice');" in app_shell_js

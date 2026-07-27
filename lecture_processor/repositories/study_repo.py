@@ -122,6 +122,20 @@ def list_study_packs_by_uid(db, uid, limit):
     return list(query.stream())
 
 
+def get_study_pack_docs(db, pack_ids):
+    """Fetch a bounded group of pack documents in one Firestore RPC when supported."""
+    refs = [study_pack_doc_ref(db, pack_id) for pack_id in pack_ids]
+    get_all = getattr(db, 'get_all', None)
+    if callable(get_all):
+        try:
+            return list(get_all(refs))
+        except (AttributeError, TypeError):
+            # Lightweight test/local adapters may expose get_all but not native
+            # Firestore references.
+            pass
+    return [ref.get() for ref in refs]
+
+
 def list_study_packs_with_audio_flags(db, limit=250):
     try:
         safe_limit = int(limit or 250)

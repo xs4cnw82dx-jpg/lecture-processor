@@ -623,6 +623,7 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
                 uid,
                 deducted_credit,
                 expected_floor=user_text_credits_before if deducted_credit == 'slides_credits' else None,
+                idempotency_key=f'runtime-job:{job_id}:primary',
             )
         retry_attempts_total = tools_extraction_support.sum_retry_attempts(retry_tracker)
         analytics_events.log_analytics_event(

@@ -324,6 +324,14 @@ def test_study_initial_load_uses_lightweight_progress_and_folder_requests():
     assert "if (hasProgressDirty())" in study_js
 
 
+def test_one_study_answer_only_syncs_dirty_pack_and_summary_markers():
+    study_js = _read('static/js/study.js')
+
+    assert 'flushProgressSync(false);' in study_js
+    assert 'flushProgressSync(!currentPackOnly);' not in study_js
+    assert 'payload.card_states[marker] = loadCardStateForPack(marker);' in study_js
+
+
 def test_planner_loads_bounded_data_and_has_safe_error_states():
     plan_template = _read('templates/plan.html')
     plan_js = _read('static/js/plan.js')

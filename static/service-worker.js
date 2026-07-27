@@ -1,4 +1,5 @@
 const VOICE_CACHE = 'lecture-processor-voice-v9';
+const VOICE_CACHE_PREFIX = 'lecture-processor-voice-';
 const APP_SHELL = [
   '/voice-notes',
   '/static/manifest.webmanifest',
@@ -33,7 +34,9 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => Promise.all(
-      keys.filter((key) => key !== VOICE_CACHE).map((key) => caches.delete(key))
+      keys
+        .filter((key) => key.startsWith(VOICE_CACHE_PREFIX) && key !== VOICE_CACHE)
+        .map((key) => caches.delete(key))
     )).then(() => self.clients.claim())
   );
 });

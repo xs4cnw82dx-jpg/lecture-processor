@@ -56,7 +56,7 @@ def _starts_at_utc(date_value, time_value, timezone_name):
 
 
 def _preferences(app_ctx, uid):
-    snapshot = app_ctx.planner_repo.get_study_plan_preferences(app_ctx.db, uid)
+    snapshot = app_ctx.repositories.planner.get_study_plan_preferences(app_ctx.db, uid)
     raw = snapshot.to_dict() if snapshot.exists else {}
     if not raw.get('timezone'):
         try:
@@ -109,7 +109,7 @@ def _pack_summary(raw, doc_id=''):
 
 def _pack_summary_page(app_ctx, uid, limit=100, after_doc=None):
     safe_limit = min(100, max(1, int(limit or 100)))
-    docs = app_ctx.study_repo.list_study_pack_summaries_by_uid(app_ctx.db, uid, safe_limit + 1, after_doc=after_doc)
+    docs = app_ctx.repositories.study.list_study_pack_summaries_by_uid(app_ctx.db, uid, safe_limit + 1, after_doc=after_doc)
     has_more = len(docs) > safe_limit
     page_docs = docs[:safe_limit]
     packs = []
@@ -139,7 +139,7 @@ def _pack_states(app_ctx, uid, pack_ids):
 
 
 def _recent_activity_context(app_ctx, uid):
-    activities = app_ctx.planner_repo.list_study_activity_by_uid(
+    activities = app_ctx.repositories.planner.list_study_activity_by_uid(
         app_ctx.db,
         uid,
         100,
@@ -174,7 +174,7 @@ def _safe_float(value, default=0.0):
 def _owned_pack_ids(app_ctx, uid, pack_ids):
     owned = set()
     for pack_id in study_plan.sanitize_pack_ids(pack_ids):
-        doc = app_ctx.study_repo.get_study_pack_summary_doc(app_ctx.db, pack_id)
+        doc = app_ctx.repositories.study.get_study_pack_summary_doc(app_ctx.db, pack_id)
         raw = doc.to_dict() if getattr(doc, 'exists', False) else {}
         if (
             getattr(doc, 'exists', False)
@@ -189,7 +189,7 @@ def _owned_pack_ids(app_ctx, uid, pack_ids):
 def _owned_pack_summaries(app_ctx, uid, pack_ids):
     summaries = {}
     for pack_id in study_plan.sanitize_pack_ids(pack_ids):
-        doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
+        doc = app_ctx.repositories.study.get_study_pack_doc(app_ctx.db, pack_id)
         raw = doc.to_dict() if getattr(doc, 'exists', False) else {}
         if not getattr(doc, 'exists', False) or str(raw.get('uid', '') or '') != uid:
             continue
@@ -203,7 +203,7 @@ def _owned_pack_summaries(app_ctx, uid, pack_ids):
 def _migrate_legacy_folder_goals(app_ctx, uid, preferences):
     if preferences.get('migration_v1_complete'):
         return preferences
-    existing = app_ctx.planner_repo.list_study_goals_by_uid(app_ctx.db, uid, 200)
+    existing = app_ctx.repositories.planner.list_study_goals_by_uid(app_ctx.db, uid, 200)
     migrated_folder_ids = {str(item.get('migrated_from_folder_id', '') or '') for item in existing}
     packs = _pack_summaries(app_ctx, uid, 100)
     packs_by_folder = {}
@@ -212,7 +212,7 @@ def _migrate_legacy_folder_goals(app_ctx, uid, preferences):
         if folder_id:
             packs_by_folder.setdefault(folder_id, []).append(pack['study_pack_id'])
     try:
-        folders = app_ctx.study_repo.list_study_folders_by_uid(app_ctx.db, uid)
+        folders = app_ctx.repositories.study.list_study_folders_by_uid(app_ctx.db, uid)
     except Exception:
         folders = []
     now_ts = app_ctx.time.time()
@@ -233,18 +233,18 @@ def _migrate_legacy_folder_goals(app_ctx, uid, preferences):
         if payload is None or error:
             continue
         payload.update({'uid': uid, 'revision': 1, 'migrated_from_folder_id': folder_id})
-        app_ctx.planner_repo.set_study_goal(app_ctx.db, uid, goal_id, payload, merge=False)
+        app_ctx.repositories.planner.set_study_goal(app_ctx.db, uid, goal_id, payload, merge=False)
     updated = dict(preferences)
     updated['migration_v1_complete'] = True
     updated['availability_configured'] = bool(preferences.get('availability_configured', False))
     updated['revision'] = max(1, int(updated.get('revision', 0) or 0))
     updated['updated_at'] = now_ts
-    app_ctx.planner_repo.set_study_plan_preferences(app_ctx.db, uid, updated, merge=False)
+    app_ctx.repositories.planner.set_study_plan_preferences(app_ctx.db, uid, updated, merge=False)
     return updated
 
 
 def _session_records(app_ctx, uid, start_date='', end_date='', limit=400):
-    records = app_ctx.planner_repo.list_planner_sessions_by_uid(
+    records = app_ctx.repositories.planner.list_planner_sessions_by_uid(
         app_ctx.db,
         uid,
         min(400, max(1, int(limit or 400))),
@@ -270,7 +270,7 @@ def _session_records(app_ctx, uid, start_date='', end_date='', limit=400):
 
 
 def _activity_summary(app_ctx, uid, start_ts, sessions, goals, workloads_by_pack, goal_workloads=None, period_start_date='', period_end_date=''):
-    activities = app_ctx.planner_repo.list_study_activity_by_uid(app_ctx.db, uid, 500, start_ts=start_ts)
+    activities = app_ctx.repositories.planner.list_study_activity_by_uid(app_ctx.db, uid, 500, start_ts=start_ts)
     metrics = {'minutes': 0, 'cards_reviewed': 0, 'questions_answered': 0, 'correct': 0, 'incorrect': 0}
     for item in activities:
         cleaned = study_plan.activity_metrics(item.get('metrics', {}))
@@ -320,7 +320,7 @@ def _activity_summary(app_ctx, uid, start_ts, sessions, goals, workloads_by_pack
     try:
         progress_doc = app_ctx.get_study_progress_doc(uid).get()
         progress_data = progress_doc.to_dict() if progress_doc.exists else {}
-        card_docs = app_ctx.study_repo.list_study_card_states_by_uid(app_ctx.db, uid, app_ctx.MAX_PROGRESS_PACKS_PER_SYNC)
+        card_docs = app_ctx.repositories.study.list_study_card_states_by_uid(app_ctx.db, uid, app_ctx.MAX_PROGRESS_PACKS_PER_SYNC)
         card_maps = [study_progress.sanitize_card_state_map((doc.to_dict() or {}).get('state', {}), runtime=app_ctx) for doc in card_docs]
         legacy_summary = study_progress.compute_study_progress_summary(progress_data, card_maps, runtime=app_ctx)
     except Exception:
@@ -368,7 +368,7 @@ def get_bootstrap(app_ctx, request):
     try:
         preferences = _migrate_legacy_folder_goals(app_ctx, uid, _preferences(app_ctx, uid))
         start_date, end_date = _date_bounds(request, preferences['timezone'])
-        goals = [_serialize_goal(item) for item in app_ctx.planner_repo.list_study_goals_by_uid(app_ctx.db, uid, 200)]
+        goals = [_serialize_goal(item) for item in app_ctx.repositories.planner.list_study_goals_by_uid(app_ctx.db, uid, 200)]
         active_goals = [item for item in goals if item['status'] == 'active']
         try:
             pack_limit = max(1, min(100, int(request.args.get('pack_limit', 100) or 100)))
@@ -378,7 +378,7 @@ def get_bootstrap(app_ctx, request):
         loaded_pack_ids = {item['study_pack_id'] for item in packs}
         selected_pack_ids = {pack_id for goal in active_goals for pack_id in goal['pack_ids']}
         for pack_id in sorted(selected_pack_ids - loaded_pack_ids):
-            doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
+            doc = app_ctx.repositories.study.get_study_pack_doc(app_ctx.db, pack_id)
             raw = doc.to_dict() if getattr(doc, 'exists', False) else {}
             if getattr(doc, 'exists', False) and str(raw.get('uid', '') or '') == uid:
                 summary = _pack_summary(raw, pack_id)
@@ -435,7 +435,7 @@ def get_bootstrap(app_ctx, request):
             period_start_date=week_start.isoformat(),
             period_end_date=week_end.isoformat(),
         )
-        feeds = [_public_feed_state(item) for item in app_ctx.planner_repo.list_calendar_feeds_by_uid(app_ctx.db, uid, MAX_CALENDAR_FEEDS, active_only=True)]
+        feeds = [_public_feed_state(item) for item in app_ctx.repositories.planner.list_calendar_feeds_by_uid(app_ctx.db, uid, MAX_CALENDAR_FEEDS, active_only=True)]
         return app_ctx.jsonify({
             'preferences': preferences,
             'goals': goals,
@@ -456,7 +456,7 @@ def get_membership(app_ctx, request):
     decoded, error_response, status = _require_user(app_ctx, request)
     if error_response is not None:
         return error_response, status
-    goals = app_ctx.planner_repo.list_study_goals_by_uid(app_ctx.db, decoded['uid'], 200)
+    goals = app_ctx.repositories.planner.list_study_goals_by_uid(app_ctx.db, decoded['uid'], 200)
     pack_ids = sorted({pack_id for goal in goals if goal.get('status', 'active') == 'active' for pack_id in study_plan.sanitize_pack_ids(goal.get('pack_ids', []))})
     return app_ctx.jsonify({'pack_ids': pack_ids})
 
@@ -475,12 +475,12 @@ def get_library_page(app_ctx, request):
     if request.args.get('cursor') and not cursor:
         return app_ctx.jsonify({'error': 'Library cursor is invalid.'}), 400
     if cursor:
-        after_doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, cursor)
+        after_doc = app_ctx.repositories.study.get_study_pack_doc(app_ctx.db, cursor)
         raw = after_doc.to_dict() if getattr(after_doc, 'exists', False) else {}
         if not getattr(after_doc, 'exists', False) or str(raw.get('uid', '') or '') != uid:
             return app_ctx.jsonify({'error': 'Library cursor is invalid.'}), 400
     packs, next_cursor = _pack_summary_page(app_ctx, uid, limit, after_doc=after_doc)
-    active_goals = [item for item in app_ctx.planner_repo.list_study_goals_by_uid(app_ctx.db, uid, 200) if item.get('status', 'active') == 'active']
+    active_goals = [item for item in app_ctx.repositories.planner.list_study_goals_by_uid(app_ctx.db, uid, 200) if item.get('status', 'active') == 'active']
     membership = {pack_id for goal in active_goals for pack_id in study_plan.sanitize_pack_ids(goal.get('pack_ids', []))}
     for pack in packs:
         pack['in_plan'] = pack['study_pack_id'] in membership
@@ -502,7 +502,7 @@ def update_preferences(app_ctx, request):
         return app_ctx.jsonify({'error': 'Planning settings changed in another tab.', 'code': 'revision_conflict', 'preferences': current}), 409
     safe = study_plan.sanitize_preferences(incoming, existing=current)
     safe.update({'uid': uid, 'revision': int(current.get('revision', 0)) + 1, 'migration_v1_complete': True, 'availability_configured': 'availability' in incoming or bool(current.get('availability_configured', False)), 'updated_at': app_ctx.time.time()})
-    app_ctx.planner_repo.set_study_plan_preferences(app_ctx.db, uid, safe, merge=False)
+    app_ctx.repositories.planner.set_study_plan_preferences(app_ctx.db, uid, safe, merge=False)
     return app_ctx.jsonify({'ok': True, 'preferences': safe})
 
 
@@ -523,7 +523,7 @@ def create_goal(app_ctx, request):
     if owned != set(payload['pack_ids']):
         return app_ctx.jsonify({'error': 'One or more study packs could not be found.'}), 400
     payload.update({'uid': uid, 'status': 'active', 'revision': 1})
-    app_ctx.planner_repo.set_study_goal(app_ctx.db, uid, goal_id, payload, merge=False)
+    app_ctx.repositories.planner.set_study_goal(app_ctx.db, uid, goal_id, payload, merge=False)
     return app_ctx.jsonify({'ok': True, 'goal': _serialize_goal(payload)}), 201
 
 
@@ -538,7 +538,7 @@ def update_goal(app_ctx, request, goal_id):
     safe_id = study_plan.sanitize_id(goal_id)
     if not safe_id:
         return app_ctx.jsonify({'error': 'Study goal id is invalid.'}), 400
-    snapshot = app_ctx.planner_repo.get_study_goal(app_ctx.db, uid, safe_id)
+    snapshot = app_ctx.repositories.planner.get_study_goal(app_ctx.db, uid, safe_id)
     if not snapshot.exists:
         return app_ctx.jsonify({'error': 'Study goal not found.'}), 404
     current = snapshot.to_dict()
@@ -551,7 +551,7 @@ def update_goal(app_ctx, request, goal_id):
     if _owned_pack_ids(app_ctx, uid, payload['pack_ids']) != set(payload['pack_ids']):
         return app_ctx.jsonify({'error': 'One or more study packs could not be found.'}), 400
     payload.update({'uid': uid, 'revision': int(current.get('revision', 0) or 0) + 1})
-    app_ctx.planner_repo.set_study_goal(app_ctx.db, uid, safe_id, payload, merge=False)
+    app_ctx.repositories.planner.set_study_goal(app_ctx.db, uid, safe_id, payload, merge=False)
     return app_ctx.jsonify({'ok': True, 'goal': _serialize_goal(payload)})
 
 
@@ -566,17 +566,17 @@ def archive_goal(app_ctx, request, goal_id):
     safe_id = study_plan.sanitize_id(goal_id)
     if not safe_id:
         return app_ctx.jsonify({'error': 'Study goal id is invalid.'}), 400
-    snapshot = app_ctx.planner_repo.get_study_goal(app_ctx.db, uid, safe_id)
+    snapshot = app_ctx.repositories.planner.get_study_goal(app_ctx.db, uid, safe_id)
     if not snapshot.exists:
         return app_ctx.jsonify({'error': 'Study goal not found.'}), 404
     current = snapshot.to_dict()
     current.update({'status': 'archived', 'revision': int(current.get('revision', 0) or 0) + 1, 'updated_at': app_ctx.time.time()})
-    app_ctx.planner_repo.set_study_goal(app_ctx.db, uid, safe_id, current, merge=False)
+    app_ctx.repositories.planner.set_study_goal(app_ctx.db, uid, safe_id, current, merge=False)
     today = _today_for_timezone(_preferences(app_ctx, uid)['timezone'])
     for item in _session_records(app_ctx, uid, today, '', 400):
         if item.get('goal_id') == safe_id and item.get('origin') == 'automatic' and item.get('status') == 'planned':
             item.update({'status': 'cancelled', 'revision': int(item.get('revision', 0) or 0) + 1, 'updated_at': app_ctx.time.time()})
-            app_ctx.planner_repo.set_planner_session(app_ctx.db, uid, item['id'], {**item, 'uid': uid}, merge=False)
+            app_ctx.repositories.planner.set_planner_session(app_ctx.db, uid, item['id'], {**item, 'uid': uid}, merge=False)
     return app_ctx.jsonify({'ok': True, 'goal': _serialize_goal(current)})
 
 
@@ -591,7 +591,7 @@ def preview_plan(app_ctx, request):
     requested_goal_id = study_plan.sanitize_id(raw_goal.get('goal_id'))
     existing_goal = {}
     if requested_goal_id:
-        snapshot = app_ctx.planner_repo.get_study_goal(app_ctx.db, uid, requested_goal_id)
+        snapshot = app_ctx.repositories.planner.get_study_goal(app_ctx.db, uid, requested_goal_id)
         if not snapshot.exists:
             return app_ctx.jsonify({'error': 'Study goal not found.'}), 404
         existing_goal = snapshot.to_dict()
@@ -655,7 +655,7 @@ def preview_plan(app_ctx, request):
         'applied_at': 0,
         'applied_session_ids': [],
     }
-    app_ctx.planner_repo.set_study_plan_proposal(app_ctx.db, uid, proposal)
+    app_ctx.repositories.planner.set_study_plan_proposal(app_ctx.db, uid, proposal)
     return app_ctx.jsonify({'proposal': proposal})
 
 
@@ -672,7 +672,7 @@ def apply_plan(app_ctx, request):
     idempotency_key = study_plan.sanitize_id(body.get('idempotency_key'))
     if not proposal_id or not idempotency_key:
         return app_ctx.jsonify({'error': 'Proposal id and idempotency key are required.'}), 400
-    snapshot = app_ctx.planner_repo.get_study_plan_proposal(app_ctx.db, uid)
+    snapshot = app_ctx.repositories.planner.get_study_plan_proposal(app_ctx.db, uid)
     if not snapshot.exists:
         return app_ctx.jsonify({'error': 'This plan preview expired. Create a new preview.'}), 409
     proposal = snapshot.to_dict()
@@ -683,7 +683,7 @@ def apply_plan(app_ctx, request):
             return app_ctx.jsonify({'error': 'This preview was already accepted.', 'code': 'idempotency_conflict'}), 409
         return app_ctx.jsonify({'ok': True, 'goal': _serialize_goal(proposal.get('goal', {})), 'session_ids': proposal.get('applied_session_ids', []), 'replayed': True})
     goal = dict(proposal.get('goal') or {})
-    current_goal_snapshot = app_ctx.planner_repo.get_study_goal(app_ctx.db, uid, goal.get('goal_id', ''))
+    current_goal_snapshot = app_ctx.repositories.planner.get_study_goal(app_ctx.db, uid, goal.get('goal_id', ''))
     current_goal = current_goal_snapshot.to_dict() if current_goal_snapshot.exists else {}
     if int(current_goal.get('revision', 0) or 0) != int(proposal.get('base_goal_revision', 0) or 0):
         return app_ctx.jsonify({'error': 'The study goal changed after this preview.', 'code': 'revision_conflict'}), 409
@@ -715,22 +715,22 @@ def apply_plan(app_ctx, request):
     })
     if app_ctx.db is not None and hasattr(app_ctx.db, 'batch'):
         batch = app_ctx.db.batch()
-        batch.set(app_ctx.planner_repo.study_goal_doc_ref(app_ctx.db, goal['goal_id']), goal)
-        batch.set(app_ctx.planner_repo.study_plan_preferences_doc_ref(app_ctx.db, uid), preferences)
+        batch.set(app_ctx.repositories.planner.study_goal_doc_ref(app_ctx.db, goal['goal_id']), goal)
+        batch.set(app_ctx.repositories.planner.study_plan_preferences_doc_ref(app_ctx.db, uid), preferences)
         for existing in cancellations:
-            batch.set(app_ctx.planner_repo.planner_session_doc_ref(app_ctx.db, uid, existing['id']), existing)
+            batch.set(app_ctx.repositories.planner.planner_session_doc_ref(app_ctx.db, uid, existing['id']), existing)
         for safe in session_payloads:
-            batch.set(app_ctx.planner_repo.planner_session_doc_ref(app_ctx.db, uid, safe['id']), safe)
-        batch.set(app_ctx.planner_repo.study_plan_proposal_doc_ref(app_ctx.db, uid), {**proposal, 'uid': uid})
+            batch.set(app_ctx.repositories.planner.planner_session_doc_ref(app_ctx.db, uid, safe['id']), safe)
+        batch.set(app_ctx.repositories.planner.study_plan_proposal_doc_ref(app_ctx.db, uid), {**proposal, 'uid': uid})
         batch.commit()
     else:
-        app_ctx.planner_repo.set_study_goal(app_ctx.db, uid, goal['goal_id'], goal, merge=False)
-        app_ctx.planner_repo.set_study_plan_preferences(app_ctx.db, uid, preferences, merge=False)
+        app_ctx.repositories.planner.set_study_goal(app_ctx.db, uid, goal['goal_id'], goal, merge=False)
+        app_ctx.repositories.planner.set_study_plan_preferences(app_ctx.db, uid, preferences, merge=False)
         for existing in cancellations:
-            app_ctx.planner_repo.set_planner_session(app_ctx.db, uid, existing['id'], existing, merge=False)
+            app_ctx.repositories.planner.set_planner_session(app_ctx.db, uid, existing['id'], existing, merge=False)
         for safe in session_payloads:
-            app_ctx.planner_repo.set_planner_session(app_ctx.db, uid, safe['id'], safe, merge=False)
-        app_ctx.planner_repo.set_study_plan_proposal(app_ctx.db, uid, proposal)
+            app_ctx.repositories.planner.set_planner_session(app_ctx.db, uid, safe['id'], safe, merge=False)
+        app_ctx.repositories.planner.set_study_plan_proposal(app_ctx.db, uid, proposal)
     return app_ctx.jsonify({'ok': True, 'goal': _serialize_goal(goal), 'session_ids': proposal['applied_session_ids'], 'replayed': False})
 
 
@@ -745,7 +745,7 @@ def update_plan_item(app_ctx, request, session_id):
     safe_id = study_plan.sanitize_id(session_id)
     if not safe_id:
         return app_ctx.jsonify({'error': 'Study session id is invalid.'}), 400
-    existing_snapshot = app_ctx.planner_repo.get_planner_session(app_ctx.db, uid, safe_id)
+    existing_snapshot = app_ctx.repositories.planner.get_planner_session(app_ctx.db, uid, safe_id)
     existing = existing_snapshot.to_dict() if existing_snapshot.exists else {}
     body = request.get_json(silent=True) or {}
     if existing and 'revision' in body and _safe_revision(body.get('revision')) != _safe_revision(existing.get('revision', 0)):
@@ -763,7 +763,7 @@ def update_plan_item(app_ctx, request, session_id):
         return app_ctx.jsonify({'error': 'Study pack not found.'}), 400
     safe['starts_at_utc'] = _starts_at_utc(safe['date'], safe['time'], _preferences(app_ctx, uid)['timezone'])
     safe.update({'uid': uid, 'revision': int(existing.get('revision', 0) or 0) + 1})
-    app_ctx.planner_repo.set_planner_session(app_ctx.db, uid, safe_id, safe, merge=False)
+    app_ctx.repositories.planner.set_planner_session(app_ctx.db, uid, safe_id, safe, merge=False)
     return app_ctx.jsonify({'ok': True, 'session': safe}), (200 if existing else 201)
 
 
@@ -782,7 +782,7 @@ def update_activity(app_ctx, request, activity_id):
     pack_id = study_plan.sanitize_id(body.get('pack_id'))
     if pack_id and pack_id not in _owned_pack_ids(app_ctx, uid, [pack_id]):
         return app_ctx.jsonify({'error': 'Study pack not found.'}), 400
-    existing_snapshot = app_ctx.planner_repo.get_study_activity(app_ctx.db, uid, safe_id)
+    existing_snapshot = app_ctx.repositories.planner.get_study_activity(app_ctx.db, uid, safe_id)
     existing = existing_snapshot.to_dict() if existing_snapshot.exists else {}
     incoming_metrics = study_plan.activity_metrics(body.get('metrics', {}))
     existing_metrics = study_plan.activity_metrics(existing.get('metrics', {}))
@@ -810,16 +810,16 @@ def update_activity(app_ctx, request, activity_id):
         'accuracy_percent': round((metrics['correct'] / (metrics['correct'] + metrics['incorrect'])) * 100) if metrics['correct'] + metrics['incorrect'] else 0,
         'updated_at': now_ts,
     }
-    app_ctx.planner_repo.set_study_activity(app_ctx.db, uid, safe_id, payload, merge=False)
+    app_ctx.repositories.planner.set_study_activity(app_ctx.db, uid, safe_id, payload, merge=False)
     plan_item_id = payload['plan_item_id']
     if plan_item_id and payload['ended_at'] and sum(metrics.values()) > 0:
-        session_snapshot = app_ctx.planner_repo.get_planner_session(app_ctx.db, uid, plan_item_id)
+        session_snapshot = app_ctx.repositories.planner.get_planner_session(app_ctx.db, uid, plan_item_id)
         if session_snapshot.exists:
             session = session_snapshot.to_dict()
             session_pack_id = str(session.get('pack_id', '') or '')
             if not session_pack_id or session_pack_id == payload['pack_id']:
                 session.update({'status': 'completed', 'revision': int(session.get('revision', 0) or 0) + 1, 'updated_at': now_ts})
-                app_ctx.planner_repo.set_planner_session(app_ctx.db, uid, plan_item_id, session, merge=False)
+                app_ctx.repositories.planner.set_planner_session(app_ctx.db, uid, plan_item_id, session, merge=False)
     return app_ctx.jsonify({'ok': True, 'activity': payload})
 
 
@@ -847,7 +847,7 @@ def create_calendar_feed(app_ctx, request):
     guard = _write_guard(app_ctx, uid)
     if guard is not None:
         return guard
-    active = app_ctx.planner_repo.list_calendar_feeds_by_uid(app_ctx.db, uid, MAX_CALENDAR_FEEDS + 1, active_only=True)
+    active = app_ctx.repositories.planner.list_calendar_feeds_by_uid(app_ctx.db, uid, MAX_CALENDAR_FEEDS + 1, active_only=True)
     if len(active) >= MAX_CALENDAR_FEEDS:
         return app_ctx.jsonify({'error': 'You can connect up to five device calendars.'}), 409
     body = request.get_json(silent=True) or {}
@@ -870,7 +870,7 @@ def create_calendar_feed(app_ctx, request):
         'revoked_at': 0,
         'last_accessed_at': 0,
     }
-    app_ctx.planner_repo.set_calendar_feed(app_ctx.db, feed_id, payload, merge=False)
+    app_ctx.repositories.planner.set_calendar_feed(app_ctx.db, feed_id, payload, merge=False)
     base_url = str(getattr(app_ctx, 'PUBLIC_BASE_URL', '') or request.url_root).rstrip('/')
     token = f'{feed_id}.{secret}'
     return app_ctx.jsonify({'ok': True, 'feed': _public_feed_state(payload), 'subscription_url': f'{base_url}/calendar/feed/{token}.ics'}), 201
@@ -887,12 +887,12 @@ def revoke_calendar_feed(app_ctx, request, feed_id):
     safe_id = study_plan.sanitize_id(feed_id)
     if not safe_id:
         return app_ctx.jsonify({'error': 'Calendar connection id is invalid.'}), 400
-    snapshot = app_ctx.planner_repo.get_calendar_feed(app_ctx.db, safe_id)
+    snapshot = app_ctx.repositories.planner.get_calendar_feed(app_ctx.db, safe_id)
     if not snapshot.exists or str(snapshot.to_dict().get('uid', '') or '') != uid:
         return app_ctx.jsonify({'error': 'Calendar connection not found.'}), 404
     payload = snapshot.to_dict()
     payload['revoked_at'] = app_ctx.time.time()
-    app_ctx.planner_repo.set_calendar_feed(app_ctx.db, safe_id, payload, merge=False)
+    app_ctx.repositories.planner.set_calendar_feed(app_ctx.db, safe_id, payload, merge=False)
     return app_ctx.jsonify({'ok': True, 'feed': _public_feed_state(payload)})
 
 
@@ -905,7 +905,7 @@ def rotate_calendar_feed(app_ctx, request, feed_id):
     if guard is not None:
         return guard
     safe_id = study_plan.sanitize_id(feed_id)
-    snapshot = app_ctx.planner_repo.get_calendar_feed(app_ctx.db, safe_id)
+    snapshot = app_ctx.repositories.planner.get_calendar_feed(app_ctx.db, safe_id)
     payload = snapshot.to_dict() if snapshot.exists else {}
     if not snapshot.exists or str(payload.get('uid', '') or '') != uid or payload.get('revoked_at'):
         return app_ctx.jsonify({'error': 'Calendar connection not found.'}), 404
@@ -915,7 +915,7 @@ def rotate_calendar_feed(app_ctx, request, feed_id):
         'rotated_at': app_ctx.time.time(),
         'last_accessed_at': 0,
     })
-    app_ctx.planner_repo.set_calendar_feed(app_ctx.db, safe_id, payload, merge=False)
+    app_ctx.repositories.planner.set_calendar_feed(app_ctx.db, safe_id, payload, merge=False)
     base_url = str(getattr(app_ctx, 'PUBLIC_BASE_URL', '') or request.url_root).rstrip('/')
     return app_ctx.jsonify({
         'ok': True,
@@ -961,7 +961,7 @@ def get_calendar_feed(app_ctx, request, token):
     safe_id = study_plan.sanitize_id(feed_id)
     if not safe_id or not secret:
         return Response('Calendar feed not found.', status=404, mimetype='text/plain')
-    snapshot = app_ctx.planner_repo.get_calendar_feed(app_ctx.db, safe_id)
+    snapshot = app_ctx.repositories.planner.get_calendar_feed(app_ctx.db, safe_id)
     if not snapshot.exists:
         return Response('Calendar feed not found.', status=404, mimetype='text/plain')
     feed = snapshot.to_dict()
@@ -976,7 +976,7 @@ def get_calendar_feed(app_ctx, request, token):
     start = (date.fromisoformat(today) - timedelta(days=30)).isoformat()
     end = (date.fromisoformat(today) + timedelta(days=365)).isoformat()
     sessions = _session_records(app_ctx, uid, start, end, 400)
-    goals = [_serialize_goal(item) for item in app_ctx.planner_repo.list_study_goals_by_uid(app_ctx.db, uid, 200)]
+    goals = [_serialize_goal(item) for item in app_ctx.repositories.planner.list_study_goals_by_uid(app_ctx.db, uid, 200)]
     now_utc = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Lecture Processor//Study Plan//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:Lecture Processor Study Plan']
     base_url = str(getattr(app_ctx, 'PUBLIC_BASE_URL', '') or request.url_root).rstrip('/')
@@ -1017,7 +1017,7 @@ def get_calendar_feed(app_ctx, request, token):
     lines.append('END:VCALENDAR')
     feed['last_accessed_at'] = app_ctx.time.time()
     try:
-        app_ctx.planner_repo.set_calendar_feed(app_ctx.db, safe_id, feed, merge=False)
+        app_ctx.repositories.planner.set_calendar_feed(app_ctx.db, safe_id, feed, merge=False)
     except Exception as error:
         app_ctx.logger.warning('Could not record calendar feed access for %s: %s', feed_id, error)
     folded_lines = [folded for line in lines for folded in _ics_fold(line)]

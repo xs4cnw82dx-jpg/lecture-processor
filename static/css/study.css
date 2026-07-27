@@ -773,6 +773,10 @@
       padding-right: 2px
     }
 
+    .folder-scroll-hint {
+      display: none;
+    }
+
     .pack-list-actions {
       display: flex;
       justify-content: center;
@@ -3107,8 +3111,11 @@
     .audio-play-btn,
     .audio-download-btn,
     .audio-close-btn {
-      width: 34px;
-      height: 34px;
+      width: 44px;
+      height: 44px;
+      min-width: 44px;
+      min-height: 44px;
+      flex: 0 0 44px;
       border-radius: 50%;
       display: flex;
       align-items: center;
@@ -3190,6 +3197,9 @@
       font-size: .74rem;
       font-weight: 700;
       padding: 4px 8px;
+      min-width: 44px;
+      min-height: 44px;
+      flex: 0 0 auto;
       cursor: pointer;
     }
 
@@ -4292,6 +4302,7 @@
     .builder-main {
       padding: 22px 26px;
       overflow-y: auto;
+      overflow-x: hidden;
       position: relative
     }
 
@@ -5666,6 +5677,21 @@
     }
 
     @media(max-width:600px) {
+      .audio-player-bar {
+        grid-template-columns: 44px minmax(56px, 1fr) 44px 44px 44px;
+        gap: 7px;
+        padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+      }
+
+      .audio-play-btn { grid-column: 1; grid-row: 1; }
+      .audio-time { grid-column: 2; grid-row: 1; min-width: 0; }
+      .audio-speed-btn { grid-column: 3; grid-row: 1; padding: 4px; }
+      .audio-download-btn { grid-column: 4; grid-row: 1; }
+      .audio-close-btn { grid-column: 5; grid-row: 1; }
+      .audio-progress-wrap { grid-column: 1 / -1; grid-row: 2; width: 100%; min-width: 0; height: 8px; }
+      .audio-pack-title,
+      .audio-retention-note { display: none; }
+
       .container {
         padding: 10px 10px calc(88px + env(safe-area-inset-bottom, 0px))
       }
@@ -5791,6 +5817,15 @@
         gap: 8px;
         padding: 2px 2px 8px;
         scroll-snap-type: x proximity;
+      }
+
+      .folder-scroll-hint {
+        display: block;
+        margin: 2px 2px 0;
+        color: var(--gray-500);
+        font-size: .72rem;
+        font-weight: 600;
+        text-align: right;
       }
 
       #folder-list .item {
@@ -6201,6 +6236,8 @@
 
       .builder-shell {
         height: 100dvh;
+        width: 100%;
+        max-width: 100vw;
         grid-template-columns: 1fr;
         grid-template-rows: auto minmax(0, 1fr);
         overflow: hidden
@@ -6221,9 +6258,14 @@
       }
 
       .builder-top-actions {
-        grid-template-columns: minmax(108px, 1fr) auto;
+        display: flex;
+        flex-wrap: wrap;
         gap: 6px;
         margin-bottom: 7px
+      }
+
+      .builder-top-actions > #builder-save-btn {
+        flex: 1 1 132px;
       }
 
       .builder-top-actions>.btn,
@@ -6234,7 +6276,8 @@
       }
 
       .builder-duo {
-        grid-template-columns: repeat(2, auto);
+        flex: 1 1 156px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 6px
       }
 
@@ -6272,7 +6315,8 @@
 
       .builder-main {
         min-height: 0;
-        padding: 12px 10px 18px
+        padding: 12px 10px calc(18px + env(safe-area-inset-bottom, 0px));
+        overscroll-behavior: contain;
       }
 
       .builder-headline {

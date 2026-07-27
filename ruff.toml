@@ -1,0 +1,12 @@
+target-version = "py314"
+extend-exclude = [
+  ".venv",
+  "venv",
+  "node_modules",
+  "physio_library",
+]
+
+[lint]
+# Start with correctness-only rules. These catch syntax errors, undefined names,
+# invalid control flow, and other defects without creating formatting churn.
+select = ["E9", "F63", "F7", "F82"]

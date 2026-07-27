@@ -92,12 +92,13 @@ def _cleanup_upload_files(app_ctx, paths, *, imported_audio_used=False, imported
         app_ctx.cleanup_files(cleanup_paths, [])
 
 
-def _attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None):
+def _attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None, *, idempotency_key=''):
     return upload_batch_support.attempt_credit_refund(
         app_ctx,
         uid,
         credit_type,
         expected_floor=expected_floor,
+        idempotency_key=idempotency_key,
     )
 
 
@@ -349,7 +350,8 @@ def upload_files(app_ctx, request):
             return upload_batch_support.queue_full_response(app_ctx)
         study_pack_title = _sanitize_study_pack_title(request.form.get('study_pack_title', ''))
         if mode in {'lecture-notes', 'slides-only', 'interview'} and not study_pack_title:
-            return app_ctx.jsonify({'error': 'Lecture Topic / Name is required.'}), 400
+            title_label = 'Interview Title / Name' if mode == 'interview' else 'Lecture Topic / Name'
+            return app_ctx.jsonify({'error': f'{title_label} is required.'}), 400
         flashcard_selection = shared_parsing.parse_requested_amount(
             request.form.get('flashcard_amount', '20'),
             {'10', '20', '30', 'auto'},
@@ -473,7 +475,12 @@ def upload_files(app_ctx, request):
                 )
                 if token_error:
                     app_ctx.cleanup_files([pdf_path, audio_path], [])
-                    billing_credits.refund_credit(uid, deducted, runtime=app_ctx)
+                    billing_credits.refund_credit(
+                        uid,
+                        deducted,
+                        runtime=app_ctx,
+                        idempotency_key=f'runtime-job:{job_id}:primary',
+                    )
                     return app_ctx.jsonify({'error': token_error}), 400
             total_steps = 4 if study_features != 'none' else 3
             try:
@@ -628,11 +635,21 @@ def upload_files(app_ctx, request):
             interview_features_cost = len(interview_features)
             if interview_features_cost > 0:
                 if not billing_credits.has_category_credit(user, 'slides', interview_features_cost, runtime=app_ctx):
-                    billing_credits.refund_credit(uid, deducted, runtime=app_ctx)
+                    billing_credits.refund_credit(
+                        uid,
+                        deducted,
+                        runtime=app_ctx,
+                        idempotency_key=f'runtime-job:{job_id}:primary',
+                    )
                     _cleanup_upload_files(app_ctx, [audio_path], imported_audio_used=imported_audio_used, imported_audio_path=audio_path)
                     return app_ctx.jsonify({'error': f'Not enough text extraction credits for interview extras. You selected {interview_features_cost} option(s) and need {interview_features_cost} text extraction credits.'}), 402
                 if not billing_credits.deduct_slides_credits(uid, interview_features_cost, runtime=app_ctx):
-                    billing_credits.refund_credit(uid, deducted, runtime=app_ctx)
+                    billing_credits.refund_credit(
+                        uid,
+                        deducted,
+                        runtime=app_ctx,
+                        idempotency_key=f'runtime-job:{job_id}:primary',
+                    )
                     _cleanup_upload_files(app_ctx, [audio_path], imported_audio_used=imported_audio_used, imported_audio_path=audio_path)
                     return app_ctx.jsonify({'error': 'Could not reserve text extraction credits for interview extras. Please try again.'}), 402
             if imported_audio_used:
@@ -644,9 +661,20 @@ def upload_files(app_ctx, request):
                 )
                 if token_error:
                     app_ctx.cleanup_files([audio_path], [])
-                    billing_credits.refund_credit(uid, deducted, runtime=app_ctx)
+                    billing_credits.refund_credit(
+                        uid,
+                        deducted,
+                        runtime=app_ctx,
+                        idempotency_key=f'runtime-job:{job_id}:primary',
+                    )
                     if interview_features_cost > 0:
-                        billing_credits.refund_slides_credits(uid, interview_features_cost, runtime=app_ctx)
+                        billing_credits.refund_slides_credits(
+                            uid,
+                            interview_features_cost,
+                            runtime=app_ctx,
+                            idempotency_key=f'runtime-job:{job_id}:extras',
+                            idempotency_total=interview_features_cost,
+                        )
                     return app_ctx.jsonify({'error': token_error}), 400
             total_steps = 2 if interview_features_cost > 0 else 1
             try:

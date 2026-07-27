@@ -3,6 +3,28 @@
 from .query_utils import apply_where
 
 
+BATCH_ROW_STATUS_FIELDS = (
+    'row_id',
+    'ordinal',
+    'status',
+    'failed_stage',
+    'error',
+    'study_pack_id',
+    'job_log_id',
+    'current_stage',
+    'current_stage_detail',
+    'last_stage_update_at',
+    'token_input_total',
+    'token_output_total',
+    'token_total',
+    'credits_charged',
+    'interview_features_cost',
+    'interview_features_refunded_count',
+    'credit_refunded',
+    'billing_receipt',
+)
+
+
 def batch_jobs_collection(db):
     return db.collection('batch_jobs')
 
@@ -122,4 +144,15 @@ def list_batch_rows(db, batch_id, limit=None):
     query = batch_rows_collection(db, batch_id).order_by('ordinal')
     if isinstance(limit, int) and limit > 0:
         query = query.limit(limit)
+    return list(query.stream())
+
+
+def list_batch_row_statuses(db, batch_id, limit=None):
+    """Read only the small fields required by the polling/status response."""
+    query = batch_rows_collection(db, batch_id).order_by('ordinal')
+    if isinstance(limit, int) and limit > 0:
+        query = query.limit(limit)
+    select = getattr(query, 'select', None)
+    if callable(select):
+        query = select(BATCH_ROW_STATUS_FIELDS)
     return list(query.stream())

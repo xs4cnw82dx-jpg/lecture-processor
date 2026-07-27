@@ -14,6 +14,26 @@ BUILTIN_FOLDER_PARENT_IDS = {'', '__interviews__', '__voice_notes__'}
 MAX_BULK_PACK_MOVE = 100
 
 
+def _commit_firestore_mutations(app_ctx, *, updates=None, deletes=None):
+    """Commit related document changes atomically when Firestore batching is available."""
+    update_items = list(updates or [])
+    delete_refs = list(deletes or [])
+    batch_factory = getattr(app_ctx.db, 'batch', None)
+    refs = [doc_ref for doc_ref, _payload in update_items] + delete_refs
+    if callable(batch_factory) and all(hasattr(doc_ref, '_document_path') for doc_ref in refs):
+        batch = batch_factory()
+        for doc_ref, payload in update_items:
+            batch.update(doc_ref, payload)
+        for doc_ref in delete_refs:
+            batch.delete(doc_ref)
+        batch.commit()
+        return
+    for doc_ref, payload in update_items:
+        doc_ref.update(payload)
+    for doc_ref in delete_refs:
+        doc_ref.delete()
+
+
 def _stream_token_lock(app_ctx):
     return getattr(app_ctx, 'AUDIO_STREAM_LOCK', None)
 
@@ -35,7 +55,7 @@ def _with_stream_token_lock(app_ctx):
 
 def _get_owned_audio_path(app_ctx, request, decoded_token, pack_id):
     uid = decoded_token['uid']
-    doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
+    doc = app_ctx.repositories.study.get_study_pack_doc(app_ctx.db, pack_id)
     if not doc.exists:
         return None, None, app_ctx.jsonify({'error': 'Study pack not found'}), 404
     pack = doc.to_dict() or {}
@@ -112,7 +132,7 @@ def _sanitize_sort_order(raw_value):
 
 def _owned_folder_payloads(app_ctx, uid):
     return study_api_support.build_folder_payloads_from_docs(
-        app_ctx.study_repo.list_study_folders_by_uid(app_ctx.db, uid)
+        app_ctx.repositories.study.list_study_folders_by_uid(app_ctx.db, uid)
     )
 
 
@@ -121,7 +141,7 @@ def _resolve_parent_folder_input(app_ctx, uid, raw_parent_id, *, current_folder_
     current_id = str(current_folder_id or '').strip()
     if parent_id in BUILTIN_FOLDER_PARENT_IDS:
         return parent_id, None, None
-    parent_doc = app_ctx.study_repo.get_study_folder_doc(app_ctx.db, parent_id)
+    parent_doc = app_ctx.repositories.study.get_study_folder_doc(app_ctx.db, parent_id)
     if not parent_doc.exists:
         return '', app_ctx.jsonify({'error': 'Parent folder not found'}), 404
     parent = parent_doc.to_dict() or {}
@@ -158,14 +178,14 @@ def get_study_packs(app_ctx, request):
         after_cursor = str(request.args.get('after', '') or '').strip()
         after_doc = None
         if after_cursor:
-            after_doc = app_ctx.study_repo.get_study_pack_summary_doc(app_ctx.db, after_cursor)
+            after_doc = app_ctx.repositories.study.get_study_pack_summary_doc(app_ctx.db, after_cursor)
             if not after_doc.exists:
                 return app_ctx.jsonify({'error': 'Invalid study pack cursor'}), 400
             after_payload = after_doc.to_dict() or {}
             if str(after_payload.get('uid', '') or '') != uid:
                 return app_ctx.jsonify({'error': 'Invalid study pack cursor'}), 400
 
-        study_docs = app_ctx.study_repo.list_study_pack_summaries_by_uid(
+        study_docs = app_ctx.repositories.study.list_study_pack_summaries_by_uid(
             app_ctx.db,
             uid,
             limit + 1,
@@ -221,7 +241,7 @@ def create_study_pack(app_ctx, request):
         folder_id = str(payload.get('folder_id', '')).strip()
         folder_name = ''
         if folder_id:
-            folder_doc = app_ctx.study_repo.get_study_folder_doc(app_ctx.db, folder_id)
+            folder_doc = app_ctx.repositories.study.get_study_folder_doc(app_ctx.db, folder_id)
             if not folder_doc.exists:
                 return app_ctx.jsonify({'error': 'Folder not found'}), 404
             folder_data = folder_doc.to_dict()
@@ -246,7 +266,7 @@ def create_study_pack(app_ctx, request):
             else []
         )
 
-        doc_ref = app_ctx.study_repo.create_study_pack_doc_ref(app_ctx.db)
+        doc_ref = app_ctx.repositories.study.create_study_pack_doc_ref(app_ctx.db)
         doc_payload = {
             'study_pack_id': doc_ref.id,
             'source_job_id': '',
@@ -372,7 +392,7 @@ def update_study_pack(app_ctx, request, pack_id):
         return app_ctx.jsonify({'error': 'Invalid payload'}), 400
 
     try:
-        pack_ref = app_ctx.study_repo.study_pack_doc_ref(app_ctx.db, pack_id)
+        pack_ref = app_ctx.repositories.study.study_pack_doc_ref(app_ctx.db, pack_id)
         doc = pack_ref.get()
         if not doc.exists:
             return app_ctx.jsonify({'error': 'Study pack not found'}), 404
@@ -408,7 +428,7 @@ def update_study_pack(app_ctx, request, pack_id):
             updates['folder_id'] = ''
             updates['folder_name'] = ''
             if folder_id:
-                folder_doc = app_ctx.study_repo.get_study_folder_doc(app_ctx.db, folder_id)
+                folder_doc = app_ctx.repositories.study.get_study_folder_doc(app_ctx.db, folder_id)
                 if not folder_doc.exists:
                     return app_ctx.jsonify({'error': 'Folder not found'}), 404
                 folder_data = folder_doc.to_dict()
@@ -487,7 +507,7 @@ def bulk_move_study_packs(app_ctx, request):
     folder_id = str(payload.get('folder_id', '') or '').strip()
     folder_name = ''
     if folder_id:
-        folder_doc = app_ctx.study_repo.get_study_folder_doc(app_ctx.db, folder_id)
+        folder_doc = app_ctx.repositories.study.get_study_folder_doc(app_ctx.db, folder_id)
         if not folder_doc.exists:
             return app_ctx.jsonify({'error': 'Folder not found'}), 404
         folder_data = folder_doc.to_dict() or {}
@@ -499,9 +519,16 @@ def bulk_move_study_packs(app_ctx, request):
     skipped = []
     try:
         now_ts = app_ctx.time.time()
+        docs_by_id = {
+            str(getattr(doc, 'id', '') or ''): doc
+            for doc in app_ctx.repositories.study.get_study_pack_docs(app_ctx.db, pack_ids)
+        }
+        updates = []
         for pack_id in pack_ids:
-            pack_ref = app_ctx.study_repo.study_pack_doc_ref(app_ctx.db, pack_id)
-            doc = pack_ref.get()
+            doc = docs_by_id.get(pack_id)
+            if doc is None:
+                skipped.append({'study_pack_id': pack_id, 'reason': 'not_found'})
+                continue
             if not doc.exists:
                 skipped.append({'study_pack_id': pack_id, 'reason': 'not_found'})
                 continue
@@ -509,8 +536,9 @@ def bulk_move_study_packs(app_ctx, request):
             if str(pack.get('uid', '') or '').strip() != uid:
                 skipped.append({'study_pack_id': pack_id, 'reason': 'forbidden'})
                 continue
-            pack_ref.update({'folder_id': folder_id, 'folder_name': folder_name, 'updated_at': now_ts})
+            updates.append((doc.reference, {'folder_id': folder_id, 'folder_name': folder_name, 'updated_at': now_ts}))
             moved += 1
+        _commit_firestore_mutations(app_ctx, updates=updates)
         return app_ctx.jsonify({'ok': True, 'moved': moved, 'skipped': skipped})
     except Exception as error:
         app_ctx.logger.error('Error bulk-moving study packs for %s: %s', uid, error)
@@ -531,17 +559,27 @@ def delete_study_pack(app_ctx, request, pack_id):
             return error_response, status
         doc, pack = pack_result
         pack_ref = doc.reference
+        delete_refs = [
+            app_ctx.repositories.study.study_pack_source_doc_ref(app_ctx.db, pack_id),
+            app_ctx.get_study_card_state_doc(uid, pack_id),
+            pack_ref,
+        ]
+        share_docs = app_ctx.repositories.study.list_study_shares_by_owner_and_entity(
+            app_ctx.db,
+            uid,
+            'pack',
+            pack_id,
+            limit=100,
+        )
+        delete_refs.extend(
+            share_doc.reference
+            for share_doc in share_docs
+            if share_doc is not None and getattr(share_doc, 'exists', False)
+        )
+        _commit_firestore_mutations(app_ctx, deletes=delete_refs)
+        # Delete the local audio only after Firestore commits. If Firestore fails,
+        # the user's pack and its media remain intact for a safe retry.
         study_audio.remove_pack_audio_file(pack, runtime=app_ctx)
-        try:
-            app_ctx.study_repo.study_pack_source_doc_ref(app_ctx.db, pack_id).delete()
-        except Exception as error:
-            app_ctx.logger.warning('Warning: could not delete study pack source outputs for %s: %s', pack_id, error)
-        study_api_support.delete_share_for_entity(app_ctx, uid, 'pack', pack_id)
-        pack_ref.delete()
-        try:
-            app_ctx.get_study_card_state_doc(uid, pack_id).delete()
-        except Exception as error:
-            app_ctx.logger.warning(f"Warning: could not delete study progress state for pack {pack_id}: {error}")
         return app_ctx.jsonify({'ok': True})
     except Exception as error:
         app_ctx.logger.error(f"Error deleting study pack {pack_id}: {error}")
@@ -560,7 +598,7 @@ def get_study_folders(app_ctx, request):
             if include_pending
             else {}
         )
-        docs = app_ctx.study_repo.list_study_folders_by_uid(app_ctx.db, uid)
+        docs = app_ctx.repositories.study.list_study_folders_by_uid(app_ctx.db, uid)
         folders = []
         for doc in docs:
             folder = doc.to_dict() or {}
@@ -674,7 +712,7 @@ def create_study_folder(app_ctx, request):
         )
         if parent_error is not None:
             return parent_error, parent_status
-        doc_ref = app_ctx.study_repo.create_study_folder_doc_ref(app_ctx.db)
+        doc_ref = app_ctx.repositories.study.create_study_folder_doc_ref(app_ctx.db)
         doc_ref.set({
             'folder_id': doc_ref.id,
             'uid': uid,
@@ -705,7 +743,7 @@ def update_study_folder(app_ctx, request, folder_id):
         return deletion_guard
     payload = request.get_json() or {}
     try:
-        folder_ref = app_ctx.study_repo.study_folder_doc_ref(app_ctx.db, folder_id)
+        folder_ref = app_ctx.repositories.study.study_folder_doc_ref(app_ctx.db, folder_id)
         doc = folder_ref.get()
         if not doc.exists:
             return app_ctx.jsonify({'error': 'Folder not found'}), 404
@@ -741,11 +779,12 @@ def update_study_folder(app_ctx, request, folder_id):
                 )
             except ValueError as error:
                 return app_ctx.jsonify({'error': str(error)}), 400
-        folder_ref.update(updates)
+        pack_updates = []
         if 'name' in updates:
-            packs = app_ctx.study_repo.list_study_packs_by_uid_and_folder(app_ctx.db, uid, folder_id)
+            packs = app_ctx.repositories.study.list_study_packs_by_uid_and_folder(app_ctx.db, uid, folder_id)
             for pack_doc in packs:
-                pack_doc.reference.update({'folder_name': updates['name'], 'updated_at': app_ctx.time.time()})
+                pack_updates.append((pack_doc.reference, {'folder_name': updates['name'], 'updated_at': updates['updated_at']}))
+        _commit_firestore_mutations(app_ctx, updates=[(folder_ref, updates)] + pack_updates)
         return app_ctx.jsonify({'ok': True})
     except Exception as error:
         app_ctx.logger.error(f"Error updating folder {folder_id}: {error}")
@@ -761,7 +800,7 @@ def delete_study_folder(app_ctx, request, folder_id):
     if deletion_guard is not None:
         return deletion_guard
     try:
-        folder_ref = app_ctx.study_repo.study_folder_doc_ref(app_ctx.db, folder_id)
+        folder_ref = app_ctx.repositories.study.study_folder_doc_ref(app_ctx.db, folder_id)
         doc = folder_ref.get()
         if not doc.exists:
             return app_ctx.jsonify({'error': 'Folder not found'}), 404
@@ -769,18 +808,21 @@ def delete_study_folder(app_ctx, request, folder_id):
         if folder.get('uid', '') != uid:
             return app_ctx.jsonify({'error': 'Forbidden'}), 403
         parent_folder_id = str(folder.get('parent_folder_id', '') or '').strip()
-        study_api_support.delete_share_for_entity(app_ctx, uid, 'folder', folder_id)
-        folder_ref.delete()
-        packs = app_ctx.study_repo.list_study_packs_by_uid_and_folder(app_ctx.db, uid, folder_id)
-        for pack_doc in packs:
-            pack_doc.reference.update({'folder_id': '', 'folder_name': '', 'updated_at': app_ctx.time.time()})
-        child_docs = app_ctx.study_repo.list_study_folders_by_uid(app_ctx.db, uid)
+        packs = app_ctx.repositories.study.list_study_packs_by_uid_and_folder(app_ctx.db, uid, folder_id)
+        child_docs = app_ctx.repositories.study.list_study_folders_by_uid(app_ctx.db, uid)
+        now_ts = app_ctx.time.time()
+        related_updates = [
+            (pack_doc.reference, {'folder_id': '', 'folder_name': '', 'updated_at': now_ts})
+            for pack_doc in packs
+        ]
         for child_doc in child_docs:
             if child_doc.id == folder_id:
                 continue
             child = child_doc.to_dict() or {}
             if str(child.get('parent_folder_id', '') or '').strip() == folder_id:
-                child_doc.reference.update({'parent_folder_id': parent_folder_id, 'updated_at': app_ctx.time.time()})
+                related_updates.append((child_doc.reference, {'parent_folder_id': parent_folder_id, 'updated_at': now_ts}))
+        _commit_firestore_mutations(app_ctx, updates=related_updates, deletes=[folder_ref])
+        study_api_support.delete_share_for_entity(app_ctx, uid, 'folder', folder_id)
         return app_ctx.jsonify({'ok': True})
     except Exception as error:
         app_ctx.logger.error(f"Error deleting folder {folder_id}: {error}")
@@ -931,7 +973,7 @@ def get_public_study_share(app_ctx, request, share_token):
         entity_id = str(share.get('entity_id', '') or '').strip()
         owner_uid = str(share.get('owner_uid', '') or '').strip()
         if entity_type == 'pack':
-            pack_doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, entity_id)
+            pack_doc = app_ctx.repositories.study.get_study_pack_doc(app_ctx.db, entity_id)
             if not pack_doc.exists:
                 return app_ctx.jsonify({'error': 'Shared content not found'}), 404
             pack = pack_doc.to_dict() or {}
@@ -946,7 +988,7 @@ def get_public_study_share(app_ctx, request, share_token):
                 }
             )
         if entity_type == 'folder':
-            folder_doc = app_ctx.study_repo.get_study_folder_doc(app_ctx.db, entity_id)
+            folder_doc = app_ctx.repositories.study.get_study_folder_doc(app_ctx.db, entity_id)
             if not folder_doc.exists:
                 return app_ctx.jsonify({'error': 'Shared content not found'}), 404
             folder = folder_doc.to_dict() or {}
@@ -957,7 +999,7 @@ def get_public_study_share(app_ctx, request, share_token):
                 packs = []
                 for folder_id in folder_ids:
                     packs.extend(
-                        app_ctx.study_repo.list_study_pack_summaries_by_uid_and_folder(
+                        app_ctx.repositories.study.list_study_pack_summaries_by_uid_and_folder(
                             app_ctx.db,
                             owner_uid,
                             folder_id,
@@ -965,7 +1007,7 @@ def get_public_study_share(app_ctx, request, share_token):
                         )
                     )
             except Exception:
-                packs = app_ctx.study_repo.list_study_packs_by_uid_and_folder(app_ctx.db, owner_uid, entity_id)
+                packs = app_ctx.repositories.study.list_study_packs_by_uid_and_folder(app_ctx.db, owner_uid, entity_id)
             pack_summaries = []
             seen_pack_ids = set()
             for pack_doc in packs:
@@ -1000,7 +1042,7 @@ def get_public_shared_folder_pack(app_ctx, request, share_token, pack_id):
             return app_ctx.jsonify({'error': 'Shared content not found'}), 404
         folder_id = str(share.get('entity_id', '') or '').strip()
         owner_uid = str(share.get('owner_uid', '') or '').strip()
-        pack_doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
+        pack_doc = app_ctx.repositories.study.get_study_pack_doc(app_ctx.db, pack_id)
         if not pack_doc.exists:
             return app_ctx.jsonify({'error': 'Shared content not found'}), 404
         pack = pack_doc.to_dict() or {}

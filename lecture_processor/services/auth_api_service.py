@@ -7,7 +7,6 @@ from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.auth import session as auth_session
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.billing import credits as billing_credits
-from lecture_processor.domains.physio import access as physio_access
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.shared import parsing as shared_parsing
 from lecture_processor.services import access_service, auth_service
@@ -146,8 +145,8 @@ def dev_sentry_test(app_ctx, request):
 
 def ingest_analytics_event(app_ctx, request):
     data = request.get_json(silent=True) or {}
-    # Authentication is optional for this public telemetry endpoint. Revocation
-    # is enforced by all normal API calls through the runtime default.
+    # Authentication is optional for this public telemetry endpoint. Avoid a
+    # live revocation lookup for best-effort analytics traffic.
     decoded_token = _verify_optional_firebase_token(app_ctx, request)
     uid = decoded_token.get('uid', '') if decoded_token else ''
     email = decoded_token.get('email', '') if decoded_token else ''
@@ -223,7 +222,6 @@ def get_user(app_ctx, request):
         'total_processed': user.get('total_processed', 0),
         'has_created_study_pack': bool(user.get('has_created_study_pack', bool(user.get('total_processed', 0)))),
         'is_admin': app_ctx.is_admin_user(decoded_token),
-        'is_physio_allowed': bool(physio_access.build_physio_access_payload(decoded_token, runtime=app_ctx).get('allowed')),
         'preferences': preferences,
     })
 
@@ -272,7 +270,7 @@ def update_user_preferences(app_ctx, request):
         updates['onboarding_completed'] = bool(payload.get('onboarding_completed'))
 
     try:
-        app_ctx.users_repo.set_doc(app_ctx.db, uid, updates, merge=True)
+        app_ctx.repositories.users.set_doc(app_ctx.db, uid, updates, merge=True)
         user.update(updates)
         return app_ctx.jsonify({'ok': True, 'preferences': shared_parsing.build_user_preferences_payload(user, runtime=app_ctx)})
     except Exception as e:

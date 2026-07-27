@@ -161,8 +161,16 @@ def _refund_interview_feature_failures(batch, row, failed_count, runtime=None):
     if pending <= 0:
         return
     uid = str((batch or {}).get('uid', '') or row.get('uid', '') or '')
+    batch_id = str((batch or {}).get('batch_id', '') or row.get('batch_id', '') or '').strip()
+    row_id = str(row.get('row_id', '') or '').strip()
     receipt_holder = {'billing_receipt': dict(row.get('billing_receipt', {}) or {})}
-    if billing_credits.refund_slides_credits(uid, pending, runtime=resolved_runtime):
+    if billing_credits.refund_slides_credits(
+        uid,
+        pending,
+        runtime=resolved_runtime,
+        idempotency_key=f'batch-row:{batch_id}:{row_id}:interview-extras',
+        idempotency_total=already + pending,
+    ):
         row['interview_features_refunded_count'] = already + pending
         billing_receipts.add_job_credit_refund(
             receipt_holder,

@@ -96,14 +96,27 @@ def _release_pending_import_tokens(app_ctx, uid, token_paths):
             app_ctx.logger.warning('Could not release pending batch audio import token for uid=%s', uid, exc_info=True)
 
 
-def _refund_batch_charges(app_ctx, uid, charged_rows):
+def _refund_batch_charges(app_ctx, uid, batch_id, charged_rows):
     for charged in charged_rows:
         credit_type = str(charged.get('credit_type', '') or '').strip()
+        row_id = str(charged.get('row_id', '') or '').strip()
+        scope = f'batch-row:{batch_id}:{row_id}'
         if credit_type:
-            billing_credits.refund_credit(uid, credit_type, runtime=app_ctx)
+            billing_credits.refund_credit(
+                uid,
+                credit_type,
+                runtime=app_ctx,
+                idempotency_key=f'{scope}:primary',
+            )
         extras = int(charged.get('interview_features_cost', 0) or 0)
         if extras > 0:
-            billing_credits.refund_slides_credits(uid, extras, runtime=app_ctx)
+            billing_credits.refund_slides_credits(
+                uid,
+                extras,
+                runtime=app_ctx,
+                idempotency_key=f'{scope}:interview-extras',
+                idempotency_total=extras,
+            )
 
 
 def _batch_requested_bytes_for_quota(app_ctx, request, row_plans):
@@ -363,7 +376,7 @@ def create_batch_job(app_ctx, request, *, instant=False):
         'pending_import_tokens',
         lambda: _release_pending_import_tokens(app_ctx, uid, pending_import_token_paths),
     )
-    resources.register('credits', lambda: _refund_batch_charges(app_ctx, uid, charged_rows))
+    resources.register('credits', lambda: _refund_batch_charges(app_ctx, uid, batch_id, charged_rows))
 
     try:
         upload_import_audio.cleanup_expired_audio_import_tokens(runtime=app_ctx)
@@ -573,7 +586,12 @@ def create_batch_job(app_ctx, request, *, instant=False):
                     raise ValueError('Not enough interview credits to start this batch.')
                 if interview_features_cost > 0:
                     if not billing_credits.deduct_slides_credits(uid, interview_features_cost, runtime=app_ctx):
-                        billing_credits.refund_credit(uid, charged_credit, runtime=app_ctx)
+                        billing_credits.refund_credit(
+                            uid,
+                            charged_credit,
+                            runtime=app_ctx,
+                            idempotency_key=f'batch-row:{batch_id}:{plan["row_id"]}:primary',
+                        )
                         raise ValueError('Not enough text extraction credits for interview extras in this batch row.')
             elif mode == 'audio-transcription':
                 charged_credit = billing_credits.deduct_interview_credit(uid, runtime=app_ctx)
@@ -592,6 +610,7 @@ def create_batch_job(app_ctx, request, *, instant=False):
 
             charged_rows.append(
                 {
+                    'row_id': plan['row_id'],
                     'credit_type': charged_credit,
                     'interview_features_cost': interview_features_cost,
                 }
@@ -719,7 +738,7 @@ def create_batch_job(app_ctx, request, *, instant=False):
         folder_name = batch_title
         folder_id = ''
         if app_ctx.db is not None:
-            created_folder_ref = app_ctx.study_repo.create_study_folder_doc_ref(app_ctx.db)
+            created_folder_ref = app_ctx.repositories.study.create_study_folder_doc_ref(app_ctx.db)
             created_folder_ref.set({
                 'folder_id': created_folder_ref.id,
                 'uid': uid,

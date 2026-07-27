@@ -310,7 +310,12 @@ def _run_general_transcription_job(app_ctx, job_id: str, audio_path: str, runtim
         uid = failed_job.get('user_id')
         credit_type = failed_job.get('credit_deducted')
         if credit_type:
-            refunded = bool(billing_credits.refund_credit(uid, credit_type, runtime=app_ctx))
+            refunded = bool(billing_credits.refund_credit(
+                uid,
+                credit_type,
+                runtime=app_ctx,
+                idempotency_key=f'runtime-job:{job_id}:primary',
+            ))
             failed_job = get_fields()
             if refunded:
                 billing_receipts.add_job_credit_refund(failed_job, credit_type, 1, runtime=app_ctx)

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Physio Clinical Workspace · Lecture Processor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/physio-launcher.css') }}">
+</head>
+<body>
+  {% set shell_title = 'Physio Clinical Workspace' %}
+  {% include '_app_shell.html' %}
+    <main class="app-shell-page physio-launcher" data-companion-url="{{ companion_url }}">
+      <section class="physio-launcher-card">
+        <span class="physio-launcher-kicker">Local-first · alleen deze Mac</span>
+        <h1>Je klinische werkruimte draait lokaal</h1>
+        <p>Zoeken, anatomie, bronnen en geanonimiseerde casussen blijven op je computer. Deze pagina maakt alleen verbinding met de companion op <code>127.0.0.1</code>.</p>
+        <div class="physio-launcher-status" id="physio-launcher-status" role="status" aria-live="polite">
+          <span class="physio-launcher-dot" aria-hidden="true"></span>
+          <span>Lokale companion controleren…</span>
+        </div>
+        <div class="physio-launcher-actions">
+          <a class="physio-launcher-button primary" id="physio-open-companion" href="{{ companion_url }}">Open werkruimte</a>
+          <button class="physio-launcher-button" type="button" id="physio-retry-companion">Opnieuw verbinden</button>
+        </div>
+        <details>
+          <summary>Companion is niet gestart?</summary>
+          <p>Installeer of start hem eenmalig vanuit de projectmap. Daarna start hij automatisch bij het inloggen.</p>
+          <code>./.venv/bin/python scripts/run_physio_companion.py</code>
+        </details>
+      </section>
+    </main>
+    {% include '_shell_footer.html' %}
+  </div>
+  </div>
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/physio-launcher.js') }}"></script>
+</body>
+</html>

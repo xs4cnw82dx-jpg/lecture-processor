@@ -91,6 +91,26 @@ def test_lecture_topic_required_state_is_programmatic():
     assert re.search(r'id="study-pack-title-input"[\s\S]*?required[\s\S]*?aria-required="true"[\s\S]*?aria-describedby="study-pack-title-error"', index_template)
     assert re.search(r'id="study-pack-title-error"[\s\S]*?role="alert"[\s\S]*?hidden', index_template)
     assert "setStudyPackTitleInvalid(true);" in index_js
+    mode_config_js = Path('static/js/index-mode-config.js').read_text(encoding='utf-8')
+    assert "titleLabel: 'Interview Title / Name'" in mode_config_js
+    assert "titlePlaceholder: 'For example: Participant 4 Research Interview'" in mode_config_js
+
+
+def test_app_shell_mobile_navigation_has_a_stateful_accessible_name():
+    shell_template = Path('templates/_app_shell.html').read_text(encoding='utf-8')
+    shell_js = Path('static/js/app-shell.js').read_text(encoding='utf-8')
+
+    assert 'aria-label="Open main navigation"' in shell_template
+    assert "menuBtn.setAttribute('aria-label', open ? 'Close main navigation' : 'Open main navigation');" in shell_js
+
+
+def test_study_folder_icon_actions_include_the_folder_name():
+    study_js = Path('static/js/study.js').read_text(encoding='utf-8')
+
+    assert "aria-label=\"' + pinLabel + ' ' + safeFolderName + '\"" in study_js
+    assert "aria-label=\"Create subfolder in ' + safeFolderName + '\"" in study_js
+    assert "aria-label=\"Share ' + safeFolderName + '\"" in study_js
+    assert "aria-label=\"Edit ' + safeFolderName + '\"" in study_js
 
 
 def test_study_tools_picker_exposes_expanded_and_selected_state():
@@ -175,19 +195,11 @@ def test_custom_select_upgrades_remove_native_controls_from_tab_order():
     assert "button.setAttribute('aria-labelledby', (fieldLabelId ? fieldLabelId + ' ' : '') + label.id);" in ux_js
 
 
-def test_physio_audio_upload_input_is_not_sequentially_focusable():
-    physio_template = Path('templates/physio.html').read_text(encoding='utf-8')
-
-    assert 'id="physio-audio-input"' in physio_template
-    assert 'tabindex="-1" aria-hidden="true"' in physio_template
-
-
 def test_audio_retention_warnings_and_download_controls_are_present():
     index_template = Path('templates/index.html').read_text(encoding='utf-8')
     batch_template = Path('templates/batch_mode.html').read_text(encoding='utf-8')
     batch_dashboard_template = Path('templates/batch_dashboard.html').read_text(encoding='utf-8')
     transcriber_template = Path('templates/general_transcriber.html').read_text(encoding='utf-8')
-    physio_template = Path('templates/physio.html').read_text(encoding='utf-8')
     voice_template = Path('templates/voice_notes.html').read_text(encoding='utf-8')
     study_dialogs = Path('templates/_study_dialogs.html').read_text(encoding='utf-8')
     shared_study_template = Path('templates/shared_study.html').read_text(encoding='utf-8')
@@ -197,7 +209,6 @@ def test_audio_retention_warnings_and_download_controls_are_present():
     index_js = Path('static/js/index-app.js').read_text(encoding='utf-8')
     batch_js = Path('static/js/batch-mode.js').read_text(encoding='utf-8')
     transcriber_js = Path('static/js/general-transcriber.js').read_text(encoding='utf-8')
-    physio_js = Path('static/js/physio.js').read_text(encoding='utf-8')
     voice_js = Path('static/js/voice-notes.js').read_text(encoding='utf-8')
 
     assert 'id="audio-storage-note"' in index_template
@@ -218,10 +229,6 @@ def test_audio_retention_warnings_and_download_controls_are_present():
     assert 'id="transcriber-audio-retention-note"' in transcriber_template
     assert 'id="transcriber-file-download"' in transcriber_template
     assert 'saveBlobAsFile(selectedFile' in transcriber_js
-
-    assert 'id="physio-audio-download-btn"' in physio_template
-    assert 'raw audio is removed after transcription' in physio_template
-    assert 'downloadSelectedAudio' in physio_js
 
     assert 'id="voice-download-audio-btn"' in voice_template
     assert 'voice-audio-retention-note' in voice_template
@@ -288,7 +295,7 @@ def test_study_folder_rows_do_not_nest_actions_inside_button_role():
     study_js = Path('static/js/study.js').read_text(encoding='utf-8')
 
     assert '<div class="item-head folder-row-head"><button type="button" class="folder-row-main" data-folder-activate="1"' in study_js
-    assert '<span class="folder-head-actions"><button type="button" class="btn folder-mini-btn" data-toggle-pin="1">' in study_js
+    assert '<span class="folder-head-actions"><button type="button" class="btn folder-mini-btn" data-toggle-pin="1" aria-label="' in study_js
 
 
 def test_study_pack_rows_use_real_buttons_for_main_actions():
@@ -310,19 +317,6 @@ def test_study_collapsed_metadata_panel_is_removed_from_focus_order():
     assert 'panel.inert = !isOpen;' in study_js
     assert re.search(r'\.meta-advanced-shell\s*\{[\s\S]*?visibility:\s*hidden;', study_css)
     assert re.search(r'\.meta-advanced-shell\s*\{[\s\S]*?pointer-events:\s*none;', study_css)
-
-
-def test_physio_audio_upload_control_is_keyboard_accessible():
-    physio_template = Path('templates/physio.html').read_text(encoding='utf-8')
-    physio_js = Path('static/js/physio.js').read_text(encoding='utf-8')
-    physio_css = Path('static/css/physio.css').read_text(encoding='utf-8')
-
-    assert 'id="physio-audio-upload-btn">Upload audio</button>' in physio_template
-    assert 'class="physio-file-input" type="file" id="physio-audio-input"' in physio_template
-    assert 'var audioUploadBtn = document.getElementById(\'physio-audio-upload-btn\');' in physio_js
-    assert 'audioUploadBtn.addEventListener(\'click\'' in physio_js
-    assert '.physio-file-input' in physio_css
-    assert '.physio-upload-btn input' not in physio_css
 
 
 def test_shell_export_modal_validation_is_inside_modal_live_region():
@@ -403,12 +397,6 @@ def test_voice_note_filters_and_actions_have_programmatic_names():
     assert 'Delete voice note "' in voice_js
 
 
-def test_physio_case_and_session_selection_exposes_current_state():
-    physio_js = Path('static/js/physio.js').read_text(encoding='utf-8')
-
-    assert physio_js.count("button.setAttribute('aria-current', 'true');") >= 2
-
-
 def test_reader_dropzone_is_keyboard_accessible_and_announced():
     reader_template = Path('templates/reader.html').read_text(encoding='utf-8')
 
@@ -448,7 +436,7 @@ def test_non_study_toasts_and_auth_messages_are_live_regions():
         'lecture_downloader.html',
         'general_transcriber.html',
         'video_overlay_builder.html',
-        'physio.html',
+        'physio_local.html',
         '_index_footer_modals.html',
     ):
         template = Path('templates', template_name).read_text(encoding='utf-8')
@@ -456,6 +444,7 @@ def test_non_study_toasts_and_auth_messages_are_live_regions():
 
     auth_overlay = Path('templates/_index_auth_overlay.html').read_text(encoding='utf-8')
     index_footer_modals = Path('templates/_index_footer_modals.html').read_text(encoding='utf-8')
+    app_shell = Path('templates/_app_shell.html').read_text(encoding='utf-8')
     index_js = Path('static/js/index-app.js').read_text(encoding='utf-8')
 
     assert 'id="auth-overlay" hidden aria-hidden="true"' in auth_overlay
@@ -470,7 +459,7 @@ def test_non_study_toasts_and_auth_messages_are_live_regions():
     assert 'id="reset-error" role="alert" aria-live="assertive" aria-atomic="true"' in auth_overlay
     assert 'id="reset-success" role="status" aria-live="polite" aria-atomic="true"' in auth_overlay
     assert 'id="goal-modal-error" role="alert" aria-live="assertive" aria-atomic="true"' in index_footer_modals
-    assert 'id="delete-account-error" role="alert" aria-live="assertive" aria-atomic="true"' in index_footer_modals
+    assert 'id="shell-delete-account-error" role="alert" aria-live="assertive" aria-atomic="true"' in app_shell
     assert 'id="language-onboarding-error" role="alert" aria-live="assertive" aria-atomic="true"' in index_footer_modals
 
 

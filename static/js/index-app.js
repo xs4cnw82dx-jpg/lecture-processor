@@ -264,68 +264,7 @@ function trackEvent(eventName, properties = {}, options = {}) {
     }).then((response) => response.ok).catch(() => false);
 }
 
-const modeConfig = {
-    'lecture-notes': {
-        description: 'Upload lecture slides and audio to generate complete notes, flashcards, and practice tests from the same lecture.',
-        creditCost: 'Uses <strong>1 lecture credit</strong>',
-        creditType: 'lecture',
-        needsPdf: true,
-        needsAudio: true,
-        pdfTitle: 'Lecture Slides',
-        pdfRequirement: 'Required',
-        pdfRequirementTone: 'required',
-        pdfHelper: 'Required for lecture notes. Upload the slide deck used in the lecture.',
-        audioTitle: 'Lecture Recording',
-        audioRequirement: 'Required',
-        audioRequirementTone: 'required',
-        audioHelper: 'Required for lecture notes. LMS import counts as your audio source.',
-        lmsImportTitle: 'Import from lecture video URL',
-        lmsImportHint: 'Paste the normal lecture video page from your LMS first. Direct playlist links also work.',
-        buttonText: 'Process Lecture',
-        resultTitle: 'Study Dashboard',
-        steps: [{ num: 1, label: 'Extract Slides' }, { num: 2, label: 'Transcribe Audio' }, { num: 3, label: 'Merge Notes' }, { num: 4, label: 'Build Study Tools' }]
-    },
-    'slides-only': {
-        description: 'Upload lecture slides (PDF or PPTX) to run slide extraction and generate clean text notes.',
-        creditCost: 'Uses <strong>1 text extraction credit</strong>',
-        creditType: 'slides',
-        needsPdf: true,
-        needsAudio: false,
-        pdfTitle: 'Lecture Slides',
-        pdfRequirement: 'Required',
-        pdfRequirementTone: 'required',
-        pdfHelper: 'Required in this mode. Audio is not used for slides extraction.',
-        audioTitle: 'Lecture Recording',
-        audioRequirement: 'Optional',
-        audioRequirementTone: 'optional',
-        audioHelper: 'Not used in this mode. Switch to Lecture Notes if you want slides and audio merged together.',
-        lmsImportTitle: 'Import from lecture video URL',
-        lmsImportHint: 'Only needed in Lecture Notes mode.',
-        buttonText: 'Extract Slides',
-        resultTitle: 'Study Dashboard',
-        steps: [{ num: 1, label: 'Extract Text' }, { num: 2, label: 'Build Study Tools' }]
-    },
-    'interview': {
-        description: 'Upload an interview recording to generate a timestamped transcript with speaker identification.',
-        creditCost: 'Uses <strong>1 interview credit</strong> (+ <strong>1 text extraction credit</strong> per selected extra)',
-        creditType: 'interview',
-        needsPdf: false,
-        needsAudio: true,
-        pdfTitle: 'Lecture Slides',
-        pdfRequirement: 'Optional',
-        pdfRequirementTone: 'optional',
-        pdfHelper: 'Slides are not used in interview mode.',
-        audioTitle: 'Interview Recording',
-        audioRequirement: 'Required',
-        audioRequirementTone: 'required',
-        audioHelper: 'Required in this mode. Upload the source audio you want transcribed.',
-        lmsImportTitle: 'Import from lecture video URL',
-        lmsImportHint: 'Use this only when the interview audio is hosted on a supported lecture video page or direct playlist URL.',
-        buttonText: 'Run Interview Transcription',
-        resultTitle: 'Interview Transcription',
-        steps: [{ num: 1, label: 'Transcribe' }]
-    }
-};
+const modeConfig = window.LectureProcessorIndexModeConfig || {};
 
 const UPLOAD_ESTIMATE_COPY = Object.freeze({
     'lecture-notes': 'A 60-minute lecture usually finishes in about 5 minutes. Longer or noisy recordings can take longer.',
@@ -369,13 +308,6 @@ const goalModalInput = document.getElementById('goal-modal-input');
 const goalModalError = document.getElementById('goal-modal-error');
 const goalModalCancelBtn = document.getElementById('goal-modal-cancel-btn');
 const goalModalSaveBtn = document.getElementById('goal-modal-save-btn');
-const deleteAccountOverlay = document.getElementById('delete-account-overlay');
-const deleteAccountClose = document.getElementById('delete-account-close');
-const deleteAccountCancelBtn = document.getElementById('delete-account-cancel-btn');
-const deleteAccountConfirmBtn = document.getElementById('delete-account-confirm-btn');
-const deleteAccountTextInput = document.getElementById('delete-account-text-input');
-const deleteAccountEmailInput = document.getElementById('delete-account-email-input');
-const deleteAccountError = document.getElementById('delete-account-error');
 const creditsDisplay = document.getElementById('credits-display');
 const creditsCount = document.getElementById('credits-count');
 const creditsTooltip = document.getElementById('credits-tooltip');
@@ -390,9 +322,7 @@ const dropdownSlidesCredits = document.getElementById('dropdown-slides-credits')
 const dropdownInterviewCredits = document.getElementById('dropdown-interview-credits');
 const buyCreditsBtn = document.getElementById('buy-credits-btn');
 const purchaseHistoryBtn = document.getElementById('purchase-history-btn');
-const exportDataBtn = document.getElementById('export-data-btn');
 const adminDashboardBtn = document.getElementById('admin-dashboard-btn');
-const deleteAccountBtn = document.getElementById('delete-account-btn');
 const signOutBtn = document.getElementById('sign-out-btn');
 
 const authOverlay = document.getElementById('auth-overlay');
@@ -425,6 +355,7 @@ const backToSignin = document.getElementById('back-to-signin');
 
 const signInRequired = document.getElementById('sign-in-required');
 const signInToProcessBtn = document.getElementById('sign-in-to-process-btn');
+const studyPackTitleLabel = document.getElementById('study-pack-title-label');
 const studyPackTitleInput = document.getElementById('study-pack-title-input');
 const studyPackTitleError = document.getElementById('study-pack-title-error');
 const modeTabs = document.querySelectorAll('.mode-tab');
@@ -740,7 +671,6 @@ async function fetchStudyProgressSummary() {
 
 let activeModalOverlay = null;
 let modalStateStack = [];
-let accountActionInFlight = false;
 let authSubmitBusyKind = '';
 let checkoutCooldownUntilMs = 0;
 let checkoutCooldownTimer = null;
@@ -781,7 +711,6 @@ function requestCloseOverlay(overlay) {
     if (overlay === pricingOverlay) { hidePricingModal(); return; }
     if (overlay === historyOverlay) { hideHistoryModal(); return; }
     if (overlay === goalModalOverlay) { closeGoalModal(); return; }
-    if (overlay === deleteAccountOverlay) { closeDeleteAccountModal(); return; }
     if (overlay === languageOnboardingOverlay) { closeLanguageOnboarding(); return; }
     closeOverlay(overlay);
 }
@@ -2918,7 +2847,7 @@ function updateProcessButton() {
     } else if (!audioReady) {
         disabledReason = 'Add the required audio before processing.';
     } else if (!titleReady) {
-        disabledReason = 'Add a lecture topic or name before processing.';
+        disabledReason = config.missingTitleMessage || 'Add a title or name before processing.';
     } else if (!hasCredits) {
         disabledReason = currentMode === 'interview' && userCredits && getTotalInterviewCredits() > 0 && !hasUnlimitedCredit('slides') && userCredits.slides < getInterviewExtraCost()
             ? 'Not enough text extraction credits for the selected interview extras.'
@@ -2960,6 +2889,9 @@ function switchMode(mode) {
         tab.tabIndex = isActive ? 0 : -1;
     });
     modeDescriptionText.textContent = config.description;
+    if (studyPackTitleLabel) studyPackTitleLabel.textContent = config.titleLabel || 'Title / Name';
+    if (studyPackTitleInput) studyPackTitleInput.placeholder = config.titlePlaceholder || '';
+    if (studyPackTitleError) studyPackTitleError.textContent = `${config.titleLabel || 'Title / Name'} is required.`;
     if (pdfZoneTitle) pdfZoneTitle.textContent = config.pdfTitle || 'Lecture Slides';
     if (pdfZoneBadge) {
         pdfZoneBadge.textContent = config.pdfRequirement || 'Required';
@@ -3471,118 +3403,6 @@ async function refreshActiveRuntimeJobs(force) {
         scheduleRuntimeJobsRefresh(RUNTIME_JOBS_REFRESH_MS);
     }
 }
-async function exportMyAccountData() {
-    if (!currentUser) {
-        showAuthModal('signin');
-        return;
-    }
-    if (accountActionInFlight) return;
-    accountActionInFlight = true;
-    try {
-        const fallbackName = `lecture-processor-account-export-${localDateString()}.json`;
-        await downloadAuthenticatedFile('/api/account/export', fallbackName);
-        showToast('Your data export has been downloaded.', 'success', 5000);
-    } catch (e) {
-        captureClientError(e, 'account_export');
-        showToast(e.message || 'Could not export your data.', 'error', 5000);
-    } finally {
-        accountActionInFlight = false;
-    }
-}
-function setDeleteAccountError(message) {
-    if (!deleteAccountError) return;
-    deleteAccountError.textContent = String(message || '').trim();
-}
-function openDeleteAccountModal() {
-    if (!deleteAccountOverlay) return;
-    const expectedEmail = String((currentUser && currentUser.email) || '').trim();
-    if (deleteAccountTextInput) deleteAccountTextInput.value = '';
-    if (deleteAccountEmailInput) deleteAccountEmailInput.value = expectedEmail;
-    setDeleteAccountError('');
-    if (deleteAccountConfirmBtn) {
-        deleteAccountConfirmBtn.disabled = false;
-        deleteAccountConfirmBtn.textContent = 'Delete permanently';
-    }
-    openOverlay(deleteAccountOverlay);
-    setTimeout(() => {
-        if (deleteAccountTextInput) deleteAccountTextInput.focus();
-    }, 20);
-}
-function closeDeleteAccountModal() {
-    if (!deleteAccountOverlay) return;
-    closeOverlay(deleteAccountOverlay);
-    setDeleteAccountError('');
-}
-async function submitDeleteAccountModal() {
-    if (!currentUser || accountActionInFlight) return;
-    const expectedEmail = String(currentUser.email || '').trim();
-    if (!expectedEmail) {
-        setDeleteAccountError('Could not verify account email. Please sign in again.');
-        return;
-    }
-    const confirmText = String((deleteAccountTextInput && deleteAccountTextInput.value) || '').trim().toUpperCase();
-    if (confirmText !== 'DELETE MY ACCOUNT') {
-        setDeleteAccountError('Type DELETE MY ACCOUNT exactly to continue.');
-        return;
-    }
-    const confirmEmail = String((deleteAccountEmailInput && deleteAccountEmailInput.value) || '').trim().toLowerCase();
-    if (confirmEmail !== expectedEmail.toLowerCase()) {
-        setDeleteAccountError('Email does not match your signed-in account.');
-        return;
-    }
-
-    accountActionInFlight = true;
-    if (deleteAccountConfirmBtn) {
-        deleteAccountConfirmBtn.disabled = true;
-        deleteAccountConfirmBtn.textContent = 'Deleting...';
-    }
-    try {
-        const response = await authenticatedFetch('/api/account/delete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                confirm_text: 'DELETE MY ACCOUNT',
-                confirm_email: expectedEmail,
-            }),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            throw new Error(data.error || 'Could not delete account data.');
-        }
-
-        closeDeleteAccountModal();
-        showToast('Account deleted. Signing out...', 'success', 5000);
-        try {
-            await auth.signOut();
-        } catch (_) { }
-        if (window.indexedDB) {
-            await new Promise((resolve) => {
-                const request = window.indexedDB.deleteDatabase('lecture-processor-voice-notes');
-                request.onsuccess = () => resolve(true);
-                request.onerror = () => resolve(false);
-                request.onblocked = () => resolve(false);
-            });
-        }
-        window.location.href = '/';
-    } catch (e) {
-        captureClientError(e, 'account_delete');
-        setDeleteAccountError(e.message || 'Could not delete account data.');
-    } finally {
-        accountActionInFlight = false;
-        if (deleteAccountConfirmBtn) {
-            deleteAccountConfirmBtn.disabled = false;
-            deleteAccountConfirmBtn.textContent = 'Delete permanently';
-        }
-    }
-}
-async function deleteMyAccountData() {
-    if (!currentUser) {
-        showAuthModal('signin');
-        return;
-    }
-    if (accountActionInFlight) return;
-    openDeleteAccountModal();
-}
 async function pollStatus() {
     if (!currentJobId) return;
     if (pollStartedAt && (Date.now() - pollStartedAt) > POLL_MAX_RUNTIME_MS) {
@@ -3723,7 +3543,7 @@ async function processFiles() {
     const studyPackTitle = getStudyPackTitleValue();
     if (!studyPackTitle) {
         setStudyPackTitleInvalid(true);
-        showToast('Lecture Topic / Name is required.', 'error');
+        showToast(`${config.titleLabel || 'Title / Name'} is required.`, 'error');
         if (studyPackTitleInput && typeof studyPackTitleInput.focus === 'function') {
             studyPackTitleInput.focus();
         }
@@ -4544,48 +4364,6 @@ if (buyCreditsBtn) {
 if (purchaseHistoryBtn) {
     purchaseHistoryBtn.addEventListener('click', () => { setUserDropdownVisible(false); showHistoryModal(); });
 }
-if (exportDataBtn) {
-    exportDataBtn.addEventListener('click', async () => {
-        setUserDropdownVisible(false);
-        await exportMyAccountData();
-    });
-}
-if (deleteAccountBtn) {
-    deleteAccountBtn.addEventListener('click', async () => {
-        setUserDropdownVisible(false);
-        await deleteMyAccountData();
-    });
-}
-if (deleteAccountClose) {
-    deleteAccountClose.addEventListener('click', closeDeleteAccountModal);
-}
-if (deleteAccountCancelBtn) {
-    deleteAccountCancelBtn.addEventListener('click', closeDeleteAccountModal);
-}
-if (deleteAccountConfirmBtn) {
-    deleteAccountConfirmBtn.addEventListener('click', submitDeleteAccountModal);
-}
-if (deleteAccountOverlay) {
-    deleteAccountOverlay.addEventListener('click', (e) => {
-        if (e.target === deleteAccountOverlay) closeDeleteAccountModal();
-    });
-}
-if (deleteAccountTextInput) {
-    deleteAccountTextInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            submitDeleteAccountModal();
-        }
-    });
-}
-if (deleteAccountEmailInput) {
-    deleteAccountEmailInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            submitDeleteAccountModal();
-        }
-    });
-}
 if (headerStudyLibraryBtn) {
     headerStudyLibraryBtn.addEventListener('click', () => {
         setHeaderSidebarVisible(false);
@@ -4846,7 +4624,6 @@ document.addEventListener('keydown', (e) => {
         else if (activeModalOverlay === pricingOverlay) hidePricingModal();
         else if (activeModalOverlay === historyOverlay) hideHistoryModal();
         else if (activeModalOverlay === goalModalOverlay) closeGoalModal();
-        else if (activeModalOverlay === deleteAccountOverlay) closeDeleteAccountModal();
         return;
     }
     if (e.key !== 'Tab') return;

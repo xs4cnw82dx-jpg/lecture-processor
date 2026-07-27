@@ -35,7 +35,12 @@ def _refund_primary_job_credit(job_id, job_data, uid, credit_type, runtime=None)
     resolved_runtime = _resolve_runtime(runtime)
     if not credit_type or bool(job_data.get('credit_refunded', False)):
         return False
-    refunded = bool(billing_credits.refund_credit(uid, credit_type, runtime=resolved_runtime))
+    refunded = bool(billing_credits.refund_credit(
+        uid,
+        credit_type,
+        runtime=resolved_runtime,
+        idempotency_key=f'runtime-job:{job_id}:primary',
+    ))
     if refunded:
         billing_receipts.add_job_credit_refund(job_data, credit_type, 1, runtime=resolved_runtime)
         job_data['credit_refunded'] = True
@@ -59,7 +64,13 @@ def _refund_extra_slides(job_id, job_data, uid, amount, runtime=None):
     if amount_int <= 0:
         return False
     already_refunded = int(job_data.get('extra_slides_refunded', 0) or 0)
-    refunded = bool(billing_credits.refund_slides_credits(uid, amount_int, runtime=resolved_runtime))
+    refunded = bool(billing_credits.refund_slides_credits(
+        uid,
+        amount_int,
+        runtime=resolved_runtime,
+        idempotency_key=f'runtime-job:{job_id}:extras',
+        idempotency_total=already_refunded + amount_int,
+    ))
     if refunded:
         job_data['extra_slides_refunded'] = already_refunded + amount_int
         billing_receipts.add_job_credit_refund(job_data, 'slides_credits', amount_int, runtime=resolved_runtime)

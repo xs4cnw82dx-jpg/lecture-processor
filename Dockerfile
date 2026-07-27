@@ -33,4 +33,4 @@ USER appuser
 
 EXPOSE 10000
 
-CMD ["sh", "-c", "gunicorn --workers ${WEB_CONCURRENCY:-1} --threads ${WEB_THREADS:-2} --timeout 180 --graceful-timeout 30 --bind 0.0.0.0:${PORT:-10000} app:app"]
+CMD ["sh", "-c", "gunicorn --workers ${WEB_CONCURRENCY:-1} --worker-class gthread --threads ${WEB_THREADS:-4} --timeout 180 --graceful-timeout 30 --bind 0.0.0.0:${PORT:-10000} app:app"]

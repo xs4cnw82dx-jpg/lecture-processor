@@ -42,7 +42,7 @@ let learnFlashcardIndex = 0, learnFlashcardFlipped = false, learnQuestionIndex =
 let activeLearnMode = ''; // 'flashcards','test','write','match','notes'
 let orderedFlashcards = [];
 let learnSessionRecorded = false;
-let audioSections = [], audioMap = [], audioReady = false, audioSpeedIndex = 1, audioHiddenForLearn = false;
+let audioSections = [], audioMap = [], audioReady = false, audioSpeedIndex = 1, audioHiddenForLearn = false, audioHiddenForBuilder = false;
 let remoteProgressCardStates = {};
 let progressTimezone = (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
 let progressSyncTimer = null, progressSyncController = null;
@@ -777,7 +777,9 @@ function queueProgressSync(currentPackOnly, options) {
   if (progressSyncTimer) { clearTimeout(progressSyncTimer); }
   progressSyncTimer = setTimeout(function () {
     progressSyncTimer = null;
-    flushProgressSync(!currentPackOnly);
+    // Dirty markers already identify the changed pack. A summary/streak update
+    // must not turn one answer into a full-library upload.
+    flushProgressSync(false);
   }, 700);
 }
 function clampIntervalDays(value) {
@@ -2159,7 +2161,7 @@ function fmtAudioTime(seconds) {
 }
 function updateAudioBarVisibility() {
   if (!audioPlayerBar) return;
-  var shouldShow = audioReady && !audioHiddenForLearn;
+  var shouldShow = audioReady && !audioHiddenForLearn && !audioHiddenForBuilder;
   audioPlayerBar.classList.toggle('visible', shouldShow);
 }
 function setAudioHiddenForLearn(hidden) {
@@ -3118,6 +3120,8 @@ function openBuilderOverlay(mode, pack) {
   markBuilderDirty(false);
   updateBuilderStats();
   updateShareActionAvailability();
+  audioHiddenForBuilder = true;
+  updateAudioBarVisibility();
   openModal(builderOverlay);
   setBodyScrollLocked(true);
 }
@@ -3130,6 +3134,8 @@ function closeBuilderOverlay() {
   builderDraft = null;
   builderPackId = '';
   builderImportParsed = null;
+  audioHiddenForBuilder = false;
+  updateAudioBarVisibility();
   updateShareActionAvailability();
   resetStudyBuilderEntryState();
 }
@@ -4575,14 +4581,15 @@ function renderFolders() {
       }
     }
     var actions = '';
+    var safeFolderName = escapeHtml(String(f.name || 'folder'));
     if (!f.is_builtin) {
       var pinLabel = f.is_pinned ? 'Unpin' : 'Pin';
-      actions = '<span class="folder-head-actions"><button type="button" class="btn folder-mini-btn" data-toggle-pin="1">' + pinLabel + '</button><button type="button" class="btn folder-mini-btn" data-new-subfolder="1">Subfolder</button><button type="button" class="btn folder-mini-btn" data-share-folder="1">Share</button><button type="button" class="btn folder-mini-btn" data-edit-folder="1">Edit</button></span>';
+      actions = '<span class="folder-head-actions"><button type="button" class="btn folder-mini-btn" data-toggle-pin="1" aria-label="' + pinLabel + ' ' + safeFolderName + '">' + pinLabel + '</button><button type="button" class="btn folder-mini-btn" data-new-subfolder="1" aria-label="Create subfolder in ' + safeFolderName + '">Subfolder</button><button type="button" class="btn folder-mini-btn" data-share-folder="1" aria-label="Share ' + safeFolderName + '">Share</button><button type="button" class="btn folder-mini-btn" data-edit-folder="1" aria-label="Edit ' + safeFolderName + '">Edit</button></span>';
     } else if (f.folder_id === BUILTIN_INTERVIEWS_FOLDER_ID || f.folder_id === BUILTIN_VOICE_NOTES_FOLDER_ID || f.folder_id === BUILTIN_ALL_FOLDER_ID) {
-      actions = '<span class="folder-head-actions"><button type="button" class="btn folder-mini-btn" data-new-subfolder="1">Subfolder</button></span>';
+      actions = '<span class="folder-head-actions"><button type="button" class="btn folder-mini-btn" data-new-subfolder="1" aria-label="Create subfolder in ' + safeFolderName + '">Subfolder</button></span>';
     }
     var collapseButton = f.child_count > 0
-      ? '<button type="button" class="folder-collapse-btn" data-folder-collapse aria-label="' + (f.is_collapsed ? 'Expand folder' : 'Collapse folder') + '">' + (f.is_collapsed ? '+' : '-') + '</button>'
+      ? '<button type="button" class="folder-collapse-btn" data-folder-collapse aria-label="' + (f.is_collapsed ? 'Expand ' : 'Collapse ') + safeFolderName + '">' + (f.is_collapsed ? '+' : '-') + '</button>'
       : '<span class="folder-collapse-spacer" aria-hidden="true"></span>';
     setSafeInnerHtml(
       div,

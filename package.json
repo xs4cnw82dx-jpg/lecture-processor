@@ -8,11 +8,14 @@
     "e2e:headed": "playwright test --headed",
     "e2e:install": "playwright install --with-deps chromium",
     "test:client-goals": "node --test tests_js/*.test.js",
+    "lint:js": "eslint static/js scripts tests_js e2e playwright.config.js",
     "build:assets": "node scripts/build_assets.mjs",
     "check:assets": "node scripts/build_assets.mjs --check"
   },
   "devDependencies": {
     "@playwright/test": "1.58.2",
-    "esbuild": "^0.28.1"
+    "esbuild": "^0.28.1",
+    "eslint": "10.8.0",
+    "globals": "17.8.0"
   }
 }

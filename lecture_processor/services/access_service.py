@@ -60,3 +60,49 @@ def require_allowed_user(
     if message:
         payload['message'] = message
     return None, app_ctx.jsonify(payload), 403
+
+
+def require_recent_allowed_user(
+    app_ctx,
+    request,
+    *,
+    max_age_seconds=None,
+    unauthorized_error='Unauthorized',
+):
+    """Require an allowlisted user with a live, recently authenticated token."""
+    try:
+        decoded_token = app_ctx.verify_firebase_token(request, check_revoked=True)
+    except TypeError:
+        decoded_token = app_ctx.verify_firebase_token(request)
+    if not decoded_token:
+        if auth_service.get_request_auth_error(request) == auth_service.EMAIL_NOT_VERIFIED_AUTH_ERROR:
+            response, status = _email_not_verified_response(app_ctx)
+            return None, response, status
+        return None, app_ctx.jsonify({'error': str(unauthorized_error or 'Unauthorized')}), 401
+    if auth_service.token_has_unverified_email(decoded_token):
+        response, status = _email_not_verified_response(app_ctx)
+        return None, response, status
+
+    email = str(decoded_token.get('email', '') or '').strip()
+    if not is_email_allowed(app_ctx, email):
+        return None, app_ctx.jsonify({
+            'error': 'Email not allowed',
+            'message': 'Please use your university email.',
+        }), 403
+
+    configured_age = max_age_seconds
+    if configured_age is None:
+        configured_age = getattr(app_ctx, 'ACCOUNT_RECENT_AUTH_MAX_AGE_SECONDS', 600)
+    try:
+        max_age = max(60, int(configured_age or 600))
+        auth_time = float(decoded_token.get('auth_time'))
+        age_seconds = float(app_ctx.time.time()) - auth_time
+    except (TypeError, ValueError):
+        age_seconds = max_age + 1
+    if age_seconds < -60 or age_seconds > max_age:
+        return None, app_ctx.jsonify({
+            'error': 'Please sign in again before exporting or deleting account data.',
+            'error_code': 'recent_authentication_required',
+            'max_age_seconds': max_age,
+        }), 403
+    return decoded_token, None, None

@@ -1,0 +1,2 @@
+# Local-only companion utility dependency. Do not add it to the hosted image.
+PyYAML==6.0.3

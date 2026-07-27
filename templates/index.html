@@ -46,7 +46,7 @@
                 <div class="processing-main-column">
                     <div class="upload-section" id="upload-section">
                         <div class="field lecture-topic-field" id="lecture-topic-field">
-                            <label class="control-label" for="study-pack-title-input">Lecture Topic / Name</label>
+                            <label class="control-label" id="study-pack-title-label" for="study-pack-title-input">Lecture Topic / Name</label>
                             <input id="study-pack-title-input" class="language-custom-input" placeholder="For example: Cellular Respiration Week 3" maxlength="120" required aria-required="true" aria-describedby="study-pack-title-error">
                             <div class="field-error" id="study-pack-title-error" role="alert" hidden>Lecture Topic / Name is required.</div>
                         </div>
@@ -315,6 +315,7 @@
     <script src="{{ url_for('static', filename='js/index-progress-utils.js') }}"></script>
     <script src="{{ url_for('static', filename=index_results_js_asset or 'js/index-results-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/index-analytics-utils.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/index-mode-config.js') }}"></script>
     <script src="{{ url_for('static', filename=index_js_asset or 'js/index-app.js') }}"></script>
 </body>
 </html>

@@ -75,7 +75,11 @@ def test_voice_note_listing_returns_hydration_page(app, monkeypatch):
         _Doc("voice-3", {"uid": "user-1", "mode": "voice-note", "title": "Third", "created_at": 5}),
     ]
     repo = _VoiceNoteRepo(docs)
-    runtime = SimpleNamespace(db=object(), study_repo=repo, jsonify=jsonify)
+    runtime = SimpleNamespace(
+        db=object(),
+        repositories=SimpleNamespace(study=repo),
+        jsonify=jsonify,
+    )
     monkeypatch.setattr(
         access_service,
         "require_allowed_user",

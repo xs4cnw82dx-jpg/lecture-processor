@@ -51,6 +51,7 @@ def recover_stuck_accounts(db, *, stale_minutes, apply_changes, limit):
     stale_after_seconds = max(60, int(stale_minutes * 60))
     scanned = 0
     recovered = 0
+    retry_required = 0
     skipped_active_jobs = 0
     candidates = 0
 
@@ -71,32 +72,62 @@ def recover_stuck_accounts(db, *, stale_minutes, apply_changes, limit):
         if has_active_jobs(db, uid):
             skipped_active_jobs += 1
             continue
+        deletion_phase = str(state.get('deletion_phase', '') or '').strip().lower()
+        safe_to_restore = deletion_phase == 'requested'
         if apply_changes:
-            payload = dict(state)
-            payload.update({
-                'uid': uid,
-                'email': str(state.get('email', '') or '').strip(),
-                'account_status': 'active',
-                'delete_requested_at': 0,
-                'delete_started_at': 0,
-                'last_delete_failure_at': now_ts,
-                'last_delete_failure_reason': 'Recovered automatically from stuck deletion state.',
-                'updated_at': now_ts,
-            })
-            doc.reference.set(payload, merge=False)
-        recovered += 1
+            if safe_to_restore:
+                doc.reference.set({
+                    'uid': uid,
+                    'email': str(state.get('email', '') or '').strip(),
+                    'account_status': 'active',
+                    'delete_requested_at': 0,
+                    'delete_started_at': 0,
+                    'deletion_phase': '',
+                    'last_delete_failure_at': now_ts,
+                    'last_delete_failure_reason': 'Recovered automatically before destructive deletion began.',
+                    'updated_at': now_ts,
+                }, merge=True)
+                db.collection(account_lifecycle.ACCOUNT_DELETIONS_COLLECTION).document(uid).set({
+                    'uid': uid,
+                    'status': 'cancelled',
+                    'phase': 'cancelled',
+                    'cancelled_at': now_ts,
+                    'updated_at': now_ts,
+                }, merge=True)
+            else:
+                doc.reference.set({
+                    'uid': uid,
+                    'account_status': 'deleting',
+                    'deletion_phase': 'retry_required',
+                    'last_delete_failure_at': now_ts,
+                    'last_delete_failure_reason': 'Deletion state needs a safe retry; data purge may already have started.',
+                    'updated_at': now_ts,
+                }, merge=True)
+                db.collection(account_lifecycle.ACCOUNT_DELETIONS_COLLECTION).document(uid).set({
+                    'uid': uid,
+                    'status': 'retry_required',
+                    'phase': 'retry_required',
+                    'failed_at': now_ts,
+                    'failure_reason': 'Deletion state needs a safe retry; data purge may already have started.',
+                    'updated_at': now_ts,
+                }, merge=True)
+        if safe_to_restore:
+            recovered += 1
+        else:
+            retry_required += 1
 
     return {
         'scanned': scanned,
         'candidates': candidates,
         'recovered': recovered,
+        'retry_required': retry_required,
         'skipped_active_jobs': skipped_active_jobs,
         'mode': 'APPLY' if apply_changes else 'DRY-RUN',
     }
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Recover users stuck in account_status=deleting after failed account deletion.")
+    parser = argparse.ArgumentParser(description="Safely classify users stuck in account_status=deleting after a failed account deletion.")
     parser.add_argument('--apply', action='store_true', help='Write changes. Without this flag the script only reports candidates.')
     parser.add_argument('--stale-minutes', type=int, default=60, help='Minimum age for a deleting state before it can be recovered.')
     parser.add_argument('--limit', type=int, default=500, help='Maximum number of deleting users to scan.')
@@ -110,7 +141,7 @@ def main():
         limit=max(1, args.limit),
     )
     print(
-        "[{mode}] scanned={scanned} candidates={candidates} recovered={recovered} skipped_active_jobs={skipped_active_jobs}".format(
+        "[{mode}] scanned={scanned} candidates={candidates} recovered={recovered} retry_required={retry_required} skipped_active_jobs={skipped_active_jobs}".format(
             **summary
         )
     )

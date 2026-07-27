@@ -24,7 +24,7 @@ def get_planner_settings(app_ctx, request):
     if error_response is not None:
         return error_response, status
     uid = decoded_token['uid']
-    snapshot = app_ctx.planner_repo.get_planner_settings(app_ctx.db, uid)
+    snapshot = app_ctx.repositories.planner.get_planner_settings(app_ctx.db, uid)
     payload = planner_models.sanitize_settings_payload(snapshot.to_dict() if snapshot.exists else {}, runtime=app_ctx)
     payload['updated_at'] = float((snapshot.to_dict() if snapshot.exists else {}).get('updated_at', 0) or 0)
     return app_ctx.jsonify(payload)
@@ -41,7 +41,7 @@ def update_planner_settings(app_ctx, request):
     payload = request.get_json(silent=True) or {}
     if not isinstance(payload, dict):
         return app_ctx.jsonify({'error': 'Invalid payload'}), 400
-    existing = app_ctx.planner_repo.get_planner_settings(app_ctx.db, uid)
+    existing = app_ctx.repositories.planner.get_planner_settings(app_ctx.db, uid)
     merged = planner_models.merge_settings(
         existing.to_dict() if existing.exists else {},
         payload,
@@ -49,7 +49,7 @@ def update_planner_settings(app_ctx, request):
         runtime=app_ctx,
     )
     merged['uid'] = uid
-    app_ctx.planner_repo.set_planner_settings(app_ctx.db, uid, merged, merge=False)
+    app_ctx.repositories.planner.set_planner_settings(app_ctx.db, uid, merged, merge=False)
     return app_ctx.jsonify({'ok': True, 'settings': planner_models.sanitize_settings_payload(merged, runtime=app_ctx), 'updated_at': merged['updated_at']})
 
 
@@ -66,7 +66,7 @@ def list_planner_sessions(app_ctx, request):
     future_only = str(request.args.get('future_only', '0') or '0').strip().lower() in {'1', 'true', 'yes', 'on'}
     tzinfo, _timezone_name = study_progress.resolve_user_timezone(uid, runtime=app_ctx)
     today = study_progress.to_timezone_now(None, tzinfo, runtime=app_ctx).strftime('%Y-%m-%d')
-    records = app_ctx.planner_repo.list_planner_sessions_by_uid(
+    records = app_ctx.repositories.planner.list_planner_sessions_by_uid(
         app_ctx.db,
         uid,
         limit if future_only else 400,
@@ -106,7 +106,7 @@ def upsert_planner_session(app_ctx, request, session_id):
     safe_session_id = planner_models.sanitize_session_id(session_id, runtime=app_ctx)
     if not safe_session_id:
         return app_ctx.jsonify({'error': 'Invalid session id'}), 400
-    existing = app_ctx.planner_repo.get_planner_session(app_ctx.db, uid, safe_session_id)
+    existing = app_ctx.repositories.planner.get_planner_session(app_ctx.db, uid, safe_session_id)
     existing_payload = existing.to_dict() if existing.exists else {}
     if existing.exists and str(existing_payload.get('uid', '') or '') not in {'', uid}:
         return app_ctx.jsonify({'error': 'Forbidden'}), 403
@@ -120,7 +120,7 @@ def upsert_planner_session(app_ctx, request, session_id):
     if safe_payload is None:
         return app_ctx.jsonify({'error': error or 'Invalid session payload'}), 400
     safe_payload['uid'] = uid
-    app_ctx.planner_repo.set_planner_session(app_ctx.db, uid, safe_session_id, safe_payload, merge=False)
+    app_ctx.repositories.planner.set_planner_session(app_ctx.db, uid, safe_session_id, safe_payload, merge=False)
     return app_ctx.jsonify({'ok': True, 'session': safe_payload})
 
 
@@ -135,5 +135,5 @@ def delete_planner_session(app_ctx, request, session_id):
     safe_session_id = planner_models.sanitize_session_id(session_id, runtime=app_ctx)
     if not safe_session_id:
         return app_ctx.jsonify({'error': 'Invalid session id'}), 400
-    app_ctx.planner_repo.delete_planner_session(app_ctx.db, uid, safe_session_id)
+    app_ctx.repositories.planner.delete_planner_session(app_ctx.db, uid, safe_session_id)
     return app_ctx.jsonify({'ok': True})

@@ -108,7 +108,7 @@ def _resolve_folder(app_ctx, uid, folder_id):
     safe_folder_id = str(folder_id or '').strip()
     if not safe_folder_id:
         return ('', '')
-    folder_doc = app_ctx.study_repo.get_study_folder_doc(app_ctx.db, safe_folder_id)
+    folder_doc = app_ctx.repositories.study.get_study_folder_doc(app_ctx.db, safe_folder_id)
     if not getattr(folder_doc, 'exists', False):
         raise ValueError('Folder not found')
     folder = folder_doc.to_dict() or {}
@@ -168,7 +168,7 @@ def list_voice_notes(app_ctx, request):
     after_cursor = str(request.args.get('after', '') or '').strip()
     after_doc = None
     if after_cursor:
-        after_doc = app_ctx.study_repo.get_study_pack_summary_doc(app_ctx.db, after_cursor)
+        after_doc = app_ctx.repositories.study.get_study_pack_summary_doc(app_ctx.db, after_cursor)
         if not getattr(after_doc, 'exists', False):
             return app_ctx.jsonify({'error': 'Invalid voice-note cursor'}), 400
         cursor_payload = after_doc.to_dict() or {}
@@ -178,7 +178,7 @@ def list_voice_notes(app_ctx, request):
         ):
             return app_ctx.jsonify({'error': 'Invalid voice-note cursor'}), 400
 
-    docs = app_ctx.study_repo.list_voice_note_packs_by_uid(
+    docs = app_ctx.repositories.study.list_voice_note_packs_by_uid(
         app_ctx.db,
         uid,
         limit + 1,
@@ -409,7 +409,7 @@ def update_voice_note_metadata(app_ctx, request, pack_id):
     if not isinstance(payload, dict):
         return app_ctx.jsonify({'error': 'Invalid payload'}), 400
 
-    pack_ref = app_ctx.study_repo.study_pack_doc_ref(app_ctx.db, pack_id)
+    pack_ref = app_ctx.repositories.study.study_pack_doc_ref(app_ctx.db, pack_id)
     doc = pack_ref.get()
     if not getattr(doc, 'exists', False):
         return app_ctx.jsonify({'error': 'Study pack not found'}), 404
@@ -443,7 +443,7 @@ def regenerate_voice_note_study_tools(app_ctx, request, pack_id):
     if not billing_credits.has_category_credit(user, 'slides', runtime=app_ctx):
         return app_ctx.jsonify({'error': 'No text extraction credits remaining.'}), 402
 
-    pack_doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
+    pack_doc = app_ctx.repositories.study.get_study_pack_doc(app_ctx.db, pack_id)
     if not getattr(pack_doc, 'exists', False):
         return app_ctx.jsonify({'error': 'Study pack not found'}), 404
     pack = pack_doc.to_dict() or {}

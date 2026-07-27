@@ -77,7 +77,7 @@ def parse_study_pack_limit(raw_value):
 
 
 def get_owned_study_pack(app_ctx, uid, pack_id):
-    doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
+    doc = app_ctx.repositories.study.get_study_pack_doc(app_ctx.db, pack_id)
     if not doc.exists:
         return None, app_ctx.jsonify({'error': 'Study pack not found'}), 404
     pack = doc.to_dict() or {}
@@ -88,7 +88,7 @@ def get_owned_study_pack(app_ctx, uid, pack_id):
 
 def get_study_pack_source_payload(app_ctx, pack_id):
     try:
-        doc = app_ctx.study_repo.get_study_pack_source_doc(app_ctx.db, pack_id)
+        doc = app_ctx.repositories.study.get_study_pack_source_doc(app_ctx.db, pack_id)
     except Exception as error:
         app_ctx.logger.warning('Could not load source outputs for study pack %s: %s', pack_id, error)
         return {}
@@ -100,7 +100,7 @@ def get_study_pack_source_payload(app_ctx, pack_id):
 
 def get_study_pack_source_flags(app_ctx, pack_id):
     try:
-        doc = app_ctx.study_repo.get_study_pack_source_flags_doc(app_ctx.db, pack_id)
+        doc = app_ctx.repositories.study.get_study_pack_source_flags_doc(app_ctx.db, pack_id)
     except Exception as error:
         app_ctx.logger.warning('Could not load source flags for study pack %s: %s', pack_id, error)
         doc = None
@@ -122,7 +122,7 @@ def get_study_pack_source_flags(app_ctx, pack_id):
 
 
 def get_owned_study_folder(app_ctx, uid, folder_id):
-    doc = app_ctx.study_repo.get_study_folder_doc(app_ctx.db, folder_id)
+    doc = app_ctx.repositories.study.get_study_folder_doc(app_ctx.db, folder_id)
     if not doc.exists:
         return None, app_ctx.jsonify({'error': 'Folder not found'}), 404
     folder = doc.to_dict() or {}
@@ -238,7 +238,7 @@ def serialize_public_pack_summary(pack_id, pack):
 def get_public_share(app_ctx, share_token):
     if app_ctx.db is None:
         return None, app_ctx.jsonify({'error': 'Sharing is unavailable'}), 503
-    doc = app_ctx.study_repo.get_study_share_doc(app_ctx.db, share_token)
+    doc = app_ctx.repositories.study.get_study_share_doc(app_ctx.db, share_token)
     if not doc.exists:
         return None, app_ctx.jsonify({'error': 'Shared content not found'}), 404
     share = doc.to_dict() or {}
@@ -253,7 +253,7 @@ def _new_share_token():
 
 def find_share_record(app_ctx, owner_uid, entity_type, entity_id):
     try:
-        docs = app_ctx.study_repo.list_study_shares_by_owner_and_entity(
+        docs = app_ctx.repositories.study.list_study_shares_by_owner_and_entity(
             app_ctx.db,
             owner_uid,
             entity_type,
@@ -269,7 +269,7 @@ def find_share_record(app_ctx, owner_uid, entity_type, entity_id):
             return docs[0]
     except Exception:
         pass
-    return app_ctx.study_repo.find_study_share_by_owner_and_entity(
+    return app_ctx.repositories.study.find_study_share_by_owner_and_entity(
         app_ctx.db,
         owner_uid,
         entity_type,
@@ -290,11 +290,11 @@ def ensure_share_record(app_ctx, owner_uid, entity_type, entity_id, *, requested
             and str(share_payload.get('access_scope', 'private') or 'private').strip().lower() != 'public'
         ):
             share_token = _new_share_token()
-            share_ref = app_ctx.study_repo.create_study_share_doc_ref(app_ctx.db, share_token)
+            share_ref = app_ctx.repositories.study.create_study_share_doc_ref(app_ctx.db, share_token)
             created_at = now_ts
         return share_ref, share_token, now_ts, created_at
     share_token = _new_share_token()
-    share_ref = app_ctx.study_repo.create_study_share_doc_ref(app_ctx.db, share_token)
+    share_ref = app_ctx.repositories.study.create_study_share_doc_ref(app_ctx.db, share_token)
     return share_ref, share_token, now_ts, now_ts
 
 
@@ -302,11 +302,11 @@ def delete_share_for_entity(app_ctx, owner_uid, entity_type, entity_id):
     if app_ctx.db is None:
         return
     try:
-        list_matches = getattr(app_ctx.study_repo, 'list_study_shares_by_owner_and_entity', None)
+        list_matches = getattr(app_ctx.repositories.study, 'list_study_shares_by_owner_and_entity', None)
         if callable(list_matches):
             share_docs = list_matches(app_ctx.db, owner_uid, entity_type, entity_id, limit=100)
         else:
-            share_doc = app_ctx.study_repo.find_study_share_by_owner_and_entity(
+            share_doc = app_ctx.repositories.study.find_study_share_by_owner_and_entity(
                 app_ctx.db,
                 owner_uid,
                 entity_type,

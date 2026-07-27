@@ -62,7 +62,7 @@ def _find_user_doc_by_email(app_ctx, email):
     email_normalized = _normalize_admin_email(email)
     docs = []
     try:
-        docs = app_ctx.users_repo.query_by_email_normalized(app_ctx.db, email_normalized, limit=5)
+        docs = app_ctx.repositories.users.query_by_email_normalized(app_ctx.db, email_normalized, limit=5)
     except Exception as error:
         app_ctx.logger.warning('Admin user email_normalized lookup failed for %s: %s', email_normalized, error)
     doc, data = _select_user_doc_for_email(docs, email_normalized)
@@ -77,7 +77,7 @@ def _find_user_doc_by_email(app_ctx, email):
             continue
         seen.add(safe_candidate)
         try:
-            docs = app_ctx.users_repo.query_by_email(app_ctx.db, safe_candidate, limit=5)
+            docs = app_ctx.repositories.users.query_by_email(app_ctx.db, safe_candidate, limit=5)
         except Exception as error:
             app_ctx.logger.warning('Admin user email lookup failed for %s: %s', safe_candidate, error)
             docs = []
@@ -158,21 +158,21 @@ def _list_admin_credit_grants(app_ctx, *, email='', uid='', limit=20):
     safe_limit = min(max(_to_non_negative_int(limit, default=20), 1), 100)
     try:
         if email:
-            docs = app_ctx.admin_credit_grants_repo.list_by_email_recent(
+            docs = app_ctx.repositories.admin_credit_grants.list_by_email_recent(
                 app_ctx.db,
                 _normalize_admin_email(email),
                 limit=safe_limit,
                 firestore_module=app_ctx.firestore,
             )
         elif uid:
-            docs = app_ctx.admin_credit_grants_repo.list_by_uid_recent(
+            docs = app_ctx.repositories.admin_credit_grants.list_by_uid_recent(
                 app_ctx.db,
                 str(uid or '').strip(),
                 limit=safe_limit,
                 firestore_module=app_ctx.firestore,
             )
         else:
-            docs = app_ctx.admin_credit_grants_repo.list_recent(
+            docs = app_ctx.repositories.admin_credit_grants.list_recent(
                 app_ctx.db,
                 limit=safe_limit,
                 firestore_module=app_ctx.firestore,
@@ -355,7 +355,7 @@ def _build_cost_analysis_payload(app_ctx, normalized_filters):
     docs = []
     used_direct_lookup = False
     if selected_filter_ids and getattr(app_ctx, 'db', None) is not None:
-        docs = app_ctx.admin_repo.get_docs_by_ids(app_ctx.db, 'job_logs', selected_filter_ids)
+        docs = app_ctx.repositories.admin.get_docs_by_ids(app_ctx.db, 'job_logs', selected_filter_ids)
         used_direct_lookup = True
     if not docs:
         docs = admin_metrics.safe_query_docs_in_window(
@@ -716,8 +716,8 @@ def admin_grant_user_credits(app_ctx, request, uid):
     now_ts = _admin_credit_now(app_ctx)
     actor = _admin_actor(decoded)
     note = _note_from_payload(payload)
-    user_ref = app_ctx.users_repo.doc_ref(app_ctx.db, safe_uid)
-    grant_ref = app_ctx.admin_credit_grants_repo.doc_ref(app_ctx.db, grant_id)
+    user_ref = app_ctx.repositories.users.doc_ref(app_ctx.db, safe_uid)
+    grant_ref = app_ctx.repositories.admin_credit_grants.doc_ref(app_ctx.db, grant_id)
 
     try:
         snapshot = user_ref.get()
@@ -796,8 +796,8 @@ def admin_update_user_unlimited(app_ctx, request, uid):
     now_ts = _admin_credit_now(app_ctx)
     actor = _admin_actor(decoded)
     note = _note_from_payload(payload)
-    user_ref = app_ctx.users_repo.doc_ref(app_ctx.db, safe_uid)
-    grant_ref = app_ctx.admin_credit_grants_repo.doc_ref(app_ctx.db, grant_id)
+    user_ref = app_ctx.repositories.users.doc_ref(app_ctx.db, safe_uid)
+    grant_ref = app_ctx.repositories.admin_credit_grants.doc_ref(app_ctx.db, grant_id)
 
     try:
         snapshot = user_ref.get()
@@ -867,7 +867,7 @@ def admin_cleanup_stale_study_audio(app_ctx, request):
     now_ts = app_ctx.time.time()
 
     try:
-        docs = app_ctx.study_repo.list_study_packs_with_audio_flags(app_ctx.db, limit=limit)
+        docs = app_ctx.repositories.study.list_study_packs_with_audio_flags(app_ctx.db, limit=limit)
     except Exception as error:
         app_ctx.logger.error('Admin stale study audio scan failed: %s', error)
         return app_ctx.jsonify({'error': 'Could not scan study packs'}), 500
