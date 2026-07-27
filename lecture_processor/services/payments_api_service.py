@@ -44,6 +44,10 @@ def _checkout_failure_response(app_ctx, status):
         return app_ctx.jsonify({'error': 'Payment is still pending.', 'status': status}), 409
     if status == 'account_deletion_in_progress':
         return app_ctx.jsonify({'error': account_lifecycle.account_write_block_message(runtime=app_ctx), 'status': status}), 409
+    if status == 'account_deleted':
+        return app_ctx.jsonify({'error': 'This account has been deleted. The payment will be refunded.', 'status': status}), 409
+    if status in {'account_state_unavailable', 'transaction_unavailable'}:
+        return app_ctx.jsonify({'error': 'Account status could not be verified. Credits were not granted.', 'status': status}), 503
     if status == 'missing_checkout_metadata':
         return app_ctx.jsonify({'error': 'Missing checkout metadata.'}), 400
     if status == 'missing_session_id':
@@ -55,6 +59,44 @@ def _checkout_failure_response(app_ctx, status):
     if str(status or '').startswith('checkout_') or status in {'invalid_checkout_session', 'missing_checkout_line_items'}:
         return app_ctx.jsonify({'error': 'Checkout session did not match the selected credit bundle.', 'status': status}), 400
     return app_ctx.jsonify({'error': 'Could not grant credits.'}), 500
+
+
+def _refund_deleted_account_checkout(app_ctx, session):
+    session_id = str(session.get('id', '') or '').strip()
+    payment_intent = session.get('payment_intent')
+    if isinstance(payment_intent, dict):
+        payment_intent = payment_intent.get('id', '')
+    payment_intent = str(payment_intent or '').strip()
+    if not session_id or not payment_intent:
+        app_ctx.logger.error(
+            'Deleted-account checkout %s is missing its payment intent; manual reconciliation is required.',
+            session_id,
+        )
+        return False
+    try:
+        refund = app_ctx.stripe.Refund.create(
+            payment_intent=payment_intent,
+            metadata={'reason': 'account_deleted', 'checkout_session_id': session_id},
+            idempotency_key=f'deleted-account-checkout-{session_id}',
+        )
+        refund_id = str(getattr(refund, 'id', '') or (refund.get('id', '') if isinstance(refund, dict) else ''))
+        app_ctx.repositories.purchases.set_doc(
+            app_ctx.db,
+            session_id,
+            {
+                'uid': '',
+                'stripe_session_id': session_id,
+                'payment_status': 'refunded_deleted_account',
+                'user_erased': True,
+                'stripe_refund_id': refund_id,
+                'refunded_at': app_ctx.time.time(),
+            },
+            merge=True,
+        )
+        return True
+    except Exception:
+        app_ctx.logger.error('Could not refund deleted-account checkout %s', session_id, exc_info=True)
+        return False
 
 
 def _retrieve_checkout_session_for_fulfillment(app_ctx, session_id):
@@ -216,6 +258,11 @@ def stripe_webhook(app_ctx, request):
         elif not ok and status == 'account_deletion_in_progress':
             app_ctx.logger.warning("⚠️ Checkout session %s could not be fulfilled because account deletion is in progress.", session.get('id', ''))
             return 'Account deletion in progress', 409
+        elif not ok and status == 'account_deleted':
+            if not _refund_deleted_account_checkout(app_ctx, session):
+                return 'Deleted-account payment refund failed', 500
+            app_ctx.logger.warning('Refunded checkout session %s because the account was deleted.', session.get('id', ''))
+            return 'Account deleted; payment refunded', 200
         elif not ok and (str(status or '').startswith('checkout_') or status in {
             'missing_checkout_metadata',
             'missing_session_id',
@@ -248,7 +295,7 @@ def get_purchase_history(app_ctx, request):
     if disallowed_response is not None:
         return disallowed_response
     try:
-        purchases_docs = app_ctx.purchases_repo.list_by_uid_recent(app_ctx.db, uid, 50, app_ctx.firestore)
+        purchases_docs = app_ctx.repositories.purchases.list_by_uid_recent(app_ctx.db, uid, 50, app_ctx.firestore)
         purchases = []
         for doc in purchases_docs:
             p = doc.to_dict()

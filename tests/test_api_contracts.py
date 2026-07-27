@@ -552,6 +552,51 @@ def test_stripe_webhook_returns_retryable_status_for_failed_fulfillment(client, 
     assert response.status_code == expected_status
 
 
+def test_stripe_webhook_refunds_payment_instead_of_recreating_deleted_account(client, monkeypatch):
+    monkeypatch.setattr(core, "STRIPE_WEBHOOK_SECRET", "whsec_test")
+    session = {
+        "id": "sess_deleted",
+        "payment_intent": "pi_deleted",
+        "metadata": {"uid": "deleted-user", "bundle_id": "lecture_5"},
+    }
+    event = {"type": "checkout.session.completed", "data": {"object": session}}
+    refunds = []
+    purchase_updates = []
+    monkeypatch.setattr(core.stripe.Webhook, "construct_event", lambda *_args, **_kwargs: event)
+    monkeypatch.setattr(core.stripe.checkout.Session, "retrieve", lambda _session_id, **_kwargs: session)
+    monkeypatch.setattr(
+        core.stripe.Refund,
+        "create",
+        lambda **kwargs: refunds.append(dict(kwargs)) or {"id": "re_deleted"},
+    )
+    monkeypatch.setattr(
+        core.purchases_repo,
+        "set_doc",
+        lambda _db, session_id, payload, merge=False: purchase_updates.append((session_id, dict(payload), merge)),
+    )
+    monkeypatch.setattr(
+        billing_purchases,
+        "process_checkout_session_credits",
+        lambda _session, runtime=None: (False, "account_deleted"),
+    )
+
+    response = client.post(
+        "/api/stripe-webhook",
+        data=b"{}",
+        headers={"Content-Type": "application/json", "Stripe-Signature": "sig"},
+    )
+
+    assert response.status_code == 200
+    assert refunds == [{
+        "payment_intent": "pi_deleted",
+        "metadata": {"reason": "account_deleted", "checkout_session_id": "sess_deleted"},
+        "idempotency_key": "deleted-account-checkout-sess_deleted",
+    }]
+    assert purchase_updates[0][0] == "sess_deleted"
+    assert purchase_updates[0][1]["payment_status"] == "refunded_deleted_account"
+    assert purchase_updates[0][1]["uid"] == ""
+
+
 def test_study_pack_get_missing_returns_404(client, monkeypatch):
     class _MissingDoc:
         exists = False
@@ -1913,7 +1958,7 @@ def test_admin_cost_analysis_contract_fields(client, monkeypatch):
 def test_admin_route_requires_server_session_cookie(client):
     response = client.get("/admin", follow_redirects=False)
     assert response.status_code in {302, 301}
-    assert response.headers.get("Location", "").endswith("/dashboard")
+    assert response.headers.get("Location", "").endswith("/dashboard?notice=admin-session-required")
 
 
 def test_admin_session_login_sets_cookie(client, monkeypatch):

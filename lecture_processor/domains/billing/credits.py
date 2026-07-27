@@ -1,3 +1,5 @@
+import hashlib
+
 from lecture_processor.runtime.container import get_runtime
 
 CREDIT_CATEGORIES = ('lecture', 'slides', 'interview')
@@ -238,10 +240,98 @@ def deduct_interview_credit(uid, runtime=None):
     return _deduct_in_transaction(transaction, user_ref)
 
 
-def refund_credit(uid, credit_type, runtime=None):
+def _refund_ledger_ref(db, uid, idempotency_key):
+    digest = hashlib.sha256(f'{uid}:{idempotency_key}'.encode('utf-8')).hexdigest()
+    return db.collection('credit_refunds').document(digest)
+
+
+def _apply_idempotent_refund(
+    uid,
+    credit_type,
+    target_amount,
+    idempotency_key,
+    *,
+    adjust_total_processed,
+    runtime=None,
+):
+    resolved_runtime = _resolve_runtime(runtime)
+    db = getattr(resolved_runtime, 'db', None)
+    if db is None or not hasattr(db, 'transaction'):
+        resolved_runtime.logger.error('Cannot apply idempotent credit refund without a Firestore transaction.')
+        return False
+    try:
+        target_amount = max(0, int(target_amount or 0))
+    except Exception:
+        return False
+    if not uid or not credit_type or target_amount <= 0 or not idempotency_key:
+        return False
+
+    user_ref = resolved_runtime.users_repo.doc_ref(db, uid)
+    ledger_ref = _refund_ledger_ref(db, uid, idempotency_key)
+    now_ts = float(resolved_runtime.time.time())
+
+    @resolved_runtime.firestore.transactional
+    def _refund(txn):
+        ledger_snapshot = ledger_ref.get(transaction=txn)
+        ledger_data = ledger_snapshot.to_dict() or {} if getattr(ledger_snapshot, 'exists', False) else {}
+        previous_amount = max(0, int(ledger_data.get('amount', 0) or 0))
+        if previous_amount >= target_amount:
+            return True
+
+        user_snapshot = user_ref.get(transaction=txn)
+        if not getattr(user_snapshot, 'exists', False):
+            return False
+        user_data = user_snapshot.to_dict() or {}
+        delta = target_amount - previous_amount
+        updates = {}
+        if not is_unlimited_for_credit_type(user_data, credit_type, runtime=resolved_runtime):
+            updates[credit_type] = resolved_runtime.firestore.Increment(delta)
+        if adjust_total_processed:
+            updates['total_processed'] = resolved_runtime.firestore.Increment(-delta)
+        if updates:
+            txn.update(user_ref, updates)
+        txn.set(
+            ledger_ref,
+            {
+                'key_hash': hashlib.sha256(str(idempotency_key).encode('utf-8')).hexdigest(),
+                'uid_hash': hashlib.sha256(str(uid).encode('utf-8')).hexdigest(),
+                'credit_type': str(credit_type),
+                'amount': target_amount,
+                'updated_at': now_ts,
+            },
+            merge=True,
+        )
+        return True
+
+    try:
+        return bool(_refund(db.transaction()))
+    except Exception:
+        resolved_runtime.logger.error(
+            "Failed idempotent refund for user %s and credit '%s'",
+            uid,
+            credit_type,
+            exc_info=True,
+        )
+        return False
+
+
+def refund_credit(uid, credit_type, runtime=None, *, idempotency_key=''):
     resolved_runtime = _resolve_runtime(runtime)
     if not uid or not credit_type:
         return False
+
+    if idempotency_key:
+        refunded = _apply_idempotent_refund(
+            uid,
+            credit_type,
+            1,
+            idempotency_key,
+            adjust_total_processed=True,
+            runtime=resolved_runtime,
+        )
+        if refunded:
+            resolved_runtime.logger.info("Refunded '%s' idempotently for user %s.", credit_type, uid)
+        return refunded
 
     try:
         user_doc = resolved_runtime.users_repo.get_doc(resolved_runtime.db, uid)
@@ -298,10 +388,23 @@ def deduct_slides_credits(uid, amount, runtime=None):
     return _deduct_in_transaction(transaction, user_ref)
 
 
-def refund_slides_credits(uid, amount, runtime=None):
+def refund_slides_credits(uid, amount, runtime=None, *, idempotency_key='', idempotency_total=None):
     resolved_runtime = _resolve_runtime(runtime)
     if not uid or amount <= 0:
         return False
+    if idempotency_key:
+        target_amount = amount if idempotency_total is None else idempotency_total
+        refunded = _apply_idempotent_refund(
+            uid,
+            'slides_credits',
+            target_amount,
+            idempotency_key,
+            adjust_total_processed=False,
+            runtime=resolved_runtime,
+        )
+        if refunded:
+            resolved_runtime.logger.info('Refunded slides credits idempotently for user %s.', uid)
+        return refunded
     try:
         user_doc = resolved_runtime.users_repo.get_doc(resolved_runtime.db, uid)
     except Exception:

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from flask import current_app
 
 from .clients import RuntimeClients, build_clients
+from .repositories import RuntimeRepositories
 from .settings import AppSettings
 
 if TYPE_CHECKING:
@@ -21,6 +22,7 @@ class AppRuntime:
     clients: RuntimeClients
     core: object
     runtime_jobs: RuntimeJobsCapability = field(init=False)
+    repositories: RuntimeRepositories = field(init=False)
 
     def __post_init__(self):
         # Import only after runtime.core has finished initializing. Importing
@@ -29,6 +31,7 @@ class AppRuntime:
         from lecture_processor.domains.runtime_jobs.capability import RuntimeJobsCapabilityAdapter
 
         self.runtime_jobs = RuntimeJobsCapabilityAdapter(self.core)
+        self.repositories = RuntimeRepositories(self.core)
 
     @property
     def db(self):

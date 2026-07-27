@@ -266,7 +266,7 @@ def test_anonymous_analytics_always_enforces_ip_limit_before_session_id(client, 
     assert keys[1] != keys[3]
 
 
-def test_runtime_token_verification_checks_revocation_by_default(monkeypatch):
+def test_runtime_token_verification_avoids_live_revocation_lookup_by_default(monkeypatch):
     captured = []
     monkeypatch.setattr(
         core.auth_service,
@@ -275,7 +275,7 @@ def test_runtime_token_verification_checks_revocation_by_default(monkeypatch):
     )
 
     assert core.verify_firebase_token(object()) == {'uid': 'u1'}
-    assert captured == [True]
+    assert captured == [False]
 
 
 def test_checkout_rate_limited_returns_retry_after(client, monkeypatch):
@@ -801,7 +801,8 @@ def test_upload_requires_study_pack_title_for_processing_modes(client, monkeypat
     )
 
     assert response.status_code == 400
-    assert response.get_json()["error"] == "Lecture Topic / Name is required."
+    expected_label = "Interview Title / Name" if mode == "interview" else "Lecture Topic / Name"
+    assert response.get_json()["error"] == f"{expected_label} is required."
     assert len(released) == 1
     assert released[0][0] == "title-u1"
 
@@ -1225,7 +1226,7 @@ def test_account_export_requires_auth(client):
 
 
 def test_account_export_returns_json_attachment(client, monkeypatch):
-    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u6", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u6", "email": "user@gmail.com", "auth_time": core.time.time()})
     monkeypatch.setattr(
         account_lifecycle,
         "collect_user_export_payload",
@@ -1253,7 +1254,7 @@ def test_account_export_bundle_requires_auth(client):
 
 
 def test_account_export_bundle_rejects_empty_selection(client, monkeypatch):
-    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "bundle-u1", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "bundle-u1", "email": "user@gmail.com", "auth_time": core.time.time()})
 
     response = client.post(
         "/api/account/export-bundle",
@@ -1265,7 +1266,78 @@ def test_account_export_bundle_rejects_empty_selection(client, monkeypatch):
     assert "select at least one export option" in response.get_json()["error"].lower()
 
 
-def test_account_export_bundle_returns_selected_folders_and_files(client, monkeypatch):
+def test_account_export_requires_live_recent_authentication(client, monkeypatch):
+    revocation_checks = []
+
+    def _verify_token(_request, check_revoked=False):
+        revocation_checks.append(check_revoked)
+        return {
+            "uid": "stale-export-user",
+            "email": "user@gmail.com",
+            "auth_time": core.time.time() - core.ACCOUNT_RECENT_AUTH_MAX_AGE_SECONDS - 1,
+        }
+
+    monkeypatch.setattr(core, "verify_firebase_token", _verify_token)
+
+    response = client.post(
+        "/api/account/export-bundle",
+        json={"scope": "account", "include": {"account_json": True}},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 403
+    assert response.get_json()["error_code"] == "recent_authentication_required"
+    assert revocation_checks == [True]
+
+
+def test_account_export_queue_backpressure_is_explicit(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "queue-u", "email": "user@gmail.com", "auth_time": core.time.time()})
+    monkeypatch.setattr(core, "UPLOAD_FOLDER", str(tmp_path))
+
+    def _queue_full(*_args, **_kwargs):
+        raise JobQueueFullError("full")
+
+    monkeypatch.setattr(core, "submit_background_job", _queue_full)
+
+    response = client.post(
+        "/api/account/export-bundle",
+        json={"scope": "account", "include": {"account_json": True}},
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 503
+    assert "queue is busy" in response.get_json()["error"].lower()
+
+
+def test_account_export_status_hides_other_users_jobs(client, monkeypatch):
+    core.jobs["account-export-private"] = {
+        "job_id": "account-export-private",
+        "job_scope": "account-export",
+        "user_id": "owner-u",
+        "status": "completed",
+    }
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "other-u", "email": "user@gmail.com"})
+
+    response = client.get(
+        "/api/account/exports/account-export-private",
+        headers={"Authorization": "Bearer dev"},
+    )
+
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "Export not found"
+
+
+def _download_completed_bundle_export(client, queued_response):
+    assert queued_response.status_code == 202
+    queued_payload = queued_response.get_json()
+    status_response = client.get(queued_payload["status_url"], headers={"Authorization": "Bearer dev"})
+    assert status_response.status_code == 200
+    status_payload = status_response.get_json()
+    assert status_payload["status"] == "completed"
+    return client.get(status_payload["download_url"], headers={"Authorization": "Bearer dev"})
+
+
+def test_account_export_bundle_returns_selected_folders_and_files(client, monkeypatch, tmp_path):
     class _PackDoc:
         def __init__(self, pack_id, payload):
             self.id = pack_id
@@ -1274,7 +1346,9 @@ def test_account_export_bundle_returns_selected_folders_and_files(client, monkey
         def to_dict(self):
             return dict(self._payload)
 
-    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "bundle-u2", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "bundle-u2", "email": "user@gmail.com", "auth_time": core.time.time()})
+    monkeypatch.setattr(core, "UPLOAD_FOLDER", str(tmp_path))
+    monkeypatch.setattr(core, "submit_background_job", lambda target, *args, **kwargs: target(*args, **kwargs))
     monkeypatch.setattr(
         core.study_repo,
         "list_study_packs_by_uid",
@@ -1309,9 +1383,10 @@ def test_account_export_bundle_returns_selected_folders_and_files(client, monkey
         headers={"Authorization": "Bearer dev"},
     )
 
-    assert response.status_code == 200
-    assert response.mimetype == "application/zip"
-    with zipfile.ZipFile(io.BytesIO(response.data), "r") as archive:
+    download = _download_completed_bundle_export(client, response)
+    assert download.status_code == 200
+    assert download.mimetype == "application/zip"
+    with zipfile.ZipFile(io.BytesIO(download.data), "r") as archive:
         names = set(archive.namelist())
     assert "flashcards_csv/" in names
     assert "account_json/" in names
@@ -1323,7 +1398,7 @@ def test_account_export_bundle_returns_selected_folders_and_files(client, monkey
     assert not any(name.startswith("lecture_notes_pdf_unmarked/") for name in names)
 
 
-def test_account_export_bundle_marked_and_unmarked_pdf_flags_are_independent(client, monkeypatch):
+def test_account_export_bundle_marked_and_unmarked_pdf_flags_are_independent(client, monkeypatch, tmp_path):
     class _PackDoc:
         def __init__(self, pack_id, payload):
             self.id = pack_id
@@ -1332,7 +1407,9 @@ def test_account_export_bundle_marked_and_unmarked_pdf_flags_are_independent(cli
         def to_dict(self):
             return dict(self._payload)
 
-    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "bundle-u3", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "bundle-u3", "email": "user@gmail.com", "auth_time": core.time.time()})
+    monkeypatch.setattr(core, "UPLOAD_FOLDER", str(tmp_path))
+    monkeypatch.setattr(core, "submit_background_job", lambda target, *args, **kwargs: target(*args, **kwargs))
     monkeypatch.setattr(
         core.study_repo,
         "list_study_packs_by_uid",
@@ -1361,8 +1438,9 @@ def test_account_export_bundle_marked_and_unmarked_pdf_flags_are_independent(cli
         json={"scope": "account", "include": {"lecture_notes_pdf_marked": True}},
         headers={"Authorization": "Bearer dev"},
     )
-    assert marked_only.status_code == 200
-    with zipfile.ZipFile(io.BytesIO(marked_only.data), "r") as archive:
+    marked_download = _download_completed_bundle_export(client, marked_only)
+    assert marked_download.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(marked_download.data), "r") as archive:
         marked_names = set(archive.namelist())
     assert any(name.startswith("lecture_notes_pdf_marked/") and name.endswith("-marked.pdf") for name in marked_names)
     assert not any(name.startswith("lecture_notes_pdf_unmarked/") and name.endswith("-unmarked.pdf") for name in marked_names)
@@ -1372,14 +1450,15 @@ def test_account_export_bundle_marked_and_unmarked_pdf_flags_are_independent(cli
         json={"scope": "account", "include": {"lecture_notes_pdf_unmarked": True}},
         headers={"Authorization": "Bearer dev"},
     )
-    assert unmarked_only.status_code == 200
-    with zipfile.ZipFile(io.BytesIO(unmarked_only.data), "r") as archive:
+    unmarked_download = _download_completed_bundle_export(client, unmarked_only)
+    assert unmarked_download.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(unmarked_download.data), "r") as archive:
         unmarked_names = set(archive.namelist())
     assert any(name.startswith("lecture_notes_pdf_unmarked/") and name.endswith("-unmarked.pdf") for name in unmarked_names)
     assert not any(name.startswith("lecture_notes_pdf_marked/") and name.endswith("-marked.pdf") for name in unmarked_names)
 
 
-def test_account_export_bundle_limits_heavy_exports_and_writes_warning_manifest(client, monkeypatch):
+def test_account_export_bundle_limits_heavy_exports_and_writes_warning_manifest(client, monkeypatch, tmp_path):
     class _PackDoc:
         def __init__(self, pack_id, payload):
             self.id = pack_id
@@ -1388,7 +1467,9 @@ def test_account_export_bundle_limits_heavy_exports_and_writes_warning_manifest(
         def to_dict(self):
             return dict(self._payload)
 
-    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "bundle-u4", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "bundle-u4", "email": "user@gmail.com", "auth_time": core.time.time()})
+    monkeypatch.setattr(core, "UPLOAD_FOLDER", str(tmp_path))
+    monkeypatch.setattr(core, "submit_background_job", lambda target, *args, **kwargs: target(*args, **kwargs))
     monkeypatch.setattr(core, "ACCOUNT_EXPORT_MAX_CSV_PACKS", 1)
     monkeypatch.setattr(core, "ACCOUNT_EXPORT_MAX_DOCX_PACKS", 1)
     monkeypatch.setattr(core, "ACCOUNT_EXPORT_MAX_PDF_PACKS", 1)
@@ -1416,8 +1497,9 @@ def test_account_export_bundle_limits_heavy_exports_and_writes_warning_manifest(
         headers={"Authorization": "Bearer dev"},
     )
 
-    assert response.status_code == 200
-    with zipfile.ZipFile(io.BytesIO(response.data), "r") as archive:
+    download = _download_completed_bundle_export(client, response)
+    assert download.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(download.data), "r") as archive:
         names = set(archive.namelist())
         warnings_payload = json.loads(archive.read("export_warnings.json").decode("utf-8"))
     assert "export_warnings.json" in names
@@ -1432,7 +1514,7 @@ def test_account_export_bundle_limits_heavy_exports_and_writes_warning_manifest(
 
 
 def test_account_delete_rejects_bad_confirmation_text(client, monkeypatch):
-    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u7", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u7", "email": "user@gmail.com", "auth_time": core.time.time()})
 
     response = client.post(
         "/api/account/delete",
@@ -1445,7 +1527,7 @@ def test_account_delete_rejects_bad_confirmation_text(client, monkeypatch):
 
 
 def test_account_delete_rejects_when_active_jobs_exist(client, monkeypatch):
-    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u8", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u8", "email": "user@gmail.com", "auth_time": core.time.time()})
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 1)
 
     response = client.post(
@@ -1469,9 +1551,13 @@ def test_account_delete_success_path_returns_ok(client, monkeypatch, tmp_path):
         def delete(self):
             return None
 
-    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u9", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u9", "email": "user@gmail.com", "auth_time": core.time.time()})
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
     monkeypatch.setattr(account_lifecycle, "mark_account_deletion_requested", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(account_lifecycle, "mark_account_data_purge_started", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(account_lifecycle, "mark_account_auth_delete_pending", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(account_lifecycle, "mark_account_auth_deleted", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(account_lifecycle, "mark_account_deletion_complete", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(account_lifecycle, "query_docs_by_field", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(account_lifecycle, "has_docs_by_field", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(account_lifecycle, "remove_upload_artifacts_for_job_ids", lambda _job_ids, runtime=None: 0)
@@ -1594,9 +1680,13 @@ def test_account_delete_exhaustively_deletes_paginated_docs(client, monkeypatch)
         _ = runtime
         return any(str(payload.get(field_name, "")) == str(field_value) for payload in store.get(collection_name, {}).values())
 
-    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-delete", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-delete", "email": "user@gmail.com", "auth_time": core.time.time()})
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
     monkeypatch.setattr(account_lifecycle, "mark_account_deletion_requested", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(account_lifecycle, "mark_account_data_purge_started", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(account_lifecycle, "mark_account_auth_delete_pending", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(account_lifecycle, "mark_account_auth_deleted", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(account_lifecycle, "mark_account_deletion_complete", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(account_lifecycle, "query_docs_by_field", _query_docs_by_field)
     monkeypatch.setattr(account_lifecycle, "has_docs_by_field", _has_docs_by_field)
     monkeypatch.setattr(
@@ -1657,7 +1747,7 @@ def test_account_delete_exhaustively_deletes_paginated_docs(client, monkeypatch)
     assert removed_artifact_sets and len(removed_artifact_sets[0]) == 101
 
 
-def test_account_delete_failure_restores_account_status(client, monkeypatch):
+def test_account_delete_failure_after_purge_requires_retry_without_restoring_account(client, monkeypatch):
     class _FakeProgressSnapshot:
         exists = False
 
@@ -1669,8 +1759,9 @@ def test_account_delete_failure_restores_account_status(client, monkeypatch):
             return None
 
     set_doc_calls = []
+    retry_calls = []
 
-    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-restore", "email": "user@gmail.com"})
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-restore", "email": "user@gmail.com", "auth_time": core.time.time()})
     monkeypatch.setattr(core, "db", object())
     monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
     monkeypatch.setattr("lecture_processor.runtime.hooks.batch_orchestrator.run_startup_batch_recovery_once", lambda runtime=None: None)
@@ -1702,6 +1793,17 @@ def test_account_delete_failure_restores_account_status(client, monkeypatch):
             False,
         )) or True,
     )
+    monkeypatch.setattr(account_lifecycle, "mark_account_data_purge_started", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(account_lifecycle, "mark_account_auth_delete_pending", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        account_lifecycle,
+        "mark_account_deletion_retry_required",
+        lambda _uid, email="", reason="", runtime=None: retry_calls.append({
+            "uid": _uid,
+            "email": email,
+            "reason": str(reason),
+        }) or True,
+    )
     monkeypatch.setattr(account_lifecycle, "query_docs_by_field", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(account_lifecycle, "has_docs_by_field", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(account_lifecycle, "remove_upload_artifacts_for_job_ids", lambda _job_ids, runtime=None: 0)
@@ -1719,11 +1821,10 @@ def test_account_delete_failure_restores_account_status(client, monkeypatch):
 
     assert response.status_code == 500
     assert set_doc_calls[0][0]["account_status"] == "deleting"
-    restored_payload = set_doc_calls[-1][0]
-    assert restored_payload["account_status"] == "active"
-    assert restored_payload["delete_requested_at"] == 0
-    assert restored_payload["delete_started_at"] == 0
-    assert "auth delete failed" in restored_payload["last_delete_failure_reason"]
+    assert len(set_doc_calls) == 1
+    assert retry_calls[0]["uid"] == "u-restore"
+    assert "auth delete failed" in retry_calls[0]["reason"]
+    assert response.get_json()["status"] == "deletion_retry_required"
 
 
 def test_merge_streak_data_keeps_most_recent_progress_day():
@@ -2959,7 +3060,7 @@ def test_voice_note_study_tools_dispatch_failure_refunds_study_credit(
     monkeypatch.setattr(
         billing_credits,
         "refund_slides_credits",
-        lambda uid, amount, runtime=None: refunds.append((uid, amount)) or True,
+        lambda uid, amount, runtime=None, **_kwargs: refunds.append((uid, amount)) or True,
     )
 
     def _raise_on_submit(*_args, **_kwargs):

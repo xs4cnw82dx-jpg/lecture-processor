@@ -2,6 +2,7 @@
   margin: 0;
   min-height: 100vh;
   overflow: hidden;
+  overflow-x: clip;
   background: #f5f7fb;
   color: #111827;
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -16,6 +17,8 @@
   height: 100dvh;
   padding: 12px;
   overflow: hidden;
+  width: 100%;
+  max-width: 100vw;
 }
 
 .overlay-builder-page *,
@@ -161,6 +164,7 @@
   background: #ffffff;
   padding: 14px 16px;
   box-shadow: 0 16px 36px rgba(15, 23, 42, 0.07);
+  min-width: 0;
 }
 
 .overlay-builder-title {
@@ -1595,6 +1599,16 @@
 @media (max-width: 760px) {
   .overlay-builder-page {
     padding: 8px;
+    width: 100%;
+    max-width: 100vw;
+  }
+
+  .overlay-project-controls,
+  .overlay-project-field,
+  .overlay-project-field input,
+  .overlay-builder-actions {
+    min-width: 0;
+    max-width: 100%;
   }
 
   .overlay-builder-topbar,
@@ -1628,11 +1642,20 @@
 
   .overlay-stage-frame {
     min-height: 260px;
+    max-width: 100%;
+    overflow-x: auto;
   }
 
   .overlay-field-grid,
   .overlay-field-grid.compact {
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .overlay-field-grid,
+  .overlay-field-grid.compact {
+    grid-template-columns: 1fr;
   }
 }
 

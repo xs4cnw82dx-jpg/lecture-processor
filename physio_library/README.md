@@ -1,36 +1,26 @@
-# Physio Library
+# Physio Library (local artifacts only)
 
-This folder contains the repo-managed knowledge base for Physio Assistant.
+Clinical source documents and generated indexes must not be committed to this
+repository. They can contain large copyrighted binaries and private study data.
 
-## Structure
+The supported Physio companion stores its private working data under:
 
-- `sources/guidelines/`
-- `sources/study-guides/`
-- `sources/forms/`
-- `index/manifest.json`
-
-## Add Documents
-
-1. Put source files into one of the `sources/` folders.
-2. Supported source formats:
-   - `.pdf`
-   - `.docx`
-   - `.pptx`
-   - `.txt`
-   - `.md`
-3. Run:
-
-```bash
-./.venv/bin/python scripts/build_physio_library.py
+```text
+~/Library/Application Support/Lecture Processor/Physio/
 ```
 
-The script extracts text, chunks it, creates embeddings, and writes the deployable index to `physio_library/index/manifest.json`.
+Use `scripts/build_physio_source_manifest.py` to create the local reviewed
+manifest. Use the source manager in the local workspace to import, review, and
+index documents. The repository keeps only these empty directories so tooling
+can refer to stable paths during migration.
 
-## Access Control
+The binaries removed in July 2026 were copied and checksum-verified at:
 
-Physio Assistant access is controlled via:
+```text
+~/Library/Application Support/Lecture Processor/Physio/
+  Legacy Repo Library Backup 2026-07-27/
+```
 
-- `config/physio_allowed_emails.json`
-- or the `PHYSIO_ALLOWED_EMAILS` environment variable
-
-For local development, `allow_local_dev` can stay `true`. Before deploying to production, add the owner email to the allowlist or set `PHYSIO_ALLOWED_EMAILS`.
+Do not rewrite Git history as part of an ordinary feature PR. If the historical
+repository size must also be reduced, coordinate a separately backed-up history
+rewrite with every collaborator.

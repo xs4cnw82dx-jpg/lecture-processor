@@ -74,28 +74,28 @@ def _serialize_run_doc(doc):
 
 
 def _load_codes(app_ctx, uid):
-    docs = app_ctx.study_repo.list_interview_codes_by_uid(app_ctx.db, uid)
+    docs = app_ctx.repositories.study.list_interview_codes_by_uid(app_ctx.db, uid)
     codes = [_serialize_code_doc(doc) for doc in docs if getattr(doc, 'exists', False)]
     codes.sort(key=lambda item: (str(item.get('parent_code_id', '') or ''), str(item.get('name', '') or '').lower()))
     return codes
 
 
 def _load_quotations(app_ctx, uid, pack_id):
-    docs = app_ctx.study_repo.list_interview_quotations_by_uid_and_pack(app_ctx.db, uid, pack_id)
+    docs = app_ctx.repositories.study.list_interview_quotations_by_uid_and_pack(app_ctx.db, uid, pack_id)
     quotations = [_serialize_quotation_doc(doc) for doc in docs if getattr(doc, 'exists', False)]
     quotations.sort(key=lambda item: (int(item.get('start_offset', 0) or 0), int(item.get('end_offset', 0) or 0)))
     return quotations
 
 
 def _load_latest_runs(app_ctx, uid, pack_id):
-    docs = app_ctx.study_repo.list_interview_ai_coding_runs_by_uid_and_pack(app_ctx.db, uid, pack_id)
+    docs = app_ctx.repositories.study.list_interview_ai_coding_runs_by_uid_and_pack(app_ctx.db, uid, pack_id)
     runs = [_serialize_run_doc(doc) for doc in docs if getattr(doc, 'exists', False)]
     runs.sort(key=lambda item: float(item.get('created_at', 0) or 0), reverse=True)
     return runs
 
 
 def _owned_code_doc(app_ctx, uid, code_id):
-    doc = app_ctx.study_repo.get_interview_code_doc(app_ctx.db, code_id)
+    doc = app_ctx.repositories.study.get_interview_code_doc(app_ctx.db, code_id)
     if not doc.exists:
         return None, app_ctx.jsonify({'error': 'Code not found'}), 404
     payload = doc.to_dict() or {}
@@ -105,7 +105,7 @@ def _owned_code_doc(app_ctx, uid, code_id):
 
 
 def _owned_quotation_doc(app_ctx, uid, pack_id, quotation_id):
-    doc = app_ctx.study_repo.get_interview_quotation_doc(app_ctx.db, quotation_id)
+    doc = app_ctx.repositories.study.get_interview_quotation_doc(app_ctx.db, quotation_id)
     if not doc.exists:
         return None, app_ctx.jsonify({'error': 'Quotation not found'}), 404
     payload = doc.to_dict() or {}
@@ -195,7 +195,7 @@ def create_code(app_ctx, request, pack_id):
     if parent_error is not None:
         return parent_error, parent_status
     now_ts = app_ctx.time.time()
-    doc_ref = app_ctx.study_repo.create_interview_code_doc_ref(app_ctx.db)
+    doc_ref = app_ctx.repositories.study.create_interview_code_doc_ref(app_ctx.db)
     doc_ref.set({
         'code_id': doc_ref.id,
         'uid': uid,
@@ -260,14 +260,14 @@ def delete_code(app_ctx, request, pack_id, code_id):
     if error_response is not None:
         return error_response, status
     now_ts = app_ctx.time.time()
-    for quotation_doc in app_ctx.study_repo.list_interview_quotations_by_uid_and_pack(app_ctx.db, uid, pack_id):
+    for quotation_doc in app_ctx.repositories.study.list_interview_quotations_by_uid_and_pack(app_ctx.db, uid, pack_id):
         quotation = quotation_doc.to_dict() or {}
         code_ids = [str(item or '').strip() for item in quotation.get('code_ids', []) if str(item or '').strip() and str(item or '').strip() != code_id]
         if code_ids:
             quotation_doc.reference.update({'code_ids': code_ids, 'updated_at': now_ts})
         else:
             quotation_doc.reference.delete()
-    for child in app_ctx.study_repo.list_interview_codes_by_uid(app_ctx.db, uid):
+    for child in app_ctx.repositories.study.list_interview_codes_by_uid(app_ctx.db, uid):
         child_payload = child.to_dict() or {}
         if str(child_payload.get('parent_code_id', '') or '').strip() == code_id:
             child.reference.update({'parent_code_id': '', 'updated_at': now_ts})
@@ -297,7 +297,7 @@ def merge_code(app_ctx, request, pack_id, source_code_id):
     if error_response is not None:
         return error_response, status
     now_ts = app_ctx.time.time()
-    for quotation_doc in app_ctx.study_repo.list_interview_quotations_by_uid_and_pack(app_ctx.db, uid, pack_id):
+    for quotation_doc in app_ctx.repositories.study.list_interview_quotations_by_uid_and_pack(app_ctx.db, uid, pack_id):
         quotation = quotation_doc.to_dict() or {}
         code_ids = []
         changed = False
@@ -310,7 +310,7 @@ def merge_code(app_ctx, request, pack_id, source_code_id):
                 code_ids.append(safe_id)
         if changed:
             quotation_doc.reference.update({'code_ids': code_ids, 'updated_at': now_ts})
-    for child in app_ctx.study_repo.list_interview_codes_by_uid(app_ctx.db, uid):
+    for child in app_ctx.repositories.study.list_interview_codes_by_uid(app_ctx.db, uid):
         child_payload = child.to_dict() or {}
         if str(child_payload.get('parent_code_id', '') or '').strip() == source_code_id:
             child.reference.update({'parent_code_id': target_code_id, 'updated_at': now_ts})
@@ -340,7 +340,7 @@ def create_quotation(app_ctx, request, pack_id):
     if quote_payload is None:
         return app_ctx.jsonify({'error': 'Quotation must include a valid text range and at least one code'}), 400
     now_ts = app_ctx.time.time()
-    doc_ref = app_ctx.study_repo.create_interview_quotation_doc_ref(app_ctx.db)
+    doc_ref = app_ctx.repositories.study.create_interview_quotation_doc_ref(app_ctx.db)
     doc_ref.set({
         'quotation_id': doc_ref.id,
         'uid': uid,
@@ -433,7 +433,7 @@ def start_ai_coding_run(app_ctx, request, pack_id):
         return app_ctx.jsonify({'error': 'Could not reserve text extraction credits for AI coding. Please try again.'}), 402
 
     now_ts = app_ctx.time.time()
-    run_ref = app_ctx.study_repo.create_interview_ai_coding_run_doc_ref(app_ctx.db)
+    run_ref = app_ctx.repositories.study.create_interview_ai_coding_run_doc_ref(app_ctx.db)
     run_payload = {
         'run_id': run_ref.id,
         'uid': uid,
@@ -515,7 +515,13 @@ def start_ai_coding_run(app_ctx, request, pack_id):
         })
         return app_ctx.jsonify({'ok': True, 'run': _serialize_run_doc(run_ref.get())})
     except Exception as error:
-        billing_credits.refund_slides_credits(uid, credit_cost, runtime=app_ctx)
+        billing_credits.refund_slides_credits(
+            uid,
+            credit_cost,
+            runtime=app_ctx,
+            idempotency_key=f'interview-coding-run:{run_ref.id}:credits',
+            idempotency_total=credit_cost,
+        )
         app_ctx.logger.exception('AI interview coding failed for pack %s', pack_id)
         run_ref.update({
             'status': 'failed',
@@ -526,7 +532,7 @@ def start_ai_coding_run(app_ctx, request, pack_id):
 
 
 def _owned_run_doc(app_ctx, uid, pack_id, run_id):
-    doc = app_ctx.study_repo.get_interview_ai_coding_run_doc(app_ctx.db, run_id)
+    doc = app_ctx.repositories.study.get_interview_ai_coding_run_doc(app_ctx.db, run_id)
     if not doc.exists:
         return None, app_ctx.jsonify({'error': 'AI coding run not found'}), 404
     payload = doc.to_dict() or {}
@@ -570,7 +576,7 @@ def accept_ai_coding_run(app_ctx, request, pack_id, run_id):
         if name_key in existing_by_name:
             code_id_by_ref[temp_id] = existing_by_name[name_key]['code_id']
             continue
-        code_ref = app_ctx.study_repo.create_interview_code_doc_ref(app_ctx.db)
+        code_ref = app_ctx.repositories.study.create_interview_code_doc_ref(app_ctx.db)
         payload = {
             'code_id': code_ref.id,
             'uid': uid,
@@ -613,7 +619,7 @@ def accept_ai_coding_run(app_ctx, request, pack_id, run_id):
         )
         if quote_payload is None:
             continue
-        quote_ref = app_ctx.study_repo.create_interview_quotation_doc_ref(app_ctx.db)
+        quote_ref = app_ctx.repositories.study.create_interview_quotation_doc_ref(app_ctx.db)
         quote_ref.set({
             'quotation_id': quote_ref.id,
             'uid': uid,

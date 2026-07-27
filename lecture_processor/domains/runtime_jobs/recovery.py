@@ -146,7 +146,12 @@ def recover_stale_runtime_jobs(runtime=None):
         already_refunded = bool(job_data.get('credit_refunded', False))
         if uid and credit_type and (not already_refunded):
             try:
-                primary_refunded = bool(billing_credits.refund_credit(uid, credit_type, runtime=resolved_runtime))
+                primary_refunded = bool(billing_credits.refund_credit(
+                    uid,
+                    credit_type,
+                    runtime=resolved_runtime,
+                    idempotency_key=f'runtime-job:{job_id}:primary',
+                ))
             except Exception:
                 primary_refunded = False
             if primary_refunded:
@@ -161,7 +166,13 @@ def recover_stale_runtime_jobs(runtime=None):
         extra_to_refund = max(0, extra_spent - extra_refunded)
         if uid and extra_to_refund > 0:
             try:
-                extras_refunded = bool(billing_credits.refund_slides_credits(uid, extra_to_refund, runtime=resolved_runtime))
+                extras_refunded = bool(billing_credits.refund_slides_credits(
+                    uid,
+                    extra_to_refund,
+                    runtime=resolved_runtime,
+                    idempotency_key=f'runtime-job:{job_id}:extras',
+                    idempotency_total=extra_refunded + extra_to_refund,
+                ))
             except Exception:
                 extras_refunded = False
             if extras_refunded:

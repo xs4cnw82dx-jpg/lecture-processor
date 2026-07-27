@@ -4,6 +4,7 @@ venv_py39_backup/
 node_modules/
 uploads/
 physio_library/sources/
+physio_library/index/
 functions/node_modules/
 functions/lib/
 .git/

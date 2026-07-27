@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Physio Clinical Workspace</title>
+  <link rel="stylesheet" href="/static/css/physio-local.css">
+</head>
+<body>
+  <div class="clinical-app" data-api-base="/api/local/physio">
+    <header class="clinical-header">
+      <div class="clinical-brand">
+        <span class="clinical-mark" aria-hidden="true">P</span>
+        <div><strong>Physio</strong><span>Clinical workspace</span></div>
+      </div>
+      <form class="clinical-search" id="clinical-search-form" role="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 4 4"></path></svg>
+        <label class="sr-only" for="clinical-search-input">Zoek in de kennisbank</label>
+        <input id="clinical-search-input" type="search" autocomplete="off" placeholder="Zoek klacht, test, structuur, afkorting of Latijnse naam…">
+        <kbd>⌘ K</kbd>
+        <button type="submit">Zoek</button>
+      </form>
+      <div class="clinical-status" id="clinical-connection" role="status">
+        <span aria-hidden="true"></span><strong>Lokaal</strong><small>controleren…</small>
+      </div>
+    </header>
+
+    <aside class="clinical-rail" aria-label="Kennisbanknavigatie">
+      <div class="rail-head"><span>Regio's</span><button id="refresh-index" type="button" title="Index vernieuwen" aria-label="Index vernieuwen">↻</button></div>
+      <div class="body-map" aria-label="Klikbare lichaamsregio's">
+        <svg viewBox="0 0 180 360" role="img" aria-labelledby="body-map-title">
+          <title id="body-map-title">Lichaamsregio kiezen</title>
+          <g class="body-outline">
+            <circle cx="90" cy="30" r="20"></circle>
+            <path d="M90 50 L90 64 M58 78 Q90 60 122 78 M90 65 L90 164 M58 78 L38 145 L28 205 M122 78 L142 145 L152 205"></path>
+            <path class="body-pelvis" d="M68 160 Q90 178 112 160 M70 161 L65 184 M110 161 L115 184"></path>
+            <path d="M66 181 L68 250 L58 329 M114 181 L112 250 L122 329"></path>
+            <path class="body-feet" d="M58 329 L43 340 M122 329 L137 340"></path>
+          </g>
+          <g class="body-hotspots">
+            <circle data-region="kaak-hoofd" cx="90" cy="31" r="18"><title>Kaak en hoofd</title></circle>
+            <circle data-region="nek" cx="90" cy="58" r="13"><title>Nek</title></circle>
+            <circle data-region="schouder" cx="63" cy="78" r="17"><title>Schouder</title></circle>
+            <circle data-region="schouder" cx="117" cy="78" r="17"><title>Schouder</title></circle>
+            <circle data-region="elleboog" cx="39" cy="143" r="13"><title>Elleboog</title></circle>
+            <circle data-region="elleboog" cx="141" cy="143" r="13"><title>Elleboog</title></circle>
+            <circle data-region="pols-hand" cx="28" cy="205" r="13"><title>Pols en hand</title></circle>
+            <circle data-region="pols-hand" cx="152" cy="205" r="13"><title>Pols en hand</title></circle>
+            <circle data-region="thoracaal" cx="90" cy="105" r="22"><title>Thoracaal</title></circle>
+            <circle data-region="lumbaal" cx="90" cy="145" r="23"><title>Lumbaal</title></circle>
+            <circle data-region="bekken-heup" cx="69" cy="178" r="17"><title>Bekken en heup</title></circle>
+            <circle data-region="bekken-heup" cx="111" cy="178" r="17"><title>Bekken en heup</title></circle>
+            <circle data-region="knie" cx="68" cy="250" r="16"><title>Knie</title></circle>
+            <circle data-region="knie" cx="112" cy="250" r="16"><title>Knie</title></circle>
+            <circle data-region="enkel-voet" cx="58" cy="329" r="17"><title>Enkel en voet</title></circle>
+            <circle data-region="enkel-voet" cx="122" cy="329" r="17"><title>Enkel en voet</title></circle>
+          </g>
+        </svg>
+        <span id="body-map-label">Schouder geselecteerd</span>
+      </div>
+      <nav class="region-list" id="region-list">
+        <button class="is-active" data-region="schouder"><span>Schouder</span></button>
+      </nav>
+      <div class="rail-label">Filter op type</div>
+      <div class="type-filters" id="type-filters">
+        <button class="is-active" data-type="">Alles</button>
+        <button data-type="condition">Aandoeningen</button>
+        <button data-type="test">Tests</button>
+        <button data-type="structure">Anatomie</button>
+        <button data-type="intervention">Interventies</button>
+        <button data-type="measure">Meetinstrumenten</button>
+        <button data-type="source">Bronnen</button>
+      </div>
+      <div class="privacy-note"><span aria-hidden="true">⌂</span><p><strong>Privé op deze Mac</strong>Vault, index, bronnen en casussen verlaten deze computer niet bij normaal gebruik.</p></div>
+    </aside>
+
+    <main class="clinical-main">
+      <div class="workspace-tabs" role="tablist" aria-label="Werkruimte">
+        <button class="is-active" data-view="knowledge" role="tab">Kennisbank</button>
+        <button data-view="sources" role="tab">Bronnen beheren</button>
+        <button data-view="graph" role="tab">Verbanden</button>
+        <button data-view="cases" role="tab">Casussen</button>
+      </div>
+
+      <section class="workspace-view is-active" data-view-panel="knowledge">
+        <div class="portal-hero" id="portal-hero">
+          <div><span class="eyebrow">Regioportaal</span><h1>Schouder</h1><p>Snel van presentatie naar screening, onderzoek, klinische afweging en plan.</p></div>
+          <div class="portal-actions"><button id="open-portal-note" type="button">Open portaalnotitie</button><button class="primary" id="deep-search" type="button">Diep zoeken met Codex</button></div>
+        </div>
+        <div class="portal-shortcut-intro"><strong>Snel naar onderdeel</strong><span>Deze knoppen openen direct het gekozen hoofdstuk van het huidige regioportaal.</span></div>
+        <div class="portal-shortcuts" id="portal-shortcuts">
+          <button data-section="screening"><span>01</span><strong>Screening</strong><small>Rode vlaggen en verwijzen</small></button>
+          <button data-section="anamnese"><span>02</span><strong>Anamnese</strong><small>Vragen en patronen</small></button>
+          <button data-section="onderzoek"><span>03</span><strong>Onderzoek</strong><small>Observatie, functie en tests</small></button>
+          <button data-section="differentiaal"><span>04</span><strong>Differentiaal</strong><small>Hypothesen vergelijken</small></button>
+          <button data-section="behandeling"><span>05</span><strong>Behandeling</strong><small>Interventies en progressie</small></button>
+          <button data-section="herbeoordeling"><span>06</span><strong>Herbeoordeling</strong><small>Uitkomst en vervolg</small></button>
+        </div>
+        <div class="result-head"><div><h2 id="result-title">Klinische startpunten</h2><span id="result-count">Laden…</span><small>Klik een resultaat om de volledige notitie en bronnen te openen.</small></div><label><input id="include-unreviewed" type="checkbox"> Toon reviewwachtrij</label></div>
+        <div class="result-list" id="search-results" aria-live="polite"></div>
+      </section>
+
+      <section class="workspace-view" data-view-panel="sources">
+        <div class="section-title source-title">
+          <div><span class="eyebrow">Lokale bronnenbibliotheek</span><h1>Bronnen beheren</h1><p>Sleep bestanden hierheen. De companion kiest een map; jij kunt categorie, status en metadata altijd aanpassen.</p></div>
+          <div class="source-steps" aria-label="Bronnenworkflow"><span><b>1</b> Importeer</span><span><b>2</b> Controleer metadata</span><span><b>3</b> Activeer</span></div>
+        </div>
+        <form id="source-upload-form" class="source-upload-form">
+          <label class="source-dropzone" id="source-dropzone" for="source-file-input">
+            <input id="source-file-input" name="files" type="file" multiple>
+            <span class="source-drop-icon" aria-hidden="true">＋</span>
+            <strong>Sleep bestanden hierheen</strong>
+            <small>of klik om bestanden te kiezen · de originele upload wordt als lokale bronkopie bewaard</small>
+          </label>
+          <div class="source-upload-controls"><label>Categorie<select id="source-upload-category" name="category"><option value="">Automatisch bepalen</option></select></label><button class="primary" type="submit">Importeer selectie</button></div>
+          <div id="source-upload-progress" class="source-upload-progress" aria-live="polite"></div>
+        </form>
+        <div class="source-manager-modes">
+          <div class="source-view-switch" role="group" aria-label="Bronnenweergave">
+            <button class="is-active" data-source-view-mode="all" type="button">Alle bronnen</button>
+            <button data-source-view-mode="region" type="button">Per regio</button>
+          </div>
+          <label id="source-region-filter-wrap" hidden>Regio<select id="source-region-filter"><option value="schouder">Schouder</option></select></label>
+          <p id="source-view-help">Bekijk en beheer de volledige lokale bronnenbibliotheek.</p>
+        </div>
+        <div class="source-manager-toolbar">
+          <input id="source-manager-search" type="search" placeholder="Zoek op titel, bestandsnaam of categorie…">
+          <select id="source-status-filter" aria-label="Filter bronstatus"><option value="">Alle statussen</option><option value="pending">Te beoordelen</option><option value="reviewed">Gereviewd</option><option value="active" selected>Actief gebruikt</option><option value="rejected">Afgewezen</option></select>
+          <span id="source-manager-count">0 bronnen</span>
+          <button id="auto-triage-sources" type="button" title="Deelt alleen bronnen in waarvan regio en type duidelijk uit bestandsnaam of bronmap volgen">Beoordeel duidelijke bronnen</button>
+          <button id="reload-sources" type="button">Vernieuwen</button>
+        </div>
+        <div class="source-manager-board"><div id="source-manager-list" class="source-manager-list"><div class="empty-state">Open dit tabblad om je bronnen te laden.</div></div><aside id="source-manager-editor" class="source-manager-editor"><div class="empty-state">Selecteer een bron om metadata en reviewstatus aan te passen.</div></aside></div>
+      </section>
+
+      <section class="workspace-view" data-view-panel="graph">
+        <div class="section-title graph-title"><div><span class="eyebrow">Lokale graaf</span><h1>Verbanden rond de huidige notitie</h1><p>Bewuste links helpen je van anatomie en tests naar klinische toepassing.</p></div><button type="button" id="global-graph">Toon volledige graaf</button></div>
+        <div class="graph-shell"><svg id="clinical-graph" viewBox="0 0 900 560" role="img" aria-label="Kennisgraaf"></svg><div class="empty-state" id="graph-empty">Open eerst een notitie om de lokale verbanden te zien.</div></div>
+      </section>
+
+      <section class="workspace-view" data-view-panel="cases">
+        <div class="section-title"><span class="eyebrow">Jouw klinische werkruimte</span><h1>Lokale casussen</h1><p>Jij bepaalt welke context voldoende geanonimiseerd is. Opslaan gebeurt lokaal; versturen naar Codex alleen na een expliciete actie.</p></div>
+        <div class="case-board"><div><button class="primary wide" id="create-case" type="button">Nieuwe casus</button><div id="case-list" class="case-list"></div></div><div id="case-editor" class="case-editor"><div class="empty-state">Selecteer of maak een casus.</div></div></div>
+      </section>
+    </main>
+
+    <aside class="clinical-context" id="clinical-context" aria-label="Casus en detail">
+      <button class="context-close" id="close-context" type="button" aria-label="Sluit detailpaneel">×</button>
+      <section class="context-card active-case-card">
+        <div class="context-card-head"><span>Actieve casus</span><button id="open-cases" type="button">Beheren</button></div>
+        <select id="active-case-select" aria-label="Actieve casus"><option value="">Geen casus geselecteerd</option></select>
+        <div class="case-mini" id="active-case-summary"><p>Pin kennis vanuit een notitie in je werkplan.</p></div>
+      </section>
+      <section class="context-card reader-card" id="note-reader">
+        <div class="reader-empty"><span>⌘</span><h2>Open een resultaat</h2><p>Hier verschijnen de volledige notitie, bronverwijzingen en gerelateerde concepten.</p></div>
+      </section>
+    </aside>
+    <button class="context-backdrop" id="context-backdrop" type="button" aria-label="Sluit detailpaneel" tabindex="-1"></button>
+  </div>
+
+  <dialog id="deep-dialog" class="clinical-dialog">
+    <form method="dialog" class="dialog-head"><div><span class="eyebrow">Expliciete Codex-actie</span><h2>Diep zoeken</h2></div><button value="cancel" aria-label="Sluiten">×</button></form>
+    <p>Codex ontvangt je vraag, de hieronder opgenomen casuscontext, relevante gereviewde vault-notities en passende passages uit actieve lokale bronnen. De huidige regio krijgt voorrang, maar relevante algemene bronnen blijven vindbaar.</p>
+    <div class="deep-fields">
+      <label>Bestaande casus gebruiken<select id="deep-case-select"><option value="">Geen casus geselecteerd</option></select></label>
+      <label>Casuscontext<textarea id="deep-case-context" rows="6" placeholder="Plak hier geanonimiseerde presentatie, bevindingen en verloop, of kies hierboven een opgeslagen casus."></textarea></label>
+      <label>Klinische vraag<textarea id="deep-query-input" rows="4" placeholder="Welke klinische vraag wil je uitzoeken?"></textarea></label>
+    </div>
+    <div class="dialog-actions"><button id="cancel-deep-job" type="button" hidden>Stop</button><button class="primary" id="run-deep-query" type="button">Zoek in actieve bronnen</button></div>
+    <article id="deep-answer" class="deep-answer" aria-live="polite"></article>
+  </dialog>
+
+  <dialog id="media-dialog" class="media-dialog"><form method="dialog"><button value="close" aria-label="Sluiten">×</button></form><div id="media-viewer"></div></dialog>
+  <div class="toast" id="clinical-toast" role="status" aria-live="polite" aria-atomic="true"></div>
+  <script src="/static/js/physio-local.js"></script>
+</body>
+</html>

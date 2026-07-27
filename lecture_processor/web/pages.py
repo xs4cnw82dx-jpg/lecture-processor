@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from flask import Blueprint, abort, redirect, render_template, request, send_from_directory
 
 from lecture_processor.domains.auth import session as auth_session
@@ -179,16 +181,12 @@ def _render_study_page(*, entry_mode: str = '', page_key: str = 'study', shell_t
     )
 
 
-def _render_physio_page(page_key: str, title: str, subtitle: str, page_mode: str):
+def _render_physio_launcher():
     runtime = get_runtime()
     return render_template(
-        'physio.html',
-        physio_page_key=page_key,
-        physio_page_title=title,
-        physio_page_subtitle=subtitle,
-        physio_page_mode=page_mode,
-        physio_js_asset=runtime.resolve_js_asset('js/physio.js'),
-        **_shell_context(runtime=runtime, page_key=page_key),
+        'physio_launcher.html',
+        companion_url=(os.getenv('PHYSIO_COMPANION_URL', '') or 'http://127.0.0.1:8765/physio').rstrip('/'),
+        **_shell_context(runtime=runtime, page_key='physio-local'),
     )
 
 
@@ -453,7 +451,7 @@ def admin_dashboard():
     if not decoded_token:
         if runtime.ADMIN_PAGE_UNAUTHORIZED_MODE == '404':
             abort(404)
-        return redirect('/dashboard')
+        return redirect('/dashboard?notice=admin-session-required')
     return render_template('admin.html', admin_js_asset=runtime.resolve_js_asset('js/admin.js'))
 
 
@@ -522,57 +520,32 @@ def study_pack_builder_page():
 
 @pages_bp.route('/physio')
 def physio_page():
-    return redirect('/physio/soap', code=302)
+    return _render_physio_launcher()
 
 
 @pages_bp.route('/physio/soap')
 def physio_soap_page():
-    return _render_physio_page(
-        'physio-soap',
-        'SOAP Notes',
-        'Transcribe consultations, generate a SOAP structure, and save sessions inside each case.',
-        'soap',
-    )
+    return _render_physio_launcher()
 
 
 @pages_bp.route('/physio/rps')
 def physio_rps_page():
-    return _render_physio_page(
-        'physio-rps',
-        'RPS Form',
-        'Create a structured RPS overview from your transcript or intake notes.',
-        'rps',
-    )
+    return _render_physio_launcher()
 
 
 @pages_bp.route('/physio/reasoning')
 def physio_reasoning_page():
-    return _render_physio_page(
-        'physio-reasoning',
-        'Clinical Reasoning',
-        'Work through the 7-step analysis, differential diagnosis, and red flags in an editable workspace.',
-        'reasoning',
-    )
+    return _render_physio_launcher()
 
 
 @pages_bp.route('/physio/knowledge')
 def physio_knowledge_page():
-    return _render_physio_page(
-        'physio-knowledge',
-        'Knowledge Base',
-        'Search your own guidelines and summaries with source-backed answers.',
-        'knowledge',
-    )
+    return _render_physio_launcher()
 
 
 @pages_bp.route('/physio/cases')
 def physio_cases_page():
-    return _render_physio_page(
-        'physio-cases',
-        'Cases',
-        'Manage cases, sessions, and simple progress tracking in one place.',
-        'cases',
-    )
+    return _render_physio_launcher()
 
 
 @pages_bp.route('/shared/<share_token>')

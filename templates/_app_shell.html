@@ -49,11 +49,7 @@
         </button>
         <div class="app-shell-group-panel-wrap" aria-hidden="{{ 'false' if shell_physio_open else 'true' }}" {% if not shell_physio_open %}inert{% endif %}>
           <div class="app-shell-group-panel" id="shell-physio-panel">
-            <a href="/physio/soap" class="app-shell-link sub">SOAP Notes</a>
-            <a href="/physio/rps" class="app-shell-link sub">RPS Form</a>
-            <a href="/physio/reasoning" class="app-shell-link sub">Clinical Reasoning</a>
-            <a href="/physio/knowledge" class="app-shell-link sub">Knowledge Base</a>
-            <a href="/physio/cases" class="app-shell-link sub">Cases</a>
+            <a href="/physio" class="app-shell-link sub">Clinical workspace</a>
           </div>
         </div>
       </div>
@@ -87,8 +83,8 @@
   </aside>
   <div class="app-shell-main">
     <header class="app-shell-topbar">
-      <button type="button" class="app-shell-menu-btn" id="app-shell-menu-btn" aria-expanded="false" aria-controls="app-shell-sidebar">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <button type="button" class="app-shell-menu-btn" id="app-shell-menu-btn" aria-label="Open main navigation" aria-expanded="false" aria-controls="app-shell-sidebar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <line x1="3" y1="6" x2="21" y2="6"></line>
           <line x1="3" y1="12" x2="21" y2="12"></line>
           <line x1="3" y1="18" x2="21" y2="18"></line>

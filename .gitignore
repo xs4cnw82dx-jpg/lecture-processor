@@ -11,6 +11,10 @@ venv_py39_backup/
 
 # Uploaded files
 uploads/
+physio_library/sources/*
+!physio_library/sources/.gitkeep
+physio_library/index/*
+!physio_library/index/.gitkeep
 functions/node_modules/
 node_modules/
 playwright-report/

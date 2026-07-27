@@ -3,13 +3,47 @@
 from datetime import datetime, timezone
 import io
 import json
+import os
+import secrets
+import shutil
 import tempfile
 import zipfile
 
 from lecture_processor.domains.account import lifecycle as account_lifecycle
+from lecture_processor.domains.rate_limit import limiter as rate_limiter
+from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.services import access_service
+from lecture_processor.runtime.job_dispatcher import JobQueueFullError
+
+
+ACCOUNT_EXPORT_JOB_SCOPE = 'account-export'
+ACCOUNT_EXPORT_FILE_TTL_SECONDS = 60 * 60
+
+
+def _require_recent_account_user(app_ctx, request):
+    return access_service.require_recent_allowed_user(app_ctx, request)
+
+
+def _account_action_rate_limit(app_ctx, uid, action):
+    if action == 'delete':
+        limit = int(getattr(app_ctx, 'ACCOUNT_DELETE_RATE_LIMIT_MAX_REQUESTS', 3) or 3)
+        window = int(getattr(app_ctx, 'ACCOUNT_DELETE_RATE_LIMIT_WINDOW_SECONDS', 3600) or 3600)
+        message = 'Too many account deletion attempts. Please wait before trying again.'
+    else:
+        limit = int(getattr(app_ctx, 'ACCOUNT_EXPORT_RATE_LIMIT_MAX_REQUESTS', 6) or 6)
+        window = int(getattr(app_ctx, 'ACCOUNT_EXPORT_RATE_LIMIT_WINDOW_SECONDS', 3600) or 3600)
+        message = 'Too many account export requests. Please wait before trying again.'
+    allowed, retry_after = rate_limiter.check_rate_limit(
+        key=f'account_{action}:{uid}',
+        limit=limit,
+        window_seconds=window,
+        runtime=app_ctx,
+    )
+    if allowed:
+        return None
+    return rate_limiter.build_rate_limited_response(message, retry_after, runtime=app_ctx)
 
 
 def _export_warning_entry(pack, doc_id, reason, formats):
@@ -24,11 +58,14 @@ def _export_warning_entry(pack, doc_id, reason, formats):
 
 
 def export_account_data(app_ctx, request):
-    decoded_token, error_response, status = access_service.require_allowed_user(app_ctx, request)
+    decoded_token, error_response, status = _require_recent_account_user(app_ctx, request)
     if error_response is not None:
         return error_response, status
 
     uid = decoded_token['uid']
+    rate_limited = _account_action_rate_limit(app_ctx, uid, 'export')
+    if rate_limited is not None:
+        return rate_limited
     email = decoded_token.get('email', '')
     try:
         payload = account_lifecycle.collect_user_export_payload(uid, email, runtime=app_ctx)
@@ -48,22 +85,7 @@ def export_account_data(app_ctx, request):
         return app_ctx.jsonify({'error': 'Could not export account data'}), 500
 
 
-def export_account_bundle(app_ctx, request):
-    decoded_token, error_response, status = access_service.require_allowed_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
-
-    uid = decoded_token['uid']
-    email = decoded_token.get('email', '')
-    payload = request.get_json(silent=True) or {}
-    scope = str(payload.get('scope', 'account') or 'account').strip().lower()
-    if scope != 'account':
-        return app_ctx.jsonify({'error': 'Only account scope is supported.'}), 400
-
-    include = account_lifecycle.normalize_export_bundle_include(payload.get('include', {}), runtime=app_ctx)
-    if not account_lifecycle.has_export_bundle_selection(include, runtime=app_ctx):
-        return app_ctx.jsonify({'error': 'Select at least one export option.'}), 400
-
+def _build_account_bundle_archive(app_ctx, uid, email, include):
     packs = []
     collection_truncated = False
     if any(
@@ -76,7 +98,7 @@ def export_account_bundle(app_ctx, request):
             'lecture_notes_pdf_unmarked',
         )
     ):
-        docs = app_ctx.study_repo.list_study_packs_by_uid(
+        docs = app_ctx.repositories.study.list_study_packs_by_uid(
             app_ctx.db,
             uid,
             app_ctx.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION + 1,
@@ -195,28 +217,211 @@ def export_account_bundle(app_ctx, request):
                 )
     except RuntimeError as error:
         archive_bytes.close()
-        return app_ctx.jsonify({'error': str(error)}), 500
+        raise error
     except Exception as error:
         archive_bytes.close()
         app_ctx.logger.error(f"Error building export bundle for {uid}: {error}")
-        return app_ctx.jsonify({'error': 'Could not build export bundle'}), 500
+        raise RuntimeError('Could not build export bundle') from error
 
     archive_bytes.seek(0)
     filename = f"lecture-processor-export-{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.zip"
-    return app_ctx.send_file(
-        archive_bytes,
-        mimetype='application/zip',
-        as_attachment=True,
-        download_name=filename,
-    )
+    return archive_bytes, filename
 
 
-def delete_account_data(app_ctx, request):
-    decoded_token, error_response, status = access_service.require_allowed_user(app_ctx, request)
+def _account_export_root(app_ctx):
+    root = os.path.abspath(os.path.join(str(app_ctx.UPLOAD_FOLDER), 'account_exports'))
+    os.makedirs(root, mode=0o700, exist_ok=True)
+    return root
+
+
+def _cleanup_expired_account_exports(app_ctx):
+    """Best-effort cleanup so abandoned exports cannot fill the worker disk."""
+    root = _account_export_root(app_ctx)
+    cutoff = app_ctx.time.time() - ACCOUNT_EXPORT_FILE_TTL_SECONDS
+    try:
+        entries = list(os.scandir(root))
+    except OSError:
+        return
+    for entry in entries:
+        try:
+            if entry.is_file(follow_symlinks=False) and entry.stat(follow_symlinks=False).st_mtime < cutoff:
+                os.unlink(entry.path)
+        except OSError:
+            continue
+
+
+def _run_account_bundle_export(app_ctx, job_id, uid, email, include, export_path, download_name):
+    partial_path = export_path + '.part'
+    try:
+        runtime_jobs_store.update_job_fields(
+            job_id,
+            runtime=app_ctx,
+            status='processing',
+            step=1,
+            step_description='Building your ZIP export…',
+        )
+        archive_bytes, _filename = _build_account_bundle_archive(app_ctx, uid, email, include)
+        try:
+            with open(partial_path, 'wb') as output_file:
+                os.chmod(partial_path, 0o600)
+                shutil.copyfileobj(archive_bytes, output_file, length=1024 * 1024)
+        finally:
+            archive_bytes.close()
+        os.replace(partial_path, export_path)
+        runtime_jobs_store.update_job_fields(
+            job_id,
+            runtime=app_ctx,
+            status='completed',
+            step=2,
+            step_description='Your export is ready.',
+            finished_at=app_ctx.time.time(),
+            export_path=export_path,
+            download_name=download_name,
+        )
+    except Exception as error:
+        for candidate in (partial_path, export_path):
+            try:
+                os.unlink(candidate)
+            except OSError:
+                pass
+        app_ctx.logger.error('Account export job %s failed for %s: %s', job_id, uid, error)
+        runtime_jobs_store.update_job_fields(
+            job_id,
+            runtime=app_ctx,
+            status='error',
+            step_description='The export could not be created.',
+            finished_at=app_ctx.time.time(),
+            error='Could not build export bundle',
+        )
+
+
+def export_account_bundle(app_ctx, request):
+    decoded_token, error_response, status = _require_recent_account_user(app_ctx, request)
     if error_response is not None:
         return error_response, status
 
     uid = decoded_token['uid']
+    rate_limited = _account_action_rate_limit(app_ctx, uid, 'export')
+    if rate_limited is not None:
+        return rate_limited
+    email = decoded_token.get('email', '')
+    payload = request.get_json(silent=True) or {}
+    scope = str(payload.get('scope', 'account') or 'account').strip().lower()
+    if scope != 'account':
+        return app_ctx.jsonify({'error': 'Only account scope is supported.'}), 400
+
+    include = account_lifecycle.normalize_export_bundle_include(payload.get('include', {}), runtime=app_ctx)
+    if not account_lifecycle.has_export_bundle_selection(include, runtime=app_ctx):
+        return app_ctx.jsonify({'error': 'Select at least one export option.'}), 400
+
+    _cleanup_expired_account_exports(app_ctx)
+    job_id = f'account-export-{secrets.token_urlsafe(18)}'
+    download_name = f"lecture-processor-export-{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.zip"
+    export_path = os.path.join(_account_export_root(app_ctx), f'{job_id}.zip')
+    runtime_jobs_store.set_job(
+        job_id,
+        {
+            'job_id': job_id,
+            'job_scope': ACCOUNT_EXPORT_JOB_SCOPE,
+            'user_id': uid,
+            'user_email': email,
+            'status': 'queued',
+            'step': 0,
+            'total_steps': 2,
+            'step_description': 'Your export is queued…',
+            'started_at': app_ctx.time.time(),
+            'export_path': export_path,
+            'download_name': download_name,
+            'error': '',
+        },
+        runtime=app_ctx,
+    )
+    try:
+        app_ctx.submit_background_job(
+            _run_account_bundle_export,
+            app_ctx,
+            job_id,
+            uid,
+            email,
+            include,
+            export_path,
+            download_name,
+        )
+    except JobQueueFullError:
+        runtime_jobs_store.delete_job(job_id, runtime=app_ctx)
+        return app_ctx.jsonify({'error': 'The export queue is busy. Please try again shortly.'}), 503
+
+    return app_ctx.jsonify({
+        'job_id': job_id,
+        'status': 'queued',
+        'status_url': f'/api/account/exports/{job_id}',
+        'download_url': f'/api/account/exports/{job_id}/download',
+    }), 202
+
+
+def _get_owned_export_job(app_ctx, request, job_id, *, require_recent=False):
+    guard = _require_recent_account_user if require_recent else access_service.require_allowed_user
+    decoded_token, error_response, status = guard(app_ctx, request)
+    if error_response is not None:
+        return None, error_response, status
+    job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx)
+    if not isinstance(job, dict) or job.get('job_scope') != ACCOUNT_EXPORT_JOB_SCOPE:
+        return None, app_ctx.jsonify({'error': 'Export not found'}), 404
+    if str(job.get('user_id', '') or '') != str(decoded_token.get('uid', '') or ''):
+        return None, app_ctx.jsonify({'error': 'Export not found'}), 404
+    return job, None, None
+
+
+def get_account_export_status(app_ctx, request, job_id):
+    job, error_response, status = _get_owned_export_job(app_ctx, request, job_id)
+    if error_response is not None:
+        return error_response, status
+    safe_status = str(job.get('status', 'queued') or 'queued')
+    payload = {
+        'job_id': job_id,
+        'status': safe_status,
+        'step': int(job.get('step', 0) or 0),
+        'total_steps': int(job.get('total_steps', 2) or 2),
+        'message': str(job.get('step_description', '') or ''),
+    }
+    if safe_status == 'completed':
+        payload['download_url'] = f'/api/account/exports/{job_id}/download'
+    elif safe_status == 'error':
+        payload['error'] = str(job.get('error', '') or 'Could not build export bundle')
+    return app_ctx.jsonify(payload)
+
+
+def download_account_export(app_ctx, request, job_id):
+    job, error_response, status = _get_owned_export_job(app_ctx, request, job_id, require_recent=True)
+    if error_response is not None:
+        return error_response, status
+    if str(job.get('status', '') or '') != 'completed':
+        return app_ctx.jsonify({'error': 'Export is not ready yet'}), 409
+    export_path = os.path.abspath(str(job.get('export_path', '') or ''))
+    export_root = _account_export_root(app_ctx)
+    try:
+        inside_root = os.path.commonpath((export_root, export_path)) == export_root
+    except ValueError:
+        inside_root = False
+    if not inside_root or not os.path.isfile(export_path):
+        return app_ctx.jsonify({'error': 'Export file has expired. Please create it again.'}), 410
+    return app_ctx.send_file(
+        export_path,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name=str(job.get('download_name', '') or 'lecture-processor-export.zip'),
+    )
+
+
+def delete_account_data(app_ctx, request):
+    decoded_token, error_response, status = _require_recent_account_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
+
+    uid = decoded_token['uid']
+    rate_limited = _account_action_rate_limit(app_ctx, uid, 'delete')
+    if rate_limited is not None:
+        return rate_limited
     email = str(decoded_token.get('email', '') or '').strip().lower()
     payload = request.get_json(silent=True) or {}
 
@@ -235,6 +440,7 @@ def delete_account_data(app_ctx, request):
         }), 409
 
     deletion_started = False
+    destructive_deletion_started = False
     auth_user_deleted = False
     original_user_state = account_lifecycle.get_user_account_state(uid, runtime=app_ctx)
 
@@ -265,6 +471,12 @@ def delete_account_data(app_ctx, request):
             return app_ctx.jsonify({
                 'error': f'Cannot delete account while {active_jobs} queued or processing job(s) are still active. Please wait until all work finishes.'
             }), 409
+
+        destructive_deletion_started = bool(
+            account_lifecycle.mark_account_data_purge_started(uid, email=email, runtime=app_ctx)
+        )
+        if not destructive_deletion_started:
+            raise RuntimeError('Could not persist the destructive account-deletion phase.')
         deleted['pending_audio_import_tokens'] = account_lifecycle.remove_pending_audio_imports_for_uid(uid, runtime=app_ctx)
 
         def _delete_field_collection(collection_name, field_name, field_value, deleted_key=None):
@@ -355,7 +567,7 @@ def delete_account_data(app_ctx, request):
                     except Exception:
                         pass
                     try:
-                        source_ref = app_ctx.study_repo.study_pack_source_doc_ref(app_ctx.db, pack_id)
+                        source_ref = app_ctx.repositories.study.study_pack_source_doc_ref(app_ctx.db, pack_id)
                         if getattr(source_ref.get(), 'exists', False):
                             source_ref.delete()
                             deleted_sources += 1
@@ -400,14 +612,14 @@ def delete_account_data(app_ctx, request):
             deleted_batches = 0
             deleted_rows = 0
             while True:
-                docs = app_ctx.batch_repo.list_batch_jobs_by_uid(app_ctx.db, uid, page_size)
+                docs = app_ctx.repositories.batches.list_batch_jobs_by_uid(app_ctx.db, uid, page_size)
                 if not docs:
                     break
                 for doc in docs:
                     batch_id = doc.id
                     batch_ids_seen.add(batch_id)
                     try:
-                        row_docs = app_ctx.batch_repo.list_batch_rows(app_ctx.db, batch_id)
+                        row_docs = app_ctx.repositories.batches.list_batch_rows(app_ctx.db, batch_id)
                     except Exception as error:
                         warnings_list.append(f"Could not list rows for batch {batch_id}: {error}")
                         row_docs = []
@@ -514,7 +726,7 @@ def delete_account_data(app_ctx, request):
                 remaining.append(label)
         for batch_id in sorted(batch_ids_seen):
             try:
-                if app_ctx.batch_repo.list_batch_rows(app_ctx.db, batch_id):
+                if app_ctx.repositories.batches.list_batch_rows(app_ctx.db, batch_id):
                     remaining.append(f'batch_rows:{batch_id}')
             except Exception as error:
                 warnings_list.append(f"Could not verify batch rows for {batch_id}: {error}")
@@ -544,14 +756,21 @@ def delete_account_data(app_ctx, request):
         upload_prefixes = set(job_ids) | batch_row_prefixes
         deleted['upload_artifacts'] = account_lifecycle.remove_upload_artifacts_for_job_ids(upload_prefixes, runtime=app_ctx)
 
-        # Keep the deleting tombstone until Auth deletion succeeds. A request
-        # carrying an older ID token is rejected by revocation-aware API auth
-        # and cannot recreate the profile after this point.
+        if not account_lifecycle.mark_account_auth_delete_pending(uid, email=email, runtime=app_ctx):
+            raise RuntimeError('Could not persist the pending Auth-deletion phase.')
+
+        # Keep a durable tombstone outside the profile. Late Stripe fulfillment
+        # checks this record even after the user document has been removed.
         app_ctx.auth.delete_user(uid)
         auth_user_deleted = True
 
+        if not account_lifecycle.mark_account_auth_deleted(uid, email=email, runtime=app_ctx):
+            raise RuntimeError('Firebase Auth was deleted but the deletion tombstone could not be updated.')
+        if not account_lifecycle.mark_account_deletion_complete(uid, email=email, runtime=app_ctx):
+            raise RuntimeError('Firebase Auth was deleted but the durable deletion tombstone could not be completed.')
+
         try:
-            app_ctx.users_repo.delete_doc(app_ctx.db, uid)
+            app_ctx.repositories.users.delete_doc(app_ctx.db, uid)
             deleted['user_profile_doc'] = 1
         except Exception as error:
             raise RuntimeError(f"Could not delete user profile document: {error}")
@@ -564,7 +783,7 @@ def delete_account_data(app_ctx, request):
         })
     except Exception as e:
         app_ctx.logger.error(f"Error deleting account data for {uid}: {e}")
-        if deletion_started and not auth_user_deleted:
+        if deletion_started and not destructive_deletion_started and not auth_user_deleted:
             try:
                 account_lifecycle.restore_account_after_failed_deletion(
                     uid,
@@ -575,7 +794,15 @@ def delete_account_data(app_ctx, request):
                 )
             except Exception:
                 app_ctx.logger.error("Could not restore account state after failed deletion for %s", uid, exc_info=True)
+        elif deletion_started:
+            account_lifecycle.mark_account_deletion_retry_required(
+                uid,
+                email=email,
+                reason=str(e),
+                runtime=app_ctx,
+            )
         return app_ctx.jsonify({
             'error': 'Could not completely delete account data',
             'details': str(e),
+            'status': 'deletion_retry_required' if destructive_deletion_started else 'deletion_failed',
         }), 500

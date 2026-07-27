@@ -15,6 +15,14 @@ def _resolve_runtime(runtime=None):
 ACTIVE_ACCOUNT_JOB_STATES = {'preparing', 'queued', 'starting', 'processing'}
 DELETION_FAILURE_REASON_MAX_LENGTH = 300
 STUCK_DELETION_AFTER_SECONDS = 60 * 60
+ACCOUNT_DELETIONS_COLLECTION = 'account_deletions'
+DESTRUCTIVE_DELETION_PHASES = {
+    'purging',
+    'retry_required',
+    'auth_delete_pending',
+    'auth_deleted',
+    'deleted',
+}
 
 
 def account_write_block_message(runtime=None):
@@ -53,6 +61,69 @@ def _normalize_failure_reason(reason):
     return str(reason or '').strip()[:DELETION_FAILURE_REASON_MAX_LENGTH]
 
 
+def account_deletion_ref(uid, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    db = getattr(resolved_runtime, 'db', None)
+    if db is None or not uid:
+        return None
+    return db.collection(ACCOUNT_DELETIONS_COLLECTION).document(str(uid).strip())
+
+
+def get_account_deletion_state(uid, runtime=None):
+    ref = account_deletion_ref(uid, runtime=runtime)
+    if ref is None:
+        return {}
+    try:
+        snapshot = ref.get()
+    except Exception:
+        return {}
+    if not getattr(snapshot, 'exists', False):
+        return {}
+    payload = snapshot.to_dict() or {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def account_deletion_blocks_fulfillment(state):
+    payload = state if isinstance(state, dict) else {}
+    status = str(payload.get('status', '') or payload.get('phase', '') or '').strip().lower()
+    return status == 'requested' or status in DESTRUCTIVE_DELETION_PHASES
+
+
+def _set_account_deletion_phase(uid, phase, *, email='', reason='', runtime=None, transaction=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    ref = account_deletion_ref(uid, runtime=resolved_runtime)
+    if ref is None:
+        return False
+    now_ts = float(resolved_runtime.time.time())
+    payload = {
+        'uid': str(uid or '').strip(),
+        'email': str(email or '').strip(),
+        'status': str(phase or '').strip().lower(),
+        'phase': str(phase or '').strip().lower(),
+        'updated_at': now_ts,
+    }
+    if phase == 'requested':
+        payload['requested_at'] = now_ts
+    elif phase == 'purging':
+        payload['purge_started_at'] = now_ts
+    elif phase == 'retry_required':
+        payload['failed_at'] = now_ts
+        payload['failure_reason'] = _normalize_failure_reason(reason)
+    elif phase == 'auth_delete_pending':
+        payload['auth_delete_started_at'] = now_ts
+    elif phase == 'auth_deleted':
+        payload['auth_deleted_at'] = now_ts
+    elif phase == 'deleted':
+        payload['deleted_at'] = now_ts
+    elif phase == 'cancelled':
+        payload['cancelled_at'] = now_ts
+    if transaction is not None:
+        transaction.set(ref, payload, merge=True)
+    else:
+        ref.set(payload, merge=True)
+    return True
+
+
 def mark_account_deletion_requested(uid, email='', runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     db = getattr(resolved_runtime, 'db', None)
@@ -60,6 +131,7 @@ def mark_account_deletion_requested(uid, email='', runtime=None):
         return False
     now_ts = float(resolved_runtime.time.time())
     user_ref = resolved_runtime.users_repo.doc_ref(db, uid)
+    deletion_ref = account_deletion_ref(uid, runtime=resolved_runtime)
     transaction = db.transaction()
 
     @resolved_runtime.firestore.transactional
@@ -78,11 +150,96 @@ def mark_account_deletion_requested(uid, email='', runtime=None):
             'delete_started_at': now_ts,
             'last_delete_failure_at': 0,
             'last_delete_failure_reason': '',
+            'deletion_phase': 'requested',
             'updated_at': now_ts,
         }, merge=True)
+        if deletion_ref is not None:
+            txn.set(deletion_ref, {
+                'uid': uid,
+                'email': str(email or '').strip(),
+                'status': 'requested',
+                'phase': 'requested',
+                'requested_at': now_ts,
+                'updated_at': now_ts,
+            }, merge=True)
         return True
 
     return bool(_mark(transaction))
+
+
+def mark_account_data_purge_started(uid, email='', runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    db = getattr(resolved_runtime, 'db', None)
+    if db is None or not uid:
+        return False
+    now_ts = float(resolved_runtime.time.time())
+    user_ref = resolved_runtime.users_repo.doc_ref(db, uid)
+    deletion_ref = account_deletion_ref(uid, runtime=resolved_runtime)
+    transaction = db.transaction()
+
+    @resolved_runtime.firestore.transactional
+    def _mark(txn):
+        snapshot = user_ref.get(transaction=txn)
+        if not getattr(snapshot, 'exists', False):
+            return False
+        txn.set(user_ref, {
+            'account_status': 'deleting',
+            'deletion_phase': 'purging',
+            'updated_at': now_ts,
+        }, merge=True)
+        if deletion_ref is not None:
+            txn.set(deletion_ref, {
+                'uid': uid,
+                'email': str(email or '').strip(),
+                'status': 'purging',
+                'phase': 'purging',
+                'purge_started_at': now_ts,
+                'updated_at': now_ts,
+            }, merge=True)
+        return True
+
+    return bool(_mark(transaction))
+
+
+def mark_account_deletion_retry_required(uid, email='', reason='', runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    now_ts = float(resolved_runtime.time.time())
+    try:
+        resolved_runtime.users_repo.set_doc(
+            resolved_runtime.db,
+            uid,
+            {
+                'account_status': 'deleting',
+                'deletion_phase': 'retry_required',
+                'last_delete_failure_at': now_ts,
+                'last_delete_failure_reason': _normalize_failure_reason(reason),
+                'updated_at': now_ts,
+            },
+            merge=True,
+        )
+        _set_account_deletion_phase(
+            uid,
+            'retry_required',
+            email=email,
+            reason=reason,
+            runtime=resolved_runtime,
+        )
+        return True
+    except Exception:
+        resolved_runtime.logger.error('Could not persist retry-required deletion state for %s', uid, exc_info=True)
+        return False
+
+
+def mark_account_auth_delete_pending(uid, email='', runtime=None):
+    return _set_account_deletion_phase(uid, 'auth_delete_pending', email=email, runtime=runtime)
+
+
+def mark_account_auth_deleted(uid, email='', runtime=None):
+    return _set_account_deletion_phase(uid, 'auth_deleted', email=email, runtime=runtime)
+
+
+def mark_account_deletion_complete(uid, email='', runtime=None):
+    return _set_account_deletion_phase(uid, 'deleted', email=email, runtime=runtime)
 
 
 def restore_account_after_failed_deletion(uid, email='', reason='', runtime=None, existing_state=None):
@@ -100,6 +257,7 @@ def restore_account_after_failed_deletion(uid, email='', reason='', runtime=None
         'delete_started_at': 0,
         'last_delete_failure_at': now_ts,
         'last_delete_failure_reason': _normalize_failure_reason(reason),
+        'deletion_phase': '',
         'updated_at': now_ts,
     })
     resolved_runtime.users_repo.set_doc(
@@ -108,6 +266,16 @@ def restore_account_after_failed_deletion(uid, email='', reason='', runtime=None
         payload,
         merge=not bool(existing_state),
     )
+    try:
+        _set_account_deletion_phase(
+            uid,
+            'cancelled',
+            email=email,
+            reason=reason,
+            runtime=resolved_runtime,
+        )
+    except Exception:
+        resolved_runtime.logger.warning('Could not mark account deletion cancelled for %s', uid, exc_info=True)
     return True
 
 

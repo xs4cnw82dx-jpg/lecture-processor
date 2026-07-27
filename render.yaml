@@ -23,6 +23,8 @@ services:
         value: "1"
       - key: STUDY_PLAN_V2
         value: "1"
+      - key: WEB_THREADS
+        value: "4"
       - key: SENTRY_ENVIRONMENT
         value: "production"
       - key: SENTRY_DSN_BACKEND

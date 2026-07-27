@@ -190,6 +190,101 @@ def test_credit_deductions_reject_deleting_account_inside_transaction(app, monke
     assert user_store['u1']['slides_credits'] == 5
 
 
+def test_credit_refund_idempotency_ledger_applies_each_amount_once(app, monkeypatch):
+    runtime = get_runtime(app)
+    store = {
+        'users': {'u1': {'slides_credits': 2, 'total_processed': 1}},
+        'credit_refunds': {},
+    }
+
+    class _Increment:
+        def __init__(self, amount):
+            self.amount = amount
+
+    class _Snapshot:
+        def __init__(self, payload):
+            self.exists = payload is not None
+            self._payload = dict(payload or {})
+
+        def to_dict(self):
+            return dict(self._payload)
+
+    class _Ref:
+        def __init__(self, collection_name, doc_id):
+            self.collection_name = collection_name
+            self.doc_id = doc_id
+
+        def get(self, transaction=None):
+            _ = transaction
+            return _Snapshot(store[self.collection_name].get(self.doc_id))
+
+    def _apply(ref, payload, merge):
+        current = dict(store[ref.collection_name].get(ref.doc_id) or {}) if merge else {}
+        for key, value in payload.items():
+            if isinstance(value, _Increment):
+                current[key] = int(current.get(key, 0) or 0) + value.amount
+            else:
+                current[key] = value
+        store[ref.collection_name][ref.doc_id] = current
+
+    class _Transaction:
+        def update(self, ref, payload):
+            _apply(ref, payload, True)
+
+        def set(self, ref, payload, merge=False):
+            _apply(ref, payload, merge)
+
+    class _Collection:
+        def __init__(self, name):
+            self.name = name
+
+        def document(self, doc_id):
+            return _Ref(self.name, doc_id)
+
+    class _DB:
+        def transaction(self):
+            return _Transaction()
+
+        def collection(self, name):
+            return _Collection(name)
+
+    monkeypatch.setattr(runtime, 'db', _DB())
+    monkeypatch.setattr(runtime.firestore, 'Increment', lambda amount: _Increment(amount), raising=False)
+    monkeypatch.setattr(runtime.firestore, 'transactional', lambda fn: fn, raising=False)
+    monkeypatch.setattr(runtime.users_repo, 'doc_ref', lambda _db, uid: _Ref('users', uid))
+
+    assert credits.refund_credit(
+        'u1',
+        'slides_credits',
+        runtime=runtime,
+        idempotency_key='runtime-job:job-1:primary',
+    ) is True
+    assert credits.refund_credit(
+        'u1',
+        'slides_credits',
+        runtime=runtime,
+        idempotency_key='runtime-job:job-1:primary',
+    ) is True
+    assert store['users']['u1'] == {'slides_credits': 3, 'total_processed': 0}
+
+    assert credits.refund_slides_credits(
+        'u1',
+        2,
+        runtime=runtime,
+        idempotency_key='runtime-job:job-1:extras',
+        idempotency_total=2,
+    ) is True
+    assert credits.refund_slides_credits(
+        'u1',
+        3,
+        runtime=runtime,
+        idempotency_key='runtime-job:job-1:extras',
+        idempotency_total=3,
+    ) is True
+    assert store['users']['u1']['slides_credits'] == 6
+    assert len(store['credit_refunds']) == 2
+
+
 def test_process_checkout_session_credits_returns_already_processed(app, monkeypatch):
     runtime = get_runtime(app)
     monkeypatch.setattr(
@@ -275,6 +370,7 @@ def test_save_purchase_record_updates_admin_purchase_rollups(app, monkeypatch):
 def _configure_transactional_purchase_runtime(runtime, monkeypatch, store, fail_on_purchase=False, rollup_calls=None):
     if rollup_calls is None:
         rollup_calls = []
+    store.setdefault('account_deletions', {})
 
     class _Snapshot:
         def __init__(self, payload):
@@ -315,6 +411,13 @@ def _configure_transactional_purchase_runtime(runtime, monkeypatch, store, fail_
     class _DB:
         def transaction(self):
             return _Transaction()
+
+        def collection(self, collection_name):
+            class _Collection:
+                def document(self, doc_id):
+                    return _Ref(collection_name, doc_id)
+
+            return _Collection()
 
     def _transactional(fn):
         def _wrapped(transaction, *args, **kwargs):
@@ -430,6 +533,34 @@ def test_process_checkout_session_credits_blocks_deleting_account(app, monkeypat
 
     assert purchases.process_checkout_session_credits(session, runtime=runtime) == (False, 'account_deletion_in_progress')
     assert store['users']['u1']['slides_credits'] == 0
+    assert store['purchases'] == {}
+
+
+def test_process_checkout_session_credits_never_recreates_a_deleted_account(app, monkeypatch):
+    runtime = get_runtime(app)
+    monkeypatch.setattr(
+        runtime,
+        'CREDIT_BUNDLES',
+        {
+            'bundle_x': {
+                'name': 'Bundle X',
+                'price_cents': 100,
+                'currency': 'eur',
+                'credits': {'slides_credits': 2},
+            }
+        },
+    )
+    store = {
+        'users': {},
+        'purchases': {},
+        'account_deletions': {'u1': {'status': 'deleted', 'phase': 'deleted'}},
+    }
+    _configure_transactional_purchase_runtime(runtime, monkeypatch, store)
+
+    session = _paid_checkout_session(session_id='sess_after_delete')
+
+    assert purchases.process_checkout_session_credits(session, runtime=runtime) == (False, 'account_deleted')
+    assert store['users'] == {}
     assert store['purchases'] == {}
 
 

@@ -12,7 +12,7 @@ def export_study_pack_flashcards_csv(app_ctx, request, pack_id):
         return error_response, status
     uid = decoded_token['uid']
     try:
-        doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
+        doc = app_ctx.repositories.study.get_study_pack_doc(app_ctx.db, pack_id)
         if not doc.exists:
             return app_ctx.jsonify({'error': 'Study pack not found'}), 404
         pack = doc.to_dict()
@@ -61,7 +61,7 @@ def export_study_pack_notes(app_ctx, request, pack_id):
         return error_response, status
     uid = decoded_token['uid']
     try:
-        doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
+        doc = app_ctx.repositories.study.get_study_pack_doc(app_ctx.db, pack_id)
         if not doc.exists:
             return app_ctx.jsonify({'error': 'Study pack not found'}), 404
         pack = doc.to_dict()
@@ -186,7 +186,7 @@ def export_study_pack_pdf(app_ctx, request, pack_id):
 
     uid = decoded_token['uid']
     try:
-        doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
+        doc = app_ctx.repositories.study.get_study_pack_doc(app_ctx.db, pack_id)
         if not doc.exists:
             return app_ctx.jsonify({'error': 'Study pack not found'}), 404
 
@@ -220,7 +220,7 @@ def export_study_pack_annotated_pdf(app_ctx, request, pack_id):
 
     uid = decoded_token['uid']
     try:
-        doc = app_ctx.study_repo.get_study_pack_doc(app_ctx.db, pack_id)
+        doc = app_ctx.repositories.study.get_study_pack_doc(app_ctx.db, pack_id)
         if not doc.exists:
             return app_ctx.jsonify({'error': 'Study pack not found'}), 404
 

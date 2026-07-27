@@ -34,7 +34,7 @@ def account_write_guard_response(app_ctx, uid):
     return app_ctx.jsonify({'error': message, 'status': 'account_deletion_in_progress'}), 409
 
 
-def attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None):
+def attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None, *, idempotency_key=''):
     if not uid or not credit_type:
         return False, ''
 
@@ -47,7 +47,10 @@ def attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None):
 
     for attempt in range(1, 4):
         try:
-            refunded = bool(billing_credits.refund_credit(uid, credit_type, runtime=app_ctx))
+            refund_kwargs = {'runtime': app_ctx}
+            if idempotency_key:
+                refund_kwargs['idempotency_key'] = idempotency_key
+            refunded = bool(billing_credits.refund_credit(uid, credit_type, **refund_kwargs))
         except Exception:
             refunded = False
         if refunded:
@@ -71,7 +74,7 @@ def attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None):
         if attempt < 3:
             app_ctx.time.sleep(0.08 * attempt)
 
-    if credit_type == 'slides_credits':
+    if credit_type == 'slides_credits' and not idempotency_key:
         for fallback_attempt in range(1, 3):
             try:
                 refunded = bool(billing_credits.refund_slides_credits(uid, 1, runtime=app_ctx))
@@ -80,7 +83,7 @@ def attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None):
                         app_ctx.time.sleep(0.08 * fallback_attempt)
                     continue
                 try:
-                    user_ref = app_ctx.users_repo.doc_ref(app_ctx.db, uid)
+                    user_ref = app_ctx.repositories.users.doc_ref(app_ctx.db, uid)
                     user_ref.update({'total_processed': app_ctx.firestore.Increment(-1)})
                 except Exception:
                     pass
@@ -175,6 +178,7 @@ def handle_runtime_job_queue_full(
             uid,
             credit_type,
             expected_floor=expected_credit_floor,
+            idempotency_key=f'runtime-job:{job_id}:primary',
         )
         if refunded:
             credit_refunded = True
@@ -188,6 +192,8 @@ def handle_runtime_job_queue_full(
                     uid,
                     int(extra_slides_credits or 0),
                     runtime=app_ctx,
+                    idempotency_key=f'runtime-job:{job_id}:extras',
+                    idempotency_total=int(extra_slides_credits or 0),
                 )
             )
         except Exception:
@@ -242,6 +248,7 @@ def handle_runtime_job_setup_failure(
             uid,
             credit_type,
             expected_floor=expected_credit_floor,
+            idempotency_key=f'runtime-job:{job_id}:primary',
         )
         if refunded:
             credit_refunded = True
@@ -255,6 +262,8 @@ def handle_runtime_job_setup_failure(
                     uid,
                     int(extra_slides_credits or 0),
                     runtime=app_ctx,
+                    idempotency_key=f'runtime-job:{job_id}:extras',
+                    idempotency_total=int(extra_slides_credits or 0),
                 )
             )
         except Exception:

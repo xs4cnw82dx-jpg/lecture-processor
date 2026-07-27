@@ -1,4 +1,5 @@
 from lecture_processor.runtime.container import get_runtime
+from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.admin import rollups as admin_rollups
 from lecture_processor.domains.analytics import events as analytics_events
@@ -180,6 +181,10 @@ def _grant_credits_and_record_purchase_fallback(stripe_session, runtime=None):
     stripe_session_id = stripe_session.get('id', '')
     firebase_email = _firebase_email_from_session(stripe_session)
 
+    deletion_state = account_lifecycle.get_account_deletion_state(uid, runtime=resolved_runtime)
+    if account_lifecycle.account_deletion_blocks_fulfillment(deletion_state):
+        return (False, 'account_deleted')
+
     try:
         user_doc = resolved_runtime.users_repo.get_doc(resolved_runtime.db, uid)
     except Exception:
@@ -218,7 +223,11 @@ def _grant_credits_and_record_purchase_atomic(stripe_session, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     db = getattr(resolved_runtime, 'db', None)
     if db is None:
-        return _grant_credits_and_record_purchase_fallback(stripe_session, runtime=resolved_runtime)
+        resolved_runtime.logger.error(
+            "❌ Refusing checkout fulfillment without durable account-deletion state for session %s",
+            stripe_session.get('id', ''),
+        )
+        return (False, 'transaction_unavailable')
     if not hasattr(db, 'transaction'):
         resolved_runtime.logger.error(
             "❌ Refusing non-transactional checkout fulfillment for session %s",
@@ -248,12 +257,20 @@ def _grant_credits_and_record_purchase_atomic(stripe_session, runtime=None):
 
     purchase_ref = resolved_runtime.purchases_repo.doc_ref(db, stripe_session_id)
     user_ref = resolved_runtime.users_repo.doc_ref(db, uid)
+    deletion_ref = account_lifecycle.account_deletion_ref(uid, runtime=resolved_runtime)
 
     @resolved_runtime.firestore.transactional
-    def _run_transaction(transaction, purchase_ref_arg, user_ref_arg):
+    def _run_transaction(transaction, purchase_ref_arg, user_ref_arg, deletion_ref_arg):
         purchase_snapshot = purchase_ref_arg.get(transaction=transaction)
         if getattr(purchase_snapshot, 'exists', False):
             return 'already_processed'
+
+        if deletion_ref_arg is None:
+            return 'account_state_unavailable'
+        deletion_snapshot = deletion_ref_arg.get(transaction=transaction)
+        deletion_state = deletion_snapshot.to_dict() or {} if getattr(deletion_snapshot, 'exists', False) else {}
+        if account_lifecycle.account_deletion_blocks_fulfillment(deletion_state):
+            return 'account_deleted'
 
         user_snapshot = user_ref_arg.get(transaction=transaction)
         if getattr(user_snapshot, 'exists', False):
@@ -276,7 +293,7 @@ def _grant_credits_and_record_purchase_atomic(stripe_session, runtime=None):
 
     try:
         transaction = db.transaction()
-        status = _run_transaction(transaction, purchase_ref, user_ref)
+        status = _run_transaction(transaction, purchase_ref, user_ref, deletion_ref)
         if status == 'granted':
             try:
                 admin_rollups.increment_purchase_rollups(purchase_record, runtime=resolved_runtime)

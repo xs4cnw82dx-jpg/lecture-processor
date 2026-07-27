@@ -459,66 +459,6 @@
             font-size: 0.8125rem;
         }
         .goal-modal-error.visible { display: block; }
-        .delete-account-overlay {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(17,24,39,0.5);
-            z-index: 220;
-            align-items: center;
-            justify-content: center;
-            padding: 18px;
-        }
-        .delete-account-overlay.visible { display: flex; }
-        .delete-account-modal {
-            width: min(560px, 100%);
-            background: var(--white);
-            border: 1px solid var(--gray-200);
-            border-radius: var(--radius-xl);
-            box-shadow: var(--shadow-xl);
-            padding: 22px;
-            animation: modalOpen 0.2s ease-out;
-            display: grid;
-            gap: 10px;
-        }
-        .delete-account-head {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-        }
-        .delete-account-title { font-size: 1.08rem; font-weight: 700; color: var(--gray-900); }
-        .delete-account-close {
-            width: 34px;
-            height: 34px;
-            border-radius: 10px;
-            border: 1px solid var(--gray-300);
-            background: var(--white);
-            color: var(--gray-600);
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .delete-account-close svg { width: 16px; height: 16px; }
-        .delete-account-subtitle {
-            color: var(--gray-600);
-            font-size: 0.89rem;
-            line-height: 1.4;
-            margin-bottom: 2px;
-        }
-        .delete-account-error {
-            min-height: 18px;
-            color: #b91c1c;
-            font-size: 0.84rem;
-            font-weight: 600;
-        }
-        .delete-account-actions {
-            display: flex;
-            justify-content: flex-end;
-            gap: 8px;
-            margin-top: 2px;
-        }
         .onboarding-overlay {
             display: none;
             position: fixed;

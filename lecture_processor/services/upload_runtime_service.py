@@ -129,7 +129,7 @@ def get_active_runtime_jobs(app_ctx, request):
 
     if getattr(app_ctx, 'db', None) is not None:
         try:
-            runtime_docs = app_ctx.runtime_jobs_repo.query_by_user_and_statuses(
+            runtime_docs = app_ctx.repositories.runtime_jobs.query_by_user_and_statuses(
                 app_ctx.db,
                 app_ctx.RUNTIME_JOBS_COLLECTION,
                 uid,

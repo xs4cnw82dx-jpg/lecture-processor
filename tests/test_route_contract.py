@@ -6,6 +6,8 @@ EXPECTED_ROUTES = [
     ('POST', '/api/account/delete', 'account_api.delete_account_data'),
     ('GET', '/api/account/export', 'account_api.export_account_data'),
     ('POST', '/api/account/export-bundle', 'account_api.export_account_bundle'),
+    ('GET', '/api/account/exports/<job_id>', 'account_api.get_account_export_status'),
+    ('GET', '/api/account/exports/<job_id>/download', 'account_api.download_account_export'),
     ('GET', '/api/admin/batch-jobs', 'admin_api.admin_batch_jobs'),
     ('GET', '/api/admin/credit-grants', 'admin_api.admin_credit_grants'),
     ('POST', '/api/admin/cost-analysis', 'admin_api.admin_cost_analysis'),
@@ -455,7 +457,9 @@ def test_physio_pages_render_open_physio_sidebar_group(client):
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert 'data-physio-page="soap"' in html
+    assert 'data-companion-url="http://127.0.0.1:8765/physio"' in html
+    assert 'Je klinische werkruimte draait lokaal' in html
     assert '<div class="app-shell-group app-shell-group-secondary is-open" id="shell-physio-group"' in html
     assert 'aria-controls="shell-physio-panel"' in html
-    assert '/physio/cases' in html
+    assert '<a href="/physio" class="app-shell-link sub">Clinical workspace</a>' in html
+    assert '/physio/cases' not in html

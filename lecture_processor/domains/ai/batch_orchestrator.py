@@ -545,6 +545,25 @@ def _list_rows(batch_id, runtime=None, limit=None):
     return sorted_rows
 
 
+def _list_status_rows(batch_id, runtime=None, limit=None):
+    """Load compact row projections for frequent status polling."""
+    resolved_runtime = _resolve_runtime(runtime)
+    db = getattr(resolved_runtime, 'db', None)
+    list_statuses = getattr(getattr(resolved_runtime, 'batch_repo', None), 'list_batch_row_statuses', None)
+    if db is not None and callable(list_statuses):
+        try:
+            docs = list_statuses(db, batch_id, limit=limit)
+            rows = []
+            for doc in docs:
+                row = doc.to_dict() or {}
+                row.setdefault('row_id', doc.id)
+                rows.append(row)
+            return rows
+        except (AttributeError, TypeError):
+            pass
+    return _list_rows(batch_id, runtime=resolved_runtime, limit=limit)
+
+
 def _upsert_row(batch_id, row_id, payload, runtime=None, merge=True):
     resolved_runtime = _resolve_runtime(runtime)
     safe_payload = _sanitize_row_payload(payload)
@@ -1433,12 +1452,20 @@ def _refund_failed_row(batch, row, runtime=None):
     uid = batch.get('uid', '')
     if not uid:
         return
+    batch_id = str(batch.get('batch_id', '') or row.get('batch_id', '') or '').strip()
+    row_id = str(row.get('row_id', '') or '').strip()
+    refund_scope = f'batch-row:{batch_id}:{row_id}'
 
     credit_type = str(row.get('credit_deducted', '') or '').strip()
     billing_receipt = dict(row.get('billing_receipt', {}) or {})
     receipt_holder = {'billing_receipt': billing_receipt}
     if credit_type and not bool(row.get('credit_refunded', False)):
-        refunded_primary = bool(billing_credits.refund_credit(uid, credit_type, runtime=resolved_runtime))
+        refunded_primary = bool(billing_credits.refund_credit(
+            uid,
+            credit_type,
+            runtime=resolved_runtime,
+            idempotency_key=f'{refund_scope}:primary',
+        ))
         if refunded_primary:
             row['credit_refunded'] = True
             billing_receipts.add_job_credit_refund(
@@ -1452,7 +1479,13 @@ def _refund_failed_row(batch, row, runtime=None):
     already_refunded = int(row.get('interview_features_refunded_count', 0) or 0)
     pending_refund = max(0, interview_feature_cost - already_refunded)
     if pending_refund > 0:
-        refunded_extras = bool(billing_credits.refund_slides_credits(uid, pending_refund, runtime=resolved_runtime))
+        refunded_extras = bool(billing_credits.refund_slides_credits(
+            uid,
+            pending_refund,
+            runtime=resolved_runtime,
+            idempotency_key=f'{refund_scope}:interview-extras',
+            idempotency_total=already_refunded + pending_refund,
+        ))
         if refunded_extras:
             row['interview_features_refunded_count'] = already_refunded + pending_refund
             billing_receipts.add_job_credit_refund(
@@ -2399,7 +2432,7 @@ def get_batch_status(batch_id, runtime=None, *, rows_limit=None):
     if rows is not None and safe_rows_limit and len(rows) > safe_rows_limit:
         rows = rows[:safe_rows_limit]
     if rows is None:
-        rows = _list_rows(batch_id, runtime=resolved_runtime, limit=safe_rows_limit)
+        rows = _list_status_rows(batch_id, runtime=resolved_runtime, limit=safe_rows_limit)
     response_rows = []
     for row in rows:
         row_stage = str(row.get('current_stage', '') or '')

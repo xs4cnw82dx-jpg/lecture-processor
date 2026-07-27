@@ -95,6 +95,7 @@ from lecture_processor.runtime import environment as runtime_environment
 from lecture_processor.runtime.http_security import apply_security_headers as runtime_apply_security_headers
 from lecture_processor.runtime.job_dispatcher import BoundedJobDispatcher, JobQueueFullError
 from lecture_processor.runtime.proxy import client_ip_from_request
+from lecture_processor.runtime.repositories import RuntimeRepositories
 
 LEGACY_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT_DIR = os.path.dirname(os.path.dirname(LEGACY_MODULE_DIR))
@@ -102,6 +103,10 @@ PROJECT_ROOT_DIR = os.path.dirname(os.path.dirname(LEGACY_MODULE_DIR))
 runtime_bootstrap.load_local_environment()
 
 app = None
+
+# Explicit persistence capability used by domain/service modules. It resolves
+# repository adapters lazily, so initialization and test overrides stay safe.
+repositories = RuntimeRepositories(sys.modules[__name__])
 
 
 def create_flask_app(*, flask_secret_key=''):
@@ -386,6 +391,11 @@ ACCOUNT_EXPORT_MAX_DOCX_PACKS = safe_int_env('ACCOUNT_EXPORT_MAX_DOCX_PACKS', 40
 ACCOUNT_EXPORT_MAX_PDF_PACKS = safe_int_env('ACCOUNT_EXPORT_MAX_PDF_PACKS', 20, minimum=1, maximum=1000)
 
 ACCOUNT_EXPORT_ZIP_SPOOL_BYTES = safe_int_env('ACCOUNT_EXPORT_ZIP_SPOOL_BYTES', 5 * 1024 * 1024, minimum=1024 * 1024, maximum=250 * 1024 * 1024)
+ACCOUNT_RECENT_AUTH_MAX_AGE_SECONDS = safe_int_env('ACCOUNT_RECENT_AUTH_MAX_AGE_SECONDS', 600, minimum=60, maximum=3600)
+ACCOUNT_EXPORT_RATE_LIMIT_WINDOW_SECONDS = safe_int_env('ACCOUNT_EXPORT_RATE_LIMIT_WINDOW_SECONDS', 3600, minimum=60, maximum=86400)
+ACCOUNT_EXPORT_RATE_LIMIT_MAX_REQUESTS = safe_int_env('ACCOUNT_EXPORT_RATE_LIMIT_MAX_REQUESTS', 6, minimum=1, maximum=100)
+ACCOUNT_DELETE_RATE_LIMIT_WINDOW_SECONDS = safe_int_env('ACCOUNT_DELETE_RATE_LIMIT_WINDOW_SECONDS', 3600, minimum=60, maximum=86400)
+ACCOUNT_DELETE_RATE_LIMIT_MAX_REQUESTS = safe_int_env('ACCOUNT_DELETE_RATE_LIMIT_MAX_REQUESTS', 3, minimum=1, maximum=20)
 
 ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION = safe_int_env('ACCOUNT_DELETE_MAX_DOCS_PER_COLLECTION', 10000, minimum=100, maximum=50000)
 
@@ -989,7 +999,7 @@ def run_startup_recovery_once():
         return
     recover_stale_runtime_jobs()
 
-def verify_firebase_token(request, *, check_revoked=True):
+def verify_firebase_token(request, *, check_revoked=False):
     return auth_service.verify_firebase_token(
         request,
         auth_module=auth,

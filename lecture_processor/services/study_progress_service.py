@@ -153,7 +153,7 @@ def get_study_progress(app_ctx, request):
 
         card_states = {}
         card_state_maps = []
-        docs = app_ctx.study_repo.list_study_card_states_by_uid(app_ctx.db, uid, app_ctx.MAX_PROGRESS_PACKS_PER_SYNC)
+        docs = app_ctx.repositories.study.list_study_card_states_by_uid(app_ctx.db, uid, app_ctx.MAX_PROGRESS_PACKS_PER_SYNC)
         for doc in docs:
             data = doc.to_dict() or {}
             pack_id = study_progress.sanitize_pack_id(data.get('pack_id', ''), runtime=app_ctx)
@@ -404,7 +404,7 @@ def get_study_progress_summary(app_ctx, request):
             )
         due_today = 0
         needs_legacy_backfill = False
-        docs = app_ctx.study_repo.list_study_card_state_summaries_by_uid(app_ctx.db, uid, app_ctx.MAX_PROGRESS_PACKS_PER_SYNC)
+        docs = app_ctx.repositories.study.list_study_card_state_summaries_by_uid(app_ctx.db, uid, app_ctx.MAX_PROGRESS_PACKS_PER_SYNC)
         for doc in docs:
             data = doc.to_dict() or {}
             pack_id = _pack_id_from_summary_doc(uid, doc, data)
@@ -418,7 +418,7 @@ def get_study_progress_summary(app_ctx, request):
 
         if needs_legacy_backfill:
             due_rollup = {}
-            full_docs = app_ctx.study_repo.list_study_card_states_by_uid(
+            full_docs = app_ctx.repositories.study.list_study_card_states_by_uid(
                 app_ctx.db,
                 uid,
                 app_ctx.MAX_PROGRESS_PACKS_PER_SYNC,

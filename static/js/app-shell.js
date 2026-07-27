@@ -268,7 +268,10 @@
       else shellMain.removeAttribute('aria-hidden');
       setElementInert(shellMain, mainHidden);
     }
-    if (menuBtn) menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (menuBtn) {
+      menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      menuBtn.setAttribute('aria-label', open ? 'Close main navigation' : 'Open main navigation');
+    }
   }
 
   function setSidebarOpen(open) {
@@ -493,6 +496,16 @@
     window.history.replaceState({}, '', nextUrl);
   }
 
+  function maybeShowNavigationNotice() {
+    var params = new URLSearchParams(window.location.search || '');
+    if (params.get('notice') !== 'admin-session-required') return;
+    showToast('Your admin session expired. Open Admin again to reconnect.', 'error');
+    params.delete('notice');
+    var query = params.toString();
+    var nextUrl = window.location.pathname + (query ? ('?' + query) : '') + (window.location.hash || '');
+    window.history.replaceState({}, '', nextUrl);
+  }
+
   function markActiveNav() {
     var currentPath = normalizePath(window.location.pathname || '/');
     var navLinks = Array.prototype.slice.call(document.querySelectorAll('.app-shell-link[href]'));
@@ -635,14 +648,14 @@
         name: String((payload.email || user.email || 'Account')).split('@')[0] || 'Account',
         initial: String((user.email || payload.email || '?').charAt(0) || '?').toUpperCase(),
         isAdmin: currentUserIsAdmin,
-        isPhysioAllowed: !!payload.is_physio_allowed,
+        isPhysioAllowed: true,
         credits: breakdown,
         cachedAt: Date.now()
       };
       writeUserCacheJson(user, CACHE_KEYS.profile, profile);
       writeCacheJson(CACHE_KEYS.lastProfile, profile);
       if (adminBtn) adminBtn.hidden = !currentUserIsAdmin;
-      setPhysioGroupVisible(!!payload.is_physio_allowed);
+      setPhysioGroupVisible(true);
       markActiveNav();
     } catch (_) {}
   }
@@ -886,6 +899,24 @@
     });
   }
 
+  function wait(milliseconds) {
+    return new Promise(function (resolve) { window.setTimeout(resolve, milliseconds); });
+  }
+
+  async function waitForAccountExport(statusUrl) {
+    var deadline = Date.now() + (5 * 60 * 1000);
+    while (Date.now() < deadline) {
+      var statusResponse = await authFetch(statusUrl);
+      var statusPayload = await statusResponse.json().catch(function () { return {}; });
+      if (!statusResponse.ok) throw new Error(statusPayload.error || 'Could not check export status.');
+      if (exportConfirmBtn && statusPayload.message) exportConfirmBtn.textContent = statusPayload.message;
+      if (statusPayload.status === 'completed' && statusPayload.download_url) return statusPayload.download_url;
+      if (statusPayload.status === 'error') throw new Error(statusPayload.error || 'Could not export data.');
+      await wait(1000);
+    }
+    throw new Error('The export is taking longer than expected. Please try again.');
+  }
+
   async function runBundleExport() {
     if (!auth.currentUser) {
       showToast('Please sign in to export your data.', 'error');
@@ -905,11 +936,17 @@
         body: JSON.stringify({ scope: 'account', include: include })
       });
       if (!response.ok) {
+        var responseError = await response.clone().json().catch(function () { return {}; });
         var fallbackResponse = null;
         if (response.status === 404 && include.account_json && !include.flashcards_csv && !include.practice_tests_csv && !include.lecture_notes_docx && !include.lecture_notes_pdf_marked && !include.lecture_notes_pdf_unmarked) {
           fallbackResponse = await authFetch('/api/account/export');
         }
-        if (!fallbackResponse || !fallbackResponse.ok) throw new Error('Could not export data');
+        if (!fallbackResponse || !fallbackResponse.ok) {
+          if (responseError.error_code === 'recent_authentication_required') {
+            throw new Error('For security, sign out and sign back in before exporting your data.');
+          }
+          throw new Error(responseError.error || 'Could not export data');
+        }
         var fallbackBlob = await fallbackResponse.blob();
         var fallbackName = getDispositionFilename(fallbackResponse.headers.get('Content-Disposition'), 'lecture-processor-account-export.json');
         triggerBlobDownload(fallbackBlob, fallbackName);
@@ -918,15 +955,30 @@
         return;
       }
 
+      if (response.status === 202) {
+        var queuedExport = await response.json().catch(function () { return {}; });
+        if (!queuedExport.status_url) throw new Error('Could not start export.');
+        if (exportConfirmBtn) exportConfirmBtn.textContent = 'Preparing ZIP…';
+        var downloadUrl = await waitForAccountExport(queuedExport.status_url);
+        response = await authFetch(downloadUrl);
+        if (!response.ok) {
+          var downloadError = await response.json().catch(function () { return {}; });
+          throw new Error(downloadError.error || 'Could not download export.');
+        }
+      }
+
       var blob = await response.blob();
       var filename = getDispositionFilename(response.headers.get('Content-Disposition'), 'lecture-processor-export.zip');
       triggerBlobDownload(blob, filename);
       showToast('Export ZIP download started.');
       setExportModalOpen(false);
-    } catch (_) {
-      showToast('Could not export data right now.', 'error');
+    } catch (error) {
+      showToast((error && error.message) || 'Could not export data right now.', 'error');
     } finally {
-      if (exportConfirmBtn) exportConfirmBtn.disabled = false;
+      if (exportConfirmBtn) {
+        exportConfirmBtn.disabled = false;
+        exportConfirmBtn.textContent = 'Export ZIP';
+      }
     }
   }
 
@@ -991,6 +1043,7 @@
 
   setupSidebarControls();
   markActiveNav();
+  maybeShowNavigationNotice();
   shellGroups.forEach(function (group) {
     if (!group.trigger) return;
     group.trigger.addEventListener('click', function () {
