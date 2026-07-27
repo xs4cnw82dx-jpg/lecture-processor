@@ -1139,6 +1139,12 @@ body {
 
   .app-shell-topbar {
     min-height: 58px;
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
     padding-top: calc(8px + env(safe-area-inset-top));
+  }
+
+  .app-shell-topbar-right {
+    gap: 8px;
   }
 }

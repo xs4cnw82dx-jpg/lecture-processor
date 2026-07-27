@@ -386,6 +386,47 @@ test('video overlay builder creates tables and previews animations', async ({ pa
   await expect(page.locator('#overlay-builder-status')).toHaveText('', { timeout: 3500 });
 });
 
+test('mobile tool and signed-in shell controls never widen the page', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/video-overlay-builder');
+
+  const overlayLayout = await page.evaluate(() => ({
+    viewportWidth: window.innerWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+    recordingWrap: getComputedStyle(document.querySelector('.overlay-recording-bar')).flexWrap,
+    recordingNoteBasis: getComputedStyle(document.querySelector('.overlay-recording-note')).flexBasis,
+  }));
+  expect(overlayLayout.scrollWidth).toBeLessThanOrEqual(overlayLayout.viewportWidth);
+  expect(overlayLayout.recordingWrap).toBe('nowrap');
+  expect(overlayLayout.recordingNoteBasis).toBe('auto');
+
+  await page.goto('/batch_status');
+  await page.evaluate(() => {
+    const shell = document.querySelector('#app-shell');
+    const account = document.querySelector('#shell-account');
+    const signin = document.querySelector('#shell-sign-in-btn');
+    const credits = document.querySelector('#shell-credits-link');
+    shell.dataset.authState = 'signed-in';
+    account.hidden = false;
+    signin.hidden = true;
+    credits.hidden = false;
+    document.querySelector('#shell-account-name').textContent = 'ijacco2004';
+    document.querySelector('#shell-credits-total').textContent = 'Unlimited credits';
+  });
+
+  const shellLayout = await page.evaluate(() => ({
+    viewportWidth: window.innerWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+    topbarRight: document.querySelector('.app-shell-topbar-right').getBoundingClientRect().right,
+    topbarPaddingLeft: getComputedStyle(document.querySelector('.app-shell-topbar')).paddingLeft,
+    topbarPaddingRight: getComputedStyle(document.querySelector('.app-shell-topbar')).paddingRight,
+  }));
+  expect(shellLayout.scrollWidth).toBeLessThanOrEqual(shellLayout.viewportWidth);
+  expect(shellLayout.topbarRight).toBeLessThanOrEqual(shellLayout.viewportWidth);
+  expect(shellLayout.topbarPaddingLeft).toBe('12px');
+  expect(shellLayout.topbarPaddingRight).toBe('12px');
+});
+
 test('video overlay recording switches into clean presenter mode', async ({ page }) => {
   await page.goto('/video-overlay-builder');
   await page.evaluate(() => {
