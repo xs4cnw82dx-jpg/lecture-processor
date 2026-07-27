@@ -524,6 +524,11 @@
   padding: 14px;
 }
 
+.overlay-stage-panel > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .overlay-stage-toolbar {
   display: flex;
   align-items: center;
@@ -1623,6 +1628,14 @@
   .overlay-recording-bar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .overlay-recording-bar {
+    flex-wrap: nowrap;
+  }
+
+  .overlay-recording-note {
+    flex-basis: auto;
   }
 
   .overlay-builder-actions > *,
