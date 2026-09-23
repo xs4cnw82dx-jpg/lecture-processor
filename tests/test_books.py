@@ -217,7 +217,7 @@ def test_malformed_documents_are_useful_errors(setup, bad):
 
 def test_export_exact_a4_dimensions_and_native_editable_text():
     logical = pages()
-    logical[0]['items'] = [model.item({'id': 'title', 'type': 'text', 'text': 'The Fox and the Moon', 'style': {'font': 'Andika', 'weight': 700}})]
+    logical[0]['items'] = [model.item({'id': 'title', 'type': 'text', 'text': 'The Fox and the Moon', 'style': {'font': 'Andika', 'weight': 700, 'size': 28, 'lineHeight': 1.4}})]
     previews = ['data:image/png;base64,' + base64.b64encode(image_bytes()).decode()] * 4
     for appearance in ('faithful', 'editable'):
         blob, _, extension = generate({'pages': logical, 'previews': previews, 'format': appearance, 'arrangement': 'cut'})
@@ -230,7 +230,12 @@ def test_export_exact_a4_dimensions_and_native_editable_text():
             assert size.get('{%s}h' % ns['w']) == '11906'
             assert len(root.findall('.//wp:anchor', ns)) == 4
             assert bool(root.findall('.//w:txbxContent', ns)) == (appearance == 'editable')
-            if appearance == 'editable': assert 'The Fox and the Moon' in ''.join(root.itertext())
+            if appearance == 'editable':
+                assert 'The Fox and the Moon' in ''.join(root.itertext())
+                # Text boxes must not inherit the one-point sheet anchor's line spacing.
+                spacing = root.find('.//w:txbxContent/w:p/w:pPr/w:spacing', ns)
+                assert spacing.get('{%s}lineRule' % ns['w']) == 'exact'
+                assert spacing.get('{%s}line' % ns['w']) == '784'
     pdf, mime, extension = generate({'pages': logical, 'previews': previews, 'format': 'pdf', 'arrangement': 'fold'})
     assert mime == 'application/pdf' and extension == 'pdf' and pdf.startswith(b'%PDF')
 

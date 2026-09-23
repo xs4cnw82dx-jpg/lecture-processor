@@ -445,10 +445,10 @@
   setInterval(async()=>{
     if(!b||b.local||document.hidden||opening||pollBusy)return;pollBusy=true;
     try{const result=await api('/api/books/'+b.id+'/revision');lastRefresh=Date.now();const editorChanged=JSON.stringify(b.editor)!==JSON.stringify(result.book.editor);b.editor=result.book.editor;b.role=result.book.role;if(leaseToken&&(!result.book.editor||!['owner','edit'].includes(b.role))){leaseToken='';sessionStorage.removeItem('book-lease-'+b.id);}if(!leaseToken&&!dirty&&result.book.revision!==b.revision)await reloadRemote();updateStatus();if(editorChanged&&!leaseToken)renderInspector();}
-    catch(e){if(e.status===403){leaseToken='';b.role='';saveError=e.message;notify('Access to this book has changed. Your unsaved draft remains on this device.',true);updateStatus();}else status('Updates paused · Reconnecting…');}
+    catch(e){if(e.status===403){leaseToken='';b.role='';saveError=e.message;notify('Access to this book has changed. Your unsaved draft remains on this device.',true);updateStatus();renderInspector();renderSelection();}else status('Updates paused · Reconnecting…');}
     finally{pollBusy=false;}
   },5000);
-  setInterval(async()=>{if(!b||b.local||!leaseToken)return;try{await api('/api/books/'+b.id+'/lease',{method:'POST',body:JSON.stringify({action:'renew',lease_token:leaseToken})});}catch(e){leaseToken='';updateStatus();notify(e.message,true);}},20000);
+  setInterval(async()=>{if(!b||b.local||!leaseToken)return;try{await api('/api/books/'+b.id+'/lease',{method:'POST',body:JSON.stringify({action:'renew',lease_token:leaseToken})});}catch(e){leaseToken='';sessionStorage.removeItem('book-lease-'+b.id);updateStatus();renderInspector();renderSelection();notify(e.message,true);}},20000);
   window.addEventListener('resize',()=>{if(b){renderStage();}});
   window.addEventListener('online',()=>{if(b&&dirty&&leaseToken)persist().catch(e=>notify(e.message,true));});
   window.addEventListener('beforeunload',e=>{if(b){D.putBook(b).catch(()=>{});if(dirty&&!b.local){e.preventDefault();e.returnValue='';}}});
@@ -460,7 +460,7 @@
     if(share){
       dialog('Open a shared book',field('Your name','guestName',user?(user.displayName||''):'')+'<p class="book-muted">Your name appears with comments and while you edit.</p><button class="primary-btn" id="open-shared">Open book</button>');
       $('open-shared').onclick=action(async()=>{const name=$('dialog-content').querySelector('[data-field=guestName]').value;const result=await api('/api/books/share-session',{method:'POST',body:JSON.stringify({token:share,name})});sessionStorage.setItem('book-access-'+result.book_id,result.access_token);closeDialog();await openBook(result.book_id);});
-    }else if(id){try{await openBook(id);}catch(e){b=null;notify(e.message,true);await loadLibrary();}}
+    }else if(id){try{await openBook(id);}catch(e){b=null;await loadLibrary();$('book-grid').innerHTML='<div class="book-empty"><h2>This book is not available</h2><p>'+esc(e.message)+'</p><a class="secondary-btn" href="/books">Back to your bookshelf</a></div>';}}
     else await loadLibrary();
   }
   let initialized=false;

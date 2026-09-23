@@ -87,7 +87,7 @@ def native_object(paragraph, obj, side, ordinal):
         p = OxmlElement('w:p')
         pp = OxmlElement('w:pPr')
         align = OxmlElement('w:jc'); align.set(qn('w:val'), obj['style']['align']); pp.append(align)
-        spacing = OxmlElement('w:spacing'); spacing.set(qn('w:before'), '0'); spacing.set(qn('w:after'), '0'); spacing.set(qn('w:line'), str(round(obj['style']['lineHeight'] * 240))); pp.append(spacing)
+        spacing = OxmlElement('w:spacing'); spacing.set(qn('w:before'), '0'); spacing.set(qn('w:after'), '0'); spacing.set(qn('w:line'), str(round(obj['style']['lineHeight'] * obj['style']['size'] * 20))); spacing.set(qn('w:lineRule'), 'exact'); pp.append(spacing)
         p.append(pp)
         runs = obj.get('runs') or [{'text': obj['text'], 'style': obj['style']}]
         for source in runs:
