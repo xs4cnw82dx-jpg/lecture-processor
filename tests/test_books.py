@@ -298,3 +298,15 @@ def test_imported_named_versions_round_trip_without_losing_page_order(setup):
     assert versions[0]['pages'][1]['title'] == 'An earlier idea'
     assert client.get('/api/books/' + bid + '?cover=1', headers=headers()).json['pages'][0]['role'] == 'front'
     assert len(client.get('/api/books/' + bid + '?cover=1', headers=headers()).json['pages']) == 1
+
+
+def test_book_creative_options_validate_and_round_trip():
+    table = model.item({'id': 'table1', 'type': 'table', 'tableHeader': False, 'tableStriped': False, 'tableRounded': False, 'cells': [['Moon', 'Fox']]})
+    assert table['tableHeader'] is False and table['tableStriped'] is False and table['tableRounded'] is False
+    assert table['cells'] == [['Moon', 'Fox']]
+    flow = model.item({'id': 'flow1', 'type': 'flow', 'flowDirection': 'vertical', 'flowShape': 'pill', 'steps': ['Imagine', 'Make']})
+    assert model.item(flow)['flowDirection'] == 'vertical'
+    assert model.item(flow)['flowShape'] == 'pill'
+    assert model.item({'id': 'oldflow', 'type': 'flow'})['flowDirection'] == 'horizontal'
+    invalid = model.item({'id': 'arrow1', 'type': 'arrow', 'arrowHead': '<script>', 'arrowLine': 'dashed'})
+    assert invalid['arrowHead'] == 'end' and invalid['arrowLine'] == 'dashed'
