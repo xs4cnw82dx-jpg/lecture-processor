@@ -16,7 +16,8 @@ async function buildTarget(target, writeOutput) {
   return build({
     entryPoints: [path.join(projectRoot, target.entry)],
     outfile: path.join(projectRoot, target.out),
-    bundle: false,
+    bundle: target.bundle || false,
+    ...(target.format ? { format: target.format, globalName: target.globalName } : {}),
     minify: true,
     legalComments: 'none',
     sourcemap: false,

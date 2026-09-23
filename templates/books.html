@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Book Studio · Lecture Processor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/book-studio.css') }}">
+</head>
+<body class="book-app" data-book-id="{{ book_id }}" data-share-token="{{ share_token }}" data-chatgpt-url="{{ chatgpt_url }}">
+  <header class="book-topbar">
+    <a class="book-brand" href="/books" aria-label="Book Studio library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5C8 2 4 3 2 4v15c3-2 7-2 10 0 3-2 7-2 10 0V4c-3-1-7-2-10 1Zm0 0v14"/></svg><span>Book Studio</span></a>
+    <div class="book-title-wrap" id="title-wrap" hidden><input id="book-title" aria-label="Book title" maxlength="150"><span id="save-state" role="status">Saved on this device</span></div>
+    <div class="book-top-actions"><span id="editor-status"></span><button class="secondary-btn" id="edit-turn" hidden>Start editing</button><button class="ghost-btn" id="finish-turn" hidden>Finish editing</button><button class="ghost-btn" id="reading" hidden>Read</button><button class="secondary-btn" id="share" hidden>Share</button><button class="primary-btn" id="export" hidden>Export</button><button class="secondary-btn" id="sign-in">Sign in with Google</button><span id="account-name" hidden></span><a class="ghost-btn" href="/tools">Tools</a></div>
+  </header>
+  <main id="library" class="book-library">
+    <div class="book-library-heading"><div><p class="book-eyebrow">A LITTLE SPACE FOR BIG IDEAS</p><h1>Your bookshelf</h1><p>Stories, sketches and discoveries. Give them a home.</p></div><button class="primary-btn" id="new-book">＋ New book</button></div>
+    <div class="book-library-tools"><div class="book-tabs" role="tablist" aria-label="Book collections"><button role="tab" aria-selected="true" data-collection="mine">My books</button><button role="tab" aria-selected="false" data-collection="shared">Shared with me</button><button role="tab" aria-selected="false" data-collection="local">On this device</button><button role="tab" aria-selected="false" data-collection="trash">Trash</button></div><div class="book-search-row"><input id="book-search" type="search" aria-label="Search books" placeholder="Search titles, folders or tags"><select id="book-sort" aria-label="Sort books"><option value="recent">Recently edited</option><option value="title">Title</option><option value="favorite">Favorites first</option></select><button class="ghost-btn" id="import-backup">Open backup</button></div></div>
+    <div id="book-grid" class="book-grid"></div>
+  </main>
+  <main id="workspace" class="book-workspace" hidden>
+    <aside class="book-pages-panel" aria-label="Pages"><div class="book-panel-heading"><h2>Pages</h2><button class="icon-btn" id="page-menu" aria-label="Page options" title="Page options">•••</button></div><div id="page-list" class="book-page-list"></div><button class="secondary-btn" id="add-page-side">＋ Add page</button><button class="ghost-btn" id="organize">Book details</button><button class="ghost-btn" id="history">History</button><button class="ghost-btn" id="comments">Comments</button></aside>
+    <section class="book-canvas-area" aria-label="Book canvas">
+      <div class="book-toolbar" role="toolbar" aria-label="Add to your book">
+        <button aria-label="Select and move" data-tool="select" aria-pressed="true" title="Select and move">↖ <span>Select</span></button><button aria-label="Add text" data-add="text">T <span>Text</span></button><button aria-label="Add image" id="add-image">▧ <span>Image</span></button><button aria-label="Add shape" data-add="shape">◇ <span>Shape</span></button><button aria-label="Draw" data-tool="pen">✎ <span>Draw</span></button><button aria-label="More tools" id="more-tools">＋ <span>More</span></button><span class="book-toolbar-divider"></span><button id="undo" aria-label="Undo" title="Undo (⌘/Ctrl Z)">↶</button><button id="redo" aria-label="Redo" title="Redo (⌘/Ctrl Shift Z)">↷</button><button id="assets">Illustrations</button><button id="page-settings" class="book-mobile-settings" aria-label="Page settings">⚙</button>
+      </div>
+      <div class="book-viewport" id="book-viewport"><div id="book-spread" class="book-spread"></div></div>
+      <div id="upload-list" class="book-uploads" aria-live="polite"></div>
+      <nav class="book-navigation" aria-label="Book navigation"><div class="book-nav-group"><button id="first-page" class="icon-btn" aria-label="First page" title="First page (Home)">⇤</button><button id="prev-page" class="icon-btn" aria-label="Previous pages" title="Previous pages (Left arrow)">‹</button><button id="page-position" class="book-position" title="Jump to a page">Cover</button><button id="next-page" class="icon-btn" aria-label="Next pages" title="Next pages (Right arrow)">›</button><button id="last-page" class="icon-btn" aria-label="Last page" title="Last page (End)">⇥</button><button aria-label="Add page" id="add-page" class="book-add-page" title="Add page (Shift N)">＋</button></div><div class="book-zoom"><select id="fit-mode" aria-label="Fit view"><option value="book">Fit book</option><option value="page">Fit page</option></select><button id="zoom-out" class="icon-btn" aria-label="Zoom out">−</button><span id="zoom-value">100%</span><button id="zoom-in" class="icon-btn" aria-label="Zoom in">＋</button><button id="shortcuts" class="icon-btn" aria-label="Keyboard shortcuts">?</button></div></nav>
+    </section>
+    <aside id="inspector" class="book-inspector" aria-label="Page and object settings"></aside>
+  </main>
+  <div id="book-toast" class="book-toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="book-dialog" class="book-dialog"><form method="dialog" class="book-dialog-close"><button aria-label="Close dialog" class="icon-btn">×</button></form><div id="dialog-content"></div></dialog>
+  <input type="file" id="image-input" accept="image/png,image/jpeg,image/webp" multiple hidden><input type="file" id="backup-input" accept=".zip,application/zip" hidden>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/video-overlay-builder-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/book-model.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/book-storage.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/book-zip.min.js') }}"></script>
+  <script src="{{ url_for('static', filename=book_js_asset or 'js/book-studio.js') }}"></script>
+</body>
+</html>

@@ -1,4 +1,6 @@
 export const minifiedTargets = [
+  { entry: 'static/js/book-zip.js', out: 'static/js/book-zip.min.js', bundle: true, format: 'iife' },
+  { entry: 'static/js/book-studio.js', out: 'static/js/book-studio.min.js' },
   { entry: 'static/js/dashboard.js', out: 'static/js/dashboard.min.js' },
   { entry: 'static/js/batch-dashboard.js', out: 'static/js/batch-dashboard.min.js' },
   { entry: 'static/js/batch-mode.js', out: 'static/js/batch-mode.min.js' },
@@ -19,6 +21,9 @@ export const minifiedTargets = [
 ];
 
 export const intentionallyUnminifiedScripts = [
+  'static/js/book-zip.min.js',
+  'static/js/book-model.js',
+  'static/js/book-storage.js',
   'static/js/app-shell.js',
   'static/js/auth-utils.js',
   'static/js/calendar.js',

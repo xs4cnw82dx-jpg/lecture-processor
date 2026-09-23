@@ -23,6 +23,14 @@ services:
         value: "1"
       - key: STUDY_PLAN_V2
         value: "1"
+      - key: BOOK_STUDIO_ENABLED
+        value: "1"
+      - key: BOOK_STORAGE_URL
+        sync: false
+      - key: BOOK_STORAGE_KEY
+        sync: false
+      - key: BOOK_STORAGE_BUCKET
+        value: "book-images"
       - key: WEB_THREADS
         value: "4"
       - key: SENTRY_ENVIRONMENT

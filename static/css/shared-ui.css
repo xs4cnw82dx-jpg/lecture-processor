@@ -229,3 +229,11 @@ body.body-scroll-locked {
 .results-title-spaced {
   margin-bottom: 14px;
 }
+
+/* Shared native switch; matches the study controls. */
+input.app-toggle{appearance:none;width:44px;height:24px;flex:none;border:0;border-radius:999px;background:var(--gray-300,#cbd5e1);position:relative;transition:background .2s ease;margin:0;cursor:pointer}
+input.app-toggle::before{content:'';position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:var(--white,#fff);box-shadow:0 1px 2px #0f172a38;transition:transform .2s ease}
+input.app-toggle:checked{background:var(--primary)}
+input.app-toggle:checked::before{transform:translateX(20px)}
+input.app-toggle:focus-visible{outline:3px solid var(--primary-light,#a5b4fc);outline-offset:3px}
+@media(prefers-reduced-motion:reduce){input.app-toggle,input.app-toggle::before{transition:none}}
