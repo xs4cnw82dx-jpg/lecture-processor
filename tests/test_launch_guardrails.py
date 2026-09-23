@@ -30,6 +30,14 @@ from lecture_processor.services import tools_download_service, upload_api_servic
 pytestmark = pytest.mark.usefixtures("disable_sentry")
 
 
+@pytest.fixture(autouse=True)
+def isolate_book_account_boundary(monkeypatch):
+    # Book ownership cleanup has its own transactional tests; these tests isolate account orchestration.
+    from lecture_processor.services import book_account_service
+    monkeypatch.setattr(book_account_service, 'delete_owned', lambda *args: 0)
+    monkeypatch.setattr(book_account_service, 'collect', lambda *args: [])
+
+
 def test_discontinued_gemini_flash_lite_preview_model_is_not_reintroduced():
     repo_root = Path(__file__).resolve().parents[1]
     blocked_model = "gemini-3.1-flash-lite-" + "preview"

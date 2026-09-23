@@ -69,6 +69,8 @@ def export_account_data(app_ctx, request):
     email = decoded_token.get('email', '')
     try:
         payload = account_lifecycle.collect_user_export_payload(uid, email, runtime=app_ctx)
+        from lecture_processor.services import book_account_service
+        payload.setdefault('collections', {})['books'] = book_account_service.collect(app_ctx, uid)
         date_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
         filename = f"lecture-processor-account-export-{date_str}.json"
         data_bytes = json.dumps(payload, ensure_ascii=False, indent=2, default=str).encode('utf-8')
@@ -201,8 +203,12 @@ def _build_account_bundle_archive(app_ctx, uid, email, include):
 
             if include.get('account_json'):
                 account_payload = account_lifecycle.collect_user_export_payload(uid, email, runtime=app_ctx)
+                from lecture_processor.services import book_account_service
+                account_payload.setdefault('collections', {})['books'] = book_account_service.collect(app_ctx, uid)
                 account_bytes = json.dumps(account_payload, ensure_ascii=False, indent=2, default=str).encode('utf-8')
                 archive.writestr('account_json/account-export.json', account_bytes)
+                from lecture_processor.services import book_account_service
+                book_account_service.add_bundle_assets(app_ctx, archive, account_payload.get('collections', {}).get('books', []))
             if collection_truncated:
                 warnings_payload['collection_truncated'] = {
                     'study_packs': {
@@ -640,6 +646,8 @@ def delete_account_data(app_ctx, request):
             deleted['batch_jobs'] = deleted_batches
             deleted['batch_rows'] = deleted_rows
 
+        from lecture_processor.services import book_account_service
+        deleted['books'] = book_account_service.delete_owned(app_ctx, uid, email)
         _delete_uid_collection('job_logs')
         _anonymize_purchases()
         _delete_uid_collection('analytics_events')
@@ -690,6 +698,8 @@ def delete_account_data(app_ctx, request):
 
         remaining = []
         verification_targets = [
+            ('books', 'owner_uid', uid, 'books'),
+            ('book_shares', 'owner_uid', uid, 'book_shares'),
             ('job_logs', 'uid', uid, 'job_logs'),
             ('analytics_events', 'uid', uid, 'analytics_events'),
             ('study_folders', 'uid', uid, 'study_folders'),

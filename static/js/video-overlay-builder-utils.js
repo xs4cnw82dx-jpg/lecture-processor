@@ -1,6 +1,15 @@
 (function (root) {
   'use strict';
 
+  // Shared by the video builder and Book Studio.
+  var SHAPE_OPTIONS = [
+    { value: 'rounded', label: 'Rounded square' }, { value: 'circle', label: 'Circle' },
+    { value: 'triangle', label: 'Triangle' }, { value: 'pentagon', label: 'Pentagon' },
+    { value: 'square', label: 'Square' }, { value: 'diamond', label: 'Diamond' },
+    { value: 'pill', label: 'Pill' }, { value: 'parallelogram', label: 'Parallelogram' },
+    { value: 'arrow-right', label: 'Block arrow' }
+  ];
+
   var SUPPORTED_ANIMATIONS = {
     none: true,
     fade: true,
@@ -151,6 +160,7 @@
   }
 
   var exported = {
+    shapeOptions: SHAPE_OPTIONS,
     buildAnimationSchedule: buildAnimationSchedule,
     clampInteger: clampInteger,
     clampNumber: clampNumber,

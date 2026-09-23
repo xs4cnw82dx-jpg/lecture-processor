@@ -24,6 +24,9 @@ RUN pip install -r requirements.txt -c requirements.constraints.txt
 
 COPY . .
 
+RUN mkdir -p /usr/local/share/fonts/book-studio && \
+    cp static/fonts/books/*.ttf /usr/local/share/fonts/book-studio/ && fc-cache -f
+
 RUN groupadd --system appuser && \
     useradd --system --gid appuser --home-dir /app --shell /usr/sbin/nologin appuser && \
     mkdir -p /app/uploads /app/.cache /app/tmp && \

@@ -28,17 +28,7 @@
     { value: 'wipe', label: 'Wipe' },
     { value: 'none', label: 'None' }
   ];
-  var SHAPE_OPTIONS = [
-    { value: 'rounded', label: 'Rounded square' },
-    { value: 'circle', label: 'Circle' },
-    { value: 'triangle', label: 'Triangle' },
-    { value: 'pentagon', label: 'Pentagon' },
-    { value: 'square', label: 'Square' },
-    { value: 'diamond', label: 'Diamond' },
-    { value: 'pill', label: 'Pill' },
-    { value: 'parallelogram', label: 'Parallelogram' },
-    { value: 'arrow-right', label: 'Block arrow' }
-  ];
+  var SHAPE_OPTIONS = utils.shapeOptions;
   var ARROW_OPTIONS = [
     { value: 'line', label: 'Line' },
     { value: 'arrow', label: 'Arrow' },
