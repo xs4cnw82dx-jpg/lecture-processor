@@ -110,7 +110,7 @@
       } else body=`<rect width="${w}" height="${h}" rx="2" fill="#edf0f5"/><text x="4" y="10" font-size="4" fill="#64748b">Image loading…</text>`;
     }
     if(o.type==='drawing') {
-      const pts=o.points||[];body=pts.slice(1).map((p,i)=>`<path d="M ${pts[i][0]} ${pts[i][1]} L ${p[0]} ${p[1]}" stroke="${esc(o.stroke)}" stroke-width="${o.strokeWidth*(o.brush==='highlighter'?3:Math.max(.3,(p[2]||.5)*1.5))}" stroke-linecap="round" opacity="${o.brush==='highlighter'?.35:o.brush==='pencil'?.72:1}"/>`).join('');
+      const pts=o.points||[];body=pts.length===1?`<circle cx="${pts[0][0]}" cy="${pts[0][1]}" r="${o.strokeWidth*(o.brush==='highlighter'?3:Math.max(.3,(pts[0][2]||.5)*1.5))/2}" fill="${esc(o.stroke)}" opacity="${o.brush==='highlighter'?.35:o.brush==='pencil'?.72:1}"/>`:pts.slice(1).map((p,i)=>`<path d="M ${pts[i][0]} ${pts[i][1]} L ${p[0]} ${p[1]}" stroke="${esc(o.stroke)}" stroke-width="${o.strokeWidth*(o.brush==='highlighter'?3:Math.max(.3,(p[2]||.5)*1.5))}" stroke-linecap="round" opacity="${o.brush==='highlighter'?.35:o.brush==='pencil'?.72:1}"/>`).join('');
     }
     if(o.type==='table') {
       const cells=o.cells||[['',''],['','']],rows=cells.length||1,cols=Math.max(1,...cells.map(r=>r.length));
@@ -187,7 +187,10 @@
     const illustration=raw.illustration||{};
     Object.assign(next,{title:text(raw.title,140)+' (imported)',folder:text(raw.folder,80),tags:arr(raw.tags,12).map(t=>text(t,40)),palette:arr(raw.palette,12).map(c=>hex(c,'#4f46e5')),pages,deletedPages,styles:Object.fromEntries(['heading','body','caption'].map(k=>[k,style((raw.styles||{})[k])])),illustration:{style:text(illustration.style),characters:text(illustration.characters,2000),space:text(illustration.space,100),blend:illustration.blend!==false,transparent:illustration.transparent!==false}});
     next.assets=arr(raw.assets,400).map(a=>({id:safeId(a.id),name:text(a.name,180),mime:one(a.mime,['image/png','image/jpeg','image/webp'],'image/png')}));
-    next.versions=arr(raw.versions,20).map(v=>({id:safeId(v.id),name:text(v.name,100),pages:arr(v.pages,100).map(cleanPage),deletedPages:arr(v.deletedPages,100).map(cleanPage),metadata:{title:next.title,folder:next.folder,tags:next.tags,palette:next.palette,styles:next.styles,illustration:next.illustration}}));
+    next.versions=arr(raw.versions,20).map(v=>{
+      const m=v.metadata||{},i=m.illustration||{};
+      return {id:safeId(v.id),name:text(v.name,100),pages:arr(v.pages,100).map(cleanPage),deletedPages:arr(v.deletedPages,100).map(cleanPage),metadata:{title:text(m.title||next.title,150),folder:text(m.folder,80),tags:arr(m.tags,12).map(t=>text(t,40)),palette:arr(m.palette,12).map(c=>hex(c,'#4f46e5')),styles:Object.fromEntries(['heading','body','caption'].map(k=>[k,style((m.styles||next.styles)[k])])),illustration:{style:text(i.style),characters:text(i.characters,2000),space:text(i.space,100),blend:i.blend!==false,transparent:i.transparent!==false}}};
+    });
     return next;
   }
 

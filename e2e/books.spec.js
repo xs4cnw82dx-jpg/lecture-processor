@@ -1,6 +1,6 @@
 const {test,expect}=require('@playwright/test');
 const fs=require('fs');
-const tinyPNG=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jAusAAAAASUVORK5CYII=','base64');
+const tinyPNG=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAMgAAACWCAYAAACb3McZAAABnklEQVR4nO3VMRGAMAAEwYB/JamRgwgkxEByGNgtv7/5653fM4Ctez8DAoEfHgSCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBMbZAjdEBFaP6faTAAAAAElFTkSuQmCC','base64');
 
 async function localStudio(page){
   await page.route('**/static/js/firebase-bootstrap.js',route=>route.fulfill({contentType:'text/javascript',body:'window.LectureProcessorBootstrap={getAuth:()=>({currentUser:null,onAuthStateChanged:fn=>queueMicrotask(()=>fn(null))})};'}));
@@ -17,7 +17,7 @@ test('local books fit the viewport, retain text, respect focus and manage pages'
   const pageBounds=await page.locator('.book-sheet').boundingBox();
   const viewport=page.viewportSize();
   expect(pageBounds.height).toBeLessThan(viewport.height-130);
-  await page.getByRole('button',{name:'T Text',exact:true}).click();
+  await page.getByRole('button',{name:'Add text',exact:true}).click();
   await page.getByRole('textbox',{name:'Text',exact:true}).fill('A small fox found a bright idea.');
   await field(page,'style.font').selectOption('Andika');
   await field(page,'style.weight').selectOption('700');
@@ -40,7 +40,7 @@ test('local books fit the viewport, retain text, respect focus and manage pages'
   await expect(page.locator('.book-thumb')).toHaveCount(5);
   await page.reload();
   await expect(page.locator('.book-thumb')).toHaveCount(5);
-  await page.getByRole('button',{name:'First page',exact:true}).click();
+  if(await page.getByRole('button',{name:'First page',exact:true}).isEnabled())await page.getByRole('button',{name:'First page',exact:true}).click();
   await expect(page.locator('#book-spread svg')).toContainText('A small fox found a bright idea.');
 });
 
@@ -102,7 +102,7 @@ test('mobile navigation, drawing and reduced-motion remain usable',async({page})
   await page.getByRole('button',{name:'Next pages',exact:true}).click();
   const metrics=await page.evaluate(()=>({width:document.body.scrollWidth,viewport:innerWidth,animation:getComputedStyle(document.getElementById('book-spread')).animationName,nav:document.querySelector('.book-navigation').getBoundingClientRect().bottom}));
   expect(metrics.width).toBeLessThanOrEqual(metrics.viewport);expect(metrics.animation).toBe('none');expect(metrics.nav).toBeLessThanOrEqual(844);
-  await page.getByRole('button',{name:'✎ Draw',exact:true}).click();
+  await page.getByRole('button',{name:'Draw',exact:true}).click();
   const sheet=page.locator('.book-sheet');const box=await sheet.boundingBox();
   await sheet.dispatchEvent('pointerdown',{pointerType:'pen',pointerId:1,clientX:box.x+30,clientY:box.y+100,pressure:.7,bubbles:true});
   await page.dispatchEvent('body','pointermove',{pointerType:'pen',pointerId:1,clientX:box.x+100,clientY:box.y+120,pressure:.3,bubbles:true});

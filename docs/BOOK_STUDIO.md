@@ -4,7 +4,7 @@ Book Studio is available from **Tools → Book Studio** (`/books`). It creates h
 
 ## Using a book
 
-Start with a blank sketchbook, picture book, journal or visual explanation. The cover and back cover stand alone; the inside pages appear in facing pairs. The bottom navigation always provides first, previous, next and last, page selection, Add page, Fit book/Fi​​t page and zoom. Small screens show one page and put page, history and book actions under More. Page settings open with the settings button.
+Start with a blank sketchbook, picture book, journal or visual explanation. The cover and back cover stand alone; the inside pages appear in facing pairs. The bottom navigation always provides first, previous, next and last, page selection, Add page, Fit book/Fit page and zoom. Small screens show one page and put page, history and book actions under More. Page settings open with the settings button.
 
 Drop PNG, JPEG or WebP illustrations onto either visible page, paste an image, or use Image. The original is retained. Imports start within half the page width and height, with proportions locked. Small/Medium/Large/Fit page, corner handles and millimeter dimensions provide resizing; cropping, Fill page and Span both pages are explicit choices. Linked spreads move together; choose Split illustration before separating them.
 
