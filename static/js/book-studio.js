@@ -3036,6 +3036,7 @@
       assets: result.assets,
       local: false,
     });
+    $("book-title").value = b.title;
     savedPages = Object.fromEntries(
       b.pages.concat(b.deletedPages).map((p) => [p.id, JSON.stringify(p)]),
     );

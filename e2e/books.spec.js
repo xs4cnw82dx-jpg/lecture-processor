@@ -1,5 +1,6 @@
 const { test, expect } = require("@playwright/test");
 const fs = require("fs");
+const BookModel = require("../static/js/book-model.js");
 const tinyPNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAMgAAACWCAYAAACb3McZAAABnklEQVR4nO3VMRGAMAAEwYB/JamRgwgkxEByGNgtv7/5653fM4Ctez8DAoEfHgSCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBIJAIAgEgkAgCASCQCAIBMbZAjdEBFaP6faTAAAAAElFTkSuQmCC",
   "base64",
@@ -498,6 +499,57 @@ test("mobile object settings reopen the selection and remain open when switching
   await expect(page.locator("#inspector")).toBeVisible();
   await settingsTab(page).click();
   await expect(field(page, "style.font")).toBeVisible();
+});
+
+test("shared refresh updates the title while preserving the reader's page and zoom", async ({
+  page,
+}) => {
+  await page.route("**/static/js/firebase-bootstrap.js", (route) =>
+    route.fulfill({
+      contentType: "text/javascript",
+      body: "window.LectureProcessorBootstrap={getAuth:()=>({currentUser:null,onAuthStateChanged:fn=>queueMicrotask(()=>fn(null))})};",
+    }),
+  );
+  const book = BookModel.book("picture");
+  book.id = "viewer-polish";
+  book.local = false;
+  book.role = "view";
+  book.revision = 1;
+  book.title = "The first draft";
+  book.page_ids = book.pages.map((p) => p.id);
+  await page.route("**/api/books/viewer-polish**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/revision"))
+      return route.fulfill({
+        json: { book: { revision: 2, role: "view", editor: null } },
+      });
+    const updated = url.searchParams.has("since");
+    return route.fulfill({
+      json: {
+        book: {
+          ...book,
+          title: updated ? "The finished story" : book.title,
+          revision: updated ? 2 : 1,
+        },
+        pages: updated ? [] : book.pages,
+        assets: [],
+      },
+    });
+  });
+  await page.goto("/books/viewer-polish");
+  await expect(
+    page.getByRole("textbox", { name: "Book title", exact: true }),
+  ).toHaveValue("The first draft");
+  await page.getByRole("button", { name: "Next pages", exact: true }).click();
+  await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+  await expect(
+    page.getByRole("textbox", { name: "Book title", exact: true }),
+  ).toHaveValue("The finished story", { timeout: 12000 });
+  await expect(page.locator("#page-position")).toHaveText("1–2 / 2");
+  await expect(page.locator("#zoom-value")).toHaveText("110%");
+  await expect(
+    page.getByRole("button", { name: "Add text", exact: true }),
+  ).toBeDisabled();
 });
 
 test("themes, page organization, version preview/restore and searchable help are usable", async ({
