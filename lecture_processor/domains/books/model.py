@@ -95,6 +95,8 @@ def item(raw):
         'tableHeader': raw.get('tableHeader') is not False,
         'tableStriped': raw.get('tableStriped') is not False,
         'tableRounded': raw.get('tableRounded') is not False,
+        'tableStyle': raw.get('tableStyle') if raw.get('tableStyle') in ('paper', 'ruled', 'custom') else 'paper',
+        'tableColumns': bool(raw.get('tableColumns')),
         'flowDirection': 'vertical' if raw.get('flowDirection') == 'vertical' else 'horizontal',
         'flowShape': raw.get('flowShape') if raw.get('flowShape') in ('rounded', 'pill', 'square') else 'rounded',
         'arrowHead': raw.get('arrowHead') if raw.get('arrowHead') in ('none', 'end', 'both') else 'end',

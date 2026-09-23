@@ -406,7 +406,8 @@
   function applyTheme() {
     if (!checkpoint()) return;
     const t = themes[themeChoice],
-      old = b.palette.slice();
+      old = b.palette.slice(),
+      oldBodyFont = b.styles.body.font;
     b.palette = t.palette.slice();
     ["heading", "body", "caption"].forEach((k) => {
       b.styles[k].font = k === "heading" ? t.font : t.body;
@@ -418,6 +419,10 @@
         if (o.styleName) {
           o.style = { ...o.style, ...b.styles[o.styleName] };
           o.runs = [];
+        }
+        if (o.type === "table" && o.tableStyle !== "custom") {
+          if (o["style"].font === oldBodyFont) o["style"].font = t.body;
+          o["style"].color = t.palette[3];
         }
         ["fill", "stroke"].forEach((k) => {
           const i = old.indexOf(o[k]);
@@ -1310,10 +1315,36 @@
           o.shape,
           M.shapeOptions.map((s) => [s.value, s.label]),
         );
-      if (["shape", "arrow", "drawing", "table", "flow"].includes(o.type))
+      if (o.type === "table") {
+        html += selectField(
+          "Table style",
+          "tableStyle",
+          o.tableStyle || "paper",
+          [
+            ["paper", "Match page paper"],
+            ["ruled", "Simple ruled lines"],
+            ["custom", "Custom colors"],
+          ],
+        );
+        html +=
+          '<p class="book-muted book-hint">' +
+          (o.tableStyle === "custom"
+            ? "Choose your own header, line and text colors. Empty cells keep the page’s paper color."
+            : "Colors follow this page’s paper, with gentle shading and readable text.") +
+          "</p>";
+      }
+      if (
+        ["shape", "arrow", "drawing", "flow"].includes(o.type) ||
+        (o.type === "table" && o.tableStyle === "custom")
+      )
         html +=
           '<div class="book-row">' +
-          field("Fill", "fill", o.fill, "color") +
+          field(
+            o.type === "table" ? "Shading color" : "Fill",
+            "fill",
+            o.fill,
+            "color",
+          ) +
           field("Line", "stroke", o.stroke, "color") +
           "</div>" +
           field(
@@ -1321,8 +1352,18 @@
             "strokeWidth",
             o.strokeWidth,
             "range",
-            'min="0.1" max="10" step="0.1"',
+            o.type === "table"
+              ? 'min="0.1" max="1.5" step="0.05"'
+              : 'min="0.1" max="10" step="0.1"',
           );
+      if (o.type === "table" && o.tableStyle !== "custom")
+        html += field(
+          "Line thickness",
+          "strokeWidth",
+          o.strokeWidth,
+          "range",
+          'min="0.1" max="1.5" step="0.05"',
+        );
       if (o.type === "arrow")
         html +=
           selectField("Arrowheads", "arrowHead", o.arrowHead || "end", [
@@ -1352,7 +1393,9 @@
             'min="6" max="160"',
           ) +
           "</div>" +
-          field("Text color", "style.color", o["style"].color, "color");
+          (o.type !== "table" || o.tableStyle === "custom"
+            ? field("Text color", "style.color", o["style"].color, "color")
+            : "");
       if (o.type === "table") {
         const rows = o.cells.length || 1,
           cols = Math.max(1, ...o.cells.map((r) => r.length));
@@ -1360,7 +1403,14 @@
         html +=
           toggle("Header row", "tableHeader", o.tableHeader !== false) +
           toggle("Alternating rows", "tableStriped", o.tableStriped !== false) +
-          toggle("Rounded corners", "tableRounded", o.tableRounded !== false);
+          toggle("Column lines", "tableColumns", !!o.tableColumns) +
+          (o.tableStyle === "ruled"
+            ? ""
+            : toggle(
+                "Rounded corners",
+                "tableRounded",
+                o.tableRounded !== false,
+              ));
       }
       if (o.type === "flow") {
         html +=
@@ -1661,6 +1711,17 @@
         const oldW = o.w,
           oldH = o.h;
         if (
+          o.type === "table" &&
+          name === "tableStyle" &&
+          value === "custom" &&
+          o.tableStyle !== "custom"
+        ) {
+          const colors = M.tableAppearance(o, page().background);
+          o.fill = colors.header;
+          o.stroke = colors.line;
+          o["style"].color = colors.ink;
+        }
+        if (
           (name === "w" || name === "h") &&
           o.type === "image" &&
           o.aspectLock
@@ -1754,7 +1815,7 @@
       o.name = baseName + " " + ++count;
     if (type === "table") {
       o.h = 55;
-      o.strokeWidth = 0.3;
+      o.strokeWidth = 0.2;
       o.style = { ...b.styles.body, size: 13, color: b.palette[3] };
       o.cells = [
         ["Character", "Favorite thing"],
@@ -3295,7 +3356,15 @@
         if (item().type === "text") applyStyle("color", color);
         else if (["drawing", "arrow"].includes(item().type))
           item().stroke = color;
-        else item().fill = color;
+        else {
+          if (item().type === "table" && item().tableStyle !== "custom") {
+            const colors = M.tableAppearance(item(), page().background);
+            item().stroke = colors.line;
+            item()["style"].color = colors.ink;
+            item().tableStyle = "custom";
+          }
+          item().fill = color;
+        }
         changed();
         return;
       }

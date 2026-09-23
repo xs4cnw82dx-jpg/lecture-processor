@@ -96,6 +96,8 @@
         tableHeader: true,
         tableStriped: true,
         tableRounded: true,
+        tableStyle: "paper",
+        tableColumns: false,
         flowDirection: "vertical",
         flowShape: "rounded",
         arrowHead: "end",
@@ -435,7 +437,7 @@
         });
     });
     // Wrap whole words across style boundaries; split only a word wider than the box.
-    for (let i = 0; i < chars.length; ) {
+    for (let i = 0; i < chars.length;) {
       if (chars[i].ch === "\n") {
         flush();
         i++;
@@ -517,6 +519,64 @@
           .join("");
       })
       .join("");
+  }
+  function tableAppearance(o, paper = "#fffdf7") {
+    const rgb = (hex) => {
+      const safe = /^#[a-f\d]{6}$/i.test(hex) ? hex : "#fffdf7";
+      return [1, 3, 5].map((start) =>
+        parseInt(safe.slice(start, start + 2), 16),
+      );
+    };
+    const blend = (a, b, amount) =>
+      "#" +
+      rgb(a)
+        .map((v, i) =>
+          Math.round(v + (rgb(b)[i] - v) * amount)
+            .toString(16)
+            .padStart(2, "0"),
+        )
+        .join("");
+    const luminance = (color) =>
+      rgb(color)
+        .map((v) => {
+          const s = v / 255;
+          return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        })
+        .reduce((total, v, i) => total + v * [0.2126, 0.7152, 0.0722][i], 0);
+    const contrast = (a, b) =>
+      (Math.max(luminance(a), luminance(b)) + 0.05) /
+      (Math.min(luminance(a), luminance(b)) + 0.05);
+    const readable = (background, preferred) =>
+      contrast(background, preferred) >= 4.5
+        ? preferred
+        : contrast(background, "#000000") >= contrast(background, "#ffffff")
+          ? "#000000"
+          : "#ffffff";
+    const kind = ["paper", "ruled", "custom"].includes(o.tableStyle)
+      ? o.tableStyle
+      : "paper";
+    const ink = readable(paper, o["style"].color);
+    const header =
+      kind === "custom"
+        ? o.fill
+        : kind === "ruled"
+          ? paper
+          : blend(paper, ink, 0.075);
+    const stripe = blend(
+      paper,
+      kind === "custom" ? o.fill : ink,
+      kind === "custom" ? 0.18 : 0.025,
+    );
+    return {
+      kind,
+      paper,
+      header,
+      stripe,
+      line: kind === "custom" ? o.stroke : blend(paper, ink, 0.23),
+      ink: kind === "custom" ? o["style"].color : ink,
+      headerInk: kind === "custom" ? o["style"].color : readable(header, ink),
+      stripeInk: kind === "custom" ? o["style"].color : readable(stripe, ink),
+    };
   }
   function objectSvg(o, assets, options = {}) {
     if (o.hidden || (options.editable && nativeEligible(o))) return "";
@@ -606,25 +666,48 @@
         rows = cells.length,
         cols = Math.max(1, ...cells.map((r) => r.length));
       const cw = w / cols,
-        ch = h / rows;
-      body = `<defs><clipPath id="table-${o.id}"><rect x=".2" y=".2" width="${w - 0.4}" height="${h - 0.4}" rx="${o.tableRounded !== false ? 3 : 0}"/></clipPath></defs><g clip-path="url(#table-${o.id})">`;
+        ch = h / rows,
+        colors = tableAppearance(o, options.paper),
+        pad = Math.min(3.5, cw / 6, ch / 4),
+        radius = colors.kind !== "ruled" && o.tableRounded !== false ? 2 : 0;
+      body = `<g data-table-style="${colors.kind}"><defs><clipPath id="table-${o.id}"><rect width="${w}" height="${h}" rx="${radius}"/></clipPath></defs><g clip-path="url(#table-${o.id})">`;
       body += cells
         .map((row, r) =>
           Array.from({ length: cols }, (_, c) => {
-            const header = r === 0 && o.tableHeader !== false;
+            const header = r === 0 && o.tableHeader !== false,
+              striped = !header && o.tableStriped !== false && r % 2 === 0;
             const cellObj = {
               ...o,
-              w: Math.max(0.2, cw - 4),
-              h: ch - 3,
+              w: Math.max(0.2, cw - pad * 2),
+              h: ch - pad * 2,
               text: row[c] || "",
               runs: [],
-              style: { ...o.style, weight: header ? 700 : o["style"].weight },
+              style: {
+                ...o.style,
+                color: header
+                  ? colors.headerInk
+                  : striped
+                    ? colors.stripeInk
+                    : colors.ink,
+                weight: header ? 700 : o["style"].weight,
+              },
             };
-            return `<svg x="${c * cw}" y="${r * ch}" width="${cw}" height="${ch}" viewBox="0 0 ${cw} ${ch}" overflow="hidden"><rect width="${cw}" height="${ch}" fill="#ffffff"/><rect width="${cw}" height="${ch}" fill="${esc(o.fill)}" opacity="${header ? 1 : o.tableStriped !== false && r % 2 === 0 ? 0.28 : 0}"/><rect width="${cw}" height="${ch}" fill="none" stroke="${esc(o.stroke)}" stroke-width="${o.strokeWidth}"/><g transform="translate(2 1.5)">${textSvg(cellObj)}</g></svg>`;
+            const fill = header
+              ? colors.header
+              : o.tableStriped !== false && r % 2 === 0
+                ? colors.stripe
+                : colors.paper;
+            const top = Math.max(pad, (ch - textLines(cellObj).height) / 2);
+            return `<svg data-table-cell="${r},${c}" x="${c * cw}" y="${r * ch}" width="${cw}" height="${ch}" viewBox="0 0 ${cw} ${ch}" overflow="hidden"><rect width="${cw}" height="${ch}" fill="${esc(fill)}"/><g transform="translate(${pad} ${top})">${textSvg(cellObj)}</g></svg>`;
           }).join(""),
         )
         .join("");
-      body += `</g><rect x="${o.strokeWidth / 2}" y="${o.strokeWidth / 2}" width="${Math.max(0.2, w - o.strokeWidth)}" height="${Math.max(0.2, h - o.strokeWidth)}" rx="${o.tableRounded !== false ? 3 : 0}" fill="none" stroke="${esc(o.stroke)}" stroke-width="${o.strokeWidth}"/>`;
+      for (let r = 1; r < rows; r++)
+        body += `<path d="M 0 ${r * ch} H ${w}" fill="none" stroke="${esc(colors.line)}" stroke-width="${o.strokeWidth}"/>`;
+      if (o.tableColumns)
+        for (let c = 1; c < cols; c++)
+          body += `<path data-table-column-line="${c}" d="M ${c * cw} 0 V ${h}" fill="none" stroke="${esc(colors.line)}" stroke-width="${o.strokeWidth}"/>`;
+      body += `</g>${colors.kind === "ruled" ? "" : `<rect x="${o.strokeWidth / 2}" y="${o.strokeWidth / 2}" width="${Math.max(0.2, w - o.strokeWidth)}" height="${Math.max(0.2, h - o.strokeWidth)}" rx="${radius}" fill="none" stroke="${esc(colors.line)}" stroke-width="${o.strokeWidth}"/>`}</g>`;
     }
     if (o.type === "flow") {
       const steps = o.steps?.length ? o.steps : ["First", "Then", "Finally"],
@@ -680,7 +763,7 @@
           o.runs.length ? o.runs.map((r) => r.text).join("") : o.text,
         )
         .join(" "),
-    )}</desc><g aria-hidden="true" clip-path="url(#page-${p.id})">${p.items.map((o) => objectSvg(o, assets, options)).join("")}</g>${options.guides ? `<rect x="10" y="10" width="${W - 20}" height="${H - 20}" fill="none" stroke="#818cf8" stroke-width=".3" stroke-dasharray="2 2" pointer-events="none"/>` : ""}</svg>`;
+    )}</desc><g aria-hidden="true" clip-path="url(#page-${p.id})">${p.items.map((o) => objectSvg(o, assets, { ...options, paper: bg })).join("")}</g>${options.guides ? `<rect x="10" y="10" width="${W - 20}" height="${H - 20}" fill="none" stroke="#818cf8" stroke-width=".3" stroke-dasharray="2 2" pointer-events="none"/>` : ""}</svg>`;
   }
   function preserveSpreads(pages) {
     const output = [],
@@ -859,6 +942,8 @@
           tableHeader: o.tableHeader !== false,
           tableStriped: o.tableStriped !== false,
           tableRounded: o.tableRounded !== false,
+          tableStyle: one(o.tableStyle, ["paper", "ruled", "custom"], "paper"),
+          tableColumns: !!o.tableColumns,
           flowDirection: one(
             o.flowDirection,
             ["horizontal", "vertical"],
@@ -992,6 +1077,7 @@
     esc,
     clamp,
     baseStyle,
+    tableAppearance,
     page,
     object,
     book,
