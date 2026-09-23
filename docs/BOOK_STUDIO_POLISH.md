@@ -30,17 +30,18 @@ Additional improvements implemented:
 24. Busy states for asynchronous actions and protection against duplicate submissions.
 25. Styled collapsible sections with reduced-motion support.
 26. Searchable shortcut reference that distinguishes text editing from object shortcuts.
-
 27. A dedicated Layers tab instead of burying layers beneath long property panels.
 28. Save status waits for the actual device write, with a leave-page warning while a write is pending.
 29. Unique names for new objects, making their layers easier to identify.
+30. Object settings in the selection toolbar, including on narrow screens; switching layers keeps an open settings panel visible.
+31. Shared readers see title changes in the header without losing their page or zoom.
 
 ## Validation
 
-- 647 backend tests, 106 client utility tests and all 35 Playwright browser tests pass locally.
-- The nine Book Studio browser journeys cover on-page typing and grouped undo, native dropdown changes, true desktop/mobile dismissal, clipboard copy/paste, pill proportions, layer movement/locking/visibility, center/thirds snapping, guide preferences, table cells and diagram steps, themes, page movement, version preview/restore, image imports, backups, every export variant, reduced motion and narrow screens.
+- The full backend suite passes (647 tests). The client suite passes (108 tests). Required repository CI passes for the main polish and paper-matched table releases.
+- All 12 Book Studio browser journeys pass locally. They cover on-page typing and grouped undo, native dropdown changes, true desktop/mobile dismissal, clipboard copy/paste, pill proportions, layer movement/locking/visibility, center/thirds snapping, guide preferences, table cells and diagram steps, themes, page movement, version preview/restore, image imports, backups, every export variant, reduced motion, narrow-screen object settings, and shared title refresh without moving the reader's page or zoom.
 - Python and JavaScript lint, generated-asset checks, repository hygiene, tracked-secret guards and all 16 smoke checks pass.
-- Signed-in Chrome: completed the actual Google flow, edited text on the page, changed static font weights, closed/reopened settings, edited a table, uploaded a non-sensitive Mac PNG and saved the book to the account. Continued cloud, export and deployed-site verification is recorded in the PR before delivery.
+- Signed-in Chrome: completed the actual Google flow, edited text on the page, changed static font weights, closed/reopened settings, edited a table, uploaded a non-sensitive Mac PNG and saved/reloaded the book from the account. All five Word/PDF export combinations were downloaded; every rendered sheet was visually inspected. Deployed-site verification is recorded in the PR before delivery.
 
 ## Compatibility
 
@@ -52,4 +53,4 @@ The original release's Windows Word and physical-printing limitations remain. No
 
 Tables now default to **Match page paper**. Their backgrounds inherit the page color, with a lightly shaded header, subtle alternate rows, fine rules and vertically centered text. The renderer adjusts text contrast on light and dark paper. Column lines are optional; **Simple ruled lines** removes the outer box. **Custom colors** remains available for deliberate overrides. Theme changes update the table's matching body font, and the same renderer is used for the editor, thumbnails, version previews and print exports. Existing tables without an explicit style receive the paper-matched appearance without changing their content or geometry.
 
-Additional validation covers colored paper, dark-paper contrast, custom colors, column rules, device reload and backup round trips. All 10 Book Studio browser journeys pass. Hands-on Chrome checks cover warm, green and dark paper plus both paper and ruled styles.
+Additional validation covers colored paper, dark-paper contrast, custom colors, column rules, device reload and backup round trips. Hands-on Chrome checks cover warm, green and dark paper plus both paper and ruled styles.
