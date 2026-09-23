@@ -422,6 +422,47 @@ test("book tables and story diagrams edit cells and steps and survive backup/rel
   ).toHaveValue("A secret");
 });
 
+test("tables follow page paper, offer subtle ruled styling and retain custom colors", async ({
+  page,
+}) => {
+  await localStudio(page);
+  await page.getByRole("button", { name: "Next pages", exact: true }).click();
+  await page.getByRole("button", { name: "More tools", exact: true }).click();
+  await page.locator('[data-extra="table"]').click();
+  await expect(field(page, "tableStyle")).toHaveValue("paper");
+  const table = () =>
+    page.locator('.book-sheet[data-active="true"] [data-table-style]');
+  const bodyCell = () => table().locator('[data-table-cell="1,0"] > rect');
+  await expect(bodyCell()).toHaveAttribute("fill", "#fffdf7");
+  await expect(table().locator("[data-table-column-line]")).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Page settings", exact: true })
+    .click();
+  await field(page, "page.background").fill("#e8f1e4");
+  await expect(bodyCell()).toHaveAttribute("fill", "#e8f1e4");
+  await layersTab(page).click();
+  await page.getByRole("button", { name: "Table", exact: true }).click();
+  await settingsTab(page).click();
+  await field(page, "tableStyle").selectOption("ruled");
+  await expect(table()).toHaveAttribute("data-table-style", "ruled");
+  await expect(table().locator(":scope > rect")).toHaveCount(0);
+  await field(page, "tableColumns").check();
+  await expect(table().locator("[data-table-column-line]")).toHaveCount(1);
+  await field(page, "tableStyle").selectOption("custom");
+  await field(page, "fill").fill("#b8ccb5");
+  await expect(
+    table().locator('[data-table-cell="0,0"] > rect'),
+  ).toHaveAttribute("fill", "#b8ccb5");
+  await expect(page.locator("#save-state")).toHaveText("Saved on this device");
+  await page.reload();
+  await page.getByRole("button", { name: "Next pages", exact: true }).click();
+  await expect(table()).toHaveAttribute("data-table-style", "custom");
+  await expect(
+    table().locator('[data-table-cell="0,0"] > rect'),
+  ).toHaveAttribute("fill", "#b8ccb5");
+  await expect(bodyCell()).toHaveAttribute("fill", "#e8f1e4");
+});
+
 test("themes, page organization, version preview/restore and searchable help are usable", async ({
   page,
 }) => {

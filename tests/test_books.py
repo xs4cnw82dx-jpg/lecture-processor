@@ -304,6 +304,10 @@ def test_book_creative_options_validate_and_round_trip():
     table = model.item({'id': 'table1', 'type': 'table', 'tableHeader': False, 'tableStriped': False, 'tableRounded': False, 'cells': [['Moon', 'Fox']]})
     assert table['tableHeader'] is False and table['tableStriped'] is False and table['tableRounded'] is False
     assert table['cells'] == [['Moon', 'Fox']]
+    assert table['tableStyle'] == 'paper' and table['tableColumns'] is False
+    styled = model.item({**table, 'tableStyle': 'custom', 'tableColumns': True})
+    assert model.item(styled)['tableStyle'] == 'custom' and model.item(styled)['tableColumns'] is True
+    assert model.item({**styled, 'tableStyle': '<script>'})['tableStyle'] == 'paper'
     flow = model.item({'id': 'flow1', 'type': 'flow', 'flowDirection': 'vertical', 'flowShape': 'pill', 'steps': ['Imagine', 'Make']})
     assert model.item(flow)['flowDirection'] == 'vertical'
     assert model.item(flow)['flowShape'] == 'pill'

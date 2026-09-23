@@ -47,3 +47,9 @@ Additional improvements implemented:
 Existing books retain their page geometry and content. Older diagrams retain their horizontal direction; new diagrams start vertically to suit a book page. Drawing/print guides are editor overlays and never enter exports. New table, arrow and diagram choices are validated on the server and retained by portable backups.
 
 The original release's Windows Word and physical-printing limitations remain. No paid service or infrastructure change is required.
+
+## Tables that match the paper
+
+Tables now default to **Match page paper**. Their backgrounds inherit the page color, with a lightly shaded header, subtle alternate rows, fine rules and vertically centered text. The renderer adjusts text contrast on light and dark paper. Column lines are optional; **Simple ruled lines** removes the outer box. **Custom colors** remains available for deliberate overrides. Theme changes update the table's matching body font, and the same renderer is used for the editor, thumbnails, version previews and print exports. Existing tables without an explicit style receive the paper-matched appearance without changing their content or geometry.
+
+Additional validation covers colored paper, dark-paper contrast, custom colors, column rules, device reload and backup round trips. All 10 Book Studio browser journeys pass. Hands-on Chrome checks cover warm, green and dark paper plus both paper and ruled styles.

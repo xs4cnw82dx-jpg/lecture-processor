@@ -1,6 +1,69 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const M = require("../static/js/book-model.js");
+test("paper tables follow the page color and keep readable text on light and dark paper", () => {
+  const table = M.object("table", {
+    strokeWidth: 0.2,
+    cells: [
+      ["Character", "Wish"],
+      ["Fox", "Stars"],
+      ["Owl", "Stories"],
+    ],
+  });
+  const luminance = (hex) =>
+    [1, 3, 5]
+      .map((i) => {
+        const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+        return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+      })
+      .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const contrast = (a, b) =>
+    (Math.max(luminance(a), luminance(b)) + 0.05) /
+    (Math.min(luminance(a), luminance(b)) + 0.05);
+  for (const paper of ["#fffdf7", "#e8f1e4", "#f4dada", "#252e3b", "#777777"]) {
+    const palette = M.tableAppearance(table, paper);
+    assert.equal(palette.paper, paper);
+    assert.ok(contrast(palette.paper, palette.ink) >= 4.5);
+    assert.ok(contrast(palette.header, palette.headerInk) >= 4.5);
+    assert.ok(contrast(palette.stripe, palette.stripeInk) >= 4.5);
+    assert.notEqual(palette.line, table.stroke);
+    const svg = M.svg({ ...M.page(), background: paper, items: [table] });
+    assert.ok(svg.includes('data-table-style="paper"'));
+    assert.ok(svg.includes(`fill="${palette.header}"`));
+    assert.ok(!svg.includes('stroke="#4f46e5"'));
+    assert.ok(!svg.includes("data-table-column-line"));
+    const print = M.svg(
+      { ...M.page(), background: paper, items: [table] },
+      {},
+      { economy: true },
+    );
+    assert.ok(
+      print.includes(`fill="${M.tableAppearance(table, "#ffffff").header}"`),
+    );
+  }
+});
+test("table styles and column rules survive backups without changing custom colors", () => {
+  const b = M.book();
+  const table = M.object("table", {
+    tableStyle: "custom",
+    tableColumns: true,
+    fill: "#b8ccb5",
+    stroke: "#56674e",
+  });
+  b.pages[1].items.push(table);
+  const restored = M.readBackup(b).pages[1].items[0];
+  assert.equal(restored.tableStyle, "custom");
+  assert.equal(restored.tableColumns, true);
+  assert.equal(M.tableAppearance(restored, "#fff8e7").header, "#b8ccb5");
+  assert.equal(M.tableAppearance(restored, "#fff8e7").line, "#56674e");
+  assert.ok(
+    M.svg({ ...M.page(), items: [restored] }).includes(
+      'data-table-column-line="1"',
+    ),
+  );
+  delete table.tableStyle;
+  assert.equal(M.readBackup(b).pages[1].items[0].tableStyle, "paper");
+});
 test("covers, spreads and odd page placeholder use the physical book model", () => {
   const b = M.book();
   assert.deepEqual(M.spreads(b.pages), [
