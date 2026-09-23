@@ -203,7 +203,10 @@
       /* Optional preference storage. */
     }
   }
-  function setInspector(open, mobile = false) {
+  function setInspector(
+    open,
+    mobile = $("inspector").classList.contains("mobile-open"),
+  ) {
     inspectorOpen = open;
     $("workspace").classList.toggle("inspector-closed", !open);
     $("inspector").classList.toggle("mobile-open", open && mobile);
@@ -287,7 +290,7 @@
     if (!bar) return;
     bar.hidden = !o || reading || !editable();
     if (bar.hidden) return;
-    bar.innerHTML = `<span>${selected.length > 1 ? selected.length + " selected" : esc(o.name)}</span>${o.locked ? `<button data-lock="${o.id}" class="secondary-btn">${icon("unlock")} Unlock</button>` : `${o.type === "text" ? '<button data-command="edit-on-page" class="secondary-btn">' + icon("text") + " Edit text</button>" : ""}<button data-command="duplicate-object" class="icon-btn" title="Duplicate (⌘/Ctrl D)" aria-label="Duplicate selection">${icon("copy")}</button><button data-command="delete-object" class="icon-btn book-danger" title="Delete" aria-label="Delete selection">${icon("trash")}</button>${selected.length > 1 ? '<button data-command="group-objects" class="secondary-btn">' + (o.group ? "Ungroup" : "Group") + "</button>" : ""}`}`;
+    bar.innerHTML = `<span>${selected.length > 1 ? selected.length + " selected" : esc(o.name)}</span><button data-command="object-settings" class="secondary-btn" aria-label="Object settings">${icon("settings")} Settings</button>${o.locked ? `<button data-lock="${o.id}" class="secondary-btn">${icon("unlock")} Unlock</button>` : `${o.type === "text" ? '<button data-command="edit-on-page" class="secondary-btn">' + icon("text") + " Edit text</button>" : ""}<button data-command="duplicate-object" class="icon-btn" title="Duplicate (⌘/Ctrl D)" aria-label="Duplicate selection">${icon("copy")}</button><button data-command="delete-object" class="icon-btn book-danger" title="Delete" aria-label="Delete selection">${icon("trash")}</button>${selected.length > 1 ? '<button data-command="group-objects" class="secondary-btn">' + (o.group ? "Ungroup" : "Group") + "</button>" : ""}`}`;
   }
   function startText() {
     const o = item();
@@ -3701,6 +3704,12 @@
             notify("Your " + name + " style is updated throughout the book.");
           }
           break;
+        case "object-settings":
+          finishText();
+          inspectorTab = "settings";
+          setInspector(true, true);
+          renderInspector();
+          break;
         case "page-settings":
           finishText();
           selected = [];
@@ -3959,6 +3968,10 @@
     if (e.target.closest("#canvas-text-editor")) return;
     const node = e.target.closest("[data-object]");
     if (node && item()?.type === "text") startText();
+    else if (node && item()) {
+      setInspector(true, true);
+      renderInspector();
+    }
   });
   let draggedPage = "";
   $("page-list").addEventListener("dragstart", (e) => {

@@ -463,6 +463,43 @@ test("tables follow page paper, offer subtle ruled styling and retain custom col
   await expect(bodyCell()).toHaveAttribute("fill", "#e8f1e4");
 });
 
+test("mobile object settings reopen the selection and remain open when switching layers", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await localStudio(page);
+  await page.getByRole("button", { name: "More tools", exact: true }).click();
+  await page.locator('[data-extra="table"]').click();
+  await page
+    .getByRole("button", { name: "Close settings", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Object settings", exact: true }),
+  ).toBeInViewport();
+  await page
+    .getByRole("button", { name: "Object settings", exact: true })
+    .click();
+  await expect(field(page, "tableStyle")).toBeVisible();
+  await page
+    .getByRole("textbox", { name: "Row 2, column 1", exact: true })
+    .fill("Little brain");
+  await page
+    .getByRole("button", { name: "Close settings", exact: true })
+    .click();
+  await expect(page.locator("#inspector")).not.toBeVisible();
+  await page
+    .getByRole("button", { name: "Object settings", exact: true })
+    .click();
+  await expect(
+    page.getByRole("textbox", { name: "Row 2, column 1", exact: true }),
+  ).toHaveValue("Little brain");
+  await layersTab(page).click();
+  await page.getByRole("button", { name: "Text", exact: true }).first().click();
+  await expect(page.locator("#inspector")).toBeVisible();
+  await settingsTab(page).click();
+  await expect(field(page, "style.font")).toBeVisible();
+});
+
 test("themes, page organization, version preview/restore and searchable help are usable", async ({
   page,
 }) => {

@@ -34,6 +34,7 @@ Additional improvements implemented:
 27. A dedicated Layers tab instead of burying layers beneath long property panels.
 28. Save status waits for the actual device write, with a leave-page warning while a write is pending.
 29. Unique names for new objects, making their layers easier to identify.
+30. Object settings in the selection toolbar, including on narrow screens; switching layers keeps an open settings panel visible.
 
 ## Validation
 
