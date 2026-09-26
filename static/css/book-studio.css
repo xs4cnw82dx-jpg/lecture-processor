@@ -454,6 +454,10 @@
   border-color: var(--primary-light);
   color: var(--primary);
 }
+.book-thumb[data-visible="true"]:not([aria-current="true"]) {
+  border-color: var(--border);
+  background: var(--surface, #fff);
+}
 .book-thumb-preview {
   display: block;
   width: 65px;

@@ -80,7 +80,7 @@
       {
         id: "route",
         name: "On the Route",
-        description: "A quiet blue path at the edge, with room for your story.",
+        description: "A flowing blue and mint route, with room for your story.",
       },
       {
         id: "shapes",
@@ -565,6 +565,28 @@
       h: Math.max(0.2, height * scale),
     };
   }
+  function imageGeometry(o, asset) {
+    const width = Number(asset?.width),
+      height = Number(asset?.height);
+    if (!(width > 0 && height > 0 && Number.isFinite(width + height)))
+      return null;
+    const frameWidth = o.spanId ? o.w * 2 : o.w,
+      scale =
+        o.fit === "cover"
+          ? Math.max(frameWidth / width, o.h / height)
+          : Math.min(frameWidth / width, o.h / height),
+      w = width * scale,
+      h = height * scale;
+    return {
+      x:
+        (o.spanId && o.spanSide === "right" ? -o.w : 0) +
+        (frameWidth - w) * (clamp(o.cropX ?? 50, 0, 100) / 100),
+      y: (o.h - h) * (clamp(o.cropY ?? 50, 0, 100) / 100),
+      w,
+      h,
+      dpi: 25.4 / scale,
+    };
+  }
   function sheetPairs(pages, arrangement) {
     if (arrangement && arrangement !== "cut")
       throw new Error(
@@ -583,7 +605,11 @@
       !o.spanId &&
       ((o.type === "text" &&
         !o["style"].outline &&
-        !(o.runs || []).some((r) => r["style"].outline)) ||
+        !(o.runs || []).some(
+          (r) =>
+            r["style"].outline ||
+            r["style"].lineHeight !== o["style"].lineHeight,
+        )) ||
         (o.type === "shape" && ["square", "circle"].includes(o.shape)))
     );
   }
@@ -746,6 +772,19 @@
     });
   }
   let measure;
+  const graphemeSegmenter =
+    typeof Intl.Segmenter === "function"
+      ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+      : null;
+  const graphemes = (text) => {
+    const normalized = text.replace(/\r\n?/g, "\n");
+    return graphemeSegmenter
+      ? Array.from(
+          graphemeSegmenter.segment(normalized),
+          (part) => part.segment,
+        )
+      : Array.from(normalized);
+  };
   function textLines(o) {
     if (!measure && root.document)
       measure = root.document.createElement("canvas").getContext("2d");
@@ -755,9 +794,10 @@
     let line = [],
       width = 0,
       base = 0,
-      lineSize = 0;
+      lineSize = 0,
+      lineHeight = 0;
     function flush() {
-      const height = (lineSize || o["style"].size) * PT * o["style"].lineHeight;
+      const height = lineHeight || o["style"].size * PT * o["style"].lineHeight;
       lines.push({
         pieces: line,
         width,
@@ -767,6 +807,7 @@
       line = [];
       width = 0;
       lineSize = 0;
+      lineHeight = 0;
     }
     const chars = [];
     runs.forEach((run) => {
@@ -780,7 +821,7 @@
           'px "' +
           s.font +
           '"';
-      for (const ch of run.text)
+      for (const ch of graphemes(run.text))
         chars.push({
           ch,
           style: s,
@@ -811,15 +852,19 @@
         line.push({ ...c, x: width });
         width += c.advance;
         lineSize = Math.max(lineSize, c["style"].size);
+        lineHeight = Math.max(
+          lineHeight,
+          c["style"].size * PT * c["style"].lineHeight,
+        );
       }
       i = end;
     }
     flush();
     return { lines, height: base };
   }
-  function textSvg(o) {
-    return textLines(o)
-      .lines.map((line) => {
+  function textSvg(o, layout = textLines(o)) {
+    return layout.lines
+      .map((line) => {
         const offset =
           o["style"].align === "center"
             ? (o.w - line.width) / 2
@@ -1164,18 +1209,13 @@
     if (o.type === "image") {
       const a = assets[o.assetId];
       if (a) {
-        const imageW = o.spanId ? w * 2 : w,
-          start = o.spanSide === "right" ? -w : 0;
-        const iw = a.width || 100,
-          ih = a.height || 100,
-          scale =
-            o.fit === "cover"
-              ? Math.max(imageW / iw, h / ih)
-              : Math.min(imageW / iw, h / ih);
-        const dw = iw * scale,
-          dh = ih * scale,
-          ix = start + (imageW - dw) * (o.cropX / 100),
-          iy = (h - dh) * (o.cropY / 100);
+        const {
+          w: dw,
+          h: dh,
+          x: ix,
+          y: iy,
+        } = imageGeometry(o, a) ||
+        imageGeometry(o, { width: 100, height: 100 });
         let mask = "";
         if (o.feather)
           mask = `<defs><radialGradient id="fade-${o.id}"><stop offset="${100 - o.feather}%" stop-color="white"/><stop offset="100%" stop-color="black"/></radialGradient><mask id="mask-${o.id}"><rect width="${w}" height="${h}" fill="url(#fade-${o.id})"/></mask></defs>`;
@@ -1241,8 +1281,9 @@
               : o.tableStriped !== false && r % 2 === 0
                 ? colors.stripe
                 : colors.paper;
-            const top = Math.max(pad, (ch - textLines(cellObj).height) / 2);
-            return `<svg data-table-cell="${r},${c}" x="${c * cw}" y="${r * ch}" width="${cw}" height="${ch}" viewBox="0 0 ${cw} ${ch}" overflow="hidden"><rect width="${cw}" height="${ch}" fill="${esc(fill)}"/><g transform="translate(${pad} ${top})">${textSvg(cellObj)}</g></svg>`;
+            const layout = textLines(cellObj),
+              top = Math.max(pad, (ch - layout.height) / 2);
+            return `<svg data-table-cell="${r},${c}" x="${c * cw}" y="${r * ch}" width="${cw}" height="${ch}" viewBox="0 0 ${cw} ${ch}" overflow="hidden"><rect width="${cw}" height="${ch}" fill="${esc(fill)}"/><g transform="translate(${pad} ${top})">${textSvg(cellObj, layout)}</g></svg>`;
           }).join(""),
         )
         .join("");
@@ -1281,7 +1322,8 @@
             runs: [],
             style: { ...o["style"], color: ink, align: "center" },
           };
-          const textH = textLines(text).height;
+          const layout = textLines(text),
+            textH = layout.height;
           const shape =
             o.flowShape === "pill"
               ? Math.min(bw, bh) / 2
@@ -1291,7 +1333,7 @@
           const arrow = vertical
             ? `M ${bw / 2} ${bh + 1} v ${gap - 2} m -1.5 -1.5 l 1.5 1.5 1.5 -1.5`
             : `M ${bw + 1} ${bh / 2} h ${gap - 2} m -1.5 -1.5 l 1.5 1.5 -1.5 1.5`;
-          return `<g data-flow-style="${themed ? "xped" : "custom"}" transform="translate(${x} ${y})"><rect x=".3" y=".3" width="${Math.max(0.2, bw - 0.6)}" height="${Math.max(0.2, bh - 0.6)}" rx="${shape}" fill="${esc(fill)}" stroke="${esc(stroke)}" stroke-width="${o.strokeWidth}"/>${themed && !options.economy ? `<circle cx="${bw - 3}" cy="3" r="1" fill="${XPED_YELLOW}"/>` : ""}<svg width="${bw}" height="${bh}" viewBox="0 0 ${bw} ${bh}" overflow="hidden"><g transform="translate(4 ${Math.max(1.5, (bh - textH) / 2)})">${textSvg(text)}</g></svg>${i < n - 1 ? `<path d="${arrow}" stroke="${esc(stroke)}" stroke-width="${Math.max(0.4, o.strokeWidth)}" stroke-linejoin="round" stroke-linecap="round" fill="none"/>` : ""}</g>`;
+          return `<g data-flow-style="${themed ? "xped" : "custom"}" transform="translate(${x} ${y})"><rect x=".3" y=".3" width="${Math.max(0.2, bw - 0.6)}" height="${Math.max(0.2, bh - 0.6)}" rx="${shape}" fill="${esc(fill)}" stroke="${esc(stroke)}" stroke-width="${o.strokeWidth}"/>${themed && !options.economy ? `<circle cx="${bw - 3}" cy="3" r="1" fill="${XPED_YELLOW}"/>` : ""}<svg width="${bw}" height="${bh}" viewBox="0 0 ${bw} ${bh}" overflow="hidden"><g transform="translate(4 ${Math.max(1.5, (bh - textH) / 2)})">${textSvg(text, layout)}</g></svg>${i < n - 1 ? `<path d="${arrow}" stroke="${esc(stroke)}" stroke-width="${Math.max(0.4, o.strokeWidth)}" stroke-linejoin="round" stroke-linecap="round" fill="none"/>` : ""}</g>`;
         })
         .join("");
     }
@@ -1324,7 +1366,13 @@
       index = interiorIndex(options),
       w = custom ? custom.w : inside ? 12 : 22,
       h = (w * 112) / 205;
-    let x = custom ? custom.x : inside ? 126 : 109,
+    let x = custom
+        ? custom.x
+        : inside
+          ? 126
+          : p.role === "front" && p.decoration.variant === "route"
+            ? 18
+            : 109,
       y = custom ? custom.y : inside ? 194 : 185;
     // Leave the outer number at the trim edge and move only the default logo inward.
     if (
@@ -1398,9 +1446,12 @@
     else if (inside) body = corner(0.037, mirrored);
     else if (design.variant === "corner")
       body = corner(back ? 0.065 : 0.08, back);
-    else if (design.variant === "route")
-      body = `<path d="${back ? "M4 0C4 35 10 40 10 66S3 110 3 132S9 160 9 175" : "M144.5 0C144.5 35 138.5 40 138.5 66S145.5 110 145.5 132S139.5 160 139.5 175"}" fill="none" stroke="${XPED_BLUE}" stroke-width="1.2" stroke-linecap="round"/>`;
-    else if (design.variant === "shapes")
+    else if (design.variant === "route") {
+      const route = back
+        ? "M-8 28 C30 46 -10 80 6 111 S-5 158 32 193 L42 216"
+        : "M151 30 C125 73 158 109 142 133 S100 153 119 177 S109 204 81 218";
+      body = `<path data-xped-route="mint" d="${route}" fill="none" stroke="${XPED_LIGHT_MINT}" stroke-width="18" stroke-linecap="round"/><path data-xped-route="blue" d="${route}" fill="none" stroke="${XPED_BLUE}" stroke-width="4.5" stroke-linecap="round"/><path d="M18 32H42" stroke="${XPED_BLUE}" stroke-width="1.1"/>`;
+    } else if (design.variant === "shapes")
       body = `<path d="${back ? "M17 38H131V146H17Z" : "M17 38H131V127L113 146H17Z"}" fill="${XPED_YELLOW}"/>`;
     else
       body = `<rect x="${back ? W - 3 : 0}" width="3" height="${H}" fill="${XPED_BLUE}"/><path d="M18 32H43" fill="none" stroke="${XPED_YELLOW}" stroke-width="1.2"/>`;
@@ -1481,8 +1532,83 @@
     }
     return output;
   }
+  function contentOverflow(o) {
+    if (o.hidden || !["text", "table", "flow"].includes(o.type)) return [];
+    const spills = (layout, width, height, top = 0) =>
+      layout.lines.some(
+        (line) =>
+          line.width > width + 0.1 ||
+          line.pieces.some(
+            (piece) =>
+              top + line.y + piece["style"].size * PT * 0.25 > height + 0.1,
+          ),
+      );
+    if (o.type === "text")
+      return spills(textLines(o), o.w, o.h)
+        ? ["text extends beyond its box."]
+        : [];
+    if (o.type === "table") {
+      const cells = o.cells?.length
+          ? o.cells
+          : [
+              ["", ""],
+              ["", ""],
+            ],
+        cw = o.w / Math.max(1, ...cells.map((row) => row.length)),
+        ch = o.h / cells.length,
+        pad = Math.min(3.5, cw / 6, ch / 4);
+      return cells.flatMap((row, r) =>
+        row.flatMap((text, c) => {
+          const width = Math.max(0.2, cw - pad * 2),
+            layout = textLines({
+              ...o,
+              w: width,
+              text,
+              runs: [],
+              style: {
+                ...o["style"],
+                weight:
+                  r === 0 && o.tableHeader !== false ? 700 : o["style"].weight,
+              },
+            });
+          return spills(
+            layout,
+            width,
+            ch,
+            Math.max(pad, (ch - layout.height) / 2),
+          )
+            ? [
+                `row ${r + 1}, column ${c + 1} has text that is cut off. Enlarge the table or reduce the text size.`,
+              ]
+            : [];
+        }),
+      );
+    }
+    const steps = o.steps?.length ? o.steps : ["First", "Then", "Finally"],
+      vertical = o.flowDirection === "vertical",
+      gap = Math.min(8, (vertical ? o.h : o.w) / (steps.length * 3)),
+      width = Math.max(
+        0.2,
+        (vertical ? o.w : (o.w - gap * (steps.length - 1)) / steps.length) - 8,
+      ),
+      height = vertical ? (o.h - gap * (steps.length - 1)) / steps.length : o.h;
+    return steps.flatMap((text, index) => {
+      const layout = textLines({ ...o, w: width, text, runs: [] });
+      return spills(
+        layout,
+        width,
+        height,
+        Math.max(1.5, (height - layout.height) / 2),
+      )
+        ? [
+            `step ${index + 1} has text that is cut off. Enlarge the diagram or reduce the text size.`,
+          ]
+        : [];
+    });
+  }
   function checks(b) {
-    const issues = [];
+    const issues = [],
+      assets = new Map((b.assets || []).map((asset) => [asset.id, asset]));
     b.pages.forEach((p, i) =>
       p.items
         .filter((o) => !o.hidden)
@@ -1491,21 +1617,26 @@
             (p.role === "page" ? "Page " + i : p.title) +
             ": " +
             (o.name || o.type);
-          if (o.type === "text" && textLines(o).height > o.h + 1)
-            issues.push(label + " — text extends beyond its box.");
-          if (o.x < 8 || o.y < 8 || o.x + o.w > W - 8 || o.y + o.h > H - 8)
+          issues.push(
+            ...contentOverflow(o).map((warning) => label + " — " + warning),
+          );
+          const box = bounds([o]);
+          if (
+            box.x < 8 ||
+            box.y < 8 ||
+            box.x + box.w > W - 8 ||
+            box.y + box.h > H - 8
+          )
             issues.push(label + " — near the paper edge.");
           if (
             p.role === "page" &&
-            ((i % 2 === 1 && o.x + o.w > W - 15) || (i % 2 === 0 && o.x < 15))
+            ((i % 2 === 1 && box.x + box.w > W - 15) ||
+              (i % 2 === 0 && box.x < 15))
           )
             issues.push(label + " — close to the binding edge.");
           if (o.type === "image") {
-            const a = b.assets.find((a) => a.id === o.assetId);
-            if (
-              a &&
-              Math.min(a.width / (o.w / 25.4), a.height / (o.h / 25.4)) < 150
-            )
+            const geometry = imageGeometry(o, assets.get(o.assetId));
+            if (geometry && geometry.dpi < 150)
               issues.push(label + " — may look blurry in print.");
           }
         }),
@@ -1821,6 +1952,7 @@
     readBackup,
     spreads,
     imageSize,
+    imageGeometry,
     sheetPairs,
     preserveSpreads,
     shapeOptions: shared.shapeOptions,
@@ -1833,6 +1965,7 @@
     distribute,
     svg,
     checks,
+    contentOverflow,
     prompt,
   };
   if (typeof module !== "undefined") module.exports = api;

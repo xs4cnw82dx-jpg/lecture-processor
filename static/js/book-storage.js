@@ -13,11 +13,15 @@
         };
         r.onsuccess = () => {
           database = r.result;
-          database.onversionchange = () => {
-            database.close();
-            database = null;
-            promise = null;
+          const opened = database;
+          const forget = () => {
+            if (database === opened) {
+              database = null;
+              promise = null;
+            }
           };
+          opened.onversionchange = () => { opened.close(); forget(); };
+          opened.onclose = forget;
           // A blocked upgrade can succeed later after an older tab closes.
           // Replace its rejected promise so retries and cloud promotion recover.
           promise = Promise.resolve(database);
@@ -43,12 +47,12 @@
           result = req.result;
         };
         tx.oncomplete = () => resolve(result);
-        tx.onerror = () =>
-          reject(
-            new Error(
-              "Device storage is full. Download a backup before closing.",
-            ),
-          );
+        tx.onerror = () => reject(new Error(tx.error?.name === "QuotaExceededError"
+          ? "Device storage is full. Download a backup before closing."
+          : "This device could not finish saving or opening your draft. Please retry; keep this tab open until your changes are saved."));
+        // A browser may abort after a request succeeds, without a request error.
+        // Settling on abort keeps autosave/retry from waiting forever.
+        tx.onabort = tx.onerror;
       });
     return database ? transact(database) : open().then(transact);
   }

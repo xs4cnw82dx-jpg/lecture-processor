@@ -125,7 +125,7 @@ def native_eligible(obj):
     if obj['type'] in ('line', 'arrow'):
         return False
     return not obj.get('hidden') and obj['opacity'] == 1 and not obj.get('spanId') and (
-        (obj['type'] == 'text' and not obj['style']['outline'] and not any(r['style']['outline'] for r in obj.get('runs', []))) or
+        (obj['type'] == 'text' and not obj['style']['outline'] and not any(r['style']['outline'] or r['style']['lineHeight'] != obj['style']['lineHeight'] for r in obj.get('runs', []))) or
         (obj['type'] == 'shape' and obj['shape'] in ('square', 'circle')))
 
 

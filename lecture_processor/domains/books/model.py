@@ -259,6 +259,23 @@ def validate_spans(pages):
             raise BookError('Keep both halves of a spread illustration together, or split the illustration first.')
 
 
+def validate_structure(pages):
+    if not pages or any(not page for page in pages):
+        raise BookError('One of the pages is missing. Reload your saved book.')
+    if pages[0]['role'] != 'front' or pages[-1]['role'] != 'back' or any(page['role'] != 'page' for page in pages[1:-1]):
+        raise BookError('Keep the front cover first, inside pages in the middle and the back cover last.')
+    validate_spans(pages)
+
+
+def validate_deleted_order(ids, active):
+    result = [identifier(pid) for pid in array(ids, 100, 'deleted-page list')]
+    if len(set(result)) != len(result):
+        raise BookError('Each deleted page must appear only once.')
+    if set(result) & set(active):
+        raise BookError('A page cannot be both active and deleted.')
+    return result
+
+
 def sheets(pages, arrangement='cut'):
     """Return logical page indices for each landscape sheet side. None is blank."""
     n = len(pages)
