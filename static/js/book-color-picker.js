@@ -1,6 +1,11 @@
 (function (root) {
   "use strict";
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  function normalizeHex(value) {
+    const hex = String(value).trim().replace(/^#/, "");
+    if (/^[a-f\d]{3}$/i.test(hex)) return "#" + [...hex].map((digit) => digit + digit).join("").toLowerCase();
+    return /^[a-f\d]{6}$/i.test(hex) ? "#" + hex.toLowerCase() : null;
+  }
   function hexToHsv(hex) {
     const rgb = hex.replace("#", "").match(/.{2}/g).map((part) => parseInt(part, 16) / 255);
     const [r, g, b] = rgb, max = Math.max(...rgb), min = Math.min(...rgb), delta = max - min;
@@ -20,11 +25,11 @@
     return "#" + rgb.map((part) => Math.round((part + m) * 255).toString(16).padStart(2, "0")).join("");
   }
   if (typeof module === "object" && module.exports) {
-    module.exports = { hexToHsv, hsvToHex };
+    module.exports = { hexToHsv, hsvToHex, normalizeHex };
     return;
   }
   const doc = root.document, records = new Set(), byInput = new WeakMap();
-  let serial = 0, popup, popupRule, active = null, observer, emitting = false, dragging = false;
+  let serial = 0, popup, popupRule, active = null, observer, emitting = false, dragging = null;
   const colorSheet = () => [...doc.styleSheets].find((entry) => entry.href?.includes("book-color-picker.css"));
   function rule(selector) { return { selector, values: {}, current: null }; }
   function removeRule(entry) {
@@ -70,30 +75,35 @@
     }
   }
   function position() {
-    if (!active || !popup || dragging) return;
+    if (!active || !popup || dragging !== null) return;
     popupRule ||= rule("#book-color-popover");
-    setCss(popupRule, { "--book-color-max-height": "calc(100dvh - 24px)" });
+    const viewport = root.visualViewport;
+    const viewLeft = viewport?.offsetLeft || 0, viewTop = viewport?.offsetTop || 0;
+    const viewWidth = viewport?.width || root.innerWidth, viewHeight = viewport?.height || root.innerHeight;
+    const right = viewLeft + viewWidth, bottom = viewTop + viewHeight;
+    setCss(popupRule, { "--book-color-max-height": Math.max(48, viewHeight - 24) + "px", "--book-color-max-width": Math.max(48, viewWidth - 24) + "px" });
     const trigger = active.record.trigger.getBoundingClientRect(), box = popup.getBoundingClientRect();
-    let left = clamp(trigger.right - box.width, 12, Math.max(12, innerWidth - box.width - 12));
+    let left = clamp(trigger.right - box.width, viewLeft + 12, Math.max(viewLeft + 12, right - box.width - 12));
     const below = trigger.bottom + 8, above = trigger.top - box.height - 8;
     let top;
-    if (below + box.height <= innerHeight - 12) top = below;
-    else if (above >= 12) top = above;
-    else if (trigger.left - box.width - 8 >= 12) {
+    if (below + box.height <= bottom - 12) top = below;
+    else if (above >= viewTop + 12) top = above;
+    else if (trigger.left - box.width - 8 >= viewLeft + 12) {
       left = trigger.left - box.width - 8;
-      top = clamp(trigger.top, 12, Math.max(12, innerHeight - box.height - 12));
-    } else if (trigger.right + box.width + 8 <= innerWidth - 12) {
+      top = clamp(trigger.top, viewTop + 12, Math.max(viewTop + 12, bottom - box.height - 12));
+    } else if (trigger.right + box.width + 8 <= right - 12) {
       left = trigger.right + 8;
-      top = clamp(trigger.top, 12, Math.max(12, innerHeight - box.height - 12));
+      top = clamp(trigger.top, viewTop + 12, Math.max(viewTop + 12, bottom - box.height - 12));
     } else {
-      const availableBelow = innerHeight - below - 12, availableAbove = trigger.top - 20;
-      const height = Math.max(100, Math.max(availableBelow, availableAbove));
+      const availableBelow = bottom - below - 12, availableAbove = trigger.top - viewTop - 20;
+      const height = clamp(Math.max(availableBelow, availableAbove), 48, Math.max(48, viewHeight - 24));
       setCss(popupRule, { "--book-color-max-height": height + "px" });
-      top = availableBelow >= availableAbove ? below : Math.max(12, trigger.top - height - 8);
+      top = availableBelow >= availableAbove ? below : trigger.top - height - 8;
+      top = clamp(top, viewTop + 12, Math.max(viewTop + 12, bottom - height - 12));
     }
     setCss(popupRule, { "--book-color-left": left + "px", "--book-color-top": top + "px" });
   }
-  function paint() {
+  function paint(resetHex = false) {
     if (!active) return;
     const hsv = active.hsv, color = active.record.input.value;
     popupRule ||= rule("#book-color-popover");
@@ -104,10 +114,10 @@
       popup.querySelector("[data-color-value=" + name + "]").textContent = value + (name === "hue" ? "°" : "%");
     }
     const hex = popup.querySelector("[data-color-control=hex]");
-    if (doc.activeElement !== hex) hex.value = color.toUpperCase();
+    if (resetHex || doc.activeElement !== hex) { hex.value = color.toUpperCase(); hexError(false); }
     popup.querySelector(".book-color-current").setAttribute("aria-label", "Current color " + color.toUpperCase());
   }
-  function update() {
+  function update(preserveHex = false) {
     if (!active) return;
     const input = active.record.input, value = hsvToHex(active.hsv);
     if (input.value.toLowerCase() !== value) {
@@ -117,20 +127,31 @@
       try { input.dispatchEvent(new Event("input", { bubbles: true })); }
       finally { emitting = false; }
     }
-    if (active) { sync(active.record); paint(); }
+    if (active) { sync(active.record); paint(!preserveHex); }
   }
   function close(restoreFocus = true) {
     if (!active) return;
     const current = active;
     active = null;
-    dragging = false;
+    dragging = null;
     current.record.trigger.setAttribute("aria-expanded", "false");
-    if (popup.matches(":popover-open")) popup.hidePopover();
+    if (typeof popup.hidePopover === "function" && popup.matches(":popover-open")) popup.hidePopover();
     popup.hidden = true;
     const input = current.record.input;
     if (input.value !== current.initial) input.dispatchEvent(new Event("change", { bubbles: true }));
     input.dispatchEvent(new CustomEvent("book-color-end", { bubbles: true }));
     if (restoreFocus && current.record.trigger.isConnected && !current.record.trigger.disabled) current.record.trigger.focus({ preventScroll: true });
+  }
+  function hexError(invalid) {
+    const hex = popup.querySelector("[data-color-control=hex]"), help = popup.querySelector("#book-color-help");
+    hex.setAttribute("aria-invalid", String(invalid));
+    const text = invalid ? "Enter a color such as #4F46E5 or #ABC." : "For example, #4F46E5 or #ABC. Changes appear instantly.";
+    if (help.textContent !== text) help.textContent = text;
+  }
+  function finish() {
+    const hex = popup.querySelector("[data-color-control=hex]");
+    if (!normalizeHex(hex.value)) { hexError(true); hex.focus(); return; }
+    close();
   }
   function createPopup() {
     if (popup) return;
@@ -143,26 +164,32 @@
     popup.setAttribute("popover", "manual");
     popup.innerHTML = '<div class="book-color-heading"><h3 id="book-color-title">Choose a color</h3><button type="button" class="icon-btn" data-color-close aria-label="Close color picker">×</button></div><div class="book-color-spectrum" aria-hidden="true"><span class="book-color-point"></span></div><div class="book-color-sliders">' +
       [["hue", "Hue", 359], ["saturation", "Saturation", 100], ["brightness", "Brightness", 100]].map(([name, label, max]) => '<label class="book-color-slider"><span>' + label + '<output data-color-value="' + name + '"></output></span><input type="range" min="0" max="' + max + '" step="1" data-color-control="' + name + '" aria-label="' + label + '"></label>').join("") +
-      '</div><div class="book-color-hex-row"><span class="book-color-current" role="img"></span><label><span>Hex color</span><input type="text" data-color-control="hex" maxlength="7" spellcheck="false" autocomplete="off" autocapitalize="characters" aria-describedby="book-color-help"></label></div><p id="book-color-help" class="book-color-help">For example, #4F46E5. Changes appear instantly.</p><button type="button" class="primary-btn book-color-done" data-color-close>Done</button>';
+      '</div><div class="book-color-hex-row"><span class="book-color-current" role="img"></span><label><span>Hex color</span><input type="text" data-color-control="hex" maxlength="7" spellcheck="false" autocomplete="off" autocapitalize="characters" aria-describedby="book-color-help"></label></div><p id="book-color-help" class="book-color-help" aria-live="polite">For example, #4F46E5 or #ABC. Changes appear instantly.</p><button type="button" class="primary-btn book-color-done" data-color-done>Done</button>';
     popup.addEventListener("click", (event) => {
       if (event.target.closest("[data-color-close]")) { event.preventDefault(); close(); }
+      else if (event.target.closest("[data-color-done]")) { event.preventDefault(); finish(); }
     });
     popup.addEventListener("input", (event) => {
       if (!active) return;
       const control = event.target.dataset.colorControl;
       if (control === "hex") {
-        const raw = event.target.value.trim(), valid = /^#?[a-f\d]{6}$/i.test(raw);
-        event.target.setAttribute("aria-invalid", String(!valid));
-        if (!valid) return;
-        active.hsv = hexToHsv(raw.startsWith("#") ? raw : "#" + raw);
+        const value = normalizeHex(event.target.value);
+        hexError(!value);
+        if (!value) return;
+        active.hsv = hexToHsv(value);
       } else if (control === "hue") active.hsv.h = Number(event.target.value);
       else if (control === "saturation") active.hsv.s = Number(event.target.value) / 100;
       else if (control === "brightness") active.hsv.v = Number(event.target.value) / 100;
       else return;
-      update();
+      update(control === "hex");
     });
     popup.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && event.target.dataset.colorControl === "hex") { event.preventDefault(); close(); }
+      if (event.key === "Enter" && event.target.dataset.colorControl === "hex") { event.preventDefault(); finish(); }
+      if (event.key === "Tab") {
+        const controls = [...popup.querySelectorAll("button:not(:disabled), input:not(:disabled)")];
+        const boundary = event.shiftKey ? controls[0] : controls[controls.length - 1];
+        if (event.target === boundary) { event.preventDefault(); close(); }
+      }
     });
     const spectrum = popup.querySelector(".book-color-spectrum");
     const point = (event) => {
@@ -173,14 +200,14 @@
       update();
     };
     spectrum.addEventListener("pointerdown", (event) => {
-      if (event.button !== 0) return;
+      if (event.button !== 0 || dragging !== null || !active) return;
       event.preventDefault();
-      dragging = true;
+      dragging = event.pointerId;
       spectrum.setPointerCapture(event.pointerId);
       point(event);
     });
-    spectrum.addEventListener("pointermove", (event) => { if (dragging) point(event); });
-    for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) spectrum.addEventListener(name, () => { dragging = false; });
+    spectrum.addEventListener("pointermove", (event) => { if (dragging === event.pointerId) point(event); });
+    for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) spectrum.addEventListener(name, (event) => { if (dragging === event.pointerId) { dragging = null; position(); } });
     doc.addEventListener("pointerdown", (event) => {
       if (active && !popup.contains(event.target) && !active.record.trigger.contains(event.target)) close(false);
     }, true);
@@ -191,6 +218,8 @@
       if (active && !popup.contains(event.target) && !active.record.trigger.contains(event.target) && event.target !== active.record.input) close(false);
     });
     root.addEventListener("resize", position);
+    root.visualViewport?.addEventListener("resize", position);
+    root.visualViewport?.addEventListener("scroll", position);
     doc.addEventListener("scroll", (event) => { if (active && !popup.contains(event.target)) position(); }, true);
   }
   function open(record) {

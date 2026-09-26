@@ -30,9 +30,10 @@ test("local books fit the viewport, retain text, respect focus and manage pages"
   page,
 }) => {
   await localStudio(page);
-  const pageBounds = await page.locator(".book-sheet").boundingBox();
   const viewport = page.viewportSize();
-  expect(pageBounds.height).toBeLessThan(viewport.height - 130);
+  // Initial font loading can replace the SVG's sheet between layout reads.
+  await expect.poll(async () => (await page.locator(".book-sheet").boundingBox())?.height ?? Infinity)
+    .toBeLessThan(viewport.height - 130);
   await page.getByRole("button", { name: "Add text", exact: true }).click();
   await page
     .getByRole("textbox", { name: "Text", exact: true })

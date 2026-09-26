@@ -44,7 +44,14 @@ This release restores the original blue/mint On the Route river and removes non-
 38. Protect images newly captured by a concurrently saved version from removal.
 39. Reject aborted browser-storage writes promptly, show a recoverable error and reopen unexpectedly closed storage connections.
 
+40. Keep the picker open with a readable error for invalid hex entries instead of silently discarding them; accept three-digit shorthand colors.
+41. Close the picker cleanly at keyboard Tab boundaries and return focus to its trigger.
+42. Keep a spectrum drag attached to its initiating pointer; a second touch cannot interrupt it.
+43. Position and size the picker within the visible mobile viewport when the keyboard opens or the viewport pans.
+
 ## Validation
+
+Validation passed: **728 backend tests, 159 client tests, 73 browser tests without retries, 16 smoke checks, Python/JavaScript lint, generated assets, secret scan and repository hygiene**. The Functions audit passes the required high-severity threshold; three pre-existing moderate findings remain outside this change.
 
 Regression coverage is in `e2e/books-quality.spec.js`, `e2e/books-storage-failures.spec.js`, the picker quality tests, `tests/test_book_quality_audit.py`, the existing book suites, and the model/xPED unit suites.
 
@@ -52,4 +59,4 @@ A separate signed-in demonstration book was created without changing the user's 
 
 The bundled LibreOffice renderer substitutes fonts that are not installed in its environment, and does not reproduce the emoji in native Word text. Faithful Word/PDF reproduce the browser artwork and fonts. Native Microsoft Word on macOS/Windows was not retested in this round. The export screen continues to offer the xPED font downloads and font-installation guidance.
 
-Final automated counts, picker changes, PR and deployed verification are recorded in the delivery PR.
+The signed-in color-picker check also exercised invalid hex feedback, a real spectrum drag, clicking the trigger to dismiss, and restoring the original paper with one Undo. Final automated counts and deployed verification are recorded in [PR #174](https://github.com/xs4cnw82dx-jpg/lecture-processor/pull/174).
