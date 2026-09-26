@@ -2,6 +2,7 @@
   "use strict";
   let promise, database;
   function open() {
+    if (database) return Promise.resolve(database);
     if (!promise)
       promise = new Promise((resolve, reject) => {
         const r = indexedDB.open("lp-book-studio-v1", 2);
@@ -17,15 +18,18 @@
             database = null;
             promise = null;
           };
+          // A blocked upgrade can succeed later after an older tab closes.
+          // Replace its rejected promise so retries and cloud promotion recover.
+          promise = Promise.resolve(database);
           resolve(database);
         };
-        r.onblocked = () => reject(new Error("Close other Book Studio tabs, then reload to finish updating device storage. Your drafts are safe."));
-        r.onerror = () =>
+        r.onblocked = () => reject(Object.assign(new Error("Save or download a backup of any unfinished work in your other Book Studio tabs, then close them and try again here. Your saved drafts stay on this device."), { code: "storage-blocked" }));
+        r.onerror = () => {
+          promise = null;
           reject(
-            new Error(
-              "This browser could not save your draft. Download a backup before closing.",
-            ),
+            Object.assign(new Error("This browser could not open your saved drafts. Check that browser storage is allowed, then try again. Nothing has been deleted."), { code: "storage-unavailable" }),
           );
+        };
       });
     return promise;
   }
