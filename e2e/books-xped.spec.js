@@ -168,7 +168,7 @@ test('page number placement, typography, color and order survive saving and matc
   await expect(page.locator('#book-spread [data-page-number]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Next pages', exact: true }).click();
   await expect(page.locator('#book-spread [data-page-number]')).toHaveText(['1', '2']);
-  await field(page, 'pageNumbers.position').selectOption('center');
+  await page.getByRole('button', {name:'Bottom center',exact:true}).click();
   await expect(page.locator('#book-spread [data-page-number]').first()).toHaveAttribute('text-anchor', 'middle');
   await field(page, 'pageNumbers.font').selectOption('Nohemi');
   await expect(field(page, 'pageNumbers.weight')).toHaveValue('700');
@@ -176,7 +176,7 @@ test('page number placement, typography, color and order survive saving and matc
   await field(page, 'pageNumbers.colorMode').selectOption('custom');
   await liveColor(page, 'pageNumbers.color', ['#885511', '#007acc']);
   await expect(page.locator('#book-spread [data-page-number]').first()).toHaveAttribute('fill', '#007acc');
-  await field(page, 'pageNumbers.position').selectOption('outer');
+  await page.getByRole('button', {name:'Bottom outside edge',exact:true}).click();
   await expect(page.locator('#book-spread [data-page-number]').nth(0)).toHaveAttribute('text-anchor', 'start');
   await expect(page.locator('#book-spread [data-page-number]').nth(1)).toHaveAttribute('text-anchor', 'end');
   await page.getByRole('button', { name: 'Duplicate page', exact: true }).click();

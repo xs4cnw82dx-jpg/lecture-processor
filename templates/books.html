@@ -5,6 +5,7 @@
   <title>Book Studio · Lecture Processor</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/book-studio.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/book-color-picker.css') }}">
 </head>
 <body class="book-app" data-book-id="{{ book_id }}" data-share-token="{{ share_token }}" data-chatgpt-url="{{ chatgpt_url }}">
   <header class="book-topbar">
@@ -22,7 +23,7 @@
     <aside class="book-pages-panel" aria-label="Pages"><div class="book-panel-heading"><h2>Pages</h2></div><div id="page-list" class="book-page-list"></div><button class="secondary-btn" id="add-page-side">＋ Add page</button><button class="ghost-btn" id="organize">Book details</button><button class="ghost-btn" id="history">Version history</button><button class="ghost-btn" id="comments">Comments</button></aside>
     <section class="book-canvas-area" aria-label="Book canvas">
       <div class="book-toolbar" role="toolbar" aria-label="Add to your book">
-        <button aria-label="Select and move" data-tool="select" aria-pressed="true" title="Select and move">↖ <span>Select</span></button><div class="book-split-tool"><button aria-label="Add text" data-add="text">T <span>Text</span></button><button id="text-presets" aria-label="Text presets" title="Heading, body and caption">⌄</button></div><button aria-label="Add image" id="add-image">▧ <span>Image</span></button><button aria-label="Add shape" data-add="shape">◇ <span>Shape</span></button><button aria-label="Draw" data-tool="pen">✎ <span>Draw</span></button><button aria-label="More tools" id="more-tools">＋ <span>More</span></button><span class="book-toolbar-divider"></span><button id="undo" aria-label="Undo" title="Undo (⌘/Ctrl Z)">↶</button><button id="redo" aria-label="Redo" title="Redo (⌘/Ctrl Shift Z)">↷</button><button id="assets">Illustrations</button><button id="page-settings" aria-label="Page settings" aria-controls="inspector" aria-expanded="true">⚙</button>
+        <button aria-label="Select and move" data-tool="select" aria-pressed="true" title="Select and move">↖ <span>Select</span></button><div class="book-split-tool"><button aria-label="Add text" data-add="text">T <span>Text</span></button><button id="text-presets" aria-label="Text presets" title="Heading, body and caption">⌄</button></div><button aria-label="Add image" id="add-image">▧ <span>Image</span></button><button aria-label="Add shape" data-add="shape">◇ <span>Shape</span></button><button aria-label="Draw" data-tool="pen">✎ <span>Draw</span></button><button aria-label="More tools" id="more-tools">＋ <span>More</span></button><span class="book-toolbar-divider"></span><button id="undo" aria-label="Undo" title="Undo (⌘/Ctrl Z)">↶</button><button id="redo" aria-label="Redo" title="Redo (⌘/Ctrl Shift Z)">↷</button><button id="page-numbers" title="Page number position and style">Page numbers</button><button id="assets">Illustrations</button><button id="page-settings" aria-label="Page settings" aria-controls="inspector" aria-expanded="true">⚙</button>
       </div>
       <div id="selection-toolbar" class="book-selection-toolbar" role="toolbar" aria-label="Selected objects" hidden></div>
       <div class="book-viewport" id="book-viewport"><div id="book-spread" class="book-spread"></div></div>
@@ -40,6 +41,8 @@
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/video-overlay-builder-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/book-model.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/book-path-editor.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/book-color-picker.js') }}"></script>
   <script src="{{ url_for('static', filename='js/book-storage.js') }}"></script>
   <script src="{{ url_for('static', filename='js/book-cloud-sync.js') }}"></script>
   <script src="{{ url_for('static', filename='js/book-zip.min.js') }}"></script>

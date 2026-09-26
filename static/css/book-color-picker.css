@@ -1,0 +1,108 @@
+.book-app input.book-color-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  clip-path: inset(50%);
+  pointer-events: none;
+}
+.book-color-trigger {
+  width: 100%;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 10px;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius, 8px);
+  background: var(--card, #fff);
+  color: var(--text, #0f172a);
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.book-color-trigger:hover:not(:disabled),
+.book-color-trigger[aria-expanded="true"] {
+  border-color: var(--primary, #4f46e5);
+  background: var(--accent-light, #eef2ff);
+}
+.book-color-swatch,
+.book-color-current {
+  display: block;
+  flex: 0 0 auto;
+  width: 27px;
+  height: 27px;
+  border-radius: 7px;
+  background: var(--book-color-swatch, #000);
+  box-shadow: inset 0 0 0 1px rgb(15 23 42 / 15%);
+}
+.book-color-value {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+}
+.book-color-chevron { margin-left: auto; color: var(--muted, #64748b); }
+.book-color-popover {
+  position: fixed;
+  inset: auto;
+  left: var(--book-color-left, 12px);
+  top: var(--book-color-top, 12px);
+  z-index: 10000;
+  margin: 0;
+  width: min(292px, calc(100vw - 24px));
+  max-height: var(--book-color-max-height, calc(100dvh - 24px));
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius-xl, 16px);
+  background: var(--card, #fff);
+  color: var(--text, #0f172a);
+  box-shadow: var(--shadow-xl, 0 12px 30px rgb(15 23 42 / 18%));
+  font: 13px Nunito, system-ui, sans-serif;
+  overscroll-behavior: contain;
+}
+.book-color-popover[hidden] { display: none; }
+.book-color-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.book-color-popover .book-color-heading h3 { margin: 0; font: inherit; font-size: 14px; font-weight: 800; }
+.book-color-popover .book-color-heading button { margin: 0; width: 32px; height: 32px; min-height: 32px; font-size: 22px; }
+.book-color-spectrum {
+  position: relative;
+  width: 100%;
+  height: 146px;
+  border-radius: 9px;
+  background: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent), var(--book-color-hue, #f00);
+  cursor: crosshair;
+  touch-action: none;
+  overflow: hidden;
+}
+.book-color-point {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  left: var(--book-color-x, 50%);
+  top: var(--book-color-y, 50%);
+  transform: translate(-50%, -50%);
+  border: 2px solid white;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgb(15 23 42 / 60%);
+  pointer-events: none;
+}
+.book-color-sliders { display: grid; gap: 9px; margin: 13px 0; }
+.book-color-slider { display: grid; gap: 3px; }
+.book-color-slider > span { display: flex; justify-content: space-between; font-size: 11px; font-weight: 800; color: var(--muted, #64748b); }
+.book-color-slider output { font-variant-numeric: tabular-nums; }
+.book-color-popover input[type="range"] { width: 100%; margin: 0; height: 20px; accent-color: var(--primary, #4f46e5); cursor: pointer; }
+.book-color-popover input[data-color-control="hue"] { accent-color: var(--book-color-hue, #f00); }
+.book-color-hex-row { display: flex; align-items: end; gap: 10px; }
+.book-color-current { width: 40px; height: 40px; margin-bottom: 0; background: var(--book-color-current, #000); }
+.book-color-hex-row label { flex: 1; display: grid; gap: 4px; min-width: 0; }
+.book-color-hex-row label > span { font-size: 11px; font-weight: 800; color: var(--muted, #64748b); }
+.book-color-popover input[data-color-control="hex"] { width: 100%; height: 40px; font-variant-numeric: tabular-nums; text-transform: uppercase; }
+.book-color-popover input[aria-invalid="true"] { border-color: var(--error, #ef4444); }
+.book-color-popover .book-color-help { margin: 8px 0 12px; font-size: 11px; line-height: 1.45; color: var(--muted, #64748b); }
+.book-color-popover .book-color-done { width: 100%; margin: 0; }
+@media (prefers-reduced-motion: reduce) { .book-color-trigger { transition: none; } }
+
+.book-palette .book-color-value, .book-palette .book-color-chevron { display: none; }
+.book-palette .book-color-trigger { padding: 5px; justify-content: center; }
+.book-palette .book-color-swatch { width: 100%; }

@@ -1,6 +1,7 @@
 (function () {
   "use strict";
   const M = window.BookModel,
+    P = window.BookPathEditor,
     D = window.BookStorage,
     $ = (id) => document.getElementById(id),
     esc = M.esc;
@@ -9,6 +10,8 @@
     b = null,
     active = "",
     selected = [],
+    furnitureSelection = "",
+    activePathPoint = -1,
     turn = 0,
     tool = "select",
     zoom = 1,
@@ -116,6 +119,7 @@
   const toggle = (label, name, value) =>
     `<label class="book-switch"><span>${esc(label)}</span><input type="checkbox" class="app-toggle" role="switch" data-field="${name}"${value ? " checked" : ""}></label>`;
   const icons = {
+    line: '<path d="M3 18 9 8l6 8 6-12"/>',
     select: '<path d="m5 3 14 9-7 1-3 7Z"/>',
     text: '<path d="M4 5h16M12 5v15M8 20h8"/>',
     image:
@@ -230,6 +234,8 @@
   function clearSelection() {
     finishText();
     selected = [];
+    furnitureSelection = "";
+    activePathPoint = -1;
     selectionRange = null;
     renderSelection();
     renderInspector();
@@ -298,7 +304,11 @@
     const bar = $("selection-toolbar"),
       o = item();
     if (!bar) return;
-    bar.hidden = !o || reading || !editable();
+    bar.hidden = (!o && !furnitureSelection) || reading || !editable();
+    if (!bar.hidden && furnitureSelection) {
+      bar.innerHTML = `<span>${furnitureSelection === "logo" ? "xPED logo" : "Page number"}</span><button data-command="furniture-settings" class="secondary-btn">${icon("settings")} Position & style</button><button data-command="reset-furniture" class="secondary-btn">Reset position</button>`;
+      return;
+    }
     if (bar.hidden) return;
     bar.innerHTML = `<span>${selected.length > 1 ? selected.length + " selected" : esc(o.name)}</span><button data-command="object-settings" class="secondary-btn" aria-label="Object settings">${icon("settings")} Settings</button>${o.locked ? `<button data-lock="${o.id}" class="secondary-btn">${icon("unlock")} Unlock</button>` : `${o.type === "text" ? '<button data-command="edit-on-page" class="secondary-btn">' + icon("text") + " Edit text</button>" : ""}<button data-command="duplicate-object" class="icon-btn" title="Duplicate (⌘/Ctrl D)" aria-label="Duplicate selection">${icon("copy")}</button><button data-command="delete-object" class="icon-btn book-danger" title="Delete" aria-label="Delete selection">${icon("trash")}</button>${selected.length > 1 ? '<button data-command="group-objects" class="secondary-btn">' + (o.group ? "Ungroup" : "Group") + "</button>" : ""}`}`;
   }
@@ -489,6 +499,9 @@
       ["Objects", "Arrow keys", "Nudge 0.5 mm; hold Shift for 5 mm"],
       ["Objects", "Shift + click / drag empty space", "Select several objects"],
       ["Objects", "Alt + drag", "Ignore snapping while dragging"],
+      ["Lines", "Right-click", "Add a bend or remove a selected bend"],
+      ["Lines", "Arrow keys", "Move a focused line point; hold Shift for 5 mm"],
+      ["Lines", "Shift + drag point", "Place a point on the 5 mm grid"],
       ["Text", "Double-click / Enter", "Edit text directly on the page"],
       ["Text", "Escape / ⌘ / Ctrl + Enter", "Finish editing text"],
       [
@@ -649,6 +662,7 @@
   }
   function dialog(title, html) {
     finishText();
+    window.BookColorPicker?.close();
     $("dialog-content").innerHTML =
       `<h2 id="book-dialog-title">${esc(title)}</h2>${html}`;
     $("book-dialog").setAttribute("aria-labelledby", "book-dialog-title");
@@ -708,6 +722,8 @@
       }
       leaseToken = "";
       selected = [];
+      furnitureSelection = "";
+      activePathPoint = -1;
       undoStack = [];
       redoStack = [];
       dirty = false;
@@ -1122,7 +1138,153 @@
     document.title = b.title + " · Book Studio";
     fitStage();
   }
+  const isPath = (o) => o && ["line", "arrow"].includes(o.type);
+  function furnitureBox(kind = furnitureSelection) {
+    const options = M.pageRenderOptions(page(), b.pages, b.pageNumbers);
+    return kind === "logo" ? M.logoGeometry(page(), options) : M.numberGeometry(page(), options);
+  }
+  function placeFurniture(box) {
+    const p = page();
+    if (furnitureSelection === "logo") {
+      const old = furnitureBox(), w = M.clamp(box.w, 8, 60), h = w * old.h / old.w;
+      p.logoPlacement = { x: M.clamp(box.x, 0, M.W - w), y: M.clamp(box.y, 0, M.H - h), w };
+    } else p.numberPlacement = { x: M.clamp(box.x, 0, M.W - box.w), y: M.clamp(box.y, 0, M.H - box.h) };
+  }
+  function selectFurniture(kind) {
+    if (!editable() || !furnitureBox(kind)) return;
+    finishText(); selected = []; furnitureSelection = kind; activePathPoint = -1;
+    inspectorTab = "settings";
+    setInspector(true, innerWidth <= 780);
+    renderSelection(); renderInspector();
+  }
+  function showPageNumbers() {
+    panelDetails.add("Page numbers");
+    inspectorTab = "settings";
+    setInspector(true, innerWidth <= 780);
+    renderInspector();
+    const section = $("page-number-controls");
+    section.open = true;
+    section.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+    section.querySelector("input")?.focus({ preventScroll: true });
+  }
+  function dragFurniture(event, sheet, kind) {
+    selectFurniture(kind);
+    const original = furnitureBox(), scale = sheet.getBoundingClientRect().width / M.W;
+    if (!original) return;
+    const resize = event.target.closest("[data-logo-resize]");
+    let moved = false;
+    const move = (e) => {
+      const delta = { x: (e.clientX - event.clientX) / scale, y: (e.clientY - event.clientY) / scale };
+      if (!moved && Math.hypot(delta.x, delta.y) < .5) return;
+      if (!moved) { if (!checkpoint()) return; moved = true; }
+      let box = { ...original }, lines = [];
+      if (resize) box.w += delta.x;
+      else {
+        let applied = delta;
+        if (snap && !e.altKey) {
+          const result = M.snapMove([{ ...original, rotation: 0 }], delta, page().items, 6 / scale, grid);
+          applied = result.delta; lines = result.lines;
+        }
+        box.x += applied.x; box.y += applied.y;
+      }
+      placeFurniture(box); renderStage(); feedback(lines, furnitureBox());
+    };
+    const up = () => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      document.removeEventListener("pointercancel", up);
+      feedback(); if (moved) changed();
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+    document.addEventListener("pointercancel", up);
+    event.preventDefault();
+  }
+  function dragPathPoint(event, sheet) {
+    const node = event.target.closest("[data-path-point]"), o = page().items.find((x) => x.id === node.dataset.object);
+    if (!isPath(o) || o.locked) return;
+    selected = [o.id]; furnitureSelection = ""; activePathPoint = +node.dataset.pathPoint;
+    const original = M.clone(o), rect = sheet.getBoundingClientRect(), scale = rect.width / M.W;
+    let moved = false;
+    renderSelection(); renderInspector();
+    const move = (e) => {
+      if (!moved && Math.hypot(e.clientX - event.clientX, e.clientY - event.clientY) < 3) return;
+      if (!moved) { if (!checkpoint()) return; moved = true; }
+      const world = { x: M.clamp((e.clientX - rect.left) / scale, 0, M.W), y: M.clamp((e.clientY - rect.top) / scale, 0, M.H) };
+      if (e.shiftKey) {
+        world.x = Math.round(world.x / 5) * 5; world.y = Math.round(world.y / 5) * 5;
+      }
+      Object.assign(o, P.movePoint(original, activePathPoint, world)); renderStage();
+    };
+    const up = () => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      document.removeEventListener("pointercancel", up);
+      if (moved) changed();
+      document.querySelector(`[data-path-point="${activePathPoint}"]`)?.focus({ preventScroll: true });
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+    document.addEventListener("pointercancel", up);
+    event.preventDefault();
+  }
+  let pathMenuPoint = null;
+  function closePathMenu() { $("book-path-menu")?.remove(); pathMenuPoint = null; }
+  function addPathBend() {
+    const o = item();
+    if (!isPath(o) || o.locked || P.points(o).length >= 32 || !checkpoint()) return;
+    const pts = P.points(o).map((p) => p.slice());
+    let insertion;
+    if (pathMenuPoint) {
+      const local = P.localPoint(o, pathMenuPoint);
+      insertion = M.nearestPathInsertion(o, { x: local[0], y: local[1] });
+    }
+    else {
+      let longest = -1;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const distance = Math.hypot((pts[i + 1][0] - pts[i][0]) * o.w, (pts[i + 1][1] - pts[i][1]) * o.h);
+        if (distance > longest) { longest = distance; insertion = { index: i + 1, point: [(pts[i][0] + pts[i + 1][0]) / 2, (pts[i][1] + pts[i + 1][1]) / 2] }; }
+      }
+    }
+    pts.splice(insertion.index, 0, insertion.point); o.pathPoints = pts;
+    activePathPoint = insertion.index;
+    closePathMenu(); changed();
+    document.querySelector(`[data-path-point="${activePathPoint}"]`)?.focus({ preventScroll: true });
+  }
+  function removePathBend() {
+    const o = item(), points = isPath(o) && P.points(o);
+    if (!points || o.locked || activePathPoint <= 0 || activePathPoint >= points.length - 1 || !checkpoint()) return;
+    o.pathPoints = points.filter((_, i) => i !== activePathPoint); activePathPoint = -1;
+    closePathMenu(); changed();
+  }
+  function pathContextMenu(event) {
+    const node = event.target.closest("[data-object]"), sheet = event.target.closest("[data-page-id]");
+    if (!node || !sheet || !editable() || reading) return;
+    const p = b.pages.find((x) => x.id === sheet.dataset.pageId), o = p.items.find((x) => x.id === node.dataset.object);
+    if (!isPath(o) || o.locked) return;
+    event.preventDefault(); closePathMenu();
+    active = p.id; selected = [o.id]; furnitureSelection = "";
+    activePathPoint = event.target.dataset.pathPoint === undefined ? -1 : +event.target.dataset.pathPoint;
+    const rect = sheet.getBoundingClientRect(), scale = rect.width / M.W;
+    pathMenuPoint = { x: (event.clientX - rect.left) / scale, y: (event.clientY - rect.top) / scale };
+    renderSelection(); renderInspector();
+    const menu = document.createElement("div"); menu.id = "book-path-menu"; menu.className = "book-path-menu";
+    menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", "Edit line");
+    menu.innerHTML = `<button role="menuitem" data-command="add-path-bend" ${P.points(o).length >= 32 ? "disabled" : ""}>Add bend here</button><button role="menuitem" data-command="remove-path-bend" ${activePathPoint <= 0 || activePathPoint >= P.points(o).length - 1 ? "disabled" : ""}>Remove this bend</button>`;
+    document.body.appendChild(menu);
+    layoutRule("#book-path-menu", { left: Math.max(8, Math.min(innerWidth - 220, event.clientX)) + "px", top: Math.max(8, Math.min(innerHeight - 120, event.clientY)) + "px" });
+    menu.querySelector("button:not(:disabled)")?.focus();
+    menu.addEventListener("keydown", (e) => {
+      if (["ArrowDown", "ArrowUp"].includes(e.key)) {
+        e.preventDefault(); e.stopPropagation();
+        const choices = Array.from(menu.querySelectorAll("button:not(:disabled)"));
+        choices[(choices.indexOf(document.activeElement) + 1) % choices.length]?.focus();
+      }
+    });
+  }
+
   function renderSelection() {
+    if (furnitureSelection && !furnitureBox()) furnitureSelection = "";
     for (const key of layoutRules.keys())
       if (key.startsWith(".book-selection")) layoutRules.delete(key);
     document.querySelectorAll(".book-selection").forEach((el) => el.remove());
@@ -1133,6 +1295,20 @@
     );
     if (!sheet) return;
     const scale = sheet.clientWidth / M.W;
+    if (furnitureSelection) {
+      const box = furnitureBox();
+      if (box) {
+        const el = document.createElement("div");
+        el.className = "book-selection book-furniture-selection";
+        el.dataset.furniture = furnitureSelection;
+        layoutRule('.book-selection[data-furniture="' + furnitureSelection + '"]', {
+          left: box.x * scale + "px", top: box.y * scale + "px",
+          width: box.w * scale + "px", height: box.h * scale + "px",
+        });
+        el.innerHTML = furnitureSelection === "logo" ? '<button class="book-handle se" data-furniture="logo" data-logo-resize="true" aria-label="Resize xPED logo"></button>' : "";
+        sheet.appendChild(el);
+      }
+    }
     selected.forEach((id) => {
       const o = page().items.find((x) => x.id === id);
       if (!o || o.locked || o.hidden) return;
@@ -1152,6 +1328,19 @@
             `<button class="book-handle ${c}" data-handle="${c}" data-object="${id}" aria-label="Resize ${esc(o.name)} from ${c}"></button>`,
         )
         .join("");
+      if (isPath(o) && selected.length === 1) {
+        el.classList.add("book-path-selection");
+        P.points(o).forEach((pt, index) => {
+          const handle = document.createElement("button");
+          handle.className = "book-path-point" + (index === activePathPoint ? " active" : "");
+          handle.dataset.pathPoint = index;
+          handle.dataset.object = o.id;
+          handle.setAttribute("aria-label", index === 0 ? "Move line start" : index === P.points(o).length - 1 ? "Move line end" : "Move bend " + index);
+          handle.title = "Drag to reshape · Arrow keys to adjust";
+          layoutRule(`.book-selection[data-object="${id}"] [data-path-point="${index}"]`, { left: pt[0] * 100 + "%", top: pt[1] * 100 + "%" });
+          el.appendChild(handle);
+        });
+      }
       sheet.appendChild(el);
     });
   }
@@ -1165,6 +1354,8 @@
     const prev = active;
     active = spreads[turn].find(Boolean);
     selected = [];
+    furnitureSelection = "";
+    activePathPoint = -1;
     selectionRange = null;
     renderStage(offset || (prev === active ? 0 : 1));
     renderPages();
@@ -1201,7 +1392,7 @@
       if (d.open) panelDetails.add(key);
       else panelDetails.delete(key);
     });
-    let html = `<div class="book-panel-heading"><h2>${selected.length > 1 ? selected.length + " objects" : o ? esc(o.name || o.type) : "Page settings"}</h2><button class="icon-btn" id="close-inspector" aria-label="Close settings" title="Close settings">${icon("close")}</button></div>`;
+    let html = `<div class="book-panel-heading"><h2>${selected.length > 1 ? selected.length + " objects" : o ? esc(o.name || o.type) : furnitureSelection === "logo" ? "xPED logo" : furnitureSelection === "number" ? "Page number" : "Page settings"}</h2><button class="icon-btn" id="close-inspector" aria-label="Close settings" title="Close settings">${icon("close")}</button></div>`;
     html += `<div class="book-inspector-tabs" role="tablist" aria-label="Settings sections"><button role="tab" data-panel="settings" aria-selected="${inspectorTab === "settings"}" aria-controls="book-properties">Settings</button><button role="tab" data-panel="layers" aria-selected="${inspectorTab === "layers"}" aria-controls="book-layers">Layers · ${p.items.length}</button></div><div id="book-properties" role="tabpanel" aria-label="Settings" ${inspectorTab !== "settings" ? "hidden" : ""}>`;
     if (disabled)
       html +=
@@ -1215,7 +1406,15 @@
                 " is editing. You can read and leave comments."
               : "You are viewing this book.") +
         "</p>";
-    if (o) {
+    if (furnitureSelection && furnitureBox()) {
+      const box = furnitureBox();
+      html += `<h3>${furnitureSelection === "logo" ? "xPED logo" : "Page number"}</h3><p class="book-muted book-hint">Drag on the page, or choose an exact position. Arrow keys make small adjustments.</p><div class="book-row">` +
+        field("Left (mm)", "furniture.x", +box.x.toFixed(1), "number", 'min="0" step="0.5"') +
+        field("Top (mm)", "furniture.y", +box.y.toFixed(1), "number", 'min="0" step="0.5"') + "</div>";
+      if (furnitureSelection === "logo") html += field("Logo width (mm)", "furniture.w", +box.w.toFixed(1), "number", 'min="8" max="60" step="0.5"');
+      html += '<button class="secondary-btn" id="reset-furniture">Reset position</button>';
+      if (furnitureSelection === "number") panelDetails.add("Page numbers");
+    } else if (o) {
       if (o.locked)
         html += `<p class="book-status-banner">This object is locked. Unlock it to make changes.</p><button class="secondary-btn" data-lock="${o.id}">${icon("unlock")} Unlock object</button>`;
       if (o.hidden)
@@ -1400,7 +1599,7 @@
           ["custom", "Custom colors"],
         ]);
       if (
-        ["shape", "arrow", "drawing", "flow"].includes(o.type) ||
+        ["shape", "drawing", "flow"].includes(o.type) ||
         (o.type === "table" && o.tableStyle === "custom")
       )
         html +=
@@ -1430,17 +1629,20 @@
           "range",
           'min="0.1" max="1.5" step="0.05"',
         );
-      if (o.type === "arrow")
-        html +=
-          selectField("Arrowheads", "arrowHead", o.arrowHead || "end", [
-            ["none", "No arrowhead"],
-            ["end", "At the end"],
-            ["both", "Both ends"],
-          ]) +
-          selectField("Line style", "arrowLine", o.arrowLine || "solid", [
-            ["solid", "Solid"],
-            ["dashed", "Dashed"],
-          ]);
+      if (isPath(o)) {
+        html += field("Line color", "stroke", o.stroke, "color") +
+          field("Line thickness (mm)", "strokeWidth", o.strokeWidth, "range", 'min="0.1" max="10" step="0.1"');
+        if (o.type === "arrow") html += selectField("Arrowheads", "arrowHead", o.arrowHead || "end", [
+          ["none", "No arrowhead"], ["end", "At the end"], ["both", "Both ends"],
+        ]) + (o.arrowHead !== "none" ? field("Arrowhead color", "arrowFill", o.arrowFill || o.stroke, "color") : "");
+        html += selectField("Line style", "arrowLine", o.arrowLine || "solid", [["solid", "Solid"], ["dashed", "Dashed"]]) +
+          selectField("Bends", "pathMode", o.pathMode || "angular", [["angular", "Sharp corners"], ["smooth", "Smooth curve"]]) +
+          '<p class="book-muted book-hint">Drag the points on your line to reshape it. Right-click anywhere along it to add a bend.</p><div class="book-row"><button class="secondary-btn" id="add-path-bend" ' + (P.points(o).length >= 32 ? "disabled" : "") + '>Add bend</button><button class="secondary-btn" id="straighten-path">Straighten</button></div>' +
+          '<button class="ghost-btn" id="remove-path-bend" ' + (activePathPoint <= 0 || activePathPoint >= P.points(o).length - 1 ? 'disabled title="Select a bend point on the page"' : "") + '>Remove selected bend</button>' +
+          toggle("Show bend markers", "nodeMarkers", !!o.nodeMarkers);
+        if (o.nodeMarkers) html += field("Marker color", "markerColor", o.markerColor || "#ffd617", "color") +
+          field("Marker diameter (mm)", "markerDiameter", o.markerDiameter || 3, "range", 'min="2" max="12" step="0.5"');
+      }
       if (["table", "flow"].includes(o.type))
         html +=
           '<div class="book-row">' +
@@ -1567,7 +1769,9 @@
           ["grid", "Grid"],
         ]);
       if (p.decoration?.id === "xped")
-        html += toggle("Show theme artwork", "page.themeArtwork", p.themeArtwork !== false);
+        html += toggle("Show theme artwork", "page.themeArtwork", p.themeArtwork !== false) +
+          toggle("Show xPED logo", "page.showLogo", p.showLogo !== false) +
+          '<button class="secondary-btn" data-select-furniture="logo" ' + (p.showLogo === false ? "disabled" : "") + '>Move & resize logo</button>';
       html +=
         '<p class="book-muted book-hint">Paper is the background of this page. It appears in print.</p><button class="secondary-btn" id="apply-paper">Apply paper to all pages</button><h3>Page actions</h3><div class="book-row"><button class="secondary-btn" id="page-earlier" ' +
         (!canMovePage(-1)
@@ -1603,13 +1807,15 @@
       '</div><button class="secondary-btn" id="book-themes">Choose a book theme</button></details>';
     const pageNumbers = M.pageNumberOptions(b.pageNumbers);
     const numberWeights = M.fontWeights(pageNumbers.font);
-    html += '<details><summary>Page numbers</summary>' +
+    html += '<details id="page-number-controls"><summary>Page numbers</summary>' +
       toggle('Show page numbers', 'pageNumbers.enabled', pageNumbers.enabled) +
       '<p class="book-muted book-hint">Number inside pages from 1. Covers stay unnumbered; moving pages updates the numbers automatically.</p>';
     if (pageNumbers.enabled) {
-      html += selectField('Number position', 'pageNumbers.position', pageNumbers.position, [
-        ['logo', 'Beside the logo'], ['center', 'Bottom center'], ['outer', 'Bottom outside edge'],
-      ]) + selectField('Number font', 'pageNumbers.font', pageNumbers.font, M.fontOptions) +
+      html += '<h3>Number position</h3><div class="book-button-stack book-number-positions" role="group" aria-label="Number position">' +
+        [['logo', 'Beside logo'], ['center', 'Bottom center'], ['outer', 'Bottom outside edge']].map(([value, label]) => `<button class="secondary-btn" data-number-position="${value}" aria-pressed="${pageNumbers.position === value && !p.numberPlacement}">${label}</button>`).join('') + '</div>' +
+        '<p class="book-muted book-hint">Position presets apply to every inside page. Drag a number to adjust just that page.</p>' +
+        (p.role === 'page' ? '<button class="secondary-btn" data-select-furniture="number">Move this page number</button>' : '') +
+        selectField('Number font', 'pageNumbers.font', pageNumbers.font, M.fontOptions) +
       field('Number size (pt)', 'pageNumbers.size', pageNumbers.size, 'number', 'min="6" max="24" step="1"') +
       (numberWeights ? selectField('Number thickness', 'pageNumbers.weight', pageNumbers.weight, numberWeights.map((weight) => [weight, weight === 700 ? 'Bold' : weight === 400 ? 'Regular' : weight === 300 ? 'Light' : String(weight)])) :
         field('Number thickness', 'pageNumbers.weight', pageNumbers.weight, 'range', `min="${pageNumbers.font === 'Nunito' ? 200 : 100}" max="${pageNumbers.font === 'Playpen Sans' ? 800 : pageNumbers.font === 'Nunito' ? 1000 : 900}" step="10"`)) +
@@ -1646,6 +1852,7 @@
         .join("") ||
       '<p class="book-muted book-hint">Add text, an image or a shape to begin.</p>'
     }</section>`;
+    window.BookColorPicker?.close();
     panel.innerHTML = html;
     panel.querySelectorAll("details").forEach((d) => {
       d.open = panelDetails.has(d.querySelector("summary").textContent);
@@ -1667,6 +1874,7 @@
       panel
         .querySelector(`[data-field="${focusField}"]`)
         ?.focus({ preventScroll: true });
+    window.BookColorPicker?.enhance(panel);
     panel.scrollTop = scroll;
     selectionToolbar();
   }
@@ -1769,8 +1977,13 @@
       const selector = $("inspector").querySelector('[data-field="flowStyle"]');
       if (selector) selector.value = "custom";
     }
-    if (name.startsWith("page.")) page()[name.slice(5)] = value;
+    if (name.startsWith("furniture.")) {
+      const box = { ...furnitureBox(), [name.slice(10)]: value };
+      placeFurniture(box);
+    }
+    else if (name.startsWith("page.")) page()[name.slice(5)] = value;
     else if (name.startsWith('pageNumbers.')) {
+      if (name === "pageNumbers.position") b.pages.forEach((p) => delete p.numberPlacement);
       b.pageNumbers = M.pageNumberOptions({ ...M.pageNumberOptions(b.pageNumbers), [name.slice(12)]: value });
     }
     else if (name.startsWith("palette."))
@@ -1819,6 +2032,10 @@
           else o.w = Math.max(0.2, value * ratio);
         }
         o[name] = value;
+        if (name === "stroke" && o.type === "arrow" && !o.arrowFill) {
+          const headColor = $("inspector").querySelector('[data-field="arrowFill"]');
+          if (headColor) { headColor.value = value; window.BookColorPicker?.enhance(headColor); }
+        }
         if (name === "shape" && value === "pill" && o.w < o.h * 1.6) {
           o.w = Math.min(M.W - 20, o.h * 2.4);
           o.x = M.clamp(o.x, 0, M.W - o.w);
@@ -1888,6 +2105,7 @@
           }
         : {};
     inspectorTab = "settings";
+    activePathPoint = -1;
     const o = M.object(type, {
       ...styles,
       fill: b.palette[1],
@@ -1918,9 +2136,9 @@
       o.style = { ...b.styles.body, size: 15, color: b.palette[3] };
       o.steps = ["An idea", "A little adventure", "A happy ending"];
     }
-    if (type === "arrow") {
+    if (["line", "arrow"].includes(type)) {
       o.w = 65;
-      o.h = 15;
+      o.h = 35;
       o.x = 40;
       o.y = 80;
     }
@@ -1937,6 +2155,7 @@
     if (b.theme?.id === "xped" && type === "flow")
       o.steps = ["Start here", "Explore an idea", "Choose a next step"];
     page().items.push(o);
+    furnitureSelection = "";
     selected = [o.id];
     tool = "select";
     changed();
@@ -1959,6 +2178,8 @@
     keepSpreadsTogether();
     active = p.id;
     selected = [];
+    furnitureSelection = "";
+    activePathPoint = -1;
     changed();
   }
   function deletePage() {
@@ -1984,6 +2205,8 @@
     keepSpreadsTogether();
     active = b.pages[Math.min(i, b.pages.length - 1)].id;
     selected = [];
+    furnitureSelection = "";
+    activePathPoint = -1;
     changed();
   }
   function copyPage(p) {
@@ -2032,6 +2255,8 @@
     keepSpreadsTogether();
     active = copies[0].id;
     selected = [];
+    furnitureSelection = "";
+    activePathPoint = -1;
     changed();
   }
   function duplicateObject() {
@@ -2072,6 +2297,8 @@
       );
     });
     selected = [];
+    furnitureSelection = "";
+    activePathPoint = -1;
     changed();
   }
   function undo(redo = false) {
@@ -2095,6 +2322,8 @@
       ? activePage
       : b.pages[0].id;
     selected = [];
+    furnitureSelection = "";
+    activePathPoint = -1;
     changed();
   }
   function sizeImage(preset) {
@@ -2153,6 +2382,8 @@
       fit: "cover",
     });
     selected = [];
+    furnitureSelection = "";
+    activePathPoint = -1;
     changed();
   }
   function resizePoint(o, delta, corner) {
@@ -2182,6 +2413,8 @@
     if (pid !== active) {
       active = pid;
       selected = [];
+      furnitureSelection = "";
+      activePathPoint = -1;
     }
     if (!editable() || reading) {
       const startX = event.clientX;
@@ -2197,6 +2430,10 @@
         x: (event.clientX - rect.left) / scale,
         y: (event.clientY - rect.top) / scale,
       };
+    const furnitureNode = event.target.closest("[data-furniture]");
+    if (furnitureNode && tool === "select") return dragFurniture(event, sheet, furnitureNode.dataset.furniture);
+    if (event.target.closest("[data-path-point]")) return dragPathPoint(event, sheet);
+    furnitureSelection = "";
     const objectNode = event.target.closest("[data-object]"),
       handle = event.target.closest("[data-handle]");
     if (tool === "eraser") {
@@ -2230,6 +2467,8 @@
         });
       p.items.push(o);
       selected = [];
+      furnitureSelection = "";
+      activePathPoint = -1;
       const move = (e) => {
         if (o.points.length >= 3000) return;
         const x = M.clamp((e.clientX - rect.left) / scale, 0, M.W),
@@ -2332,6 +2571,7 @@
     const o = page().items.find((x) => x.id === objectNode.dataset.object);
     if (!o) return;
     if (o.locked) {
+      furnitureSelection = "";
       selected = [o.id];
       setInspector(true);
       renderSelection();
@@ -2349,6 +2589,7 @@
       renderInspector();
       return;
     }
+    if (!selected.includes(o.id)) activePathPoint = -1;
     if (!selected.includes(o.id))
       selected = o.group
         ? page()
@@ -2524,6 +2765,7 @@
           }
           if (b === current) {
             active = p.id;
+            furnitureSelection = "";
             selected = [o.id];
             changed();
           }
@@ -3372,6 +3614,8 @@
     });
     active = b.pages[0].id;
     selected = [];
+    furnitureSelection = "";
+    activePathPoint = -1;
     changed();
     closeDialog();
   }
@@ -3457,6 +3701,25 @@
       if (id === "retry-cloud-save") return retryCloudSave();
       if (id === "import-backup") return $("backup-input").click();
       if (!b) return;
+      if (ds.selectFurniture) return selectFurniture(ds.selectFurniture);
+      if (ds.numberPosition && checkpoint()) {
+        b.pageNumbers = M.pageNumberOptions({ ...b.pageNumbers, enabled: true, position: ds.numberPosition });
+        b.pages.forEach((p) => delete p.numberPlacement);
+        changed();
+        return;
+      }
+      if (id === "page-numbers") return showPageNumbers();
+      if (id === "furniture-settings") { setInspector(true, innerWidth <= 780); renderInspector(); return; }
+      if (id === "reset-furniture" && checkpoint()) {
+        delete page()[furnitureSelection === "logo" ? "logoPlacement" : "numberPlacement"];
+        changed(); return;
+      }
+      if (id === "add-path-bend") return addPathBend();
+      if (id === "remove-path-bend") return removePathBend();
+      if (id === "straighten-path" && isPath(item()) && checkpoint()) {
+        const pts = P.points(item()); item().pathPoints = [pts[0], pts[pts.length - 1]];
+        activePathPoint = -1; changed(); return;
+      }
       if (ds.panel) {
         inspectorTab = ds.panel;
         renderInspector();
@@ -3466,6 +3729,8 @@
         finishText();
         active = ds.page;
         selected = [];
+        furnitureSelection = "";
+        activePathPoint = -1;
         renderAll();
         return;
       }
@@ -3518,7 +3783,7 @@
       ) {
         const color = b.palette[+ds.palette];
         if (item().type === "text") applyStyle("color", color);
-        else if (["drawing", "arrow"].includes(item().type))
+        else if (["drawing", "arrow", "line"].includes(item().type))
           item().stroke = color;
         else {
           if (item().type === "table" && item().tableStyle !== "custom") {
@@ -3563,6 +3828,8 @@
         return;
       }
       if (ds.selectObject) {
+        furnitureSelection = "";
+        activePathPoint = -1;
         if (event.shiftKey)
           selected = selected.includes(ds.selectObject)
             ? selected.filter((x) => x !== ds.selectObject)
@@ -3615,6 +3882,8 @@
         if (b.pages.some((p) => p.id === ds.commentPage)) {
           active = ds.commentPage;
           selected = [];
+          furnitureSelection = "";
+          activePathPoint = -1;
           renderAll();
           closeDialog();
         }
@@ -3639,6 +3908,7 @@
             y: (M.H - size.h) / 2,
           });
         page().items.push(o);
+        furnitureSelection = "";
         selected = [o.id];
         changed();
         closeDialog();
@@ -3798,6 +4068,8 @@
           document.body.classList.toggle("book-reading", reading);
           target.textContent = reading ? "Edit view" : "Read";
           selected = [];
+          furnitureSelection = "";
+          activePathPoint = -1;
           renderAll();
           break;
         case "undo":
@@ -3885,6 +4157,8 @@
         case "page-settings":
           finishText();
           selected = [];
+          furnitureSelection = "";
+          activePathPoint = -1;
           selectionRange = null;
           inspectorTab = "settings";
           setInspector(true, true);
@@ -3978,7 +4252,8 @@
           dialog(
             "Create on the page",
             `<div class="book-template-grid">${[
-              ["arrow", "Arrow", "Point to a little detail"],
+              ["line", "Line", "Draw a route, curve or connection"],
+              ["arrow", "Arrow", "Point the way with editable bends"],
               ["table", "Table", "Compare and collect ideas"],
               ["flow", "Story steps", "One moment after another"],
             ]
@@ -4007,6 +4282,8 @@
       if (ds.jump) {
         active = ds.jump;
         selected = [];
+        furnitureSelection = "";
+        activePathPoint = -1;
         renderAll();
         closeDialog();
       }
@@ -4135,6 +4412,7 @@
       if (file) await importBackup(file);
     }),
   );
+  $("book-spread").addEventListener("contextmenu", pathContextMenu);
   $("book-spread").addEventListener("pointerdown", pointer);
   $("book-spread").addEventListener("dblclick", (e) => {
     if (e.target.closest("#canvas-text-editor")) return;
@@ -4284,6 +4562,8 @@
   document.addEventListener("keydown", (e) => {
     if (
       !b ||
+      e.defaultPrevented ||
+      e.target.closest(".book-color-popover") ||
       $("book-dialog").open ||
       e.target.closest("input,textarea,select,[contenteditable=true]")
     )
@@ -4304,6 +4584,7 @@
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
       e.preventDefault();
+      furnitureSelection = "";
       selected = page()
         .items.filter((o) => !o.locked && !o.hidden)
         .map((o) => o.id);
@@ -4331,7 +4612,10 @@
       return;
     }
     if (e.key === "Escape") {
+      closePathMenu();
       selected = [];
+      furnitureSelection = "";
+      activePathPoint = -1;
       tool = "select";
       $("inspector").classList.remove("mobile-open");
       renderAll();
@@ -4341,6 +4625,9 @@
       e.preventDefault();
       addPage();
       return;
+    }
+    if ((e.key === "Delete" || e.key === "Backspace") && e.target.dataset.pathPoint !== undefined && activePathPoint > 0 && activePathPoint < P.points(item()).length - 1) {
+      e.preventDefault(); removePathBend(); return;
     }
     if ((e.key === "Delete" || e.key === "Backspace") && selected.length) {
       e.preventDefault();
@@ -4357,6 +4644,22 @@
     }
     if (e.key.startsWith("Arrow")) {
       e.preventDefault();
+      if (furnitureSelection && !e.altKey && editable() && checkpoint()) {
+        const box = furnitureBox(), step = e.shiftKey ? 5 : .5;
+        box.x += e.key === "ArrowRight" ? step : e.key === "ArrowLeft" ? -step : 0;
+        box.y += e.key === "ArrowDown" ? step : e.key === "ArrowUp" ? -step : 0;
+        placeFurniture(box); changed(); return;
+      }
+      if (e.target.dataset.pathPoint !== undefined && !e.altKey && isPath(item()) && editable() && checkpoint()) {
+        const o = item(), index = +e.target.dataset.pathPoint, pt = P.points(o)[index];
+        const angle = (o.rotation || 0) * Math.PI / 180, dx = (pt[0] - .5) * o.w, dy = (pt[1] - .5) * o.h;
+        const step = e.shiftKey ? 5 : .5;
+        const world = { x: o.x + o.w / 2 + dx * Math.cos(angle) - dy * Math.sin(angle), y: o.y + o.h / 2 + dx * Math.sin(angle) + dy * Math.cos(angle) };
+        world.x += e.key === "ArrowRight" ? step : e.key === "ArrowLeft" ? -step : 0;
+        world.y += e.key === "ArrowDown" ? step : e.key === "ArrowUp" ? -step : 0;
+        Object.assign(o, P.movePoint(o, index, world)); changed();
+        document.querySelector(`[data-path-point="${index}"]`)?.focus(); return;
+      }
       if (selected.length && !e.altKey && editable()) {
         checkpoint();
         const step = e.shiftKey ? 5 : 0.5;
@@ -4544,6 +4847,7 @@
     } else await loadLibrary();
   }
   decorateTools();
+  document.addEventListener("book-color-start", () => { editBatch = null; });
   $("inspector").addEventListener("focusout", (e) => {
     if (e.target.type === "color" && !e.relatedTarget) return;
     editBatch = null;
@@ -4552,6 +4856,7 @@
     if (e.target.type === "color") editBatch = null;
   });
   document.addEventListener("pointerdown", (e) => {
+    if (!e.target.closest("#book-path-menu")) closePathMenu();
     if (inlineEdit && !e.target.closest("#canvas-text-editor")) finishText();
     if (
       b &&
