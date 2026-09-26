@@ -98,9 +98,7 @@ test("cut sheet order puts the cover first and preserves facing pairs", () => {
     assert.deepEqual(pairs[1], [1, 2]);
     assert.deepEqual(pairs.at(-1), [n - 1, null]);
     assert.deepEqual(
-      pairs
-        .flat()
-        .filter((x) => x !== null),
+      pairs.flat().filter((x) => x !== null),
       pages.map((_, i) => i),
     );
     assert.throws(() => M.sheetPairs(pages, "fold"), /[Rr]efresh/);
@@ -246,4 +244,210 @@ test("table, diagram and arrow options survive portable backup with safe default
   assert.match(M.svg(restored.pages[1]), /stroke-dasharray="3 2"/);
   delete b.pages[1].items[1].flowDirection;
   assert.equal(M.readBackup(b).pages[1].items[1].flowDirection, "horizontal");
+});
+
+test("print checks use rotated visible bounds for trim and binding warnings", () => {
+  const b = M.book();
+  b.pages[0].items = [
+    M.object("shape", {
+      name: "Rotated edge",
+      x: 10,
+      y: 30,
+      w: 8,
+      h: 70,
+      rotation: 90,
+    }),
+  ];
+  b.pages[1].items = [
+    M.object("shape", {
+      name: "Rotated binding",
+      x: 100,
+      y: 40,
+      w: 15,
+      h: 60,
+      rotation: 90,
+    }),
+  ];
+  assert.ok(M.checks(b).some((s) => /Rotated edge.*paper edge/.test(s)));
+  assert.ok(M.checks(b).some((s) => /Rotated binding.*binding edge/.test(s)));
+  b.pages[0].items = [
+    M.object("shape", {
+      name: "Fits after rotation",
+      x: 2,
+      y: 35,
+      w: 60,
+      h: 8,
+      rotation: 90,
+    }),
+  ];
+  assert.ok(!M.checks(b).some((s) => /Fits after rotation/.test(s)));
+});
+
+test("print resolution follows actual contain, crop and two-page image scale", () => {
+  const b = M.book(),
+    image = M.object("image", {
+      assetId: "panorama",
+      w: 100,
+      h: 100,
+      fit: "contain",
+    });
+  b.assets = [{ id: "panorama", width: 1200, height: 200 }];
+  b.pages[1].items = [image];
+  const contain = M.imageGeometry(image, b.assets[0]);
+  assert.equal(contain.w, 100);
+  assert.ok(Math.abs(contain.h - 100 / 6) < 0.0001);
+  assert.ok(contain.dpi > 300);
+  assert.ok(!M.checks(b).some((s) => s.includes("blurry")));
+  image.fit = "cover";
+  assert.ok(M.checks(b).some((s) => s.includes("blurry")));
+  b.assets = [{ id: "panorama", width: 800, height: 1200 }];
+  Object.assign(image, {
+    w: 100,
+    h: 150,
+    spanId: "spread",
+    spanSide: "left",
+    cropY: 30,
+  });
+  const left = M.imageGeometry(image, b.assets[0]);
+  assert.equal(left.w, 200);
+  assert.equal(left.h, 300);
+  assert.equal(left.y, -45);
+  assert.ok(left.dpi < 150);
+  assert.ok(M.checks(b).some((s) => s.includes("blurry")));
+  image.spanSide = "right";
+  assert.equal(M.imageGeometry(image, b.assets[0]).x, left.x - image.w);
+  assert.equal(M.imageGeometry(image, {}), null);
+});
+
+test("export checks identify clipped table cells and story steps with useful recovery advice", () => {
+  const b = M.book(),
+    table = M.object("table", {
+      name: "Character table",
+      w: 80,
+      h: 15,
+      cells: [
+        ["Name", "Story"],
+        [
+          "Fox",
+          "A very long story that needs more room in this small table cell.",
+        ],
+      ],
+    }),
+    flow = M.object("flow", {
+      name: "Story steps",
+      w: 70,
+      h: 15,
+      flowDirection: "horizontal",
+      steps: ["This first step contains too much text for a tiny box.", "Done"],
+    });
+  b.pages[1].items = [table, flow];
+  assert.ok(
+    M.checks(b).some((s) =>
+      /Character table.*row 2, column 2.*Enlarge the table/.test(s),
+    ),
+  );
+  assert.ok(
+    M.checks(b).some((s) => /Story steps.*step 1.*Enlarge the diagram/.test(s)),
+  );
+  table.h = 120;
+  table.style.size = 10;
+  flow.h = 80;
+  flow.w = 120;
+  flow.style.size = 10;
+  assert.deepEqual(M.contentOverflow(table), []);
+  assert.deepEqual(M.contentOverflow(flow), []);
+  table.h = 1;
+  table.hidden = true;
+  assert.deepEqual(M.contentOverflow(table), []);
+});
+
+test("text keeps emoji sequences and combining accents together in SVG and line wrapping", () => {
+  const o = M.object("text", {
+    text: "👩🏽‍🚀e\u0301🇳🇱",
+    w: 4,
+    style: { ...M.baseStyle, size: 10 },
+  });
+  const pieces = M.textLines(o).lines.flatMap((line) =>
+    line.pieces.map((p) => p.ch),
+  );
+  assert.deepEqual(pieces, ["👩🏽‍🚀", "e\u0301", "🇳🇱"]);
+  const p = { ...M.page(), items: [o] },
+    svg = M.svg(p);
+  for (const grapheme of pieces)
+    assert.ok(svg.includes(">" + grapheme + "</text>"));
+  o.text = "First\r\nSecond\rThird";
+  o.w = 100;
+  assert.deepEqual(
+    M.textLines(o).lines.map((line) => line.pieces.map((p) => p.ch).join("")),
+    ["First", "Second", "Third"],
+  );
+});
+
+test("selected-run line spacing controls layout and remains faithful in editable exports", () => {
+  const o = M.object("text", {
+    text: "Wide spacing\nNormal",
+    style: { ...M.baseStyle, size: 12, lineHeight: 1.2 },
+    runs: [
+      {
+        text: "Wide spacing\n",
+        style: { ...M.baseStyle, size: 12, lineHeight: 2.4 },
+      },
+      { text: "Normal", style: { ...M.baseStyle, size: 12, lineHeight: 1.2 } },
+    ],
+  });
+  const lines = M.textLines(o).lines;
+  assert.ok(Math.abs(lines[1].y - lines[0].y - 12 * M.PT * 2.4) < 0.0001);
+  assert.equal(M.nativeEligible(o), false);
+  assert.match(
+    M.svg({ ...M.page(), items: [o] }, {}, { editable: true }),
+    /<text/,
+  );
+  o.runs[0].style.lineHeight = 1.2;
+  assert.equal(M.nativeEligible(o), true);
+});
+
+test("table and diagram rendering measure each text layout once", () => {
+  const fs = require("node:fs"),
+    vm = require("node:vm"),
+    path = require("node:path");
+  let calls = 0;
+  const context = {
+    module: { exports: {} },
+    require: () => require("../static/js/video-overlay-builder-utils.js"),
+    document: {
+      createElement: () => ({
+        getContext: () => ({
+          font: "",
+          measureText: () => {
+            calls++;
+            return { width: 4 };
+          },
+        }),
+      }),
+    },
+  };
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, "../static/js/book-model.js"), "utf8"),
+    context,
+  );
+  const model = context.module.exports;
+  for (const o of [
+    model.object("table", {
+      cells: [
+        ["Fox", "Moon"],
+        ["Owl", "Stars"],
+      ],
+    }),
+    model.object("flow", { steps: ["First", "Next", "Last"] }),
+  ]) {
+    calls = 0;
+    const text =
+      o.type === "table" ? o.cells.flat().join("") : o.steps.join("");
+    model.svg({ ...model.page(), items: [o] });
+    assert.equal(
+      calls,
+      text.length,
+      "No duplicate glyph measurements for vertical centering",
+    );
+  }
 });

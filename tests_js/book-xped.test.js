@@ -586,7 +586,7 @@ test("route back-cover scaffolding clears the decorative route while reapplicati
   }
 });
 
-test("restrained covers keep decorative marks out of their editable title, summary and footer zones", () => {
+test("cover furniture stays clear of the restored Route river and restrained designs", () => {
   for (const { id } of M.xped.variants) {
     for (const role of ["front", "back"]) {
       const p = M.coverPreview(id, "light", role),
@@ -595,9 +595,10 @@ test("restrained covers keep decorative marks out of their editable title, summa
           svg.indexOf("<g data-theme-artwork"),
           svg.indexOf("<desc>"),
         );
-      assert.doesNotMatch(art, /<circle|#76F6CF|#1FE4A9|stroke-dasharray/);
+      assert.doesNotMatch(art, /<circle|#1FE4A9|stroke-dasharray/);
+      if (id !== "route") assert.doesNotMatch(art, /#76F6CF/);
       assert.deepEqual(M.logoGeometry(p), {
-        x: 109,
+        x: id === "route" && role === "front" ? 18 : 109,
         y: 185,
         w: 22,
         h: (22 * 112) / 205,
@@ -605,12 +606,24 @@ test("restrained covers keep decorative marks out of their editable title, summa
       assert.equal(p.items.at(-1).y + p.items.at(-1).h, 183);
       if (id === "route") {
         const geometry = art.match(/ d="([^"]+)"/)[1];
-        assert.ok(
+        assert.equal(
+          geometry,
           role === "front"
-            ? geometry.startsWith("M144.5")
-            : geometry.startsWith("M4"),
+            ? "M151 30 C125 73 158 109 142 133 S100 153 119 177 S109 204 81 218"
+            : "M-8 28 C30 46 -10 80 6 111 S-5 158 32 193 L42 216",
         );
-        assert.ok(geometry.endsWith("175"), "The path stops above the footer");
+        assert.match(
+          art,
+          /data-xped-route="mint"[^>]+stroke="#76F6CF" stroke-width="18"/,
+        );
+        assert.match(
+          art,
+          /data-xped-route="blue"[^>]+stroke="#007ACC" stroke-width="4.5"/,
+        );
+        const placed = { x: 52, y: 177, w: 20 };
+        p.logoPlacement = placed;
+        assert.deepEqual(M.logoGeometry(p), { ...placed, h: (20 * 112) / 205 });
+        assert.doesNotMatch(M.svg(p, {}, { economy: true }), /data-xped-route/);
       }
     }
   }

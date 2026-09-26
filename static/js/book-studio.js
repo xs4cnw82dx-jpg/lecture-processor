@@ -107,7 +107,7 @@
     pageNumbers: M.pageNumberOptions(b.pageNumbers),
   });
   const field = (label, name, value, type = "text", extra = "") =>
-    `<label class="book-field"><span>${esc(label)}</span><input type="${type}" data-field="${name}" value="${esc(value)}" ${extra}></label>`;
+    `<label class="book-field"><span>${esc(label)}</span><input type="${type}" data-field="${name}" value="${esc(value)}" data-last-value="${esc(value)}" ${extra}></label>`;
   const selectField = (label, name, value, options) =>
     `<label class="book-field"><span>${esc(label)}</span><select data-field="${name}">${options
       .map((o) => {
@@ -154,6 +154,7 @@
   const iconButton = (name, label, attrs = "") =>
     `<button class="icon-btn" aria-label="${esc(label)}" title="${esc(label)}" ${attrs}>${icon(name)}</button>`;
   let inlineEdit = null,
+    stageFrame = 0,
     editBatch = null,
     grid = false,
     thirds = false,
@@ -318,30 +319,14 @@
       return;
     const sheet = $("book-spread").querySelector(`[data-page-id="${active}"]`);
     if (!sheet) return;
-    const scale = sheet.clientWidth / M.W,
-      editor = document.createElement("textarea");
+    const editor = document.createElement("textarea");
     editor.id = "canvas-text-editor";
     editor.className = "book-inline-text";
     editor.setAttribute("aria-label", "Edit text on page");
     editor.maxLength = 12000;
     editor.spellcheck = true;
     editor.value = o.runs?.length ? o.runs.map((r) => r.text).join("") : o.text;
-    layoutRule("#canvas-text-editor", {
-      left: o.x * scale + "px",
-      top: o.y * scale + "px",
-      width: o.w * scale + "px",
-      height: o.h * scale + "px",
-      fontFamily: `"${o["style"].font}"`,
-      fontSize: o["style"].size * M.PT * scale + "px",
-      fontWeight: o["style"].weight,
-      fontStyle: o["style"].italic ? "italic" : "normal",
-      lineHeight: o["style"].lineHeight,
-      letterSpacing: ((o["style"].letterSpacing * 25.4) / 96) * scale + "px",
-      color: o["style"].color,
-      textAlign: o["style"].align,
-      backgroundColor: page().background,
-      transform: `rotate(${o.rotation}deg)`,
-    });
+    positionTextEditor(o, sheet);
     inlineEdit = { id: o.id, page: active, editor };
     sheet.append(editor);
     editor.focus();
@@ -374,8 +359,27 @@
         selectionRange = null;
         renderStage();
         renderInspector();
-        sheet.focus();
+        $("book-spread").querySelector(`[data-page-id="${active}"]`)?.focus();
       }
+    });
+  }
+  function positionTextEditor(o, sheet) {
+    const scale = sheet.clientWidth / M.W;
+    layoutRule("#canvas-text-editor", {
+      left: o.x * scale + "px",
+      top: o.y * scale + "px",
+      width: o.w * scale + "px",
+      height: o.h * scale + "px",
+      fontFamily: `"${o["style"].font}"`,
+      fontSize: o["style"].size * M.PT * scale + "px",
+      fontWeight: o["style"].weight,
+      fontStyle: o["style"].italic ? "italic" : "normal",
+      lineHeight: o["style"].lineHeight,
+      letterSpacing: ((o["style"].letterSpacing * 25.4) / 96) * scale + "px",
+      color: o["style"].color,
+      textAlign: o["style"].align,
+      backgroundColor: page().background,
+      transform: `rotate(${o.rotation}deg)`,
     });
   }
   function finishText() {
@@ -383,7 +387,9 @@
     inlineEdit.editor.remove();
     inlineEdit = null;
     editBatch = null;
-    requestAnimationFrame(() => {
+    cancelAnimationFrame(stageFrame);
+    stageFrame = requestAnimationFrame(() => {
+      stageFrame = 0;
       if (!inlineEdit && b) renderStage();
     });
   }
@@ -879,6 +885,7 @@
   }
   function updateStatus() {
     if (!b) return;
+    document.title = b.title + " · Book Studio";
     const can = editable();
     if ($("retry-cloud-save")) {
       $("retry-cloud-save").hidden = !saveError || !user || (!b.local && !b.pending);
@@ -1046,44 +1053,73 @@
   function renderAll() {
     if (!b) return;
     finishText();
+    if (document.activeElement !== $("book-title")) $("book-title").value = b.title;
     renderPages();
     renderStage();
     renderInspector();
     updateStatus();
   }
   function renderPages() {
-    syncTurn();
-    $("page-list").innerHTML = b.pages
-      .map(
-        (p, i) =>
-          `<button class="book-thumb" draggable="${editable()}" data-page="${p.id}" aria-current="${p.id === active}" title="${esc(p.title)}" aria-label="${esc(p.role === "page" ? "Page " + i + ": " + p.title : p.title)}"><span class="book-thumb-preview">${M.svg(p, renderedAssets, M.pageRenderOptions(p, b.pages, b.pageNumbers))}</span><span>${esc(p.role === "page" ? "Page " + i : p.title)}</span>${p.role === "page" && p.title !== "Untitled page" ? `<span class="book-thumb-title">${esc(p.title)}</span>` : ""}</button>`,
-      )
-      .join("");
+    const spreads = syncTurn(), visible = spreads[turn] || [], list = $("page-list");
+    const existing = new Map([...list.children].map((node) => [node.dataset.page, node]));
+    b.pages.forEach((p, i) => {
+      const node = existing.get(p.id) || document.createElement("button");
+      existing.delete(p.id);
+      node.className = "book-thumb";
+      node.dataset.page = p.id;
+      node.draggable = editable() && p.role === "page";
+      node.setAttribute("aria-current", String(p.id === active));
+      node.dataset.visible = String(visible.includes(p.id));
+      node.title = p.title;
+      node.setAttribute("aria-label", p.role === "page" ? "Page " + i + ": " + p.title : p.title);
+      const options = M.pageRenderOptions(p, b.pages, b.pageNumbers);
+      const assets = p.items.filter((o) => o.assetId).map((o) => renderedAssets[o.assetId]?.src || "");
+      const key = JSON.stringify([p, options, assets]);
+      if (node.bookPreviewKey !== key) {
+        node.innerHTML = `<span class="book-thumb-preview">${M.svg(p, renderedAssets, options)}</span><span>${esc(p.role === "page" ? "Page " + i : p.title)}</span>${p.role === "page" && p.title !== "Untitled page" ? `<span class="book-thumb-title">${esc(p.title)}</span>` : ""}`;
+        node.bookPreviewKey = key;
+      }
+      if (list.children[i] !== node) list.insertBefore(node, list.children[i] || null);
+    });
+    existing.forEach((node) => node.remove());
+    if (list.dataset.active !== active) {
+      list.dataset.active = active;
+      const thumb = list.querySelector(`[data-page="${active}"]`);
+      if (thumb && list.clientHeight) {
+        const box = thumb.getBoundingClientRect(), bounds = list.getBoundingClientRect();
+        if (box.top < bounds.top) list.scrollTop -= bounds.top - box.top;
+        else if (box.bottom > bounds.bottom) list.scrollTop += box.bottom - bounds.bottom;
+      }
+    }
   }
   const layoutRules = new Map();
-  let layoutCount = 0;
   function layoutRule(selector, properties) {
     const sheet = Array.from(document.styleSheets).find(
       (s) => s.href && s.href.includes("book-studio.css"),
     );
     if (!sheet) return;
-    layoutRules.set(
-      selector,
-      Object.entries(properties)
+    const body = Object.entries(properties)
         .map(
           ([key, value]) =>
             key.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase()) + ":" + value,
         )
-        .join(";"),
-    );
-    while (layoutCount) {
-      sheet.deleteRule(sheet.cssRules.length - 1);
-      layoutCount--;
+        .join(";");
+    const previous = layoutRules.get(selector);
+    if (previous?.body === body) return;
+    if (previous) {
+      const at = [...sheet.cssRules].indexOf(previous.rule);
+      if (at >= 0) sheet.deleteRule(at);
     }
-    for (const [target, body] of layoutRules) {
-      sheet.insertRule(target + "{" + body + "}", sheet.cssRules.length);
-      layoutCount++;
-    }
+    const at = sheet.insertRule(selector + "{" + body + "}", sheet.cssRules.length);
+    layoutRules.set(selector, { body, rule: sheet.cssRules[at] });
+  }
+  function removeLayoutRule(selector) {
+    const entry = layoutRules.get(selector);
+    if (!entry) return;
+    const sheet = [...document.styleSheets].find((s) => s.href?.includes("book-studio.css"));
+    const at = sheet ? [...sheet.cssRules].indexOf(entry.rule) : -1;
+    if (at >= 0) sheet.deleteRule(at);
+    layoutRules.delete(selector);
   }
   function fitStage() {
     if (!b || !$("book-spread").children.length) return;
@@ -1101,12 +1137,18 @@
     $("zoom-value").textContent = Math.round(zoom * 100) + "%";
     $("zoom-in").disabled = zoom >= 2.5;
     $("zoom-out").disabled = zoom <= 0.4;
+    if (inlineEdit) {
+      const sheet = inlineEdit.editor.closest(".book-sheet"), o = item();
+      if (sheet && o) positionTextEditor(o, sheet);
+    }
     renderSelection();
   }
   function renderStage(direction = 0) {
     if (inlineEdit) finishText();
+    cancelAnimationFrame(stageFrame);
+    stageFrame = 0;
     const spreads = syncTurn(),
-      ids = spreads[turn] || spreads[0];
+      ids = (spreads[turn] || spreads[0]).filter(Boolean);
     $("book-spread").className =
       "book-spread" +
       (ids.length === 2 ? " two-pages" : "") +
@@ -1114,9 +1156,7 @@
     $("book-spread").innerHTML = ids
       .map((pid) => {
         const p = b.pages.find((p) => p.id === pid);
-        return p
-          ? `<div class="book-sheet" data-page-id="${p.id}" data-active="${p.id === active}" tabindex="0" aria-label="${esc(p.title || "Book page")}">${rulers && !reading ? rulerMarkup() : ""}${M.svg(p, renderedAssets, { ...M.pageRenderOptions(p, b.pages, b.pageNumbers), guides: guides && !reading })}${editorGuides(p.id)}</div>`
-          : '<div class="book-sheet blank" aria-label="Blank page"></div>';
+        return `<div class="book-sheet" data-page-id="${p.id}" data-active="${p.id === active}" tabindex="0" aria-label="${esc(p.role === "page" ? "Page " + b.pages.indexOf(p) + ": " + p.title : p.title)}">${rulers && !reading ? rulerMarkup() : ""}${M.svg(p, renderedAssets, { ...M.pageRenderOptions(p, b.pages, b.pageNumbers), guides: guides && !reading })}${editorGuides(p.id)}</div>`;
       })
       .join("");
     const p = page(),
@@ -1137,6 +1177,11 @@
       turn === spreads.length - 1;
     document.title = b.title + " · Book Studio";
     fitStage();
+    renderContentWarnings();
+  }
+  function renderContentWarnings() {
+    const box = $("object-content-warnings"), o = item();
+    if (box) box.innerHTML = o ? M.contentOverflow(o).map((warning) => `<p class="book-warning">${esc(warning[0].toUpperCase() + warning.slice(1))}</p>`).join("") : "";
   }
   const isPath = (o) => o && ["line", "arrow"].includes(o.type);
   function furnitureBox(kind = furnitureSelection) {
@@ -1174,6 +1219,7 @@
     const resize = event.target.closest("[data-logo-resize]");
     let moved = false;
     const move = (e) => {
+      if (e.pointerId !== event.pointerId) return;
       const delta = { x: (e.clientX - event.clientX) / scale, y: (e.clientY - event.clientY) / scale };
       if (!moved && Math.hypot(delta.x, delta.y) < .5) return;
       if (!moved) { if (!checkpoint()) return; moved = true; }
@@ -1189,7 +1235,8 @@
       }
       placeFurniture(box); renderStage(); feedback(lines, furnitureBox());
     };
-    const up = () => {
+    const up = (e) => {
+      if (e.pointerId !== event.pointerId) return;
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerup", up);
       document.removeEventListener("pointercancel", up);
@@ -1208,6 +1255,7 @@
     let moved = false;
     renderSelection(); renderInspector();
     const move = (e) => {
+      if (e.pointerId !== event.pointerId) return;
       if (!moved && Math.hypot(e.clientX - event.clientX, e.clientY - event.clientY) < 3) return;
       if (!moved) { if (!checkpoint()) return; moved = true; }
       const world = { x: M.clamp((e.clientX - rect.left) / scale, 0, M.W), y: M.clamp((e.clientY - rect.top) / scale, 0, M.H) };
@@ -1216,7 +1264,8 @@
       }
       Object.assign(o, P.movePoint(original, activePathPoint, world)); renderStage();
     };
-    const up = () => {
+    const up = (e) => {
+      if (e.pointerId !== event.pointerId) return;
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerup", up);
       document.removeEventListener("pointercancel", up);
@@ -1286,7 +1335,7 @@
   function renderSelection() {
     if (furnitureSelection && !furnitureBox()) furnitureSelection = "";
     for (const key of layoutRules.keys())
-      if (key.startsWith(".book-selection")) layoutRules.delete(key);
+      if (key.startsWith(".book-selection")) removeLayoutRule(key);
     document.querySelectorAll(".book-selection").forEach((el) => el.remove());
     selectionToolbar();
     if (reading || !editable()) return;
@@ -1345,12 +1394,14 @@
     });
   }
   function go(offset, absolute) {
-    finishText();
-    const spreads = currentSpreads();
-    turn =
+    const spreads = syncTurn();
+    const next =
       absolute === undefined
         ? M.clamp(turn + offset, 0, spreads.length - 1)
         : absolute;
+    if (next === turn) return;
+    finishText();
+    turn = next;
     const prev = active;
     active = spreads[turn].find(Boolean);
     selected = [];
@@ -1373,6 +1424,7 @@
   }
   function renderInspector() {
     if (!b) return;
+    document.querySelectorAll("[data-tool]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.tool === tool)));
     const p = page(),
       source = item(),
       o = source ? { ...source, style: selectedStyle(source) } : null,
@@ -1393,7 +1445,7 @@
       else panelDetails.delete(key);
     });
     let html = `<div class="book-panel-heading"><h2>${selected.length > 1 ? selected.length + " objects" : o ? esc(o.name || o.type) : furnitureSelection === "logo" ? "xPED logo" : furnitureSelection === "number" ? "Page number" : "Page settings"}</h2><button class="icon-btn" id="close-inspector" aria-label="Close settings" title="Close settings">${icon("close")}</button></div>`;
-    html += `<div class="book-inspector-tabs" role="tablist" aria-label="Settings sections"><button role="tab" data-panel="settings" aria-selected="${inspectorTab === "settings"}" aria-controls="book-properties">Settings</button><button role="tab" data-panel="layers" aria-selected="${inspectorTab === "layers"}" aria-controls="book-layers">Layers · ${p.items.length}</button></div><div id="book-properties" role="tabpanel" aria-label="Settings" ${inspectorTab !== "settings" ? "hidden" : ""}>`;
+    html += `<div class="book-inspector-tabs" role="tablist" aria-label="Settings sections"><button role="tab" data-panel="settings" tabindex="${inspectorTab === "settings" ? "0" : "-1"}" aria-selected="${inspectorTab === "settings"}" aria-controls="book-properties">Settings</button><button role="tab" data-panel="layers" tabindex="${inspectorTab === "layers" ? "0" : "-1"}" aria-selected="${inspectorTab === "layers"}" aria-controls="book-layers">Layers · ${p.items.length}</button></div><div id="book-properties" role="tabpanel" aria-label="Settings" ${inspectorTab !== "settings" ? "hidden" : ""}>`;
     if (disabled)
       html +=
         '<p class="book-status-banner">' +
@@ -1645,7 +1697,7 @@
       }
       if (["table", "flow"].includes(o.type))
         html +=
-          '<div class="book-row">' +
+          '<div id="object-content-warnings" aria-live="polite"></div><div class="book-row">' +
           selectField("Font", "style.font", o["style"].font, M.fontOptions) +
           field(
             "Text size (pt)",
@@ -1876,6 +1928,7 @@
         ?.focus({ preventScroll: true });
     window.BookColorPicker?.enhance(panel);
     panel.scrollTop = scroll;
+    renderContentWarnings();
     selectionToolbar();
   }
   function applyStyle(key, value) {
@@ -1931,16 +1984,21 @@
   function changeField(input) {
     const name = input.dataset.field;
     if (!name) return;
+    if (input.type === "number" && (input.value.trim() === "" || !Number.isFinite(Number(input.value)))) return;
     if (input.type === "color") {
       if (liveColorValues.get(input) === input.value) return;
       liveColorValues.set(input, input.value);
     }
-    const value =
+    let value =
       input.type === "checkbox"
         ? input.checked
         : ["range", "number"].includes(input.type)
           ? Number(input.value)
           : input.value;
+    if (input.type === "number") {
+      value = M.clamp(value, input.min === "" ? -Infinity : Number(input.min), input.max === "" ? Infinity : Number(input.max));
+      input.dataset.lastValue = String(value);
+    }
     if (
       [
         "guides",
@@ -1963,6 +2021,7 @@
       if (name === "brushWidth") brushWidth = value;
       saveView();
       renderStage();
+      if (name === "tool") renderInspector();
       return;
     }
     if (!editCheckpoint(input)) return;
@@ -2027,9 +2086,11 @@
           o.type === "image" &&
           o.aspectLock
         ) {
-          const ratio = o.w / o.h;
-          if (name === "w") o.h = Math.max(0.2, value / ratio);
-          else o.w = Math.max(0.2, value * ratio);
+          const scale = M.clamp(value / o[name], Math.max(0.2 / o.w, 0.2 / o.h), Math.min(297 / o.w, 420 / o.h));
+          o.w *= scale;
+          o.h *= scale;
+          value = o[name];
+          input.dataset.lastValue = String(value);
         }
         o[name] = value;
         if (name === "stroke" && o.type === "arrow" && !o.arrowFill) {
@@ -2042,6 +2103,14 @@
         }
         if (["w", "h"].includes(name))
           o[name] = M.clamp(value, 0.2, name === "w" ? 297 : 420);
+        if (["w", "h"].includes(name) && o.type === "image" && o.aspectLock) {
+          const otherName = name === "w" ? "h" : "w";
+          const otherInput = $("inspector").querySelector(`[data-field="${otherName}"]`);
+          if (otherInput) {
+            otherInput.value = String(Math.round(o[otherName] * 100) / 100);
+            otherInput.dataset.lastValue = otherInput.value;
+          }
+        }
         if (o.type === "drawing" && ["w", "h"].includes(name))
           o.points = o.points.map((p) => [
             (p[0] * o.w) / oldW,
@@ -2085,12 +2154,12 @@
   }
   function addObject(type, preset = "body") {
     finishText();
-    if (!checkpoint()) return;
     if (page().items.length >= 300)
       return notify(
         "This page has 300 objects. Add another page to keep creating.",
         true,
       );
+    if (!checkpoint()) return;
     const styles =
       type === "text"
         ? {
@@ -2162,11 +2231,11 @@
     setInspector(true, window.innerWidth <= 780);
   }
   function addPage() {
-    if (!checkpoint()) return;
     if (b.pages.length >= 100) {
       notify("This book has reached 100 pages.", true);
       return;
     }
+    if (!checkpoint()) return;
     const index = Math.min(
       b.pages.length - 1,
       Math.max(1, b.pages.indexOf(page()) + 1),
@@ -2194,12 +2263,12 @@
       notify("Keep at least two inside pages in your book.");
       return;
     }
-    if (!checkpoint()) return;
     const i = b.pages.indexOf(p);
     if (p.items.some((o) => o.spanId)) {
       notify("Split the spread illustration before deleting this page.");
       return;
     }
+    if (!checkpoint()) return;
     b.deletedPages.push(p);
     b.pages.splice(i, 1);
     keepSpreadsTogether();
@@ -2222,7 +2291,6 @@
     return next;
   }
   function duplicatePages(spread) {
-    if (!checkpoint()) return;
     const sources = spread
       ? currentSpreads()
           [turn].filter(Boolean)
@@ -2236,6 +2304,7 @@
       notify("This book has reached its page limit.");
       return;
     }
+    if (!checkpoint()) return;
     const copies = sources.map(copyPage),
       spanMap = {};
     copies.forEach((p) =>
@@ -2261,9 +2330,10 @@
   }
   function duplicateObject() {
     finishText();
-    if (!selectedItems().length || !checkpoint()) return;
+    if (!selectedItems().length) return;
     if (page().items.length + selectedItems().length > 300)
       return notify("This page is full. Paste onto another page.", true);
+    if (!checkpoint()) return;
     const groups = new Map();
     const copies = page()
       .items.filter((o) => selected.includes(o.id) && !o.locked)
@@ -2399,27 +2469,47 @@
       const ratio = o.w / o.h;
       if (Math.abs(delta.x) > Math.abs(delta.y)) h = w / ratio;
       else w = h * ratio;
+      const scale = Math.min(1, 297 / w, 420 / h);
+      w *= scale; h *= scale;
     }
     if (left) x = o.x + o.w - w;
     if (top) y = o.y + o.h - h;
     return { x, y, w: Math.min(297, w), h: Math.min(420, h) };
   }
+  let canvasPointer = null;
+  for (const eventName of ["pointerup", "pointercancel"]) document.addEventListener(eventName, (event) => {
+    if (event.pointerId === canvasPointer) canvasPointer = null;
+  });
   function pointer(event) {
+    if (canvasPointer !== null && canvasPointer !== event.pointerId) return;
     if (event.target.closest("#canvas-text-editor")) return;
     if (inlineEdit) finishText();
-    const sheet = event.target.closest("[data-page-id]");
+    let sheet = event.target.closest("[data-page-id]");
     if (!sheet || !b || event.button > 0) return;
+    canvasPointer = event.pointerId;
     const pid = sheet.dataset.pageId;
+    sheet.focus({ preventScroll: true });
+    // Blurring an inspector field can redraw the page; use its live geometry.
+    if (!sheet.isConnected) {
+      sheet = $("book-spread").querySelector(`[data-page-id="${pid}"]`);
+      if (!sheet) return;
+      sheet.focus({ preventScroll: true });
+    }
     if (pid !== active) {
       active = pid;
       selected = [];
       furnitureSelection = "";
       activePathPoint = -1;
+      renderPages();
+      $("book-spread").querySelectorAll("[data-page-id]").forEach((node) => { node.dataset.active = String(node.dataset.pageId === active); });
+      renderInspector();
     }
     if (!editable() || reading) {
       const startX = event.clientX;
+      const startY = event.clientY;
       sheet.onpointerup = (e) => {
-        if (Math.abs(e.clientX - startX) > 60) go(e.clientX < startX ? 1 : -1);
+        if (e.pointerId !== event.pointerId) return;
+        if (event.pointerType === "touch" && Math.abs(e.clientX - startX) > 60 && Math.abs(e.clientX - startX) > Math.abs(e.clientY - startY) * 1.5) go(e.clientX < startX ? 1 : -1);
         sheet.onpointerup = null;
       };
       return;
@@ -2440,13 +2530,14 @@
       const target =
         objectNode &&
         page().items.find((o) => o.id === objectNode.dataset.object);
-      if (target && target.type === "drawing" && checkpoint()) {
+      if (target && target.type === "drawing" && !target.locked && checkpoint()) {
         page().items = page().items.filter((o) => o !== target);
         changed();
       }
       return;
     }
     if (["pen", "pencil", "highlighter"].includes(tool)) {
+      if (page().items.length >= 300) return notify("This page has 300 objects. Add another page to keep drawing.", true);
       if (!checkpoint()) return;
       const p = page(),
         o = M.object("drawing", {
@@ -2470,6 +2561,7 @@
       furnitureSelection = "";
       activePathPoint = -1;
       const move = (e) => {
+      if (e.pointerId !== event.pointerId) return;
         if (o.points.length >= 3000) return;
         const x = M.clamp((e.clientX - rect.left) / scale, 0, M.W),
           y = M.clamp((e.clientY - rect.top) / scale, 0, M.H);
@@ -2478,7 +2570,8 @@
         o.points.push([x, y, e.pressure || 0.5]);
         renderStage();
       };
-      const up = () => {
+      const up = (e) => {
+      if (e.pointerId !== event.pointerId) return;
         document.removeEventListener("pointermove", move);
         document.removeEventListener("pointerup", up);
         document.removeEventListener("pointercancel", up);
@@ -2509,6 +2602,7 @@
       marquee.className = "book-marquee";
       let moved = false;
       const move = (e) => {
+      if (e.pointerId !== event.pointerId) return;
         if (event.pointerType === "touch") return;
         if (Math.hypot(e.clientX - sx, e.clientY - sy) < 5) return;
         moved = true;
@@ -2550,6 +2644,7 @@
         renderSelection();
       };
       const release = (e) => {
+        if (e.pointerId !== event.pointerId) return;
         document.removeEventListener("pointermove", move);
         document.removeEventListener("pointerup", release);
         document.removeEventListener("pointercancel", release);
@@ -2593,7 +2688,7 @@
     if (!selected.includes(o.id))
       selected = o.group
         ? page()
-            .items.filter((x) => x.group === o.group && !x.locked)
+            .items.filter((x) => x.group === o.group && !x.locked && !x.hidden)
             .map((x) => x.id)
         : [o.id];
     selectionRange = null;
@@ -2604,6 +2699,7 @@
       .map(M.clone);
     let moved = false;
     const move = (e) => {
+      if (e.pointerId !== event.pointerId) return;
       const delta = {
         x: (e.clientX - event.clientX) / scale,
         y: (e.clientY - event.clientY) / scale,
@@ -2664,7 +2760,8 @@
       renderStage();
       feedback(lines, M.bounds(selectedItems()));
     };
-    const up = () => {
+    const up = (e) => {
+      if (e.pointerId !== event.pointerId) return;
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerup", up);
       document.removeEventListener("pointercancel", up);
@@ -2698,7 +2795,7 @@
     return dimensions;
   }
   async function importImages(files, pid, point) {
-    if (!editable()) {
+    if (!editable() || reading) {
       notify("Start an editing turn before adding images.");
       return;
     }
@@ -4302,6 +4399,11 @@
   $("inspector").addEventListener(
     "change",
     action((e) => {
+      if (e.target.type === "number" && e.target.dataset.field) {
+        if (e.target.value.trim() === "" || !e.target.validity.valid) e.target.value = e.target.dataset.lastValue;
+        else { changeField(e.target); e.target.value = e.target.dataset.lastValue; }
+        return;
+      }
       if (
         e.target.tagName === "SELECT" ||
         e.target.type === "checkbox" ||
@@ -4386,8 +4488,16 @@
   });
   $("book-title").addEventListener("input", () => {
     if (!editable()) return;
+    if (editBatch !== "book-title") {
+      if (!checkpoint()) return;
+      editBatch = "book-title";
+    }
     b.title = $("book-title").value.trim() || "Untitled book";
     changed(false);
+  });
+  $("book-title").addEventListener("blur", () => {
+    editBatch = null;
+    if (b) $("book-title").value = b.title;
   });
   $("book-search").addEventListener("input", renderLibrary);
   $("book-sort").addEventListener("change", renderLibrary);
@@ -4504,6 +4614,7 @@
       if (
         !b ||
         !editable() ||
+        reading ||
         $("book-dialog").open ||
         e.target.closest("input,textarea,select,[contenteditable=true]")
       )
@@ -4560,6 +4671,17 @@
     }),
   );
   document.addEventListener("keydown", (e) => {
+    const tab = e.target.closest('[role="tab"]');
+    if (tab && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
+      e.preventDefault();
+      const list = tab.closest('[role="tablist"]'), tabs = [...list.querySelectorAll('[role="tab"]')];
+      const step = e.key === "ArrowLeft" ? -1 : 1;
+      const index = e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : (tabs.indexOf(tab) + step + tabs.length) % tabs.length;
+      tabs[index].click();
+      const label = list.getAttribute("aria-label");
+      document.querySelector(`[role="tablist"][aria-label="${label}"] [aria-selected="true"]`)?.focus();
+      return;
+    }
     if (
       !b ||
       e.defaultPrevented ||
@@ -4575,6 +4697,15 @@
           ? 1
           : M.clamp(zoom + (e.key === "-" ? -0.1 : 0.1), 0.4, 2.5);
       fitStage();
+      return;
+    }
+    if (reading) {
+      if (["ArrowLeft", "ArrowRight", "Home", "End", "Escape"].includes(e.key)) {
+        e.preventDefault();
+        if (e.key === "Escape") $("reading").click();
+        else if (e.key === "Home" || e.key === "End") go(e.key === "Home" ? -1 : 1, e.key === "Home" ? 0 : currentSpreads().length - 1);
+        else go(e.key === "ArrowRight" ? 1 : -1);
+      }
       return;
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") {
@@ -4621,7 +4752,7 @@
       renderAll();
       return;
     }
-    if (e.shiftKey && e.key.toLowerCase() === "n") {
+    if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === "n") {
       e.preventDefault();
       addPage();
       return;
@@ -4733,7 +4864,18 @@
   }, 20000);
   window.addEventListener("resize", () => {
     if (b) {
-      renderStage();
+      if (inlineEdit) {
+        const ids = currentSpreads().find((spread) => spread.includes(active)).filter(Boolean);
+        const shown = [...$("book-spread").children].map((sheet) => sheet.dataset.pageId);
+        if (ids.join() !== shown.join()) {
+          const { selectionStart, selectionEnd } = inlineEdit.editor;
+          renderStage();
+          startText();
+          inlineEdit?.editor.setSelectionRange(selectionStart, selectionEnd);
+          renderPages();
+        } else fitStage();
+      }
+      else { renderStage(); renderPages(); }
     }
   });
   window.addEventListener("online", () => {
@@ -4759,13 +4901,16 @@
       if (dirty && leaseToken) persist().catch(() => {});
     }
   });
-  document.fonts.ready.then(() => {
+  function refreshFontLayouts() {
     if (startupState !== "ready") return;
-    if (b && !inlineEdit) {
-      renderStage();
+    if (b) {
+      $("page-list").querySelectorAll(".book-thumb").forEach((node) => { node.bookPreviewKey = null; });
+      if (!inlineEdit) renderStage();
       renderPages();
     } else if (!b) renderLibrary();
-  });
+  }
+  document.fonts.ready.then(refreshFontLayouts);
+  document.fonts.addEventListener("loadingdone", refreshFontLayouts);
   function showStartupError(error) {
     startupError = error;
     startupState = "error";
@@ -4884,6 +5029,7 @@
       if (
         !b ||
         !editable() ||
+        reading ||
         !selected.length ||
         $("book-dialog").open ||
         e.target.closest("input,textarea,select,[contenteditable=true]")

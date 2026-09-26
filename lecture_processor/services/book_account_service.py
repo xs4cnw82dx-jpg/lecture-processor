@@ -11,15 +11,16 @@ def export_row(row, private=()):
 
 
 def collect(runtime, uid):
+    from lecture_processor.services.book_service import retained_pages
     db = BookStore(runtime.db)
     result = []
     for book in db.list('books', 'owner_uid', uid, limit=101):
         root = 'books/' + book['id']
-        pages = [export_row(page) for page in db.list(root + '/pages', limit=200)]
+        pages = [export_row(page) for page in retained_pages(db, root + '/pages', book['page_ids'], book.get('deleted_page_ids', []))]
         assets = db.list(root + '/assets', limit=400)
         versions = [export_row(version) for version in db.list(root + '/versions', limit=20)]
         for version in versions:
-            rows = [export_row(page) for page in db.list(root + '/versions/' + version['id'] + '/pages', limit=200)]
+            rows = [export_row(page) for page in retained_pages(db, root + '/versions/' + version['id'] + '/pages', version['page_ids'], version.get('deleted_page_ids', []))]
             version['pages'] = [next(p for p in rows if p['id'] == pid) for pid in version['page_ids']]
             version['deletedPages'] = [p for p in rows if p['id'] in version.get('deleted_page_ids', [])]
         result.append({

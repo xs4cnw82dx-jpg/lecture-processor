@@ -90,7 +90,7 @@ def access(runtime, book_id, required='view', cached=False):
     uid = user['uid'] if user else ''
     email = str((user or {}).get('email', '')).lower()
     role = 'owner' if uid and book['owner_uid'] == uid else (book.get('members', {}).get(email, '') if email else '')
-    who = {'id': uid, 'name': model.text((user or {}).get('name') or email.split('@')[0], 60)}
+    who = {'id': uid, 'name': model.text((user or {}).get('name') or email.split('@')[0], 60), 'share_id': ''}
     share_key = request.headers.get('X-Book-Access', '')
     if share_key:
         try:
@@ -99,10 +99,11 @@ def access(runtime, book_id, required='view', cached=False):
         except (BadSignature, KeyError, ValueError):
             grant = None
         if grant and grant['book_id'] == book_id and not grant.get('revoked') and (not grant.get('expires_at') or grant['expires_at'] > now()) and (not grant.get('require_signin') or user):
-            if role != 'owner' and (not role or grant['role'] == 'edit'):
+            if not role or (role == 'view' and grant['role'] == 'edit'):
                 role = grant['role']
+                who['share_id'] = grant['id']
             if not uid:
-                who = {'id': claims['guest'], 'name': model.text(claims['name'], 60)}
+                who.update(id=claims['guest'], name=model.text(claims['name'], 60))
     if not role or (book.get('deleted') and role != 'owner'):
         raise model.BookError('You do not have access to this book.', 403)
     if required == 'owner' and role != 'owner':
@@ -141,7 +142,7 @@ def list_books(runtime):
     db = store(runtime)
     owned = db.list('books', 'owner_uid', user['uid'])
     shared = db.list('books', 'member_emails', str(user.get('email', '')).lower(), 'array_contains')
-    books = {b['id']: public_book(b, 'owner' if b['owner_uid'] == user['uid'] else b['members'].get(str(user.get('email', '')).lower(), 'view')) for b in owned + shared}
+    books = {b['id']: public_book(b, 'owner' if b['owner_uid'] == user['uid'] else b['members'].get(str(user.get('email', '')).lower(), 'view')) for b in owned + shared if b['owner_uid'] == user['uid'] or not b.get('deleted')}
     return jsonify(books=list(books.values()), storage_available=book_storage.configured())
 
 
@@ -151,8 +152,7 @@ def create_book(runtime):
     key = idempotency_key(raw.get('idempotency_key'))
     pages = [model.page(p) for p in model.array(raw.get('pages'), 100, 'page list')]
     order = model.validate_order([p['id'] for p in pages])
-    if pages[0]['role'] != 'front' or pages[-1]['role'] != 'back':
-        raise model.BookError('Add a front and back cover before saving.')
+    model.validate_structure(pages)
     if any(obj['assetId'] or obj['originalAssetId'] for p in pages for obj in p['items']):
         raise model.BookError('Upload this book’s images before attaching them.')
     book_id = operation_id(user['uid'], 'book', key) if key else model.new_id()
@@ -183,13 +183,33 @@ def create_book(runtime):
     return jsonify(book=public_book(saved, 'owner'), idempotent_replay=replay), 200 if replay else 201
 
 
+def retained_pages(db, root, page_ids, deleted_ids=(), since=0):
+    """Only return pages still in the book, recovering older orphan-heavy books."""
+    ids = list(dict.fromkeys([*page_ids, *deleted_ids]))
+    rows = db.list(root, 'revision', since, '>', limit=200) if since else db.list(root, limit=200)
+    by_id = {p['id']: p for p in rows if p['id'] in ids}
+    # Previous versions left abandoned page documents behind. Their arbitrary
+    # query order must never crowd a current page out of the 200-document window.
+    if not since or len(rows) >= 200:
+        for pid in ids:
+            if pid not in by_id:
+                page = db.get(root + '/' + pid)
+                if not page:
+                    raise model.BookError('One of the saved pages could not be opened. Please retry or restore a saved version.', 409)
+                if not since or page.get('revision', 0) > since:
+                    by_id[pid] = page
+    return [by_id[pid] for pid in ids if pid in by_id]
+
+
 def get_book(runtime, book_id):
     db, book, role, _ = access(runtime, book_id)
     since = request.args.get('since', type=int) or 0
     cover = request.args.get('cover') == '1'
-    pages = [db.get(path(book_id) + '/pages/' + book['page_ids'][0])] if cover else (db.list(path(book_id) + '/pages', 'revision', since, '>', limit=200) if since else db.list(path(book_id) + '/pages', limit=200))
+    pages = [db.get(path(book_id) + '/pages/' + book['page_ids'][0])] if cover else retained_pages(db, path(book_id) + '/pages', book['page_ids'], book.get('deleted_page_ids', []), since)
     assets = db.list(path(book_id) + '/assets', limit=400)
     if cover:
+        if not pages[0]:
+            raise model.BookError('The cover could not be opened. Please retry or restore a saved version.', 409)
         used = {obj['assetId'] for obj in pages[0]['items'] if obj['assetId']}
         assets = [a for a in assets if a['id'] in used]
     return jsonify(book=public_book(book, role), pages=pages, assets=[public_asset(a) for a in assets if a.get('ready') or a.get('failed')])
@@ -209,6 +229,12 @@ def lease(runtime, book_id):
 
     def update(tx):
         current = tx.get(path(book_id))
+        if not current or current.get('deleted'):
+            raise model.BookError('This book is unavailable. Your draft stays on this device.', 409)
+        if who['share_id']:
+            grant = tx.get('book_shares/' + who['share_id'])
+            if not grant or grant.get('revoked') or (grant.get('expires_at') and grant['expires_at'] <= now()):
+                raise model.BookError('This sharing link has expired or been turned off.', 403)
         active = current.get('lease') or {}
         same = active.get('session') == session and active.get('user_id') == who['id'] and secrets.compare_digest(active.get('token_hash', ''), digest(body.get('lease_token', '')))
         if action in ('renew', 'release') and (not same or (action == 'renew' and active.get('expires_at', 0) <= now())):
@@ -219,7 +245,7 @@ def lease(runtime, book_id):
         if action not in ('acquire', 'renew', 'release'):
             raise model.BookError('Unknown editing action.')
         next_token = body.get('lease_token') if action == 'renew' else token
-        current['lease'] = None if action == 'release' else {'user_id': who['id'], 'name': who['name'] or 'Guest', 'session': session, 'token_hash': digest(next_token), 'expires_at': now() + LEASE_SECONDS}
+        current['lease'] = None if action == 'release' else {'user_id': who['id'], 'name': who['name'] or 'Guest', 'session': session, 'token_hash': digest(next_token), 'expires_at': now() + LEASE_SECONDS, 'share_id': who['share_id']}
         tx.put(path(book_id), current)
         return next_token
     issued = db.atomic(update)
@@ -233,10 +259,8 @@ def save_book(runtime, book_id):
     if len({p['id'] for p in changed}) != len(changed):
         raise model.BookError('Each changed page must be sent once.')
     order = model.validate_order(body.get('page_ids'))
-    deleted = [model.identifier(pid) for pid in model.array(body.get('deleted_page_ids'), 100, 'deleted-page list')]
+    deleted = model.validate_deleted_order(body.get('deleted_page_ids'), order)
     meta = model.metadata(body.get('metadata'))
-    if set(order) & set(deleted):
-        raise model.BookError('A page cannot be both active and deleted.')
     assets = {a['id'] for a in db.list(path(book_id) + '/assets', limit=400) if a.get('ready')}
     for p in changed:
         if p['id'] not in order + deleted:
@@ -253,13 +277,14 @@ def save_book(runtime, book_id):
         # Reads precede all transaction writes; covers and linked spreads remain structural.
         by_id = {p['id']: p for p in changed}
         ordered = [by_id.get(pid) or tx.get(path(book_id) + '/pages/' + pid) for pid in order]
-        if ordered[0]['role'] != 'front' or ordered[-1]['role'] != 'back' or any(p['role'] != 'page' for p in ordered[1:-1]):
-            raise model.BookError('Keep the front cover first and the back cover last.')
-        model.validate_spans(ordered)
+        model.validate_structure(ordered)
+        removed = set(book['page_ids'] + book.get('deleted_page_ids', [])) - set(order + deleted)
         book.update(meta, page_ids=order, deleted_page_ids=deleted, revision=book['revision'] + 1, updated_at=now())
         tx.put(path(book_id), book)
         for p in changed:
             tx.put(path(book_id) + '/pages/' + p['id'], dict(p, revision=book['revision']))
+        for pid in removed:
+            tx.delete(path(book_id) + '/pages/' + pid)
         return book['revision']
     return jsonify(revision=db.atomic(update))
 
@@ -306,11 +331,18 @@ def sharing(runtime, book_id):
         return jsonify(ok=True)
     if body.get('revoke'):
         ref = 'book_shares/' + model.identifier(body['revoke'])
-        grant = db.get(ref)
-        if not grant or grant['book_id'] != book_id:
-            raise model.BookError('This sharing link is unavailable.', 404)
-        grant['revoked'] = True
-        db.put(ref, grant)
+        def revoke(tx):
+            grant = tx.get(ref)
+            current = tx.get(path(book_id))
+            if not grant or grant['book_id'] != book_id:
+                raise model.BookError('This sharing link is unavailable.', 404)
+            grant['revoked'] = True
+            active = (current or {}).get('lease') or {}
+            if active.get('share_id') == grant['id']:
+                current['lease'] = None
+                tx.put(path(book_id), current)
+            tx.put(ref, grant)
+        db.atomic(revoke)
         return jsonify(ok=True)
     if body.get('role') not in ('view', 'edit'):
         raise model.BookError('Choose View or Edit for this link.')
@@ -351,12 +383,20 @@ def comments(runtime, book_id):
         message = model.text(body.get('text'), 2000).strip()
         if not message:
             raise model.BookError('Write a comment first.')
-        if len(db.list(root, limit=300)) >= 300:
-            raise model.BookError('This book has reached its comment limit.')
-        if body.get('page_id') not in book['page_ids']:
-            raise model.BookError('Choose a page in this book for your comment.')
         cid = model.new_id()
         def add_comment(tx):
+            current = tx.get(path(book_id))
+            count = len(tx.list(root, limit=300))
+            if not current or current.get('deleted'):
+                raise model.BookError('Restore this book before adding a comment.', 409)
+            if body.get('page_id') not in current['page_ids']:
+                raise model.BookError('Choose a page in this book for your comment.')
+            if count >= 300:
+                raise model.BookError('This book has reached its comment limit.')
+            # The shared book write serializes simultaneous last-slot comments
+            # without changing its content revision or interrupting the editor.
+            current['_comment_count'] = count + 1
+            tx.put(path(book_id), current)
             tx.put(root + '/' + cid, {'id': cid, 'text': message, 'page_id': model.identifier(body.get('page_id')), 'item_id': model.text(body.get('item_id'), 100), 'author_id': who['id'], 'author': who['name'] or 'Guest', 'created_at': now(), 'resolved': False})
             tx.put('book_comments/' + cid, {'id': cid, 'uid': who['id'], 'book_id': book_id})
         db.atomic(add_comment)
@@ -370,7 +410,7 @@ def history(runtime, book_id):
         versions = db.list(root, limit=20)
         if request.args.get('include_pages') == '1':
             for version in versions:
-                rows = db.list(root + '/' + version['id'] + '/pages', limit=200)
+                rows = retained_pages(db, root + '/' + version['id'] + '/pages', version['page_ids'], version.get('deleted_page_ids', []))
                 version['pages'] = [next(p for p in rows if p['id'] == pid) for pid in version['page_ids']]
                 version['deletedPages'] = [p for p in rows if p['id'] in version.get('deleted_page_ids', [])]
         return jsonify(versions=versions)
@@ -381,27 +421,25 @@ def history(runtime, book_id):
         version = db.get(root + '/' + model.identifier(body['restore']))
         if not version:
             raise model.BookError('This version is unavailable.', 404)
-        pages = db.list(root + '/' + version['id'] + '/pages', limit=200)
+        pages = retained_pages(db, root + '/' + version['id'] + '/pages', version['page_ids'], version.get('deleted_page_ids', []))
         return jsonify(metadata=version['metadata'], page_ids=version['page_ids'], deleted_page_ids=version.get('deleted_page_ids', []), pages=pages)
     vid = operation_id(book_id, 'version', key) if key else model.new_id()
     existing = db.get(root + '/' + vid)
     if existing:
         return jsonify(ok=True, version_id=vid, idempotent_replay=True)
-    pages = db.list(path(book_id) + '/pages', limit=200)
+    pages = retained_pages(db, path(book_id) + '/pages', book['page_ids'], book.get('deleted_page_ids', []))
     version_order = book['page_ids']
     version_deleted = book.get('deleted_page_ids', [])
     version_meta = model.metadata(book)
     if 'pages' in body:
         pages = [model.page(p) for p in model.array(body['pages'], 200, 'version page list')]
         version_order = model.validate_order(body.get('page_ids'))
-        version_deleted = [model.identifier(p) for p in model.array(body.get('deleted_page_ids'), 100)]
+        version_deleted = model.validate_deleted_order(body.get('deleted_page_ids'), version_order)
         by_id = {p['id']: p for p in pages}
-        if len(by_id) != len(pages) or not set(version_order + version_deleted) <= set(by_id):
-            raise model.BookError('This saved version has missing pages.')
+        if len(by_id) != len(pages) or set(version_order + version_deleted) != set(by_id):
+            raise model.BookError('This saved version has missing or unlisted pages.')
         ordered = [by_id[pid] for pid in version_order]
-        if ordered[0]['role'] != 'front' or ordered[-1]['role'] != 'back':
-            raise model.BookError('This version needs its front and back covers.')
-        model.validate_spans(ordered)
+        model.validate_structure(ordered)
         assets = {a['id'] for a in db.list(path(book_id) + '/assets', limit=400) if a.get('ready')}
         if any(aid and aid not in assets for p in pages for o in p['items'] for aid in (o['assetId'], o['originalAssetId'])):
             raise model.BookError('Upload the illustrations used by this version first.')
@@ -586,14 +624,20 @@ def delete_asset(runtime, book_id, asset_id):
     asset = db.get(path(book_id) + '/assets/' + aid)
     if not asset:
         raise model.BookError('This image is unavailable.', 404)
-    collections = [path(book_id) + '/pages'] + [path(book_id) + '/versions/' + v['id'] + '/pages' for v in db.list(path(book_id) + '/versions', limit=20)]
-    for collection in collections:
-        if any(aid in (o.get('assetId'), o.get('originalAssetId')) for p in db.list(collection, limit=200) for o in p['items']):
-            raise model.BookError('This image is used by a page or saved version. Keep it so those pages can still open.')
     def mark_removing(tx):
         latest = tx.get(path(book_id))
         stored = tx.get(path(book_id) + '/assets/' + aid)
         assert_lease(latest, who, body)
+        if not stored:
+            raise model.BookError('This image is unavailable.', 404)
+        # Reference checks and removal must share a transaction: a named version
+        # can otherwise capture this image between checking and deleting it.
+        versions = tx.list(path(book_id) + '/versions', limit=20)
+        roots = [(path(book_id) + '/pages', latest)] + [(path(book_id) + '/versions/' + v['id'] + '/pages', v) for v in versions]
+        for collection, source in roots:
+            retained = retained_pages(tx, collection, source['page_ids'], source.get('deleted_page_ids', []))
+            if any(aid in (o.get('assetId'), o.get('originalAssetId')) for p in retained for o in p['items']):
+                raise model.BookError('This image is used by a page or saved version. Keep it so those pages can still open.')
         # Invalidate in-flight saves before deleting bytes; save validates readiness again.
         stored.update(ready=False, failed=True)
         latest['revision'] += 1
@@ -609,14 +653,14 @@ def delete_asset(runtime, book_id, asset_id):
 
 def backup(runtime, book_id):
     db, book, _, _ = access(runtime, book_id, 'edit')
-    pages = db.list(path(book_id) + '/pages', limit=200)
+    pages = retained_pages(db, path(book_id) + '/pages', book['page_ids'], book.get('deleted_page_ids', []))
     assets = db.list(path(book_id) + '/assets', limit=400)
     reserve_transfer(db, sum(a.get('original_size', 0) for a in assets if a.get('ready')))
     output = io.BytesIO()
     with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
         versions = db.list(path(book_id) + '/versions', limit=20)
         for version in versions:
-            rows = db.list(path(book_id) + '/versions/' + version['id'] + '/pages', limit=200)
+            rows = retained_pages(db, path(book_id) + '/versions/' + version['id'] + '/pages', version['page_ids'], version.get('deleted_page_ids', []))
             version['pages'] = [next(p for p in rows if p['id'] == pid) for pid in version['page_ids']]
             version['deletedPages'] = [p for p in rows if p['id'] in version.get('deleted_page_ids', [])]
         snapshot = dict(model.metadata(book), schema_version=1, pages=[next(p for p in pages if p['id'] == pid) for pid in book['page_ids']], deletedPages=[p for p in pages if p['id'] in book.get('deleted_page_ids', [])], versions=versions, assets=[public_asset(a) for a in assets if a.get('ready')])

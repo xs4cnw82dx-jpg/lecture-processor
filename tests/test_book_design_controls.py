@@ -164,6 +164,27 @@ def captured_page():
     return image, 'data:image/png;base64,' + base64.b64encode(data.getvalue()).decode()
 
 
+def test_editable_export_keeps_mixed_run_spacing_in_capture_without_duplicate_native_text():
+    _, preview = captured_page()
+    logical = pages()
+    mixed = model.item({
+        'id': 'mixed-spacing', 'type': 'text', 'text': 'Airy words\nClose words', 'style': {'lineHeight': 1.4},
+        'runs': [{'text': 'Airy words\n', 'style': {'lineHeight': 2}}, {'text': 'Close words', 'style': {'lineHeight': 1.4}}],
+    })
+    assert native_eligible(mixed) is False
+    uniform = deepcopy(mixed)
+    for run in uniform['runs']:
+        run['style']['lineHeight'] = uniform['style']['lineHeight']
+    assert native_eligible(uniform) is True
+    logical[0]['items'] = [mixed]
+    data, _, _ = generate({'pages': logical, 'previews': [preview] * 4, 'format': 'editable'})
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        document = etree.fromstring(archive.read('word/document.xml'))
+    ns = {'v': 'urn:schemas-microsoft-com:vml', 'wp': 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing'}
+    assert len(document.findall('.//wp:anchor', ns)) == 4
+    assert not document.findall('.//v:textbox', ns)
+
+
 @pytest.mark.parametrize('format', ['faithful', 'editable', 'pdf'])
 def test_exports_retain_captured_lines_markers_and_placed_furniture(format):
     image, preview = captured_page()
