@@ -9,7 +9,8 @@ import uuid
 WIDTH = 148.5
 HEIGHT = 210
 MAX_PAGES = 100
-FONTS = {'Andika', 'Playpen Sans', 'Nunito', 'Comic Neue', 'Fraunces'}
+FONTS = {'Andika', 'Playpen Sans', 'Nunito', 'Comic Neue', 'Fraunces', 'Nohemi', 'General Sans'}
+XPED_VARIANTS = {'corner', 'route', 'shapes', 'minimal'}
 TYPES = {'text', 'image', 'shape', 'arrow', 'table', 'flow', 'drawing'}
 
 
@@ -54,15 +55,52 @@ def array(value, limit, label='list'):
     return value
 
 
+def theme(raw):
+    """Only identifiers for bundled artwork are accepted, never markup or URLs."""
+    if not isinstance(raw, dict) or raw.get('id') != 'xped':
+        return None
+    return {
+        'id': 'xped',
+        'variant': raw.get('variant') if isinstance(raw.get('variant'), str) and raw['variant'] in XPED_VARIANTS else 'corner',
+        'mode': 'dark' if raw.get('mode') == 'dark' else 'light',
+    }
+
+
+def page_numbers(raw):
+    raw = raw if isinstance(raw, dict) else {}
+    font = raw.get('font', 'General Sans')
+    font = font if isinstance(font, str) and font in FONTS else 'General Sans'
+    static_weights = {'Andika': (400, 700), 'Comic Neue': (300, 400, 700), 'Nohemi': (700,), 'General Sans': (400, 700)}
+    limits = {'Nunito': (200, 1000), 'Playpen Sans': (100, 800), 'Fraunces': (100, 900)}.get(font, (100, 1000))
+    weight = number(raw.get('weight', 400), *limits, 400)
+    if font in static_weights:
+        weight = min(static_weights[font], key=lambda candidate: abs(candidate - weight))
+    return {
+        'enabled': raw.get('enabled') is True,
+        'position': raw.get('position') if raw.get('position') in ('logo', 'center', 'outer') else 'logo',
+        'font': font,
+        'size': number(raw.get('size', 9), 6, 24, 9),
+        'weight': weight,
+        'colorMode': 'custom' if raw.get('colorMode') == 'custom' else 'theme',
+        'color': color(raw.get('color'), '#062940'),
+    }
+
+
 def style(raw):
     raw = raw if isinstance(raw, dict) else {}
     font = raw.get('font', 'Nunito')
+    font = font if isinstance(font, str) and font in FONTS else 'Nunito'
+    weight = number(raw.get('weight', 400), 100, 1000, 400)
+    if font == 'Nohemi':
+        weight = 700
+    elif font == 'General Sans':
+        weight = 700 if weight >= 600 else 400
     return {
-        'font': font if isinstance(font, str) and font in FONTS else 'Nunito',
+        'font': font,
         'size': number(raw.get('size', 18), 6, 160, 18),
-        'weight': number(raw.get('weight', 400), 100, 1000, 400),
+        'weight': weight,
         'color': color(raw.get('color')),
-        'italic': bool(raw.get('italic')), 'underline': bool(raw.get('underline')),
+        'italic': bool(raw.get('italic')) and font not in ('Nohemi', 'General Sans', 'Playpen Sans'), 'underline': bool(raw.get('underline')),
         'align': raw.get('align') if raw.get('align') in ('left', 'center', 'right') else 'left',
         'lineHeight': number(raw.get('lineHeight', 1.4), 0.8, 3, 1.4),
         'letterSpacing': number(raw.get('letterSpacing', 0), -2, 10),
@@ -99,6 +137,7 @@ def item(raw):
         'tableColumns': bool(raw.get('tableColumns')),
         'flowDirection': 'vertical' if raw.get('flowDirection') == 'vertical' else 'horizontal',
         'flowShape': raw.get('flowShape') if raw.get('flowShape') in ('rounded', 'pill', 'square') else 'rounded',
+        'flowStyle': 'custom' if raw.get('flowStyle') == 'custom' else 'theme',
         'arrowHead': raw.get('arrowHead') if raw.get('arrowHead') in ('none', 'end', 'both') else 'end',
         'arrowLine': 'dashed' if raw.get('arrowLine') == 'dashed' else 'solid',
 
@@ -138,6 +177,8 @@ def page(raw):
         'role': raw.get('role') if raw.get('role') in ('front', 'back', 'page') else 'page',
         'background': color(raw.get('background'), '#fffdf7'),
         'texture': raw.get('texture') if raw.get('texture') in ('plain', 'grain', 'lined', 'dots', 'grid') else 'plain',
+        'decoration': theme(raw.get('decoration')),
+        'themeArtwork': raw.get('themeArtwork') is not False,
         'items': [item(obj) for obj in objects],
     }
     if len({obj['id'] for obj in result['items']}) != len(objects):
@@ -156,6 +197,8 @@ def metadata(raw):
         'folder': text(raw.get('folder'), 80),
         'tags': [text(tag, 40) for tag in array(raw.get('tags'), 12, 'tag list')],
         'favorite': bool(raw.get('favorite')),
+        'theme': theme(raw.get('theme')),
+        'pageNumbers': page_numbers(raw.get('pageNumbers')),
         'palette': [color(c) for c in array(raw.get('palette') or ['#4f46e5', '#c9def0', '#f6d6a8', '#263343'], 12, 'palette')],
         'styles': {key: style(styles.get(key)) for key in ('heading', 'body', 'caption')},
         'illustration': {
@@ -191,18 +234,9 @@ def validate_spans(pages):
 def sheets(pages, arrangement='cut'):
     """Return logical page indices for each landscape sheet side. None is blank."""
     n = len(pages)
-    if arrangement == 'fold':
-        order = list(range(n - 1))
-        while (len(order) + 1) % 4:
-            order.append(None)
-        order.append(n - 1)
-        total = len(order)
-        pairs = []
-        for offset in range(total // 4):
-            pairs.extend([(order[total - 1 - offset * 2], order[offset * 2]),
-                          (order[offset * 2 + 1], order[total - 2 - offset * 2])])
-        return pairs
-    pairs = [(None, 0)]
+    if arrangement != 'cut':
+        raise BookError('Fold and staple is no longer available. Refresh this page to export with cut and bind.')
+    pairs = [(0, None)]
     inside = list(range(1, n - 1))
     for offset in range(0, len(inside), 2):
         pairs.append((inside[offset], inside[offset + 1] if offset + 1 < len(inside) else None))

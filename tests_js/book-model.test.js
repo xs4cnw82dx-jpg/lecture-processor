@@ -90,19 +90,20 @@ test("import sizing preserves proportions, fits half-page limits and never enlar
   }
   assert.ok(M.imageSize(4000, 3000, "large").w > M.imageSize(4000, 3000).w);
 });
-test("booklet sheet order remains correct for 4, 8, 12 and odd books", () => {
-  for (const n of [4, 8, 12, 7]) {
+test("cut sheet order puts the cover first and preserves facing pairs", () => {
+  for (const n of [4, 5, 8, 12]) {
     const pages = Array.from({ length: n }, M.page);
-    const pairs = M.sheetPairs(pages, "fold");
-    assert.deepEqual(pairs[0], [n - 1, 0]);
+    const pairs = M.sheetPairs(pages);
+    assert.deepEqual(pairs[0], [0, null]);
+    assert.deepEqual(pairs[1], [1, 2]);
+    assert.deepEqual(pairs.at(-1), [n - 1, null]);
     assert.deepEqual(
       pairs
         .flat()
-        .filter((x) => x !== null)
-        .sort((a, b) => a - b),
+        .filter((x) => x !== null),
       pages.map((_, i) => i),
     );
-    assert.equal(pairs.length % 2, 0);
+    assert.throws(() => M.sheetPairs(pages, "fold"), /[Rr]efresh/);
   }
 });
 test("page movement keeps linked artwork together with a visible blank when needed", () => {

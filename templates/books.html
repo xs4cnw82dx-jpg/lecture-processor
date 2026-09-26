@@ -9,7 +9,7 @@
 <body class="book-app" data-book-id="{{ book_id }}" data-share-token="{{ share_token }}" data-chatgpt-url="{{ chatgpt_url }}">
   <header class="book-topbar">
     <a class="book-brand" href="/books" aria-label="Book Studio library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5C8 2 4 3 2 4v15c3-2 7-2 10 0 3-2 7-2 10 0V4c-3-1-7-2-10 1Zm0 0v14"/></svg><span>Book Studio</span></a>
-    <div class="book-title-wrap" id="title-wrap" hidden><input id="book-title" aria-label="Book title" maxlength="150"><span id="save-state" role="status">Opening book…</span></div>
+    <div class="book-title-wrap" id="title-wrap" hidden><input id="book-title" aria-label="Book title" maxlength="150"><div class="book-save-row"><span id="save-state" role="status">Opening book…</span><button type="button" id="retry-cloud-save" class="book-text-link" hidden>Retry</button></div></div>
     <div class="book-top-actions"><span id="editor-status"></span><button class="secondary-btn" id="edit-turn" hidden>Start editing</button><button class="ghost-btn" id="finish-turn" hidden>Finish editing</button><button class="ghost-btn" id="reading" hidden>Read</button><button class="secondary-btn" id="share" hidden>Share</button><button class="primary-btn" id="export" hidden>Export</button><button class="secondary-btn" id="sign-in">Sign in with Google</button><span id="account-name" hidden></span><a class="ghost-btn" href="/tools">Tools</a></div>
   </header>
   <div id="book-loading" class="book-loading" role="status" {% if not book_id %}hidden{% endif %}><span class="book-spinner"></span> Opening your book…</div>
@@ -41,6 +41,7 @@
   <script src="{{ url_for('static', filename='js/video-overlay-builder-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/book-model.js') }}"></script>
   <script src="{{ url_for('static', filename='js/book-storage.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/book-cloud-sync.js') }}"></script>
   <script src="{{ url_for('static', filename='js/book-zip.min.js') }}"></script>
   <script src="{{ url_for('static', filename=book_js_asset or 'js/book-studio.js') }}"></script>
 </body>

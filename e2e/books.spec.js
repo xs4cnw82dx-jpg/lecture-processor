@@ -133,15 +133,10 @@ test("file picker, invalid images, backup and all print export choices work", as
     "Choose a PNG, JPEG or WebP image.",
   );
   await page.getByRole("button", { name: "Export", exact: true }).click();
-  for (const [format, arrangement] of [
-    ["faithful", "cut"],
-    ["faithful", "fold"],
-    ["editable", "cut"],
-    ["editable", "fold"],
-    ["pdf", "cut"],
-  ]) {
+  await expect(field(page, "arrangement")).toHaveCount(0);
+  await expect(page.locator("#print-preview")).toContainText("Sheet 1 · Cover / Blank");
+  for (const format of ["faithful", "editable", "pdf"]) {
     await field(page, "exportFormat").selectOption(format);
-    await field(page, "arrangement").selectOption(arrangement);
     const pending = page.waitForEvent("download");
     await page.getByRole("button", { name: "Download", exact: true }).click();
     const download = await pending;

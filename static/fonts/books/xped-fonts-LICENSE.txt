@@ -1,0 +1,27 @@
+xPED book fonts
+
+Source: approved xPED Project brand asset manifest (reviewed 2026-07-14).
+The source fonts are approved for project use, bundling and publication.
+General Sans is credited to Indian Type Foundry. Nohemi is credited to Rajesh Rajput.
+Original WOFF2 files are unchanged. TTF files are decompressed installable copies.
+General Sans TTF family/style names are repaired for desktop font installation; glyph outlines are unchanged.
+Nohemi font names and embedding flags are unchanged. These fonts are supplied for use with xPED templates and exported books; all underlying font rights remain with their creators.
+
+Nohemi-Bold
+©rajeshrajput
+By downloading/installing NOHEMI™ free typeface you agree to this license.
+This typeface is freeware, you can use it freely for personal and commercial projects. The typeface files may not be modified without written permission from Rajesh Rajput (rajputrajesh_448@yahoo.com).
+Rajesh Rajput is not liable for any damage resulting from the use of this typeface. Except for your right to use this typeface, all other rights are owned and retained by Rajesh Rajput.
+Thank you for your support.
+Please spread the word around, if you like the NOHEMI™ typeface.
+https://www.behance.net/rajputrajesh
+
+GeneralSans-Regular
+Copyright 2017-2021 Indian Type Foundry. All rights reserved.
+This Font Software is protected under domestic and international trademark and copyright law. You agree to identify the ITF fonts by name and credit the ITF's ownership of the trademarks and copyrights in any design or production credits.
+https://fontshare.com/terms
+
+GeneralSans-Bold
+Copyright 2017-2021 Indian Type Foundry. All rights reserved.
+This Font Software is protected under domestic and international trademark and copyright law. You agree to identify the ITF fonts by name and credit the ITF's ownership of the trademarks and copyrights in any design or production credits.
+https://fontshare.com/terms

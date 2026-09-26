@@ -10,11 +10,19 @@ Drop PNG, JPEG or WebP illustrations onto either visible page, paste an image, o
 
 Use the inspector for fonts, thickness, selected-text formatting, reusable heading/body/caption styles, shape colors, drawing tools, paper, guides, layers and grouping. Playpen Sans has no italic face. Andika and Comic Neue expose supported static weights; variable fonts expose a slider. The illustration assistant copies an editable prompt and links to ChatGPT, where references and generated results are transferred by the user.
 
+**Book palette & themes → Choose a book theme → xPED** offers xPED Classic, On the Route, Bright Ideas and Night Expedition, each with front/back previews. Inside pages start white and can switch to navy. The original blue/yellow corner alternates from top left to mirrored top right across inside pages and can be hidden per page. The pattern follows the current page order, including after reordering or restoring a version. New pages inherit the theme; duplicated and restored pages keep their own treatment. Tables and Story steps follow the paper with coordinated colors unless Custom colors is selected. Applying a theme preserves existing content, positioning and explicit custom colors. The six named brand colors, Nohemi Bold and General Sans Regular/Bold are bundled locally with provenance and licensing information. These fonts expose only their real weights and no synthetic italics.
+
+**Page numbers** adds optional numbering beside the logo, at the bottom center or at the bottom outside edge. Numbers start at 1 on the first inside page; covers stay unnumbered. Font, size, thickness and automatic or custom color apply throughout the book and to exports.
+
+Color pickers update the canvas as the spectrum moves. One continuous picker interaction is one undo step; the picker keeps focus. Palette swatches update immediately, while **Use** applies a swatch to the selected object.
+
 Arrow keys turn spreads, or nudge a selected object. Alt+arrow turns with a selection. Home/End go to the covers, Shift+N adds a page, Cmd/Ctrl+Z undoes and Cmd/Ctrl+Shift+Z redoes. Text inputs retain normal cursor shortcuts. Reduced motion disables page-turn animation.
 
 ## Saving and collaboration
 
-Local drafts and pending changes are stored in IndexedDB, separately from video projects. The library separates cloud ownership, invitations, local drafts and trash. Book details provides title, folder, tags, favorite, duplication and upload to an account. Named versions and deleted pages appear under History. A backup ZIP can be reopened as an independent local book.
+Local drafts and pending changes are stored in IndexedDB, separately from video projects. Signed-in creation, copies and backup imports automatically save to the account. Opening an older device-only draft, or signing in with one open, uploads that draft; unopened drafts stay on the device. Guests continue saving locally. The library separates cloud ownership, invitations, local drafts and trash, and pending uploads appear in My books. Book details provides title, folder, tags, favorite and duplication. Named versions and deleted pages appear under History.
+
+Account uploads are resumable and bound to the account that started them. Retrying creation, images or named versions uses an idempotency key, so a lost response does not create duplicates or count storage twice. IndexedDB retains the recovery draft until all images, original sketch references, deleted pages, versions and current edits have transferred. Account switching pauses an unfinished transfer instead of assigning it to another account. Offline and failed saves show their state and a Retry control; reconnecting resumes eligible transfers. Shared books keep their owner, and a recovery draft never overwrites a newer cloud revision automatically.
 
 Cloud books use Firebase authentication and Firestore via Flask. No direct browser Firestore access is added. Supabase stores private image originals and previews. The browser receives assets only through authorized app endpoints; server credentials never enter generated HTML or JavaScript.
 
@@ -26,13 +34,12 @@ Editing uses a Firestore transaction lease scoped to the user **and browser tab*
 
 Logical pages are 148.5 × 210 mm. Printed sheets are exactly 297 × 210 mm, landscape A4.
 
-* **Cut and bind:** cover on one half, blank opposite; sequential inside pairs; back cover alone. Print single-sided, cut in the middle, and assemble in the numbered order shown in the preview.
-* **Fold and staple:** add blank padding before the back cover to a multiple of four; impose front/back sheets. Print duplex with short-edge flipping and the printer's own booklet option off.
+* **Cut and bind:** Cover / Blank on the first sheet; sequential inside pairs; back cover on the left with a blank opposite. Print single-sided, cut in the middle, and assemble in the numbered order shown in the preview. Folding is no longer offered; old folding requests receive a refresh message. Omitted arrangement or `cut` remain compatible.
 * **Word · exact appearance:** 300 dpi page images, positioned at physical page coordinates.
 * **Word · editable text & shapes:** native Word text boxes and rectangles/ovals; other objects/effects are rendered. The dialog lists flattened objects and regular/bold substitutions. Font installation is offered as a licensed ZIP. Word can change wrapping or layering. Changes in Word do not synchronize back.
 * **PDF:** the same page renderer and sheet ordering as faithful Word.
 
-Exports freeze the current saved revision and reject generation if the cloud revision changes. Print checks flag overflow, small images, paper edges and binding edges. Guides do not promise borderless output: physical printer margins still apply. The preview shows all sheets and padding.
+Exports freeze the current saved revision and reject generation if the cloud revision changes. Print checks flag overflow, small images, paper edges and binding edges. Guides do not promise borderless output: physical printer margins still apply. The preview shows all sheets, blank halves and center-guide settings. Save ink previews white paper, restrained xPED artwork and dark readable theme text without changing the saved book.
 
 ## Deployment configuration
 
@@ -60,4 +67,4 @@ Backend tests cover private access, membership, guest revocation, independent co
 
 The release QA record is in `BOOK_STUDIO_QA.md`; do not treat an unrecorded platform or journey as verified.
 
-Font sources and SIL Open Font License files are bundled under `static/fonts/books`. `fflate` is bundled by the normal asset build; its MIT license is in `static/licenses/fflate-LICENSE.txt`.
+Font sources and applicable license/provenance files are bundled under `static/fonts/books`. `fflate` is bundled by the normal asset build; its MIT license is in `static/licenses/fflate-LICENSE.txt`.

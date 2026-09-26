@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import io
 
 from docx import Document
@@ -122,6 +123,18 @@ def native_eligible(obj):
         (obj['type'] == 'shape' and obj['shape'] in ('square', 'circle')))
 
 
+def ink_saving_object(obj):
+    """Keep native Word text as readable as the shared white-paper renderer."""
+    obj = copy.deepcopy(obj)
+    for style in [obj['style']] + [run['style'] for run in obj.get('runs', [])]:
+        channels = [int(style['color'][i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        linear = [v / 12.92 if v <= .04045 else ((v + .055) / 1.055) ** 2.4 for v in channels]
+        luminance = sum(value * factor for value, factor in zip(linear, (.2126, .7152, .0722)))
+        if 1.05 / (luminance + .05) < 4.5:
+            style['color'] = '#062940'
+    return obj
+
+
 def generate(raw):
     pages = [model.page(p) for p in model.array(raw.get('pages'), 100, 'page list')]
     model.validate_order([p['id'] for p in pages])
@@ -132,8 +145,6 @@ def generate(raw):
     if mode not in ('faithful', 'editable', 'pdf'):
         raise model.BookError('Choose Word or PDF.')
     pairs = model.sheets(pages, raw.get('arrangement', 'cut'))
-    if raw.get('arrangement', 'cut') not in ('cut', 'fold'):
-        raise model.BookError('Choose cut and bind or fold and staple.')
     output = io.BytesIO()
     economy = bool(raw.get('economy'))
     if mode == 'pdf':
@@ -176,6 +187,8 @@ def generate(raw):
                 for obj in pages[index]['items']:
                     if native_eligible(obj):
                         ordinal += 1
+                        if economy and (pages[index].get('decoration') or {}).get('id') == 'xped':
+                            obj = ink_saving_object(obj)
                         native_object(paragraph, obj, side, ordinal)
         if raw.get('guides'):
             pict = OxmlElement('w:pict')
