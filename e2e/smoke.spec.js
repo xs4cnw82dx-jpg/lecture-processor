@@ -542,6 +542,7 @@ test('lecture notes audio disclosures toggle open and closed', async ({ page }) 
 test('lecture notes keeps a stable layout on desktop and stacks cleanly on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 1200 });
   await page.goto('/lecture-notes');
+  await expect(page.locator('#mobile-process-summary')).toHaveText('Sign in to check your credits and start processing.');
 
   const desktopLayout = await page.evaluate(() => {
     const uploadSection = document.getElementById('upload-section');

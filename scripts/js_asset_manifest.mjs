@@ -23,6 +23,8 @@ export const minifiedTargets = [
 export const intentionallyUnminifiedScripts = [
   'static/js/book-zip.min.js',
   'static/js/book-model.js',
+  'static/js/book-path-editor.js',
+  'static/js/book-color-picker.js',
   'static/js/book-storage.js',
   'static/js/book-cloud-sync.js',
   'static/js/app-shell.js',

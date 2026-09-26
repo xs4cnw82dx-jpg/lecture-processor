@@ -11,7 +11,7 @@ HEIGHT = 210
 MAX_PAGES = 100
 FONTS = {'Andika', 'Playpen Sans', 'Nunito', 'Comic Neue', 'Fraunces', 'Nohemi', 'General Sans'}
 XPED_VARIANTS = {'corner', 'route', 'shapes', 'minimal'}
-TYPES = {'text', 'image', 'shape', 'arrow', 'table', 'flow', 'drawing'}
+TYPES = {'text', 'image', 'shape', 'arrow', 'line', 'table', 'flow', 'drawing'}
 
 
 class BookError(ValueError):
@@ -86,6 +86,25 @@ def page_numbers(raw):
     }
 
 
+def path_points(raw):
+    """Keep editable paths as bounded geometry, never caller-supplied SVG."""
+    if raw is None or raw == []:
+        return [[0, .5], [1, .5]]
+    points = array(raw, 32, 'line point list')
+    if len(points) < 2 or any(not isinstance(point, list) or len(point) != 2 for point in points):
+        raise BookError('A line needs between 2 and 32 points with horizontal and vertical positions.')
+    return [[number(point[0], 0, 1), number(point[1], 0, 1)] for point in points]
+
+
+def page_placement(raw, logo=False):
+    if not isinstance(raw, dict):
+        return None
+    result = {'x': number(raw.get('x'), 0, WIDTH), 'y': number(raw.get('y'), 0, HEIGHT)}
+    if logo:
+        result['w'] = number(raw.get('w', 12), 8, 60, 12)
+    return result
+
+
 def style(raw):
     raw = raw if isinstance(raw, dict) else {}
     font = raw.get('font', 'Nunito')
@@ -140,6 +159,12 @@ def item(raw):
         'flowStyle': 'custom' if raw.get('flowStyle') == 'custom' else 'theme',
         'arrowHead': raw.get('arrowHead') if raw.get('arrowHead') in ('none', 'end', 'both') else 'end',
         'arrowLine': 'dashed' if raw.get('arrowLine') == 'dashed' else 'solid',
+        'arrowFill': color(raw.get('arrowFill'), None),
+        'pathPoints': path_points(raw.get('pathPoints')),
+        'pathMode': 'smooth' if raw.get('pathMode') == 'smooth' else 'angular',
+        'nodeMarkers': bool(raw.get('nodeMarkers')),
+        'markerColor': color(raw.get('markerColor'), '#FFD617'),
+        'markerDiameter': number(raw.get('markerDiameter', 3), 2, 12, 3),
 
         'assetId': identifier(raw['assetId']) if raw.get('assetId') else '',
         'originalAssetId': identifier(raw['originalAssetId']) if raw.get('originalAssetId') else '',
@@ -179,6 +204,9 @@ def page(raw):
         'texture': raw.get('texture') if raw.get('texture') in ('plain', 'grain', 'lined', 'dots', 'grid') else 'plain',
         'decoration': theme(raw.get('decoration')),
         'themeArtwork': raw.get('themeArtwork') is not False,
+        'showLogo': raw.get('showLogo') is not False,
+        'logoPlacement': page_placement(raw.get('logoPlacement'), logo=True),
+        'numberPlacement': page_placement(raw.get('numberPlacement')),
         'items': [item(obj) for obj in objects],
     }
     if len({obj['id'] for obj in result['items']}) != len(objects):

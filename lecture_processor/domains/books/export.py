@@ -118,6 +118,12 @@ def native_object(paragraph, obj, side, ordinal):
 
 
 def native_eligible(obj):
+    # Lines and arrows deliberately remain in the shared-renderer page image.
+    # VML cannot faithfully retain our editable bends, smooth paths, node
+    # markers and independently colored arrowheads. The export dialog lists
+    # these objects as images before download, using the same eligibility rule.
+    if obj['type'] in ('line', 'arrow'):
+        return False
     return not obj.get('hidden') and obj['opacity'] == 1 and not obj.get('spanId') and (
         (obj['type'] == 'text' and not obj['style']['outline'] and not any(r['style']['outline'] for r in obj.get('runs', []))) or
         (obj['type'] == 'shape' and obj['shape'] in ('square', 'circle')))

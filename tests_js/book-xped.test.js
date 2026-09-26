@@ -585,3 +585,303 @@ test("route back-cover scaffolding clears the decorative route while reapplicati
     assert.equal(caption.x, 22);
   }
 });
+
+test("restrained covers keep decorative marks out of their editable title, summary and footer zones", () => {
+  for (const { id } of M.xped.variants) {
+    for (const role of ["front", "back"]) {
+      const p = M.coverPreview(id, "light", role),
+        svg = M.svg(p),
+        art = svg.slice(
+          svg.indexOf("<g data-theme-artwork"),
+          svg.indexOf("<desc>"),
+        );
+      assert.doesNotMatch(art, /<circle|#76F6CF|#1FE4A9|stroke-dasharray/);
+      assert.deepEqual(M.logoGeometry(p), {
+        x: 109,
+        y: 185,
+        w: 22,
+        h: (22 * 112) / 205,
+      });
+      assert.equal(p.items.at(-1).y + p.items.at(-1).h, 183);
+      if (id === "route") {
+        const geometry = art.match(/ d="([^"]+)"/)[1];
+        assert.ok(
+          role === "front"
+            ? geometry.startsWith("M144.5")
+            : geometry.startsWith("M4"),
+        );
+        assert.ok(geometry.endsWith("175"), "The path stops above the footer");
+      }
+    }
+  }
+});
+
+test("furniture has independent visibility, transparent hit areas and stable source marks", () => {
+  const b = M.book();
+  M.applyXpedTheme(b);
+  const p = b.pages[1],
+    options = M.pageRenderOptions(p, b.pages, { enabled: true });
+  p.themeArtwork = false;
+  const svg = M.svg(p, {}, options);
+  assert.doesNotMatch(svg, /data-theme-artwork/);
+  for (const kind of ["logo", "number"]) {
+    const group = svg.match(
+      new RegExp('<g data-furniture="' + kind + '">([\\s\\S]*?)<\\/g>'),
+    );
+    assert.ok(group);
+    assert.match(group[1], /<rect[^>]+fill="transparent"/);
+    assert.doesNotMatch(group[0], /pointer-events="none"|data-object=/);
+  }
+  p.showLogo = false;
+  assert.equal(M.logoGeometry(p, options), null);
+  assert.doesNotMatch(M.svg(p, {}, options), /data-furniture="logo"/);
+  assert.match(M.svg(p, {}, options), /data-furniture="number"/);
+  p.themeArtwork = true;
+  assert.match(M.svg(p, {}, options), /data-theme-artwork/);
+});
+
+test("movable logo geometry retains the original ratio and stays inside the page", () => {
+  const p = M.coverPreview("minimal"),
+    before = M.clone(p.items);
+  p.logoPlacement = { x: 44, y: 135, w: 32 };
+  assert.deepEqual(M.logoGeometry(p), {
+    x: 44,
+    y: 135,
+    w: 32,
+    h: (32 * 112) / 205,
+  });
+  p.logoPlacement = { x: 1000, y: 1000, w: 1000 };
+  const box = M.logoGeometry(p);
+  assert.equal(box.w, 60);
+  assert.equal(box.x + box.w, M.W);
+  assert.equal(box.y + box.h, M.H);
+  assert.equal(box.h / box.w, 112 / 205);
+  p.logoPlacement.w = 0;
+  assert.equal(M.logoGeometry(p).w, 8);
+  assert.deepEqual(p.items, before);
+  assert.match(M.svg(p, {}, { economy: true }), /data-xped-mark="navy"/);
+});
+
+test("beside-logo numbers track a moved logo, manual placement wins and page bounds remain safe", () => {
+  const b = M.book();
+  M.applyXpedTheme(b);
+  const p = b.pages[1],
+    options = M.pageRenderOptions(p, b.pages, {
+      enabled: true,
+      position: "logo",
+      size: 12,
+    });
+  p.logoPlacement = { x: 90, y: 130, w: 30 };
+  const logo = M.logoGeometry(p, options),
+    number = M.numberGeometry(p, options);
+  assert.equal(number.x + number.w + 5, logo.x);
+  assert.ok(Math.abs(number.y + number.h / 2 - (logo.y + logo.h / 2)) < 1e-9);
+  p.showLogo = false;
+  assert.deepEqual(M.numberGeometry(p, options), number);
+  p.numberPlacement = { x: 20, y: 28 };
+  assert.deepEqual(M.numberGeometry(p, options), { ...number, x: 20, y: 28 });
+  p.numberPlacement = { x: -15, y: 999 };
+  const clamped = M.numberGeometry(p, options);
+  assert.equal(clamped.x, 0);
+  assert.equal(clamped.y + clamped.h, M.H);
+  p.numberPlacement = null;
+  p.logoPlacement.x = 0;
+  assert.ok(M.numberGeometry(p, options).x >= p.logoPlacement.w + 5);
+});
+
+test("furniture geometry survives backup, deleted pages, saved versions and theme reapplication", () => {
+  const b = M.book();
+  M.applyXpedTheme(b, "route", "dark");
+  const p = b.pages[1];
+  Object.assign(p, {
+    showLogo: false,
+    themeArtwork: false,
+    logoPlacement: { x: 42, y: 120, w: 28 },
+    numberPlacement: { x: 29, y: 160 },
+  });
+  b.deletedPages = [M.clone(p)];
+  b.deletedPages[0].id = M.id();
+  b.versions = [
+    {
+      id: M.id(),
+      name: "Moved footer",
+      created_at: 1,
+      pages: M.clone(b.pages),
+      metadata: { styles: b.styles },
+    },
+  ];
+  const restored = M.readBackup(b);
+  for (const target of [
+    restored.pages[1],
+    restored.deletedPages[0],
+    restored.versions[0].pages[1],
+  ]) {
+    assert.deepEqual(target.logoPlacement, p.logoPlacement);
+    assert.deepEqual(target.numberPlacement, p.numberPlacement);
+    assert.equal(target.showLogo, false);
+  }
+  M.applyXpedTheme(restored, "minimal", "light");
+  assert.deepEqual(restored.pages[1].logoPlacement, p.logoPlacement);
+  assert.equal(restored.pages[1].showLogo, false);
+  delete b.pages[1].showLogo;
+  delete b.pages[1].logoPlacement;
+  delete b.pages[1].numberPlacement;
+  const legacy = M.readBackup(b).pages[1];
+  assert.equal(legacy.showLogo, true);
+  assert.equal(legacy.logoPlacement, null);
+  assert.equal(legacy.numberPlacement, null);
+});
+
+const pathSvg = (o, options = {}) =>
+  M.svg({ ...M.page(), items: [o] }, {}, options);
+
+test("legacy arrows and plain lines retain a straight route and independently editable arrow fill", () => {
+  const legacy = M.object("arrow", {
+    w: 80,
+    h: 20,
+    stroke: "#115588",
+    arrowHead: "both",
+  });
+  delete legacy.pathPoints;
+  delete legacy.pathMode;
+  delete legacy.arrowFill;
+  assert.equal(M.pathData(legacy), "M 0 10 L 80 10");
+  assert.equal((pathSvg(legacy).match(/data-arrow-head=/g) || []).length, 2);
+  assert.match(pathSvg(legacy), /data-arrow-head="end"[^>]+fill="#115588"/);
+  legacy.stroke = "#336611";
+  assert.match(pathSvg(legacy), /data-arrow-head="end"[^>]+fill="#336611"/);
+  legacy.arrowFill = "#FFD617";
+  assert.match(
+    pathSvg(legacy),
+    /data-arrow-head="end"[^>]+fill="#FFD617"[^>]+stroke="#336611"/,
+  );
+  const line = { ...legacy, type: "line" };
+  assert.doesNotMatch(pathSvg(line), /data-arrow-head/);
+  assert.equal(M.nativeEligible(line), false);
+  assert.equal(M.nativeEligible(legacy), false);
+  assert.match(pathSvg(line, { editable: true }), /data-path-line/);
+});
+
+test("angled arrows use the final and initial segment directions while markers identify only bends", () => {
+  const o = M.object("arrow", {
+    w: 80,
+    h: 60,
+    pathPoints: [
+      [0, 0],
+      [1, 0],
+      [1, 1],
+    ],
+    arrowHead: "both",
+    nodeMarkers: true,
+    markerDiameter: 8,
+  });
+  const svg = pathSvg(o);
+  assert.equal(M.pathData(o), "M 0 0 L 80 0 L 80 60");
+  assert.match(
+    svg,
+    /data-arrow-head="end" transform="translate\(80 60\) rotate\(90\)"/,
+  );
+  assert.match(
+    svg,
+    /data-arrow-head="start" transform="translate\(0 0\) rotate\(180\)"/,
+  );
+  assert.equal((svg.match(/data-path-marker=/g) || []).length, 1);
+  assert.match(svg, /data-path-marker="1" cx="80" cy="0" r="4" fill="#FFD617"/);
+  o.nodeMarkers = false;
+  assert.doesNotMatch(pathSvg(o), /data-path-marker/);
+});
+
+test("smooth paths keep endpoints and bounded controls, with curve-aware insertion", () => {
+  const o = M.object("line", {
+    w: 100,
+    h: 100,
+    pathMode: "smooth",
+    pathPoints: [
+      [0, 0.5],
+      [0.5, 0],
+      [1, 0.5],
+    ],
+  });
+  assert.match(M.pathData(o), /^M 0 50 C /);
+  assert.match(M.pathData(o), /100 50$/);
+  const values = M.pathData(o)
+    .match(/-?\d+(?:\.\d+)?/g)
+    .map(Number);
+  assert.ok(values.every((n) => n >= 0 && n <= 100));
+  // This is the first cubic segment at t=.5: it bows away from the straight chord.
+  const candidate = { x: 21.875, y: 21.875 },
+    insertion = M.nearestPathInsertion(o, candidate);
+  assert.equal(insertion.index, 1);
+  assert.ok(insertion.distance < 0.001);
+  assert.ok(Math.abs(insertion.point[0] - 0.21875) < 0.0001);
+  const angular = M.nearestPathInsertion(
+    { ...o, pathMode: "angular" },
+    candidate,
+  );
+  assert.ok(angular.distance > 4);
+  const repeated = {
+    ...o,
+    pathPoints: [
+      [0.5, 0.5],
+      [0.5, 0.5],
+      [0.5, 0.5],
+    ],
+    type: "arrow",
+  };
+  assert.doesNotMatch(pathSvg(repeated), /NaN|Infinity/);
+});
+
+test("path configuration and closed heads survive backups with safe bounded geometry", () => {
+  const b = M.book(),
+    o = M.object("line", {
+      pathPoints: [
+        [-1, 0.2],
+        [0.4, 0.7],
+        [2, 0.9],
+      ],
+      pathMode: "smooth",
+      nodeMarkers: true,
+      markerColor: "#007ACC",
+      markerDiameter: 99,
+      arrowFill: "#FFD617",
+    });
+  b.pages[1].items = [o];
+  const restored = M.readBackup(b).pages[1].items[0];
+  assert.deepEqual(restored.pathPoints, [
+    [0, 0.2],
+    [0.4, 0.7],
+    [1, 0.9],
+  ]);
+  assert.equal(restored.pathMode, "smooth");
+  assert.equal(restored.markerDiameter, 12);
+  assert.equal(restored.markerColor, "#007ACC");
+  assert.equal(restored.arrowFill, "#FFD617");
+  o.pathPoints = [];
+  o.arrowFill = null;
+  o.markerDiameter = 0;
+  const legacy = M.readBackup(b).pages[1].items[0];
+  assert.deepEqual(legacy.pathPoints, [
+    [0, 0.5],
+    [1, 0.5],
+  ]);
+  assert.equal(legacy.arrowFill, null);
+  assert.equal(legacy.markerDiameter, 2);
+  o.pathPoints = [[0, 0]];
+  assert.throws(() => M.readBackup(b), /cannot be opened/);
+  o.pathPoints = Array.from({ length: 33 }, () => [0, 0]);
+  assert.throws(() => M.readBackup(b), /cannot be opened/);
+  o.pathPoints = Array.from({ length: 32 }, (_, i) => [i / 31, 0.5]);
+  assert.equal(M.nearestPathInsertion(o, { x: 20, y: 20 }), null);
+});
+
+test("new lines and arrows use legible themed ink and Save ink remains readable", () => {
+  const b = M.book();
+  M.applyXpedTheme(b, "minimal", "dark");
+  for (const type of ["line", "arrow"]) {
+    const o = M.styleObjectForBook(M.object(type), b, b.pages[1]);
+    assert.ok(contrast(o.stroke, b.pages[1].background) >= 4.5);
+    b.pages[1].items = [o];
+    const svg = M.svg(b.pages[1], {}, { economy: true });
+    assert.match(svg, /data-path-line="true"[^>]+stroke="#062940"/);
+  }
+});
