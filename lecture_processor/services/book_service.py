@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import re
 import secrets
 import time
 import zipfile
@@ -27,6 +28,23 @@ def now():
 
 def digest(value):
     return hashlib.sha256(str(value).encode()).hexdigest()
+
+
+def idempotency_key(raw):
+    """Accept bounded client operation IDs; these identifiers grant no access."""
+    if raw is None:
+        return ''
+    if not isinstance(raw, str) or not re.fullmatch(r'[a-zA-Z0-9_.:-]{1,120}', raw):
+        raise model.BookError('This save could not be identified. Reload your book and try again.')
+    return raw
+
+
+def operation_id(scope, operation, key):
+    return operation + '-' + digest(json.dumps([scope, operation, key], separators=(',', ':')))
+
+
+def public_asset(asset):
+    return {key: value for key, value in asset.items() if key not in ('path', 'preview_path') and not key.startswith('_')}
 
 
 def store(runtime):
@@ -97,14 +115,20 @@ def access(runtime, book_id, required='view', cached=False):
 
 
 def public_book(book, role):
-    result = {key: value for key, value in book.items() if key not in ('lease', 'members', 'member_emails', '_id')}
+    result = {key: value for key, value in book.items() if key not in ('lease', 'members', 'member_emails') and not key.startswith('_')}
     lease = book.get('lease') or {}
     result['editor'] = {'name': lease.get('name', ''), 'expires_at': lease.get('expires_at', 0)} if lease.get('expires_at', 0) > now() else None
     result['role'] = role
+    if role == 'owner' and book.get('_creation_key'):
+        # Correlate a pending device draft after a successful create response was
+        # lost. Shared users do not need the owner's device operation identifier.
+        result['creation_key'] = book['_creation_key']
     return result
 
 
 def assert_lease(book, who, body):
+    if not book or book.get('deleted'):
+        raise model.BookError('This book is unavailable. Your draft stays on this device.', 409)
     lease = book.get('lease') or {}
     if lease.get('expires_at', 0) <= now() or lease.get('user_id') != who['id'] or not secrets.compare_digest(lease.get('token_hash', ''), digest(body.get('lease_token', ''))) or lease.get('session') != request.headers.get('X-Book-Session'):
         raise model.BookError('Your editing turn has ended. Your changes are kept on this device.', 409)
@@ -124,26 +148,39 @@ def list_books(runtime):
 def create_book(runtime):
     user = identity(runtime, True)
     raw = payload()
+    key = idempotency_key(raw.get('idempotency_key'))
     pages = [model.page(p) for p in model.array(raw.get('pages'), 100, 'page list')]
     order = model.validate_order([p['id'] for p in pages])
     if pages[0]['role'] != 'front' or pages[-1]['role'] != 'back':
         raise model.BookError('Add a front and back cover before saving.')
     if any(obj['assetId'] or obj['originalAssetId'] for p in pages for obj in p['items']):
         raise model.BookError('Upload this book’s images before attaching them.')
-    if len(store(runtime).list('books', 'owner_uid', user['uid'], limit=101)) >= 100:
-        raise model.BookError('Your library has reached 100 books. Download a backup before starting another library.')
-    book_id = model.new_id()
+    book_id = operation_id(user['uid'], 'book', key) if key else model.new_id()
     book = dict(model.metadata(raw), id=book_id, schema_version=1, owner_uid=user['uid'], page_ids=order,
                 deleted_page_ids=[], revision=1, created_at=now(), updated_at=now(), members={}, member_emails=[],
                 deleted=False, asset_bytes=0, lease=None)
+    if key:
+        book['_creation_key'] = key
     db = store(runtime)
 
     def create(tx):
+        existing = tx.get(path(book_id))
+        if existing:
+            if existing['owner_uid'] != user['uid']:
+                raise model.BookError('This book is unavailable.', 403)
+            if existing.get('deleted'):
+                raise model.BookError('This book is in the trash. Restore it before saving again.', 409)
+            return existing, True
+        # The library query belongs to the same transaction as creation, so a
+        # concurrent retry cannot create another book or evade the library limit.
+        if len(tx.list('books', 'owner_uid', user['uid'], limit=100)) >= 100:
+            raise model.BookError('Your library has reached 100 books. Download a backup before starting another library.')
         tx.put(path(book_id), book)
         for page in pages:
             tx.put(path(book_id) + '/pages/' + page['id'], dict(page, revision=1))
-    db.atomic(create)
-    return jsonify(book=public_book(book, 'owner')), 201
+        return book, False
+    saved, replay = db.atomic(create)
+    return jsonify(book=public_book(saved, 'owner'), idempotent_replay=replay), 200 if replay else 201
 
 
 def get_book(runtime, book_id):
@@ -155,7 +192,7 @@ def get_book(runtime, book_id):
     if cover:
         used = {obj['assetId'] for obj in pages[0]['items'] if obj['assetId']}
         assets = [a for a in assets if a['id'] in used]
-    return jsonify(book=public_book(book, role), pages=pages, assets=[{k: v for k, v in a.items() if k not in ('path', 'preview_path', '_id')} for a in assets if a.get('ready') or a.get('failed')])
+    return jsonify(book=public_book(book, role), pages=pages, assets=[public_asset(a) for a in assets if a.get('ready') or a.get('failed')])
 
 
 def revision(runtime, book_id):
@@ -338,15 +375,18 @@ def history(runtime, book_id):
                 version['deletedPages'] = [p for p in rows if p['id'] in version.get('deleted_page_ids', [])]
         return jsonify(versions=versions)
     body = payload()
-    assert_lease(book, who, body)
+    key = idempotency_key(body.get('idempotency_key'))
     if body.get('restore'):
+        assert_lease(book, who, body)
         version = db.get(root + '/' + model.identifier(body['restore']))
         if not version:
             raise model.BookError('This version is unavailable.', 404)
         pages = db.list(root + '/' + version['id'] + '/pages', limit=200)
         return jsonify(metadata=version['metadata'], page_ids=version['page_ids'], deleted_page_ids=version.get('deleted_page_ids', []), pages=pages)
-    if len(db.list(root, limit=20)) >= 20:
-        raise model.BookError('This book already has 20 saved versions. Download a backup before starting another book.')
+    vid = operation_id(book_id, 'version', key) if key else model.new_id()
+    existing = db.get(root + '/' + vid)
+    if existing:
+        return jsonify(ok=True, version_id=vid, idempotent_replay=True)
     pages = db.list(path(book_id) + '/pages', limit=200)
     version_order = book['page_ids']
     version_deleted = book.get('deleted_page_ids', [])
@@ -366,42 +406,78 @@ def history(runtime, book_id):
         if any(aid and aid not in assets for p in pages for o in p['items'] for aid in (o['assetId'], o['originalAssetId'])):
             raise model.BookError('Upload the illustrations used by this version first.')
         version_meta = model.metadata(body.get('metadata'))
-    vid = model.new_id()
 
     def snapshot(tx):
         current = tx.get(path(book_id))
+        existing = tx.get(root + '/' + vid)
+        if existing:
+            return True
         assert_lease(current, who, body)
+        count = len(tx.list(root, limit=20))
+        if count >= 20:
+            raise model.BookError('This book already has 20 saved versions. Download a backup before starting another book.')
+        # Serialize separate version keys too; the count must remain bounded even
+        # when two requests for the same active editor arrive together.
+        current['_version_count'] = count + 1
+        tx.put(path(book_id), current)
         tx.put(root + '/' + vid, {'id': vid, 'name': model.text(body.get('name'), 100) or 'Saved version', 'created_at': now(), 'metadata': version_meta, 'page_ids': version_order, 'deleted_page_ids': version_deleted})
         for p in pages:
             tx.put(root + '/' + vid + '/pages/' + p['id'], p)
-    db.atomic(snapshot)
-    return jsonify(ok=True)
+        return False
+    return jsonify(ok=True, version_id=vid, idempotent_replay=db.atomic(snapshot))
+
+
+def write_asset_part(db, asset_path, data, mime, resumable):
+    """A timed-out storage POST may already have succeeded; verify before retrying."""
+    try:
+        book_storage.request('POST', asset_path, data, mime)
+    except model.BookError as error:
+        if resumable:
+            reserve_transfer(db, len(data))
+            try:
+                existing = book_storage.request('GET', asset_path)
+                if hashlib.sha256(existing).digest() == hashlib.sha256(data).digest():
+                    return
+            except model.BookError:
+                pass
+        raise error
 
 
 def upload_asset(runtime, book_id):
     db, _, _, who = access(runtime, book_id, 'edit')
-    if not book_storage.configured():
-        raise model.BookError('Cloud image storage is temporarily unavailable. Your image stays on this device.', 503)
+    key = idempotency_key(request.form.get('idempotency_key'))
     file = request.files.get('image')
     if not file:
         raise model.BookError('Choose an image first.')
     data = file.read(book_storage.MAX_BYTES + 1)
     dimensions, preview, mime = book_storage.validate_image(data)
     size = len(data) + len(preview)
-    aid = model.new_id()
-    if len(db.list(path(book_id) + '/assets', limit=401)) >= 400:
-        raise model.BookError('This book has 400 illustrations. Remove unused images before adding more.')
+    aid = operation_id(book_id, 'asset', key) if key else model.new_id()
+    root = path(book_id) + '/assets/' + aid
+    content_digest = hashlib.sha256(data).hexdigest()
     try:
         base_revision = int(request.form.get('base_revision', -1))
     except (TypeError, ValueError):
         raise model.BookError('Reload your book before uploading this image.') from None
     body = {'lease_token': request.form.get('lease_token'), 'base_revision': base_revision}
-    asset = {'id': aid, 'book_id': book_id, 'name': model.text(file.filename, 120), 'size': size, 'original_size': len(data), 'preview_size': len(preview), 'width': dimensions[0], 'height': dimensions[1], 'mime': mime, 'path': book_id + '/' + aid + '/original', 'preview_path': book_id + '/' + aid + '/preview.webp', 'ready': False}
+    asset = {'id': aid, 'book_id': book_id, 'name': model.text(file.filename, 120), 'size': size, 'original_size': len(data), 'preview_size': len(preview), 'width': dimensions[0], 'height': dimensions[1], 'mime': mime, 'path': book_id + '/' + aid + '/original', 'preview_path': book_id + '/' + aid + '/preview.webp', 'ready': False, '_content_digest': content_digest}
 
     def reserve(tx):
         book = tx.get(path(book_id))
+        existing = tx.get(root)
         budget = tx.get('book_usage/storage') or {'bytes': 0}
+        if existing:
+            if existing.get('_content_digest') != content_digest:
+                raise model.BookError('This image changed during upload. Add it again as a new image.', 409)
+            if existing.get('ready'):
+                return existing, True
+            assert_lease(book, who, body)
+            return existing, False
         assert_lease(book, who, body)
+        if not book_storage.configured():
+            raise model.BookError('Cloud image storage is temporarily unavailable. Your image stays on this device.', 503)
+        if len(tx.list(path(book_id) + '/assets', limit=400)) >= 400:
+            raise model.BookError('This book has 400 illustrations. Remove unused images before adding more.')
         if book.get('asset_bytes', 0) + size > book_storage.BOOK_BYTES or budget['bytes'] + size > book_storage.GLOBAL_BYTES:
             raise model.BookError('Image storage is full. Download a backup and remove unused images before adding more.', 413)
         book['asset_bytes'] = book.get('asset_bytes', 0) + size
@@ -409,24 +485,55 @@ def upload_asset(runtime, book_id):
         current_app.logger.info('Book image storage reserved: bytes=%s', budget['bytes'])
         tx.put(path(book_id), book)
         tx.put('book_usage/storage', budget)
-        tx.put(path(book_id) + '/assets/' + aid, asset)
-    db.atomic(reserve)
+        tx.put(root, asset)
+        return asset, False
+    asset, replay = db.atomic(reserve)
+    if replay:
+        return jsonify(asset=public_asset(asset), idempotent_replay=True), 200
+
+    def failed(tx):
+        current = tx.get(root)
+        if current and not current.get('ready'):
+            current['failed'] = True
+            tx.put(root, current)
+        return current
+
     try:
-        book_storage.request('POST', asset['path'], data, mime)
-        book_storage.request('POST', asset['preview_path'], preview, 'image/webp')
+        write_asset_part(db, asset['path'], data, mime, bool(key))
+        write_asset_part(db, asset['preview_path'], preview, 'image/webp', bool(key))
+        # A revoked link or a changed editing turn cannot finish a pending write.
+        access(runtime, book_id, 'edit')
+
+        def finish(tx):
+            book = tx.get(path(book_id))
+            current = tx.get(root)
+            if not current:
+                raise model.BookError('This image upload was removed. Add the image again.', 409)
+            if current.get('ready'):
+                return current
+            assert_lease(book, who, body)
+            current.update(ready=True, failed=False)
+            tx.put(root, current)
+            return current
+        asset = db.atomic(finish)
     except model.BookError:
-        # Keep reservations only when cleanup could not be confirmed, so quotas stay truthful.
-        try:
-            for field in ('path', 'preview_path'):
-                book_storage.request('DELETE', asset[field])
-            release_asset_reservation(db, book_id, aid, size)
-        except model.BookError:
-            asset['failed'] = True
-            db.put(path(book_id) + '/assets/' + aid, asset)
+        if key:
+            # Stable paths and a single reservation allow recovery after partial
+            # uploads or a server restart. Never delete another retry's bytes.
+            completed = db.atomic(failed)
+            if completed and completed.get('ready'):
+                return jsonify(asset=public_asset(completed), idempotent_replay=True), 200
+        else:
+            # Legacy requests keep their cleanup behavior. Reservations remain
+            # only when deleting partial storage could not be confirmed.
+            try:
+                for field in ('path', 'preview_path'):
+                    book_storage.request('DELETE', asset[field])
+                release_asset_reservation(db, book_id, aid, size)
+            except model.BookError:
+                db.atomic(failed)
         raise
-    asset['ready'] = True
-    db.put(path(book_id) + '/assets/' + aid, asset)
-    return jsonify(asset={k: v for k, v in asset.items() if k not in ('path', 'preview_path')}), 201
+    return jsonify(asset=public_asset(asset), idempotent_replay=False), 201
 
 
 def release_asset_reservation(db, book_id, aid, size):
@@ -437,9 +544,9 @@ def release_asset_reservation(db, book_id, aid, size):
         if not asset:
             return
         if book:
-            book['asset_bytes'] = max(0, book.get('asset_bytes', 0) - size)
+            book['asset_bytes'] = max(0, book.get('asset_bytes', 0) - asset['size'])
             tx.put(path(book_id), book)
-        budget['bytes'] = max(0, budget['bytes'] - size)
+        budget['bytes'] = max(0, budget['bytes'] - asset['size'])
         tx.put('book_usage/storage', budget)
         tx.delete(path(book_id) + '/assets/' + aid)
     db.atomic(remove)
@@ -512,7 +619,7 @@ def backup(runtime, book_id):
             rows = db.list(path(book_id) + '/versions/' + version['id'] + '/pages', limit=200)
             version['pages'] = [next(p for p in rows if p['id'] == pid) for pid in version['page_ids']]
             version['deletedPages'] = [p for p in rows if p['id'] in version.get('deleted_page_ids', [])]
-        snapshot = dict(model.metadata(book), schema_version=1, pages=[next(p for p in pages if p['id'] == pid) for pid in book['page_ids']], deletedPages=[p for p in pages if p['id'] in book.get('deleted_page_ids', [])], versions=versions, assets=[{k: v for k, v in a.items() if k not in ('path', 'preview_path', '_id')} for a in assets if a.get('ready')])
+        snapshot = dict(model.metadata(book), schema_version=1, pages=[next(p for p in pages if p['id'] == pid) for pid in book['page_ids']], deletedPages=[p for p in pages if p['id'] in book.get('deleted_page_ids', [])], versions=versions, assets=[public_asset(a) for a in assets if a.get('ready')])
         if db.get(path(book_id))['revision'] != book['revision']:
             raise model.BookError('The book changed while the backup was preparing. Please try again.', 409)
         archive.writestr('book.json', json.dumps(snapshot))

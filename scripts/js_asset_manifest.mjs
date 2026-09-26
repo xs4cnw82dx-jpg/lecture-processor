@@ -24,6 +24,7 @@ export const intentionallyUnminifiedScripts = [
   'static/js/book-zip.min.js',
   'static/js/book-model.js',
   'static/js/book-storage.js',
+  'static/js/book-cloud-sync.js',
   'static/js/app-shell.js',
   'static/js/auth-utils.js',
   'static/js/calendar.js',

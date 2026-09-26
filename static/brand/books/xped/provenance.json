@@ -1,0 +1,59 @@
+{
+  "brand": "xPED",
+  "verified_source": "xPED Project/Design & Research Studio/docs/BRAND_STYLE.md and brand/asset-manifest.yaml",
+  "permission": "Source manifest approves project use, editing, bundling and publication; user requested public xPED book templates and exact supplied white mark.",
+  "assets": [
+    {
+      "asset_id": "font-nohemi-bold",
+      "source": "Animatie Studio/brand/fonts/Nohemi-Bold.woff2",
+      "web_file": "/static/fonts/books/xped-Nohemi-Bold.woff2",
+      "sha256": "e27ab86d6433318e9d91e2490755f4346827fee14e3efa1647777fe05f76e031",
+      "installable_file": "/static/fonts/books/xped-Nohemi-Bold.ttf",
+      "derivation": "WOFF2 decompression; original names, outlines and embedding flags retained"
+    },
+    {
+      "asset_id": "font-general-sans-regular",
+      "source": "Animatie Studio/brand/fonts/GeneralSans-Regular.woff2",
+      "web_file": "/static/fonts/books/xped-GeneralSans-Regular.woff2",
+      "sha256": "3ec2be771caf168b077ca05af4df1dace77088e2b3a27da570036e61be58a039",
+      "installable_file": "/static/fonts/books/xped-GeneralSans-Regular.ttf",
+      "derivation": "WOFF2 decompression; General Sans installable family/style names normalized, outlines unchanged"
+    },
+    {
+      "asset_id": "font-general-sans-bold",
+      "source": "Animatie Studio/brand/fonts/GeneralSans-Bold.woff2",
+      "web_file": "/static/fonts/books/xped-GeneralSans-Bold.woff2",
+      "sha256": "a29eab9b114f3c631cb24d537400dfb8d0ceea8cc9fb514864a68c4ead960490",
+      "installable_file": "/static/fonts/books/xped-GeneralSans-Bold.ttf",
+      "derivation": "WOFF2 decompression; General Sans installable family/style names normalized, outlines unchanged"
+    },
+    {
+      "asset_id": "user-supplied-xped-white-mark",
+      "source": "~/Downloads/xped-beeldmerk-wit kopie.png",
+      "file": "mark-white.png",
+      "sha256": "e997176acf6c2f8538e9712cddd81bbe30bc6657d9c487dd58dc658e15404500",
+      "derivation": "Exact original bytes; transparent logo, original proportions"
+    },
+    {
+      "asset_id": "xped-illustration-13",
+      "source": "~/Desktop/xPED Project/Animatie Studio/brand/assets/illustrations/brand-elements/xped-beeldmerk-navy.png",
+      "file": "mark-navy.png",
+      "sha256": "19946b4e8bcde732e8d1908d396b0e09a30ff99a06dc6eff393c00c2db325a31",
+      "derivation": "Exact original bytes; transparent logo, original proportions"
+    },
+    {
+      "asset_id": "xped-corner-blue",
+      "source": "Design & Research Studio/projects/P-003-festival-vitaal-zuidlaren/assets/decor-v5/corner-blue.svg",
+      "file": "corner-blue.svg",
+      "sha256": "b7ee4a633289caeb6a3eb6b1f8ee6f82ab0c1721208059653da2c614a302c501",
+      "derivation": "Original SVG path retained by BookModel renderer"
+    },
+    {
+      "asset_id": "xped-corner-yellow",
+      "source": "Design & Research Studio/projects/P-003-festival-vitaal-zuidlaren/assets/decor-v5/corner-yellow.svg",
+      "file": "corner-yellow.svg",
+      "sha256": "53fb9fec39b8d17178274b39037f25a9f04640b52050ec6a85bf2bc023a4d5df",
+      "derivation": "Original SVG path retained by BookModel renderer"
+    }
+  ]
+}

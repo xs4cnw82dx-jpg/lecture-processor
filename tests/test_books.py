@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from PIL import Image
 from lxml import etree
+from pypdf import PdfReader
 
 from lecture_processor.domains.books import model
 from lecture_processor.domains.books.export import generate
@@ -193,20 +194,19 @@ def test_upload_validation_quota_and_interrupted_reservation_cleanup(setup, monk
     assert client.get('/api/books/' + bid + '/assets/' + response.json['asset']['id']).status_code == 403
 
 
-@pytest.mark.parametrize('n', [4, 8, 12])
-def test_fold_imposition_outer_and_inner_sheets(n):
-    pairs = model.sheets(pages(n), 'fold')
-    assert pairs[0] == (n - 1, 0)
-    assert pairs[1] == (1, n - 2)
-    assert sorted(p for pair in pairs for p in pair) == list(range(n))
-    assert len(pairs) == n // 2
+@pytest.mark.parametrize('n', [4, 5, 8, 12])
+def test_cut_sheets_start_with_cover_and_keep_facing_pages(n):
+    pairs = model.sheets(pages(n), 'cut')
+    assert pairs[0] == (0, None)
+    assert pairs[1] == (1, 2)
+    assert pairs[-1] == (n - 1, None)
+    assert [p for pair in pairs for p in pair if p is not None] == list(range(n))
 
 
 def test_odd_pages_pad_before_back_cover_and_cut_covers_are_alone():
-    pairs = model.sheets(pages(5), 'fold')
-    assert pairs[0] == (4, 0)
-    assert sum(p is None for pair in pairs for p in pair) == 3
-    assert model.sheets(pages(5), 'cut') == [(None, 0), (1, 2), (3, None), (4, None)]
+    assert model.sheets(pages(5), 'cut') == [(0, None), (1, 2), (3, None), (4, None)]
+    with pytest.raises(model.BookError, match='[Rr]efresh'):
+        model.sheets(pages(5), 'fold')
 
 
 @pytest.mark.parametrize('bad', [{'pages': {}}, {'pages': [{'id': 'a', 'items': 'bad'}]}, {'pages': pages(), 'tags': {} }])
@@ -236,8 +236,51 @@ def test_export_exact_a4_dimensions_and_native_editable_text():
                 spacing = root.find('.//w:txbxContent/w:p/w:pPr/w:spacing', ns)
                 assert spacing.get('{%s}lineRule' % ns['w']) == 'exact'
                 assert spacing.get('{%s}line' % ns['w']) == '784'
-    pdf, mime, extension = generate({'pages': logical, 'previews': previews, 'format': 'pdf', 'arrangement': 'fold'})
+    pdf, mime, extension = generate({'pages': logical, 'previews': previews, 'format': 'pdf'})
     assert mime == 'application/pdf' and extension == 'pdf' and pdf.startswith(b'%PDF')
+
+
+@pytest.mark.parametrize('count', [4, 5, 8, 12])
+def test_every_export_sheet_has_the_same_cover_first_order(count):
+    logical = pages(count)
+    for i, p in enumerate(logical):
+        p['items'] = [model.item({'id': 'number-' + str(i), 'type': 'text', 'text': str(i)})]
+    previews = ['data:image/png;base64,' + base64.b64encode(image_bytes()).decode()] * count
+    pairs = model.sheets(logical, 'cut')
+    for mode in ('faithful', 'editable'):
+        blob, _, _ = generate({'pages': logical, 'previews': previews, 'format': mode})
+        with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+            root = etree.fromstring(archive.read('word/document.xml'))
+        ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'wp': 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing'}
+        sheets = root.findall('./w:body/w:p', ns)
+        assert len(sheets) == len(pairs)
+        for paragraph, pair in zip(sheets, pairs):
+            offsets = paragraph.findall('.//wp:positionH/wp:posOffset', ns)
+            assert [int(p.text) for p in offsets] == [side * 5346000 for side, index in enumerate(pair) if index is not None]
+            if mode == 'editable':
+                assert paragraph.xpath('.//w:txbxContent//w:t/text()', namespaces=ns) == [str(i) for i in pair if i is not None]
+    blob, _, _ = generate({'pages': logical, 'previews': previews, 'format': 'pdf'})
+    pdf = PdfReader(io.BytesIO(blob))
+    assert len(pdf.pages) == len(pairs)
+    for sheet in pdf.pages:
+        assert float(sheet.mediabox.width) == pytest.approx(297 * 72 / 25.4, abs=.001)
+        assert float(sheet.mediabox.height) == pytest.approx(210 * 72 / 25.4, abs=.001)
+
+
+def test_editable_save_ink_keeps_xped_text_readable_without_changing_book():
+    logical = pages()
+    logical[0]['decoration'] = {'id': 'xped', 'variant': 'minimal', 'mode': 'dark'}
+    logical[0]['items'] = [model.item({'id': 'title', 'type': 'text', 'text': 'Light title', 'style': {'font': 'Nohemi', 'weight': 700, 'color': '#ffffff'}, 'runs': [{'text': 'Light title', 'style': {'font': 'Nohemi', 'weight': 700, 'color': '#ffffff'}}, {'text': ' and custom ink', 'style': {'color': '#062940'}}]})]
+    before = deepcopy(logical)
+    previews = ['data:image/png;base64,' + base64.b64encode(image_bytes()).decode()] * len(logical)
+    for economy, expected in [(False, ['ffffff', '062940']), (True, ['062940', '062940'])]:
+        blob, _, _ = generate({'pages': logical, 'previews': previews, 'format': 'editable', 'economy': economy})
+        with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+            root = etree.fromstring(archive.read('word/document.xml'))
+        ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+        assert root.xpath('.//w:txbxContent//w:color/@w:val', namespaces=ns) == expected
+        assert root.xpath('.//w:txbxContent//w:rFonts/@w:ascii', namespaces=ns)[0] == 'Nohemi'
+    assert logical == before
 
 
 def test_linked_illustrations_cannot_be_separated():

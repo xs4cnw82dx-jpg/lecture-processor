@@ -44,6 +44,9 @@
     uploads = 0,
     lastRefresh = 0;
   let savedPages = {};
+  let cloudPromotion = null,
+    cloudPhase = "",
+    cloudBlocked = false;
   const instance = M.id(),
     tabChannel =
       typeof BroadcastChannel !== "undefined"
@@ -85,7 +88,7 @@
   const page = () =>
     (b && b.pages.find((p) => p.id === active)) || (b && b.pages[0]);
   const item = () => page() && page().items.find((o) => o.id === selected[0]);
-  const editable = () => !!b && (b.local || !!leaseToken) && !b.deleted;
+  const editable = () => !!b && (b.local || !!leaseToken) && !b.deleted && cloudPhase !== "finishing" && !cloudBlocked;
   const metadata = () => ({
     title: b.title,
     folder: b.folder,
@@ -94,6 +97,8 @@
     palette: b.palette,
     styles: b.styles,
     illustration: b.illustration,
+    theme: b.theme || null,
+    pageNumbers: M.pageNumberOptions(b.pageNumbers),
   });
   const field = (label, name, value, type = "text", extra = "") =>
     `<label class="book-field"><span>${esc(label)}</span><input type="${type}" data-field="${name}" value="${esc(value)}" ${extra}></label>`;
@@ -149,7 +154,9 @@
   let inspectorTab = "settings";
   let cachedVersions = [],
     themeChoice = 0;
+  let xpedVariant = "corner", xpedMode = "light";
   const panelDetails = new Set();
+  const liveColorValues = new WeakMap();
   const themes = [
     {
       name: "Moonlit story",
@@ -401,16 +408,27 @@
     changed();
   }
   function themeDialog() {
+    const isXped = themeChoice === "xped";
+    const xpedOptions = isXped
+      ? `<section class="book-xped-options" aria-label="xPED design options"><div class="book-theme-setting"><div><h3>Inside pages</h3><p class="book-muted">Alternating signature corners, on light or dark paper.</p></div><div class="book-segmented" role="group" aria-label="Inside page appearance"><button data-xped-mode="light" aria-pressed="${xpedMode === "light"}">Light pages</button><button data-xped-mode="dark" aria-pressed="${xpedMode === "dark"}">Dark pages</button></div></div><h3>Choose a cover pair</h3><div class="book-cover-grid">${M.xped.variants.map((v) => `<button class="book-cover-choice" data-xped-variant="${v.id}" aria-pressed="${xpedVariant === v.id}"><span class="book-cover-pair"><span>${M.svg(M.coverPreview(v.id, xpedMode, "front"))}<small>Front</small></span><span>${M.svg(M.coverPreview(v.id, xpedMode, "back"))}<small>Back</small></span></span><strong>${esc(v.name)}</strong><span>${esc(v.description)}</span></button>`).join("")}</div><p class="book-muted">Your words and illustrations stay in place. Theme artwork can be hidden on any page.</p></section>` : "";
     dialog(
       "Book themes",
-      `<p class="book-muted">A coordinated palette, paper and text styles for the whole book. Existing custom colors stay as you chose them.</p><div class="book-theme-grid">${themes.map((t, i) => `<button class="book-theme" data-theme="${i}" aria-pressed="${i === themeChoice}"><svg viewBox="0 0 160 105" aria-hidden="true"><rect width="160" height="105" rx="8" fill="${t.paper}"/><circle cx="126" cy="30" r="17" fill="${t.palette[2]}"/><path d="M0 80Q50 35 95 83T160 70V105H0Z" fill="${t.palette[1]}"/><text x="12" y="37" font-family="${t.font}" font-size="16" fill="${t.palette[3]}">A little story</text><path d="M13 51h68M13 60h55" stroke="${t.palette[0]}" stroke-width="2"/></svg><strong>${t.name}</strong><span>${t.font} + ${t.body}</span></button>`).join("")}</div><button id="apply-theme" class="primary-btn">Apply ${themes[themeChoice].name}</button><p class="book-muted">You can undo this change.</p>`,
+      `<p class="book-muted">A coordinated palette, paper and text styles for the whole book. Existing custom colors stay as you chose them.</p><div class="book-theme-grid">${themes.map((t, i) => `<button class="book-theme" data-theme="${i}" aria-pressed="${i === themeChoice}"><svg viewBox="0 0 160 105" aria-hidden="true"><rect width="160" height="105" rx="8" fill="${t.paper}"/><circle cx="126" cy="30" r="17" fill="${t.palette[2]}"/><path d="M0 80Q50 35 95 83T160 70V105H0Z" fill="${t.palette[1]}"/><text x="12" y="37" font-family="${t.font}" font-size="16" fill="${t.palette[3]}">A little story</text><path d="M13 51h68M13 60h55" stroke="${t.palette[0]}" stroke-width="2"/></svg><strong>${t.name}</strong><span>${t.font} + ${t.body}</span></button>`).join("")}<button class="book-theme book-theme-xped" data-theme="xped" aria-pressed="${isXped}"><span class="book-xped-swatch" aria-hidden="true"><span></span><span></span><span></span></span><strong>xPED</strong><span>Four cover designs · light or dark pages</span></button></div>${xpedOptions}<div class="book-theme-apply"><button id="apply-theme" class="primary-btn">Apply ${isXped ? "xPED" : themes[themeChoice].name}</button><span class="book-muted">You can undo this change.</span></div>`,
     );
   }
   function applyTheme() {
     if (!checkpoint()) return;
+    if (themeChoice === "xped") {
+      M.applyXpedTheme(b, xpedVariant, xpedMode);
+      changed();
+      closeDialog();
+      notify("xPED applied to your book.");
+      return;
+    }
     const t = themes[themeChoice],
       old = b.palette.slice(),
       oldBodyFont = b.styles.body.font;
+    b.theme = null;
     b.palette = t.palette.slice();
     ["heading", "body", "caption"].forEach((k) => {
       b.styles[k].font = k === "heading" ? t.font : t.body;
@@ -418,6 +436,7 @@
     });
     b.pages.forEach((p) => {
       p.background = t.paper;
+      p.decoration = null;
       p.items.forEach((o) => {
         if (o.styleName) {
           o.style = { ...o.style, ...b.styles[o.styleName] };
@@ -426,6 +445,12 @@
         if (o.type === "table" && o.tableStyle !== "custom") {
           if (o["style"].font === oldBodyFont) o["style"].font = t.body;
           o["style"].color = t.palette[3];
+        }
+        if (o.type === "flow" && o.flowStyle !== "custom") {
+          if (o["style"].font === oldBodyFont) o["style"].font = t.body;
+          o["style"].color = t.palette[3];
+          o.fill = t.palette[1];
+          o.stroke = t.palette[0];
         }
         ["fill", "stroke"].forEach((k) => {
           const i = old.indexOf(o[k]);
@@ -493,10 +518,15 @@
   function status(message) {
     $("save-state").textContent = message;
   }
-  async function api(url, options = {}, blob = false) {
+  async function api(url, options = {}, blob = false, accountUid = "") {
     const headers = { "X-Book-Session": session, ...options.headers };
-    if (user) headers.Authorization = "Bearer " + (await user.getIdToken());
-    if (accessToken) headers["X-Book-Access"] = accessToken;
+    const requestUser = user;
+    if (accountUid && requestUser?.uid !== accountUid)
+      throw new Error("Sign in with the same account to continue saving this draft.");
+    if (requestUser) headers.Authorization = "Bearer " + (await requestUser.getIdToken());
+    if (accountUid && user?.uid !== accountUid)
+      throw new Error("Cloud saving paused because your account changed.");
+    if (accessToken && !accountUid) headers["X-Book-Access"] = accessToken;
     if (options.body && !(options.body instanceof FormData))
       headers["Content-Type"] = "application/json";
     const r = await fetch(url, { ...options, headers });
@@ -521,6 +551,10 @@
         const result = await api("/api/books");
         cloudBooks = result.books;
         cloudAvailable = result.storage_available;
+        const pending = await Promise.all(localBooks.filter((draft) => draft.local && draft.cloudAccountUid === user.uid).map((draft) => D.getSync(draft.id)));
+        const uploadingIds = new Set(pending.filter((operation) => operation && !operation.complete).map((operation) => operation.remoteId));
+        const uploadingKeys = new Set(pending.filter((operation) => operation && !operation.complete).map((operation) => operation.key));
+        cloudBooks = cloudBooks.filter((book) => !uploadingIds.has(book.id) && !uploadingKeys.has(book.creation_key));
       } catch (e) {
         notify(e.message, true);
       }
@@ -578,7 +612,10 @@
                 ...cloudBooks.filter((x) => x.deleted),
               ]
             : user
-              ? cloudBooks.filter((x) => x.role === "owner" && !x.deleted)
+              ? [
+                  ...cloudBooks.filter((x) => x.role === "owner" && !x.deleted),
+                  ...localBooks.filter((x) => x.local && !x.deleted && x.cloudAccountUid === user.uid),
+                ]
               : localBooks.filter((x) => x.local && !x.deleted);
     const query = $("book-search").value.toLowerCase();
     list = list.filter((x) =>
@@ -602,7 +639,7 @@
             const cached = localBooks.find((l) => l.id === x.id),
               cover =
                 coverCache[x.id] || (cached && cached.pages && cached.pages[0]);
-            return `<article class="book-card"><button class="book-cover-button" data-open="${esc(x.id)}" aria-label="Open ${esc(x.title)}"><span class="book-mini-cover">${cover ? M.svg(cover, renderedAssets) : M.svg({ ...M.page("front"), items: [M.object("text", { text: x.title, y: 38, w: 108, h: 90, style: { ...M.baseStyle, font: "Fraunces", size: 28 } })] })}</span></button><div class="book-card-title"><h3>${x.favorite ? "★ " : ""}${esc(x.title)}</h3><button class="icon-btn" data-book-options="${esc(x.id)}" aria-label="Options for ${esc(x.title)}">•••</button></div><p>${esc(x.folder || (x.local ? "On this device" : "Saved to cloud"))} · ${new Date(x.updated_at * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</p></article>`;
+            return `<article class="book-card"><button class="book-cover-button" data-open="${esc(x.id)}" aria-label="Open ${esc(x.title)}"><span class="book-mini-cover">${cover ? M.svg(cover, renderedAssets) : M.svg({ ...M.page("front"), items: [M.object("text", { text: x.title, y: 38, w: 108, h: 90, style: { ...M.baseStyle, font: "Fraunces", size: 28 } })] })}</span></button><div class="book-card-title"><h3>${x.favorite ? "★ " : ""}${esc(x.title)}</h3><button class="icon-btn" data-book-options="${esc(x.id)}" aria-label="Options for ${esc(x.title)}">•••</button></div><p>${esc(x.local && user?.uid && x.cloudAccountUid === user.uid ? "Waiting to save to your account" : x.folder || (x.local ? "On this device" : "Saved to cloud"))} · ${new Date(x.updated_at * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</p></article>`;
           })
           .join("")
       : `<div class="book-empty"><h2>${query ? "No books found" : collection === "trash" ? "Nothing in the trash" : collection === "shared" ? "A place for shared stories" : "Your next idea starts here"}</h2><p>${query ? "Try another title, folder or tag." : collection === "shared" ? "Books shared with your email address will appear here." : collection === "trash" ? "Deleted books can be restored here." : "Start with a blank page or choose a little inspiration."}</p>${!query && ["mine", "local"].includes(collection) ? '<button class="primary-btn" data-new>＋ Create a book</button>' : ""}</div>`;
@@ -656,14 +693,24 @@
     status("Opening book…");
     try {
       if (b && dirty) await persist();
+      if (cloudPromotion) await cloudPromotion.catch(() => {});
       if (b && !b.local && leaseToken) await release();
       b = await D.getBook(id);
+      if (!b && id.startsWith("local-")) {
+        const operation = await D.getSync(id);
+        if (operation?.complete && operation.uid === user?.uid) {
+          id = operation.remoteId;
+          b = await D.getBook(id);
+        }
+      }
       leaseToken = "";
       selected = [];
       undoStack = [];
       redoStack = [];
       dirty = false;
       changeCount = 0;
+      cloudPhase = "";
+      cloudBlocked = false;
       accessToken = sessionStorage.getItem("book-access-" + id) || "";
       if (!id.startsWith("local-")) {
         const local = b;
@@ -724,7 +771,7 @@
           );
         }
       }
-      await D.putBook(b);
+      if (!b.local) await D.putBook(b);
       updateStatus();
     } finally {
       opening = false;
@@ -732,6 +779,8 @@
       if (b) updateStatus();
       else $("library").hidden = false;
     }
+    if (b?.local && user && !b.id.startsWith("local-recovery-"))
+      ensureCloudBook().catch(() => {});
   }
   async function loadAssets(original = false) {
     const current = b;
@@ -812,6 +861,11 @@
   function updateStatus() {
     if (!b) return;
     const can = editable();
+    if ($("retry-cloud-save")) {
+      $("retry-cloud-save").hidden = !saveError || !user || (!b.local && !b.pending);
+      $("retry-cloud-save").disabled = !!cloudPromotion || (b.cloudAccountUid && b.cloudAccountUid !== user?.uid);
+      $("retry-cloud-save").title = saveError || "Retry saving to your account";
+    }
     $("book-title").disabled = !can;
     $("edit-turn").hidden =
       b.local || can || !["owner", "edit"].includes(b.role) || b.deleted;
@@ -830,8 +884,12 @@
     status(
       opening
         ? "Opening book…"
+        : cloudPromotion || cloudPhase === "saving" || cloudPhase === "finishing"
+          ? "Saving to your account…"
         : saveError
-          ? "Needs attention"
+          ? b.local && b.cloudAccountUid
+            ? navigator.onLine ? "Couldn’t save to cloud · Draft safe on this device" : "Offline · Saved on this device"
+            : "Needs attention"
           : saving || localWrites
             ? "Saving…"
             : dirty
@@ -907,6 +965,7 @@
   }
   async function persist() {
     if (!b) return;
+    if (b.local && cloudBlocked) return;
     if (saving) {
       await saving;
       if (dirty && leaseToken) return persist();
@@ -914,6 +973,7 @@
     }
     const current = b;
     await D.putBook(current);
+    if (cloudPromotion) return;
     if (current.local) {
       dirty = false;
       updateStatus();
@@ -977,7 +1037,7 @@
     $("page-list").innerHTML = b.pages
       .map(
         (p, i) =>
-          `<button class="book-thumb" draggable="${editable()}" data-page="${p.id}" aria-current="${p.id === active}" title="${esc(p.title)}" aria-label="${esc(p.role === "page" ? "Page " + i + ": " + p.title : p.title)}"><span class="book-thumb-preview">${M.svg(p, renderedAssets)}</span><span>${esc(p.role === "page" ? "Page " + i : p.title)}</span>${p.role === "page" && p.title !== "Untitled page" ? `<span class="book-thumb-title">${esc(p.title)}</span>` : ""}</button>`,
+          `<button class="book-thumb" draggable="${editable()}" data-page="${p.id}" aria-current="${p.id === active}" title="${esc(p.title)}" aria-label="${esc(p.role === "page" ? "Page " + i + ": " + p.title : p.title)}"><span class="book-thumb-preview">${M.svg(p, renderedAssets, M.pageRenderOptions(p, b.pages, b.pageNumbers))}</span><span>${esc(p.role === "page" ? "Page " + i : p.title)}</span>${p.role === "page" && p.title !== "Untitled page" ? `<span class="book-thumb-title">${esc(p.title)}</span>` : ""}</button>`,
       )
       .join("");
   }
@@ -1036,7 +1096,7 @@
       .map((pid) => {
         const p = b.pages.find((p) => p.id === pid);
         return p
-          ? `<div class="book-sheet" data-page-id="${p.id}" data-active="${p.id === active}" tabindex="0" aria-label="${esc(p.title || "Book page")}">${rulers && !reading ? rulerMarkup() : ""}${M.svg(p, renderedAssets, { guides: guides && !reading })}${editorGuides(p.id)}</div>`
+          ? `<div class="book-sheet" data-page-id="${p.id}" data-active="${p.id === active}" tabindex="0" aria-label="${esc(p.title || "Book page")}">${rulers && !reading ? rulerMarkup() : ""}${M.svg(p, renderedAssets, { ...M.pageRenderOptions(p, b.pages, b.pageNumbers), guides: guides && !reading })}${editorGuides(p.id)}</div>`
           : '<div class="book-sheet blank" aria-label="Blank page"></div>';
       })
       .join("");
@@ -1123,6 +1183,12 @@
       source = item(),
       o = source ? { ...source, style: selectedStyle(source) } : null,
       disabled = !editable();
+    if (o?.type === "flow") {
+      const colors = M.flowAppearance(o, p.background, p.decoration);
+      o.fill = colors.fill;
+      o.stroke = colors.stroke;
+      o.style = { ...o.style, color: colors.ink };
+    }
     const panel = $("inspector"),
       scroll = panel.scrollTop,
       focused = document.activeElement;
@@ -1167,13 +1233,7 @@
           ["body", "Body"],
           ["caption", "Caption"],
         ]);
-        html += selectField("Font", "style.font", o["style"].font, [
-          "Andika",
-          "Playpen Sans",
-          "Nunito",
-          "Comic Neue",
-          "Fraunces",
-        ]);
+        html += selectField("Font", "style.font", o["style"].font, M.fontOptions);
         html +=
           '<div class="book-row">' +
           field(
@@ -1185,12 +1245,7 @@
           ) +
           field("Color", "style.color", o["style"].color, "color") +
           "</div>";
-        const weights =
-          o["style"].font === "Andika"
-            ? [400, 700]
-            : o["style"].font === "Comic Neue"
-              ? [300, 400, 700]
-              : null;
+        const weights = M.fontWeights(o["style"].font);
         html += weights
           ? selectField(
               "Thickness",
@@ -1217,7 +1272,7 @@
           ]
             .map(
               ([key, label]) =>
-                `<button data-style-toggle="${key}"${key === "italic" && o["style"].font === "Playpen Sans" ? ' disabled title="This font has no italic style"' : ""} aria-pressed="${o.style[key]}">${label}</button>`,
+                `<button data-style-toggle="${key}"${key === "italic" && !M.fontSupportsItalic(o["style"].font) ? ' disabled title="This font has no italic style"' : ""} aria-pressed="${o.style[key]}">${label}</button>`,
             )
             .join("") +
           "</div>";
@@ -1336,6 +1391,11 @@
             : "Colors follow this page’s paper, with gentle shading and readable text.") +
           "</p>";
       }
+      if (o.type === "flow" && p.decoration?.id === "xped")
+        html += selectField("Step colors", "flowStyle", o.flowStyle || "theme", [
+          ["theme", "Match page theme"],
+          ["custom", "Custom colors"],
+        ]);
       if (
         ["shape", "arrow", "drawing", "flow"].includes(o.type) ||
         (o.type === "table" && o.tableStyle === "custom")
@@ -1381,13 +1441,7 @@
       if (["table", "flow"].includes(o.type))
         html +=
           '<div class="book-row">' +
-          selectField("Font", "style.font", o["style"].font, [
-            "Nunito",
-            "Andika",
-            "Playpen Sans",
-            "Comic Neue",
-            "Fraunces",
-          ]) +
+          selectField("Font", "style.font", o["style"].font, M.fontOptions) +
           field(
             "Text size (pt)",
             "style.size",
@@ -1509,6 +1563,8 @@
           ["dots", "Dotted"],
           ["grid", "Grid"],
         ]);
+      if (p.decoration?.id === "xped")
+        html += toggle("Show theme artwork", "page.themeArtwork", p.themeArtwork !== false);
       html +=
         '<p class="book-muted book-hint">Paper is the background of this page. It appears in print.</p><button class="secondary-btn" id="apply-paper">Apply paper to all pages</button><h3>Page actions</h3><div class="book-row"><button class="secondary-btn" id="page-earlier" ' +
         (!canMovePage(-1)
@@ -1535,13 +1591,29 @@
     html +=
       '<details><summary>Book palette & themes</summary><p class="book-muted book-hint">Reusable colors for text, shapes and illustrations. Paper color is set separately.</p><div class="book-palette">' +
       b.palette
-        .slice(0, 4)
+        .slice(0, b.theme?.id === "xped" ? 6 : 4)
         .map(
           (c, i) =>
-            `<div>${field(["Accent", "Soft", "Warm", "Ink"][i], "palette." + i, c, "color")}<button class="secondary-btn" data-palette="${i}" ${!o || o.locked || o.type === "image" ? 'disabled title="Select text, a shape or a drawing to use this color"' : ""}>Use</button></div>`,
+            `<div>${field(b.theme?.id === "xped" ? M.xped.colors[i].name : ["Accent", "Soft", "Warm", "Ink"][i], "palette." + i, c, "color")}<button class="secondary-btn" data-palette="${i}" ${!o || o.locked || o.type === "image" ? 'disabled title="Select text, a shape or a drawing to use this color"' : ""}>Use</button></div>`,
         )
         .join("") +
       '</div><button class="secondary-btn" id="book-themes">Choose a book theme</button></details>';
+    const pageNumbers = M.pageNumberOptions(b.pageNumbers);
+    const numberWeights = M.fontWeights(pageNumbers.font);
+    html += '<details><summary>Page numbers</summary>' +
+      toggle('Show page numbers', 'pageNumbers.enabled', pageNumbers.enabled) +
+      '<p class="book-muted book-hint">Number inside pages from 1. Covers stay unnumbered; moving pages updates the numbers automatically.</p>';
+    if (pageNumbers.enabled) {
+      html += selectField('Number position', 'pageNumbers.position', pageNumbers.position, [
+        ['logo', 'Beside the logo'], ['center', 'Bottom center'], ['outer', 'Bottom outside edge'],
+      ]) + selectField('Number font', 'pageNumbers.font', pageNumbers.font, M.fontOptions) +
+      field('Number size (pt)', 'pageNumbers.size', pageNumbers.size, 'number', 'min="6" max="24" step="1"') +
+      (numberWeights ? selectField('Number thickness', 'pageNumbers.weight', pageNumbers.weight, numberWeights.map((weight) => [weight, weight === 700 ? 'Bold' : weight === 400 ? 'Regular' : weight === 300 ? 'Light' : String(weight)])) :
+        field('Number thickness', 'pageNumbers.weight', pageNumbers.weight, 'range', `min="${pageNumbers.font === 'Nunito' ? 200 : 100}" max="${pageNumbers.font === 'Playpen Sans' ? 800 : pageNumbers.font === 'Nunito' ? 1000 : 900}" step="10"`)) +
+      selectField('Number color', 'pageNumbers.colorMode', pageNumbers.colorMode, [['theme', 'Match the page'], ['custom', 'Custom color']]);
+      if (pageNumbers.colorMode === 'custom') html += field('Custom number color', 'pageNumbers.color', pageNumbers.color, 'color');
+    }
+    html += '</details>';
     if (tool !== "select")
       html +=
         "<h3>Drawing</h3>" +
@@ -1648,6 +1720,10 @@
   function changeField(input) {
     const name = input.dataset.field;
     if (!name) return;
+    if (input.type === "color") {
+      if (liveColorValues.get(input) === input.value) return;
+      liveColorValues.set(input, input.value);
+    }
     const value =
       input.type === "checkbox"
         ? input.checked
@@ -1680,7 +1756,20 @@
     }
     if (!editCheckpoint(input)) return;
     const o = item();
+    if (o?.type === "flow" && o.flowStyle !== "custom" &&
+        (["fill", "stroke", "style.color"].includes(name) || (name === "flowStyle" && value === "custom"))) {
+      const colors = M.flowAppearance(o, page().background, page().decoration);
+      o.fill = colors.fill;
+      o.stroke = colors.stroke;
+      o["style"].color = colors.ink;
+      o.flowStyle = "custom";
+      const selector = $("inspector").querySelector('[data-field="flowStyle"]');
+      if (selector) selector.value = "custom";
+    }
     if (name.startsWith("page.")) page()[name.slice(5)] = value;
+    else if (name.startsWith('pageNumbers.')) {
+      b.pageNumbers = M.pageNumberOptions({ ...M.pageNumberOptions(b.pageNumbers), [name.slice(12)]: value });
+    }
     else if (name.startsWith("palette."))
       b.palette[+name.split(".")[1]] = value;
     else if (o) {
@@ -1688,27 +1777,20 @@
         const selectionStyle = selectedStyle(o);
         applyStyle(name.slice(6), value);
         if (name === "style.font") {
-          if (value === "Andika")
-            applyStyle("weight", selectionStyle.weight >= 600 ? 700 : 400);
-          if (value === "Comic Neue")
-            applyStyle(
-              "weight",
-              selectionStyle.weight < 350
-                ? 300
-                : selectionStyle.weight < 600
-                  ? 400
-                  : 700,
-            );
+          const weights = M.fontWeights(value);
+          if (weights)
+            applyStyle("weight", weights.reduce((closest, weight) => Math.abs(weight - selectionStyle.weight) < Math.abs(closest - selectionStyle.weight) ? weight : closest));
           if (value === "Playpen Sans") {
             applyStyle("weight", Math.min(800, selectionStyle.weight));
-            applyStyle("italic", false);
           }
+          if (!M.fontSupportsItalic(value)) applyStyle("italic", false);
         }
       } else if (name === "styleName") {
         o.styleName = value;
         if (b.styles[value]) {
           o.style = M.clone(b.styles[value]);
           o.runs = [];
+          M.styleObjectForBook(o, b, page());
         }
       } else {
         const oldW = o.w,
@@ -1719,7 +1801,7 @@
           value === "custom" &&
           o.tableStyle !== "custom"
         ) {
-          const colors = M.tableAppearance(o, page().background);
+          const colors = M.tableAppearance(o, page().background, page().decoration);
           o.fill = colors.header;
           o.stroke = colors.line;
           o["style"].color = colors.ink;
@@ -1846,6 +1928,11 @@
       o.y = 74;
     }
     if (type === "image") return;
+    M.styleObjectForBook(o, b, page());
+    if (b.theme?.id === "xped" && type === "table")
+      o.cells = [["Topic", "Notes"], ["An idea", "What matters to you"], ["Next step", "Something to explore"]];
+    if (b.theme?.id === "xped" && type === "flow")
+      o.steps = ["Start here", "Explore an idea", "Choose a next step"];
     page().items.push(o);
     selected = [o.id];
     tool = "select";
@@ -1862,8 +1949,8 @@
       b.pages.length - 1,
       Math.max(1, b.pages.indexOf(page()) + 1),
     );
-    const p = M.page();
-    p.background = page().background;
+    const p = M.pageForBook(b);
+    if (b.theme?.id !== "xped") p.background = page().background;
     p.texture = page().texture;
     b.pages.splice(index, 0, p);
     keepSpreadsTogether();
@@ -2478,6 +2565,7 @@
     form.append("image", file, asset.name);
     form.append("lease_token", leaseToken);
     form.append("base_revision", current.revision);
+    form.append("idempotency_key", "asset:" + asset.id);
     const result = await api("/api/books/" + current.id + "/assets", {
         method: "POST",
         body: form,
@@ -2508,60 +2596,113 @@
       if (!uploads && !current.assets.some((a) => a.local)) await persist();
     }
   }
-  async function publish() {
-    if (!user) {
-      await signIn();
-      if (!user) return;
+  const cloudSync = window.BookCloudSync.create({
+    storage: D,
+    holder: instance,
+    session: () => session,
+    accountMatches: (uid) => user?.uid === uid,
+    request: (url, options, uid) => api(url, options, false, uid),
+  });
+  async function ensureCloudBook(allowRecovery = false) {
+    const current = b, uid = user?.uid;
+    if (!current?.local || !uid || current.deleted) return;
+    if (current.id.startsWith("local-recovery-") && !allowRecovery) return;
+    if (cloudPromotion) return cloudPromotion;
+    if (current.cloudAccountUid && current.cloudAccountUid !== uid) {
+      cloudBlocked = true;
+      saveError = "Sign in with the account that first saved this draft to continue.";
+      updateStatus();
+      return;
     }
-    if (!b.local) return;
-    const old = M.clone(b),
-      draftId = b.id;
-    const initial = M.clone(b.pages);
-    initial.forEach((p) =>
-      p.items.forEach((o) => {
-        o.assetId = "";
-        o.originalAssetId = "";
-      }),
-    );
-    const result = await api("/api/books", {
-      method: "POST",
-      body: JSON.stringify({ ...metadata(), pages: initial }),
-    });
-    Object.assign(b, result.book, { local: false, role: "owner" });
-    await acquire();
-    try {
-      for (const a of old.assets) {
-        const stored = await D.getAsset(a.id);
-        if (stored && stored.blob) await uploadOne(a, stored.blob, b);
-      }
-      changed();
-      await persist();
-      if (b.assets.some((a) => a.local))
-        throw new Error(
-          "Some images still need to upload. Your local copy is safe.",
-        );
-      for (const v of b.versions || []) {
-        await api("/api/books/" + b.id + "/history", {
-          method: "POST",
-          body: JSON.stringify({
-            name: v.name,
-            pages: v.pages.concat(v.deletedPages || []),
-            page_ids: v.pages.map((p) => p.id),
-            deleted_page_ids: (v.deletedPages || []).map((p) => p.id),
-            metadata: v.metadata || metadata(),
-            lease_token: leaseToken,
-            base_revision: b.revision,
-          }),
+    current.cloudAccountUid = uid;
+    cloudBlocked = false;
+    cloudPhase = "saving";
+    saveError = "";
+    cloudPromotion = (async () => {
+      try {
+        const result = await cloudSync.sync(current, uid, {
+          isCurrent: () => b === current,
+          isBusy: () => uploads > 0,
+          onClaim: () => D.putBook(current),
+          onState: (phase) => {
+            cloudPhase = phase;
+            updateStatus();
+          },
         });
+        if (result.existingId) {
+          // A second tab completed this promotion. Keep any separate edits as recovery.
+          if (dirty) {
+            const recovery = {
+              ...M.clone(current), id: "local-recovery-" + M.id(),
+              title: current.title + " (recovered draft)", pending: false,
+            };
+            delete recovery.cloudAccountUid;
+            await D.putBook(recovery);
+            notify("This book was saved in another tab. Your separate edits are safe in a recovered draft.");
+          }
+          cloudPromotion = null;
+          cloudPhase = "";
+          dirty = false;
+          await openBook(result.existingId);
+          return;
+        }
+        Object.entries(result.assetMap).forEach(([localId, remote]) => {
+          if (renderedAssets[localId]) renderedAssets[remote.id] = renderedAssets[localId];
+          [...undoStack, ...redoStack].forEach((version) =>
+            version.pages.concat(version.deletedPages || []).forEach((p) => p.items.forEach((o) => {
+              if (o.assetId === localId) o.assetId = remote.id;
+              if (o.originalAssetId === localId) o.originalAssetId = remote.id;
+            })),
+          );
+        });
+        Object.assign(current, result.book);
+        delete current.cloudAccountUid;
+        delete current.cloudSaveError;
+        leaseToken = result.leaseToken;
+        sessionStorage.setItem("book-lease-" + current.id, leaseToken);
+        accessToken = "";
+        savedPages = Object.fromEntries(current.pages.concat(current.deletedPages || []).map((p) => [p.id, JSON.stringify(p)]));
+        dirty = false;
+        saveError = "";
+        cloudPhase = "";
+        history.replaceState({}, "", "/books/" + current.id);
+        if ($("publish-book")) closeDialog();
+        renderAll();
+      } catch (e) {
+        if (b === current) {
+          cloudPhase = "error";
+          cloudBlocked = ["account", "tab", "conflict"].includes(e.code);
+          saveError = e.message;
+          current.cloudSaveError = e.message;
+          if (!["tab", "account"].includes(e.code)) await D.putBook(current);
+          notify(e.message, true);
+          renderAll();
+        }
+        throw e;
+      } finally {
+        cloudPromotion = null;
+        if (cloudPhase !== "error") cloudPhase = "";
+        if (b === current) updateStatus();
       }
-      await D.deleteBook(draftId);
-      history.replaceState({}, "", "/books/" + b.id);
-      notify("Your book is saved to your account.");
-    } catch (e) {
-      await D.putBook({ ...old, id: draftId });
-      throw e;
+    })();
+    updateStatus();
+    return cloudPromotion;
+  }
+  async function publish() {
+    if (!user) await signIn();
+    if (user) await ensureCloudBook(true);
+  }
+  async function retryCloudSave() {
+    saveError = "";
+    if (b.local) return ensureCloudBook();
+    if (!leaseToken) await acquire();
+    for (const asset of b.assets.filter((a) => a.local)) {
+      const stored = await D.getAsset(asset.id);
+      if (!stored?.blob) throw new Error("An illustration is missing. Add it again before saving.");
+      await uploadOne(asset, stored.blob, b);
     }
-    renderAll();
+    await persist();
+    updateStatus();
   }
   async function signIn() {
     try {
@@ -2593,7 +2734,7 @@
       reader.readAsDataURL(blob);
     });
   }
-  async function fontCss(pages) {
+  async function fontCss(pages, pageNumbers) {
     const families = new Set(
       pages.flatMap((p) =>
         p.items
@@ -2604,6 +2745,7 @@
           ]),
       ),
     );
+    if (pageNumbers?.enabled) families.add(M.pageNumberOptions(pageNumbers).font);
     const response = await fetch("/static/css/book-studio.css"),
       css = await response.text();
     const faces = css.match(/@font-face\s*\{[^}]+\}/g) || [];
@@ -2660,31 +2802,25 @@
           ["editable", "Word · editable text & shapes"],
           ["pdf", "PDF · ready to print"],
         ],
-      )}${selectField("Paper arrangement", "arrangement", "cut", [
-        ["cut", "Cut and bind"],
-        ["fold", "Fold and staple"],
-      ])}</div><div id="export-advice" class="book-status-banner">Print single-sided on A4 landscape. Cut along the middle and assemble the pages in reading order.</div><div class="book-row">${toggle("Show center guide", "exportGuides", true)}${toggle("Save ink", "economy", false)}</div>${issues.length ? "<details><summary>" + issues.length + ' things to check before printing</summary><ul class="book-check-list">' + issues.map((i) => "<li>" + esc(i) + "</li>").join("") + "</ul></details>" : '<p class="book-muted">Your pages are ready for a closer look.</p>'}<div id="editable-notes"></div><h3>Sheet preview</h3><div id="print-preview" class="book-print-preview"></div><div class="book-row"><button class="primary-btn" id="download-export">Download</button><button class="secondary-btn" id="download-backup">Download backup</button></div><p class="book-muted" id="export-progress" role="status"></p>`,
+      )}</div><div id="export-advice" class="book-status-banner">Print single-sided on A4 landscape. Cut along the middle and assemble the pages in reading order.</div><div class="book-row">${toggle("Show center guide", "exportGuides", true)}${toggle("Save ink", "economy", false)}</div>${issues.length ? "<details><summary>" + issues.length + ' things to check before printing</summary><ul class="book-check-list">' + issues.map((i) => "<li>" + esc(i) + "</li>").join("") + "</ul></details>" : '<p class="book-muted">Your pages are ready for a closer look.</p>'}<div id="editable-notes"></div><h3>Sheet preview</h3><div id="print-preview" class="book-print-preview"></div><div class="book-row"><button class="primary-btn" id="download-export">Download</button><button class="secondary-btn" id="download-backup">Download backup</button></div><p class="book-muted" id="export-progress" role="status"></p>`,
     );
     printPreview();
   }
   function printPreview() {
-    const arrangement = $("dialog-content").querySelector(
-        "[data-field=arrangement]",
-      ).value,
-      format = $("dialog-content").querySelector(
+    const format = $("dialog-content").querySelector(
         "[data-field=exportFormat]",
-      ).value;
-    const pairs = M.sheetPairs(b.pages, arrangement);
+      ).value,
+      economy = $("dialog-content").querySelector("[data-field=economy]").checked,
+      showGuides = $("dialog-content").querySelector("[data-field=exportGuides]").checked;
+    const pairs = M.sheetPairs(b.pages);
     $("print-preview").innerHTML = pairs
       .map(
         (pair, i) =>
-          `<div><div class="book-print-sheet">${pair.map((index) => (index === null ? '<div class="empty-half"></div>' : M.svg(b.pages[index], renderedAssets))).join("")}</div><small class="book-muted">${arrangement === "fold" ? "Sheet " + (Math.floor(i / 2) + 1) + " · " + (i % 2 ? "back" : "front") : "Sheet " + (i + 1)} · ${pair.map((index) => (index === null ? "Blank" : index === 0 ? "Cover" : index === b.pages.length - 1 ? "Back cover" : "Page " + index)).join(" / ")}</small></div>`,
+          `<div><div class="book-print-sheet${showGuides ? " with-guide" : ""}${economy ? " save-ink" : ""}">${pair.map((index) => (index === null ? '<div class="empty-half"></div>' : M.svg(b.pages[index], renderedAssets, { ...M.pageRenderOptions(b.pages[index], b.pages, b.pageNumbers), economy }))).join("")}</div><small class="book-muted">Sheet ${i + 1} · ${pair.map((index) => (index === null ? "Blank" : index === 0 ? "Cover" : index === b.pages.length - 1 ? "Back cover" : "Page " + index)).join(" / ")}</small></div>`,
       )
       .join("");
     $("export-advice").textContent =
-      (arrangement === "fold"
-        ? "Print on both sides of A4 landscape, flipping on the short edge. Pages are already arranged for folding; leave the printer’s booklet option off."
-        : "Print single-sided on A4 landscape. Cut along the middle and assemble the pages in reading order.") +
+      "Print single-sided on A4 landscape. Cut along the middle and assemble the pages in reading order. The cover is the first half-page." +
       (format === "editable"
         ? " Install the book fonts for the closest match. Word changes stay in the downloaded file."
         : "");
@@ -2739,9 +2875,6 @@
       format = $("dialog-content").querySelector(
         "[data-field=exportFormat]",
       ).value,
-      arrangement = $("dialog-content").querySelector(
-        "[data-field=arrangement]",
-      ).value,
       economy = $("dialog-content").querySelector(
         "[data-field=economy]",
       ).checked,
@@ -2751,7 +2884,7 @@
     try {
       $("export-progress").textContent = "Preparing fonts and illustrations…";
       await document.fonts.ready;
-      const fonts = await fontCss(snapshot.pages),
+      const fonts = await fontCss(snapshot.pages, snapshot.pageNumbers),
         assets = {};
       for (const a of snapshot.assets) {
         let stored = await D.getAsset(a.id),
@@ -2780,6 +2913,7 @@
           "Preparing page " + (i + 1) + " of " + snapshot.pages.length + "…";
         previews.push(
           await raster(snapshot.pages[i], assets, fonts, {
+            ...M.pageRenderOptions(snapshot.pages[i], snapshot.pages, snapshot.pageNumbers),
             editable: format === "editable",
             economy,
           }),
@@ -2795,7 +2929,7 @@
             pages: snapshot.pages,
             previews,
             format,
-            arrangement,
+            arrangement: "cut",
             economy,
             guides: showGuides,
             book_id: snapshot.local ? null : snapshot.id,
@@ -2807,8 +2941,7 @@
       download(
         blob,
         (snapshot.title || "Book") +
-          " - " +
-          (arrangement === "fold" ? "fold and staple" : "cut and bind") +
+          " - cut and bind" +
           (format === "editable" ? " - editable" : "") +
           "." +
           (format === "pdf" ? "pdf" : "docx"),
@@ -2914,7 +3047,7 @@
       );
     await D.putBook(next);
     await openBook(next.id);
-    notify("Backup opened as a new local book.");
+    notify(user ? "Your imported book is saving to your account." : "Backup opened as a new local book.");
   }
   function sharingLinks(links) {
     return (
@@ -2931,10 +3064,13 @@
     );
   }
   async function shareDialog() {
+    if (b.local && user && !b.id.startsWith("local-recovery-")) await ensureCloudBook();
     if (b.local) {
       dialog(
         "Save your book to share it",
-        '<p class="book-muted">Save this book to your account first. Then you can invite people or create a sharing link.</p><button class="primary-btn" id="publish-book">Save to my account</button>',
+        user
+          ? '<p class="book-muted">Your draft is safe on this device. Finish saving it to your account to share it.</p><button class="primary-btn" data-command="retry-cloud-save">Retry cloud save</button>'
+          : '<p class="book-muted">Sign in to save your book and invite people.</p><button class="primary-btn" id="publish-book">Sign in to share</button>',
       );
       return;
     }
@@ -3057,7 +3193,7 @@
         ) +
         toggle("Favorite", "detailsFavorite", b.favorite) +
         '<div class="book-row"><button class="primary-btn" id="save-details">Save details</button><button class="secondary-btn" id="copy-book">Make a copy</button></div>' +
-        (b.local
+        (b.local && (!user || b.id.startsWith("local-recovery-"))
           ? '<button class="secondary-btn" id="publish-book">Save to my account</button>'
           : ""),
     );
@@ -3088,12 +3224,15 @@
     next.deleted = false;
     next.title += " (copy)";
     next.updated_at = Date.now() / 1000;
+    delete next.cloudAccountUid;
+    delete next.cloudSaveError;
+    delete next.owner_uid;
     next.assets = next.assets.map((a) => ({ ...a, local: true }));
     await D.putBook(next);
     closeDialog();
     if (b && !b.local && leaseToken) await release();
     await openBook(next.id);
-    notify("A new copy is ready on this device.");
+    notify(user ? "Your new copy is saving to your account." : "A new copy is ready on this device.");
   }
   function illustrationDialog() {
     const p = page(),
@@ -3165,7 +3304,7 @@
       );
     dialog(
       version.name,
-      `<p class="book-muted">${version.created_at ? new Date(version.created_at * 1000).toLocaleString() : "Saved version"} · ${version.pages.length} pages</p><div class="book-version-preview">${version.pages.map((p, i) => `<figure>${M.svg(p, renderedAssets)}<figcaption>${esc(p.role === "page" ? "Page " + i : p.title)}</figcaption></figure>`).join("")}</div><p>Restore these pages and book styles? You can undo this after restoring.</p><div class="book-row"><button class="secondary-btn" id="history">Back to versions</button><button class="primary-btn" data-confirm-version="${id}" ${!editable() ? "disabled" : ""}>Restore this version</button></div>`,
+      `<p class="book-muted">${version.created_at ? new Date(version.created_at * 1000).toLocaleString() : "Saved version"} · ${version.pages.length} pages</p><div class="book-version-preview">${version.pages.map((p, i) => `<figure>${M.svg(p, renderedAssets, M.pageRenderOptions(p, version.pages, version.metadata?.pageNumbers))}<figcaption>${esc(p.role === "page" ? "Page " + i : p.title)}</figcaption></figure>`).join("")}</div><p>Restore these pages and book styles? You can undo this after restoring.</p><div class="book-row"><button class="secondary-btn" id="history">Back to versions</button><button class="primary-btn" data-confirm-version="${id}" ${!editable() ? "disabled" : ""}>Restore this version</button></div>`,
     );
   }
   async function saveVersion() {
@@ -3223,6 +3362,8 @@
       };
     }
     Object.assign(b, version.metadata, {
+      theme: version.metadata?.theme || null,
+      pageNumbers: M.pageNumberOptions(version.metadata?.pageNumbers),
       pages: M.clone(version.pages),
       deletedPages: M.clone(version.deletedPages || []),
     });
@@ -3232,10 +3373,13 @@
     closeDialog();
   }
   async function commentsDialog() {
+    if (b.local && user && !b.id.startsWith("local-recovery-")) await ensureCloudBook();
     if (b.local) {
       dialog(
         "Comments",
-        '<p class="book-muted">Save your book to your account to invite comments.</p><button class="primary-btn" id="publish-book">Save to my account</button>',
+        user
+          ? '<p class="book-muted">Your draft is safe on this device. Finish saving it to your account to invite comments.</p><button class="primary-btn" data-command="retry-cloud-save">Retry cloud save</button>'
+          : '<p class="book-muted">Sign in to save your book and invite comments.</p><button class="primary-btn" id="publish-book">Sign in for comments</button>',
       );
       return;
     }
@@ -3305,6 +3449,7 @@
       }
       if (ds.new !== undefined || id === "new-book") return newBookDialog();
       if (id === "sign-in") return signIn();
+      if (id === "retry-cloud-save") return retryCloudSave();
       if (id === "import-backup") return $("backup-input").click();
       if (!b) return;
       if (ds.panel) {
@@ -3326,8 +3471,18 @@
         return;
       }
       if (ds.theme !== undefined) {
-        themeChoice = +ds.theme;
+        themeChoice = ds.theme === "xped" ? "xped" : +ds.theme;
         themeDialog();
+        if (themeChoice === 'xped') $("dialog-content").querySelector('.book-xped-options').scrollIntoView({ block: 'start' });
+        return;
+      }
+      if (ds.xpedVariant || ds.xpedMode) {
+        const scroll = $("book-dialog").scrollTop;
+        if (ds.xpedVariant) xpedVariant = ds.xpedVariant;
+        if (ds.xpedMode) xpedMode = ds.xpedMode;
+        themeDialog();
+        $("book-dialog").scrollTop = scroll;
+        $("dialog-content").querySelector(ds.xpedVariant ? `[data-xped-variant="${xpedVariant}"]` : `[data-xped-mode="${xpedMode}"]`).focus({ preventScroll: true });
         return;
       }
       if (ds.tableAxis) return resizeTable(ds.tableAxis, +ds.delta);
@@ -3362,10 +3517,16 @@
           item().stroke = color;
         else {
           if (item().type === "table" && item().tableStyle !== "custom") {
-            const colors = M.tableAppearance(item(), page().background);
+            const colors = M.tableAppearance(item(), page().background, page().decoration);
             item().stroke = colors.line;
             item()["style"].color = colors.ink;
             item().tableStyle = "custom";
+          }
+          if (item().type === "flow" && item().flowStyle !== "custom") {
+            const colors = M.flowAppearance(item(), page().background, page().decoration);
+            item().stroke = colors.stroke;
+            item()["style"].color = colors.ink;
+            item().flowStyle = "custom";
           }
           item().fill = color;
         }
@@ -3565,6 +3726,11 @@
           movePage(1);
           break;
         case "book-themes":
+          if (b.theme?.id === "xped") {
+            themeChoice = "xped";
+            xpedVariant = b.theme.variant;
+            xpedMode = b.theme.mode;
+          }
           themeDialog();
           break;
         case "apply-theme":
@@ -3866,7 +4032,7 @@
     if (
       e.target.dataset.field &&
       e.target.tagName !== "SELECT" &&
-      !["checkbox", "color"].includes(e.target.type)
+      e.target.type !== "checkbox"
     ) {
       changeField(e.target);
       if (e.target.type === "range") {
@@ -3929,7 +4095,7 @@
     "change",
     action((e) => {
       const field = e.target.dataset.field;
-      if (["arrangement", "exportFormat"].includes(field)) printPreview();
+      if (["exportFormat", "exportGuides", "economy"].includes(field)) printPreview();
       if (field && field.startsWith("illustration")) updatePrompt();
     }),
   );
@@ -4263,13 +4429,17 @@
     }
   });
   window.addEventListener("online", () => {
+    if (b?.local && user && !b.id.startsWith("local-recovery-")) {
+      ensureCloudBook().catch(() => {});
+      return;
+    }
     if (b && dirty && leaseToken)
       persist().catch((e) => notify(e.message, true));
   });
   window.addEventListener("beforeunload", (e) => {
     if (b) {
-      D.putBook(b).catch(() => {});
-      if ((dirty && !b.local) || localWrites) {
+      if (!cloudBlocked) D.putBook(b).catch(() => {});
+      if ((dirty && !b.local) || localWrites || cloudPromotion) {
         e.preventDefault();
         e.returnValue = "";
       }
@@ -4277,7 +4447,7 @@
   });
   document.addEventListener("visibilitychange", () => {
     if (document.hidden && b) {
-      D.putBook(b).catch(() => {});
+      if (!cloudBlocked) D.putBook(b).catch(() => {});
       if (dirty && leaseToken) persist().catch(() => {});
     }
   });
@@ -4330,8 +4500,12 @@
     } else await loadLibrary();
   }
   decorateTools();
-  $("inspector").addEventListener("focusout", () => {
+  $("inspector").addEventListener("focusout", (e) => {
+    if (e.target.type === "color" && !e.relatedTarget) return;
     editBatch = null;
+  });
+  $("inspector").addEventListener("pointerdown", (e) => {
+    if (e.target.type === "color") editBatch = null;
   });
   document.addEventListener("pointerdown", (e) => {
     if (inlineEdit && !e.target.closest("#canvas-text-editor")) finishText();
@@ -4400,7 +4574,14 @@
   let initialized = false;
   auth.onAuthStateChanged(
     action(async (next) => {
+      const previousUid = user?.uid;
       user = next;
+      if (b && previousUid !== next?.uid) {
+        if (!b.local) leaseToken = "";
+        cloudBlocked = !!(b.local && b.cloudAccountUid && b.cloudAccountUid !== next?.uid);
+        updateStatus();
+        renderInspector();
+      }
       $("sign-in").hidden = !!next;
       $("account-name").hidden = !next;
       $("account-name").textContent = next
@@ -4411,11 +4592,7 @@
         await boot();
         document.body.dataset.ready = "true";
       } else if (!b) await loadLibrary();
-      else if (b.local && next) {
-        notify(
-          "Signed in. Use Book details to save this draft to your account.",
-        );
-      }
+      else if (b.local && next) await ensureCloudBook();
     }),
   );
 })();

@@ -5,24 +5,29 @@ from lecture_processor.repositories.books_repo import BookStore
 from lecture_processor.services import book_storage
 
 
+def export_row(row, private=()):
+    """Keep storage bookkeeping out of account data without altering user values."""
+    return {key: value for key, value in row.items() if key not in private and not key.startswith('_')}
+
+
 def collect(runtime, uid):
     db = BookStore(runtime.db)
     result = []
     for book in db.list('books', 'owner_uid', uid, limit=101):
         root = 'books/' + book['id']
-        pages = db.list(root + '/pages', limit=200)
+        pages = [export_row(page) for page in db.list(root + '/pages', limit=200)]
         assets = db.list(root + '/assets', limit=400)
-        versions = db.list(root + '/versions', limit=20)
+        versions = [export_row(version) for version in db.list(root + '/versions', limit=20)]
         for version in versions:
-            rows = db.list(root + '/versions/' + version['id'] + '/pages', limit=200)
+            rows = [export_row(page) for page in db.list(root + '/versions/' + version['id'] + '/pages', limit=200)]
             version['pages'] = [next(p for p in rows if p['id'] == pid) for pid in version['page_ids']]
             version['deletedPages'] = [p for p in rows if p['id'] in version.get('deleted_page_ids', [])]
         result.append({
-            **{k: v for k, v in book.items() if k not in ('lease', '_id')},
+            **export_row(book, ('lease',)),
             'pages': [next(p for p in pages if p['id'] == pid) for pid in book['page_ids']],
             'deletedPages': [p for p in pages if p['id'] in book.get('deleted_page_ids', [])],
-            'assets': [{k: v for k, v in a.items() if k not in ('path', 'preview_path', '_id')} for a in assets],
-            'comments': db.list(root + '/comments', limit=300), 'versions': versions,
+            'assets': [export_row(asset, ('path', 'preview_path')) for asset in assets],
+            'comments': [export_row(comment) for comment in db.list(root + '/comments', limit=300)], 'versions': versions,
             'local': True, 'pending': False, 'role': 'owner',
         })
     return result

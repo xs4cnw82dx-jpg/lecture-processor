@@ -100,6 +100,14 @@ class BookStore:
                 snap = self.ref(path).get(transaction=transaction)
                 return decode(snap.to_dict()) if snap.exists else None
 
+            def list(_, path, field=None, value=None, operator='==', limit=200):
+                query = self.db.collection(path)
+                if field:
+                    query = apply_where(query, field, operator, value)
+                rows = [dict(decode(doc.to_dict()), _id=doc.id) for doc in query.limit(limit).stream(transaction=transaction)]
+                record('reads', max(1, len(rows)))
+                return rows
+
             def put(_, path, value):
                 record('writes')
                 transaction.set(self.ref(path), encode(value))
