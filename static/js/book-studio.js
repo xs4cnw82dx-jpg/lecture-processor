@@ -44,6 +44,9 @@
     uploads = 0,
     lastRefresh = 0;
   let savedPages = {};
+  let startupState = "loading",
+    startupError = null,
+    startupTask = null;
   let cloudPromotion = null,
     cloudPhase = "",
     cloudBlocked = false;
@@ -600,7 +603,7 @@
     }
   }
   function renderLibrary() {
-    if (b) return;
+    if (b || startupError) return;
     let list =
       collection === "shared"
         ? cloudBooks.filter((x) => x.role !== "owner" && !x.deleted)
@@ -3449,6 +3452,8 @@
       }
       if (ds.new !== undefined || id === "new-book") return newBookDialog();
       if (id === "sign-in") return signIn();
+      if (id === "retry-book-startup") return initializeStudio();
+      if (id === "reload-book-startup") return window.location.reload();
       if (id === "retry-cloud-save") return retryCloudSave();
       if (id === "import-backup") return $("backup-input").click();
       if (!b) return;
@@ -4452,11 +4457,54 @@
     }
   });
   document.fonts.ready.then(() => {
+    if (startupState !== "ready") return;
     if (b && !inlineEdit) {
       renderStage();
       renderPages();
     } else if (!b) renderLibrary();
   });
+  function showStartupError(error) {
+    startupError = error;
+    startupState = "error";
+    document.body.dataset.ready = "error";
+    $("book-loading").hidden = true;
+    $("workspace").hidden = true;
+    $("library").hidden = false;
+    $("title-wrap").hidden = true;
+    $("editor-status").textContent = "";
+    ["edit-turn", "finish-turn", "reading", "share", "export"].forEach((id) => { $(id).hidden = true; });
+    document.querySelector(".book-library-heading").hidden = true;
+    document.querySelector(".book-library-tools").hidden = true;
+    $("book-grid").innerHTML =
+      '<div class="book-empty" role="alert"><h2>' +
+      (error.code === "storage-blocked" ? "Another Book Studio tab needs to close" : document.body.dataset.bookId && error.code !== "storage-unavailable" ? "This book is not available" : "Your books couldn’t open") +
+      '</h2><p>' + esc(error.message || "Please try again. Your saved drafts have not been changed.") +
+      '</p><div class="book-row"><button id="retry-book-startup" class="primary-btn">Try again</button><button id="reload-book-startup" class="secondary-btn">Reload this tab</button></div><a class="book-text-link" href="/books">Back to your bookshelf</a></div>';
+  }
+  async function initializeStudio() {
+    if (startupTask) return startupTask;
+    startupState = "loading";
+    startupError = null;
+    document.body.dataset.ready = "false";
+    $("book-loading").hidden = false;
+    $("library").hidden = true;
+    document.querySelector(".book-library-heading").hidden = false;
+    document.querySelector(".book-library-tools").hidden = false;
+    startupTask = (async () => {
+      try {
+        await boot();
+        startupState = "ready";
+        document.body.dataset.ready = "true";
+        $("library").hidden = !!b;
+      } catch (error) {
+        showStartupError(error);
+      } finally {
+        $("book-loading").hidden = true;
+        startupTask = null;
+      }
+    })();
+    return startupTask;
+  }
   async function boot() {
     await new Promise((resolve) => setTimeout(resolve, 80));
     user = auth.currentUser;
@@ -4491,11 +4539,7 @@
         await openBook(id);
       } catch (e) {
         b = null;
-        await loadLibrary();
-        $("book-grid").innerHTML =
-          '<div class="book-empty"><h2>This book is not available</h2><p>' +
-          esc(e.message) +
-          '</p><a class="secondary-btn" href="/books">Back to your bookshelf</a></div>';
+        throw e;
       }
     } else await loadLibrary();
   }
@@ -4589,9 +4633,9 @@
         : "";
       if (!initialized) {
         initialized = true;
-        await boot();
-        document.body.dataset.ready = "true";
-      } else if (!b) await loadLibrary();
+        await initializeStudio();
+      } else if (startupState === "error") await initializeStudio();
+      else if (!b) await loadLibrary();
       else if (b.local && next) await ensureCloudBook();
     }),
   );

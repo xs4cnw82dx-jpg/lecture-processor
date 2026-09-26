@@ -32,3 +32,15 @@ Rendered and inspected every sheet of light, dark and Save ink editions with the
 Visual inspection caught route artwork crossing the default back-cover caption. New Route and Night Expedition covers now place that caption clear of the route, while existing book positions remain unchanged. The demonstration book was adjusted through its position controls. Theme changes also preserve each page's explicit artwork visibility setting.
 
 Local inspection artifacts are in `/tmp/book-xped-export-qa`; these generated QA documents and screenshots are not committed. In Microsoft Word on macOS, opened the exported editable document, confirmed its three sheets and native text boxes, typed into the cover title and used Undo to restore it. Closed the test export without saving the temporary edits. Windows Word is unavailable in this environment; no claim is made for that platform.
+
+## Deployed verification
+
+PR #171 merged as `23536ae3cd998c081c55223d5abcb315341a0c2f`; Render reported that exact commit as successfully deployed. On the deployed site, the real signed-in account reopened the demonstration book with its image and theme intact. Page numbers were moved beside the logo, sized to 11 pt and confirmed after reload. A copy saved to the account automatically. An older open device-only demonstration draft also uploaded automatically after refreshing its legacy tab; a ZIP backup was downloaded first. The temporary copy was moved to recoverable trash after the test.
+
+Downloaded fresh production PDF and editable Word exports, confirmed three exact A4 landscape sheets and native editable text boxes, and rendered and inspected all sheets. The public font bundle endpoint returned a valid ZIP containing the xPED TTFs, other book fonts and installation/license guidance.
+
+Post-deployment testing also identified a legacy-tab storage-upgrade loading issue, covered by the follow-up regression and recovery interface.
+
+A separate signed-out browser opened a view link and displayed the theme and stored illustration with editing disabled. Switching numbering from beside-logo to center and then outside propagated to that viewer while it stayed on its chosen spread at 110% zoom. Revoking the temporary link removed access. Reload also exposed an existing issue where the access-denied message was hidden; the follow-up startup recovery fix makes this message visible and persistent.
+
+The follow-up passed eight focused browser journeys against the production bundle (storage migration, revoked-access display, signed-out pointer navigation/zoom, and the five cloud-saving journeys), all 137 client tests, JavaScript lint and generated-asset verification.
