@@ -45,6 +45,7 @@ async function library(page, enabled = true) {
 
 test('private pictures can be enlarged, uploaded and survive card edits and reload', async ({ page }) => {
   const { pack, saves } = await library(page);
+  await page.locator('.study-picture-open').first().scrollIntoViewIfNeeded();
   await expect(page.locator('.study-picture-open img').first()).toHaveJSProperty('naturalWidth', 1);
   await page.locator('.study-picture-open').first().click();
   await expect(page.getByRole('dialog', { name: 'Picture viewer' })).toBeVisible();
