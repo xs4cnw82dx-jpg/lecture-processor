@@ -506,14 +506,38 @@ def get_model_pricing_config(force_reload=False, runtime=None):
     cached = resolved_runtime.MODEL_PRICING_CACHE.get('payload')
     loaded_at = float(resolved_runtime.MODEL_PRICING_CACHE.get('loaded_at', 0.0) or 0.0)
     if not force_reload and isinstance(cached, dict) and cached and (now_ts - loaded_at < resolved_runtime.MODEL_PRICING_CACHE_TTL_SECONDS):
-        return json.loads(json.dumps(cached))
+        return _calculator_pricing_config(cached, now_ts)
     with open(resolved_runtime.MODEL_PRICING_CONFIG_PATH, 'r', encoding='utf-8') as handle:
         payload = json.load(handle)
     if not isinstance(payload, dict):
         raise ValueError(f"Model pricing config must be a JSON object: {resolved_runtime.MODEL_PRICING_CONFIG_PATH}")
     resolved_runtime.MODEL_PRICING_CACHE['payload'] = payload
     resolved_runtime.MODEL_PRICING_CACHE['loaded_at'] = now_ts
-    return json.loads(json.dumps(payload))
+    return _calculator_pricing_config(payload, now_ts)
+
+
+def _rates_as_of(rates, timestamp=None):
+    """Apply dated rate changes while retaining the original historical rates."""
+    current_date = datetime.fromtimestamp(
+        timestamp if timestamp is not None else datetime.now(timezone.utc).timestamp(),
+        tz=timezone.utc,
+    ).date().isoformat()
+    effective = dict(rates)
+    for change in sorted(rates.get('rate_schedule', []), key=lambda row: row['effective_from']):
+        if change['effective_from'] <= current_date:
+            effective.update(change)
+    return effective
+
+
+def _calculator_pricing_config(payload, now_ts):
+    """Expose today's calculator rates; keep the report's dated table intact."""
+    result = json.loads(json.dumps(payload))
+    result['models'] = {
+        model: _rates_as_of(rates, now_ts)
+        for model, rates in result.get('models', {}).items()
+    }
+    result['pricing_as_of'] = datetime.fromtimestamp(now_ts, tz=timezone.utc).date().isoformat()
+    return result
 
 
 def coerce_analysis_period(period_key, runtime=None):
@@ -604,6 +628,7 @@ def resolve_stage_pricing(
     input_modality='text',
     input_tokens=0,
     runtime=None,
+    as_of=None,
 ):
     _ = runtime
     safe_model = str(model_id or '').strip()
@@ -660,6 +685,7 @@ def resolve_stage_pricing(
         rates = selected if isinstance(selected, dict) else {}
         tier_label = str(rates.get('label', '') or '').strip()
 
+    rates = _rates_as_of(rates, as_of)
     input_text_rate = _as_non_negative_float(rates.get('input_text_per_M', 0.0), default=0.0)
     input_audio_rate = rates.get('input_audio_per_M')
     output_rate = _as_non_negative_float(rates.get('output_per_M', 0.0), default=0.0)
@@ -714,6 +740,8 @@ def compute_job_stage_costs(job_payload, config_payload, runtime=None):
             billing_mode=stage_billing_mode,
             input_modality=input_modality,
             input_tokens=input_tokens,
+            as_of=get_timestamp(job.get('finished_at')) or get_timestamp(job.get('created_at'))
+            or get_timestamp(job.get('started_at')) or None,
         )
         input_cost = (input_tokens / 1_000_000.0) * _as_non_negative_float(pricing.get('input_rate_per_million', 0.0))
         output_cost = (output_tokens / 1_000_000.0) * _as_non_negative_float(pricing.get('output_rate_per_million', 0.0))

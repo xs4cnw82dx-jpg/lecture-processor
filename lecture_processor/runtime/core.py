@@ -584,19 +584,19 @@ ALLOWED_EMAIL_DOMAINS, ALLOWED_EMAIL_PATTERNS = load_email_allowlist_config(EMAI
 def is_email_allowed(email):
     return auth_policy.is_email_allowed(email, runtime=_self_runtime())
 
-MODEL_SLIDES = 'gemini-3.1-flash-lite'
+MODEL_SLIDES = 'gemini-3.5-flash-lite'
 
-MODEL_AUDIO = 'gemini-3.1-flash-lite'
+MODEL_AUDIO = 'gemini-3.5-flash-lite'
 
-MODEL_INTEGRATION = 'gemini-2.5-pro'
+MODEL_INTEGRATION = 'gemini-3.1-pro-preview'
 
-MODEL_INTERVIEW = 'gemini-2.5-pro'
+MODEL_INTERVIEW = 'gemini-3.1-pro-preview'
 
-MODEL_INTERVIEW_CODING = 'gemini-3-flash-preview'
+MODEL_INTERVIEW_CODING = 'gemini-3.8-flash'
 
-MODEL_STUDY = 'gemini-3.1-flash-lite'
+MODEL_STUDY = 'gemini-3.5-flash-lite'
 
-MODEL_TOOLS = 'gemini-3.1-flash-lite'
+MODEL_TOOLS = 'gemini-3.5-flash-lite'
 
 ALLOWED_TOOLS_DOC_EXTENSIONS = {'pdf', 'pptx', 'docx'}
 
@@ -1341,7 +1341,11 @@ def get_billing_receipt_snapshot(job_data):
 def job_has_refunds(job_data):
     return billing_receipts.job_has_refunds(job_data, runtime=_self_runtime())
 
-MODEL_THINKING_POLICY = {'gemini-3.1-flash-lite': {'thinking_level': 'minimal'}, 'gemini-2.5-pro': {'thinking_budget': 32768}, 'gemini-3-flash-preview': {'thinking_level': 'high'}}
+MODEL_THINKING_POLICY = {
+    MODEL_SLIDES: {'thinking_level': 'minimal'},
+    MODEL_INTEGRATION: {'thinking_level': 'high'},
+    MODEL_INTERVIEW_CODING: {'thinking_level': 'high'},
+}
 
 PROVIDER_RETRY_MAX_ATTEMPTS = safe_int_env('PROVIDER_RETRY_MAX_ATTEMPTS', 3, minimum=1, maximum=6)
 
@@ -1942,15 +1946,4 @@ def process_interview_transcription(job_id, audio_path):
     return ai_pipelines.process_interview_transcription(job_id, audio_path, runtime=_self_runtime())
 
 def get_model_pricing_config(force_reload=False):
-    now_ts = time.time()
-    cached = MODEL_PRICING_CACHE.get('payload')
-    loaded_at = float(MODEL_PRICING_CACHE.get('loaded_at', 0.0) or 0.0)
-    if not force_reload and isinstance(cached, dict) and cached and (now_ts - loaded_at < MODEL_PRICING_CACHE_TTL_SECONDS):
-        return json.loads(json.dumps(cached))
-    with open(MODEL_PRICING_CONFIG_PATH, 'r', encoding='utf-8') as handle:
-        payload = json.load(handle)
-    if not isinstance(payload, dict):
-        raise ValueError(f'Model pricing config must be a JSON object: {MODEL_PRICING_CONFIG_PATH}')
-    MODEL_PRICING_CACHE['payload'] = payload
-    MODEL_PRICING_CACHE['loaded_at'] = now_ts
-    return json.loads(json.dumps(payload))
+    return admin_metrics.get_model_pricing_config(force_reload=force_reload, runtime=_self_runtime())

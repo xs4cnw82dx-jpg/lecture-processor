@@ -722,7 +722,7 @@ def _response_usage(response, runtime=None):
                 ),
                 'output_tokens': int(
                     usage_obj.get('candidates_token_count', usage_obj.get('candidatesTokenCount', 0)) or 0
-                ),
+                ) + int(usage_obj.get('thoughts_token_count', usage_obj.get('thoughtsTokenCount', 0)) or 0),
                 'total_tokens': int(
                     usage_obj.get('total_token_count', usage_obj.get('totalTokenCount', 0)) or 0
                 ),

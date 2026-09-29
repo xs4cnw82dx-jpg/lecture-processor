@@ -1372,7 +1372,7 @@ def test_batch_notes_merge_requests_include_max_thinking_config():
     payload = batch_orchestrator._request_with_stage_config(request, 'notes_merge', core)
 
     assert payload['generationConfig']['maxOutputTokens'] == 65536
-    assert payload['generationConfig']['thinkingConfig']['thinkingBudget'] == 32768
+    assert payload['generationConfig']['thinkingConfig'] == {'thinkingLevel': 'high'}
     assert 'generationConfig' not in request
 
 

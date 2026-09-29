@@ -159,7 +159,7 @@ def _coding_state_payload(app_ctx, pack_id, pack, transcript, uid):
         'palette': interview_coding.CODING_PALETTE,
         'ai_estimate': {
             'credit_cost': credit_cost,
-            'model': getattr(app_ctx, 'MODEL_INTERVIEW_CODING', 'gemini-3-flash-preview'),
+            'model': getattr(app_ctx, 'MODEL_INTERVIEW_CODING', 'gemini-3.8-flash'),
             'thinking_level': 'high',
         },
     }
@@ -439,7 +439,7 @@ def start_ai_coding_run(app_ctx, request, pack_id):
         'uid': uid,
         'pack_id': pack_id,
         'status': 'processing',
-        'model': getattr(app_ctx, 'MODEL_INTERVIEW_CODING', 'gemini-3-flash-preview'),
+        'model': getattr(app_ctx, 'MODEL_INTERVIEW_CODING', 'gemini-3.8-flash'),
         'thinking_level': 'high',
         'prompt_version': getattr(app_ctx, 'PROMPT_REGISTRY_VERSION', 'v1'),
         'proposed_codes': [],
@@ -466,7 +466,7 @@ def start_ai_coding_run(app_ctx, request, pack_id):
                 existing_codes + proposed_codes,
             )
             response = ai_provider.generate_with_policy(
-                getattr(app_ctx, 'MODEL_INTERVIEW_CODING', 'gemini-3-flash-preview'),
+                getattr(app_ctx, 'MODEL_INTERVIEW_CODING', 'gemini-3.8-flash'),
                 [prompt],
                 max_output_tokens=32768,
                 retry_tracker=retry_tracker,
@@ -476,7 +476,7 @@ def start_ai_coding_run(app_ctx, request, pack_id):
             usage = ai_provider.extract_token_usage(response, runtime=app_ctx)
             usage_by_stage[f'interview_ai_coding_{index + 1}'] = {
                 **usage,
-                'model': getattr(app_ctx, 'MODEL_INTERVIEW_CODING', 'gemini-3-flash-preview'),
+                'model': getattr(app_ctx, 'MODEL_INTERVIEW_CODING', 'gemini-3.8-flash'),
                 'billing_mode': 'standard',
                 'input_modality': 'text',
             }

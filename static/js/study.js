@@ -5684,7 +5684,7 @@ function renderCodingAiPanel() {
   codingAiPanel.hidden = false;
   if (codingShell) codingShell.classList.add('has-ai-panel');
   if (isProgressing) {
-    var stages = ['Preparing transcript', 'Asking Gemini 3 Flash', 'Finding themes and quotations', 'Building review draft'];
+    var stages = ['Preparing transcript', 'Analyzing interview', 'Finding themes and quotations', 'Building review draft'];
     var safeStage = Math.min(Math.max(codingAiProgressStage, 0), stages.length - 1);
     var stageHtml = stages.map(function (stage, index) {
       var state = index < safeStage ? 'done' : (index === safeStage ? 'active' : '');

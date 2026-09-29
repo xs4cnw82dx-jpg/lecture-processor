@@ -168,7 +168,7 @@ def build_tools_prompt(source_type, custom_prompt=''):
             "3. # Key Terms (term: concise definition)\n"
             "4. # Open Questions (uncertain or ambiguous parts)\n"
             "Do not fabricate details. If text is unreadable, say so explicitly.\n"
-            "Use maximum available reasoning depth for Gemini 3.1 Flash-Lite Preview.\n"
+            "Reason carefully about the source and flag uncertain details.\n"
             "Use clean markdown with valid headings and bullet lists only.\n"
             "Do not use malformed list markers like '- 1. item'."
         )
@@ -182,7 +182,7 @@ def build_tools_prompt(source_type, custom_prompt=''):
             "3. # Key Terms (term: concise definition)\n"
             "4. # Review Questions\n"
             "Use only facts present in the source text.\n"
-            "Use maximum available reasoning depth for Gemini 3.1 Flash-Lite Preview.\n"
+            "Reason carefully about the source and flag uncertain details.\n"
             "Use clean markdown with valid headings and bullet lists only.\n"
             "Do not use malformed list markers like '- 1. item'."
         )
@@ -196,7 +196,7 @@ def build_tools_prompt(source_type, custom_prompt=''):
             "3. # Key Terms (term: concise definition)\n"
             "4. # Review Questions\n"
             "Preserve important formulas, lists, and headings. Do not invent missing content.\n"
-            "Use maximum available reasoning depth for Gemini 3.1 Flash-Lite Preview.\n"
+            "Reason carefully about the source and flag uncertain details.\n"
             "Use clean markdown with valid headings and bullet lists only.\n"
             "Prefer '-' for bullet points and avoid malformed nested list markers.\n"
             "Do not use malformed list markers like '- 1. item'."

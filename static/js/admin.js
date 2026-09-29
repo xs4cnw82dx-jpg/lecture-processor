@@ -1684,8 +1684,9 @@ function formatEur(value) {
 }
 
 function resolveStageModelId(baseModelId, inputTokens) {
-    if (baseModelId === 'gemini-2.5-pro' && Number(inputTokens || 0) > 200000) {
-        return 'gemini-2.5-pro-200k';
+    const model = getCalculatorModels()[baseModelId] || {};
+    if (model.long_context_model && Number(inputTokens || 0) > Number(model.max_input_tokens)) {
+        return model.long_context_model;
     }
     return baseModelId;
 }
@@ -1885,7 +1886,7 @@ async function initCostCalculator() {
         if (!payload || typeof payload !== 'object') return;
         calculatorConfig = payload;
         if (calcPricingVersion) {
-            calcPricingVersion.textContent = `Pricing version: ${String(payload.version || '-')}`;
+            calcPricingVersion.textContent = `Pricing version: ${String(payload.version || '-')} · Rates as of ${String(payload.pricing_as_of || payload.version || '-')}`;
         }
         clearChildren(calcScenario);
         const scenarios = getCalculatorScenarios();
