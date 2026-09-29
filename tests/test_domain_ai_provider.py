@@ -144,7 +144,7 @@ def test_generate_with_policy_and_optional_thinking_builds_expected_payloads():
 
 
 def test_interview_coding_model_uses_high_thinking_policy():
-    assert core.MODEL_INTERVIEW_CODING == 'gemini-3-flash-preview'
+    assert core.MODEL_INTERVIEW_CODING == 'gemini-3.8-flash'
     assert core.MODEL_THINKING_POLICY[core.MODEL_INTERVIEW_CODING]['thinking_level'] == 'high'
 
 
@@ -153,5 +153,5 @@ def test_interview_transcription_uses_required_prompt_and_model():
 •⁠  ⁠Use ‘Onderzoeker’ and ‘Geïnterviewde’ to identify speakers
 •⁠  ⁠Put a '-' between the time, the speaker name and the transcript"""
 
-    assert core.MODEL_INTERVIEW == 'gemini-2.5-pro'
+    assert core.MODEL_INTERVIEW == 'gemini-3.1-pro-preview'
     assert core.PROMPT_INTERVIEW_TRANSCRIPTION == expected_prompt

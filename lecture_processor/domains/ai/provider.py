@@ -162,7 +162,8 @@ def extract_token_usage(response, runtime=None):
         return {'input_tokens': 0, 'output_tokens': 0, 'total_tokens': 0}
     return {
         'input_tokens': getattr(meta, 'prompt_token_count', 0) or 0,
-        'output_tokens': getattr(meta, 'candidates_token_count', 0) or 0,
+        'output_tokens': (getattr(meta, 'candidates_token_count', 0) or 0)
+        + (getattr(meta, 'thoughts_token_count', 0) or 0),
         'total_tokens': getattr(meta, 'total_token_count', 0) or 0,
     }
 
