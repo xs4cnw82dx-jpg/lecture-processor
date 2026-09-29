@@ -36,6 +36,10 @@ def isolate_book_account_boundary(monkeypatch):
     from lecture_processor.services import book_account_service
     monkeypatch.setattr(book_account_service, 'delete_owned', lambda *args: 0)
     monkeypatch.setattr(book_account_service, 'collect', lambda *args: [])
+    from lecture_processor.services import study_picture_service
+    monkeypatch.setattr(study_picture_service, 'delete_owned', lambda *args: 0)
+    monkeypatch.setattr(study_picture_service, 'collect', lambda *args: [])
+    monkeypatch.setattr(study_picture_service, 'add_bundle_assets', lambda *args: None)
 
 
 def test_discontinued_gemini_flash_lite_preview_model_is_not_reintroduced():

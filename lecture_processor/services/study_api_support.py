@@ -185,7 +185,7 @@ def serialize_public_pack(app_ctx, pack_id, pack, *, include_folder=True):
         'has_audio_playback': has_audio_playback,
         'audio_unavailable_reason': 'missing_audio_file' if audio_unavailable_message else '',
         'audio_unavailable_message': audio_unavailable_message,
-        'flashcards': pack.get('flashcards', []),
+        'flashcards': [{k: v for k, v in card.items() if k != 'image_ids'} for card in pack.get('flashcards', [])],
         'test_questions': pack.get('test_questions', []),
         'interview_summary': pack.get('interview_summary'),
         'interview_sections': pack.get('interview_sections'),

@@ -158,6 +158,8 @@ EXPECTED_ROUTES = [
     ('DELETE', '/api/study-packs/<pack_id>', 'study_api.delete_study_pack'),
     ('GET', '/api/study-packs/<pack_id>', 'study_api.get_study_pack'),
     ('PATCH', '/api/study-packs/<pack_id>', 'study_api.update_study_pack'),
+    ('POST', '/api/study-packs/<pack_id>/images', 'study_api.upload_study_picture'),
+    ('GET', '/api/study-packs/<pack_id>/images/<image_id>', 'study_api.get_study_picture'),
     ('GET', '/api/study-packs/<pack_id>/audio', 'study_api.stream_study_pack_audio'),
     ('GET', '/api/study-packs/<pack_id>/audio-stream', 'study_api.stream_study_pack_audio_with_token'),
     ('POST', '/api/study-packs/<pack_id>/audio-token', 'study_api.create_study_pack_audio_token'),

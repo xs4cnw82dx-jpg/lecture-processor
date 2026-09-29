@@ -1,4 +1,5 @@
 from flask import Blueprint, request
+from lecture_processor.domains.books.model import BookError
 
 from lecture_processor.runtime.container import get_runtime
 from lecture_processor.services import (
@@ -6,10 +7,27 @@ from lecture_processor.services import (
     planner_api_service,
     study_api_service,
     study_plan_service,
+    study_picture_service,
     voice_note_service,
 )
 
 study_bp = Blueprint('study_api', __name__)
+
+
+@study_bp.route('/api/study-packs/<pack_id>/images', methods=['POST'])
+def upload_study_picture(pack_id):
+    try:
+        return study_picture_service.upload(get_runtime(), request, pack_id)
+    except BookError as error:
+        return {'error': str(error)}, error.status
+
+
+@study_bp.route('/api/study-packs/<pack_id>/images/<image_id>', methods=['GET'])
+def get_study_picture(pack_id, image_id):
+    try:
+        return study_picture_service.get_image(get_runtime(), request, pack_id, image_id)
+    except BookError as error:
+        return {'error': str(error)}, error.status
 
 
 @study_bp.route('/api/study-plan', methods=['GET'])
