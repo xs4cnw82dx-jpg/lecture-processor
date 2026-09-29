@@ -1656,6 +1656,7 @@ function openStudySignIn() {
     : '/lecture-notes?auth=signin';
 }
 function applyStudySignedOutState() {
+  if (window.StudyPictures) window.StudyPictures.clear();
   setStudyLibraryVisibility(false);
   folders = [];
   packs = [];
@@ -2406,6 +2407,7 @@ function authenticatedFetch(path, options, allowRefresh) {
   }
   return performAuthenticatedFetch(path, options, allowRefresh !== false);
 }
+if (window.StudyPictures) window.StudyPictures.configure(authenticatedFetch);
 function downloadStudyPackSource(packId, type, format) {
   if (studyApiUtils && typeof studyApiUtils.downloadStudyPackSource === 'function') {
     return studyApiUtils.downloadStudyPackSource(packId, type, format, {
@@ -2905,7 +2907,7 @@ function buildDraftFromPack(pack) {
     block: source.block || '',
     notes_markdown: source.notes_markdown || '',
     flashcards: (source.flashcards || []).map(function (card) {
-      return { front: card.front || '', back: card.back || '' };
+      return { front: card.front || '', back: card.back || '', image_ids: (card.image_ids || []).slice() };
     }),
     test_questions: (source.test_questions || []).map(function (q) {
       return normalizeQuestion(q);
@@ -3024,6 +3026,11 @@ function renderBuilderFlashcards() {
       + '<div class="builder-split"><div class="field"><label for="' + frontId + '">Front</label><textarea id="' + frontId + '" class="u-min-h-92" data-fc-field="front" data-fc-index="' + index + '">' + escapeHtml(card.front || '') + '</textarea></div>'
       + '<div class="field"><label for="' + backId + '">Back</label><textarea id="' + backId + '" class="u-min-h-92" data-fc-field="back" data-fc-index="' + index + '">' + escapeHtml(card.back || '') + '</textarea></div></div></div>';
   }).join(''));
+  if (window.StudyPictures && selectedPack && builderPackId) {
+    builderFlashcardList.querySelectorAll('[data-fc-row]').forEach(function (row) {
+      window.StudyPictures.editor(row, cards[Number(row.dataset.fcRow)], selectedPack, markBuilderDirty, renderBuilderFlashcards);
+    });
+  }
   updateBuilderStats();
 }
 function renderBuilderQuestions() {
@@ -5001,6 +5008,7 @@ function renderFlashcardEditor(hi) {
     var safeBack = escapeHtml(card.back || '');
     setSafeInnerHtml(row, '<div class="editor-card-head"><span class="editor-card-title">Flashcard ' + (ci + 1) + '</span><button class="btn danger u-btn-compact" data-delete-card="' + ci + '">Delete</button></div><div class="field"><label for="' + frontId + '">Front</label><input id="' + frontId + '" data-card-field="front" data-card-index="' + ci + '" value="' + safeFront + '"></div><div class="field u-mt-8"><label for="' + backId + '">Back</label><textarea id="' + backId + '" data-card-field="back" data-card-index="' + ci + '">' + safeBack + '</textarea></div>');
     flashcardEditorList.appendChild(row);
+    if (window.StudyPictures) window.StudyPictures.editor(row, card, selectedPack, queueInlineAutosave, renderFlashcardEditor);
   });
   flashcardEditorList.querySelectorAll('[data-card-field]').forEach(function (el) {
     el.addEventListener('input', function () {
@@ -5243,6 +5251,14 @@ function renderFlashcardListView() {
     return '<div class="' + rowClass + '" role="button" tabindex="0" data-peek-index="' + idx + '"><span class="peek-index">' + (idx + 1) + '</span><span class="peek-front">' + frontText + '</span><span class="peek-divider"></span><span class="peek-right">' + rightContent + '</span></div>';
   }).join('');
   setSafeInnerHtml(learnFListView, rowsHtml);
+  if (window.StudyPictures && selectedPack && selectedPack.pictures_enabled) {
+    learnFListView.querySelectorAll('[data-peek-index]').forEach(function (row) {
+      var entry = queue[Number(row.dataset.peekIndex)];
+      if (flashcardPeekMode || flashcardPeekRevealed[String(entry.idx)]) {
+        window.StudyPictures.pictures(row.querySelector('.peek-right'), entry.card, selectedPack.study_pack_id);
+      }
+    });
+  }
   learnFListView.querySelectorAll('[data-peek-index]').forEach(function (row) {
     var activateRow = function () {
       var index = parseInt(row.dataset.peekIndex, 10);
@@ -5295,6 +5311,9 @@ function updateFlashcardContent() {
   var swap = sessionSettings.swapAnswerQuestion || (sessionSettings.randomSwap && Math.random() > 0.5);
   learnFlashcardFront.textContent = swap ? (c.back || '') : (c.front || '');
   learnFlashcardBack.textContent = swap ? (c.front || '') : (c.back || '');
+  if (window.StudyPictures && selectedPack && selectedPack.pictures_enabled) {
+    window.StudyPictures.pictures(swap ? learnFlashcardFront : learnFlashcardBack, c, selectedPack.study_pack_id);
+  }
   learnFProgress.textContent = 'Card ' + (learnFlashcardIndex + 1) + ' of ' + cards.length;
   learnFPrev.disabled = (learnFlashcardIndex === 0);
   learnFNext.disabled = (learnFlashcardIndex === cards.length - 1);
@@ -6600,7 +6619,7 @@ function normalizeInlineAutosaveSnapshot(source) {
     block: String(pack.block || '').trim(),
     notes_markdown: String(pack.notes_markdown || ''),
     flashcards: (Array.isArray(pack.flashcards) ? pack.flashcards : []).map(function (card) {
-      return { front: String(card && card.front || ''), back: String(card && card.back || '') };
+      return { front: String(card && card.front || ''), back: String(card && card.back || ''), image_ids: (card && card.image_ids || []).slice() };
     }),
     test_questions: (Array.isArray(pack.test_questions) ? pack.test_questions : []).map(normalizeQuestion)
   };
@@ -6692,7 +6711,9 @@ function runInlineAutosaveNow(options) {
         if (Object.prototype.hasOwnProperty.call(payload, 'semester')) selectedPack.semester = payload.semester;
         if (Object.prototype.hasOwnProperty.call(payload, 'block')) selectedPack.block = payload.block;
         if (Object.prototype.hasOwnProperty.call(payload, 'notes_markdown')) selectedPack.notes_markdown = payload.notes_markdown;
-        if (Object.prototype.hasOwnProperty.call(payload, 'flashcards')) selectedPack.flashcards = payload.flashcards;
+        if (Object.prototype.hasOwnProperty.call(payload, 'flashcards')) {
+          payload.flashcards.forEach(function (card, index) { Object.assign(selectedPack.flashcards[index], card); });
+        }
         if (Object.prototype.hasOwnProperty.call(payload, 'test_questions')) selectedPack.test_questions = payload.test_questions;
       }
       selectedPack.updated_at = Date.now() / 1000;

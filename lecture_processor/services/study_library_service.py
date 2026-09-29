@@ -9,6 +9,8 @@ from lecture_processor.domains.study import progress as study_progress
 
 from lecture_processor.services import admin_support
 from lecture_processor.services import study_api_support
+from lecture_processor.services import study_picture_service
+from lecture_processor.domains.books.model import BookError
 
 BUILTIN_FOLDER_PARENT_IDS = {'', '__interviews__', '__voice_notes__'}
 MAX_BULK_PACK_MOVE = 100
@@ -353,6 +355,7 @@ def get_study_pack(app_ctx, request, pack_id):
             'has_source_slides': bool(source_flags.get('has_source_slides', False)),
             'has_source_transcript': bool(source_flags.get('has_source_transcript', False)),
             'flashcards': pack.get('flashcards', []),
+            'pictures_enabled': study_picture_service.enabled(app_ctx, uid),
             'test_questions': pack.get('test_questions', []),
             'interview_summary': pack.get('interview_summary'),
             'interview_sections': pack.get('interview_sections'),
@@ -443,7 +446,7 @@ def update_study_pack(app_ctx, request, pack_id):
             updates['daily_card_goal'] = daily_card_goal
 
         if 'flashcards' in payload:
-            updates['flashcards'] = app_ctx.sanitize_flashcards(payload.get('flashcards', []), 500)
+            updates['flashcards'] = study_picture_service.sanitize_cards(app_ctx, uid, pack_id, payload.get('flashcards', []))
             updates['flashcards_count'] = len(updates['flashcards'])
         if 'test_questions' in payload:
             updates['test_questions'] = app_ctx.sanitize_questions(payload.get('test_questions', []), 500)
@@ -472,6 +475,8 @@ def update_study_pack(app_ctx, request, pack_id):
 
         pack_ref.update(updates)
         return app_ctx.jsonify({'ok': True})
+    except BookError as error:
+        return app_ctx.jsonify({'error': str(error)}), error.status
     except Exception as error:
         app_ctx.logger.error(f"Error updating study pack {pack_id}: {error}")
         return app_ctx.jsonify({'error': 'Could not update study pack'}), 500

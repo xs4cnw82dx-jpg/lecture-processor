@@ -1,0 +1,13 @@
+.study-picture-editor { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border, #d5dce5); }
+.study-picture-heading { display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.study-picture-gallery { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin: 12px 0; }
+.study-picture-item { display: flex; flex-direction: column; align-items: center; gap: 6px; max-width: 100%; }
+.study-picture-open { cursor: zoom-in; border: 1px solid #d5dce5; border-radius: 10px; background: #fff; padding: 4px; }
+.study-picture-open img { display: block; object-fit: contain; width: 130px; height: 150px; }
+.study-picture-status { display: inline-block; font-size: 12px; margin: 0 8px; }
+.flashcard-face:has(.study-picture-gallery) { overflow-y: auto; }
+.flashcard-text:has(.study-picture-gallery) { font-size: 18px; width: 100%; }
+.flashcard-text .study-picture-open img { width: 160px; height: 190px; }
+.study-picture-viewer { width: min(900px, 92vw); max-height: 90vh; padding: 16px; border: 0; border-radius: 16px; background: #fff; }
+.study-picture-viewer::backdrop { background: rgba(15, 23, 42, .7); }
+.study-picture-viewer img { display: block; width: 100%; height: 75vh; object-fit: contain; margin-top: 12px; }

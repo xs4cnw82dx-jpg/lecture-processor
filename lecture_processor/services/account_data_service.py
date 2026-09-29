@@ -71,6 +71,8 @@ def export_account_data(app_ctx, request):
         payload = account_lifecycle.collect_user_export_payload(uid, email, runtime=app_ctx)
         from lecture_processor.services import book_account_service
         payload.setdefault('collections', {})['books'] = book_account_service.collect(app_ctx, uid)
+        from lecture_processor.services import study_picture_service
+        payload['collections']['study_images'] = study_picture_service.collect(app_ctx, uid)
         date_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
         filename = f"lecture-processor-account-export-{date_str}.json"
         data_bytes = json.dumps(payload, ensure_ascii=False, indent=2, default=str).encode('utf-8')
@@ -205,10 +207,13 @@ def _build_account_bundle_archive(app_ctx, uid, email, include):
                 account_payload = account_lifecycle.collect_user_export_payload(uid, email, runtime=app_ctx)
                 from lecture_processor.services import book_account_service
                 account_payload.setdefault('collections', {})['books'] = book_account_service.collect(app_ctx, uid)
+                from lecture_processor.services import study_picture_service
+                account_payload['collections']['study_images'] = study_picture_service.collect(app_ctx, uid)
                 account_bytes = json.dumps(account_payload, ensure_ascii=False, indent=2, default=str).encode('utf-8')
                 archive.writestr('account_json/account-export.json', account_bytes)
                 from lecture_processor.services import book_account_service
                 book_account_service.add_bundle_assets(app_ctx, archive, account_payload.get('collections', {}).get('books', []))
+                study_picture_service.add_bundle_assets(app_ctx, archive, uid)
             if collection_truncated:
                 warnings_payload['collection_truncated'] = {
                     'study_packs': {
@@ -648,6 +653,8 @@ def delete_account_data(app_ctx, request):
 
         from lecture_processor.services import book_account_service
         deleted['books'] = book_account_service.delete_owned(app_ctx, uid, email)
+        from lecture_processor.services import study_picture_service
+        deleted['study_images'] = study_picture_service.delete_owned(app_ctx, uid)
         _delete_uid_collection('job_logs')
         _anonymize_purchases()
         _delete_uid_collection('analytics_events')

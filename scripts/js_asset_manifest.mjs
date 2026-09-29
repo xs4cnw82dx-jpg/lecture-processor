@@ -52,6 +52,7 @@ export const intentionallyUnminifiedScripts = [
   'static/js/study-audio-utils.js',
   'static/js/study-progress-utils.js',
   'static/js/study-session-utils.js',
+  'static/js/study-pictures.js',
   'static/js/topbar-utils.js',
   'static/js/ui-cache.js',
   'static/js/user-cache-utils.js',
