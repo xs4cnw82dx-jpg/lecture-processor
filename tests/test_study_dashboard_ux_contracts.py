@@ -163,7 +163,10 @@ def test_batch_mode_loads_saved_language_without_overriding_user_interaction():
     batch_mode_js = _read('static/js/batch-mode.js')
 
     assert "authFetch('/api/user-preferences')" in batch_mode_js
-    assert 'if (outputLanguageUserTouched) return false;' in batch_mode_js
+    assert 'if (!isCurrent() || outputLanguageUserTouched) return false;' in batch_mode_js
+    preference_loader = batch_mode_js.split('function loadOutputLanguagePreference()', 1)[1].split('function setStudyFeature(', 1)[0]
+    assert 'var isCurrent = captureAccount();' in preference_loader
+    assert preference_loader.index('if (!isCurrent() || outputLanguageUserTouched)') < preference_loader.index('setOutputLanguage(')
     assert "setOutputLanguage(preferences.output_language || 'english', preferences.output_language_custom || '')" in batch_mode_js
     assert 'if (user) loadOutputLanguagePreference();' in batch_mode_js
 

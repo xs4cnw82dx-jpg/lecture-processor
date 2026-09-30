@@ -61,6 +61,15 @@
         </button>
       </nav>
 
+      <section class="voice-save-recovery" id="voice-save-recovery" aria-label="Unsaved audio recovery" hidden>
+        <p id="voice-save-message" role="status" aria-live="polite"></p>
+        <div class="voice-save-actions">
+          <button type="button" class="voice-btn voice-btn-primary" id="voice-download-unsaved-btn">Download audio</button>
+          <button type="button" class="voice-btn" id="voice-retry-save-btn">Retry saving</button>
+          <button type="button" class="voice-btn" id="voice-discard-unsaved-btn">Discard unsaved audio</button>
+        </div>
+      </section>
+
       <section class="voice-view active" id="voice-view-record" data-voice-panel="record">
         <section class="voice-recorder voice-recorder-simple">
           <div class="voice-recorder-head">

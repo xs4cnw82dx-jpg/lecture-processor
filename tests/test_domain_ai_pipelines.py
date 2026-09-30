@@ -6,7 +6,7 @@ import pytest
 from lecture_processor.domains.ai import pipelines
 
 
-def test_save_study_pack_marks_user_created_flag(monkeypatch):
+def test_save_study_pack_marks_user_created_flag(allow_account_writes, monkeypatch):
     class _DocRef:
         def __init__(self):
             self.id = "pack-123"
@@ -203,7 +203,7 @@ def test_extra_slides_refund_marks_job_refunded_after_success(monkeypatch):
         ),
     ],
 )
-def test_save_study_pack_writes_source_outputs(monkeypatch, mode, job_data, expected_source):
+def test_save_study_pack_writes_source_outputs(allow_account_writes, monkeypatch, mode, job_data, expected_source):
     class _DocRef:
         def __init__(self):
             self.id = f"pack-{mode}"

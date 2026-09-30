@@ -42,3 +42,10 @@ def client(app, core):
 @pytest.fixture()
 def disable_sentry(monkeypatch, core):
     monkeypatch.setattr(core, "sentry_sdk", None)
+
+
+@pytest.fixture()
+def allow_account_writes(monkeypatch):
+    """Isolate non-account unit scenarios that have no account database fixture."""
+    from lecture_processor.domains.account import lifecycle
+    monkeypatch.setattr(lifecycle, 'ensure_account_allows_writes', lambda _uid, runtime=None: (True, ''))

@@ -15,9 +15,17 @@
   var checkoutBusy = false;
   var paymentResultChecked = false;
   var authStateResolved = !auth || !!auth.currentUser;
+  var accountRevision = 0;
+  var accountUid = getCurrentUser() ? getCurrentUser().uid : null;
 
   function getCurrentUser() {
     return auth && auth.currentUser ? auth.currentUser : null;
+  }
+
+  function captureAccount() {
+    var user = getCurrentUser();
+    var revision = accountRevision;
+    return function () { return user === getCurrentUser() && revision === accountRevision; };
   }
 
   function getSignInHref(bundleId) {
@@ -101,6 +109,7 @@
       return;
     }
     if (checkoutBusy) return;
+    var isCurrent = captureAccount();
     checkoutBusy = true;
     setBundleButtons(true, bundleId);
     try {
@@ -110,12 +119,14 @@
         body: JSON.stringify({ bundle_id: bundleId })
       });
       var payload = await response.json().catch(function () { return {}; });
+      if (!isCurrent()) return;
       if (!response.ok || !payload.checkout_url) {
         throw new Error(payload.error || 'Could not start checkout');
       }
       window.location.href = payload.checkout_url;
       return;
     } catch (error) {
+      if (!isCurrent()) return;
       showToast(error && error.message ? error.message : 'Could not start checkout.', 'error');
       checkoutBusy = false;
       setBundleButtons(false);
@@ -178,12 +189,15 @@
       return;
     }
     setHistoryEmpty('Loading purchase history...');
+    var isCurrent = captureAccount();
     try {
       var response = await authFetch('/api/purchase-history');
       if (!response.ok) throw new Error('Could not load purchase history');
       var payload = await response.json().catch(function () { return {}; });
+      if (!isCurrent()) return;
       renderPurchaseHistory(payload.purchases || []);
     } catch (_) {
+      if (!isCurrent()) return;
       setHistoryEmpty('Could not load purchase history right now.');
     }
   }
@@ -191,14 +205,16 @@
   async function refreshUserCredits() {
     var user = getCurrentUser();
     if (!user) return false;
+    var isCurrent = captureAccount();
     try {
       if (typeof user.getIdToken === 'function') {
         await user.getIdToken(true);
       }
+      if (!isCurrent()) return false;
       var response = await authFetch('/api/auth/user');
       if (!response.ok) return false;
       await response.json().catch(function () { return {}; });
-      return true;
+      return isCurrent();
     } catch (_) {
       return false;
     }
@@ -237,11 +253,15 @@
     var status = params.get('payment');
     var sessionId = params.get('session_id');
     if (!status) return;
+    var isCurrent = captureAccount();
     if (status === 'success') {
       var confirmation = await confirmCheckoutSession(sessionId);
+      if (!isCurrent()) return;
       if (confirmation.ok) {
         var refreshed = await refreshUserCredits();
+        if (!isCurrent()) return;
         await loadPurchaseHistory();
+        if (!isCurrent()) return;
         if (confirmation.status === 'already_processed') {
           showToast(refreshed ? 'Payment already confirmed. Credits are available.' : 'Payment already confirmed. Credits may take a few seconds to appear.');
         } else if (refreshed) {
@@ -298,6 +318,14 @@
 
   if (auth && typeof bootstrap.onAuthStateReady === 'function') {
     bootstrap.onAuthStateReady(auth, function () {
+      var nextUid = getCurrentUser() ? getCurrentUser().uid : null;
+      if (nextUid !== accountUid) {
+        accountRevision += 1;
+        accountUid = nextUid;
+        checkoutBusy = false;
+        if (toast) toast.classList.remove('visible');
+        setHistoryEmpty(nextUid ? 'Loading purchase history...' : 'Sign in to view purchase history.');
+      }
       authStateResolved = true;
       updateSignedOutUi();
       checkPaymentResult();

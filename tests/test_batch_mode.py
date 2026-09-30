@@ -88,7 +88,7 @@ def _patch_batch_quota_guards(monkeypatch, *, reserve_daily=(True, 0)):
     monkeypatch.setattr(rate_limit_quotas, 'release_daily_upload_bytes', lambda _uid, _bytes, runtime=None: True)
 
 
-def test_batch_create_requires_minimum_two_rows(client, monkeypatch):
+def test_batch_create_requires_minimum_two_rows(allow_account_writes, client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     monkeypatch.setattr(core, 'client', None)
 
@@ -106,7 +106,7 @@ def test_batch_create_requires_minimum_two_rows(client, monkeypatch):
     assert 'at least 2 rows' in str(body.get('error', '')).lower()
 
 
-def test_regular_batch_create_enforces_row_cap(client, monkeypatch):
+def test_regular_batch_create_enforces_row_cap(allow_account_writes, client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     monkeypatch.setattr(core, 'BATCH_MAX_ROWS', 2)
 
@@ -127,7 +127,7 @@ def test_regular_batch_create_enforces_row_cap(client, monkeypatch):
     assert 'supports up to 2 rows' in response.get_json()['error']
 
 
-def test_batch_create_rejects_unsafe_row_ids_before_charging(client, monkeypatch):
+def test_batch_create_rejects_unsafe_row_ids_before_charging(allow_account_writes, client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     monkeypatch.setattr(core, 'client', object())
     monkeypatch.setattr(
@@ -162,7 +162,7 @@ def test_batch_create_rejects_unsafe_row_ids_before_charging(client, monkeypatch
     assert charged == []
 
 
-def test_batch_create_rejects_duplicate_row_ids_before_charging(client, monkeypatch):
+def test_batch_create_rejects_duplicate_row_ids_before_charging(allow_account_writes, client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     monkeypatch.setattr(core, 'client', object())
     monkeypatch.setattr(
@@ -198,7 +198,7 @@ def test_batch_create_rejects_duplicate_row_ids_before_charging(client, monkeypa
     assert charged == []
 
 
-def test_batch_create_requires_batch_title(client, monkeypatch):
+def test_batch_create_requires_batch_title(allow_account_writes, client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     monkeypatch.setattr(core, 'client', None)
     monkeypatch.setattr(upload_import_audio, 'cleanup_expired_audio_import_tokens', lambda runtime=None: None)
@@ -240,7 +240,7 @@ def test_batch_create_requires_batch_title(client, monkeypatch):
     assert str(body.get('error', '')).strip() == 'Batch title is required.'
 
 
-def test_batch_submit_failure_after_persistence_marks_rows_refunded(client, monkeypatch):
+def test_batch_submit_failure_after_persistence_marks_rows_refunded(allow_account_writes, client, monkeypatch):
     _clear_batch_memory()
     _patch_batch_auth(monkeypatch)
     _patch_batch_refunds(monkeypatch)
@@ -291,7 +291,7 @@ def test_batch_submit_failure_after_persistence_marks_rows_refunded(client, monk
     assert all(row['credit_refunded'] is True for row in rows)
 
 
-def test_batch_create_deduplicates_client_submission_id(client, monkeypatch):
+def test_batch_create_deduplicates_client_submission_id(allow_account_writes, client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     monkeypatch.setattr(core, 'client', None)
     monkeypatch.setattr(
@@ -366,7 +366,7 @@ def test_submission_resource_ledger_rolls_back_once():
     assert calls == ['files', 'credits']
 
 
-def test_batch_create_slides_only_contract(client, monkeypatch):
+def test_batch_create_slides_only_contract(allow_account_writes, client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     _patch_batch_quota_guards(monkeypatch)
     monkeypatch.setattr(core, 'client', object())
@@ -437,7 +437,7 @@ def test_batch_create_slides_only_contract(client, monkeypatch):
     assert getattr(submitted_runtime, 'core', submitted_runtime) is core
 
 
-def test_instant_batch_create_accepts_all_modes_with_instant_metadata(client, monkeypatch):
+def test_instant_batch_create_accepts_all_modes_with_instant_metadata(allow_account_writes, client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     _patch_batch_quota_guards(monkeypatch)
     monkeypatch.setattr(core, 'client', object())
@@ -558,7 +558,7 @@ def test_instant_batch_create_accepts_all_modes_with_instant_metadata(client, mo
     assert all(item['func'] is instant_batch_orchestrator.process_instant_batch_job for item in submitted)
 
 
-def test_instant_batch_rejects_more_than_twenty_rows(client, monkeypatch):
+def test_instant_batch_rejects_more_than_twenty_rows(allow_account_writes, client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     rows = [{'row_id': f'row-{idx}'} for idx in range(21)]
 
@@ -572,7 +572,7 @@ def test_instant_batch_rejects_more_than_twenty_rows(client, monkeypatch):
     assert 'up to 20 rows' in response.get_json().get('error', '')
 
 
-def test_batch_create_lecture_notes_preserves_row_study_override_contract(client, monkeypatch):
+def test_batch_create_lecture_notes_preserves_row_study_override_contract(allow_account_writes, client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     _patch_batch_quota_guards(monkeypatch)
     monkeypatch.setattr(core, 'client', object())
@@ -651,7 +651,7 @@ def test_batch_create_lecture_notes_preserves_row_study_override_contract(client
     assert capture.rows[1].get('question_selection') == '10'
 
 
-def test_batch_create_interview_accepts_empty_extras_by_default(client, monkeypatch):
+def test_batch_create_interview_accepts_empty_extras_by_default(allow_account_writes, client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     _patch_batch_quota_guards(monkeypatch)
     monkeypatch.setattr(core, 'client', object())
@@ -714,7 +714,7 @@ def test_batch_create_interview_accepts_empty_extras_by_default(client, monkeypa
     assert capture.rows[1].get('interview_features_cost') == 0
 
 
-def test_batch_create_audio_transcription_uses_interview_credits_without_study_tools(client, monkeypatch):
+def test_batch_create_audio_transcription_uses_interview_credits_without_study_tools(allow_account_writes, client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     _patch_batch_quota_guards(monkeypatch)
     monkeypatch.setattr(core, 'client', object())
@@ -797,7 +797,7 @@ def test_batch_create_audio_transcription_uses_interview_credits_without_study_t
     assert capture.rows[1].get('study_features') == 'none'
 
 
-def test_batch_create_text_combine_accepts_mixed_txt_inputs_with_lecture_credits(client, monkeypatch):
+def test_batch_create_text_combine_accepts_mixed_txt_inputs_with_lecture_credits(allow_account_writes, client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     _patch_batch_quota_guards(monkeypatch)
     monkeypatch.setattr(core, 'client', object())
@@ -881,7 +881,7 @@ def test_batch_create_text_combine_accepts_mixed_txt_inputs_with_lecture_credits
     assert capture.rows[0].get('credit_deducted') == 'lecture_credits_standard'
 
 
-def test_batch_create_text_combine_rejects_missing_txt_inputs(client, monkeypatch):
+def test_batch_create_text_combine_rejects_missing_txt_inputs(allow_account_writes, client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     _patch_batch_quota_guards(monkeypatch)
     monkeypatch.setattr(core, 'client', object())
@@ -930,7 +930,7 @@ def test_batch_create_text_combine_rejects_missing_txt_inputs(client, monkeypatc
         (b'a' * (core.MAX_BATCH_TEXT_UPLOAD_BYTES + 1), 'slides.txt', 'exceeds the 2 MB limit'),
     ],
 )
-def test_batch_create_text_combine_rejects_invalid_txt_uploads(client, monkeypatch, file_bytes, filename, expected_error):
+def test_batch_create_text_combine_rejects_invalid_txt_uploads(allow_account_writes, client, monkeypatch, file_bytes, filename, expected_error):
     _patch_batch_auth(monkeypatch)
     _patch_batch_quota_guards(monkeypatch)
     monkeypatch.setattr(core, 'client', object())
@@ -968,7 +968,7 @@ def test_batch_create_text_combine_rejects_invalid_txt_uploads(client, monkeypat
     assert expected_error in response.get_json()['error']
 
 
-def test_batch_direct_url_does_not_download_when_credit_preflight_fails(client, monkeypatch):
+def test_batch_direct_url_does_not_download_when_credit_preflight_fails(allow_account_writes, client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     _patch_batch_quota_guards(monkeypatch)
     monkeypatch.setattr(core, 'client', object())
@@ -1015,7 +1015,7 @@ def test_batch_direct_url_does_not_download_when_credit_preflight_fails(client, 
     assert 'not enough lecture credits' in response.get_json()['error'].lower()
 
 
-def test_batch_direct_url_does_not_download_when_daily_quota_fails(client, monkeypatch):
+def test_batch_direct_url_does_not_download_when_daily_quota_fails(allow_account_writes, client, monkeypatch):
     _patch_batch_auth(monkeypatch)
     _patch_batch_quota_guards(monkeypatch, reserve_daily=(False, 123))
     monkeypatch.setattr(core, 'client', object())
@@ -1063,7 +1063,7 @@ def test_batch_direct_url_does_not_download_when_daily_quota_fails(client, monke
     assert 'daily upload quota' in response.get_json()['error'].lower()
 
 
-def test_batch_direct_url_redacts_source_url_and_defers_download(client, monkeypatch, tmp_path):
+def test_batch_direct_url_redacts_source_url_and_defers_download(allow_account_writes, client, monkeypatch, tmp_path):
     _patch_batch_auth(monkeypatch)
     _patch_batch_quota_guards(monkeypatch)
     monkeypatch.setattr(core, 'client', object())
@@ -1590,7 +1590,7 @@ def test_process_batch_text_combine_runs_prompt3_variants(monkeypatch):
     assert row_one.get('study_features') == 'none'
 
 
-def test_batch_queue_full_cleans_consumed_import_token_files(client, monkeypatch, tmp_path):
+def test_batch_queue_full_cleans_consumed_import_token_files(allow_account_writes, client, monkeypatch, tmp_path):
     _clear_batch_memory()
     _patch_batch_auth(monkeypatch)
     _patch_batch_quota_guards(monkeypatch)

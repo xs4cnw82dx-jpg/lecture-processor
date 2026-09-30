@@ -68,12 +68,19 @@ def require_recent_allowed_user(
     *,
     max_age_seconds=None,
     unauthorized_error='Unauthorized',
+    allow_deleting_account=False,
 ):
     """Require an allowlisted user with a live, recently authenticated token."""
+    token_options = {'check_revoked': True}
+    if allow_deleting_account:
+        token_options['allow_deleting_account'] = True
     try:
-        decoded_token = app_ctx.verify_firebase_token(request, check_revoked=True)
+        decoded_token = app_ctx.verify_firebase_token(request, **token_options)
     except TypeError:
-        decoded_token = app_ctx.verify_firebase_token(request)
+        try:
+            decoded_token = app_ctx.verify_firebase_token(request, check_revoked=True)
+        except TypeError:
+            decoded_token = app_ctx.verify_firebase_token(request)
     if not decoded_token:
         if auth_service.get_request_auth_error(request) == auth_service.EMAIL_NOT_VERIFIED_AUTH_ERROR:
             response, status = _email_not_verified_response(app_ctx)

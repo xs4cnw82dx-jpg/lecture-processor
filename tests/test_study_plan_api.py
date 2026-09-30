@@ -395,3 +395,109 @@ def test_private_calendar_feed_hash_rotation_revocation_and_ics(client, study_pl
     assert revoked.status_code == 200
     assert client.get(new_url).status_code == 410
     assert client.get('/calendar/feed/not-a-valid-token.ics').status_code == 404
+
+
+@pytest.mark.parametrize('concurrent_change', ['revoke', 'rotate', 'delete'])
+def test_calendar_refresh_cannot_restore_stale_access_settings(client, study_plan_runtime, monkeypatch, concurrent_change):
+    import hashlib
+    from lecture_processor.services import study_plan_service
+
+    created = client.post('/api/study-plan/calendar-feeds', json={}, headers=_headers()).get_json()
+    feed_id = created['feed']['feed_id']
+    old_url = created['subscription_url'].replace('https://lectureprocessor.test', '')
+    original_preferences = study_plan_service._preferences
+    changed = False
+
+    def change_after_feed_authentication(app_ctx, uid):
+        nonlocal changed
+        if not changed:
+            changed = True
+            if concurrent_change == 'delete':
+                core.planner_repo._CALENDAR_FEED_STORE.pop(feed_id)
+            elif concurrent_change == 'revoke':
+                core.planner_repo.update_calendar_feed(None, feed_id, {'revoked_at': 1234})
+            else:
+                core.planner_repo.update_calendar_feed(None, feed_id, {
+                    'secret_hash': hashlib.sha256(b'new-secret').hexdigest(),
+                    'rotated_at': 1234,
+                    'last_accessed_at': 0,
+                })
+        return original_preferences(app_ctx, uid)
+
+    monkeypatch.setattr(study_plan_service, '_preferences', change_after_feed_authentication)
+    # The already-authorized request may complete, but its access timestamp must
+    # not reverse a concurrent change or recreate an account-deleted feed.
+    assert client.get(old_url).status_code == 200
+    current = core.planner_repo.get_calendar_feed(None, feed_id)
+    if concurrent_change == 'delete':
+        assert current.exists is False
+        assert client.get(old_url).status_code == 404
+    elif concurrent_change == 'revoke':
+        assert current.to_dict()['revoked_at'] == 1234
+        assert client.get(old_url).status_code == 410
+    else:
+        assert current.to_dict()['secret_hash'] == hashlib.sha256(b'new-secret').hexdigest()
+        assert current.to_dict()['rotated_at'] == 1234
+        assert client.get(old_url).status_code == 404
+        assert client.get(f'/calendar/feed/{feed_id}.new-secret.ics').status_code == 200
+
+
+@pytest.mark.parametrize('operation,concurrent_change', [
+    ('rotate', 'revoke'), ('revoke', 'rotate'), ('rotate', 'delete'), ('revoke', 'delete'),
+])
+def test_calendar_owner_changes_do_not_rewrite_concurrent_security_fields(client, study_plan_runtime, monkeypatch, operation, concurrent_change):
+    import hashlib
+
+    created = client.post('/api/study-plan/calendar-feeds', json={}, headers=_headers()).get_json()
+    feed_id = created['feed']['feed_id']
+    original_get = core.planner_repo.get_calendar_feed
+    changed = False
+
+    def change_after_owner_read(db, requested_id):
+        nonlocal changed
+        snapshot = original_get(db, requested_id)
+        if not changed and requested_id == feed_id:
+            changed = True
+            if concurrent_change == 'delete':
+                core.planner_repo._CALENDAR_FEED_STORE.pop(feed_id)
+            elif concurrent_change == 'revoke':
+                core.planner_repo.update_calendar_feed(None, feed_id, {'revoked_at': 1234})
+            else:
+                core.planner_repo.update_calendar_feed(None, feed_id, {
+                    'secret_hash': hashlib.sha256(b'new-secret').hexdigest(), 'rotated_at': 1234,
+                })
+        return snapshot
+
+    monkeypatch.setattr(core.planner_repo, 'get_calendar_feed', change_after_owner_read)
+    if operation == 'rotate':
+        response = client.post(f'/api/study-plan/calendar-feeds/{feed_id}/rotate', json={}, headers=_headers())
+    else:
+        response = client.delete(f'/api/study-plan/calendar-feeds/{feed_id}', headers=_headers())
+    current = original_get(None, feed_id)
+    if concurrent_change == 'delete':
+        assert response.status_code == 404
+        assert current.exists is False
+    else:
+        assert response.status_code == 200
+        assert current.to_dict()['revoked_at'] > 0
+        if concurrent_change == 'rotate':
+            assert current.to_dict()['secret_hash'] == hashlib.sha256(b'new-secret').hexdigest()
+            assert current.to_dict()['rotated_at'] == 1234
+        else:
+            new_url = response.get_json()['subscription_url'].replace('https://lectureprocessor.test', '')
+            assert client.get(new_url).status_code == 410
+
+
+def test_calendar_field_update_does_not_create_missing_firestore_document(monkeypatch):
+    from types import SimpleNamespace
+    from google.api_core.exceptions import NotFound
+
+    writes = []
+
+    def update(fields):
+        writes.append(fields)
+        raise NotFound('Removed by account deletion')
+
+    monkeypatch.setattr(core.planner_repo, 'calendar_feed_doc_ref', lambda _db, _id: SimpleNamespace(update=update))
+    assert core.planner_repo.update_calendar_feed(object(), 'feed_test', {'last_accessed_at': 1234}) is False
+    assert writes == [{'last_accessed_at': 1234}]

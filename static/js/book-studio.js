@@ -28,7 +28,7 @@
     saving = null,
     localWrites = 0,
     saveTimer,
-    localTimer,
+    pagesTimer,
     toastTimer,
     leaseToken = "",
     undoStack = [],
@@ -71,7 +71,92 @@
   if (tabChannel) tabChannel.postMessage({ type: "probe", session, instance });
   sessionStorage.setItem("book-tab-session", session);
   let accessToken = "",
-    storedSelection = null;
+    storedSelection = null,
+    accountGeneration = 0,
+    localSaveError = "";
+  const storageScope = () => user?.uid || "guest:" + session;
+  const accountChangedError = () => Object.assign(new Error("Your account changed. Open the book again in the right account."), { code: "account" });
+  function assertAccount(generation) {
+    if (generation !== accountGeneration) throw accountChangedError();
+  }
+  function scopeDraft(book, uid = user?.uid) {
+    if (uid && !D.accountUid(book)) book.cacheAccountUid = uid;
+    return book;
+  }
+  const localSaves = D.createSaveQueue({
+    key: ({ book }) => D.accountUid(book) + ":" + book.id,
+    snapshot: ({ book, count }) => ({ book: M.clone(book), count }),
+    write: ({ book }) => D.putBook(book),
+    onState: ({ busy }) => { localWrites = Number(busy); updateStatus(); },
+    onSaved: ({ book, count }) => {
+      if (b?.id !== book.id || D.accountUid(b) !== D.accountUid(book)) return;
+      localSaveError = "";
+      if (b.local && changeCount === count) dirty = false;
+    },
+    onError: (error) => {
+      localSaveError = error.message;
+      if (b) notify(error.message, true);
+    },
+  });
+  function queueLocalSave(book = b, count = changeCount) {
+    if (book) localSaves.enqueue({ book, count });
+  }
+  function clearWorkspace() {
+    finishText();
+    clearTimeout(saveTimer);
+    clearTimeout(pagesTimer);
+    cancelAnimationFrame(stageFrame);
+    stageFrame = 0;
+    window.BookColorPicker?.close();
+    closeDialog();
+    b = null;
+    leaseToken = accessToken = active = "";
+    cloudPhase = "";
+    cloudBlocked = false;
+    selected = [];
+    undoStack = [];
+    redoStack = [];
+    savedPages = {};
+    storedSelection = selectionRange = null;
+    furnitureSelection = "";
+    dirty = false;
+    saveError = localSaveError = "";
+    localBooks = [];
+    cloudBooks = [];
+    Object.values(renderedAssets).forEach((asset) => URL.revokeObjectURL(asset.src));
+    Object.keys(renderedAssets).forEach((id) => delete renderedAssets[id]);
+    Object.keys(coverCache).forEach((id) => delete coverCache[id]);
+    ["page-list", "book-spread", "inspector", "dialog-content", "upload-list", "book-grid", "selection-toolbar"].forEach((id) => $(id).replaceChildren());
+    $("book-title").value = "";
+    document.title = "Book Studio · Lecture Processor";
+    $("workspace").hidden = $("title-wrap").hidden = true;
+    $("editor-status").textContent = "";
+    ["edit-turn", "finish-turn", "reading", "share", "export", "retry-cloud-save"].forEach((id) => { $(id).hidden = true; });
+  }
+  async function retirePrivateBook(error) {
+    const previous = b;
+    let recovery;
+    if (previous && (dirty || previous.pending)) {
+      // Recovery remains tied to the viewer who made these edits, including
+      // collaborators whose uid differs from the book owner's uid.
+      previous.cacheAccountUid ||= storageScope();
+      queueLocalSave(previous);
+      if (!previous.local) recovery = {
+        ...M.clone(previous), id: "local-recovery-" + M.id(),
+        title: previous.title + " (recovered draft)", local: true, pending: false, role: "owner",
+      };
+    }
+    clearWorkspace();
+    if (previous) sessionStorage.removeItem("book-lease-" + previous.id);
+    try {
+      await localSaves.flush();
+      if (recovery) {
+        await D.putBook(recovery);
+        await D.deleteBook(previous.id);
+      }
+    } catch (_) { /* The original draft is retained in the queue for retry. */ }
+    if (error) showStartupError(error);
+  }
   const busyButtons = new WeakSet();
   const action = (fn) => async (event) => {
     const button = event?.target?.closest("button");
@@ -337,7 +422,7 @@
       selectionRange = null;
       changed(false);
       if ($("object-text")) $("object-text").value = editor.value;
-      renderPages();
+      schedulePages();
     });
     const range = () => {
       selectionRange = {
@@ -542,16 +627,18 @@
   }
   async function api(url, options = {}, blob = false, accountUid = "") {
     const headers = { "X-Book-Session": session, ...options.headers };
-    const requestUser = user;
+    const requestUser = user, generation = accountGeneration;
     if (accountUid && requestUser?.uid !== accountUid)
       throw new Error("Sign in with the same account to continue saving this draft.");
     if (requestUser) headers.Authorization = "Bearer " + (await requestUser.getIdToken());
+    assertAccount(generation);
     if (accountUid && user?.uid !== accountUid)
       throw new Error("Cloud saving paused because your account changed.");
     if (accessToken && !accountUid) headers["X-Book-Access"] = accessToken;
     if (options.body && !(options.body instanceof FormData))
       headers["Content-Type"] = "application/json";
     const r = await fetch(url, { ...options, headers });
+    assertAccount(generation);
     if (!r.ok) {
       let p;
       try {
@@ -559,25 +646,46 @@
       } catch (_) {
         p = { error: "Could not reach the server. Your local draft is safe." };
       }
+      assertAccount(generation);
       const e = new Error(p.error || "Please try again.");
       e.status = r.status;
+      const path = url.split("?")[0], current = b;
+      if ([401, 403, 404].includes(r.status) && current && !current.local) {
+        const bookPath = "/api/books/" + current.id;
+        if (path === bookPath || path === bookPath + "/revision") {
+          accountGeneration++;
+          await retirePrivateBook(e);
+        } else if (path.startsWith(bookPath + "/") && r.status !== 404) {
+          // Losing an editing capability does not necessarily revoke viewing.
+          // Missing images/versions are also recoverable without closing a book.
+          try { await api(bookPath + "/revision"); } catch (_) { /* A denied revision request clears the private workspace. */ }
+        }
+      }
       throw e;
     }
-    return blob ? r.blob() : r.json();
+    const result = await (blob ? r.blob() : r.json());
+    assertAccount(generation);
+    return result;
   }
   async function loadLibrary() {
-    localBooks = await D.listBooks();
+    const generation = accountGeneration, uid = user?.uid;
+    const stored = await D.listBooks(storageScope());
+    assertAccount(generation);
+    localBooks = stored;
     cloudBooks = [];
     if (user) {
       try {
         const result = await api("/api/books");
+        assertAccount(generation);
         cloudBooks = result.books;
         cloudAvailable = result.storage_available;
-        const pending = await Promise.all(localBooks.filter((draft) => draft.local && draft.cloudAccountUid === user.uid).map((draft) => D.getSync(draft.id)));
+        const pending = await Promise.all(localBooks.filter((draft) => draft.local && draft.cloudAccountUid === uid).map((draft) => D.getSync(draft.id)));
+        assertAccount(generation);
         const uploadingIds = new Set(pending.filter((operation) => operation && !operation.complete).map((operation) => operation.remoteId));
         const uploadingKeys = new Set(pending.filter((operation) => operation && !operation.complete).map((operation) => operation.key));
         cloudBooks = cloudBooks.filter((book) => !uploadingIds.has(book.id) && !uploadingKeys.has(book.creation_key));
       } catch (e) {
+        if (e.code === "account") return;
         notify(e.message, true);
       }
     }
@@ -585,6 +693,7 @@
     await loadCovers();
   }
   async function loadCovers() {
+    const generation = accountGeneration;
     for (const entry of cloudBooks.filter((x) => !x.deleted).slice(0, 30)) {
       if (b) return;
       try {
@@ -595,10 +704,12 @@
         const result = cached
           ? { pages: [cached.pages[0]], assets: cached.assets }
           : await api("/api/books/" + entry.id + "?cover=1");
+        assertAccount(generation);
         coverCache[entry.id] = result.pages[0];
         for (const a of result.assets) {
           if (renderedAssets[a.id]) continue;
           const stored = await D.getAsset(a.id);
+          assertAccount(generation);
           let blob = stored && stored.blob;
           if (!blob && a.ready) {
             blob = await api(
@@ -607,6 +718,7 @@
               true,
             );
             await D.putAsset({ ...a, blob });
+            assertAccount(generation);
           }
           if (blob)
             renderedAssets[a.id] = {
@@ -617,6 +729,7 @@
         }
         renderLibrary();
       } catch (_) {
+        if (generation !== accountGeneration) return;
         /* The bookshelf remains usable if a cover cannot load. */
       }
     }
@@ -694,8 +807,9 @@
     );
   }
   async function create(template) {
-    const next = M.book(template);
+    const generation = accountGeneration, next = scopeDraft(M.book(template));
     await D.putBook(next);
+    assertAccount(generation);
     closeDialog();
     await openBook(next.id);
   }
@@ -710,20 +824,31 @@
   }
   async function openBook(id) {
     if (opening) return;
+    const generation = accountGeneration;
+    let switched = false;
     opening = true;
     $("book-loading").hidden = false;
     $("library").hidden = true;
     status("Opening book…");
     try {
-      if (b && dirty) await persist();
+      if (b) await persist();
       if (cloudPromotion) await cloudPromotion.catch(() => {});
+      assertAccount(generation);
       if (b && !b.local && leaseToken) await release();
-      b = await D.getBook(id);
+      assertAccount(generation);
+      const cached = await D.getBook(id, storageScope());
+      assertAccount(generation);
+      clearWorkspace();
+      switched = true;
+      b = cached;
       if (!b && id.startsWith("local-")) {
         const operation = await D.getSync(id);
+        assertAccount(generation);
         if (operation?.complete && operation.uid === user?.uid) {
           id = operation.remoteId;
-          b = await D.getBook(id);
+          const promoted = await D.getBook(id, storageScope());
+          assertAccount(generation);
+          b = promoted;
         }
       }
       leaseToken = "";
@@ -740,6 +865,7 @@
       if (!id.startsWith("local-")) {
         const local = b;
         const result = await api("/api/books/" + id);
+        assertAccount(generation);
         b = {
           ...result.book,
           pages: result.book.page_ids
@@ -750,6 +876,7 @@
             .filter(Boolean),
           assets: result.assets,
           local: false,
+          cacheAccountUid: storageScope(),
         };
         if (local && local.pending) {
           await D.putBook({
@@ -759,7 +886,9 @@
             local: true,
             pending: false,
             role: "owner",
+            cacheAccountUid: D.accountUid(local) || storageScope(),
           });
+          assertAccount(generation);
           notify(
             "Your unsaved changes are safe in a recovered draft on your bookshelf.",
           );
@@ -785,32 +914,46 @@
       );
       saveError = "";
       await loadAssets();
+      assertAccount(generation);
       renderAll();
       if (!b.local && !b.deleted && (b.role === "owner" || b.role === "edit")) {
         const resume = sessionStorage.getItem("book-lease-" + id);
         try {
           await acquire(false, resume);
-        } catch (_) {
+        } catch (error) {
+          if (generation !== accountGeneration) throw error;
           notify(
             "Opened for viewing. You can start editing when the book is available.",
           );
         }
       }
       if (!b.local) await D.putBook(b);
+      assertAccount(generation);
       updateStatus();
+    } catch (error) {
+      if (generation === accountGeneration && (switched || !b)) {
+        clearWorkspace();
+        showStartupError(error);
+      }
+      throw error;
     } finally {
       opening = false;
-      $("book-loading").hidden = true;
-      if (b) updateStatus();
-      else $("library").hidden = false;
+      if (generation === accountGeneration) {
+        $("book-loading").hidden = true;
+        if (b) updateStatus();
+        else $("library").hidden = false;
+      }
     }
     if (b?.local && user && !b.id.startsWith("local-recovery-"))
       ensureCloudBook().catch(() => {});
   }
   async function loadAssets(original = false) {
-    const current = b;
+    const current = b, generation = accountGeneration;
+    if (!current) return;
     for (const a of current.assets) {
       const stored = await D.getAsset(a.id);
+      assertAccount(generation);
+      if (b !== current) return;
       let blob = stored && stored.blob;
       if (!blob && !current.local && a.ready) {
         try {
@@ -824,7 +967,9 @@
             true,
           );
           await D.putAsset({ ...a, blob });
+          assertAccount(generation);
         } catch (e) {
+          if (b !== current || e.code === "account") throw e;
           notify(e.message, true);
           continue;
         }
@@ -839,7 +984,8 @@
     }
   }
   async function acquire(takeover = false, resume = "") {
-    if (b.local) return;
+    const current = b;
+    if (!current || current.local) return;
     const result = await api("/api/books/" + b.id + "/lease", {
       method: "POST",
       body: JSON.stringify({
@@ -848,9 +994,11 @@
         lease_token: resume || leaseToken,
       }),
     });
+    if (b !== current) return;
     leaseToken = result.lease_token;
     sessionStorage.setItem("book-lease-" + b.id, leaseToken);
     const remote = await api("/api/books/" + b.id + "/revision");
+    if (b !== current) return;
     if (remote.book.revision !== b.revision) {
       if (dirty) {
         await D.putBook({
@@ -860,6 +1008,7 @@
           local: true,
           pending: false,
           role: "owner",
+          cacheAccountUid: D.accountUid(current) || storageScope(),
         });
         notify(
           "A newer version is open. Your unsaved changes are in a recovered draft.",
@@ -873,11 +1022,14 @@
   }
   async function release() {
     if (!b || b.local || !leaseToken) return;
+    const current = b;
     await persist();
+    if (b !== current) return;
     await api("/api/books/" + b.id + "/lease", {
       method: "POST",
       body: JSON.stringify({ action: "release", lease_token: leaseToken }),
     });
+    if (b !== current) return;
     leaseToken = "";
     sessionStorage.removeItem("book-lease-" + b.id);
     updateStatus();
@@ -912,6 +1064,8 @@
         ? "Opening book…"
         : cloudPromotion || cloudPhase === "saving" || cloudPhase === "finishing"
           ? "Saving to your account…"
+        : localSaveError
+          ? "Needs attention · Changes not saved on this device"
         : saveError
           ? b.local && b.cloudAccountUid
             ? navigator.onLine ? "Couldn’t save to cloud · Draft safe on this device" : "Offline · Saved on this device"
@@ -919,9 +1073,7 @@
           : saving || localWrites
             ? "Saving…"
             : dirty
-              ? b.local
-                ? "Saved on this device"
-                : "Saving…"
+              ? "Saving…"
               : b.local
                 ? "Saved on this device"
                 : "Saved to cloud",
@@ -962,24 +1114,13 @@
     return true;
   }
   function changed(render = true) {
+    if (!b) return;
     syncLinkedItems();
     b.updated_at = Date.now() / 1000;
     dirty = true;
     b.pending = !b.local;
     changeCount++;
-    clearTimeout(localTimer);
-    const savingBook = b;
-    localWrites++;
-    D.putBook(savingBook)
-      .catch((e) => {
-        saveError = e.message;
-        status("Needs attention");
-        notify(e.message, true);
-      })
-      .finally(() => {
-        localWrites--;
-        if (b === savingBook) updateStatus();
-      });
+    queueLocalSave();
     clearTimeout(saveTimer);
     if (!b.local)
       saveTimer = setTimeout(
@@ -992,16 +1133,19 @@
   async function persist() {
     if (!b) return;
     if (b.local && cloudBlocked) return;
+    clearTimeout(saveTimer);
+    const current = b, generation = accountGeneration;
+    queueLocalSave(current);
+    await localSaves.flush();
+    assertAccount(generation);
+    if (b !== current) return;
     if (saving) {
       await saving;
-      if (dirty && leaseToken) return persist();
+      if (b === current && dirty && leaseToken) return persist();
       return;
     }
-    const current = b;
-    await D.putBook(current);
     if (cloudPromotion) return;
     if (current.local) {
-      dirty = false;
       updateStatus();
       return;
     }
@@ -1033,9 +1177,11 @@
           dirty = false;
           current.pending = false;
         }
-        await D.putBook(current);
+        queueLocalSave(current);
+        await localSaves.flush();
         updateStatus();
       } catch (e) {
+        if (b !== current || generation !== accountGeneration) throw e;
         if (e.status === 409 || e.status === 403) {
           leaseToken = "";
           sessionStorage.removeItem("book-lease-" + current.id);
@@ -1060,6 +1206,8 @@
     updateStatus();
   }
   function renderPages() {
+    clearTimeout(pagesTimer);
+    if (!b) return;
     const spreads = syncTurn(), visible = spreads[turn] || [], list = $("page-list");
     const existing = new Map([...list.children].map((node) => [node.dataset.page, node]));
     b.pages.forEach((p, i) => {
@@ -1091,6 +1239,10 @@
         else if (box.bottom > bounds.bottom) list.scrollTop += box.bottom - bounds.bottom;
       }
     }
+  }
+  function schedulePages() {
+    clearTimeout(pagesTimer);
+    pagesTimer = setTimeout(renderPages, 250);
   }
   const layoutRules = new Map();
   function layoutRule(selector, properties) {
@@ -2121,7 +2273,7 @@
     }
     changed(false);
     renderStage();
-    renderPages();
+    schedulePages();
     if (input.tagName === "SELECT" || input.type === "checkbox")
       renderInspector();
   }
@@ -2799,7 +2951,7 @@
       notify("Start an editing turn before adding images.");
       return;
     }
-    const current = b,
+    const current = b, generation = accountGeneration,
       p = current.pages.find((p) => p.id === pid) || page();
     if (!checkpoint()) return;
     uploads++;
@@ -2812,6 +2964,8 @@
         $("upload-list").appendChild(progress);
         try {
           const dims = await imageInfo(file);
+          assertAccount(generation);
+          if (b !== current) return;
           if (
             current.assets.reduce((n, a) => n + a.size, 0) + file.size >
             25 * 1024 * 1024
@@ -2827,6 +2981,8 @@
               local: true,
             };
           await D.putAsset({ ...asset, blob: file });
+          assertAccount(generation);
+          if (b !== current) return;
           current.assets.push(asset);
           renderedAssets[aid] = {
             src: URL.createObjectURL(file),
@@ -2894,13 +3050,14 @@
       }
     } finally {
       uploads--;
-      changed();
+      if (b === current) changed();
     }
   }
   async function uploadOne(asset, file, current) {
     // Flush only after remapping all local references, so no local asset IDs reach cloud pages.
     clearTimeout(saveTimer);
     if (saving) await saving;
+    if (b !== current) throw accountChangedError();
     if (!leaseToken)
       throw new Error("Start a new editing turn, then retry the image upload.");
     const form = new FormData();
@@ -2913,7 +3070,9 @@
         body: form,
       }),
       remote = result.asset;
+    if (b !== current) throw accountChangedError();
     await D.putAsset({ ...remote, blob: file });
+    if (b !== current) throw accountChangedError();
     renderedAssets[remote.id] = renderedAssets[asset.id];
     current.pages
       .concat(
@@ -2946,31 +3105,36 @@
     request: (url, options, uid) => api(url, options, false, uid),
   });
   async function ensureCloudBook(allowRecovery = false) {
-    const current = b, uid = user?.uid;
+    const current = b, uid = user?.uid, generation = accountGeneration;
     if (!current?.local || !uid || current.deleted) return;
     if (current.id.startsWith("local-recovery-") && !allowRecovery) return;
     if (cloudPromotion) return cloudPromotion;
-    if (current.cloudAccountUid && current.cloudAccountUid !== uid) {
+    if (!D.canReadBook(current, storageScope())) {
       cloudBlocked = true;
       saveError = "Sign in with the account that first saved this draft to continue.";
       updateStatus();
       return;
     }
     current.cloudAccountUid = uid;
+    current.cacheAccountUid = uid;
     cloudBlocked = false;
     cloudPhase = "saving";
     saveError = "";
     cloudPromotion = (async () => {
       try {
         const result = await cloudSync.sync(current, uid, {
-          isCurrent: () => b === current,
+          isCurrent: () => b === current && generation === accountGeneration,
           isBusy: () => uploads > 0,
-          onClaim: () => D.putBook(current),
+          onClaim: async () => { queueLocalSave(current); await localSaves.flush(); },
+          beforeComplete: () => localSaves.flush(),
           onState: (phase) => {
+            if (b !== current || generation !== accountGeneration) return;
             cloudPhase = phase;
             updateStatus();
           },
         });
+        assertAccount(generation);
+        if (b !== current) return;
         if (result.existingId) {
           // A second tab completed this promotion. Keep any separate edits as recovery.
           if (dirty) {
@@ -2978,6 +3142,7 @@
               ...M.clone(current), id: "local-recovery-" + M.id(),
               title: current.title + " (recovered draft)", pending: false,
             };
+            recovery.cacheAccountUid = uid;
             delete recovery.cloudAccountUid;
             await D.putBook(recovery);
             notify("This book was saved in another tab. Your separate edits are safe in a recovered draft.");
@@ -3023,7 +3188,7 @@
         throw e;
       } finally {
         cloudPromotion = null;
-        if (cloudPhase !== "error") cloudPhase = "";
+        if (b === current && cloudPhase !== "error") cloudPhase = "";
         if (b === current) updateStatus();
       }
     })();
@@ -3204,7 +3369,10 @@
         : "";
   }
   async function doExport() {
-    if (!b.local) await persist();
+    const generation = accountGeneration;
+    await persist();
+    assertAccount(generation);
+    if (!b) throw accountChangedError();
     if (dirty && !b.local)
       throw new Error(
         "Save your latest changes before exporting. Start an editing turn or download a backup.",
@@ -3228,9 +3396,11 @@
       await document.fonts.ready;
       const fonts = await fontCss(snapshot.pages, snapshot.pageNumbers),
         assets = {};
+      assertAccount(generation);
       for (const a of snapshot.assets) {
         let stored = await D.getAsset(a.id),
           blob = stored && stored.blob;
+        assertAccount(generation);
         if (!snapshot.local) {
           blob = await api(
             "/api/books/" + snapshot.id + "/assets/" + a.id + "?original=1",
@@ -3251,6 +3421,7 @@
       }
       const previews = [];
       for (let i = 0; i < snapshot.pages.length; i++) {
+        assertAccount(generation);
         $("export-progress").textContent =
           "Preparing page " + (i + 1) + " of " + snapshot.pages.length + "…";
         previews.push(
@@ -3261,6 +3432,7 @@
           }),
         );
       }
+      assertAccount(generation);
       $("export-progress").textContent = "Creating your download…";
       const blob = await api(
         "/api/books/export",
@@ -3295,6 +3467,11 @@
     }
   }
   async function backup() {
+    const generation = accountGeneration;
+    // Backups must remain available as an escape hatch when device storage is full.
+    await localSaves.flush().catch(() => {});
+    assertAccount(generation);
+    if (!b) throw accountChangedError();
     const snapshot = M.clone(b),
       files = {};
     if (!snapshot.local) {
@@ -3306,6 +3483,7 @@
     files["book.json"] = window.BookZip.strToU8(JSON.stringify(snapshot));
     for (const a of snapshot.assets) {
       const stored = await D.getAsset(a.id);
+      assertAccount(generation);
       let blob = stored && stored.blob;
       if (!snapshot.local && a.ready)
         blob = await api(
@@ -3319,6 +3497,7 @@
         );
       files["assets/" + a.id] = new Uint8Array(await blob.arrayBuffer());
     }
+    assertAccount(generation);
     download(
       new Blob([window.BookZip.zipSync(files, { level: 1 })], {
         type: "application/zip",
@@ -3328,6 +3507,8 @@
     notify("Backup downloaded.");
   }
   async function importBackup(file) {
+    const generation = accountGeneration, uid = user?.uid;
+    await localSaves.flush();
     if (file.size > 40 * 1024 * 1024)
       throw new Error("Choose a backup smaller than 40 MB.");
     let uncompressed = 0;
@@ -3373,6 +3554,7 @@
         size: blob.size,
       };
       await D.putAsset({ ...asset, blob });
+      assertAccount(generation);
       next.assets.push(asset);
     }
     next.pages
@@ -3387,7 +3569,9 @@
             o.originalAssetId = mapping[o.originalAssetId] || "";
         }),
       );
+    scopeDraft(next, uid);
     await D.putBook(next);
+    assertAccount(generation);
     await openBook(next.id);
     notify(user ? "Your imported book is saving to your account." : "Backup opened as a new local book.");
   }
@@ -3501,8 +3685,10 @@
   }
   async function reloadRemote() {
     if (!b || b.local) return;
+    const current = b, generation = accountGeneration;
     const result = await api("/api/books/" + b.id + "?since=" + b.revision),
       remote = result.book;
+    if (b !== current) return;
     const pagesById = new Map(
       b.pages.concat(b.deletedPages || [], result.pages).map((p) => [p.id, p]),
     );
@@ -3520,7 +3706,10 @@
     );
     if (!b.pages.some((p) => p.id === active)) active = b.pages[0].id;
     await loadAssets();
+    assertAccount(generation);
+    if (b !== current) return;
     await D.putBook(b);
+    assertAccount(generation);
     renderAll();
   }
   function detailsDialog() {
@@ -3541,6 +3730,9 @@
     );
   }
   async function copyBook(source = b) {
+    const generation = accountGeneration, uid = user?.uid;
+    await localSaves.flush();
+    assertAccount(generation);
     if (!source.local) {
       for (const a of source.assets) {
         if (a.ready) {
@@ -3550,6 +3742,7 @@
             true,
           );
           await D.putAsset({ ...a, blob });
+          assertAccount(generation);
         }
       }
     }
@@ -3569,8 +3762,11 @@
     delete next.cloudAccountUid;
     delete next.cloudSaveError;
     delete next.owner_uid;
+    delete next.cacheAccountUid;
+    scopeDraft(next, uid);
     next.assets = next.assets.map((a) => ({ ...a, local: true }));
     await D.putBook(next);
+    assertAccount(generation);
     closeDialog();
     if (b && !b.local && leaseToken) await release();
     await openBook(next.id);
@@ -3773,6 +3969,13 @@
       if (!target) return;
       const ds = target.dataset,
         id = ds.command || target.id;
+      if (b && target.tagName === "A" && !target.hasAttribute("download") && target.target !== "_blank" && target.origin === window.location.origin) {
+        event.preventDefault();
+        await persist();
+        await localSaves.flush();
+        window.location.assign(target.href);
+        return;
+      }
       if (ds.template) return create(ds.template);
       if (ds.open) {
         closeDialog();
@@ -4436,7 +4639,7 @@
       } else o.steps[+e.target.dataset.step] = e.target.value;
       changed(false);
       renderStage();
-      renderPages();
+      schedulePages();
       return;
     }
     if (e.target.id === "object-text") {
@@ -4445,7 +4648,7 @@
       selectionRange = null;
       changed(false);
       renderStage();
-      renderPages();
+      schedulePages();
     }
     if (e.target.id === "table-content") {
       checkpoint();
@@ -4810,9 +5013,11 @@
   let pollBusy = false;
   setInterval(async () => {
     if (!b || b.local || document.hidden || opening || pollBusy) return;
+    const current = b;
     pollBusy = true;
     try {
       const result = await api("/api/books/" + b.id + "/revision");
+      if (b !== current) return;
       lastRefresh = Date.now();
       const editorChanged =
         JSON.stringify(b.editor) !== JSON.stringify(result.book.editor);
@@ -4830,30 +5035,21 @@
       updateStatus();
       if (editorChanged && !leaseToken) renderInspector();
     } catch (e) {
-      if (e.status === 403) {
-        leaseToken = "";
-        b.role = "";
-        saveError = e.message;
-        notify(
-          "Access to this book has changed. Your unsaved draft remains on this device.",
-          true,
-        );
-        updateStatus();
-        renderInspector();
-        renderSelection();
-      } else status("Updates paused · Reconnecting…");
+      if (b === current && e.code !== "account") status("Updates paused · Reconnecting…");
     } finally {
       pollBusy = false;
     }
   }, 5000);
   setInterval(async () => {
     if (!b || b.local || !leaseToken) return;
+    const current = b;
     try {
       await api("/api/books/" + b.id + "/lease", {
         method: "POST",
         body: JSON.stringify({ action: "renew", lease_token: leaseToken }),
       });
     } catch (e) {
+      if (b !== current) return;
       leaseToken = "";
       sessionStorage.removeItem("book-lease-" + b.id);
       updateStatus();
@@ -4888,8 +5084,8 @@
   });
   window.addEventListener("beforeunload", (e) => {
     if (b) {
-      if (!cloudBlocked) D.putBook(b).catch(() => {});
-      if ((dirty && !b.local) || localWrites || cloudPromotion) {
+      localSaves.flush().catch(() => {});
+      if (dirty || localWrites || localSaveError || cloudPromotion) {
         e.preventDefault();
         e.returnValue = "";
       }
@@ -4897,7 +5093,7 @@
   });
   document.addEventListener("visibilitychange", () => {
     if (document.hidden && b) {
-      if (!cloudBlocked) D.putBook(b).catch(() => {});
+      localSaves.flush().catch(() => {});
       if (dirty && leaseToken) persist().catch(() => {});
     }
   });
@@ -4931,6 +5127,7 @@
   }
   async function initializeStudio() {
     if (startupTask) return startupTask;
+    const generation = accountGeneration;
     startupState = "loading";
     startupError = null;
     document.body.dataset.ready = "false";
@@ -4941,11 +5138,12 @@
     startupTask = (async () => {
       try {
         await boot();
+        if (generation !== accountGeneration) return;
         startupState = "ready";
         document.body.dataset.ready = "true";
         $("library").hidden = !!b;
       } catch (error) {
-        showStartupError(error);
+        if (generation === accountGeneration) showStartupError(error);
       } finally {
         $("book-loading").hidden = true;
         startupTask = null;
@@ -5070,13 +5268,32 @@
   auth.onAuthStateChanged(
     action(async (next) => {
       const previousUid = user?.uid;
-      user = next;
-      if (b && previousUid !== next?.uid) {
-        if (!b.local) leaseToken = "";
-        cloudBlocked = !!(b.local && b.cloudAccountUid && b.cloudAccountUid !== next?.uid);
-        updateStatus();
-        renderInspector();
+      if (initialized && previousUid !== next?.uid) {
+        const generation = ++accountGeneration;
+        const anonymousDraft = b?.local && !D.accountUid(b) && !previousUid;
+        if (!anonymousDraft) {
+          const promotion = cloudPromotion;
+          const retiring = retirePrivateBook();
+          user = next;
+          for (const key of Object.keys(sessionStorage)) {
+            if (key.startsWith("book-lease-") || key.startsWith("book-access-")) sessionStorage.removeItem(key);
+          }
+          await retiring;
+          if (promotion) await promotion.catch(() => {});
+          assertAccount(generation);
+          startupError = null;
+          startupState = "ready";
+          document.body.dataset.bookId = "";
+          document.body.dataset.shareToken = "";
+          document.body.dataset.ready = "true";
+          history.replaceState({}, "", "/books");
+          $("library").hidden = false;
+          $("book-loading").hidden = true;
+          document.querySelector(".book-library-heading").hidden = false;
+          document.querySelector(".book-library-tools").hidden = false;
+        }
       }
+      user = next;
       $("sign-in").hidden = !!next;
       $("account-name").hidden = !next;
       $("account-name").textContent = next

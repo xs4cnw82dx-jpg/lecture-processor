@@ -1,5 +1,62 @@
 (function (root) {
   "use strict";
+  // Old cloud caches and recovery copies predate cacheAccountUid. Keep them
+  // private to their original account instead of treating them as guest drafts.
+  const accountUid = (book) => String(book?.cacheAccountUid || book?.cloudAccountUid || book?.owner_uid || "");
+  const canReadBook = (book, uid) => !!book && (accountUid(book)
+    ? accountUid(book) === String(uid || "")
+    : !!book.local);
+
+  function createSaveQueue({ write, snapshot = (value) => structuredClone(value), key = () => "current", delay = 250, onState = () => {}, onSaved = () => {}, onError = () => {} }) {
+    const pending = new Map();
+    let active = null, timer = null, revision = 0, lastError = null;
+    const state = () => ({ busy: !!(pending.size || active), pending: !!pending.size, inFlight: !!active, error: lastError });
+    const report = () => onState(state());
+    const clearTimer = () => { clearTimeout(timer); timer = null; };
+    function start() {
+      clearTimer();
+      if (active) return active;
+      if (!pending.size) return Promise.resolve();
+      const [workKey, work] = pending.entries().next().value;
+      pending.delete(workKey);
+      // Clone only when a write starts. Fast edits replace one pending value.
+      active = Promise.resolve().then(() => {
+        work.value = snapshot(work.value);
+        return write(work.value);
+      }).then(() => {
+        lastError = null;
+        onSaved(work.value, work.revision);
+      }).catch((error) => {
+        lastError = error;
+        if (!pending.has(workKey)) pending.set(workKey, work);
+        onError(error);
+        throw error;
+      }).finally(() => {
+        active = null;
+        report();
+        if (pending.size && !lastError) schedule(0);
+      });
+      report();
+      return active;
+    }
+    function schedule(ms = delay) {
+      clearTimer();
+      timer = setTimeout(() => { start().catch(() => {}); }, ms);
+    }
+    return {
+      enqueue(value) {
+        pending.set(key(value), { value, revision: ++revision });
+        if (!active) schedule();
+        report();
+        return revision;
+      },
+      async flush() {
+        clearTimer();
+        do { await (active || start()); clearTimer(); } while (pending.size);
+      },
+      state,
+    };
+  }
   let promise, database;
   function open() {
     if (database) return Promise.resolve(database);
@@ -118,10 +175,19 @@
       tx.onabort = tx.onerror;
     });
   }
-  root.BookStorage = {
-    getBook: (id) => run("books", "readonly", "get", id),
+  const exported = {
+    accountUid,
+    canReadBook,
+    createSaveQueue,
+    getBook: async (id, uid) => {
+      const book = await run("books", "readonly", "get", id);
+      return uid === undefined || canReadBook(book, uid) ? book : undefined;
+    },
     putBook: (b) => run("books", "readwrite", "put", b),
-    listBooks: () => run("books", "readonly", "getAll"),
+    listBooks: async (uid) => {
+      const books = await run("books", "readonly", "getAll");
+      return uid === undefined ? books : books.filter((book) => canReadBook(book, uid));
+    },
     deleteBook: (id) => run("books", "readwrite", "delete", id),
     getAsset: (id) => run("assets", "readonly", "get", id),
     putAsset: (a) => run("assets", "readwrite", "put", a),
@@ -131,4 +197,6 @@
     claimSync,
     completeCloudDraft,
   };
-})(window);
+  if (typeof module === "object" && module.exports) module.exports = exported;
+  else root.BookStorage = exported;
+})(typeof window === "object" ? window : globalThis);

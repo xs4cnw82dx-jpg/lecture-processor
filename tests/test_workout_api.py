@@ -27,7 +27,7 @@ def test_workout_api_rejects_non_admin(client, monkeypatch, runtime):
     assert response.status_code == 403
 
 
-def test_workout_cycle_session_and_sanitized_share_flow(client, monkeypatch, runtime):
+def test_workout_cycle_session_and_sanitized_share_flow(allow_account_writes, client, monkeypatch, runtime):
     _patch_admin(monkeypatch, runtime)
     bootstrap = client.get('/api/admin/workout/bootstrap')
     assert bootstrap.status_code == 200
@@ -96,7 +96,7 @@ def test_missing_workout_share_page_returns_not_found(client, monkeypatch, runti
     assert response.status_code == 404
 
 
-def test_workout_session_revision_conflict_returns_current_state(client, monkeypatch, runtime):
+def test_workout_session_revision_conflict_returns_current_state(allow_account_writes, client, monkeypatch, runtime):
     _patch_admin(monkeypatch, runtime)
     started = client.post('/api/admin/workout/sessions', json={})
     assert started.status_code == 201

@@ -891,8 +891,10 @@ def revoke_calendar_feed(app_ctx, request, feed_id):
     if not snapshot.exists or str(snapshot.to_dict().get('uid', '') or '') != uid:
         return app_ctx.jsonify({'error': 'Calendar connection not found.'}), 404
     payload = snapshot.to_dict()
-    payload['revoked_at'] = app_ctx.time.time()
-    app_ctx.repositories.planner.set_calendar_feed(app_ctx.db, safe_id, payload, merge=False)
+    updates = {'revoked_at': app_ctx.time.time()}
+    if not app_ctx.repositories.planner.update_calendar_feed(app_ctx.db, safe_id, updates):
+        return app_ctx.jsonify({'error': 'Calendar connection not found.'}), 404
+    payload.update(updates)
     return app_ctx.jsonify({'ok': True, 'feed': _public_feed_state(payload)})
 
 
@@ -910,12 +912,14 @@ def rotate_calendar_feed(app_ctx, request, feed_id):
     if not snapshot.exists or str(payload.get('uid', '') or '') != uid or payload.get('revoked_at'):
         return app_ctx.jsonify({'error': 'Calendar connection not found.'}), 404
     secret = secrets.token_urlsafe(32)
-    payload.update({
+    updates = {
         'secret_hash': hashlib.sha256(secret.encode('utf-8')).hexdigest(),
         'rotated_at': app_ctx.time.time(),
         'last_accessed_at': 0,
-    })
-    app_ctx.repositories.planner.set_calendar_feed(app_ctx.db, safe_id, payload, merge=False)
+    }
+    if not app_ctx.repositories.planner.update_calendar_feed(app_ctx.db, safe_id, updates):
+        return app_ctx.jsonify({'error': 'Calendar connection not found.'}), 404
+    payload.update(updates)
     base_url = str(getattr(app_ctx, 'PUBLIC_BASE_URL', '') or request.url_root).rstrip('/')
     return app_ctx.jsonify({
         'ok': True,
@@ -1015,9 +1019,10 @@ def get_calendar_feed(app_ctx, request, token):
             'END:VEVENT',
         ])
     lines.append('END:VCALENDAR')
-    feed['last_accessed_at'] = app_ctx.time.time()
     try:
-        app_ctx.repositories.planner.set_calendar_feed(app_ctx.db, safe_id, feed, merge=False)
+        app_ctx.repositories.planner.update_calendar_feed(
+            app_ctx.db, safe_id, {'last_accessed_at': app_ctx.time.time()},
+        )
     except Exception as error:
         app_ctx.logger.warning('Could not record calendar feed access for %s: %s', feed_id, error)
     folded_lines = [folded for line in lines for folded in _ics_fold(line)]

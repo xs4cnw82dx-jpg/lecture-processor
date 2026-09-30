@@ -283,14 +283,14 @@ def test_runtime_token_verification_avoids_live_revocation_lookup_by_default(mon
     monkeypatch.setattr(
         core.auth_service,
         'verify_firebase_token',
-        lambda _request, auth_module, logger, check_revoked=False: captured.append(check_revoked) or {'uid': 'u1'},
+        lambda _request, auth_module, logger, check_revoked=False, **_kwargs: captured.append(check_revoked) or {'uid': 'u1'},
     )
 
     assert core.verify_firebase_token(object()) == {'uid': 'u1'}
     assert captured == [False]
 
 
-def test_checkout_rate_limited_returns_retry_after(client, monkeypatch):
+def test_checkout_rate_limited_returns_retry_after(allow_account_writes, client, monkeypatch):
     captured = []
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u2", "email": "user@example.com"})
     monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: True)
@@ -376,7 +376,7 @@ def test_purchase_history_disallowed_email_returns_403(client, monkeypatch):
     assert response.get_json()["error"] == "Email not allowed"
 
 
-def test_upload_active_jobs_returns_429(client, monkeypatch):
+def test_upload_active_jobs_returns_429(allow_account_writes, client, monkeypatch):
     captured = []
     monkeypatch.setattr(core, "client", None)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u3", "email": "user@gmail.com"})
@@ -392,7 +392,7 @@ def test_upload_active_jobs_returns_429(client, monkeypatch):
     assert captured == [("upload", 10)]
 
 
-def test_upload_rate_limited_returns_retry_after(client, monkeypatch):
+def test_upload_rate_limited_returns_retry_after(allow_account_writes, client, monkeypatch):
     captured = []
     monkeypatch.setattr(core, "client", None)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u4", "email": "user@gmail.com"})
@@ -411,7 +411,7 @@ def test_upload_rate_limited_returns_retry_after(client, monkeypatch):
     assert captured == [("upload", 33)]
 
 
-def test_upload_rejected_when_disk_space_low(client, monkeypatch):
+def test_upload_rejected_when_disk_space_low(allow_account_writes, client, monkeypatch):
     monkeypatch.setattr(core, "client", None)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-lowdisk", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
@@ -425,7 +425,7 @@ def test_upload_rejected_when_disk_space_low(client, monkeypatch):
     assert "storage" in response.get_json()["error"].lower()
 
 
-def test_upload_rejected_when_daily_quota_reached(client, monkeypatch):
+def test_upload_rejected_when_daily_quota_reached(allow_account_writes, client, monkeypatch):
     captured = []
     monkeypatch.setattr(core, "client", None)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-daycap", "email": "user@gmail.com"})
@@ -444,7 +444,7 @@ def test_upload_rejected_when_daily_quota_reached(client, monkeypatch):
     assert captured == [("upload", 123)]
 
 
-def test_upload_invalid_audio_content_type_rejected(client, monkeypatch):
+def test_upload_invalid_audio_content_type_rejected(allow_account_writes, client, monkeypatch):
     released = []
     monkeypatch.setattr(core, "client", None)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u5", "email": "user@gmail.com"})
@@ -478,7 +478,7 @@ def test_upload_invalid_audio_content_type_rejected(client, monkeypatch):
     assert released[0][0] == "u5"
 
 
-def test_import_audio_url_rejects_invalid_host(client, monkeypatch):
+def test_import_audio_url_rejects_invalid_host(allow_account_writes, client, monkeypatch):
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "imp-u1", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
@@ -493,7 +493,7 @@ def test_import_audio_url_rejects_invalid_host(client, monkeypatch):
     assert "not allowed" in response.get_json()["error"].lower()
 
 
-def test_import_audio_url_rate_limited_returns_retry_after(client, monkeypatch):
+def test_import_audio_url_rate_limited_returns_retry_after(allow_account_writes, client, monkeypatch):
     captured = []
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "imp-limited", "email": "user@gmail.com"})
     monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: True)
@@ -512,7 +512,7 @@ def test_import_audio_url_rate_limited_returns_retry_after(client, monkeypatch):
     assert captured == [("audio_import", 17)]
 
 
-def test_import_audio_url_success_queues_job_and_status_returns_token(client, monkeypatch, tmp_path):
+def test_import_audio_url_success_queues_job_and_status_returns_token(allow_account_writes, client, monkeypatch, tmp_path):
     core.AUDIO_IMPORT_TOKENS.clear()
     core.AUDIO_IMPORT_JOBS.clear()
     imported_path = tmp_path / "imported.mp3"
@@ -687,7 +687,7 @@ def test_tools_lecture_download_checks_quota_before_fetch(client, monkeypatch):
     assert reserve_calls == [("tool-dl-u2", core.MAX_AUDIO_UPLOAD_BYTES, "Lecture media download", "lecture_download")]
 
 
-def test_upload_accepts_audio_import_token_for_lecture_mode(client, monkeypatch):
+def test_upload_accepts_audio_import_token_for_lecture_mode(allow_account_writes, client, monkeypatch):
     token_calls = []
     released = []
     monkeypatch.setattr(core, "client", object())
@@ -742,7 +742,7 @@ def test_upload_accepts_audio_import_token_for_lecture_mode(client, monkeypatch)
     assert released == []
 
 
-def test_upload_slides_only_accepts_pptx_after_conversion(client, monkeypatch):
+def test_upload_slides_only_accepts_pptx_after_conversion(allow_account_writes, client, monkeypatch):
     monkeypatch.setattr(core, "client", object())
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "pptx-u1", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
@@ -783,7 +783,7 @@ def test_upload_slides_only_accepts_pptx_after_conversion(client, monkeypatch):
 
 
 @pytest.mark.parametrize("mode", ["lecture-notes", "slides-only", "interview"])
-def test_upload_requires_study_pack_title_for_processing_modes(client, monkeypatch, mode):
+def test_upload_requires_study_pack_title_for_processing_modes(allow_account_writes, client, monkeypatch, mode):
     released = []
     monkeypatch.setattr(core, "client", None)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "title-u1", "email": "user@gmail.com"})
@@ -819,7 +819,7 @@ def test_upload_requires_study_pack_title_for_processing_modes(client, monkeypat
     assert released[0][0] == "title-u1"
 
 
-def test_upload_missing_credits_releases_daily_quota_reservation(client, monkeypatch):
+def test_upload_missing_credits_releases_daily_quota_reservation(allow_account_writes, client, monkeypatch):
     released = []
     monkeypatch.setattr(core, "client", None)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "credits-u1", "email": "user@gmail.com"})
@@ -843,7 +843,7 @@ def test_upload_missing_credits_releases_daily_quota_reservation(client, monkeyp
     assert released[0][0] == "credits-u1"
 
 
-def test_tools_extract_image_rejects_more_than_five_files(client, monkeypatch):
+def test_tools_extract_image_rejects_more_than_five_files(allow_account_writes, client, monkeypatch):
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "tools-u1", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
@@ -868,7 +868,7 @@ def test_tools_extract_image_rejects_more_than_five_files(client, monkeypatch):
     assert "up to 5 images" in response.get_json()["error"].lower()
 
 
-def test_tools_extract_image_accepts_five_files_bills_once_and_returns_output_text(client, monkeypatch):
+def test_tools_extract_image_accepts_five_files_bills_once_and_returns_output_text(allow_account_writes, client, monkeypatch):
     deduct_calls = []
     log_calls = []
     cleanup_calls = []
@@ -2011,7 +2011,7 @@ def test_get_study_progress_pack_returns_only_requested_pack_state(client, monke
     assert body["summary"]["due_today"] >= 1
 
 
-def test_update_study_progress_empty_card_state_payload_does_not_delete_existing_pack(client, monkeypatch):
+def test_update_study_progress_empty_card_state_payload_does_not_delete_existing_pack(allow_account_writes, client, monkeypatch):
     class _FakeSnapshot:
         def __init__(self, payload=None, exists=True):
             self._payload = payload or {}
@@ -2485,7 +2485,7 @@ def test_get_study_progress_summary_falls_back_for_legacy_card_state_docs(client
     }
 
 
-def test_update_study_progress_merges_cross_browser_card_states(client, monkeypatch):
+def test_update_study_progress_merges_cross_browser_card_states(allow_account_writes, client, monkeypatch):
     class _FakeSnapshot:
         def __init__(self, payload=None, exists=False):
             self._payload = payload or {}

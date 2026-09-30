@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from google.api_core.exceptions import NotFound
+
 from .query_utils import apply_where
 
 _SETTINGS_STORE = {}
@@ -289,6 +291,20 @@ def set_calendar_feed(db, feed_id, payload, merge=True):
         _set_memory_doc(_CALENDAR_FEED_STORE, feed_id, payload, merge=merge)
         return
     calendar_feed_doc_ref(db, feed_id).set(dict(payload or {}), merge=merge)
+
+
+def update_calendar_feed(db, feed_id, updates):
+    """Change only supplied fields; never recreate a deleted connection."""
+    if db is None:
+        if feed_id not in _CALENDAR_FEED_STORE:
+            return False
+        _CALENDAR_FEED_STORE[feed_id] = {**_CALENDAR_FEED_STORE[feed_id], **dict(updates or {})}
+        return True
+    try:
+        calendar_feed_doc_ref(db, feed_id).update(dict(updates or {}))
+    except NotFound:
+        return False
+    return True
 
 
 def list_calendar_feeds_by_uid(db, uid, limit=5, *, active_only=False):

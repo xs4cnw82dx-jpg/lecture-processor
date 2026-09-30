@@ -29,10 +29,12 @@
     authReady: !!auth.currentUser,
     recorder: null,
     recordingStream: null,
-    recordingChunks: [],
     recordingElapsedMs: 0,
     recordingTickStartedAt: 0,
     recordingTimer: 0,
+    startingRecording: false,
+    pendingAudioByOwner: {},
+    accountRevision: 0,
     audioContext: null,
     analyser: null,
     micSource: null,
@@ -63,7 +65,8 @@
       'voice-hl-undo', 'voice-hl-redo', 'voice-hl-clear', 'voice-download-notes', 'voice-language-select',
       'voice-custom-input', 'voice-storage-count', 'voice-storage-size', 'voice-sync-all-btn', 'voice-toast',
       'voice-confirm-modal', 'voice-confirm-title', 'voice-confirm-message', 'voice-confirm-close',
-      'voice-confirm-cancel', 'voice-confirm-confirm'
+      'voice-confirm-cancel', 'voice-confirm-confirm', 'voice-save-recovery', 'voice-save-message',
+      'voice-retry-save-btn', 'voice-download-unsaved-btn', 'voice-discard-unsaved-btn'
     ].forEach(function (id) {
       var key = id.replace(/^voice-/, '').replace(/-([a-z])/g, function (_m, chr) { return chr.toUpperCase(); });
       els[key] = $(id);
@@ -91,23 +94,27 @@
     });
   }
 
-  function withStore(storeName, mode, callback) {
+  function withTransaction(storeNames, mode, callback) {
     return openDb().then(function (db) {
       return new Promise(function (resolve, reject) {
-        var tx = db.transaction(storeName, mode);
-        var store = tx.objectStore(storeName);
+        var tx;
         var result;
+        try { tx = db.transaction(storeNames, mode); } catch (error) { db.close(); reject(error); return; }
         tx.oncomplete = function () {
           db.close();
           resolve(result);
         };
-        tx.onerror = function () {
+        tx.onerror = tx.onabort = function () {
           db.close();
           reject(tx.error || new Error('Storage failed'));
         };
-        result = callback(store);
+        try { result = callback(tx); } catch (error) { tx.abort(); reject(error); }
       });
     });
+  }
+
+  function withStore(storeName, mode, callback) {
+    return withTransaction(storeName, mode, function (tx) { return callback(tx.objectStore(storeName)); });
   }
 
   function requestToPromise(request) {
@@ -119,6 +126,12 @@
 
   function currentOwnerKey() {
     return state.user && state.user.uid ? ('user:' + String(state.user.uid)) : 'anon';
+  }
+
+  function captureAccount() {
+    var user = state.user;
+    var revision = state.accountRevision;
+    return function () { return user === state.user && user === auth.currentUser && revision === state.accountRevision; };
   }
 
   function noteBelongsToCurrentOwner(note) {
@@ -140,16 +153,11 @@
   }
 
   function putNote(note) {
+    var ownerKey = note.owner_key || currentOwnerKey();
     return withStore(STORE_NOTES, 'readwrite', function (store) {
-      note.owner_key = currentOwnerKey();
+      note.owner_key = ownerKey;
       store.put(note);
       return note;
-    });
-  }
-
-  function removeNoteRow(id) {
-    return withStore(STORE_NOTES, 'readwrite', function (store) {
-      store.delete(id);
     });
   }
 
@@ -162,22 +170,19 @@
   }
 
   function putAudioBlob(id, blob, name) {
+    var ownerKey = currentOwnerKey();
     return withStore(STORE_AUDIO, 'readwrite', function (store) {
-      store.put({ id: id, owner_key: currentOwnerKey(), blob: blob, name: name || 'voice-note.webm', size: Number(blob && blob.size) || 0, updated_at: Date.now() });
-    });
-  }
-
-  function removeAudioBlob(id) {
-    return withStore(STORE_AUDIO, 'readwrite', function (store) {
-      store.delete(id);
+      store.put({ id: id, owner_key: ownerKey, blob: blob, name: name || 'voice-note.webm', size: Number(blob && blob.size) || 0, updated_at: Date.now() });
     });
   }
 
   function loadSettings() {
+    var ownerKey = currentOwnerKey();
+    var isCurrent = captureAccount();
     return withStore(STORE_SETTINGS, 'readonly', function (store) {
-      return requestToPromise(store.get('voice-settings:' + currentOwnerKey()));
+      return requestToPromise(store.get('voice-settings:' + ownerKey));
     }).then(function (row) {
-      if (row && row.value) state.settings = Object.assign({}, state.settings, row.value);
+      if (isCurrent() && row && row.value) state.settings = Object.assign({}, state.settings, row.value);
     }).catch(function () {});
   }
 
@@ -265,8 +270,7 @@
   }
 
   function hasSignedInSession() {
-    if (state.user || (auth && auth.currentUser)) return true;
-    return !!(authClient && typeof authClient.getToken === 'function' && authClient.getToken());
+    return !!(state.user && state.user === auth.currentUser);
   }
 
   function authFetch(path, options) {
@@ -283,8 +287,10 @@
   }
 
   function apiJson(path, options) {
+    var isCurrent = captureAccount();
     return authFetch(path, options).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (payload) {
+        if (!isCurrent()) throw new Error('Your account changed. Please try again.');
         if (!response.ok) throw new Error(payload.error || 'Request failed');
         return payload;
       });
@@ -514,6 +520,7 @@
       var label = els.recordBtn.querySelector('span');
       if (label) label.textContent = 'Start recording';
     }
+    renderSaveRecovery();
   }
 
   function setRecordingControls(recording) {
@@ -534,36 +541,45 @@
   }
 
   function startRecording() {
+    if (state.startingRecording || state.recorder || pendingAudio()) return;
     if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function' || !window.MediaRecorder) {
       showToast('Recording is not supported in this browser.', 'error');
       return;
     }
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+    var isCurrent = captureAccount();
+    var ownerKey = currentOwnerKey();
+    state.startingRecording = true;
+    renderSaveRecovery();
+    return navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      if (!isCurrent()) {
+        stream.getTracks().forEach(function (track) { track.stop(); });
+        return;
+      }
       var mimeType = preferredMimeType();
       var options = mimeType ? { mimeType: mimeType } : undefined;
-      state.recordingChunks = [];
+      var chunks = [];
+      var recorder = new MediaRecorder(stream, options);
       state.recordingStream = stream;
-      state.recorder = new MediaRecorder(stream, options);
-      state.recorder.ondataavailable = function (event) {
-        if (event.data && event.data.size > 0) state.recordingChunks.push(event.data);
+      state.recorder = recorder;
+      recorder.ondataavailable = function (event) {
+        if (event.data && event.data.size > 0) chunks.push(event.data);
       };
-      state.recorder.onstop = function () {
-        var seconds = recordingSeconds();
-        var blobType = state.recorder && state.recorder.mimeType ? state.recorder.mimeType : (mimeType || 'audio/webm');
-        var blob = new Blob(state.recordingChunks, { type: blobType });
+      recorder.onstop = async function () {
+        var seconds = state.recorder === recorder ? recordingSeconds() : 0;
+        var blobType = recorder.mimeType || mimeType || 'audio/webm';
+        var blob = new Blob(chunks, { type: blobType });
         var name = audioFileName('', blob);
-        stopTimer();
-        stopAmplitudeMeter();
-        if (state.recordingStream) {
-          state.recordingStream.getTracks().forEach(function (track) { track.stop(); });
+        stream.getTracks().forEach(function (track) { track.stop(); });
+        if (state.recorder === recorder) {
+          stopTimer();
+          stopAmplitudeMeter();
+          state.recordingStream = null;
+          state.recorder = null;
+          resetRecorderControls();
         }
-        state.recordingStream = null;
-        state.recorder = null;
-        resetRecorderControls();
-        setRecordStatus('Saved locally. Transcribing...');
-        saveAudioAndSync(blob, name, seconds);
+        await saveAudioAndSync(blob, name, seconds, ownerKey);
       };
-      state.recorder.start(1000);
+      recorder.start(1000);
       startAmplitudeMeter(stream);
       setRecordingControls(true);
       setRecordStatus('Recording. Keep this app open and unlocked.');
@@ -573,6 +589,9 @@
       stopAmplitudeMeter();
       resetRecorderControls();
       showToast(error && error.message ? error.message : 'Microphone permission was not granted.', 'error');
+    }).finally(function () {
+      state.startingRecording = false;
+      renderSaveRecovery();
     });
   }
 
@@ -609,14 +628,95 @@
     }
   }
 
-  function saveAudioAndSync(blob, name, seconds) {
+  function pendingAudio() {
+    return state.pendingAudioByOwner[currentOwnerKey()] || null;
+  }
+
+  function renderSaveRecovery() {
+    var pending = pendingAudio();
+    var recording = !!state.recorder;
+    if (els.saveRecovery) els.saveRecovery.hidden = !pending;
+    if (els.saveMessage && pending) {
+      els.saveMessage.textContent = pending.saving
+        ? 'Saving your audio on this device… Keep this page open.'
+        : 'Your audio could not be saved on this device. It is still available in this tab. Download it now, or free up device storage and retry. Keep this page open until it is safe.';
+    }
+    if (els.retrySaveBtn) els.retrySaveBtn.disabled = !pending || pending.saving;
+    if (els.downloadUnsavedBtn) els.downloadUnsavedBtn.disabled = !pending;
+    if (els.discardUnsavedBtn) els.discardUnsavedBtn.disabled = !pending || pending.saving;
+    if (els.recordBtn) els.recordBtn.disabled = !!pending || !!recording || state.startingRecording;
+    if (els.importBtn) els.importBtn.disabled = !!pending || !!recording || state.startingRecording;
+  }
+
+  function persistAudioNote(pending) {
+    return withTransaction([STORE_AUDIO, STORE_NOTES], 'readwrite', function (tx) {
+      tx.objectStore(STORE_AUDIO).put({
+        id: pending.note.id, owner_key: pending.note.owner_key, blob: pending.blob,
+        name: pending.note.audio_name, size: pending.blob.size, updated_at: Date.now()
+      });
+      tx.objectStore(STORE_NOTES).put(pending.note);
+      return pending.note;
+    });
+  }
+
+  function retryPendingAudio(ownerKey) {
+    var key = ownerKey || currentOwnerKey();
+    var pending = state.pendingAudioByOwner[key];
+    if (!pending) return Promise.resolve(null);
+    if (pending.saving) return pending.promise;
+    pending.saving = true;
+    if (key === currentOwnerKey()) setRecordStatus('Saving audio on this device…');
+    renderSaveRecovery();
+    var isCurrent = captureAccount();
+    pending.promise = persistAudioNote(pending).then(function (note) {
+      delete state.pendingAudioByOwner[key];
+      if (key !== currentOwnerKey() || !isCurrent()) return note;
+      if (!state.notes.some(function (item) { return item.id === note.id; })) state.notes.unshift(note);
+      state.selectedId = note.id;
+      setView('detail');
+      renderAll();
+      if (!navigator.onLine || !hasSignedInSession()) {
+        setRecordStatus(navigator.onLine ? 'Saved offline. Sign in to transcribe.' : 'Saved offline. It will transcribe when you are online.');
+        return note;
+      }
+      setRecordStatus('Saved locally. Transcribing…');
+      syncNote(note).catch(function () {});
+      return note;
+    }).catch(function () {
+      pending.saving = false;
+      if (key === currentOwnerKey()) {
+        setRecordStatus('Audio was not saved. Download it or retry saving below.');
+        showToast('Could not save your audio. Download it now or retry saving.', 'error');
+      }
+      return null;
+    }).finally(renderSaveRecovery);
+    return pending.promise;
+  }
+
+  async function discardPendingAudio() {
+    var pending = pendingAudio();
+    if (!pending || pending.saving) return;
+    var confirmed = await openConfirmModal('Discard unsaved audio?', 'This recording has not been saved in Voice Notes. Download a copy first. Discard it from this tab?', 'Discard audio');
+    if (!confirmed || pendingAudio() !== pending) return;
+    delete state.pendingAudioByOwner[pending.note.owner_key];
+    setRecordStatus('Ready to record.');
+    renderSaveRecovery();
+  }
+
+  function saveAudioAndSync(blob, name, seconds, ownerKey) {
     if (!blob || !blob.size) {
       showToast('The recording was empty. Please try again.', 'error');
+      return Promise.resolve(null);
+    }
+    var key = ownerKey || currentOwnerKey();
+    if (state.pendingAudioByOwner[key]) {
+      showToast('Save or download the pending audio before starting another recording.', 'error');
       return Promise.resolve(null);
     }
     var id = createLocalId();
     var note = {
       id: id,
+      owner_key: key,
       study_pack_id: '',
       local_audio_id: id,
       title: 'Transcribing voice note...',
@@ -635,34 +735,18 @@
       created_at: nowSeconds(),
       updated_at: nowSeconds()
     };
-    return putAudioBlob(id, blob, note.audio_name)
-      .then(function () { return putNote(note); })
-      .then(function () {
-        state.notes.unshift(note);
-        state.selectedId = id;
-        setView('detail');
-        renderAll();
-        if (!navigator.onLine) {
-          setRecordStatus('Saved offline. It will transcribe when you are online.');
-          return note;
-        }
-        if (!hasSignedInSession()) {
-          setRecordStatus('Saved offline. Sign in to transcribe.');
-          showToast('Saved offline. Sign in to transcribe.');
-          return note;
-        }
-        syncNote(note);
-        return note;
-      });
+    state.pendingAudioByOwner[key] = { note: note, blob: blob, saving: false, promise: null };
+    return retryPendingAudio(key);
   }
 
   function syncNote(note) {
     if (!note || state.syncing[note.id]) return Promise.resolve();
-    if (!hasSignedInSession()) {
+    if (!hasSignedInSession() || !noteBelongsToCurrentOwner(note)) {
       showToast('Sign in to transcribe.', 'error');
       renderSyncPill();
       return Promise.resolve();
     }
+    var isCurrent = captureAccount();
     state.syncing[note.id] = true;
     note.status = 'syncing';
     note.error = '';
@@ -670,8 +754,10 @@
     note.updated_at = nowSeconds();
     renderAll();
     return putNote(note).then(function () {
+      if (!isCurrent()) throw new Error('Your account changed. Sign in again to retry.');
       return getAudioBlob(note.local_audio_id || note.id);
     }).then(function (blob) {
+      if (!isCurrent()) throw new Error('Your account changed. Sign in again to retry.');
       if (!blob) throw new Error('Offline audio was not found on this device.');
       var form = new FormData();
       form.append('audio', blob, audioFileName(note.audio_name, blob));
@@ -680,31 +766,36 @@
       return authFetch('/api/voice-notes', { method: 'POST', body: form });
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (payload) {
+        if (!isCurrent()) throw new Error('Your account changed. Sign in again to retry.');
         if (!response.ok) throw new Error(payload.error || 'Could not transcribe voice note');
         note.job_id = payload.job_id;
         note.status = 'syncing';
         note.step_description = 'Transcribing...';
         note.updated_at = nowSeconds();
-        return putNote(note).then(function () { return pollJob(note, payload.job_id); });
+        return putNote(note).then(function () { return pollJob(note, payload.job_id, isCurrent); });
       });
     }).catch(function (error) {
       note.status = 'error';
       note.error = error && error.message ? error.message : 'Sync failed';
       note.updated_at = nowSeconds();
-      setRecordStatus('Saved offline. Sync needs retry.');
-      showToast(note.error, 'error');
-      return putNote(note);
+      if (isCurrent()) {
+        setRecordStatus('Saved offline. Sync needs retry.');
+        showToast(note.error, 'error');
+      }
+      return putNote(note).catch(function () {});
     }).finally(function () {
       delete state.syncing[note.id];
       renderAll();
     });
   }
 
-  function pollJob(note, jobId) {
+  function pollJob(note, jobId, isCurrent) {
     var attempts = 0;
     function tick() {
+      if (!isCurrent()) return Promise.reject(new Error('Your account changed. Sign in again to retry.'));
       attempts += 1;
       return apiJson('/api/voice-notes/jobs/' + encodeURIComponent(jobId)).then(function (payload) {
+        if (!isCurrent()) throw new Error('Your account changed. Sign in again to retry.');
         note.status = payload.status || 'syncing';
         note.step_description = payload.step_description || '';
         if (payload.transcript) {
@@ -722,6 +813,7 @@
           note.test_questions = [];
           note.updated_at = nowSeconds();
           return fetchAndCachePack(note).then(function () {
+            if (!isCurrent()) return;
             setRecordStatus('Transcript ready.');
             showToast('Transcript ready.');
           });
@@ -745,8 +837,10 @@
   }
 
   function fetchAndCachePack(note) {
+    var isCurrent = captureAccount();
     if (!note.study_pack_id) return putNote(note);
     return apiJson('/api/study-packs/' + encodeURIComponent(note.study_pack_id)).then(function (pack) {
+      if (!isCurrent()) return;
       var merged = utils.normalizePackPayload ? utils.normalizePackPayload(pack, note) : Object.assign({}, note, pack);
       merged.id = note.id;
       merged.local_audio_id = note.local_audio_id || note.id;
@@ -759,6 +853,7 @@
       merged.test_questions = [];
       Object.assign(note, merged);
       return putNote(note).then(function () {
+        if (!isCurrent()) return;
         var index = state.notes.findIndex(function (item) { return item.id === note.id; });
         if (index >= 0) state.notes[index] = note;
       });
@@ -900,6 +995,11 @@
       els.detailEmpty.hidden = false;
       setAudioStatus('');
       setAudioDownloadReady(false);
+      if (els.detailTitle) els.detailTitle.value = '';
+      if (els.detailMeta) els.detailMeta.textContent = '';
+      if (els.transcript) els.transcript.textContent = '';
+      if (els.notesSurface) els.notesSurface.innerHTML = '';
+      clearAudioPlayback();
       return;
     }
     els.detail.hidden = false;
@@ -942,12 +1042,13 @@
 
   function renderAudio(note) {
     if (!els.audio) return;
+    var isCurrent = captureAccount();
     var current = els.audio.getAttribute('data-note-id') || '';
     if (current === note.id) return;
-    els.audio.removeAttribute('src');
-    els.audio.hidden = true;
+    clearAudioPlayback();
     els.audio.setAttribute('data-note-id', note.id);
     getAudioBlob(note.local_audio_id || note.id).then(function (blob) {
+      if (!isCurrent() || !selectedNote() || selectedNote().id !== note.id) return;
       if (blob && selectedNote() && selectedNote().id === note.id) {
         els.audio.src = URL.createObjectURL(blob);
         els.audio.hidden = false;
@@ -957,7 +1058,8 @@
           if (!response.ok) throw new Error('Audio unavailable');
           return response.blob();
         }).then(function (remoteBlob) {
-          putAudioBlob(note.local_audio_id || note.id, remoteBlob, note.audio_name || 'voice-note.mp3');
+          if (!isCurrent()) return;
+          putAudioBlob(note.local_audio_id || note.id, remoteBlob, note.audio_name || 'voice-note.mp3').catch(function () {});
           if (selectedNote() && selectedNote().id === note.id) {
             els.audio.src = URL.createObjectURL(remoteBlob);
             els.audio.hidden = false;
@@ -981,6 +1083,16 @@
         setAudioStatus('Could not check audio on this device.', 'error');
       }
     });
+  }
+
+  function clearAudioPlayback() {
+    if (!els.audio) return;
+    var source = els.audio.getAttribute('src') || '';
+    els.audio.pause();
+    els.audio.removeAttribute('src');
+    els.audio.removeAttribute('data-note-id');
+    els.audio.hidden = true;
+    if (source.indexOf('blob:') === 0) URL.revokeObjectURL(source);
   }
 
   function renderTranscript(note) {
@@ -1012,6 +1124,7 @@
     renderStorage();
     renderSettings();
     renderSyncPill();
+    renderSaveRecovery();
   }
 
   function setAuthUi() {
@@ -1127,29 +1240,43 @@
   function deleteVoiceNote(note) {
     var target = note || selectedNote();
     if (!target) return;
-    openConfirmModal(
+    if (target.study_pack_id && !navigator.onLine) {
+      showToast('Connect to the internet to delete a synced voice note. Your note and audio are still saved.', 'error');
+      return Promise.resolve(false);
+    }
+    var isCurrent = captureAccount();
+    return openConfirmModal(
       'Delete Voice Note',
       'Delete this voice note permanently? This also removes the synced study-pack copy.',
       'Delete Voice Note'
     ).then(function (confirmed) {
-      if (!confirmed) return;
+      if (!confirmed || !isCurrent()) return false;
+      if (target.study_pack_id && !navigator.onLine) {
+        showToast('Connect to the internet to delete a synced voice note. Your note and audio are still saved.', 'error');
+        return false;
+      }
       var removeLocal = function () {
-        state.notes = state.notes.filter(function (item) { return item.id !== target.id; });
-        if (state.selectedId === target.id) state.selectedId = '';
-        return Promise.all([
-          removeNoteRow(target.id).catch(function () {}),
-          removeAudioBlob(target.local_audio_id || target.id).catch(function () {})
-        ]);
+        if (!isCurrent()) return false;
+        return withTransaction([STORE_AUDIO, STORE_NOTES], 'readwrite', function (tx) {
+          tx.objectStore(STORE_NOTES).delete(target.id);
+          tx.objectStore(STORE_AUDIO).delete(target.local_audio_id || target.id);
+        });
       };
-      var remoteDelete = target.study_pack_id && navigator.onLine
+      var remoteDelete = target.study_pack_id
         ? apiJson('/api/study-packs/' + encodeURIComponent(target.study_pack_id), { method: 'DELETE' })
         : Promise.resolve();
-      remoteDelete.then(removeLocal).then(function () {
+      return remoteDelete.then(removeLocal).then(function () {
+        if (!isCurrent()) return false;
+        state.notes = state.notes.filter(function (item) { return item.id !== target.id; });
+        if (state.selectedId === target.id) state.selectedId = '';
         showToast('Voice note deleted.');
         setView('library');
         renderAll();
+        return true;
       }).catch(function (error) {
+        if (!isCurrent()) return false;
         showToast(error && error.message ? error.message : 'Could not delete voice note.', 'error');
+        return false;
       });
     });
   }
@@ -1272,10 +1399,13 @@
 
   function loadServerStudyPacks() {
     if (!hasSignedInSession()) return Promise.resolve();
+    var isCurrent = captureAccount();
     function loadPage(afterCursor) {
+      if (!isCurrent()) return Promise.resolve();
       var endpoint = '/api/voice-notes?limit=100';
       if (afterCursor) endpoint += '&after=' + encodeURIComponent(afterCursor);
       return apiJson(endpoint).then(function (payload) {
+        if (!isCurrent()) return;
         var notes = Array.isArray(payload.voice_notes) ? payload.voice_notes : [];
         var writes = notes.map(function (detail) {
           var existing = state.notes.find(function (note) { return note.study_pack_id === detail.study_pack_id; });
@@ -1293,6 +1423,7 @@
           return putNote(existing || note);
         });
         return Promise.all(writes).then(function () {
+          if (!isCurrent()) return;
           var nextCursor = String(payload.next_cursor || '');
           if (payload.has_more && nextCursor) return loadPage(nextCursor);
           return null;
@@ -1320,13 +1451,20 @@
     if (els.recordBtn) els.recordBtn.addEventListener('click', startRecording);
     if (els.pauseBtn) els.pauseBtn.addEventListener('click', toggleRecordingPause);
     if (els.stopBtn) els.stopBtn.addEventListener('click', stopRecording);
-    if (els.importBtn) els.importBtn.addEventListener('click', function () { if (els.fileInput) els.fileInput.click(); });
+    if (els.retrySaveBtn) els.retrySaveBtn.addEventListener('click', function () { retryPendingAudio(); });
+    if (els.downloadUnsavedBtn) els.downloadUnsavedBtn.addEventListener('click', function () {
+      var pending = pendingAudio();
+      if (pending) saveBlobAsFile(pending.blob, pending.note.audio_name);
+    });
+    if (els.discardUnsavedBtn) els.discardUnsavedBtn.addEventListener('click', discardPendingAudio);
+    if (els.importBtn) els.importBtn.addEventListener('click', function () {
+      if (els.fileInput && !pendingAudio() && !state.recorder && !state.startingRecording) els.fileInput.click();
+    });
     if (els.fileInput) {
-      els.fileInput.addEventListener('change', function () {
+      els.fileInput.addEventListener('change', async function () {
         var file = els.fileInput.files && els.fileInput.files[0];
-        if (!file) return;
-        setRecordStatus('Audio imported. Transcribing...');
-        saveAudioAndSync(file, file.name || 'voice-note.m4a', 0);
+        if (!file || pendingAudio() || state.recorder || state.startingRecording) return;
+        await saveAudioAndSync(file, file.name || 'voice-note.m4a', 0);
         els.fileInput.value = '';
       });
     }
@@ -1393,6 +1531,11 @@
       syncAllPending();
     });
     window.addEventListener('offline', renderAll);
+    window.addEventListener('beforeunload', function (event) {
+      if (!Object.keys(state.pendingAudioByOwner).length && !state.recorder && !state.startingRecording) return;
+      event.preventDefault();
+      event.returnValue = '';
+    });
     document.addEventListener('visibilitychange', function () {
       if (!document.hidden || !state.recorder || state.recorder.state === 'inactive') return;
       if (typeof state.recorder.requestData === 'function') {
@@ -1415,20 +1558,25 @@
   }
 
   function loadLocalVoiceNotesForCurrentUser() {
+    var isCurrent = captureAccount();
     state.notes = [];
     state.selectedId = '';
     state.settings = Object.assign({}, DEFAULT_SETTINGS);
+    renderAll();
     return loadSettings()
       .then(getAllNotes)
       .then(function (notes) {
+        if (!isCurrent()) return;
         state.notes = notes;
         return loadServerStudyPacks();
       })
       .then(function () {
+        if (!isCurrent()) return;
         renderAll();
         if (navigator.onLine && hasSignedInSession()) syncAllPending();
       })
       .catch(function (error) {
+        if (!isCurrent()) return;
         showToast(error && error.message ? error.message : 'Could not load voice notes.', 'error');
       });
   }
@@ -1442,6 +1590,11 @@
     registerServiceWorker();
 
     bootstrap.onAuthStateReady(auth, function (user) {
+      if (state.user !== (user || null)) {
+        state.accountRevision += 1;
+        if (state.recorder) stopRecording();
+        closeConfirmModal(false);
+      }
       state.authReady = true;
       state.user = user || null;
       if (!state.user && authClient && typeof authClient.clearToken === 'function') authClient.clearToken();

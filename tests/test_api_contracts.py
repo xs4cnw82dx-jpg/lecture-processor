@@ -396,7 +396,7 @@ def test_admin_overview_uses_rollups_and_limited_recent_queries(client, monkeypa
     assert any(call["collection_name"] == "job_logs" and call["allow_unfiltered_fallback"] is True for call in query_calls)
 
 
-def test_checkout_invalid_bundle_returns_400(client, monkeypatch):
+def test_checkout_invalid_bundle_returns_400(allow_account_writes, client, monkeypatch):
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "contract-u1", "email": "u@example.com"})
     monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: True)
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
@@ -1106,7 +1106,7 @@ def test_study_pack_export_source_rejects_non_owner(client, monkeypatch):
     assert response.get_json()["error"] == "Forbidden"
 
 
-def test_study_pack_create_accepts_daily_card_goal_and_notes_highlights(client, monkeypatch):
+def test_study_pack_create_accepts_daily_card_goal_and_notes_highlights(allow_account_writes, client, monkeypatch):
     stored = {}
 
     class _DocRef:
@@ -1139,7 +1139,7 @@ def test_study_pack_create_accepts_daily_card_goal_and_notes_highlights(client, 
     assert stored["notes_highlights"]["ranges"] == [{"start": 0, "end": 5, "color": "yellow"}]
 
 
-def test_study_pack_update_round_trips_daily_card_goal_and_notes_highlights(client, monkeypatch):
+def test_study_pack_update_round_trips_daily_card_goal_and_notes_highlights(allow_account_writes, client, monkeypatch):
     stored = {
         "uid": "study-u4",
         "title": "Existing pack",
@@ -1188,7 +1188,7 @@ def test_study_pack_update_round_trips_daily_card_goal_and_notes_highlights(clie
     }
 
 
-def test_study_pack_update_rejects_invalid_notes_highlights(client, monkeypatch):
+def test_study_pack_update_rejects_invalid_notes_highlights(allow_account_writes, client, monkeypatch):
     class _Doc:
         exists = True
 
@@ -1223,7 +1223,7 @@ def test_study_pack_update_rejects_invalid_notes_highlights(client, monkeypatch)
     assert "notes_highlights" in response.get_json()["error"]
 
 
-def test_study_folder_nesting_and_bulk_pack_move(client, monkeypatch):
+def test_study_folder_nesting_and_bulk_pack_move(allow_account_writes, client, monkeypatch):
     folder_store = {
         "parent": {"uid": "study-folder-u1", "name": "Parent", "parent_folder_id": "", "created_at": 1},
         "child": {"uid": "study-folder-u1", "name": "Child", "parent_folder_id": "parent", "created_at": 2},
@@ -1268,7 +1268,7 @@ def test_study_folder_nesting_and_bulk_pack_move(client, monkeypatch):
     assert pack_store["pack-2"]["folder_name"] == "Parent"
 
 
-def test_interview_coding_state_quote_and_pdf(client, monkeypatch):
+def test_interview_coding_state_quote_and_pdf(allow_account_writes, client, monkeypatch):
     transcript = "00:01 - Speaker A - Patients want clear guidance.\n00:08 - Speaker B - Follow-up feels rushed."
     pack_store = {
         "pack-1": {"uid": "coding-u1", "title": "Interview One", "mode": "interview"},
@@ -1325,7 +1325,7 @@ def test_interview_coding_state_quote_and_pdf(client, monkeypatch):
     assert pdf_response.data.startswith(b"%PDF-")
 
 
-def test_voice_note_metadata_update_persists_mobile_organizer_fields(client, monkeypatch):
+def test_voice_note_metadata_update_persists_mobile_organizer_fields(allow_account_writes, client, monkeypatch):
     stored = {
         "uid": "voice-u1",
         "title": "Voice note",
@@ -2126,7 +2126,7 @@ def test_processing_estimate_uses_sanitized_total_mb_and_percentiles(client, mon
     assert payload["range"]["high_seconds"] >= payload["range"]["typical_seconds"]
 
 
-def test_checkout_session_uses_trusted_public_base_url(client, monkeypatch):
+def test_checkout_session_uses_trusted_public_base_url(allow_account_writes, client, monkeypatch):
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "checkout-u1", "email": "u@example.com"})
     monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: True)
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
