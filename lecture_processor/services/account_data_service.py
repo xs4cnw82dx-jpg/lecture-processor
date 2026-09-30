@@ -425,7 +425,9 @@ def download_account_export(app_ctx, request, job_id):
 
 
 def delete_account_data(app_ctx, request):
-    decoded_token, error_response, status = _require_recent_account_user(app_ctx, request)
+    decoded_token, error_response, status = access_service.require_recent_allowed_user(
+        app_ctx, request, allow_deleting_account=True,
+    )
     if error_response is not None:
         return error_response, status
 
@@ -776,8 +778,8 @@ def delete_account_data(app_ctx, request):
         if not account_lifecycle.mark_account_auth_delete_pending(uid, email=email, runtime=app_ctx):
             raise RuntimeError('Could not persist the pending Auth-deletion phase.')
 
-        # Keep a durable tombstone outside the profile. Late Stripe fulfillment
-        # checks this record even after the user document has been removed.
+        # Keep a durable tombstone outside the profile. Authentication, profile
+        # initialization and late payments check it after the profile is removed.
         app_ctx.auth.delete_user(uid)
         auth_user_deleted = True
 

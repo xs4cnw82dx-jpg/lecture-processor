@@ -31,7 +31,7 @@ def token_has_unverified_email(decoded_token):
     return decoded_token.get('email_verified') is False
 
 
-def verify_firebase_token(request, auth_module, logger, *, check_revoked=False):
+def verify_firebase_token(request, auth_module, logger, *, check_revoked=False, runtime=None, allow_deleting_account=False):
     """Return decoded Firebase token dict, or None when invalid/missing."""
     _set_request_auth_error(request, '')
     auth_header = request.headers.get('Authorization', '')
@@ -50,6 +50,13 @@ def verify_firebase_token(request, auth_module, logger, *, check_revoked=False):
             if logger is not None:
                 logger.info('Token verification rejected unverified email token for uid=%s', decoded_token.get('uid', ''))
             return None
+        if runtime is not None:
+            from lecture_processor.domains.account import lifecycle as account_lifecycle
+            account_lifecycle.require_account_access(
+                decoded_token.get('uid', ''),
+                runtime=runtime,
+                allow_deleting=bool(allow_deleting_account and check_revoked),
+            )
         return decoded_token
     except Exception as exc:
         if logger is not None:

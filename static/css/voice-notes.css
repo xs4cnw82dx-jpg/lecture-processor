@@ -410,6 +410,29 @@ body {
   font-weight: 700;
 }
 
+.voice-save-recovery {
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid var(--voice-border-strong);
+  border-radius: 10px;
+  background: var(--voice-surface);
+}
+
+.voice-save-recovery[hidden] {
+  display: none;
+}
+
+.voice-save-recovery p {
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+.voice-save-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .voice-btn,
 .voice-chip,
 .voice-tab,

@@ -156,6 +156,7 @@ test("file picker, invalid images, backup and all print export choices work", as
   await page
     .getByRole("link", { name: "Book Studio library", exact: true })
     .click();
+  await expect(page).toHaveURL(/\/books$/);
   await expect(page.locator("body")).toHaveAttribute("data-ready", "true");
   await page.locator("#backup-input").setInputFiles(archive);
   await expect(page.locator("#workspace")).toBeVisible();

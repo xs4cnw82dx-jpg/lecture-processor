@@ -999,12 +999,14 @@ def run_startup_recovery_once():
         return
     recover_stale_runtime_jobs()
 
-def verify_firebase_token(request, *, check_revoked=False):
+def verify_firebase_token(request, *, check_revoked=False, allow_deleting_account=False):
     return auth_service.verify_firebase_token(
         request,
         auth_module=auth,
         logger=logger,
         check_revoked=check_revoked,
+        runtime=_self_runtime(),
+        allow_deleting_account=allow_deleting_account,
     )
 
 def is_admin_user(decoded_token):

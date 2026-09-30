@@ -170,6 +170,8 @@
           if (hooks.isBusy?.() || !matches(book, source) || !matches(source, book)) continue;
           assertCurrent();
           hooks.onState?.("finishing");
+          await hooks.beforeComplete?.();
+          assertCurrent();
           const cloud = {
             ...snapshot, id: op.remoteId, owner_uid: uid, role: "owner", local: false,
             revision: op.revision, pending: false,

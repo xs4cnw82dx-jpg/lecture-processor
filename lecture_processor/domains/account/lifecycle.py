@@ -25,6 +25,10 @@ DESTRUCTIVE_DELETION_PHASES = {
 }
 
 
+class AccountUnavailableError(RuntimeError):
+    """Account access cannot safely continue (including failed state reads)."""
+
+
 def account_write_block_message(runtime=None):
     _ = _resolve_runtime(runtime)
     return 'Account deletion is in progress. New work and credit changes are blocked until deletion finishes.'
@@ -34,26 +38,39 @@ def remove_pending_audio_imports_for_uid(uid, runtime=None):
     return upload_import_audio.release_audio_import_tokens_for_uid(uid, runtime=_resolve_runtime(runtime))
 
 
-def get_user_account_state(uid, runtime=None):
+def get_user_account_state(uid, runtime=None, *, strict=False):
     resolved_runtime = _resolve_runtime(runtime)
     db = getattr(resolved_runtime, 'db', None)
     if db is None or not uid:
+        if strict:
+            raise AccountUnavailableError('Account state is unavailable.')
         return {}
     try:
         doc = resolved_runtime.users_repo.get_doc(db, uid)
-    except Exception:
+        if not getattr(doc, 'exists', False):
+            return {}
+        data = doc.to_dict() or {}
+        if strict and not isinstance(data, dict):
+            raise AccountUnavailableError('Account state is unavailable.')
+    except Exception as error:
+        if strict:
+            raise AccountUnavailableError('Account state is unavailable.') from error
         return {}
-    if not getattr(doc, 'exists', False):
-        return {}
-    data = doc.to_dict() or {}
     return data if isinstance(data, dict) else {}
 
 
 def ensure_account_allows_writes(uid, runtime=None):
-    account_state = get_user_account_state(uid, runtime=runtime)
+    try:
+        account_state = get_user_account_state(uid, runtime=runtime, strict=True)
+    except AccountUnavailableError:
+        return (False, 'Account status could not be verified. Please try again shortly.')
     status = str(account_state.get('account_status', '') or '').strip().lower()
-    if status == 'deleting':
+    if status in {'deleting', 'deleted'}:
         return (False, account_write_block_message(runtime=runtime))
+    try:
+        require_account_access(uid, runtime=runtime)
+    except AccountUnavailableError:
+        return (False, 'Account is unavailable. New work and credit changes are blocked.')
     return (True, '')
 
 
@@ -81,6 +98,35 @@ def get_account_deletion_state(uid, runtime=None):
         return {}
     payload = snapshot.to_dict() or {}
     return payload if isinstance(payload, dict) else {}
+
+
+def require_account_access(uid, runtime=None, *, allow_deleting=False, transaction=None):
+    """Check the durable tombstone without caching or treating read errors as absence.
+
+    The deletion endpoint may resume an unfinished deletion after verifying a
+    live Auth user. Completed Auth deletion is never bypassed. Reading through
+    the profile transaction also prevents a concurrent deletion from racing
+    profile initialization or normalization.
+    """
+    try:
+        ref = account_deletion_ref(uid, runtime=runtime)
+        if ref is None:
+            raise AccountUnavailableError('Account state is unavailable.')
+        snapshot = ref.get(transaction=transaction) if transaction is not None else ref.get()
+        if not getattr(snapshot, 'exists', False):
+            return
+        state = snapshot.to_dict() or {}
+        if not isinstance(state, dict):
+            raise AccountUnavailableError('Account state is unavailable.')
+    except Exception as error:
+        raise AccountUnavailableError('Account state is unavailable.') from error
+    status = str(state.get('status', '') or state.get('phase', '') or '').strip().lower()
+    if status == 'cancelled':
+        return
+    retryable = {'requested', 'purging', 'retry_required', 'auth_delete_pending'}
+    if allow_deleting and status in retryable:
+        return
+    raise AccountUnavailableError('Account is unavailable.')
 
 
 def account_deletion_blocks_fulfillment(state):

@@ -1,5 +1,6 @@
 from lecture_processor.runtime.container import get_runtime
 from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.account import lifecycle as account_lifecycle
 
 
 def _resolve_runtime(runtime=None):
@@ -16,55 +17,62 @@ def build_default_user_data(uid, email, runtime=None):
 def get_or_create_user(uid, email, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     user_ref = resolved_runtime.users_repo.doc_ref(resolved_runtime.db, uid)
-    user_doc = user_ref.get()
-    if user_doc.exists:
-        user_data = user_doc.to_dict()
-        # A deletion tombstone must remain immutable until Firebase Auth is
-        # deleted; otherwise ordinary reads can mutate or revive the profile.
-        if str(user_data.get('account_status', '') or '').strip().lower() == 'deleting':
-            return user_data
-        updates = {}
-        if user_data.get('email') != email and email:
-            updates['email'] = email
-        normalized_email = billing_credits.normalize_email(email or user_data.get('email', ''))
-        if user_data.get('email_normalized') != normalized_email:
-            updates['email_normalized'] = normalized_email
-        normalized_unlimited = billing_credits.normalize_unlimited_credits(user_data.get('unlimited_credits'))
-        if user_data.get('unlimited_credits') != normalized_unlimited:
-            updates['unlimited_credits'] = normalized_unlimited
+    transaction = resolved_runtime.db.transaction()
 
-        preferred_key = resolved_runtime.sanitize_output_language_pref_key(
-            user_data.get('preferred_output_language', resolved_runtime.DEFAULT_OUTPUT_LANGUAGE_KEY),
-        )
-        preferred_custom = resolved_runtime.sanitize_output_language_pref_custom(
-            user_data.get('preferred_output_language_custom', ''),
-        )
-        if preferred_key != str(user_data.get('preferred_output_language', '') or '').strip().lower():
-            updates['preferred_output_language'] = preferred_key
-        if preferred_key != 'other':
-            preferred_custom = ''
-        if preferred_custom != str(user_data.get('preferred_output_language_custom', '') or '').strip():
-            updates['preferred_output_language_custom'] = preferred_custom
-        if not isinstance(user_data.get('onboarding_completed'), bool):
-            updates['onboarding_completed'] = False
-        if not isinstance(user_data.get('has_created_study_pack'), bool):
-            updates['has_created_study_pack'] = bool(user_data.get('total_processed', 0))
-        if str(user_data.get('account_status', '') or '').strip().lower() not in {'active', 'deleting'}:
-            updates['account_status'] = 'active'
-        if 'delete_requested_at' not in user_data:
-            updates['delete_requested_at'] = 0
-        if 'delete_started_at' not in user_data:
-            updates['delete_started_at'] = 0
-        if 'last_delete_failure_at' not in user_data:
-            updates['last_delete_failure_at'] = 0
-        if 'last_delete_failure_reason' not in user_data:
-            updates['last_delete_failure_reason'] = ''
-        if updates:
-            user_ref.update(updates)
-            user_data.update(updates)
-        return user_data
+    @resolved_runtime.firestore.transactional
+    def _get_or_create(txn):
+        account_lifecycle.require_account_access(uid, runtime=resolved_runtime, transaction=txn)
+        user_doc = user_ref.get(transaction=txn)
+        if user_doc.exists:
+            user_data = user_doc.to_dict()
+            if str(user_data.get('account_status', '') or '').strip().lower() in {'deleting', 'deleted'}:
+                raise account_lifecycle.AccountUnavailableError('Account is unavailable.')
+            updates = {}
+            if user_data.get('email') != email and email:
+                updates['email'] = email
+            normalized_email = billing_credits.normalize_email(email or user_data.get('email', ''))
+            if user_data.get('email_normalized') != normalized_email:
+                updates['email_normalized'] = normalized_email
+            normalized_unlimited = billing_credits.normalize_unlimited_credits(user_data.get('unlimited_credits'))
+            if user_data.get('unlimited_credits') != normalized_unlimited:
+                updates['unlimited_credits'] = normalized_unlimited
 
-    user_data = build_default_user_data(uid, email, runtime=resolved_runtime)
-    user_ref.set(user_data)
-    resolved_runtime.logger.info('New user created: %s (%s)', uid, email)
+            preferred_key = resolved_runtime.sanitize_output_language_pref_key(
+                user_data.get('preferred_output_language', resolved_runtime.DEFAULT_OUTPUT_LANGUAGE_KEY),
+            )
+            preferred_custom = resolved_runtime.sanitize_output_language_pref_custom(
+                user_data.get('preferred_output_language_custom', ''),
+            )
+            if preferred_key != str(user_data.get('preferred_output_language', '') or '').strip().lower():
+                updates['preferred_output_language'] = preferred_key
+            if preferred_key != 'other':
+                preferred_custom = ''
+            if preferred_custom != str(user_data.get('preferred_output_language_custom', '') or '').strip():
+                updates['preferred_output_language_custom'] = preferred_custom
+            if not isinstance(user_data.get('onboarding_completed'), bool):
+                updates['onboarding_completed'] = False
+            if not isinstance(user_data.get('has_created_study_pack'), bool):
+                updates['has_created_study_pack'] = bool(user_data.get('total_processed', 0))
+            if str(user_data.get('account_status', '') or '').strip().lower() not in {'active', 'deleting'}:
+                updates['account_status'] = 'active'
+            if 'delete_requested_at' not in user_data:
+                updates['delete_requested_at'] = 0
+            if 'delete_started_at' not in user_data:
+                updates['delete_started_at'] = 0
+            if 'last_delete_failure_at' not in user_data:
+                updates['last_delete_failure_at'] = 0
+            if 'last_delete_failure_reason' not in user_data:
+                updates['last_delete_failure_reason'] = ''
+            if updates:
+                txn.update(user_ref, updates)
+                user_data.update(updates)
+            return user_data, False
+
+        user_data = build_default_user_data(uid, email, runtime=resolved_runtime)
+        txn.set(user_ref, user_data)
+        return user_data, True
+
+    user_data, created = _get_or_create(transaction)
+    if created:
+        resolved_runtime.logger.info('New user created: %s (%s)', uid, email)
     return user_data

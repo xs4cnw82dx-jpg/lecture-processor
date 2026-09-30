@@ -133,7 +133,39 @@
   var pendingStartRequest = false;
   var startLockedByBatchState = false;
   var outputLanguageUserTouched = false;
+  var accountRevision = 0;
+  var accountUid = auth && auth.currentUser ? auth.currentUser.uid : null;
+  var accountResolved = !!(auth && auth.currentUser);
   var BATCH_CACHE_KEY_PREFIX = isInstantBatch ? 'instant_batch_mode_last_batch_' : 'batch_mode_last_batch_';
+
+  function captureAccount() {
+    var user = auth && auth.currentUser;
+    var revision = accountRevision;
+    return function () { return user === (auth && auth.currentUser) && revision === accountRevision; };
+  }
+
+  function resetAccountState() {
+    accountRevision += 1;
+    stopPolling();
+    currentBatchId = '';
+    queryBatchId = '';
+    activeSubmissionId = '';
+    pendingStartRequest = false;
+    startLockedByBatchState = false;
+    outputLanguageUserTouched = false;
+    if (statusPanel) statusPanel.hidden = true;
+    if (submitFeedback) { submitFeedback.hidden = true; submitFeedback.innerHTML = ''; }
+    if (summaryEl) summaryEl.innerHTML = '';
+    if (rowsBody) rowsBody.innerHTML = '';
+    if (statusBanner) statusBanner.textContent = '';
+    if (batchTitleInput) batchTitleInput.value = '';
+    if (rowsWrap) rowsWrap.innerHTML = '';
+    rowStates.clear();
+    setBatchIdInUrl('');
+    ensureMinimumRows();
+    setOutputLanguage('english');
+    setStartButtonState(false, isInstantBatch ? 'Start instant batch' : 'Start batch');
+  }
 
   function modeMeta() {
     return MODE_META[mode] || MODE_META['lecture-notes'];
@@ -476,11 +508,12 @@
   }
 
   function loadOutputLanguagePreference() {
+    var isCurrent = captureAccount();
     return authFetch('/api/user-preferences').then(function (response) {
       if (!response.ok) throw new Error('Could not load output language preference.');
       return response.json();
     }).then(function (payload) {
-      if (outputLanguageUserTouched) return false;
+      if (!isCurrent() || outputLanguageUserTouched) return false;
       var preferences = payload && payload.preferences ? payload.preferences : {};
       setOutputLanguage(preferences.output_language || 'english', preferences.output_language_custom || '');
       return true;
@@ -817,13 +850,14 @@
     });
   }
 
-  function pollRowAudioImportJob(rowNode, jobId) {
+  function pollRowAudioImportJob(rowNode, jobId, isCurrent) {
     var safeJobId = String(jobId || '').trim();
     if (!safeJobId) return Promise.reject(new Error('Audio import did not return a job id.'));
     var deadlineMs = Date.now() + 16 * 60 * 1000;
     var attempt = 0;
 
     function tick() {
+      if (!isCurrent()) throw new Error('Your account changed. Please import the audio again.');
       if (Date.now() >= deadlineMs) {
         throw new Error('Audio import is taking longer than expected. Please try again.');
       }
@@ -832,6 +866,7 @@
           return { response: response, payload: payload };
         });
       }).then(function (result) {
+        if (!isCurrent()) throw new Error('Your account changed. Please import the audio again.');
         if (!result.response.ok) {
           throw new Error(String(result.payload.error || 'Could not read audio import status.'));
         }
@@ -872,6 +907,7 @@
   }
 
   function importRowAudioFromUrl(rowNode, options) {
+    var isCurrent = captureAccount();
     var opts = options || {};
     var reason = String(opts.reason || 'manual');
     var silentIfAlreadyImported = opts.silentIfAlreadyImported !== false;
@@ -910,14 +946,16 @@
         return { response: response, payload: payload };
       });
     }).then(function (result) {
+      if (!isCurrent()) return { ok: false, reason: 'account-changed' };
         if (!result.response.ok) {
           setRowAudioImportStatus(rowNode, 'Import failed: ' + String(result.payload.error || 'Could not import audio from URL.'), 'error');
           return { ok: false, reason: 'import-failed' };
         }
       var readyPayload = result.payload.audio_import_token
         ? Promise.resolve(result.payload)
-        : pollRowAudioImportJob(rowNode, result.payload.job_id);
+        : pollRowAudioImportJob(rowNode, result.payload.job_id, isCurrent);
       return readyPayload.then(function (payload) {
+        if (!isCurrent()) return false;
         return applyRowImportedAudio(
           rowNode,
           payload,
@@ -926,9 +964,10 @@
           reason !== 'auto-start'
         );
       }).then(function () {
-        return { ok: true, reason: 'imported' };
+        return { ok: isCurrent(), reason: isCurrent() ? 'imported' : 'account-changed' };
       });
     }).catch(function () {
+      if (!isCurrent()) return { ok: false, reason: 'account-changed' };
       setRowAudioImportStatus(rowNode, 'Import failed: Could not import audio from that URL. Please try again.', 'error');
       return { ok: false, reason: 'network-error' };
     }).finally(function () {
@@ -1755,6 +1794,8 @@
   function refreshBatchStatus(options) {
     var opts = options || {};
     if (!currentBatchId) return Promise.resolve();
+    var isCurrent = captureAccount();
+    var requestedBatchId = currentBatchId;
     return authFetch(batchApiBase + '/' + encodeURIComponent(currentBatchId))
       .then(function (response) {
         return response.json().then(function (payload) {
@@ -1762,6 +1803,7 @@
         });
       })
       .then(function (result) {
+        if (!isCurrent() || currentBatchId !== requestedBatchId) return;
         if (!result.response.ok) {
           throw new Error(String(result.payload.error || 'Could not read batch status.'));
         }
@@ -1776,6 +1818,7 @@
         }
       })
       .catch(function (error) {
+        if (!isCurrent() || currentBatchId !== requestedBatchId) return;
         console.error('Batch status polling failed:', error);
         if (!opts.silent) {
           showShellToast(String((error && error.message) || 'Could not read batch status.'), 'error');
@@ -1819,6 +1862,7 @@
   }
 
   async function startBatch() {
+    var isCurrent = captureAccount();
     if (!auth || !auth.currentUser) {
       showShellToast('Please sign in first.', 'error');
       return;
@@ -1838,6 +1882,7 @@
     try {
       showSubmitPendingFeedback('Preparing rows...');
       await runAutoImportSweepBeforeStart();
+      if (!isCurrent()) return;
       if (!activeSubmissionId) {
         activeSubmissionId = makeSubmissionId();
       }
@@ -1848,6 +1893,7 @@
         body: formData,
       });
       var payload = await response.json().catch(function () { return {}; });
+      if (!isCurrent()) return;
       if (!response.ok) {
         throw new Error(String(payload.error || 'Could not create batch.'));
       }
@@ -1865,9 +1911,11 @@
       }
       if (statusPanel) statusPanel.hidden = false;
       await refreshBatchStatus({ silent: true });
+      if (!isCurrent()) return;
       scheduleNextPoll();
       activeSubmissionId = '';
     } catch (error) {
+      if (!isCurrent()) return;
       showShellToast(String(error && error.message ? error.message : error), 'error');
       showSubmitErrorFeedback(String(error && error.message ? error.message : 'Could not create batch.'));
       pendingStartRequest = false;
@@ -1875,7 +1923,7 @@
         setStartButtonState(false, isInstantBatch ? 'Start instant batch' : 'Start batch');
       }
     } finally {
-      if (!pendingStartRequest && !startLockedByBatchState && !currentBatchId) {
+      if (isCurrent() && !pendingStartRequest && !startLockedByBatchState && !currentBatchId) {
         activeSubmissionId = '';
       }
     }
@@ -2104,6 +2152,10 @@
 
     if (auth) {
       bootstrap.onAuthStateReady(auth, function (user) {
+        var nextUid = user ? user.uid : null;
+        if (accountResolved && nextUid !== accountUid) resetAccountState();
+        accountUid = nextUid;
+        accountResolved = true;
         if (user) loadOutputLanguagePreference();
         if (user && queryBatchId) {
           currentBatchId = queryBatchId;

@@ -65,7 +65,14 @@ def test_voice_notes_local_storage_is_user_scoped_and_cleared_on_signout():
     assert "notesStore.createIndex('owner_key', 'owner_key', { unique: false })" in voice_notes_js
     assert "return state.user && state.user.uid ? ('user:' + String(state.user.uid)) : 'anon';" in voice_notes_js
     assert "filter(noteBelongsToCurrentOwner)" in voice_notes_js
-    assert "store.put({ id: id, owner_key: currentOwnerKey()" in voice_notes_js
+    # Capture the owner before opening storage so a later account switch cannot
+    # assign an earlier account's audio to the newly signed-in user.
+    audio_writer = voice_notes_js.split('function putAudioBlob(', 1)[1].split('function loadSettings(', 1)[0]
+    assert 'var ownerKey = currentOwnerKey();' in audio_writer
+    assert 'owner_key: ownerKey' in audio_writer
+    assert audio_writer.index('var ownerKey = currentOwnerKey();') < audio_writer.index('withStore(')
+    assert 'owner_key: pending.note.owner_key' in voice_notes_js
+    assert 'user === state.user && user === auth.currentUser && revision === state.accountRevision' in voice_notes_js
     assert "indexedDB.deleteDatabase('lecture-processor-voice-notes')" in app_shell_js
     assert "indexedDB.deleteDatabase('lecture-processor-voice-notes')" not in index_js
 

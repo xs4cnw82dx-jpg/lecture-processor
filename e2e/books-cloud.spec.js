@@ -113,6 +113,7 @@ test("a lost creation response exposes Retry and resumes the same account book a
 test("guest drafts automatically upload after sign-in, while unopened drafts stay on the device", async ({ page }) => {
   const state = await setupCloud(page, { guest: true });
   await page.goto("/books");
+  await expect(page).toHaveURL(/\/books$/);
   await expect(page.locator("body")).toHaveAttribute("data-ready", "true");
   const untouched = M.book("blank"); untouched.title = "Keep this unopened draft local";
   await seedDraft(page, untouched);
@@ -129,6 +130,7 @@ test("guest drafts automatically upload after sign-in, while unopened drafts sta
 test("opening an old device draft saves deleted pages and versions; recovery drafts stay local", async ({ page }) => {
   const state = await setupCloud(page);
   await page.goto("/books");
+  await expect(page).toHaveURL(/\/books$/);
   await expect(page.locator("body")).toHaveAttribute("data-ready", "true");
   const draft = M.book("story"); draft.title = "A device draft";
   draft.deletedPages.push({ ...M.page(), id: "deleted-page", title: "A recoverable page" });
@@ -156,6 +158,7 @@ test("signed-in ZIP imports save automatically and a pending account book stays 
   const path = await (await downloaded).path();
   await page.getByRole("button", { name: "Close dialog", exact: true }).click();
   await page.getByRole("link", { name: "Book Studio library", exact: true }).click();
+  await expect(page).toHaveURL(/\/books$/);
   await expect(page.locator("body")).toHaveAttribute("data-ready", "true");
   state.failCreate = 1;
   await page.locator("#backup-input").setInputFiles(path);

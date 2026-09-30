@@ -20,6 +20,19 @@
   var recentCards = document.getElementById('batch-dashboard-recent-cards');
   var pollTimer = null;
   var enhancedSelects = [];
+  var accountRevision = 0;
+
+  function captureAccount() {
+    var user = auth && auth.currentUser;
+    var revision = accountRevision;
+    return function () { return user === (auth && auth.currentUser) && revision === accountRevision; };
+  }
+
+  function clearAccountRows() {
+    [activeBody, recentBody, activeCards, recentCards].forEach(function (element) {
+      if (element) element.innerHTML = '';
+    });
+  }
 
   function showShellToast(message, variant) {
     var shell = window.LectureProcessorShell || {};
@@ -565,6 +578,7 @@
   }
 
   function loadBatches(showRefreshToast) {
+    var isCurrent = captureAccount();
     if (!auth || !auth.currentUser) {
       setSignedInView(false);
       renderTable(activeBody, [], true);
@@ -581,6 +595,7 @@
         });
       })
       .then(function (result) {
+        if (!isCurrent()) return;
         if (!result.response.ok) {
           throw new Error(String(result.payload.error || 'Could not load batch list.'));
         }
@@ -595,6 +610,7 @@
         }
       })
       .catch(function (error) {
+        if (!isCurrent()) return;
         console.error('Could not load batch dashboard:', error);
         var message = String((error && error.message) || 'Could not load batch dashboard.');
         renderLoadError(message);
@@ -661,6 +677,8 @@
     wireEvents();
     if (auth) {
       bootstrap.onAuthStateReady(auth, function () {
+        accountRevision += 1;
+        clearAccountRows();
         loadBatches(false);
       });
     } else {
