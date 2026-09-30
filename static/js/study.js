@@ -33,6 +33,7 @@ let plannedPackIds = new Set();
 let plannerActivity = null, plannerActivitySyncTimer = null;
 let packsHasMore = false, packsNextCursor = '', packsLoadingMore = false;
 let activeEditorPane = 'notes', exportType = 'flashcards', draggedPackId = '', draggedPackIds = [], draggingFolderId = '';
+let renderedEditorPanes = { flashcards: false, test: false };
 let folderModalMode = 'create', editingFolderId = '', folderModalParentId = '', pendingOpenPackId = '', confirmModalResolver = null;
 let builderDraft = null, builderMode = 'edit', builderPane = 'info', builderDirty = false, builderPackId = '', builderExitResolver = null, builderImportParsed = null;
 let builderAutoSaveTimer = null, builderAutoSaving = false, builderAutoSaveQueued = false, builderBulkImporting = false;
@@ -1666,6 +1667,7 @@ function applyStudySignedOutState() {
   selectedFolderId = '';
   selectedPackId = '';
   selectedPack = null;
+  resetInlineEditorViews();
   selectedPackIds = new Set();
   packSelectionAnchorId = '';
   syncPackSelectionControls();
@@ -3281,6 +3283,8 @@ function saveBuilderPack(closeAfter, options) {
       if (selectedPack && selectedPackId && (builderPackId || selectedPackId) === selectedPackId) {
         selectedPack = Object.assign({}, selectedPack, payload, { study_pack_id: selectedPackId });
         setInlineAutosaveBaseline(selectedPack);
+        resetInlineEditorViews();
+        setEditorPane(activeEditorPane);
       }
       return null;
     }
@@ -4268,6 +4272,10 @@ function setEditorPane(pane) {
   }
   activeEditorPane = pane;
   syncTabSelection(editorTabs, 'editorPane', pane);
+  if (selectedPack && !renderedEditorPanes[pane]) {
+    if (pane === 'flashcards') renderFlashcardEditor();
+    if (pane === 'test') renderQuestionEditor();
+  }
   if (codingPane && !codingWorkspaceOpen) codingPane.hidden = true;
   exportType = (pane === 'test') ? 'test' : 'flashcards';
   if (pane === 'notes') { scheduleNotesFullscreenIdle(); }
@@ -5011,7 +5019,15 @@ function updatePackSummary() {
 }
 
 /* ── Flashcard editor ── */
+function resetInlineEditorViews() {
+  renderedEditorPanes = { flashcards: false, test: false };
+  flashcardEditorList.innerHTML = '';
+  questionEditorList.innerHTML = '';
+  flashcardCount.textContent = ((selectedPack && selectedPack.flashcards) || []).length + ' flashcards';
+  questionCount.textContent = ((selectedPack && selectedPack.test_questions) || []).length + ' practice questions';
+}
 function renderFlashcardEditor(hi) {
+  renderedEditorPanes.flashcards = true;
   var idx = typeof hi === 'number' ? hi : -1;
   var cards = selectedPack && Array.isArray(selectedPack.flashcards) ? selectedPack.flashcards : [];
   flashcardCount.textContent = cards.length + ' flashcards'; flashcardEditorList.innerHTML = '';
@@ -5085,6 +5101,7 @@ function syncQuestionAnswerPicker(row, question) {
 }
 
 function renderQuestionEditor(hi) {
+  renderedEditorPanes.test = true;
   var idx = typeof hi === 'number' ? hi : -1;
   selectedPack.test_questions = (selectedPack.test_questions || []).map(normalizeQuestion);
   var questions = selectedPack.test_questions;
@@ -5540,6 +5557,7 @@ function openPack(packId) {
     setGoalPanelStatus('Synced', 'success');
     selectedPack.flashcards = Array.isArray(selectedPack.flashcards) ? selectedPack.flashcards : [];
     selectedPack.test_questions = Array.isArray(selectedPack.test_questions) ? selectedPack.test_questions.map(normalizeQuestion) : [];
+    resetInlineEditorViews();
     selectedPack.has_audio_playback = !!selectedPack.has_audio_playback;
     selectedPack.has_audio_sync = !!selectedPack.has_audio_sync;
     selectedPack.audio_unavailable_reason = String(selectedPack.audio_unavailable_reason || '');
@@ -5576,7 +5594,6 @@ function openPack(packId) {
       renderNotesForSelectedPackBase();
       reapplyHighlightsForPack();
       initAudioForSelectedPack();
-      renderFlashcardEditor(); renderQuestionEditor();
       setEditorPane(getContentPreferredEditorPane(selectedPack, activeEditorPane));
       updateShareActionAvailability();
       // Deep link: auto-open learn mode if URL says so

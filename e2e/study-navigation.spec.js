@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 
-async function installLibrary(page) {
+async function installLibrary(page, options = {}) {
   const firebaseStub = `(function () {
     var user = { uid: 'owner', email: 'student@example.com', getIdToken: function () { return Promise.resolve('test-token'); } };
     var auth = { currentUser: user, setPersistence: function () { return Promise.resolve(); }, authStateReady: function () { return Promise.resolve(); }, onAuthStateChanged: function (callback) { setTimeout(function () { callback(user); }, 0); return function () {}; } };
@@ -11,6 +11,7 @@ async function installLibrary(page) {
   await page.route('https://www.gstatic.com/firebasejs/**', route => route.fulfill({ contentType: 'application/javascript', body: firebaseStub }));
   const folders = [{ folder_id: 'anatomy', name: 'Anatomy and physiology', parent_folder_id: '', is_pinned: false },
     { folder_id: 'muscles', name: 'Muscles of the lower limb', parent_folder_id: 'anatomy', is_pinned: false }];
+  const packs = options.packs || [];
   await page.route('**/api/**', route => {
     const request = route.request(), path = new URL(request.url()).pathname;
     let body = {};
@@ -19,7 +20,14 @@ async function installLibrary(page) {
       Object.assign(folders[0], request.postDataJSON());
       body = { ok: true, folder: folders[0] };
     } else if (path.endsWith('/share')) body = { access_scope: 'private', share_url: '' };
-    else if (path === '/api/study-packs') body = { study_packs: [], has_more: false };
+    else if (path === '/api/study-packs') body = { study_packs: packs, has_more: false };
+    else if (path.startsWith('/api/study-packs/')) {
+      const pack = packs.find(item => item.study_pack_id === path.split('/').pop());
+      if (pack) {
+        if (request.method() === 'PATCH') Object.assign(pack, request.postDataJSON());
+        body = pack;
+      }
+    }
     else if (path === '/api/auth/user') body = { uid: 'owner', email_verified: true, onboarding_completed: true, allowed: true };
     else if (path === '/api/study-plan/membership') body = { pack_ids: [] };
     else if (path.includes('progress')) body = { card_states: {}, daily_progress: {} };
@@ -92,4 +100,35 @@ test('the overlay preview keeps its export aspect ratio at phone and desktop siz
       return Math.abs(bounds.width / bounds.height - 16 / 9);
     }).toBeLessThan(0.02);
   }
+});
+
+test('large packs create editors on demand and retain edits when switching tabs', async ({ page }) => {
+  const pack = { study_pack_id: 'large', title: 'Large anatomy pack', mode: 'manual', notes_markdown: '# Anatomy notes',
+    flashcards_count: 165, test_questions_count: 40,
+    flashcards: Array.from({ length: 165 }, (_, index) => ({ front: `Muscle ${index}`, back: `Origin ${index}` })),
+    test_questions: Array.from({ length: 40 }, (_, index) => ({ question: `Question ${index}`, options: ['A', 'B', 'C', 'D'], answer: 'A', explanation: 'Explanation' })) };
+  const second = { study_pack_id: 'second', title: 'Second pack', mode: 'manual', notes_markdown: 'Other notes',
+    flashcards_count: 1, test_questions_count: 0, flashcards: [{ front: 'Different card', back: 'Different answer' }], test_questions: [] };
+  await installLibrary(page, { packs: [pack, second] });
+  await page.goto('/study?pack_id=large');
+  await expect(page.locator('#pack-title')).toHaveValue('Large anatomy pack');
+  await expect(page.locator('#flashcard-editor-list .editor-card')).toHaveCount(0);
+  await expect(page.locator('#question-editor-list .editor-card')).toHaveCount(0);
+  await page.locator('#editor-tab-flashcards').click();
+  await expect(page.locator('#flashcard-editor-list .editor-card')).toHaveCount(165);
+  await expect(page.locator('#question-editor-list .editor-card')).toHaveCount(0);
+  const firstCard = await page.locator('#editor-card-front-0').elementHandle();
+  await page.locator('#editor-card-front-0').fill('Edited muscle');
+  await page.locator('#editor-tab-test').click();
+  await expect(page.locator('#question-editor-list .editor-card')).toHaveCount(40);
+  await page.locator('#editor-question-text-0').fill('Edited question');
+  await page.locator('#editor-tab-flashcards').click();
+  await expect(page.locator('#editor-card-front-0')).toHaveValue('Edited muscle');
+  expect(await firstCard.evaluate(node => node.isConnected)).toBe(true);
+  await expect.poll(() => pack.flashcards[0].front).toBe('Edited muscle');
+  await expect.poll(() => pack.test_questions[0].question).toBe('Edited question');
+  await page.locator('#pack-list [data-pack-open]').filter({ hasText: 'Second pack' }).click();
+  await expect(page.locator('#editor-card-front-0')).toHaveValue('Different card');
+  await expect(page.locator('#flashcard-editor-list .editor-card')).toHaveCount(1);
+  await expect(page.locator('#question-editor-list .editor-card')).toHaveCount(0);
 });
