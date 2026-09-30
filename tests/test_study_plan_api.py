@@ -24,7 +24,7 @@ class _Snapshot:
 
 
 @pytest.fixture
-def study_plan_runtime(monkeypatch):
+def study_plan_runtime(monkeypatch, runtime):
     uid = 'study-plan-user'
     pack_id = 'pack_questions'
     pack = {
@@ -47,7 +47,7 @@ def study_plan_runtime(monkeypatch):
     monkeypatch.setattr(core.study_repo, 'get_study_pack_doc', lambda _db, requested: _Snapshot(pack, requested) if requested == pack_id else _Snapshot())
     monkeypatch.setattr(core.study_repo, 'list_study_folders_by_uid', lambda _db, _uid: [])
     monkeypatch.setattr(core, 'get_study_card_state_doc', lambda _uid, _pack_id: type('Ref', (), {'get': lambda self: _Snapshot({'state': {}})})())
-    monkeypatch.setattr(core, 'get_study_progress_doc', lambda _uid: type('Ref', (), {'get': lambda self: _Snapshot({
+    monkeypatch.setitem(runtime.__dict__, 'get_study_progress_doc', lambda _uid: type('Ref', (), {'get': lambda self: _Snapshot({
         'card_state_due_by_date_version': 1, 'card_state_due_by_date': {},
     })})())
     monkeypatch.setattr(core.study_repo, 'list_study_card_states_by_uid', lambda _db, _uid, _limit: [])
@@ -544,13 +544,13 @@ def test_upcoming_api_uses_local_time_and_keeps_legacy_after_finished_sessions(c
     assert [row['id'] for row in response.get_json()['sessions']] == ['near_future', 'legacy']
 
 
-def test_plan_and_dashboard_use_the_same_complete_due_total(client, study_plan_runtime, monkeypatch):
+def test_plan_and_dashboard_use_the_same_complete_due_total(client, study_plan_runtime, monkeypatch, runtime):
     progress = {
         'card_state_due_by_date_version': 1,
         'card_state_due_by_date': {'2000-01-01': 402, '2099-01-01': 20},
     }
     monkeypatch.setattr(core, 'MAX_PROGRESS_PACKS_PER_SYNC', 1)
-    monkeypatch.setattr(core, 'get_study_progress_doc', lambda _uid: type('Ref', (), {'get': lambda self: _Snapshot(progress)})())
+    monkeypatch.setitem(runtime.__dict__, 'get_study_progress_doc', lambda _uid: type('Ref', (), {'get': lambda self: _Snapshot(progress)})())
 
     def unexpected_limited_scan(*_args, **_kwargs):
         pytest.fail('A complete summary must not fall back to a limited card-state scan')

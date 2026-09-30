@@ -42,6 +42,13 @@ def isolate_book_account_boundary(monkeypatch):
     monkeypatch.setattr(study_picture_service, 'add_bundle_assets', lambda *args: None)
 
 
+@pytest.fixture
+def allow_progress_account_access(monkeypatch):
+    # These progress-shape tests use minimal database fakes. Transactional
+    # account-deletion behavior is exercised in test_study_progress_rollup.py.
+    monkeypatch.setattr(account_lifecycle, 'require_account_access', lambda *_args, **_kwargs: None)
+
+
 def test_discontinued_gemini_flash_lite_preview_model_is_not_reintroduced():
     repo_root = Path(__file__).resolve().parents[1]
     blocked_model = "gemini-3.1-flash-lite-" + "preview"
@@ -2011,7 +2018,7 @@ def test_get_study_progress_pack_returns_only_requested_pack_state(client, monke
     assert body["summary"]["due_today"] >= 1
 
 
-def test_update_study_progress_empty_card_state_payload_does_not_delete_existing_pack(allow_account_writes, client, monkeypatch):
+def test_update_study_progress_empty_card_state_payload_does_not_delete_existing_pack(allow_progress_account_access, allow_account_writes, client, monkeypatch):
     class _FakeSnapshot:
         def __init__(self, payload=None, exists=True):
             self._payload = payload or {}
@@ -2314,7 +2321,7 @@ def test_compute_study_progress_summary_timezone_yesterday_window():
     assert summary["daily_goal"] == 25
 
 
-def test_get_study_progress_summary_rebuilds_unversioned_compact_summaries_from_state(client, monkeypatch):
+def test_get_study_progress_summary_rebuilds_unversioned_compact_summaries_from_state(allow_progress_account_access, client, monkeypatch):
     class _FakeSnapshot:
         def __init__(self, payload=None, exists=True):
             self._payload = payload or {}
@@ -2428,7 +2435,7 @@ def test_get_study_progress_summary_uses_rollup_without_scanning_pack_docs(clien
     assert response.get_json()["due_today"] == 3
 
 
-def test_get_study_progress_summary_falls_back_for_legacy_card_state_docs(client, monkeypatch):
+def test_get_study_progress_summary_falls_back_for_legacy_card_state_docs(allow_progress_account_access, client, monkeypatch):
     class _FakeSnapshot:
         def __init__(self, payload=None, exists=True):
             self._payload = payload or {}
@@ -2502,7 +2509,7 @@ def test_get_study_progress_summary_falls_back_for_legacy_card_state_docs(client
     }
 
 
-def test_update_study_progress_merges_cross_browser_card_states(allow_account_writes, client, monkeypatch):
+def test_update_study_progress_merges_cross_browser_card_states(allow_progress_account_access, allow_account_writes, client, monkeypatch):
     class _FakeSnapshot:
         def __init__(self, payload=None, exists=False):
             self._payload = payload or {}
