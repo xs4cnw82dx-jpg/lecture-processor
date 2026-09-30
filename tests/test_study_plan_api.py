@@ -24,7 +24,7 @@ class _Snapshot:
 
 
 @pytest.fixture
-def study_plan_runtime(monkeypatch):
+def study_plan_runtime(monkeypatch, runtime):
     uid = 'study-plan-user'
     pack_id = 'pack_questions'
     pack = {
@@ -47,7 +47,9 @@ def study_plan_runtime(monkeypatch):
     monkeypatch.setattr(core.study_repo, 'get_study_pack_doc', lambda _db, requested: _Snapshot(pack, requested) if requested == pack_id else _Snapshot())
     monkeypatch.setattr(core.study_repo, 'list_study_folders_by_uid', lambda _db, _uid: [])
     monkeypatch.setattr(core, 'get_study_card_state_doc', lambda _uid, _pack_id: type('Ref', (), {'get': lambda self: _Snapshot({'state': {}})})())
-    monkeypatch.setattr(core, 'get_study_progress_doc', lambda _uid: type('Ref', (), {'get': lambda self: _Snapshot()})())
+    monkeypatch.setitem(runtime.__dict__, 'get_study_progress_doc', lambda _uid: type('Ref', (), {'get': lambda self: _Snapshot({
+        'card_state_due_by_date_version': 1, 'card_state_due_by_date': {},
+    })})())
     monkeypatch.setattr(core.study_repo, 'list_study_card_states_by_uid', lambda _db, _uid, _limit: [])
     core.planner_repo.clear_memory_state()
     yield {'uid': uid, 'pack_id': pack_id, 'pack': pack}
@@ -501,3 +503,63 @@ def test_calendar_field_update_does_not_create_missing_firestore_document(monkey
     monkeypatch.setattr(core.planner_repo, 'calendar_feed_doc_ref', lambda _db, _id: SimpleNamespace(update=update))
     assert core.planner_repo.update_calendar_feed(object(), 'feed_test', {'last_accessed_at': 1234}) is False
     assert writes == [{'last_accessed_at': 1234}]
+
+
+def test_plan_preview_excludes_elapsed_today_slots_in_user_timezone(client, study_plan_runtime, monkeypatch):
+    from datetime import datetime, timezone
+
+    now = datetime(2026, 9, 30, 16, 30, tzinfo=timezone.utc)
+    monkeypatch.setattr(core.time, 'time', lambda: now.timestamp())
+    body = _preview_body(study_plan_runtime['pack_id'], exam_date='2026-10-02')
+    body['preferences'].update(timezone='Europe/Amsterdam', availability=[
+        {'weekday': weekday, 'start': '09:00', 'end': '20:00'} for weekday in range(7)
+    ])
+    response = client.post('/api/study-plan/preview', json=body, headers=_headers())
+    assert response.status_code == 200
+    sessions = response.get_json()['proposal']['sessions']
+    assert sessions[0]['date'] == '2026-09-30'
+    assert sessions[0]['time'] == '19:00'
+    assert all(datetime.fromisoformat(row['starts_at_utc'].replace('Z', '+00:00')) >= now for row in sessions)
+
+
+def test_upcoming_api_uses_local_time_and_keeps_legacy_after_finished_sessions(client, study_plan_runtime, monkeypatch):
+    from datetime import datetime, timezone
+    from lecture_processor.domains.study import progress
+
+    local_zone = timezone(timedelta(hours=2))
+    monkeypatch.setattr(progress, 'resolve_user_timezone', lambda _uid, runtime=None: (local_zone, 'Europe/Amsterdam'))
+    monkeypatch.setattr(progress, 'to_timezone_now', lambda _base, _zone, runtime=None: datetime(2026, 10, 1, 0, 30, tzinfo=local_zone))
+    for session_id, day, clock, status in [('cancelled', '2026-10-01', '01:00', 'cancelled'),
+                                          ('completed', '2026-10-01', '01:00', 'completed'),
+                                          ('elapsed', '2026-10-01', '00:00', 'planned'),
+                                          ('utc_yesterday', '2026-09-30', '23:59', 'planned'),
+                                          ('near_future', '2026-10-01', '01:00', 'planned'),
+                                          ('legacy', '2026-10-01', '02:00', None)]:
+        row = {'id': session_id, 'date': day, 'time': clock, 'duration': 45, 'title': session_id}
+        if status is not None:
+            row['status'] = status
+        core.planner_repo.set_planner_session(None, study_plan_runtime['uid'], session_id, row)
+    response = client.get('/api/planner/sessions?future_only=1&limit=2', headers=_headers())
+    assert response.status_code == 200
+    assert [row['id'] for row in response.get_json()['sessions']] == ['near_future', 'legacy']
+
+
+def test_plan_and_dashboard_use_the_same_complete_due_total(client, study_plan_runtime, monkeypatch, runtime):
+    progress = {
+        'card_state_due_by_date_version': 1,
+        'card_state_due_by_date': {'2000-01-01': 402, '2099-01-01': 20},
+    }
+    monkeypatch.setattr(core, 'MAX_PROGRESS_PACKS_PER_SYNC', 1)
+    monkeypatch.setitem(runtime.__dict__, 'get_study_progress_doc', lambda _uid: type('Ref', (), {'get': lambda self: _Snapshot(progress)})())
+
+    def unexpected_limited_scan(*_args, **_kwargs):
+        pytest.fail('A complete summary must not fall back to a limited card-state scan')
+
+    monkeypatch.setattr(core.study_repo, 'list_study_card_states_by_uid', unexpected_limited_scan)
+    dashboard = client.get('/api/study-progress/summary', headers=_headers())
+    plan = client.get('/api/study-plan', headers=_headers())
+
+    assert dashboard.status_code == 200
+    assert plan.status_code == 200
+    assert dashboard.get_json()['due_today'] == 402
+    assert plan.get_json()['progress']['due_cards'] == 402

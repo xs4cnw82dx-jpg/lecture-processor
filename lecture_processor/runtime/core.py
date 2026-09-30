@@ -1409,142 +1409,29 @@ def convert_audio_to_mp3_with_ytdlp(local_audio_path):
     return file_service.convert_audio_to_mp3_with_ytdlp(local_audio_path, ffmpeg_binary_getter=get_ffmpeg_binary, logger=logger, which_func=shutil.which, subprocess_module=subprocess)
 
 def resolve_auto_amount(kind, source_text):
-    word_count = len((source_text or '').split())
-    if kind == 'flashcards':
-        if word_count < 1200:
-            return 10
-        if word_count < 2600:
-            return 20
-        return 30
-    if word_count < 1200:
-        return 5
-    if word_count < 2600:
-        return 10
-    return 15
+    return study_generation.resolve_auto_amount(kind, source_text, runtime=_self_runtime())
+
 
 def resolve_study_amounts(flashcard_selection, question_selection, source_text):
-    flashcard_amount = resolve_auto_amount('flashcards', source_text) if flashcard_selection == 'auto' else int(flashcard_selection)
-    question_amount = resolve_auto_amount('questions', source_text) if question_selection == 'auto' else int(question_selection)
-    return (flashcard_amount, question_amount)
+    return study_generation.resolve_study_amounts(
+        flashcard_selection, question_selection, source_text, runtime=_self_runtime(),
+    )
+
 
 def extract_json_payload(raw_text):
-    if not raw_text:
-        return None
-    text = raw_text.strip()
-    if text.startswith('```'):
-        lines = text.splitlines()
-        if len(lines) >= 3 and lines[0].startswith('```') and (lines[-1].strip() == '```'):
-            text = '\n'.join(lines[1:-1]).strip()
-    start = text.find('{')
-    if start == -1:
-        return None
-    decoder = json.JSONDecoder()
-    try:
-        parsed, _ = decoder.raw_decode(text[start:])
-        return parsed
-    except json.JSONDecodeError:
-        end = text.rfind('}')
-        if end == -1 or end <= start:
-            return None
-        try:
-            return json.loads(text[start:end + 1])
-        except json.JSONDecodeError:
-            return None
+    return study_generation.extract_json_payload(raw_text, runtime=_self_runtime())
+
 
 def sanitize_flashcards(items, max_items):
-    MAX_TEXT_LEN = 2000
-    if not isinstance(items, list):
-        return []
-    cleaned = []
-    seen = set()
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        front = normalize_flashcard_front(item.get('front', ''))[:MAX_TEXT_LEN]
-        back = str(item.get('back', '')).strip()[:MAX_TEXT_LEN]
-        if not front or not back:
-            continue
-        key = (front.lower(), back.lower())
-        if key in seen:
-            continue
-        seen.add(key)
-        cleaned.append({'front': front, 'back': back})
-        if len(cleaned) >= max_items:
-            break
-    return cleaned
+    return study_generation.sanitize_flashcards(items, max_items, runtime=_self_runtime())
+
 
 def normalize_flashcard_front(raw_front):
-    front = str(raw_front or '').strip()
-    if not front:
-        return ''
-    if front.endswith('?'):
-        return front
+    return study_generation.normalize_flashcard_front(raw_front)
 
-    compact = re.sub(r'\s+', ' ', front).strip()
-    if not compact:
-        return ''
-
-    lower = compact.lower()
-    question_starts = (
-        'what ',
-        'which ',
-        'who ',
-        'when ',
-        'where ',
-        'why ',
-        'how ',
-        'list ',
-        'name ',
-        'identify ',
-        'describe ',
-        'define ',
-        'explain ',
-        'give ',
-    )
-    if any(lower.startswith(prefix) for prefix in question_starts):
-        return compact.rstrip('.!') + '?'
-
-    article_match = re.match(r'^(?:the|a|an)\s+(.+)$', compact, flags=re.IGNORECASE)
-    if article_match:
-        compact = article_match.group(1).strip()
-
-    if not compact:
-        return ''
-
-    if re.search(r'\b(?:components|parts|steps|stages|types|examples|causes|effects|symptoms|features)\b', lower):
-        return f'List all {compact.rstrip(".!")}?'
-    return f'What is {compact.rstrip(".!")}?' 
 
 def sanitize_questions(items, max_items):
-    MAX_TEXT_LEN = 2000
-    if not isinstance(items, list):
-        return []
-    cleaned = []
-    seen = set()
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        question = str(item.get('question', '')).strip()[:MAX_TEXT_LEN]
-        options = item.get('options', [])
-        answer = str(item.get('answer', '')).strip()[:MAX_TEXT_LEN]
-        explanation = str(item.get('explanation', '')).strip()[:MAX_TEXT_LEN]
-        if not question or not isinstance(options, list) or len(options) != 4 or (not answer):
-            continue
-        option_strings = [str(option).strip()[:MAX_TEXT_LEN] for option in options]
-        if any((not option for option in option_strings)):
-            continue
-        if len(set(option_strings)) != 4:
-            continue
-        if answer not in option_strings:
-            continue
-        dedupe_key = question.lower()
-        if dedupe_key in seen:
-            continue
-        seen.add(dedupe_key)
-        cleaned.append({'question': question, 'options': option_strings, 'answer': answer, 'explanation': explanation})
-        if len(cleaned) >= max_items:
-            break
-    return cleaned
+    return study_generation.sanitize_questions(items, max_items, runtime=_self_runtime())
 
 def default_streak_data():
     return study_progress.default_streak_data(runtime=_self_runtime())

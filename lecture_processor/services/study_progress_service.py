@@ -3,11 +3,145 @@
 from lecture_processor.domains.study import progress as study_progress
 
 from lecture_processor.services import study_api_support
+from lecture_processor.domains.account import lifecycle as account_lifecycle
 
 
 UNSCHEDULED_DUE_DATE = '0001-01-01'
 CARD_STATE_DUE_ROLLUP_KEY = 'card_state_due_by_date'
 CARD_STATE_DUE_ROLLUP_UPDATED_AT_KEY = 'card_state_due_by_date_updated_at'
+CARD_STATE_DUE_ROLLUP_VERSION_KEY = 'card_state_due_by_date_version'
+CARD_STATE_DUE_ROLLUP_VERSION = 1
+
+
+class ProgressPackUnavailable(ValueError):
+    def __init__(self, message, status):
+        super().__init__(message)
+        self.status = status
+
+
+def _read_doc(doc_ref, transaction=None):
+    return doc_ref.get(transaction=transaction) if transaction is not None else doc_ref.get()
+
+
+def _has_complete_due_rollup(progress_data):
+    return (
+        progress_data.get(CARD_STATE_DUE_ROLLUP_VERSION_KEY) == CARD_STATE_DUE_ROLLUP_VERSION
+        and isinstance(progress_data.get(CARD_STATE_DUE_ROLLUP_KEY), dict)
+    )
+
+
+def _rollup_updates(uid, rollup, app_ctx):
+    return {
+        'uid': uid,
+        CARD_STATE_DUE_ROLLUP_KEY: rollup,
+        CARD_STATE_DUE_ROLLUP_UPDATED_AT_KEY: app_ctx.time.time(),
+        CARD_STATE_DUE_ROLLUP_VERSION_KEY: CARD_STATE_DUE_ROLLUP_VERSION,
+    }
+
+
+def _assert_pack_owner(app_ctx, uid, pack_id, transaction):
+    pack_ref = app_ctx.repositories.study.study_pack_doc_ref(app_ctx.db, pack_id)
+    doc = _read_doc(pack_ref, transaction)
+    if not doc.exists:
+        raise ProgressPackUnavailable('Study pack not found', 404)
+    if (doc.to_dict() or {}).get('uid') != uid:
+        raise ProgressPackUnavailable('Forbidden', 403)
+
+
+def _rebuild_due_rollup(app_ctx, uid, transaction=None):
+    """Rebuild from authoritative state; old summary maps may retain stale dates."""
+    docs = app_ctx.repositories.study.list_all_study_card_states_by_uid(app_ctx.db, uid, transaction=transaction)
+    states = {}
+    for doc in docs:
+        data = doc.to_dict() or {}
+        pack_id = _pack_id_from_summary_doc(uid, doc, data)
+        if pack_id and data.get('uid') == uid:
+            states[pack_id] = study_progress.sanitize_card_state_map(data.get('state', {}), runtime=app_ctx)
+    owners = app_ctx.repositories.study.get_study_pack_owner_docs(app_ctx.db, states, transaction=transaction)
+    owned_ids = {doc.id for doc in owners if doc.exists and (doc.to_dict() or {}).get('uid') == uid}
+    rollup = {}
+    for pack_id in owned_ids:
+        due_by_date = _card_state_summary(states[pack_id], app_ctx)['due_by_date']
+        rollup = _apply_due_by_date_delta(rollup, add=due_by_date)
+    return rollup
+
+
+def _due_rollup_for_progress(app_ctx, uid, progress_data, transaction=None):
+    if _has_complete_due_rollup(progress_data):
+        return _sanitize_due_by_date(progress_data[CARD_STATE_DUE_ROLLUP_KEY], app_ctx)
+    return _rebuild_due_rollup(app_ctx, uid, transaction)
+
+
+def _complete_progress_data(app_ctx, uid):
+    progress_ref = app_ctx.get_study_progress_doc(uid)
+    initial_doc = progress_ref.get()
+    initial_data = (initial_doc.to_dict() or {}) if initial_doc.exists else {}
+    if _has_complete_due_rollup(initial_data):
+        return initial_data
+
+    def load(transaction=None):
+        doc = _read_doc(progress_ref, transaction)
+        data = (doc.to_dict() or {}) if doc.exists else {}
+        if _has_complete_due_rollup(data):
+            return data
+        account_lifecycle.require_account_access(uid, runtime=app_ctx, transaction=transaction)
+        updates = _rollup_updates(uid, _rebuild_due_rollup(app_ctx, uid, transaction), app_ctx)
+        # A top-level merge mask replaces the entire date map. merge=True
+        # preserves absent nested date keys and can leave obsolete due counts.
+        if transaction is not None:
+            transaction.set(progress_ref, updates, merge=list(updates))
+        else:
+            progress_ref.set(updates, merge=list(updates))
+        return {**data, **updates}
+
+    transactional = getattr(getattr(app_ctx, 'firestore', None), 'transactional', None)
+    transaction_factory = getattr(app_ctx.db, 'transaction', None)
+    if callable(transactional) and callable(transaction_factory):
+        return transactional(load)(transaction_factory())
+    return load()
+
+
+def delete_pack_and_progress(app_ctx, uid, pack_id, delete_refs):
+    """Delete a pack and its due contribution together; leave media until commit."""
+    progress_ref = app_ctx.get_study_progress_doc(uid)
+    state_ref = app_ctx.get_study_card_state_doc(uid, pack_id)
+
+    def prepare(transaction=None):
+        account_lifecycle.require_account_access(uid, runtime=app_ctx, transaction=transaction)
+        if transaction is not None:
+            _assert_pack_owner(app_ctx, uid, pack_id, transaction)
+        progress_doc = _read_doc(progress_ref, transaction)
+        progress_data = (progress_doc.to_dict() or {}) if progress_doc.exists else {}
+        state_doc = _read_doc(state_ref, transaction)
+        state_data = (state_doc.to_dict() or {}) if state_doc.exists else {}
+        state = study_progress.sanitize_card_state_map(state_data.get('state', {}), runtime=app_ctx)
+        rollup = _due_rollup_for_progress(app_ctx, uid, progress_data, transaction)
+        rollup = _apply_due_by_date_delta(rollup, subtract=_card_state_summary(state, app_ctx)['due_by_date'])
+        return _rollup_updates(uid, rollup, app_ctx)
+
+    transactional = getattr(getattr(app_ctx, 'firestore', None), 'transactional', None)
+    transaction_factory = getattr(app_ctx.db, 'transaction', None)
+    if callable(transactional) and callable(transaction_factory):
+        @transactional
+        def remove(transaction):
+            updates = prepare(transaction)
+            transaction.set(progress_ref, updates, merge=list(updates))
+            for ref in delete_refs:
+                transaction.delete(ref)
+        remove(transaction_factory())
+        return
+    updates = prepare()
+    batch_factory = getattr(app_ctx.db, 'batch', None)
+    if callable(batch_factory):
+        batch = batch_factory()
+        batch.set(progress_ref, updates, merge=list(updates))
+        for ref in delete_refs:
+            batch.delete(ref)
+        batch.commit()
+        return
+    progress_ref.set(updates, merge=list(updates))
+    for ref in delete_refs:
+        ref.delete()
 
 
 def _local_today(progress_data, app_ctx):
@@ -82,27 +216,6 @@ def _apply_due_by_date_delta(base, *, subtract=None, add=None):
     return next_rollup
 
 
-def _due_count_from_card_state_summary(summary_payload, today_local, app_ctx):
-    if not isinstance(summary_payload, dict):
-        return None
-    raw_due_by_date = summary_payload.get('due_by_date')
-    if not isinstance(raw_due_by_date, dict):
-        return None
-    due_today = 0
-    for raw_due_date, raw_count in raw_due_by_date.items():
-        due_date = study_progress.sanitize_progress_date(raw_due_date, runtime=app_ctx)
-        if not due_date or due_date > today_local:
-            continue
-        due_today += study_progress.sanitize_int(
-            raw_count,
-            default=0,
-            min_value=0,
-            max_value=100000,
-            runtime=app_ctx,
-        )
-    return due_today
-
-
 def _due_count_from_due_by_date(due_by_date, today_local, app_ctx):
     due_today = 0
     for raw_due_date, raw_count in (due_by_date or {}).items():
@@ -143,8 +256,7 @@ def get_study_progress(app_ctx, request):
         return error_response, status
     uid = decoded_token['uid']
     try:
-        progress_doc = app_ctx.get_study_progress_doc(uid).get()
-        progress_data = progress_doc.to_dict() if progress_doc.exists else {}
+        progress_data = _complete_progress_data(app_ctx, uid)
         daily_goal = study_progress.sanitize_daily_goal_value(progress_data.get('daily_goal'), runtime=app_ctx)
         if daily_goal is None:
             daily_goal = 20
@@ -152,7 +264,6 @@ def get_study_progress(app_ctx, request):
         timezone = str(progress_data.get('timezone', '') or '').strip()[:80]
 
         card_states = {}
-        card_state_maps = []
         docs = app_ctx.repositories.study.list_study_card_states_by_uid(app_ctx.db, uid, app_ctx.MAX_PROGRESS_PACKS_PER_SYNC)
         for doc in docs:
             data = doc.to_dict() or {}
@@ -161,15 +272,18 @@ def get_study_progress(app_ctx, request):
                 continue
             state_map = study_progress.sanitize_card_state_map(data.get('state', {}), runtime=app_ctx)
             card_states[pack_id] = state_map
-            card_state_maps.append(state_map)
 
         return app_ctx.jsonify({
             'daily_goal': daily_goal,
             'streak_data': streak_data,
             'timezone': study_progress.sanitize_timezone_name(timezone, runtime=app_ctx),
             'card_states': card_states,
-            'summary': study_progress.compute_study_progress_summary(progress_data, card_state_maps, runtime=app_ctx),
+            'summary': _summary_with_due_count(progress_data, _due_count_from_due_by_date(
+                progress_data[CARD_STATE_DUE_ROLLUP_KEY], _local_today(progress_data, app_ctx), app_ctx,
+            ), app_ctx),
         })
+    except account_lifecycle.AccountUnavailableError:
+        return study_api_support.account_unavailable_response(app_ctx)
     except Exception as error:
         app_ctx.logger.error(f"Error fetching study progress for user {uid}: {error}")
         return app_ctx.jsonify({'error': 'Could not load study progress'}), 500
@@ -261,12 +375,13 @@ def update_study_progress(app_ctx, request):
         progress_ref = app_ctx.get_study_progress_doc(uid)
         now_ts = app_ctx.time.time()
 
-        def _read_doc(doc_ref, transaction=None):
-            if transaction is not None:
-                return doc_ref.get(transaction=transaction)
-            return doc_ref.get()
-
         def _build_mutations(transaction=None):
+            account_lifecycle.require_account_access(uid, runtime=app_ctx, transaction=transaction)
+            # Ownership must be checked in the same transaction as progress:
+            # otherwise a concurrent pack deletion can resurrect its state.
+            if transaction is not None:
+                for pack_id in sorted(requested_pack_ids):
+                    _assert_pack_owner(app_ctx, uid, pack_id, transaction)
             existing_progress_doc = _read_doc(progress_ref, transaction)
             existing_progress_data = existing_progress_doc.to_dict() if existing_progress_doc.exists else {}
             updates = {'uid': uid, 'updated_at': now_ts}
@@ -285,8 +400,8 @@ def update_study_progress(app_ctx, request):
                     runtime=app_ctx,
                 )
 
-            due_rollup_changed = bool(remove_pack_id_set)
-            due_rollup = _sanitize_due_by_date(existing_progress_data.get(CARD_STATE_DUE_ROLLUP_KEY), app_ctx)
+            due_rollup_changed = bool(remove_pack_id_set) or not _has_complete_due_rollup(existing_progress_data)
+            due_rollup = _due_rollup_for_progress(app_ctx, uid, existing_progress_data, transaction)
             card_state_writes = []
             state_docs = {}
             for pack_id, _cleaned_state in validated_states:
@@ -304,13 +419,11 @@ def update_study_progress(app_ctx, request):
                 existing_due_by_date = {}
                 if existing_pack_doc.exists:
                     existing_pack_data = existing_pack_doc.to_dict() or {}
-                    existing_due_by_date = _due_by_date_from_summary(existing_pack_data.get('summary'), app_ctx)
                     existing_pack_state = study_progress.sanitize_card_state_map(
                         existing_pack_data.get('state', {}),
                         runtime=app_ctx,
                     )
-                    if not existing_due_by_date:
-                        existing_due_by_date = _due_by_date_from_summary(_card_state_summary(existing_pack_state, app_ctx), app_ctx)
+                    existing_due_by_date = _card_state_summary(existing_pack_state, app_ctx)['due_by_date']
                 merged_state = study_progress.merge_card_state_maps(
                     existing_pack_state,
                     cleaned_state,
@@ -337,18 +450,14 @@ def update_study_progress(app_ctx, request):
                 if not existing_pack_doc.exists:
                     continue
                 existing_pack_data = existing_pack_doc.to_dict() or {}
-                existing_due_by_date = _due_by_date_from_summary(existing_pack_data.get('summary'), app_ctx)
-                if not existing_due_by_date:
-                    existing_pack_state = study_progress.sanitize_card_state_map(
-                        existing_pack_data.get('state', {}),
-                        runtime=app_ctx,
-                    )
-                    existing_due_by_date = _due_by_date_from_summary(_card_state_summary(existing_pack_state, app_ctx), app_ctx)
+                existing_pack_state = study_progress.sanitize_card_state_map(
+                    existing_pack_data.get('state', {}), runtime=app_ctx,
+                )
+                existing_due_by_date = _card_state_summary(existing_pack_state, app_ctx)['due_by_date']
                 due_rollup = _apply_due_by_date_delta(due_rollup, subtract=existing_due_by_date)
 
             if due_rollup_changed:
-                updates[CARD_STATE_DUE_ROLLUP_KEY] = due_rollup
-                updates[CARD_STATE_DUE_ROLLUP_UPDATED_AT_KEY] = now_ts
+                updates.update(_rollup_updates(uid, due_rollup, app_ctx))
             return updates, card_state_writes
 
         transactional = getattr(getattr(app_ctx, 'firestore', None), 'transactional', None)
@@ -357,9 +466,9 @@ def update_study_progress(app_ctx, request):
             @transactional
             def _write_in_transaction(transaction):
                 updates, card_state_writes = _build_mutations(transaction)
-                transaction.set(progress_ref, updates, merge=True)
+                transaction.set(progress_ref, updates, merge=list(updates))
                 for doc_ref, doc_payload in card_state_writes:
-                    transaction.set(doc_ref, doc_payload, merge=True)
+                    transaction.set(doc_ref, doc_payload, merge=list(doc_payload))
                 for pack_id in sanitized_remove_pack_ids:
                     transaction.delete(app_ctx.get_study_card_state_doc(uid, pack_id))
 
@@ -368,23 +477,36 @@ def update_study_progress(app_ctx, request):
             updates, card_state_writes = _build_mutations()
             if callable(getattr(app_ctx.db, 'batch', None)):
                 batch = app_ctx.db.batch()
-                batch.set(progress_ref, updates, merge=True)
+                batch.set(progress_ref, updates, merge=list(updates))
                 for doc_ref, doc_payload in card_state_writes:
-                    batch.set(doc_ref, doc_payload, merge=True)
+                    batch.set(doc_ref, doc_payload, merge=list(doc_payload))
                 for pack_id in sanitized_remove_pack_ids:
                     batch.delete(app_ctx.get_study_card_state_doc(uid, pack_id))
                 batch.commit()
             else:
-                progress_ref.set(updates, merge=True)
+                progress_ref.set(updates, merge=list(updates))
                 for doc_ref, doc_payload in card_state_writes:
-                    doc_ref.set(doc_payload, merge=True)
+                    doc_ref.set(doc_payload, merge=list(doc_payload))
                 for pack_id in sanitized_remove_pack_ids:
                     app_ctx.get_study_card_state_doc(uid, pack_id).delete()
 
         return app_ctx.jsonify({'ok': True})
+    except ProgressPackUnavailable as error:
+        return app_ctx.jsonify({'error': str(error)}), error.status
+    except account_lifecycle.AccountUnavailableError:
+        return study_api_support.account_unavailable_response(app_ctx)
     except Exception as error:
         app_ctx.logger.error(f"Error updating study progress for user {uid}: {error}")
         return app_ctx.jsonify({'error': 'Could not save study progress'}), 500
+
+
+def load_study_progress_summary(app_ctx, uid):
+    """Use the same complete due total for Dashboard and Study Plan."""
+    progress_data = _complete_progress_data(app_ctx, uid)
+    due_today = _due_count_from_due_by_date(
+        progress_data[CARD_STATE_DUE_ROLLUP_KEY], _local_today(progress_data, app_ctx), app_ctx,
+    )
+    return _summary_with_due_count(progress_data, due_today, app_ctx)
 
 
 def get_study_progress_summary(app_ctx, request):
@@ -393,60 +515,9 @@ def get_study_progress_summary(app_ctx, request):
         return error_response, status
     uid = decoded_token['uid']
     try:
-        progress_doc = app_ctx.get_study_progress_doc(uid).get()
-        progress_data = progress_doc.to_dict() if progress_doc.exists else {}
-        today_local = _local_today(progress_data, app_ctx)
-        if CARD_STATE_DUE_ROLLUP_KEY in progress_data:
-            due_rollup = _sanitize_due_by_date(progress_data.get(CARD_STATE_DUE_ROLLUP_KEY), app_ctx)
-            due_today = _due_count_from_due_by_date(due_rollup, today_local, app_ctx)
-            return app_ctx.jsonify(
-                _summary_with_due_count(progress_data, due_today, app_ctx)
-            )
-        due_today = 0
-        needs_legacy_backfill = False
-        docs = app_ctx.repositories.study.list_study_card_state_summaries_by_uid(app_ctx.db, uid, app_ctx.MAX_PROGRESS_PACKS_PER_SYNC)
-        for doc in docs:
-            data = doc.to_dict() or {}
-            pack_id = _pack_id_from_summary_doc(uid, doc, data)
-            if not pack_id:
-                continue
-            compact_due = _due_count_from_card_state_summary(data.get('summary'), today_local, app_ctx)
-            if compact_due is not None:
-                due_today += compact_due
-                continue
-            needs_legacy_backfill = True
-
-        if needs_legacy_backfill:
-            due_rollup = {}
-            full_docs = app_ctx.repositories.study.list_study_card_states_by_uid(
-                app_ctx.db,
-                uid,
-                app_ctx.MAX_PROGRESS_PACKS_PER_SYNC,
-            )
-            for doc in full_docs:
-                data = doc.to_dict() or {}
-                state = study_progress.sanitize_card_state_map(data.get('state', {}), runtime=app_ctx)
-                state_due_by_date = _due_by_date_from_summary(_card_state_summary(state, app_ctx), app_ctx)
-                due_rollup = _apply_due_by_date_delta(due_rollup, add=state_due_by_date)
-            due_today = _due_count_from_due_by_date(due_rollup, today_local, app_ctx)
-            try:
-                app_ctx.get_study_progress_doc(uid).set(
-                    {
-                        CARD_STATE_DUE_ROLLUP_KEY: due_rollup,
-                        CARD_STATE_DUE_ROLLUP_UPDATED_AT_KEY: app_ctx.time.time(),
-                    },
-                    merge=True,
-                )
-            except Exception as backfill_error:
-                app_ctx.logger.warning(
-                    "Could not backfill study progress due-date rollup for %s: %s",
-                    uid,
-                    backfill_error,
-                )
-
-        return app_ctx.jsonify(
-            _summary_with_due_count(progress_data, due_today, app_ctx)
-        )
+        return app_ctx.jsonify(load_study_progress_summary(app_ctx, uid))
+    except account_lifecycle.AccountUnavailableError:
+        return study_api_support.account_unavailable_response(app_ctx)
     except Exception as error:
         app_ctx.logger.error(f"Error fetching study progress summary for user {uid}: {error}")
         return app_ctx.jsonify({'error': 'Could not load study progress summary'}), 500

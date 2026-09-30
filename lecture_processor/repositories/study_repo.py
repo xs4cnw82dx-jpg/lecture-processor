@@ -136,6 +136,27 @@ def get_study_pack_docs(db, pack_ids):
     return [ref.get() for ref in refs]
 
 
+def _get_projected_docs(db, refs, field_paths):
+    """Bound RPC sizes while retaining small/local adapter compatibility."""
+    documents = []
+    get_all = getattr(db, 'get_all', None)
+    for offset in range(0, len(refs), 100):
+        batch = refs[offset:offset + 100]
+        if callable(get_all):
+            try:
+                documents.extend(list(get_all(batch, field_paths=list(field_paths))))
+                continue
+            except (AttributeError, TypeError):
+                pass
+        documents.extend(_get_doc_with_fields(ref, field_paths) for ref in batch)
+    return documents
+
+
+def get_study_pack_summary_docs(db, pack_ids):
+    refs = [study_pack_doc_ref(db, pack_id) for pack_id in dict.fromkeys(pack_ids)]
+    return _get_projected_docs(db, refs, STUDY_PACK_SUMMARY_FIELDS)
+
+
 def list_study_packs_with_audio_flags(db, limit=250):
     try:
         safe_limit = int(limit or 250)
@@ -291,6 +312,11 @@ def study_card_state_doc_ref(db, uid, pack_id):
     return db.collection('study_card_states').document(f"{uid}__{pack_id}")
 
 
+def get_study_card_state_docs(db, uid, pack_ids):
+    refs = [study_card_state_doc_ref(db, uid, pack_id) for pack_id in dict.fromkeys(pack_ids)]
+    return _get_projected_docs(db, refs, ('uid', 'pack_id', 'state'))
+
+
 def list_study_card_states_by_uid(db, uid, limit):
     return apply_where(db.collection('study_card_states'), 'uid', '==', uid).limit(limit).stream()
 
@@ -299,3 +325,46 @@ def list_study_card_state_summaries_by_uid(db, uid, limit):
     query = apply_where(db.collection('study_card_states'), 'uid', '==', uid).limit(limit)
     query = _apply_select(query, STUDY_CARD_STATE_SUMMARY_FIELDS)
     return query.stream()
+
+
+def list_all_study_card_states_by_uid(db, uid, transaction=None):
+    """Read the complete owner state for a one-time rollup rebuild."""
+    query = apply_where(db.collection('study_card_states'), 'uid', '==', uid)
+    if transaction is not None:
+        return list(query.stream(transaction=transaction))
+    return list(query.stream())
+
+
+def get_study_pack_owner_docs(db, pack_ids, transaction=None):
+    """Check ownership in bounded RPCs, including deleted/missing packs."""
+    ids = sorted(set(pack_ids))
+    docs = []
+    for offset in range(0, len(ids), 100):
+        refs = [study_pack_doc_ref(db, pack_id) for pack_id in ids[offset:offset + 100]]
+        get_all = getattr(db, 'get_all', None)
+        if callable(get_all):
+            kwargs = {'field_paths': ['uid']}
+            if transaction is not None:
+                kwargs['transaction'] = transaction
+            docs.extend(get_all(refs, **kwargs))
+        else:
+            for ref in refs:
+                if transaction is not None:
+                    docs.append(ref.get(transaction=transaction))
+                else:
+                    docs.append(_get_doc_with_fields(ref, ['uid']))
+    return docs
+
+
+def get_study_image_docs(db, image_ids):
+    """Fetch only image authorization fields, in at most 100-reference RPCs."""
+    ids = sorted(set(image_ids))
+    docs = []
+    for offset in range(0, len(ids), 100):
+        refs = [db.collection('study_images').document(image_id) for image_id in ids[offset:offset + 100]]
+        get_all = getattr(db, 'get_all', None)
+        if callable(get_all):
+            docs.extend(get_all(refs, field_paths=['uid', 'pack_id', 'ready']))
+        else:
+            docs.extend(_get_doc_with_fields(ref, ['uid', 'pack_id', 'ready']) for ref in refs)
+    return docs

@@ -26,7 +26,27 @@ ALLOWED_SET_TYPES = {'normal', 'warmup', 'drop', 'failure'}
 def load_seed() -> dict:
     seed_path = Path(__file__).with_name('seed_v1.json')
     with seed_path.open('r', encoding='utf-8') as seed_file:
-        return json.load(seed_file)
+        seed = json.load(seed_file)
+    validate_muscle_targets(seed)
+    return seed
+
+
+def validate_muscle_targets(seed: dict) -> None:
+    """Reject spreadsheet headers/totals accidentally imported as muscle rows."""
+    expected_groups = {item['muscle_group'] for item in seed['exercises']}
+    weeks = seed['integrity']['weeks']
+    seen = set()
+    for target in seed['muscle_targets']:
+        group = target.get('muscle_group')
+        weekly_sets = target.get('weekly_sets')
+        if not isinstance(group, str) or group not in expected_groups or group in seen:
+            raise ValueError(f'Invalid workout muscle target: {group!r}')
+        if (not isinstance(weekly_sets, list) or len(weekly_sets) != weeks
+                or any(type(value) is not int or value < 0 for value in weekly_sets)):
+            raise ValueError(f'Invalid weekly sets for workout muscle target: {group}')
+        seen.add(group)
+    if seen != expected_groups:
+        raise ValueError('Workout muscle targets must cover every seeded muscle group')
 
 
 def bounded_text(value, limit=200, *, fallback='') -> str:

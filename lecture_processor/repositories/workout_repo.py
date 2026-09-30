@@ -94,14 +94,34 @@ def delete_record(db, collection_name: str, uid: str, record_id: str) -> None:
     db.collection(collection_name).document(key).delete()
 
 
-def list_records(db, collection_name: str, uid: str, limit=500) -> list[dict]:
+def list_records(db, collection_name: str, uid: str, limit=500, *, filters=(), order_by=None, descending=False) -> list[dict]:
+    """Select matching records before limiting, identically in Firestore and memory.
+
+    ``limit=None`` intentionally reads the full matching history for lifetime
+    statistics and previous exercise values. A display limit must not change
+    those totals or cause an older personal record to be forgotten.
+    """
     if collection_name not in _MEMORY:
         return []
-    safe_limit = max(1, min(int(limit or 1), 2000))
+    safe_limit = None if limit is None else max(1, min(int(limit or 1), 2000))
+    for _, operator, _ in filters:
+        if operator not in {'==', 'in'}:
+            raise ValueError('Unsupported workout filter')
     if db is None:
         records = [deepcopy(item) for item in _MEMORY[collection_name].values() if isinstance(item, dict) and item.get('uid') == uid]
+        for field, operator, value in filters:
+            records = [item for item in records if (item.get(field) == value if operator == '==' else item.get(field) in value)]
+        if order_by:
+            records = [item for item in records if order_by in item]
+            records.sort(key=lambda item: (item[order_by], str(item.get('id', ''))), reverse=descending)
         return records[:safe_limit]
-    query = apply_where(db.collection(collection_name), 'uid', '==', uid).limit(safe_limit)
+    query = apply_where(db.collection(collection_name), 'uid', '==', uid)
+    for field, operator, value in filters:
+        query = apply_where(query, field, operator, value)
+    if order_by:
+        query = query.order_by(order_by, direction='DESCENDING' if descending else 'ASCENDING')
+    if safe_limit is not None:
+        query = query.limit(safe_limit)
     records = []
     for doc in query.stream():
         payload = doc.to_dict() or {}

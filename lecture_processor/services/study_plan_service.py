@@ -14,7 +14,7 @@ from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.planner import models as legacy_models
 from lecture_processor.domains.planner import study_plan
 from lecture_processor.domains.study import progress as study_progress
-from lecture_processor.services import access_service
+from lecture_processor.services import access_service, study_api_support, study_progress_service
 
 
 PROPOSAL_TTL_SECONDS = 15 * 60
@@ -37,13 +37,14 @@ def _new_id(prefix):
     return f"{prefix}_{secrets.token_urlsafe(12).replace('-', '_')[:18]}"
 
 
-def _today_for_timezone(timezone_name):
+def _today_for_timezone(timezone_name, now=None):
     safe_timezone = study_plan.sanitize_timezone(timezone_name)
+    current = now if now is not None else datetime.now(timezone.utc)
     try:
         from zoneinfo import ZoneInfo
-        return datetime.now(ZoneInfo(safe_timezone)).date().isoformat()
+        return current.astimezone(ZoneInfo(safe_timezone)).date().isoformat()
     except Exception:
-        return datetime.now(timezone.utc).date().isoformat()
+        return current.astimezone(timezone.utc).date().isoformat()
 
 
 def _starts_at_utc(date_value, time_value, timezone_name):
@@ -127,7 +128,23 @@ def _pack_summaries(app_ctx, uid, limit=100):
 
 
 def _pack_states(app_ctx, uid, pack_ids):
-    states = {}
+    states = {pack_id: {} for pack_id in pack_ids}
+    if app_ctx.db is not None:
+        try:
+            docs = app_ctx.repositories.study.get_study_card_state_docs(app_ctx.db, uid, pack_ids)
+            expected = {f'{uid}__{pack_id}': pack_id for pack_id in pack_ids}
+            for doc in docs:
+                pack_id = expected.get(str(getattr(doc, 'id', '') or ''))
+                if not pack_id or not getattr(doc, 'exists', False):
+                    continue
+                raw = doc.to_dict() or {}
+                if raw.get('uid') not in (None, '', uid):
+                    continue
+                states[pack_id] = study_progress.sanitize_card_state_map(raw.get('state', {}), runtime=app_ctx)
+        except Exception:
+            app_ctx.logger.warning('Could not load planner card states for %s', uid, exc_info=True)
+        return states
+    # In-memory runtimes can supply a state reference without a Firestore client.
     for pack_id in pack_ids:
         try:
             doc = app_ctx.get_study_card_state_doc(uid, pack_id).get()
@@ -172,24 +189,29 @@ def _safe_float(value, default=0.0):
 
 
 def _owned_pack_ids(app_ctx, uid, pack_ids):
-    owned = set()
-    for pack_id in study_plan.sanitize_pack_ids(pack_ids):
-        doc = app_ctx.repositories.study.get_study_pack_summary_doc(app_ctx.db, pack_id)
-        raw = doc.to_dict() if getattr(doc, 'exists', False) else {}
-        if (
-            getattr(doc, 'exists', False)
-            and str(raw.get('uid', '') or '') == uid
-            and str(raw.get('mode', '') or '').strip().lower() != 'voice-note'
-            and not bool(raw.get('archived', False))
-        ):
-            owned.add(pack_id)
-    return owned
+    return set(_owned_pack_summaries(app_ctx, uid, pack_ids))
 
 
 def _owned_pack_summaries(app_ctx, uid, pack_ids):
     summaries = {}
-    for pack_id in study_plan.sanitize_pack_ids(pack_ids):
-        doc = app_ctx.repositories.study.get_study_pack_doc(app_ctx.db, pack_id)
+    safe_ids = study_plan.sanitize_pack_ids(pack_ids)
+    if app_ctx.db is None:
+        docs = [(pack_id, app_ctx.repositories.study.get_study_pack_doc(app_ctx.db, pack_id)) for pack_id in safe_ids]
+    else:
+        snapshots = app_ctx.repositories.study.get_study_pack_summary_docs(app_ctx.db, safe_ids)
+        docs = [(str(getattr(doc, 'id', '') or ''), doc) for doc in snapshots]
+        # Older packs may predate stored counts. Fetch only those legacy packs
+        # in a batch to preserve their original array-length fallback.
+        missing_counts = [pack_id for pack_id, doc in docs if getattr(doc, 'exists', False)
+                          and (doc.to_dict() or {}).get('uid') == uid
+                          and not {'flashcards_count', 'test_questions_count'} <= (doc.to_dict() or {}).keys()]
+        if missing_counts:
+            legacy = {str(getattr(doc, 'id', '') or ''): doc
+                      for doc in app_ctx.repositories.study.get_study_pack_docs(app_ctx.db, missing_counts)}
+            docs = [(pack_id, legacy.get(pack_id, doc)) for pack_id, doc in docs]
+    for pack_id, doc in docs:
+        if pack_id not in safe_ids:
+            continue
         raw = doc.to_dict() if getattr(doc, 'exists', False) else {}
         if not getattr(doc, 'exists', False) or str(raw.get('uid', '') or '') != uid:
             continue
@@ -318,11 +340,9 @@ def _activity_summary(app_ctx, uid, start_ts, sessions, goals, workloads_by_pack
             'readiness_percent': round((mastery_percent + coverage_percent) / 2) if total_outcomes else coverage_percent,
         })
     try:
-        progress_doc = app_ctx.get_study_progress_doc(uid).get()
-        progress_data = progress_doc.to_dict() if progress_doc.exists else {}
-        card_docs = app_ctx.repositories.study.list_study_card_states_by_uid(app_ctx.db, uid, app_ctx.MAX_PROGRESS_PACKS_PER_SYNC)
-        card_maps = [study_progress.sanitize_card_state_map((doc.to_dict() or {}).get('state', {}), runtime=app_ctx) for doc in card_docs]
-        legacy_summary = study_progress.compute_study_progress_summary(progress_data, card_maps, runtime=app_ctx)
+        legacy_summary = study_progress_service.load_study_progress_summary(app_ctx, uid)
+    except account_lifecycle.AccountUnavailableError:
+        raise
     except Exception:
         legacy_summary = {'current_streak': 0, 'due_today': 0}
     global_outcomes = sum(int(item.get('flashcards_total', 0) or 0) + int(item.get('questions_total', 0) or 0) for item in workloads_by_pack.values())
@@ -377,13 +397,9 @@ def get_bootstrap(app_ctx, request):
         packs, next_pack_cursor = _pack_summary_page(app_ctx, uid, pack_limit)
         loaded_pack_ids = {item['study_pack_id'] for item in packs}
         selected_pack_ids = {pack_id for goal in active_goals for pack_id in goal['pack_ids']}
-        for pack_id in sorted(selected_pack_ids - loaded_pack_ids):
-            doc = app_ctx.repositories.study.get_study_pack_doc(app_ctx.db, pack_id)
-            raw = doc.to_dict() if getattr(doc, 'exists', False) else {}
-            if getattr(doc, 'exists', False) and str(raw.get('uid', '') or '') == uid:
-                summary = _pack_summary(raw, pack_id)
-                if not summary['archived']:
-                    packs.append(summary)
+        missing_pack_ids = sorted(selected_pack_ids - loaded_pack_ids)
+        for offset in range(0, len(missing_pack_ids), 100):
+            packs.extend(_owned_pack_summaries(app_ctx, uid, missing_pack_ids[offset:offset + 100]).values())
         states = _pack_states(app_ctx, uid, [item['study_pack_id'] for item in packs])
         pace, completed_notes = _recent_activity_context(app_ctx, uid)
         today = _today_for_timezone(preferences['timezone'])
@@ -447,6 +463,8 @@ def get_bootstrap(app_ctx, request):
             'range': {'from': start_date, 'to': end_date},
             'next_pack_cursor': next_pack_cursor,
         })
+    except account_lifecycle.AccountUnavailableError:
+        return study_api_support.account_unavailable_response(app_ctx)
     except Exception as error:
         app_ctx.logger.error('Could not load Study Plan bootstrap for %s: %s', uid, error)
         return app_ctx.jsonify({'error': 'Could not load your study plan.'}), 500
@@ -599,16 +617,17 @@ def preview_plan(app_ctx, request):
     goal, validation_error = study_plan.sanitize_goal(raw_goal, goal_id=goal_id, existing=existing_goal, now_ts=now_ts)
     if goal is None:
         return app_ctx.jsonify({'error': validation_error}), 400
-    if _owned_pack_ids(app_ctx, uid, goal['pack_ids']) != set(goal['pack_ids']):
+    packs_by_id = _owned_pack_summaries(app_ctx, uid, goal['pack_ids'])
+    if set(packs_by_id) != set(goal['pack_ids']):
         return app_ctx.jsonify({'error': 'One or more study packs could not be found.'}), 400
     current_preferences = _preferences(app_ctx, uid)
     requested_preferences = body.get('preferences') if isinstance(body.get('preferences'), dict) else {}
     preferences = study_plan.sanitize_preferences(requested_preferences, existing=current_preferences)
     preferences['availability_configured'] = True
-    today = _today_for_timezone(preferences['timezone'])
+    now = datetime.fromtimestamp(now_ts, timezone.utc)
+    today = _today_for_timezone(preferences['timezone'], now=now)
     if goal['exam_date'] <= today:
         return app_ctx.jsonify({'error': 'The exam date must be after today.'}), 400
-    packs_by_id = _owned_pack_summaries(app_ctx, uid, goal['pack_ids'])
     states = _pack_states(app_ctx, uid, goal['pack_ids'])
     pace, completed_notes = _recent_activity_context(app_ctx, uid)
     workloads = [
@@ -640,6 +659,7 @@ def preview_plan(app_ctx, request):
         start_date=today,
         occupied=occupied,
         proposal_id=proposal_id,
+        now=now,
     )
     proposal = {
         'proposal_id': proposal_id,

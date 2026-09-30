@@ -15,6 +15,19 @@ class Store:
     def __init__(self):
         self.data = {'users/owner': {'study_pictures_enabled': True}, 'study_packs/pack': {'uid': 'owner'}}
         self.writing = False
+        self.metadata_batches = []
+
+    def collection(self, name):
+        assert name == 'study_images'
+        return SimpleNamespace(document=lambda aid: SimpleNamespace(id=aid, path='study_images/' + aid))
+
+    def get_all(self, refs, field_paths):
+        assert field_paths == ['uid', 'pack_id', 'ready']
+        self.metadata_batches.append([ref.id for ref in refs])
+        return [SimpleNamespace(
+            id=ref.id, exists=ref.path in self.data,
+            to_dict=lambda root=ref.path: {key: value for key, value in self.data.get(root, {}).items() if key in field_paths},
+        ) for ref in reversed(refs)]
 
     def get(self, path):
         assert not self.writing, 'Firestore reads must precede writes'
@@ -123,6 +136,43 @@ def test_card_edits_preserve_references_and_reject_foreign_pictures(setup):
     db.data['study_images/' + image['id']]['ready'] = False
     with pytest.raises(BookError): service.sanitize_cards(runtime, 'owner', 'pack', cards)
     assert service.sanitize_cards(runtime, 'owner', 'pack', [{'front': 'a', 'back': 'b'}]) == [{'front': 'a', 'back': 'b'}]
+
+
+def test_many_picture_cards_validate_in_two_projected_batches_and_deduplicate_references(setup):
+    runtime, db, _, _ = setup
+    cards = []
+    for index in range(165):
+        aid = f'{index:064x}'
+        db.data['study_images/' + aid] = {'uid': 'owner', 'pack_id': 'pack', 'ready': True, 'private_storage_path': 'not needed'}
+        cards.append({'front': f'Card {index}', 'back': 'Answer', 'image_ids': [aid, aid]})
+
+    cleaned = service.sanitize_cards(runtime, 'owner', 'pack', cards)
+
+    assert [len(batch) for batch in db.metadata_batches] == [100, 65]
+    assert len(cleaned) == 165
+    assert cleaned[164]['image_ids'] == [f'{164:064x}']
+
+
+@pytest.mark.parametrize('mutation', ['missing', 'foreign-user', 'foreign-pack', 'not-ready'])
+def test_batched_picture_validation_keeps_every_authorization_check(setup, mutation):
+    runtime, db, _, _ = setup
+    aid = 'a' * 64
+    asset = {'uid': 'owner', 'pack_id': 'pack', 'ready': True}
+    if mutation == 'foreign-user': asset['uid'] = 'other'
+    if mutation == 'foreign-pack': asset['pack_id'] = 'other'
+    if mutation == 'not-ready': asset['ready'] = False
+    if mutation != 'missing': db.data['study_images/' + aid] = asset
+
+    with pytest.raises(BookError, match='does not belong'):
+        service.sanitize_cards(runtime, 'owner', 'pack', [{'front': 'Card', 'back': 'Answer', 'image_ids': [aid]}])
+
+    assert db.metadata_batches == [[aid]]
+
+
+def test_cards_without_pictures_do_not_read_image_metadata(setup):
+    runtime, db, _, _ = setup
+    assert service.sanitize_cards(runtime, 'owner', 'pack', [{'front': 'Text', 'back': 'Only'}]) == [{'front': 'Text', 'back': 'Only'}]
+    assert db.metadata_batches == []
 
 
 def test_private_read_and_account_cleanup(setup, monkeypatch):

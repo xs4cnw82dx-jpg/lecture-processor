@@ -304,12 +304,15 @@ def _parse_local_datetime(day_value, clock_value, timezone_name):
     return datetime.combine(day_value, datetime_time(hour=hour, minute=minute), tzinfo=zone)
 
 
-def build_available_slots(*, start_date, exam_date, preferences, occupied=None, max_sessions=200):
+def build_available_slots(*, start_date, exam_date, preferences, occupied=None, max_sessions=200, now=None):
     start_day = date.fromisoformat(sanitize_date(start_date))
     exam_day = date.fromisoformat(sanitize_date(exam_date))
     safe_preferences = sanitize_preferences(preferences)
     duration = safe_preferences['default_session_minutes']
     timezone_name = safe_preferences['timezone']
+    if now is not None and (now.tzinfo is None or now.utcoffset() is None):
+        raise ValueError('The scheduling cutoff must include a timezone.')
+    cutoff = now.astimezone(timezone.utc) if now is not None else None
     occupied_ranges = []
     for item in occupied if isinstance(occupied, list) else []:
         if str(item.get('status', 'planned')) in {'cancelled', 'skipped'}:
@@ -330,7 +333,8 @@ def build_available_slots(*, start_date, exam_date, preferences, occupied=None, 
             window_end = _parse_local_datetime(day_cursor, window['end'], timezone_name)
             while cursor + timedelta(minutes=duration) <= window_end and len(slots) < max_sessions:
                 slot_end = cursor + timedelta(minutes=duration)
-                if not any(cursor < occupied_end and slot_end > occupied_start for occupied_start, occupied_end in occupied_ranges):
+                is_future = cutoff is None or cursor.astimezone(timezone.utc) >= cutoff
+                if is_future and not any(cursor < occupied_end and slot_end > occupied_start for occupied_start, occupied_end in occupied_ranges):
                     slots.append({
                         'date': day_cursor.isoformat(),
                         'time': cursor.strftime('%H:%M'),
@@ -343,19 +347,46 @@ def build_available_slots(*, start_date, exam_date, preferences, occupied=None, 
     return slots
 
 
-def generate_schedule(*, goal, pack_workloads, preferences, start_date, occupied=None, proposal_id=''):
+def _workload_minutes(workload):
+    minutes = (workload['cards_remaining'] * workload['card_minutes_per_item']
+               + workload['questions_remaining'] * workload['question_minutes_per_item']
+               + workload['notes_minutes'])
+    return max(0, int(math.ceil(minutes * 1.15 - 1e-9)))
+
+
+def _allocate_outcomes(workload, duration):
+    """Consume only whole items that fit, keeping unassigned remainders alive."""
+    remaining = duration / 1.15
+    cards = min(workload['cards_remaining'], int((remaining + 1e-9) / workload['card_minutes_per_item']))
+    remaining -= cards * workload['card_minutes_per_item']
+    questions = min(workload['questions_remaining'], int((remaining + 1e-9) / workload['question_minutes_per_item']))
+    remaining -= questions * workload['question_minutes_per_item']
+    notes_minutes = min(workload['notes_minutes'], max(0, int(remaining + 1e-9)))
+    workload['cards_remaining'] -= cards
+    workload['questions_remaining'] -= questions
+    workload['notes_minutes'] -= notes_minutes
+    minutes = cards * workload['card_minutes_per_item'] + questions * workload['question_minutes_per_item'] + notes_minutes
+    return {'flashcards': cards, 'questions': questions, 'notes_minutes': notes_minutes}, max(5, int(math.ceil(minutes * 1.15 - 1e-9)))
+
+
+def generate_schedule(*, goal, pack_workloads, preferences, start_date, occupied=None, proposal_id='', now=None):
     safe_goal = goal if isinstance(goal, dict) else {}
     slots = build_available_slots(
         start_date=start_date,
         exam_date=safe_goal.get('exam_date', ''),
         preferences=preferences,
         occupied=occupied,
+        now=now,
     )
     queue = []
     for workload in pack_workloads if isinstance(pack_workloads, list) else []:
         item = dict(workload)
-        item['remaining_minutes'] = _bounded_int(item.get('total_minutes'), maximum=100000)
-        if item['remaining_minutes'] > 0:
+        item['cards_remaining'] = _bounded_int(item.get('cards_remaining'))
+        item['questions_remaining'] = _bounded_int(item.get('questions_remaining'))
+        item['notes_minutes'] = _bounded_int(item.get('notes_minutes'))
+        item['card_minutes_per_item'] = max(0.25, min(5.0, float(item.get('card_minutes_per_item', 1.0) or 1.0)))
+        item['question_minutes_per_item'] = max(0.5, min(10.0, float(item.get('question_minutes_per_item', 2.0) or 2.0)))
+        if _workload_minutes(item) > 0:
             queue.append(item)
     queue.sort(key=lambda item: (
         -_bounded_int(item.get('due_cards')),
@@ -364,68 +395,50 @@ def generate_schedule(*, goal, pack_workloads, preferences, start_date, occupied
         -_bounded_int(item.get('unanswered_questions')),
         str(item.get('title', '')).lower(),
     ))
-    total_required = sum(item['remaining_minutes'] for item in queue)
+    total_required = sum(_workload_minutes(item) for item in queue)
     default_duration = sanitize_preferences(preferences)['default_session_minutes']
-    needed_slots = int(math.ceil(total_required / default_duration)) if total_required else 0
+    # Build one-pack sessions before spacing them over the calendar. Counting
+    # combined minutes undercounts small packs and loses rounded item remainders.
+    active = list(queue)
+    allocations = []
+    while active and len(allocations) < len(slots):
+        workload = active.pop(0)
+        outcomes, duration = _allocate_outcomes(workload, default_duration)
+        if any(outcomes.values()):
+            allocations.append((workload, outcomes, duration))
+        if _workload_minutes(workload) > 0:
+            active.append(workload)
+    needed_slots = len(allocations)
     selected_slots = slots
     if 0 < needed_slots < len(slots):
         if needed_slots == 1:
             selected_slots = [slots[0]]
         else:
             last_index = len(slots) - 1
-            indices = sorted({round(index * last_index / (needed_slots - 1)) for index in range(needed_slots)})
+            indices = [round(index * last_index / (needed_slots - 1)) for index in range(needed_slots)]
             selected_slots = [slots[index] for index in indices]
     scheduled = []
-    queue_index = 0
-    for index, slot in enumerate(selected_slots):
-        while queue and queue[queue_index % len(queue)]['remaining_minutes'] <= 0:
-            queue_index += 1
-            if queue_index > len(queue) * 3:
-                break
-        active = [item for item in queue if item['remaining_minutes'] > 0]
-        if not active:
-            break
-        workload = active[queue_index % len(active)]
-        allocated = min(slot['duration'], workload['remaining_minutes'])
-        outcome_minutes = allocated / 1.15
-        card_pace = max(0.25, min(5.0, float(workload.get('card_minutes_per_item', 1.0) or 1.0)))
-        question_pace = max(0.5, min(10.0, float(workload.get('question_minutes_per_item', 2.0) or 2.0)))
-        cards = min(_bounded_int(workload.get('cards_remaining')), int(outcome_minutes // card_pace))
-        outcome_minutes = max(0.0, outcome_minutes - (cards * card_pace))
-        questions = min(_bounded_int(workload.get('questions_remaining')), int(outcome_minutes // question_pace))
-        outcome_minutes = max(0.0, outcome_minutes - (questions * question_pace))
-        notes_minutes = min(_bounded_int(workload.get('notes_minutes')), int(math.ceil(outcome_minutes))) if not cards and not questions else 0
-        session_id = f"sp_{proposal_id[:12]}_{index + 1:03d}"
-        session_duration = max(5, allocated)
+    for index, (slot, allocation) in enumerate(zip(selected_slots, allocations)):
+        workload, outcomes, duration = allocation
         scheduled.append({
             **slot,
-            'duration': session_duration,
-            'id': session_id,
+            'duration': duration,
+            'id': f"sp_{proposal_id[:12]}_{index + 1:03d}",
             'title': f"Study {workload.get('title', 'study pack')}",
             'goal_id': safe_goal.get('goal_id', ''),
             'pack_id': workload.get('pack_id', ''),
             'pack_title': workload.get('title', ''),
-            'planned_outcomes': {
-                'flashcards': cards,
-                'questions': questions,
-                'notes_minutes': notes_minutes,
-            },
+            'planned_outcomes': outcomes,
             'origin': 'automatic',
             'locked': False,
             'status': 'planned',
             'proposal_id': proposal_id,
         })
-        workload['remaining_minutes'] -= allocated
-        workload['cards_remaining'] = max(0, _bounded_int(workload.get('cards_remaining')) - cards)
-        workload['questions_remaining'] = max(0, _bounded_int(workload.get('questions_remaining')) - questions)
-        workload['notes_minutes'] = max(0, _bounded_int(workload.get('notes_minutes')) - notes_minutes)
-        queue_index += 1
-    scheduled_minutes = sum(item['duration'] for item in scheduled)
     return {
         'sessions': scheduled,
         'required_minutes': total_required,
-        'scheduled_minutes': scheduled_minutes,
-        'shortage_minutes': max(0, total_required - scheduled_minutes),
+        'scheduled_minutes': sum(item['duration'] for item in scheduled),
+        'shortage_minutes': sum(_workload_minutes(item) for item in queue),
         'capacity_minutes': sum(item['duration'] for item in slots),
     }
 

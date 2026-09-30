@@ -3,6 +3,7 @@
 import secrets
 from urllib.parse import quote
 
+from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.study import progress as study_progress
@@ -10,6 +11,7 @@ from lecture_processor.domains.study import progress as study_progress
 from lecture_processor.services import admin_support
 from lecture_processor.services import study_api_support
 from lecture_processor.services import study_picture_service
+from lecture_processor.services import study_progress_service
 from lecture_processor.domains.books.model import BookError
 
 BUILTIN_FOLDER_PARENT_IDS = {'', '__interviews__', '__voice_notes__'}
@@ -581,11 +583,15 @@ def delete_study_pack(app_ctx, request, pack_id):
             for share_doc in share_docs
             if share_doc is not None and getattr(share_doc, 'exists', False)
         )
-        _commit_firestore_mutations(app_ctx, deletes=delete_refs)
+        study_progress_service.delete_pack_and_progress(app_ctx, uid, pack_id, delete_refs)
         # Delete the local audio only after Firestore commits. If Firestore fails,
         # the user's pack and its media remain intact for a safe retry.
         study_audio.remove_pack_audio_file(pack, runtime=app_ctx)
         return app_ctx.jsonify({'ok': True})
+    except study_progress_service.ProgressPackUnavailable as error:
+        return app_ctx.jsonify({'error': str(error)}), error.status
+    except account_lifecycle.AccountUnavailableError:
+        return study_api_support.account_unavailable_response(app_ctx)
     except Exception as error:
         app_ctx.logger.error(f"Error deleting study pack {pack_id}: {error}")
         return app_ctx.jsonify({'error': 'Could not delete study pack'}), 500
