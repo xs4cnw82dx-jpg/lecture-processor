@@ -19,7 +19,7 @@
   {% include '_app_shell.html' %}
   <main class="app-shell-page">
   <div class="container">
-    <h1 class="sr-only">{{ study_shell_title or 'Study Library' }}</h1>
+    <h1 class="sr-only" id="study-page-heading">{{ study_shell_title or 'Study Library' }}</h1>
     <section class="study-auth-gate" id="study-auth-gate" hidden>
       <div class="study-auth-gate-card">
         <p class="study-auth-eyebrow">Protected library</p>
@@ -61,7 +61,7 @@
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                 <polyline points="17 8 12 3 7 8"></polyline>
                 <line x1="12" y1="3" x2="12" y2="15"></line>
-              </svg><span>Import CSV</span></button><button class="btn" id="create-pack-btn"><svg viewBox="0 0 24 24" fill="none"
+              </svg><span>Import CSV</span></button><button class="btn" id="create-pack-btn" aria-label="Create study pack"><svg viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>

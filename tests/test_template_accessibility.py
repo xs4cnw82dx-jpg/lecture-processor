@@ -288,7 +288,10 @@ def test_voice_notes_and_study_pages_have_single_page_heading_contract():
 
     assert '<h2>Sign in to transcribe</h2>' in voice_template
     assert '<h1>Sign in to transcribe</h1>' not in voice_template
-    assert '<h1 class="sr-only">{{ study_shell_title or ' in study_template
+    headings = re.findall(r'<h1\b[^>]*>', study_template)
+    assert len(headings) == 1
+    assert 'class="sr-only"' in headings[0]
+    assert 'id="study-page-heading"' in headings[0]
 
 
 def test_study_folder_rows_do_not_nest_actions_inside_button_role():

@@ -33,6 +33,7 @@ let plannedPackIds = new Set();
 let plannerActivity = null, plannerActivitySyncTimer = null;
 let packsHasMore = false, packsNextCursor = '', packsLoadingMore = false;
 let activeEditorPane = 'notes', exportType = 'flashcards', draggedPackId = '', draggedPackIds = [], draggingFolderId = '';
+let renderedEditorPanes = { flashcards: false, test: false };
 let folderModalMode = 'create', editingFolderId = '', folderModalParentId = '', pendingOpenPackId = '', confirmModalResolver = null;
 let builderDraft = null, builderMode = 'edit', builderPane = 'info', builderDirty = false, builderPackId = '', builderExitResolver = null, builderImportParsed = null;
 let builderAutoSaveTimer = null, builderAutoSaving = false, builderAutoSaveQueued = false, builderBulkImporting = false;
@@ -1634,6 +1635,8 @@ function updateStudyShellTitle(nextTitle) {
   if (!safeTitle) { return; }
   var shellTitleEl = document.querySelector('.app-shell-title');
   if (shellTitleEl) { shellTitleEl.textContent = safeTitle; }
+  var pageHeading = document.getElementById('study-page-heading');
+  if (pageHeading) { pageHeading.textContent = safeTitle; }
   document.title = safeTitle;
 }
 function resetStudyBuilderEntryState() {
@@ -1664,6 +1667,7 @@ function applyStudySignedOutState() {
   selectedFolderId = '';
   selectedPackId = '';
   selectedPack = null;
+  resetInlineEditorViews();
   selectedPackIds = new Set();
   packSelectionAnchorId = '';
   syncPackSelectionControls();
@@ -3279,6 +3283,8 @@ function saveBuilderPack(closeAfter, options) {
       if (selectedPack && selectedPackId && (builderPackId || selectedPackId) === selectedPackId) {
         selectedPack = Object.assign({}, selectedPack, payload, { study_pack_id: selectedPackId });
         setInlineAutosaveBaseline(selectedPack);
+        resetInlineEditorViews();
+        setEditorPane(activeEditorPane);
       }
       return null;
     }
@@ -4266,6 +4272,10 @@ function setEditorPane(pane) {
   }
   activeEditorPane = pane;
   syncTabSelection(editorTabs, 'editorPane', pane);
+  if (selectedPack && !renderedEditorPanes[pane]) {
+    if (pane === 'flashcards') renderFlashcardEditor();
+    if (pane === 'test') renderQuestionEditor();
+  }
   if (codingPane && !codingWorkspaceOpen) codingPane.hidden = true;
   exportType = (pane === 'test') ? 'test' : 'flashcards';
   if (pane === 'notes') { scheduleNotesFullscreenIdle(); }
@@ -4595,6 +4605,9 @@ function renderFolders() {
     } else if (f.folder_id === BUILTIN_INTERVIEWS_FOLDER_ID || f.folder_id === BUILTIN_VOICE_NOTES_FOLDER_ID || f.folder_id === BUILTIN_ALL_FOLDER_ID) {
       actions = '<span class="folder-head-actions"><button type="button" class="btn folder-mini-btn" data-new-subfolder="1" aria-label="Create subfolder in ' + safeFolderName + '">Subfolder</button></span>';
     }
+    if (actions) {
+      actions = '<details class="folder-action-menu"><summary aria-label="Folder actions for ' + safeFolderName + '">Actions</summary>' + actions + '</details>';
+    }
     var collapseButton = f.child_count > 0
       ? '<button type="button" class="folder-collapse-btn" data-folder-collapse aria-label="' + (f.is_collapsed ? 'Expand ' : 'Collapse ') + safeFolderName + '">' + (f.is_collapsed ? '+' : '-') + '</button>'
       : '<span class="folder-collapse-spacer" aria-hidden="true"></span>';
@@ -4615,6 +4628,17 @@ function renderFolders() {
       renderPacks();
     };
     var activateButton = div.querySelector('[data-folder-activate]');
+    var actionMenu = div.querySelector('.folder-action-menu');
+    if (actionMenu) {
+      actionMenu.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && actionMenu.open) {
+          event.preventDefault();
+          event.stopPropagation();
+          actionMenu.open = false;
+          actionMenu.querySelector('summary').focus();
+        }
+      });
+    }
     if (activateButton) {
       activateButton.addEventListener('click', function () { activateFolder(); });
     }
@@ -4995,7 +5019,15 @@ function updatePackSummary() {
 }
 
 /* ── Flashcard editor ── */
+function resetInlineEditorViews() {
+  renderedEditorPanes = { flashcards: false, test: false };
+  flashcardEditorList.innerHTML = '';
+  questionEditorList.innerHTML = '';
+  flashcardCount.textContent = ((selectedPack && selectedPack.flashcards) || []).length + ' flashcards';
+  questionCount.textContent = ((selectedPack && selectedPack.test_questions) || []).length + ' practice questions';
+}
 function renderFlashcardEditor(hi) {
+  renderedEditorPanes.flashcards = true;
   var idx = typeof hi === 'number' ? hi : -1;
   var cards = selectedPack && Array.isArray(selectedPack.flashcards) ? selectedPack.flashcards : [];
   flashcardCount.textContent = cards.length + ' flashcards'; flashcardEditorList.innerHTML = '';
@@ -5069,6 +5101,7 @@ function syncQuestionAnswerPicker(row, question) {
 }
 
 function renderQuestionEditor(hi) {
+  renderedEditorPanes.test = true;
   var idx = typeof hi === 'number' ? hi : -1;
   selectedPack.test_questions = (selectedPack.test_questions || []).map(normalizeQuestion);
   var questions = selectedPack.test_questions;
@@ -5524,6 +5557,7 @@ function openPack(packId) {
     setGoalPanelStatus('Synced', 'success');
     selectedPack.flashcards = Array.isArray(selectedPack.flashcards) ? selectedPack.flashcards : [];
     selectedPack.test_questions = Array.isArray(selectedPack.test_questions) ? selectedPack.test_questions.map(normalizeQuestion) : [];
+    resetInlineEditorViews();
     selectedPack.has_audio_playback = !!selectedPack.has_audio_playback;
     selectedPack.has_audio_sync = !!selectedPack.has_audio_sync;
     selectedPack.audio_unavailable_reason = String(selectedPack.audio_unavailable_reason || '');
@@ -5560,7 +5594,6 @@ function openPack(packId) {
       renderNotesForSelectedPackBase();
       reapplyHighlightsForPack();
       initAudioForSelectedPack();
-      renderFlashcardEditor(); renderQuestionEditor();
       setEditorPane(getContentPreferredEditorPane(selectedPack, activeEditorPane));
       updateShareActionAvailability();
       // Deep link: auto-open learn mode if URL says so
@@ -7310,8 +7343,7 @@ deletePackBtn.addEventListener('click', function () {
       });
     }, Promise.resolve());
     deleteChain.then(function () {
-      return apiCall('/api/study-progress', { method: 'PUT', body: JSON.stringify({ remove_pack_ids: removedPackIds }) }).catch(function () { });
-    }).then(function () {
+      // Pack deletion also removes its progress and due-count contribution.
       removedPackIds.forEach(removePackLocalCaches);
       clearPackSelection(false);
       if (activePackDeleted) {

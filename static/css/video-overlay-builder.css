@@ -1649,10 +1649,6 @@
     grid-template-columns: 1fr;
   }
 
-  .overlay-stage {
-    min-height: 220px;
-  }
-
   .overlay-stage-frame {
     min-height: 260px;
     max-width: 100%;

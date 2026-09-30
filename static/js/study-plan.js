@@ -8,6 +8,7 @@
   var htmlUtils = window.LectureProcessorHtml || {};
   var userCache = window.LectureProcessorUserCache || {};
   var uiCache = window.LectureProcessorUiCache || {};
+  var ux = window.LectureProcessorUx;
   var escapeHtml = htmlUtils.escapeHtml || function (value) { return String(value == null ? '' : value); };
   var CACHE_KEY = 'study_plan_v2_bootstrap';
   var DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -28,8 +29,7 @@
     packFilter: 'all',
     packSearch: '',
     online: navigator.onLine !== false,
-    queryPacksConsumed: false,
-    lastFocusedElement: null
+    queryPacksConsumed: false
   };
 
   var els = {};
@@ -407,7 +407,8 @@
   function showControlPopover(panel, anchor) {
     closeControlPopover(false);
     panel.classList.add('plan-control-popover');
-    document.body.appendChild(panel);
+    // Keep picker controls inside the owning modal's focus and inertness scope.
+    (anchor.closest('[role="dialog"]') || document.body).appendChild(panel);
     anchor.setAttribute('aria-expanded', 'true');
     activeControlPopover = { panel: panel, anchor: anchor };
     positionControlPopover(panel, anchor);
@@ -443,6 +444,14 @@
       panel.appendChild(optionButton);
     });
     showControlPopover(panel, button);
+    panel.addEventListener('keydown', function (event) {
+      var options = queryAll('.pretty-option:not([disabled])', panel);
+      var index = options.indexOf(document.activeElement);
+      if (!options.length || ['ArrowDown', 'ArrowUp', 'Home', 'End'].indexOf(event.key) === -1) return;
+      event.preventDefault();
+      var next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : (index + (event.key === 'ArrowUp' ? -1 : 1) + options.length) % options.length;
+      options[next].focus();
+    });
     var selectedButton = panel.querySelector('.pretty-option.is-selected');
     if (selectedButton) selectedButton.focus();
   }
@@ -456,6 +465,7 @@
       wrapper.appendChild(select);
       select.classList.add('plan-native-control-hidden');
       select.tabIndex = -1;
+      select.setAttribute('aria-hidden', 'true');
       var button = document.createElement('button');
       button.type = 'button';
       button.className = 'pretty-select-button';
@@ -566,23 +576,19 @@
 
   function openOverlay(element) {
     if (!element) return;
-    state.lastFocusedElement = document.activeElement;
-    element.hidden = false;
-    element.setAttribute('aria-hidden', 'false');
     document.body.classList.add('plan-modal-open');
-    window.requestAnimationFrame(function () {
-      var first = element.querySelector('[autofocus], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])');
-      if (first) first.focus();
+    ux.openModalOverlay(element, {
+      focusableSelector: 'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]):not([tabindex="-1"]),summary,[tabindex]:not([tabindex="-1"])',
+      onRequestClose: function () {
+        if (!closeControlPopover(true)) closeOverlay(element);
+      }
     });
   }
   function closeOverlay(element) {
     if (!element) return;
     closeControlPopover(false);
-    element.hidden = true;
-    element.setAttribute('aria-hidden', 'true');
+    ux.closeModalOverlay(element);
     document.body.classList.remove('plan-modal-open');
-    if (state.lastFocusedElement && typeof state.lastFocusedElement.focus === 'function') state.lastFocusedElement.focus();
-    state.lastFocusedElement = null;
   }
 
   function requestedPackIds() {
@@ -955,10 +961,8 @@
     window.addEventListener('online', function () { setOfflineState(); loadData({ useCache: false }); });
     window.addEventListener('offline', setOfflineState);
     document.addEventListener('keydown', function (event) {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
       if (closeControlPopover(true)) { event.preventDefault(); return; }
-      var open = [els.feedsOverlay, els.sessionOverlay, els.wizardOverlay].find(function (overlay) { return overlay && !overlay.hidden; });
-      if (open) { event.preventDefault(); closeOverlay(open); }
     });
   }
 
