@@ -340,3 +340,9 @@ body.plan-modal-open { overflow: hidden; }
   .progress-summary-grid { grid-template-columns: 1fr; }
   .schedule-actions .btn { font-size: .75rem; padding-left: 9px; padding-right: 9px; }
 }
+
+@media (max-width: 380px) {
+  .custom-day { grid-template-columns: minmax(0, 1fr) 10px minmax(0, 1fr); }
+  .custom-day > label { grid-column: 1 / -1; }
+  .custom-day .plan-picker-control { min-width: 0; }
+}

@@ -221,7 +221,77 @@ test('Study Plan controls and dialogs remain keyboard and screen-reader friendly
   await page.keyboard.press('Enter');
   await expect(page.locator('#plan-wizard-overlay')).toBeVisible();
   await expect(page.locator('#plan-wizard-close')).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.locator('#wizard-next-btn')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.locator('#plan-wizard-close')).toBeFocused();
+  await expect(page.locator('.app-shell')).toHaveAttribute('inert', '');
   await page.keyboard.press('Escape');
   await expect(page.locator('#plan-wizard-overlay')).toBeHidden();
   await expect(createButton).toBeFocused();
+});
+
+test('session and calendar dialogs contain focus while their pickers remain usable', async ({ page }) => {
+  await installSignedInPlanner(page);
+  await page.goto('/plan?view=schedule');
+  await page.locator('[data-calendar-session="session_today"]').click();
+  await expect(page.locator('#session-editor-close')).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.locator('#session-editor-save')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.locator('#session-editor-close')).toBeFocused();
+  const timeTrigger = page.locator('#session-editor-time').locator('..').locator('.plan-picker-trigger');
+  await timeTrigger.click();
+  await expect(page.locator('#session-editor-overlay .time-picker-popover')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.time-picker-popover')).toHaveCount(0);
+  await expect(page.locator('#session-editor-overlay')).toBeVisible();
+  await expect(timeTrigger).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#session-editor-overlay')).toBeHidden();
+  await expect(page.locator('[data-calendar-session="session_today"]')).toBeFocused();
+
+  await page.getByRole('button', { name: 'Progress', exact: true }).click();
+  await page.locator('#progress-calendar-connections-btn').click();
+  await expect(page.locator('#calendar-feeds-close')).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.locator('.calendar-help summary')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.locator('#calendar-feeds-close')).toBeFocused();
+  await page.getByRole('button', { name: 'Reminder: 30 minutes before', exact: true }).click();
+  await expect(page.locator('#calendar-feeds-overlay .select-popover')).toBeVisible();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: 'Reminder: 1 hour before', exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#calendar-feeds-overlay')).toBeHidden();
+  await expect(page.locator('#progress-calendar-connections-btn')).toBeFocused();
+});
+
+test('exact-time availability remains fully visible at narrow phone widths', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await installSignedInPlanner(page, { withGoal: false });
+  await page.goto('/plan?add_pack=pack_question_1');
+  await page.locator('#wizard-next-btn').click();
+  await page.locator('#wizard-goal-title').fill('Anatomy final');
+  await page.locator('#wizard-next-btn').click();
+  await page.locator('[data-availability-preset="custom"]').click();
+  for (const width of [320, 360, 390]) {
+    await page.setViewportSize({ width, height: 800 });
+    const bounds = await page.locator('.custom-day').evaluateAll(rows => rows.map(row => ({
+      right: row.getBoundingClientRect().right,
+      controls: [...row.querySelectorAll('input,button')].map(control => {
+        const rect = control.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, width: rect.width };
+      })
+    })));
+    for (const row of bounds) {
+      expect(row.right).toBeLessThanOrEqual(width);
+      for (const control of row.controls) {
+        expect(control.left).toBeGreaterThanOrEqual(0);
+        expect(control.right).toBeLessThanOrEqual(width);
+        expect(control.width).toBeGreaterThan(0);
+      }
+    }
+  }
 });

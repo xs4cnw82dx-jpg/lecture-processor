@@ -1634,6 +1634,8 @@ function updateStudyShellTitle(nextTitle) {
   if (!safeTitle) { return; }
   var shellTitleEl = document.querySelector('.app-shell-title');
   if (shellTitleEl) { shellTitleEl.textContent = safeTitle; }
+  var pageHeading = document.getElementById('study-page-heading');
+  if (pageHeading) { pageHeading.textContent = safeTitle; }
   document.title = safeTitle;
 }
 function resetStudyBuilderEntryState() {
@@ -4595,6 +4597,9 @@ function renderFolders() {
     } else if (f.folder_id === BUILTIN_INTERVIEWS_FOLDER_ID || f.folder_id === BUILTIN_VOICE_NOTES_FOLDER_ID || f.folder_id === BUILTIN_ALL_FOLDER_ID) {
       actions = '<span class="folder-head-actions"><button type="button" class="btn folder-mini-btn" data-new-subfolder="1" aria-label="Create subfolder in ' + safeFolderName + '">Subfolder</button></span>';
     }
+    if (actions) {
+      actions = '<details class="folder-action-menu"><summary aria-label="Folder actions for ' + safeFolderName + '">Actions</summary>' + actions + '</details>';
+    }
     var collapseButton = f.child_count > 0
       ? '<button type="button" class="folder-collapse-btn" data-folder-collapse aria-label="' + (f.is_collapsed ? 'Expand ' : 'Collapse ') + safeFolderName + '">' + (f.is_collapsed ? '+' : '-') + '</button>'
       : '<span class="folder-collapse-spacer" aria-hidden="true"></span>';
@@ -4615,6 +4620,17 @@ function renderFolders() {
       renderPacks();
     };
     var activateButton = div.querySelector('[data-folder-activate]');
+    var actionMenu = div.querySelector('.folder-action-menu');
+    if (actionMenu) {
+      actionMenu.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && actionMenu.open) {
+          event.preventDefault();
+          event.stopPropagation();
+          actionMenu.open = false;
+          actionMenu.querySelector('summary').focus();
+        }
+      });
+    }
     if (activateButton) {
       activateButton.addEventListener('click', function () { activateFolder(); });
     }
