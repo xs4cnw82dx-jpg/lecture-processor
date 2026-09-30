@@ -7343,8 +7343,7 @@ deletePackBtn.addEventListener('click', function () {
       });
     }, Promise.resolve());
     deleteChain.then(function () {
-      return apiCall('/api/study-progress', { method: 'PUT', body: JSON.stringify({ remove_pack_ids: removedPackIds }) }).catch(function () { });
-    }).then(function () {
+      // Pack deletion also removes its progress and due-count contribution.
       removedPackIds.forEach(removePackLocalCaches);
       clearPackSelection(false);
       if (activePackDeleted) {
