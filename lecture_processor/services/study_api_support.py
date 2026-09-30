@@ -29,6 +29,10 @@ def pack_item_count(pack, count_key, items_key):
     return len(items) if isinstance(items, list) else 0
 
 
+def account_unavailable_response(app_ctx):
+    return app_ctx.jsonify({'error': 'Account is unavailable.', 'status': 'account_deletion_in_progress'}), 409
+
+
 def account_write_guard(app_ctx, uid):
     allowed, message = account_lifecycle.ensure_account_allows_writes(uid, runtime=app_ctx)
     if allowed:

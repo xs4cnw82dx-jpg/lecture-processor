@@ -2069,6 +2069,8 @@ def test_update_study_progress_empty_card_state_payload_does_not_delete_existing
     monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _FakePackDoc())
     monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: fake_progress_doc, raising=False)
     monkeypatch.setattr(runtime, "get_study_card_state_doc", lambda _uid, _pack_id: fake_card_doc, raising=False)
+    monkeypatch.setattr(core.study_repo, "list_all_study_card_states_by_uid", lambda *_args, **_kwargs: [fake_card_doc.get()])
+    monkeypatch.setattr(core.study_repo, "get_study_pack_owner_docs", lambda *_args, **_kwargs: [SimpleNamespace(id="pack-1", exists=True, to_dict=lambda: {"uid": "u10"})])
 
     response = client.put(
         "/api/study-progress",
@@ -2312,7 +2314,7 @@ def test_compute_study_progress_summary_timezone_yesterday_window():
     assert summary["daily_goal"] == 25
 
 
-def test_get_study_progress_summary_uses_compact_card_state_summaries(client, monkeypatch):
+def test_get_study_progress_summary_rebuilds_unversioned_compact_summaries_from_state(client, monkeypatch):
     class _FakeSnapshot:
         def __init__(self, payload=None, exists=True):
             self._payload = payload or {}
@@ -2325,12 +2327,23 @@ def test_get_study_progress_summary_uses_compact_card_state_summaries(client, mo
         def get(self):
             return _FakeSnapshot({"daily_goal": 30, "timezone": "UTC"})
 
+        def set(self, payload, merge=False):
+            assert payload["card_state_due_by_date_version"] == 1
+            assert payload["card_state_due_by_date"] == {"2000-01-01": 2, "2099-01-01": 1}
+            assert "card_state_due_by_date" in merge
+
     class _FakeSummaryDoc:
         id = "compact-u__pack-1"
 
         def to_dict(self):
             return {
+                "uid": "compact-u",
                 "pack_id": "pack-1",
+                "state": {
+                    "fc_1": {"seen": 1, "next_review_date": "2000-01-01"},
+                    "fc_2": {"seen": 1, "next_review_date": "2000-01-01"},
+                    "fc_3": {"seen": 1, "next_review_date": "2099-01-01"},
+                },
                 "summary": {
                     "due_by_date": {
                         "2000-01-01": 2,
@@ -2341,6 +2354,7 @@ def test_get_study_progress_summary_uses_compact_card_state_summaries(client, mo
 
     class _FakePackDoc:
         exists = True
+        id = "pack-1"
 
         def to_dict(self):
             return {"uid": "compact-u", "study_pack_id": "pack-1"}
@@ -2355,9 +2369,10 @@ def test_get_study_progress_summary_uses_compact_card_state_summaries(client, mo
     monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _FakePackDoc())
     monkeypatch.setattr(
         core.study_repo,
-        "list_study_card_state_summaries_by_uid",
-        lambda _db, _uid, _limit: [_FakeSummaryDoc()],
+        "list_all_study_card_states_by_uid",
+        lambda *_args, **_kwargs: [_FakeSummaryDoc()],
     )
+    monkeypatch.setattr(core.study_repo, "get_study_pack_owner_docs", lambda *_args, **_kwargs: [_FakePackDoc()])
     monkeypatch.setattr(
         runtime,
         "get_study_card_state_doc",
@@ -2392,6 +2407,7 @@ def test_get_study_progress_summary_uses_rollup_without_scanning_pack_docs(clien
                         "2000-01-01": 3,
                         "2099-01-01": 10,
                     },
+                    "card_state_due_by_date_version": 1,
                 }
             )
 
@@ -2402,7 +2418,7 @@ def test_get_study_progress_summary_uses_rollup_without_scanning_pack_docs(clien
     monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: _FakeProgressDoc(), raising=False)
     monkeypatch.setattr(
         core.study_repo,
-        "list_study_card_state_summaries_by_uid",
+        "list_all_study_card_states_by_uid",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("summary docs should not be scanned when rollup exists")),
     )
 
@@ -2464,9 +2480,10 @@ def test_get_study_progress_summary_falls_back_for_legacy_card_state_docs(client
 
     monkeypatch.setattr(
         core.study_repo,
-        "list_study_card_states_by_uid",
-        lambda _db, _uid, _limit: [_FakeCardStateDoc()],
+        "list_all_study_card_states_by_uid",
+        lambda *_args, **_kwargs: [_FakeCardStateDoc()],
     )
+    monkeypatch.setattr(core.study_repo, "get_study_pack_owner_docs", lambda *_args, **_kwargs: [SimpleNamespace(id="pack-legacy", exists=True, to_dict=lambda: {"uid": "legacy-u"})])
     monkeypatch.setattr(
         runtime,
         "get_study_card_state_doc",
@@ -2549,6 +2566,9 @@ def test_update_study_progress_merges_cross_browser_card_states(allow_account_wr
     monkeypatch.setattr(runtime, "db", fake_db, raising=False)
     monkeypatch.setattr(core.firestore, "transactional", lambda fn: fn, raising=False)
     monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _FakePackDoc())
+    monkeypatch.setattr(core.study_repo, "study_pack_doc_ref", lambda _db, _pack_id: SimpleNamespace(get=lambda transaction=None: _FakePackDoc()))
+    monkeypatch.setattr(core.study_repo, "list_all_study_card_states_by_uid", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(core.study_repo, "get_study_pack_owner_docs", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(runtime, "get_study_progress_doc", lambda uid: _FakeDocRef(progress_store, uid), raising=False)
     monkeypatch.setattr(
         runtime,

@@ -145,3 +145,37 @@ def test_list_study_card_state_summaries_by_uid_selects_compact_fields():
     assert result == ["state-doc"]
     assert ("limit", 10) in query.calls
     assert ("select", tuple(study_repo.STUDY_CARD_STATE_SUMMARY_FIELDS)) in query.calls
+
+
+def test_rollup_rebuild_reads_all_states_in_the_same_transaction_without_sync_limit():
+    transaction = object()
+
+    class _Query(_StudyPackQuery):
+        def stream(self, transaction=None):
+            self.calls.append(('stream', transaction))
+            return ['a', 'b', 'c']
+
+    class _Db:
+        def collection(self, name):
+            assert name == 'study_card_states'
+            return query
+
+    query = _Query()
+    assert study_repo.list_all_study_card_states_by_uid(_Db(), 'owner', transaction) == ['a', 'b', 'c']
+    assert not any(call[0] == 'limit' for call in query.calls)
+    assert query.calls[-1] == ('stream', transaction)
+
+
+def test_rollup_owner_reads_are_projected_batched_and_transactional():
+    calls = []
+    transaction = object()
+
+    class _BatchDb(_DB):
+        def get_all(self, refs, **kwargs):
+            calls.append((len(refs), kwargs))
+            return [ref.doc_id for ref in refs]
+
+    result = study_repo.get_study_pack_owner_docs(_BatchDb(_StudyPackQuery()), [f'pack-{index}' for index in range(205)] + ['pack-1'], transaction)
+    assert len(result) == 205
+    assert [size for size, _ in calls] == [100, 100, 5]
+    assert all(options == {'field_paths': ['uid'], 'transaction': transaction} for _, options in calls)

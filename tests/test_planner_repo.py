@@ -95,3 +95,64 @@ def test_future_memory_query_filters_and_sorts_before_limit():
         assert [item["id"] for item in records] == ["earlier"]
     finally:
         planner_repo.clear_memory_state()
+
+
+def test_upcoming_query_continues_past_full_excluded_pages_and_includes_legacy():
+    from types import SimpleNamespace
+
+    rows = [dict(id=f'session-{index:03}', uid='user-1', date='2099-01-01', time='09:00',
+                 status='cancelled' if index % 2 else 'completed') for index in range(100)]
+    rows += [dict(id='legacy', uid='user-1', date='2099-01-02', time='09:00'),
+             dict(id='planned', uid='user-1', date='2099-01-03', time='09:00', status='planned')]
+    docs = [SimpleNamespace(id='user-1__' + row['id'], to_dict=lambda row=row: dict(row)) for row in rows]
+    pages = []
+    query_calls = []
+
+    class Query:
+        def __init__(self, after=None, limit=0):
+            self.after, self.page_limit = after, limit
+
+        def where(self, *args, **kwargs):
+            query_calls.append(('where', args, kwargs))
+            return self
+
+        def order_by(self, field, direction=None):
+            query_calls.append(('order', field, direction))
+            return self
+
+        def start_after(self, cursor):
+            return Query(cursor)
+
+        def limit(self, value):
+            return Query(self.after, value)
+
+        def stream(self):
+            start = docs.index(self.after) + 1 if self.after is not None else 0
+            pages.append((start, self.page_limit))
+            return docs[start:start + self.page_limit]
+
+    db = SimpleNamespace(collection=lambda name: Query())
+    result = planner_repo.list_planner_sessions_by_uid(db, 'user-1', 2, start_date='2026-09-30', planned_only=True)
+    assert [row['id'] for row in result] == ['legacy', 'planned']
+    assert pages == [(0, 50), (50, 50), (100, 50)]
+    assert [item for item in query_calls if item[0] == 'order'] == [
+        ('order', 'date', 'ASCENDING'), ('order', 'time', 'ASCENDING')]
+    assert len([item for item in query_calls if item[0] == 'where']) == 2
+
+
+def test_upcoming_memory_query_filters_finished_and_elapsed_before_limit():
+    planner_repo.clear_memory_state()
+    try:
+        for session_id, clock, status in [('cancelled', '20:00', 'cancelled'), ('completed', '20:00', 'completed'),
+                                          ('skipped', '20:00', 'skipped'), ('elapsed', '09:00', 'planned'),
+                                          ('upcoming', '19:00', 'planned'), ('legacy', '20:00', None)]:
+            row = dict(id=session_id, date='2026-09-30', time=clock)
+            if status is not None:
+                row['status'] = status
+            planner_repo.set_planner_session(None, 'user-1', session_id, row)
+        result = planner_repo.list_planner_sessions_by_uid(
+            None, 'user-1', 2, start_date='2026-09-30', start_time='18:30:00', planned_only=True,
+        )
+        assert [row['id'] for row in result] == ['upcoming', 'legacy']
+    finally:
+        planner_repo.clear_memory_state()

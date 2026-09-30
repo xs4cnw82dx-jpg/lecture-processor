@@ -10,6 +10,7 @@ from flask import jsonify, send_file
 
 from lecture_processor.domains.books.model import BookError
 from lecture_processor.repositories.books_repo import BookStore
+from lecture_processor.repositories import study_repo
 from lecture_processor.services import book_service, book_storage, study_api_support
 
 MAX_CARD_IMAGES = 8
@@ -61,9 +62,13 @@ def sanitize_cards(runtime, uid, pack_id, items):
     if all_ids:
         if not enabled(runtime, uid):
             raise BookError('Pictures are not enabled for this account.', 403)
-        db = BookStore(runtime.db)
+        assets = {
+            doc.id: doc.to_dict() or {}
+            for doc in study_repo.get_study_image_docs(runtime.db, all_ids)
+            if doc.exists
+        }
         for aid in all_ids:
-            asset = db.get('study_images/' + aid)
+            asset = assets.get(aid)
             if not asset or not asset.get('ready') or asset.get('uid') != uid or asset.get('pack_id') != pack_id:
                 raise BookError('This picture does not belong to this study pack.', 403)
     for card in cleaned:

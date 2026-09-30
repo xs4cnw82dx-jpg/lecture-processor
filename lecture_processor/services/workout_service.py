@@ -28,8 +28,8 @@ def _json_payload(request):
     return payload if isinstance(payload, dict) else {}
 
 
-def _collection(app_ctx, name, uid, limit=1000):
-    return workout_repo.list_records(app_ctx.db, name, uid, limit)
+def _collection(app_ctx, name, uid, limit=1000, **query):
+    return workout_repo.list_records(app_ctx.db, name, uid, limit, **query)
 
 
 def _profile(app_ctx, uid):
@@ -54,10 +54,17 @@ def _conflict(app_ctx, payload, existing):
 
 def _active_cycle_data(app_ctx, uid, profile):
     active_cycle_id = str(profile.get('active_cycle_id', '') or '')
-    cycles = _collection(app_ctx, workout_repo.CYCLE_COLLECTION, uid, 50)
-    occurrences = _collection(app_ctx, workout_repo.OCCURRENCE_COLLECTION, uid, 800)
+    cycles = _collection(app_ctx, workout_repo.CYCLE_COLLECTION, uid, 50, order_by='created_at', descending=True)
     active_cycle = next((item for item in cycles if item.get('id') == active_cycle_id), None)
-    active_occurrences = [item for item in occurrences if item.get('cycle_id') == active_cycle_id] if active_cycle_id else []
+    if active_cycle_id and active_cycle is None:
+        snapshot = workout_repo.get_record(app_ctx.db, workout_repo.CYCLE_COLLECTION, uid, active_cycle_id)
+        if snapshot.exists:
+            active_cycle = snapshot.to_dict()
+            cycles.append(active_cycle)
+    active_occurrences = _collection(
+        app_ctx, workout_repo.OCCURRENCE_COLLECTION, uid, None,
+        filters=(('cycle_id', '==', active_cycle_id),), order_by='date',
+    ) if active_cycle_id else []
     active_occurrences.sort(key=lambda item: (item.get('date', ''), item.get('day', '')))
     return cycles, active_cycle, active_occurrences
 
@@ -82,11 +89,11 @@ def bootstrap(app_ctx, request):
     profile = _profile(app_ctx, uid)
     exercises, routines = _exercise_and_routine_data(app_ctx, uid)
     cycles, active_cycle, occurrences = _active_cycle_data(app_ctx, uid, profile)
-    sessions = _collection(app_ctx, workout_repo.SESSION_COLLECTION, uid, 300)
-    sessions.sort(key=lambda item: str(item.get('updated_at', '')), reverse=True)
-    active_session = next((models.calculate_session(item) for item in sessions if item.get('status') in {'active', 'paused'}), None)
+    sessions = _completed_sessions(app_ctx, uid)
+    active = _active_session(app_ctx, uid)
+    active_session = models.calculate_session(active) if active else None
     previous_scope = str((profile.get('settings') or {}).get('previous_values_scope', 'same_routine') or 'same_routine')
-    bodyweight = _collection(app_ctx, workout_repo.BODYWEIGHT_COLLECTION, uid, 500)
+    bodyweight = _bodyweight_history(app_ctx, uid)
     shares = _collection(app_ctx, workout_repo.SHARE_COLLECTION, uid, 200)
     return app_ctx.jsonify({
         'seed': models.load_seed(),
@@ -97,7 +104,7 @@ def bootstrap(app_ctx, request):
         'active_cycle': active_cycle,
         'occurrences': occurrences,
         'active_session': active_session,
-        'history': [models.calculate_session(item) for item in sessions if item.get('status') == 'completed'][:30],
+        'history': [models.calculate_session(item) for item in sessions[:30]],
         'previous_values': models.previous_values(sessions, reference=active_session, scope=previous_scope),
         'bodyweight': sorted(bodyweight, key=lambda item: str(item.get('date', ''))),
         'shares': [{key: item.get(key) for key in ('token', 'kind', 'source_id', 'revoked', 'created_at', 'updated_at')} for item in shares],
@@ -457,10 +464,25 @@ def update_occurrence(app_ctx, request, occurrence_id):
     return app_ctx.jsonify({'ok': True, 'occurrence': existing})
 
 
-def _all_sessions(app_ctx, uid):
-    sessions = _collection(app_ctx, workout_repo.SESSION_COLLECTION, uid, 1000)
-    sessions.sort(key=lambda item: str(item.get('updated_at', '')), reverse=True)
-    return sessions
+def _completed_sessions(app_ctx, uid):
+    # Lifetime totals, records and previous values use every completed workout.
+    # Only the separately returned history cards are capped for display.
+    return _collection(
+        app_ctx, workout_repo.SESSION_COLLECTION, uid, None,
+        filters=(('status', '==', 'completed'),), order_by='updated_at', descending=True,
+    )
+
+
+def _active_session(app_ctx, uid):
+    sessions = _collection(
+        app_ctx, workout_repo.SESSION_COLLECTION, uid, 1,
+        filters=(('status', 'in', ['active', 'paused']),), order_by='updated_at', descending=True,
+    )
+    return sessions[0] if sessions else None
+
+
+def _bodyweight_history(app_ctx, uid):
+    return _collection(app_ctx, workout_repo.BODYWEIGHT_COLLECTION, uid, None, order_by='date')
 
 
 def list_sessions(app_ctx, request):
@@ -471,11 +493,13 @@ def list_sessions(app_ctx, request):
         limit = max(1, min(int(request.args.get('limit', 50) or 50), 100))
     except (TypeError, ValueError):
         limit = 50
-    sessions = _all_sessions(app_ctx, decoded['uid'])
     status_filter = str(request.args.get('status', '') or '').strip()
-    if status_filter:
-        sessions = [item for item in sessions if item.get('status') == status_filter]
-    return app_ctx.jsonify({'sessions': [models.calculate_session(item) for item in sessions[:limit]]})
+    sessions = _collection(
+        app_ctx, workout_repo.SESSION_COLLECTION, decoded['uid'], limit,
+        filters=(('status', '==', status_filter),) if status_filter else (),
+        order_by='updated_at', descending=True,
+    )
+    return app_ctx.jsonify({'sessions': [models.calculate_session(item) for item in sessions]})
 
 
 def start_session(app_ctx, request):
@@ -486,8 +510,7 @@ def start_session(app_ctx, request):
     guard = _write_guard(app_ctx, uid)
     if guard:
         return guard
-    sessions = _all_sessions(app_ctx, uid)
-    active = next((item for item in sessions if item.get('status') in {'active', 'paused'}), None)
+    active = _active_session(app_ctx, uid)
     if active:
         return app_ctx.jsonify({'ok': True, 'resumed': True, 'session': models.calculate_session(active)})
     payload = _json_payload(request)
@@ -523,7 +546,7 @@ def start_session(app_ctx, request):
         bodyweight_kg=profile.get('bodyweight_kg', 0),
         now_ts=app_ctx.time.time(),
     )
-    previous = models.previous_values(sessions, reference=session, scope=str((profile.get('settings') or {}).get('previous_values_scope', 'same_routine') or 'same_routine'))
+    previous = models.previous_values(_completed_sessions(app_ctx, uid), reference=session, scope=str((profile.get('settings') or {}).get('previous_values_scope', 'same_routine') or 'same_routine'))
     for item in session.get('exercises', []):
         item['previous_sets'] = previous.get(item['exercise_id'], [])
     workout_repo.set_record(app_ctx.db, workout_repo.SESSION_COLLECTION, uid, session_id, session)
@@ -584,7 +607,8 @@ def finish_session(app_ctx, request, session_id):
         if not safe:
             return app_ctx.jsonify({'error': validation_error}), 400
         existing = safe
-    previous_stats = models.build_statistics(_all_sessions(app_ctx, uid), [], [])['records']
+    previous_sessions = _completed_sessions(app_ctx, uid)
+    previous_stats = models.build_statistics(previous_sessions, [], [])['records']
     existing['status'] = 'completed'
     existing['finished_at'] = models.utc_iso(app_ctx.time.time())
     existing['updated_at'] = existing['finished_at']
@@ -613,7 +637,7 @@ def finish_session(app_ctx, request, session_id):
             records.append({'exercise_id': exercise.get('exercise_id'), 'name': exercise.get('exercise_name'), 'type': 'estimated_1rm', 'value': round(estimated, 2)})
         if best_set_volume > float(previous.get('set_volume_kg', 0) or 0):
             records.append({'exercise_id': exercise.get('exercise_id'), 'name': exercise.get('exercise_name'), 'type': 'set_volume', 'value': round(best_set_volume, 2)})
-    previous_session_volume = max((models.calculate_session(item).get('volume_kg', 0) for item in _all_sessions(app_ctx, uid) if item.get('status') == 'completed'), default=0)
+    previous_session_volume = max((models.calculate_session(item).get('volume_kg', 0) for item in previous_sessions), default=0)
     if calculated.get('volume_kg', 0) > previous_session_volume:
         records.append({'exercise_id': '', 'name': calculated.get('name', 'Workout'), 'type': 'session_volume', 'value': calculated.get('volume_kg', 0)})
     calculated['personal_records'] = records
@@ -664,8 +688,7 @@ def list_bodyweight(app_ctx, request):
     decoded, error, status = _auth(app_ctx, request)
     if error is not None:
         return error, status
-    entries = _collection(app_ctx, workout_repo.BODYWEIGHT_COLLECTION, decoded['uid'], 500)
-    return app_ctx.jsonify({'entries': sorted(entries, key=lambda item: str(item.get('date', '')))})
+    return app_ctx.jsonify({'entries': _bodyweight_history(app_ctx, decoded['uid'])})
 
 
 def upsert_bodyweight(app_ctx, request):
@@ -699,9 +722,9 @@ def statistics(app_ctx, request):
     profile = _profile(app_ctx, uid)
     _, _, occurrences = _active_cycle_data(app_ctx, uid, profile)
     return app_ctx.jsonify(models.build_statistics(
-        _all_sessions(app_ctx, uid),
+        _completed_sessions(app_ctx, uid),
         occurrences,
-        _collection(app_ctx, workout_repo.BODYWEIGHT_COLLECTION, uid, 500),
+        _bodyweight_history(app_ctx, uid),
         include_warmups=bool((profile.get('settings') or {}).get('warmup_sets_in_statistics')),
     ))
 

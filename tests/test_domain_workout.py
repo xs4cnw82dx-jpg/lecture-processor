@@ -1,5 +1,7 @@
 from copy import deepcopy
 
+import pytest
+
 from lecture_processor.domains.workout import models
 
 
@@ -36,6 +38,43 @@ def test_workout_seed_matches_selected_excel_contract():
     assert seed['available_loads']['dumbbell_per_hand_kg'] == [0, 2, 3, 5, 7, 8, 10, 12, 13, 15, 17, 18, 20]
     assert seed['available_loads']['backpack_kg'][-1] == 10
     assert seed['prescriptions'][0]['exercise_name'] == 'Weighted Pull-Up'
+
+
+def test_muscle_targets_only_contain_real_groups_with_ten_weekly_counts():
+    seed = models.load_seed()
+    models.validate_muscle_targets(seed)
+    assert len(seed['muscle_targets']) == 10
+    assert {target['muscle_group'] for target in seed['muscle_targets']} == {
+        'Back/Lats', 'Mid-Back', 'Chest', 'Shoulders', 'Rear Delts',
+        'Biceps', 'Triceps', 'Quads/Glutes', 'Hamstrings', 'Abs',
+    }
+    assert models.build_statistics([], [], [])['muscle_targets'] == seed['muscle_targets']
+
+
+@pytest.mark.parametrize('invalid_group', ['Week', 1, 10, 'Unknown'])
+def test_seed_validation_rejects_headers_totals_and_unknown_muscles(invalid_group):
+    seed = deepcopy(models.load_seed())
+    seed['muscle_targets'].append({'muscle_group': invalid_group, 'weekly_sets': [0] * 10})
+    with pytest.raises(ValueError, match='Invalid workout muscle target'):
+        models.validate_muscle_targets(seed)
+
+
+@pytest.mark.parametrize('weekly_sets', [[0] * 9, [None] * 10, [-1] * 10, [True] * 10])
+def test_seed_validation_rejects_invalid_weekly_counts(weekly_sets):
+    seed = deepcopy(models.load_seed())
+    seed['muscle_targets'][0]['weekly_sets'] = weekly_sets
+    with pytest.raises(ValueError, match='Invalid weekly sets'):
+        models.validate_muscle_targets(seed)
+
+
+def test_seed_validation_rejects_duplicate_or_missing_muscle_targets():
+    seed = deepcopy(models.load_seed())
+    seed['muscle_targets'].append(deepcopy(seed['muscle_targets'][0]))
+    with pytest.raises(ValueError, match='Invalid workout muscle target'):
+        models.validate_muscle_targets(seed)
+    seed['muscle_targets'] = seed['muscle_targets'][:-2]
+    with pytest.raises(ValueError, match='must cover every seeded muscle group'):
+        models.validate_muscle_targets(seed)
 
 
 def test_cycle_builds_40_occurrences_and_exact_phase_boundaries():

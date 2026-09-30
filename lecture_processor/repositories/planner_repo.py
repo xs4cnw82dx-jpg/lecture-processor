@@ -99,16 +99,29 @@ def delete_planner_session(db, uid, session_id):
     planner_session_doc_ref(db, uid, session_id).delete()
 
 
-def list_planner_sessions_by_uid(db, uid, limit, *, start_date=None):
+def _matches_session_filter(item, start_date='', start_time='', planned_only=False):
+    if planned_only and str(item.get('status', 'planned') or 'planned').strip().lower() != 'planned':
+        return False
+    item_date = str(item.get('date', '') or '')
+    if start_date and item_date < start_date:
+        return False
+    if start_time and item_date == start_date:
+        item_time = str(item.get('time', '') or '')
+        if len(item_time) == 5:
+            item_time += ':00'
+        if item_time < start_time:
+            return False
+    return True
+
+
+def list_planner_sessions_by_uid(db, uid, limit, *, start_date=None, start_time=None, planned_only=False):
     safe_limit = max(1, int(limit or 1))
     safe_start_date = str(start_date or '').strip()
+    safe_start_time = str(start_time or '').strip()
     if db is None:
-        sessions = list(_SESSIONS_STORE.get(uid, {}).values())
+        sessions = [item for item in _SESSIONS_STORE.get(uid, {}).values()
+                    if _matches_session_filter(item, safe_start_date, safe_start_time, planned_only)]
         if safe_start_date:
-            sessions = [
-                item for item in sessions
-                if str(item.get('date', '') or '') >= safe_start_date
-            ]
             sessions.sort(
                 key=lambda item: (
                     str(item.get('date', '') or ''),
@@ -121,6 +134,27 @@ def list_planner_sessions_by_uid(db, uid, limit, *, start_date=None):
     if safe_start_date:
         query = apply_where(query, 'date', '>=', safe_start_date)
         query = query.order_by('date', direction='ASCENDING').order_by('time', direction='ASCENDING')
+    if planned_only or safe_start_time:
+        # Legacy sessions may have no status field. Scan the existing indexed
+        # date/time query in bounded pages, then limit matching results. A
+        # status equality query would silently hide those planned sessions.
+        page_size = max(50, min(200, safe_limit))
+        records = []
+        cursor = None
+        while True:
+            page_query = query.start_after(cursor) if cursor is not None else query
+            docs = list(page_query.limit(page_size).stream())
+            for doc in docs:
+                payload = doc.to_dict() or {}
+                if not payload or not _matches_session_filter(payload, safe_start_date, safe_start_time, planned_only):
+                    continue
+                payload.setdefault('id', str(doc.id).split('__', 1)[-1])
+                records.append(payload)
+                if len(records) >= safe_limit:
+                    return records
+            if len(docs) < page_size:
+                return records
+            cursor = docs[-1]
     query = query.limit(safe_limit)
     records = []
     for doc in query.stream():

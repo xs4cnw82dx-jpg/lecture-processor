@@ -65,12 +65,16 @@ def list_planner_sessions(app_ctx, request):
     limit = max(1, min(200, limit))
     future_only = str(request.args.get('future_only', '0') or '0').strip().lower() in {'1', 'true', 'yes', 'on'}
     tzinfo, _timezone_name = study_progress.resolve_user_timezone(uid, runtime=app_ctx)
-    today = study_progress.to_timezone_now(None, tzinfo, runtime=app_ctx).strftime('%Y-%m-%d')
+    now = study_progress.to_timezone_now(None, tzinfo, runtime=app_ctx)
+    today = now.strftime('%Y-%m-%d')
+    earliest_time = now.strftime('%H:%M:%S')
     records = app_ctx.repositories.planner.list_planner_sessions_by_uid(
         app_ctx.db,
         uid,
         limit if future_only else 400,
         start_date=today if future_only else None,
+        start_time=earliest_time if future_only else None,
+        planned_only=future_only,
     )
     sessions = []
     for record in records:
@@ -86,9 +90,11 @@ def list_planner_sessions(app_ctx, request):
         sessions.append(safe_payload)
     ordered = planner_models.sort_sessions(sessions, runtime=app_ctx)
     if future_only:
-        # Keep this defensive filter for in-memory/test repositories and legacy
-        # records, while Firestore performs the indexed filter before its limit.
-        ordered = [item for item in ordered if str(item.get('date', '') or '') >= today]
+        # Repositories filter before limiting; keep the response defensive for
+        # older adapters while comparing times in the user's local timezone.
+        ordered = [item for item in ordered if item.get('status') == 'planned'
+                   and (item.get('date', '') > today
+                        or (item.get('date') == today and item.get('time', '') + ':00' >= earliest_time))]
     return app_ctx.jsonify({'sessions': ordered[:limit]})
 
 
