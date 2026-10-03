@@ -38,10 +38,10 @@ test("local books fit the viewport, retain text, respect focus and manage pages"
   await page
     .getByRole("textbox", { name: "Text", exact: true })
     .fill("A small fox found a bright idea.");
-  await field(page, "style.font").selectOption("Andika");
-  await field(page, "style.weight").selectOption("700");
+  await chooseField(page, "style.font", "Andika");
+  await chooseField(page, "style.weight", "700");
   await expect(field(page, "style.weight")).toHaveValue("700");
-  await field(page, "style.font").selectOption("Nunito");
+  await chooseField(page, "style.font", "Nunito");
   await expect(field(page, "style.weight")).toHaveAttribute("type", "range");
   await page.locator("#object-text").press("ArrowRight");
   await expect(page.locator("#page-position")).toHaveText("Front cover");
@@ -137,7 +137,7 @@ test("file picker, invalid images, backup and all print export choices work", as
   await expect(field(page, "arrangement")).toHaveCount(0);
   await expect(page.locator("#print-preview")).toContainText("Sheet 1 · Cover / Blank");
   for (const format of ["faithful", "editable", "pdf"]) {
-    await field(page, "exportFormat").selectOption(format);
+    await chooseField(page, "exportFormat", format);
     const pending = page.waitForEvent("download");
     await page.getByRole("button", { name: "Download", exact: true }).click();
     const download = await pending;
@@ -257,10 +257,10 @@ test("text edits on the page, selectors apply once, typing undoes together and s
     "The moon kept a little secret. A fox found it.",
   );
   await editor.press("Escape");
-  await field(page, "style.font").selectOption("Comic Neue");
-  await field(page, "style.weight").selectOption("700");
+  await chooseField(page, "style.font", "Comic Neue");
+  await chooseField(page, "style.weight", "700");
   await expect(field(page, "style.weight")).toHaveValue("700");
-  await field(page, "style.font").selectOption("Andika");
+  await chooseField(page, "style.font", "Andika");
   await expect(field(page, "style.font")).toHaveValue("Andika");
   await page
     .getByRole("button", { name: "Close settings", exact: true })
@@ -283,7 +283,7 @@ test("pill proportions, object copy and paste, layer ordering and lock/visibilit
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await localStudio(page);
   await page.getByRole("button", { name: "Add shape", exact: true }).click();
-  await field(page, "shape").selectOption("pill");
+  await chooseField(page, "shape", "pill");
   expect(+(await field(page, "w").inputValue())).toBeGreaterThan(
     1.6 * +(await field(page, "h").inputValue()),
   );
@@ -396,8 +396,8 @@ test("book tables and story diagrams edit cells and steps and survive backup/rel
   await expect(
     page.getByRole("textbox", { name: "Step 3", exact: true }),
   ).toHaveValue("Share the light");
-  await field(page, "flowDirection").selectOption("horizontal");
-  await field(page, "flowShape").selectOption("pill");
+  await chooseField(page, "flowDirection", "horizontal");
+  await chooseField(page, "flowShape", "pill");
   await expect(page.locator("#save-state")).toHaveText("Saved on this device");
   await page.reload();
   await page.getByRole("button", { name: "Next pages", exact: true }).click();
@@ -441,12 +441,12 @@ test("tables follow page paper, offer subtle ruled styling and retain custom col
   await layersTab(page).click();
   await page.getByRole("button", { name: "Table", exact: true }).click();
   await settingsTab(page).click();
-  await field(page, "tableStyle").selectOption("ruled");
+  await chooseField(page, "tableStyle", "ruled");
   await expect(table()).toHaveAttribute("data-table-style", "ruled");
   await expect(table().locator(":scope > rect")).toHaveCount(0);
   await field(page, "tableColumns").check();
   await expect(table().locator("[data-table-column-line]")).toHaveCount(1);
-  await field(page, "tableStyle").selectOption("custom");
+  await chooseField(page, "tableStyle", "custom");
   await field(page, "fill").fill("#b8ccb5");
   await expect(
     table().locator('[data-table-cell="0,0"] > rect'),
@@ -477,7 +477,7 @@ test("mobile object settings reopen the selection and remain open when switching
   await page
     .getByRole("button", { name: "Object settings", exact: true })
     .click();
-  await expect(field(page, "tableStyle")).toBeVisible();
+  await expect(field(page, "tableStyle").locator("..").locator(".app-select-button")).toBeVisible();
   await page
     .getByRole("textbox", { name: "Row 2, column 1", exact: true })
     .fill("Little brain");
@@ -495,7 +495,7 @@ test("mobile object settings reopen the selection and remain open when switching
   await page.getByRole("button", { name: "Text", exact: true }).first().click();
   await expect(page.locator("#inspector")).toBeVisible();
   await settingsTab(page).click();
-  await expect(field(page, "style.font")).toBeVisible();
+  await expect(field(page, "style.font").locator("..").locator(".app-select-button")).toBeVisible();
 });
 
 test("shared refresh updates the title while preserving the reader's page and zoom", async ({
@@ -597,3 +597,11 @@ test("themes, page organization, version preview/restore and searchable help are
     .fill("Paste");
   await expect(page.locator(".book-shortcut:visible")).toHaveCount(2);
 });
+
+async function chooseField(page, name, value) {
+  const native = field(page, name);
+  const label = await native.locator('option').evaluateAll((options, selected) => options.find(option => option.value === String(selected)).textContent, value);
+  await native.locator('..').locator('.app-select-button').click();
+  await page.getByRole('option', { name: label, exact: true }).click();
+  await expect(field(page, name)).toHaveValue(String(value));
+}

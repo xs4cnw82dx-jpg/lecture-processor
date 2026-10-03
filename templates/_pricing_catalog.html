@@ -23,8 +23,9 @@
 {% macro render_pricing_catalog(pricing_catalog, variant='modal') -%}
   {% for category in pricing_catalog %}
     {% if variant == 'page' %}
-      <div class="shell-panel category">
-        <h2>{{ category.title }}</h2>
+      <div class="category">
+        <div class="credit-category-heading"><span class="credit-category-icon">{{ render_pricing_icon(category.icon) }}</span><h2>{{ category.title }}</h2></div>
+        <p class="credit-category-description">{% if category.icon == 'notes' %}Slides and audio, brought together.{% elif category.icon == 'slides' %}Slide extraction and optional study tools.{% else %}Turn spoken conversations into text.{% endif %}</p>
         {% for bundle in category.bundles %}
           <button
             type="button"
@@ -41,7 +42,7 @@
             <span class="credits">{{ bundle.credits_label }}</span>
             <span class="price" data-price-cents="{{ bundle.price_cents }}" data-currency="{{ bundle.currency }}"></span>
             <span class="meta">{{ bundle.description }}</span>
-            <span class="cta">Buy now</span>
+            <span class="cta">Choose bundle <span aria-hidden="true">→</span></span>
           </button>
         {% endfor %}
       </div>

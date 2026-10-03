@@ -1,4 +1,6 @@
+const { expectProductControls } = require('./helpers/control-audit');
 const { test, expect } = require('@playwright/test');
+const path = require('node:path');
 const { installAccountFixture } = require('./helpers/batch-fixture');
 
 test.use({ serviceWorkers: 'block' });
@@ -11,6 +13,7 @@ const failed = {
 };
 async function fixture(page, entries = [failed]) {
   const base = await installAccountFixture(page);
+  await page.route(/\/static\/js\/batch-status(?:\.min)?\.js(?:\?.*)?$/, (route) => route.fulfill({ contentType: 'application/javascript', path: path.resolve('static/js/batch-status.js') }));
   const batches = structuredClone(entries);
   let offline = false;
   const downloads = [];
@@ -64,7 +67,7 @@ test('archive, restore, undo and direct links retain results across reloads', as
   await page.goto('/batch_status');
   await page.getByRole('button', { name: /Needs attention/ }).click();
   await page.locator('.bs-overflow summary').click();
-  await page.getByRole('button', { name: 'Archive', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Archive', exact: true }).click();
   await expect(page.locator('#batch-dashboard-rows')).toContainText('No matches');
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(page.getByRole('link', { name: 'View details' })).toBeVisible();
@@ -75,10 +78,32 @@ test('archive, restore, undo and direct links retain results across reloads', as
   await expect(page.getByRole('button', { name: 'Restore batch' })).toBeVisible();
   await page.goto('/batch_status?view=archived');
   await page.locator('.bs-overflow summary').click();
-  await page.getByRole('button', { name: 'Restore', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Restore', exact: true }).click();
   await expect(page.locator('#batch-dashboard-rows')).toContainText('No matches');
   expect(f.batches[0].credits_refunded).toBe(2);
   expect(f.browserErrors).toEqual([]);
+});
+
+test('batch action menu is bounded, keyboard accessible and returns focus on close', async ({ page }) => {
+  await fixture(page);
+  await page.goto('/batch_status');
+  const menu = page.locator('.bs-overflow');
+  await page.locator('#batch-filters > summary').click();
+  await expectProductControls(page);
+  await page.locator('#batch-filters > summary').click();
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({width, height:900});
+    await menu.locator('summary').press('ArrowDown');
+    await expect(page.getByRole('menuitem', {name:'Archive', exact:true})).toBeFocused();
+    const rect = await menu.locator('.app-menu-panel').boundingBox();
+    expect(rect.x).toBeGreaterThanOrEqual(0);
+    expect(rect.x + rect.width).toBeLessThanOrEqual(width);
+    await page.screenshot({path:`/tmp/redesign-secondary-evidence/batch/actions-open-${width}.png`,animations:'disabled'});
+    await page.keyboard.press('Escape');
+    await expect(menu).not.toHaveAttribute('open', '');
+    await expect(menu.locator('summary')).toBeFocused();
+    await page.screenshot({path:`/tmp/redesign-secondary-evidence/batch/actions-closed-${width}.png`,animations:'disabled'});
+  }
 });
 
 test('refresh failure preserves results and authenticated instant partial ZIP remains available', async ({ page }) => {
@@ -131,11 +156,11 @@ test('responsive long content and limited rows remain accessible', async ({ page
     await page.goto('/batch_status');
     await expect(page.getByRole('link', { name: 'View details' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.screenshot({ path: `test-results/batch-dashboard-${width}.png`, fullPage: true });
+    await page.screenshot({ path: `/tmp/redesign-secondary-evidence/batch/batch-dashboard-${width}.png`, fullPage: true, animations: 'disabled' });
     await page.getByRole('link', { name: 'View details' }).click();
     await expect(page.getByRole('button', { name: 'Show more items' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.screenshot({ path: `test-results/batch-detail-${width}.png`, fullPage: true });
+    await page.screenshot({ path: `/tmp/redesign-secondary-evidence/batch/batch-detail-${width}.png`, fullPage: true, animations: 'disabled' });
   }
   expect(f.browserErrors).toEqual([]);
 });
@@ -153,7 +178,7 @@ test('late list responses cannot undo archive, even when the list changes during
   });
   await page.goto('/batch_status');
   await page.locator('.bs-overflow summary').click();
-  await page.getByRole('button', { name: 'Archive', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Archive', exact: true }).click();
   await expect.poll(() => writing).toBe(true);
   f.batches[0].updated_at = 100;
   await page.getByRole('button', { name: 'Refresh', exact: true }).click();
@@ -193,12 +218,12 @@ test('ordinary desktop and mobile details show the outcome immediately', async (
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/batch_status');
     await expect(page.getByRole('link', { name: 'View details' })).toBeVisible();
-    await page.screenshot({ path: `test-results/batch-dashboard-normal-${width}.png`, fullPage: true });
+    await page.screenshot({ path: `/tmp/redesign-secondary-evidence/batch/batch-dashboard-normal-${width}.png`, fullPage: true, animations: 'disabled' });
     await page.getByRole('link', { name: 'View details' }).click();
     await expect(page.getByRole('heading', { name: 'All 2 credits refunded' })).toBeInViewport();
     await expect(page.getByRole('link', { name: 'Start a new batch', exact: true })).toBeInViewport();
     await expect(page.getByRole('link', { name: 'Start a new batch', exact: true })).toHaveCSS('color', 'rgb(255, 255, 255)');
-    await page.screenshot({ path: `test-results/batch-detail-normal-${width}.png`, fullPage: true });
+    await page.screenshot({ path: `/tmp/redesign-secondary-evidence/batch/batch-detail-normal-${width}.png`, fullPage: true, animations: 'disabled' });
   }
 });
 
@@ -212,7 +237,8 @@ test('views filter every status, active work comes first, and browser Back resto
   await page.getByRole('button', { name: /Completed 1/ }).click();
   await expect(rows).toHaveCount(1);
   await page.locator('#batch-filters > summary').click();
-  await page.locator('#batch-dashboard-mode-filter').selectOption('slides-only');
+  await page.locator('#batch-dashboard-mode-filter-button').click();
+  await page.getByRole('option', { name: 'Slides', exact: true }).click();
   await page.getByRole('link', { name: 'View details' }).click();
   await page.goBack();
   await expect(page).toHaveURL(/view=completed&mode=slides-only/);
@@ -230,4 +256,44 @@ test('failed archive keeps the batch and exposes the server error', async ({ pag
   await expect(page.locator('#batch-notice')).toContainText('Could not save. Try again.');
   await expect(page.getByRole('button', { name: 'Archive batch' })).toBeEnabled();
   await expect(page.locator('.bs-eyebrow')).not.toContainText('Archived');
+});
+
+test('failed results explain the shared issue once and keep diagnostics out of the initial view', async ({ page }) => {
+  await fixture(page);
+  await page.goto('/batch_status/failed');
+  await expect(page.getByRole('heading', { name: 'This batch couldn’t finish' })).toBeVisible();
+  await expect(page.locator('.bs-message')).toContainText('temporarily unavailable');
+  await expect(page.locator('.bs-result')).toHaveCount(2);
+  await expect(page.locator('.bs-progress-failed')).toHaveAttribute('width', '100');
+  await expect(page.locator('.bs-progress-failed')).toHaveCSS('fill', 'rgb(212, 139, 149)');
+  expect((await page.locator('.bs-progress-failed').boundingBox()).width).toBeGreaterThan(100);
+  await expect(page.locator('.bs-result-content').first()).toContainText('No output was generated.');
+  for (const diagnostic of await page.locator('.bs-detail pre').all()) await expect(diagnostic).not.toBeVisible();
+  await expect(page.locator('.bs-retention')).toHaveCount(0);
+  const failure = page.locator('[data-key="failure-row-1"]');
+  await failure.locator('summary').first().press('Enter');
+  await expect(failure).toHaveAttribute('open', '');
+  await failure.locator('summary').first().press('Enter');
+  await expect(failure).not.toHaveAttribute('open', '');
+});
+
+test('active, ready, partial and empty layouts keep status and recovery readable at multiple widths', async ({ page }) => {
+  const f = await fixture(page, [{ ...failed, status: 'processing', failed_rows: 0, completed_rows: 0, credits_refunded: 0, error_message: '', rows: [{ row_id: 'row-1', ordinal: 1, status: 'processing', current_stage_label: 'Preparing your notes' }] }]);
+  for (const width of [1440, 1024, 768, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const status of ['processing', 'partial', 'complete']) {
+      Object.assign(f.batches[0], { status, rows: [1, 2].map((n) => ({ row_id: 'row-' + n, ordinal: n, status: status === 'processing' ? 'processing' : status === 'partial' && n === 2 ? 'error' : 'complete', current_stage_label: status === 'processing' ? 'Preparing your notes' : '', error: status === 'partial' && n === 2 ? 'Processing timed out.' : '' })), credits_refunded: status === 'partial' ? 1 : 0, completed_rows: status === 'complete' ? 2 : status === 'partial' ? 1 : 0, failed_rows: status === 'partial' ? 1 : 0, can_download_zip: status !== 'processing' });
+      await page.goto('/batch_status/failed');
+      await expect(page.locator('.bs-summary h2')).toBeVisible();
+      await expect(page.locator('.bs-credit-card h3')).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: `/tmp/redesign-secondary-evidence/batch/batch-${status}-${width}.png`, fullPage: true, animations: 'disabled' });
+    }
+  }
+  f.batches.splice(0);
+  await page.goto('/batch_status');
+  await expect(page.getByRole('heading', { name: 'No batches yet' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Start a batch', exact: true })).toBeVisible();
+  await page.screenshot({ path: '/tmp/redesign-secondary-evidence/batch/batch-empty-mobile.png', fullPage: true, animations: 'disabled' });
+  expect(f.browserErrors).toEqual([]);
 });

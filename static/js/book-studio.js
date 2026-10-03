@@ -194,7 +194,7 @@
   const field = (label, name, value, type = "text", extra = "") =>
     `<label class="book-field"><span>${esc(label)}</span><input type="${type}" data-field="${name}" value="${esc(value)}" data-last-value="${esc(value)}" ${extra}></label>`;
   const selectField = (label, name, value, options) =>
-    `<label class="book-field"><span>${esc(label)}</span><select data-field="${name}">${options
+    `<label class="book-field"><span>${esc(label)}</span><select data-app-select ${name === "style.font" ? "data-app-select-search" : ""} data-field="${name}">${options
       .map((o) => {
         const v = Array.isArray(o) ? o[0] : o,
           l = Array.isArray(o) ? o[1] : o;
@@ -768,13 +768,14 @@
             b.updated_at - a.updated_at
           : b.updated_at - a.updated_at,
     );
+    $("book-library-count").textContent = `${list.length} ${list.length === 1 ? "book" : "books"}${query ? " matching your search" : " in this view"}`;
     $("book-grid").innerHTML = list.length
       ? list
           .map((x) => {
             const cached = localBooks.find((l) => l.id === x.id),
               cover =
                 coverCache[x.id] || (cached && cached.pages && cached.pages[0]);
-            return `<article class="book-card"><button class="book-cover-button" data-open="${esc(x.id)}" aria-label="Open ${esc(x.title)}"><span class="book-mini-cover">${cover ? M.svg(cover, renderedAssets) : M.svg({ ...M.page("front"), items: [M.object("text", { text: x.title, y: 38, w: 108, h: 90, style: { ...M.baseStyle, font: "Fraunces", size: 28 } })] })}</span></button><div class="book-card-title"><h3>${x.favorite ? "★ " : ""}${esc(x.title)}</h3><button class="icon-btn" data-book-options="${esc(x.id)}" aria-label="Options for ${esc(x.title)}">•••</button></div><p>${esc(x.local && user?.uid && x.cloudAccountUid === user.uid ? "Waiting to save to your account" : x.folder || (x.local ? "On this device" : "Saved to cloud"))} · ${new Date(x.updated_at * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</p></article>`;
+            return `<article class="book-card"><button class="book-cover-button" data-open="${esc(x.id)}" aria-label="Open ${esc(x.title)}"><span class="book-mini-cover">${cover ? M.svg(cover, renderedAssets) : M.svg({ ...M.page("front"), items: [M.object("text", { text: x.title, y: 38, w: 108, h: 90, style: { ...M.baseStyle, font: "Fraunces", size: 28 } })] })}</span></button><div class="book-card-title"><h3>${x.favorite ? "★ " : ""}${esc(x.title)}</h3><button class="icon-btn" data-book-options="${esc(x.id)}" aria-label="Options for ${esc(x.title)}">•••</button></div><p>${esc(x.local && user?.uid && x.cloudAccountUid === user.uid ? "Waiting to save to your account" : x.folder || (x.local ? "On this device" : "Saved to cloud"))} · ${new Date(x.updated_at * 1000).toLocaleDateString("en-GB", { month: "short", day: "numeric" })}</p></article>`;
           })
           .join("")
       : `<div class="book-empty"><h2>${query ? "No books found" : collection === "trash" ? "Nothing in the trash" : collection === "shared" ? "A place for shared stories" : "Your next idea starts here"}</h2><p>${query ? "Try another title, folder or tag." : collection === "shared" ? "Books shared with your email address will appear here." : collection === "trash" ? "Deleted books can be restored here." : "Start with a blank page or choose a little inspiration."}</p>${!query && ["mine", "local"].includes(collection) ? '<button class="primary-btn" data-new>＋ Create a book</button>' : ""}</div>`;
@@ -801,7 +802,7 @@
       ]
         .map(
           (t) =>
-            `<button class="book-template" data-template="${t[0]}"><strong>${t[1]}</strong><span class="book-muted">${t[2]}</span></button>`,
+            `<button class="book-template" aria-label="${t[1]} ${t[2]}" data-template="${t[0]}"><strong>${t[1]}</strong><span class="book-muted">${t[2]}</span></button>`,
         )
         .join("")}</div>`,
     );
@@ -1430,7 +1431,14 @@
     event.preventDefault();
   }
   let pathMenuPoint = null;
-  function closePathMenu() { $("book-path-menu")?.remove(); pathMenuPoint = null; }
+  function closePathMenu(immediate = false) {
+    const menu = $("book-path-menu"); pathMenuPoint = null;
+    if (!menu) return;
+    menu.inert = true;
+    if (immediate || matchMedia("(prefers-reduced-motion: reduce)").matches) { menu.remove(); return; }
+    menu.getAnimations().forEach((animation) => animation.cancel());
+    menu.animate([{opacity:1,transform:"translateY(0)"},{opacity:0,transform:"translateY(-4px)"}], {duration:140,easing:"ease-in",fill:"forwards"}).finished.then(() => menu.remove()).catch(() => {});
+  }
   function addPathBend() {
     const o = item();
     if (!isPath(o) || o.locked || P.points(o).length >= 32 || !checkpoint()) return;
@@ -1463,7 +1471,7 @@
     if (!node || !sheet || !editable() || reading) return;
     const p = b.pages.find((x) => x.id === sheet.dataset.pageId), o = p.items.find((x) => x.id === node.dataset.object);
     if (!isPath(o) || o.locked) return;
-    event.preventDefault(); closePathMenu();
+    event.preventDefault(); closePathMenu(true);
     active = p.id; selected = [o.id]; furnitureSelection = "";
     activePathPoint = event.target.dataset.pathPoint === undefined ? -1 : +event.target.dataset.pathPoint;
     const rect = sheet.getBoundingClientRect(), scale = rect.width / M.W;
@@ -1473,6 +1481,7 @@
     menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", "Edit line");
     menu.innerHTML = `<button role="menuitem" data-command="add-path-bend" ${P.points(o).length >= 32 ? "disabled" : ""}>Add bend here</button><button role="menuitem" data-command="remove-path-bend" ${activePathPoint <= 0 || activePathPoint >= P.points(o).length - 1 ? "disabled" : ""}>Remove this bend</button>`;
     document.body.appendChild(menu);
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) menu.animate([{opacity:0,transform:"translateY(-4px)"},{opacity:1,transform:"translateY(0)"}], {duration:180,easing:"ease-out"});
     layoutRule("#book-path-menu", { left: Math.max(8, Math.min(innerWidth - 220, event.clientX)) + "px", top: Math.max(8, Math.min(innerHeight - 120, event.clientY)) + "px" });
     menu.querySelector("button:not(:disabled)")?.focus();
     menu.addEventListener("keydown", (e) => {
@@ -2079,6 +2088,7 @@
         .querySelector(`[data-field="${focusField}"]`)
         ?.focus({ preventScroll: true });
     window.BookColorPicker?.enhance(panel);
+    window.LectureProcessorUx?.enhanceMarkedSelects?.(panel);
     panel.scrollTop = scroll;
     renderContentWarnings();
     selectionToolbar();

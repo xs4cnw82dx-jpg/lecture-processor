@@ -235,7 +235,8 @@ function renderAdminBatchJobs(rows) {
         const status = String(batch.status || 'queued');
         const statusClass = status === 'complete' ? 'complete' : (status === 'error' ? 'error' : (status === 'partial' ? 'partial' : (status === 'processing' ? 'processing' : 'queued')));
         const rowSummary = `${Number(batch.completed_rows || 0)}/${Number(batch.total_rows || 0)} complete · ${Number(batch.failed_rows || 0)} failed`;
-        const stageSummary = [batch.current_stage || '-', batch.current_stage_state || '-', batch.provider_state || '-'].join(' · ');
+        const stages = [batch.current_stage, batch.current_stage_state, batch.provider_state].filter(Boolean);
+        const stageSummary = stages.filter((value, index) => stages.findIndex((item) => String(item).toLowerCase() === String(value).toLowerCase()) === index).join(' · ') || '—';
         const refundSummary = `${Number(batch.credits_refunded || 0)} refunded · ${Number(batch.credits_refund_pending || 0)} pending`;
 
         [
@@ -1156,7 +1157,7 @@ async function cleanupStaleStudyAudio() {
         setAdminMaintenanceStatus('Please sign in as an admin first.', 'error');
         return;
     }
-    const confirmed = window.confirm('Clean stale study audio flags for up to 250 packs? This does not delete notes, cards, or saved audio metadata.');
+    const confirmed = await window.LectureProcessorUx.requestDialog({ title: 'Clean stale audio flags?', message: 'Checks up to 250 study packs. Notes, cards and saved audio metadata remain unchanged.', confirmLabel: 'Clean flags' });
     if (!confirmed) return;
     if (adminCleanStaleAudioBtn) {
         adminCleanStaleAudioBtn.disabled = true;
@@ -1413,193 +1414,11 @@ setActiveModeViewButton();
 setAdminTab('overview');
 
 /* ── Cost Calculator ── */
-const enhancedAdminSelects = [];
-
-function closeAdminSelectMenus(exceptionMenu) {
-    enhancedAdminSelects.forEach((instance) => {
-        if (!instance || !instance.menu || instance.menu === exceptionMenu) return;
-        instance.setOpen(false);
-    });
-}
-
 function enhanceAdminSelect(selectEl, onChange) {
-    if (!selectEl || selectEl.dataset.enhanced === 'true') return null;
-    const parent = selectEl.parentElement;
-    if (!parent) return null;
-    selectEl.dataset.enhanced = 'true';
-    selectEl.classList.add('calculator-native-select');
-    selectEl.hidden = true;
-    selectEl.tabIndex = -1;
-    selectEl.setAttribute('aria-hidden', 'true');
-
-    const wrapper = document.createElement('div');
-    wrapper.className = 'app-select calculator-select calculator-select-upgraded';
-
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'app-select-button calculator-select-button';
-    button.setAttribute('aria-haspopup', 'listbox');
-    button.setAttribute('aria-expanded', 'false');
-    if (!selectEl.id) selectEl.id = 'admin-select-' + Math.random().toString(36).slice(2, 8);
-
-    const label = document.createElement('span');
-    label.className = 'app-select-label';
-    label.id = selectEl.id + '-value';
-    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    icon.setAttribute('viewBox', '0 0 24 24');
-    icon.setAttribute('fill', 'none');
-    icon.setAttribute('stroke', 'currentColor');
-    icon.setAttribute('stroke-width', '2');
-    icon.setAttribute('stroke-linecap', 'round');
-    icon.setAttribute('stroke-linejoin', 'round');
-    const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-    polyline.setAttribute('points', '6 9 12 15 18 9');
-    icon.appendChild(polyline);
-    button.appendChild(label);
-    button.appendChild(icon);
-
-    const menu = document.createElement('div');
-    menu.className = 'app-select-menu calculator-select-menu';
-    menu.setAttribute('role', 'listbox');
-    menu.id = selectEl.id + '-menu';
-    button.id = selectEl.id + '-button';
-    button.setAttribute('aria-controls', menu.id);
-    button.setAttribute('aria-labelledby', label.id);
-    menu.setAttribute('aria-labelledby', button.id);
-    wrapper.appendChild(button);
-    wrapper.appendChild(menu);
-    selectEl.insertAdjacentElement('afterend', wrapper);
-
-    function getItems() {
-        return Array.from(menu.querySelectorAll('.app-select-item[data-value]')).filter((item) => !item.disabled);
-    }
-
-    function focusItem(direction) {
-        const items = getItems();
-        if (!items.length) return;
-        const currentIndex = items.indexOf(document.activeElement);
-        const activeIndex = Math.max(0, items.findIndex((item) => item.classList.contains('active')));
-        let nextIndex = activeIndex;
-        if (direction === 'first') nextIndex = 0;
-        if (direction === 'last') nextIndex = items.length - 1;
-        if (direction === 'next') nextIndex = currentIndex >= 0 ? (currentIndex + 1) % items.length : activeIndex;
-        if (direction === 'prev') nextIndex = currentIndex >= 0 ? (currentIndex - 1 + items.length) % items.length : activeIndex;
-        items.forEach((item) => { item.tabIndex = -1; });
-        items[nextIndex].tabIndex = 0;
-        items[nextIndex].focus();
-    }
-
-    function setOpen(open, focusTarget) {
-        const shouldOpen = !!open;
-        if (shouldOpen) closeAdminSelectMenus(menu);
-        menu.classList.toggle('visible', shouldOpen);
-        button.classList.toggle('open', shouldOpen);
-        button.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
-        if (shouldOpen) {
-            focusItem(focusTarget || 'first');
-        }
-    }
-
-    function sync() {
-        let activeText = '';
-        getItems().forEach((item) => {
-            const active = item.dataset.value === String(selectEl.value || '');
-            item.classList.toggle('active', active);
-            item.setAttribute('aria-selected', active ? 'true' : 'false');
-            item.tabIndex = -1;
-            if (active) activeText = item.textContent;
-        });
-        label.textContent = activeText || (selectEl.options[selectEl.selectedIndex] ? selectEl.options[selectEl.selectedIndex].textContent : 'Select');
-    }
-
-    function rebuild() {
-        clearChildren(menu);
-        Array.from(selectEl.options || []).forEach((option) => {
-            const item = document.createElement('button');
-            item.type = 'button';
-            item.className = 'app-select-item calculator-select-item';
-            item.dataset.value = String(option.value);
-            item.textContent = String(option.textContent || option.value || '-');
-            item.setAttribute('role', 'option');
-            item.disabled = !!option.disabled;
-            item.addEventListener('click', () => {
-                if (selectEl.value !== option.value) {
-                    selectEl.value = option.value;
-                    selectEl.dispatchEvent(new Event('change', { bubbles: true }));
-                    if (typeof onChange === 'function') onChange(option.value);
-                }
-                sync();
-                setOpen(false);
-                button.focus();
-            });
-            menu.appendChild(item);
-        });
-        sync();
-    }
-
-    button.addEventListener('click', (event) => {
-        event.preventDefault();
-        setOpen(!menu.classList.contains('visible'));
-    });
-
-    button.addEventListener('keydown', (event) => {
-        if (event.key === 'ArrowDown') {
-            event.preventDefault();
-            setOpen(true, 'first');
-        } else if (event.key === 'ArrowUp') {
-            event.preventDefault();
-            setOpen(true, 'last');
-        } else if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            setOpen(!menu.classList.contains('visible'));
-        } else if (event.key === 'Escape') {
-            event.preventDefault();
-            setOpen(false);
-        }
-    });
-
-    menu.addEventListener('keydown', (event) => {
-        if (event.key === 'ArrowDown') {
-            event.preventDefault();
-            focusItem('next');
-        } else if (event.key === 'ArrowUp') {
-            event.preventDefault();
-            focusItem('prev');
-        } else if (event.key === 'Home') {
-            event.preventDefault();
-            focusItem('first');
-        } else if (event.key === 'End') {
-            event.preventDefault();
-            focusItem('last');
-        } else if (event.key === 'Escape') {
-            event.preventDefault();
-            setOpen(false);
-            button.focus();
-        } else if (event.key === 'Enter' || event.key === ' ') {
-            const item = document.activeElement && document.activeElement.closest('.app-select-item[data-value]');
-            if (!item) return;
-            event.preventDefault();
-            item.click();
-        }
-    });
-
-    selectEl.addEventListener('change', sync);
-
-    const instance = { menu, setOpen, rebuild, sync, button };
-    enhancedAdminSelects.push(instance);
-    rebuild();
-    return instance;
+    if (!selectEl) return null;
+    if (onChange) selectEl.addEventListener('change', onChange);
+    return window.LectureProcessorUx.enhanceNativeSelect(selectEl);
 }
-
-document.addEventListener('click', (event) => {
-    if (event.target && event.target.closest('.calculator-select-upgraded')) return;
-    closeAdminSelectMenus();
-});
-
-document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
-    closeAdminSelectMenus();
-});
 
 const calcScenario = document.getElementById('calc-scenario');
 const calcScenarioPicker = document.getElementById('calc-scenario-picker');

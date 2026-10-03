@@ -24,10 +24,10 @@
 <body data-forced-mode="{{ forced_mode or '' }}" data-instant-batch="{{ '1' if instant_mode else '0' }}">
   {% include '_app_shell.html' %}
   <main class="app-shell-page batch-page" id="batch-page">
-    <section class="shell-panel batch-hero">
+    <section class="batch-hero">
       <div class="batch-hero-head">
         <div>
-          <h1>{{ 'Instant batch' if instant_mode else 'Batch processing' }}</h1>
+          <p class="batch-eyebrow">Create in bulk</p><h1>{{ 'Instant batch' if instant_mode else 'Batch processing' }}</h1>
           <p id="batch-hero-description">Create one batch request with multiple lectures. Each row produces its own outputs, and the batch can be downloaded as one ZIP.</p>
           <div class="batch-hero-meta-list" role="list" aria-label="Batch processing notes">
             <div class="batch-hero-meta-item" role="listitem">
@@ -51,7 +51,7 @@
                 <path d="m3 7 9 6 9-6"></path>
               </svg>
               {% endif %}
-              <span>{{ 'Up to 2 rows run at once, with a short pause between AI calls to protect reliability.' if instant_mode else 'You will receive an email when your batch reaches a final status.' }}</span>
+              <span>{{ 'Leave this page whenever you like. Follow progress in Batch status.' if instant_mode else 'You will receive an email when your batch reaches a final status.' }}</span>
             </div>
           </div>
         </div>
@@ -74,7 +74,7 @@
           <label class="field-control">
             <span>Batch title</span>
             <input id="batch-title" name="batch_title" placeholder="Example: Week 3 Neuro Lecture Batch" maxlength="120" required>
-            <small class="field-help">Required: this will be the folder name in your Study Library and the ZIP file name.</small>
+            <small class="field-help">Used for your Study Library folder and download.</small>
           </label>
           <div class="field-control field-control-language">
             <span id="output-language-field-label">Output language</span>
@@ -98,7 +98,7 @@
           </div>
         </div>
 
-        <div id="study-defaults-wrap" class="study-defaults-wrap">
+        <details class="batch-defaults"><summary>Output options <span>Study tools &amp; download preferences</span></summary><div class="batch-defaults-body"><div id="study-defaults-wrap" class="study-defaults-wrap">
           <div class="generation-control wide">
             <span class="control-label">Study tools</span>
             <input type="hidden" id="study-features" name="study_features" value="both">
@@ -140,11 +140,12 @@
             </span>
             <span class="batch-export-copy">
               <span class="batch-export-title">Include a combined Word document of all outputs</span>
-              <span class="control-note">Your ZIP will still include every individual file, plus one combined `.docx` in batch order.</span>
+              <span class="control-note">Your ZIP includes individual files and one combined Word document in batch order.</span>
             </span>
           </span>
         </label>
 
+        </div></details>
         <div class="rows-head">
           <h2 id="rows-title">Lectures</h2>
           <button type="button" id="add-row-btn" class="btn add-btn">
@@ -154,7 +155,7 @@
         </div>
         {% if forced_mode in ['lecture-notes', 'interview', 'audio-transcription'] %}
         <div class="batch-audio-retention-note" role="note">
-          Keep your original audio files. Batch audio inputs, imported audio, and generated playback audio are temporary and can be deleted unless you download them.
+          Keep your original recordings. Uploaded and generated playback audio are temporary and can be deleted. Import lecture links before processing.
         </div>
         {% endif %}
         <div id="rows-wrap" class="rows-wrap"></div>

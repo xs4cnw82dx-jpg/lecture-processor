@@ -27,11 +27,12 @@
     var previousFocus = document.activeElement;
     var overlay = document.createElement('div');
     overlay.className = 'planned-study-overlay';
-    overlay.innerHTML = '<section class="planned-study" role="dialog" aria-modal="true" aria-labelledby="planned-study-title"><header class="planned-study-header"><div><p class="planned-study-kicker">YOUR STUDY SESSION</p><h1 id="planned-study-title">' + escape(session.title) + '</h1><p>' + escape(options.pack.title) + ' · ' + Math.round(run.duration_seconds / 60) + ' minute slot</p></div><button type="button" class="btn" data-leave>Save &amp; leave</button></header><div class="planned-study-toolbar"><div class="planned-study-timer"><strong data-clock>0:00</strong><span data-phase>Ready to focus</span></div><label>Timer <select data-timer aria-label="Study timer"><option value="countdown">Countdown</option><option value="pomodoro">Pomodoro · 25 / 5</option></select></label><button type="button" class="btn primary" data-pause>Start session</button><button type="button" class="btn" data-summary>Session progress</button></div><p class="planned-study-timer-note">Your timer pauses when you leave this tab. Pomodoro breaks fit inside your study slot.</p><div class="planned-study-progress"><progress max="100" value="0" data-progress aria-label="Completed study targets"></progress><span data-progress-label></span></div><div class="planned-study-work" data-work></div><footer><span data-save role="status" aria-live="polite">Progress saved</span><a href="/plan">Study Plan</a></footer></section>';
+    overlay.innerHTML = '<section class="planned-study" role="dialog" aria-modal="true" aria-labelledby="planned-study-title"><header class="planned-study-header"><div><p class="planned-study-kicker">YOUR STUDY SESSION</p><h1 id="planned-study-title">' + escape(session.title) + '</h1><p>' + escape(options.pack.title) + ' · ' + Math.round(run.duration_seconds / 60) + ' minute slot</p></div><button type="button" class="btn" data-leave>Save &amp; leave</button></header><div class="planned-study-toolbar"><div class="planned-study-timer"><strong data-clock>0:00</strong><span data-phase>Ready to focus</span></div><label>Timer <select data-app-select data-timer aria-label="Study timer"><option value="countdown">Countdown</option><option value="pomodoro">Pomodoro · 25 / 5</option></select></label><button type="button" class="btn primary" data-pause>Start session</button><button type="button" class="btn" data-summary>Session progress</button></div><p class="planned-study-timer-note">Your timer pauses when you leave this tab. Pomodoro breaks fit inside your study slot.</p><div class="planned-study-progress"><progress max="100" value="0" data-progress aria-label="Completed study targets"></progress><span data-progress-label></span></div><div class="planned-study-work" data-work></div><footer><span data-save role="status" aria-live="polite">Progress saved</span><a href="/plan">Study Plan</a></footer></section>';
     document.body.appendChild(overlay);
     document.body.classList.add('planned-study-open');
     var $ = function (selector) { return overlay.querySelector(selector); };
     $('[data-timer]').value = run.timer_mode;
+    if (window.LectureProcessorUx && window.LectureProcessorUx.enhanceMarkedSelects) window.LectureProcessorUx.enhanceMarkedSelects(overlay);
     function persist() {
       run.checkpoint_revision += 1;
       try { localStorage.setItem(storageKey, JSON.stringify(run)); } catch (_error) { saveMessage = 'Keep this tab open until your progress is saved.'; }
@@ -143,7 +144,7 @@
       if (item.type === 'fc') {
         html += '<h2>' + escape(content.front) + '</h2>' + (revealed ? '<div class="planned-study-answer">' + escape(content.back) + '</div><p>How well did you remember it?</p><div class="planned-study-actions">' + ['retry', 'hard', 'good', 'easy'].map(function (action) { return '<button type="button" class="btn' + (action === 'good' ? ' primary' : '') + '" data-rate="' + action + '"' + (paused ? ' disabled' : '') + '>' + { retry: 'Again', hard: 'Hard', good: 'Got it', easy: 'Easy' }[action] + '</button>'; }).join('') + '</div>' : '<button type="button" class="btn primary" data-reveal' + (paused ? ' disabled' : '') + '>Reveal answer</button>');
       } else if (item.type === 'q') {
-        html += '<h2>' + escape(content.question) + '</h2><div class="planned-study-options">' + (content.options || []).map(function (answer, index) { return '<button type="button" class="btn" data-answer="' + index + '"' + (paused ? ' disabled' : '') + '>' + escape(answer) + '</button>'; }).join('') + '</div><div data-feedback role="status"></div>';
+        html += '<h2>' + escape(content.question) + '</h2><div class="planned-study-options">' + (content.options || []).map(function (answer, index) { return '<button type="button" class="btn" data-answer="' + index + '"' + (paused ? ' disabled' : '') + '>' + '<span class="planned-study-option-letter" aria-hidden="true">' + String.fromCharCode(65 + index) + '</span>' + escape(answer) + '</button>'; }).join('') + '</div><div data-feedback role="status"></div>';
       } else {
         html += '<div class="planned-study-notes">' + options.markdown(options.pack.notes_markdown || '') + '</div><button type="button" class="btn" data-notes-next' + (run.notes_seconds < item.seconds ? ' disabled' : '') + '>Continue</button><p>Read actively, then explain the main ideas from memory. ' + Math.ceil(item.seconds / 60) + ' minutes allocated.</p>';
       }
@@ -159,7 +160,13 @@
         if (answerLocked) return;
         answerLocked = true;
         var correct = content.options[Number(button.dataset.answer)] === content.answer;
-        overlay.querySelectorAll('[data-answer]').forEach(function (option) { option.disabled = true; });
+        overlay.querySelectorAll('[data-answer]').forEach(function (option) {
+          option.disabled = true;
+          var isCorrect = content.options[Number(option.dataset.answer)] === content.answer;
+          option.classList.toggle('is-correct', isCorrect);
+          option.classList.toggle('is-incorrect', option === button && !correct);
+          if (isCorrect || option === button) option.setAttribute('aria-label', content.options[Number(option.dataset.answer)] + (isCorrect ? ' — correct answer' : ' — your answer, incorrect'));
+        });
         $('[data-feedback]').innerHTML = '<div class="planned-study-answer"><strong>' + (correct ? 'Correct' : 'Answer: ' + escape(content.answer)) + '</strong><p>' + escape(content.explanation || '') + '</p><button type="button" class="btn primary" data-question-next>Continue</button></div>';
         // Save the answer immediately; leaving while reading feedback loses no work.
         record(item, correct ? 'good' : 'retry', true);
@@ -232,7 +239,8 @@
         localStorage.setItem('planned_timer_' + options.uid, run.timer_mode);
         persist(); renderWork();
       } catch (error) { saveMessage = error.message; }
-      $('[data-timer]').value = run.timer_mode; renderTimer();
+      $('[data-timer]').value = run.timer_mode;
+    if (window.LectureProcessorUx && window.LectureProcessorUx.enhanceMarkedSelects) window.LectureProcessorUx.enhanceMarkedSelects(overlay); renderTimer();
     });
     overlay.addEventListener('keydown', function (event) {
       if (event.key === 'Escape') { event.preventDefault(); tick(); run.run_status = 'paused'; summary = true; checkpoint(); renderWork(); renderTimer(); }

@@ -18,7 +18,7 @@ async function loginFixture(page, options = {}) {
       reload: async () => { user.emailVerified = true; },
     };
     const auth = {
-      currentUser: restored ? user : null,
+      currentUser: restored || sessionStorage.getItem('login-fixture-signed-in') === '1' ? user : null,
       setPersistence: async () => {},
       onAuthStateChanged(callback) {
         listeners.push(callback);
@@ -28,11 +28,12 @@ async function loginFixture(page, options = {}) {
       async signInWithEmailAndPassword() {
         window.firebaseSignIns++;
         auth.currentUser = user;
+        sessionStorage.setItem('login-fixture-signed-in', '1');
         listeners.forEach((callback) => callback(user));
         return { user };
       },
       async signInWithPopup() { return auth.signInWithEmailAndPassword(); },
-      async signOut() { auth.currentUser = null; listeners.forEach((callback) => callback(null)); },
+      async signOut() { sessionStorage.removeItem('login-fixture-signed-in'); auth.currentUser = null; listeners.forEach((callback) => callback(null)); },
     };
     const factory = () => auth;
     factory.Auth = { Persistence: { LOCAL: 'local' } };
@@ -184,4 +185,24 @@ test('signing out during token retrieval cannot reactivate the old account', asy
   expect(fixture.calls).not.toContain('/api/runtime-jobs/active');
   await expect(page.locator('#toast-text')).not.toHaveText('Signed in successfully!');
   expect(fixture.errors).toEqual([]);
+});
+
+test('payment return survives the real sign-in navigation and confirms once', async ({ page }) => {
+  await loginFixture(page);
+  let confirmations = 0;
+  await page.route('**/api/confirm-checkout-session?*', route => {
+    confirmations++;
+    expect(new URL(route.request().url()).searchParams.get('session_id')).toBe('checkout-return-fixture');
+    return route.fulfill({contentType:'application/json',body:'{"status":"granted"}'});
+  });
+  await page.goto('/buy_credits?payment=success&session_id=checkout-return-fixture');
+  await expect(page.locator('#payment-result')).toContainText('Sign in to apply');
+  await page.locator('#buy-credits-signin-link').click();
+  await expect(page.locator('#auth-overlay')).toBeVisible();
+  await page.locator('#signin-email').fill('student@gmail.com');
+  await page.locator('#signin-password').fill('fixture-password');
+  await page.locator('#signin-submit').click();
+  await expect(page).toHaveURL(/buy_credits/);
+  await expect(page.locator('#payment-result')).toContainText('Payment confirmed');
+  expect(confirmations).toBe(1);
 });

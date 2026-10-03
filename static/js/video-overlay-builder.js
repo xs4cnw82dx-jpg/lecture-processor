@@ -434,7 +434,7 @@
     var value = Number(timestamp || 0);
     if (!value) return 'Not saved yet';
     try {
-      return new Date(value).toLocaleString(navigator.language || 'en-US', {
+      return new Date(value).toLocaleString('en-GB', {
         day: '2-digit',
         month: 'short',
         hour: '2-digit',
@@ -1398,11 +1398,11 @@
   function getStageSizingRule() {
     if (!refs.stageFrame) return '.overlay-stage{width:min(100%,150vh);height:auto;font-size:16px;--overlay-stage-scale:1;}';
     var frameRect = refs.stageFrame.getBoundingClientRect();
-    var availableWidth = Math.max(240, frameRect.width - 4);
-    var availableHeight = Math.max(160, frameRect.height - 10);
+    var availableWidth = Math.max(1, frameRect.width - 4);
+    var availableHeight = Math.max(1, frameRect.height - 10);
     var fittedWidth = Math.min(availableWidth, availableHeight * (16 / 9));
     var presenterMode = document.body && document.body.classList.contains('overlay-recording-presenter');
-    var zoomedWidth = Math.max(240, fittedWidth * (presenterMode ? 1 : stageZoom));
+    var zoomedWidth = Math.max(1, fittedWidth * (presenterMode ? 1 : stageZoom));
     var zoomedHeight = zoomedWidth * 9 / 16;
     var contentScale = Math.max(0.36, Math.min(1.08, zoomedWidth / 1600));
     var fontSize = Math.round(16 * contentScale * 1000) / 1000;
@@ -2572,6 +2572,16 @@
     document.addEventListener('click', function (event) {
       if (!event.target.closest || !event.target.closest('.app-select')) closeCustomSelects();
     });
+    document.querySelector('.overlay-recording-tools').addEventListener('toggle', function () {
+      window.requestAnimationFrame(updateStageZoom);
+    });
+    if (typeof ResizeObserver === 'function') {
+      var stageResizeFrame = null;
+      new ResizeObserver(function () {
+        if (stageResizeFrame) window.cancelAnimationFrame(stageResizeFrame);
+        stageResizeFrame = window.requestAnimationFrame(function () { stageResizeFrame = null; updateStageZoom(); scheduleAutoFitAll(); });
+      }).observe(refs.stageFrame);
+    }
     window.addEventListener('resize', function () {
       updateStageZoom();
       scheduleAutoFitAll();

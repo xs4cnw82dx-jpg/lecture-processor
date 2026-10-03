@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Book Studio · Lecture Processor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/book-studio.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/book-color-picker.css') }}">
@@ -15,9 +16,9 @@
   </header>
   <div id="book-loading" class="book-loading" role="status" {% if not book_id %}hidden{% endif %}><span class="book-spinner"></span> Opening your book…</div>
   <main id="library" class="book-library" {% if book_id %}hidden{% endif %}>
-    <div class="book-library-heading"><div><p class="book-eyebrow">A LITTLE SPACE FOR BIG IDEAS</p><h1>Your bookshelf</h1><p>Stories, sketches and discoveries. Give them a home.</p></div><button class="primary-btn" id="new-book">＋ New book</button></div>
-    <div class="book-library-tools"><div class="book-tabs" role="tablist" aria-label="Book collections"><button role="tab" aria-selected="true" data-collection="mine">My books</button><button role="tab" aria-selected="false" data-collection="shared">Shared with me</button><button role="tab" aria-selected="false" data-collection="local">On this device</button><button role="tab" aria-selected="false" data-collection="trash">Trash</button></div><div class="book-search-row"><input id="book-search" type="search" aria-label="Search books" placeholder="Search titles, folders or tags"><select id="book-sort" aria-label="Sort books"><option value="recent">Recently edited</option><option value="title">Title</option><option value="favorite">Favorites first</option></select><button class="ghost-btn" id="import-backup">Open backup</button></div></div>
-    <div id="book-grid" class="book-grid"></div>
+    <div class="book-library-heading"><div><p class="book-eyebrow">YOUR CREATIVE WORKSPACE</p><h1>Your bookshelf</h1><p>Stories, sketches and discoveries. Give them a home.</p></div><button class="primary-btn" id="new-book">＋ New book</button></div>
+    <div class="book-library-tools"><div class="book-tabs" role="tablist" aria-label="Book collections"><button role="tab" aria-selected="true" data-collection="mine">My books</button><button role="tab" aria-selected="false" data-collection="shared">Shared with me</button><button role="tab" aria-selected="false" data-collection="local">On this device</button><button role="tab" aria-selected="false" data-collection="trash">Trash</button></div><div class="book-search-row"><input id="book-search" type="search" aria-label="Search books" placeholder="Search titles, folders or tags"><select data-app-select id="book-sort" aria-label="Sort books"><option value="recent">Recently edited</option><option value="title">Title</option><option value="favorite">Favorites first</option></select><button class="ghost-btn" id="import-backup">Open backup</button></div></div>
+    <p class="book-library-count" id="book-library-count" role="status"></p><div id="book-grid" class="book-grid"></div>
   </main>
   <main id="workspace" class="book-workspace" hidden>
     <aside class="book-pages-panel" aria-label="Pages"><div class="book-panel-heading"><h2>Pages</h2></div><div id="page-list" class="book-page-list"></div><button class="secondary-btn" id="add-page-side">＋ Add page</button><button class="ghost-btn" id="organize">Book details</button><button class="ghost-btn" id="history">Version history</button><button class="ghost-btn" id="comments">Comments</button></aside>
@@ -28,7 +29,7 @@
       <div id="selection-toolbar" class="book-selection-toolbar" role="toolbar" aria-label="Selected objects" hidden></div>
       <div class="book-viewport" id="book-viewport"><div id="book-spread" class="book-spread"></div></div>
       <div id="upload-list" class="book-uploads" aria-live="polite"></div>
-      <nav class="book-navigation" aria-label="Book navigation"><div class="book-nav-group"><button id="first-page" class="icon-btn" aria-label="First page" title="First page (Home)">⇤</button><button id="prev-page" class="icon-btn" aria-label="Previous pages" title="Previous pages (Left arrow)">‹</button><button id="page-position" class="book-position" title="Jump to a page">Cover</button><button id="next-page" class="icon-btn" aria-label="Next pages" title="Next pages (Right arrow)">›</button><button id="last-page" class="icon-btn" aria-label="Last page" title="Last page (End)">⇥</button><button aria-label="Add page" id="add-page" class="book-add-page" title="Add page (Shift N)">＋</button></div><div class="book-zoom"><select id="fit-mode" aria-label="Fit view"><option value="book">Fit book</option><option value="page">Fit page</option></select><button id="zoom-out" class="icon-btn" aria-label="Zoom out">−</button><button id="zoom-value" class="book-zoom-reset" title="Reset zoom (⌘/Ctrl 0)" aria-label="Reset zoom">100%</button><button id="zoom-in" class="icon-btn" aria-label="Zoom in">＋</button><button id="shortcuts" class="icon-btn" aria-label="Keyboard shortcuts">?</button></div></nav>
+      <nav class="book-navigation" aria-label="Book navigation"><div class="book-nav-group"><button id="first-page" class="icon-btn" aria-label="First page" title="First page (Home)">⇤</button><button id="prev-page" class="icon-btn" aria-label="Previous pages" title="Previous pages (Left arrow)">‹</button><button id="page-position" class="book-position" title="Jump to a page">Cover</button><button id="next-page" class="icon-btn" aria-label="Next pages" title="Next pages (Right arrow)">›</button><button id="last-page" class="icon-btn" aria-label="Last page" title="Last page (End)">⇥</button><button aria-label="Add page" id="add-page" class="book-add-page" title="Add page (Shift N)">＋</button></div><div class="book-zoom"><select data-app-select id="fit-mode" aria-label="Fit view"><option value="book">Fit book</option><option value="page">Fit page</option></select><button id="zoom-out" class="icon-btn" aria-label="Zoom out">−</button><button id="zoom-value" class="book-zoom-reset" title="Reset zoom (⌘/Ctrl 0)" aria-label="Reset zoom">100%</button><button id="zoom-in" class="icon-btn" aria-label="Zoom in">＋</button><button id="shortcuts" class="icon-btn" aria-label="Keyboard shortcuts">?</button></div></nav>
     </section>
     <aside id="inspector" class="book-inspector" aria-label="Page and object settings"></aside>
   </main>
@@ -39,6 +40,7 @@
   <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
   <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/video-overlay-builder-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/book-model.js') }}"></script>
   <script src="{{ url_for('static', filename='js/book-path-editor.js') }}"></script>

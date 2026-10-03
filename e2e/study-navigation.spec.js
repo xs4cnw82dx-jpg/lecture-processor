@@ -1,4 +1,9 @@
+const { expectProductControls } = require('./helpers/control-audit');
 const { test, expect } = require('@playwright/test');
+const { readFileSync } = require('node:fs');
+test.beforeEach(async ({ page }) => {
+  await page.route('**/static/js/study.min.js*', route => route.fulfill({ contentType: 'application/javascript', body: readFileSync('static/js/study.js', 'utf8') }));
+});
 
 async function installLibrary(page, options = {}) {
   const firebaseStub = `(function () {
@@ -56,18 +61,21 @@ for (const width of [320, 390, 1280]) {
       await expect(action).toBeVisible();
       const bounds = await action.boundingBox();
       expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
-      if (width < 600) expect(bounds.height).toBeGreaterThanOrEqual(44);
+      if (width < 600) await expect.poll(async () => (await action.boundingBox()).height).toBeGreaterThanOrEqual(44);
     }
     await folder.locator('[data-edit-folder]').click();
     await expect(page.locator('#folder-name-input')).toHaveValue('Anatomy and physiology');
     await page.locator('#folder-modal-close').click();
+    await folder.locator('summary').click();
     await folder.locator('[data-new-subfolder]').click();
     await expect(page.locator('#folder-modal-title')).toHaveText('Create Folder');
     await expect(page.locator('#folder-name-input')).toHaveValue('');
     await page.locator('#folder-modal-close').click();
+    await folder.locator('summary').click();
     await folder.locator('[data-share-folder]').click();
     await expect(page.locator('#share-modal-title')).toHaveText('Share Folder');
     await page.locator('#share-modal-close').click();
+    await folder.locator('summary').click();
     await folder.locator('[data-toggle-pin]').click();
     await expect(folder.locator('.pinned-note')).toHaveText('Pinned');
     await folder.locator('summary').click();
@@ -131,4 +139,41 @@ test('large packs create editors on demand and retain edits when switching tabs'
   await expect(page.locator('#editor-card-front-0')).toHaveValue('Different card');
   await expect(page.locator('#flashcard-editor-list .editor-card')).toHaveCount(1);
   await expect(page.locator('#question-editor-list .editor-card')).toHaveCount(0);
+});
+
+test('redesigned learning workspace stays readable through library, setup and large builder', async ({ page }, testInfo) => {
+  const pack = { study_pack_id: 'visual', title: 'Anatomy — movement and the lower limb', mode: 'manual', folder_id: 'anatomy', notes_markdown: '# How the lower limb moves\n\nMovement brings together muscles, joints and nerves. Build a clear picture before learning individual attachments.\n\n## A useful starting point\n\n- Identify the joint being crossed.\n- Follow the muscle from origin to insertion.\n- Explain the movement in your own words.\n\n### Active recall\n\nWhat changes when the muscle contracts?', flashcards_count: 165, test_questions_count: 40,
+    flashcards: Array.from({ length: 165 }, (_, index) => ({ front: `Muscle ${index + 1}: explain its action and attachments`, back: 'Follow the muscle across the joint to understand its action.' })),
+    test_questions: Array.from({ length: 40 }, (_, index) => ({ question: `Question ${index + 1}: which movement decreases the angle at a joint?`, options: ['Flexion', 'Extension', 'Rotation', 'Abduction'], answer: 'Flexion', explanation: 'Flexion decreases the angle.' })) };
+  await installLibrary(page, { packs: [pack, { ...pack, study_pack_id: 'second', title: 'Neuroanatomy — pathways and clinical cases' }] });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/study?pack_id=visual');
+  await expect(page.locator('#pack-summary-title')).toContainText('Anatomy');
+  expect((await page.locator('.notes-view').boundingBox()).y).toBeLessThan(640);
+  await expectProductControls(page);
+  await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('library-desktop.png'), fullPage: true });
+  await page.locator('#open-learn-btn').click();
+  await expect(page.locator('#setup-overlay')).toBeVisible();
+  await expect(page.locator('#lesson-card-flashcards')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#lesson-card-test')).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('#lesson-card-write').click();
+  await expect(page.locator('#lesson-card-write')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#lesson-card-flashcards')).toHaveAttribute('aria-pressed', 'true');
+  await expectProductControls(page);
+  await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('study-setup.png') });
+  await page.locator('#setup-close-btn').click();
+  await page.locator('#open-builder-btn').click();
+  await page.locator('[data-builder-pane="flashcards"]').click();
+  await expect(page.locator('#builder-flashcard-list details')).toHaveCount(165);
+  await expect(page.locator('#builder-flashcard-list details[open]')).toHaveCount(1);
+  await expectProductControls(page);
+  await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('builder-desktop.png') });
+  await page.locator('#builder-flashcard-list details').nth(164).locator('summary').click();
+  await page.locator('#builder-fc-front-164').fill('Edited final flashcard');
+  await expect(page.locator('#builder-fc-front-164')).toHaveValue('Edited final flashcard');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('#builder-flashcard-list details').first().scrollIntoViewIfNeeded();
+  await expectProductControls(page);
+  await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('builder-mobile.png') });
+  expect(await page.locator('#builder-overlay').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
 });

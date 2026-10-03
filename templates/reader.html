@@ -16,28 +16,14 @@
   {% set shell_title = reader_title %}
   {% include '_app_shell.html' %}
     <main class="app-shell-page reader-page" data-reader-source="{{ reader_source }}">
-      <section class="shell-panel reader-hero">
-        <h1>{{ reader_title }}</h1>
+      <section class="reader-hero">
+        <p class="workspace-eyebrow">Read & extract</p><h1>{{ reader_title }}</h1>
         <p>{{ reader_subtitle }}</p>
       </section>
 
       <section class="reader-grid">
         <article class="shell-panel reader-input-card">
-          <h2>Extract Content</h2>
-          <div class="reader-advanced">
-            <button type="button" class="advanced-toggle" id="reader-advanced-toggle" aria-expanded="false" aria-controls="reader-advanced-body">
-              Advanced
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="6 9 12 15 18 9"></polyline>
-              </svg>
-            </button>
-            <div class="advanced-body" id="reader-advanced-body">
-              <label for="reader-question-input">Question</label>
-              <textarea id="reader-question-input" rows="5"></textarea>
-              <p class="reader-help" id="reader-question-help"></p>
-            </div>
-          </div>
-
+          <h2>Add your source</h2>
           <label class="reader-url-wrap" id="reader-url-wrap" for="reader-url-input" hidden>
             <span>Source URL</span>
             <input type="url" id="reader-url-input" placeholder="https://example.com/article" autocomplete="off">
@@ -63,6 +49,20 @@
             <div class="selected-files" id="reader-selected-files"></div>
           </div>
 
+          <div class="reader-advanced">
+            <button type="button" class="advanced-toggle" id="reader-advanced-toggle" aria-expanded="false" aria-controls="reader-advanced-body">
+              Add a question (optional)
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </button>
+            <div class="advanced-body" id="reader-advanced-body"><div class="advanced-body-inner">
+              <label for="reader-question-input">Question</label>
+              <textarea id="reader-question-input" rows="5"></textarea>
+              <p class="reader-help" id="reader-question-help"></p></div>
+            </div>
+          </div>
+
           <div class="run-row">
             <button type="button" class="primary-btn" id="reader-run-btn" disabled>Extract</button>
             <span class="credit-note" id="reader-credit-note">Text extraction credits: &mdash;</span>
@@ -79,13 +79,13 @@
 
         <article class="shell-panel reader-output-card">
           <div class="result-head">
-            <h2>Output</h2>
+            <h2>Extracted content</h2>
             <div class="actions">
               <button type="button" class="secondary-btn" id="reader-copy-btn" disabled>Copy</button>
               <button type="button" class="secondary-btn" id="reader-download-docx-btn" disabled>Download .docx</button>
             </div>
           </div>
-          <pre class="output-pre" id="reader-output-pre"></pre>
+          <pre class="output-pre" id="reader-output-pre"></pre><div class="output-placeholder"><span class="output-placeholder-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3H5v18h14V7l-4-4H8Z"/><path d="M9 11h6M9 15h6"/></svg></span><h3>Your source, made clearer</h3><p>Add a source and extract its content. Your results will appear here, ready to copy or download.</p></div>
         </article>
       </section>
     </main>

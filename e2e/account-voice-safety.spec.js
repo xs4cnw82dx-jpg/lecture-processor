@@ -276,6 +276,7 @@ test('offline deletion of a synced note preserves its row and audio across reloa
   await page.goto('/voice-notes');
   await seedVoiceNote(page, true);
   await page.evaluate(() => { window.voiceOnline = false; window.dispatchEvent(new Event('offline')); });
+  await page.locator('#voice-detail .voice-more-actions > summary').click();
   await page.locator('#voice-delete-btn').click();
   await expect(page.locator('#voice-toast')).toContainText('Connect to the internet');
   const beforeReload = await savedVoiceData(page);
@@ -294,6 +295,7 @@ test('offline deletion of a local-only note removes both records after confirmat
   await page.goto('/voice-notes');
   await seedVoiceNote(page, false);
   await page.evaluate(() => { window.voiceOnline = false; window.dispatchEvent(new Event('offline')); });
+  await page.locator('#voice-detail .voice-more-actions > summary').click();
   await page.locator('#voice-delete-btn').click();
   await page.locator('#voice-confirm-confirm').click();
   await expect(page.locator('#voice-toast')).toContainText('Voice note deleted');
@@ -307,6 +309,7 @@ test('failed remote deletion keeps the saved note and audio intact', async ({ pa
   await page.route('**/api/study-packs/seeded-pack', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"Please retry when connected"}' }));
   await page.goto('/voice-notes');
   await seedVoiceNote(page, true);
+  await page.locator('#voice-detail .voice-more-actions > summary').click();
   await page.locator('#voice-delete-btn').click();
   await page.locator('#voice-confirm-confirm').click();
   await expect(page.locator('#voice-toast')).toContainText('Please retry when connected');

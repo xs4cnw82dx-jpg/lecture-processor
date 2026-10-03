@@ -28,7 +28,13 @@
       viewer.setAttribute('aria-label', 'Picture viewer');
       var close = document.createElement('button');
       close.type = 'button'; close.className = 'btn'; close.textContent = 'Close picture';
-      close.addEventListener('click', function () { viewer.close(); });
+      function closeViewer() {
+        viewer.classList.add('is-closing');
+        window.setTimeout(function () { if (viewer) { viewer.close(); viewer.classList.remove('is-closing'); } }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 160);
+      }
+      close.addEventListener('click', closeViewer);
+      viewer.addEventListener('cancel', function (event) { event.preventDefault(); closeViewer(); });
+      viewer.addEventListener('click', function (event) { if (event.target === viewer && (event.clientX < viewer.getBoundingClientRect().left || event.clientX > viewer.getBoundingClientRect().right || event.clientY < viewer.getBoundingClientRect().top || event.clientY > viewer.getBoundingClientRect().bottom)) closeViewer(); });
       var image = document.createElement('img');
       viewer.append(close, image);
       document.body.appendChild(viewer);

@@ -497,6 +497,8 @@
     if (!statusEl) return;
     var text = String(message || '').trim();
     statusEl.textContent = text;
+    var disclosure = statusEl.closest('details');
+    if (text && disclosure) disclosure.open = true;
     statusEl.classList.remove('pending', 'success', 'error', 'info');
     if (text && ['pending', 'success', 'error', 'info'].indexOf(statusKind) >= 0) {
       statusEl.classList.add(statusKind);
@@ -1249,10 +1251,10 @@
       (
         meta.allowsAudioUrlImport
           ? (
-            '  <div class="row-url-import" data-audio-url-wrap>' +
+            '  <details class="row-url-import" data-audio-url-wrap><summary>Or import a lecture link</summary>' +
             '    <div class="row-url-head">' +
             '      <strong id="' + urlTitleId + '">Import from audio or video URL</strong>' +
-            '      <span id="' + urlHintId + '">Paste the normal lecture video page first. Direct playlist links also work and audio can be auto-imported for this row.</span>' +
+            '      <span id="' + urlHintId + '">Use the lecture page URL or a direct playlist link.</span>' +
             '    </div>' +
             '    <div class="row-url-row">' +
             '      <input type="url" class="row-url-input" data-field="m3u8" placeholder="https://.../audio-video-or-index.m3u8" autocomplete="off" aria-labelledby="' + urlTitleId + '" aria-describedby="' + urlHintId + ' ' + urlHelpId + ' ' + urlStatusId + '">' +
@@ -1260,10 +1262,10 @@
             '    </div>' +
             '    <div class="row-url-help" id="' + urlHelpId + '">' +
             '      <span class="info-dot" aria-hidden="true">i</span>' +
-            '      <span>These links expire quickly. Importing stores audio immediately so the batch can still run even when processing takes longer. If the page URL fails, retry with the direct playlist URL.</span>' +
+            '      <span>If the page URL fails, try its direct media playlist.</span>' +
             '    </div>' +
             '    <div class="row-url-status" id="' + urlStatusId + '" data-field="m3u8-status" aria-live="polite"></div>' +
-            '  </div>'
+            '  </details>'
           )
           : ''
       ) +

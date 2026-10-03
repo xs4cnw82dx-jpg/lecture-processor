@@ -30,11 +30,13 @@
         </label>
         <div class="overlay-builder-actions" aria-label="Project actions">
           <button type="button" class="secondary-btn" id="overlay-new-project">New Project</button>
-          <button type="button" class="secondary-btn" id="overlay-save-draft">Save Project</button>
+          <button type="button" class="primary-btn" id="overlay-save-draft">Save Project</button>
+          <details class="overlay-project-more" data-app-menu><summary class="ghost-btn">More actions</summary><div class="overlay-project-menu app-menu-panel">
           <a class="ghost-btn" href="/study?folder=video-overlays">Study Library</a>
           <button type="button" class="secondary-btn" id="overlay-export-json">Export JSON</button>
           <button type="button" class="ghost-btn" id="overlay-import-json">Import JSON</button>
           <button type="button" class="ghost-btn danger-text" id="overlay-reset">Reset</button>
+          </div></details>
         </div>
       </div>
     </header>
@@ -56,9 +58,21 @@
           <ul class="overlay-slide-list" id="overlay-slide-list"></ul>
         </section>
 
+
         <section class="overlay-sidebar-section">
           <div class="overlay-section-head">
-            <h2>Add Overlay</h2>
+            <h2>Overlays</h2>
+          </div>
+          <ul class="overlay-item-list" id="overlay-item-list"></ul>
+        </section>
+
+
+      </aside>
+
+      <section class="overlay-stage-panel" aria-label="Overlay preview">
+        <section class="overlay-insert-tools">
+          <div class="overlay-section-head">
+            <h2>Insert</h2>
           </div>
           <div class="overlay-add-grid">
             <button type="button" class="secondary-btn" id="overlay-add-text">Text</button>
@@ -68,7 +82,7 @@
             <button type="button" class="secondary-btn" id="overlay-add-arrow">Arrow</button>
             <button type="button" class="secondary-btn" id="overlay-add-shape">Shape</button>
           </div>
-          <div class="overlay-table-size-row" aria-label="New table size">
+          <details class="overlay-table-options"><summary>Table size</summary><div class="overlay-table-size-row" aria-label="New table size">
             <label class="overlay-field" for="overlay-table-rows">
               <span>Rows</span>
               <input type="number" id="overlay-table-rows" min="1" max="8" step="1" value="3">
@@ -77,20 +91,9 @@
               <span>Columns</span>
               <input type="number" id="overlay-table-cols" min="1" max="8" step="1" value="3">
             </label>
-          </div>
+          </div></details>
         </section>
 
-        <section class="overlay-sidebar-section">
-          <div class="overlay-section-head">
-            <h2>Overlays</h2>
-          </div>
-          <ul class="overlay-item-list" id="overlay-item-list"></ul>
-        </section>
-
-        <section class="overlay-sidebar-section overlay-inspector" id="overlay-inspector" aria-label="Selected overlay settings"></section>
-      </aside>
-
-      <section class="overlay-stage-panel" aria-label="Overlay preview">
         <div class="overlay-stage-toolbar">
           <div class="overlay-stage-label" id="overlay-stage-label"></div>
           <div class="overlay-stage-actions">
@@ -109,6 +112,13 @@
             <button type="button" class="ghost-btn" id="overlay-stop-preview">Stop Preview</button>
           </div>
         </div>
+        <div class="overlay-stage-frame">
+          <div class="overlay-preview-meter" aria-hidden="true">
+            <div class="overlay-preview-progress" id="overlay-preview-progress"></div>
+          </div>
+          <div class="overlay-stage" id="overlay-stage" tabindex="0" aria-label="Editable 16 by 9 overlay canvas"></div>
+        </div>
+        <details class="overlay-recording-tools"><summary>Record your presentation</summary>
         <div class="overlay-recording-bar" aria-label="Screen recording controls">
           <div class="overlay-recorder-visual" aria-hidden="true">
             <span></span><span></span><span></span><span></span><span></span>
@@ -122,14 +132,12 @@
           <div class="overlay-recording-status" id="overlay-recording-status" aria-live="polite">Ready to record WebM video.</div>
           <div class="overlay-recording-note">Keep the downloaded WebM file. Screen and microphone recordings are created in your browser and are not stored on the server.</div>
         </div>
-        <div class="overlay-stage-frame">
-          <div class="overlay-preview-meter" aria-hidden="true">
-            <div class="overlay-preview-progress" id="overlay-preview-progress"></div>
-          </div>
-          <div class="overlay-stage" id="overlay-stage" tabindex="0" aria-label="Editable 16 by 9 overlay canvas"></div>
-        </div>
+        </details>
         <div class="status" id="overlay-builder-status" role="status" aria-live="polite" aria-atomic="true"></div>
       </section>
+      <aside class="overlay-inspector-panel" aria-label="Inspector">
+        <section class="overlay-sidebar-section overlay-inspector" id="overlay-inspector" aria-label="Selected overlay settings"></section>
+      </aside>
     </section>
   </main>
 

@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Buy Credits · Lecture Processor</title>
@@ -16,23 +17,25 @@
   {% set shell_title = 'Buy Credits' %}
   {% include '_app_shell.html' %}
     <main class="app-shell-page buy-credits-page">
-      <section class="shell-panel hero">
-        <h1>Buy Credits</h1>
-        <p>Choose a credit pack and continue processing without interruptions.</p>
+      <section class="credits-heading">
+        <span class="credits-eyebrow">Your study workspace</span>
+        <h1>A little fuel for your next idea.</h1>
+        <p>Choose the material you want to process, then pick a bundle. Your current balances are available in the header.</p>
       </section>
       <section class="shell-panel" id="buy-credits-auth-panel" hidden>
         <h2>Sign in to buy credits</h2>
         <p>Credit purchases are saved to your account, so sign in before choosing a bundle.</p>
         <a class="refresh-history-btn" id="buy-credits-signin-link" href="/lecture-notes?auth=signin&amp;next={{ request.path }}">Sign in</a>
       </section>
-      <section class="pricing-grid">{{ render_pricing_catalog(pricing_catalog, variant='page') }}</section>
+      <section class="payment-result" id="payment-result" role="status" aria-live="polite" hidden><div><strong id="payment-result-title"></strong><p id="payment-result-message"></p></div><button type="button" id="payment-result-retry" class="refresh-history-btn" hidden>Check again</button></section>
+      <section class="pricing-grid" aria-label="Credit bundles">{{ render_pricing_catalog(pricing_catalog, variant='page') }}</section>
       <section class="shell-panel purchase-history-panel" id="purchase-history">
         <div class="purchase-history-head">
           <h2>Purchase History</h2>
           <button type="button" class="refresh-history-btn" id="refresh-purchase-history-btn">Refresh</button>
         </div>
         <div class="purchase-history-list" id="purchase-history-list">
-          <div class="history-empty">Sign in to view purchase history.</div>
+          <div class="history-empty">Checking your account…</div>
         </div>
       </section>
       <div class="toast" id="buy-credits-toast" role="status" aria-live="polite" aria-atomic="true"></div>

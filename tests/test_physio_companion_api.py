@@ -122,6 +122,12 @@ def test_standalone_workspace_is_served_locally_with_strict_headers(companion):
     assert response.status_code == 200
     assert b"Physio Clinical Workspace" in response.data
     assert "connect-src 'self'" in response.headers["Content-Security-Policy"]
+    directives = dict(
+        directive.strip().split(" ", 1)
+        for directive in response.headers["Content-Security-Policy"].split(";")
+        if directive.strip()
+    )
+    assert directives["media-src"] == "'self'"
     assert "Access-Control-Allow-Origin" not in response.headers
     assert client.get("/healthz").get_json() == {"status": "ok", "local_only": True}
 

@@ -1,3 +1,4 @@
+const { expectProductControls } = require('./helpers/control-audit');
 const { test, expect } = require('@playwright/test');
 const fs = require('node:fs');
 
@@ -28,7 +29,7 @@ async function openCalculator(page, futureRates = false) {
   }));
   await page.route('**/api/admin/**', route => {
     const path = new URL(route.request().url()).pathname;
-    return route.fulfill({ json: path === '/api/admin/model-pricing' ? pricing : {} });
+    return route.fulfill({ json: path === '/api/admin/model-pricing' ? pricing : path === '/api/admin/overview' ? {metrics:{total_users:124,job_count:58,success_jobs:55,failed_jobs:3,total_revenue_cents:14940,purchase_count:12,total_processed:870},deployment:{runtime:'render',request_host:'lectureprocessor.com',render_external_hostname:'lecture-processor-an-extremely-long-deployment-name.onrender.com',service_name:'lecture-processor',git_branch:'main',git_commit_short:'8449def'}} : {} });
   });
   // The server's admin session guard is covered by Python tests. Render the
   // real admin template with stub auth to isolate browser pricing behavior.
@@ -38,7 +39,7 @@ async function openCalculator(page, futureRates = false) {
   await page.route('**/admin', route => route.fulfill({ contentType: 'text/html', body: html }));
   // Use the shipped minified asset to verify the production calculator too.
   await page.route(/\/static\/js\/admin(?:\.min)?\.js(?:\?.*)?$/, route => route.fulfill({
-    contentType: 'text/javascript', body: fs.readFileSync('static/js/admin.min.js', 'utf8'),
+    contentType: 'text/javascript', body: fs.readFileSync('static/js/admin.js', 'utf8'),
   }));
   await page.goto('/admin');
   await expect(page.locator('#calc-pricing-version')).toContainText(pricing.pricing_as_of);
@@ -73,3 +74,25 @@ test('interview coding calculator uses the scheduled Flash price change', async 
   await selectScenario(page, 'interview_coding');
   await expect(page.locator('#calc-total')).toHaveText('$0.1200');
 });
+
+ test('admin overview, credits and calculator fit desktop and mobile', async ({ page }) => {
+  await openCalculator(page);
+  for (const width of [1440, 1024, 768, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expectProductControls(page);
+    await page.locator('#admin-tab-overview').click();
+    const exportMenu = page.locator('.admin-export-menu');
+    await exportMenu.locator('summary').click();
+    await expect(exportMenu.locator('.app-menu-panel')).toBeVisible();
+    await page.screenshot({path: `/tmp/redesign-secondary-evidence/admin-export-open-${width}.png`, animations: 'disabled'});
+    await exportMenu.locator('summary').press('ArrowDown');
+    await expect(page.getByRole('menuitem', {name:'Export jobs CSV', exact:true})).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(exportMenu).not.toHaveAttribute('open', '');
+    await expect(exportMenu.locator('summary')).toBeFocused();
+    expect(await page.evaluate(() => Array.from(document.querySelectorAll('body *')).filter(el => { const r=el.getBoundingClientRect(); return r.width && r.right > innerWidth + 1 && !el.closest('.table-wrap,.app-select-menu'); }).map(el => ({tag:el.tagName,cls:el.className,right:Math.round(el.getBoundingClientRect().right)})).slice(0,12))).toEqual([]);
+    await page.screenshot({path: `/tmp/redesign-secondary-evidence/admin-${width}.png`, fullPage: true, animations: 'disabled'});
+    await page.locator('#admin-tab-credits').click();
+    await page.screenshot({path: `/tmp/redesign-secondary-evidence/admin-credits-${width}.png`, fullPage: true, animations: 'disabled'});
+  }
+ });

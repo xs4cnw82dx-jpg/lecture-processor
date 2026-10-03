@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Features - Lecture Processor</title>
@@ -19,20 +20,16 @@
   <section class="section hero">
     <div class="section-inner">
       <div class="hero-kicker-row">
-        <div class="hero-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> AI-Powered Study Platform</div>
-        <div class="hero-meta-pill">Tools beta available</div>
+        <div class="hero-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> From material to understanding</div>
+
       </div>
-      <h1>From Lecture to <span class="gradient">Mastery</span> <br>in Minutes</h1>
-      <p class="hero-sub">Upload your lecture files once and get notes, flashcards, and practice tests ready for focused study in minutes.</p>
+      <h1>A home for your notes.<br><span class="gradient">A plan for your progress.</span></h1>
+      <p class="hero-sub">Bring your lecture material together, build a useful study pack, and return to a clear next step every day.</p>
       <div class="hero-actions">
         <a href="/dashboard" class="hero-btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Start Studying</a>
         <a href="#workflow" class="hero-btn secondary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg> See How It Works</a>
       </div>
-      <div class="hero-stat-row reveal">
-        <div class="hero-stat"><div class="hero-stat-num">5x</div><div class="hero-stat-label">Faster than manual notes</div></div>
-        <div class="hero-stat"><div class="hero-stat-num">4</div><div class="hero-stat-label">Interactive study modes</div></div>
-        <div class="hero-stat"><div class="hero-stat-num">100%</div><div class="hero-stat-label">AI-generated content</div></div>
-      </div>
+      <nav class="feature-jump-nav" aria-label="Explore features"><a href="#capture">Capture & create</a><a href="#modes">Practice & recall</a><a href="#organize">Organize & plan</a><a href="#calculator">Estimate your time</a></nav>
     </div>
   </section>
 
@@ -40,8 +37,8 @@
   <section class="section section-alt" id="workflow">
     <div class="section-inner">
       <div class="workflow-title reveal">
-        <h2>Your Complete Study Pipeline</h2>
-        <p>Five simple steps from raw lecture material to exam-ready confidence.</p>
+        <h2>A familiar rhythm, from start to finish</h2>
+        <p>Capture what matters. Make it useful. Come back and practice.</p>
       </div>
       <div class="workflow-steps reveal">
         <div class="workflow-step">
@@ -121,30 +118,34 @@
         <h2>Four Ways to Study, One Platform</h2>
         <p>Each study mode targets a different type of recall. Use them together for complete mastery.</p>
       </div>
+      <div class="feature-preview" aria-label="Example flashcard">
+        <div class="feature-preview-context"><span>TRY A STUDY CARD</span><h3>A moment of active recall.</h3><p>Read the prompt, think of your answer, then turn the card over. This is a sample, so your progress is not recorded.</p></div>
+        <button class="feature-sample-card" id="feature-sample-card" type="button" aria-pressed="false"><span id="feature-card-side">QUESTION · EXAMPLE</span><strong id="feature-card-text">What is active recall?</strong><small id="feature-card-hint">Reveal answer ↗</small></button>
+      </div>
       <div class="modes-grid reveal">
         <div class="mode-card">
           <div class="mode-card-icon mc-purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><line x1="2" y1="12" x2="22" y2="12"></line></svg></div>
-          <h3>Zen Cards</h3>
+          <h3>Flashcards</h3>
           <p>Distraction-free flashcards with smooth 3D flip animations. Navigate with keyboard shortcuts for fast-paced review sessions.</p>
-          <span class="mode-card-tag tag-popular">Most Popular</span>
+          <span class="mode-card-tag tag-popular">Recall</span>
         </div>
         <div class="mode-card">
           <div class="mode-card-icon mc-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg></div>
-          <h3>Multiple Choice</h3>
+          <h3>Practice tests</h3>
           <p>AI-generated practice tests with instant feedback and explanations. Track your score as you progress through questions.</p>
-          <span class="mode-card-tag tag-popular">Exam Prep</span>
+          <span class="mode-card-tag tag-popular">Understanding</span>
         </div>
         <div class="mode-card">
           <div class="mode-card-icon mc-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></div>
           <h3>Write</h3>
           <p>Type answers from memory with smart grading that respects your settings - case sensitivity, articles, brackets, and exact matching.</p>
-          <span class="mode-card-tag tag-new">New</span>
+          <span class="mode-card-tag tag-new">Practice</span>
         </div>
         <div class="mode-card">
           <div class="mode-card-icon mc-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg></div>
           <h3>Match</h3>
           <p>Race the clock to pair terms with definitions. Compete against your own high scores with timed rounds on a 4x3 grid.</p>
-          <span class="mode-card-tag tag-new">New</span>
+          <span class="mode-card-tag tag-new">Practice</span>
         </div>
       </div>
     </div>
@@ -176,7 +177,7 @@
         <div class="fg-card">
           <div class="fg-card-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"></path><path d="M12 20V4"></path><path d="M6 20v-6"></path></svg></div>
           <h3>Persistent Progress</h3>
-          <p>Your mastery state, session settings, algorithm configuration, and high scores are all saved locally. Come back tomorrow and pick up exactly where you left off - no progress lost.</p>
+          <p>Study progress is saved to your account, with local preferences for your study sessions. Return to your library or plan to choose your next step.</p>
         </div>
       </div>
     </div>
@@ -218,8 +219,8 @@
   <section class="section" id="calculator">
     <div class="section-inner">
       <div class="fg-header reveal">
-        <h2>See How Much Time You Save</h2>
-        <p>Adjust the sliders to match your semester and see the real impact.</p>
+        <h2>Make room for focused study</h2>
+        <p>Explore an estimate based on your own study schedule.</p>
       </div>
       <div class="calc-wrap reveal">
         <div class="calc-card">
@@ -239,8 +240,9 @@
             <input type="range" class="calc-slider" id="calc-minutes" min="10" max="90" value="40" step="5">
             <span class="calc-slider-val" id="calc-minutes-val">40</span>
           </div>
+          <p class="calc-assumption">Illustration only: assumes 5 minutes per lecture to upload and review. Processing time, correction, and actual study time vary.</p>
           <div class="calc-divider"></div>
-          <div class="calc-result">
+          <div class="calc-result" aria-live="polite">
             <div class="calc-result-item">
               <div class="calc-result-num" id="calc-manual">60h</div>
               <div class="calc-result-label">Manual study prep</div>
@@ -264,7 +266,7 @@
     <div class="section-inner">
       <div class="fg-header reveal">
         <h2>Manual Study Prep vs. Lecture Processor</h2>
-        <p>A side-by-side look at the old way versus the smart way.</p>
+        <p>How each task fits into your workflow.</p>
       </div>
       <div class="comparison reveal">
         <table class="comparison-table">
@@ -279,7 +281,7 @@
             <tr>
               <td class="col-task">Transcribe a 1-hour lecture</td>
               <td class="col-manual">2 - 3 hours</td>
-              <td class="col-lp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>2 - 3 minutes</td>
+              <td class="col-lp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>Varies by recording</td>
             </tr>
             <tr>
               <td class="col-task">Create structured notes</td>
@@ -303,12 +305,12 @@
             </tr>
             <tr>
               <td class="col-task">Track mastery progress</td>
-              <td class="col-manual">Not possible</td>
+              <td class="col-manual">Manual tracking</td>
               <td class="col-lp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>Automatic tracking</td>
             </tr>
             <tr>
               <td class="col-task">Adaptive study algorithm</td>
-              <td class="col-manual">Not possible</td>
+              <td class="col-manual">Manual tracking</td>
               <td class="col-lp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>5-slot custom algo</td>
             </tr>
           </tbody>
@@ -321,8 +323,8 @@
   <section class="cta-section">
     <div class="cta-card reveal">
       <h2>Ready to Study Smarter?</h2>
-      <p>Upload your first lecture and get AI-generated study materials in under 3 minutes. No credit card required.</p>
-      <a href="/dashboard" class="cta-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Start Processing Lectures</a>
+      <p>Start with your own materials and build a study routine that works for you.</p>
+      <a href="/dashboard" class="cta-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Open your workspace</a>
     </div>
   </section>
 

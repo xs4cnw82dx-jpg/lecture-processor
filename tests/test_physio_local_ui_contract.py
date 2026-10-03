@@ -56,7 +56,9 @@ def test_local_workspace_uses_visible_detail_drawer_and_styled_controls():
     assert "function applySearchHighlights" in javascript
     assert "function renderSourcePreview" in javascript
     assert "reader-table-wrap" in javascript
-    assert '.pretty-select-menu' in css
+    assert '.app-select-menu' in css
+    assert 'LectureProcessorUx.enhanceNativeSelect' in javascript
+    assert 'LectureProcessorUx.requestDialog' in javascript
     assert 'input[type="checkbox"]' in css
     assert '.source-preview' in css
     assert '.search-highlight' in css

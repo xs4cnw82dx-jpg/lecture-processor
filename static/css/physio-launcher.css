@@ -1,52 +1,37 @@
-:root {
-  --physio-ink: #173d37;
-  --physio-green: #19735f;
-  --physio-mint: #dff4ec;
-}
-
-.physio-launcher {
-  align-items: center;
-  background:
-    radial-gradient(circle at 80% 10%, rgba(92, 194, 157, .16), transparent 32rem),
-    #f4f7f5;
-  display: flex;
-  justify-content: center;
-  min-height: calc(100vh - 68px);
-  padding: 40px;
-}
-
-.physio-launcher-card {
-  background: #fff;
-  border: 1px solid #dce8e3;
-  border-radius: 22px;
-  box-shadow: 0 24px 60px rgba(29, 63, 54, .09);
-  color: var(--physio-ink);
-  max-width: 720px;
-  padding: 44px;
-}
-
-.physio-launcher-kicker {
-  color: var(--physio-green);
-  font-size: .76rem;
-  font-weight: 800;
-  letter-spacing: .09em;
-  text-transform: uppercase;
-}
-
-.physio-launcher h1 { font-size: clamp(2rem, 5vw, 3.35rem); letter-spacing: -.04em; line-height: 1.03; margin: 16px 0; }
-.physio-launcher p { color: #537069; font-size: 1.05rem; line-height: 1.7; }
-.physio-launcher code { background: #eff5f2; border-radius: 7px; color: #31584f; padding: .16em .38em; }
-.physio-launcher-status { align-items: center; background: #f5f8f6; border-radius: 12px; display: flex; gap: 10px; margin: 26px 0; padding: 14px 16px; }
-.physio-launcher-dot { background: #df9b2f; border-radius: 50%; height: 10px; width: 10px; }
-.physio-launcher-status.is-online .physio-launcher-dot { background: #24986f; box-shadow: 0 0 0 5px rgba(36, 152, 111, .12); }
-.physio-launcher-status.is-offline .physio-launcher-dot { background: #c94d42; }
-.physio-launcher-actions { display: flex; flex-wrap: wrap; gap: 12px; }
-.physio-launcher-button { background: #fff; border: 1px solid #b9d2ca; border-radius: 10px; color: var(--physio-ink); cursor: pointer; font: inherit; font-weight: 700; padding: 12px 18px; text-decoration: none; }
-.physio-launcher-button.primary { background: var(--physio-green); border-color: var(--physio-green); color: #fff; }
-.physio-launcher details { border-top: 1px solid #e4ece8; margin-top: 30px; padding-top: 22px; }
-.physio-launcher summary { cursor: pointer; font-weight: 700; }
-
-@media (max-width: 680px) {
-  .physio-launcher { padding: 18px; }
-  .physio-launcher-card { padding: 28px; }
-}
+ .physio-launcher { max-width:1160px; margin:auto; padding:38px 28px 64px; color:#17233c; }
+.physio-launcher-heading { margin-bottom:28px; }
+.physio-launcher-kicker { color:#2558d9; font-size:10px; font-weight:800; letter-spacing:.1em; }
+.physio-launcher-heading h1 { margin:7px 0 10px; font-size:36px; letter-spacing:-.035em; line-height:1.2; }
+.physio-launcher p { color:#65718a; line-height:1.7; font-size:14px; }
+.physio-launcher-heading p { margin:0; }
+.physio-launcher-layout { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr); gap:24px; align-items:start; }
+.physio-launcher-card { background:#fff; border:1px solid #dfe5ef; border-radius:18px; box-shadow:0 8px 24px #17233c09; padding:30px; }
+.physio-launcher-mark { display:grid; place-items:center; width:44px; height:44px; border-radius:12px; background:#edf2fc; color:#2558d9; font-size:22px; font-weight:750; margin-bottom:24px; }
+.physio-launcher h2 { font-size:23px; letter-spacing:-.025em; line-height:1.3; margin:0 0 10px; }
+.physio-launcher-card > p { margin:0; }
+.physio-launcher-status { display:flex; align-items:center; gap:12px; background:#f6f8fc; border:1px solid #e5eaf2; border-radius:12px; padding:15px; margin:24px 0 20px; font-size:13px; color:#52617a; line-height:1.6; }
+.physio-launcher-dot { width:8px; height:8px; flex-shrink:0; border-radius:50%; background:#ad711b; }
+.physio-launcher-status.is-online { background:#edf8f3; color:#216a50; }
+.physio-launcher-status.is-online .physio-launcher-dot { background:#279674; }
+.physio-launcher-status.is-offline { background:#fff7e8; color:#886124; }
+.physio-launcher-status.is-offline .physio-launcher-dot { background:#c68c2d; }
+.physio-launcher-actions { display:flex; flex-wrap:wrap; gap:10px; }
+.physio-launcher-button { border:1px solid #cfd8e8; border-radius:11px; background:#fff; color:#263650; font:inherit; font-size:13px; font-weight:650; text-decoration:none; padding:12px 16px; min-height:44px; cursor:pointer; transition:background .16s; }
+.physio-launcher-button:hover { background:#f6f8fc; }
+.physio-launcher-button.primary { background:#2558d9; border-color:#2558d9; color:#fff; box-shadow:0 5px 12px #2558d922; }
+.physio-launcher-button:disabled { opacity:.6; cursor:wait; }
+.physio-launcher details { border-top:1px solid #e4eaf3; margin-top:26px; padding-top:20px; }
+.physio-launcher summary { cursor:pointer; font-size:13px; font-weight:650; }
+.physio-launcher-help { padding-top:4px; }
+.physio-launcher-help p { font-size:12px; }
+.physio-launcher code { background:#edf2f9; border-radius:6px; padding:3px 5px; font-size:11px; overflow-wrap:anywhere; }
+.physio-launcher-context { padding:24px 6px; }
+.physio-launcher-context h2 { font-size:20px; margin-top:12px; }
+.physio-launcher-context ul { margin:24px 0; padding:0; list-style:none; display:grid; gap:22px; }
+.physio-launcher-context li { display:grid; gap:5px; padding-left:16px; border-left:2px solid #d8e3f9; }
+.physio-launcher-context strong { font-size:14px; }
+.physio-launcher-context span:not(.physio-launcher-kicker), .physio-launcher-context p { font-size:12px; color:#65718a; line-height:1.6; }
+.physio-launcher :focus-visible { outline:3px solid #2558d94a; outline-offset:3px; }
+@media (max-width:850px) { .physio-launcher-layout { grid-template-columns:1fr; } .physio-launcher-context { padding:4px; } }
+@media (max-width:620px) { .physio-launcher { padding:24px 16px 40px; } .physio-launcher-heading h1 { font-size:29px; } .physio-launcher-card { padding:23px; } }
+@media (prefers-reduced-motion:reduce) { .physio-launcher * { transition:none !important; } }

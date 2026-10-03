@@ -117,7 +117,7 @@
     var range = Math.max(1, paddedMax - paddedMin);
     var coordinates = model.values.map(function (value, index) {
       return {
-        x: model.values.length === 1 ? 50 : (index / (model.values.length - 1) * 100),
+        x: model.values.length === 1 ? 50 : 2 + (index / (model.values.length - 1) * 96),
         y: 88 - ((value - paddedMin) / range * 70),
         value: value,
         date: model.dates[index],
@@ -125,12 +125,12 @@
     });
     var points = coordinates.map(function (point) { return point.x.toFixed(1) + ',' + point.y.toFixed(1); }).join(' ');
     var circles = coordinates.map(function (point) {
-      return '<circle cx="' + point.x.toFixed(1) + '" cy="' + point.y.toFixed(1) + '" r="2.5" fill="#4f46e5" vector-effect="non-scaling-stroke"><title>' + escapeHtml(formatDate(point.date) + ': ' + formatNumber(point.value, 1) + unit) + '</title></circle>';
+      return '<path d="M' + point.x.toFixed(1) + ' ' + point.y.toFixed(1) + 'h0.01" fill="none" stroke="#2558d9" stroke-width="7" stroke-linecap="round" vector-effect="non-scaling-stroke"><title>' + escapeHtml(formatDate(point.date) + ': ' + formatNumber(point.value, 1) + unit) + '</title></path>';
     }).join('');
     var changePrefix = model.change > 0 ? '+' : '';
     var summary = 'From ' + (formatDate(model.dates[0]) || 'first entry') + ' to ' + (formatDate(model.dates[model.dates.length - 1]) || 'latest entry') + '. Minimum ' + formatNumber(model.min, 1) + unit + ', maximum ' + formatNumber(model.max, 1) + unit + ', latest ' + formatNumber(model.latest, 1) + unit + ', latest change ' + changePrefix + formatNumber(model.change, 1) + unit + '.';
     var rows = coordinates.map(function (point) { return '<li>' + escapeHtml(formatDate(point.date) || 'Entry') + ': ' + escapeHtml(formatNumber(point.value, 1) + unit) + '</li>'; }).join('');
-    return '<p class="workout-chart-summary">' + escapeHtml(summary) + '</p><svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="' + escapeHtml(opts.label || 'Progress trend') + '"><title>' + escapeHtml(summary) + '</title><polyline points="' + points + '" fill="none" stroke="#4f46e5" stroke-width="3" vector-effect="non-scaling-stroke"></polyline>' + circles + '</svg><ol class="sr-only" aria-label="' + escapeHtml((opts.label || 'Progress trend') + ' data') + '">' + rows + '</ol>';
+    return '<p class="workout-chart-summary">' + escapeHtml(summary) + '</p><svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="' + escapeHtml(opts.label || 'Progress trend') + '"><title>' + escapeHtml(summary) + '</title><polyline points="' + points + '" fill="none" stroke="#2558d9" stroke-width="3" vector-effect="non-scaling-stroke"></polyline>' + circles + '</svg><ol class="sr-only" aria-label="' + escapeHtml((opts.label || 'Progress trend') + ' data') + '">' + rows + '</ol>';
   }
 
   function parseJson(response) {
@@ -220,9 +220,9 @@
     });
   }
 
-  function showView(viewName) {
+  async function showView(viewName) {
     if (state.currentView === 'settings' && viewName !== 'settings' && state.settingsDirty) {
-      if (!global.confirm('You have unsaved workout settings. Leave without saving them?')) return;
+      if (!await ux.requestDialog({ title: 'Leave without saving?', message: 'Your workout settings have unsaved changes.', confirmLabel: 'Leave without saving', destructive: true })) return;
       state.settingsDirty = false;
     }
     state.currentView = viewName;
@@ -260,6 +260,10 @@
     var occurrences = (state.data.occurrences || []).filter(function (item) { return Number(item.week) === week; });
     if (!cycle) {
       setHtml(elements.schedule, '<button class="workout-primary-btn" type="button" data-open-cycle>Set up 10-week calendar</button>');
+      return;
+    }
+    if (!occurrences.length) {
+      setHtml(elements.schedule, '<div class="workout-schedule-empty"><strong>No workouts scheduled this week</strong><p>Review your plan or choose a saved routine to keep training.</p><button class="workout-text-btn" type="button" data-open-cycle>Review your plan</button></div>');
       return;
     }
     var today = new Date().toISOString().slice(0, 10);
@@ -543,12 +547,14 @@
 
   function openSheet(title, eyebrow, content, onReady, options) {
     var sheetOptions = options || {};
+    if (elements.toast) elements.toast.classList.remove('is-visible');
     state.sheetReturnFocus = document.activeElement;
     state.sheetDirtyCheck = null;
     byId('workout-sheet-title').textContent = title;
     byId('workout-sheet-eyebrow').textContent = eyebrow || 'Workout';
     setHtml(elements.sheetContent, content);
     enhanceSelects(elements.sheetContent);
+    if (ux.enhanceDateInput) elements.sheetContent.querySelectorAll('[data-app-date]').forEach(function (input) { ux.enhanceDateInput(input); });
     if (typeof onReady === 'function') onReady(elements.sheetContent);
     if (sheetOptions.confirmDirty) {
       var dirty = false;
@@ -565,8 +571,8 @@
       if (focusable) focusable.focus();
     }
   }
-  function closeSheet(force) {
-    if (!force && state.sheetDirtyCheck && state.sheetDirtyCheck() && !global.confirm('Discard the unsaved changes in this form?')) return false;
+  async function closeSheet(force) {
+    if (!force && state.sheetDirtyCheck && state.sheetDirtyCheck() && !await ux.requestDialog({ title: 'Discard these changes?', message: 'The unsaved changes in this form will be lost.', confirmLabel: 'Discard changes', destructive: true })) return false;
     if (ux && typeof ux.closeModalOverlay === 'function') ux.closeModalOverlay(elements.sheetOverlay, { returnFocus: state.sheetReturnFocus });
     else {
       elements.sheetOverlay.hidden = true;
@@ -590,7 +596,7 @@
     var stored = {};
     (profile.start_tests || []).forEach(function (item) { stored[item.exercise_id] = item; });
     var content = '<form class="workout-sheet-form" id="workout-cycle-form"><p class="workout-sheet-help">Starting or resetting archives the current plan while preserving all completed workout history. Your original imported plan remains available if you want to restore it later.</p>' +
-      '<label class="workout-sheet-field">Start Monday<input type="date" id="workout-cycle-start" required value="' + escapeHtml(state.data.active_cycle ? state.data.active_cycle.start_monday : mondayIso()) + '"></label>' +
+      '<label class="workout-sheet-field">Start Monday<input type="date" data-app-date id="workout-cycle-start" required value="' + escapeHtml(state.data.active_cycle ? state.data.active_cycle.start_monday : mondayIso()) + '"></label>' +
       '<div class="workout-sheet-row">' + weekdayField('A') + weekdayField('B') + '</div><div class="workout-sheet-row">' + weekdayField('C') + weekdayField('D') + '</div>' +
       '<div class="workout-sheet-row"><label class="workout-sheet-field">Bodyweight (kg)<input type="number" id="workout-cycle-weight" min="20" max="400" step="0.1" inputmode="decimal" value="' + Number(profile.bodyweight_kg || 62.5) + '"></label><label class="workout-sheet-field">Handle weight (kg)<input type="number" id="workout-cycle-handle" min="0" max="10" step="0.1" inputmode="decimal" value="' + Number(profile.handle_weight_kg || 0) + '"></label></div>' +
       '<label class="workout-toggle-row"><span><strong>Include an optional fourth workout</strong><small>Saturday by default; does not affect your adherence score</small></span><input id="workout-cycle-optional" type="checkbox" role="switch"' + (profile.optional_day_enabled !== false ? ' checked' : '') + '></label>' +
@@ -698,13 +704,13 @@
     var routine = getRoutine(routineId); if (!routine) return;
     var deleteLabel = routine.seeded ? 'Restore original plan instead' : 'Archive routine';
     openSheet(routine.name, 'Routine options', '<div class="workout-sheet-list"><button class="workout-sheet-action" type="button" data-routine-action="share">Share routine<span>↗</span></button><button class="workout-sheet-action" type="button" data-routine-action="duplicate">Duplicate routine<span>⧉</span></button><button class="workout-sheet-action" type="button" data-routine-action="edit">Edit routine<span>✎</span></button><button class="workout-sheet-action ' + (routine.seeded ? '' : 'is-danger') + '" type="button" data-routine-action="delete">' + escapeHtml(deleteLabel) + '<span>×</span></button></div>', function (root) {
-      root.addEventListener('click', function (event) {
+      root.addEventListener('click', async function (event) {
         var button = event.target.closest('[data-routine-action]'); if (!button) return;
         var action = button.dataset.routineAction; closeSheet(true);
         if (action === 'share') shareItem('routine', routine.id);
         if (action === 'duplicate' && requireOnline('Duplicating a routine')) withBusy(button, function () { return api('/api/admin/workout/routines/' + encodeURIComponent(routine.id) + '/duplicate', { method: 'POST', body: {} }); }, 'Duplicating…').then(function (payload) { state.data.routines.push(payload.routine); renderRoutines(); toast('Routine duplicated.'); }).catch(function (error) { toast(error.message); });
         if (action === 'edit') routineEditor(routine);
-        if (action === 'delete') { if (routine.seeded) restoreBaseline(); else if (requireOnline('Archiving a routine') && global.confirm('Archive “' + routine.name + '”? Completed workout history will be kept.')) api('/api/admin/workout/routines/' + encodeURIComponent(routine.id), { method: 'DELETE' }).then(function () { routine.archived = true; renderRoutines(); toast('Routine archived.'); }).catch(function (error) { toast(error.message); }); }
+        if (action === 'delete') { if (routine.seeded) restoreBaseline(); else if (requireOnline('Archiving a routine') && await ux.requestDialog({ title: 'Archive this routine?', message: '“' + routine.name + '” will leave your routines. Completed workout history will be kept.', confirmLabel: 'Archive routine' })) api('/api/admin/workout/routines/' + encodeURIComponent(routine.id), { method: 'DELETE' }).then(function () { routine.archived = true; renderRoutines(); toast('Routine archived.'); }).catch(function (error) { toast(error.message); }); }
       });
     });
   }
@@ -775,9 +781,9 @@
     }, { confirmDirty: true });
   }
 
-  function shareItem(kind, sourceId, trigger) {
+  async function shareItem(kind, sourceId, trigger) {
     if (!requireOnline('Creating a share link')) return Promise.resolve(false);
-    if (!global.confirm('Create a read-only public link for this ' + (kind === 'routine' ? 'routine' : 'completed workout') + '? Anyone with the link can view the snapshot until you revoke it.')) return Promise.resolve(false);
+    if (!await ux.requestDialog({ title: 'Share this ' + (kind === 'routine' ? 'routine' : 'workout') + '?', message: 'Anyone with the link can view this read-only snapshot until you revoke it.', confirmLabel: 'Create share link' })) return Promise.resolve(false);
     return withBusy(trigger, function () { return api('/api/admin/workout/shares', { method: 'POST', body: { kind: kind, source_id: sourceId } }); }, 'Creating link…').then(function (payload) {
       state.data.shares = state.data.shares || [];
       state.data.shares.unshift(Object.assign({ revoked: false }, payload.share));
@@ -796,9 +802,9 @@
       return '<div class="workout-sheet-action"><span><strong>' + escapeHtml(label) + '</strong><small>' + escapeHtml(formatDate(share.created_at) || 'Shared link') + '</small></span><button class="workout-danger-btn" type="button" data-revoke-share="' + escapeHtml(share.token) + '">Revoke</button></div>';
     }).join('') + '</div>';
     openSheet('Manage shared links', 'Privacy', shares.length ? content : '<p class="workout-sheet-help">You have no active shared links.</p>', function (root) {
-      root.addEventListener('click', function (event) {
+      root.addEventListener('click', async function (event) {
         var button = event.target.closest('[data-revoke-share]');
-        if (!button || !requireOnline('Revoking a share link') || !global.confirm('Revoke this public link? It will stop working immediately.')) return;
+        if (!button || !requireOnline('Revoking a share link') || !await ux.requestDialog({ title: 'Revoke this link?', message: 'Anyone using this public link will lose access immediately.', confirmLabel: 'Revoke link', destructive: true })) return;
         var token = button.dataset.revokeShare;
         withBusy(button, function () { return api('/api/admin/workout/shares/' + encodeURIComponent(token), { method: 'DELETE' }); }, 'Revoking…').then(function () {
           var share = (state.data.shares || []).find(function (item) { return item.token === token; });
@@ -810,7 +816,7 @@
   }
 
   function logBodyweight() {
-    openSheet('Log bodyweight', 'Progress', '<form class="workout-sheet-form" id="workout-weight-form"><label class="workout-sheet-field">Date<input id="workout-weight-date" type="date" value="' + new Date().toISOString().slice(0, 10) + '"></label><label class="workout-sheet-field">Weight (kg)<input id="workout-weight-value" type="number" min="20" max="400" step="0.1" inputmode="decimal" value="' + Number(state.data.profile.bodyweight_kg || 0) + '"></label><button class="workout-primary-btn" type="submit">Save entry</button></form>', function () { byId('workout-weight-form').addEventListener('submit', function (event) { event.preventDefault(); if (!requireOnline('Saving bodyweight')) return; var button = event.submitter || event.currentTarget.querySelector('[type="submit"]'); withBusy(button, function () { return api('/api/admin/workout/bodyweight', { method: 'PUT', body: { date: byId('workout-weight-date').value, weight_kg: Number(byId('workout-weight-value').value) } }).then(function (payload) { var existing = (state.data.bodyweight || []).findIndex(function (item) { return item.date === payload.entry.date; }); if (existing >= 0) state.data.bodyweight[existing] = payload.entry; else state.data.bodyweight.push(payload.entry); state.data.profile = payload.profile; return refreshStatistics(); }); }, 'Saving…').then(function () { closeSheet(true); renderProgress(); toast('Bodyweight saved.'); }).catch(function (error) { toast(error.message); }); }); }, { confirmDirty: true });
+    openSheet('Log bodyweight', 'Progress', '<form class="workout-sheet-form" id="workout-weight-form"><label class="workout-sheet-field">Date<input id="workout-weight-date" type="date" data-app-date value="' + new Date().toISOString().slice(0, 10) + '"></label><label class="workout-sheet-field">Weight (kg)<input id="workout-weight-value" type="number" min="20" max="400" step="0.1" inputmode="decimal" value="' + Number(state.data.profile.bodyweight_kg || 0) + '"></label><button class="workout-primary-btn" type="submit">Save entry</button></form>', function () { byId('workout-weight-form').addEventListener('submit', function (event) { event.preventDefault(); if (!requireOnline('Saving bodyweight')) return; var button = event.submitter || event.currentTarget.querySelector('[type="submit"]'); withBusy(button, function () { return api('/api/admin/workout/bodyweight', { method: 'PUT', body: { date: byId('workout-weight-date').value, weight_kg: Number(byId('workout-weight-value').value) } }).then(function (payload) { var existing = (state.data.bodyweight || []).findIndex(function (item) { return item.date === payload.entry.date; }); if (existing >= 0) state.data.bodyweight[existing] = payload.entry; else state.data.bodyweight.push(payload.entry); state.data.profile = payload.profile; return refreshStatistics(); }); }, 'Saving…').then(function () { closeSheet(true); renderProgress(); toast('Bodyweight saved.'); }).catch(function (error) { toast(error.message); }); }); }, { confirmDirty: true });
   }
   function refreshStatistics() { return api('/api/admin/workout/statistics').then(function (payload) { state.data.statistics = payload; }); }
 

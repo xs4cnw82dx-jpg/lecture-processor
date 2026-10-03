@@ -1,3 +1,4 @@
+const { expectProductControls } = require('./helpers/control-audit');
 const { test, expect } = require('@playwright/test');
 
 const companionUrl = process.env.PHYSIO_COMPANION_URL || 'http://127.0.0.1:8765/physio';
@@ -18,6 +19,22 @@ async function authorizeRequest(request) {
 test('local Physio workspace supports shoulder lookup, graph, case workflow and source links', async ({ page }) => {
   const browserErrors = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));
+  await page.route('**/api/local/physio/notes/structure-scapula', async route => {
+    const response = await route.fetch();
+    const note = await response.json();
+    (note.note || note).embeds = [{id:'atlas-of-anatomy',title:'Anatomie atlas',page:1}];
+    await route.fulfill({response,json:note});
+  });
+  const content = 'BT /F1 22 Tf 60 760 Td (Anatomy reference) Tj 0 -36 Td /F1 12 Tf (Local document preview - test fixture) Tj ET';
+  const objects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>', `<< /Length ${content.length} >>\nstream\n${content}\nendstream`];
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((object, index) => { offsets.push(pdf.length); pdf += `${index + 1} 0 obj\n${object}\nendobj\n`; });
+  const xref = pdf.length;
+  pdf += `xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map(offset => String(offset).padStart(10,'0') + ' 00000 n ').join('\n')}\ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  await page.route('**/api/local/physio/media/atlas-of-anatomy', route => route.fulfill({contentType:'application/pdf',body:pdf}));
   await page.goto(authorizedCompanionUrl());
 
   await expect(page.locator('#portal-hero h1')).toHaveText('Schouder');
@@ -28,13 +45,27 @@ test('local Physio workspace supports shoulder lookup, graph, case workflow and 
   await scapula.click();
   await expect(page.locator('#note-reader .reader-head h2')).toContainText(/scapula/i);
   await expect(page.locator('#note-reader a[href^="obsidian://"]')).toBeVisible();
+  await page.locator('#note-reader [data-media-id]').first().click();
+  await expect(page.locator('#media-dialog .physio-document-toolbar')).toBeVisible();
+  await expect(page.locator('#media-dialog .physio-document-toolbar > strong')).toContainText('Anatomie atlas');
+  await expect(page.locator('#media-dialog iframe')).toHaveAttribute('src', /toolbar=0&navpanes=0/);
+  await expect(page.locator('#media-dialog a[download]')).toHaveText('Download origineel');
+  await expect(page.locator('#media-dialog a[target="_blank"]')).toHaveText('Open volledig document');
+  for (const width of [1440,390]) {
+    await page.setViewportSize({width,height:900});
+    await expectProductControls(page);
+    await page.screenshot({path:`/tmp/redesign-secondary-evidence/physio-pdf-preview-${width}.png`,animations:'disabled'});
+  }
+  await page.locator('#media-dialog [value="close"]').click();
+  await page.setViewportSize({width:1280,height:900});
 
   await page.getByRole('tab', { name: 'Verbanden' }).click();
   await expect(page.locator('#clinical-graph [data-graph-id]')).not.toHaveCount(0);
 
   await page.getByRole('tab', { name: 'Casussen' }).click();
-  page.once('dialog', (dialog) => dialog.accept('E2E schouder 01'));
   await page.locator('#create-case').click();
+  await page.getByLabel('Casuslabel (bijv. S01 schouder)').fill('E2E schouder 01');
+  await page.getByRole('button', {name:'Casus aanmaken', exact:true}).click();
   await expect(page.locator('#case-form')).toBeVisible();
   await page.locator('[name="presenting_complaint"]').fill('Pijn bij heffen van de arm');
   await page.locator('[name="notes"]').fill('Actieve elevatie beperkt; hulpvraag is bovenhands reiken.');
@@ -88,8 +119,8 @@ test('local Physio workspace supports shoulder lookup, graph, case workflow and 
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^physio-case-.*\.json$/);
 
-  page.once('dialog', (dialog) => dialog.accept());
   await page.locator('[data-delete-case]').click();
+  await page.getByRole('dialog').getByRole('button', {name:'Permanent verwijderen', exact:true}).click();
   await expect(page.locator('#case-list')).toContainText('Nog geen casussen');
   expect(browserErrors).toEqual([]);
 });
@@ -124,11 +155,11 @@ test('portal shortcuts, search results and styled controls stay usable in a comp
 
   await expect(page.locator('#include-unreviewed')).toHaveCSS('appearance', 'none');
   await page.getByRole('tab', { name: 'Bronnen beheren' }).click();
-  const categoryTrigger = page.locator('#source-upload-category + .pretty-select-trigger');
+  const categoryTrigger = page.locator('#source-upload-category-button');
   await expect(categoryTrigger).toBeVisible();
   await categoryTrigger.click();
-  await expect(page.locator('#source-upload-category ~ .pretty-select-menu')).toBeVisible();
-  await expect(page.locator('#source-upload-category ~ .pretty-select-menu')).toContainText('Richtlijnen');
+  await expect(page.locator('#source-upload-category-menu')).toBeVisible();
+  await expect(page.locator('#source-upload-category-menu')).toContainText('Richtlijnen');
   await page.locator('body').click({ position: { x: 10, y: 10 } });
   await page.locator('[data-source-view-mode="region"]').click();
   await expect(page.locator('#source-region-filter-wrap')).toBeVisible();
@@ -150,6 +181,35 @@ test('local source endpoint supports browser range requests', async ({ request }
   });
   expect(partial.status()).toBe(206);
   expect(partial.headers()['content-range']).toMatch(/^bytes 0-1023\//);
+});
+
+test('local source audio preview uses website playback controls', async ({ page }) => {
+  const wav = Buffer.alloc(44 + 64000);
+  wav.write('RIFF', 0); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8);
+  wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(16000, 28); wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(64000, 40);
+  await page.route('**/api/local/physio/sources-manager?*', route => route.fulfill({json:{sources:[{
+    id:'audio-preview', title:'Anatomie toelichting', original_filename:'anatomie.wav', suffix:'.wav', review_status:'active', source_type:'audio', category:'college', regions:['schouder'],
+  }], total:1, categories:['college']}}));
+  await page.route('**/api/local/physio/sources-manager/audio-preview/preview', route => route.fulfill({contentType:'audio/wav', body:wav}));
+  await page.goto(authorizedCompanionUrl());
+  await page.getByRole('tab', {name:'Bronnen beheren'}).click();
+  await page.locator('[data-source-id="audio-preview"]').click();
+  const preview = page.locator('#source-preview-body');
+  await expect(preview.locator('audio')).toHaveJSProperty('controls', false);
+  await expect(preview.locator('audio')).toHaveJSProperty('duration', 4);
+  await expect(preview.getByRole('button', {name:'Play', exact:true})).toBeVisible();
+  await expectProductControls(page);
+  for (const width of [1440,390]) {
+    await page.setViewportSize({width,height:900});
+    await preview.scrollIntoViewIfNeeded();
+    await page.screenshot({path:`/tmp/redesign-secondary-evidence/physio-audio-${width}.png`,animations:'disabled'});
+  }
+  await preview.getByRole('button', {name:'Play', exact:true}).click();
+  await expect(preview.locator('audio')).toHaveJSProperty('paused', false);
+  await preview.getByRole('button', {name:'Pause', exact:true}).click();
+  await expect(preview.locator('audio')).toHaveJSProperty('paused', true);
 });
 
 test('source manager imports, edits, activates and removes a managed source copy', async ({ page }) => {
@@ -178,7 +238,24 @@ test('source manager imports, edits, activates and removes a managed source copy
 
   await page.locator('[data-source-action="activate"]').click();
   await expect(page.locator('#source-manager-editor .source-status')).toContainText('Actief');
-  page.once('dialog', (dialog) => dialog.accept());
   await page.locator('[data-delete-source]').click();
+  await page.getByRole('dialog').getByRole('button', {name:'Permanent verwijderen', exact:true}).click();
   await expect(page.locator('#source-manager-list')).toContainText('Geen bronnen voor dit filter');
+});
+
+test('Physio layouts reflow and cases use a cancellable website dialog', async ({page}) => {
+  await page.goto(authorizedCompanionUrl());
+  for (const width of [1440, 1024, 768, 390]) {
+    await page.setViewportSize({width, height:900});
+    await expectProductControls(page);
+    for (const name of ['Kennisbank', 'Bronnen beheren', 'Verbanden', 'Casussen']) {
+      await page.getByRole('tab', {name, exact:true}).click();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({path: `/tmp/redesign-secondary-evidence/physio-${name.replace(/ /g,'-')}-${width}.png`, fullPage:true, animations:'disabled'});
+    }
+  }
+  await page.locator('#create-case').click();
+  await expect(page.getByRole('dialog')).toContainText('Nieuwe lokale casus');
+  await page.getByRole('button', {name:'Annuleren', exact:true}).click();
+  await expect(page.locator('#create-case')).toBeFocused();
 });

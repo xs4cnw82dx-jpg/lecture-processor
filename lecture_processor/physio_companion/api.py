@@ -462,7 +462,7 @@ def create_companion_app(
         if request.path == "/physio":
             response.headers["Content-Security-Policy"] = (
                 "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-                "connect-src 'self'; frame-src 'self'; font-src 'self'; frame-ancestors 'none'; "
+                "connect-src 'self'; frame-src 'self'; media-src 'self'; font-src 'self'; frame-ancestors 'none'; "
                 "base-uri 'none'; form-action 'self'"
             )
         response.headers.pop("Access-Control-Allow-Origin", None)

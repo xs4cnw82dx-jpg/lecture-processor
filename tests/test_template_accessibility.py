@@ -186,13 +186,14 @@ def test_custom_select_upgrades_remove_native_controls_from_tab_order():
     admin_js = Path('static/js/admin.js').read_text(encoding='utf-8')
     ux_js = Path('static/js/ux-utils.js').read_text(encoding='utf-8')
 
-    # Batch filters now use labeled native selects, with built-in keyboard support.
+    # Native controls retain labels and are progressively enhanced by one helper.
     dashboard = Path('templates/batch_dashboard.html').read_text(encoding='utf-8')
-    assert '<label>Mode<select id="batch-dashboard-mode-filter"' in dashboard
+    assert '<label for="batch-dashboard-mode-filter">Mode</label>' in dashboard
     assert 'selectEl.hidden = true' not in batch_dashboard_js
-    assert "selectEl.hidden = true;" in admin_js
-    assert "selectEl.tabIndex = -1;" in admin_js
-    assert "selectEl.setAttribute('aria-hidden', 'true');" in admin_js
+    assert "LectureProcessorUx.enhanceNativeSelect(selectEl)" in admin_js
+    assert "selectEl.hidden = true;" in ux_js
+    assert "selectEl.tabIndex = -1;" in ux_js
+    assert "selectEl.setAttribute('aria-hidden', 'true');" in ux_js
     assert "button.setAttribute('aria-labelledby', (fieldLabelId ? fieldLabelId + ' ' : '') + label.id);" in ux_js
 
 
@@ -270,7 +271,9 @@ def test_feature_calculator_sliders_have_labels_and_focus_style():
 def test_features_heading_preserves_readable_text_boundary():
     features_template = Path('templates/features.html').read_text(encoding='utf-8')
 
-    assert '<span class="gradient">Mastery</span> <br>' in features_template
+    heading = re.search(r"<h1>(.*?)</h1>", features_template, re.S).group(1)
+    assert re.search(r"[.!?]\s*<br>\s*<span", heading)
+    assert "A plan for your progress." in heading
 
 
 def test_calendar_validation_errors_are_field_owned():
@@ -293,7 +296,7 @@ def test_voice_notes_and_study_pages_have_single_page_heading_contract():
     assert '<h1>Sign in to transcribe</h1>' not in voice_template
     headings = re.findall(r'<h1\b[^>]*>', study_template)
     assert len(headings) == 1
-    assert 'class="sr-only"' in headings[0]
+    assert 'class="sr-only"' not in headings[0]
     assert 'id="study-page-heading"' in headings[0]
 
 
@@ -301,7 +304,8 @@ def test_study_folder_rows_do_not_nest_actions_inside_button_role():
     study_js = Path('static/js/study.js').read_text(encoding='utf-8')
 
     assert '<div class="item-head folder-row-head"><button type="button" class="folder-row-main" data-folder-activate="1"' in study_js
-    assert '<span class="folder-head-actions"><button type="button" class="btn folder-mini-btn" data-toggle-pin="1" aria-label="' in study_js
+    assert '<div class="folder-head-actions app-menu-panel"><button type="button" class="btn folder-mini-btn" data-toggle-pin="1" aria-label="' in study_js
+    assert "'</button>' + collapseButton + actions + '</div>'" in study_js
 
 
 def test_study_pack_rows_use_real_buttons_for_main_actions():

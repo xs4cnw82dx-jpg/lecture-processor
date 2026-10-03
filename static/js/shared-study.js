@@ -131,8 +131,8 @@
         + '<article class="shared-card">'
         + '<div class="shared-card-label">Front</div>'
         + '<div class="shared-card-front">' + escapeHtml(card.front || '') + '</div>'
-        + '<div class="shared-card-label">Back</div>'
-        + '<div class="shared-card-back">' + escapeHtml(card.back || '') + '</div>'
+        + '<details class="shared-answer-reveal"><summary>Reveal answer</summary>'
+        + '<div class="shared-card-back">' + escapeHtml(card.back || '') + '</div></details>'
         + '</article>';
     }).join('');
   }
@@ -156,8 +156,8 @@
         + '<ol class="shared-question-options">'
         + options.map(function (option) { return '<li>' + escapeHtml(option || '') + '</li>'; }).join('')
         + '</ol>'
-        + '<div class="shared-question-answer">Answer: ' + escapeHtml(question.answer || '') + '</div>'
-        + '<div class="shared-question-explanation">' + escapeHtml(question.explanation || '') + '</div>'
+        + '<details class="shared-answer-reveal"><summary>Show answer &amp; explanation</summary><div class="shared-question-answer">Answer: ' + escapeHtml(question.answer || '') + '</div>'
+        + '<div class="shared-question-explanation">' + escapeHtml(question.explanation || '') + '</div></details>'
         + '</article>';
     }).join('');
   }
@@ -191,6 +191,7 @@
       throw new Error(payload.error || 'Could not load shared pack.');
     }
     if (folderEmptyEl) folderEmptyEl.hidden = true;
+    document.getElementById('shared-folder-pack-title').textContent = payload.title || 'Study pack';
     if (folderPackPreviewEl) folderPackPreviewEl.hidden = false;
     renderPackPreview(payload, {
       modeEl: folderPackModeEl,

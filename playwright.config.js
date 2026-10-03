@@ -27,7 +27,7 @@ module.exports = defineConfig({
   },
   webServer: [
     {
-      command: `${pythonCommand} app.py`,
+      command: `${pythonCommand} scripts/run_ui_preview.py --port ${testPort}`,
       url: baseUrl,
       reuseExistingServer: false,
       timeout: 90_000,

@@ -217,6 +217,7 @@
     var text = String(message || '').trim();
     els.audioStatus.textContent = text;
     els.audioStatus.hidden = !text;
+    if (els.audioRetentionNote) els.audioRetentionNote.hidden = !!text;
     els.audioStatus.classList.toggle('error', type === 'error');
     els.audioStatus.setAttribute('role', type === 'error' ? 'alert' : 'status');
     els.audioStatus.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
@@ -226,6 +227,7 @@
     if (!els.downloadAudioBtn) return;
     els.downloadAudioBtn.disabled = !isReady;
     els.downloadAudioBtn.setAttribute('aria-disabled', isReady ? 'false' : 'true');
+    els.downloadAudioBtn.title = isReady ? 'Save a copy of this recording' : 'No downloadable recording is available';
   }
 
   function openConfirmModal(title, message, confirmLabel) {
@@ -897,10 +899,10 @@
         '<div class="voice-note-meta"></div>',
         '<div class="voice-tag-row"></div>',
         '</button>',
-        '<div class="voice-note-actions">',
+        '<details class="voice-note-actions voice-more-actions" data-app-menu><summary aria-label="Note actions">More</summary><div class="voice-more-menu app-menu-panel">',
         '<button type="button" class="voice-note-action" data-note-archive></button>',
         '<button type="button" class="voice-note-action danger" data-note-delete>Delete</button>',
-        '</div>'
+        '</div></details>'
       ].join('');
       var noteTitle = note.title || 'Voice note';
       item.querySelector('.voice-note-title').textContent = noteTitle;
@@ -1028,15 +1030,15 @@
     var localId = note.local_audio_id || note.id;
     return getAudioBlob(localId).then(function (blob) {
       if (!selectedNote() || selectedNote().id !== noteId) return;
-      var hasServerAudio = !!(note.study_pack_id && note.has_audio_playback);
+      var hasServerAudio = !!(els.audio && els.audio.getAttribute('src') && els.audio.getAttribute('data-note-id') === noteId);
       var isReady = !!blob || hasServerAudio;
       setAudioDownloadReady(isReady);
-      if (!isReady) {
+      if (!isReady && !note.has_audio_playback) {
         setAudioStatus('No downloadable audio copy is available for this note.', 'error');
       }
     }).catch(function () {
       if (!selectedNote() || selectedNote().id !== noteId) return;
-      setAudioDownloadReady(!!(note.study_pack_id && note.has_audio_playback));
+      setAudioDownloadReady(!!(els.audio && els.audio.getAttribute('src') && els.audio.getAttribute('data-note-id') === noteId));
     });
   }
 
@@ -1112,7 +1114,10 @@
   }
 
   function renderSettings() {
-    if (els.languageSelect) els.languageSelect.value = state.settings.output_language || 'english';
+    if (els.languageSelect) {
+      els.languageSelect.value = state.settings.output_language || 'english';
+      if (uxUtils.refreshEnhancedSelect) uxUtils.refreshEnhancedSelect(els.languageSelect);
+    }
     if (els.customInput && els.customInput.value !== (state.settings.custom_instruction || '')) {
       els.customInput.value = state.settings.custom_instruction || '';
     }

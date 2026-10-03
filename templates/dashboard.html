@@ -16,9 +16,9 @@
   {% set shell_title = 'Dashboard' %}
   {% include '_app_shell.html' %}
     <main class="app-shell-page dashboard-page" id="dashboard-page" data-load-state="loading" aria-busy="true">
-      <section class="shell-panel hero">
-        <h1>Your semester at a glance</h1>
-        <p>Track what is due, continue recent packs, and keep your study work moving from one place.</p>
+      <section class="hero">
+        <p class="dashboard-eyebrow">Your study workspace</p><h1>A little progress, every day.</h1>
+        <p>Pick up where you left off and make room for what’s next.</p>
         <div class="hero-actions">
           <a href="/study" class="hero-btn library">Study Library</a>
           <a href="/study-pack-builder" class="hero-btn manual secondary">Study Pack Builder</a>
@@ -35,20 +35,21 @@
         </div>
       </section>
 
+      <section class="dashboard-continue" id="dash-continue"><div><p class="dashboard-eyebrow">Your next step</p><h2 id="dash-continue-title">Ready for your next session?</h2><p id="dash-continue-copy">Review your study plan or choose a pack from your library.</p></div><a class="hero-btn" id="dash-continue-link" href="/plan">Open Study Plan <span aria-hidden="true">→</span></a></section>
       <section class="dashboard-grid">
         <article class="shell-panel stat-card">
           <div class="stat-label">Current streak</div>
-          <div class="stat-value" id="dash-streak">Loading...</div>
+          <div class="stat-value" id="dash-streak"><span class="dashboard-skeleton" aria-label="Loading"></span></div>
           <div class="stat-sub">Keep momentum by reviewing every day.</div>
         </article>
         <article class="shell-panel stat-card">
           <div class="stat-label">Due today</div>
-          <div class="stat-value" id="dash-due">Loading...</div>
-          <div class="stat-sub">Cards ready for active recall now.</div>
+          <div class="stat-value" id="dash-due"><span class="dashboard-skeleton" aria-label="Loading"></span></div>
+          <div class="stat-sub"><a href="/study">Review in your library →</a></div>
         </article>
         <article class="shell-panel stat-card">
           <div class="stat-label">Daily goal</div>
-          <div class="stat-value" id="dash-goal">Loading...</div>
+          <div class="stat-value" id="dash-goal"><span class="dashboard-skeleton" aria-label="Loading"></span></div>
           <progress class="goal-track goal-track-bar" id="dash-goal-fill" max="100" value="0" hidden aria-hidden="true" aria-label="Daily goal progress">0%</progress>
         </article>
       </section>
@@ -56,20 +57,20 @@
       <section class="dashboard-grid two-col">
         <article class="shell-panel">
           <div class="section-head">
-            <h2>Upcoming Sessions</h2>
-            <a href="/calendar">Calendar</a>
+            <h2>Upcoming sessions</h2>
+            <a href="/plan?view=schedule">View schedule</a>
           </div>
           <div class="list-block" id="dash-sessions-list">
-            <div class="list-empty">Loading sessions...</div>
+            <div class="dashboard-list-skeleton" aria-label="Loading sessions"></div>
           </div>
         </article>
         <article class="shell-panel">
           <div class="section-head">
-            <h2>Recent Study Packs</h2>
+            <h2>Recent study packs</h2>
             <a href="/study">Study Library</a>
           </div>
           <div class="list-block" id="dash-packs-list">
-            <div class="list-empty">Loading study packs...</div>
+            <div class="dashboard-list-skeleton" aria-label="Loading study packs"></div>
           </div>
         </article>
       </section>

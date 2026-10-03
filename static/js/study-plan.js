@@ -58,7 +58,7 @@
     return date;
   }
   function formatDate(value, options) {
-    try { return new Intl.DateTimeFormat(undefined, options || { day: 'numeric', month: 'short' }).format(parseDate(value)); }
+    try { return new Intl.DateTimeFormat('en-GB', options || { day: 'numeric', month: 'short' }).format(parseDate(value)); }
     catch (_) { return String(value || ''); }
   }
   function todayInTimezone() {
@@ -359,7 +359,7 @@
       ['Study time', minutesLabel(progress.completed_minutes || progress.minutes || 0), minutesLabel(progress.tracked_minutes || 0) + ' tracked · ' + minutesLabel(progress.offline_minutes || 0) + ' logged'],
       ['Cards reviewed', Number(progress.cards_reviewed || 0), Number(progress.due_cards || 0) + ' due now'],
       ['Questions answered', Number(progress.questions_answered || 0), Number(progress.correct || 0) + ' correct'],
-      ['Accuracy', Number(progress.accuracy_percent || 0) + '%', Number(progress.correct || 0) + ' correct'],
+      ['Accuracy', Number(progress.questions_answered || 0) || Number(progress.cards_reviewed || 0) ? Number(progress.accuracy_percent || 0) + '%' : '—', Number(progress.questions_answered || 0) || Number(progress.cards_reviewed || 0) ? Number(progress.correct || 0) + ' correct' : 'Answer a question or review a card to begin'],
       ['Mastery', Number(progress.mastery_percent || 0) + '%', Number(progress.due_cards || 0) + ' cards due'],
       ['Study streak', Number(progress.current_streak || 0) + ' days', 'Keep the rhythm going']
     ];
@@ -402,19 +402,36 @@
     var current = activeControlPopover;
     activeControlPopover = null;
     if (current.anchor) current.anchor.setAttribute('aria-expanded', 'false');
-    if (current.panel && current.panel.parentNode) current.panel.parentNode.removeChild(current.panel);
+    if (current.panel && current.panel.parentNode) {
+      current.panel.classList.add('is-closing');
+      current.panel.setAttribute('aria-hidden', 'true');
+      current.panel.inert = true;
+      window.setTimeout(function () { window.LectureProcessorUx.clearLayoutStyles(current.panel); current.panel.remove(); }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 140);
+    }
     if (restoreFocus && current.anchor && typeof current.anchor.focus === 'function') current.anchor.focus();
     return true;
   }
   function positionControlPopover(panel, anchor) {
     var rect = anchor.getBoundingClientRect();
-    panel.classList.toggle('is-lower-anchor', rect.top > window.innerHeight * .55);
+    if (window.innerWidth <= 600) { window.LectureProcessorUx.clearLayoutStyles(panel); return; }
+    var width = panel.offsetWidth;
+    var height = Math.min(panel.scrollHeight, 430, window.innerHeight - 24);
+    var below = window.innerHeight - rect.bottom - 20;
+    var above = rect.top - 20;
+    var useAbove = below < height && above > below;
+    var available = Math.max(120, useAbove ? above : below);
+    window.LectureProcessorUx.setLayoutStyles(panel, {
+      'max-height': Math.min(height, available) + 'px',
+      left: Math.max(12, Math.min(rect.left, window.innerWidth - width - 12)) + 'px',
+      top: Math.max(12, useAbove ? rect.top - Math.min(height, available) - 8 : rect.bottom + 8) + 'px'
+    });
   }
   function showControlPopover(panel, anchor) {
     closeControlPopover(false);
     panel.classList.add('plan-control-popover');
     // Keep picker controls inside the owning modal's focus and inertness scope.
     (anchor.closest('[role="dialog"]') || document.body).appendChild(panel);
+    if (typeof panel.showPopover === 'function') { panel.setAttribute('popover', 'manual'); panel.showPopover(); }
     anchor.setAttribute('aria-expanded', 'true');
     activeControlPopover = { panel: panel, anchor: anchor };
     positionControlPopover(panel, anchor);
@@ -434,6 +451,14 @@
     panel.className = 'select-popover';
     panel.setAttribute('role', 'listbox');
     panel.setAttribute('aria-label', controlLabel(select));
+    var search = null;
+    if (select.options.length > 7) {
+      panel.setAttribute('role', 'dialog');
+      search = document.createElement('input');
+      search.type = 'search'; search.className = 'plan-picker-search'; search.placeholder = 'Find a study pack…'; search.setAttribute('aria-label', 'Find a study pack');
+      search.addEventListener('input', function () { queryAll('.pretty-option', panel).forEach(function (item) { item.hidden = !item.textContent.toLowerCase().includes(search.value.toLowerCase()); }); });
+      panel.appendChild(search);
+    }
     Array.prototype.forEach.call(select.options, function (option) {
       var optionButton = document.createElement('button');
       optionButton.type = 'button';
@@ -453,15 +478,24 @@
     });
     showControlPopover(panel, button);
     panel.addEventListener('keydown', function (event) {
-      var options = queryAll('.pretty-option:not([disabled])', panel);
+      var options = queryAll('.pretty-option:not([disabled]):not([hidden])', panel);
       var index = options.indexOf(document.activeElement);
+      if (event.target === search) {
+        if (event.key === 'Home' || event.key === 'End') return;
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          if (options.length === 1) options[0].click();
+          else if (options.length) options[0].focus();
+          return;
+        }
+      }
       if (!options.length || ['ArrowDown', 'ArrowUp', 'Home', 'End'].indexOf(event.key) === -1) return;
       event.preventDefault();
       var next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : (index + (event.key === 'ArrowUp' ? -1 : 1) + options.length) % options.length;
       options[next].focus();
     });
     var selectedButton = panel.querySelector('.pretty-option.is-selected');
-    if (selectedButton) selectedButton.focus();
+    if (search) search.focus({ preventScroll: true }); else if (selectedButton) selectedButton.focus({ preventScroll: true });
   }
   function enhancePrettySelects(root) {
     queryAll('select[data-pretty-select]', root || document).forEach(function (select) {
@@ -525,7 +559,7 @@
         cells += '<button type="button" class="date-picker-day' + (value === today ? ' is-today' : '') + (value === selected ? ' is-selected' : '') + '" data-picker-date="' + value + '"' + (allowed(value) ? '' : ' disabled') + ' aria-label="' + escapeHtml(formatDate(value, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })) + '">' + day + '</button>';
       }
       var todayDisabled = allowed(today) ? '' : ' disabled';
-      panel.innerHTML = '<div class="date-picker-header"><button type="button" class="date-picker-nav" data-month-step="-1" aria-label="Previous month">‹</button><div class="date-picker-title">' + escapeHtml(new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' }).format(monthCursor)) + '</div><button type="button" class="date-picker-nav" data-month-step="1" aria-label="Next month">›</button></div><div class="date-picker-weekdays"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div><div class="date-picker-grid">' + cells + '</div><div class="date-picker-footer"><button type="button" class="picker-text-button" data-picker-clear>Clear</button><button type="button" class="picker-text-button" data-picker-today' + todayDisabled + '>Today</button></div>';
+      panel.innerHTML = '<div class="date-picker-header"><button type="button" class="date-picker-nav" data-month-step="-1" aria-label="Previous month">‹</button><div class="date-picker-title">' + escapeHtml(new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' }).format(monthCursor)) + '</div><button type="button" class="date-picker-nav" data-month-step="1" aria-label="Next month">›</button></div><div class="date-picker-weekdays"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div><div class="date-picker-grid">' + cells + '</div><div class="date-picker-footer"><button type="button" class="picker-text-button" data-picker-clear>Clear</button><button type="button" class="picker-text-button" data-picker-today' + todayDisabled + '>Today</button></div>';
       queryAll('[data-month-step]', panel).forEach(function (button) { button.addEventListener('click', function () { monthCursor = new Date(year, month + Number(button.dataset.monthStep), 1); renderMonth(); positionControlPopover(panel, anchor); }); });
       queryAll('[data-picker-date]', panel).forEach(function (button) { button.addEventListener('click', function () { setPickerValue(input, button.dataset.pickerDate); closeControlPopover(false); input.focus(); }); });
       panel.querySelector('[data-picker-clear]').addEventListener('click', function () { setPickerValue(input, ''); closeControlPopover(false); input.focus(); });
@@ -556,7 +590,7 @@
     });
     showControlPopover(panel, anchor);
     var selected = grid.querySelector('.is-selected');
-    if (selected) selected.scrollIntoView({ block: 'center' });
+    if (selected) panel.scrollTop = selected.offsetTop - panel.clientHeight / 2;
   }
   function enhancePlanPickers(root) {
     queryAll('input[data-plan-picker]', root || document).forEach(function (input) {
@@ -704,6 +738,8 @@
     queryAll('[data-wizard-marker]').forEach(function (marker) { marker.classList.toggle('is-active', Number(marker.dataset.wizardMarker) <= state.wizardStep); });
     els.wizardBack.hidden = state.wizardStep === 1;
     els.wizardNext.textContent = state.wizardStep === 4 ? 'Accept this plan' : (state.wizardStep === 3 ? 'Generate schedule' : 'Continue');
+    var scrollBody = els.wizardOverlay.querySelector('.wizard-scroll-body');
+    if (scrollBody) scrollBody.scrollTop = 0;
     els.wizardNext.disabled = state.wizardStep === 4 && state.proposal && state.proposal.can_apply === false;
   }
   function clearWizardErrors() { [els.wizardPackError, els.wizardGoalError, els.wizardAvailabilityError].forEach(function (item) { item.hidden = true; item.textContent = ''; }); }
@@ -1075,7 +1111,7 @@
     var labels = { disconnected: 'Not connected', pending: 'Waiting to sync', syncing: 'Syncing', connected: 'Connected', retrying: 'Retrying', needs_attention: 'Needs attention', reconnect_required: 'Reconnect needed', disconnecting: 'Disconnecting' };
     byId('google-calendar-status').textContent = labels[data.status] || 'Not connected';
     byId('google-calendar-description').textContent = !data.available && !connected ? 'Direct Google connection is not configured yet. You can add your plan now using a private link below.' : (data.message || 'We create a separate Lecture Processor calendar. Your other calendars stay private. Changes you make here are sent to Google automatically.');
-    byId('google-calendar-account').textContent = data.email ? data.email + (data.last_synced_at ? ' · Last synced ' + new Date(data.last_synced_at * 1000).toLocaleString() : '') : '';
+    byId('google-calendar-account').textContent = data.email ? data.email + (data.last_synced_at ? ' · Last synced ' + new Date(data.last_synced_at * 1000).toLocaleString('en-GB') : '') : '';
     byId('google-calendar-connect').hidden = !needsConnect;
     byId('google-calendar-connect').disabled = !data.available || calendarBusy;
     byId('google-calendar-connect').textContent = connected ? 'Reconnect Google account' : 'Connect Google account';
@@ -1099,11 +1135,11 @@
     }
     if (action === 'disconnect') payload.remove_synced_events = byId('google-calendar-remove').checked;
     if (action === 'sync' && googleCalendarState && ['creation_uncertain', 'calendar_missing'].indexOf(googleCalendarState.error_code) >= 0) {
-      if (!window.confirm('Check Google Calendar first. If an empty Lecture Processor calendar was created during the interrupted setup, remove it before continuing. Create a new study calendar now?')) return;
+      if (!await window.LectureProcessorUx.requestDialog({ title: 'Create a new calendar?', message: 'Check Google Calendar first. If an empty Lecture Processor calendar was created during the interrupted setup, remove it before continuing. Create a new study calendar now?', confirmLabel: 'Create calendar', destructive: false })) return;
       payload.confirm_recreate = true;
     }
     if (action === 'connect' && (state.data.calendar_feeds || []).some(function (feed) { return !feed.revoked_at && feed.provider === 'google'; })) {
-      if (!window.confirm('You already have a Google subscription link. Connecting as well can show duplicate sessions. Continue with a direct connection?')) return;
+      if (!await window.LectureProcessorUx.requestDialog({ title: 'Connect Google Calendar?', message: 'You already have a Google subscription link. Connecting as well can show duplicate sessions. Continue with a direct connection?', confirmLabel: 'Continue connecting', destructive: false })) return;
     }
     calendarBusy = true; renderGoogleCalendar(false); calendarMessage('');
     try {
@@ -1122,7 +1158,7 @@
     var feeds = state.data.calendar_feeds || [];
     els.feedList.innerHTML = feeds.length ? feeds.map(function (feed) {
       var revoked = Number(feed.revoked_at || 0) > 0;
-      var status = revoked ? 'Revoked' : (feed.last_accessed_at ? 'Last fetched ' + new Date(feed.last_accessed_at * 1000).toLocaleString() : 'Link ready · add it to your calendar');
+      var status = revoked ? 'Revoked' : (feed.last_accessed_at ? 'Last fetched ' + new Date(feed.last_accessed_at * 1000).toLocaleString('en-GB') : 'Link ready · add it to your calendar');
       return '<div class="calendar-feed-item' + (revoked ? ' is-revoked' : '') + '" data-feed-id="' + escapeHtml(feed.feed_id) + '"><div><strong>' + escapeHtml(feed.name) + '</strong><span>' + escapeHtml(status) + '</span></div>' + (!revoked ? '<div class="calendar-feed-actions"><button type="button" class="btn" data-feed-rotate>Replace link</button><button type="button" class="btn danger" data-feed-revoke>Disconnect</button></div>' : '') + '</div>';
     }).join('') : '<p class="calendar-refresh-note">No subscription links yet. Choose your calendar above to get started.</p>';
     queryAll('[data-feed-id]', els.feedList).forEach(function (row) {
@@ -1160,7 +1196,7 @@
     finally { els.feedCreate.disabled = false; }
   }
   async function rotateFeed(feedId) {
-    if (!window.confirm('Replace this private link? The old link will stop working. You will need to replace the subscription in your calendar app.')) return;
+    if (!await window.LectureProcessorUx.requestDialog({ title: 'Replace calendar link?', message: 'Replace this private link? The old link will stop working. You will need to replace the subscription in your calendar app.', confirmLabel: 'Replace link', destructive: false })) return;
     try {
       var result = await api('/api/study-plan/calendar-feeds/' + encodeURIComponent(feedId) + '/rotate', { method: 'POST', body: '{}' });
       state.data.calendar_feeds = (state.data.calendar_feeds || []).map(function (feed) { return feed.feed_id === feedId ? result.feed : feed; });
@@ -1168,7 +1204,7 @@
     } catch (error) { calendarMessage(error.message); }
   }
   async function revokeFeed(feedId) {
-    if (!window.confirm('Disconnect this subscription? Its link will stop working. Also remove the subscribed calendar in your calendar app to clear its saved events.')) return;
+    if (!await window.LectureProcessorUx.requestDialog({ title: 'Disconnect subscription?', message: 'Disconnect this subscription? Its link will stop working. Also remove the subscribed calendar in your calendar app to clear its saved events.', confirmLabel: 'Disconnect', destructive: true })) return;
     try {
       var result = await api('/api/study-plan/calendar-feeds/' + encodeURIComponent(feedId), { method: 'DELETE' });
       state.data.calendar_feeds = (state.data.calendar_feeds || []).map(function (feed) { return feed.feed_id === feedId ? result.feed : feed; });
@@ -1230,7 +1266,7 @@
     [els.wizardOverlay, els.sessionOverlay, els.feedsOverlay].forEach(function (overlay) { overlay.addEventListener('click', function (event) { if (event.target === overlay) closeOverlay(overlay); }); });
     document.addEventListener('click', function (event) { if (activeControlPopover && !activeControlPopover.panel.contains(event.target) && !activeControlPopover.anchor.contains(event.target)) closeControlPopover(false); });
     window.addEventListener('resize', function () { closeControlPopover(false); });
-    window.addEventListener('scroll', function (event) { if (activeControlPopover && !activeControlPopover.panel.contains(event.target)) closeControlPopover(false); }, true);
+    window.addEventListener('scroll', function (event) { if (activeControlPopover && !activeControlPopover.panel.contains(event.target)) positionControlPopover(activeControlPopover.panel, activeControlPopover.anchor); }, true);
     window.addEventListener('online', function () { setOfflineState(); loadData({ useCache: false }); });
     window.addEventListener('offline', setOfflineState);
     document.addEventListener('keydown', function (event) {

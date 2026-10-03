@@ -1,6 +1,6 @@
 <div class="goal-modal-overlay" id="goal-modal-overlay" aria-hidden="true">
     <div class="goal-modal" role="dialog" aria-modal="true" aria-labelledby="goal-modal-title">
-        <div class="goal-modal-title" id="goal-modal-title">Set Daily Card Goal</div>
+        <div class="goal-modal-title" id="goal-modal-title">Set your daily card goal</div>
         <div class="goal-modal-subtitle">Choose how many cards you want to review each day (1–500).</div>
         <label class="form-label" for="goal-modal-input">Daily goal</label>
         <input id="goal-modal-input" class="form-input" type="number" min="1" max="500" inputmode="numeric">
@@ -15,7 +15,7 @@
 <div class="onboarding-overlay" id="language-onboarding-overlay" aria-hidden="true">
     <div class="onboarding-modal" role="dialog" aria-modal="true" aria-labelledby="language-onboarding-title">
         <div class="onboarding-title" id="language-onboarding-title">Choose your default language</div>
-        <div class="onboarding-subtitle">This will be used as the default output language for processing. You can change it later in Advanced settings.</div>
+        <div class="onboarding-subtitle">Choose the language for your study material. You can change it for any new source.</div>
         <div class="onboarding-language-grid" id="language-onboarding-grid">
             <button type="button" class="onboarding-language-btn active" data-value="english">🇬🇧 English</button>
             <button type="button" class="onboarding-language-btn" data-value="dutch">🇳🇱 Dutch</button>
@@ -25,7 +25,7 @@
             <button type="button" class="onboarding-language-btn" data-value="chinese">🇨🇳 Chinese</button>
             <button type="button" class="onboarding-language-btn" data-value="other">🌐 Other</button>
         </div>
-        <input class="language-custom-input onboarding-custom-input" id="language-onboarding-custom" placeholder="Type your preferred language (for example: Italian)" hidden>
+        <input class="language-custom-input onboarding-custom-input" id="language-onboarding-custom" aria-label="Preferred output language" placeholder="Type your preferred language (for example: Italian)" hidden>
         <div class="onboarding-error" id="language-onboarding-error" role="alert" aria-live="assertive" aria-atomic="true"></div>
         <div class="onboarding-actions">
             <button type="button" class="progress-action-btn primary" id="language-onboarding-save-btn">Save preference</button>

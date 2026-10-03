@@ -68,8 +68,8 @@ test('lines and filled arrows support right-click bends, free movement, markers,
   const original=await field(page,'h').inputValue();expect(Number(original)).toBeGreaterThan(15);
   await field(page,'nodeMarkers').setChecked(true);
   await field(page,'markerDiameter').evaluate(el=>{el.value='7';el.dispatchEvent(new Event('input',{bubbles:true}));});
-  await field(page,'pathMode').selectOption('smooth');
-  await field(page,'arrowLine').selectOption('dashed');
+  await chooseField(page, 'pathMode', 'smooth');
+  await chooseField(page, 'arrowLine', 'dashed');
   await expect(page.locator('#book-spread [data-object] circle[fill="#ffd617"],#book-spread [data-object] circle[fill="#FFD617"]')).toHaveCount(1);
   await page.locator('[data-path-point="1"]').click({button:'right'});
   await expect(page.getByRole('menu',{name:'Edit line'})).toBeVisible();
@@ -138,3 +138,11 @@ test('narrow-screen color picker keeps its trigger reachable and stays inside th
   await page.getByRole('button',{name:'Choose fill',exact:true}).click();
   await expect(popup).toBeHidden();
 });
+
+async function chooseField(page, name, value) {
+  const native = field(page, name);
+  const label = await native.locator('option').evaluateAll((options, selected) => options.find(option => option.value === String(selected)).textContent, value);
+  await native.locator('..').locator('.app-select-button').click();
+  await page.getByRole('option', { name: label, exact: true }).click();
+  await expect(field(page, name)).toHaveValue(String(value));
+}
