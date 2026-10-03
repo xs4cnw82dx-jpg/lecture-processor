@@ -1,4 +1,6 @@
 EXPECTED_ROUTES = [
+    ('GET', '/batch_status/<batch_id>', 'pages.batch_detail_page'),
+    ('PATCH', '/api/batch/jobs/<batch_id>/visibility', 'upload_api.set_batch_visibility'),
     ('GET', '/books', 'books.studio'),
     ('GET', '/books/<book_id>', 'books.studio'),
     ('GET', '/books/shared/<token>', 'books.studio'),

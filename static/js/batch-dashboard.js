@@ -1,691 +1,134 @@
 (function () {
   'use strict';
-
-  var bootstrap = window.LectureProcessorBootstrap || {};
-  var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
+  var bootstrap = window.LectureProcessorBootstrap || {}, util = window.LectureProcessorBatchStatus;
+  var auth = bootstrap.getAuth ? bootstrap.getAuth() : null;
   var authUtils = window.LectureProcessorAuth || {};
-  var authClient = auth && authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
-  var downloadUtils = window.LectureProcessorDownload || {};
-
-  var refreshBtn = document.getElementById('batch-dashboard-refresh-btn');
-  var modeFilter = document.getElementById('batch-dashboard-mode-filter');
-  var strategyFilter = document.getElementById('batch-dashboard-strategy-filter');
-  var statusFilter = document.getElementById('batch-dashboard-status-filter');
-  var authGate = document.getElementById('batch-dashboard-auth-gate');
-  var contentWrap = document.getElementById('batch-dashboard-content');
-  var signInBtn = document.getElementById('batch-dashboard-signin-btn');
-  var activeBody = document.getElementById('batch-dashboard-active-body');
-  var recentBody = document.getElementById('batch-dashboard-recent-body');
-  var activeCards = document.getElementById('batch-dashboard-active-cards');
-  var recentCards = document.getElementById('batch-dashboard-recent-cards');
-  var pollTimer = null;
-  var enhancedSelects = [];
-  var accountRevision = 0;
-
-  function captureAccount() {
-    var user = auth && auth.currentUser;
-    var revision = accountRevision;
-    return function () { return user === (auth && auth.currentUser) && revision === accountRevision; };
+  var client = auth && authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
+  var page = document.querySelector('.batch-dashboard-page'), id = page.dataset.batchId;
+  var content = document.getElementById('batch-dashboard-content'), gate = document.getElementById('batch-dashboard-auth-gate');
+  var rowsNode = document.getElementById('batch-dashboard-rows'), errorNode = document.getElementById('batch-dashboard-error');
+  var modeFilter = document.getElementById('batch-dashboard-mode-filter'), strategyFilter = document.getElementById('batch-dashboard-strategy-filter');
+  var batches = [], loaded = false, revision = 0, timer = null, running = null, view = 'all', lastList = '';
+  function fetcher(path, options) { return client ? client.authFetch(path, options, { retryOn401: true }) : Promise.reject(new Error('Please sign in')); }
+  function uid() { return auth && auth.currentUser ? auth.currentUser.uid : ''; }
+  var detail = id ? util.renderer({ element: document.getElementById('batch-detail'), fetch: fetcher, uid: uid }) : null;
+  function inView(b, v) {
+    if (v === 'archived') return !!b.archived;
+    if (b.archived) return false;
+    if (v === 'active') return !util.terminal(b.status);
+    if (v === 'completed') return b.status === 'complete';
+    if (v === 'attention') return b.status === 'partial' || b.status === 'error';
+    return true;
   }
-
-  function clearAccountRows() {
-    [activeBody, recentBody, activeCards, recentCards].forEach(function (element) {
-      if (element) element.innerHTML = '';
-    });
+  function readFilters() {
+    var params = new URLSearchParams(location.search);
+    view = ['all', 'active', 'completed', 'attention', 'archived'].indexOf(params.get('view')) >= 0 ? params.get('view') : 'all';
+    modeFilter.value = params.get('mode') || ''; strategyFilter.value = params.get('strategy') || '';
+    document.getElementById('batch-filters').open = !!(modeFilter.value || strategyFilter.value);
   }
-
-  function showShellToast(message, variant) {
-    var shell = window.LectureProcessorShell || {};
-    if (shell && typeof shell.showToast === 'function') {
-      shell.showToast(message, variant || '');
-    }
-  }
-
-  function authFetch(path, options) {
-    if (authClient && typeof authClient.authFetch === 'function') {
-      return authClient.authFetch(path, options, { retryOn401: true });
-    }
-    if (!auth || !auth.currentUser) {
-      return Promise.reject(new Error('Please sign in'));
-    }
-    return auth.currentUser.getIdToken().then(function (token) {
-      var opts = options || {};
-      var headers = Object.assign({}, opts.headers || {}, { Authorization: 'Bearer ' + token });
-      return fetch(path, Object.assign({}, opts, { headers: headers }));
-    });
-  }
-
-  function saveBlobFallback(response, fallbackName) {
-    return response.blob().then(function (blob) {
-      var url = URL.createObjectURL(blob);
-      var anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = fallbackName || 'download';
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(url);
-      return fallbackName;
-    });
-  }
-
-  function parseDownloadError(response) {
-    return response.json().catch(function () { return {}; }).then(function (payload) {
-      throw new Error((payload && payload.error) || 'Could not download this file.');
-    });
-  }
-
-  function downloadAuthenticatedFile(path, fallbackName, button) {
-    var originalText = button ? button.textContent : '';
-    if (button) {
-      button.disabled = true;
-      button.textContent = 'Downloading...';
-    }
-    return authFetch(path).then(function (response) {
-      if (!response.ok) return parseDownloadError(response);
-      if (downloadUtils && typeof downloadUtils.downloadResponseBlob === 'function') {
-        return downloadUtils.downloadResponseBlob(response, fallbackName);
-      }
-      return saveBlobFallback(response, fallbackName);
-    }).then(function () {
-      showShellToast('Download started.');
-    }).catch(function (error) {
-      showShellToast(error && error.message ? error.message : 'Could not download this file.', 'error');
-    }).finally(function () {
-      if (button) {
-        button.disabled = false;
-        button.textContent = originalText;
-      }
-    });
-  }
-
-  function isProtectedBatchDownload(href) {
-    var value = String(href || '').trim();
-    return (
-      /^\/api\/(?:instant-)?batch\/jobs\/[^?#]+\/download\.zip(?:[?#].*)?$/.test(value) ||
-      /^\/api\/(?:instant-)?batch\/jobs\/[^?#]+\/rows\/[^?#]+\/download-docx(?:[?#].*)?$/.test(value) ||
-      /^\/api\/(?:instant-)?batch\/jobs\/[^?#]+\/rows\/[^?#]+\/download-flashcards-csv(?:[?#].*)?$/.test(value)
-    );
-  }
-
-  function openBatchActionHref(href, button) {
-    if (!href) return;
-    if (isProtectedBatchDownload(href)) {
-      downloadAuthenticatedFile(href, 'batch-download', button);
-      return;
-    }
-    window.open(href, '_blank');
-  }
-
-  function formatDate(secondsValue) {
-    var safe = Number(secondsValue || 0);
-    if (!safe) return '-';
-    var date = new Date(safe * 1000);
-    if (Number.isNaN(date.getTime())) return '-';
-    return date.toLocaleString(navigator.language || 'en-US', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  }
-
-  function escapeHtml(value) {
-    return String(value == null ? '' : value)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
-  function modeLabel(mode) {
-    var key = String(mode || '').trim();
-    if (key === 'lecture-notes') return 'Lectures';
-    if (key === 'slides-only') return 'Slides';
-    if (key === 'interview') return 'Interviews';
-    if (key === 'audio-transcription') return 'Audio Transcriptions';
-    if (key === 'text-combine') return 'Combine Text';
-    return key || '-';
-  }
-
-  function isInstantBatch(batch) {
-    return String((batch || {}).processing_strategy || 'batch').trim().toLowerCase() === 'instant';
-  }
-
-  function modePath(mode, batch) {
-    var prefix = isInstantBatch(batch) ? '/instant_batch_mode' : '/batch_mode';
-    if (mode === 'slides-only') return prefix + '_slides_extraction';
-    if (mode === 'interview') return prefix + '_interview_transcription';
-    if (mode === 'audio-transcription') return prefix + '_audio_transcription';
-    if (mode === 'text-combine') return prefix + '_text_combine';
-    return prefix;
-  }
-
-  function apiPath(batch) {
-    return isInstantBatch(batch) ? '/api/instant-batch/jobs' : '/api/batch/jobs';
-  }
-
-  function stageText(batch) {
-    var stage = String(batch.stage_label || batch.current_stage || '').trim();
-    var stageState = String(batch.current_stage_state || '').trim();
-    var provider = String(batch.provider_label || batch.provider_state || '').trim();
-    if (!stage && !stageState && !provider) return '-';
-    return [stage || '-', stageState || '-', provider || '-'].join(' · ');
-  }
-
-  function statusPill(status) {
-    var safe = String(status || 'queued').trim().toLowerCase();
-    var classSuffix = safe.replace(/[^a-z0-9_-]/g, '');
-    return '<span class="batch-status-pill ' + classSuffix + '">' + escapeHtml(safe) + '</span>';
-  }
-
-  function emptyStateCopy(isActiveTable) {
-    return isActiveTable
-      ? {
-          title: 'No active batches',
-          detail: 'Running batches will appear here while they process.',
-          action: 'Start a batch'
-        }
-      : {
-          title: 'No recent batches',
-          detail: 'Completed and failed batches will appear here after you run one.',
-          action: 'Start a batch'
-        };
-  }
-
-  function emptyStateHtml(isActiveTable) {
-    var copy = emptyStateCopy(isActiveTable);
-    return '<div class="batch-empty-state">' +
-      '<strong>' + escapeHtml(copy.title) + '</strong>' +
-      '<span>' + escapeHtml(copy.detail) + '</span>' +
-      '<a class="btn-link" href="/batch_mode">' + escapeHtml(copy.action) + '</a>' +
-      '</div>';
-  }
-
-  function errorStateHtml(message) {
-    return '<div class="batch-empty-state error">' +
-      '<strong>Could not load batches</strong>' +
-      '<span>' + escapeHtml(message || 'Check your connection, then refresh this page.') + '</span>' +
-      '<button type="button" class="btn-link" data-action="retry-load">Retry</button>' +
-      '</div>';
-  }
-
-  function emptyRow(colspan, isActiveTable) {
-    var tr = document.createElement('tr');
-    var td = document.createElement('td');
-    td.colSpan = colspan;
-    td.className = 'table-empty';
-    td.innerHTML = emptyStateHtml(isActiveTable);
-    tr.appendChild(td);
-    return tr;
-  }
-
-  function errorRow(colspan, message) {
-    var tr = document.createElement('tr');
-    var td = document.createElement('td');
-    td.colSpan = colspan;
-    td.className = 'table-empty';
-    td.innerHTML = errorStateHtml(message);
-    tr.appendChild(td);
-    return tr;
-  }
-
-  function renderLoadError(message) {
-    var safeMessage = message || 'Check your connection, then try again.';
-    [activeBody, recentBody].forEach(function (body) {
-      if (!body) return;
-      body.innerHTML = '';
-      body.appendChild(errorRow(8, safeMessage));
-    });
-    [activeCards, recentCards].forEach(function (container) {
-      if (!container) return;
-      container.innerHTML = '';
-      var empty = document.createElement('div');
-      empty.className = 'batch-card-empty';
-      empty.innerHTML = errorStateHtml(safeMessage);
-      container.appendChild(empty);
-    });
-    attachTableActions();
-  }
-
-  function setSignedInView(signedIn) {
-    if (authGate) authGate.hidden = !!signedIn;
-    if (contentWrap) contentWrap.hidden = !signedIn;
-  }
-
-  function batchTitleCell(batch) {
-    var title = String(batch.batch_title || batch.batch_id || '-');
-    var detail = String(batch.error_message || batch.status_message || '').trim();
-    if (!detail) return escapeHtml(title);
-    return '<div class="batch-title-cell"><strong>' + escapeHtml(title) + '</strong><span>' + escapeHtml(detail) + '</span></div>';
-  }
-
-  function renderTable(body, rows, isActiveTable) {
-    if (!body) return;
-    body.innerHTML = '';
-    if (!rows.length) {
-      body.appendChild(emptyRow(8, isActiveTable));
-      return;
-    }
-
-    rows.forEach(function (batch) {
-      var batchId = String(batch.batch_id || '');
-      var created = formatDate(batch.created_at);
-      var updated = formatDate(batch.updated_at || batch.last_heartbeat_at || 0);
-      var rowsText = String(Number(batch.completed_rows || 0)) + '/' + String(Number(batch.total_rows || 0)) + ' complete · ' + String(Number(batch.failed_rows || 0)) + ' failed';
-      var actions = [];
-      var viewHref = modePath(batch.mode, batch) + '?batch_id=' + encodeURIComponent(batchId);
-      actions.push('<a class="btn-link" href="' + escapeHtml(viewHref) + '">View</a>');
-      if (batch.next_action_label && batch.next_action_href && batch.next_action_href !== viewHref) {
-        if (String(batch.next_action_href).indexOf('/api/batch/jobs/') === 0 || String(batch.next_action_href).indexOf('/api/instant-batch/jobs/') === 0) {
-          actions.push('<button type="button" class="btn-link" data-action="open-href" data-href="' + escapeHtml(String(batch.next_action_href)) + '">' + escapeHtml(String(batch.next_action_label)) + '</button>');
-        } else {
-          actions.push('<a class="btn-link" href="' + escapeHtml(String(batch.next_action_href)) + '">' + escapeHtml(String(batch.next_action_label)) + '</a>');
-        }
-      }
-      if (batch.can_download_zip) {
-        actions.push('<button type="button" class="btn-link" data-action="download-zip" data-batch-id="' + escapeHtml(batchId) + '" data-api-base="' + escapeHtml(apiPath(batch)) + '">Download ZIP</button>');
-      }
-      var tr = document.createElement('tr');
-      if (isActiveTable) {
-        tr.innerHTML =
-          '<td>' + batchTitleCell(batch) + '</td>' +
-          '<td>' + escapeHtml(modeLabel(batch.mode) + (isInstantBatch(batch) ? ' · Instant' : ' · Standard')) + '</td>' +
-          '<td>' + created + '</td>' +
-          '<td>' + escapeHtml(stageText(batch)) + '</td>' +
-          '<td>' + rowsText + '</td>' +
-          '<td>' + updated + '</td>' +
-          '<td>' + escapeHtml(String(batch.email_status_label || batch.completion_email_status || 'pending')) + '</td>' +
-          '<td><div class="table-actions">' + actions.join('') + '</div></td>';
-      } else {
-        tr.innerHTML =
-          '<td>' + batchTitleCell(batch) + '</td>' +
-          '<td>' + escapeHtml(modeLabel(batch.mode) + (isInstantBatch(batch) ? ' · Instant' : ' · Standard')) + '</td>' +
-          '<td>' + statusPill(batch.status) + '</td>' +
-          '<td>' + created + '</td>' +
-          '<td>' + rowsText + '</td>' +
-          '<td>' + updated + '</td>' +
-          '<td>' + escapeHtml(String(batch.email_status_label || batch.completion_email_status || 'pending')) + '</td>' +
-          '<td><div class="table-actions">' + actions.join('') + '</div></td>';
-      }
-      body.appendChild(tr);
-    });
-  }
-
-  function renderCards(container, rows, isActiveTable) {
-    if (!container) return;
-    container.innerHTML = '';
-    if (!rows.length) {
-      var empty = document.createElement('div');
-      empty.className = 'batch-card-empty';
-      empty.innerHTML = emptyStateHtml(isActiveTable);
-      container.appendChild(empty);
-      return;
-    }
-
-    rows.forEach(function (batch) {
-      var batchId = String(batch.batch_id || '');
-      var viewHref = modePath(batch.mode, batch) + '?batch_id=' + encodeURIComponent(batchId);
-      var actions = [];
-      actions.push('<a class="btn-link" href="' + escapeHtml(viewHref) + '">View</a>');
-      if (batch.next_action_label && batch.next_action_href && batch.next_action_href !== viewHref) {
-        if (String(batch.next_action_href).indexOf('/api/batch/jobs/') === 0 || String(batch.next_action_href).indexOf('/api/instant-batch/jobs/') === 0) {
-          actions.push('<button type="button" class="btn-link" data-action="open-href" data-href="' + escapeHtml(String(batch.next_action_href)) + '">' + escapeHtml(String(batch.next_action_label)) + '</button>');
-        } else {
-          actions.push('<a class="btn-link" href="' + escapeHtml(String(batch.next_action_href)) + '">' + escapeHtml(String(batch.next_action_label)) + '</a>');
-        }
-      }
-      if (batch.can_download_zip) {
-        actions.push('<button type="button" class="btn-link" data-action="download-zip" data-batch-id="' + escapeHtml(batchId) + '" data-api-base="' + escapeHtml(apiPath(batch)) + '">Download ZIP</button>');
-      }
-
-      var card = document.createElement('article');
-      card.className = 'batch-card';
-      card.innerHTML =
-        '<div class="batch-card-head">' +
-          '<div>' +
-            '<h3>' + escapeHtml(String(batch.batch_title || batch.batch_id || 'Untitled batch')) + '</h3>' +
-            '<p>' + escapeHtml(String(batch.error_message || batch.status_message || '').trim() || 'Batch overview') + '</p>' +
-          '</div>' +
-          (isActiveTable ? '' : statusPill(batch.status)) +
-        '</div>' +
-        '<div class="batch-card-meta">' +
-          '<span><strong>Mode</strong>' + escapeHtml(modeLabel(batch.mode)) + '</span>' +
-          '<span><strong>Processing</strong>' + escapeHtml(isInstantBatch(batch) ? 'Instant batch' : 'Standard batch') + '</span>' +
-          '<span><strong>Submitted</strong>' + escapeHtml(formatDate(batch.created_at)) + '</span>' +
-          '<span><strong>Updated</strong>' + escapeHtml(formatDate(batch.updated_at || batch.last_heartbeat_at || 0)) + '</span>' +
-          '<span><strong>Rows</strong>' + escapeHtml(String(Number(batch.completed_rows || 0)) + '/' + String(Number(batch.total_rows || 0)) + ' complete · ' + String(Number(batch.failed_rows || 0)) + ' failed') + '</span>' +
-          '<span><strong>' + (isActiveTable ? 'Stage' : 'Status') + '</strong>' + escapeHtml(isActiveTable ? stageText(batch) : String(batch.status || 'queued')) + '</span>' +
-          '<span><strong>Email</strong>' + escapeHtml(String(batch.email_status_label || batch.completion_email_status || 'pending')) + '</span>' +
-        '</div>' +
-        '<div class="batch-card-actions">' + actions.join('') + '</div>';
-      container.appendChild(card);
-    });
-  }
-
-  function attachTableActions() {
-    Array.prototype.slice.call(document.querySelectorAll('[data-action="download-zip"]')).forEach(function (button) {
-      button.addEventListener('click', function () {
-        var batchId = String(button.getAttribute('data-batch-id') || '').trim();
-        if (!batchId) return;
-        var apiBase = String(button.getAttribute('data-api-base') || '/api/batch/jobs');
-        downloadAuthenticatedFile(apiBase + '/' + encodeURIComponent(batchId) + '/download.zip', 'batch-' + batchId + '.zip', button);
-      });
-    });
-    Array.prototype.slice.call(document.querySelectorAll('[data-action="open-href"]')).forEach(function (button) {
-      button.addEventListener('click', function () {
-        var href = String(button.getAttribute('data-href') || '').trim();
-        openBatchActionHref(href, button);
-      });
-    });
-    Array.prototype.slice.call(document.querySelectorAll('[data-action="retry-load"]')).forEach(function (button) {
-      button.addEventListener('click', function () {
-        loadBatches(true);
-      });
-    });
-  }
-
-  function activeRows(rows) {
-    return rows.filter(function (batch) {
-      var status = String(batch.status || '').trim();
-      return status === 'queued' || status === 'processing';
-    });
-  }
-
-  function recentRows(rows) {
-    return rows.filter(function (batch) {
-      var status = String(batch.status || '').trim();
-      return status !== 'queued' && status !== 'processing';
-    });
-  }
-
-  function listPath() {
+  function saveFilters() {
     var params = new URLSearchParams();
-    var mode = String((modeFilter && modeFilter.value) || '').trim();
-    var strategy = String((strategyFilter && strategyFilter.value) || '').trim();
-    var status = String((statusFilter && statusFilter.value) || '').trim();
-    if (mode) params.set('mode', mode);
-    if (strategy) params.set('strategy', strategy);
-    if (status) params.set('status', status);
-    params.set('limit', '200');
-    return '/api/batch/jobs?' + params.toString();
+    if (view !== 'all') params.set('view', view);
+    if (modeFilter.value) params.set('mode', modeFilter.value);
+    if (strategyFilter.value) params.set('strategy', strategyFilter.value);
+    history.replaceState(null, '', '/batch_status' + (params.size ? '?' + params.toString() : ''));
   }
-
-  function closeBatchDashboardSelectMenus(exceptionMenu) {
-    enhancedSelects.forEach(function (instance) {
-      if (!instance || !instance.menu || instance.menu === exceptionMenu) return;
-      instance.setOpen(false);
+  function render() {
+    if (id) return;
+    var filtered = batches.filter(function (b) { return (!modeFilter.value || b.mode === modeFilter.value) && (!strategyFilter.value || (b.processing_strategy || 'batch') === strategyFilter.value); });
+    document.querySelectorAll('[data-view]').forEach(function (tab) {
+      tab.setAttribute('aria-current', tab.dataset.view === view ? 'page' : 'false');
+      tab.querySelector('[data-count]').textContent = filtered.filter(function (b) { return inView(b, tab.dataset.view); }).length;
     });
-  }
-
-  function enhanceDashboardSelect(selectEl) {
-    if (!selectEl || selectEl.dataset.enhanced === 'true') return;
-    selectEl.dataset.enhanced = 'true';
-    selectEl.classList.add('batch-dashboard-native-select');
-    selectEl.hidden = true;
-    selectEl.tabIndex = -1;
-    selectEl.setAttribute('aria-hidden', 'true');
-
-    var wrapper = document.createElement('div');
-    wrapper.className = 'app-select batch-dashboard-select';
-    var button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'app-select-button';
-    button.setAttribute('aria-haspopup', 'listbox');
-    button.setAttribute('aria-expanded', 'false');
-    if (!selectEl.id) selectEl.id = 'batch-dashboard-select-' + Math.random().toString(36).slice(2, 8);
-
-    var label = document.createElement('span');
-    label.className = 'app-select-label';
-    label.id = selectEl.id + '-value';
-    var icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    icon.setAttribute('viewBox', '0 0 24 24');
-    icon.setAttribute('fill', 'none');
-    icon.setAttribute('stroke', 'currentColor');
-    icon.setAttribute('stroke-width', '2');
-    icon.setAttribute('stroke-linecap', 'round');
-    icon.setAttribute('stroke-linejoin', 'round');
-    var polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-    polyline.setAttribute('points', '6 9 12 15 18 9');
-    icon.appendChild(polyline);
-    button.appendChild(label);
-    button.appendChild(icon);
-
-    var menu = document.createElement('div');
-    menu.className = 'app-select-menu';
-    menu.setAttribute('role', 'listbox');
-    menu.id = selectEl.id + '-menu';
-    button.id = selectEl.id + '-button';
-    button.setAttribute('aria-controls', menu.id);
-    button.setAttribute('aria-labelledby', label.id);
-    menu.setAttribute('aria-labelledby', button.id);
-    wrapper.appendChild(button);
-    wrapper.appendChild(menu);
-    selectEl.insertAdjacentElement('afterend', wrapper);
-
-    function items() {
-      return Array.prototype.slice.call(menu.querySelectorAll('.app-select-item[data-value]')).filter(function (item) {
-        return !item.disabled;
-      });
-    }
-
-    function focusItem(direction) {
-      var allItems = items();
-      if (!allItems.length) return;
-      var currentIndex = allItems.indexOf(document.activeElement);
-      var activeIndex = Math.max(0, allItems.findIndex(function (item) { return item.classList.contains('active'); }));
-      var nextIndex = activeIndex;
-      if (direction === 'first') nextIndex = 0;
-      if (direction === 'last') nextIndex = allItems.length - 1;
-      if (direction === 'next') nextIndex = currentIndex >= 0 ? (currentIndex + 1) % allItems.length : activeIndex;
-      if (direction === 'prev') nextIndex = currentIndex >= 0 ? (currentIndex - 1 + allItems.length) % allItems.length : activeIndex;
-      allItems.forEach(function (item) { item.tabIndex = -1; });
-      allItems[nextIndex].tabIndex = 0;
-      allItems[nextIndex].focus();
-    }
-
-    function sync() {
-      var activeText = '';
-      items().forEach(function (item) {
-        var active = item.getAttribute('data-value') === String(selectEl.value || '');
-        item.classList.toggle('active', active);
-        item.setAttribute('aria-selected', active ? 'true' : 'false');
-        item.tabIndex = -1;
-        if (active) activeText = item.textContent;
-      });
-      label.textContent = activeText || (selectEl.options[selectEl.selectedIndex] ? selectEl.options[selectEl.selectedIndex].textContent : 'Select');
-    }
-
-    function setOpen(open, focusTarget) {
-      var shouldOpen = !!open;
-      if (shouldOpen) closeBatchDashboardSelectMenus(menu);
-      menu.classList.toggle('visible', shouldOpen);
-      button.classList.toggle('open', shouldOpen);
-      button.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
-      if (shouldOpen) focusItem(focusTarget || 'first');
-    }
-
-    function rebuild() {
-      menu.innerHTML = '';
-      Array.prototype.slice.call(selectEl.options || []).forEach(function (option) {
-        var item = document.createElement('button');
-        item.type = 'button';
-        item.className = 'app-select-item';
-        item.setAttribute('role', 'option');
-        item.setAttribute('data-value', String(option.value));
-        item.textContent = String(option.textContent || option.value || '-');
-        item.disabled = !!option.disabled;
-        item.addEventListener('click', function () {
-          if (selectEl.value !== option.value) {
-            selectEl.value = option.value;
-            selectEl.dispatchEvent(new Event('change', { bubbles: true }));
-          }
-          sync();
-          setOpen(false);
-          button.focus();
-        });
-        menu.appendChild(item);
-      });
-      sync();
-    }
-
-    button.addEventListener('click', function (event) {
-      event.preventDefault();
-      setOpen(!menu.classList.contains('visible'));
+    var visible = filtered.filter(function (b) { return inView(b, view); }).sort(function (a, b) { return Number(util.terminal(a.status)) - Number(util.terminal(b.status)) || Number(b.created_at || 0) - Number(a.created_at || 0); });
+    document.getElementById('batch-list-limit').textContent = batches.length >= 200 ? 'Latest 200 batches · counts refer to loaded batches' : 'Counts refer to loaded batches';
+    var html = '';
+    if (!visible.length) {
+      var empty = !batches.length && !modeFilter.value && !strategyFilter.value && view === 'all';
+      html = '<div class="bs-empty"><h2>' + (empty ? 'No batches yet' : 'No matches') + '</h2><p>' + (empty ? 'Your batches will appear here after you start one.' : 'Try another view or clear your filters.') + '</p>' + (empty ? '<a class="bs-button bs-primary" href="/batch_mode">Start a batch</a>' : '<button type="button" class="bs-button" data-dashboard-action="clear">Clear filters</button>') + '</div>';
+    } else visible.forEach(function (b) {
+      var batchId = util.escape(b.batch_id), href = util.detailUrl(b.batch_id) + '?return=' + encodeURIComponent(location.pathname + location.search);
+      html += '<article class="bs-list-row" role="row" data-id="' + batchId + '"><div role="cell"><a class="bs-batch-title" href="' + util.escape(href) + '">' + util.escape(b.batch_title || b.batch_id) + '</a><p class="bs-muted">' + util.escape(util.mode(b)) + '</p></div><div role="cell">' + util.pill(b.status) + '</div><div role="cell">' + util.escape(util.progress(b)) + '</div><div role="cell" class="bs-date">' + util.escape(util.date(b.created_at)) + '</div><div role="cell" class="bs-actions"><a class="bs-button" href="' + util.escape(href) + '">View details</a>' + (b.can_download_zip ? '<button class="bs-button" type="button" data-dashboard-action="zip">Download ZIP</button>' : '') + (util.terminal(b.status) ? '<details class="bs-overflow"><summary aria-label="More actions for ' + util.escape(b.batch_title || b.batch_id) + '">•••</summary><button class="bs-button" type="button" data-dashboard-action="archive">' + (b.archived ? 'Restore' : 'Archive') + '</button></details>' : '') + '</div></article>';
     });
-
-    button.addEventListener('keydown', function (event) {
-      if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        setOpen(true, 'first');
-      } else if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        setOpen(true, 'last');
-      } else if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        setOpen(!menu.classList.contains('visible'));
-      } else if (event.key === 'Escape') {
-        event.preventDefault();
-        setOpen(false);
-      }
-    });
-
-    menu.addEventListener('keydown', function (event) {
-      if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        focusItem('next');
-      } else if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        focusItem('prev');
-      } else if (event.key === 'Home') {
-        event.preventDefault();
-        focusItem('first');
-      } else if (event.key === 'End') {
-        event.preventDefault();
-        focusItem('last');
-      } else if (event.key === 'Escape') {
-        event.preventDefault();
-        setOpen(false);
-        button.focus();
-      }
-    });
-
-    selectEl.addEventListener('change', sync);
-    enhancedSelects.push({ menu: menu, setOpen: setOpen });
-    rebuild();
-  }
-
-  function loadBatches(showRefreshToast) {
-    var isCurrent = captureAccount();
-    if (!auth || !auth.currentUser) {
-      setSignedInView(false);
-      renderTable(activeBody, [], true);
-      renderTable(recentBody, [], false);
-      renderCards(activeCards, [], true);
-      renderCards(recentCards, [], false);
-      return Promise.resolve();
-    }
-    setSignedInView(true);
-    return authFetch(listPath())
-      .then(function (response) {
-        return response.json().catch(function () { return {}; }).then(function (payload) {
-          return { response: response, payload: payload };
-        });
-      })
-      .then(function (result) {
-        if (!isCurrent()) return;
-        if (!result.response.ok) {
-          throw new Error(String(result.payload.error || 'Could not load batch list.'));
+    if (html !== lastList) {
+      var focus = document.activeElement, action = focus.dataset && focus.dataset.dashboardAction;
+      var focusRow = focus.closest && focus.closest('[data-id]');
+      var focusId = focusRow && focusRow.dataset.id;
+      var openIds = Array.from(rowsNode.querySelectorAll('details[open]')).map(function (d) { return d.closest('[data-id]').dataset.id; });
+      lastList = html; rowsNode.innerHTML = html;
+      rowsNode.querySelectorAll('[data-id]').forEach(function (row) {
+        var menu = row.querySelector('details'); if (menu) menu.open = openIds.indexOf(row.dataset.id) >= 0;
+        if (row.dataset.id === focusId) {
+          var next = Array.from(row.querySelectorAll('[data-dashboard-action]')).find(function (b) { return b.dataset.dashboardAction === action; });
+          if (next) next.focus({ preventScroll: true });
         }
-        var rows = Array.isArray(result.payload.batches) ? result.payload.batches : [];
-        renderTable(activeBody, activeRows(rows), true);
-        renderTable(recentBody, recentRows(rows), false);
-        renderCards(activeCards, activeRows(rows), true);
-        renderCards(recentCards, recentRows(rows), false);
-        attachTableActions();
-        if (showRefreshToast) {
-          showShellToast('Batch dashboard refreshed.', 'success');
-        }
-      })
-      .catch(function (error) {
-        if (!isCurrent()) return;
-        console.error('Could not load batch dashboard:', error);
-        var message = String((error && error.message) || 'Could not load batch dashboard.');
-        renderLoadError(message);
-        showShellToast(message, 'error');
       });
+    }
   }
-
-  function schedulePolling() {
-    if (pollTimer) {
-      window.clearTimeout(pollTimer);
-      pollTimer = null;
-    }
-    var delay = document.visibilityState === 'hidden' ? 60000 : 20000;
-    pollTimer = window.setTimeout(function () {
-      loadBatches(false).finally(schedulePolling);
-    }, delay);
+  function schedule() { clearTimeout(timer); if (!id && uid()) timer = setTimeout(load, document.visibilityState === 'hidden' ? 60000 : 20000); }
+  function load() {
+    if (!uid()) return Promise.resolve();
+    if (running) return running;
+    clearTimeout(timer); var r = revision;
+    running = util.json(fetcher, '/api/batch/jobs?limit=200').then(function (payload) {
+      if (r !== revision) return;
+      batches = Array.isArray(payload.batches) ? payload.batches : []; loaded = true;
+      errorNode.hidden = true; render();
+    }).catch(function (e) {
+      if (r !== revision) return;
+      errorNode.hidden = false; errorNode.textContent = 'Couldn’t refresh. ' + e.message;
+      var retry = document.createElement('button'); retry.className = 'bs-button'; retry.textContent = 'Retry'; retry.onclick = load; errorNode.appendChild(retry);
+      if (!loaded) { rowsNode.textContent = 'Batch information is unavailable until the connection is restored.'; lastList = ''; }
+    }).finally(function () { if (r === revision) { running = null; schedule(); } });
+    return running;
   }
-
-  function wireEvents() {
-    if (refreshBtn) {
-      refreshBtn.addEventListener('click', function () {
-        loadBatches(true);
-      });
-    }
-    if (modeFilter) {
-      modeFilter.addEventListener('change', function () {
-        loadBatches(false);
-      });
-    }
-    if (strategyFilter) {
-      strategyFilter.addEventListener('change', function () {
-        loadBatches(false);
-      });
-    }
-    if (statusFilter) {
-      statusFilter.addEventListener('change', function () {
-        loadBatches(false);
-      });
-    }
-    if (signInBtn) {
-      signInBtn.addEventListener('click', function () {
-        window.location.href = typeof authUtils.buildSignInUrl === 'function'
-          ? authUtils.buildSignInUrl()
-          : '/lecture-notes?auth=signin';
-      });
-    }
-    document.addEventListener('visibilitychange', function () {
-      schedulePolling();
+  document.getElementById('batch-dashboard-signin-btn').onclick = function () { location.href = authUtils.buildSignInUrl ? authUtils.buildSignInUrl() : '/lecture-notes?auth=signin'; };
+  if (id) {
+    var back = new URLSearchParams(location.search).get('return');
+    if (back && /^\/batch_status(?:\?[^#]*)?$/.test(back)) document.getElementById('batch-back-link').href = back;
+  } else {
+    readFilters();
+    document.getElementById('batch-dashboard-refresh-btn').onclick = load;
+    [modeFilter, strategyFilter].forEach(function (filter) { filter.onchange = function () { saveFilters(); render(); }; });
+    page.addEventListener('click', async function (event) {
+      var tab = event.target.closest('[data-view]'); if (tab) { view = tab.dataset.view; saveFilters(); render(); return; }
+      var button = event.target.closest('[data-dashboard-action]'); if (!button) return;
+      var action = button.dataset.dashboardAction;
+      if (action === 'clear') { view = 'all'; modeFilter.value = ''; strategyFilter.value = ''; saveFilters(); render(); return; }
+      var row = button.closest('[data-id]'), b = row && batches.find(function (item) { return item.batch_id === row.dataset.id; }); if (!b) return;
+      var r = revision;
+      if (action === 'zip') { await util.download(fetcher, util.api(b) + '/download.zip', 'batch-' + b.batch_id + '.zip', button, function () { return revision === r; }); return; }
+      button.disabled = true;
+      try {
+        var result = await util.visibility(fetcher, b.batch_id, !b.archived);
+        if (r !== revision) return;
+        // Invalidate an earlier list response before changing local visibility.
+        revision++; running = null; r = revision;
+        var previous = !!b.archived; batches = batches.map(function (item) { return item.batch_id === b.batch_id ? Object.assign({}, item, result) : item; }); render();
+        document.querySelector('[data-view="' + view + '"]').focus({ preventScroll: true });
+        schedule();
+        util.notice(result.archived ? 'Batch archived. Results are still available.' : 'Batch restored.', 'Undo', async function () {
+          if (r !== revision) return;
+          var restored = await util.visibility(fetcher, b.batch_id, previous);
+          if (r !== revision) return;
+          revision++; running = null; batches = batches.map(function (item) { return item.batch_id === b.batch_id ? Object.assign({}, item, restored) : item; }); render(); schedule();
+        });
+      } catch (e) { if (r === revision) util.notice(e.message); }
+      finally { button.disabled = false; }
     });
+    window.addEventListener('popstate', function () { readFilters(); render(); });
+    document.addEventListener('visibilitychange', schedule);
   }
-
-  function boot() {
-    enhanceDashboardSelect(modeFilter);
-    enhanceDashboardSelect(strategyFilter);
-    enhanceDashboardSelect(statusFilter);
-    document.addEventListener('click', function (event) {
-      if (event.target && event.target.closest('.batch-dashboard-select')) return;
-      closeBatchDashboardSelectMenus();
-    });
-    document.addEventListener('keydown', function (event) {
-      if (event.key !== 'Escape') return;
-      closeBatchDashboardSelectMenus();
-    });
-    wireEvents();
-    if (auth) {
-      bootstrap.onAuthStateReady(auth, function () {
-        accountRevision += 1;
-        clearAccountRows();
-        loadBatches(false);
-      });
-    } else {
-      loadBatches(false);
-    }
-    schedulePolling();
+  function accountChanged() {
+    revision++; clearTimeout(timer); running = null; batches = []; loaded = false; lastList = '';
+    var toast = document.getElementById('batch-notice'); if (toast) toast.hidden = true;
+    if (rowsNode) rowsNode.replaceChildren();
+    if (errorNode) { errorNode.hidden = true; errorNode.textContent = ''; }
+    if (detail) detail.clear();
+    gate.hidden = !!uid(); content.hidden = !uid();
+    if (!uid()) return;
+    if (detail) detail.start({ batch_id: id, status: 'queued', batch_title: 'Loading batch…' });
+    else load();
   }
-
-  boot();
+  if (auth) bootstrap.onAuthStateReady(auth, accountChanged); else accountChanged();
 })();

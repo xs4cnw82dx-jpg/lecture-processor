@@ -19,6 +19,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/batch-mode.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/batch-dashboard.css') }}">
 </head>
 <body data-forced-mode="{{ forced_mode or '' }}" data-instant-batch="{{ '1' if instant_mode else '0' }}">
   {% include '_app_shell.html' %}
@@ -64,6 +65,8 @@
         <a href="{{ mode_prefix }}_text_combine" class="mode-link{% if forced_mode == 'text-combine' %} active{% endif %}"{% if forced_mode == 'text-combine' %} aria-current="page"{% endif %}>Combine Text</a>
       </div>
     </section>
+
+    <section class="shell-panel" id="batch-status-panel" tabindex="-1" aria-label="Batch status" hidden></section>
 
     <section class="shell-panel">
       <form id="batch-form" class="batch-form" novalidate>
@@ -163,33 +166,6 @@
       </form>
     </section>
 
-    <section class="shell-panel" id="batch-status-panel" hidden>
-      <div class="status-head">
-        <h2>Batch status</h2>
-        <div>
-          <button type="button" id="refresh-status-btn" class="btn">Refresh</button>
-          <button type="button" id="download-zip-btn" class="btn" hidden>Download ZIP</button>
-        </div>
-      </div>
-      <p class="status-note">You can safely leave this page. API usage includes status polling requests.</p>
-      <div id="batch-status-banner" class="batch-status-banner" hidden></div>
-      <div id="batch-summary" class="batch-summary"></div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th id="status-row-header">Lecture</th>
-              <th>Status</th>
-              <th>In Tokens</th>
-              <th>Out Tokens</th>
-              <th>Total Tokens</th>
-              <th>Downloads</th>
-            </tr>
-          </thead>
-          <tbody id="batch-rows-body"></tbody>
-        </table>
-      </div>
-    </section>
   </main>
   {% include '_shell_footer.html' %}
   </div>
@@ -204,6 +180,7 @@
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+  <script src="{{ url_for('static', filename=batch_status_js_asset or 'js/batch-status.js') }}"></script>
   <script src="{{ url_for('static', filename=batch_mode_js_asset or 'js/batch-mode.js') }}"></script>
 </body>
 </html>

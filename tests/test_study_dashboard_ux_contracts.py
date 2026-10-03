@@ -246,13 +246,13 @@ def test_batch_dashboard_has_clear_empty_and_error_states():
     batch_dashboard_js = _read('static/js/batch-dashboard.js')
     batch_dashboard_css = _read('static/css/batch-dashboard.css')
 
-    assert 'function emptyStateCopy(isActiveTable)' in batch_dashboard_js
-    assert 'Running batches will appear here while they process.' in batch_dashboard_js
-    assert 'Completed and failed batches will appear here after you run one.' in batch_dashboard_js
-    assert 'function renderLoadError(message)' in batch_dashboard_js
-    assert 'data-action="retry-load"' in batch_dashboard_js
-    assert 'renderLoadError(message);' in batch_dashboard_js
-    assert '.batch-empty-state.error' in batch_dashboard_css
+    assert 'No batches yet' in batch_dashboard_js
+    assert 'No matches' in batch_dashboard_js
+    assert 'Clear filters' in batch_dashboard_js
+    assert 'Couldn’t refresh.' in batch_dashboard_js
+    assert "retry.textContent = 'Retry'" in batch_dashboard_js
+    assert 'if (!loaded)' in batch_dashboard_js
+    assert '.bs-refresh-error' in batch_dashboard_css
 
 
 def test_batch_downloads_use_authenticated_fetch_instead_of_new_tabs():
@@ -260,31 +260,25 @@ def test_batch_downloads_use_authenticated_fetch_instead_of_new_tabs():
     batch_dashboard_template = _read('templates/batch_dashboard.html')
     batch_mode_js = _read('static/js/batch-mode.js')
     batch_dashboard_js = _read('static/js/batch-dashboard.js')
+    status_js = _read('static/js/batch-status.js')
 
-    assert batch_mode_template.index("filename='js/download-utils.js'") < batch_mode_template.index("batch_mode_js_asset")
-    assert batch_dashboard_template.index("filename='js/download-utils.js'") < batch_dashboard_template.index("batch_dashboard_js_asset")
+    for template, entry in ((batch_mode_template, 'batch_mode_js_asset'), (batch_dashboard_template, 'batch_dashboard_js_asset')):
+        assert template.index("filename='js/download-utils.js'") < template.index('batch_status_js_asset')
+        assert template.index('batch_status_js_asset') < template.index(entry)
 
-    for source in (batch_mode_js, batch_dashboard_js):
-        assert 'var downloadUtils = window.LectureProcessorDownload || {};' in source
-        assert 'function downloadAuthenticatedFile(path, fallbackName, button)' in source
-        assert 'return authClient.authFetch(path, options, { retryOn401: true });' in source
-        assert 'downloadUtils.downloadResponseBlob(response, fallbackName)' in source
-        assert 'function isProtectedBatchDownload(href)' in source
-
-    assert re.search(r"downloadAuthenticatedFile\(\s*apiBase \+ '/' \+ encodeURIComponent\(batchId\) \+ '/download\.zip'", batch_dashboard_js)
-    assert re.search(r"downloadAuthenticatedFile\(\s*batchApiBase \+ '/' \+ encodeURIComponent\(currentBatchId\) \+ '/download\.zip'", batch_mode_js)
-    assert re.search(r"downloadAuthenticatedFile\(\s*batchApiBase \+ '/' \+ encodeURIComponent\(currentBatchId\) \+ '/rows/' \+ encodeURIComponent\(rowId\) \+ '/download-docx'", batch_mode_js)
-    assert re.search(r"downloadAuthenticatedFile\(\s*batchApiBase \+ '/' \+ encodeURIComponent\(currentBatchId\) \+ '/rows/' \+ encodeURIComponent\(rowId\) \+ '/download-flashcards-csv\?type=flashcards'", batch_mode_js)
-    assert re.search(r"downloadAuthenticatedFile\(\s*batchApiBase \+ '/' \+ encodeURIComponent\(currentBatchId\) \+ '/rows/' \+ encodeURIComponent\(rowId\) \+ '/download-flashcards-csv\?type=test'", batch_mode_js)
-
-    forbidden_download_openers = [
-        "window.open(batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/download.zip'",
-        "window.open(batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/rows/'",
-        "window.open(apiBase + '/' + encodeURIComponent(batchId) + '/download.zip'",
-    ]
-    for snippet in forbidden_download_openers:
-        assert snippet not in batch_mode_js
-        assert snippet not in batch_dashboard_js
+    # The two views now share one authenticated downloader rather than copying it.
+    assert 'fetch: authFetch' in batch_mode_js
+    assert 'return authClient.authFetch(path, options, { retryOn401: true });' in batch_mode_js
+    assert 'fetch: fetcher' in batch_dashboard_js
+    assert 'client.authFetch(path, options, { retryOn401: true })' in batch_dashboard_js
+    assert 'util.download(fetcher, util.api(b)' in batch_dashboard_js
+    assert 'async function download(fetcher, path, name, button, isCurrent)' in status_js
+    assert 'var response = await fetcher(path);' in status_js
+    assert 'downloadResponseBlob(wrapped, name)' in status_js
+    assert 'if (isCurrent && !isCurrent()) return;' in status_js
+    for endpoint in ('/download.zip', '/download-docx', '/download-flashcards-csv?type='):
+        assert endpoint in status_js
+    assert 'window.open(' not in status_js
 
 
 def test_study_supports_voice_notes_folder_deep_link():

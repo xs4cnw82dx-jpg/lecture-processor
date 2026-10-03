@@ -4,54 +4,7 @@ const path = require('node:path');
 
 test.use({ serviceWorkers: 'block' });
 
-async function installAccountFixture(page) {
-  const requests = [];
-  const browserErrors = [];
-  page.on('pageerror', (error) => browserErrors.push(error.message));
-  await page.addInitScript(() => {
-    const listeners = [];
-    const users = {};
-    function userFor(uid) {
-      if (!uid) return null;
-      if (!users[uid]) users[uid] = {
-        uid, email: uid + '@example.test', emailVerified: true, displayName: 'Student ' + uid,
-        getIdToken: () => Promise.resolve('token-' + uid),
-      };
-      return users[uid];
-    }
-    const auth = {
-      currentUser: userFor('a'),
-      setPersistence: () => Promise.resolve(),
-      authStateReady: () => Promise.resolve(),
-      onAuthStateChanged(callback) {
-        listeners.push(callback);
-        queueMicrotask(() => callback(auth.currentUser));
-        return () => { const index = listeners.indexOf(callback); if (index >= 0) listeners.splice(index, 1); };
-      },
-      switchTo(uid) { auth.currentUser = userFor(uid); listeners.slice().forEach((callback) => callback(auth.currentUser)); },
-      signOut() { auth.switchTo(null); return Promise.resolve(); },
-    };
-    function authFactory() { return auth; }
-    authFactory.Auth = { Persistence: { LOCAL: 'local' } };
-    window.firebase = { app: () => ({}), initializeApp: () => ({}), auth: authFactory };
-    window.testAccount = auth;
-  });
-  await page.route('https://www.gstatic.com/firebasejs/**', (route) => route.fulfill({ contentType: 'application/javascript', body: '' }));
-  // Exercise the working sources even before the shared build regenerates assets.
-  await page.route(/\/static\/js\/(buy-credits|batch-dashboard|batch-mode|voice-notes)(\.min)?\.js(?:\?.*)?$/, (route) => {
-    const name = new URL(route.request().url()).pathname.split('/').pop().replace('.min.js', '.js');
-    return route.fulfill({ contentType: 'application/javascript', path: path.resolve('static/js', name) });
-  });
-  await page.route('**/api/**', (route) => {
-    const request = route.request();
-    requests.push({ path: new URL(request.url()).pathname, method: request.method(), authorization: request.headers().authorization });
-    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({
-      user: { uid: 'a', display_name: 'Student', credits: { lecture: 10, slides: 10 } },
-      preferences: {}, purchases: [], batches: [], voice_notes: [],
-    }) });
-  });
-  return { requests, browserErrors };
-}
+const { installAccountFixture } = require('./helpers/batch-fixture');
 
 async function installVoiceFixture(page) {
   const fixture = await installAccountFixture(page);
@@ -163,33 +116,34 @@ test('batch dashboard removes private rows immediately and ignores a pending old
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ batches: [{ batch_id: isA ? 'batch-a' : 'batch-b', batch_title: isA ? 'Private A batch' : 'B batch', mode: 'lecture-notes', status: 'complete', total_rows: 2, completed_rows: 2 }] }) });
   });
   await page.goto('/batch_status');
-  await expect(page.locator('#batch-dashboard-recent-body')).toContainText('Private A batch');
+  await expect(page.locator('#batch-dashboard-rows')).toContainText('Private A batch');
   delayA = true;
   await page.locator('#batch-dashboard-refresh-btn').click();
   await expect.poll(() => pendingA).toBe(true);
   await page.evaluate(() => window.testAccount.switchTo(null));
-  await expect(page.locator('#batch-dashboard-recent-body')).not.toContainText('Private A');
+  await expect(page.locator('#batch-dashboard-rows')).not.toContainText('Private A');
   await page.evaluate(() => window.testAccount.switchTo('b'));
-  await expect(page.locator('#batch-dashboard-recent-body')).toContainText('B batch');
+  await expect(page.locator('#batch-dashboard-rows')).toContainText('B batch');
   releaseA();
-  await expect(page.locator('#batch-dashboard-recent-body')).not.toContainText('Private A');
+  await expect(page.locator('#batch-dashboard-rows')).not.toContainText('Private A');
   expect(fixture.browserErrors).toEqual([]);
 });
 
-test('batch status and draft fields clear when a different user enters the open page', async ({ page }) => {
+test('batch details clear when a different user enters the open page', async ({ page }) => {
   const fixture = await installAccountFixture(page);
-  await page.route('**/api/batch/jobs/private-batch', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({
-    batch_id: 'private-batch', batch_title: 'Private A batch', status: 'complete', total_rows: 2,
-    status_message: 'Private A result', rows: [],
-  }) }));
+  await page.route('**/api/batch/jobs/private-batch?*', (route) => route.fulfill({
+    status: route.request().headers().authorization === 'Bearer token-a' ? 200 : 403,
+    contentType: 'application/json', body: JSON.stringify(route.request().headers().authorization === 'Bearer token-a' ? {
+      batch_id: 'private-batch', batch_title: 'Private A batch', status: 'error', total_rows: 2,
+      error_message: 'Private A result', rows: [],
+    } : { error: 'Not authorized' })
+  }));
   await page.goto('/batch_mode?batch_id=private-batch');
-  await expect(page.locator('#batch-status-panel')).toContainText('Private A result');
-  await page.locator('#batch-title').fill('Private draft title');
+  await expect(page).toHaveURL(/batch_status\/private-batch/);
+  await expect(page.locator('#batch-detail')).toContainText('Private A result');
   await page.evaluate(() => window.testAccount.switchTo('b'));
-  await expect(page.locator('#batch-status-panel')).toBeHidden();
-  await expect(page.locator('#batch-status-panel')).not.toContainText('Private A');
-  await expect(page.locator('#batch-title')).toHaveValue('');
-  await expect(page).not.toHaveURL(/private-batch/);
+  await expect(page.locator('#batch-detail')).not.toContainText('Private A');
+  await expect(page.locator('#batch-detail')).toContainText('Not authorized');
   expect(fixture.browserErrors).toEqual([]);
 });
 
