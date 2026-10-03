@@ -84,6 +84,7 @@ def _serialize_goal(raw):
         'exam_date': str(source.get('exam_date', '') or ''),
         'pack_ids': list(source.get('pack_ids', []) if isinstance(source.get('pack_ids'), list) else []),
         'notes_minutes_by_pack': dict(source.get('notes_minutes_by_pack', {}) if isinstance(source.get('notes_minutes_by_pack'), dict) else {}),
+        'schedule_preferences': dict(source.get('schedule_preferences') or {}),
         'status': str(source.get('status', 'active') or 'active'),
         'revision': revision if revision >= 0 else 0,
         'created_at': _safe_float(source.get('created_at', 0)),
@@ -163,7 +164,12 @@ def _recent_activity_context(app_ctx, uid):
         start_ts=app_ctx.time.time() - (90 * 24 * 60 * 60),
     )
     notes_minutes_by_pack = {}
+    activities = [item for item in activities if not item.get('revoked_at') and item.get('source') != 'offline']
     for activity in activities:
+        if activity.get('notes_seconds'):
+            pack_id = str(activity.get('pack_id', '') or '')
+            notes_minutes_by_pack[pack_id] = notes_minutes_by_pack.get(pack_id, 0) + int(activity['notes_seconds']) // 60
+            continue
         mode = str(activity.get('mode', '') or '').strip().lower()
         if mode not in {'notes', 'read', 'reading'}:
             continue
@@ -265,11 +271,11 @@ def _migrate_legacy_folder_goals(app_ctx, uid, preferences):
     return updated
 
 
-def _session_records(app_ctx, uid, start_date='', end_date='', limit=400):
+def _session_records(app_ctx, uid, start_date='', end_date='', limit=2000):
     records = app_ctx.repositories.planner.list_planner_sessions_by_uid(
         app_ctx.db,
         uid,
-        min(400, max(1, int(limit or 400))),
+        min(2001, max(1, int(limit or 2000))),
         start_date=start_date or None,
     )
     sessions = []
@@ -295,6 +301,8 @@ def _activity_summary(app_ctx, uid, start_ts, sessions, goals, workloads_by_pack
     activities = app_ctx.repositories.planner.list_study_activity_by_uid(app_ctx.db, uid, 500, start_ts=start_ts)
     metrics = {'minutes': 0, 'cards_reviewed': 0, 'questions_answered': 0, 'correct': 0, 'incorrect': 0}
     for item in activities:
+        if item.get('revoked_at'):
+            continue
         cleaned = study_plan.activity_metrics(item.get('metrics', {}))
         for key in metrics:
             metrics[key] += cleaned[key]
@@ -304,7 +312,8 @@ def _activity_summary(app_ctx, uid, start_ts, sessions, goals, workloads_by_pack
         and (not period_end_date or item.get('date', '') <= period_end_date)
     ]
     planned_minutes = sum(int(item.get('duration', 0) or 0) for item in period_sessions if item.get('status') != 'cancelled')
-    completed_minutes = sum(int(item.get('duration', 0) or 0) for item in period_sessions if item.get('status') == 'completed')
+    completed_minutes = metrics['minutes']
+    offline_minutes = sum(study_plan.activity_metrics(item.get('metrics', {}))['minutes'] for item in activities if item.get('source') == 'offline' and not item.get('revoked_at'))
     total_answers = metrics['correct'] + metrics['incorrect']
     per_goal = []
     for goal in goals:
@@ -312,9 +321,10 @@ def _activity_summary(app_ctx, uid, start_ts, sessions, goals, workloads_by_pack
         goal_pack_workloads = (goal_workloads or {}).get(goal.get('goal_id'), workloads_by_pack)
         remaining = sum(int((goal_pack_workloads.get(pack_id) or {}).get('total_minutes', 0) or 0) for pack_id in pack_ids)
         scheduled_future = sum(
-            int(item.get('duration', 0) or 0)
+            int(item.get('coverage_minutes', item.get('duration', 0)) or 0)
             for item in sessions
             if item.get('goal_id') == goal.get('goal_id') and item.get('status') == 'planned'
+            and (not item.get('starts_at_utc') or datetime.fromisoformat(item['starts_at_utc'].replace('Z', '+00:00')).timestamp() >= app_ctx.time.time())
         )
         total_outcomes = sum(
             int((goal_pack_workloads.get(pack_id) or {}).get('flashcards_total', 0) or 0)
@@ -335,7 +345,7 @@ def _activity_summary(app_ctx, uid, start_ts, sessions, goals, workloads_by_pack
             'remaining_minutes': remaining,
             'scheduled_minutes': scheduled_future,
             'on_track': scheduled_future >= remaining if remaining else True,
-            'needs_rebalance': abs(scheduled_future - remaining) >= 45,
+            'needs_rebalance': remaining - scheduled_future >= 45,
             'mastery_percent': mastery_percent,
             'readiness_percent': round((mastery_percent + coverage_percent) / 2) if total_outcomes else coverage_percent,
         })
@@ -349,6 +359,8 @@ def _activity_summary(app_ctx, uid, start_ts, sessions, goals, workloads_by_pack
     global_mastered = sum(int(item.get('mastered_cards', 0) or 0) + int(item.get('mastered_questions', 0) or 0) for item in workloads_by_pack.values())
     return {
         **metrics,
+        'offline_minutes': offline_minutes,
+        'tracked_minutes': max(0, completed_minutes - offline_minutes),
         'planned_minutes': planned_minutes,
         'completed_minutes': completed_minutes,
         'accuracy_percent': round((metrics['correct'] / total_answers) * 100) if total_answers else 0,
@@ -439,7 +451,7 @@ def get_bootstrap(app_ctx, request):
         week_start = date.fromisoformat(today) - timedelta(days=date.fromisoformat(today).weekday())
         week_end = week_start + timedelta(days=6)
         progress_end = max([week_end.isoformat()] + [goal['exam_date'] for goal in active_goals])
-        progress_sessions = _session_records(app_ctx, uid, week_start.isoformat(), progress_end, 400)
+        progress_sessions = _session_records(app_ctx, uid, week_start.isoformat(), progress_end, 2000)
         progress = _activity_summary(
             app_ctx,
             uid,
@@ -622,12 +634,26 @@ def preview_plan(app_ctx, request):
         return app_ctx.jsonify({'error': 'One or more study packs could not be found.'}), 400
     current_preferences = _preferences(app_ctx, uid)
     requested_preferences = body.get('preferences') if isinstance(body.get('preferences'), dict) else {}
-    preferences = study_plan.sanitize_preferences(requested_preferences, existing=current_preferences)
+    preferences = study_plan.sanitize_preferences(requested_preferences, existing=existing_goal.get('schedule_preferences') or current_preferences)
     preferences['availability_configured'] = True
+    goal['schedule_preferences'] = dict(preferences)
     now = datetime.fromtimestamp(now_ts, timezone.utc)
     today = _today_for_timezone(preferences['timezone'], now=now)
     if goal['exam_date'] <= today:
         return app_ctx.jsonify({'error': 'The exam date must be after today.'}), 400
+    if (date.fromisoformat(goal['exam_date']) - date.fromisoformat(today)).days > 366:
+        return app_ctx.jsonify({'error': 'Choose a deadline within the next year. You can extend your plan later.'}), 400
+    if preferences['cadence'] == 'daily' and not study_plan.TIME_RE.match(str(requested_preferences.get('daily_start', preferences['daily_start']))):
+        return app_ctx.jsonify({'error': 'Choose a valid daily start time.'}), 400
+    if preferences['cadence'] != 'daily':
+        requested_windows = requested_preferences.get('availability', preferences['availability'])
+        if not isinstance(requested_windows, list) or not preferences['availability'] or len(preferences['availability']) != len(requested_windows):
+            return app_ctx.jsonify({'error': 'Check every selected day: enter a valid start and end time.'}), 400
+        for window in preferences['availability']:
+            start_minutes = int(window['start'][:2]) * 60 + int(window['start'][3:])
+            end_minutes = int(window['end'][:2]) * 60 + int(window['end'][3:])
+            if end_minutes - start_minutes < preferences['default_session_minutes']:
+                return app_ctx.jsonify({'error': 'Each availability window must fit your full session length. Extend the window or shorten your sessions.'}), 400
     states = _pack_states(app_ctx, uid, goal['pack_ids'])
     pace, completed_notes = _recent_activity_context(app_ctx, uid)
     workloads = [
@@ -643,33 +669,42 @@ def preview_plan(app_ctx, request):
         for pack_id in goal['pack_ids']
         if pack_id in packs_by_id
     ]
-    future_sessions = _session_records(app_ctx, uid, today, goal['exam_date'], 400)
+    all_future_sessions = _session_records(app_ctx, uid, today, limit=2001)
+    if len(all_future_sessions) > 2000:
+        return app_ctx.jsonify({'error': 'There are too many future sessions to safely replace this plan. Contact support for help.'}), 409
+    future_sessions = [item for item in all_future_sessions if item['date'] < goal['exam_date']]
     occupied = [
         item for item in future_sessions
         if item.get('goal_id') != goal_id
         or item.get('locked')
+        or item.get('active_run_id')
         or item.get('origin') != 'automatic'
         or item.get('status') != 'planned'
     ]
     proposal_id = _new_id('proposal')
-    preview = study_plan.generate_schedule(
-        goal=goal,
-        pack_workloads=workloads,
-        preferences=preferences,
-        start_date=today,
-        occupied=occupied,
-        proposal_id=proposal_id,
-        now=now,
-    )
+    try:
+        preview = study_plan.generate_schedule(
+            goal=goal, pack_workloads=workloads, preferences=preferences, start_date=today,
+            occupied=occupied, proposal_id=proposal_id, now=now,
+        )
+    except ValueError as error:
+        return app_ctx.jsonify({'error': str(error)}), 400
     proposal = {
         'proposal_id': proposal_id,
         'goal': goal,
         'preferences': preferences,
         'sessions': preview['sessions'],
         'summary': {key: preview[key] for key in ('required_minutes', 'scheduled_minutes', 'shortage_minutes', 'capacity_minutes')},
+        'retained_sessions': preview.get('retained_sessions', []),
+        'conflicts': preview.get('conflicts', []),
+        'excluded_dates': preview.get('excluded_dates', []),
+        'can_apply': not preview.get('conflicts') and bool(preview['sessions'] or preview.get('retained_sessions')),
         'pace': pace,
         'base_goal_revision': int(existing_goal.get('revision', 0) or 0),
         'base_preferences_revision': int(current_preferences.get('revision', 0) or 0),
+        'base_session_versions': {item['id']: int(item.get('revision', 0)) for item in all_future_sessions},
+        'base_session_runs': {item['id']: item['active_run_id'] for item in all_future_sessions if item.get('active_run_id')},
+        'schedule_start_date': today,
         'created_at': now_ts,
         'expires_at': now_ts + PROPOSAL_TTL_SECONDS,
         'applied_at': 0,
@@ -710,47 +745,56 @@ def apply_plan(app_ctx, request):
     current_preferences = _preferences(app_ctx, uid)
     if int(current_preferences.get('revision', 0) or 0) != int(proposal.get('base_preferences_revision', 0) or 0):
         return app_ctx.jsonify({'error': 'Availability changed after this preview.', 'code': 'revision_conflict'}), 409
+    if proposal.get('can_apply') is False or proposal.get('conflicts'):
+        return app_ctx.jsonify({'error': 'Resolve the scheduling conflicts and generate a new preview before accepting.'}), 409
     now_ts = app_ctx.time.time()
     goal.update({'uid': uid, 'revision': int(current_goal.get('revision', 0) or 0) + 1, 'updated_at': now_ts})
     preferences = dict(proposal.get('preferences') or {})
     preferences.update({'uid': uid, 'revision': int(current_preferences.get('revision', 0) or 0) + 1, 'migration_v1_complete': True, 'availability_configured': True, 'updated_at': now_ts})
-    today = _today_for_timezone(preferences['timezone'])
-    cancellations = []
-    for existing in _session_records(app_ctx, uid, today, goal['exam_date'], 250):
-        if existing.get('goal_id') == goal['goal_id'] and existing.get('origin') == 'automatic' and not existing.get('locked') and existing.get('status') == 'planned':
-            existing.update({'status': 'cancelled', 'revision': int(existing.get('revision', 0) or 0) + 1, 'updated_at': now_ts})
-            cancellations.append({**existing, 'uid': uid})
+    today = proposal.get('schedule_start_date') or _today_for_timezone(preferences['timezone'])
+    current_sessions = _session_records(app_ctx, uid, today, limit=2001)
+    if ({item['id']: int(item.get('revision', 0)) for item in current_sessions} != proposal.get('base_session_versions', {})
+            or {item['id']: item['active_run_id'] for item in current_sessions if item.get('active_run_id')} != proposal.get('base_session_runs', {})):
+        return app_ctx.jsonify({'error': 'Your schedule changed after this preview. Generate a fresh preview to keep those changes.', 'code': 'revision_conflict'}), 409
+    replaceable = [item for item in current_sessions if item.get('goal_id') == goal['goal_id'] and item.get('origin') == 'automatic' and not item.get('locked') and not item.get('active_run_id') and item.get('status') == 'planned']
     session_payloads = []
-    for raw in proposal.get('sessions', [])[:200]:
+    changed_payloads = []
+    retained_ids = set()
+    stable_fields = ('date', 'time', 'duration', 'pack_id', 'title', 'planned_outcomes', 'timezone', 'coverage_minutes', 'revision_minutes', 'study_intent')
+    for raw in proposal.get('sessions', []):
         safe, validation_error = legacy_models.sanitize_session_payload(raw, session_id=raw.get('id', ''), now_ts=now_ts, runtime=app_ctx)
         if safe is None or validation_error:
-            continue
-        safe.update({'uid': uid, 'revision': 1})
+            return app_ctx.jsonify({'error': 'A proposed session is invalid. Generate a fresh preview.'}), 409
+        same = next((item for item in replaceable if item['id'] not in retained_ids and all(item.get(key) == safe.get(key) for key in stable_fields)), None)
+        if same:
+            safe = dict(same)
+            retained_ids.add(same['id'])
+        else:
+            safe.update({'uid': uid, 'revision': 1})
+            changed_payloads.append(safe)
         session_payloads.append(safe)
+    cancellations = []
+    for existing in replaceable:
+        if existing['id'] not in retained_ids:
+            cancellations.append({**existing, 'uid': uid, 'status': 'cancelled', 'cancellation_reason': 'replaced', 'revision': int(existing.get('revision', 0)) + 1, 'updated_at': now_ts})
+    if len(changed_payloads) + len(cancellations) + 4 > 500:
+        return app_ctx.jsonify({'error': 'This change replaces too many sessions at once. Shorten the planning period or contact support; your current plan has not changed.'}), 409
     proposal.update({
         'applied_at': now_ts,
         'applied_session_ids': [item['id'] for item in session_payloads],
         'goal': goal,
         'idempotency_key': idempotency_key,
     })
-    if app_ctx.db is not None and hasattr(app_ctx.db, 'batch'):
-        batch = app_ctx.db.batch()
-        batch.set(app_ctx.repositories.planner.study_goal_doc_ref(app_ctx.db, goal['goal_id']), goal)
-        batch.set(app_ctx.repositories.planner.study_plan_preferences_doc_ref(app_ctx.db, uid), preferences)
-        for existing in cancellations:
-            batch.set(app_ctx.repositories.planner.planner_session_doc_ref(app_ctx.db, uid, existing['id']), existing)
-        for safe in session_payloads:
-            batch.set(app_ctx.repositories.planner.planner_session_doc_ref(app_ctx.db, uid, safe['id']), safe)
-        batch.set(app_ctx.repositories.planner.study_plan_proposal_doc_ref(app_ctx.db, uid), {**proposal, 'uid': uid})
-        batch.commit()
-    else:
-        app_ctx.repositories.planner.set_study_goal(app_ctx.db, uid, goal['goal_id'], goal, merge=False)
-        app_ctx.repositories.planner.set_study_plan_preferences(app_ctx.db, uid, preferences, merge=False)
-        for existing in cancellations:
-            app_ctx.repositories.planner.set_planner_session(app_ctx.db, uid, existing['id'], existing, merge=False)
-        for safe in session_payloads:
-            app_ctx.repositories.planner.set_planner_session(app_ctx.db, uid, safe['id'], safe, merge=False)
-        app_ctx.repositories.planner.set_study_plan_proposal(app_ctx.db, uid, proposal)
+    from lecture_processor.repositories import planner_repo as planner_repository
+    from lecture_processor.services import calendar_sync_service
+    try:
+        app_ctx.repositories.planner.commit_study_plan(
+            app_ctx.db, uid, proposal=proposal, goal=goal, preferences=preferences,
+            sessions=changed_payloads, cancellations=cancellations, start_date=today,
+            mark_dirty=lambda **kwargs: calendar_sync_service.mark_dirty(app_ctx, uid, **kwargs),
+        )
+    except planner_repository.PlannerRevisionConflict:
+        return app_ctx.jsonify({'error': 'Your plan changed while saving. Generate a fresh preview.', 'code': 'revision_conflict'}), 409
     return app_ctx.jsonify({'ok': True, 'goal': _serialize_goal(goal), 'session_ids': proposal['applied_session_ids'], 'replayed': False})
 
 
@@ -768,11 +812,21 @@ def update_plan_item(app_ctx, request, session_id):
     existing_snapshot = app_ctx.repositories.planner.get_planner_session(app_ctx.db, uid, safe_id)
     existing = existing_snapshot.to_dict() if existing_snapshot.exists else {}
     body = request.get_json(silent=True) or {}
+    if body.get('status') == 'completed' and existing.get('status') != 'completed':
+        return app_ctx.jsonify({'error': 'Use Log study done or finish a tracked session.'}), 400
+    if existing.get('status') == 'completed' and body.get('status', 'completed') != 'completed':
+        return app_ctx.jsonify({'error': 'Use Reopen session to undo completion.'}), 400
+    for protected in ('active_run_id', 'completion', 'completion_generation'):
+        body.pop(protected, None)
     if existing and 'revision' in body and _safe_revision(body.get('revision')) != _safe_revision(existing.get('revision', 0)):
         return app_ctx.jsonify({'error': 'This session changed in another tab.', 'code': 'revision_conflict', 'session': existing}), 409
     merged = dict(existing)
     merged.update(body)
     merged['id'] = safe_id
+    if existing and body.get('status') == 'cancelled':
+        merged['cancellation_reason'] = 'user_removed'
+    elif existing.get('status') == 'cancelled' and body.get('status') in {'planned', 'skipped'}:
+        merged['cancellation_reason'] = ''
     if not existing:
         merged.setdefault('origin', 'manual')
         merged.setdefault('locked', True)
@@ -781,9 +835,17 @@ def update_plan_item(app_ctx, request, session_id):
         return app_ctx.jsonify({'error': validation_error}), 400
     if safe.get('pack_id') and safe['pack_id'] not in _owned_pack_ids(app_ctx, uid, [safe['pack_id']]):
         return app_ctx.jsonify({'error': 'Study pack not found.'}), 400
-    safe['starts_at_utc'] = _starts_at_utc(safe['date'], safe['time'], _preferences(app_ctx, uid)['timezone'])
+    safe['timezone'] = study_plan.sanitize_timezone(existing.get('timezone') or _preferences(app_ctx, uid)['timezone'])
+    unchanged_start = existing.get('date') == safe['date'] and existing.get('time') == safe['time'] and existing.get('starts_at_utc')
+    safe['starts_at_utc'] = existing['starts_at_utc'] if unchanged_start else _starts_at_utc(safe['date'], safe['time'], safe['timezone'])
     safe.update({'uid': uid, 'revision': int(existing.get('revision', 0) or 0) + 1})
-    app_ctx.repositories.planner.set_planner_session(app_ctx.db, uid, safe_id, safe, merge=False)
+    from lecture_processor.repositories import planner_repo as planner_repository
+    try:
+        app_ctx.repositories.planner.set_planner_session_if_revision(app_ctx.db, uid, safe_id, safe, int(existing.get('revision', 0) or 0))
+    except planner_repository.PlannerRevisionConflict:
+        return app_ctx.jsonify({'error': 'This session changed in another tab.', 'code': 'revision_conflict'}), 409
+    from lecture_processor.services import calendar_sync_service
+    calendar_sync_service.mark_dirty(app_ctx, uid)
     return app_ctx.jsonify({'ok': True, 'session': safe}), (200 if existing else 201)
 
 
@@ -804,6 +866,8 @@ def update_activity(app_ctx, request, activity_id):
         return app_ctx.jsonify({'error': 'Study pack not found.'}), 400
     existing_snapshot = app_ctx.repositories.planner.get_study_activity(app_ctx.db, uid, safe_id)
     existing = existing_snapshot.to_dict() if existing_snapshot.exists else {}
+    if existing.get('source') in {'tracked', 'offline'}:
+        return app_ctx.jsonify({'error': 'Use the planned study run endpoint for this activity.'}), 409
     incoming_metrics = study_plan.activity_metrics(body.get('metrics', {}))
     existing_metrics = study_plan.activity_metrics(existing.get('metrics', {}))
     metrics = {key: max(existing_metrics[key], incoming_metrics[key]) for key in incoming_metrics}
@@ -831,15 +895,8 @@ def update_activity(app_ctx, request, activity_id):
         'updated_at': now_ts,
     }
     app_ctx.repositories.planner.set_study_activity(app_ctx.db, uid, safe_id, payload, merge=False)
-    plan_item_id = payload['plan_item_id']
-    if plan_item_id and payload['ended_at'] and sum(metrics.values()) > 0:
-        session_snapshot = app_ctx.repositories.planner.get_planner_session(app_ctx.db, uid, plan_item_id)
-        if session_snapshot.exists:
-            session = session_snapshot.to_dict()
-            session_pack_id = str(session.get('pack_id', '') or '')
-            if not session_pack_id or session_pack_id == payload['pack_id']:
-                session.update({'status': 'completed', 'revision': int(session.get('revision', 0) or 0) + 1, 'updated_at': now_ts})
-                app_ctx.repositories.planner.set_planner_session(app_ctx.db, uid, plan_item_id, session, merge=False)
+    # Ending an activity is not completing a commitment. The explicit completion
+    # endpoint validates targets/time and supports undo without deleting reviews.
     return app_ctx.jsonify({'ok': True, 'activity': payload})
 
 
@@ -851,6 +908,7 @@ def _public_feed_state(raw):
         reminder_offset = 30
     return {
         'feed_id': str(source.get('feed_id', '') or ''),
+        'provider': str(source.get('provider', 'other') or 'other'),
         'name': str(source.get('name', '') or 'Device calendar'),
         'created_at': _safe_float(source.get('created_at', 0)),
         'revoked_at': _safe_float(source.get('revoked_at', 0)),
@@ -883,6 +941,7 @@ def create_calendar_feed(app_ctx, request):
     payload = {
         'feed_id': feed_id,
         'uid': uid,
+        'provider': body.get('provider') if body.get('provider') in {'google', 'apple', 'other'} else 'other',
         'name': name,
         'secret_hash': secret_hash,
         'reminder_offset_minutes': reminder_offset,
@@ -999,20 +1058,23 @@ def get_calendar_feed(app_ctx, request, token):
     today = _today_for_timezone(preferences['timezone'])
     start = (date.fromisoformat(today) - timedelta(days=30)).isoformat()
     end = (date.fromisoformat(today) + timedelta(days=365)).isoformat()
-    sessions = _session_records(app_ctx, uid, start, end, 400)
+    from lecture_processor.services import calendar_sync_service
+    sessions = calendar_sync_service.all_sessions(app_ctx, uid, start, end)
     goals = [_serialize_goal(item) for item in app_ctx.repositories.planner.list_study_goals_by_uid(app_ctx.db, uid, 200)]
-    now_utc = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    def event_stamp(record):
+        timestamp = _safe_float(record.get('updated_at') or record.get('created_at') or feed.get('created_at'))
+        return datetime.fromtimestamp(timestamp, timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Lecture Processor//Study Plan//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:Lecture Processor Study Plan']
     base_url = str(getattr(app_ctx, 'PUBLIC_BASE_URL', '') or request.url_root).rstrip('/')
     reminder = int(feed.get('reminder_offset_minutes', preferences.get('reminder_offset_minutes', 30)) or 0)
     for session in sessions:
-        start_dt = _ics_timestamp(session['date'], session['time'], preferences['timezone'])
+        start_dt = calendar_sync_service.session_start(session, preferences)
         end_dt = start_dt + timedelta(minutes=int(session.get('duration', 45) or 45))
         deep_link = f"{base_url}/study?pack_id={session.get('pack_id', '')}&mode=learn&plan_item_id={session.get('id', '')}" if session.get('pack_id') else f'{base_url}/plan?view=today'
         lines.extend([
             'BEGIN:VEVENT',
             f"UID:{_ics_escape(session['id'])}@lectureprocessor.com",
-            f'DTSTAMP:{now_utc}',
+            f'DTSTAMP:{event_stamp(session)}',
             f"DTSTART:{start_dt.strftime('%Y%m%dT%H%M%SZ')}",
             f"DTEND:{end_dt.strftime('%Y%m%dT%H%M%SZ')}",
             f"SEQUENCE:{int(session.get('revision', 0) or 0)}",
@@ -1025,11 +1087,13 @@ def get_calendar_feed(app_ctx, request, token):
             lines.extend(['BEGIN:VALARM', f'TRIGGER:-PT{reminder}M', 'ACTION:DISPLAY', 'DESCRIPTION:Study session reminder', 'END:VALARM'])
         lines.append('END:VEVENT')
     for goal in goals:
+        if not start <= goal['exam_date'] <= end:
+            continue
         exam_day = date.fromisoformat(goal['exam_date'])
         lines.extend([
             'BEGIN:VEVENT',
             f"UID:goal-{_ics_escape(goal['goal_id'])}@lectureprocessor.com",
-            f'DTSTAMP:{now_utc}',
+            f'DTSTAMP:{event_stamp(goal)}',
             f"DTSTART;VALUE=DATE:{exam_day.strftime('%Y%m%d')}",
             f"DTEND;VALUE=DATE:{(exam_day + timedelta(days=1)).strftime('%Y%m%d')}",
             f"SEQUENCE:{int(goal.get('revision', 0) or 0)}",
@@ -1049,5 +1113,6 @@ def get_calendar_feed(app_ctx, request, token):
     response = Response('\r\n'.join(folded_lines) + '\r\n', status=200, content_type='text/calendar; charset=utf-8')
     response.headers['Content-Disposition'] = 'inline; filename="lecture-processor-study-plan.ics"'
     response.headers['Cache-Control'] = 'private, max-age=300'
-    response.headers['ETag'] = hashlib.sha256(response.get_data()).hexdigest()
+    response.set_etag(hashlib.sha256(response.get_data()).hexdigest())
+    response.make_conditional(request)
     return response

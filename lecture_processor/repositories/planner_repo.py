@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from threading import RLock
 
 from google.api_core.exceptions import NotFound
 
@@ -15,6 +16,85 @@ _GOALS_STORE = {}
 _PROPOSALS_STORE = {}
 _ACTIVITY_STORE = {}
 _CALENDAR_FEED_STORE = {}
+_PLAN_WRITE_LOCK = RLock()
+
+
+class PlannerRevisionConflict(Exception):
+    """A preview or edit no longer matches the committed planner state."""
+
+
+def set_planner_session_if_revision(db, uid, session_id, payload, expected_revision):
+    if db is None:
+        with _PLAN_WRITE_LOCK:
+            current = _memory_session(uid, session_id).to_dict()
+            if int(current.get('revision', 0)) != expected_revision:
+                raise PlannerRevisionConflict()
+            set_planner_session(db, uid, session_id, payload, merge=False)
+        return
+    from google.cloud import firestore
+    ref = planner_session_doc_ref(db, uid, session_id)
+
+    @firestore.transactional
+    def write(transaction):
+        doc = ref.get(transaction=transaction)
+        current = doc.to_dict() or {} if doc.exists else {}
+        if int(current.get('revision', 0)) != expected_revision:
+            raise PlannerRevisionConflict()
+        transaction.set(ref, payload)
+
+    write(db.transaction())
+
+
+def commit_study_plan(db, uid, *, proposal, goal, preferences, sessions, cancellations, start_date, mark_dirty=None):
+    """Validate the complete future schedule and publish a preview atomically."""
+    def check(raw_proposal, raw_goal, raw_preferences, records):
+        versions = {item['id']: int(item.get('revision', 0)) for item in records}
+        runs = {item['id']: item['active_run_id'] for item in records if item.get('active_run_id')}
+        if (raw_proposal.get('proposal_id') != proposal['proposal_id'] or raw_proposal.get('applied_at')
+                or int(raw_goal.get('revision', 0)) != proposal['base_goal_revision']
+                or int(raw_preferences.get('revision', 0)) != proposal['base_preferences_revision']
+                or versions != proposal.get('base_session_versions', {})
+                or runs != proposal.get('base_session_runs', {})):
+            raise PlannerRevisionConflict()
+
+    if db is None:
+        with _PLAN_WRITE_LOCK:
+            check(get_study_plan_proposal(db, uid).to_dict(), get_study_goal(db, uid, goal['goal_id']).to_dict(),
+                  get_study_plan_preferences(db, uid).to_dict(), list_planner_sessions_by_uid(db, uid, 2001, start_date=start_date))
+            set_study_goal(db, uid, goal['goal_id'], goal, merge=False)
+            set_study_plan_preferences(db, uid, preferences, merge=False)
+            for item in cancellations + sessions:
+                set_planner_session(db, uid, item['id'], item, merge=False)
+            set_study_plan_proposal(db, uid, proposal)
+        if mark_dirty:
+            mark_dirty()
+        return
+    from google.cloud import firestore
+
+    @firestore.transactional
+    def write(transaction):
+        proposal_ref = study_plan_proposal_doc_ref(db, uid)
+        goal_ref = study_goal_doc_ref(db, goal['goal_id'])
+        preferences_ref = study_plan_preferences_doc_ref(db, uid)
+        raw_proposal = proposal_ref.get(transaction=transaction).to_dict() or {}
+        raw_goal = goal_ref.get(transaction=transaction).to_dict() or {}
+        raw_preferences = preferences_ref.get(transaction=transaction).to_dict() or {}
+        query = apply_where(apply_where(db.collection('planner_sessions'), 'uid', '==', uid), 'date', '>=', start_date)
+        records = []
+        for doc in transaction.get(query):
+            raw = doc.to_dict() or {}
+            raw.setdefault('id', doc.id.split('__', 1)[-1])
+            records.append(raw)
+        check(raw_proposal, raw_goal, raw_preferences, records)
+        transaction.set(goal_ref, goal)
+        transaction.set(preferences_ref, preferences)
+        for item in cancellations + sessions:
+            transaction.set(planner_session_doc_ref(db, uid, item['id']), item)
+        transaction.set(proposal_ref, {**proposal, 'uid': uid})
+        if mark_dirty:
+            mark_dirty(batch=transaction)
+
+    write(db.transaction())
 
 
 @dataclass

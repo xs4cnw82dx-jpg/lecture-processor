@@ -24,6 +24,7 @@
     proposal: null,
     applyIdempotencyKey: '',
     availabilityPreset: '',
+    wizardPreferences: {},
     wizardSelectedPackIds: new Set(),
     wizardNotesMinutesByPack: {},
     packFilter: 'all',
@@ -265,8 +266,8 @@
       return;
     }
     els.nextTime.textContent = next.date === today ? next.time : formatDate(next.date, { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ' + next.time;
-    els.nextContent.innerHTML = '<h2>' + escapeHtml(next.title) + '</h2><p>' + escapeHtml(sessionOutcomeText(next)) + (next.pack_title ? ' from ' + escapeHtml(next.pack_title) : '') + '</p><div class="next-session-actions"><a class="btn" href="' + escapeHtml(studyLink(next)) + '">Start studying</a><button type="button" class="btn secondary" data-next-complete>Complete</button><button type="button" class="btn secondary" data-next-edit>Reschedule</button></div>';
-    els.nextContent.querySelector('[data-next-complete]').addEventListener('click', function () { updateSessionStatus(next, 'completed'); });
+    els.nextContent.innerHTML = '<h2>' + escapeHtml(next.title) + '</h2><p>' + escapeHtml(sessionOutcomeText(next)) + (next.pack_title ? ' from ' + escapeHtml(next.pack_title) : '') + '</p><div class="next-session-actions"><a class="btn" href="' + escapeHtml(studyLink(next)) + '">Start studying</a><button type="button" class="btn secondary" data-next-complete>Log study done</button><button type="button" class="btn secondary" data-next-edit>Reschedule</button></div>';
+    els.nextContent.querySelector('[data-next-complete]').addEventListener('click', function () { openStudyLog(next); });
     els.nextContent.querySelector('[data-next-edit]').addEventListener('click', function () { openSessionEditor(next); });
   }
   function sortSessions(a, b) { return (a.date + a.time + a.id).localeCompare(b.date + b.time + b.id); }
@@ -284,8 +285,8 @@
     els.goalHealth.innerHTML = '<div class="goal-countdown">' + days + ' <span>days left</span></div><h2>' + escapeHtml(goal.title) + '</h2><p>' + escapeHtml(paceCopy) + 'Deadline: ' + escapeHtml(formatDate(goal.exam_date, { day: 'numeric', month: 'long' })) + '.</p><span class="health-badge ' + (progressGoal.on_track ? 'good' : 'warning') + '">' + (progressGoal.on_track ? 'On track' : 'Needs attention') + '</span>';
   }
   function sessionRow(session) {
-    var statusLabel = session.status === 'completed' ? 'Completed' : session.status === 'skipped' ? 'Skipped' : '';
-    return '<div class="session-row is-' + escapeHtml(session.status) + '" data-session-id="' + escapeHtml(session.id) + '"><div class="session-row-time">' + escapeHtml(session.time) + '<span>' + escapeHtml(minutesLabel(session.duration)) + '</span></div><div><h3>' + escapeHtml(session.title) + '</h3><p>' + escapeHtml(statusLabel || sessionOutcomeText(session)) + (session.locked ? ' · Locked' : '') + '</p></div><div class="session-row-actions">' + (session.status === 'planned' && session.pack_id ? '<a class="btn" href="' + escapeHtml(studyLink(session)) + '">Start</a>' : '') + (session.status === 'planned' ? '<button type="button" class="btn" data-complete>Complete</button><button type="button" class="btn" data-edit>Edit</button>' : '') + '</div></div>';
+    var statusLabel = session.status === 'completed' ? (session.completion && session.completion.source ? session.completion.source === 'offline' ? 'Completed · self-reported study' : 'Completed · tracked study' : 'Completed') : session.status === 'skipped' ? 'Skipped' : '';
+    return '<div class="session-row is-' + escapeHtml(session.status) + '" data-session-id="' + escapeHtml(session.id) + '"><div class="session-row-time">' + escapeHtml(session.time) + '<span>' + escapeHtml(minutesLabel(session.duration)) + '</span></div><div><h3>' + escapeHtml(session.title) + '</h3><p>' + escapeHtml(statusLabel || sessionOutcomeText(session)) + (session.locked ? ' · Locked' : '') + '</p></div><div class="session-row-actions">' + (session.status === 'planned' && session.pack_id ? '<a class="btn" href="' + escapeHtml(studyLink(session)) + '">Start</a>' : '') + (session.status === 'planned' ? '<button type="button" class="btn" data-complete>Log study done</button><button type="button" class="btn" data-edit>Edit</button>' : session.status === 'completed' ? '<button type="button" class="btn" data-reopen>Reopen session</button>' : '') + '</div></div>';
   }
   function renderToday() {
     var today = todayInTimezone();
@@ -295,7 +296,9 @@
       var session = plannedSessions().find(function (item) { return item.id === row.dataset.sessionId; });
       var complete = row.querySelector('[data-complete]');
       var edit = row.querySelector('[data-edit]');
-      if (complete) complete.addEventListener('click', function () { updateSessionStatus(session, 'completed'); });
+      if (complete) complete.addEventListener('click', function () { openStudyLog(session); });
+      var reopen = row.querySelector('[data-reopen]');
+      if (reopen) reopen.addEventListener('click', function () { reopenSession(session); });
       if (edit) edit.addEventListener('click', function () { openSessionEditor(session); });
     });
     var missed = plannedSessions().filter(function (item) { return item.status === 'planned' && item.date < today && item.origin === 'automatic'; });
@@ -343,7 +346,9 @@
       var session = plannedSessions().find(function (item) { return item.id === row.dataset.sessionId; });
       var complete = row.querySelector('[data-complete]');
       var edit = row.querySelector('[data-edit]');
-      if (complete) complete.addEventListener('click', function () { updateSessionStatus(session, 'completed'); });
+      if (complete) complete.addEventListener('click', function () { openStudyLog(session); });
+      var reopen = row.querySelector('[data-reopen]');
+      if (reopen) reopen.addEventListener('click', function () { reopenSession(session); });
       if (edit) edit.addEventListener('click', function () { openSessionEditor(session); });
     });
   }
@@ -351,7 +356,7 @@
   function renderProgress() {
     var progress = (state.data && state.data.progress) || {};
     var metrics = [
-      ['Study time', minutesLabel(progress.completed_minutes || progress.minutes || 0), minutesLabel(progress.planned_minutes || 0) + ' planned'],
+      ['Study time', minutesLabel(progress.completed_minutes || progress.minutes || 0), minutesLabel(progress.tracked_minutes || 0) + ' tracked · ' + minutesLabel(progress.offline_minutes || 0) + ' logged'],
       ['Cards reviewed', Number(progress.cards_reviewed || 0), Number(progress.due_cards || 0) + ' due now'],
       ['Questions answered', Number(progress.questions_answered || 0), Number(progress.correct || 0) + ' correct'],
       ['Accuracy', Number(progress.accuracy_percent || 0) + '%', Number(progress.correct || 0) + ' correct'],
@@ -378,6 +383,7 @@
     renderGoalHealth();
     renderToday();
     renderSchedule();
+    decorateSessionRemoval();
     renderProgress();
     renderFeeds();
     setView(state.view, false);
@@ -415,12 +421,14 @@
   }
   function refreshPrettySelect(select) {
     if (!select || !select._prettyButton) return;
+    select._prettyButton.disabled = select.disabled;
     var option = select.options[select.selectedIndex] || select.options[0];
     var text = option ? option.textContent : 'Choose an option';
     select._prettyButton.querySelector('[data-pretty-select-label]').textContent = text;
     select._prettyButton.setAttribute('aria-label', controlLabel(select) + ': ' + text);
   }
   function openPrettySelect(select) {
+    if (select.disabled) return;
     var button = select._prettyButton;
     var panel = document.createElement('div');
     panel.className = 'select-popover';
@@ -674,16 +682,20 @@
     els.wizardPackSearch.value = '';
     queryAll('[data-pack-filter]').forEach(function (button) { var active = button.dataset.packFilter === 'all'; button.classList.toggle('is-active', active); button.setAttribute('aria-pressed', active ? 'true' : 'false'); });
     var existing = activeGoals().find(function (goal) { return goal.goal_id === state.wizardGoalId; });
+    state.wizardPreferences = Object.assign({}, (existing && existing.schedule_preferences && Object.keys(existing.schedule_preferences).length ? existing.schedule_preferences : state.data.preferences) || {});
+    if (!existing && !state.wizardPreferences.availability_configured) state.wizardPreferences.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
     renderWizardPacks(settings.packIds || (existing ? existing.pack_ids : []), existing ? existing.notes_minutes_by_pack : {});
     els.wizardPersonalPaceNote.hidden = !hasPersonalPace();
     els.wizardTitle.value = existing ? existing.title : '';
     els.wizardDate.value = existing ? existing.exam_date : defaultExamDate();
-    els.wizardDate.min = localDate(addDays(new Date(), 1));
-    els.wizardSessionLength.value = String((state.data.preferences || {}).default_session_minutes || 45);
+    els.wizardDate.min = localDate(addDays(parseDate(todayInTimezone()), 1));
+    els.wizardDate.max = localDate(addDays(parseDate(todayInTimezone()), 366));
+    els.wizardSessionLength.value = String(state.wizardPreferences.default_session_minutes || 45);
+    els.wizardStartTime.value = state.wizardPreferences.daily_start || '17:00';
     refreshPrettySelect(els.wizardSessionLength);
     renderCustomAvailability();
-    var configured = !!((state.data.preferences || {}).availability_configured);
-    chooseAvailabilityPreset(existing || configured ? 'custom' : '', true);
+    var configured = !!state.wizardPreferences.availability_configured;
+    chooseAvailabilityPreset(existing || configured ? (state.wizardPreferences.availability_preset || 'custom') : '', true);
     renderWizardStep();
     openOverlay(els.wizardOverlay);
   }
@@ -692,22 +704,32 @@
     queryAll('[data-wizard-marker]').forEach(function (marker) { marker.classList.toggle('is-active', Number(marker.dataset.wizardMarker) <= state.wizardStep); });
     els.wizardBack.hidden = state.wizardStep === 1;
     els.wizardNext.textContent = state.wizardStep === 4 ? 'Accept this plan' : (state.wizardStep === 3 ? 'Generate schedule' : 'Continue');
-    els.wizardNext.disabled = false;
+    els.wizardNext.disabled = state.wizardStep === 4 && state.proposal && state.proposal.can_apply === false;
   }
   function clearWizardErrors() { [els.wizardPackError, els.wizardGoalError, els.wizardAvailabilityError].forEach(function (item) { item.hidden = true; item.textContent = ''; }); }
+  function clockMinutes(value) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value || '')) ? Number(value.slice(0, 2)) * 60 + Number(value.slice(3)) : NaN; }
+  function presetEndTime() {
+    var end = clockMinutes(els.wizardStartTime.value) + Number(els.wizardSessionLength.value || 45);
+    return Number.isFinite(end) && end < 1440 ? pad(Math.floor(end / 60)) + ':' + pad(end % 60) : '';
+  }
+  function refreshPresetTime() {
+    var end = presetEndTime();
+    var range = end ? els.wizardStartTime.value + '–' + end : 'Choose a valid time';
+    queryAll('[data-preset-time]').forEach(function (item) { item.textContent = (item.dataset.presetTime === 'daily' ? 'Every day' : 'Mon–Fri') + ' · ' + range; });
+    els.wizardTimeSummary.textContent = (state.availabilityPreset === 'daily' ? 'One ' + minutesLabel(els.wizardSessionLength.value) + ' session every day until your deadline, including revision after the first study round.' : 'Sessions fit within ' + range + ' on weekdays, based on your remaining work.') + ' Times are in ' + (state.wizardPreferences.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC') + '.';
+  }
   function availabilityForPreset() {
     if (state.availabilityPreset === 'balanced') return [
       { weekday: 0, start: '17:00', end: '19:00' },
       { weekday: 2, start: '17:00', end: '19:00' },
       { weekday: 5, start: '10:00', end: '12:00' }
     ];
-    if (state.availabilityPreset === 'weekday-evenings') return [0,1,2,3,4].map(function (weekday) { return { weekday: weekday, start: '19:00', end: '21:00' }; });
-    if (state.availabilityPreset === 'daily') return [0,1,2,3,4,5,6].map(function (weekday) { return { weekday: weekday, start: '17:00', end: '19:00' }; });
+    if (state.availabilityPreset === 'weekday-evenings' || state.availabilityPreset === 'daily') return (state.availabilityPreset === 'daily' ? [0,1,2,3,4,5,6] : [0,1,2,3,4]).map(function (weekday) { return { weekday: weekday, start: els.wizardStartTime.value, end: presetEndTime() }; });
     if (state.availabilityPreset !== 'custom') return [];
-    return queryAll('.custom-day', els.customAvailability).filter(function (row) { return row.querySelector('input[type="checkbox"]').checked; }).map(function (row) { return { weekday: Number(row.dataset.weekday), start: row.querySelector('[data-start]').value, end: row.querySelector('[data-end]').value }; }).filter(function (item) { return item.start && item.end && item.end > item.start; });
+    return queryAll('.custom-day', els.customAvailability).filter(function (row) { return row.querySelector('input[type="checkbox"]').checked; }).map(function (row) { return { weekday: Number(row.dataset.weekday), start: row.querySelector('[data-start]').value, end: row.querySelector('[data-end]').value }; });
   }
   function renderCustomAvailability() {
-    var preferences = ((state.data || {}).preferences || {});
+    var preferences = state.wizardPreferences || {};
     var current = preferences.availability_configured ? (preferences.availability || []) : [];
     els.customAvailability.innerHTML = DAY_NAMES.map(function (name, weekday) {
       var existing = current.find(function (item) { return Number(item.weekday) === weekday; });
@@ -715,12 +737,13 @@
     }).join('');
     enhancePlanPickers(els.customAvailability);
   }
-  function chooseAvailabilityPreset(preset, skipRender) {
+  function chooseAvailabilityPreset(preset) {
     state.availabilityPreset = preset;
     queryAll('[data-availability-preset]').forEach(function (button) { var active = button.dataset.availabilityPreset === preset; button.classList.toggle('is-active', active); button.setAttribute('aria-pressed', active ? 'true' : 'false'); });
     els.customAvailability.hidden = preset !== 'custom';
-    if (preset === 'custom' && !skipRender) renderCustomAvailability();
+    els.presetTimeSettings.hidden = preset !== 'daily' && preset !== 'weekday-evenings';
     if (preset === 'custom' && !els.customAvailability.children.length) renderCustomAvailability();
+    refreshPresetTime();
   }
   async function previewWizard() {
     if (!isEditable()) { toast('Reconnect before generating a schedule.', 'error'); return; }
@@ -735,8 +758,11 @@
       notes_minutes_by_pack: wizardNotesMinutes(packIds)
     };
     var preferences = {
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || ((state.data || {}).preferences || {}).timezone || 'UTC',
+      timezone: state.wizardPreferences.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
       availability: availabilityForPreset(),
+      cadence: state.availabilityPreset === 'daily' ? 'daily' : 'workload',
+      availability_preset: state.availabilityPreset,
+      daily_start: els.wizardStartTime.value,
       default_session_minutes: Number(els.wizardSessionLength.value || 45),
       reminder_offset_minutes: Number(((state.data || {}).preferences || {}).reminder_offset_minutes || 30)
     };
@@ -759,21 +785,29 @@
   function renderPreview() {
     var proposal = state.proposal || {};
     var summary = proposal.summary || {};
-    var sessionDates = new Set((proposal.sessions || []).map(function (session) { return session.date; })).size;
+    var visibleSessions = (proposal.sessions || []).concat((proposal.retained_sessions || []).map(function (session) { return Object.assign({}, session, { retained: true }); })).sort(sortSessions);
+    var sessionDates = new Set(visibleSessions.map(function (session) { return session.date; })).size;
     var personalized = !!(proposal.pace && proposal.pace.personalized);
     var paceStat = personalized ? '<div class="preview-stat"><strong>' + escapeHtml(minutesLabel(summary.required_minutes)) + '</strong><span>at your recent pace</span></div>' : '';
     els.previewSummary.classList.toggle('has-two-stats', !personalized);
-    els.previewSummary.innerHTML = paceStat + '<div class="preview-stat"><strong>' + escapeHtml(String((proposal.sessions || []).length)) + '</strong><span>study sessions</span></div><div class="preview-stat"><strong>' + escapeHtml(String(sessionDates)) + '</strong><span>study day' + (sessionDates === 1 ? '' : 's') + '</span></div>';
+    els.previewSummary.innerHTML = paceStat + '<div class="preview-stat"><strong>' + escapeHtml(String(visibleSessions.length)) + '</strong><span>study sessions</span></div><div class="preview-stat"><strong>' + escapeHtml(String(sessionDates)) + '</strong><span>study day' + (sessionDates === 1 ? '' : 's') + '</span></div>';
+    var notices = [];
+    if (proposal.preferences && proposal.preferences.cadence === 'daily') notices.push('Daily sessions keep your chosen duration, with revision after your initial study work.');
+    if ((proposal.retained_sessions || []).length) notices.push(proposal.retained_sessions.length + ' existing sessions stay at their current times and lengths.');
+    if ((proposal.excluded_dates || []).length) notices.push(proposal.excluded_dates.length + ' removed days stay free.');
+    if ((proposal.conflicts || []).length) notices.push('Resolve ' + proposal.conflicts.length + ' time conflicts before accepting: ' + proposal.conflicts.slice(0, 3).map(function (item) { return formatDate(item.date) + ' at ' + item.time; }).join(', ') + '. Go back to choose another start time, or edit the conflicting sessions.');
+    els.previewNotice.hidden = !notices.length;
+    els.previewNotice.textContent = notices.join(' ');
     var shortage = Number(summary.shortage_minutes || 0);
     els.capacityWarning.hidden = shortage <= 0;
     if (shortage > 0) {
       els.capacityWarning.innerHTML = '<strong>You are short by ' + escapeHtml(minutesLabel(shortage)) + '.</strong>This plan stays within your availability instead of overbooking you.<div class="capacity-fixes"><button type="button" data-capacity-fix="availability">Add availability</button><button type="button" data-capacity-fix="scope">Reduce scope</button><button type="button" data-capacity-fix="deadline">Change deadline</button></div>';
       queryAll('[data-capacity-fix]', els.capacityWarning).forEach(function (button) { button.addEventListener('click', function () { state.wizardStep = button.dataset.capacityFix === 'scope' ? 1 : button.dataset.capacityFix === 'deadline' ? 2 : 3; renderWizardStep(); }); });
     }
-    els.previewSessions.innerHTML = (proposal.sessions || []).map(function (session) { return '<div class="preview-session"><time>' + escapeHtml(formatDate(session.date, { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ' + session.time) + '</time><span>' + escapeHtml(session.title + ' · ' + minutesLabel(session.duration)) + '</span></div>'; }).join('') || '<div class="empty-plan-state">No sessions could be scheduled. Add availability or change the deadline.</div>';
+    els.previewSessions.innerHTML = visibleSessions.map(function (session) { return '<div class="preview-session"><time>' + escapeHtml(formatDate(session.date, { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ' + session.time) + '</time><span>' + escapeHtml(session.title + ' · ' + minutesLabel(session.duration) + (session.retained ? ' · Kept as scheduled' : session.study_intent === 'mixed' ? ' · Includes revision' : '')) + '</span></div>'; }).join('') || '<div class="empty-plan-state">No sessions could be scheduled. Add availability or change the deadline.</div>';
   }
   async function applyWizardPlan() {
-    if (!state.proposal) return;
+    if (!state.proposal || state.proposal.can_apply === false) return;
     if (!isEditable()) { toast('Reconnect before accepting this plan.', 'error'); return; }
     els.wizardNext.disabled = true;
     els.wizardNext.textContent = 'Saving…';
@@ -798,13 +832,61 @@
       if (!selectedWizardPacks().length) { els.wizardPackError.textContent = 'Select at least one study pack.'; els.wizardPackError.hidden = false; return; }
       state.wizardStep = 2;
     } else if (state.wizardStep === 2) {
-      if (!els.wizardTitle.value.trim() || !validPickerDate(els.wizardDate.value) || els.wizardDate.value <= todayInTimezone()) { els.wizardGoalError.textContent = 'Enter a goal name and choose a future date.'; els.wizardGoalError.hidden = false; return; }
+      if (!els.wizardTitle.value.trim() || !validPickerDate(els.wizardDate.value) || els.wizardDate.value <= todayInTimezone() || els.wizardDate.value > els.wizardDate.max) { els.wizardGoalError.textContent = 'Enter a goal name and choose a future date within the next year.'; els.wizardGoalError.hidden = false; return; }
       state.wizardStep = 3;
     } else if (state.wizardStep === 3) {
       if (!availabilityForPreset().length) { els.wizardAvailabilityError.textContent = 'Add at least one availability window.'; els.wizardAvailabilityError.hidden = false; return; }
+      if (availabilityForPreset().some(function (item) { return !Number.isFinite(clockMinutes(item.start)) || !Number.isFinite(clockMinutes(item.end)) || clockMinutes(item.end) - clockMinutes(item.start) < Number(els.wizardSessionLength.value); })) { els.wizardAvailabilityError.textContent = 'Check every selected time: each window must fit your full session before midnight.'; els.wizardAvailabilityError.hidden = false; return; }
       previewWizard(); return;
     } else { applyWizardPlan(); return; }
     renderWizardStep();
+  }
+
+  function decorateSessionRemoval() {
+    [els.todayList, els.mobileAgenda].forEach(function (container) {
+      queryAll('[data-session-id]', container).forEach(function (row) {
+        var session = plannedSessions().find(function (item) { return item.id === row.dataset.sessionId; });
+        if (!session || session.status === 'cancelled' || session.status === 'completed') return;
+        var actions = row.querySelector('.session-row-actions');
+        if (!actions || actions.querySelector('[data-remove-session]')) return;
+        var button = document.createElement('button');
+        button.type = 'button'; button.className = 'btn'; button.dataset.removeSession = session.id;
+        button.textContent = 'Remove'; button.setAttribute('aria-label', 'Remove ' + session.title);
+        button.addEventListener('click', function () { removeSession(session); });
+        actions.appendChild(button);
+      });
+    });
+  }
+  function removalNotice(session, previousStatus) {
+    var notice = byId('session-removal-status');
+    if (!notice) {
+      notice = document.createElement('div'); notice.id = 'session-removal-status'; notice.className = 'session-removal-status'; notice.setAttribute('role', 'status');
+      var tabs = document.querySelector('.study-plan-tabs'); tabs.insertAdjacentElement('afterend', notice);
+    }
+    notice.hidden = false;
+    notice.innerHTML = '<span>Session removed. You can undo this change.</span><button type="button" class="btn" data-undo-removal>Undo</button><button type="button" class="btn" data-dismiss-removal aria-label="Dismiss removal message">×</button>';
+    notice.querySelector('[data-dismiss-removal]').addEventListener('click', function () { notice.hidden = true; });
+    notice.querySelector('[data-undo-removal]').addEventListener('click', async function () {
+      var button = notice.querySelector('[data-undo-removal]'); button.disabled = true;
+      try {
+        var result = await api('/api/study-plan/items/' + encodeURIComponent(session.id), { method: 'PUT', body: JSON.stringify({ revision: session.revision, status: previousStatus || 'planned' }) });
+        state.data.sessions = plannedSessions().filter(function (item) { return item.id !== session.id; }).concat([result.session]).sort(sortSessions);
+        cacheData(); renderAll(); notice.hidden = true; toast('Session restored.');
+      } catch (error) { button.disabled = false; toast(error.message, 'error'); }
+    });
+  }
+  async function removeSession(session) {
+    if (!session || !isEditable()) { toast('Reconnect before removing a session.', 'error'); return; }
+    var previous = plannedSessions().slice();
+    state.data.sessions = previous.map(function (item) { return item.id === session.id ? Object.assign({}, item, { status: 'cancelled' }) : item; });
+    closeOverlay(els.sessionOverlay); renderAll(); setSaving('saving');
+    try {
+      var result = await api('/api/study-plan/items/' + encodeURIComponent(session.id), { method: 'PUT', body: JSON.stringify({ revision: session.revision, status: 'cancelled' }) });
+      state.data.sessions = plannedSessions().filter(function (item) { return item.id !== session.id; }).concat([result.session]).sort(sortSessions);
+      cacheData(); renderAll(); setSaving('', 'Saved'); removalNotice(result.session, session.status);
+    } catch (error) {
+      state.data.sessions = previous; renderAll(); setSaving('failed'); toast(error.message + ' The session was restored.', 'error');
+    }
   }
 
   function populateSessionEditorPacks(selected) {
@@ -816,13 +898,21 @@
     var current = session || {};
     els.sessionId.value = current.id || '';
     els.sessionName.value = current.title || 'Study session';
+    els.sessionPack.disabled = !!current.active_run_id;
     populateSessionEditorPacks(current.pack_id || '');
     els.sessionDate.value = current.date || todayInTimezone();
     els.sessionTime.value = current.time || '19:00';
     els.sessionDuration.value = current.duration || ((state.data.preferences || {}).default_session_minutes || 45);
+    els.sessionDuration.disabled = !!current.active_run_id;
+    byId('session-editor-run-note').hidden = !current.active_run_id;
     els.sessionLocked.checked = current.id ? !!current.locked : true;
+    byId('session-editor-remove').hidden = !current.id || current.status === 'cancelled' || current.status === 'completed';
     els.sessionError.hidden = true;
-    els.sessionStatusActions.hidden = !current.id || current.status !== 'planned';
+    els.sessionStatusActions.hidden = !current.id;
+    queryAll('[data-session-log], [data-session-status]', els.sessionStatusActions).forEach(function (button) { button.hidden = current.status !== 'planned'; });
+    var reopenButton = els.sessionStatusActions.querySelector('[data-session-reopen]');
+    reopenButton.hidden = current.status !== 'completed' && !current.active_run_id;
+    reopenButton.textContent = current.status === 'completed' ? 'Reopen session' : 'Restart study run';
     openOverlay(els.sessionOverlay);
   }
   async function saveSession(statusOverride) {
@@ -871,19 +961,170 @@
   }
   function updateSessionStatus(session, status) {
     if (!session) return;
+    if (status === 'completed') { openStudyLog(session); return; }
     if (!isEditable()) { toast('Reconnect before changing a session.', 'error'); return; }
     openSessionEditor(session);
     saveSession(status);
   }
 
-  function openFeeds() { renderFeeds(); openOverlay(els.feedsOverlay); }
+  var studyLogSession = null;
+  var studyLogKey = '';
+  var studyLogSaving = false;
+  function openStudyLog(session) {
+    if (!session || !isEditable()) return;
+    studyLogSession = session;
+    studyLogKey = randomId('study_log');
+    byId('study-log-minutes').value = '';
+    byId('study-log-session').textContent = session.title + ' · ' + minutesLabel(session.duration) + ' planned';
+    byId('study-log-error').hidden = true;
+    closeOverlay(els.sessionOverlay);
+    openOverlay(byId('study-log-overlay'));
+  }
+  function acceptSessionChange(session) {
+    state.data.sessions = plannedSessions().filter(function (item) { return item.id !== session.id; }).concat([session]).sort(sortSessions);
+    cacheData(); renderAll();
+    loadData({ useCache: false });
+  }
+  async function reopenSession(session) {
+    if (!isEditable()) return;
+    try {
+      var result = await api('/api/study-plan/items/' + encodeURIComponent(session.id) + '/completion', { method: 'POST', body: JSON.stringify({ action: 'reopen', revision: session.revision }) });
+      closeOverlay(els.sessionOverlay);
+      acceptSessionChange(result.session);
+      toast(session.completion && session.completion.source === 'offline' ? 'Session reopened and its manual time log removed. Card progress is unchanged.' : 'Session reopened. Your answers and study time are kept.');
+    } catch (error) { toast(error.message, 'error'); loadData({ useCache: false }); }
+  }
+  async function saveStudyLog(event) {
+    event.preventDefault();
+    if (studyLogSaving || !studyLogSession) return;
+    var minutes = Number(byId('study-log-minutes').value);
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
+      byId('study-log-error').textContent = 'Enter the actual time you studied, from 1 to 1,440 minutes.';
+      byId('study-log-error').hidden = false;
+      return;
+    }
+    studyLogSaving = true; byId('study-log-submit').disabled = true;
+    try {
+      var result = await api('/api/study-plan/items/' + encodeURIComponent(studyLogSession.id) + '/completion', { method: 'POST', body: JSON.stringify({ action: 'complete', source: 'offline', minutes: minutes, revision: studyLogSession.revision, idempotency_key: studyLogKey }) });
+      closeOverlay(byId('study-log-overlay'));
+      acceptSessionChange(result.session);
+      toast(minutesLabel(minutes) + ' logged. Session completed.');
+      var undo = document.createElement('button'); undo.type = 'button'; undo.className = 'btn'; undo.textContent = 'Undo';
+      undo.addEventListener('click', function () { reopenSession(result.session); });
+      els.toast.appendChild(undo);
+    } catch (error) {
+      byId('study-log-error').textContent = error.message;
+      byId('study-log-error').hidden = false;
+    } finally { studyLogSaving = false; byId('study-log-submit').disabled = false; }
+  }
+
+  var calendarProvider = 'google';
+  var googleCalendarState = null;
+  var googleCalendarPoll = null;
+  var calendarBusy = false;
+  function calendarMessage(message) {
+    var node = byId('calendar-setup-message');
+    node.hidden = !message;
+    node.textContent = message || '';
+  }
+  function selectCalendarProvider(provider, subscription) {
+    calendarProvider = provider;
+    queryAll('[data-calendar-provider]').forEach(function (button) {
+      var selected = button.dataset.calendarProvider === provider;
+      button.classList.toggle('is-selected', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    });
+    byId('google-calendar-panel').hidden = provider !== 'google';
+    byId('calendar-subscribe-panel').hidden = provider === 'google' && !subscription;
+    els.feedOnce.hidden = true;
+    els.feedUrl.value = '';
+    byId('calendar-provider-open').hidden = true;
+    els.feedName.placeholder = provider === 'apple' ? 'My Apple Calendar' : provider === 'google' ? 'My Google Calendar' : 'My calendar';
+    var instructions = {
+      google: ['Create and copy your private link below.', 'On a computer, open Google Calendar. Next to Other calendars, choose + → From URL.', 'Paste the link and choose Add calendar. It will also appear in your Google Calendar mobile app.'],
+      apple: ['Create your private link below.', 'Choose Open Apple Calendar and confirm the subscription. On Mac, you can also use File → New Calendar Subscription.', 'Choose iCloud to see it on your Apple devices. On iPhone or iPad: Calendars → Add Calendar → Add Subscription Calendar.'],
+      other: ['Create and copy your private link below.', 'In your calendar app, look for Subscribe from web or Add calendar from URL.', 'Paste the link and save. Choose a subscription so future changes can appear.']
+    };
+    byId('calendar-subscribe-title').textContent = 'Add to ' + (provider === 'apple' ? 'Apple Calendar' : provider === 'google' ? 'Google Calendar' : 'your calendar');
+    byId('calendar-subscribe-description').textContent = provider === 'google' ? 'A private link works without connecting your account. Google requires a computer browser for this first step.' : 'A short setup now keeps your study schedule within reach.';
+    byId('calendar-subscribe-steps').innerHTML = instructions[provider].map(function (step) { return '<li>' + escapeHtml(step) + '</li>'; }).join('');
+    var duplicate = provider === 'google' && subscription && googleCalendarState && googleCalendarState.status !== 'disconnected';
+    calendarMessage(duplicate ? 'You already have a Google connection. Subscribing as well can show every session twice. Choose one method for the same Google account.' : '');
+  }
+  function openFeeds() {
+    renderFeeds(); openOverlay(els.feedsOverlay); selectCalendarProvider('google', false); loadGoogleCalendar(true);
+  }
+  async function loadGoogleCalendar(settings) {
+    window.clearTimeout(googleCalendarPoll);
+    try {
+      googleCalendarState = await api('/api/study-plan/calendar/google');
+      renderGoogleCalendar(settings);
+      if (!els.feedsOverlay.hidden && ['pending', 'syncing', 'retrying', 'disconnecting'].indexOf(googleCalendarState.status) >= 0) {
+        googleCalendarPoll = window.setTimeout(function () { loadGoogleCalendar(false); }, 5000);
+      }
+    } catch (_) {
+      byId('google-calendar-status').textContent = 'Unavailable';
+      byId('google-calendar-description').textContent = 'We could not check your Google connection. You can still subscribe using a private link.';
+      byId('google-calendar-connect').disabled = true;
+    }
+  }
+  function renderGoogleCalendar(settings) {
+    var data = googleCalendarState || {};
+    var connected = data.status && data.status !== 'disconnected';
+    var needsConnect = !connected || data.status === 'reconnect_required';
+    var labels = { disconnected: 'Not connected', pending: 'Waiting to sync', syncing: 'Syncing', connected: 'Connected', retrying: 'Retrying', needs_attention: 'Needs attention', reconnect_required: 'Reconnect needed', disconnecting: 'Disconnecting' };
+    byId('google-calendar-status').textContent = labels[data.status] || 'Not connected';
+    byId('google-calendar-description').textContent = !data.available && !connected ? 'Direct Google connection is not configured yet. You can add your plan now using a private link below.' : (data.message || 'We create a separate Lecture Processor calendar. Your other calendars stay private. Changes you make here are sent to Google automatically.');
+    byId('google-calendar-account').textContent = data.email ? data.email + (data.last_synced_at ? ' · Last synced ' + new Date(data.last_synced_at * 1000).toLocaleString() : '') : '';
+    byId('google-calendar-connect').hidden = !needsConnect;
+    byId('google-calendar-connect').disabled = !data.available || calendarBusy;
+    byId('google-calendar-connect').textContent = connected ? 'Reconnect Google account' : 'Connect Google account';
+    ['sync', 'save', 'disconnect', 'open'].forEach(function (action) {
+      byId('google-calendar-' + action).hidden = !connected;
+      byId('google-calendar-' + action).disabled = calendarBusy || data.status === 'disconnecting';
+    });
+    byId('google-calendar-sync').textContent = ['creation_uncertain', 'calendar_missing'].indexOf(data.error_code) >= 0 ? 'Recreate study calendar' : 'Sync now';
+    if (settings) {
+      byId('google-calendar-reminder').value = String(data.reminder_offset_minutes == null ? 30 : data.reminder_offset_minutes);
+      byId('google-calendar-deadlines').checked = data.include_deadlines !== false;
+      byId('google-calendar-reminder').dispatchEvent(new Event('change'));
+    }
+    if (!connected) byId('google-calendar-disconnect-confirm').hidden = true;
+  }
+  async function googleCalendarAction(action) {
+    if (calendarBusy || !isEditable()) return;
+    var payload = {};
+    if (action === 'connect' || action === 'settings') {
+      payload = { reminder_offset_minutes: Number(byId('google-calendar-reminder').value), include_deadlines: byId('google-calendar-deadlines').checked };
+    }
+    if (action === 'disconnect') payload.remove_synced_events = byId('google-calendar-remove').checked;
+    if (action === 'sync' && googleCalendarState && ['creation_uncertain', 'calendar_missing'].indexOf(googleCalendarState.error_code) >= 0) {
+      if (!window.confirm('Check Google Calendar first. If an empty Lecture Processor calendar was created during the interrupted setup, remove it before continuing. Create a new study calendar now?')) return;
+      payload.confirm_recreate = true;
+    }
+    if (action === 'connect' && (state.data.calendar_feeds || []).some(function (feed) { return !feed.revoked_at && feed.provider === 'google'; })) {
+      if (!window.confirm('You already have a Google subscription link. Connecting as well can show duplicate sessions. Continue with a direct connection?')) return;
+    }
+    calendarBusy = true; renderGoogleCalendar(false); calendarMessage('');
+    try {
+      var result = await api('/api/study-plan/calendar/google' + (action === 'settings' ? '' : '/' + action), {
+        method: action === 'settings' ? 'PATCH' : 'POST', body: JSON.stringify(payload)
+      });
+      if (action === 'connect') { window.location.assign(result.authorization_url); return; }
+      googleCalendarState = result;
+      byId('google-calendar-disconnect-confirm').hidden = true;
+      await loadGoogleCalendar(false);
+    } catch (error) { calendarMessage(error.message || 'Could not update your calendar. Please try again.'); }
+    finally { calendarBusy = false; renderGoogleCalendar(false); }
+  }
   function renderFeeds() {
     if (!els.feedList || !state.data) return;
     var feeds = state.data.calendar_feeds || [];
     els.feedList.innerHTML = feeds.length ? feeds.map(function (feed) {
       var revoked = Number(feed.revoked_at || 0) > 0;
-      return '<div class="calendar-feed-item' + (revoked ? ' is-revoked' : '') + '" data-feed-id="' + escapeHtml(feed.feed_id) + '"><div><strong>' + escapeHtml(feed.name) + '</strong><span>' + (revoked ? 'Revoked' : 'Active · reminder ' + escapeHtml(minutesLabel(feed.reminder_offset_minutes))) + '</span></div>' + (!revoked ? '<div class="calendar-feed-actions"><button type="button" class="btn" data-feed-rotate>Rotate URL</button><button type="button" class="btn danger" data-feed-revoke>Revoke</button></div>' : '') + '</div>';
-    }).join('') : '<div class="empty-plan-state">No device calendars connected.</div>';
+      var status = revoked ? 'Revoked' : (feed.last_accessed_at ? 'Last fetched ' + new Date(feed.last_accessed_at * 1000).toLocaleString() : 'Link ready · add it to your calendar');
+      return '<div class="calendar-feed-item' + (revoked ? ' is-revoked' : '') + '" data-feed-id="' + escapeHtml(feed.feed_id) + '"><div><strong>' + escapeHtml(feed.name) + '</strong><span>' + escapeHtml(status) + '</span></div>' + (!revoked ? '<div class="calendar-feed-actions"><button type="button" class="btn" data-feed-rotate>Replace link</button><button type="button" class="btn danger" data-feed-revoke>Disconnect</button></div>' : '') + '</div>';
+    }).join('') : '<p class="calendar-refresh-note">No subscription links yet. Choose your calendar above to get started.</p>';
     queryAll('[data-feed-id]', els.feedList).forEach(function (row) {
       var rotate = row.querySelector('[data-feed-rotate]');
       var revoke = row.querySelector('[data-feed-revoke]');
@@ -892,38 +1133,62 @@
     });
   }
   function showFeedUrl(result) {
+    var provider = result.feed && result.feed.provider || calendarProvider;
+    if (provider !== calendarProvider || byId('calendar-subscribe-panel').hidden) selectCalendarProvider(provider, true);
     els.feedOnce.hidden = false;
     els.feedUrl.value = result.subscription_url || '';
-    els.feedUrl.focus();
-    els.feedUrl.select();
+    var link = byId('calendar-provider-open');
+    link.hidden = false;
+    link.textContent = provider === 'apple' ? 'Open Apple Calendar' : 'Open Google Calendar ↗';
+    link.href = provider === 'apple' ? els.feedUrl.value.replace(/^https?:/, 'webcal:') : 'https://calendar.google.com/calendar/u/0/r/settings/addbyurl';
+    if (provider !== 'apple') { link.target = '_blank'; link.rel = 'noopener noreferrer'; }
+    else { link.removeAttribute('target'); link.removeAttribute('rel'); }
+    link.hidden = provider === 'other';
+    els.feedUrl.focus(); els.feedUrl.select();
   }
   async function createFeed() {
-    if (!isEditable()) { toast('Reconnect before creating a calendar URL.', 'error'); return; }
+    if (!isEditable()) { toast('Reconnect before creating a calendar link.', 'error'); return; }
     els.feedCreate.disabled = true;
     try {
-      var result = await api('/api/study-plan/calendar-feeds', { method: 'POST', body: JSON.stringify({ name: els.feedName.value.trim() || 'Device calendar', reminder_offset_minutes: Number(els.feedReminder.value) }) });
+      var result = await api('/api/study-plan/calendar-feeds', { method: 'POST', body: JSON.stringify({
+        name: els.feedName.value.trim() || (calendarProvider === 'apple' ? 'Apple Calendar' : calendarProvider === 'google' ? 'Google Calendar subscription' : 'My calendar'),
+        provider: calendarProvider, reminder_offset_minutes: Number(els.feedReminder.value)
+      }) });
       state.data.calendar_feeds = [result.feed].concat(state.data.calendar_feeds || []);
       renderFeeds(); showFeedUrl(result); cacheData();
-    } catch (error) { toast(error.message, 'error'); }
+    } catch (error) { calendarMessage(error.message); }
     finally { els.feedCreate.disabled = false; }
   }
   async function rotateFeed(feedId) {
-    if (!window.confirm('Rotate this private URL? The previous URL will stop working immediately.')) return;
+    if (!window.confirm('Replace this private link? The old link will stop working. You will need to replace the subscription in your calendar app.')) return;
     try {
       var result = await api('/api/study-plan/calendar-feeds/' + encodeURIComponent(feedId) + '/rotate', { method: 'POST', body: '{}' });
-      showFeedUrl(result); toast('Private calendar URL rotated.');
-    } catch (error) { toast(error.message, 'error'); }
+      state.data.calendar_feeds = (state.data.calendar_feeds || []).map(function (feed) { return feed.feed_id === feedId ? result.feed : feed; });
+      renderFeeds(); showFeedUrl(result); cacheData(); toast('New private calendar link ready.');
+    } catch (error) { calendarMessage(error.message); }
   }
   async function revokeFeed(feedId) {
-    if (!window.confirm('Revoke this calendar subscription? Its URL will stop working.')) return;
+    if (!window.confirm('Disconnect this subscription? Its link will stop working. Also remove the subscribed calendar in your calendar app to clear its saved events.')) return;
     try {
       var result = await api('/api/study-plan/calendar-feeds/' + encodeURIComponent(feedId), { method: 'DELETE' });
       state.data.calendar_feeds = (state.data.calendar_feeds || []).map(function (feed) { return feed.feed_id === feedId ? result.feed : feed; });
-      renderFeeds(); cacheData(); toast('Calendar subscription revoked.');
-    } catch (error) { toast(error.message, 'error'); }
+      els.feedOnce.hidden = true; els.feedUrl.value = '';
+      renderFeeds(); cacheData(); toast('Calendar subscription disconnected.');
+    } catch (error) { calendarMessage(error.message); }
+  }
+  function bindCalendarActions() {
+    queryAll('[data-calendar-provider]').forEach(function (button) { button.addEventListener('click', function () { selectCalendarProvider(button.dataset.calendarProvider); }); });
+    byId('google-calendar-use-link').addEventListener('click', function () { selectCalendarProvider('google', true); });
+    byId('google-calendar-connect').addEventListener('click', function () { googleCalendarAction('connect'); });
+    byId('google-calendar-sync').addEventListener('click', function () { googleCalendarAction('sync'); });
+    byId('google-calendar-save').addEventListener('click', function () { googleCalendarAction('settings'); });
+    byId('google-calendar-disconnect').addEventListener('click', function () { byId('google-calendar-disconnect-confirm').hidden = false; byId('google-calendar-remove').checked = false; byId('google-calendar-disconnect-cancel').focus(); });
+    byId('google-calendar-disconnect-cancel').addEventListener('click', function () { byId('google-calendar-disconnect-confirm').hidden = true; });
+    byId('google-calendar-disconnect-confirm-btn').addEventListener('click', function () { googleCalendarAction('disconnect'); });
   }
 
   function bindElements() {
+    els.wizardStartTime = byId('wizard-start-time'); els.wizardTimeSummary = byId('wizard-time-summary'); els.presetTimeSettings = byId('preset-time-settings'); els.previewNotice = byId('wizard-preview-notice');
     els.loading = byId('study-plan-loading'); els.workspace = byId('study-plan-workspace'); els.authGate = byId('study-plan-auth'); els.offline = byId('study-plan-offline'); els.saveState = byId('study-plan-save-state'); els.toast = byId('study-plan-toast');
     els.nextTime = byId('next-session-time'); els.nextContent = byId('next-session-content'); els.goalHealth = byId('goal-health-content'); els.todayList = byId('today-session-list'); els.rebalance = byId('rebalance-card'); els.rebalanceMessage = byId('rebalance-message');
     els.weekTitle = byId('schedule-week-title'); els.weekSummary = byId('schedule-week-summary'); els.scheduleHelp = byId('schedule-help'); els.weekCalendar = byId('week-calendar'); els.mobileAgenda = byId('mobile-agenda');
@@ -933,6 +1198,10 @@
     els.feedsOverlay = byId('calendar-feeds-overlay'); els.feedName = byId('calendar-feed-name'); els.feedReminder = byId('calendar-feed-reminder'); els.feedCreate = byId('calendar-feed-create-btn'); els.feedOnce = byId('calendar-feed-once'); els.feedUrl = byId('calendar-feed-url'); els.feedList = byId('calendar-feed-list');
   }
   function bindActions() {
+    bindCalendarActions();
+    els.wizardStartTime.addEventListener('input', refreshPresetTime);
+    els.wizardSessionLength.addEventListener('change', refreshPresetTime);
+    byId('session-editor-remove').addEventListener('click', function () { removeSession(plannedSessions().find(function (item) { return item.id === els.sessionId.value; })); });
     queryAll('.study-plan-tab').forEach(function (button) { button.addEventListener('click', function () { setView(button.dataset.planView); }); });
     byId('new-study-goal-btn').addEventListener('click', function () { openWizard(); });
     byId('today-add-session-btn').addEventListener('click', function () { openSessionEditor(null); });
@@ -951,6 +1220,10 @@
     [byId('session-editor-close'), byId('session-editor-cancel')].forEach(function (button) { button.addEventListener('click', function () { closeOverlay(els.sessionOverlay); }); });
     byId('session-editor-save').addEventListener('click', function () { saveSession(); });
     queryAll('[data-session-status]', els.sessionStatusActions).forEach(function (button) { button.addEventListener('click', function () { saveSession(button.dataset.sessionStatus); }); });
+    els.sessionStatusActions.querySelector('[data-session-log]').addEventListener('click', function () { openStudyLog(plannedSessions().find(function (item) { return item.id === els.sessionId.value; })); });
+    els.sessionStatusActions.querySelector('[data-session-reopen]').addEventListener('click', function () { reopenSession(plannedSessions().find(function (item) { return item.id === els.sessionId.value; })); });
+    byId('study-log-form').addEventListener('submit', saveStudyLog);
+    ['study-log-close', 'study-log-cancel'].forEach(function (id) { byId(id).addEventListener('click', function () { closeOverlay(byId('study-log-overlay')); }); });
     byId('calendar-feeds-close').addEventListener('click', function () { closeOverlay(els.feedsOverlay); });
     els.feedCreate.addEventListener('click', createFeed);
     byId('calendar-feed-copy').addEventListener('click', async function () { try { await navigator.clipboard.writeText(els.feedUrl.value); toast('Calendar URL copied.'); } catch (_) { els.feedUrl.select(); toast('Select and copy the URL.'); } });
@@ -982,6 +1255,14 @@
       els.authGate.hidden = true;
       try { authClient.setToken(await user.getIdToken()); } catch (_) {}
       await loadData({ useCache: true });
+      var calendarQuery = new URLSearchParams(window.location.search);
+      if (calendarQuery.get('calendar') === 'google') {
+        openFeeds();
+        var calendarResult = calendarQuery.get('calendar_result');
+        if (calendarResult && calendarResult !== 'connected') calendarMessage(calendarResult === 'cancelled' ? 'Google connection was cancelled. Nothing changed.' : 'Google connection could not finish. Reconnect the same Google account and allow access to your study calendar.');
+        calendarQuery.delete('calendar'); calendarQuery.delete('calendar_result');
+        window.history.replaceState(null, '', window.location.pathname + (calendarQuery.toString() ? '?' + calendarQuery.toString() : ''));
+      }
     });
   }
 

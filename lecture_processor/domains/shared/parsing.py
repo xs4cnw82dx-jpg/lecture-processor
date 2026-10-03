@@ -1,4 +1,5 @@
 from lecture_processor.runtime.container import get_runtime
+from lecture_processor.domains.shared.tool_catalog import sanitize_favorite_tools
 
 
 def _resolve_runtime(runtime=None):
@@ -64,6 +65,7 @@ def build_user_preferences_payload(user_data, runtime=None):
         'output_language_custom': custom,
         'output_language_label': resolved,
         'onboarding_completed': bool(user_data.get('onboarding_completed', False)),
+        'favorite_tools': sanitize_favorite_tools(user_data.get('favorite_tools', [])),
     }
 
 

@@ -1,6 +1,5 @@
 <div class="app-shell" id="app-shell" data-page-key="{{ shell_page_key or '' }}" data-auth-state="pending">
   {% set shell_physio_open = shell_page_key and shell_page_key.startswith('physio-') %}
-  {% set shell_more_tools_open = shell_page_key in ['document-reader', 'image-reader', 'url-reader', 'lecture-downloader', 'video-overlay-builder', 'general-transcriber', 'tools'] %}
   <button type="button" class="app-shell-overlay" id="app-shell-overlay" aria-label="Close navigation" aria-hidden="true" tabindex="-1"></button>
   <aside class="app-shell-sidebar" id="app-shell-sidebar" aria-label="Main navigation">
     <a href="/dashboard" class="app-shell-brand">
@@ -53,32 +52,12 @@
           </div>
         </div>
       </div>
-      <div class="app-shell-group app-shell-group-secondary {% if shell_more_tools_open %}is-open{% endif %}" id="shell-more-tools-group" data-shell-group="more-tools">
-        <button
-          type="button"
-          class="app-shell-group-trigger"
-          id="shell-more-tools-trigger"
-          data-shell-group-trigger="more-tools"
-          aria-expanded="{{ 'true' if shell_more_tools_open else 'false' }}"
-          aria-controls="shell-more-tools-panel"
-        >
-          <span class="app-shell-group-label"><span class="app-shell-link-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v18"></path><path d="M3 12h18"></path><path d="M5.6 5.6l12.8 12.8"></path><path d="M18.4 5.6 5.6 18.4"></path></svg></span><span>More Tools</span></span>
-          <svg class="app-shell-group-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <polyline points="6 8 10 12 14 8"></polyline>
-          </svg>
-        </button>
-        <div class="app-shell-group-panel-wrap" aria-hidden="{{ 'false' if shell_more_tools_open else 'true' }}" {% if not shell_more_tools_open %}inert{% endif %}>
-          <div class="app-shell-group-panel" id="shell-more-tools-panel">
-            <a href="/lecture-downloader" class="app-shell-link sub">Lecture Downloader</a>
-            <a href="/video-overlay-builder" class="app-shell-link sub">Video Overlay Builder</a>
-            <a href="/general-transcriber" class="app-shell-link sub">General Transcriber</a>
-            <a href="/document-reader" class="app-shell-link sub">Document Reader</a>
-            <a href="/image-reader" class="app-shell-link sub">Image Reader</a>
-            <a href="/url-reader" class="app-shell-link sub">URL Reader</a>
-            <a href="/tools" class="app-shell-link sub">Tools Overview</a>
-          </div>
-        </div>
+      <a href="/tools" class="app-shell-link" id="shell-more-tools-link"><span class="app-shell-link-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"></path></svg></span><span>More Tools</span></a>
+      <div id="shell-tool-favorites" hidden>
+        <div class="app-shell-section-label">Your favorites</div>
+        <div id="shell-tool-favorites-links"></div>
       </div>
+      <script type="application/json" id="shell-tool-catalog">{{ tool_catalog|default([])|tojson }}</script>
     </nav>
   </aside>
   <div class="app-shell-main">

@@ -900,7 +900,7 @@ function startPlannerActivity(mode) {
   plannerActivity = {
     activity_id: 'activity_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10),
     pack_id: String(selectedPackId || ''),
-    plan_item_id: plannerSessionFromUrl,
+    plan_item_id: '',
     mode: String(mode || 'study'),
     started_at: Date.now() / 1000,
     metrics: { minutes: 0, cards_reviewed: 0, questions_answered: 0, correct: 0, incorrect: 0 }
@@ -1072,6 +1072,7 @@ function updateDailyGoalDisplays() {
 }
 function recordLearnSessionCompletion() {
   if (learnSessionRecorded) return;
+  if (!plannerActivity || !(plannerActivity.metrics.cards_reviewed + plannerActivity.metrics.questions_answered > 0 || (plannerActivity.mode === 'notes' && Date.now() / 1000 - plannerActivity.started_at >= 60))) return;
   var today = todayLocalDateString();
   var yesterday = addDaysToLocalDate(today, -1);
   var data = loadStreakData();
@@ -5599,6 +5600,19 @@ function openPack(packId) {
       // Deep link: auto-open learn mode if URL says so
       if (openLearnFromUrl && !autoLearnConsumed && selectedPack.study_pack_id === learnPackFromUrl) {
         autoLearnConsumed = true;
+        if (plannerSessionFromUrl && window.LectureProcessorPlannedStudy) {
+          window.LectureProcessorPlannedStudy.open({
+            api: apiCall, uid: auth.currentUser.uid, sessionId: plannerSessionFromUrl, pack: selectedPack,
+            isCurrentUser: (function (uid) { return function () { return auth.currentUser && auth.currentUser.uid === uid; }; })(auth.currentUser.uid),
+            onPack: function (pack) { selectedPack = pack; selectedPackId = pack.study_pack_id; },
+            review: applyReviewAction,
+            notesStudied: function () { saveStreakData(ensureStudyActivityRecorded()); },
+            flush: async function () { var controller = getProgressSyncController(); if (controller) await controller.whenIdle(); return flushProgressSync(false); },
+            markdown: function (value) { return window.DOMPurify ? window.DOMPurify.sanitize(mdToHtml(value)) : escapeHtml(value); },
+            onLeave: function () { window.location.href = '/plan'; }
+          }).catch(function (error) { showToast(error.message || 'Could not open this planned session.', 'error'); });
+          return;
+        }
         var preferMode = focusFromUrl || '';
         if (preferMode && ['flashcards', 'test', 'write', 'match', 'notes'].indexOf(preferMode) >= 0) {
           openLearnStageWithMode(preferMode, fullscreenFromUrl);
@@ -6803,7 +6817,10 @@ function queueInlineAutosave() {
 
 /* ── Auth ── */
 hydrateTopbarDueFromCache(auth.currentUser || null);
+var plannedStudyAuthUid = auth.currentUser ? auth.currentUser.uid : '';
 bootstrap.onAuthStateReady(auth, function (user) {
+  if (plannedStudyAuthUid !== (user ? user.uid : '') && window.LectureProcessorPlannedStudy) window.LectureProcessorPlannedStudy.invalidate();
+  plannedStudyAuthUid = user ? user.uid : '';
   if (!user) {
     token = null;
     if (authClient && typeof authClient.clearToken === 'function') { authClient.clearToken(); }

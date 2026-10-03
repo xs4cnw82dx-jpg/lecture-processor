@@ -114,6 +114,12 @@ def upsert_planner_session(app_ctx, request, session_id):
         return app_ctx.jsonify({'error': 'Invalid session id'}), 400
     existing = app_ctx.repositories.planner.get_planner_session(app_ctx.db, uid, safe_session_id)
     existing_payload = existing.to_dict() if existing.exists else {}
+    if payload.get('status') == 'completed' and existing_payload.get('status') != 'completed':
+        return app_ctx.jsonify({'error': 'Use Log study done or finish a tracked session.'}), 400
+    if existing_payload.get('status') == 'completed' and payload.get('status', 'completed') != 'completed':
+        return app_ctx.jsonify({'error': 'Use Reopen session to undo completion.'}), 400
+    for protected in ('active_run_id', 'completion', 'completion_generation'):
+        payload.pop(protected, None)
     if existing.exists and str(existing_payload.get('uid', '') or '') not in {'', uid}:
         return app_ctx.jsonify({'error': 'Forbidden'}), 403
     safe_payload, error = planner_models.sanitize_session_payload(
@@ -126,7 +132,13 @@ def upsert_planner_session(app_ctx, request, session_id):
     if safe_payload is None:
         return app_ctx.jsonify({'error': error or 'Invalid session payload'}), 400
     safe_payload['uid'] = uid
-    app_ctx.repositories.planner.set_planner_session(app_ctx.db, uid, safe_session_id, safe_payload, merge=False)
+    expected_revision = int(existing_payload.get('revision', 0) or 0)
+    safe_payload['revision'] = expected_revision + 1
+    from lecture_processor.repositories import planner_repo as planner_repository
+    try:
+        app_ctx.repositories.planner.set_planner_session_if_revision(app_ctx.db, uid, safe_session_id, safe_payload, expected_revision)
+    except planner_repository.PlannerRevisionConflict:
+        return app_ctx.jsonify({'error': 'This session changed in another tab.', 'code': 'revision_conflict'}), 409
     return app_ctx.jsonify({'ok': True, 'session': safe_payload})
 
 

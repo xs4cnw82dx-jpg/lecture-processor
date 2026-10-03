@@ -8,6 +8,7 @@ import warnings
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
+from lecture_processor.calendar_observability import install_calendar_log_filters, scrub_calendar_event
 
 
 warnings.filterwarnings('ignore', message='urllib3 v2 only supports OpenSSL 1\\.1\\.1\\+.*')
@@ -25,6 +26,7 @@ def configure_logging(log_level: str):
         level=getattr(logging, safe_level, logging.INFO),
         format='%(asctime)s %(levelname)s %(name)s %(message)s',
     )
+    install_calendar_log_filters()
     return logging.getLogger('lecture_processor')
 
 
@@ -147,4 +149,7 @@ def initialize_backend_sentry(
         send_default_pii=False,
         environment=environment,
         release=release,
+        before_send=scrub_calendar_event,
+        before_send_transaction=scrub_calendar_event,
+        before_breadcrumb=scrub_calendar_event,
     )

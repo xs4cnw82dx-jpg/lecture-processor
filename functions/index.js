@@ -80,3 +80,5 @@ exports.beforecreated = beforeUserCreated((event) => {
 exports.beforesignedin = beforeUserSignedIn((event) => {
   enforceAllowlist(event);
 });
+
+Object.assign(exports, require('./calendar-sync'));

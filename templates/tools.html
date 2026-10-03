@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tools Overview · Lecture Processor</title>
+  <title>More Tools · Lecture Processor</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -12,68 +12,42 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tools-hub.css') }}">
 </head>
 <body>
-  {% set shell_title = 'Tools Overview' %}
+  {% set shell_title = 'More Tools' %}
   {% include '_app_shell.html' %}
     <main class="app-shell-page tools-hub-page">
-      <section class="shell-panel hub-hero">
+      <header class="hub-hero">
+        <span class="hub-eyebrow">YOUR TOOLKIT</span>
         <h1>More tools</h1>
-        <p>Download lecture media, run focused transcriptions, or open the right reader for your source.</p>
+        <p>Find the right tool for what you want to do. Keep your favorites close.</p>
+      </header>
+      <section class="hub-favorites shell-panel" aria-labelledby="hub-favorites-title">
+        <div class="hub-section-heading"><div><h2 id="hub-favorites-title">Your favorites</h2><p>Your shortcuts, here and in the sidebar.</p></div><span id="hub-favorite-count" class="hub-count">0 tools</span></div>
+        <p id="hub-favorites-empty" class="hub-empty">Select the star beside any tool to add your first favorite.</p>
+        <ol id="hub-favorites-list" class="hub-favorites-list"></ol>
+        <p id="hub-favorites-status" role="status" aria-live="polite"></p>
       </section>
-      <section class="hub-grid">
-        <a class="shell-panel hub-card" href="/lecture-downloader">
-          <div class="hub-card-head"><span class="hub-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"></rect><path d="M10 9l5 3-5 3z"></path><path d="M8 22h8"></path></svg></span><h2>Lecture Downloader</h2></div>
-          <p>Download a supported lecture URL as MP4, MP3, or a ZIP with both.</p>
-        </a>
-        <a class="shell-panel hub-card" href="/general-transcriber">
-          <div class="hub-card-head"><span class="hub-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg></span><h2>General Transcriber</h2></div>
-          <p>Upload an audio file and create a clean transcript with one interview credit.</p>
-        </a>
-        <a class="shell-panel hub-card" href="/books"><div class="hub-card-head"><span class="hub-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 5C8 2 4 3 2 4v15c3-2 7-2 10 0 3-2 7-2 10 0V4c-3-1-7-2-10 1Zm0 0v14"/></svg></span><h2>Book Studio</h2></div><p>Create illustrated stories, sketchbooks and journals. Share a book or print it at home.</p></a>
-        <a class="shell-panel hub-card" href="/video-overlay-builder">
-          <div class="hub-card-head"><span class="hub-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M7 9h7"></path><path d="M7 13h4"></path><path d="M15 13h2"></path><path d="M15 9h2"></path><path d="M9 22h6"></path><path d="M12 19v3"></path></svg></span><h2>Video Overlay Builder</h2></div>
-          <p>Create timed cards, tables, images, and flow overlays for lecture videos.</p>
-        </a>
-        <a class="shell-panel hub-card" href="/batch_mode_audio_transcription">
-          <div class="hub-card-head"><span class="hub-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7c0 2 3.6 4 8 4s8-2 8-4-3.6-4-8-4-8 2-8 4z"></path><path d="M4 7v10c0 2 3.6 4 8 4s8-2 8-4V7"></path><path d="M4 12c0 2 3.6 4 8 4s8-2 8-4"></path></svg></span><h2>Batch Transcriber</h2></div>
-          <p>Transcribe multiple audio recordings in one batch with combined ZIP output.</p>
-        </a>
-        <a class="shell-panel hub-card" href="/batch_mode_text_combine">
-          <div class="hub-card-head"><span class="hub-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16"></path><path d="M4 12h10"></path><path d="M4 18h16"></path><path d="M17 10l3 2-3 2"></path></svg></span><h2>Batch Combine Text</h2></div>
-          <p>Combine existing slide extraction and transcript text files into complete lecture notes.</p>
-        </a>
-        <a class="shell-panel hub-card" href="/instant_batch_mode">
-          <div class="hub-card-head"><span class="hub-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7c0 2 3.6 4 8 4s8-2 8-4-3.6-4-8-4-8 2-8 4z"></path><path d="M4 7v10c0 2 3.6 4 8 4s8-2 8-4V7"></path><path d="M4 12c0 2 3.6 4 8 4s8-2 8-4"></path><path d="M17 3l3 3-3 3"></path></svg></span><h2>Instant Batch</h2></div>
-          <p>Start multiple rows immediately with live progress and combined ZIP output.</p>
-        </a>
-        <a class="shell-panel hub-card" href="/lecture-notes">
-          <div class="hub-card-head"><span class="hub-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></span><h2>Lecture Notes</h2></div>
-          <p>Slides + audio to full notes, flashcards, and tests.</p>
-        </a>
-        <a class="shell-panel hub-card" href="/slides-extraction">
-          <div class="hub-card-head"><span class="hub-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="14" rx="2"></rect><path d="M8 21h8"></path><path d="M12 18v3"></path></svg></span><h2>Slides Extraction</h2></div>
-          <p>Turn slide decks into clear study text quickly.</p>
-        </a>
-        <a class="shell-panel hub-card" href="/interview-transcription">
-          <div class="hub-card-head"><span class="hub-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg></span><h2>Interview Transcription</h2></div>
-          <p>Timestamped transcript with optional summary and headers</p>
-        </a>
-        <a class="shell-panel hub-card" href="/document-reader">
-          <div class="hub-card-head"><span class="hub-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="14" y2="17"></line></svg></span><h2>Document Reader</h2></div>
-          <p>Upload PDF, PPTX, or DOCX and ask focused questions.</p>
-        </a>
-        <a class="shell-panel hub-card" href="/image-reader">
-          <div class="hub-card-head"><span class="hub-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg></span><h2>Image Reader</h2></div>
-          <p>Upload up to 5 images and extract all text</p>
-        </a>
-        <a class="shell-panel hub-card" href="/url-reader">
-          <div class="hub-card-head"><span class="hub-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 14a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L10 6"></path><path d="M14 10a5 5 0 0 0-7.07 0L4.1 12.83a5 5 0 0 0 7.07 7.07L14 18"></path></svg></span><h2>URL Reader</h2></div>
-          <p>Analyze article pages and simplify complex findings.</p>
-        </a>
-        <a class="shell-panel hub-card" href="/batch_mode">
-          <div class="hub-card-head"><span class="hub-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M7 8h10"></path><path d="M7 12h10"></path><path d="M7 16h6"></path></svg></span><h2>Batch Mode</h2></div>
-          <p>Process multiple lecture rows in one request with combined ZIP output.</p>
-        </a>
+      <section class="hub-discovery" aria-label="Find a tool">
+        <label class="hub-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="6"></circle><path d="m15 15 5 5"></path></svg><span class="hub-sr-only">Search tools</span><input id="hub-search" type="search" placeholder="Search tools, files, or tasks…" autocomplete="off"></label>
+        <div class="hub-filters" aria-label="Tool categories"><button type="button" data-category="all" aria-pressed="true">All tools</button>{% for key, title, description in tool_categories %}<button type="button" data-category="{{ key }}" aria-pressed="false">{{ title }}</button>{% endfor %}</div>
       </section>
+      <p id="hub-results-status" class="hub-sr-only" role="status" aria-live="polite"></p>
+      <div id="hub-categories">
+      {% for key, title, description in tool_categories %}
+        <section class="hub-category" data-tool-category="{{ key }}" aria-labelledby="hub-category-{{ key }}">
+          <div class="hub-section-heading"><div><h2 id="hub-category-{{ key }}">{{ title }}</h2><p>{{ description }}</p></div></div>
+          <div class="hub-grid">
+          {% for tool in tool_catalog if tool.category == key %}
+            <article class="shell-panel hub-card" data-tool-id="{{ tool.id }}" data-search="{{ (tool.name ~ ' ' ~ tool.description ~ ' ' ~ title)|lower }}">
+              <div class="hub-card-head"><span class="hub-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="{{ tool_icons[tool.icon] }}"></path></svg></span><button type="button" class="hub-star" data-favorite="{{ tool.id }}" aria-label="Add {{ tool.name }} to favorites" aria-pressed="false" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9Z"></path></svg></button></div>
+              <h3><a href="{{ tool.url }}">{{ tool.name }}</a></h3><p>{{ tool.description }}</p>
+              <a class="hub-open" href="{{ tool.url }}" aria-label="Open {{ tool.name }}">Open tool <span aria-hidden="true">↗</span></a>
+            </article>
+          {% endfor %}
+          </div>
+        </section>
+      {% endfor %}
+      </div>
+      <div id="hub-no-results" class="hub-empty shell-panel" hidden><h2>No tools found</h2><p>Try a different word or browse all the categories.</p><button type="button" id="hub-clear-search">Clear search and filters</button></div>
     </main>
     {% include '_shell_footer.html' %}
   </div>
@@ -86,5 +60,6 @@
   <script src="{{ url_for('static', filename='js/user-cache-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/tools-hub.js') }}"></script>
 </body>
 </html>

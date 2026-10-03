@@ -83,9 +83,14 @@ def sanitize_preferences(payload, existing=None):
     source = payload if isinstance(payload, dict) else {}
     current = existing if isinstance(existing, dict) else {}
     availability_source = source.get('availability') if 'availability' in source else current.get('availability', DEFAULT_AVAILABILITY)
+    preset = str(source.get('availability_preset', current.get('availability_preset', 'custom')) or 'custom')
+    daily_start = str(source.get('daily_start', current.get('daily_start', '17:00')))
     return {
         'timezone': sanitize_timezone(source.get('timezone', current.get('timezone', 'UTC'))),
         'availability': sanitize_availability(availability_source),
+        'cadence': 'daily' if source.get('cadence', current.get('cadence')) == 'daily' else 'workload',
+        'availability_preset': preset if preset in {'daily', 'balanced', 'weekday-evenings', 'custom'} else 'custom',
+        'daily_start': daily_start if TIME_RE.match(daily_start) else '17:00',
         'default_session_minutes': _bounded_int(
             source.get('default_session_minutes', current.get('default_session_minutes', DEFAULT_SESSION_MINUTES)),
             default=DEFAULT_SESSION_MINUTES,
@@ -140,6 +145,7 @@ def sanitize_goal(payload, *, goal_id='', existing=None, now_ts=0.0):
         'pack_ids': pack_ids,
         'status': status,
         'notes_minutes_by_pack': sanitize_notes_minutes(source.get('notes_minutes_by_pack', current.get('notes_minutes_by_pack', {})), pack_ids),
+        'schedule_preferences': sanitize_preferences(source.get('schedule_preferences', current.get('schedule_preferences', {}))) if source.get('schedule_preferences', current.get('schedule_preferences')) else {},
         'revision': _bounded_int(current.get('revision', 0), maximum=1000000000),
         'created_at': created_at,
         'updated_at': float(now_ts or created_at),
@@ -304,7 +310,17 @@ def _parse_local_datetime(day_value, clock_value, timezone_name):
     return datetime.combine(day_value, datetime_time(hour=hour, minute=minute), tzinfo=zone)
 
 
-def build_available_slots(*, start_date, exam_date, preferences, occupied=None, max_sessions=200, now=None):
+def _session_start_utc(item, fallback_timezone):
+    try:
+        instant = datetime.fromisoformat(str(item.get('starts_at_utc', '')).replace('Z', '+00:00'))
+        if instant.tzinfo is not None:
+            return instant.astimezone(timezone.utc)
+    except (ValueError, TypeError):
+        pass
+    return _parse_local_datetime(date.fromisoformat(item['date']), item['time'], sanitize_timezone(item.get('timezone') or fallback_timezone)).astimezone(timezone.utc)
+
+
+def build_available_slots(*, start_date, exam_date, preferences, occupied=None, max_sessions=50000, now=None):
     start_day = date.fromisoformat(sanitize_date(start_date))
     exam_day = date.fromisoformat(sanitize_date(exam_date))
     safe_preferences = sanitize_preferences(preferences)
@@ -315,17 +331,17 @@ def build_available_slots(*, start_date, exam_date, preferences, occupied=None, 
     cutoff = now.astimezone(timezone.utc) if now is not None else None
     occupied_ranges = []
     for item in occupied if isinstance(occupied, list) else []:
-        if str(item.get('status', 'planned')) in {'cancelled', 'skipped'}:
+        if str(item.get('status', 'planned')) in {'cancelled', 'skipped'} and item.get('cancellation_reason') != 'user_removed':
             continue
         item_date = sanitize_date(item.get('date'))
         item_time = str(item.get('time', '') or '')
         if not item_date or not TIME_RE.match(item_time):
             continue
-        start = _parse_local_datetime(date.fromisoformat(item_date), item_time, timezone_name)
+        start = _session_start_utc(item, timezone_name)
         occupied_ranges.append((start, start + timedelta(minutes=_bounded_int(item.get('duration'), default=duration, minimum=5, maximum=360))))
     slots = []
     day_cursor = start_day
-    final_day = exam_day - timedelta(days=1)
+    final_day = min(exam_day - timedelta(days=1), start_day + timedelta(days=365))
     availability = safe_preferences['availability']
     while day_cursor <= final_day and len(slots) < max_sessions:
         for window in [item for item in availability if item['weekday'] == day_cursor.weekday()]:
@@ -334,14 +350,15 @@ def build_available_slots(*, start_date, exam_date, preferences, occupied=None, 
             while cursor + timedelta(minutes=duration) <= window_end and len(slots) < max_sessions:
                 slot_end = cursor + timedelta(minutes=duration)
                 is_future = cutoff is None or cursor.astimezone(timezone.utc) >= cutoff
-                if is_future and not any(cursor < occupied_end and slot_end > occupied_start for occupied_start, occupied_end in occupied_ranges):
+                if is_future and not any(cursor.astimezone(timezone.utc) < occupied_end and slot_end.astimezone(timezone.utc) > occupied_start for occupied_start, occupied_end in occupied_ranges):
                     slots.append({
                         'date': day_cursor.isoformat(),
                         'time': cursor.strftime('%H:%M'),
                         'starts_at_utc': cursor.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z'),
                         'duration': duration,
+                        'timezone': timezone_name,
                     })
-                    occupied_ranges.append((cursor, slot_end))
+                    occupied_ranges.append((cursor.astimezone(timezone.utc), slot_end.astimezone(timezone.utc)))
                 cursor = slot_end + timedelta(minutes=15)
         day_cursor += timedelta(days=1)
     return slots
@@ -369,13 +386,79 @@ def _allocate_outcomes(workload, duration):
     return {'flashcards': cards, 'questions': questions, 'notes_minutes': notes_minutes}, max(5, int(math.ceil(minutes * 1.15 - 1e-9)))
 
 
+def _daily_schedule(*, goal, workloads, preferences, start_date, occupied, proposal_id, now, required_minutes):
+    """Daily commitments keep their wall-clock time and duration, including revision."""
+    safe = sanitize_preferences(preferences)
+    duration = safe['default_session_minutes']
+    start_minutes = int(safe['daily_start'][:2]) * 60 + int(safe['daily_start'][3:])
+    if start_minutes + duration >= 24 * 60:
+        raise ValueError('Choose a start time that leaves room for the full session before midnight.')
+    end_minutes = start_minutes + duration
+    safe['availability'] = [{'weekday': day, 'start': safe['daily_start'], 'end': f'{end_minutes // 60:02d}:{end_minutes % 60:02d}'} for day in range(7)]
+    candidates = build_available_slots(start_date=start_date, exam_date=goal['exam_date'], preferences=safe, now=now)
+    same_goal = [item for item in occupied if item.get('goal_id') == goal.get('goal_id')]
+    retained = [item for item in same_goal if item.get('status', 'planned') in {'planned', 'completed', 'skipped'}]
+    covered_dates = {item['date'] for item in retained}
+    excluded_dates = {item['date'] for item in same_goal if item.get('status') == 'cancelled' and item.get('cancellation_reason') == 'user_removed'}
+    conflicts = []
+    scheduled = []
+    rotation = 0
+    for slot in candidates:
+        if slot['date'] in covered_dates or slot['date'] in excluded_dates:
+            continue
+        start = datetime.fromisoformat(slot['starts_at_utc'].replace('Z', '+00:00'))
+        end = start + timedelta(minutes=duration)
+        if ZoneInfo is not None and start.astimezone(ZoneInfo(safe['timezone'])).strftime('%H:%M') != slot['time']:
+            conflicts.append({'date': slot['date'], 'time': slot['time'], 'session_ids': [], 'reason': 'daylight_saving_time'})
+            continue
+        collision = []
+        for item in occupied:
+            if item.get('status', 'planned') in {'cancelled', 'skipped'}:
+                continue
+            other_start = _session_start_utc(item, safe['timezone'])
+            if start < other_start + timedelta(minutes=int(item.get('duration', duration))) and end > other_start:
+                collision.append(item.get('id', ''))
+        if collision:
+            conflicts.append({'date': slot['date'], 'time': slot['time'], 'session_ids': collision})
+            continue
+        available = [item for item in workloads if _workload_minutes(item) > 0]
+        pool = available or workloads
+        if not pool:
+            continue
+        workload = pool[rotation % len(pool)]
+        rotation += 1
+        if available:
+            outcomes, coverage = _allocate_outcomes(workload, duration)
+            coverage = min(duration, coverage) if any(outcomes.values()) else 0
+        else:
+            outcomes, coverage = {'flashcards': 0, 'questions': 0, 'notes_minutes': 0}, 0
+        revision_minutes = max(0, duration - coverage)
+        intent = 'review' if not coverage else 'mixed' if revision_minutes else 'study'
+        scheduled.append({
+            **slot, 'duration': duration,
+            'id': f"sp_{proposal_id[:12]}_{len(scheduled) + 1:03d}",
+            'title': f"{'Review' if intent == 'review' else 'Study'} {workload.get('title', 'study pack')}",
+            'goal_id': goal.get('goal_id', ''), 'pack_id': workload.get('pack_id', ''),
+            'pack_title': workload.get('title', ''), 'planned_outcomes': outcomes,
+            'coverage_minutes': coverage, 'revision_minutes': revision_minutes, 'study_intent': intent,
+            'origin': 'automatic', 'locked': False, 'status': 'planned', 'proposal_id': proposal_id,
+        })
+    return {
+        'sessions': scheduled, 'required_minutes': required_minutes,
+        'scheduled_minutes': sum(item['duration'] for item in scheduled),
+        'shortage_minutes': sum(_workload_minutes(item) for item in workloads),
+        'capacity_minutes': len(candidates) * duration,
+        'retained_sessions': retained, 'conflicts': conflicts, 'excluded_dates': sorted(excluded_dates),
+    }
+
+
 def generate_schedule(*, goal, pack_workloads, preferences, start_date, occupied=None, proposal_id='', now=None):
     safe_goal = goal if isinstance(goal, dict) else {}
     slots = build_available_slots(
         start_date=start_date,
         exam_date=safe_goal.get('exam_date', ''),
         preferences=preferences,
-        occupied=occupied,
+        occupied=[item for item in (occupied or []) if item.get('cancellation_reason') != 'user_removed' or item.get('goal_id') == safe_goal.get('goal_id')],
         now=now,
     )
     queue = []
@@ -386,7 +469,7 @@ def generate_schedule(*, goal, pack_workloads, preferences, start_date, occupied
         item['notes_minutes'] = _bounded_int(item.get('notes_minutes'))
         item['card_minutes_per_item'] = max(0.25, min(5.0, float(item.get('card_minutes_per_item', 1.0) or 1.0)))
         item['question_minutes_per_item'] = max(0.5, min(10.0, float(item.get('question_minutes_per_item', 2.0) or 2.0)))
-        if _workload_minutes(item) > 0:
+        if _workload_minutes(item) > 0 or sanitize_preferences(preferences)['cadence'] == 'daily':
             queue.append(item)
     queue.sort(key=lambda item: (
         -_bounded_int(item.get('due_cards')),
@@ -396,12 +479,24 @@ def generate_schedule(*, goal, pack_workloads, preferences, start_date, occupied
         str(item.get('title', '')).lower(),
     ))
     total_required = sum(_workload_minutes(item) for item in queue)
+    # A locked/manual commitment already covers its targets; don't assign them again.
+    for session in occupied or []:
+        if session.get('goal_id') != safe_goal.get('goal_id') or session.get('status', 'planned') != 'planned':
+            continue
+        for workload in queue:
+            if workload.get('pack_id') == session.get('pack_id'):
+                outcomes = session.get('planned_outcomes') or {}
+                for remaining, outcome in [('cards_remaining', 'flashcards'), ('questions_remaining', 'questions'), ('notes_minutes', 'notes_minutes')]:
+                    workload[remaining] = max(0, workload[remaining] - _bounded_int(outcomes.get(outcome)))
+    if sanitize_preferences(preferences)['cadence'] == 'daily':
+        return _daily_schedule(goal=safe_goal, workloads=queue, preferences=preferences, start_date=start_date,
+                               occupied=occupied or [], proposal_id=proposal_id, now=now, required_minutes=total_required)
     default_duration = sanitize_preferences(preferences)['default_session_minutes']
     # Build one-pack sessions before spacing them over the calendar. Counting
     # combined minutes undercounts small packs and loses rounded item remainders.
-    active = list(queue)
+    active = [item for item in queue if _workload_minutes(item) > 0]
     allocations = []
-    while active and len(allocations) < len(slots):
+    while active and len(allocations) < min(200, len(slots)):
         workload = active.pop(0)
         outcomes, duration = _allocate_outcomes(workload, default_duration)
         if any(outcomes.values()):

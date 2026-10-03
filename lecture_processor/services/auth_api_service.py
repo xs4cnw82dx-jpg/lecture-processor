@@ -9,6 +9,7 @@ from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.shared import parsing as shared_parsing
+from lecture_processor.domains.shared.tool_catalog import TOOL_IDS, sanitize_favorite_tools
 from lecture_processor.services import access_service, auth_service
 
 
@@ -268,6 +269,12 @@ def update_user_preferences(app_ctx, request):
     }
     if 'onboarding_completed' in payload:
         updates['onboarding_completed'] = bool(payload.get('onboarding_completed'))
+    if 'favorite_tools' in payload:
+        favorites = payload['favorite_tools']
+        if (not isinstance(favorites, list) or len(favorites) > len(TOOL_IDS)
+                or any(not isinstance(item, str) or item not in TOOL_IDS for item in favorites)):
+            return app_ctx.jsonify({'error': 'Choose favorites from the available tools.'}), 400
+        updates['favorite_tools'] = sanitize_favorite_tools(favorites)
 
     try:
         app_ctx.repositories.users.set_doc(app_ctx.db, uid, updates, merge=True)
