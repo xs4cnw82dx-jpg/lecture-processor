@@ -8,6 +8,7 @@ from flask import g, jsonify, request
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from lecture_processor.domains.ai import batch_orchestrator
+from lecture_processor.calendar_observability import redact_calendar_url
 
 
 def _set_sentry_tags(runtime, tags):
@@ -55,7 +56,7 @@ def register_runtime_hooks(app, runtime) -> None:
         g.request_id = request_id
         tags = {
             'request.id': request_id,
-            'route.path': request.path,
+            'route.path': redact_calendar_url(request.path),
             'route.method': request.method,
             'route.endpoint': request.endpoint or '',
             'route.auth_header_present': 'true' if request.headers.get('Authorization') else 'false',

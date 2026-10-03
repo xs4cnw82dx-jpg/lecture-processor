@@ -672,7 +672,10 @@ def delete_account_data(app_ctx, request):
         _delete_uid_collection('study_goals')
         _delete_uid_collection('study_plan_proposals')
         _delete_uid_collection('study_activity_sessions')
+        from lecture_processor.services import calendar_sync_service
+        calendar_sync_service.delete_account_connection(app_ctx, uid)
         _delete_uid_collection('study_calendar_feeds')
+        _delete_uid_collection('study_calendar_oauth_states')
         _delete_uid_collection('physio_case_sessions')
         _delete_uid_collection('physio_cases')
         for workout_collection in (

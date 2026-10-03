@@ -84,6 +84,19 @@ def sanitize_session_payload(payload, *, session_id='', existing=None, now_ts=0.
     created_at = float(current.get('created_at', now_ts) or now_ts)
     planned_source = source.get('planned_outcomes', current.get('planned_outcomes', {}))
     planned_source = planned_source if isinstance(planned_source, dict) else {}
+    planned_outcomes = {key: _safe_outcome_int(planned_source.get(key, 0))
+                        for key in ('flashcards', 'questions', 'notes_minutes')}
+    if current.get('active_run_id'):
+        current_outcomes = current.get('planned_outcomes') or {}
+        targets_changed = any(planned_outcomes[key] != _safe_outcome_int(current_outcomes.get(key, 0))
+                              for key in planned_outcomes)
+        budget_changed = any(_safe_outcome_int(source.get(key, current.get(key, default))) !=
+                             _safe_outcome_int(current.get(key, default))
+                             for key, default in (('coverage_minutes', duration), ('revision_minutes', 0)))
+        intent_changed = str(source.get('study_intent', current.get('study_intent', 'study')) or 'study') != str(current.get('study_intent', 'study') or 'study')
+        if (pack_id != str(current.get('pack_id') or '') or duration != int(current.get('duration', 0))
+                or targets_changed or budget_changed or intent_changed):
+            return (None, 'Restart the study run before changing its study pack, duration, or study targets.')
     status = str(source.get('status', current.get('status', 'planned')) or '').strip().lower()
     if status not in {'planned', 'completed', 'skipped', 'cancelled'}:
         status = 'planned'
@@ -105,17 +118,21 @@ def sanitize_session_payload(payload, *, session_id='', existing=None, now_ts=0.
             'pack_id': pack_id,
             'pack_title': pack_title,
             'goal_id': str(source.get('goal_id', current.get('goal_id', '')) or '').strip()[:120],
-            'planned_outcomes': {
-                'flashcards': _safe_outcome_int(planned_source.get('flashcards', 0)),
-                'questions': _safe_outcome_int(planned_source.get('questions', 0)),
-                'notes_minutes': _safe_outcome_int(planned_source.get('notes_minutes', 0)),
-            },
+            'planned_outcomes': planned_outcomes,
             'origin': origin,
             'locked': bool(source.get('locked', current.get('locked', origin in {'legacy', 'manual'}))),
             'status': status,
             'proposal_id': str(source.get('proposal_id', current.get('proposal_id', '')) or '').strip()[:120],
             'revision': revision,
             'starts_at_utc': str(source.get('starts_at_utc', current.get('starts_at_utc', '')) or '').strip()[:40],
+            'timezone': str(source.get('timezone', current.get('timezone', '')) or '').strip()[:80],
+            'coverage_minutes': _safe_outcome_int(source.get('coverage_minutes', current.get('coverage_minutes', duration))),
+            'revision_minutes': _safe_outcome_int(source.get('revision_minutes', current.get('revision_minutes', 0))),
+            'study_intent': str(source.get('study_intent', current.get('study_intent', 'study')) or 'study')[:20],
+            'cancellation_reason': str(source.get('cancellation_reason', current.get('cancellation_reason', '')) or '')[:40],
+            'active_run_id': str(source.get('active_run_id', current.get('active_run_id', '')) or '')[:120],
+            'completion': dict(source.get('completion', current.get('completion', {}))) if isinstance(source.get('completion', current.get('completion', {})), dict) else {},
+            'completion_generation': _safe_outcome_int(source.get('completion_generation', current.get('completion_generation', 0))),
             'created_at': created_at,
             'updated_at': float(now_ts or created_at or 0.0),
         },

@@ -7,9 +7,15 @@ from flask import Blueprint, abort, redirect, render_template, request, send_fro
 from lecture_processor.domains.auth import session as auth_session
 from lecture_processor.runtime.container import get_runtime
 from lecture_processor.services import workout_service
+from lecture_processor.domains.shared.tool_catalog import TOOL_CATALOG, TOOL_CATEGORIES, ICONS
 
 
 pages_bp = Blueprint('pages', __name__)
+
+
+@pages_bp.app_context_processor
+def tool_catalog_context():
+    return {'tool_catalog': TOOL_CATALOG, 'tool_categories': TOOL_CATEGORIES, 'tool_icons': ICONS}
 
 
 PRICING_CATEGORY_SPECS = (

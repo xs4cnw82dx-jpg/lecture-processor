@@ -122,12 +122,23 @@ EXPECTED_ROUTES = [
     ('GET', '/api/study-plan', 'study_api.get_study_plan'),
     ('POST', '/api/study-plan/apply', 'study_api.apply_study_plan'),
     ('POST', '/api/study-plan/calendar-feeds', 'study_api.create_study_plan_calendar_feed'),
+    ('GET', '/api/study-plan/calendar/google', 'study_api.study_google_calendar'),
+    ('PATCH', '/api/study-plan/calendar/google', 'study_api.study_google_calendar'),
+    ('POST', '/api/study-plan/calendar/google/connect', 'study_api.connect_study_google_calendar'),
+    ('GET', '/api/study-plan/calendar/google/callback', 'study_api.callback_study_google_calendar'),
+    ('POST', '/api/study-plan/calendar/google/sync', 'study_api.sync_study_google_calendar'),
+    ('POST', '/api/study-plan/calendar/google/disconnect', 'study_api.disconnect_study_google_calendar'),
+    ('POST', '/internal/study-plan/calendar-sync/drain', 'study_api.drain_study_google_calendar'),
+
     ('DELETE', '/api/study-plan/calendar-feeds/<feed_id>', 'study_api.revoke_study_plan_calendar_feed'),
     ('POST', '/api/study-plan/calendar-feeds/<feed_id>/rotate', 'study_api.rotate_study_plan_calendar_feed'),
     ('POST', '/api/study-plan/goals', 'study_api.create_study_plan_goal'),
     ('DELETE', '/api/study-plan/goals/<goal_id>', 'study_api.archive_study_plan_goal'),
     ('PATCH', '/api/study-plan/goals/<goal_id>', 'study_api.update_study_plan_goal'),
     ('PUT', '/api/study-plan/items/<session_id>', 'study_api.update_study_plan_item'),
+    ('POST', '/api/study-plan/items/<session_id>/run', 'study_api.start_planned_study_run'),
+    ('PUT', '/api/study-plan/runs/<run_id>', 'study_api.checkpoint_planned_study_run'),
+    ('POST', '/api/study-plan/items/<session_id>/completion', 'study_api.complete_planned_study_session'),
     ('GET', '/api/study-plan/library', 'study_api.get_study_plan_library'),
     ('GET', '/api/study-plan/membership', 'study_api.get_study_plan_membership'),
     ('PUT', '/api/study-plan/preferences', 'study_api.update_study_plan_preferences'),
@@ -410,9 +421,9 @@ def test_more_tools_pages_and_links_render(client):
     downloader_response = client.get('/lecture-downloader')
     assert downloader_response.status_code == 200
     downloader_html = downloader_response.get_data(as_text=True)
-    assert 'href="/lecture-downloader"' in downloader_html
-    assert 'href="/video-overlay-builder"' in downloader_html
-    assert 'href="/general-transcriber"' in downloader_html
+    assert 'id="shell-more-tools-link"' in downloader_html
+    assert 'id="shell-tool-favorites" hidden' in downloader_html
+    assert 'id="shell-more-tools-panel"' not in downloader_html
     assert 'href="/instant_batch_mode"' in downloader_html
     assert 'href="/batch_mode_audio_transcription"' not in downloader_html
     assert 'href="/batch_mode_text_combine"' not in downloader_html

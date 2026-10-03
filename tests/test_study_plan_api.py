@@ -47,6 +47,7 @@ def study_plan_runtime(monkeypatch, runtime):
     monkeypatch.setattr(core.study_repo, 'get_study_pack_doc', lambda _db, requested: _Snapshot(pack, requested) if requested == pack_id else _Snapshot())
     monkeypatch.setattr(core.study_repo, 'list_study_folders_by_uid', lambda _db, _uid: [])
     monkeypatch.setattr(core, 'get_study_card_state_doc', lambda _uid, _pack_id: type('Ref', (), {'get': lambda self: _Snapshot({'state': {}})})())
+    monkeypatch.setitem(runtime.__dict__, 'get_study_card_state_doc', lambda _uid, _pack_id: type('Ref', (), {'get': lambda self: _Snapshot({'state': {}})})())
     monkeypatch.setitem(runtime.__dict__, 'get_study_progress_doc', lambda _uid: type('Ref', (), {'get': lambda self: _Snapshot({
         'card_state_due_by_date_version': 1, 'card_state_due_by_date': {},
     })})())
@@ -248,7 +249,7 @@ def test_legacy_folder_migration_retry_is_idempotent(client, study_plan_runtime,
     assert len(retried.get_json()['goals']) == 1
 
 
-def test_activity_checkpoint_completes_linked_session_and_aggregates_questions(client, study_plan_runtime):
+def test_activity_checkpoint_keeps_partial_session_planned_and_aggregates_questions(client, study_plan_runtime):
     session = client.put(
         '/api/study-plan/items/session_activity',
         json={
@@ -279,7 +280,7 @@ def test_activity_checkpoint_completes_linked_session_and_aggregates_questions(c
     assert activity['questions_completed'] == 4
     assert activity['accuracy_percent'] == 75
     stored = core.planner_repo.get_planner_session(None, study_plan_runtime['uid'], session['id']).to_dict()
-    assert stored['status'] == 'completed'
+    assert stored['status'] == 'planned'
 
 
 def test_activity_and_resource_ids_reject_invalid_input(client, study_plan_runtime):

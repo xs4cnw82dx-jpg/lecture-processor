@@ -102,11 +102,11 @@
               <p id="schedule-week-summary"></p>
             </div>
             <div class="schedule-actions">
-              <button type="button" class="btn" id="calendar-connections-btn">Device calendar</button>
+              <button type="button" class="btn" id="calendar-connections-btn">Add to calendar</button>
               <button type="button" class="btn primary" id="schedule-add-session-btn">Add session</button>
             </div>
           </div>
-          <p class="schedule-help" id="schedule-help">Select a session to complete, skip, lock, or move it. Automatic sessions only change after you accept a new proposal.</p>
+          <p class="schedule-help" id="schedule-help">Select a session to study, log work done, skip, or move it. You can reopen completed sessions without losing your learning progress.</p>
           <div class="week-calendar" id="week-calendar" aria-label="Weekly study schedule"></div>
           <div class="mobile-agenda" id="mobile-agenda"></div>
         </section>
@@ -139,7 +139,7 @@
               <h2>Subscribe on your device</h2>
               <p>One-way calendar subscriptions keep reminders working while Lecture Processor is closed. External edits do not change your study plan.</p>
             </div>
-            <button type="button" class="btn" id="progress-calendar-connections-btn">Manage subscriptions</button>
+            <button type="button" class="btn" id="progress-calendar-connections-btn">Manage calendars</button>
           </article>
         </section>
       </section>
@@ -190,12 +190,16 @@
       <section class="wizard-step" data-wizard-step="3" hidden>
         <p class="study-plan-kicker">Step 3 of 4</p>
         <h2>When can you study?</h2>
-        <p class="availability-intro">Nothing is chosen for you. Pick the option that is closest to your week, or set the exact days and times yourself.</p>
+        <p class="availability-intro">Build a daily habit, or choose available windows for a plan based on your remaining work.</p>
         <div class="availability-presets" role="group" aria-label="Availability preset">
           <button type="button" class="availability-preset" data-availability-preset="balanced" aria-pressed="false"><span class="preset-check" aria-hidden="true">✓</span>Balanced week<span>Mon, Wed &amp; Sat · mixed times</span></button>
-          <button type="button" class="availability-preset" data-availability-preset="weekday-evenings" aria-pressed="false"><span class="preset-check" aria-hidden="true">✓</span>Weekday evenings<span>Mon–Fri · 19:00–21:00</span></button>
-          <button type="button" class="availability-preset" data-availability-preset="daily" aria-pressed="false"><span class="preset-check" aria-hidden="true">✓</span>A little every day<span>Every day · 17:00–19:00</span></button>
+          <button type="button" class="availability-preset" data-availability-preset="weekday-evenings" aria-pressed="false"><span class="preset-check" aria-hidden="true">✓</span>Weekday evenings<span data-preset-time="weekday-evenings">Mon–Fri · choose a time</span></button>
+          <button type="button" class="availability-preset" data-availability-preset="daily" aria-pressed="false"><span class="preset-check" aria-hidden="true">✓</span>A little every day<span data-preset-time="daily">Every day · choose a time</span></button>
           <button type="button" class="availability-preset" data-availability-preset="custom" aria-pressed="false"><span class="preset-check" aria-hidden="true">✓</span>Choose exact times<span>Set each day yourself</span></button>
+        </div>
+        <div class="preset-time-settings" id="preset-time-settings" hidden>
+          <div class="plan-field compact"><label for="wizard-start-time">Start time</label><input id="wizard-start-time" type="text" inputmode="numeric" autocomplete="off" data-plan-picker="time" value="17:00"></div>
+          <p id="wizard-time-summary" aria-live="polite"></p>
         </div>
         <div class="custom-availability" id="custom-availability" hidden></div>
         <div class="plan-field compact"><label for="wizard-session-length">Session length</label><select id="wizard-session-length" data-pretty-select><option value="30">30 minutes</option><option value="45" selected>45 minutes</option><option value="60">60 minutes</option><option value="90">90 minutes</option></select></div>
@@ -205,6 +209,7 @@
         <p class="study-plan-kicker">Step 4 of 4</p>
         <h2>Review before anything changes</h2>
         <div class="preview-summary" id="wizard-preview-summary"></div>
+        <p class="preview-notice" id="wizard-preview-notice" hidden></p>
         <div class="capacity-warning" id="wizard-capacity-warning" hidden></div>
         <div class="preview-session-list" id="wizard-preview-sessions"></div>
       </section>
@@ -229,9 +234,12 @@
         <div class="plan-field"><label for="session-editor-duration">Minutes</label><input id="session-editor-duration" type="number" min="5" max="360"></div>
       </div>
       <label class="plan-check"><input id="session-editor-locked" type="checkbox"> <span>Lock this session so automatic proposals cannot move it</span></label>
+      <button type="button" class="btn danger" id="session-editor-remove" hidden>Remove session</button>
+      <p class="plan-muted" id="session-editor-run-note" hidden>Restart the study run to change its pack or duration. You can still move this session to another date or time.</p>
       <div class="field-error" id="session-editor-error" role="alert" hidden></div>
       <div class="session-editor-status-actions" id="session-editor-status-actions">
-        <button type="button" class="btn" data-session-status="completed">Complete</button>
+        <button type="button" class="btn" data-session-log>Log study done</button>
+        <button type="button" class="btn" data-session-reopen hidden>Reopen session</button>
         <button type="button" class="btn" data-session-status="skipped">Skip</button>
       </div>
       <div class="plan-dialog-actions">
@@ -241,24 +249,64 @@
     </div>
   </div>
 
+  <div class="plan-overlay" id="study-log-overlay" hidden aria-hidden="true">
+    <div class="plan-dialog" role="dialog" aria-modal="true" aria-labelledby="study-log-title">
+      <button type="button" class="plan-dialog-close" id="study-log-close" aria-label="Close study log">×</button>
+      <p class="study-plan-kicker">Studied away from the app?</p>
+      <h2 id="study-log-title">Log study done</h2>
+      <p id="study-log-session"></p>
+      <p>This records your study time and completes this session. Card reviews and mastery only change when you answer or review cards.</p>
+      <form id="study-log-form">
+        <div class="plan-field"><label for="study-log-minutes">Time spent (minutes)</label><input id="study-log-minutes" type="number" min="1" max="1440" step="1" required inputmode="numeric" placeholder="Enter actual study time"></div>
+        <div class="field-error" id="study-log-error" role="alert" hidden></div>
+        <div class="plan-dialog-actions"><button type="button" class="btn" id="study-log-cancel">Cancel</button><button type="submit" class="btn primary" id="study-log-submit">Save study log</button></div>
+      </form>
+    </div>
+  </div>
+
   <div class="plan-overlay" id="calendar-feeds-overlay" hidden aria-hidden="true">
     <div class="plan-dialog calendar-dialog" role="dialog" aria-modal="true" aria-labelledby="calendar-feeds-title">
-      <button type="button" class="plan-dialog-close" id="calendar-feeds-close" aria-label="Close calendar subscriptions">×</button>
-      <p class="study-plan-kicker">One-way calendar sync</p>
-      <h2 id="calendar-feeds-title">Device calendar subscriptions</h2>
-      <p>Lecture Processor publishes your sessions and deadlines to a private calendar URL. The URL is shown only when it is created or rotated.</p>
-      <div class="calendar-feed-create">
-        <div class="plan-field"><label for="calendar-feed-name">Name</label><input id="calendar-feed-name" maxlength="80" placeholder="My iPhone"></div>
-        <div class="plan-field"><label for="calendar-feed-reminder">Reminder</label><select id="calendar-feed-reminder" data-pretty-select><option value="10">10 minutes before</option><option value="30" selected>30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option><option value="0">No reminder</option></select></div>
-        <button type="button" class="btn primary" id="calendar-feed-create-btn">Create private URL</button>
+      <button type="button" class="plan-dialog-close" id="calendar-feeds-close" aria-label="Close calendar setup">×</button>
+      <p class="study-plan-kicker">Your plan, wherever you are</p>
+      <h2 id="calendar-feeds-title">Add to your calendar</h2>
+      <p>See study time alongside the rest of your day. Keep planning here, and take your schedule with you.</p>
+      <div class="calendar-provider-grid" aria-label="Choose your calendar">
+        <button type="button" class="calendar-provider is-selected" data-calendar-provider="google" aria-pressed="true"><span class="calendar-provider-icon">G</span><strong>Google Calendar</strong><span>Connect or subscribe</span></button>
+        <button type="button" class="calendar-provider" data-calendar-provider="apple" aria-pressed="false"><span class="calendar-provider-icon" aria-hidden="true">▦</span><strong>Apple Calendar</strong><span>iPhone, iPad &amp; Mac</span></button>
+        <button type="button" class="calendar-provider" data-calendar-provider="other" aria-pressed="false"><span class="calendar-provider-icon" aria-hidden="true">+</span><strong>Other calendar</strong><span>Use a private link</span></button>
       </div>
-      <div class="calendar-feed-once" id="calendar-feed-once" hidden>
-        <strong>Copy this URL now—it will not be shown again.</strong>
-        <div class="calendar-feed-url-row"><input id="calendar-feed-url" aria-label="New private calendar subscription URL" readonly><button type="button" class="btn" id="calendar-feed-copy">Copy</button></div>
-      </div>
-      <div class="calendar-feed-list" id="calendar-feed-list"></div>
-      <details class="calendar-help"><summary>How to subscribe</summary><div><strong>Google Calendar:</strong> Other calendars → From URL. <strong>Apple Calendar:</strong> File → New Calendar Subscription. <strong>Outlook:</strong> Add calendar → Subscribe from web.</div></details>
-      <p class="calendar-privacy-note">Anyone with a private URL can read that calendar. Revoke it immediately if it is shared accidentally.</p>
+      <p class="calendar-inline-message" id="calendar-setup-message" role="status" hidden></p>
+      <section class="calendar-connection-panel" id="google-calendar-panel" aria-label="Google account connection">
+        <div class="calendar-panel-heading"><div><span class="calendar-method-label">DIRECT CONNECTION</span><h3>A calendar just for studying</h3></div><span class="calendar-status-pill" id="google-calendar-status">Checking…</span></div>
+        <p id="google-calendar-description">We create a separate Lecture Processor calendar. Your other calendars stay private. Changes you make here are sent to Google automatically.</p>
+        <p id="google-calendar-account" class="calendar-account-detail"></p>
+        <div class="calendar-settings-row">
+          <div class="plan-field"><label for="google-calendar-reminder">Remind me</label><select id="google-calendar-reminder" data-pretty-select><option value="10">10 minutes before</option><option value="30" selected>30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option><option value="0">No reminder</option></select></div>
+          <label class="calendar-deadline-choice"><input type="checkbox" id="google-calendar-deadlines" checked> Include exam deadlines</label>
+        </div>
+        <div class="calendar-main-actions"><button type="button" class="btn primary" id="google-calendar-connect" disabled>Connect Google account</button><button type="button" class="btn" id="google-calendar-sync" hidden>Sync now</button><button type="button" class="btn" id="google-calendar-save" hidden>Save settings</button><a class="btn" id="google-calendar-open" href="https://calendar.google.com/" target="_blank" rel="noopener noreferrer" hidden>Open Google Calendar ↗</a><button type="button" class="btn danger" id="google-calendar-disconnect" hidden>Disconnect</button></div>
+        <div class="calendar-disconnect-confirm" id="google-calendar-disconnect-confirm" hidden><strong>Disconnect Google Calendar?</strong><p>Your study plan stays here. Existing Google events are kept unless you choose to remove the synced study events below.</p><label><input type="checkbox" id="google-calendar-remove"> Also remove the study events added by Lecture Processor. Keep my calendar and anything I added myself.</label><div class="calendar-main-actions"><button type="button" class="btn" id="google-calendar-disconnect-cancel">Keep connected</button><button type="button" class="btn danger" id="google-calendar-disconnect-confirm-btn">Disconnect</button></div></div>
+        <button type="button" class="calendar-text-action" id="google-calendar-use-link">Or subscribe using a private link</button>
+      </section>
+      <section class="calendar-subscribe-panel" id="calendar-subscribe-panel" hidden>
+        <span class="calendar-method-label">CALENDAR SUBSCRIPTION</span>
+        <h3 id="calendar-subscribe-title">Subscribe to your study plan</h3>
+        <p id="calendar-subscribe-description">Create your private calendar link, then add it to your calendar app.</p>
+        <ol class="calendar-setup-steps" id="calendar-subscribe-steps"></ol>
+        <div class="calendar-feed-create">
+          <div class="plan-field"><label for="calendar-feed-name">Calendar label</label><input id="calendar-feed-name" maxlength="80" placeholder="My Apple Calendar"></div>
+          <div class="plan-field"><label for="calendar-feed-reminder">Remind me</label><select id="calendar-feed-reminder" data-pretty-select><option value="10">10 minutes before</option><option value="30" selected>30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option><option value="0">No reminder</option></select></div>
+          <button type="button" class="btn primary" id="calendar-feed-create-btn">Create calendar link</button>
+        </div>
+        <div class="calendar-feed-once" id="calendar-feed-once" hidden>
+          <strong>Your private calendar link is ready</strong><p>Copy it before leaving this page. For your privacy, we cannot show this link again later.</p>
+          <div class="calendar-feed-url-row"><input id="calendar-feed-url" aria-label="New private calendar subscription URL" readonly><button type="button" class="btn" id="calendar-feed-copy">Copy link</button></div>
+          <div class="calendar-main-actions"><a class="btn primary" id="calendar-provider-open" hidden>Open calendar</a></div>
+        </div>
+        <p class="calendar-refresh-note">Subscriptions refresh on your calendar app’s schedule. Edit sessions here; changes may take time to appear. Your app controls notifications.</p>
+      </section>
+      <section class="calendar-existing"><h3>Your subscription links</h3><div class="calendar-feed-list" id="calendar-feed-list"></div></section>
+      <p class="calendar-privacy-note">A private link lets anyone who has it read your study schedule. Share it only with your calendar app.</p>
     </div>
   </div>
 

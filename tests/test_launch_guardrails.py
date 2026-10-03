@@ -1782,6 +1782,7 @@ def test_account_delete_failure_after_purge_requires_retry_without_restoring_acc
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-restore", "email": "user@gmail.com", "auth_time": core.time.time()})
     monkeypatch.setattr(core, "db", object())
+    monkeypatch.setattr("lecture_processor.services.calendar_sync_service.delete_account_connection", lambda _ctx, _uid: None)
     monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
     monkeypatch.setattr("lecture_processor.runtime.hooks.batch_orchestrator.run_startup_batch_recovery_once", lambda runtime=None: None)
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)

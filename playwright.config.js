@@ -34,6 +34,8 @@ module.exports = defineConfig({
       env: {
         PORT: String(testPort),
         FLASK_DEBUG: '0',
+        ENABLE_RUNTIME_JOB_RECOVERY: '0',
+        ENABLE_BATCH_JOB_RECOVERY: '0',
         SENTRY_DSN_BACKEND: '',
         SENTRY_DSN_FRONTEND: ''
       }

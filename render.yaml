@@ -23,6 +23,9 @@ services:
         value: "1"
       - key: STUDY_PLAN_V2
         value: "1"
+      # Keep disabled until OAuth and Firebase worker are configured; see docs/google-calendar-setup.md.
+      - key: GOOGLE_CALENDAR_ENABLED
+        value: "0"
       - key: BOOK_STUDIO_ENABLED
         value: "1"
       - key: BOOK_STORAGE_URL

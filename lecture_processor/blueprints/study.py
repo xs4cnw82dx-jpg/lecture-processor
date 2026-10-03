@@ -7,11 +7,26 @@ from lecture_processor.services import (
     planner_api_service,
     study_api_service,
     study_plan_service,
+    study_run_service,
     study_picture_service,
     voice_note_service,
 )
 
 study_bp = Blueprint('study_api', __name__)
+
+@study_bp.route('/api/study-plan/items/<session_id>/run', methods=['POST'])
+def start_planned_study_run(session_id):
+    return study_run_service.start_run(get_runtime(), request, session_id)
+
+
+@study_bp.route('/api/study-plan/runs/<run_id>', methods=['PUT'])
+def checkpoint_planned_study_run(run_id):
+    return study_run_service.checkpoint_run(get_runtime(), request, run_id)
+
+
+@study_bp.route('/api/study-plan/items/<session_id>/completion', methods=['POST'])
+def complete_planned_study_session(session_id):
+    return study_run_service.completion(get_runtime(), request, session_id)
 
 
 @study_bp.route('/api/study-packs/<pack_id>/images', methods=['POST'])
@@ -418,3 +433,39 @@ def update_voice_note_metadata(pack_id):
 def regenerate_voice_note_study_tools(pack_id):
     runtime = get_runtime()
     return voice_note_service.regenerate_voice_note_study_tools(runtime, request, pack_id)
+
+
+@study_bp.route('/api/study-plan/calendar/google', methods=['GET', 'PATCH'])
+def study_google_calendar():
+    from lecture_processor.services import calendar_sync_service
+    return calendar_sync_service.handle(get_runtime(), request, 'status' if request.method == 'GET' else 'settings')
+
+
+@study_bp.route('/api/study-plan/calendar/google/connect', methods=['POST'])
+def connect_study_google_calendar():
+    from lecture_processor.services import calendar_sync_service
+    return calendar_sync_service.handle(get_runtime(), request, 'connect')
+
+
+@study_bp.route('/api/study-plan/calendar/google/callback', methods=['GET'])
+def callback_study_google_calendar():
+    from lecture_processor.services import calendar_sync_service
+    return calendar_sync_service.callback(get_runtime(), request)
+
+
+@study_bp.route('/api/study-plan/calendar/google/sync', methods=['POST'])
+def sync_study_google_calendar():
+    from lecture_processor.services import calendar_sync_service
+    return calendar_sync_service.handle(get_runtime(), request, 'sync')
+
+
+@study_bp.route('/api/study-plan/calendar/google/disconnect', methods=['POST'])
+def disconnect_study_google_calendar():
+    from lecture_processor.services import calendar_sync_service
+    return calendar_sync_service.handle(get_runtime(), request, 'disconnect')
+
+
+@study_bp.route('/internal/study-plan/calendar-sync/drain', methods=['POST'])
+def drain_study_google_calendar():
+    from lecture_processor.services import calendar_sync_service
+    return calendar_sync_service.internal_drain(get_runtime(), request)

@@ -77,10 +77,10 @@
         var isJson = contentType.indexOf('application/json') >= 0;
         return (isJson ? response.json() : Promise.resolve(null)).then(function (data) {
           if (!response.ok) {
-            if (response.status === 401) {
-              throw new Error('Session expired. Please sign in again.');
-            }
-            throw new Error((data && data.error) || 'Request failed');
+            var error = new Error(response.status === 401 ? 'Session expired. Please sign in again.' : ((data && data.error) || 'Request failed'));
+            error.status = response.status;
+            error.payload = data;
+            throw error;
           }
           return data;
         });

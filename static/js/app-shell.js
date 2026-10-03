@@ -606,6 +606,91 @@
     }
   }
 
+  var favoriteTools = [];
+  var favoriteToolsUid = '';
+  var favoriteToolsReady = false;
+  var favoriteToolsSaving = false;
+  var favoriteToolsError = '';
+  var toolCatalogNode = document.getElementById('shell-tool-catalog');
+  var toolCatalog = [];
+  try { toolCatalog = JSON.parse(toolCatalogNode ? toolCatalogNode.textContent : '[]'); } catch (_) {}
+
+  function normalizedFavorites(ids) {
+    return (Array.isArray(ids) ? ids : []).filter(function (id, index, list) {
+      return list.indexOf(id) === index && toolCatalog.some(function (tool) { return tool.id === id; });
+    });
+  }
+
+  function publishFavoriteTools() {
+    var wrap = document.getElementById('shell-tool-favorites');
+    var links = document.getElementById('shell-tool-favorites-links');
+    if (links) {
+      links.replaceChildren();
+      favoriteTools.forEach(function (id) {
+        var tool = toolCatalog.find(function (item) { return item.id === id; });
+        if (!tool) return;
+        var link = document.createElement('a');
+        link.className = 'app-shell-link sub';
+        link.href = tool.url;
+        link.textContent = tool.name;
+        links.appendChild(link);
+      });
+    }
+    if (wrap) wrap.hidden = !favoriteTools.length;
+    markActiveNav();
+    window.dispatchEvent(new CustomEvent('lp:tool-favorites', { detail: favoriteToolsSnapshot() }));
+  }
+
+  function favoriteToolsSnapshot() {
+    return { ids: favoriteTools.slice(), ready: favoriteToolsReady, saving: favoriteToolsSaving,
+      signedIn: !!favoriteToolsUid, error: favoriteToolsError, catalog: toolCatalog.slice() };
+  }
+
+  function resetFavoriteTools(user) {
+    var uid = user && user.uid ? String(user.uid) : '';
+    if (uid === favoriteToolsUid && favoriteToolsReady) return;
+    favoriteToolsUid = uid;
+    favoriteTools = [];
+    favoriteToolsReady = !uid;
+    favoriteToolsSaving = false;
+    favoriteToolsError = '';
+    publishFavoriteTools();
+  }
+
+  async function saveFavoriteTools(ids) {
+    if (!favoriteToolsUid || !auth || !auth.currentUser) throw new Error('Sign in to save your favorites.');
+    if (!favoriteToolsReady || favoriteToolsSaving) return false;
+    var uid = favoriteToolsUid;
+    var previous = favoriteTools.slice();
+    favoriteTools = normalizedFavorites(ids);
+    favoriteToolsSaving = true;
+    favoriteToolsError = '';
+    publishFavoriteTools();
+    try {
+      var response = await authFetch('/api/user-preferences', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ favorite_tools: favoriteTools })
+      });
+      var payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Could not save favorites. Please try again.');
+      if (favoriteToolsUid !== uid) return false;
+      favoriteTools = normalizedFavorites((payload.preferences || {}).favorite_tools);
+      return true;
+    } catch (error) {
+      if (favoriteToolsUid !== uid) return false;
+      favoriteTools = previous;
+      favoriteToolsError = error.message || 'Could not save favorites. Please try again.';
+      return false;
+    } finally {
+      if (favoriteToolsUid === uid) {
+        favoriteToolsSaving = false;
+        publishFavoriteTools();
+      }
+    }
+  }
+
+  window.LectureProcessorTools = { snapshot: favoriteToolsSnapshot, save: saveFavoriteTools };
+
   async function authFetch(path, options) {
     var user = auth.currentUser;
     if (!user) throw new Error('Please sign in');
@@ -640,8 +725,15 @@
     if (!user) return;
     try {
       var response = await authFetch('/api/auth/user');
-      if (!response.ok) return;
+      if (!response.ok) throw new Error('Could not load favorites. Reload to try again.');
       var payload = await response.json();
+      if (!auth.currentUser || auth.currentUser.uid !== user.uid) return;
+      if (!favoriteToolsSaving) {
+        favoriteTools = normalizedFavorites((payload.preferences || {}).favorite_tools);
+        favoriteToolsReady = true;
+        favoriteToolsError = '';
+        publishFavoriteTools();
+      }
       var breakdown = parseCreditBreakdown(payload);
       currentUserIsAdmin = !!payload.is_admin;
       applyCreditBreakdown(breakdown);
@@ -661,10 +753,13 @@
       if (adminBtn) adminBtn.hidden = !currentUserIsAdmin;
       setPhysioGroupVisible(true);
       markActiveNav();
-    } catch (_) {}
+    } catch (error) {
+      if (favoriteToolsUid === user.uid) { favoriteToolsError = error.message; publishFavoriteTools(); }
+    }
   }
 
   function applySignedOutState(userOrUid) {
+    resetFavoriteTools(null);
     clearUserScopedCaches(userOrUid);
     clearLegacyAccountCaches();
     currentUserIsAdmin = false;
@@ -750,6 +845,7 @@
   }
 
   function applyAuth(user) {
+    resetFavoriteTools(user);
     var signedIn = !!user;
     setAuthState(signedIn ? 'signed-in' : 'signed-out');
     if (signInBtn) signInBtn.hidden = signedIn;
