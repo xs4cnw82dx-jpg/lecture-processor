@@ -497,7 +497,7 @@ def test_physio_pages_render_open_physio_sidebar_group(client):
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert 'data-companion-url="http://127.0.0.1:8765/physio"' in html
-    assert 'Je klinische werkruimte draait lokaal' in html
+    assert 'Open je klinische werkruimte' in html
     assert '<div class="app-shell-group app-shell-group-secondary is-open" id="shell-physio-group"' in html
     assert 'aria-controls="shell-physio-panel"' in html
     assert '<a href="/physio" class="app-shell-link sub">Clinical workspace</a>' in html

@@ -94,7 +94,17 @@
           e.preventDefault();
           var navHeight=64;
           var targetPosition=target.getBoundingClientRect().top+window.pageYOffset-navHeight;
-          window.scrollTo({top:targetPosition,behavior:'smooth'});
+          window.scrollTo({top:targetPosition,behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
         }
       });
     });
+
+var sampleCard = document.getElementById('feature-sample-card');
+if (sampleCard) sampleCard.addEventListener('click', function () {
+  var answer = sampleCard.getAttribute('aria-pressed') !== 'true';
+  sampleCard.setAttribute('aria-pressed', String(answer));
+  document.getElementById('feature-card-side').textContent = answer ? 'ANSWER · EXAMPLE' : 'QUESTION · EXAMPLE';
+  document.getElementById('feature-card-text').textContent = answer ? 'Retrieving information from memory, instead of only reading it again.' : 'What is active recall?';
+  document.getElementById('feature-card-hint').textContent = answer ? 'Back to question ↗' : 'Reveal answer ↗';
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) sampleCard.animate([{ opacity: .4, transform: 'translateY(5px)' }, { opacity: 1, transform: 'translateY(0)' }], { duration: 220, easing: 'ease-out' });
+});

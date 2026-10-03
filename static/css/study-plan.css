@@ -128,7 +128,7 @@
 .schedule-toolbar p, .schedule-help { color: var(--plan-muted); font-size: .85rem; margin: 4px 0 0; }
 .schedule-nav, .schedule-actions { display: flex; gap: 8px; }
 .schedule-help { margin-bottom: 16px; }
-.week-calendar { background: white; border: 1px solid var(--plan-line); border-radius: 18px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-height: 550px; overflow: hidden; }
+.week-calendar { background: white; border: 1px solid var(--plan-line); border-radius: 18px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-height: 320px; overflow: hidden; }
 .week-calendar.is-empty-workspace { display: block; min-height: 0; overflow: visible; }
 .week-day { border-left: 1px solid var(--plan-line); min-width: 0; padding: 14px 9px; }
 .week-day:first-child { border-left: 0; }
@@ -144,7 +144,7 @@
 .calendar-session-title { display: block; font-size: .78rem; font-weight: 700; overflow-wrap: anywhere; }
 .mobile-agenda { display: none; }
 
-.progress-summary-grid { display: grid; gap: 14px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.progress-summary-grid { display: grid; gap: 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .metric-card { background: white; border: 1px solid var(--plan-line); border-radius: 16px; padding: 21px; }
 .metric-card-label { color: var(--plan-muted); font-size: .78rem; font-weight: 700; }
 .metric-card-value { font-size: 1.85rem; font-weight: 800; letter-spacing: -.04em; margin: 8px 0 3px; }
@@ -167,7 +167,10 @@
 body.plan-modal-open { overflow: hidden; }
 .plan-overlay[hidden] { display: none; }
 .plan-dialog { background: white; border-radius: 20px; box-shadow: 0 26px 80px rgba(10, 19, 42, .28); max-height: calc(100vh - 40px); max-width: 660px; overflow: auto; padding: 30px; position: relative; width: 100%; }
-.wizard-dialog { max-width: 760px; }
+.wizard-dialog { max-width: 760px; display: flex; flex-direction: column; overflow: hidden; }
+.wizard-scroll-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 4px 4px; }
+.wizard-progress, .wizard-actions { flex-shrink: 0; }
+.wizard-actions { border-top: 1px solid var(--plan-line); padding-top: 18px; }
 .calendar-dialog { max-width: 780px; }
 .plan-dialog h2 { font-size: 1.65rem; letter-spacing: -.035em; margin: 6px 0 8px; }
 .plan-dialog > p:not(.study-plan-kicker) { color: var(--plan-muted); line-height: 1.55; }
@@ -246,8 +249,11 @@ body.plan-modal-open { overflow: hidden; }
 .plan-picker-trigger:focus-visible, .pretty-select-button:focus-visible { outline: 3px solid rgba(37, 88, 217, .18); outline-offset: 2px; }
 .plan-picker-trigger svg { height: 18px; width: 18px; }
 
-.plan-control-popover { background: #fff; border: 1px solid #d5deeb; border-radius: 15px; box-shadow: 0 20px 52px rgba(21, 35, 65, .22); color: var(--plan-ink); left: 50%; max-height: min(430px, calc(100vh - 24px)); overflow: auto; padding: 9px; position: fixed; top: 50%; transform: translate(-50%, -50%); width: min(340px, calc(100vw - 24px)); z-index: 1800; }
-.plan-control-popover.is-lower-anchor { bottom: 24px; top: auto; transform: translateX(-50%); }
+.plan-control-popover { margin: 0; bottom: auto; right: auto; background: #fff; border: 1px solid #d5deeb; border-radius: 15px; box-shadow: 0 20px 52px rgba(21, 35, 65, .22); color: var(--plan-ink); left: 12px; max-height: min(430px, calc(100dvh - 24px)); overflow: auto; padding: 9px; position: fixed; top: 12px; transform: none; width: min(340px, calc(100vw - 24px)); z-index: 1800; }
+.plan-control-popover { animation: plan-popover-enter .2s ease; }
+.plan-control-popover.is-closing { opacity: 0; pointer-events: none; transition: opacity .14s ease; }
+.plan-picker-search { width: 100%; padding: 11px; margin-bottom: 6px; border: 1px solid var(--plan-line); border-radius: 10px; font: inherit; font-size: .85rem; }
+@keyframes plan-popover-enter { from { opacity: 0; } to { opacity: 1; } }
 .select-popover { display: grid; gap: 4px; max-height: min(360px, calc(100vh - 24px)); }
 .pretty-option { appearance: none; background: #fff; border: 0; border-radius: 9px; color: #34435c; cursor: pointer; font: inherit; font-size: .84rem; min-height: 40px; padding: 9px 11px; text-align: left; width: 100%; }
 .pretty-option:hover, .pretty-option:focus-visible { background: #f0f4fb; color: var(--plan-blue); outline: none; }
@@ -400,3 +406,8 @@ body.plan-modal-open { overflow: hidden; }
   .calendar-feed-create { grid-template-columns: 1fr; }
   .calendar-main-actions .btn { flex-grow: 1; text-align: center; }
 }
+
+.next-session-card h2, .session-row h3, .goal-progress-item h3 { overflow-wrap: anywhere; }
+.next-session-topline { gap: 16px; flex-wrap: wrap; }
+.plan-dialog-actions { flex-wrap: wrap; }
+@media (prefers-reduced-motion: reduce) { .plan-control-popover { animation: none; transition: none; } }

@@ -1,3 +1,4 @@
+const { expectProductControls } = require('./helpers/control-audit');
 const { test, expect } = require('@playwright/test');
 async function picker(page) {
   await page.route('**/static/js/firebase-bootstrap.js', route => route.fulfill({contentType:'text/javascript',body:'window.LectureProcessorBootstrap={getAuth:()=>({currentUser:null,onAuthStateChanged:fn=>queueMicrotask(()=>fn(null))})};'}));
@@ -8,6 +9,7 @@ async function picker(page) {
   await page.getByRole('button', {name:'Add shape', exact:true}).click();
   await page.getByRole('button', {name:'Choose fill', exact:true}).click();
   await expect(page.locator('.book-color-popover')).toBeVisible();
+  await expectProductControls(page);
 }
 
 test('invalid hex keeps the picker open and shorthand colors preview immediately', async ({page}) => {
@@ -76,9 +78,26 @@ test('the picker follows the visible viewport when the mobile keyboard opens', a
     Object.assign(window.visualViewport, {height:400, offsetTop:90});
     window.visualViewport.dispatchEvent(new Event('resize'));
   });
+  await expect.poll(async () => (await page.locator('.book-color-popover').boundingBox()).y).toBeGreaterThanOrEqual(102);
   const box = await page.locator('.book-color-popover').boundingBox();
   expect(box.y).toBeGreaterThanOrEqual(102);
   expect(box.y + box.height).toBeLessThanOrEqual(479);
   expect(box.x).toBeGreaterThanOrEqual(12);
   expect(box.x + box.width).toBeLessThanOrEqual(378);
+});
+
+test('color picker can reopen during its closing animation and keeps keyboard focus', async ({page}) => {
+  await picker(page);
+  const popup=page.locator('.book-color-popover');
+  await page.evaluate(() => {
+    document.querySelector('[data-color-close]').click();
+    document.querySelector('[data-field="fill"]').closest('label').querySelector('.book-color-trigger').click();
+  });
+  await expect(popup).toBeVisible();
+  await expect(popup).toHaveJSProperty('inert', false);
+  await expect(page.getByRole('slider', {name:'Saturation', exact:true})).toBeFocused();
+  await page.getByRole('textbox', {name:'Hex color',exact:true}).fill('#AABBCC');
+  await page.getByRole('button', {name:'Done',exact:true}).click();
+  await expect(popup).toBeHidden();
+  await expect(page.getByRole('button', {name:'Choose fill',exact:true})).toBeFocused();
 });

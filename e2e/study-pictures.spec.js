@@ -50,6 +50,7 @@ test('private pictures can be enlarged, uploaded and survive card edits and relo
   await page.locator('.study-picture-open').first().click();
   await expect(page.getByRole('dialog', { name: 'Picture viewer' })).toBeVisible();
   await page.getByRole('button', { name: 'Close picture', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Picture viewer' })).toBeHidden();
   await page.locator('#editor-card-front-0').fill('Edited muscle question');
   await expect.poll(() => saves.some(body => body.flashcards && body.flashcards[0].image_ids.includes(imageId))).toBe(true);
   await page.locator('.study-picture-editor input[type=file]').setInputFiles({ name: 'muscle.png', mimeType: 'image/png', buffer: png });

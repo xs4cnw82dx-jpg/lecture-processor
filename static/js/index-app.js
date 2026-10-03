@@ -1728,7 +1728,7 @@ function updateQuickstartVisibility() {
     try {
         dismissed = localStorage.getItem(`quickstart_dismissed_${currentUser.uid}`) === '1';
     } catch (_) { }
-    setQuickstartVisible(isNewUser && !dismissed && !resultsLocked);
+    setQuickstartVisible(isNewUser && !dismissed && !resultsLocked && currentMode === 'lecture-notes');
 }
 function mergeRuntimeJobs(currentJobs, incomingJobs) {
     if (runtimeJobUtils && typeof runtimeJobUtils.mergeActiveRuntimeJobs === 'function') {
@@ -2782,7 +2782,7 @@ function maybeSendCompletionNotification(job, payload) {
 }
 function updateUploadEstimatePanel() {
     if (!uploadEstimate || !uploadEstimateTime || !uploadEstimateMeta) return;
-    if (!currentUser || resultsLocked) {
+    if (!currentUser || resultsLocked || !(pdfFile || audioFile || hasReadyImportedAudioToken())) {
         setHidden(uploadEstimate, true);
         return;
     }
@@ -3203,6 +3203,9 @@ function buildProgressSteps(steps) {
     });
 }
 function updateProgressUI(step, desc, total) {
+    progressSection.classList.remove('is-error');
+    progressSection.querySelector('.progress-title').textContent = currentMode === 'interview' ? 'Preparing your transcript' : 'Preparing your study material';
+    progressSection.querySelector('.progress-subtitle').textContent = 'Processing time depends on the size of your source.';
     for (let i = 1; i <= total; i++) {
         const el = document.getElementById(`step-${i}`);
         if (!el) continue;
@@ -3963,8 +3966,8 @@ function showResults(md, slides, trans, generatedFlashcards, generatedQuestions,
     updateQuickstartVisibility();
     resultsTitleText.textContent = config.resultTitle;
     setSanitizedHtml(resultsContent, simpleMarkdownToHtml(resultMarkdown), {
-        ALLOWED_TAGS: ['h1', 'h2', 'h3', 'p', 'br', 'strong', 'em', 'code', 'pre', 'ul', 'ol', 'li', 'blockquote', 'a', 'hr'],
-        ALLOWED_ATTR: ['href', 'title', 'target', 'rel'],
+        ALLOWED_TAGS: ['h1', 'h2', 'h3', 'p', 'br', 'strong', 'em', 'code', 'pre', 'ul', 'ol', 'li', 'blockquote', 'a', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
+        ALLOWED_ATTR: ['href', 'title', 'target', 'rel', 'scope'],
     });
     flashcardCountBadge.textContent = String(flashcards.length);
     testCountBadge.textContent = String(testQuestions.length);
@@ -4006,6 +4009,9 @@ function showResults(md, slides, trans, generatedFlashcards, generatedQuestions,
     showToast('Processing complete!', 'success');
 }
 function showError(msg, creditRefunded, billingReceipt) {
+    progressSection.classList.add('is-error');
+    progressSection.querySelector('.progress-title').textContent = 'Processing stopped';
+    progressSection.querySelector('.progress-subtitle').textContent = 'Your sources are still here. Check them and try again when you are ready.';
     const failedJobId = currentJobId;
     setProgressRetryVisible(false);
     renderBillingReceipt(null);
@@ -4845,6 +4851,7 @@ progressRetryBtn.addEventListener('click', retryStatusCheckNow);
 function setStudyToolsPanelVisible(visible) {
     const isVisible = Boolean(visible);
     studyToolsPanel.classList.toggle('visible', isVisible);
+    studyToolsPanel.inert = !isVisible;
     studyToolsPanel.setAttribute('aria-hidden', isVisible ? 'false' : 'true');
     studyToolsToggle.classList.toggle('open', isVisible);
     studyToolsToggle.setAttribute('aria-expanded', isVisible ? 'true' : 'false');

@@ -27,7 +27,6 @@
   var toastEl = document.getElementById('toast');
 
   var DEFAULT_DAILY_GOAL = progressUtils.DEFAULT_DAILY_GOAL || 20;
-  var flatpickrInstances = [];
   var currentUser = null;
   var currentToken = null;
   var currentFolders = [];
@@ -288,12 +287,6 @@
     return null;
   }
 
-  function formatDisplayDate(value) {
-    var match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (!match) return '';
-    return match[3] + '-' + match[2] + '-' + match[1];
-  }
-
   function readPackState(packId) {
     var safePackId = String(packId || '').trim();
     if (!safePackId) return {};
@@ -479,13 +472,13 @@
 
     var input = document.createElement('input');
     input.className = 'input js-folder-date';
-    input.type = 'text';
-    input.placeholder = 'dd-mm-yyyy';
+    input.type = 'date';
+    input.dataset.appDate = '';
     input.setAttribute('inputmode', 'numeric');
     input.setAttribute('aria-label', 'Exam date for ' + folderName);
     input.dataset.folderId = String(folder.folder_id || '');
     input.dataset.savedExamDate = String(folder.exam_date || '');
-    input.value = formatDisplayDate(folder.exam_date || '');
+    input.value = folder.exam_date || '';
     wrap.appendChild(input);
 
     var icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -604,25 +597,8 @@
   }
 
   function initFolderDatePickers() {
-    if (typeof flatpickr === 'undefined') return;
-    flatpickrInstances.forEach(function (instance) {
-      try { instance.destroy(); } catch (_error) { }
-    });
-    flatpickrInstances = [];
-
-    Array.prototype.slice.call(document.querySelectorAll('.js-folder-date')).forEach(function (input) {
-      var folderId = String(input.dataset.folderId || '');
-      var picker = flatpickr(input, {
-        dateFormat: 'd-m-Y',
-        allowInput: true,
-        disableMobile: true,
-        locale: { firstDayOfWeek: 1 },
-        defaultDate: input.value || null,
-        onClose: function () {
-          if (folderId) scheduleFolderExamDateSave(folderId, input, true);
-        },
-      });
-      flatpickrInstances.push(picker);
+    document.querySelectorAll('.js-folder-date').forEach(function (input) {
+      window.LectureProcessorUx.enhanceDateInput(input);
     });
   }
 
@@ -630,6 +606,7 @@
     Array.prototype.slice.call(document.querySelectorAll('.js-folder-date')).forEach(function (input) {
       var folderId = String(input.dataset.folderId || '');
       if (!folderId) return;
+      input.addEventListener('change', function () { scheduleFolderExamDateSave(folderId, input, true); });
       input.addEventListener('input', function () {
         scheduleFolderExamDateSave(folderId, input, false);
       });
@@ -1336,7 +1313,8 @@
     }
     var savedValue = parseDateInput(input.dataset.savedExamDate || '');
     if ((savedValue || '') === (parsedDate || '')) {
-      input.value = formatDisplayDate(parsedDate || '');
+      input.value = parsedDate || '';
+      if (input._appDateInstance) input._appDateInstance.sync();
       return;
     }
 
@@ -1350,7 +1328,8 @@
         if (!response.ok) throw new Error(body.error || 'Could not save exam date');
         Array.prototype.slice.call(document.querySelectorAll('.js-folder-date[data-folder-id="' + folderId + '"]')).forEach(function (node) {
           node.dataset.savedExamDate = parsedDate || '';
-          node.value = formatDisplayDate(parsedDate || '');
+          node.value = parsedDate || '';
+          if (node._appDateInstance) node._appDateInstance.sync();
         });
         currentFolders = currentFolders.map(function (folder) {
           if (String(folder.folder_id || '') !== folderId) return folder;
@@ -1362,7 +1341,8 @@
       });
     }).catch(function (error) {
       Array.prototype.slice.call(document.querySelectorAll('.js-folder-date[data-folder-id="' + folderId + '"]')).forEach(function (node) {
-        node.value = formatDisplayDate(node.dataset.savedExamDate || '');
+        node.value = node.dataset.savedExamDate || '';
+        if (node._appDateInstance) node._appDateInstance.sync();
       });
       showToast((error && error.message) ? error.message : 'Could not save exam date.', 'error');
     }).finally(function () {

@@ -1,17 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Batch Status · Lecture Processor</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/batch-dashboard.css') }}">
 </head>
 <body>
   {% set shell_title = 'Batch Status' %}
   {% include '_app_shell.html' %}
   <main class="app-shell-page batch-dashboard-page" data-batch-id="{{ batch_id or '' }}">
-    <section class="shell-panel" id="batch-dashboard-auth-gate" hidden>
+    <section class="bs-empty bs-auth" id="batch-dashboard-auth-gate" hidden>
       <h1>Sign in to view your batches</h1>
       <p>Your batch results and progress are linked to your account.</p>
       <button class="bs-button bs-primary" id="batch-dashboard-signin-btn" type="button">Sign in</button>
@@ -19,13 +21,13 @@
     <div id="batch-dashboard-content" hidden>
       {% if batch_id %}
       <a class="bs-back" href="/batch_status" id="batch-back-link">← Back to batches</a>
-      <section class="shell-panel bs-detail" id="batch-detail" tabindex="-1" aria-label="Batch details"><p role="status">Loading batch…</p></section>
+      <section class="bs-detail" id="batch-detail" tabindex="-1" aria-label="Batch details"><div class="bs-loading" role="status"><span class="bs-skeleton"></span><span class="bs-skeleton"></span><p>Loading your batch…</p></div></section>
       {% else %}
       <header class="bs-dashboard-head">
-        <div><h1>Batch status</h1><p>Track progress, get your results, and manage past batches.</p></div>
+        <div><p class="bs-kicker">YOUR PROCESSING WORKSPACE</p><h1>Batch status</h1><p>Track progress, get your results, and manage past batches.</p></div>
         <div class="bs-actions"><a class="bs-button bs-primary" href="/batch_mode">New batch</a><button type="button" class="bs-button" id="batch-dashboard-refresh-btn">Refresh</button></div>
       </header>
-      <section class="shell-panel bs-workspace">
+      <section class="bs-workspace">
         <nav class="bs-tabs" aria-label="Batch views">
           {% for value, label in [('all','All'), ('active','Active'), ('completed','Completed'), ('attention','Needs attention'), ('archived','Archived')] %}
           <button type="button" class="bs-tab" data-view="{{ value }}">{{ label }} <span data-count="{{ value }}">0</span></button>
@@ -33,8 +35,8 @@
         </nav>
         <div class="bs-list-tools">
           <details id="batch-filters"><summary>Filters</summary><div class="bs-filters">
-            <label>Mode<select id="batch-dashboard-mode-filter"><option value="">All modes</option><option value="lecture-notes">Lectures</option><option value="slides-only">Slides</option><option value="interview">Interviews</option><option value="audio-transcription">Audio transcriptions</option><option value="text-combine">Combine text</option></select></label>
-            <label>Processing<select id="batch-dashboard-strategy-filter"><option value="">All processing</option><option value="batch">Standard batch</option><option value="instant">Instant batch</option></select></label>
+            <div class="bs-filter-field"><label for="batch-dashboard-mode-filter">Mode</label><select id="batch-dashboard-mode-filter"><option value="">All modes</option><option value="lecture-notes">Lectures</option><option value="slides-only">Slides</option><option value="interview">Interviews</option><option value="audio-transcription">Audio transcriptions</option><option value="text-combine">Combine text</option></select></div>
+            <div class="bs-filter-field"><label for="batch-dashboard-strategy-filter">Processing</label><select id="batch-dashboard-strategy-filter"><option value="">All processing</option><option value="batch">Standard batch</option><option value="instant">Instant batch</option></select></div>
             <button class="bs-button" type="button" data-dashboard-action="clear">Clear filters</button>
           </div></details>
           <span id="batch-list-limit" class="bs-muted">Counts refer to loaded batches</span>
@@ -42,7 +44,7 @@
         <p id="batch-dashboard-error" class="bs-refresh-error" role="status" hidden></p>
         <div class="bs-list" role="table" aria-label="Batches">
           <div class="bs-list-header" role="row"><span role="columnheader">Batch</span><span role="columnheader">Status</span><span role="columnheader">Progress</span><span role="columnheader">Submitted</span><span role="columnheader">Actions</span></div>
-          <div id="batch-dashboard-rows" role="rowgroup"><p role="status">Loading batches…</p></div>
+          <div id="batch-dashboard-rows" role="rowgroup"><div class="bs-loading" role="status"><span class="bs-skeleton"></span><span class="bs-skeleton"></span><p>Loading your batches…</p></div></div>
         </div>
       </section>
       {% endif %}

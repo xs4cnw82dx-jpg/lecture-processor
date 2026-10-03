@@ -3,9 +3,9 @@
 
   var DEFAULT_ALLOWED_TAGS = [
     'h1', 'h2', 'h3', 'h4', 'p', 'br', 'strong', 'em', 'code', 'pre',
-    'ul', 'ol', 'li', 'blockquote', 'a', 'hr'
+    'ul', 'ol', 'li', 'blockquote', 'a', 'hr', 'h5', 'h6', 'table', 'thead', 'tbody', 'tr', 'th', 'td'
   ];
-  var DEFAULT_ALLOWED_ATTR = ['href', 'title', 'target', 'rel'];
+  var DEFAULT_ALLOWED_ATTR = ['href', 'title', 'target', 'rel', 'scope'];
 
   function getHtmlUtils() {
     return global.LectureProcessorHtml || {};

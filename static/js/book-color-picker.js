@@ -135,8 +135,11 @@
     active = null;
     dragging = null;
     current.record.trigger.setAttribute("aria-expanded", "false");
-    if (typeof popup.hidePopover === "function" && popup.matches(":popover-open")) popup.hidePopover();
-    popup.hidden = true;
+    popup.inert = true;
+    popup.getAnimations().forEach(animation => animation.cancel());
+    const hide = () => { if (active) return; if (typeof popup.hidePopover === "function" && popup.matches(":popover-open")) popup.hidePopover(); popup.hidden = true; };
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) hide();
+    else popup.animate([{opacity:1,transform:"translateY(0)"},{opacity:0,transform:"translateY(-5px)"}], {duration:140,easing:"ease-in"}).finished.then(hide).catch(() => {});
     const input = current.record.input;
     if (input.value !== current.initial) input.dispatchEvent(new Event("change", { bubbles: true }));
     input.dispatchEvent(new CustomEvent("book-color-end", { bubbles: true }));
@@ -236,10 +239,13 @@
     const hex = popup.querySelector("[data-color-control=hex]");
     hex.value = record.input.value.toUpperCase();
     hex.removeAttribute("aria-invalid");
+    popup.getAnimations().forEach(animation => animation.cancel());
+    popup.inert = false;
     popup.hidden = false;
     if (popup.showPopover) popup.showPopover();
     paint();
     position();
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) popup.animate([{opacity:0,transform:"translateY(-5px)"},{opacity:1,transform:"translateY(0)"}], {duration:180,easing:"ease-out"});
     popup.querySelector("[data-color-control=saturation]").focus({ preventScroll: true });
   }
   function enhance(container = doc) {

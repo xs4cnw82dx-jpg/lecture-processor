@@ -37,3 +37,18 @@ test('raw provider errors stay out of the main explanation', () => {
   assert.match(batch.friendlyError('503 UNAVAILABLE {"error":"upstream"}'), /temporarily unavailable/);
   assert.match(batch.friendlyError('Traceback: ValueError at parser'), /Technical details/);
 });
+
+test('outcomes distinguish partial results, waiting, and unknown status without inventing completion', () => {
+  assert.equal(batch.outcome({ status: 'partial' }).title, 'Some results are ready');
+  assert.match(batch.outcome({ status: 'queued' }).title, /queue/);
+  assert.match(batch.outcome({ status: 'processing' }).title, /progress/);
+  assert.match(batch.outcome({ status: 'unrecognized' }).title, /Checking/);
+  assert.doesNotMatch(batch.outcome({ status: 'unrecognized' }).copy, /finish|ready/);
+});
+
+test('progress segments cannot overflow when counts are stale or total is zero', () => {
+  const overcounted = batch.progressBar({ total_rows: 2, completed_rows: 5, failed_rows: 8 });
+  assert.match(overcounted, /width="100"/);
+  assert.match(overcounted, /bs-progress-failed" x="100" width="0"/);
+  assert.doesNotMatch(batch.progressBar({ total_rows: 0, completed_rows: 1 }), /NaN|Infinity/);
+});

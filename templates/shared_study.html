@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Shared Study Content</title>
@@ -27,12 +28,12 @@
         <a href="/study" class="btn primary shared-study-library-btn">Open your Study Library</a>
       </section>
 
-      <section class="shell-panel shared-study-state" id="shared-study-loading">
+      <section class="shell-panel shared-study-state" id="shared-study-loading" role="status" aria-live="polite">
         <div class="shared-study-state-title">Preparing shared content</div>
         <div class="shared-study-state-copy">Loading notes, flashcards, and practice material...</div>
       </section>
 
-      <section class="shell-panel shared-study-state shared-study-state-error" id="shared-study-error" hidden>
+      <section class="shell-panel shared-study-state shared-study-state-error" id="shared-study-error" role="alert" hidden>
         <div class="shared-study-state-title">This shared link is unavailable</div>
         <div class="shared-study-state-copy" id="shared-study-error-text">The link may be private, expired, or no longer exists.</div>
       </section>
@@ -43,20 +44,20 @@
           <div class="shared-pack-meta" id="shared-pack-meta"></div>
         </div>
         <div class="shared-audio-note" role="note">{{ shared_audio_note }}</div>
-        <div class="shared-pack-sections">
-          <section class="panel">
+        <nav class="shared-material-nav" aria-label="Shared material"><a href="#shared-notes-section">Notes</a><a href="#shared-cards-section">Flashcards</a><a href="#shared-questions-section">Practice questions</a></nav><div class="shared-pack-sections">
+          <section class="panel" id="shared-notes-section">
             <div class="panel-head"><span class="panel-title">Notes</span></div>
             <div class="panel-body">
               <div class="shared-notes-view" id="shared-notes-view"></div>
             </div>
           </section>
-          <section class="panel">
+          <section class="panel" id="shared-cards-section">
             <div class="panel-head"><span class="panel-title">Flashcards</span></div>
             <div class="panel-body">
               <div class="shared-stack" id="shared-flashcards-list"></div>
             </div>
           </section>
-          <section class="panel">
+          <section class="panel" id="shared-questions-section">
             <div class="panel-head"><span class="panel-title">Practice Test</span></div>
             <div class="panel-body">
               <div class="shared-stack" id="shared-questions-list"></div>
@@ -80,22 +81,22 @@
                 <div class="shared-empty-title">Select a pack</div>
                 <div class="shared-empty-copy">Choose a shared pack from the list to preview its notes, flashcards, and practice questions.</div>
               </div>
-              <div id="shared-folder-pack-preview" hidden>
+              <div id="shared-folder-pack-preview" hidden><h2 class="shared-preview-title" id="shared-folder-pack-title"></h2>
                 <div class="shared-pack-summary">
                   <div class="shared-pack-pill" id="shared-folder-pack-mode">Study Pack</div>
                   <div class="shared-pack-meta" id="shared-folder-pack-meta"></div>
                 </div>
                 <div class="shared-audio-note" role="note">{{ shared_audio_note }}</div>
-                <div class="shared-pack-sections">
-                  <section class="panel shared-inner-panel">
+                <nav class="shared-material-nav" aria-label="Shared material"><a href="#shared-folder-notes-section">Notes</a><a href="#shared-folder-cards-section">Flashcards</a><a href="#shared-folder-questions-section">Practice questions</a></nav><div class="shared-pack-sections">
+                  <section class="panel shared-inner-panel" id="shared-folder-notes-section">
                     <div class="panel-head"><span class="panel-title">Notes</span></div>
                     <div class="panel-body"><div class="shared-notes-view" id="shared-folder-notes-view"></div></div>
                   </section>
-                  <section class="panel shared-inner-panel">
+                  <section class="panel shared-inner-panel" id="shared-folder-cards-section">
                     <div class="panel-head"><span class="panel-title">Flashcards</span></div>
                     <div class="panel-body"><div class="shared-stack" id="shared-folder-flashcards-list"></div></div>
                   </section>
-                  <section class="panel shared-inner-panel">
+                  <section class="panel shared-inner-panel" id="shared-folder-questions-section">
                     <div class="panel-head"><span class="panel-title">Practice Test</span></div>
                     <div class="panel-body"><div class="shared-stack" id="shared-folder-questions-list"></div></div>
                   </section>

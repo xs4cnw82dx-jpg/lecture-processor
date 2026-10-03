@@ -40,69 +40,14 @@
     herbeoordeling: ['progressie en herbeoordeling', 'herbeoordeling', 'progressie']
   };
 
-  function closePrettySelects(except) {
-    $$('.pretty-select.is-open').forEach(function (wrapper) {
-      if (wrapper === except) return;
-      wrapper.classList.remove('is-open');
-      var trigger = $('.pretty-select-trigger', wrapper);
-      if (trigger) trigger.setAttribute('aria-expanded', 'false');
-    });
-  }
-
   function refreshPrettySelect(select) {
     if (!select) return;
-    var wrapper = select.closest('.pretty-select');
-    if (!wrapper) return;
-    var trigger = $('.pretty-select-trigger', wrapper);
-    var menu = $('.pretty-select-menu', wrapper);
-    var selected = select.options[select.selectedIndex] || select.options[0];
-    trigger.innerHTML = '<span>' + escapeHtml(selected ? selected.textContent : '') + '</span><i aria-hidden="true"></i>';
-    menu.innerHTML = Array.from(select.options).map(function (option) {
-      var active = option.value === select.value;
-      return '<button type="button" class="pretty-select-option' + (active ? ' is-selected' : '') + '" role="option" aria-selected="' + active + '" data-value="' + escapeHtml(option.value) + '"><span>' + escapeHtml(option.textContent) + '</span>' + (active ? '<b aria-hidden="true">✓</b>' : '') + '</button>';
-    }).join('');
-    $$('.pretty-select-option', menu).forEach(function (optionButton) {
-      optionButton.addEventListener('click', function (event) {
-        event.stopPropagation();
-        select.value = optionButton.dataset.value;
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-        wrapper.classList.remove('is-open');
-        trigger.setAttribute('aria-expanded', 'false');
-        refreshPrettySelect(select);
-      });
-    });
+    var instance = window.LectureProcessorUx.enhanceNativeSelect(select);
+    if (instance) instance.rebuild({ value: select.value });
   }
-
-  function enhanceSelect(select) {
-    if (!select || select.closest('.pretty-select')) { refreshPrettySelect(select); return; }
-    var wrapper = document.createElement('div');
-    wrapper.className = 'pretty-select';
-    select.parentNode.insertBefore(wrapper, select);
-    wrapper.appendChild(select);
-    select.classList.add('pretty-select-native');
-    var trigger = document.createElement('button');
-    trigger.type = 'button';
-    trigger.className = 'pretty-select-trigger';
-    trigger.setAttribute('aria-haspopup', 'listbox');
-    trigger.setAttribute('aria-expanded', 'false');
-    var menu = document.createElement('div');
-    menu.className = 'pretty-select-menu';
-    menu.setAttribute('role', 'listbox');
-    wrapper.appendChild(trigger);
-    wrapper.appendChild(menu);
-    trigger.addEventListener('click', function (event) {
-      event.stopPropagation();
-      var opening = !wrapper.classList.contains('is-open');
-      closePrettySelects(wrapper);
-      wrapper.classList.toggle('is-open', opening);
-      trigger.setAttribute('aria-expanded', String(opening));
-    });
-    select.addEventListener('change', function () { refreshPrettySelect(select); });
-    refreshPrettySelect(select);
-  }
-
   function enhanceSelects(scope) {
-    $$('select', scope || document).forEach(enhanceSelect);
+    $$('select', scope || document).forEach(refreshPrettySelect);
+    $$('[data-app-date]', scope || document).forEach(function (input) { window.LectureProcessorUx.enhanceDateInput(input); });
   }
 
   function openContextPanel() {
@@ -431,7 +376,7 @@
       var pin = $('#note-reader [data-action="pin"]');
       if (pin) pin.addEventListener('click', pinCurrentNote);
       $$('#note-reader [data-related-id]').forEach(function (button) { button.addEventListener('click', function () { openNote(button.dataset.relatedId); }); });
-      $$('#note-reader [data-media-id]').forEach(function (button) { button.addEventListener('click', function () { openMedia(button.dataset.mediaId, button.dataset.mediaPage); }); });
+      $$('#note-reader [data-media-id]').forEach(function (button) { button.addEventListener('click', function () { openMedia(button.dataset.mediaId, button.dataset.mediaPage, button.textContent.trim()); }); });
       if (anchor || sectionKey || highlightQuery) {
         window.requestAnimationFrame(function () {
           var target = anchor ? document.getElementById('note-heading-' + String(anchor).replace(/^#/, '')) : null;
@@ -462,12 +407,16 @@
     } catch (error) { toast(error.message, true); }
   }
 
-  async function openMedia(id, page) {
+  async function openMedia(id, page, title) {
     var viewer = $('#media-viewer');
     var url = apiBase + '/media/' + encodeURIComponent(id);
     var fragment = page ? '#page=' + encodeURIComponent(page) + '&zoom=page-width' : '#view=FitH';
-    viewer.innerHTML = '<iframe title="Lokale anatomie- of PDF-bron" src="' + escapeHtml(url + fragment) + '"></iframe>';
+    viewer.innerHTML = pdfPreview(url, fragment, title || 'Lokale anatomie- of PDF-bron');
     $('#media-dialog').showModal();
+  }
+
+  function pdfPreview(url, fragment, title) {
+    return '<div class="physio-document-preview"><div class="physio-document-toolbar"><strong>' + escapeHtml(title) + '</strong><div><a href="' + escapeHtml(url + fragment) + '" target="_blank" rel="noreferrer">Open volledig document</a><a href="' + escapeHtml(url) + '" download>Download origineel</a></div></div><iframe title="' + escapeHtml(title) + '" src="' + escapeHtml(url + fragment + '&toolbar=0&navpanes=0') + '"></iframe></div>';
   }
 
   async function loadGraph(noteId) {
@@ -585,7 +534,7 @@
   }
 
   async function createCase() {
-    var label = window.prompt('Casuslabel (bijv. S01 schouder):');
+    var label = await window.LectureProcessorUx.requestDialog({ title: 'Nieuwe lokale casus', message: 'Kies een herkenbaar, geanonimiseerd label.', inputLabel: 'Casuslabel (bijv. S01 schouder)', confirmLabel: 'Casus aanmaken', cancelLabel: 'Annuleren', maxLength: 120 });
     if (!label) return;
     try {
       var data = await api('/cases', { method: 'POST', body: { title: label, region: state.region || 'schouder', mode: 'clinical', presenting_complaint: '', notes: '', pinned_note_ids: [] } });
@@ -630,7 +579,7 @@
 
   async function deleteCase() {
     var item = activeCase();
-    if (!item || !window.confirm('Deze lokale casus en alle sessies permanent verwijderen?')) return;
+    if (!item || !await window.LectureProcessorUx.requestDialog({ title: 'Casus permanent verwijderen?', message: 'Deze lokale casus en alle bijbehorende sessies worden verwijderd.', confirmLabel: 'Permanent verwijderen', cancelLabel: 'Annuleren', destructive: true })) return;
     try {
       await api('/cases/' + encodeURIComponent(caseId(item)), { method: 'DELETE' });
       state.cases = state.cases.filter(function (candidate) { return caseId(candidate) !== caseId(item); });
@@ -894,7 +843,7 @@
       '<label>Titel<input name="title" value="' + escapeHtml(sourceTitle(item)) + '" required></label>' +
       '<label>Categorie<select name="category">' + categories + '</select></label>' +
       '<label>Brontype<input name="source_type" value="' + escapeHtml(item.source_type || sourceCategory(item)) + '"></label>' +
-      '<label>Brondatum<input name="source_date" type="date" value="' + escapeHtml(item.source_date || item.date || '') + '"></label>' +
+      '<label>Brondatum<input name="source_date" type="date" data-app-date value="' + escapeHtml(item.source_date || item.date || '') + '"></label>' +
       '<label>Vertrouwensniveau<select name="trust_tier"><option value="500">Richtlijn</option><option value="400">Boek / evidence-publicatie</option><option value="300">Semestersamenvatting / anatomie</option><option value="200">Persoonlijke of Craft-notitie</option><option value="150">College</option><option value="100">Nog niet ingedeeld</option></select></label>' +
       '<label>Privacyklasse<select name="privacy_class"><option value="private-local">Privé lokaal</option><option value="private_notes">Privé notities</option><option value="private_education">Privé onderwijsmateriaal</option><option value="private_clinical">Privé klinisch</option><option value="private">Privé</option><option value="deidentified">Geanonimiseerd</option><option value="public">Publiek</option><option value="review-required">Eerst controleren</option><option value="unknown">Onbekend</option></select></label>' +
       '<label>Auteursrecht<select name="copyright_class"><option value="publisher-restricted">Uitgever — privé gebruik</option><option value="private-study">Privé studiemateriaal</option><option value="commercial_copyright">Commercieel auteursrecht</option><option value="institutional">Institutioneel</option><option value="personal">Eigen/persoonlijk</option><option value="open_license">Open licentie</option><option value="public_domain">Publiek domein</option><option value="private">Privé</option><option value="unknown">Onbekend</option></select></label>' +
@@ -928,7 +877,7 @@
       return;
     }
     if (suffix === '.pdf') {
-      preview.innerHTML = '<iframe title="PDF-voorvertoning" src="' + escapeHtml(url + '#view=FitH') + '"></iframe>';
+      preview.innerHTML = pdfPreview(url, '#view=FitH', sourceTitle(item));
       return;
     }
     if (['.mp3', '.m4a', '.wav'].indexOf(suffix) !== -1) {
@@ -996,7 +945,7 @@
 
   async function deleteSource() {
     var item = state.sources.find(function (candidate) { return sourceId(candidate) === state.currentSourceId; });
-    if (!item || !window.confirm('Verwijder deze geïmporteerde bronkopie en de manifestregistratie permanent?')) return;
+    if (!item || !await window.LectureProcessorUx.requestDialog({ title: 'Bronkopie verwijderen?', message: 'De geïmporteerde lokale bronkopie en manifestregistratie worden permanent verwijderd.', confirmLabel: 'Permanent verwijderen', cancelLabel: 'Annuleren', destructive: true })) return;
     try {
       await api('/sources-manager/' + encodeURIComponent(state.currentSourceId), { method: 'DELETE' });
       state.sources = state.sources.filter(function (candidate) { return sourceId(candidate) !== state.currentSourceId; });
@@ -1075,10 +1024,10 @@
 
   $('#clinical-search-form').addEventListener('submit', function (event) { event.preventDefault(); search(); });
   $('#clinical-search-input').addEventListener('input', function () { window.clearTimeout(search.timer); search.timer = window.setTimeout(search, 180); });
-  document.addEventListener('click', function () { closePrettySelects(); });
+
   document.addEventListener('keydown', function (event) {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); $('#clinical-search-input').focus(); }
-    if (event.key === 'Escape') { closePrettySelects(); closeContextPanel(); }
+    if (event.key === 'Escape' && !document.querySelector('.app-select-menu.visible, .app-request-overlay:not([hidden])')) closeContextPanel();
   });
   bindRegionButtons();
   $$('.body-hotspots [data-region]').forEach(function (spot) { spot.addEventListener('click', function () { setRegion(spot.dataset.region); }); });

@@ -106,7 +106,7 @@ test('reading mode prevents content shortcuts and canvas boundary navigation pre
 test('eraser respects locked drawings and selected tool indicators stay accurate',async({page})=>{
   await studio(page);await seed(page,'locked-drawing');
   await page.getByRole('button',{name:'Draw',exact:true}).click();
-  await field(page,'tool').selectOption('eraser');
+  await chooseField(page, 'tool', 'eraser');
   await page.locator('#book-spread svg [data-object]').click();
   await expect(page.locator('#book-spread svg [data-object]')).toHaveCount(1);
   await expect(page.getByRole('button',{name:'Undo',exact:true})).toBeDisabled();
@@ -207,3 +207,11 @@ test('xPED river covers and an odd final page remain clear in the editor',async(
   await expect(page.locator('.book-thumb[aria-current="true"]')).toContainText('Page 3');
   await page.screenshot({animations:'disabled',path:test.info().outputPath('real-final-page.png')});
 });
+
+async function chooseField(page, name, value) {
+  const native = field(page, name);
+  const label = await native.locator('option').evaluateAll((options, selected) => options.find(option => option.value === String(selected)).textContent, value);
+  await native.locator('..').locator('.app-select-button').click();
+  await page.getByRole('option', { name: label, exact: true }).click();
+  await expect(field(page, name)).toHaveValue(String(value));
+}

@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="nl">
 <head>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Physio Clinical Workspace · Lecture Processor</title>
@@ -12,29 +13,32 @@
   {% set shell_title = 'Physio Clinical Workspace' %}
   {% include '_app_shell.html' %}
     <main class="app-shell-page physio-launcher" data-companion-url="{{ companion_url }}">
+      <header class="physio-launcher-heading"><span class="physio-launcher-kicker">JOUW LOKALE KENNISWERKPLEK</span><h1>Physio werkruimte</h1><p>Van klinische vraag naar bronnen, onderzoek en een helder plan.</p></header>
+      <div class="physio-launcher-layout">
       <section class="physio-launcher-card">
-        <span class="physio-launcher-kicker">Local-first · alleen deze Mac</span>
-        <h1>Je klinische werkruimte draait lokaal</h1>
-        <p>Zoeken, anatomie, bronnen en geanonimiseerde casussen blijven op je computer. Deze pagina maakt alleen verbinding met de companion op <code>127.0.0.1</code>.</p>
-        <div class="physio-launcher-status" id="physio-launcher-status" role="status" aria-live="polite">
-          <span class="physio-launcher-dot" aria-hidden="true"></span>
-          <span>Lokale companion controleren…</span>
-        </div>
-        <div class="physio-launcher-actions">
-          <a class="physio-launcher-button primary" id="physio-open-companion" href="{{ companion_url }}">Open werkruimte</a>
-          <button class="physio-launcher-button" type="button" id="physio-retry-companion">Opnieuw verbinden</button>
-        </div>
-        <details>
-          <summary>Companion is niet gestart?</summary>
-          <p>Installeer of start hem eenmalig vanuit de projectmap. Daarna start hij automatisch bij het inloggen.</p>
-          <code>./.venv/bin/python scripts/run_physio_companion.py</code>
-        </details>
+        <span class="physio-launcher-mark" aria-hidden="true">P</span>
+        <h2>Open je klinische werkruimte</h2>
+        <p>Je kennisbank, anatomie en geanonimiseerde casussen staan in de lokale companion op deze computer.</p>
+        <div class="physio-launcher-status" id="physio-launcher-status" role="status" aria-live="polite"><span class="physio-launcher-dot" aria-hidden="true"></span><span>Lokale companion controleren…</span></div>
+        <div class="physio-launcher-actions"><a class="physio-launcher-button primary" id="physio-open-companion" href="{{ companion_url }}">Open werkruimte</a><button class="physio-launcher-button" type="button" id="physio-retry-companion">Opnieuw verbinden</button></div>
+        <details><summary>Hulp bij het starten</summary><div class="physio-launcher-help"><p>Start de companion vanuit de projectmap. Na installatie kan hij automatisch starten bij het inloggen.</p><code>./.venv/bin/python scripts/run_physio_companion.py</code></div></details>
       </section>
+      <aside class="physio-launcher-context"><span class="physio-launcher-kicker">OP DEZE COMPUTER</span><h2>Alles bij je klinische vraag</h2><ul><li><strong>Kennis &amp; anatomie</strong><span>Zoek op regio, structuur, klacht of test.</span></li><li><strong>Eigen bronnen</strong><span>Importeer, controleer en activeer je materiaal.</span></li><li><strong>Lokale casussen</strong><span>Verbind je bevindingen met een werkplan.</span></li></ul><p>De verbinding loopt via <code>127.0.0.1</code>. Je lokale gegevens blijven op deze computer bij normaal gebruik.</p></aside>
+      </div>
     </main>
     {% include '_shell_footer.html' %}
   </div>
   </div>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/user-cache-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+
   <script src="{{ url_for('static', filename='js/physio-launcher.js') }}"></script>
 </body>
 </html>

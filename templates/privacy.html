@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Privacy Policy | Lecture Processor</title>
@@ -9,8 +10,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/public-header.css') }}">
 </head>
 <body>
+  {% set public_page = 'legal' %}
+  {% include '_public_header.html' %}
   <div class="container">
     <a href="/dashboard" class="back-link">
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
@@ -26,13 +30,14 @@
         This policy explains what Lecture Processor stores and how that data is used. This document is an operational baseline for a student-run project and should be reviewed by qualified legal counsel before public/commercial launch.
       </div>
 
-      <h2>1. Who This Applies To</h2>
+      <nav class="legal-contents" aria-label="On this page"><strong>On this page</strong><a href="#1-who-this-applies-to">1. Who This Applies To</a><a href="#2-service-operator">2. Service Operator</a><a href="#3-data-we-collect">3. Data We Collect</a><a href="#4-how-we-use-data">4. How We Use Data</a><a href="#5-legal-bases-eea-uk-style-summary">5. Legal Bases (EEA/UK-style Summary)</a><a href="#6-third-party-processors">6. Third-Party Processors</a><a href="#7-uploads-audio-and-transcript-handling">7. Uploads, Audio, and Transcript Handling</a><a href="#8-payments">8. Payments</a><a href="#9-data-retention">9. Data Retention</a><a href="#10-security">10. Security</a><a href="#11-international-processing">11. International Processing</a><a href="#12-your-rights">12. Your Rights</a><a href="#13-requests-and-contact">13. Requests and Contact</a><a href="#14-local-storage-and-browser-data">14. Local Storage and Browser Data</a><a href="#15-children">15. Children</a><a href="#16-changes-to-this-policy">16. Changes to This Policy</a></nav>
+      <h2 id="1-who-this-applies-to">1. Who This Applies To</h2>
       <p>This policy applies to your use of Lecture Processor, including the website, dashboard, study library, planner, and related features.</p>
 
-      <h2>2. Service Operator</h2>
+      <h2 id="2-service-operator">2. Service Operator</h2>
       <p>Lecture Processor is operated by the project owner/maintainer (the "operator"). The operator determines how data in this app is processed and is the contact point for privacy requests.</p>
 
-      <h2>3. Data We Collect</h2>
+      <h2 id="3-data-we-collect">3. Data We Collect</h2>
       <p>Depending on how you use the service, we may collect:</p>
       <ul>
         <li>Account and sign-in data (for example email address, user ID, sign-in provider) through Firebase Authentication.</li>
@@ -43,7 +48,7 @@
         <li>Operational and security logs (for example processing job logs, error details, rate-limit events, and high-level event telemetry).</li>
       </ul>
 
-      <h2>4. How We Use Data</h2>
+      <h2 id="4-how-we-use-data">4. How We Use Data</h2>
       <p>We process personal data to:</p>
       <ul>
         <li>Provide core features (file processing, study tools, credits, and account access).</li>
@@ -52,7 +57,7 @@
         <li>Improve product quality using aggregated operational metrics.</li>
       </ul>
 
-      <h2>5. Legal Bases (EEA/UK-style Summary)</h2>
+      <h2 id="5-legal-bases-eea-uk-style-summary">5. Legal Bases (EEA/UK-style Summary)</h2>
       <p>Where applicable, we process data under one or more of these bases:</p>
       <ul>
         <li>Contract/performance: to provide requested features and account functionality.</li>
@@ -61,7 +66,7 @@
         <li>Legal obligations: to keep records where required by law.</li>
       </ul>
 
-      <h2>6. Third-Party Processors</h2>
+      <h2 id="6-third-party-processors">6. Third-Party Processors</h2>
       <p>Lecture Processor relies on service providers that process data on our behalf, including:</p>
       <ul>
         <li>Google Firebase (authentication and database services).</li>
@@ -70,17 +75,17 @@
         <li>Sentry (error monitoring), when configured.</li>
       </ul>
 
-      <h2>7. Uploads, Audio, and Transcript Handling</h2>
+      <h2 id="7-uploads-audio-and-transcript-handling">7. Uploads, Audio, and Transcript Handling</h2>
       <ul>
         <li>Uploaded files are processed to generate study outputs.</li>
         <li>For packs with playback features enabled, a processed audio file may be stored so playback and notes-to-audio sync can work.</li>
         <li>Audio/transcript data can be removed by deleting the study pack or deleting the account.</li>
       </ul>
 
-      <h2>8. Payments</h2>
+      <h2 id="8-payments">8. Payments</h2>
       <p>Card details are processed by Stripe and are not stored on Lecture Processor servers. We store purchase metadata required for crediting, support, accounting, and fraud prevention.</p>
 
-      <h2>9. Data Retention</h2>
+      <h2 id="9-data-retention">9. Data Retention</h2>
       <p>We retain data for as long as reasonably necessary to provide the service and meet legal obligations. Retention can vary by data type:</p>
       <ul>
         <li>Generated study packs and user study data are retained until removed by the user or by administrative cleanup.</li>
@@ -89,30 +94,30 @@
         <li>Purchase/accounting records may be retained longer where required for legal, tax, audit, or fraud-prevention obligations.</li>
       </ul>
 
-      <h2>10. Security</h2>
+      <h2 id="10-security">10. Security</h2>
       <p>We use access controls, authentication checks, and server-side validation to reduce unauthorized access and abuse. No online system is fully risk-free, so absolute security cannot be guaranteed.</p>
 
-      <h2>11. International Processing</h2>
+      <h2 id="11-international-processing">11. International Processing</h2>
       <p>Your data may be processed in countries where our infrastructure providers operate. Those transfers are handled through provider contractual safeguards where applicable.</p>
 
-      <h2>12. Your Rights</h2>
+      <h2 id="12-your-rights">12. Your Rights</h2>
       <p>Depending on your jurisdiction, you may have rights to access, correct, delete, or export personal data, and to object to certain processing activities.</p>
       <p>You can request a self-service export or account/data deletion from the dashboard user menu when signed in.</p>
 
-      <h2>13. Requests and Contact</h2>
+      <h2 id="13-requests-and-contact">13. Requests and Contact</h2>
       {% if legal_contact_email %}
       <p>For privacy requests (access, deletion, export, correction), contact: <a href="mailto:{{ legal_contact_email }}">{{ legal_contact_email }}</a>.</p>
       {% else %}
       <p>For privacy requests (access, deletion, export, correction), contact the project owner through your support channel and include your account email and request type.</p>
       {% endif %}
 
-      <h2>14. Local Storage and Browser Data</h2>
+      <h2 id="14-local-storage-and-browser-data">14. Local Storage and Browser Data</h2>
       <p>The app may use browser storage (for example <code>localStorage</code>) to keep UI preferences, cached study state, and browser-local reminder delivery data such as notification history. Clearing browser data may remove those local values even when planner sessions stay synced to your account.</p>
 
-      <h2>15. Children</h2>
+      <h2 id="15-children">15. Children</h2>
       <p>This service is intended for students and adult learners and is not designed for children under the age required by applicable law in your region.</p>
 
-      <h2>16. Changes to This Policy</h2>
+      <h2 id="16-changes-to-this-policy">16. Changes to This Policy</h2>
       <p>We may update this page when product behavior or legal requirements change. Material changes should be reflected by an updated date above.</p>
 
       <div class="footer">{% include '_footer_links.html' %}</div>

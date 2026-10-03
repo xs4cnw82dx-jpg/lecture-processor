@@ -603,16 +603,13 @@
     }
 
     function initPickers() {
-      if (typeof flatpickr === 'undefined') return;
       if (!sessionDatePicker) {
-        sessionDatePicker = flatpickr(sessionDateEl, {
-          dateFormat: 'Y-m-d',
-          disableMobile: true,
-          locale: { firstDayOfWeek: 1 },
-          allowInput: true,
-          defaultDate: localDateString(new Date())
-        });
+        sessionDateEl.type = 'date';
+        sessionDateEl.value = localDateString(new Date());
+        const picker = window.LectureProcessorUx.enhanceDateInput(sessionDateEl);
+        sessionDatePicker = { setDate(value) { sessionDateEl.value = value; picker.sync(); } };
       }
+      if (typeof flatpickr === 'undefined') return;
       if (!sessionTimePicker) {
         sessionTimePicker = flatpickr(sessionTimeEl, {
           enableTime: true,

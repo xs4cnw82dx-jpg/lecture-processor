@@ -58,9 +58,9 @@ test('planned session reviews picture cards and questions, bounded retry, explic
   await page.getByRole('button', { name: 'Reveal answer', exact: true }).click();
   const picture = page.locator('.planned-study-answer .study-picture-open img');
   await expect(picture).toHaveJSProperty('naturalWidth', 360);
-  await page.screenshot({ path: testInfo.outputPath('planned-study-desktop.png'), fullPage: true });
+  await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('planned-study-desktop.png'), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({ path: testInfo.outputPath('planned-study-mobile.png'), fullPage: true });
+  await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('planned-study-mobile.png'), fullPage: true });
   expect(await page.locator('.planned-study-overlay').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
   await page.getByRole('button', { name: /Enlarge Picture for/ }).click();
   await expect(page.getByRole('dialog', { name: 'Picture viewer' })).toBeVisible();
@@ -103,7 +103,8 @@ test('partial progress resumes after reload without replaying the answered card'
 test('notes progress advances on focus time and Pomodoro excludes its break', async ({ page }) => {
   await page.clock.install();
   const fixture = await plannedLibrary(page, { notes: true });
-  await page.locator('[data-timer]').selectOption('pomodoro');
+  await page.locator('.planned-study-toolbar .app-select-button').click();
+  await page.getByRole('option', { name: 'Pomodoro · 25 / 5', exact: true }).click();
   await page.getByRole('button', { name: 'Start session', exact: true }).click();
   await page.clock.runFor(60000);
   await expect(page.getByRole('button', { name: 'Finish session', exact: true })).toBeEnabled();
@@ -115,7 +116,8 @@ test('notes progress advances on focus time and Pomodoro excludes its break', as
 test('Pomodoro break stays inside the slot and hidden tabs pause without empty completion', async ({ page }) => {
   await page.clock.install();
   const fixture = await plannedLibrary(page);
-  await page.locator('[data-timer]').selectOption('pomodoro');
+  await page.locator('.planned-study-toolbar .app-select-button').click();
+  await page.getByRole('option', { name: 'Pomodoro · 25 / 5', exact: true }).click();
   await page.getByRole('button', { name: 'Start session', exact: true }).click();
   await page.clock.fastForward(25 * 60 * 1000);
   await expect(page.locator('[data-phase]')).toContainText('Take a break');

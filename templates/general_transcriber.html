@@ -17,15 +17,15 @@
   {% set shell_title = 'General Transcriber' %}
   {% include '_app_shell.html' %}
     <main class="app-shell-page reader-page">
-      <section class="shell-panel reader-hero">
-        <h1>General Transcriber</h1>
-        <p>Upload a standalone audio file and generate a clean transcript with the same audio prompt used in lecture processing.</p>
+      <section class="reader-hero">
+        <p class="workspace-eyebrow">Capture & transcribe</p><h1>General Transcriber</h1>
+        <p>Turn a recording into a clear transcript you can read, copy, and keep.</p>
       </section>
 
       <section class="reader-grid">
         <article class="shell-panel reader-input-card">
           <h2>Upload Audio</h2>
-          <p class="tool-note">Each run costs 1 interview credit. Choose the transcript language below, or keep your saved default.</p>
+          <p class="tool-note">Each run costs 1 interview credit.</p>
 
           <div class="tool-upload-wrap">
             <div class="tool-upload-zone" id="transcriber-dropzone" role="button" tabindex="0" aria-labelledby="transcriber-dropzone-title" aria-describedby="transcriber-dropzone-helper transcriber-audio-retention-note">
@@ -38,10 +38,10 @@
               <div class="tool-upload-title-row">
                 <div class="tool-upload-title" id="transcriber-dropzone-title">Audio Recording</div>
               </div>
-              <div class="tool-upload-helper" id="transcriber-dropzone-helper">Upload one standalone audio file for transcription.</div>
+              <div class="tool-upload-helper" id="transcriber-dropzone-helper">Add your recording to get started.</div>
               <div class="tool-upload-subtitle">Drag &amp; drop or click to browse</div>
               <div class="tool-upload-formats">MP3, M4A, WAV, AAC, OGG, FLAC, WEBM &middot; Max 500 MB</div>
-              <div class="tool-retention-note" id="transcriber-audio-retention-note">Keep or download your original audio. This tool deletes uploaded audio after transcription, so only the transcript is recoverable later.</div>
+
               <input type="file" id="transcriber-file-input" accept=".mp3,.m4a,.wav,.aac,.ogg,.flac,.webm">
               <div class="tool-file-info" id="transcriber-file-info" hidden>
                 <div class="tool-file-details">
@@ -72,6 +72,7 @@
             </div>
           </div>
 
+              <div class="tool-retention-note" id="transcriber-audio-retention-note">Keep your original recording. Uploaded audio is deleted after transcription.</div>
           <div class="tool-language-field">
             <span class="tool-language-label">Output Language</span>
             <input type="hidden" id="transcriber-output-language" value="english">
@@ -118,7 +119,7 @@
               <button type="button" class="secondary-btn" id="transcriber-download-docx-btn" disabled>Download .docx</button>
             </div>
           </div>
-          <pre class="output-pre" id="transcriber-output-pre"></pre>
+          <pre class="output-pre" id="transcriber-output-pre"></pre><div class="output-placeholder"><span class="output-placeholder-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 5h14M5 10h14M5 15h9M5 20h11"/></svg></span><h3>Every word, in one place</h3><p>Your transcript will appear here. Copy it or download a Word document when it is ready.</p></div>
         </article>
       </section>
     </main>

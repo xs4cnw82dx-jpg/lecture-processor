@@ -71,6 +71,24 @@
     var names = { 'lecture-notes': 'Lecture', 'slides-only': 'Slide set', interview: 'Interview', 'audio-transcription': 'Audio recording', 'text-combine': 'Text set' };
     return (names[b.mode] || 'Item') + ' ' + count(row.ordinal);
   }
+  function icon(name) {
+    var paths = { check: '<path d="m6 12 4 4 8-8"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/>', file: '<path d="M14 3H6v18h12V7zM14 3v5h4M9 12h6M9 16h6"/>', alert: '<circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16h.01"/>', shield: '<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6zM8 12l3 3 5-6"/>' };
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (paths[name] || paths.file) + '</svg>';
+  }
+  function outcome(b) {
+    if (b.status === 'error') return { title: 'This batch couldn’t finish', copy: 'You can start a new batch when you’re ready.', icon: 'alert' };
+    if (b.status === 'partial') return { title: 'Some results are ready', copy: 'Download the completed items. Start a new batch for the items that failed.', icon: 'alert' };
+    if (b.status === 'complete') return { title: 'Your results are ready', copy: 'Download everything together, or choose individual results below.', icon: 'check' };
+    if (b.status === 'processing') return { title: 'Your batch is in progress', copy: 'You can leave this page. Your results will be here when processing finishes.', icon: 'clock' };
+    if (!labels[b.status]) return { title: 'Checking your batch status', copy: 'Refresh to get the latest update. Your saved batch stays available here.', icon: 'clock' };
+    return { title: 'Your batch is in the queue', copy: 'Processing will begin automatically. You can check back here at any time.', icon: 'clock' };
+  }
+  function progressBar(b) {
+    var total = count(b.total_rows), completed = Math.min(total, count(b.completed_rows)), failed = Math.min(total - completed, count(b.failed_rows));
+    var readyWidth = total ? completed / total * 100 : 0, failedWidth = total ? failed / total * 100 : 0;
+    return '<svg class="bs-progress-track" viewBox="0 0 100 1" preserveAspectRatio="none" role="img" aria-label="' + escape(progress(b)) + '"><rect class="bs-progress-ready" width="' + readyWidth + '" height="1"></rect><rect class="bs-progress-failed" x="' + readyWidth + '" width="' + failedWidth + '" height="1"></rect></svg>';
+  }
+  function loading() { return '<div class="bs-loading" role="status"><span class="bs-skeleton"></span><span class="bs-skeleton"></span><p>Loading your batch…</p></div>'; }
   function renderer(options) {
     var element = options.element, batch = null, generation = 0, timer = null, running = null, lastMarkup = '', dismissal = '';
     var dismissed = new Set();
@@ -88,37 +106,41 @@
       if (announcement.textContent !== spoken) announcement.textContent = spoken;
       var error = friendlyError(b.error_message || (['partial', 'error'].indexOf(b.status) >= 0 ? b.status_message : ''));
       dismissal = dismissKey(b);
+      var state = outcome(b), warning = ['partial', 'error'].indexOf(b.status) >= 0;
       var actions = compact ? '<a class="bs-button bs-primary" href="' + detailUrl(id) + '">View details</a>' : '';
       if (b.can_download_zip) actions += button('zip', 'Download ZIP', compact ? '' : 'data-primary="true"');
-      if (!compact && ['partial', 'error'].indexOf(b.status) >= 0) actions += '<a class="bs-button ' + (b.can_download_zip ? '' : 'bs-primary') + '" href="' + newBatchUrl(b) + '">Start a new batch</a>';
-      if (terminal(b.status)) actions += button('archive', b.archived ? 'Restore batch' : 'Archive batch');
-      actions += button('refresh', 'Refresh');
-      var html = '<div class="bs-heading"><div><p class="bs-eyebrow">' + escape(mode(b)) + (b.archived ? ' · Archived' : '') + '</p><h' + (compact ? '2' : '1') + '>' + escape(b.batch_title || id) + '</h' + (compact ? '2' : '1') + '></div>' + pill(b.status) + '</div>' +
-        '<div class="bs-outcome"><div><h3>' + escape(progress(b)) + '</h3>' + (!terminal(b.status) ? '<p>' + escape(b.stage_label || b.status_message || 'Waiting for processing to begin') + '</p>' : '') + '</div><div class="bs-credits"><h3>' + escape(credit.heading) + '</h3><p>' + escape(credit.breakdown) + '</p></div></div>' +
+      if (!compact && warning) actions += '<a class="bs-button ' + (b.can_download_zip ? '' : 'bs-primary') + '" href="' + newBatchUrl(b) + '">Start a new batch</a>';
+      var utilities = (terminal(b.status) ? button('archive', b.archived ? 'Restore batch' : 'Archive batch') : '') + button('refresh', 'Refresh');
+      var html = '<div class="bs-heading"><div><p class="bs-eyebrow">' + escape(mode(b)) + (b.archived ? ' · Archived' : '') + '</p><h' + (compact ? '2' : '1') + '>' + escape(b.batch_title || id) + '</h' + (compact ? '2' : '1') + '><p class="bs-submitted">Submitted ' + escape(date(b.created_at)) + '</p></div><div class="bs-utilities">' + utilities + '</div></div>' +
+        '<div class="bs-overview"><section class="bs-summary bs-state-' + escape(labels[b.status] ? b.status : 'queued') + '"><div class="bs-summary-top"><span class="bs-status-icon">' + icon(state.icon) + '</span>' + pill(b.status) + '</div><h2>' + escape(state.title) + '</h2><p class="bs-summary-copy">' + escape(state.copy) + '</p>' +
+        '<div class="bs-progress"><div class="bs-progress-label"><strong>' + escape(progress(b)) + '</strong><span>' + count(b.total_rows) + ' items</span></div>' + progressBar(b) + (!terminal(b.status) ? '<p class="bs-stage">' + escape(b.stage_label || b.status_message || (b.status === 'processing' ? 'Processing your items. This page updates automatically.' : 'Waiting for processing to begin')) + '</p>' : '') + '</div>' +
         (error && !isDismissed(dismissal) ? '<div class="bs-message"><span>' + escape(error) + '</span>' + button('dismiss', 'Dismiss message') + '</div>' : '') +
-        '<div class="bs-actions">' + actions + '</div><p class="bs-refresh-error" role="status" hidden></p>';
+        '<div class="bs-actions bs-main-actions">' + actions + '</div>' + (!compact && warning ? '<p class="bs-recovery">Select your files again to submit a new batch.</p>' : '') + '</section>' +
+        '<aside class="bs-credit-card' + (count(b.credits_refund_pending) ? ' bs-credit-pending' : '') + '"><span class="bs-credit-icon">' + icon('shield') + '</span><p class="bs-kicker">CREDIT SUMMARY</p><h3>' + escape(credit.heading) + '</h3><p class="bs-credit-breakdown">' + escape(credit.breakdown) + '</p><p class="bs-credit-note">' + (count(b.credits_refund_pending) ? 'Refunds are still being applied. This status updates automatically.' : count(b.credits_charged) > 0 && count(b.credits_refunded) === count(b.credits_charged) ? 'The credits used for this batch have been returned to your balance.' : count(b.credits_refunded) ? 'Refunded credits are back in your balance.' : 'Credit usage stays attached to this batch for your records.') + '</p>' + (b.archived ? '<p class="bs-archived-note">Find this batch again in the Archived view.</p>' : '') + '</aside></div><p class="bs-refresh-error" role="status" hidden></p>';
       if (compact && b.can_download_zip && ['lecture-notes', 'interview', 'audio-transcription'].indexOf(b.mode) >= 0) html += '<p class="bs-retention">ZIP files exclude original audio. Save important audio from your <a href="/study">Study Library</a> before temporary audio is deleted.</p>';
       if (!compact) {
-        if (['partial', 'error'].indexOf(b.status) >= 0) html += '<p class="bs-recovery">Select your files again to submit a new batch.</p>';
-        html += '<section class="bs-results"><h2>Results</h2><div class="bs-result-list">';
+        html += '<section class="bs-results"><div class="bs-section-head"><div><p class="bs-kicker">INDIVIDUAL OUTPUTS</p><h2>Results <span>' + count(b.total_rows) + '</span></h2></div><p>' + (count(b.completed_rows) ? count(b.completed_rows) + ' ready to download' : warning ? 'Review the items in this batch' : 'Results appear as processing finishes') + '</p></div><div class="bs-result-list">';
         (b.rows || []).forEach(function (row) {
           var rowId = escape(row.row_id), name = itemName(b, row);
-          html += '<article class="bs-result"><div><strong>' + escape(name) + '</strong><div>' + pill(row.status) + '</div></div><div class="bs-result-content">';
-          if (row.status === 'error') html += '<p>This item could not be completed. See failure details below.</p><details data-key="failure-' + rowId + '"><summary>Failure details</summary><p>' + escape(friendlyError(row.error) || error || 'Processing failed. Start a new batch to try again.') + '</p><details data-key="raw-' + rowId + '"><summary>Technical details</summary><pre>' + escape(row.error || row.status_message || 'No additional diagnostics available.') + '</pre><p>Stage: ' + escape(row.failed_stage || row.current_stage_label || 'Unavailable') + '</p></details></details>';
-          else if (row.status !== 'complete') html += '<p>' + escape(row.current_stage_label || row.current_stage_detail || 'Waiting to start') + '</p>';
-          html += '</div><div class="bs-actions">';
+          html += '<article class="bs-result"><div class="bs-result-identity"><span class="bs-item-icon">' + icon(row.status === 'complete' ? 'check' : 'file') + '</span><div><h3>' + escape(name) + '</h3>' + pill(row.status) + '</div></div><div class="bs-result-content">';
+          if (row.status === 'error') {
+            var rowError = friendlyError(row.error);
+            html += '<p class="bs-row-summary">No output was generated.</p><details class="bs-failure" data-key="failure-' + rowId + '"><summary>Failure details</summary><div class="bs-disclosure-body"><p>' + escape(rowError && rowError !== error ? rowError : 'This item was affected by the batch processing issue. Select its files again in a new batch to try again.') + '</p><details class="bs-raw" data-key="raw-' + rowId + '"><summary>Technical details</summary><div class="bs-disclosure-body"><pre>' + escape(row.error || row.status_message || 'No additional diagnostics available.') + '</pre><p>Stage: ' + escape(row.failed_stage || row.current_stage_label || 'Unavailable') + '</p></div></details></div></details>';
+          } else if (row.status !== 'complete') html += '<p class="bs-row-summary">' + escape(row.current_stage_label || row.current_stage_detail || 'Waiting to start') + '</p>';
+          else html += '<p class="bs-row-summary">Ready to download</p><p class="bs-row-help">Choose the format you need.</p>';
+          html += '</div><div class="bs-actions bs-result-actions">';
           if (row.status === 'complete') {
             html += button('docx', 'Word document', 'data-row="' + rowId + '"');
             if (['lecture-notes', 'slides-only'].indexOf(b.mode) >= 0) html += button('flashcards', 'Flashcards CSV', 'data-row="' + rowId + '"') + button('test', 'Test CSV', 'data-row="' + rowId + '"');
           }
           html += '</div></article>';
         });
-        if (!(b.rows || []).length) html += '<p>Item details will appear here when available.</p>';
+        if (!(b.rows || []).length) html += '<div class="bs-empty bs-empty-results">' + icon('clock') + '<h3>Waiting for item details</h3><p>Individual results will appear here when available.</p></div>';
         html += '</div>';
-        if (b.rows_limited) html += '<p>Showing ' + count(b.rows_returned) + ' of ' + count(b.total_rows) + ' items. Counts above cover the whole batch.</p>' + (count(b.rows_returned) < 500 ? button('more', 'Show more items') : '');
-        if (['lecture-notes', 'interview', 'audio-transcription'].indexOf(b.mode) >= 0) html += '<p class="bs-retention">ZIP downloads contain generated results, not original audio. Save important audio from your <a href="/study">Study Library</a> before temporary audio is deleted.</p>';
-        html += '</section><details class="bs-details" data-key="additional"><summary>Additional details</summary><dl class="bs-metadata"><div><dt>Submitted</dt><dd>' + escape(date(b.created_at)) + '</dd></div><div><dt>Last updated</dt><dd>' + escape(date(b.updated_at)) + '</dd></div><div><dt>Completion email</dt><dd>' + escape(b.email_status_label || b.completion_email_status || 'Not available') + '</dd></div><div><dt>ZIP contents</dt><dd>Individual results' + (b.export_options && b.export_options.include_combined_docx ? ' and a combined Word document' : '') + '</dd></div></dl></details>' +
-          '<details class="bs-details" data-key="technical"><summary>Technical details</summary><p>Batch ID: ' + escape(id) + '</p><p>Provider: ' + escape(b.provider_label || b.provider_state || 'Not available') + '</p><p>Tokens: ' + count(b.token_input_total) + ' input · ' + count(b.token_output_total) + ' output · ' + count(b.token_total) + ' total</p><pre>' + escape(b.error_summary || b.error_message || '') + '</pre>' + (b.rows || []).map(function (r) { return '<p>' + escape(itemName(b, r)) + ': ' + count(r.token_input_total) + ' input · ' + count(r.token_output_total) + ' output · ' + count(r.token_total) + ' total tokens</p>'; }).join('') + '<pre>' + escape(b.completion_email_error || '') + '</pre></details>';
+        if (b.rows_limited) html += '<div class="bs-more"><p>Showing ' + count(b.rows_returned) + ' of ' + count(b.total_rows) + ' items. Counts above cover the whole batch.</p>' + (count(b.rows_returned) < 500 ? button('more', 'Show more items') : '') + '</div>';
+        if (b.can_download_zip && ['lecture-notes', 'interview', 'audio-transcription'].indexOf(b.mode) >= 0) html += '<p class="bs-retention">ZIP downloads contain generated results, not original audio. Save important audio from your <a href="/study">Study Library</a> before temporary audio is deleted.</p>';
+        html += '</section><div class="bs-support-details"><details class="bs-details" data-key="additional"><summary>Additional details <span>Dates, delivery and exports</span></summary><div class="bs-disclosure-body"><dl class="bs-metadata"><div><dt>Submitted</dt><dd>' + escape(date(b.created_at)) + '</dd></div><div><dt>Last updated</dt><dd>' + escape(date(b.updated_at)) + '</dd></div><div><dt>Completion email</dt><dd>' + escape(b.email_status_label || b.completion_email_status || 'Not available') + '</dd></div><div><dt>ZIP contents</dt><dd>Individual results' + (b.export_options && b.export_options.include_combined_docx ? ' and a combined Word document' : '') + '</dd></div></dl></div></details>' +
+          '<details class="bs-details" data-key="technical"><summary>Technical details <span>Diagnostics for troubleshooting</span></summary><div class="bs-disclosure-body"><dl class="bs-metadata"><div><dt>Batch ID</dt><dd>' + escape(id) + '</dd></div><div><dt>Provider</dt><dd>' + escape(b.provider_label || b.provider_state || 'Not available') + '</dd></div><div><dt>Tokens</dt><dd>' + count(b.token_input_total) + ' input · ' + count(b.token_output_total) + ' output · ' + count(b.token_total) + ' total</dd></div></dl>' + (b.error_summary || b.error_message ? '<pre>' + escape(b.error_summary || b.error_message) + '</pre>' : '') + (b.rows || []).map(function (r) { return '<p class="bs-row-help">' + escape(itemName(b, r)) + ': ' + count(r.token_input_total) + ' input · ' + count(r.token_output_total) + ' output · ' + count(r.token_total) + ' total tokens</p>'; }).join('') + (b.completion_email_error ? '<pre>' + escape(b.completion_email_error) + '</pre>' : '') + '</div></details></div>';
       }
       if (lastMarkup === html) return;
       var open = Array.from(element.querySelectorAll('details[open]')).map(function (el) { return el.dataset.key; });
@@ -148,7 +170,7 @@
       }).finally(function () { if (valid(g)) { running = null; schedule(); } });
       return running;
     }
-    function start(b) { stop(); rowsLimit = 100; batch = b; lastMarkup = ''; if (b.total_rows != null) render(b); else element.innerHTML = '<p role="status">Loading batch…</p>'; return refresh(); }
+    function start(b) { stop(); rowsLimit = 100; batch = b; lastMarkup = ''; if (b.total_rows != null) render(b); else element.innerHTML = loading(); return refresh(); }
     element.addEventListener('click', async function (event) {
       var target = event.target.closest('[data-bs-action]'); if (!target || !batch) return;
       var action = target.dataset.bsAction, b = batch, g = generation;
@@ -187,7 +209,7 @@
     document.addEventListener('visibilitychange', schedule);
     return { start: start, refresh: refresh, stop: stop, clear: clear, render: render };
   }
-  var exported = { escape: escape, terminal: terminal, friendlyError: friendlyError, needsPolling: needsPolling, status: status, pill: pill, mode: mode, date: date, progress: progress, credits: credits, detailUrl: detailUrl, newBatchUrl: newBatchUrl, api: api, json: json, visibility: visibility, notice: notice, download: download, renderer: renderer };
+  var exported = { escape: escape, terminal: terminal, friendlyError: friendlyError, needsPolling: needsPolling, status: status, pill: pill, mode: mode, date: date, progress: progress, credits: credits, detailUrl: detailUrl, newBatchUrl: newBatchUrl, api: api, json: json, visibility: visibility, notice: notice, download: download, renderer: renderer, icon: icon, outcome: outcome, progressBar: progressBar, loading: loading };
   root.LectureProcessorBatchStatus = exported;
   if (typeof module !== 'undefined' && module.exports) module.exports = exported;
 })(typeof window !== 'undefined' ? window : globalThis);

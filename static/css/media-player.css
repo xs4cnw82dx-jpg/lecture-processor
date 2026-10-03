@@ -1,0 +1,37 @@
+/* Website media controls preserve the original media element and its events. */
+.app-media-player { position:relative; margin:18px 0; min-width:0; border:1px solid #dfe5ef; border-radius:16px; background:#f7f9fd; color:#17233c; overflow:visible; font-family:var(--font-ui,Inter,sans-serif); }
+.app-media-player[hidden] { display:none; }
+.app-media-player.app-media-audio > audio.app-media-source { position:absolute; width:1px; height:1px; opacity:0; margin:0; pointer-events:none; }
+.app-media-video > video.app-media-source { display:block; width:100%; max-height:65vh; margin:0; border-radius:15px 15px 0 0; background:#111827; object-fit:contain; }
+.app-media-controls { padding:14px 16px; }
+.app-media-main { display:grid; grid-template-columns:44px minmax(0,1fr) 88px; gap:14px; align-items:center; }
+.app-media-player button { display:inline-flex; align-items:center; justify-content:center; flex:none; cursor:pointer; font:inherit; }
+.app-media-player svg { width:20px; height:20px; flex:none; }
+.app-media-player .app-media-play { width:44px; height:44px; padding:11px; border:0; border-radius:50%; color:#fff; background:#2558d9; box-shadow:0 3px 8px #2558d91a; transition:background 140ms ease,transform 140ms ease; }
+.app-media-play:hover { background:#1e46b1; }
+.app-media-play:active { transform:scale(.96); }
+.app-media-player button:disabled { opacity:.45; cursor:not-allowed; }
+.app-media-timeline { min-width:0; }
+.app-media-time { display:block; color:#52617b; font-size:.75rem; font-variant-numeric:tabular-nums; margin-bottom:3px; }
+.app-media-track { position:relative; height:28px; display:flex; align-items:center; }
+.app-media-progress { appearance:none; width:100%; height:4px; border:0; border-radius:4px; overflow:hidden; background:#dfe6f2; color:#2558d9; }
+.app-media-progress::-webkit-progress-bar { background:#dfe6f2; }
+.app-media-progress::-webkit-progress-value { background:#2558d9; }
+.app-media-progress::-moz-progress-bar { background:#2558d9; }
+.app-media-player input[type="range"] { appearance:none; -webkit-appearance:none; padding:0; border:0; border-radius:4px; cursor:pointer; margin:0; }
+.app-media-player input.app-media-seek { position:absolute; inset:0; width:100%; height:28px; background:transparent; }
+.app-media-player input[type="range"]::-webkit-slider-thumb { appearance:none; width:13px; height:13px; border:2px solid #fff; border-radius:50%; background:#2558d9; box-shadow:0 1px 5px #17233c26; }
+.app-media-player input[type="range"]::-moz-range-thumb { width:10px; height:10px; border:2px solid #fff; border-radius:50%; background:#2558d9; }
+.app-media-player input[type="range"]:disabled { opacity:.45; cursor:not-allowed; }
+.app-media-speed .app-select-button { min-height:38px; padding:8px 10px; font-size:.78rem; box-shadow:none; }
+.app-media-bottom { display:flex; align-items:center; gap:8px; margin-top:6px; min-height:30px; }
+.app-media-player .app-media-mute,.app-media-player .app-media-fullscreen { width:32px; height:32px; padding:6px; border:0; border-radius:8px; color:#52617b; background:transparent; }
+.app-media-player .app-media-mute:hover,.app-media-player .app-media-fullscreen:hover { background:#eaf0ff; color:#2558d9; }
+.app-media-player input.app-media-volume { width:70px; height:4px; background:#dfe6f2; }
+.app-media-status { flex:1; min-width:0; color:#65718a; font-size:.72rem; line-height:1.4; text-align:right; }
+.app-media-player.has-error .app-media-status { color:#b42335; }
+.app-media-player:fullscreen { display:flex; flex-direction:column; justify-content:center; width:100%; height:100%; border:0; border-radius:0; background:#111827; }
+.app-media-player:fullscreen video.app-media-source { flex:1; min-height:0; max-height:calc(100vh - 118px); }
+.app-media-player:fullscreen .app-media-controls { background:#f7f9fd; }
+@media(max-width:480px) { .app-media-controls { padding:12px; } .app-media-main { grid-template-columns:40px minmax(0,1fr) 78px; gap:10px; } .app-media-player .app-media-play { width:40px; height:40px; } .app-media-status { font-size:.68rem; } }
+@media(prefers-reduced-motion:reduce) { .app-media-player button { transition:none; } }

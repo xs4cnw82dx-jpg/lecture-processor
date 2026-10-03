@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FAQ | Lecture Processor</title>
@@ -17,67 +18,68 @@
 
   <main class="support-shell">
     <section class="support-hero">
-      <span class="support-badge">FAQ</span>
-      <h1>Short answers to the questions people ask before and after their first upload.</h1>
+      <span class="support-badge">A few useful answers</span>
+      <h1>Frequently asked questions</h1>
       <p>If you need step-by-step help instead of a short answer, open the <a href="/helpcenter">Help Center</a>.</p>
     </section>
 
+    <nav class="support-hero-links support-topic-nav" aria-label="Question topics"><a class="support-pill" href="#account">Account</a><a class="support-pill" href="#uploads">Uploads</a><a class="support-pill" href="#credits">Credits</a><a class="support-pill" href="#study-packs-and-batch-mode">Study packs and batch mode</a><a class="support-pill" href="#privacy-and-support">Privacy and support</a></nav>
     <section class="faq-sections">
       <div class="faq-group">
-        <h2>Account</h2>
-        <details class="faq-item" open>
+        <h2 id="account">Account</h2>
+        <details class="faq-item" data-animated-details>
           <summary>Do I need an account to process files?</summary>
           <p>Yes for processing, credits, saved study packs, synced study progress, and synced planner sessions. Browser reminders still run only in an open browser tab on the device where you enabled them.</p>
         </details>
-        <details class="faq-item">
+        <details class="faq-item" data-animated-details>
           <summary>Why do I briefly see loading in the header?</summary>
           <p>The app checks your Firebase session first. During that short auth-pending state, the header stays in a neutral loading state until it knows which account is active.</p>
         </details>
       </div>
 
       <div class="faq-group">
-        <h2>Uploads</h2>
-        <details class="faq-item">
+        <h2 id="uploads">Uploads</h2>
+        <details class="faq-item" data-animated-details>
           <summary>Do Lecture Notes require both slides and audio?</summary>
           <p>Yes. Lecture Notes uses slides plus audio together. If you only have slides, use Slides Extraction. If you only have audio, use Interview Transcription.</p>
         </details>
-        <details class="faq-item">
+        <details class="faq-item" data-animated-details>
           <summary>What does “Import from lecture video URL” mean?</summary>
           <p>It means you can paste the normal lecture video page from your LMS and let Lecture Processor fetch the audio for you. Direct playlist links also work, and Brightspace is one example of a supported flow.</p>
         </details>
       </div>
 
       <div class="faq-group">
-        <h2>Credits</h2>
-        <details class="faq-item">
+        <h2 id="credits">Credits</h2>
+        <details class="faq-item" data-animated-details>
           <summary>Where do I buy credits?</summary>
           <p>Open <a href="/buy_credits">Buy Credits</a>. Payment is handled by Stripe.</p>
         </details>
-        <details class="faq-item">
+        <details class="faq-item" data-animated-details>
           <summary>What happens if processing fails?</summary>
           <p>Internal processing failures may trigger a credit refund based on the app’s refund logic. You can also contact support if something looks incorrect.</p>
         </details>
       </div>
 
       <div class="faq-group">
-        <h2>Study packs and batch mode</h2>
-        <details class="faq-item">
+        <h2 id="study-packs-and-batch-mode">Study packs and batch mode</h2>
+        <details class="faq-item" data-animated-details>
           <summary>Where do generated packs go?</summary>
           <p>Saved packs appear in <a href="/study">Study Library</a>, where you can organize them into folders and launch study modes.</p>
         </details>
-        <details class="faq-item">
+        <details class="faq-item" data-animated-details>
           <summary>When should I use batch processing?</summary>
           <p>Use <a href="/batch_mode">Batch Processing</a> when you want to queue many rows in one submission and export the results together.</p>
         </details>
       </div>
 
       <div class="faq-group">
-        <h2>Privacy and support</h2>
-        <details class="faq-item">
+        <h2 id="privacy-and-support">Privacy and support</h2>
+        <details class="faq-item" data-animated-details>
           <summary>Where can I read privacy or terms details?</summary>
           <p>See <a href="/privacy">Privacy Policy</a> and <a href="/terms">Terms</a>.</p>
         </details>
-        <details class="faq-item">
+        <details class="faq-item" data-animated-details>
           <summary>How do I contact support?</summary>
           <p>Email <a href="mailto:{{ legal_contact_email }}">{{ legal_contact_email }}</a>.</p>
         </details>
@@ -89,5 +91,6 @@
     <p>{% include '_footer_links.html' %}</p>
   </footer>
 
+  <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
 </body>
 </html>

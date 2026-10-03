@@ -4,8 +4,8 @@ import base64
 import secrets
 import uuid
 
-from flask import g, jsonify, request
-from werkzeug.exceptions import RequestEntityTooLarge
+from flask import g, jsonify, request, render_template
+from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 
 from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.calendar_observability import redact_calendar_url
@@ -78,6 +78,23 @@ def register_runtime_hooks(app, runtime) -> None:
     @app.errorhandler(RequestEntityTooLarge)
     def _handle_request_entity_too_large(_error):
         return jsonify({'error': 'Upload too large. Maximum total upload size is 560MB (up to 50MB PDF and 500MB audio).'}), 413
+
+    @app.errorhandler(HTTPException)
+    def _render_browser_error(error):
+        # Preserve status/headers and existing API error semantics.
+        response = error.get_response()
+        if request.path.startswith('/api/') or request.method not in ('GET', 'HEAD'):
+            return response
+        messages = {
+            403: ('This page is not available', 'Your account does not have access to this page.'),
+            404: ('We could not find this page', 'The address may have changed, or this shared link may no longer be available.'),
+            410: ('This link is no longer available', 'The owner may have removed it or turned sharing off.'),
+            500: ('Something went wrong', 'We could not load this page. Please try again in a moment.'),
+        }
+        title, message = messages.get(error.code, ('We could not open this page', 'Please return to your workspace and try again.'))
+        response.set_data(render_template('error.html', error_code=error.code, error_title=title, error_message=message))
+        response.content_type = 'text/html; charset=utf-8'
+        return response
 
     @app.context_processor
     def _inject_template_security_context():

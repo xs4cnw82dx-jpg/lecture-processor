@@ -1,6 +1,8 @@
 <!doctype html>
 <html lang="nl">
 <head>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
+  <link rel="stylesheet" href="/static/css/media-player.css">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
@@ -28,7 +30,7 @@
 
     <aside class="clinical-rail" aria-label="Kennisbanknavigatie">
       <div class="rail-head"><span>Regio's</span><button id="refresh-index" type="button" title="Index vernieuwen" aria-label="Index vernieuwen">↻</button></div>
-      <div class="body-map" aria-label="Klikbare lichaamsregio's">
+      <details class="region-map-disclosure"><summary>Lichaamskaart</summary><div class="body-map" aria-label="Klikbare lichaamsregio's">
         <svg viewBox="0 0 180 360" role="img" aria-labelledby="body-map-title">
           <title id="body-map-title">Lichaamsregio kiezen</title>
           <g class="body-outline">
@@ -59,6 +61,7 @@
         </svg>
         <span id="body-map-label">Schouder geselecteerd</span>
       </div>
+      </details>
       <nav class="region-list" id="region-list">
         <button class="is-active" data-region="schouder"><span>Schouder</span></button>
       </nav>
@@ -173,6 +176,8 @@
 
   <dialog id="media-dialog" class="media-dialog"><form method="dialog"><button value="close" aria-label="Sluiten">×</button></form><div id="media-viewer"></div></dialog>
   <div class="toast" id="clinical-toast" role="status" aria-live="polite" aria-atomic="true"></div>
+  <script src="/static/js/ux-utils.js"></script>
+  <script src="/static/js/media-player.js"></script>
   <script src="/static/js/physio-local.js"></script>
 </body>
 </html>

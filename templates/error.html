@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ error_code }} · {{ error_title }} | Lecture Processor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/public-header.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/error.css') }}">
+</head>
+<body>
+  {% set public_page = '' %}
+  {% include '_public_header.html' %}
+  <main class="error-page">
+    <div class="error-illustration" aria-hidden="true"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2"><rect x="13" y="9" width="38" height="46" rx="9"/><path d="M23 23h18M23 31h10M24 43l6-6m-6 0 6 6"/></svg></div>
+    <span class="error-code">{{ error_code }}</span>
+    <h1>{{ error_title }}</h1>
+    <p>{{ error_message }}</p>
+    <div class="error-actions"><a href="/dashboard" class="error-primary">Go to your workspace <span aria-hidden="true">↗</span></a><a href="/helpcenter">Visit the Help Center</a></div>
+  </main>
+</body>
+</html>

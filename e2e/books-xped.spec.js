@@ -59,7 +59,7 @@ test("xPED cover pairs, paper treatments, artwork, font choices and print previe
   await expect(field(page, "style.font")).toHaveValue("General Sans");
   await expect(field(page, "style.weight").locator("option")).toHaveCount(2);
   await expect(page.getByRole("button", { name: "Italic", exact: true })).toBeDisabled();
-  await field(page, "style.font").selectOption("Nohemi");
+  await chooseField(page, "style.font", "Nohemi");
   await expect(field(page, "style.weight")).toHaveValue("700");
   await expect(field(page, "style.weight").locator("option")).toHaveCount(1);
   await page.getByRole("button", { name: "Next pages", exact: true }).click();
@@ -105,7 +105,7 @@ test("color input events paint immediately, preserve picker focus and undo as on
   await liveColor(page, "fill", ["#fdc08a", "#68ddbb"]);
   await expect(page.locator('#book-spread [data-object] [fill="#68ddbb"]').first()).toBeVisible();
   await addExtra(page, "table");
-  await field(page, "tableStyle").selectOption("custom");
+  await chooseField(page, "tableStyle", "custom");
   await liveColor(page, "fill", ["#c0a3ea", "#abcdee"]);
   await expect(page.locator('#book-spread [data-object] [fill="#abcdee"]').first()).toBeVisible();
   await page.getByRole("button", { name: "Add text", exact: true }).click();
@@ -161,7 +161,7 @@ test('page number placement, typography, color and order survive saving and matc
   await studio(page);
   await applyXped(page, 'minimal', 'light');
   await page.getByRole('button', { name: 'Add text', exact: true }).click();
-  await field(page, 'styleName').selectOption('heading');
+  await chooseField(page, 'styleName', 'heading');
   await expect(field(page, 'style.color')).toHaveValue('#ffffff');
   await page.getByRole('button', { name: 'Page settings', exact: true }).click();
   await page.locator('summary').filter({ hasText: /^Page numbers$/ }).click();
@@ -171,10 +171,10 @@ test('page number placement, typography, color and order survive saving and matc
   await expect(page.locator('#book-spread [data-page-number]')).toHaveText(['1', '2']);
   await page.getByRole('button', {name:'Bottom center',exact:true}).click();
   await expect(page.locator('#book-spread [data-page-number]').first()).toHaveAttribute('text-anchor', 'middle');
-  await field(page, 'pageNumbers.font').selectOption('Nohemi');
+  await chooseField(page, 'pageNumbers.font', 'Nohemi');
   await expect(field(page, 'pageNumbers.weight')).toHaveValue('700');
   await field(page, 'pageNumbers.size').fill('12');
-  await field(page, 'pageNumbers.colorMode').selectOption('custom');
+  await chooseField(page, 'pageNumbers.colorMode', 'custom');
   await liveColor(page, 'pageNumbers.color', ['#885511', '#007acc']);
   await expect(page.locator('#book-spread [data-page-number]').first()).toHaveAttribute('fill', '#007acc');
   await page.getByRole('button', {name:'Bottom outside edge',exact:true}).click();
@@ -191,3 +191,11 @@ test('page number placement, typography, color and order survive saving and matc
   await expect(page.locator('#print-preview [data-page-number]')).toHaveText(['1', '2', '3']);
   await expect(page.locator('#print-preview [data-page-number]').first()).toHaveAttribute('font-family', 'Nohemi');
 });
+
+async function chooseField(page, name, value) {
+  const native = field(page, name);
+  const label = await native.locator('option').evaluateAll((options, selected) => options.find(option => option.value === String(selected)).textContent, value);
+  await native.locator('..').locator('.app-select-button').click();
+  await page.getByRole('option', { name: label, exact: true }).click();
+  await expect(field(page, name)).toHaveValue(String(value));
+}

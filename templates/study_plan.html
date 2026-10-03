@@ -155,6 +155,7 @@
       <div class="wizard-progress" aria-label="Setup progress">
         <span class="is-active" data-wizard-marker="1">1</span><i></i><span data-wizard-marker="2">2</span><i></i><span data-wizard-marker="3">3</span><i></i><span data-wizard-marker="4">4</span>
       </div>
+      <div class="wizard-scroll-body">
       <section class="wizard-step" data-wizard-step="1">
         <p class="study-plan-kicker">Step 1 of 4</p>
         <h2 id="plan-wizard-title">What do you need to study?</h2>
@@ -213,6 +214,7 @@
         <div class="capacity-warning" id="wizard-capacity-warning" hidden></div>
         <div class="preview-session-list" id="wizard-preview-sessions"></div>
       </section>
+      </div>
       <div class="wizard-actions">
         <button type="button" class="btn" id="wizard-back-btn" hidden>Back</button>
         <button type="button" class="btn primary" id="wizard-next-btn">Continue</button>
@@ -256,7 +258,7 @@
       <h2 id="study-log-title">Log study done</h2>
       <p id="study-log-session"></p>
       <p>This records your study time and completes this session. Card reviews and mastery only change when you answer or review cards.</p>
-      <form id="study-log-form">
+      <form id="study-log-form" novalidate>
         <div class="plan-field"><label for="study-log-minutes">Time spent (minutes)</label><input id="study-log-minutes" type="number" min="1" max="1440" step="1" required inputmode="numeric" placeholder="Enter actual study time"></div>
         <div class="field-error" id="study-log-error" role="alert" hidden></div>
         <div class="plan-dialog-actions"><button type="button" class="btn" id="study-log-cancel">Cancel</button><button type="submit" class="btn primary" id="study-log-submit">Save study log</button></div>

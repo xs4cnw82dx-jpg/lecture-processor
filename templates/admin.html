@@ -13,22 +13,22 @@
     <div class="container">
         <div class="topbar">
             <div>
-                <h1>Lecture Processor Admin</h1>
+                <p class="admin-eyebrow">LECTURE PROCESSOR · ADMINISTRATION</p><h1>Operations overview</h1>
                 <div class="meta" id="signed-in-meta">Checking sign-in...</div>
             </div>
             <div class="actions">
                 <a class="btn" href="/admin/workout">Workout</a>
                 <button class="btn" id="back-btn" type="button">Back to app</button>
-                <button class="btn" id="refresh-btn" type="button">Refresh</button>
-                <button class="btn" id="export-jobs-btn" type="button">Export jobs CSV</button>
+                <button class="btn primary" id="refresh-btn" type="button">Refresh</button>
+                <details class="admin-export-menu" data-app-menu><summary class="btn">Export data</summary><div class="admin-export-options app-menu-panel"><button class="btn" id="export-jobs-btn" type="button">Export jobs CSV</button>
                 <button class="btn" id="export-purchases-btn" type="button">Export purchases CSV</button>
                 <button class="btn" id="export-funnel-btn" type="button">Export funnel CSV</button>
                 <button class="btn" id="export-funnel-daily-btn" type="button">Export funnel daily CSV</button>
-                <button class="btn primary" id="auth-btn" type="button">Sign in</button>
+                </div></details><button class="btn" id="auth-btn" type="button">Sign in</button>
             </div>
         </div>
 
-        <div class="filters">
+        <div class="filters"><span class="admin-filter-label">Reporting period</span>
             <button class="btn filter" data-window="24h" type="button">Last 24h</button>
             <button class="btn filter active" data-window="7d" type="button">Last 7d</button>
             <button class="btn filter" data-window="30d" type="button">Last 30d</button>
@@ -46,57 +46,45 @@
             </section>
 
             <div id="admin-tab-overview-content" role="tabpanel" aria-labelledby="admin-tab-overview" aria-hidden="false">
-            <section class="metrics">
-                <article class="metric">
+            <div class="admin-section-heading"><h2>At a glance</h2><p>Activity in the selected reporting period</p></div><section class="metrics"><article class="metric">
                     <div class="label">Total users</div>
                     <div class="value" id="m-users">0</div>
                     <div class="sub" id="m-users-sub">0 new in window</div>
-                </article>
-                <article class="metric">
+                </article><article class="metric">
                     <div class="label">Jobs in window</div>
                     <div class="value" id="m-jobs">0</div>
-                </article>
-                <article class="metric">
+                </article><article class="metric">
                     <div class="label">Success rate</div>
                     <div class="value" id="m-success-rate">0%</div>
-                </article>
-                <article class="metric">
+                </article><article class="metric">
                     <div class="label">Revenue in window</div>
                     <div class="value" id="m-revenue">€0.00</div>
-                </article>
-                <article class="metric">
+                </article></section><section class="metrics metrics-secondary" aria-label="Operational totals"><article class="metric">
                     <div class="label">Purchases in window</div>
                     <div class="value" id="m-purchases">0</div>
-                </article>
-                <article class="metric">
+                </article><article class="metric">
                     <div class="label">Credits processed</div>
                     <div class="value" id="m-processed">0</div>
                     <div class="sub">All-time</div>
-                </article>
-                <article class="metric">
+                </article><article class="metric">
                     <div class="label">Refunded jobs</div>
                     <div class="value" id="m-refunds">0</div>
-                </article>
-                <article class="metric">
+                </article><article class="metric">
                     <div class="label">Avg duration</div>
                     <div class="value" id="m-duration">0s</div>
-                </article>
-                <article class="metric">
+                </article><article class="metric">
                     <div class="label">Successful jobs</div>
                     <div class="value" id="m-success-jobs">0</div>
-                </article>
-                <article class="metric">
+                </article><article class="metric">
                     <div class="label">Failed jobs</div>
                     <div class="value" id="m-failed-jobs">0</div>
-                </article>
-                <article class="metric">
+                </article><article class="metric">
                     <div class="label">Rate-limit 429s</div>
                     <div class="value" id="m-rate-limit-total">0</div>
                     <div class="sub" id="m-rate-limit-sub">U: 0 · C: 0 · A: 0</div>
-                </article>
-            </section>
+                </article></section>
 
-            <section class="panel admin-status-panel">
+            <section class="panel admin-status-panel"><div class="admin-section-heading"><h2>Service health</h2><p>Deployment, availability and maintenance</p></div>
                 <div class="admin-warning-banner" id="admin-partial-banner" hidden>
                     <strong>Partial dataset</strong>
                     <span id="admin-partial-copy">Some admin queries failed, so these numbers may be incomplete.</span>
@@ -564,6 +552,7 @@
     <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
     <script src="{{ url_for('static', filename=admin_js_asset or 'js/admin.js') }}"></script>
 </body>
 

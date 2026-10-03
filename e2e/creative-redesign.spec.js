@@ -1,0 +1,75 @@
+const { expectProductControls } = require('./helpers/control-audit');
+const { test, expect } = require('@playwright/test');
+const { readFileSync } = require('node:fs');
+test.beforeEach(async ({page}) => {
+  for (const name of ['book-studio','video-overlay-builder']) await page.route('**/static/js/'+name+'.min.js*', route => route.fulfill({contentType:'text/javascript',body:readFileSync('static/js/'+name+'.js','utf8')}));
+});
+async function localAuth(page) {
+  await page.route('**/static/js/firebase-bootstrap.js', route => route.fulfill({ contentType:'text/javascript', body:'window.LectureProcessorBootstrap={getAuth:()=>({currentUser:null,onAuthStateChanged:fn=>queueMicrotask(()=>fn(null))})};' }));
+}
+async function fits(page) {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
+}
+test('creative editors keep canvas, contextual controls and mobile actions usable', async ({page}, testInfo) => {
+  await localAuth(page);
+  await page.setViewportSize({width:1440,height:960});
+  await page.goto('/video-overlay-builder');
+  await expect(page.locator('#overlay-stage')).toBeVisible();
+  await expectProductControls(page);
+  await page.screenshot({path:testInfo.outputPath('overlay-empty-desktop.png'), animations:'disabled'});
+  await page.locator('#overlay-add-text').click();
+  await page.locator('.overlay-stage-item.is-selected [data-edit-field="body"]').fill('One idea, clearly explained.');
+  await expect(page.locator('.overlay-inspector-panel')).toBeVisible();
+  await fits(page);
+  await expectProductControls(page);
+  await page.screenshot({path:testInfo.outputPath('overlay-editor-desktop.png'), animations:'disabled'});
+  await page.locator('.overlay-project-more summary').click();
+  await expect(page.locator('#overlay-export-json')).toBeVisible();
+  await expectProductControls(page);
+  await page.screenshot({path:testInfo.outputPath('overlay-more-open.png'), animations:'disabled'});
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#overlay-export-json')).toBeHidden();
+  await page.locator('.overlay-table-options summary').click();
+  await expect(page.locator('.overlay-table-size-row')).toBeVisible();
+  await page.locator('.overlay-recording-tools summary').click();
+  await expectProductControls(page);
+  await page.screenshot({path:testInfo.outputPath('overlay-disclosures-open.png'), animations:'disabled'});
+  await page.locator('.overlay-recording-tools summary').click();
+  await page.setViewportSize({width:390,height:844});
+  await fits(page);
+  await expectProductControls(page);
+  await page.screenshot({path:testInfo.outputPath('overlay-mobile.png'), fullPage:true, animations:'disabled'});
+  await page.goto('/books');
+  await page.setViewportSize({width:1440,height:960});
+  await expectProductControls(page);
+  await page.screenshot({path:testInfo.outputPath('books-library.png'), animations:'disabled'});
+  await page.getByRole('button', {name:'＋ New book',exact:true}).click();
+  await expectProductControls(page);
+  await page.screenshot({path:testInfo.outputPath('books-templates.png'), animations:'disabled'});
+  await page.getByRole('button', {name:'Picture book A little room for a big adventure.',exact:true}).click();
+  await expect(page.locator('#workspace')).toBeVisible();
+  await page.getByRole('button', {name:'Add text',exact:true}).click();
+  await page.getByRole('textbox',{name:'Text',exact:true}).fill('A little room for a new idea.');
+  await fits(page);
+  await page.locator('summary').filter({hasText:'Text spacing & effects'}).click();
+  await expectProductControls(page);
+  await page.screenshot({path:testInfo.outputPath('books-disclosure-open.png'), animations:'disabled'});
+  await page.locator('summary').filter({hasText:'Text spacing & effects'}).click();
+  await expectProductControls(page);
+  await page.screenshot({path:testInfo.outputPath('books-editor.png'), animations:'disabled'});
+  await page.locator('[data-field="style.font"]').locator('..').locator('.app-select-button').click();
+  await expect(page.getByRole('option',{name:'Andika',exact:true})).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.setViewportSize({width:640,height:480});
+  await fits(page);
+  await page.locator('#export').click();
+  await expect(page.locator('#book-dialog')).toBeVisible();
+  await expectProductControls(page);
+  await page.screenshot({path:testInfo.outputPath('books-export-small.png'), animations:'disabled'});
+  await page.getByRole('button',{name:'Close dialog',exact:true}).click();
+  await page.setViewportSize({width:390,height:844});
+  await fits(page);
+  await expectProductControls(page);
+  await page.screenshot({path:testInfo.outputPath('books-mobile.png'), fullPage:true, animations:'disabled'});
+});

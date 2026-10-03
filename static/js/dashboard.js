@@ -172,22 +172,31 @@
       var signInHref = typeof authUtils.buildSignInUrl === 'function'
         ? authUtils.buildSignInUrl()
         : '/lecture-notes?auth=signin';
-      sessionsList.innerHTML = '<div class="empty-state-card"><h3>Sign in to see your planner</h3><p>Study sessions now sync with your account. Sign in to view your upcoming plan and open Calendar.</p><div class="empty-state-actions"><a class="empty-state-link primary" href="' + signInHref + '">Sign in</a><a class="empty-state-link" href="/helpcenter">Help Center</a></div></div>';
+      sessionsList.innerHTML = '<div class="empty-state-card"><h3>Sign in to see your planner</h3><p>Study sessions now sync with your account. Sign in to view your upcoming plan and open Study Plan.</p><div class="empty-state-actions"><a class="empty-state-link primary" href="' + signInHref + '">Sign in</a><a class="empty-state-link" href="/helpcenter">Help Center</a></div></div>';
       return;
     }
     var future = Array.isArray(sessions) ? sessions : [];
     if (!future.length) {
-      sessionsList.innerHTML = '<div class="empty-state-card"><h3>Plan your first study session</h3><p>Study sessions sync with your account. Browser reminders still only fire while an active calendar tab is open.</p><div class="empty-state-actions"><a class="empty-state-link primary" href="/calendar">Open Calendar</a><a class="empty-state-link" href="/plan">Planning &amp; Progress</a></div></div>';
+      sessionsList.innerHTML = '<div class="empty-state-card"><h3>Plan your first study session</h3><p>Give your next study session a time and a place in your week.</p><div class="empty-state-actions"><a class="empty-state-link primary" href="/plan?view=schedule">Open schedule</a><a class="empty-state-link" href="/plan">Study Plan</a></div></div>';
       return;
     }
+    var nextSession = future.find(function (session) { return session.status !== 'completed' && session.status !== 'cancelled' && session.status !== 'skipped'; });
+    if (nextSession) {
+      document.getElementById('dash-continue-title').textContent = nextSession.title || 'Your next study session';
+      document.getElementById('dash-continue-copy').textContent = 'Your next session is planned. Open Study Plan when you’re ready to focus.';
+      document.getElementById('dash-continue-link').textContent = 'Continue studying →';
+    }
     future.forEach(function (session) {
-      var row = document.createElement('div');
-      row.className = 'list-item';
+      var row = document.createElement('a');
+      row.className = 'list-item plain-link-reset';
+      row.href = '/plan?view=schedule';
       var title = document.createElement('h3');
       title.textContent = String(session.title || 'Study session');
       var meta = document.createElement('p');
-      var pack = session.pack_title ? (' · ' + session.pack_title) : '';
-      meta.textContent = String(session.date || '-') + ' at ' + String(session.time || '00:00') + pack;
+      var pack = session.pack_title && !String(session.title || '').includes(session.pack_title) ? (' · ' + session.pack_title) : '';
+      var date = new Date(String(session.date || '') + 'T12:00:00');
+      var dateText = Number.isNaN(date.getTime()) ? String(session.date || '') : new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).format(date);
+      meta.textContent = dateText + ' · ' + String(session.time || '00:00') + pack;
       row.appendChild(title);
       row.appendChild(meta);
       sessionsList.appendChild(row);
@@ -196,7 +205,7 @@
 
   function renderUpcomingSessionsError() {
     if (!sessionsList) return;
-    sessionsList.innerHTML = '<div class="empty-state-card" role="status" aria-live="polite"><h3>Could not load your planner</h3><p>Your saved sessions may still exist. Check your connection, then try again.</p><div class="empty-state-actions"><button type="button" class="empty-state-link primary" data-dashboard-retry>Retry</button><a class="empty-state-link" href="/calendar">Open Calendar</a></div></div>';
+    sessionsList.innerHTML = '<div class="empty-state-card" role="status" aria-live="polite"><h3>Could not load your planner</h3><p>Your saved sessions may still exist. Check your connection, then try again.</p><div class="empty-state-actions"><button type="button" class="empty-state-link primary" data-dashboard-retry>Retry</button><a class="empty-state-link" href="/plan?view=schedule">Open schedule</a></div></div>';
   }
 
   function renderRecentPacks(packs) {
@@ -213,13 +222,11 @@
       var title = document.createElement('h3');
       title.textContent = String(pack.title || 'Untitled pack');
       var meta = document.createElement('p');
-      var countSummary = displayFormatUtils && typeof displayFormatUtils.formatPackCounts === 'function'
-        ? displayFormatUtils.formatPackCounts(pack.flashcards_count || 0, pack.test_questions_count || 0)
-        : ((pack.flashcards_count || 0) + ' cards · ' + (pack.test_questions_count || 0) + ' questions');
       var modeLabel = displayFormatUtils && typeof displayFormatUtils.formatPackMode === 'function'
         ? displayFormatUtils.formatPackMode(pack.mode || '')
         : 'Study Pack';
-      meta.textContent = modeLabel + ' · ' + countSummary;
+      var materialCounts = [Number(pack.flashcards_count) ? pack.flashcards_count + ' cards' : '', Number(pack.test_questions_count) ? pack.test_questions_count + ' questions' : ''].filter(Boolean);
+      meta.textContent = [modeLabel].concat(materialCounts).join(' · ');
       row.appendChild(title);
       row.appendChild(meta);
       packsList.appendChild(row);

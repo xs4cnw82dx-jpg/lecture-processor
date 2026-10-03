@@ -53,12 +53,47 @@
     return { html: html, nextIndex: index };
   }
 
+  function tableCells(line) {
+    var cells = [];
+    var current = '';
+    var inCode = false;
+    var source = String(line || '').trim().replace(/^\|/, '').replace(/(?<!\\)\|$/, '');
+    for (var i = 0; i < source.length; i += 1) {
+      var char = source[i];
+      if (char === '\\' && source[i + 1] === '|') { current += '|'; i += 1; continue; }
+      if (char === '`') inCode = !inCode;
+      if (char === '|' && !inCode) { cells.push(current.trim()); current = ''; }
+      else current += char;
+    }
+    cells.push(current.trim());
+    return cells;
+  }
+
+  function startsTable(lines, index) {
+    if (!lines[index] || !lines[index + 1] || lines[index].indexOf('|') < 0) return false;
+    var headers = tableCells(lines[index]);
+    var separators = tableCells(lines[index + 1]);
+    return headers.length === separators.length && separators.every(function (cell) { return /^:?-{3,}:?$/.test(cell); });
+  }
+
+  function renderTable(lines, index) {
+    var headers = tableCells(lines[index]);
+    var html = '<table><thead><tr>' + headers.map(function (cell) { return '<th scope="col">' + renderInline(cell) + '</th>'; }).join('') + '</tr></thead><tbody>';
+    index += 2;
+    while (index < lines.length && lines[index].trim() && lines[index].indexOf('|') >= 0) {
+      var cells = tableCells(lines[index]);
+      html += '<tr>' + headers.map(function (_, column) { return '<td>' + renderInline(cells[column] || '') + '</td>'; }).join('') + '</tr>';
+      index += 1;
+    }
+    return { html: html + '</tbody></table>', nextIndex: index };
+  }
+
   function renderParagraph(lines, startIndex) {
     var parts = [];
     var index = startIndex;
     while (index < lines.length) {
       var line = lines[index];
-      if (!line.trim()) break;
+      if (!line.trim() || startsTable(lines, index)) break;
       if (/^\s*#{1,6}\s+/.test(line) || /^\s*[-*+]\s+/.test(line) || /^\s*\d+[.)]\s+/.test(line) || /^\s*>/.test(line) || /^\s*```/.test(line) || /^\s*---+\s*$/.test(line)) {
         break;
       }
@@ -130,6 +165,13 @@
         var ordered = renderList(lines, index, true);
         output.push(ordered.html);
         index = ordered.nextIndex;
+        continue;
+      }
+
+      if (startsTable(lines, index)) {
+        var table = renderTable(lines, index);
+        output.push(table.html);
+        index = table.nextIndex;
         continue;
       }
 

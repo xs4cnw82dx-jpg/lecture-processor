@@ -17,9 +17,21 @@
 <body data-study-entry-mode="{{ study_entry_mode or '' }}">
   {% set shell_title = study_shell_title or 'Study Library' %}
   {% include '_app_shell.html' %}
-  <main class="app-shell-page">
+  <main class="app-shell-page study-page">
   <div class="container">
-    <h1 class="sr-only" id="study-page-heading">{{ study_shell_title or 'Study Library' }}</h1>
+    <header class="library-page-header">
+      <div><p class="library-eyebrow">Your study workspace</p><h1 id="study-page-heading">{{ study_shell_title or 'Study Library' }}</h1></div>
+                <div class="actions library-create-actions"><button class="btn" id="import-pack-csv-btn"><svg viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg><span>Import CSV</span></button><button class="btn primary" id="create-pack-btn" aria-label="Create study pack"><svg viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg><span class="create-pack-label">New study pack</span><span class="create-pack-mobile-label" aria-hidden="true">New</span></button></div>
+    </header>
     <section class="study-auth-gate" id="study-auth-gate" hidden>
       <div class="study-auth-gate-card">
         <p class="study-auth-eyebrow">Protected library</p>
@@ -44,40 +56,38 @@
         <div class="processing-now-list" id="processing-now-list"></div>
       </section>
       <div class="grid" id="library-grid">
-      <aside class="panel">
+      <aside class="panel library-folders" aria-label="Study folders">
         <div class="panel-head"><span class="panel-title">Folders</span>
-          <div class="actions"><button class="btn" id="new-folder-btn">+ Folder</button><button class="btn" id="new-subfolder-btn">+ Subfolder</button><button class="btn danger"
-              id="delete-folder-btn">Delete</button></div>
+          <details class="library-folder-tools" data-app-menu><summary aria-label="Manage folders">•••</summary><div class="actions app-menu-panel"><button class="btn" id="new-folder-btn">+ Folder</button><button class="btn" id="new-subfolder-btn">+ Subfolder</button><button class="btn danger"
+              id="delete-folder-btn">Delete selected folder</button></div></details>
         </div>
         <div class="panel-body">
           <div class="list" id="folder-list"></div>
-          <p class="folder-scroll-hint" aria-hidden="true">Swipe horizontally to see more folders →</p>
+
         </div>
       </aside>
-      <section class="panel">
-        <div class="panel-head"><span class="panel-title">Study Packs</span>
-          <div class="actions"><button class="btn primary" id="import-pack-csv-btn"><svg viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="17 8 12 3 7 8"></polyline>
-                <line x1="12" y1="3" x2="12" y2="15"></line>
-              </svg><span>Import CSV</span></button><button class="btn" id="create-pack-btn" aria-label="Create study pack"><svg viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg><span class="create-pack-label">Manually Create Study Pack</span><span class="create-pack-mobile-label" aria-hidden="true">New</span></button><button class="btn danger" id="delete-pack-btn">Delete Pack</button></div>
+      <section class="panel library-content">
+        <div class="panel-head library-content-head"><div><span class="panel-title" id="library-location">All study packs</span><span class="library-result-count" id="library-result-count" role="status" aria-live="polite"></span></div><details class="library-pack-tools" data-app-menu><summary aria-label="Pack actions">•••</summary><div class="actions app-menu-panel"><button class="btn danger" id="delete-pack-btn">Delete Pack</button></div></details>
+
         </div>
         <div class="panel-body">
-          <div class="field search-box pack-search-box">
-            <label for="search-input">Search study packs</label>
-            <input id="search-input" placeholder="Filter by title, course, or subject">
-          </div>
           <div class="pack-selection-bar" id="pack-selection-bar" hidden>
             <span id="pack-selection-count" role="status" aria-live="polite" aria-atomic="true">0 selected</span>
             <button type="button" class="btn primary" id="add-selected-to-plan-btn">Add to Study Plan</button>
             <button type="button" class="btn" id="clear-pack-selection-btn">Clear selection</button>
           </div>
-          <div class="pack-summary" id="pack-summary">
+          <div class="split">
+            <div class="library-pack-browser">          <div class="field search-box pack-search-box">
+            <label for="search-input">Search study packs</label>
+            <input id="search-input" placeholder="Filter by title, course, or subject">
+          </div>
+
+              <div class="list" id="pack-list"></div>
+              <div class="pack-list-actions" id="pack-list-actions" hidden>
+                <button type="button" class="btn" id="load-more-packs-btn">Load more study packs</button>
+              </div>
+            </div>
+            <div class="library-pack-detail"><button type="button" class="btn library-back" id="library-back-btn">← All packs</button>          <div class="pack-summary" id="pack-summary">
             <div class="pack-summary-title" id="pack-summary-title"></div>
             <div class="pack-summary-meta" id="pack-summary-meta"></div>
             <div class="pack-summary-stats">
@@ -109,16 +119,9 @@
               <button type="button" class="btn" id="add-pack-to-plan-btn">Add to Study Plan</button>
             </div>
           </div>
-          <div class="split">
-            <div>
-              <div class="list" id="pack-list"></div>
-              <div class="pack-list-actions" id="pack-list-actions" hidden>
-                <button type="button" class="btn" id="load-more-packs-btn">Load more study packs</button>
-              </div>
-            </div>
-            <div>
+
               <div class="empty" id="pack-empty">
-                <div class="pack-empty-block visible" id="pack-empty-default">Select a study pack to edit and study.
+                <div class="pack-empty-block visible" id="pack-empty-default"><span class="library-empty-symbol" aria-hidden="true">↗</span><h2>Make room for your next idea.</h2><p>Select a pack to read your notes, review flashcards, or start a focused study session.</p>
                 </div>
                 <div class="pack-empty-block" id="pack-empty-onboarding">
                   <div class="pack-empty-title">No study packs yet</div>
@@ -132,7 +135,7 @@
                 </div>
               </div>
               <div class="editor-wrap" id="pack-editor-wrap">
-                <div class="meta-grid">
+                <details class="pack-details-disclosure"><summary>Edit pack details<span>Title, folder &amp; course</span></summary><div class="pack-details-body"><div class="meta-grid">
                   <div class="field"><label for="pack-title">Title</label><input id="pack-title"></div>
                   <div class="field"><label for="pack-folder-button">Folder</label><input type="hidden" id="pack-folder-select" value="">
                     <div class="app-select" id="pack-folder-picker"><button type="button" class="app-select-button"
@@ -160,7 +163,11 @@
                     </div>
                   </div>
                 </div>
-                <div class="actions editor-actions">
+                </div></details>
+                <div class="actions editor-actions">                  <button class="btn primary" id="open-learn-btn"><svg viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg><span id="open-learn-btn-label">Learn Mode</span></button>
                   <span class="pack-save-status builder-status saved" id="pack-save-status" role="status"
                     aria-live="polite" aria-atomic="true">Saved</span>
                   <button class="btn" id="open-builder-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -169,14 +176,8 @@
                       <path d="M14 3h7v7h-7z"></path>
                       <path d="M14 14h7v7h-7z"></path>
                       <path d="M3 14h7v7H3z"></path>
-                    </svg>Open Full Editor</button>
-                  <button class="btn" id="export-pack-notes-btn"><svg viewBox="0 0 24 24" fill="none"
-                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                      <polyline points="14 2 14 8 20 8"></polyline>
-                      <path d="M12 11v6"></path>
-                      <polyline points="9 14 12 17 15 14"></polyline>
-                    </svg><span class="export-notes-label-full">Export Lecture Notes</span><span class="export-notes-label-short">Export Notes</span></button>
+                    </svg>Edit content</button>
+
                   <button class="btn" id="pack-share-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                       stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <circle cx="18" cy="5" r="3"></circle>
@@ -193,7 +194,14 @@
                         <polyline points="7 10 12 15 17 10"></polyline>
                         <line x1="12" y1="15" x2="12" y2="3"></line>
                       </svg>Export</button>
-                    <div class="export-menu-list" id="export-menu-list" role="menu">
+                    <div class="export-menu-list" id="export-menu-list" role="menu" inert>                  <button class="export-menu-item" role="menuitem" id="export-pack-notes-btn"><svg viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                      <polyline points="14 2 14 8 20 8"></polyline>
+                      <path d="M12 11v6"></path>
+                      <polyline points="9 14 12 17 15 14"></polyline>
+                    </svg><span class="export-notes-label-full">Export Lecture Notes</span><span class="export-notes-label-short">Export Notes</span></button>
+                      <button type="button" class="export-menu-item" role="menuitem" id="export-annotated-notes-btn"><strong>Annotated Notes PDF</strong><span>Notes with your highlights</span></button>
                       <button type="button" class="export-menu-item" role="menuitem"
                         data-export-kind="flashcards"><strong>Flashcards CSV</strong><span>Question/answer
                           cards</span></button>
@@ -216,7 +224,7 @@
                         aria-expanded="false" data-export-kind="pdf-menu"><strong>Lecture Notes Pack
                           PDF</strong><span>Notes, flashcards, and practice test</span><span
                           class="submenu-arrow">▸</span></button>
-                      <div class="export-submenu" id="export-pdf-submenu">
+                      <div class="export-submenu" id="export-pdf-submenu" inert>
                         <button type="button" class="export-menu-item" role="menuitem"
                           data-export-kind="pdf-with-answers"><strong>PDF (with answers)</strong><span>Default export
                             with marked correct answers</span></button>
@@ -226,10 +234,7 @@
                       </div>
                     </div>
                   </div>
-                  <button class="btn primary" id="open-learn-btn"><svg viewBox="0 0 24 24" fill="none"
-                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                    </svg><span id="open-learn-btn-label">Learn Mode</span></button>
+
                 </div>
                 <div class="editor-tabs" role="tablist" aria-label="Study pack sections">
                   <button class="editor-tab active" id="editor-tab-notes" data-editor-pane="notes" role="tab"
@@ -343,7 +348,7 @@
                         <button type="button" class="btn" id="coding-ai-accept-btn" hidden>Accept Draft</button>
                         <button type="button" class="btn" id="coding-ai-reject-btn" hidden>Reject Draft</button>
                         <button type="button" class="btn" id="coding-export-pdf-btn">Export PDF</button>
-                        <button type="button" class="btn danger" id="coding-reset-btn">Reset Coding</button>
+                        <details class="coding-more-actions" data-app-menu><summary>More actions</summary><div class="app-menu-panel"><button type="button" class="btn danger" id="coding-reset-btn">Reset Coding</button></div></details>
                         <button type="button" class="btn" id="coding-close-btn">Back to Library</button>
                       </div>
                     </div>
@@ -358,11 +363,11 @@
                               <span class="coding-code-picker-label" id="coding-code-picker-label">Choose code</span>
                             </button>
                             <div class="coding-code-picker-menu" id="coding-code-picker-menu" hidden>
-                              <input id="coding-code-picker-search" placeholder="Search codes">
+                              <input id="coding-code-picker-search" aria-label="Search available codes" placeholder="Search codes">
                               <div class="coding-code-picker-list" id="coding-code-picker-list" role="listbox"></div>
                             </div>
                           </div>
-                          <input id="coding-comment-input" placeholder="Quotation comment">
+                          <input id="coding-comment-input" aria-label="Quotation comment" placeholder="Add a comment (optional)">
                           <button type="button" class="btn primary" id="coding-apply-btn">Apply</button>
                           <button type="button" class="btn" id="coding-invivo-btn">In Vivo</button>
                           <button type="button" class="btn" id="coding-undo-btn">Undo</button>
@@ -372,7 +377,7 @@
                       </section>
                       <aside class="coding-manager-panel" aria-label="Code manager">
                         <div class="coding-manager-head">
-                          <input id="coding-search-input" placeholder="Search codes">
+                          <input id="coding-search-input" aria-label="Search codes" placeholder="Search codes">
                           <button type="button" class="btn" id="coding-new-code-btn">New Code</button>
                         </div>
                         <div class="coding-code-list" id="coding-code-list"></div>
@@ -432,18 +437,18 @@
       <!-- Setup tabs + panes (hidden when mode picker is shown) -->
       <div id="setup-main-content">
         <div class="setup-tabs" id="setup-tabs" role="tablist" aria-label="Session setup sections">
+          <button class="setup-tab" id="setup-tab-lessons" data-setup-pane="lessons" role="tab"
+            aria-selected="false" aria-controls="setup-pane-lessons" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+            </svg>Study mode</button>
           <button class="setup-tab active" id="setup-tab-mastery" data-setup-pane="mastery" role="tab"
             aria-selected="true" aria-controls="setup-pane-mastery" tabindex="0"><svg viewBox="0 0 24 24" fill="none"
               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5C5.7 4 7 4.8 8 6c1-1.2 2.3-2 3.5-2a2.5 2.5 0 0 1 0 5H10"></path>
               <path d="M6 9l6 6 6-6"></path>
             </svg>Mastery</button>
-          <button class="setup-tab" id="setup-tab-lessons" data-setup-pane="lessons" role="tab"
-            aria-selected="false" aria-controls="setup-pane-lessons" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="2" y="4" width="20" height="16" rx="2"></rect>
-              <line x1="2" y1="12" x2="22" y2="12"></line>
-            </svg>Lessons</button>
           <button class="setup-tab" id="setup-tab-settings" data-setup-pane="settings" role="tab"
             aria-selected="false" aria-controls="setup-pane-settings" tabindex="-1"><svg viewBox="0 0 24 24" fill="none"
               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -458,7 +463,7 @@
               <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
             </svg>Algorithm</button>
         </div>
-        <div class="setup-pane active" id="setup-pane-mastery" role="tabpanel" aria-labelledby="setup-tab-mastery"
+        <div class="setup-scroll-body"><div class="setup-pane active" id="setup-pane-mastery" role="tabpanel" aria-labelledby="setup-tab-mastery"
           aria-hidden="false">
           <div class="mastery-section">
             <div class="mastery-stat"><span>Cards seen:</span> <strong id="mastery-seen">0</strong> / <strong
@@ -487,14 +492,13 @@
               <span class="difficulty-chip good">Good <strong id="diff-good-count">0</strong></span>
               <span class="difficulty-chip easy">Easy <strong id="diff-easy-count">0</strong></span>
             </div>
-            <div class="exam-recommendation" id="exam-recommendation">Set an exam date in Planning mode to get a daily
+            <div class="exam-recommendation" id="exam-recommendation">Set an exam date in Study Plan to get a daily
               target recommendation.</div>
           </div>
         </div>
         <div class="setup-pane" id="setup-pane-lessons" role="tabpanel" aria-labelledby="setup-tab-lessons"
           aria-hidden="true">
-          <p class="u-text-center u-color-muted u-font-sm u-mb-16">Choose which lesson
-            types to include:</p>
+          <p class="u-text-center u-color-muted u-font-sm u-mb-16">Choose the modes to practise. You can select more than one:</p>
           <div class="lesson-grid" id="lesson-grid">
             <button type="button" class="lesson-card selected" data-lesson="flashcards" id="lesson-card-flashcards" aria-pressed="true">
               <div class="lesson-card-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
@@ -506,7 +510,7 @@
                   <rect x="2" y="4" width="20" height="16" rx="2"></rect>
                   <line x1="2" y1="12" x2="22" y2="12"></line>
                 </svg></div>
-              <div class="lesson-card-title">Zen Cards</div>
+              <div class="lesson-card-title">Flashcards</div>
               <div class="lesson-card-desc">Distraction-free flashcards</div>
             </button>
             <button type="button" class="lesson-card selected" data-lesson="test" id="lesson-card-test" aria-pressed="true">
@@ -519,7 +523,7 @@
                   <path d="M9 11l3 3L22 4"></path>
                   <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
                 </svg></div>
-              <div class="lesson-card-title">Multiple Choice</div>
+              <div class="lesson-card-title">Practice test</div>
               <div class="lesson-card-desc">Choose your answer from options</div>
             </button>
             <button type="button" class="lesson-card" data-lesson="write" id="lesson-card-write" aria-pressed="false">
@@ -603,10 +607,10 @@
             <p>New = never opened. Familiar = viewed or written. Retry = more wrong than right. Hard = graded hard. Remaster = once-mastered cards that are due again or have slipped.</p>
           </div>
         </div>
-        <button class="btn cta u-mt-8" id="setup-start-btn"><svg viewBox="0 0 24 24" fill="none"
+        </div><div class="setup-footer"><button class="btn cta u-mt-8" id="setup-start-btn"><svg viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="5 3 19 12 5 21 5 3"></polygon>
-          </svg>Start Session</button>
+          </svg>Start Session</button></div>
       </div>
 
       <!-- Mode picker (shown when multiple lessons enabled) -->
@@ -759,7 +763,7 @@
     <div class="builder-shell" role="dialog" aria-modal="true" aria-labelledby="builder-title">
       <aside class="builder-rail">
         <div class="builder-brand">
-          <h2>Study Library<br>Pack Builder</h2>
+          <h2>Pack Builder</h2>
           <p id="builder-brand-sub">Create and refine your study pack</p>
         </div>
         <div class="builder-top-actions">
@@ -781,7 +785,7 @@
               <circle cx="12" cy="12" r="10"></circle>
               <line x1="12" y1="16" x2="12" y2="12"></line>
               <line x1="12" y1="8" x2="12.01" y2="8"></line>
-            </svg>Deck Info</button>
+            </svg>Pack details</button>
           <button class="builder-nav-btn" id="builder-tab-flashcards" data-builder-pane="flashcards" role="tab"
             aria-selected="false" aria-controls="builder-pane-flashcards" tabindex="-1"><svg viewBox="0 0 24 24" fill="none"
               stroke="currentColor" stroke-width="2">
@@ -826,7 +830,7 @@
               <div class="builder-grid">
                 <div class="field"><label for="builder-title-input">Title</label><input id="builder-title-input" placeholder="Untitled pack">
                 </div>
-                <div class="field"><label for="builder-folder-select">Folder</label><select id="builder-folder-select"
+                <div class="field"><label for="builder-folder-select">Folder</label><select data-app-select data-app-select-search id="builder-folder-select"
                     class="builder-select"></select></div>
                 <div class="field"><label for="builder-course-input">Course</label><input id="builder-course-input"></div>
                 <div class="field"><label for="builder-subject-input">Subject</label><input id="builder-subject-input"></div>
@@ -866,18 +870,18 @@
           <section class="builder-pane" id="builder-pane-import" role="tabpanel" aria-labelledby="builder-tab-import"
             aria-hidden="true">
             <div class="builder-card">
-              <div class="builder-helper u-mb-8">Import data directly into this pack, or choose multiple CSV files to create separate study packs. CSV files apply and save automatically.</div>
+              <div class="builder-helper u-mb-8">One CSV adds to this pack; multiple files create separate packs. CSV files apply and save automatically.</div>
               <div class="builder-import-tools">
-                <div class="field"><label for="builder-import-type">Import Type</label><select class="builder-select" id="builder-import-type">
+                <div class="field"><label for="builder-import-type">Import Type</label><select data-app-select class="builder-select" id="builder-import-type">
                     <option value="flashcards">Flashcards CSV</option>
                     <option value="test">Practice Test CSV</option>
                   </select></div>
-                <div class="field"><label for="builder-import-mode">Import Mode</label><select class="builder-select" id="builder-import-mode">
+                <div class="field"><label for="builder-import-mode">Import Mode</label><select data-app-select class="builder-select" id="builder-import-mode">
                     <option value="append">Append to existing</option>
                     <option value="replace">Replace existing</option>
                   </select></div>
               </div>
-              <div class="builder-drop" id="builder-csv-drop" role="button" tabindex="0" aria-labelledby="builder-csv-drop-title" aria-describedby="builder-csv-drop-helper builder-import-summary" aria-controls="builder-csv-input"><strong id="builder-csv-drop-title">Drag CSV files here</strong>
+              <p class="builder-import-guidance">Use the template below for the right columns. Choose Append to keep existing material, or Replace to overwrite it.</p><div class="builder-drop" id="builder-csv-drop" role="button" tabindex="0" aria-labelledby="builder-csv-drop-title" aria-describedby="builder-csv-drop-helper builder-import-summary" aria-controls="builder-csv-input"><strong id="builder-csv-drop-title">Drag CSV files here</strong>
                 <div class="builder-helper" id="builder-csv-drop-helper">or click to browse</div><input type="file" id="builder-csv-input"
                   accept=".csv,text/csv" multiple hidden>
               </div>

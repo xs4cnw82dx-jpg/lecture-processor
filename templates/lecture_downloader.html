@@ -17,12 +17,12 @@
   {% set shell_title = 'Lecture Downloader' %}
   {% include '_app_shell.html' %}
     <main class="app-shell-page reader-page">
-      <section class="shell-panel reader-hero">
-        <h1>Lecture Downloader</h1>
+      <section class="reader-hero">
+        <p class="workspace-eyebrow">Lecture media</p><h1>Lecture Downloader</h1>
         <p>Paste a supported lecture URL and download it as MP4 video, MP3 audio, or a ZIP that includes both.</p>
       </section>
 
-      <section class="reader-grid">
+      <section class="reader-grid downloader-grid">
         <article class="shell-panel reader-input-card">
           <h2>Lecture URL</h2>
           <div class="tool-input-grid">
@@ -39,20 +39,20 @@
           <div class="choice-grid" id="lecture-downloader-format-grid" role="group" aria-label="Download format">
             <button type="button" class="choice-chip active" data-format="video">
               <span class="choice-chip-title">MP4 Video</span>
-              <span class="choice-chip-copy">Download the lecture as a standard video file.</span>
+              <span class="choice-chip-copy">Video with visuals</span>
             </button>
             <button type="button" class="choice-chip" data-format="audio">
               <span class="choice-chip-title">MP3 Audio</span>
-              <span class="choice-chip-copy">Download the lecture as an audio-only file.</span>
+              <span class="choice-chip-copy">Audio for listening</span>
             </button>
             <button type="button" class="choice-chip" data-format="both">
               <span class="choice-chip-title">Both</span>
-              <span class="choice-chip-copy">Download a ZIP that contains both MP4 and MP3.</span>
+              <span class="choice-chip-copy">Video + audio in a ZIP</span>
             </button>
           </div>
 
-          <p class="tool-note">No credits are used for this tool. Sign in is still required so the download request uses your authenticated session.</p>
-          <p class="tool-retention-note">Keep the downloaded MP3, MP4, or ZIP. This tool sends the file to your browser and does not preserve lecture media on the server.</p>
+          <p class="tool-note">Free to use · Sign in to download.</p>
+          <p class="tool-retention-note">Keep your downloaded file. This tool does not preserve lecture media on the server.</p>
 
           <div class="run-row">
             <button type="button" class="primary-btn" id="lecture-downloader-run-btn" disabled>Download</button>
@@ -67,28 +67,12 @@
           <div class="status" id="lecture-downloader-status" role="status" aria-live="polite" aria-atomic="true"></div>
         </article>
 
-        <article class="shell-panel reader-output-card">
-          <div class="result-head">
-            <h2>What You Get</h2>
-          </div>
-          <div class="info-stack">
-            <section class="info-card">
-              <h3>MP4 video</h3>
-              <p>Best when you want the original lecture with visuals intact for later review.</p>
-            </section>
-            <section class="info-card">
-              <h3>MP3 audio</h3>
-              <p>Best when you only need the spoken content and want a smaller file for listening.</p>
-            </section>
-            <section class="info-card">
-              <h3>Both in one ZIP</h3>
-              <p>Best when you want both versions now and prefer a single download.</p>
-            </section>
-          </div>
-          <div class="download-summary" id="lecture-downloader-summary">
-            <strong>Last download:</strong> none yet.
-          </div>
-        </article>
+        <aside class="download-guide">
+          <h2>Keep your lecture close</h2>
+          <p>Paste the lecture page URL, choose a format, and save a copy for later.</p>
+          <ol><li>Copy the link from your lecture platform.</li><li>Choose video, audio, or both.</li><li>Save the download on your device.</li></ol>
+          <div class="download-summary" id="lecture-downloader-summary" aria-live="polite"><strong>Your next download</strong><p>File details will appear here when your download is ready.</p></div>
+        </aside>
       </section>
     </main>
   {% include '_shell_footer.html' %}

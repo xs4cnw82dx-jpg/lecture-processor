@@ -1,3 +1,4 @@
+const { expectProductControls } = require('./helpers/control-audit');
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
@@ -107,6 +108,15 @@ test('real Workout template supports navigation, dialogs, progress, settings, an
   const browserErrors = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));
   const fixture = workoutBootstrapFixture();
+  fixture.active_session = {
+    id: 'session-preview', revision: 1, name: 'Full body', status: 'paused', phase: 'Build', week: 1,
+    elapsed_seconds: 420, notes: '', exercises: [{
+      exercise_id: 'exercise-1', exercise_name: 'Goblet squat', muscle_group: 'Quadriceps',
+      tracking_type: 'weight_reps', load_type: 'Dumbbell', target_sets: 3, rep_min: 8, rep_max: 12,
+      early_rpe: 8, last_rpe: 9, rest_seconds: 90, technique: 'Move with control', cues: 'Keep your chest tall.',
+      sets: [0, 1, 2].map((index) => ({ id: `set-${index}`, type: 'normal', kg: 10, reps: 10, rpe: 8, completed: index === 0 })),
+    }],
+  };
 
   await page.addInitScript((bootstrapPayload) => {
     const jsonResponse = (payload, status = 200) => new Response(JSON.stringify(payload), {
@@ -153,6 +163,22 @@ test('real Workout template supports navigation, dialogs, progress, settings, an
   expect(layout.bodyScrollWidth).toBeLessThanOrEqual(layout.viewportWidth);
   expect(layout.minimumNavHeight).toBeGreaterThanOrEqual(44);
 
+  await page.locator('#workout-resume-card').click();
+  await expect(page.locator('#workout-logger')).toBeVisible();
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({width, height: 900});
+    expect(await page.locator('#workout-logger').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await page.screenshot({path: `/tmp/redesign-secondary-evidence/workout-logger-${width}.png`, animations: 'disabled'});
+  }
+  await page.locator('#workout-finish-btn').click();
+  await expect(page.locator('#workout-sheet-content')).toContainText('1 sets are complete');
+  await page.locator('#workout-sheet-close').click();
+  await page.locator('#workout-discard-btn').click();
+  await expect(page.locator('#workout-confirm-discard')).toBeVisible();
+  await page.locator('#workout-sheet-close').click();
+  await page.locator('#workout-close-logger').click();
+  await expect(page.locator('#workout-resume-card')).toBeVisible();
+
   await page.getByRole('button', { name: 'Routines', exact: true }).last().click();
   await expect(page.locator('#workout-view-routines')).toBeVisible();
   await page.locator('#workout-new-routine').click();
@@ -161,6 +187,14 @@ test('real Workout template supports navigation, dialogs, progress, settings, an
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toBeHidden();
   await expect(page.locator('#workout-new-routine')).toBeFocused();
+  await page.locator('#workout-new-routine').click();
+  await page.locator('#workout-new-routine-name').fill('Unsaved routine');
+  await page.locator('#workout-sheet-close').click();
+  await page.getByRole('button', {name:'Cancel', exact:true}).click();
+  await expect(page.locator('#workout-new-routine-name')).toHaveValue('Unsaved routine');
+  await page.locator('#workout-sheet-close').click();
+  await page.getByRole('button', {name:'Discard changes', exact:true}).click();
+  await expect(page.locator('#workout-sheet-overlay')).toBeHidden();
 
   await page.getByRole('button', { name: 'Progress', exact: true }).click();
   await expect(page.locator('#workout-view-progress')).toBeVisible();
@@ -176,6 +210,24 @@ test('real Workout template supports navigation, dialogs, progress, settings, an
   await expect(page.locator('#workout-settings-form [type="submit"]')).not.toHaveClass(/is-sticky/);
   await page.locator('#workout-manage-shares').click();
   await expect(page.getByRole('dialog')).toContainText('no active shared links');
+  await page.locator('#workout-sheet-close').click();
+
+  for (const width of [1440, 1024, 768, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expectProductControls(page);
+    for (const name of ['Today', 'Routines', 'Progress', 'Settings']) {
+      await page.getByRole('button', { name, exact: true }).last().click();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({path: `/tmp/redesign-secondary-evidence/workout-${name.toLowerCase()}-${width}.png`, fullPage: true, animations: 'disabled'});
+    }
+  }
+  await page.getByRole('button', {name: 'Today', exact: true}).click();
+  await page.getByRole('button', {name: 'Manage plan', exact: true}).click();
+  await expect(page.locator('#workout-cycle-start')).toHaveClass(/app-date-native/);
+  await expectProductControls(page);
+  await page.screenshot({path: '/tmp/redesign-secondary-evidence/workout-plan-mobile.png', fullPage: true, animations: 'disabled'});
+  await page.locator('#workout-sheet-content button[type="submit"]').scrollIntoViewIfNeeded();
+  await expect(page.locator('#workout-sheet-content button[type="submit"]')).toBeInViewport();
   await page.locator('#workout-sheet-close').click();
 
   await page.evaluate(() => {

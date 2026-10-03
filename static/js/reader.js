@@ -38,6 +38,7 @@
   var currentUser = auth && auth.currentUser ? auth.currentUser : null;
   var authStateResolved = !!currentUser;
   var selectedFiles = [];
+  var previewUrls = [];
   var running = false;
   var lastOutput = '';
   var currentJobId = '';
@@ -189,6 +190,7 @@
   function setAdvancedOpen(open) {
     if (!advancedBody || !advancedToggle) return;
     advancedBody.classList.toggle('visible', !!open);
+    advancedBody.inert = !open;
     advancedToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
@@ -203,11 +205,11 @@
     if (sourceType === 'url') {
       if (urlWrap) urlWrap.hidden = false;
       if (dropzoneWrap) dropzoneWrap.hidden = true;
-      setAdvancedOpen(true);
+      setAdvancedOpen(false);
       return;
     }
 
-    setAdvancedOpen(sourceType === 'document');
+    setAdvancedOpen(false);
     if (urlWrap) urlWrap.hidden = true;
     if (dropzoneWrap) dropzoneWrap.hidden = false;
     if (sourceType === 'image') {
@@ -239,6 +241,8 @@
   }
 
   function renderSelectedFiles() {
+    previewUrls.forEach(function (url) { URL.revokeObjectURL(url); });
+    previewUrls = [];
     while (selectedFilesEl.firstChild) selectedFilesEl.removeChild(selectedFilesEl.firstChild);
     if (!selectedFiles.length) {
       dropzoneTitle.textContent = sourceType === 'image' ? 'Drop image files here or click to browse' : 'Drop a file here or click to browse';
@@ -267,6 +271,15 @@
         renderSelectedFiles();
         updateRunState();
       });
+      if (sourceType === 'image') {
+        var preview = document.createElement('img');
+        preview.className = 'selected-file-preview';
+        preview.alt = '';
+        preview.src = URL.createObjectURL(file);
+        previewUrls.push(preview.src);
+        preview.addEventListener('error', function () { preview.hidden = true; });
+        row.appendChild(preview);
+      }
       row.appendChild(left);
       row.appendChild(remove);
       selectedFilesEl.appendChild(row);
@@ -330,6 +343,12 @@
     var hasInput = sourceType === 'url'
       ? Boolean(urlInput && String(urlInput.value || '').trim())
       : selectedFiles.length > 0;
+    var outputCard = outputPre && outputPre.closest('.reader-output-card');
+    if (outputCard) {
+      outputCard.classList.toggle('is-processing', running);
+      outputCard.setAttribute('aria-busy', String(running));
+      outputCard.querySelector('.output-placeholder h3').textContent = running ? 'Reading your source…' : 'Your source, made clearer';
+    }
     runBtn.disabled = pending || !signedIn || !hasInput || running;
     runBtn.textContent = running ? 'Extracting...' : 'Extract';
     updateAuthStateUI();
@@ -483,8 +502,9 @@
       return;
     }
     var urlValue = String(urlInput ? (urlInput.value || '') : '').trim();
-    if (sourceType === 'url' && !urlValue) {
-      setStatus('Enter a valid URL first.', 'error');
+    if (sourceType === 'url' && (!urlValue || !urlInput.checkValidity() || !/^https?:\/\//i.test(urlValue))) {
+      setStatus('Enter a valid web address beginning with https:// or http://.', 'error');
+      urlInput.focus();
       return;
     }
     if (sourceType !== 'url' && !selectedFiles.length) {

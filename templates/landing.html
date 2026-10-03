@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Lecture Processor — From Lecture to Mastery</title>
@@ -17,29 +18,43 @@
 
   <main class="container">
     <section class="hero">
-      <div class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9z"></path></svg> AI-Powered Study Workflow</div>
-      <h1>From lecture files to <span class="grad">exam-ready study</span> in minutes</h1>
-      <p class="sub">Upload your class material once and generate structured notes, flashcards, and practice tests instantly. Then study in focused modes with mastery tracking and adaptive card ordering.</p>
-
-      <div class="hero-actions">
-        <a href="/dashboard" class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Start Studying</a>
+      <div class="hero-copy">
+        <p class="eyebrow">A calmer way to study</p>
+        <h1>Less organizing.<br><span>More understanding.</span></h1>
+        <p class="sub">Bring your lectures together. Turn them into clear notes, practice what matters, and make a study plan that fits your week.</p>
+        <div class="hero-actions">
+          <a href="/dashboard" class="btn primary">Start Studying <span aria-hidden="true">↗</span></a>
+          <a href="/features" class="btn secondary">Explore the workspace</a>
+        </div>
+        <p class="hero-caption">Notes, flashcards, practice tests, and your next step—all in one place.</p>
       </div>
-
+      <div class="workspace-preview" aria-label="Example of the Study Plan workspace">
+        <div class="preview-topbar"><span class="preview-brand">LP</span><strong>Your study workspace</strong><span class="preview-avatar" aria-hidden="true">S</span></div>
+        <div class="preview-body">
+          <div class="preview-heading"><div><p class="eyebrow">Your week, in focus</p><h2>Study Plan</h2></div><span class="preview-date">Example week</span></div>
+          <div class="preview-tabs" aria-hidden="true"><span class="selected">Today</span><span>Schedule</span><span>Progress</span></div>
+          <div class="preview-next"><div class="preview-next-top"><span>UP NEXT</span><span>25 min</span></div><h3>A little progress,<br>every day.</h3><p>Review your biology flashcards</p><span class="preview-action">Start studying <span aria-hidden="true">→</span></span></div>
+          <div class="preview-bottom"><div><span class="preview-check" aria-hidden="true">✓</span><div><strong>Lecture notes</strong><span>Ready when you are</span></div></div><div class="preview-goal"><strong>One clear plan</strong><span>Built around your time</span><i aria-hidden="true"></i></div></div>
+        </div>
+      </div>
+    </section>
+    <section class="workflow-section" aria-labelledby="workflow-title">
+      <div class="section-intro"><p class="eyebrow">From lecture to understanding</p><h2 id="workflow-title">Everything connects.</h2><p>Your material becomes something you can actually study.</p></div>
       <div class="value-grid">
         <article class="value-card">
           <div class="value-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></div>
-          <h3>Auto-Generated Notes</h3>
+          <h3>01 · Bring it together</h3>
           <p>Turn slides, PDFs, and audio into clean study notes without manual rewriting.</p>
         </article>
         <article class="value-card">
           <div class="value-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"></rect><line x1="2" y1="12" x2="22" y2="12"></line></svg></div>
-          <h3>Focused Learn Modes</h3>
+          <h3>02 · Make it stick</h3>
           <p>Flashcards, test, write, and match mode with mode selection and distraction-free sessions.</p>
         </article>
         <article class="value-card">
           <div class="value-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></div>
-          <h3>Mastery Tracking</h3>
-          <p>Track seen, familiar, and mastered cards over time to focus review where needed.</p>
+          <h3>03 · Find your rhythm</h3>
+          <p>Plan focused sessions around your deadline and see what deserves another look.</p>
         </article>
       </div>
     </section>

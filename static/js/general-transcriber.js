@@ -254,6 +254,12 @@
   function updateRunState() {
     var signedIn = hasSignedInSession();
     var pending = authStateIsPending();
+    var outputCard = outputPre && outputPre.closest('.reader-output-card');
+    if (outputCard) {
+      outputCard.classList.toggle('is-processing', running);
+      outputCard.setAttribute('aria-busy', String(running));
+      outputCard.querySelector('.output-placeholder h3').textContent = running ? 'Listening to your recording…' : 'Every word, in one place';
+    }
     runBtn.disabled = pending || !signedIn || !selectedFile || running;
     runBtn.textContent = running ? 'Transcribing...' : 'Transcribe';
     updateAuthStateUI();

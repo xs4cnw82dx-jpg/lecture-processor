@@ -46,6 +46,7 @@ export const intentionallyUnminifiedScripts = [
   'static/js/lecture-downloader.js',
   'static/js/marked-lite.js',
   'static/js/markdown-utils.js',
+  'static/js/media-player.js',
   'static/js/plan.js',
   'static/js/physio-launcher.js',
   'static/js/physio-local.js',

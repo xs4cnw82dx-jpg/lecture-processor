@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { installAccountFixture } = require('./helpers/batch-fixture');
 
 async function assertAppHealth(request) {
   const healthResponse = await request.get('/healthz');
@@ -83,8 +84,25 @@ test('batch output language listbox supports keyboard selection', async ({ page 
 
 test('mobile pack builder keeps actions visible and option typing focused', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
+  await installAccountFixture(page);
+  // This test supplies Firebase through the fixture; don't load SRI-pinned CDN scripts with stub bodies.
+  await page.route('**/study-pack-builder', async route => {
+    const response = await route.fetch();
+    const html = await response.text();
+    await route.fulfill({ response, body: html.replace(/<script\b[^>]*src="https:\/\/www\.gstatic\.com\/firebasejs\/[^"\s]+"[^>]*><\/script>/g, '') });
+  });
+  await page.route('**/api/study**', route => {
+    const pathname = new URL(route.request().url()).pathname;
+    const payload = pathname === '/api/study-folders' ? { folders: [] }
+      : pathname === '/api/study-packs' ? { study_packs: [], has_more: false }
+      : pathname === '/api/study-plan/membership' ? { pack_ids: [] }
+      : { card_states: {}, daily_progress: {} };
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(payload) });
+  });
+  // The authenticated route opens Builder after library hydration completes.
   await page.goto('/study-pack-builder');
-  await page.evaluate(() => window.openBuilderOverlay('create', null));
+  await expect(page.locator('#builder-overlay')).toBeVisible();
+  await expect(page.locator('#builder-tab-test')).toBeVisible();
 
   await expect(page.locator('#builder-stat-dirty')).toHaveText('Not saved yet');
   await expect(page.locator('#builder-save-btn')).toBeInViewport();
@@ -94,7 +112,8 @@ test('mobile pack builder keeps actions visible and option typing focused', asyn
   await page.locator('#builder-tab-test').click();
   await page.locator('#builder-add-question-btn').click();
   const answer = page.locator('[data-q-answer="0"]');
-  await answer.selectOption({ label: 'C: Option C' });
+  await page.locator('#builder-q-answer-0-button').click();
+  await page.getByRole('option', { name: 'C: Option C', exact: true }).click();
   const option = page.locator('#builder-q-option-0-2');
   await option.focus();
   await option.selectText();
@@ -142,8 +161,8 @@ test('video overlay builder creates tables and previews animations', async ({ pa
       justifyContent: styles.justifyContent
     };
   });
-  expect(recordButtonStyle.backgroundImage).toContain('linear-gradient');
-  expect(recordButtonStyle.borderRadius).toBe('8px');
+  expect(recordButtonStyle.backgroundImage).toBe('none');
+  expect(recordButtonStyle.borderRadius).toBe('11px');
   expect(recordButtonStyle.alignItems).toBe('center');
   expect(recordButtonStyle.justifyContent).toBe('center');
 
@@ -199,6 +218,7 @@ test('video overlay builder creates tables and previews animations', async ({ pa
     window.AudioContext = FakeAudioContext;
     window.webkitAudioContext = FakeAudioContext;
   });
+  await page.locator('.overlay-recording-tools > summary').click();
   await page.locator('#overlay-record-voice').check();
   await expect(page.locator('.overlay-recorder-visual')).toHaveClass(/is-live/);
   await expect(page.locator('#overlay-recording-status')).toContainText('Microphone test active.');
@@ -207,6 +227,11 @@ test('video overlay builder creates tables and previews animations', async ({ pa
   await expect(page.locator('.overlay-recorder-visual')).not.toHaveClass(/is-live/);
   await expect.poll(async () => page.evaluate(() => window.__overlayMicProbe.stopped())).toBe(1);
 
+  await page.locator('.overlay-recording-tools').evaluate(node => Promise.all(node.getAnimations().map(animation => animation.finished.catch(() => {}))));
+  await expect.poll(async () => page.locator('#overlay-stage').evaluate(stage => {
+    const frame = stage.closest('.overlay-stage-frame'), bounds = frame.getBoundingClientRect(), rect = stage.getBoundingClientRect();
+    return rect.top >= bounds.top - 1 && rect.bottom <= bounds.bottom + 1 && frame.scrollHeight <= frame.clientHeight + 2;
+  })).toBe(true);
   const defaultStageMetrics = await page.evaluate(() => {
     const frame = document.querySelector('.overlay-stage-frame');
     const stage = document.getElementById('overlay-stage');
@@ -249,6 +274,7 @@ test('video overlay builder creates tables and previews animations', async ({ pa
   await textBody.fill('Clean typing starts here');
   await expect(textBody).toHaveText('Clean typing starts here');
 
+  await page.locator('.overlay-table-options > summary').click();
   await page.locator('#overlay-table-rows').fill('0');
   await page.locator('#overlay-table-cols').fill('-2');
   await page.locator('#overlay-add-table').click();
@@ -480,6 +506,7 @@ test('video overlay recording switches into clean presenter mode', async ({ page
     const title = document.querySelector('.overlay-card-title');
     return parseFloat(window.getComputedStyle(title).fontSize) / stage.width;
   });
+  await page.locator('.overlay-recording-tools > summary').click();
   await page.locator('#overlay-record-screen').click();
 
   await expect(page.locator('body')).toHaveClass(/overlay-recording-presenter/);
@@ -544,46 +571,34 @@ test('lecture notes keeps a stable layout on desktop and stacks cleanly on mobil
   await page.goto('/lecture-notes');
   await expect(page.locator('#mobile-process-summary')).toHaveText('Sign in to check your credits and start processing.');
 
-  const desktopLayout = await page.evaluate(() => {
-    const uploadSection = document.getElementById('upload-section');
-    const buttonSection = document.getElementById('button-section');
-    const advancedSettings = document.getElementById('advanced-settings');
-    const secondaryGrid = document.querySelector('.processing-secondary-grid');
-    const processSummary = document.getElementById('mobile-process-summary');
-    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
-
-    return {
-      templateAreas: normalize(getComputedStyle(uploadSection).gridTemplateAreas),
-      buttonPosition: getComputedStyle(buttonSection).position,
-      advancedArea: normalize(getComputedStyle(advancedSettings).gridArea),
-      secondaryArea: normalize(getComputedStyle(secondaryGrid).gridArea),
-      processSummary: normalize(processSummary.textContent),
-    };
-  });
-
-  expect(desktopLayout.templateAreas).toContain('"topic topic"');
-  expect(desktopLayout.templateAreas).toContain('"slides audio"');
-  expect(desktopLayout.templateAreas).toContain('"advanced secondary"');
-  expect(desktopLayout.templateAreas).toContain('"action action"');
-  expect(desktopLayout.buttonPosition).toBe('static');
-  expect(desktopLayout.advancedArea).toContain('advanced');
-  expect(desktopLayout.secondaryArea).toContain('secondary');
-  expect(desktopLayout.processSummary).toMatch(/Sign in to check your credits and start processing\./);
-  expect(desktopLayout.processSummary).not.toContain('•');
+  async function layout() {
+    return page.evaluate(() => {
+      const box = id => {
+        const r = document.getElementById(id).getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width };
+      };
+      return {
+        slides: box('pdf-zone'), audio: box('audio-zone'),
+        options: box('advanced-settings'), actions: box('button-section'),
+        width: document.documentElement.scrollWidth, viewport: window.innerWidth,
+      };
+    });
+  }
+  const desktop = await layout();
+  expect(Math.abs(desktop.slides.top - desktop.audio.top)).toBeLessThan(2);
+  expect(desktop.slides.right).toBeLessThan(desktop.audio.left);
+  expect(desktop.slides.width).toBeGreaterThan(300);
+  expect(desktop.options.top).toBeGreaterThanOrEqual(desktop.slides.bottom);
+  expect(desktop.actions.top).toBeGreaterThanOrEqual(desktop.options.bottom);
+  expect(desktop.width).toBeLessThanOrEqual(desktop.viewport + 1);
 
   await page.setViewportSize({ width: 390, height: 1100 });
-
-  const mobileLayout = await page.evaluate(() => {
-    const uploadSection = document.getElementById('upload-section');
-    return String(getComputedStyle(uploadSection).gridTemplateAreas).replace(/\s+/g, ' ').trim();
-  });
-
-  expect(mobileLayout).toContain('"topic"');
-  expect(mobileLayout).toContain('"slides"');
-  expect(mobileLayout).toContain('"audio"');
-  expect(mobileLayout).toContain('"secondary"');
-  expect(mobileLayout).toContain('"advanced"');
-  expect(mobileLayout).toContain('"action"');
+  const mobile = await layout();
+  expect(mobile.audio.top).toBeGreaterThanOrEqual(mobile.slides.bottom);
+  expect(Math.abs(mobile.audio.left - mobile.slides.left)).toBeLessThan(2);
+  expect(mobile.options.top).toBeGreaterThanOrEqual(mobile.audio.bottom);
+  expect(mobile.actions.top).toBeGreaterThanOrEqual(mobile.options.bottom);
+  expect(mobile.width).toBeLessThanOrEqual(mobile.viewport + 1);
 });
 
 test('singular processing pages use the desktop width instead of a narrow mobile column', async ({ page }) => {
@@ -598,23 +613,19 @@ test('singular processing pages use the desktop width instead of a narrow mobile
       const sourceZone = document.querySelector('#pdf-zone:not([hidden]), #audio-zone:not([hidden])');
       const secondaryGrid = document.querySelector('.processing-secondary-grid');
       const buttonSection = document.getElementById('button-section');
-      const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
-
       return {
-        templateAreas: normalize(getComputedStyle(uploadSection).gridTemplateAreas),
         maxWidth: getComputedStyle(uploadSection).maxWidth,
         sourceWidth: sourceZone.getBoundingClientRect().width,
         uploadSectionWidth: uploadSection.getBoundingClientRect().width,
         secondaryHidden: secondaryGrid.hidden,
-        buttonColumns: normalize(getComputedStyle(buttonSection).gridTemplateColumns),
+        actionWidth: buttonSection.getBoundingClientRect().width,
       };
     });
 
-    expect(layout.templateAreas).toContain('"source advanced"');
     expect(layout.maxWidth).toBe('none');
     expect(layout.sourceWidth).toBeGreaterThan(500);
     expect(layout.uploadSectionWidth).toBeGreaterThan(900);
     expect(layout.secondaryHidden).toBeTruthy();
-    expect(layout.buttonColumns).not.toBe('none');
+    expect(layout.actionWidth).toBeGreaterThan(900);
   }
 });

@@ -14,6 +14,11 @@
   var refreshHistoryBtn = document.getElementById('refresh-purchase-history-btn');
   var checkoutBusy = false;
   var paymentResultChecked = false;
+  var paymentSessionId = '';
+  var paymentStatus = '';
+  var paymentNeedsConfirmation = false;
+  var paymentPanel = document.getElementById('payment-result');
+  var paymentRetry = document.getElementById('payment-result-retry');
   var authStateResolved = !auth || !!auth.currentUser;
   var accountRevision = 0;
   var accountUid = getCurrentUser() ? getCurrentUser().uid : null;
@@ -29,9 +34,16 @@
   }
 
   function getSignInHref(bundleId) {
-    var next = '/buy_credits';
+    var currentParams = new URLSearchParams(window.location.search);
+    var pendingSession = paymentSessionId || currentParams.get('session_id');
+    var pendingStatus = paymentStatus || currentParams.get('payment');
+    var nextParams = new URLSearchParams();
     var safeBundle = String(bundleId || '').trim();
-    if (safeBundle) next += '?bundle_id=' + encodeURIComponent(safeBundle);
+    if (pendingStatus === 'success' && pendingSession) {
+      nextParams.set('payment', 'success');
+      nextParams.set('session_id', pendingSession);
+    } else if (safeBundle) nextParams.set('bundle_id', safeBundle);
+    var next = '/buy_credits' + (nextParams.toString() ? '?' + nextParams.toString() : '');
     if (typeof authUtils.buildSignInUrl === 'function') {
       return authUtils.buildSignInUrl(next);
     }
@@ -77,7 +89,7 @@
     var signedIn = !!getCurrentUser();
     var needsSignIn = !signedIn && authStateResolved;
     document.querySelectorAll('.bundle-buy-btn').forEach(function (button) {
-      button.disabled = !!disabled;
+      button.disabled = !!disabled || !authStateResolved;
       if (needsSignIn) {
         button.setAttribute('aria-describedby', 'buy-credits-auth-panel');
       } else {
@@ -91,6 +103,8 @@
       if (!target) return;
       if (disabled && activeBundle && button.dataset.bundleId === activeBundle) {
         target.textContent = 'Redirecting...';
+      } else if (!authStateResolved) {
+        target.textContent = 'Checking account…';
       } else if (needsSignIn) {
         target.textContent = 'Sign in to buy';
       } else {
@@ -185,7 +199,7 @@
   async function loadPurchaseHistory() {
     if (!historyList) return;
     if (!getCurrentUser()) {
-      setHistoryEmpty('Sign in to view purchase history.');
+      setHistoryEmpty(authStateResolved ? 'Sign in to view purchase history.' : 'Checking your account…');
       return;
     }
     setHistoryEmpty('Loading purchase history...');
@@ -246,42 +260,55 @@
     }
   }
 
+  function showPaymentResult(message, type, retry) {
+    if (!paymentPanel) return;
+    paymentPanel.hidden = false;
+    paymentPanel.dataset.state = type || 'success';
+    document.getElementById('payment-result-title').textContent = type === 'error' ? 'Payment needs attention' : type === 'pending' ? 'Waiting for confirmation' : type === 'cancelled' ? 'Checkout cancelled' : 'Payment confirmed';
+    document.getElementById('payment-result-message').textContent = message;
+    if (paymentRetry) { paymentRetry.hidden = !retry; paymentRetry.disabled = false; }
+  }
+
   async function checkPaymentResult() {
     if (paymentResultChecked) return;
     paymentResultChecked = true;
     var params = new URLSearchParams(window.location.search);
-    var status = params.get('payment');
-    var sessionId = params.get('session_id');
+    var status = params.get('payment') || paymentStatus;
+    var sessionId = params.get('session_id') || paymentSessionId;
+    paymentSessionId = sessionId;
+    paymentStatus = status;
+    if (params.get('payment') === 'success') paymentNeedsConfirmation = true;
     if (!status) return;
     var isCurrent = captureAccount();
     if (status === 'success') {
       var confirmation = await confirmCheckoutSession(sessionId);
       if (!isCurrent()) return;
       if (confirmation.ok) {
+        paymentNeedsConfirmation = false;
         var refreshed = await refreshUserCredits();
         if (!isCurrent()) return;
         await loadPurchaseHistory();
         if (!isCurrent()) return;
         if (confirmation.status === 'already_processed') {
-          showToast(refreshed ? 'Payment already confirmed. Credits are available.' : 'Payment already confirmed. Credits may take a few seconds to appear.');
+          showPaymentResult(refreshed ? 'Payment already confirmed. Credits are available.' : 'Payment already confirmed. Credits may take a few seconds to appear.');
         } else if (refreshed) {
-          showToast('Payment successful. Credits updated.');
+          showPaymentResult('Payment successful. Credits updated.');
         } else {
-          showToast('Payment successful. Credits may take a few seconds to appear.');
+          showPaymentResult('Payment successful. Credits may take a few seconds to appear.');
         }
       } else if (confirmation.status === 'pending_payment') {
-        showToast('Payment received. Confirmation is still pending.');
+        showPaymentResult('Payment received. Confirmation is still pending.', 'pending', true);
       } else if (confirmation.status === 'account_deletion_in_progress') {
-        showToast('Payment could not be applied because account deletion is in progress.');
+        showPaymentResult('Payment could not be applied because account deletion is in progress.', 'error');
       } else if (confirmation.status === 'not_signed_in') {
         authStateResolved = true;
         updateSignedOutUi();
-        showToast('Sign in to apply your payment credits.', 'error');
+        showPaymentResult('Sign in to apply your payment credits.', 'pending', true);
       } else {
-        showToast('Could not confirm payment yet. Please refresh and try again shortly.', 'error');
+        showPaymentResult('Could not confirm payment yet. Check again shortly; you do not need to make another purchase.', 'error', true);
       }
     } else if (status === 'cancelled') {
-      showToast('Payment cancelled.');
+      showPaymentResult('No credits were purchased. You can choose a bundle whenever you are ready.', 'cancelled');
     }
     window.history.replaceState({}, '', '/buy_credits');
   }
@@ -314,6 +341,12 @@
     });
   }
 
+  if (paymentRetry) paymentRetry.addEventListener('click', function () {
+    paymentRetry.disabled = true;
+    paymentResultChecked = false;
+    checkPaymentResult();
+  });
+
   updateSignedOutUi();
 
   if (auth && typeof bootstrap.onAuthStateReady === 'function') {
@@ -324,6 +357,9 @@
         accountUid = nextUid;
         checkoutBusy = false;
         if (toast) toast.classList.remove('visible');
+        if (paymentPanel) paymentPanel.hidden = true;
+        if (paymentNeedsConfirmation) paymentResultChecked = false;
+        else { paymentSessionId = ''; paymentStatus = ''; }
         setHistoryEmpty(nextUid ? 'Loading purchase history...' : 'Sign in to view purchase history.');
       }
       authStateResolved = true;

@@ -1,3 +1,4 @@
+const { expectProductControls } = require('./helpers/control-audit');
 const { test, expect } = require('@playwright/test');
 
 function isoDate(offsetDays) {
@@ -193,8 +194,8 @@ test('desktop progress, failed-save rollback, missed catch-up, and calendar revo
   await page.locator('#calendar-feed-name').fill('My phone');
   await page.locator('#calendar-feed-create-btn').click();
   await expect(page.locator('#calendar-feed-url')).toHaveValue(/feed_e2e\.secret\.ics/);
-  page.once('dialog', dialog => dialog.accept());
   await page.locator('[data-feed-revoke]').click();
+  await page.getByRole('dialog', { name:'Disconnect subscription?' }).getByRole('button', { name:'Disconnect', exact:true }).click();
   await expect(page.locator('#calendar-feed-list')).toContainText('Revoked');
 });
 
@@ -437,4 +438,47 @@ test('logging offline study requires actual minutes and completed sessions can r
   await row.getByRole('button', { name: 'Reopen session', exact: true }).click();
   await expect(row.getByRole('button', { name: 'Log study done', exact: true })).toBeVisible();
   expect(fixture.progress.offline_minutes).toBe(0);
+});
+
+test('planner visual layout keeps tall wizard actions and anchored controls reachable', async ({ page }, testInfo) => {
+  await installSignedInPlanner(page, { withGoal: true, packCount: 24 });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/plan?view=progress');
+  await expect(page.locator('#progress-summary-grid .metric-card')).toHaveCount(6);
+  await expectProductControls(page);
+  await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('plan-progress.png') });
+  await page.getByRole('button', { name: 'Schedule', exact: true }).click();
+  await expectProductControls(page);
+  await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('plan-schedule.png') });
+  await page.locator('#new-study-goal-btn').click();
+  await page.locator('#wizard-pack-list input').first().check();
+  await page.locator('#wizard-next-btn').click();
+  await page.locator('#wizard-goal-title').fill('Anatomy assessment');
+  await page.locator('#wizard-exam-date').fill(isoDate(30));
+  await page.locator('#wizard-next-btn').click();
+  await page.locator('[data-availability-preset="custom"]').click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator('#wizard-next-btn')).toBeInViewport();
+  await expect(page.locator('#plan-wizard-close')).toBeInViewport();
+  await expectProductControls(page);
+  await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('plan-tall-wizard-mobile.png') });
+  expect(await page.locator('.wizard-dialog').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+});
+
+test('searchable planner pack menu preserves text keys and Enter selects without submitting', async ({ page }) => {
+  await installSignedInPlanner(page);
+  await page.goto('/plan?view=schedule');
+  await page.locator('[data-calendar-session="session_today"]').click();
+  await page.locator('#session-editor-pack').locator('..').locator('.pretty-select-button').click();
+  const search = page.getByRole('searchbox', { name:'Find a study pack' });
+  await search.fill('Question pack 18');
+  await search.press('Home');
+  await expect(search).toBeFocused();
+  expect(await search.evaluate(input => input.selectionStart)).toBe(0);
+  await search.press('End');
+  await expect(search).toBeFocused();
+  expect(await search.evaluate(input => input.selectionStart)).toBe(16);
+  await search.press('Enter');
+  await expect(page.locator('#session-editor-pack')).toHaveValue('pack_question_18');
+  await expect(page.locator('#session-editor-overlay')).toBeVisible();
 });

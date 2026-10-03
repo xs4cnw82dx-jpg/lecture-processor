@@ -8,7 +8,8 @@
   var retry = document.getElementById('physio-retry-companion');
 
   async function checkCompanion() {
-    if (!status) return false;
+    if (!status || (retry && retry.disabled)) return false;
+    if (retry) retry.disabled = true;
     status.className = 'physio-launcher-status';
     status.lastElementChild.textContent = 'Lokale companion controleren…';
     try {
@@ -21,7 +22,7 @@
       status.classList.add('is-offline');
       status.lastElementChild.textContent = 'Companion is nog niet bereikbaar. Start hem lokaal en probeer opnieuw.';
       return false;
-    }
+    } finally { if (retry) retry.disabled = false; }
   }
 
   if (retry) retry.addEventListener('click', checkCompanion);

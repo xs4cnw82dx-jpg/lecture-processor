@@ -284,7 +284,7 @@ select {
   text-decoration: none;
   border-radius: 999px;
   padding: 8px 13px;
-  background: linear-gradient(135deg, #4f46e5, #2563eb);
+  background: linear-gradient(135deg, #2558d9, #2563eb);
   color: #fff;
   font-weight: 700;
   font-size: 0.85rem;
@@ -479,7 +479,7 @@ select {
   background: transparent;
   font: inherit;
   padding: 9px 10px;
-  border-radius: 8px;
+  border-radius: 11px;
   cursor: pointer;
   font-family: inherit;
   transition: background-color var(--motion-fast, 140ms) var(--motion-ease, ease), color var(--motion-fast, 140ms) var(--motion-ease, ease);
@@ -554,7 +554,7 @@ select {
   right: 12px;
   width: 30px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: 11px;
   border: 1px solid var(--shell-border);
   background: #fff;
   color: var(--shell-muted);
@@ -650,7 +650,7 @@ select {
 .shell-modal-primary {
   border: none;
   border-radius: 10px;
-  background: linear-gradient(135deg, #4f46e5, #2563eb);
+  background: linear-gradient(135deg, #2558d9, #2563eb);
   color: #fff;
   padding: 10px 16px;
   font-weight: 700;
@@ -812,19 +812,19 @@ select {
   }
 }
 
-/* App-wide redesign overrides */
+/* Shared workspace shell: navigation, surfaces and responsive behavior. */
 :root {
-  --shell-bg: #f8fafc;
+  --shell-bg: #f6f8fc;
   --shell-surface: #ffffff;
   --shell-border: #e2e8f0;
-  --shell-text: #111827;
-  --shell-muted: #64748b;
-  --shell-accent: #4f46e5;
-  --shell-accent-hover: #4338ca;
-  --shell-accent-soft: #eef2ff;
+  --shell-text: #17233c;
+  --shell-muted: #65718a;
+  --shell-accent: #2558d9;
+  --shell-accent-hover: #1e46b1;
+  --shell-accent-soft: #eaf0ff;
   --shell-sidebar: #1a1f2e;
   --shell-sidebar-hover: #252b3b;
-  --shell-panel-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 24px rgba(15, 23, 42, 0.04);
+  --shell-panel-shadow: 0 8px 28px rgba(33, 49, 82, 0.055);
 }
 
 body {
@@ -873,10 +873,10 @@ body {
 .app-shell-brand-icon {
   width: 34px;
   height: 34px;
-  border-radius: 8px;
+  border-radius: 11px;
   background: var(--shell-accent);
   color: #ffffff;
-  box-shadow: 0 10px 24px rgba(79, 70, 229, 0.22);
+  box-shadow: 0 10px 24px rgba(37, 88, 217, 0.22);
 }
 
 .app-shell-nav {
@@ -893,7 +893,7 @@ body {
 .app-shell-link,
 .app-shell-group-trigger {
   min-height: 42px;
-  border-radius: 8px;
+  border-radius: 11px;
   color: #d1d5db;
   font-size: 0.92rem;
   line-height: 1.2;
@@ -949,7 +949,7 @@ body {
 .app-shell-group-secondary {
   background: transparent;
   border: 0;
-  border-radius: 8px;
+  border-radius: 11px;
   padding: 0;
 }
 
@@ -998,7 +998,7 @@ body {
 }
 
 .app-shell-title {
-  color: #111827;
+  color: #17233c;
   font-size: 1.1rem;
   font-weight: 700;
 }
@@ -1007,7 +1007,7 @@ body {
 .app-shell-signin,
 .app-shell-account-btn {
   border-color: #d1d5db;
-  border-radius: 8px;
+  border-radius: 11px;
   background: #ffffff;
   color: #374151;
 }
@@ -1048,14 +1048,14 @@ body {
 }
 
 .app-shell-account-item:hover {
-  background: #eef2ff;
-  color: #3730a3;
+  background: #eaf0ff;
+  color: #1e46b1;
 }
 
 .app-shell-credits,
 .shell-modal-primary {
   background: var(--shell-accent);
-  box-shadow: 0 10px 20px rgba(79, 70, 229, 0.18);
+  box-shadow: 0 10px 20px rgba(37, 88, 217, 0.18);
 }
 
 .app-shell-credits:hover,
@@ -1073,14 +1073,15 @@ body {
 }
 
 .app-shell-page {
-  width: 100%;
-  padding: 24px;
+  width: min(1320px, 100%);
+  margin-inline: auto;
+  padding: 36px 32px 56px;
 }
 
 .shell-panel {
   background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border: 1px solid var(--shell-border);
+  border-radius: 18px;
   box-shadow: var(--shell-panel-shadow);
   backdrop-filter: none;
 }
@@ -1091,7 +1092,8 @@ body {
 }
 
 .shell-modal {
-  border-radius: 12px;
+  border-radius: 20px;
+  box-shadow: 0 26px 80px rgba(10,19,42,.24);
 }
 
 @media (max-width: 1024px) {
@@ -1148,3 +1150,10 @@ body {
     gap: 8px;
   }
 }
+
+.app-shell-menu-divider { height: 1px; background: var(--border); margin: 7px 4px; }
+.shell-export-option { transition: background 160ms,border-color 160ms; }
+.shell-export-option:has(input:checked) { background: #edf3ff; border-color: #b7caf0; }
+.shell-export-option input { accent-color: #2558d9; width: 17px; height: 17px; flex-shrink: 0; }
+.shell-modal-actions { position: sticky; bottom: -24px; background: #fff; padding-top: 16px; padding-bottom: 4px; border-top: 1px solid var(--border); }
+.app-shell-email { overflow-wrap: anywhere; }

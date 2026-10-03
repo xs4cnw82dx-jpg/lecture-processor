@@ -252,7 +252,7 @@ const MODE_ICONS = {
   write: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>',
   match: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg>'
 };
-const MODE_NAMES = { flashcards: 'Zen Cards', test: 'Multiple Choice', write: 'Write', match: 'Match' };
+const MODE_NAMES = { flashcards: 'Flashcards', test: 'Practice test', write: 'Write', match: 'Match' };
 const MODE_DESCS = { flashcards: 'Flip through cards at your pace', test: 'Answer multiple choice questions', write: 'Type answers from memory', match: 'Pair terms with definitions' };
 
 let sessionSettings = { swapAnswerQuestion: false, randomSwap: false, caseSensitive: false, forceExactMatch: false, addMissedToReview: true, ignoreArticles: false, ignoreDeterminers: false, ignoreBrackets: false };
@@ -2129,6 +2129,7 @@ function setQuestionAnswerMenuOpen(button, menu, open, focusMode) {
 function setExportPdfSubmenuOpen(open) {
   if (!exportPdfSubmenu) return;
   var shouldOpen = !!open;
+  exportPdfSubmenu.inert = !shouldOpen;
   exportPdfSubmenu.classList.toggle('visible', shouldOpen);
   var trigger = exportMenuList ? exportMenuList.querySelector('[data-export-kind="pdf-menu"]') : null;
   if (trigger) { trigger.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false'); }
@@ -2136,6 +2137,7 @@ function setExportPdfSubmenuOpen(open) {
 function setExportMenuOpen(open, focusMode) {
   if (!exportMenuList || !exportMenuBtn) return;
   var shouldOpen = !!open;
+  exportMenuList.inert = !shouldOpen;
   exportMenuList.classList.toggle('visible', shouldOpen);
   exportMenuBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
   if (!shouldOpen) { setExportPdfSubmenuOpen(false); return; }
@@ -3026,14 +3028,14 @@ function renderBuilderFlashcards() {
   setSafeInnerHtml(builderFlashcardList, cards.map(function (card, index) {
     var frontId = 'builder-fc-front-' + index;
     var backId = 'builder-fc-back-' + index;
-    return '<div class="builder-row" data-fc-row="' + index + '">'
+    return '<details class="builder-row builder-expandable" data-fc-row="' + index + '"' + (index === 0 ? ' open' : '') + '><summary><span class="builder-row-number">' + String(index + 1).padStart(2, '0') + '</span><span>' + escapeHtml(card.front || 'New flashcard') + '</span><span class="builder-row-expand-label">Edit</span></summary><div class="builder-row-content">'
       + '<div class="builder-row-head"><span class="builder-row-title">Flashcard ' + (index + 1) + '</span><button class="btn danger u-btn-compact" data-delete-fc="' + index + '">Delete</button></div>'
       + '<div class="builder-split"><div class="field"><label for="' + frontId + '">Front</label><textarea id="' + frontId + '" class="u-min-h-92" data-fc-field="front" data-fc-index="' + index + '">' + escapeHtml(card.front || '') + '</textarea></div>'
-      + '<div class="field"><label for="' + backId + '">Back</label><textarea id="' + backId + '" class="u-min-h-92" data-fc-field="back" data-fc-index="' + index + '">' + escapeHtml(card.back || '') + '</textarea></div></div></div>';
+      + '<div class="field"><label for="' + backId + '">Back</label><textarea id="' + backId + '" class="u-min-h-92" data-fc-field="back" data-fc-index="' + index + '">' + escapeHtml(card.back || '') + '</textarea></div></div></div></details>';
   }).join(''));
   if (window.StudyPictures && selectedPack && builderPackId) {
     builderFlashcardList.querySelectorAll('[data-fc-row]').forEach(function (row) {
-      window.StudyPictures.editor(row, cards[Number(row.dataset.fcRow)], selectedPack, markBuilderDirty, renderBuilderFlashcards);
+      window.StudyPictures.editor(row.querySelector('.builder-row-content') || row, cards[Number(row.dataset.fcRow)], selectedPack, markBuilderDirty, renderBuilderFlashcards);
     });
   }
   updateBuilderStats();
@@ -3060,7 +3062,7 @@ function renderBuilderQuestions() {
       var letter = ['A', 'B', 'C', 'D'][optionIndex] || '';
       return '<option value="' + escapeHtml(option) + '" ' + (question.answer === option ? 'selected' : '') + '>' + letter + ': ' + escapeHtml(option || '(empty)') + '</option>';
     }).join('');
-    return '<div class="builder-row" data-q-row="' + index + '">'
+    return '<details class="builder-row builder-expandable" data-q-row="' + index + '"' + (index === 0 ? ' open' : '') + '><summary><span class="builder-row-number">' + String(index + 1).padStart(2, '0') + '</span><span>' + escapeHtml(question.question || 'New question') + '</span><span class="builder-row-expand-label">Edit</span></summary><div class="builder-row-content">'
       + '<div class="builder-row-head"><span class="builder-row-title">Question ' + (index + 1) + '</span><button class="btn danger u-btn-compact" data-delete-q="' + index + '">Delete</button></div>'
       + '<div class="field"><label for="' + questionId + '">Question</label><textarea id="' + questionId + '" class="u-min-h-86" data-q-field="question" data-q-index="' + index + '">' + escapeHtml(question.question || '') + '</textarea></div>'
       + '<div class="builder-grid-3 u-mt-8">'
@@ -3069,8 +3071,8 @@ function renderBuilderQuestions() {
       + '<div class="field"><label for="' + optionPrefix + '2">Option C</label><input id="' + optionPrefix + '2" data-q-option="2" data-q-index="' + index + '" value="' + escapeHtml(question.options[2] || '') + '"></div>'
       + '</div><div class="builder-grid u-mt-8">'
       + '<div class="field"><label for="' + optionPrefix + '3">Option D</label><input id="' + optionPrefix + '3" data-q-option="3" data-q-index="' + index + '" value="' + escapeHtml(question.options[3] || '') + '"></div>'
-      + '<div class="field"><label for="' + answerId + '">Correct Answer</label><select id="' + answerId + '" class="builder-select" data-q-answer="' + index + '">' + answerOptions + '</select></div>'
-      + '</div><div class="field u-mt-8"><label for="' + explanationId + '">Explanation (optional)</label><textarea id="' + explanationId + '" class="u-min-h-72" data-q-field="explanation" data-q-index="' + index + '">' + escapeHtml(question.explanation || '') + '</textarea></div></div>';
+      + '<div class="field"><label for="' + answerId + '">Correct Answer</label><select id="' + answerId + '" class="builder-select" data-app-select data-q-answer="' + index + '">' + answerOptions + '</select></div>'
+      + '</div><div class="field u-mt-8"><label for="' + explanationId + '">Explanation (optional)</label><textarea id="' + explanationId + '" class="u-min-h-72" data-q-field="explanation" data-q-index="' + index + '">' + escapeHtml(question.explanation || '') + '</textarea></div></div></details>';
   }).join(''));
   updateBuilderStats();
 }
@@ -3787,7 +3789,7 @@ function renderAlgoLane() {
   algoLane.innerHTML = '';
   sessionAlgo.forEach(function (type, i) {
     if (i > 0) { var ch = document.createElement('div'); ch.className = 'algo-chevron'; setSafeInnerHtml(ch, '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>'); algoLane.appendChild(ch); }
-    var s = document.createElement('div'); s.className = 'algo-slot'; s.dataset.type = type; s.dataset.index = String(i);
+    var s = document.createElement('button'); s.type = 'button'; s.setAttribute('aria-label', 'Review slot ' + (i + 1) + ': ' + type + '. Activate to change.'); s.className = 'algo-slot'; s.dataset.type = type; s.dataset.index = String(i);
     setSafeInnerHtml(s, (ALGO_ICONS[type] || '') + '<span>' + type.charAt(0).toUpperCase() + type.slice(1) + '</span>');
     s.addEventListener('click', function () { var ni = (ALGO_TYPES.indexOf(type) + 1) % ALGO_TYPES.length; sessionAlgo[i] = ALGO_TYPES[ni]; sessionAlgoPreset = ''; renderAlgoLane(); renderAlgoPresets(); saveSessionState(); });
     algoLane.appendChild(s);
@@ -3829,6 +3831,7 @@ function renderLessonCards() {
   if (!hf) { sessionLessons.flashcards = false; sessionLessons.write = false; sessionLessons.match = false; }
   if (!ht) { sessionLessons.test = false; }
   if (ht && !hf && !sessionLessons.test) { sessionLessons.test = true; }
+  document.getElementById('lesson-grid').dataset.modeCount = String([hf, ht, hf, hf].filter(Boolean).length);
   fc.classList.toggle('selected', sessionLessons.flashcards);
   tc.classList.toggle('selected', sessionLessons.test);
   wc.classList.toggle('selected', sessionLessons.write);
@@ -3878,11 +3881,11 @@ function renderMasteryGauge() {
     var folder = findSelectedPackFolder();
     var examDate = folder && folder.exam_date ? String(folder.exam_date) : '';
     if (!examDate) {
-      examRecommendationEl.textContent = 'Set an exam date in Planning mode to get a daily target recommendation.';
+      examRecommendationEl.textContent = 'Set an exam date in Study Plan to get a daily target recommendation.';
     } else {
       var recommendation = buildExamRecommendation(unmastered, examDate);
       if (!recommendation || recommendation.days_remaining === null) {
-        examRecommendationEl.textContent = 'Set an exam date in Planning mode to get a daily target recommendation.';
+        examRecommendationEl.textContent = 'Set an exam date in Study Plan to get a daily target recommendation.';
       } else if (recommendation.days_remaining < 0) {
         examRecommendationEl.textContent = 'Exam date has passed. Update the folder exam date to get a recommendation.';
       } else if (recommendation.days_remaining === 0) {
@@ -3985,7 +3988,7 @@ function openSessionSetup() {
   setupPackName.textContent = selectedPack.title || 'Untitled pack';
   hideModePicker();
   renderMasteryGauge(); renderLessonCards(); renderSettingsRows(); renderAlgoLane(); renderAlgoPresets();
-  setSetupPane('mastery');
+  setSetupPane('lessons');
   openModal(setupOverlay);
 }
 function closeSessionSetup() { closeModal(setupOverlay); hideModePicker(); if (!learnStage.classList.contains('visible')) { setAudioHiddenForLearn(false); } }
@@ -4005,10 +4008,7 @@ document.querySelectorAll('.lesson-card:not(.unavailable)').forEach(function (ca
   card.addEventListener('click', function () {
     var l = card.dataset.lesson;
     if (card.classList.contains('unavailable')) return;
-    if (l === 'flashcards') { sessionLessons.flashcards = !sessionLessons.flashcards; }
-    if (l === 'test') { sessionLessons.test = !sessionLessons.test; }
-    if (l === 'write') { sessionLessons.write = !sessionLessons.write; }
-    if (l === 'match') { sessionLessons.match = !sessionLessons.match; }
+    sessionLessons[l] = !sessionLessons[l];
     renderLessonCards(); saveSessionState();
   });
 });
@@ -4573,7 +4573,7 @@ function renderFolders() {
     var metaParts = [f.course, f.subject, f.semester, f.block].filter(Boolean).map(escapeHtml);
     var metaLine = buildMetadataText(
       metaParts,
-      f.meta_default || 'Add course details to organize this folder.'
+      ''
     );
     var pendingCount = Math.max(0, parseInt(f.pending_batch_count, 10) || 0);
     var pendingBadge = pendingCount > 0
@@ -4582,7 +4582,7 @@ function renderFolders() {
     var pendingHint = pendingCount > 0 && String(f.pending_batch_hint || '').trim()
       ? '<span class="item-sub pending-hint">' + escapeHtml(String(f.pending_batch_hint || '').trim()) + '</span>'
       : '';
-    var pinLine = f.is_pinned ? '<span class="item-sub pinned-note">Pinned</span>' : '';
+    var pinLine = f.is_pinned ? '<span class="item-sub pinned-note" title="Pinned folder">Pinned</span>' : '';
     var examLine = '';
     if (f.folder_id && !f.is_builtin && f.exam_date) {
       var parts = String(f.exam_date).split('-');
@@ -4602,19 +4602,19 @@ function renderFolders() {
     var safeFolderName = escapeHtml(String(f.name || 'folder'));
     if (!f.is_builtin) {
       var pinLabel = f.is_pinned ? 'Unpin' : 'Pin';
-      actions = '<span class="folder-head-actions"><button type="button" class="btn folder-mini-btn" data-toggle-pin="1" aria-label="' + pinLabel + ' ' + safeFolderName + '">' + pinLabel + '</button><button type="button" class="btn folder-mini-btn" data-new-subfolder="1" aria-label="Create subfolder in ' + safeFolderName + '">Subfolder</button><button type="button" class="btn folder-mini-btn" data-share-folder="1" aria-label="Share ' + safeFolderName + '">Share</button><button type="button" class="btn folder-mini-btn" data-edit-folder="1" aria-label="Edit ' + safeFolderName + '">Edit</button></span>';
+      actions = '<div class="folder-head-actions app-menu-panel"><button type="button" class="btn folder-mini-btn" data-toggle-pin="1" aria-label="' + pinLabel + ' ' + safeFolderName + '">' + pinLabel + '</button><button type="button" class="btn folder-mini-btn" data-new-subfolder="1" aria-label="Create subfolder in ' + safeFolderName + '">Subfolder</button><button type="button" class="btn folder-mini-btn" data-share-folder="1" aria-label="Share ' + safeFolderName + '">Share</button><button type="button" class="btn folder-mini-btn" data-edit-folder="1" aria-label="Edit ' + safeFolderName + '">Edit</button></div>';
     } else if (f.folder_id === BUILTIN_INTERVIEWS_FOLDER_ID || f.folder_id === BUILTIN_VOICE_NOTES_FOLDER_ID || f.folder_id === BUILTIN_ALL_FOLDER_ID) {
-      actions = '<span class="folder-head-actions"><button type="button" class="btn folder-mini-btn" data-new-subfolder="1" aria-label="Create subfolder in ' + safeFolderName + '">Subfolder</button></span>';
+      actions = '<div class="folder-head-actions app-menu-panel"><button type="button" class="btn folder-mini-btn" data-new-subfolder="1" aria-label="Create subfolder in ' + safeFolderName + '">Subfolder</button></div>';
     }
     if (actions) {
-      actions = '<details class="folder-action-menu"><summary aria-label="Folder actions for ' + safeFolderName + '">Actions</summary>' + actions + '</details>';
+      actions = '<details class="folder-action-menu" data-app-menu><summary aria-label="Folder actions for ' + safeFolderName + '">•••</summary>' + actions + '</details>';
     }
     var collapseButton = f.child_count > 0
       ? '<button type="button" class="folder-collapse-btn" data-folder-collapse aria-label="' + (f.is_collapsed ? 'Expand ' : 'Collapse ') + safeFolderName + '">' + (f.is_collapsed ? '+' : '-') + '</button>'
       : '<span class="folder-collapse-spacer" aria-hidden="true"></span>';
     setSafeInnerHtml(
       div,
-      '<div class="item-head folder-row-head"><button type="button" class="folder-row-main" data-folder-activate="1"' + (selectedFolderId === f.folder_id ? ' aria-current="page"' : '') + '><span class="item-title-wrap"><span class="item-title">' + escapeHtml(f.name) + '</span>' + pendingBadge + '</span><span class="item-sub">' + metaLine + '</span>' + pendingHint + pinLine + examLine + '</button>' + collapseButton + actions + '</div>'
+      '<div class="item-head folder-row-head"><button type="button" class="folder-row-main" data-folder-activate="1"' + (selectedFolderId === f.folder_id ? ' aria-current="page"' : '') + '><span class="item-title-wrap"><span class="item-title">' + escapeHtml(f.name) + '</span>' + pendingBadge + '</span>' + (metaParts.length ? '<span class="item-sub">' + metaLine + '</span>' : '') + pendingHint + pinLine + examLine + '</button>' + collapseButton + actions + '</div>'
     );
     var activateFolder = function () {
       selectedFolderId = f.folder_id;
@@ -4629,17 +4629,6 @@ function renderFolders() {
       renderPacks();
     };
     var activateButton = div.querySelector('[data-folder-activate]');
-    var actionMenu = div.querySelector('.folder-action-menu');
-    if (actionMenu) {
-      actionMenu.addEventListener('keydown', function (event) {
-        if (event.key === 'Escape' && actionMenu.open) {
-          event.preventDefault();
-          event.stopPropagation();
-          actionMenu.open = false;
-          actionMenu.querySelector('summary').focus();
-        }
-      });
-    }
     if (activateButton) {
       activateButton.addEventListener('click', function () { activateFolder(); });
     }
@@ -4877,6 +4866,10 @@ function renderPacks() {
     return;
   }
   var items = filteredPacks(); packList.innerHTML = '';
+  var locationLabel = document.getElementById('library-location');
+  var countLabel = document.getElementById('library-result-count');
+  if (locationLabel) locationLabel.textContent = selectedFolderId ? getFolderNameById(selectedFolderId) : 'All study packs';
+  if (countLabel) countLabel.textContent = items.length + (packsHasMore ? '+' : '') + ' pack' + (items.length === 1 ? '' : 's') + (searchInput.value.trim() ? ' found' : '');
   prunePackSelection();
   updatePackEmptyState();
   if (!items.length) {
@@ -4909,15 +4902,16 @@ function renderPacks() {
     var metaParts = [p.course, p.subject, p.semester, p.block].filter(Boolean).map(escapeHtml);
     var defaultFolderText = (p.mode === 'interview')
       ? 'Folder: Interviews'
-      : (p.mode === 'voice-note' ? 'Folder: Voice Notes' : 'Add course details to organize this pack.');
+      : (p.mode === 'voice-note' ? 'Folder: Voice Notes' : '');
     var metaText = buildMetadataText(
       metaParts,
       p.folder_name ? 'Folder: ' + escapeHtml(p.folder_name) : defaultFolderText
     );
-    div.setAttribute('aria-label', (isCheckedForDelete ? 'Selected for deletion, ' : '') + (p.title || 'Untitled pack'));
+    div.setAttribute('aria-label', (isCheckedForDelete ? 'Selected, ' : '') + (p.title || 'Untitled pack'));
     var planBadge = plannedPackIds.has(packId) ? '<span class="pack-in-plan-badge">In plan</span>' : '';
-    setSafeInnerHtml(div, '<div class="pack-row-main"><label class="pack-select-control"><input type="checkbox" data-pack-select aria-label="Select ' + titleText + '"' + (isCheckedForDelete ? ' checked' : '') + '><span class="pack-select-box" aria-hidden="true"></span></label><button type="button" class="pack-row-open" data-pack-open><span class="pack-row-content"><span class="item-head"><span class="item-title">' + titleText + planBadge + '</span></span><span class="item-sub">' + modeText + ' · ' + formatPackCountSummary(p.flashcards_count, p.test_questions_count) + '</span><span class="item-sub">' + metaText + '</span></span></button><button type="button" class="pack-quick-learn" data-pack-learn>Learn</button></div>');
+    setSafeInnerHtml(div, '<div class="pack-row-main"><label class="pack-select-control"><input type="checkbox" data-pack-select aria-label="Select ' + titleText + '"' + (isCheckedForDelete ? ' checked' : '') + '><span class="pack-select-box" aria-hidden="true"></span></label><button type="button" class="pack-row-open" data-pack-open><span class="pack-row-content"><span class="item-head"><span class="item-title">' + titleText + planBadge + '</span></span><span class="item-sub">' + ([Number(p.flashcards_count) > 0 ? formatItemCount(Number(p.flashcards_count), 'card') : '', Number(p.test_questions_count) > 0 ? formatItemCount(Number(p.test_questions_count), 'question') : ''].filter(Boolean).join(' · ') || modeText) + '</span><span class="item-sub">' + metaText + '</span></span></button><button type="button" class="pack-quick-learn" data-pack-learn>Learn</button></div>');
     var activatePack = function () {
+      document.getElementById('library-grid').classList.add('has-open-pack');
       selectedPackId = packId;
       renderPacks();
       openPack(packId);
@@ -4970,6 +4964,7 @@ function renderPacks() {
 function showPackEditor(v) {
   setHidden(packEmpty, !!v);
   packEditorWrap.classList.toggle('visible', v);
+  document.getElementById('library-grid').classList.toggle('has-open-pack', !!v);
   if (!v) { updatePackEmptyState(); }
   updatePrimaryStudyAction();
   updateShareActionAvailability();
@@ -5010,11 +5005,14 @@ function updatePackSummary() {
     addPackToPlanBtn.hidden = isVoiceNote;
     addPackToPlanBtn.textContent = isInPlan ? 'Open Study Plan' : 'Add to Study Plan';
   }
+  packStatCards.closest('.pack-stat').hidden = !(selectedPack.flashcards || []).length;
+  packStatTest.closest('.pack-stat').hidden = !(selectedPack.test_questions || []).length;
+  packStatNotes.closest('.pack-stat').hidden = !selectedPack.notes_markdown;
   /* Informative images tip */
   var imagesTipEl = document.getElementById('pack-images-tip');
   if (imagesTipEl) {
-    imagesTipEl.textContent = selectedPack.notes_markdown
-      ? 'Tip: Informative slide images do not appear in the generated notes. You can manually add any relevant slide images to your final document if desired.'
+    imagesTipEl.textContent = selectedPack.notes_markdown && selectedPack.mode === 'lecture' && !selectedPack.pictures_enabled
+      ? 'Slide images are available in your source document.'
       : '';
   }
 }
@@ -5034,18 +5032,24 @@ function renderFlashcardEditor(hi) {
   flashcardCount.textContent = cards.length + ' flashcards'; flashcardEditorList.innerHTML = '';
   if (!cards.length) { setSafeInnerHtml(flashcardEditorList, '<div class="empty">No flashcards yet. Add one to start editing.</div>'); return; }
   cards.forEach(function (card, ci) {
-    var row = document.createElement('div'); row.className = 'editor-card' + (ci === idx ? ' newly-added' : ''); row.dataset.rowIndex = String(ci);
+    var row = document.createElement('details'); row.open = ci === 0 || ci === idx; row.className = 'editor-card builder-expandable' + (ci === idx ? ' newly-added' : ''); row.dataset.rowIndex = String(ci);
     var frontId = 'editor-card-front-' + ci;
     var backId = 'editor-card-back-' + ci;
     var safeFront = escapeHtml(card.front || '');
     var safeBack = escapeHtml(card.back || '');
     setSafeInnerHtml(row, '<div class="editor-card-head"><span class="editor-card-title">Flashcard ' + (ci + 1) + '</span><button class="btn danger u-btn-compact" data-delete-card="' + ci + '">Delete</button></div><div class="field"><label for="' + frontId + '">Front</label><input id="' + frontId + '" data-card-field="front" data-card-index="' + ci + '" value="' + safeFront + '"></div><div class="field u-mt-8"><label for="' + backId + '">Back</label><textarea id="' + backId + '" data-card-field="back" data-card-index="' + ci + '">' + safeBack + '</textarea></div>');
+    var cardBody = document.createElement('div'); cardBody.className = 'builder-row-content';
+    while (row.firstChild) cardBody.appendChild(row.firstChild);
+    var cardSummary = document.createElement('summary');
+    setSafeInnerHtml(cardSummary, '<span class="builder-row-number">' + String(ci + 1).padStart(2, '0') + '</span><span data-item-summary>' + safeFront + '</span><span class="builder-row-expand-label">Edit</span>');
+    row.append(cardSummary, cardBody);
     flashcardEditorList.appendChild(row);
-    if (window.StudyPictures) window.StudyPictures.editor(row, card, selectedPack, queueInlineAutosave, renderFlashcardEditor);
+    if (window.StudyPictures) window.StudyPictures.editor(cardBody, card, selectedPack, queueInlineAutosave, renderFlashcardEditor);
   });
   flashcardEditorList.querySelectorAll('[data-card-field]').forEach(function (el) {
     el.addEventListener('input', function () {
       selectedPack.flashcards[parseInt(el.dataset.cardIndex, 10)][el.dataset.cardField] = el.value;
+      if (el.dataset.cardField === 'front') el.closest('.editor-card').querySelector('[data-item-summary]').textContent = el.value || 'New flashcard';
       queueInlineAutosave();
     });
   });
@@ -5109,7 +5113,7 @@ function renderQuestionEditor(hi) {
   questionCount.textContent = questions.length + ' practice questions'; questionEditorList.innerHTML = '';
   if (!questions.length) { setSafeInnerHtml(questionEditorList, '<div class="empty">No practice questions yet. Add one to start editing.</div>'); return; }
   questions.forEach(function (q, qi) {
-    var row = document.createElement('div'); row.className = 'editor-card' + (qi === idx ? ' newly-added' : ''); row.dataset.rowIndex = String(qi);
+    var row = document.createElement('details'); row.open = qi === 0 || qi === idx; row.className = 'editor-card builder-expandable' + (qi === idx ? ' newly-added' : ''); row.dataset.rowIndex = String(qi);
     var adStr = escapeHtml(getAnswerDisplay(q));
     var answerMenuId = 'q-answer-menu-' + qi;
     var answerButtonId = 'q-answer-button-' + qi;
@@ -5136,6 +5140,11 @@ function renderQuestionEditor(hi) {
       + q.options.map(function (o, oi) { var isActive = q.answer === o; return '<button type="button" role="option" aria-selected="' + (isActive ? 'true' : 'false') + '" class="app-select-item' + (isActive ? ' active' : '') + '" data-answer-item data-question-index="' + qi + '" data-option-index="' + oi + '">' + (['A', 'B', 'C', 'D'][oi]) + ': ' + escapeHtml(o || '(empty)') + '</button>'; }).join('')
       + '</div></div></div>'
       + '<div class="field u-mt-8"><label for="' + explanationId + '">Explanation</label><textarea id="' + explanationId + '" data-question-field="explanation" data-question-index="' + qi + '">' + safeExplanation + '</textarea></div>');
+    var questionBody = document.createElement('div'); questionBody.className = 'builder-row-content';
+    while (row.firstChild) questionBody.appendChild(row.firstChild);
+    var questionSummary = document.createElement('summary');
+    setSafeInnerHtml(questionSummary, '<span class="builder-row-number">' + String(qi + 1).padStart(2, '0') + '</span><span data-item-summary>' + escapeHtml(q.question || 'New question') + '</span><span class="builder-row-expand-label">Edit</span>');
+    row.append(questionSummary, questionBody);
     questionEditorList.appendChild(row);
   });
   questionEditorList.querySelectorAll('[data-question-field="question"],[data-question-field="explanation"]').forEach(function (el) {
@@ -5771,7 +5780,7 @@ function renderCodingAiPanel() {
     return '<div class="coding-ai-preview-item"><span class="coding-ai-preview-dot"></span><span class="coding-ai-preview-text">' + escapeHtml(truncateCodingText(quote.text || '', 140)) + '</span></div>';
   }).join('');
   setSafeInnerHtml(codingAiPanel,
-    '<div class="coding-ai-panel-head"><div><div class="coding-ai-panel-title">AI draft ready to review</div><div class="coding-ai-panel-sub">Nothing is applied until you accept it. Preview the suggested codebook and quotations below.</div></div><div class="coding-ai-counts">' + proposedCodes.length + ' codes &middot; ' + proposedQuotes.length + ' quotations</div></div>' +
+    '<div class="coding-ai-panel-head"><div><div class="coding-ai-panel-title">AI draft ready to review</div><div class="coding-ai-panel-sub">Nothing is applied until you accept it. Preview the suggested codebook and quotations below.</div></div><div class="coding-ai-counts">' + proposedCodes.length + (proposedCodes.length === 1 ? ' code' : ' codes') + ' &middot; ' + proposedQuotes.length + (proposedQuotes.length === 1 ? ' quotation' : ' quotations') + '</div></div>' +
     '<div class="coding-ai-preview-grid"><div class="coding-ai-preview-box"><div class="coding-ai-preview-box-title">Suggested codes</div><div class="coding-ai-preview-list">' + (codePreview || '<div class="coding-code-picker-empty">No suggested codes.</div>') + '</div></div><div class="coding-ai-preview-box"><div class="coding-ai-preview-box-title">Suggested quotations</div><div class="coding-ai-preview-list">' + (quotePreview || '<div class="coding-code-picker-empty">No suggested quotations.</div>') + '</div></div></div>' +
     '<div class="coding-ai-panel-actions"><button type="button" class="btn" data-ai-draft-action="reject">Reject Draft</button><button type="button" class="btn primary" data-ai-draft-action="accept">Accept Draft</button></div>'
   );
@@ -5853,7 +5862,7 @@ function openCodingWorkspace() {
   document.body.classList.add('coding-workspace-open');
   setBodyScrollLocked(true);
   ensureCodingLoaded(true).then(function () {
-    if (codingTranscript && typeof codingTranscript.focus === 'function') codingTranscript.focus();
+    if (codingTranscript && typeof codingTranscript.focus === 'function') codingTranscript.focus({ preventScroll: true });
   }).catch(function () {});
 }
 function closeCodingWorkspace() {
@@ -6998,28 +7007,39 @@ builderBlockInput.addEventListener('input', function () {
   markBuilderDirty(true);
 });
 builderNotesInput.addEventListener('input', function () { if (builderDraft) { builderDraft.notes_markdown = builderNotesInput.value; markBuilderDirty(true); } });
+function focusNewBuilderItem(list, selector) {
+  var rows = list.querySelectorAll('.builder-row');
+  var row = rows[rows.length - 1];
+  if (!row) return;
+  row.open = true; row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  var input = row.querySelector(selector); if (input) input.focus({ preventScroll: true });
+}
 builderAddCardBtn.addEventListener('click', function () {
   if (!builderDraft) { return; }
   builderDraft.flashcards.push({ front: '', back: '' });
   renderBuilderFlashcards();
+  focusNewBuilderItem(builderFlashcardList, '[data-fc-field="front"]');
   markBuilderDirty(true);
 });
 builderAddCardBatchBtn.addEventListener('click', function () {
   if (!builderDraft) { return; }
   for (var i = 0; i < 5; i++) { builderDraft.flashcards.push({ front: '', back: '' }); }
   renderBuilderFlashcards();
+  focusNewBuilderItem(builderFlashcardList, '[data-fc-field="front"]');
   markBuilderDirty(true);
 });
 builderAddQuestionBtn.addEventListener('click', function () {
   if (!builderDraft) { return; }
   builderDraft.test_questions.push(createDefaultQuestion());
   renderBuilderQuestions();
+  focusNewBuilderItem(builderQuestionList, '[data-q-field="question"]');
   markBuilderDirty(true);
 });
 builderAddQuestionBatchBtn.addEventListener('click', function () {
   if (!builderDraft) { return; }
   for (var i = 0; i < 3; i++) { builderDraft.test_questions.push(createDefaultQuestion()); }
   renderBuilderQuestions();
+  focusNewBuilderItem(builderQuestionList, '[data-q-field="question"]');
   markBuilderDirty(true);
 });
 builderFlashcardList.addEventListener('input', function (event) {
@@ -7030,6 +7050,7 @@ builderFlashcardList.addEventListener('input', function (event) {
     var field = target.dataset.fcField;
     if (builderDraft.flashcards[index]) {
       builderDraft.flashcards[index][field] = target.value;
+      if (field === 'front') target.closest('.builder-row').querySelector('summary > span:nth-child(2)').textContent = target.value || 'New flashcard';
       markBuilderDirty(true);
     }
   }
@@ -7371,7 +7392,13 @@ deletePackBtn.addEventListener('click', function () {
   });
 });
 
+var exportAnnotatedNotesBtn = document.getElementById('export-annotated-notes-btn');
+if (exportAnnotatedNotesBtn) exportAnnotatedNotesBtn.addEventListener('click', function () {
+  setExportMenuOpen(false);
+  downloadAnnotatedNotesPdf();
+});
 exportPackNotesBtn.addEventListener('click', function () {
+  setExportMenuOpen(false);
   if (!selectedPackId) { showToast('Select a study pack first.', 'error'); return; }
   showToast('Lecture notes export started.', 'success');
   downloadStudyPackNotes(selectedPackId, 'docx').catch(function (e) { showToast(e.message || 'Could not export notes.', 'error'); });
@@ -8655,3 +8682,11 @@ document.addEventListener('keydown', function (e) {
 });
 updateHighlightHistoryButtons();
 updateShareActionAvailability();
+
+// Mobile library navigation keeps the selected pack and scroll context intact.
+var libraryBackButton = document.getElementById('library-back-btn');
+if (libraryBackButton) libraryBackButton.addEventListener('click', function () {
+  document.getElementById('library-grid').classList.remove('has-open-pack');
+  var selectedRow = packList.querySelector('.item.active [data-pack-open]');
+  if (selectedRow) selectedRow.focus();
+});
