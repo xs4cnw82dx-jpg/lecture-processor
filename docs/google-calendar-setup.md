@@ -1,5 +1,9 @@
 # Study Plan calendars: deployment and verification
 
+**Activation is deliberately deferred to avoid extra costs.** Start with
+[PRODUCTION_READINESS.md](../PRODUCTION_READINESS.md) for the owner's current
+decision, existing production configuration, and the request to enable this later.
+
 Study Plan supports direct, one-way Google synchronization and private ICS subscriptions for Google, Apple and other calendar clients. Subscriptions work independently of Google OAuth configuration. The UI reports unavailable direct connection instead of offering a broken authorization button.
 
 ## Configure Google access
@@ -71,7 +75,7 @@ Operational signals are sanitized connection status, last success, pending gener
 
 ### Local acceptance status (3 October 2026)
 
-The existing Google Cloud project was inspected without changing configuration. It had the Firebase sign-in OAuth client, but no dedicated calendar client; Calendar API and Cloud Scheduler were not shown among enabled services. Direct Google synchronization remains disabled until the configuration above and deployment are approved and completed.
+The initial inspection found only the Firebase sign-in OAuth client and no enabled Calendar API or Cloud Scheduler. During guided setup, the owner approved enabling Calendar API and creating a dedicated calendar OAuth client; its credentials and encryption key were saved privately in Render. A keyless worker service account was created, but setup stopped before its permissions or any calendar jobs were deployed when the owner decided to defer additional costs. OAuth scope changes were cancelled without saving. `GOOGLE_CALENDAR_ENABLED=0` and the disabled connect button were verified in production. See the readiness file for exact resource names and remaining steps.
 
 Apple Calendar's actual Mac setup path was verified as **File → New Calendar Subscription** (Dutch: **Archief → Nieuw agenda-abonnement…**). An isolated synthetic feed from the implemented service reached Apple's insecure-connection warning because its localhost URL used HTTP. The test was cancelled without bypassing that warning or adding a subscription. Actual Apple event creation, refresh, and cancellation still require acceptance against the public HTTPS feed. No user calendar events were changed.
 
