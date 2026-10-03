@@ -19,6 +19,8 @@
   var authBanner = document.getElementById('dashboard-auth-banner');
   var DASHBOARD_CACHE_KEY = 'dashboard_summary';
   var currentUser = null;
+  var dueRequest = 0;
+  var nextPlannedPack = false;
 
   function setDashboardLoading(isLoading) {
     if (!dashboardPage) return;
@@ -183,7 +185,9 @@
     var nextSession = future.find(function (session) { return session.status !== 'completed' && session.status !== 'cancelled' && session.status !== 'skipped'; });
     if (nextSession) {
       document.getElementById('dash-continue-title').textContent = nextSession.title || 'Your next study session';
-      document.getElementById('dash-continue-copy').textContent = 'Your next session is planned. Open Study Plan when you’re ready to focus.';
+      document.getElementById('dash-continue-copy').textContent = 'Choose your study mode and begin your planned session.';
+      nextPlannedPack = !!nextSession.pack_id;
+      if (nextPlannedPack) document.getElementById('dash-continue-link').href = studyEntry(nextSession.pack_id, nextSession.session_id || nextSession.id);
       document.getElementById('dash-continue-link').textContent = 'Continue studying →';
     }
     future.forEach(function (session) {
@@ -215,6 +219,12 @@
       packsList.innerHTML = '<div class="empty-state-card"><h3>Upload your first lecture</h3><p>Create a study pack first, then your latest packs will appear here for quick access.</p><div class="empty-state-actions"><a class="empty-state-link primary" href="/lecture-notes">Upload first lecture</a><a class="empty-state-link" href="/study">Open Study Library</a></div></div>';
       return;
     }
+    if (!nextPlannedPack && packs[0]) {
+      document.getElementById('dash-continue-title').textContent = packs[0].title || 'Your latest study pack';
+      document.getElementById('dash-continue-copy').textContent = 'Pick a study mode and continue with your latest pack.';
+      document.getElementById('dash-continue-link').textContent = 'Continue studying →';
+      document.getElementById('dash-continue-link').href = studyEntry(packs[0].study_pack_id);
+    }
     packs.slice(0, 5).forEach(function (pack) {
       var row = document.createElement('a');
       row.className = 'list-item plain-link-reset';
@@ -225,7 +235,7 @@
       var modeLabel = displayFormatUtils && typeof displayFormatUtils.formatPackMode === 'function'
         ? displayFormatUtils.formatPackMode(pack.mode || '')
         : 'Study Pack';
-      var materialCounts = [Number(pack.flashcards_count) ? pack.flashcards_count + ' cards' : '', Number(pack.test_questions_count) ? pack.test_questions_count + ' questions' : ''].filter(Boolean);
+      var materialCounts = [Number(pack.flashcards_count) ? pack.flashcards_count + (Number(pack.flashcards_count) === 1 ? ' card' : ' cards') : '', Number(pack.test_questions_count) ? pack.test_questions_count + (Number(pack.test_questions_count) === 1 ? ' question' : ' questions') : ''].filter(Boolean);
       meta.textContent = [modeLabel].concat(materialCounts).join(' · ');
       row.appendChild(title);
       row.appendChild(meta);
@@ -253,6 +263,15 @@
   }
 
   async function loadDashboard(user) {
+    nextPlannedPack = false;
+    dueRequest += 1;
+    document.getElementById('dash-due-panel').hidden = true;
+    document.getElementById('dash-due-list').replaceChildren();
+    document.getElementById('dash-due-open').setAttribute('aria-expanded', 'false');
+    document.getElementById('dash-continue-link').href = '/plan';
+    document.getElementById('dash-continue-title').textContent = 'Ready for your next session?';
+    document.getElementById('dash-continue-copy').textContent = 'Review your study plan or choose a pack from your library.';
+    document.getElementById('dash-continue-link').textContent = 'Open Study Plan →';
     setDashboardLoading(true);
     if (!user) {
       setSignedOutHero(true);
@@ -272,12 +291,14 @@
         fetchRecentStudyPacks(headers),
         fetchUpcomingSessions(token).catch(function () { return { __dashboardLoadFailed: true }; })
       ]);
+      if (currentUser !== user) return;
       var sessionsFailed = !!(result[2] && result[2].__dashboardLoadFailed);
       var packsFailed = !result[1].ok;
       sessions = sessionsFailed ? [] : (Array.isArray(result[2]) ? result[2] : []);
       var snapshot = null;
       if (result[0].ok) {
         var progressPayload = await result[0].json();
+        if (currentUser !== user) return;
         var summary = progressPayload && progressPayload.summary ? progressPayload.summary : progressPayload;
         if (!summary || typeof summary !== 'object') summary = {};
         snapshot = toSnapshot(summary);
@@ -291,17 +312,71 @@
         renderRecentPacksError();
       } else {
         var packsPayload = await result[1].json();
+        if (currentUser !== user) return;
         renderRecentPacks(dashboardVisiblePacks((packsPayload && packsPayload.study_packs) || []));
       }
     } catch (_) {
+      if (currentUser !== user) return;
       hydrateCachedSnapshot(user);
       renderUpcomingSessionsError();
       renderRecentPacksError();
     } finally {
-      bindDashboardRetry();
-      setDashboardLoading(false);
+      if (currentUser === user) { bindDashboardRetry(); setDashboardLoading(false); }
     }
   }
+
+  function studyEntry(packId, sessionId) {
+    return '/study?pack_id=' + encodeURIComponent(packId || '') + '&mode=learn' + (sessionId ? '&plan_item_id=' + encodeURIComponent(sessionId) : '');
+  }
+
+  async function loadDueCards() {
+    var user = currentUser, requestId = ++dueRequest;
+    var list = document.getElementById('dash-due-list');
+    list.replaceChildren();
+    var message = document.createElement('p'); message.className = 'dashboard-due-message';
+    message.textContent = user ? 'Finding your due cards…' : 'Sign in to see your due cards.';
+    list.appendChild(message);
+    if (!user) return;
+    try {
+      var token = await user.getIdToken();
+      var response = await fetch('/api/study-progress/due', { headers: { Authorization: 'Bearer ' + token } });
+      if (!response.ok) throw new Error('Could not load due cards.');
+      var data = await response.json();
+      if (currentUser !== user || requestId !== dueRequest) return;
+      list.replaceChildren();
+      dueEl.textContent = data.due_count + ' card' + (data.due_count === 1 ? '' : 's');
+      if (!data.packs || !data.packs.length) {
+        message.textContent = 'You’re all caught up. Your previously studied cards will appear here when they’re ready for review.';
+        list.appendChild(message); return;
+      }
+      data.packs.forEach(function (pack) {
+        var section = document.createElement('section'); section.className = 'dashboard-due-pack';
+        var head = document.createElement('div'); head.className = 'dashboard-due-pack-head';
+        var title = document.createElement('h3'); title.textContent = pack.title;
+        var review = document.createElement('a'); review.className = 'hero-btn';
+        review.href = studyEntry(pack.study_pack_id) + '&review=due';
+        review.textContent = 'Review ' + pack.due_count + ' due card' + (pack.due_count === 1 ? '' : 's');
+        head.append(title, review); section.appendChild(head);
+        var cards = document.createElement('ol'); cards.className = 'dashboard-due-cards';
+        (pack.cards || []).forEach(function (card) { var item = document.createElement('li'); item.textContent = card.front; cards.appendChild(item); });
+        section.appendChild(cards); list.appendChild(section);
+      });
+    } catch (_) {
+      if (currentUser !== user || requestId !== dueRequest) return;
+      list.replaceChildren(); message.textContent = 'Could not load due cards. Your progress is safe; try again.';
+      var retry = document.createElement('button'); retry.type = 'button'; retry.className = 'hero-btn secondary'; retry.textContent = 'Try again'; retry.addEventListener('click', loadDueCards);
+      list.append(message, retry);
+    }
+  }
+  document.getElementById('dash-due-open').addEventListener('click', function () {
+    var panel = document.getElementById('dash-due-panel');
+    panel.hidden = false;
+    if (!panel.open) panel.querySelector('summary').click();
+    this.setAttribute('aria-expanded', 'true');
+    loadDueCards();
+    panel.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' });
+  });
+  document.getElementById('dash-due-panel').addEventListener('toggle', function () { document.getElementById('dash-due-open').setAttribute('aria-expanded', String(this.open)); });
 
   function handleExternalProgressEvent(user, payload) {
     if (!user || !payload || (payload.user_id && payload.user_id !== user.uid)) return;

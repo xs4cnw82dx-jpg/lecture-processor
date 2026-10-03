@@ -319,7 +319,8 @@ details.app-disclosure > summary:focus-visible { outline:3px solid #2558d933; ou
 .app-disclosure-chevron { width:16px; height:16px; margin-left:auto; flex:none; stroke:#7b8da9; stroke-width:1.8; transition:transform 220ms cubic-bezier(.22,1,.36,1),stroke 160ms ease; }
 details.app-disclosure[open] > summary > .app-disclosure-chevron { transform:rotate(180deg); stroke:#2558d9; }
 details.app-disclosure.is-menu-closing > summary > .app-disclosure-chevron { transform:rotate(0); }
-details.app-disclosure:not([data-app-menu]) > summary { padding:12px 14px; font-size:.875rem; line-height:1.45; }
+details.app-disclosure:not([data-app-menu]) > summary { padding:12px 14px; font-size:.875rem; line-height:1.45; background:#eef1ff; color:#284bb7; border:1px solid #dce3fa; }
+details.app-disclosure:not([data-app-menu]) > summary:hover { background:#e5ebff; color:#2043a6; }
 details.app-disclosure:not([data-app-menu])[open] > summary { color:#2558d9; }
 details.app-action-menu { position:relative; border:0; padding:0; }
 details.app-action-menu > summary { display:inline-flex; min-height:40px; gap:10px; padding:9px 13px; border:1px solid #d9e2ef; border-radius:11px; background:#fff; box-shadow:0 1px 2px #17233c06; font-size:.82rem; line-height:1.2; white-space:nowrap; }

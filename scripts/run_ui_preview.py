@@ -50,6 +50,9 @@ def main() -> None:
              patch('lecture_processor.runtime.container._start_cleanup_thread_once'):
             app = create_app()
         app.config['TESTING'] = True
+        if os.environ.get('PLANNER_STATEFUL_FIXTURE') == '1':
+            from scripts.planner_preview_fixture import install
+            install(app)
         app.jinja_env.auto_reload = True
         app.run(host='127.0.0.1', port=args.port, debug=False, use_reloader=False, threaded=True)
 

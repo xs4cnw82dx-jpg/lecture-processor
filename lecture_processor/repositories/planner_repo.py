@@ -59,13 +59,17 @@ def commit_study_plan(db, uid, *, proposal, goal, preferences, sessions, cancell
 
     if db is None:
         with _PLAN_WRITE_LOCK:
-            check(get_study_plan_proposal(db, uid).to_dict(), get_study_goal(db, uid, goal['goal_id']).to_dict(),
+            check(get_study_plan_proposal(db, uid, proposal['proposal_id']).to_dict(), get_study_goal(db, uid, goal['goal_id']).to_dict(),
                   get_study_plan_preferences(db, uid).to_dict(), list_planner_sessions_by_uid(db, uid, 2001, start_date=start_date))
             set_study_goal(db, uid, goal['goal_id'], goal, merge=False)
             set_study_plan_preferences(db, uid, preferences, merge=False)
             for item in cancellations + sessions:
                 set_planner_session(db, uid, item['id'], item, merge=False)
-            set_study_plan_proposal(db, uid, proposal)
+            current = get_study_plan_proposal(db, uid).to_dict()
+            if current.get('proposal_id') == proposal['proposal_id']:
+                set_study_plan_proposal(db, uid, proposal)
+            else:
+                _set_memory_doc(_PROPOSALS_STORE, f"{uid}__{proposal['proposal_id']}", {**proposal, 'uid': uid}, merge=False)
         if mark_dirty:
             mark_dirty()
         return
@@ -73,7 +77,11 @@ def commit_study_plan(db, uid, *, proposal, goal, preferences, sessions, cancell
 
     @firestore.transactional
     def write(transaction):
-        proposal_ref = study_plan_proposal_doc_ref(db, uid)
+        current_proposal_ref = study_plan_proposal_doc_ref(db, uid)
+        version_ref = study_plan_proposal_doc_ref(db, uid, proposal['proposal_id'])
+        version_snapshot = version_ref.get(transaction=transaction)
+        current_proposal = current_proposal_ref.get(transaction=transaction).to_dict() or {}
+        proposal_ref = version_ref if version_snapshot.exists else current_proposal_ref
         goal_ref = study_goal_doc_ref(db, goal['goal_id'])
         preferences_ref = study_plan_preferences_doc_ref(db, uid)
         raw_proposal = proposal_ref.get(transaction=transaction).to_dict() or {}
@@ -91,10 +99,65 @@ def commit_study_plan(db, uid, *, proposal, goal, preferences, sessions, cancell
         for item in cancellations + sessions:
             transaction.set(planner_session_doc_ref(db, uid, item['id']), item)
         transaction.set(proposal_ref, {**proposal, 'uid': uid})
+        if proposal_ref is not current_proposal_ref and current_proposal.get('proposal_id') == proposal['proposal_id']:
+            transaction.set(current_proposal_ref, {**proposal, 'uid': uid})
         if mark_dirty:
             mark_dirty(batch=transaction)
 
     write(db.transaction())
+
+
+def archive_study_goal(db, uid, goal_id, *, expected_revision, today, now_ts, mark_dirty=None):
+    """Archive a goal and cancel its future automatic commitments in one write."""
+    def prepare(current, records):
+        if current.get('uid') != uid:
+            raise PlannerRevisionConflict()
+        if current.get('status') == 'archived':
+            return current, []
+        if int(current.get('revision', 0)) != expected_revision:
+            raise PlannerRevisionConflict()
+        goal = {**current, 'status': 'archived', 'revision': expected_revision + 1, 'updated_at': now_ts}
+        if len(records) > 2000:
+            raise ValueError('There are too many future sessions to safely remove this goal. Contact support; nothing changed.')
+        cancellations = [{**item, 'status': 'cancelled', 'cancellation_reason': 'goal_deleted',
+                          'revision': int(item.get('revision', 0)) + 1, 'updated_at': now_ts}
+                         for item in records if item.get('goal_id') == goal_id and item.get('origin') == 'automatic'
+                         and item.get('status') == 'planned' and not item.get('active_run_id')]
+        if len(cancellations) > 495:
+            raise ValueError('This goal has too many future sessions to remove safely at once. Contact support; nothing changed.')
+        return goal, cancellations
+
+    if db is None:
+        with _PLAN_WRITE_LOCK:
+            goal, cancellations = prepare(get_study_goal(db, uid, goal_id).to_dict(),
+                list_planner_sessions_by_uid(db, uid, 2001, start_date=today))
+            set_study_goal(db, uid, goal_id, goal, merge=False)
+            for item in cancellations:
+                set_planner_session(db, uid, item['id'], item, merge=False)
+        if mark_dirty:
+            mark_dirty()
+        return goal
+    from google.cloud import firestore
+
+    @firestore.transactional
+    def write(transaction):
+        goal_ref = study_goal_doc_ref(db, goal_id)
+        current = goal_ref.get(transaction=transaction).to_dict() or {}
+        query = apply_where(apply_where(db.collection('planner_sessions'), 'uid', '==', uid), 'date', '>=', today)
+        records = []
+        for doc in transaction.get(query):
+            raw = doc.to_dict() or {}
+            raw.setdefault('id', doc.id.split('__', 1)[-1])
+            records.append(raw)
+        goal, cancellations = prepare(current, records)
+        transaction.set(goal_ref, goal)
+        for item in cancellations:
+            transaction.set(planner_session_doc_ref(db, uid, item['id']), item)
+        if mark_dirty:
+            mark_dirty(batch=transaction)
+        return goal
+
+    return write(db.transaction())
 
 
 @dataclass
@@ -332,24 +395,37 @@ def list_study_goals_by_uid(db, uid, limit=100):
     return records
 
 
-def study_plan_proposal_doc_ref(db, uid):
-    return db.collection('study_plan_proposals').document(uid)
+def study_plan_proposal_doc_ref(db, uid, proposal_id=''):
+    return db.collection('study_plan_proposals').document(f'{uid}__{proposal_id}' if proposal_id else uid)
 
 
-def get_study_plan_proposal(db, uid):
+def get_study_plan_proposal(db, uid, proposal_id=''):
+    key = f'{uid}__{proposal_id}' if proposal_id else uid
     if db is None:
-        return _memory_snapshot(_PROPOSALS_STORE, uid)
-    doc = study_plan_proposal_doc_ref(db, uid).get()
-    return PlannerSnapshot(bool(getattr(doc, 'exists', False)), doc.to_dict() or {} if getattr(doc, 'exists', False) else {})
+        snapshot = _memory_snapshot(_PROPOSALS_STORE, key)
+    else:
+        doc = study_plan_proposal_doc_ref(db, uid, proposal_id).get()
+        snapshot = PlannerSnapshot(bool(getattr(doc, 'exists', False)), doc.to_dict() or {} if getattr(doc, 'exists', False) else {})
+    if proposal_id and not snapshot.exists:
+        current = get_study_plan_proposal(db, uid)
+        if current.to_dict().get('proposal_id') == proposal_id:
+            return current
+    return snapshot
 
 
 def set_study_plan_proposal(db, uid, payload):
-    safe_payload = dict(payload or {})
-    safe_payload['uid'] = uid
+    safe_payload = {**dict(payload or {}), 'uid': uid}
+    proposal_id = safe_payload.get('proposal_id', '')
     if db is None:
         _set_memory_doc(_PROPOSALS_STORE, uid, safe_payload, merge=False)
+        if proposal_id:
+            _set_memory_doc(_PROPOSALS_STORE, f'{uid}__{proposal_id}', safe_payload, merge=False)
         return
-    study_plan_proposal_doc_ref(db, uid).set(safe_payload, merge=False)
+    batch = db.batch()
+    batch.set(study_plan_proposal_doc_ref(db, uid), safe_payload)
+    if proposal_id:
+        batch.set(study_plan_proposal_doc_ref(db, uid, proposal_id), safe_payload)
+    batch.commit()
 
 
 def study_activity_doc_ref(db, uid, session_id):

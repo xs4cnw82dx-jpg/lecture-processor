@@ -220,7 +220,8 @@ def test_audio_retention_warnings_and_download_controls_are_present():
     assert 'id="audio-download"' in index_template
 
     assert 'batch-audio-retention-note' in batch_template
-    assert 'generated playback audio are temporary and can be deleted' in batch_template
+    assert 'Clearing browser site data' in batch_template
+    assert 'Server uploads and generated playback audio also expire' in batch_template
     assert 'Render' not in batch_template
     status_js = Path('static/js/batch-status.js').read_text(encoding='utf-8')
     assert 'bs-retention' in status_js
@@ -265,6 +266,7 @@ def test_feature_calculator_sliders_have_labels_and_focus_style():
     assert '<label class="calc-slider-label" for="calc-lectures">Lectures per week</label>' in features_template
     assert '<label class="calc-slider-label" for="calc-weeks">Weeks per semester</label>' in features_template
     assert '<label class="calc-slider-label" for="calc-minutes">Minutes per lecture (manual notes)</label>' in features_template
+    assert '<label class="calc-slider-label" for="calc-review">Minutes per lecture (upload, review & correction)</label>' in features_template
     assert '.calc-slider:focus-visible{outline:2px solid var(--primary);outline-offset:4px}' in features_css
 
 
@@ -273,7 +275,7 @@ def test_features_heading_preserves_readable_text_boundary():
 
     heading = re.search(r"<h1>(.*?)</h1>", features_template, re.S).group(1)
     assert re.search(r"[.!?]\s*<br>\s*<span", heading)
-    assert "A plan for your progress." in heading
+    assert "The recording explains why." in heading
 
 
 def test_calendar_validation_errors_are_field_owned():
@@ -305,7 +307,7 @@ def test_study_folder_rows_do_not_nest_actions_inside_button_role():
 
     assert '<div class="item-head folder-row-head"><button type="button" class="folder-row-main" data-folder-activate="1"' in study_js
     assert '<div class="folder-head-actions app-menu-panel"><button type="button" class="btn folder-mini-btn" data-toggle-pin="1" aria-label="' in study_js
-    assert "'</button>' + collapseButton + actions + '</div>'" in study_js
+    assert "'</span></button>' + collapseButton + actions + '</div>'" in study_js
 
 
 def test_study_pack_rows_use_real_buttons_for_main_actions():
@@ -431,8 +433,8 @@ def test_shared_shell_hidden_and_live_region_contracts():
     assert "currentPath === '/batch_mode_slides_extraction'" in app_shell_js
     assert "currentPath === '/batch_mode_audio_transcription'" in app_shell_js
     assert "currentPath === '/batch_mode_text_combine'" in app_shell_js
-    assert "href === '/instant_batch_mode'" in app_shell_js
-    assert "currentPath === '/instant_batch_mode_audio_transcription'" in app_shell_js
+    assert "currentPath === '/instant_batch_mode'" in app_shell_js
+    assert "currentPath.indexOf('/instant_batch_mode_') === 0" in app_shell_js
     assert "link.setAttribute('aria-current', 'page');" in app_shell_js
     assert "creditsLink.setAttribute('aria-label', 'Buy credits, ' + creditsTotalLabel.textContent);" in app_shell_js
 

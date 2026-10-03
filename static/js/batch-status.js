@@ -8,7 +8,7 @@
   function needsPolling(b) { return !terminal(b.status) || count(b.credits_refund_pending) > 0 || ['pending', 'sending', 'queued'].indexOf(b.completion_email_status) >= 0; }
   function status(s) { return labels[s] || 'Status unavailable'; }
   function pill(s) { return '<span class="bs-pill bs-' + (labels[s] ? escape(s) : 'queued') + '">' + status(s) + '</span>'; }
-  function mode(b) { return (modes[b.mode] || 'Batch') + ' · ' + (b.processing_strategy === 'instant' ? 'Instant' : 'Standard'); }
+  function mode(b) { return (modes[b.mode] || 'Batch') + ' · ' + (b.processing_strategy === 'instant' ? 'Instant' : 'Deferred'); }
   function date(value) { return value ? new Date(Number(value) * 1000).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Not available'; }
   function progress(b) { return count(b.completed_rows) + ' of ' + count(b.total_rows) + ' completed' + (count(b.failed_rows) ? ' · ' + count(b.failed_rows) + ' failed' : ''); }
   function credits(b) {

@@ -45,7 +45,7 @@
         <article class="shell-panel stat-card">
           <div class="stat-label">Due today</div>
           <div class="stat-value" id="dash-due"><span class="dashboard-skeleton" aria-label="Loading"></span></div>
-          <div class="stat-sub"><a href="/study">Review in your library →</a></div>
+          <div class="stat-sub"><button type="button" class="dashboard-text-action" id="dash-due-open" aria-controls="dash-due-panel" aria-expanded="false">See due cards →</button></div>
         </article>
         <article class="shell-panel stat-card">
           <div class="stat-label">Daily goal</div>
@@ -54,6 +54,10 @@
         </article>
       </section>
 
+      <details class="shell-panel dashboard-due-panel" id="dash-due-panel" hidden>
+        <summary><span>Cards ready to review</span></summary>
+        <div id="dash-due-list" aria-live="polite"></div>
+      </details>
       <section class="dashboard-grid two-col">
         <article class="shell-panel">
           <div class="section-head">

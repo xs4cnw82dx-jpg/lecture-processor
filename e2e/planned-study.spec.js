@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const { readFileSync } = require('node:fs');
 
-async function plannedLibrary(page, { notes = false } = {}) {
+async function plannedLibrary(page, { notes = false, chooseMode = 'review', capturePicker = false } = {}) {
   const firebaseStub = `(function () {
     var user = { uid: 'owner', email: 'student@example.com', displayName: 'Student', getIdToken: function () { return Promise.resolve('test-token'); } };
     var auth = { currentUser: user, setPersistence: function () { return Promise.resolve(); }, authStateReady: function () { return Promise.resolve(); }, onAuthStateChanged: function (cb) { setTimeout(function () { cb(user); }, 0); return function () {}; }, signOut: function () { return Promise.resolve(); } };
@@ -18,12 +18,14 @@ async function plannedLibrary(page, { notes = false } = {}) {
   let session = { id: 'session_focus', title: 'Study Anatomy 1.2 — Muscles', pack_id: pack.study_pack_id, duration: 45, status: 'planned', revision: 2 };
   let run = { activity_id: 'run_focus', generation: 0, source: 'tracked', content_fingerprint: 'content_v1', queue: notes ? [{ id: 'notes', type: 'notes', seconds: 60 }] : [{ id: 'fc_0', type: 'fc', index: 0, reason: 'Due today' }, { id: 'fc_1', type: 'fc', index: 1, reason: 'New' }, { id: 'q_0', type: 'q', index: 0, reason: 'New' }],
     answers: {}, retry_done: [], active_seconds: 0, slot_seconds: 0, notes_seconds: 0, duration_seconds: 2700, timer_mode: 'countdown', run_status: 'paused', checkpoint_revision: 0 };
-  const checkpoints = [], completions = [], progressWrites = [];
+  const checkpoints = [], completions = [], progressWrites = [], starts = [];
   await page.route('**/api/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname;
     let body = {};
     if (path.endsWith('/session_focus/run')) {
-      const data = request.postDataJSON();
+      const data = request.postDataJSON(); starts.push(data);
+      if (data.study_mode === 'flashcards') run.queue = run.queue.filter(item => item.type === 'fc');
+      if (data.study_mode === 'test') run.queue = run.queue.filter(item => item.type === 'q');
       if (!run.slot_seconds) run.timer_mode = data.timer_mode || 'countdown';
       body = { session, run };
     } else if (path.endsWith('/runs/run_focus')) {
@@ -46,8 +48,14 @@ async function plannedLibrary(page, { notes = false } = {}) {
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
   });
   await page.goto('/study?pack_id=anatomy-pack&mode=learn&plan_item_id=session_focus');
+  await expect(page.locator('#mode-picker')).toBeVisible();
+  if (capturePicker) {
+    require('node:fs').mkdirSync('/tmp/product-feedback-learning-evidence',{recursive:true});
+    await page.screenshot({path:'/tmp/product-feedback-learning-evidence/picker-planned-'+page.viewportSize().width+'.png',animations:'disabled'});
+  }
+  await page.locator('[data-study-mode='+chooseMode+']').click();
   await expect(page.locator('.planned-study-overlay')).toBeVisible();
-  return { checkpoints, completions, progressWrites, run: () => run };
+  return { checkpoints, completions, progressWrites, starts, run: () => run };
 }
 
 test('planned session reviews picture cards and questions, bounded retry, explicit finish and reopen', async ({ page }, testInfo) => {
@@ -93,6 +101,7 @@ test('partial progress resumes after reload without replaying the answered card'
   await page.getByRole('button', { name: 'Got it', exact: true }).click();
   await expect.poll(() => fixture.run().answers.fc_0 && fixture.run().answers.fc_0.correct).toBe(true);
   await page.reload();
+  await page.locator('[data-study-mode=resume]').click();
   await expect(page.locator('.planned-study-work')).toContainText('What movement does the biceps perform?');
   await expect(page.locator('[data-progress-label]')).toContainText('1 / 3');
   await page.getByRole('button', { name: 'Session progress', exact: true }).click();
@@ -133,4 +142,28 @@ test('Pomodoro break stays inside the slot and hidden tabs pause without empty c
   await page.getByRole('button', { name: 'Session progress', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Finish session', exact: true })).toBeDisabled();
   expect(fixture.completions).toHaveLength(0);
+});
+
+
+test('planned picker offers supported modes and starts selected tracked material on mobile',async({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  const fixture=await plannedLibrary(page,{chooseMode:'test',capturePicker:true});
+  expect(fixture.starts[0].study_mode).toBe('test');
+  expect(fixture.run().queue.map(item=>item.type)).toEqual(['q']);
+  await expect(page.locator('.planned-study-work')).toContainText('Which movement bends the elbow?');
+});
+
+test('mode changes cannot discard unsynced planned progress on this device', async({page})=>{
+  const fixture=await plannedLibrary(page);
+  await page.addInitScript(() => {
+    const key='planned_run_owner_run_focus';
+    const saved=JSON.parse(localStorage.getItem(key) || '{}');
+    Object.assign(saved,{activity_id:'run_focus',plan_item_id:'session_focus',study_mode:'review',slot_seconds:60,answers:{fc_0:{type:'fc',correct:true}}});
+    localStorage.setItem(key,JSON.stringify(saved));
+  });
+  await page.reload();
+  await page.locator('[data-study-mode=test]').click();
+  await expect(page.locator('#mode-picker-context')).toContainText('Resume saved session');
+  expect(fixture.starts).toHaveLength(1);
+  await expect(page.locator('#mode-picker')).toBeVisible();
 });

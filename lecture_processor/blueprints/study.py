@@ -6,6 +6,7 @@ from lecture_processor.services import (
     interview_coding_service,
     planner_api_service,
     study_api_service,
+    study_progress_service,
     study_plan_service,
     study_run_service,
     study_picture_service,
@@ -175,6 +176,11 @@ def delete_planner_session(session_id):
 def update_study_progress():
     runtime = get_runtime()
     return study_api_service.update_study_progress(runtime, request)
+
+
+@study_bp.route('/api/study-progress/due', methods=['GET'])
+def get_due_study_cards():
+    return study_progress_service.get_due_study_cards(get_runtime(), request)
 
 
 @study_bp.route('/api/study-progress/summary', methods=['GET'])

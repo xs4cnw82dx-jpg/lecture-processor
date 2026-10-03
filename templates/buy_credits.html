@@ -19,8 +19,8 @@
     <main class="app-shell-page buy-credits-page">
       <section class="credits-heading">
         <span class="credits-eyebrow">Your study workspace</span>
-        <h1>A little fuel for your next idea.</h1>
-        <p>Choose the material you want to process, then pick a bundle. Your current balances are available in the header.</p>
+        <h1>Credits for the work you need.</h1>
+        <p>Choose a credit category, then a bundle. Your current balances are available in the header.</p>
       </section>
       <section class="shell-panel" id="buy-credits-auth-panel" hidden>
         <h2>Sign in to buy credits</h2>
@@ -29,6 +29,10 @@
       </section>
       <section class="payment-result" id="payment-result" role="status" aria-live="polite" hidden><div><strong id="payment-result-title"></strong><p id="payment-result-message"></p></div><button type="button" id="payment-result-retry" class="refresh-history-btn" hidden>Check again</button></section>
       <section class="pricing-grid" aria-label="Credit bundles">{{ render_pricing_catalog(pricing_catalog, variant='page') }}</section>
+      <section class="credit-guide" aria-labelledby="credit-guide-title">
+        <div><span class="credits-eyebrow">What a credit covers</span><h2 id="credit-guide-title">Extraction and add-ons, explained.</h2><p>These uses share the same slides extraction / add-on balance.</p><p>For Lecture Notes and Interview Transcription, each recording can be up to 500 MB. Lecture slide files can be up to 50 MB. Credits are charged per run, rather than per minute.</p></div>
+        <dl><div><dt>Slides or reader extraction <span>1 credit per run</span></dt><dd>Extract a PDF or PowerPoint in Slides Extraction, or process a document, image collection, or public webpage with a Reader tool.</dd></div><div><dt>Voice Notes study tools <span>1 credit per generation</span></dt><dd>Generate flashcards, practice questions, or both from a saved Voice Note transcript.</dd></div><div><dt>Interview extras <span>1 credit per selected extra</span></dt><dd>Add a concise summary or a transcript organized into sections. Selecting both uses 2 add-on credits, in addition to the interview transcription credit.</dd></div></dl>
+      </section>
       <section class="shell-panel purchase-history-panel" id="purchase-history">
         <div class="purchase-history-head">
           <h2>Purchase History</h2>

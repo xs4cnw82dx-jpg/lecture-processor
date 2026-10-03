@@ -563,7 +563,8 @@
       title.setAttribute('aria-live', 'polite');
       function moveMonth(amount) {
         cursor = new Date(cursor.getFullYear(), cursor.getMonth() + amount, 1, 12);
-        render(true);
+        render(false);
+        panel.querySelector(amount < 0 ? '.app-date-heading button:first-child' : '.app-date-heading button:last-child').focus();
       }
       head.append(button('‹', 'Previous month', function () { moveMonth(-1); }), title, button('›', 'Next month', function () { moveMonth(1); }));
       var days = document.createElement('div');
@@ -599,7 +600,7 @@
       footer.appendChild(button('Close', null, function () { close(true); }));
       panel.append(head, days, footer);
       if (focusDay) {
-        var target = panel.querySelector('[data-date="' + iso(cursor) + '"]:not(:disabled)') || panel.querySelector('[data-date]:not(:disabled)');
+        var target = panel.querySelector('[data-date="' + iso(cursor) + '"]:not(:disabled)') || panel.querySelector('[data-date]:not(:disabled)') || panel.querySelector('.app-date-heading button');
         if (target) { target.tabIndex = 0; target.focus(); }
       }
     }
@@ -692,8 +693,11 @@
   }
 
   document.addEventListener('click', function (event) {
+    // Month navigation replaces its button before this event reaches document.
+    // The original event path still identifies the calendar that was clicked.
+    var path = typeof event.composedPath === 'function' ? event.composedPath() : [];
     document.querySelectorAll('.app-date-panel:not([hidden])').forEach(function (panel) {
-      if (panel._close && !panel.parentElement.contains(event.target)) panel._close(false);
+      if (panel._close && path.indexOf(panel) < 0 && !panel.parentElement.contains(event.target)) panel._close(false);
     });
   });
 

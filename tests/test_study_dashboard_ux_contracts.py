@@ -108,7 +108,9 @@ def test_study_pack_modes_and_question_only_packs_have_user_friendly_defaults():
     assert "formatStudyPackMode(p.mode || '')" in study_js
     assert 'function getContentPreferredEditorPane(pack, currentPane)' in study_js
     assert "setEditorPane(getContentPreferredEditorPane(selectedPack, activeEditorPane));" in study_js
-    assert "openLearnStageWithMode('test', fullscreenFromUrl);" in study_js
+    assert 'openDirectModePicker();' in study_js
+    assert "hasTest ? ['test'] : []" in study_js
+    assert 'showModePicker(modes);' in study_js
 
 
 def test_study_tabs_expose_tab_roles_and_keyboard_support():

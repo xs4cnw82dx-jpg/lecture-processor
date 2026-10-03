@@ -1,338 +1,50 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Features · Lecture Processor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Features - Lecture Processor</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/public-header.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/features.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
 </head>
 <body>
-  {% set public_page = 'features' %}
-  {% include '_public_header.html' %}
+  {% set public_page = 'features' %}{% include '_public_header.html' %}
+  <main>
+    <section class="feature-hero feature-width">
+      <div><p class="feature-eyebrow">Inside Lecture Processor</p><h1>The slides say what.<br><span>The recording explains why.</span></h1><p class="feature-lead">Keep both. Transcribe a lecture recording, extract the text from PDF or PowerPoint slides, and combine them into comprehensive, structured study notes.</p><div class="feature-actions"><a href="/dashboard" class="feature-button primary">Start Studying <span aria-hidden="true">↗</span></a><a href="#capture" class="feature-button">Explore the workflow</a></div></div>
+      <div class="source-composition" aria-label="Illustrative example of combining slide text and a recording">
+        <div class="source-piece"><span>PDF / POWERPOINT</span><strong>Long-term memory</strong><p>Encoding → storage → retrieval</p></div>
+        <div class="source-piece recording-piece"><span>LECTURE RECORDING</span><p>“Retrieval is an active process. Try recalling an idea before you look at your notes.”</p><div class="waveform" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+        <div class="combined-piece"><div><span>COMBINED NOTES</span><small>Illustrative example</small></div><h2>How retrieval supports memory</h2><p>Information is encoded, stored, and later retrieved. Practising retrieval means bringing an idea to mind before checking the source.</p><p class="example-takeaway">Study prompt: explain retrieval in your own words.</p></div>
+      </div>
+    </section>
+    <nav class="feature-jump-nav feature-width" aria-label="Explore features"><a href="#capture">Lecture notes</a><a href="#interviews">Interviews</a><a href="#batch">Batch & tools</a><a href="#modes">Study & plan</a><a href="#exports">Exports</a></nav>
 
-  <!-- Hero -->
-  <section class="section hero">
-    <div class="section-inner">
-      <div class="hero-kicker-row">
-        <div class="hero-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> From material to understanding</div>
+    <section class="feature-section feature-width" id="capture">
+      <div class="section-heading"><p class="feature-eyebrow">From two sources to one document</p><h2>Less switching between<br>slides and recordings.</h2><p>A slide often contains the outline; the spoken explanation supplies the context. Lecture Notes brings those sources together so you can review one connected document.</p></div>
+      <div class="workflow-layout" id="workflow"><ol class="workflow-list"><li><span>1</span><div><h3>Add your sources</h3><p>Upload PDF or PPTX slides and an audio recording. You can also record in your browser or import a supported lecture link.</p></div></li><li><span>2</span><div><h3>Transcribe, extract, combine</h3><p>The recording becomes a transcript. Text is extracted from the slides. Both are combined into structured notes.</p></div></li><li><span>3</span><div><h3>Review and make it yours</h3><p>Read and edit the result, then use optional flashcards and practice questions to work with the material.</p></div></li></ol>
+      <aside class="import-example"><div class="import-example-heading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/></svg><h3>Already in your LMS?</h3></div><p>Paste a supported Brightspace or Kaltura lecture-page URL into the audio import field. If the page cannot be resolved, use its direct media playlist URL.</p><div class="example-url">Lecture page URL <span aria-hidden="true">→</span> Imported audio</div><p class="fine-copy">Import availability depends on the recording host and its access requirements. The walkthrough shows the Brightspace steps.</p><a href="https://youtu.be/Sz3W9l8J1q0" target="_blank" rel="noopener noreferrer" class="text-link">Watch the Brightspace walkthrough <span aria-hidden="true">↗</span></a></aside></div>
+    </section>
 
-      </div>
-      <h1>A home for your notes.<br><span class="gradient">A plan for your progress.</span></h1>
-      <p class="hero-sub">Bring your lecture material together, build a useful study pack, and return to a clear next step every day.</p>
-      <div class="hero-actions">
-        <a href="/dashboard" class="hero-btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Start Studying</a>
-        <a href="#workflow" class="hero-btn secondary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg> See How It Works</a>
-      </div>
-      <nav class="feature-jump-nav" aria-label="Explore features"><a href="#capture">Capture & create</a><a href="#modes">Practice & recall</a><a href="#organize">Organize & plan</a><a href="#calculator">Estimate your time</a></nav>
-    </div>
-  </section>
+    <section class="interview-section" id="interviews"><div class="feature-width interview-layout"><div class="interview-copy"><p class="feature-eyebrow">For conversations and research</p><h2>An interview you can<br>read, quote, and code.</h2><p>Interview Transcription formats the recording with timecodes and speaker labels. Add a concise summary or a version organized into sections when you need them.</p><p>Open the transcript in the coding workspace to label quotations, organize codes, and review an AI coding draft before accepting it.</p><a href="/interview-transcription" class="feature-button">Open Interview Transcription <span aria-hidden="true">→</span></a><p class="fine-copy">Optional summary and sectioned-transcript outputs use separate add-on credits.</p></div>
+      <figure class="transcript-example"><figcaption><span>INTERVIEW TRANSCRIPT</span><span>Formatting example</span></figcaption><div class="transcript-line"><time>00:04</time><div><strong>Onderzoeker</strong><p>Wat helpt je om een college te onthouden?</p></div></div><div class="transcript-line"><time>00:09</time><div><strong>Geïnterviewde</strong><p>Ik probeer eerst zelf uit te leggen wat ik heb geleerd. Daarna kijk ik terug in mijn aantekeningen.</p></div></div><div class="transcript-line"><time>00:21</time><div><strong>Onderzoeker</strong><p>En wat doe je als je iets niet meer weet?</p></div></div><div class="transcript-line"><time>00:25</time><div><strong>Geïnterviewde</strong><p>Dan markeer ik dat onderwerp om het later opnieuw te oefenen.</p></div></div><p class="transcript-caption">Timestamps and speaker labels keep each turn easy to follow.</p></figure>
+    </div></section>
 
-  <!-- Workflow -->
-  <section class="section section-alt" id="workflow">
-    <div class="section-inner">
-      <div class="workflow-title reveal">
-        <h2>A familiar rhythm, from start to finish</h2>
-        <p>Capture what matters. Make it useful. Come back and practice.</p>
-      </div>
-      <div class="workflow-steps reveal">
-        <div class="workflow-step">
-          <div class="workflow-step-num">1</div>
-          <div class="workflow-step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg></div>
-          <h3>Upload</h3>
-          <p>Upload slides + audio, interview audio, or use Tools beta for document/image extraction.</p>
-          <div class="workflow-connector"></div>
-        </div>
-        <div class="workflow-step">
-          <div class="workflow-step-num">2</div>
-          <div class="workflow-step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.77 1.05 1.37 1.22H21a2 2 0 0 1 0 4h-.09c-.6.17-1.11.62-1.37 1.22z"></path></svg></div>
-          <h3>Process</h3>
-          <p>AI transcribes, structures, and extracts key concepts automatically.</p>
-          <div class="workflow-connector"></div>
-        </div>
-        <div class="workflow-step">
-          <div class="workflow-step-num">3</div>
-          <div class="workflow-step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg></div>
-          <h3>Generate</h3>
-          <p>Get structured notes, flashcards, and practice tests in seconds.</p>
-          <div class="workflow-connector"></div>
-        </div>
-        <div class="workflow-step">
-          <div class="workflow-step-num">4</div>
-          <div class="workflow-step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><line x1="2" y1="12" x2="22" y2="12"></line></svg></div>
-          <h3>Study</h3>
-          <p>Choose from four interactive study modes tailored to how you learn.</p>
-          <div class="workflow-connector"></div>
-        </div>
-        <div class="workflow-step">
-          <div class="workflow-step-num">5</div>
-          <div class="workflow-step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></div>
-          <h3>Master</h3>
-          <p>Track progress with smart mastery algorithms and ace your exams.</p>
-        </div>
-      </div>
-    </div>
-  </section>
+    <section class="feature-section feature-width" id="batch"><div class="section-heading"><p class="feature-eyebrow">A whole week of material</p><h2>Handle a queue.<br>Or just one small task.</h2><p>Use batch processing for several items, and focused tools when you only need a transcript or an extraction.</p></div>
+      <div class="batch-layout"><article class="batch-feature"><div class="batch-feature-copy"><h3>One batch, clear results.</h3><p>Choose a processing type: lecture pairs, slides, interviews, audio files, or slide-text/transcript-text pairs. Set shared options, adjust individual rows, and follow the batch on Batch Status.</p><a href="/batch_mode" class="text-link">Open Batch Processing <span aria-hidden="true">→</span></a></div><div class="batch-example" aria-label="Illustrative batch results"><div><span class="example-file">1</span><span><strong>Memory and learning</strong><small>Slides + recording</small></span><span class="example-ready">Ready</span></div><div><span class="example-file">2</span><span><strong>Research methods</strong><small>Slides + recording</small></span><span class="example-ready">Ready</span></div><div><span class="example-file">3</span><span><strong>Cell biology</strong><small>Slides + recording</small></span><span class="example-processing">Processing</span></div><p>Download completed results individually or together as a ZIP.</p></div></article>
+      <div class="tool-directory"><a href="/general-transcriber"><strong>General Transcriber</strong><span>Turn an audio file into a transcript.</span><b aria-hidden="true">↗</b></a><a href="/document-reader"><strong>Document Reader</strong><span>Extract content from a document, with an optional question.</span><b aria-hidden="true">↗</b></a><a href="/image-reader"><strong>Image Reader</strong><span>Read text and content from images or screenshots.</span><b aria-hidden="true">↗</b></a><a href="/url-reader"><strong>URL Reader</strong><span>Extract content from an accessible public webpage.</span><b aria-hidden="true">↗</b></a><a href="/voice-notes"><strong>Voice Notes</strong><span>Record or import audio, then work with its transcript.</span><b aria-hidden="true">↗</b></a><a href="/tools" class="tool-directory-all"><strong>Explore all tools</strong><span>Find the right starting point for your material.</span><b aria-hidden="true">→</b></a></div></div>
+    </section>
 
-  <!-- Capture & Process -->
-  <section class="section" id="capture">
-    <div class="section-inner">
-      <div class="fg-header reveal">
-        <h2>Capture Any Lecture Format</h2>
-        <p>No matter how your lecture is delivered, we process it into structured study material.</p>
-      </div>
-      <div class="fg-grid reveal">
-        <div class="fg-card">
-          <div class="fg-card-icon purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg></div>
-          <h3>Audio Recordings</h3>
-          <p>Upload recorded lectures in any audio format. Our AI transcribes speech with high accuracy, then structures the content into organized study materials with key topics identified.</p>
-        </div>
-        <div class="fg-card">
-          <div class="fg-card-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg></div>
-          <h3>Video Lectures</h3>
-          <p>From recorded seminars to screen-captured tutorials - extract the audio, transcribe it, and generate comprehensive study packs without watching the full video again.</p>
-        </div>
-        <div class="fg-card">
-          <div class="fg-card-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg></div>
-          <h3>Documents &amp; PDFs (Tools Beta)</h3>
-          <p>Use Tools to read PDFs/PPTX and extract structured markdown notes. This utility is separate from full lecture processing and currently in beta.</p>
-        </div>
-        <div class="fg-card">
-          <div class="fg-card-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>
-          <h3>Images &amp; Photos (Tools Beta)</h3>
-          <p>Use Image Reader in Tools to run OCR + structured extraction from photos and screenshots. This utility is currently in beta.</p>
-        </div>
-      </div>
-    </div>
-  </section>
+    <section class="study-section" id="modes"><div class="feature-width"><div class="section-heading"><p class="feature-eyebrow">Make the material work for you</p><h2>Read it. Recall it.<br>Come back to it.</h2></div><div class="study-layout"><div class="study-mode-list"><article><h3>Flashcards</h3><p>Think of your answer, reveal the card, and grade your recall.</p></article><article><h3>Practice tests</h3><p>Answer multiple-choice questions and review explanations.</p></article><article><h3>Write</h3><p>Type an answer and compare it with the saved answer. Configure text matching to ignore case, articles, or bracketed text.</p></article><article><h3>Match</h3><p>Pair terms with their definitions in a timed round.</p></article></div><div class="study-preview"><p class="feature-eyebrow">Try a sample flashcard</p><button class="feature-sample-card" id="feature-sample-card" type="button" aria-pressed="false"><span id="feature-card-side">QUESTION · EXAMPLE</span><strong id="feature-card-text">What is active recall?</strong><small id="feature-card-hint">Reveal answer ↗</small></button><p class="fine-copy">This example does not record study progress.</p></div></div><div class="organize-strip" id="organize"><div><h3>Your Library keeps it together.</h3><p>Organize packs in folders, edit the material, and track what you have studied.</p></div><div><h3>Study Plan gives it a place in your week.</h3><p>Choose study packs, set a goal and deadline, and plan sessions around your availability.</p></div></div></div></section>
 
-  <!-- Study Modes -->
-  <section class="section section-alt" id="modes">
-    <div class="section-inner">
-      <div class="fg-header reveal">
-        <h2>Four Ways to Study, One Platform</h2>
-        <p>Each study mode targets a different type of recall. Use them together for complete mastery.</p>
-      </div>
-      <div class="feature-preview" aria-label="Example flashcard">
-        <div class="feature-preview-context"><span>TRY A STUDY CARD</span><h3>A moment of active recall.</h3><p>Read the prompt, think of your answer, then turn the card over. This is a sample, so your progress is not recorded.</p></div>
-        <button class="feature-sample-card" id="feature-sample-card" type="button" aria-pressed="false"><span id="feature-card-side">QUESTION · EXAMPLE</span><strong id="feature-card-text">What is active recall?</strong><small id="feature-card-hint">Reveal answer ↗</small></button>
-      </div>
-      <div class="modes-grid reveal">
-        <div class="mode-card">
-          <div class="mode-card-icon mc-purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><line x1="2" y1="12" x2="22" y2="12"></line></svg></div>
-          <h3>Flashcards</h3>
-          <p>Distraction-free flashcards with smooth 3D flip animations. Navigate with keyboard shortcuts for fast-paced review sessions.</p>
-          <span class="mode-card-tag tag-popular">Recall</span>
-        </div>
-        <div class="mode-card">
-          <div class="mode-card-icon mc-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg></div>
-          <h3>Practice tests</h3>
-          <p>AI-generated practice tests with instant feedback and explanations. Track your score as you progress through questions.</p>
-          <span class="mode-card-tag tag-popular">Understanding</span>
-        </div>
-        <div class="mode-card">
-          <div class="mode-card-icon mc-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></div>
-          <h3>Write</h3>
-          <p>Type answers from memory with smart grading that respects your settings - case sensitivity, articles, brackets, and exact matching.</p>
-          <span class="mode-card-tag tag-new">Practice</span>
-        </div>
-        <div class="mode-card">
-          <div class="mode-card-icon mc-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg></div>
-          <h3>Match</h3>
-          <p>Race the clock to pair terms with definitions. Compete against your own high scores with timed rounds on a 4x3 grid.</p>
-          <span class="mode-card-tag tag-new">Practice</span>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Smart Learning -->
-  <section class="section" id="smart">
-    <div class="section-inner">
-      <div class="fg-header reveal">
-        <h2>Smart Learning That Adapts to You</h2>
-        <p>Our algorithm learns what you know and what you do not, so you spend time where it matters most.</p>
-      </div>
-      <div class="fg-grid reveal">
-        <div class="fg-card">
-          <div class="fg-card-icon purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></div>
-          <h3>Mastery Tracking</h3>
-          <p>Every card you study is categorized as New, Familiar, or Mastered. Visual mastery rings give you instant clarity on where you stand before an exam - no guessing required.</p>
-        </div>
-        <div class="fg-card">
-          <div class="fg-card-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg></div>
-          <h3>5-Slot Algorithm Builder</h3>
-          <p>Customize how cards are selected for each session. Build a five-slot lane with New, Familiar, Retry, Remaster, Hard, and Random priorities, or start from a preset like Balanced or Fix Mistakes.</p>
-        </div>
-        <div class="fg-card">
-          <div class="fg-card-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09"></path></svg></div>
-          <h3>Granular Session Settings</h3>
-          <p>Fine-tune every session to your needs: swap question and answer sides, toggle case sensitivity, ignore articles and determiners, remove bracket content, or force exact matching for maximum rigor.</p>
-        </div>
-        <div class="fg-card">
-          <div class="fg-card-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"></path><path d="M12 20V4"></path><path d="M6 20v-6"></path></svg></div>
-          <h3>Persistent Progress</h3>
-          <p>Study progress is saved to your account, with local preferences for your study sessions. Return to your library or plan to choose your next step.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Organization -->
-  <section class="section section-alt" id="organize">
-    <div class="section-inner">
-      <div class="fg-header reveal">
-        <h2>Organize Your Entire Semester</h2>
-        <p>Keep every lecture, course, and subject structured so nothing falls through the cracks.</p>
-      </div>
-      <div class="fg-grid reveal">
-        <div class="fg-card">
-          <div class="fg-card-icon purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></div>
-          <h3>Folder System</h3>
-          <p>Group study packs into folders by course, module, or topic. Drag and drop packs between folders to reorganize without losing any data or progress.</p>
-        </div>
-        <div class="fg-card">
-          <div class="fg-card-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"></line><line x1="4" y1="15" x2="20" y2="15"></line><line x1="10" y1="3" x2="8" y2="21"></line><line x1="16" y1="3" x2="14" y2="21"></line></svg></div>
-          <h3>Rich Metadata</h3>
-          <p>Tag every pack and folder with course name, subject, semester, and block. Filter and search instantly across your entire library to find exactly what you need before an exam.</p>
-        </div>
-        <div class="fg-card">
-          <div class="fg-card-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></div>
-          <h3>Search &amp; Filter</h3>
-          <p>Instantly filter your entire study library by title, course, subject, or any metadata field. Find the right study pack in seconds, even with dozens of courses loaded.</p>
-        </div>
-        <div class="fg-card">
-          <div class="fg-card-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></div>
-          <h3>CSV Export</h3>
-          <p>Export any set of flashcards or practice questions as a clean CSV file. Import into other tools, share with classmates, or print for offline study before exam day.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Time Calculator -->
-  <section class="section" id="calculator">
-    <div class="section-inner">
-      <div class="fg-header reveal">
-        <h2>Make room for focused study</h2>
-        <p>Explore an estimate based on your own study schedule.</p>
-      </div>
-      <div class="calc-wrap reveal">
-        <div class="calc-card">
-          <h3>Your Study Time Calculator</h3>
-          <div class="calc-slider-row">
-            <label class="calc-slider-label" for="calc-lectures">Lectures per week</label>
-            <input type="range" class="calc-slider" id="calc-lectures" min="1" max="20" value="6">
-            <span class="calc-slider-val" id="calc-lectures-val">6</span>
-          </div>
-          <div class="calc-slider-row">
-            <label class="calc-slider-label" for="calc-weeks">Weeks per semester</label>
-            <input type="range" class="calc-slider" id="calc-weeks" min="4" max="30" value="15">
-            <span class="calc-slider-val" id="calc-weeks-val">15</span>
-          </div>
-          <div class="calc-slider-row">
-            <label class="calc-slider-label" for="calc-minutes">Minutes per lecture (manual notes)</label>
-            <input type="range" class="calc-slider" id="calc-minutes" min="10" max="90" value="40" step="5">
-            <span class="calc-slider-val" id="calc-minutes-val">40</span>
-          </div>
-          <p class="calc-assumption">Illustration only: assumes 5 minutes per lecture to upload and review. Processing time, correction, and actual study time vary.</p>
-          <div class="calc-divider"></div>
-          <div class="calc-result" aria-live="polite">
-            <div class="calc-result-item">
-              <div class="calc-result-num" id="calc-manual">60h</div>
-              <div class="calc-result-label">Manual study prep</div>
-            </div>
-            <div class="calc-result-item">
-              <div class="calc-result-num highlight" id="calc-lp">12h</div>
-              <div class="calc-result-label">With Lecture Processor</div>
-            </div>
-            <div class="calc-result-item">
-              <div class="calc-result-num highlight" id="calc-saved">48h</div>
-              <div class="calc-result-label">Hours saved per semester</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Comparison Table -->
-  <section class="section section-alt" id="compare">
-    <div class="section-inner">
-      <div class="fg-header reveal">
-        <h2>Manual Study Prep vs. Lecture Processor</h2>
-        <p>How each task fits into your workflow.</p>
-      </div>
-      <div class="comparison reveal">
-        <table class="comparison-table">
-          <thead>
-            <tr>
-              <th>Task</th>
-              <th>Manual</th>
-              <th>Lecture Processor</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td class="col-task">Transcribe a 1-hour lecture</td>
-              <td class="col-manual">2 - 3 hours</td>
-              <td class="col-lp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>Varies by recording</td>
-            </tr>
-            <tr>
-              <td class="col-task">Create structured notes</td>
-              <td class="col-manual">30 - 60 minutes</td>
-              <td class="col-lp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>Automatic</td>
-            </tr>
-            <tr>
-              <td class="col-task">Build 30 flashcards</td>
-              <td class="col-manual">45 - 90 minutes</td>
-              <td class="col-lp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>Automatic</td>
-            </tr>
-            <tr>
-              <td class="col-task">Write practice questions</td>
-              <td class="col-manual">60+ minutes</td>
-              <td class="col-lp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>Automatic</td>
-            </tr>
-            <tr>
-              <td class="col-task">Organize by course/semester</td>
-              <td class="col-manual">Manual filing</td>
-              <td class="col-lp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>Built-in folders</td>
-            </tr>
-            <tr>
-              <td class="col-task">Track mastery progress</td>
-              <td class="col-manual">Manual tracking</td>
-              <td class="col-lp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>Automatic tracking</td>
-            </tr>
-            <tr>
-              <td class="col-task">Adaptive study algorithm</td>
-              <td class="col-manual">Manual tracking</td>
-              <td class="col-lp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>5-slot custom algo</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
-  <!-- CTA -->
-  <section class="cta-section">
-    <div class="cta-card reveal">
-      <h2>Ready to Study Smarter?</h2>
-      <p>Start with your own materials and build a study routine that works for you.</p>
-      <a href="/dashboard" class="cta-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Open your workspace</a>
-    </div>
-  </section>
-
-  <!-- Footer -->
-  <footer class="footer">
-    <p>{% include '_footer_links.html' %}</p>
-  </footer>
-
-  <script src="{{ url_for('static', filename='js/features.js') }}"></script>
+    <section class="feature-section feature-width" id="exports"><div class="export-layout"><div class="section-heading"><p class="feature-eyebrow">Keep working your way</p><h2>Your notes.<br>In a useful format.</h2><p>Review your generated material, edit what needs attention, and take it with you.</p><a href="/study" class="text-link">Open your Study Library <span aria-hidden="true">→</span></a></div><dl class="export-list"><div><dt>Word & Markdown</dt><dd>Export study-pack notes as an editable Word document or Markdown text.</dd></div><div><dt>Annotated PDF</dt><dd>Export your highlighted Library notes as a PDF, with your annotations.</dd></div><div><dt>CSV & practice PDFs</dt><dd>Export flashcards or questions as CSV; download practice PDFs with or without answers.</dd></div><div><dt>Batch ZIP</dt><dd>Collect completed batch outputs in one download, with an optional combined Word document.</dd></div></dl></div>
+      <details class="time-estimator" id="calculator"><summary>Explore your own preparation-time estimates</summary><div class="calc-card"><p>This is a comparison of the times you enter, not a measured speed or savings claim. Include time for checking and correcting generated material.</p><div class="calc-inputs"><div class="calc-slider-row"><label class="calc-slider-label" for="calc-lectures">Lectures per week</label><input type="range" class="calc-slider" id="calc-lectures" min="1" max="20" value="6"><span id="calc-lectures-val">6</span></div><div class="calc-slider-row"><label class="calc-slider-label" for="calc-weeks">Weeks per semester</label><input type="range" class="calc-slider" id="calc-weeks" min="4" max="30" value="15"><span id="calc-weeks-val">15</span></div><div class="calc-slider-row"><label class="calc-slider-label" for="calc-minutes">Minutes per lecture (manual notes)</label><input type="range" class="calc-slider" id="calc-minutes" min="10" max="90" value="40" step="5"><span id="calc-minutes-val">40</span></div><div class="calc-slider-row"><label class="calc-slider-label" for="calc-review">Minutes per lecture (upload, review & correction)</label><input type="range" class="calc-slider" id="calc-review" min="5" max="90" value="15" step="5"><span id="calc-review-val">15</span></div></div><div class="calc-result" aria-live="polite"><div><strong id="calc-manual">60h</strong><span>Manual preparation estimate</span></div><div><strong id="calc-lp">23h</strong><span>Upload & review estimate</span></div><div><strong id="calc-saved">37h</strong><span>Difference between estimates</span></div></div></div></details>
+    </section>
+    <section class="feature-final feature-width"><h2>Start with the lecture<br>in front of you.</h2><a href="/lecture-notes" class="feature-button primary">Create lecture notes <span aria-hidden="true">→</span></a></section>
+  </main>
+  <footer class="footer">{% include '_footer_links.html' %}</footer>
+  <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script><script src="{{ url_for('static', filename='js/features.js') }}"></script>
 </body>
 </html>

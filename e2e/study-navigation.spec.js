@@ -77,7 +77,7 @@ for (const width of [320, 390, 1280]) {
     await page.locator('#share-modal-close').click();
     await folder.locator('summary').click();
     await folder.locator('[data-toggle-pin]').click();
-    await expect(folder.locator('.pinned-note')).toHaveText('Pinned');
+    await expect(folder.locator('.folder-pin')).toHaveAttribute('aria-label','Pinned folder');
     await folder.locator('summary').click();
     await expect(folder.locator('[data-toggle-pin]')).toHaveText('Unpin');
     await page.keyboard.press('Escape');

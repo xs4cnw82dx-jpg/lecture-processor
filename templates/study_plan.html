@@ -64,8 +64,8 @@
             </article>
 
             <aside class="goal-health-card" id="goal-health-card">
-              <div class="study-plan-kicker">Goal health</div>
-              <div id="goal-health-content"></div>
+              <div class="study-plan-kicker">Your study goals</div>
+              <div id="goal-health-content"></div><p id="goal-management-error" class="field-error" role="alert" hidden></p>
             </aside>
           </div>
 
@@ -102,11 +102,13 @@
               <p id="schedule-week-summary"></p>
             </div>
             <div class="schedule-actions">
+              <button type="button" class="btn" id="schedule-goals-btn">Edit goals</button>
               <button type="button" class="btn" id="calendar-connections-btn">Add to calendar</button>
               <button type="button" class="btn primary" id="schedule-add-session-btn">Add session</button>
             </div>
           </div>
           <p class="schedule-help" id="schedule-help">Select a session to study, log work done, skip, or move it. You can reopen completed sessions without losing your learning progress.</p>
+          <div class="schedule-pack-legend" id="schedule-pack-legend" aria-label="Study pack colors"></div>
           <div class="week-calendar" id="week-calendar" aria-label="Weekly study schedule"></div>
           <div class="mobile-agenda" id="mobile-agenda"></div>
         </section>
@@ -208,17 +210,17 @@
       </section>
       <section class="wizard-step" data-wizard-step="4" hidden>
         <p class="study-plan-kicker">Step 4 of 4</p>
-        <h2>Review before anything changes</h2>
+        <h2>Review before anything changes</h2><p class="wizard-edit-note" id="wizard-edit-note" hidden>Your existing goal is updated only when you accept. Completed work, learning progress, and sessions already in progress stay intact.</p>
         <div class="preview-summary" id="wizard-preview-summary"></div>
         <p class="preview-notice" id="wizard-preview-notice" hidden></p>
         <div class="capacity-warning" id="wizard-capacity-warning" hidden></div>
         <div class="preview-session-list" id="wizard-preview-sessions"></div>
       </section>
       </div>
-      <div class="wizard-actions">
+      <div class="wizard-footer"><div id="wizard-action-feedback" class="wizard-action-feedback" role="alert" hidden><p id="wizard-action-message"></p><div><button type="button" class="btn" id="wizard-refresh-preview-btn" hidden>Refresh preview</button><button type="button" class="btn" id="wizard-adjust-times-btn" hidden>Change study times</button></div></div><div class="wizard-actions">
         <button type="button" class="btn" id="wizard-back-btn" hidden>Back</button>
         <button type="button" class="btn primary" id="wizard-next-btn">Continue</button>
-      </div>
+      </div></div>
     </div>
   </div>
 

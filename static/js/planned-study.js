@@ -7,9 +7,19 @@
 
   async function open(options) {
     if (controller) return;
+    if (options.studyMode) {
+      var savedKeys = [];
+      try { savedKeys = Object.keys(localStorage).filter(function (key) { return key.indexOf('planned_run_' + options.uid + '_') === 0; }); } catch (_error) { /* Storage may be unavailable. */ }
+      savedKeys.forEach(function (key) {
+        var saved; try { saved = JSON.parse(localStorage.getItem(key) || 'null'); } catch (_error) { return; }
+        if (saved && saved.plan_item_id === options.sessionId && (saved.study_mode || 'review') !== options.studyMode && (saved.slot_seconds || Object.keys(saved.answers || {}).length)) {
+          throw new Error('This session has saved progress on this device. Choose Resume saved session to keep it.');
+        }
+      });
+    }
     var preferredMode = 'countdown';
     try { preferredMode = localStorage.getItem('planned_timer_' + options.uid) || preferredMode; } catch (_error) { /* Preference is optional. */ }
-    var result = await options.api('/api/study-plan/items/' + encodeURIComponent(options.sessionId) + '/run', { method: 'POST', body: JSON.stringify({ timer_mode: preferredMode }) });
+    var result = await options.api('/api/study-plan/items/' + encodeURIComponent(options.sessionId) + '/run', { method: 'POST', body: JSON.stringify({ timer_mode: preferredMode, study_mode: options.studyMode }) });
     if (options.isCurrentUser && !options.isCurrentUser()) return;
     if (result.pack) { options.pack = result.pack; if (options.onPack) options.onPack(result.pack); }
     var session = result.session;

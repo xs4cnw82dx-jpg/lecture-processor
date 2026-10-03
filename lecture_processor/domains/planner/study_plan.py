@@ -436,7 +436,7 @@ def _daily_schedule(*, goal, workloads, preferences, start_date, occupied, propo
         intent = 'review' if not coverage else 'mixed' if revision_minutes else 'study'
         scheduled.append({
             **slot, 'duration': duration,
-            'id': f"sp_{proposal_id[:12]}_{len(scheduled) + 1:03d}",
+            'id': f"sp_{proposal_id}_{len(scheduled) + 1:03d}",
             'title': f"{'Review' if intent == 'review' else 'Study'} {workload.get('title', 'study pack')}",
             'goal_id': goal.get('goal_id', ''), 'pack_id': workload.get('pack_id', ''),
             'pack_title': workload.get('title', ''), 'planned_outcomes': outcomes,
@@ -518,7 +518,7 @@ def generate_schedule(*, goal, pack_workloads, preferences, start_date, occupied
         scheduled.append({
             **slot,
             'duration': duration,
-            'id': f"sp_{proposal_id[:12]}_{index + 1:03d}",
+            'id': f"sp_{proposal_id}_{index + 1:03d}",
             'title': f"Study {workload.get('title', 'study pack')}",
             'goal_id': safe_goal.get('goal_id', ''),
             'pack_id': workload.get('pack_id', ''),

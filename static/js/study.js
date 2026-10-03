@@ -84,8 +84,8 @@ const urlParams = new URLSearchParams(window.location.search);
 const learnPackFromUrl = urlParams.get('pack_id') || '';
 const openLearnFromUrl = urlParams.get('mode') === 'learn';
 const plannerSessionFromUrl = String(urlParams.get('plan_item_id') || '').trim();
-const fullscreenFromUrl = urlParams.get('fullscreen') === '1';
-const focusFromUrl = urlParams.get('focus') || '';
+let dueReviewOnly = urlParams.get('review') === 'due';
+let plannedPickerActive = false;
 const folderFromUrl = String(urlParams.get('folder') || '').trim().toLowerCase();
 const actionFromUrl = String(urlParams.get('action') || '').trim().toLowerCase();
 const bodyEntryMode = String((document.body && document.body.dataset && document.body.dataset.studyEntryMode) || '').trim().toLowerCase();
@@ -247,13 +247,16 @@ const ALGO_ICONS = {
   random: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>'
 };
 const MODE_ICONS = {
+  notes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 5C9 3 5 3 3 4v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-2-1-6-1-9 1Zm0 0v15"/></svg>',
+  review: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>',
+  resume: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 11a9 9 0 1 1 3 8M3 5v6h6m3-5v6l4 2"/></svg>',
   flashcards: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><line x1="2" y1="12" x2="22" y2="12"></line></svg>',
   test: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>',
   write: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>',
   match: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg>'
 };
-const MODE_NAMES = { flashcards: 'Flashcards', test: 'Practice test', write: 'Write', match: 'Match' };
-const MODE_DESCS = { flashcards: 'Flip through cards at your pace', test: 'Answer multiple choice questions', write: 'Type answers from memory', match: 'Pair terms with definitions' };
+const MODE_NAMES = { review: 'Planned review', resume: 'Resume saved session', notes: 'Read notes', flashcards: 'Flashcards', test: 'Practice test', write: 'Write', match: 'Match' };
+const MODE_DESCS = { review: 'Work through your planned mix of material', resume: 'Keep your saved answers, timer and mode', notes: 'Read, recall and reflect on your notes', flashcards: 'Flip through cards at your pace', test: 'Answer multiple choice questions', write: 'Type answers from memory', match: 'Pair terms with definitions' };
 
 let sessionSettings = { swapAnswerQuestion: false, randomSwap: false, caseSensitive: false, forceExactMatch: false, addMissedToReview: true, ignoreArticles: false, ignoreDeterminers: false, ignoreBrackets: false };
 let sessionAlgo = ['new', 'new', 'familiar', 'retry', 'remaster'], sessionAlgoPreset = 'balanced';
@@ -1448,15 +1451,21 @@ function saveSessionState() {
 /* ── Algorithm ordering ── */
 function orderCardsByAlgo(cards) {
   if (studySessionUtils && typeof studySessionUtils.orderCardsByAlgo === 'function') {
-    return studySessionUtils.orderCardsByAlgo(cards, {
+    var ordered = studySessionUtils.orderCardsByAlgo(cards, {
       cardState: loadCardState(),
       isDueDate: isDueDate,
       sessionAlgo: sessionAlgo
     });
+    if (dueReviewOnly) {
+      var state = loadCardState();
+      return ordered.filter(function (item) { var entry = state['fc_' + item.idx]; return entry && hasCardInteraction(entry) && isDueDate(entry.next_review_date); });
+    }
+    return ordered;
   }
   return [];
 }
 function getFlashcardQueue() {
+  if (dueReviewOnly) return orderedFlashcards;
   if (studySessionUtils && typeof studySessionUtils.getFlashcardQueue === 'function') {
     return studySessionUtils.getFlashcardQueue(orderedFlashcards, selectedPack);
   }
@@ -3028,7 +3037,7 @@ function renderBuilderFlashcards() {
   setSafeInnerHtml(builderFlashcardList, cards.map(function (card, index) {
     var frontId = 'builder-fc-front-' + index;
     var backId = 'builder-fc-back-' + index;
-    return '<details class="builder-row builder-expandable" data-fc-row="' + index + '"' + (index === 0 ? ' open' : '') + '><summary><span class="builder-row-number">' + String(index + 1).padStart(2, '0') + '</span><span>' + escapeHtml(card.front || 'New flashcard') + '</span><span class="builder-row-expand-label">Edit</span></summary><div class="builder-row-content">'
+    return '<details class="builder-row builder-expandable" data-fc-row="' + index + '"' + (index === 0 ? ' open' : '') + '><summary><span class="builder-row-number">' + String(index + 1) + '</span><span>' + escapeHtml(card.front || 'New flashcard') + '</span><span class="builder-row-expand-label">Edit</span></summary><div class="builder-row-content">'
       + '<div class="builder-row-head"><span class="builder-row-title">Flashcard ' + (index + 1) + '</span><button class="btn danger u-btn-compact" data-delete-fc="' + index + '">Delete</button></div>'
       + '<div class="builder-split"><div class="field"><label for="' + frontId + '">Front</label><textarea id="' + frontId + '" class="u-min-h-92" data-fc-field="front" data-fc-index="' + index + '">' + escapeHtml(card.front || '') + '</textarea></div>'
       + '<div class="field"><label for="' + backId + '">Back</label><textarea id="' + backId + '" class="u-min-h-92" data-fc-field="back" data-fc-index="' + index + '">' + escapeHtml(card.back || '') + '</textarea></div></div></div></details>';
@@ -3062,7 +3071,7 @@ function renderBuilderQuestions() {
       var letter = ['A', 'B', 'C', 'D'][optionIndex] || '';
       return '<option value="' + escapeHtml(option) + '" ' + (question.answer === option ? 'selected' : '') + '>' + letter + ': ' + escapeHtml(option || '(empty)') + '</option>';
     }).join('');
-    return '<details class="builder-row builder-expandable" data-q-row="' + index + '"' + (index === 0 ? ' open' : '') + '><summary><span class="builder-row-number">' + String(index + 1).padStart(2, '0') + '</span><span>' + escapeHtml(question.question || 'New question') + '</span><span class="builder-row-expand-label">Edit</span></summary><div class="builder-row-content">'
+    return '<details class="builder-row builder-expandable" data-q-row="' + index + '"' + (index === 0 ? ' open' : '') + '><summary><span class="builder-row-number">' + String(index + 1) + '</span><span>' + escapeHtml(question.question || 'New question') + '</span><span class="builder-row-expand-label">Edit</span></summary><div class="builder-row-content">'
       + '<div class="builder-row-head"><span class="builder-row-title">Question ' + (index + 1) + '</span><button class="btn danger u-btn-compact" data-delete-q="' + index + '">Delete</button></div>'
       + '<div class="field"><label for="' + questionId + '">Question</label><textarea id="' + questionId + '" class="u-min-h-86" data-q-field="question" data-q-index="' + index + '">' + escapeHtml(question.question || '') + '</textarea></div>'
       + '<div class="builder-grid-3 u-mt-8">'
@@ -3961,14 +3970,25 @@ function bindTabKeyboard(buttons, datasetKey, activate) {
 
 function showModePicker(modes) {
   setHidden(setupMainContent, true);
+  document.getElementById('setup-title').textContent = 'Learn Mode';
   modePicker.classList.add('active');
   modePickerGrid.innerHTML = '';
   modes.forEach(function (m) {
     var card = document.createElement('button');
     card.type = 'button';
     card.className = 'mode-picker-card';
-    card.innerHTML = (MODE_ICONS[m] || '') + '<div class="mode-picker-card-title">' + (MODE_NAMES[m] || m) + '</div><div class="mode-picker-card-desc">' + (MODE_DESCS[m] || '') + '</div>';
-    card.addEventListener('click', function () {
+    card.innerHTML = (MODE_ICONS[m] || MODE_ICONS.flashcards) + '<div class="mode-picker-card-title">' + (MODE_NAMES[m] || m) + '</div><div class="mode-picker-card-desc">' + (MODE_DESCS[m] || '') + '</div>';
+    card.dataset.studyMode = m;
+    card.addEventListener('click', async function () {
+      if (plannedPickerActive) {
+        modePickerGrid.querySelectorAll('button').forEach(function (button) { button.disabled = true; });
+        var message = document.getElementById('mode-picker-context');
+        message.textContent = 'Opening your saved study session…';
+        try { await openPlannedStudy(m); closeSessionSetup(); }
+        catch (error) { message.textContent = error.message || 'Could not open this session. Please try again.'; message.setAttribute('role', 'alert'); }
+        finally { modePickerGrid.querySelectorAll('button').forEach(function (button) { button.disabled = false; }); }
+        return;
+      }
       closeSessionSetup();
       openLearnStageWithMode(m, false);
     });
@@ -3976,22 +3996,63 @@ function showModePicker(modes) {
   });
 }
 
+function openPlannedStudy(mode) {
+  return window.LectureProcessorPlannedStudy.open({
+            studyMode: mode === 'resume' ? undefined : mode,
+            api: apiCall, uid: auth.currentUser.uid, sessionId: plannerSessionFromUrl, pack: selectedPack,
+            isCurrentUser: (function (uid) { return function () { return auth.currentUser && auth.currentUser.uid === uid; }; })(auth.currentUser.uid),
+            onPack: function (pack) { selectedPack = pack; selectedPackId = pack.study_pack_id; },
+            review: applyReviewAction,
+            notesStudied: function () { saveStreakData(ensureStudyActivityRecorded()); },
+            flush: async function () { var controller = getProgressSyncController(); if (controller) await controller.whenIdle(); return flushProgressSync(false); },
+            markdown: function (value) { return window.DOMPurify ? window.DOMPurify.sanitize(mdToHtml(value)) : escapeHtml(value); },
+            onLeave: function () { window.location.href = '/plan'; }
+          });
+
+}
+function openDirectModePicker() {
+  openSessionSetup();
+  plannedPickerActive = !!(plannerSessionFromUrl && window.LectureProcessorPlannedStudy);
+  var hasCards = (selectedPack.flashcards || []).length > 0;
+  var hasTest = (selectedPack.test_questions || []).length > 0;
+  var hasNotes = !!String(selectedPack.notes_markdown || '').trim();
+  var modes;
+  if (plannedPickerActive) modes = ['review'].concat(hasCards ? ['flashcards'] : [], hasTest ? ['test'] : [], hasNotes ? ['notes'] : [], ['resume']);
+  else if (dueReviewOnly) modes = orderCardsByAlgo(selectedPack.flashcards || []).length ? ['flashcards', 'write'] : [];
+  else modes = [].concat(hasCards ? ['flashcards', 'write'] : [], hasTest ? ['test'] : [], hasCards && selectedPack.flashcards.length >= MATCH_MIN_CARDS ? ['match'] : [], hasNotes ? ['notes'] : []);
+  showModePicker(modes);
+  document.getElementById('mode-picker-context').textContent = plannedPickerActive
+    ? 'Choose how to use this planned study slot. Your timer and progress stay linked to Study Plan. Resume keeps your existing session mode.'
+    : dueReviewOnly ? (modes.length ? 'Review only previously studied cards that are due today. New and future cards stay out of this session.' : 'You’re all caught up. No previously studied cards are due in this pack.')
+    : 'Choose a mode to begin. You can adjust review priorities in session settings.';
+  document.getElementById('mode-picker-free').hidden = !plannedPickerActive;
+  modePickerBack.hidden = plannedPickerActive || dueReviewOnly;
+}
+
 function hideModePicker() {
   modePicker.classList.remove('active');
+  document.getElementById('setup-title').textContent = 'Session setup';
   setHidden(setupMainContent, false);
 }
 
 function openSessionSetup() {
   if (!selectedPack) { showToast('Select a study pack first.', 'error'); return; }
   setAudioHiddenForLearn(true);
+  plannedPickerActive = false;
+  modePickerBack.hidden = false;
+  document.getElementById('mode-picker-free').hidden = true;
+  document.getElementById('mode-picker-context').textContent = '';
+  document.getElementById('mode-picker-context').removeAttribute('role');
   loadSessionState();
   setupPackName.textContent = selectedPack.title || 'Untitled pack';
   hideModePicker();
-  renderMasteryGauge(); renderLessonCards(); renderSettingsRows(); renderAlgoLane(); renderAlgoPresets();
+  renderMasteryGauge(); renderLessonCards();
+  if (!getEnabledModes().length && (selectedPack.flashcards || []).length) { sessionLessons.flashcards = true; renderLessonCards(); }
+  renderSettingsRows(); renderAlgoLane(); renderAlgoPresets();
   setSetupPane('lessons');
   openModal(setupOverlay);
 }
-function closeSessionSetup() { closeModal(setupOverlay); hideModePicker(); if (!learnStage.classList.contains('visible')) { setAudioHiddenForLearn(false); } }
+function closeSessionSetup() { closeModal(setupOverlay); if (!learnStage.classList.contains('visible')) { setAudioHiddenForLearn(false); } }
 
 setupTabs.forEach(function (t) { t.addEventListener('click', function () { setSetupPane(t.dataset.setupPane); }); });
 bindTabKeyboard(setupTabs, 'setupPane', setSetupPane);
@@ -4013,6 +4074,13 @@ document.querySelectorAll('.lesson-card:not(.unavailable)').forEach(function (ca
   });
 });
 modePickerBack.addEventListener('click', hideModePicker);
+document.getElementById('mode-picker-free').addEventListener('click', function () {
+  plannedPickerActive = false; dueReviewOnly = false;
+  showModePicker([].concat((selectedPack.flashcards || []).length ? ['flashcards', 'write'] : [], (selectedPack.test_questions || []).length ? ['test'] : [], (selectedPack.flashcards || []).length >= MATCH_MIN_CARDS ? ['match'] : [], selectedPack.notes_markdown ? ['notes'] : []));
+  document.getElementById('mode-picker-context').textContent = 'Free practice saves card progress, but does not complete your planned study slot.';
+  document.getElementById('mode-picker-free').hidden = true;
+  modePickerBack.hidden = false;
+});
 
 setupStartBtn.addEventListener('click', function () {
   saveSessionState();
@@ -4567,7 +4635,7 @@ function renderFolders() {
   all.forEach(function (f) {
     var div = document.createElement('div');
     var folderDepth = Math.max(0, parseInt(f.depth, 10) || 0);
-    div.className = 'item folder-depth-' + Math.min(folderDepth, 8) + (selectedFolderId === f.folder_id ? ' active' : '');
+    div.className = 'item folder-depth-' + Math.min(folderDepth, 8) + (selectedFolderId === f.folder_id ? ' active' : '') + (f.is_builtin ? ' folder-built-in' : '');
     div.dataset.folderId = f.folder_id;
     div.dataset.folderDepth = String(folderDepth);
     var metaParts = [f.course, f.subject, f.semester, f.block].filter(Boolean).map(escapeHtml);
@@ -4582,7 +4650,7 @@ function renderFolders() {
     var pendingHint = pendingCount > 0 && String(f.pending_batch_hint || '').trim()
       ? '<span class="item-sub pending-hint">' + escapeHtml(String(f.pending_batch_hint || '').trim()) + '</span>'
       : '';
-    var pinLine = f.is_pinned ? '<span class="item-sub pinned-note" title="Pinned folder">Pinned</span>' : '';
+    var pinLine = f.is_pinned && !f.is_builtin ? '<span class="folder-pin" role="img" aria-label="Pinned folder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m9 3 6 0-1 6 4 4v2H6v-2l4-4-1-6Zm3 12v6"/></svg></span>' : '';
     var examLine = '';
     if (f.folder_id && !f.is_builtin && f.exam_date) {
       var parts = String(f.exam_date).split('-');
@@ -4610,11 +4678,12 @@ function renderFolders() {
       actions = '<details class="folder-action-menu" data-app-menu><summary aria-label="Folder actions for ' + safeFolderName + '">•••</summary>' + actions + '</details>';
     }
     var collapseButton = f.child_count > 0
-      ? '<button type="button" class="folder-collapse-btn" data-folder-collapse aria-label="' + (f.is_collapsed ? 'Expand ' : 'Collapse ') + safeFolderName + '">' + (f.is_collapsed ? '+' : '-') + '</button>'
-      : '<span class="folder-collapse-spacer" aria-hidden="true"></span>';
+      ? '<button type="button" class="folder-collapse-btn" data-folder-collapse aria-expanded="' + (!f.is_collapsed) + '" title="' + (f.is_collapsed ? 'Show subfolders' : 'Hide subfolders') + '" aria-label="' + (f.is_collapsed ? 'Expand ' : 'Collapse ') + safeFolderName + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button>'
+      : '';
+    var folderIcon = '<span class="folder-visual" aria-hidden="true"><svg viewBox="0 0 32 28" fill="none"><path d="M3 7a3 3 0 0 1 3-3h7l3 3h10a3 3 0 0 1 3 3v13a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3Z" fill="currentColor" opacity=".18"/><path d="M3 11V7a3 3 0 0 1 3-3h7l3 3h10a3 3 0 0 1 3 3v13a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V11Zm0 0h26" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span>';
     setSafeInnerHtml(
       div,
-      '<div class="item-head folder-row-head"><button type="button" class="folder-row-main" data-folder-activate="1"' + (selectedFolderId === f.folder_id ? ' aria-current="page"' : '') + '><span class="item-title-wrap"><span class="item-title">' + escapeHtml(f.name) + '</span>' + pendingBadge + '</span>' + (metaParts.length ? '<span class="item-sub">' + metaLine + '</span>' : '') + pendingHint + pinLine + examLine + '</button>' + collapseButton + actions + '</div>'
+      '<div class="item-head folder-row-head"><button type="button" class="folder-row-main" data-folder-activate="1"' + (selectedFolderId === f.folder_id ? ' aria-current="page"' : '') + '>' + folderIcon + '<span class="folder-copy"><span class="item-title-wrap"><span class="item-title">' + escapeHtml(f.name) + '</span>' + pinLine + '</span>' + pendingBadge + (metaParts.length ? '<span class="item-sub">' + metaLine + '</span>' : '') + pendingHint + examLine + '</span></button>' + collapseButton + actions + '</div>'
     );
     var activateFolder = function () {
       selectedFolderId = f.folder_id;
@@ -4634,14 +4703,35 @@ function renderFolders() {
     }
     var collapseBtn = div.querySelector('[data-folder-collapse]');
     if (collapseBtn) {
-      collapseBtn.addEventListener('click', function (e) {
+      collapseBtn.addEventListener('click', async function (e) {
         e.stopPropagation();
+        if (collapseBtn.disabled) return;
+        collapseBtn.disabled = true;
         var id = String(f.folder_id || '');
-        if (collapsedFolderIds.has(id)) collapsedFolderIds.delete(id);
-        else collapsedFolderIds.add(id);
+        var expanding = collapsedFolderIds.has(id);
+        var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        function descendants(row) {
+          var nodes = [], next = row.nextElementSibling;
+          while (next && Number(next.dataset.folderDepth) > folderDepth) { nodes.push(next); next = next.nextElementSibling; }
+          return nodes;
+        }
+        function animateRows(rows, opening) {
+          return Promise.all(rows.map(function (row) {
+            var height = row.getBoundingClientRect().height;
+            return row.animate(opening ? [{ height: '0px', opacity: 0, marginTop: '-9px' }, { height: height + 'px', opacity: 1, marginTop: '0px' }] : [{ height: height + 'px', opacity: 1, marginTop: '0px' }, { height: '0px', opacity: 0, marginTop: '-9px' }], { duration: 200, easing: 'ease-out' }).finished.catch(function () {});
+          }));
+        }
+        if (!expanding && !reduced) await animateRows(descendants(div), false);
+        if (expanding) collapsedFolderIds.delete(id); else collapsedFolderIds.add(id);
         renderFolders();
+        var nextControl = Array.from(folderList.querySelectorAll('[data-folder-id]')).find(function (row) { return row.dataset.folderId === id; });
+        if (nextControl) {
+          nextControl.querySelector('[data-folder-collapse]').focus({ preventScroll: true });
+          if (expanding && !reduced) await animateRows(descendants(nextControl), true);
+        }
       });
     }
+
     var subfolderBtn = div.querySelector('[data-new-subfolder]');
     if (subfolderBtn) {
       subfolderBtn.addEventListener('click', function (e) {
@@ -5041,7 +5131,7 @@ function renderFlashcardEditor(hi) {
     var cardBody = document.createElement('div'); cardBody.className = 'builder-row-content';
     while (row.firstChild) cardBody.appendChild(row.firstChild);
     var cardSummary = document.createElement('summary');
-    setSafeInnerHtml(cardSummary, '<span class="builder-row-number">' + String(ci + 1).padStart(2, '0') + '</span><span data-item-summary>' + safeFront + '</span><span class="builder-row-expand-label">Edit</span>');
+    setSafeInnerHtml(cardSummary, '<span class="builder-row-number">' + String(ci + 1) + '</span><span data-item-summary>' + safeFront + '</span><span class="builder-row-expand-label">Edit</span>');
     row.append(cardSummary, cardBody);
     flashcardEditorList.appendChild(row);
     if (window.StudyPictures) window.StudyPictures.editor(cardBody, card, selectedPack, queueInlineAutosave, renderFlashcardEditor);
@@ -5143,7 +5233,7 @@ function renderQuestionEditor(hi) {
     var questionBody = document.createElement('div'); questionBody.className = 'builder-row-content';
     while (row.firstChild) questionBody.appendChild(row.firstChild);
     var questionSummary = document.createElement('summary');
-    setSafeInnerHtml(questionSummary, '<span class="builder-row-number">' + String(qi + 1).padStart(2, '0') + '</span><span data-item-summary>' + escapeHtml(q.question || 'New question') + '</span><span class="builder-row-expand-label">Edit</span>');
+    setSafeInnerHtml(questionSummary, '<span class="builder-row-number">' + String(qi + 1) + '</span><span data-item-summary>' + escapeHtml(q.question || 'New question') + '</span><span class="builder-row-expand-label">Edit</span>');
     row.append(questionSummary, questionBody);
     questionEditorList.appendChild(row);
   });
@@ -5507,6 +5597,7 @@ function closeLearnStage() {
   orderedFlashcards = [];
   stopMatchTimer();
   activeLearnMode = '';
+  dueReviewOnly = false;
   clearHintFadeTimers();
   if (keyboardHints) keyboardHints.classList.remove('faded');
   setAudioHiddenForLearn(false);
@@ -5609,27 +5700,7 @@ function openPack(packId) {
       // Deep link: auto-open learn mode if URL says so
       if (openLearnFromUrl && !autoLearnConsumed && selectedPack.study_pack_id === learnPackFromUrl) {
         autoLearnConsumed = true;
-        if (plannerSessionFromUrl && window.LectureProcessorPlannedStudy) {
-          window.LectureProcessorPlannedStudy.open({
-            api: apiCall, uid: auth.currentUser.uid, sessionId: plannerSessionFromUrl, pack: selectedPack,
-            isCurrentUser: (function (uid) { return function () { return auth.currentUser && auth.currentUser.uid === uid; }; })(auth.currentUser.uid),
-            onPack: function (pack) { selectedPack = pack; selectedPackId = pack.study_pack_id; },
-            review: applyReviewAction,
-            notesStudied: function () { saveStreakData(ensureStudyActivityRecorded()); },
-            flush: async function () { var controller = getProgressSyncController(); if (controller) await controller.whenIdle(); return flushProgressSync(false); },
-            markdown: function (value) { return window.DOMPurify ? window.DOMPurify.sanitize(mdToHtml(value)) : escapeHtml(value); },
-            onLeave: function () { window.location.href = '/plan'; }
-          }).catch(function (error) { showToast(error.message || 'Could not open this planned session.', 'error'); });
-          return;
-        }
-        var preferMode = focusFromUrl || '';
-        if (preferMode && ['flashcards', 'test', 'write', 'match', 'notes'].indexOf(preferMode) >= 0) {
-          openLearnStageWithMode(preferMode, fullscreenFromUrl);
-        } else if (isPracticeOnlyPack(selectedPack)) {
-          openLearnStageWithMode('test', fullscreenFromUrl);
-        } else {
-          openSessionSetup();
-        }
+        openDirectModePicker();
       }
     });
   });
@@ -7495,6 +7566,7 @@ if (exportMenuBtn && exportMenuList) {
 }
 
 openLearnBtn.addEventListener('click', function () {
+  dueReviewOnly = false;
   if (selectedPack && String(selectedPack.mode || '') === 'interview') {
     openCodingWorkspace();
     return;

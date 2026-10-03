@@ -9,6 +9,7 @@ import secrets
 from datetime import date, datetime, timedelta, timezone
 
 from flask import Response
+from google.api_core.exceptions import FailedPrecondition, ServiceUnavailable, DeadlineExceeded
 
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.planner import models as legacy_models
@@ -600,13 +601,23 @@ def archive_goal(app_ctx, request, goal_id):
     if not snapshot.exists:
         return app_ctx.jsonify({'error': 'Study goal not found.'}), 404
     current = snapshot.to_dict()
-    current.update({'status': 'archived', 'revision': int(current.get('revision', 0) or 0) + 1, 'updated_at': app_ctx.time.time()})
-    app_ctx.repositories.planner.set_study_goal(app_ctx.db, uid, safe_id, current, merge=False)
-    today = _today_for_timezone(_preferences(app_ctx, uid)['timezone'])
-    for item in _session_records(app_ctx, uid, today, '', 400):
-        if item.get('goal_id') == safe_id and item.get('origin') == 'automatic' and item.get('status') == 'planned':
-            item.update({'status': 'cancelled', 'revision': int(item.get('revision', 0) or 0) + 1, 'updated_at': app_ctx.time.time()})
-            app_ctx.repositories.planner.set_planner_session(app_ctx.db, uid, item['id'], {**item, 'uid': uid}, merge=False)
+    body = request.get_json(silent=True) or {}
+    revision = _safe_revision(body.get('revision', current.get('revision', 0)))
+    from lecture_processor.repositories import planner_repo as planner_repository
+    from lecture_processor.services import calendar_sync_service
+    try:
+        current = app_ctx.repositories.planner.archive_study_goal(
+            app_ctx.db, uid, safe_id, expected_revision=revision,
+            today=_today_for_timezone(_preferences(app_ctx, uid)['timezone']), now_ts=app_ctx.time.time(),
+            mark_dirty=lambda **kwargs: calendar_sync_service.mark_dirty(app_ctx, uid, **kwargs))
+    except planner_repository.PlannerRevisionConflict:
+        return app_ctx.jsonify({'error': 'This goal changed in another tab. Reload before deleting it.', 'code': 'revision_conflict'}), 409
+    except ValueError as error:
+        return app_ctx.jsonify({'error': str(error)}), 409
+    except FailedPrecondition:
+        return app_ctx.jsonify({'error': 'Goal changes are temporarily unavailable. Nothing was removed. Try again shortly.', 'code': 'planner_unavailable'}), 503
+    except (ServiceUnavailable, DeadlineExceeded):
+        return app_ctx.jsonify({'error': 'We could not confirm deletion. Retry to safely check this request.', 'code': 'save_unconfirmed'}), 503
     return app_ctx.jsonify({'ok': True, 'goal': _serialize_goal(current)})
 
 
@@ -625,6 +636,10 @@ def preview_plan(app_ctx, request):
         if not snapshot.exists:
             return app_ctx.jsonify({'error': 'Study goal not found.'}), 404
         existing_goal = snapshot.to_dict()
+        if existing_goal.get('status') == 'archived':
+            return app_ctx.jsonify({'error': 'This goal was deleted. Create a new goal to schedule these packs again.', 'code': 'goal_archived'}), 409
+        if 'revision' in raw_goal and _safe_revision(raw_goal['revision']) != _safe_revision(existing_goal.get('revision', 0)):
+            return app_ctx.jsonify({'error': 'This goal changed in another tab. Reload its details before editing.', 'code': 'revision_conflict'}), 409
     goal_id = requested_goal_id or _new_id('goal')
     goal, validation_error = study_plan.sanitize_goal(raw_goal, goal_id=goal_id, existing=existing_goal, now_ts=now_ts)
     if goal is None:
@@ -698,7 +713,7 @@ def preview_plan(app_ctx, request):
         'retained_sessions': preview.get('retained_sessions', []),
         'conflicts': preview.get('conflicts', []),
         'excluded_dates': preview.get('excluded_dates', []),
-        'can_apply': not preview.get('conflicts') and bool(preview['sessions'] or preview.get('retained_sessions')),
+        'can_apply': not preview.get('conflicts') and bool(preview['sessions'] or preview.get('retained_sessions') or existing_goal),
         'pace': pace,
         'base_goal_revision': int(existing_goal.get('revision', 0) or 0),
         'base_preferences_revision': int(current_preferences.get('revision', 0) or 0),
@@ -727,16 +742,18 @@ def apply_plan(app_ctx, request):
     idempotency_key = study_plan.sanitize_id(body.get('idempotency_key'))
     if not proposal_id or not idempotency_key:
         return app_ctx.jsonify({'error': 'Proposal id and idempotency key are required.'}), 400
-    snapshot = app_ctx.repositories.planner.get_study_plan_proposal(app_ctx.db, uid)
+    snapshot = app_ctx.repositories.planner.get_study_plan_proposal(app_ctx.db, uid, proposal_id)
     if not snapshot.exists:
-        return app_ctx.jsonify({'error': 'This plan preview expired. Create a new preview.'}), 409
+        return app_ctx.jsonify({'error': 'This plan preview is no longer available. Generate a fresh preview.', 'code': 'proposal_expired'}), 409
     proposal = snapshot.to_dict()
-    if proposal.get('proposal_id') != proposal_id or float(proposal.get('expires_at', 0) or 0) < app_ctx.time.time():
-        return app_ctx.jsonify({'error': 'This plan preview expired. Create a new preview.'}), 409
+    if proposal.get('proposal_id') != proposal_id:
+        return app_ctx.jsonify({'error': 'This plan preview is no longer available. Generate a fresh preview.', 'code': 'proposal_expired'}), 409
     if proposal.get('applied_at'):
         if not hmac.compare_digest(str(proposal.get('idempotency_key', '') or ''), idempotency_key):
             return app_ctx.jsonify({'error': 'This preview was already accepted.', 'code': 'idempotency_conflict'}), 409
         return app_ctx.jsonify({'ok': True, 'goal': _serialize_goal(proposal.get('goal', {})), 'session_ids': proposal.get('applied_session_ids', []), 'replayed': True})
+    if float(proposal.get('expires_at', 0) or 0) < app_ctx.time.time():
+        return app_ctx.jsonify({'error': 'This plan preview expired. Generate a fresh preview; your saved plan has not changed.', 'code': 'proposal_expired'}), 409
     goal = dict(proposal.get('goal') or {})
     current_goal_snapshot = app_ctx.repositories.planner.get_study_goal(app_ctx.db, uid, goal.get('goal_id', ''))
     current_goal = current_goal_snapshot.to_dict() if current_goal_snapshot.exists else {}
@@ -777,7 +794,7 @@ def apply_plan(app_ctx, request):
     for existing in replaceable:
         if existing['id'] not in retained_ids:
             cancellations.append({**existing, 'uid': uid, 'status': 'cancelled', 'cancellation_reason': 'replaced', 'revision': int(existing.get('revision', 0)) + 1, 'updated_at': now_ts})
-    if len(changed_payloads) + len(cancellations) + 4 > 500:
+    if len(changed_payloads) + len(cancellations) + 5 > 500:
         return app_ctx.jsonify({'error': 'This change replaces too many sessions at once. Shorten the planning period or contact support; your current plan has not changed.'}), 409
     proposal.update({
         'applied_at': now_ts,
@@ -795,6 +812,10 @@ def apply_plan(app_ctx, request):
         )
     except planner_repository.PlannerRevisionConflict:
         return app_ctx.jsonify({'error': 'Your plan changed while saving. Generate a fresh preview.', 'code': 'revision_conflict'}), 409
+    except FailedPrecondition:
+        return app_ctx.jsonify({'error': 'Scheduling is temporarily unavailable. Your saved plan has not changed. Try accepting again shortly.', 'code': 'planner_unavailable'}), 503
+    except (ServiceUnavailable, DeadlineExceeded):
+        return app_ctx.jsonify({'error': 'We could not confirm that the plan was saved. Try accepting again to safely check this request.', 'code': 'save_unconfirmed'}), 503
     return app_ctx.jsonify({'ok': True, 'goal': _serialize_goal(goal), 'session_ids': proposal['applied_session_ids'], 'replayed': False})
 
 

@@ -6,6 +6,7 @@ Before any redesign work, at the start of each new phase, and immediately after 
 
 1. `docs/VISUAL_REDESIGN_MASTER_PLAN.md` — the complete approved 45-part visual and interaction audit.
 2. `docs/VISUAL_REDESIGN_PROGRESS.md` — current ownership, completed work, verification, and outstanding work.
+3. `docs/PRODUCT_FEEDBACK_REPAIR_PLAN.md` — active screenshot-driven follow-up, functional repairs, ownership and delivery checklist.
 
 Use Study Plan as the visual foundation. The user explicitly requires a genuinely polished redesign: improve composition, typography, spacing, hierarchy, controls, interaction states, and responsive behavior. A palette change or additional CSS overrides alone does not satisfy the task. Inspect rendered results and iterate.
 

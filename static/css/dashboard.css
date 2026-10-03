@@ -23,10 +23,24 @@
 .goal-track { display: block; width: 100%; height: 7px; appearance: none; border: 0; border-radius: 99px; overflow: hidden; background: #eaf0ff; }
 .goal-track::-webkit-progress-bar { background: #eaf0ff; }.goal-track::-webkit-progress-value { background: #2558d9; border-radius: 99px; }.goal-track::-moz-progress-bar { background: #2558d9; }
 .section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 20px; }.section-head h2 { font-size: 1rem; margin: 0; letter-spacing: -.02em; }.section-head a { font-size: .76rem; font-weight: 650; }
-.list-block { display: grid; gap: 0; }.list-item { display: block; color: inherit; text-decoration: none; padding: 15px 4px; border-bottom: 1px solid #edf0f6; transition: background .16s; }.list-item:last-child { border-bottom: 0; }.list-item:hover { background: #f6f8fc; }.list-item h3 { font-size: .9rem; line-height: 1.5; font-weight: 650; margin: 0 0 5px; overflow-wrap: anywhere; }.list-item p { color: #65718a; font-size: .77rem; margin: 0; line-height: 1.6; }
+.list-block { display: grid; gap: 0; }.list-item { display: block; color: inherit; text-decoration: none; padding: 15px 14px; border-radius: 12px; border-bottom: 1px solid transparent; transition: background .16s; }.list-item:last-child { border-bottom: 0; }.list-item:hover, .list-item:focus-visible { background: #edf2ff; }.list-item h3 { font-size: .9rem; line-height: 1.5; font-weight: 650; margin: 0 0 5px; overflow-wrap: anywhere; }.list-item p { color: #65718a; font-size: .77rem; margin: 0; line-height: 1.6; }
 .empty-state-card { background: #f6f8fc; border-radius: 12px; padding: 22px; }.empty-state-card h3 { font-size: 1rem; margin: 0 0 8px; }.empty-state-card p, .list-empty { font-size: .85rem; color: #65718a; line-height: 1.65; }.empty-state-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }.empty-state-link.primary { background: #2558d9; color: #fff; border-color: #2558d9; }
 .dashboard-auth-banner { margin-top: 20px; padding: 20px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border: 1px solid #dfe5ef; border-radius: 16px; background: white; }.dashboard-auth-banner p { font-size: .85rem; color: #65718a; line-height: 1.6; }.dashboard-auth-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .dashboard-skeleton { display: block; width: 110px; height: 32px; border-radius: 7px; background: #edf1f8; }.dashboard-list-skeleton { height: 190px; border-radius: 12px; background: repeating-linear-gradient(to bottom, #f0f3f8 0 45px, transparent 45px 64px); }
 [hidden] { display: none!important; }
 @media (max-width: 950px) { .dashboard-grid.two-col { grid-template-columns: 1fr; }.dashboard-continue { align-items: flex-start; flex-direction: column; } }
 @media (max-width: 600px) { .dashboard-page { gap: 16px; }.dashboard-grid { gap: 10px; grid-template-columns: 1fr; }.dashboard-page .stat-card { min-height: 0; padding: 18px; grid-template-columns: 1fr auto; align-items: center; }.stat-sub,.goal-track { grid-column: 1/-1; }.dashboard-continue,.dashboard-page .shell-panel { padding: 22px; }.dashboard-auth-banner { flex-direction: column; align-items: flex-start; }.section-head { flex-wrap: wrap; } }
+
+.dashboard-text-action { color: #2558d9; border: 0; padding: 0; background: transparent; font: inherit; font-weight: 600; cursor: pointer; }
+.dashboard-text-action:focus-visible { outline: 3px solid #a7bdea; outline-offset: 4px; border-radius: 4px; }
+.dashboard-due-panel { margin-bottom: 24px; }
+.dashboard-due-panel > summary { margin: -8px; }
+.dashboard-due-pack { padding: 22px 0; border-bottom: 1px solid #e4eaf4; }
+.dashboard-due-pack:last-child { border-bottom: 0; padding-bottom: 0; }
+.dashboard-due-pack-head { display:flex; align-items: center; justify-content: space-between; gap: 20px; }
+.dashboard-due-pack h3 { margin: 0; font-size: 1rem; }
+.dashboard-due-pack .hero-btn { font-size: .8rem; flex-shrink: 0; }
+.dashboard-due-cards { margin: 16px 0 0; padding-left: 24px; max-height: 230px; overflow: auto; color: #586782; font-size: .85rem; line-height: 1.6; }
+.dashboard-due-cards li { padding: 5px 8px; overflow-wrap: anywhere; }
+.dashboard-due-message { color: #65718a; line-height: 1.6; margin: 20px 0 8px; }
+@media(max-width:600px) { .dashboard-due-pack-head { align-items: flex-start; flex-direction: column; gap: 12px; } }

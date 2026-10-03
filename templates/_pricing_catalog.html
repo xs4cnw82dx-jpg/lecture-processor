@@ -24,8 +24,8 @@
   {% for category in pricing_catalog %}
     {% if variant == 'page' %}
       <div class="category">
-        <div class="credit-category-heading"><span class="credit-category-icon">{{ render_pricing_icon(category.icon) }}</span><h2>{{ category.title }}</h2></div>
-        <p class="credit-category-description">{% if category.icon == 'notes' %}Slides and audio, brought together.{% elif category.icon == 'slides' %}Slide extraction and optional study tools.{% else %}Turn spoken conversations into text.{% endif %}</p>
+        <div class="credit-category-heading"><span class="credit-category-icon">{{ render_pricing_icon(category.icon) }}</span><h2>{% if category.key == 'slides' %}Slides extraction / add-ons{% else %}{{ category.title }}{% endif %}</h2></div>
+        <p class="credit-category-description">{% if category.icon == 'notes' %}One lecture credit combines your slides and recording, with optional flashcards and practice questions.{% elif category.icon == 'slides' %}For slides-only extraction, reader tools, Voice Notes study tools, or interview extras.{% else %}One interview credit transcribes a recording. Optional summaries and sections use add-on credits.{% endif %}</p>
         {% for bundle in category.bundles %}
           <button
             type="button"
@@ -41,7 +41,7 @@
             {% endif %}
             <span class="credits">{{ bundle.credits_label }}</span>
             <span class="price" data-price-cents="{{ bundle.price_cents }}" data-currency="{{ bundle.currency }}"></span>
-            <span class="meta">{{ bundle.description }}</span>
+            <span class="meta">{% if category.key == 'slides' %}Slides extraction / add-ons{% else %}{{ bundle.description }}{% endif %}</span>
             <span class="cta">Choose bundle <span aria-hidden="true">→</span></span>
           </button>
         {% endfor %}
@@ -50,7 +50,7 @@
       <div class="pricing-category">
         <div class="pricing-category-header">
           <div class="pricing-category-icon">{{ render_pricing_icon(category.icon) }}</div>
-          <span class="pricing-category-name">{{ category.title }}</span>
+          <span class="pricing-category-name">{% if category.key == 'slides' %}Slides extraction / add-ons{% else %}{{ category.title }}{% endif %}</span>
         </div>
         {% for bundle in category.bundles %}
           <div class="bundle-card{% if bundle.featured %} best-value{% endif %}">
@@ -58,8 +58,8 @@
               <div class="best-value-badge">Best Value</div>
             {% endif %}
             <div class="bundle-credits">{{ bundle.credits_label }}</div>
-            <div class="bundle-description">{{ bundle.description }}</div>
             <div class="bundle-price" data-price-cents="{{ bundle.price_cents }}" data-currency="{{ bundle.currency }}"></div>
+            <div class="bundle-description">{% if category.key == 'slides' %}Slides extraction / add-ons{% else %}{{ bundle.description }}{% endif %}</div>
             <div class="bundle-price-per"{% if bundle.price_per_credit_cents is not none %} data-price-per-cents="{{ bundle.price_per_credit_cents }}" data-currency="{{ bundle.currency }}"{% endif %}></div>
             <button
               type="button"

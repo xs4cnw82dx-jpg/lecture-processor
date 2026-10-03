@@ -189,3 +189,36 @@ def test_time_completion_requires_full_focus_budget_not_just_one_answer(client, 
     assert client.put('/api/study-plan/runs/' + run['activity_id'], headers=_headers(), json=sparse).status_code == 200
     session = core.planner_repo.get_planner_session(None, run['uid'], 'session_run').to_dict()
     assert client.post('/api/study-plan/items/session_run/completion', headers=_headers(), json={'source': 'tracked', 'revision': session['revision']}).status_code == 400
+
+
+def test_mode_choice_filters_targets_and_preserves_resume_timer(client, study_plan_runtime):
+    create_session(client, study_plan_runtime)
+    response = client.post('/api/study-plan/items/session_run/run', headers=_headers(),
+                           json={'study_mode': 'flashcards', 'timer_mode': 'pomodoro'})
+    assert response.status_code == 200
+    run = response.get_json()['run']
+    assert {item['type'] for item in run['queue']} == {'fc'}
+    response = client.post('/api/study-plan/items/session_run/run', headers=_headers(), json={'study_mode': 'test'})
+    assert response.status_code == 200
+    run = response.get_json()['run']
+    assert run['timer_mode'] == 'pomodoro'
+    assert {item['type'] for item in run['queue']} == {'q'}
+    run = checkpoint(client, run, {'q_0': {'correct': True}}, 20)
+    blocked = client.post('/api/study-plan/items/session_run/run', headers=_headers(), json={'study_mode': 'flashcards'})
+    assert blocked.status_code == 409
+    resumed = start(client)
+    assert resumed['study_mode'] == 'test'
+    assert resumed['answers'] == run['answers']
+
+
+def test_notes_mode_survives_content_rebuild_and_rejects_unavailable_mode(client, study_plan_runtime):
+    create_session(client, study_plan_runtime)
+    study_plan_runtime['pack']['notes_markdown'] = '# Anatomy notes'
+    response = client.post('/api/study-plan/items/session_run/run', headers=_headers(), json={'study_mode': 'notes'})
+    assert response.status_code == 200
+    assert [item['type'] for item in response.get_json()['run']['queue']] == ['notes']
+    study_plan_runtime['pack']['notes_markdown'] += '\nChanged text'
+    resumed = start(client)
+    assert [item['type'] for item in resumed['queue']] == ['notes']
+    invalid = client.post('/api/study-plan/items/session_run/run', headers=_headers(), json={'study_mode': 'write'})
+    assert invalid.status_code == 400
