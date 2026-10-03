@@ -483,6 +483,9 @@
   }
 
   function maybeOpenAuthFromQuery() {
+    // The processing page owns this modal and must save `next` before
+    // consuming `auth`. Its script runs after the shared shell.
+    if (document.getElementById('signin-form')) return;
     var params = new URLSearchParams(window.location.search || '');
     var authView = String(params.get('auth') || '').trim().toLowerCase();
     if (!authView) return;
