@@ -335,3 +335,20 @@ def test_repair_fails_closed_when_account_state_cannot_be_read(setup, monkeypatc
     assert status == 409
     assert response.get_json()['status'] == 'account_deletion_in_progress'
     assert db.data == before
+
+
+def test_due_cards_are_complete_owned_actionable_and_exclude_new_future_or_removed_cards(setup):
+    runtime, db, _ = setup
+    for pack_id in ('a', 'b', 'archived', 'foreign', 'deleted'):
+        seed_pack(db, pack_id, ['2000-01-01', '2999-01-01', ''])
+        db.data['study_packs/' + pack_id]['flashcards'] = [{'front': 'Due card'}, {'front': 'Future card'}, {'front': 'Unscheduled reviewed card'}, {'front': 'New card'}]
+    db.data['study_packs/foreign']['uid'] = 'someone-else'
+    db.data['study_packs/archived']['archived'] = True
+    del db.data['study_packs/deleted']
+    db.data['study_card_states/owner__a']['state']['fc_99'] = {'seen': 1, 'next_review_date': '2000-01-01'}
+    db.data['study_card_states/owner__a']['state']['q_0'] = {'seen': 1, 'next_review_date': '2000-01-01'}
+    result = assert_ok(service.get_due_study_cards(runtime, None))
+    assert result['due_count'] == 4
+    assert {pack['study_pack_id'] for pack in result['packs']} == {'a', 'b'}
+    assert all({card['id'] for card in pack['cards']} == {'fc_0', 'fc_2'} for pack in result['packs'])
+    assert all(card['front'] != 'Future card' for pack in result['packs'] for card in pack['cards'])

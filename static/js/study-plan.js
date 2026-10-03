@@ -273,20 +273,52 @@
   function sortSessions(a, b) { return (a.date + a.time + a.id).localeCompare(b.date + b.time + b.id); }
   function renderGoalHealth() {
     var goals = activeGoals().slice().sort(function (a, b) { return a.exam_date.localeCompare(b.exam_date); });
-    var goal = goals[0];
-    if (!goal) {
-      els.goalHealth.innerHTML = '<h2>Start with a study goal</h2><p>Choose the packs you want to study and the date you want to be ready. We will guide you through the rest.</p><button type="button" class="btn primary" data-setup-plan>Set up a goal</button>';
-      bindSetupButtons(els.goalHealth);
-      return;
+    if (!goals.length) {
+      els.goalHealth.innerHTML = '<h2>Start with a study goal</h2><p>Choose your packs and a deadline, then review a schedule that fits your time.</p><button type="button" class="btn primary" data-setup-plan>Set up a goal</button>';
+      bindSetupButtons(els.goalHealth); return;
     }
-    var progressGoal = (((state.data || {}).progress || {}).goals || []).find(function (item) { return item.goal_id === goal.goal_id; }) || {};
-    var days = Math.max(0, Math.ceil((parseDate(goal.exam_date) - parseDate(todayInTimezone())) / 86400000));
-    var paceCopy = hasPersonalPace() ? minutesLabel(progressGoal.remaining_minutes || 0) + ' remaining at your recent pace. ' : '';
-    els.goalHealth.innerHTML = '<div class="goal-countdown">' + days + ' <span>days left</span></div><h2>' + escapeHtml(goal.title) + '</h2><p>' + escapeHtml(paceCopy) + 'Deadline: ' + escapeHtml(formatDate(goal.exam_date, { day: 'numeric', month: 'long' })) + '.</p><span class="health-badge ' + (progressGoal.on_track ? 'good' : 'warning') + '">' + (progressGoal.on_track ? 'On track' : 'Needs attention') + '</span>';
+    els.goalHealth.innerHTML = goals.map(function (goal) {
+      var packs = (goal.pack_ids || []).map(function (id) { var pack = ((state.data || {}).study_packs || []).find(function (item) { return item.study_pack_id === id; }); return pack ? pack.title : 'Study pack'; });
+      var days = Math.ceil((parseDate(goal.exam_date) - parseDate(todayInTimezone())) / 86400000);
+      var countdown = days < 0 ? 'Deadline passed' : days === 0 ? 'Today' : days + (days === 1 ? ' day left' : ' days left');
+      return '<article class="managed-goal" data-goal-id="' + escapeHtml(goal.goal_id) + '"><h2>' + escapeHtml(goal.title) + '</h2><p class="managed-goal-deadline">Ready by ' + escapeHtml(formatDate(goal.exam_date, { day: 'numeric', month: 'long', year: 'numeric' })) + ' · ' + escapeHtml(countdown) + '</p><p class="managed-goal-packs">' + escapeHtml(packs.join(' · ')) + '</p><div class="managed-goal-actions"><button type="button" class="btn" data-edit-goal="' + escapeHtml(goal.goal_id) + '">Edit goal &amp; schedule</button><button type="button" class="btn danger" data-delete-goal="' + escapeHtml(goal.goal_id) + '" aria-label="Delete ' + escapeHtml(goal.title) + '">Delete</button></div></article>';
+    }).join('');
+    queryAll('[data-edit-goal]', els.goalHealth).forEach(function (button) { button.addEventListener('click', function () { openWizard({ goalId: button.dataset.editGoal }); }); });
+    queryAll('[data-delete-goal]', els.goalHealth).forEach(function (button) { button.addEventListener('click', function () { deleteGoal(button.dataset.deleteGoal); }); });
   }
+  async function deleteGoal(goalId) {
+    var goal = activeGoals().find(function (item) { return item.goal_id === goalId; });
+    if (!goal || !isEditable()) return;
+    var confirmed = await window.LectureProcessorUx.requestDialog({ title: 'Delete this study goal?', message: 'Delete “' + goal.title + '” and its upcoming automatic sessions? Completed work, sessions already in progress, manually added sessions, study packs and learning progress are kept.', confirmLabel: 'Delete goal', destructive: true });
+    if (!confirmed) return;
+    var errorBox = byId('goal-management-error'); errorBox.hidden = true;
+    try {
+      await api('/api/study-plan/goals/' + encodeURIComponent(goalId), { method: 'DELETE', body: JSON.stringify({ revision: goal.revision }) });
+      await loadData({ useCache: false }); toast('Goal deleted. Your learning progress is kept.');
+    } catch (error) { errorBox.textContent = error.message; errorBox.hidden = false; }
+  }
+  var packColors = {};
+  var packColorOwner = '';
+  function syncPackColors() {
+    var owner = state.user && state.user.uid || '';
+    if (owner !== packColorOwner) {
+      packColors = owner && userCache.getUserJson ? userCache.getUserJson(state.user, 'study_plan_pack_colors_v1', {}, uiCache) || {} : {};
+      packColorOwner = owner;
+    }
+    var ids = Array.from(new Set(((state.data || {}).study_packs || []).map(function (pack) { return pack.study_pack_id; }).concat(plannedSessions().map(function (session) { return session.pack_id; })))).filter(Boolean).sort();
+    ids.forEach(function (id) {
+      if (Number.isInteger(packColors[id]) && packColors[id] >= 0 && packColors[id] < 12) return;
+      var hash = Array.from(id).reduce(function (value, letter) { return (value * 31 + letter.charCodeAt(0)) >>> 0; }, 0);
+      var color = hash % 12;
+      for (var offset = 0; offset < 12; offset += 1) { if (Object.values(packColors).indexOf((color + offset) % 12) < 0) { color = (color + offset) % 12; break; } }
+      packColors[id] = color;
+    });
+    if (owner && userCache.setUserJson) userCache.setUserJson(state.user, 'study_plan_pack_colors_v1', packColors, uiCache);
+  }
+  function packColorClass(packId) { return packId && Number.isInteger(packColors[packId]) ? ' pack-color-' + packColors[packId] : ''; }
   function sessionRow(session) {
     var statusLabel = session.status === 'completed' ? (session.completion && session.completion.source ? session.completion.source === 'offline' ? 'Completed · self-reported study' : 'Completed · tracked study' : 'Completed') : session.status === 'skipped' ? 'Skipped' : '';
-    return '<div class="session-row is-' + escapeHtml(session.status) + '" data-session-id="' + escapeHtml(session.id) + '"><div class="session-row-time">' + escapeHtml(session.time) + '<span>' + escapeHtml(minutesLabel(session.duration)) + '</span></div><div><h3>' + escapeHtml(session.title) + '</h3><p>' + escapeHtml(statusLabel || sessionOutcomeText(session)) + (session.locked ? ' · Locked' : '') + '</p></div><div class="session-row-actions">' + (session.status === 'planned' && session.pack_id ? '<a class="btn" href="' + escapeHtml(studyLink(session)) + '">Start</a>' : '') + (session.status === 'planned' ? '<button type="button" class="btn" data-complete>Log study done</button><button type="button" class="btn" data-edit>Edit</button>' : session.status === 'completed' ? '<button type="button" class="btn" data-reopen>Reopen session</button>' : '') + '</div></div>';
+    return '<div class="session-row' + packColorClass(session.pack_id) + ' is-' + escapeHtml(session.status) + '" data-session-id="' + escapeHtml(session.id) + '"><div class="session-row-time">' + escapeHtml(session.time) + '<span>' + escapeHtml(minutesLabel(session.duration)) + '</span></div><div><h3>' + escapeHtml(session.title) + '</h3><p>' + escapeHtml(statusLabel || sessionOutcomeText(session)) + (session.locked ? ' · Locked' : '') + '</p></div><div class="session-row-actions">' + (session.status === 'planned' && session.pack_id ? '<a class="btn" href="' + escapeHtml(studyLink(session)) + '">Start</a>' : '') + (session.status === 'planned' ? '<button type="button" class="btn" data-complete>Log study done</button><button type="button" class="btn" data-edit>Edit</button>' : session.status === 'completed' ? '<button type="button" class="btn" data-reopen>Reopen session</button>' : '') + '</div></div>';
   }
   function renderToday() {
     var today = todayInTimezone();
@@ -316,6 +348,8 @@
     var sessions = plannedSessions().filter(function (item) { return item.date >= from && item.date <= to && item.status !== 'cancelled'; }).sort(sortSessions);
     els.weekTitle.textContent = formatDate(from, { day: 'numeric', month: 'short' }) + ' – ' + formatDate(to, { day: 'numeric', month: 'short', year: 'numeric' });
     els.weekSummary.textContent = minutesLabel(sessions.filter(function (item) { return item.status !== 'skipped'; }).reduce(function (total, item) { return total + Number(item.duration || 0); }, 0)) + ' planned across ' + sessions.length + ' session' + (sessions.length === 1 ? '' : 's');
+    var legendPacks = Array.from(new Set(sessions.map(function (item) { return item.pack_id; }))).filter(Boolean);
+    byId('schedule-pack-legend').innerHTML = legendPacks.map(function (id) { var session = sessions.find(function (item) { return item.pack_id === id; }); return '<span class="schedule-pack-key' + packColorClass(id) + '"><i aria-hidden="true"></i>' + escapeHtml(session.pack_title || session.title) + '</span>'; }).join('');
     var noPlanYet = activeGoals().length === 0 && plannedSessions().length === 0;
     els.scheduleHelp.hidden = noPlanYet;
     els.weekCalendar.classList.toggle('is-empty-workspace', noPlanYet);
@@ -332,7 +366,7 @@
       var day = localDate(addDays(state.weekStart, index));
       var daySessions = sessions.filter(function (item) { return item.date === day; });
       var buttons = daySessions.map(function (item) {
-        return '<button type="button" class="calendar-session is-' + escapeHtml(item.status) + (item.locked ? ' is-locked' : '') + '" data-calendar-session="' + escapeHtml(item.id) + '"><span class="calendar-session-time">' + escapeHtml(item.time) + ' · ' + escapeHtml(minutesLabel(item.duration)) + '</span><span class="calendar-session-title">' + escapeHtml(item.title) + '</span></button>';
+        return '<button type="button" class="calendar-session' + packColorClass(item.pack_id) + ' is-' + escapeHtml(item.status) + (item.locked ? ' is-locked' : '') + '" data-calendar-session="' + escapeHtml(item.id) + '"><span class="calendar-session-time">' + escapeHtml(item.time) + ' · ' + escapeHtml(minutesLabel(item.duration)) + '</span><span class="calendar-session-title">' + escapeHtml(item.title) + '</span>' + (item.status !== 'planned' ? '<span class="calendar-session-status">' + escapeHtml(item.status === 'completed' ? 'Completed' : item.status === 'skipped' ? 'Skipped' : item.status) + '</span>' : '') + '</button>';
       }).join('');
       daysHtml.push('<div class="week-day' + (day === today ? ' is-today' : '') + '"><div class="week-day-head"><div class="week-day-name">' + escapeHtml(DAY_NAMES[index].slice(0, 3)) + '</div><div class="week-day-number">' + parseDate(day).getDate() + '</div></div>' + (buttons || '<div class="empty-plan-state">Free</div>') + '</div>');
       agendaHtml.push('<section class="agenda-day"><h3>' + escapeHtml(DAY_NAMES[index]) + ' · ' + escapeHtml(formatDate(day)) + '</h3>' + (daySessions.length ? daySessions.map(sessionRow).join('') : '<div class="empty-plan-state">No sessions</div>') + '</section>');
@@ -378,6 +412,7 @@
 
   function renderAll() {
     if (!state.data) return;
+    syncPackColors();
     renderHeaderAction();
     renderNextSession();
     renderGoalHealth();
@@ -560,7 +595,7 @@
       }
       var todayDisabled = allowed(today) ? '' : ' disabled';
       panel.innerHTML = '<div class="date-picker-header"><button type="button" class="date-picker-nav" data-month-step="-1" aria-label="Previous month">‹</button><div class="date-picker-title">' + escapeHtml(new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' }).format(monthCursor)) + '</div><button type="button" class="date-picker-nav" data-month-step="1" aria-label="Next month">›</button></div><div class="date-picker-weekdays"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div><div class="date-picker-grid">' + cells + '</div><div class="date-picker-footer"><button type="button" class="picker-text-button" data-picker-clear>Clear</button><button type="button" class="picker-text-button" data-picker-today' + todayDisabled + '>Today</button></div>';
-      queryAll('[data-month-step]', panel).forEach(function (button) { button.addEventListener('click', function () { monthCursor = new Date(year, month + Number(button.dataset.monthStep), 1); renderMonth(); positionControlPopover(panel, anchor); }); });
+      queryAll('[data-month-step]', panel).forEach(function (button) { button.addEventListener('click', function () { monthCursor = new Date(year, month + Number(button.dataset.monthStep), 1); renderMonth(); positionControlPopover(panel, anchor); panel.querySelector('[data-month-step="' + button.dataset.monthStep + '"]').focus(); }); });
       queryAll('[data-picker-date]', panel).forEach(function (button) { button.addEventListener('click', function () { setPickerValue(input, button.dataset.pickerDate); closeControlPopover(false); input.focus(); }); });
       panel.querySelector('[data-picker-clear]').addEventListener('click', function () { setPickerValue(input, ''); closeControlPopover(false); input.focus(); });
       var todayButton = panel.querySelector('[data-picker-today]');
@@ -706,7 +741,9 @@
   function openWizard(options) {
     if (!isEditable()) { toast(state.online ? 'Sign in to create a plan.' : 'Reconnect before changing your plan.', 'error'); return; }
     var settings = options || {};
-    state.wizardMode = settings.goalId ? 'rebalance' : 'create';
+    state.wizardMode = settings.goalId ? 'edit' : 'create';
+    state.wizardNeedsRefresh = false;
+    setWizardFeedback('');
     state.wizardGoalId = settings.goalId || '';
     state.proposal = null;
     state.applyIdempotencyKey = '';
@@ -730,6 +767,7 @@
     renderCustomAvailability();
     var configured = !!state.wizardPreferences.availability_configured;
     chooseAvailabilityPreset(existing || configured ? (state.wizardPreferences.availability_preset || 'custom') : '', true);
+    byId('wizard-edit-note').hidden = !existing;
     renderWizardStep();
     openOverlay(els.wizardOverlay);
   }
@@ -740,7 +778,26 @@
     els.wizardNext.textContent = state.wizardStep === 4 ? 'Accept this plan' : (state.wizardStep === 3 ? 'Generate schedule' : 'Continue');
     var scrollBody = els.wizardOverlay.querySelector('.wizard-scroll-body');
     if (scrollBody) scrollBody.scrollTop = 0;
-    els.wizardNext.disabled = state.wizardStep === 4 && state.proposal && state.proposal.can_apply === false;
+    els.wizardNext.disabled = state.wizardStep === 4 && (state.wizardNeedsRefresh || (state.proposal && state.proposal.can_apply === false));
+    if (state.wizardStep !== 4) setWizardFeedback('');
+    else if (state.proposal && state.proposal.can_apply === false) setWizardFeedback((state.proposal.conflicts || []).length ? 'These exact times overlap with existing sessions. Choose another time or a wider availability window, then generate a new schedule. Your other goals stay unchanged.' : 'No sessions fit this selection. Add availability, choose a later deadline, or select packs with remaining work.', 'times');
+  }
+  function setWizardFeedback(message, recovery) {
+    byId('wizard-action-feedback').hidden = !message;
+    byId('wizard-action-message').textContent = message || '';
+    byId('wizard-refresh-preview-btn').hidden = recovery !== 'refresh';
+    byId('wizard-adjust-times-btn').hidden = recovery !== 'times';
+  }
+  async function refreshWizardPreview() {
+    els.wizardNext.disabled = true;
+    byId('wizard-refresh-preview-btn').disabled = true;
+    try {
+      state.data = await api('/api/study-plan' + bootstrapRange());
+      var existing = activeGoals().find(function (goal) { return goal.goal_id === state.wizardGoalId; });
+      if (state.wizardGoalId && !existing) { setWizardFeedback('This goal has been deleted in another tab. Close this editor and create a new goal.', ''); return; }
+      state.wizardNeedsRefresh = false; setWizardFeedback(''); await previewWizard();
+    } catch (error) { setWizardFeedback(error.message, 'refresh'); }
+    finally { byId('wizard-refresh-preview-btn').disabled = false; }
   }
   function clearWizardErrors() { [els.wizardPackError, els.wizardGoalError, els.wizardAvailabilityError].forEach(function (item) { item.hidden = true; item.textContent = ''; }); }
   function clockMinutes(value) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value || '')) ? Number(value.slice(0, 2)) * 60 + Number(value.slice(3)) : NaN; }
@@ -808,6 +865,7 @@
       var result = await api('/api/study-plan/preview', { method: 'POST', body: JSON.stringify({ goal: goal, preferences: preferences }) });
       state.proposal = result.proposal;
       state.applyIdempotencyKey = randomId('idem');
+      state.wizardNeedsRefresh = false; setWizardFeedback('');
       renderPreview();
       state.wizardStep = 4;
       renderWizardStep();
@@ -853,13 +911,15 @@
       await api('/api/study-plan/apply', { method: 'POST', body: JSON.stringify({ proposal_id: state.proposal.proposal_id, idempotency_key: state.applyIdempotencyKey }) });
       closeOverlay(els.wizardOverlay);
       setSaving('', 'Saved');
-      toast(state.wizardMode === 'rebalance' ? 'Catch-up plan accepted.' : 'Your study plan is ready.');
+      toast(state.wizardMode === 'edit' ? 'Goal and schedule updated. Your progress is kept.' : 'Your study plan is ready.');
       await loadData({ useCache: false });
     } catch (error) {
       setSaving('failed');
       els.wizardNext.disabled = false;
       els.wizardNext.textContent = 'Try accepting again';
-      toast(error.message, 'error');
+      state.wizardNeedsRefresh = error.status === 409;
+      els.wizardNext.disabled = state.wizardNeedsRefresh;
+      setWizardFeedback(error.message, state.wizardNeedsRefresh ? 'refresh' : '');
     }
   }
   function nextWizardStep() {
@@ -1239,6 +1299,9 @@
     els.wizardSessionLength.addEventListener('change', refreshPresetTime);
     byId('session-editor-remove').addEventListener('click', function () { removeSession(plannedSessions().find(function (item) { return item.id === els.sessionId.value; })); });
     queryAll('.study-plan-tab').forEach(function (button) { button.addEventListener('click', function () { setView(button.dataset.planView); }); });
+    byId('wizard-refresh-preview-btn').addEventListener('click', refreshWizardPreview);
+    byId('wizard-adjust-times-btn').addEventListener('click', function () { state.wizardStep = 3; renderWizardStep(); });
+    byId('schedule-goals-btn').addEventListener('click', function () { setView('today'); byId('goal-health-card').scrollIntoView({ block: 'center' }); var edit = els.goalHealth.querySelector('button'); if (edit) edit.focus({ preventScroll: true }); });
     byId('new-study-goal-btn').addEventListener('click', function () { openWizard(); });
     byId('today-add-session-btn').addEventListener('click', function () { openSessionEditor(null); });
     byId('schedule-add-session-btn').addEventListener('click', function () { openSessionEditor(null); });
@@ -1264,7 +1327,7 @@
     els.feedCreate.addEventListener('click', createFeed);
     byId('calendar-feed-copy').addEventListener('click', async function () { try { await navigator.clipboard.writeText(els.feedUrl.value); toast('Calendar URL copied.'); } catch (_) { els.feedUrl.select(); toast('Select and copy the URL.'); } });
     [els.wizardOverlay, els.sessionOverlay, els.feedsOverlay].forEach(function (overlay) { overlay.addEventListener('click', function (event) { if (event.target === overlay) closeOverlay(overlay); }); });
-    document.addEventListener('click', function (event) { if (activeControlPopover && !activeControlPopover.panel.contains(event.target) && !activeControlPopover.anchor.contains(event.target)) closeControlPopover(false); });
+    document.addEventListener('click', function (event) { var path = event.composedPath(); if (activeControlPopover && path.indexOf(activeControlPopover.panel) < 0 && path.indexOf(activeControlPopover.anchor) < 0) closeControlPopover(false); });
     window.addEventListener('resize', function () { closeControlPopover(false); });
     window.addEventListener('scroll', function (event) { if (activeControlPopover && !activeControlPopover.panel.contains(event.target)) positionControlPopover(activeControlPopover.panel, activeControlPopover.anchor); }, true);
     window.addEventListener('online', function () { setOfflineState(); loadData({ useCache: false }); });

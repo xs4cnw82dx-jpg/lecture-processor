@@ -2236,7 +2236,7 @@ def test_update_study_progress_invalid_remove_pack_ids_returns_400_without_write
 
 
 def test_compute_study_progress_summary_uses_server_logic_for_overview():
-    now = core.datetime.now()
+    now = datetime(2026, 10, 3, 12, tzinfo=timezone.utc)
     today = now.strftime("%Y-%m-%d")
     tomorrow = (now + core.timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -2256,7 +2256,7 @@ def test_compute_study_progress_summary_uses_server_logic_for_overview():
         }
     ]
 
-    summary = core.compute_study_progress_summary(progress_data, card_state_maps)
+    summary = core.compute_study_progress_summary(progress_data, card_state_maps, base_now=now)
 
     assert summary["daily_goal"] == 30
     assert summary["current_streak"] == 6

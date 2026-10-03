@@ -138,3 +138,21 @@ test('updateQuestionOption preserves the selected correct option while its text 
   assert.equal(updated.answer, 'Pulmonary artery');
   assert.equal(original.answer, 'Artery');
 });
+
+
+test('every priority preset fills all-new and missing-category packs without losing or duplicating cards', () => {
+  const presets = [
+    ['new', 'familiar', 'retry', 'hard', 'remaster'],
+    ['random', 'random', 'random', 'random', 'random'],
+    ['remaster', 'hard', 'familiar', 'retry', 'familiar'],
+    ['retry', 'hard', 'retry', 'remaster', 'familiar'],
+    ['hard', 'retry', 'hard', 'remaster', 'familiar'],
+  ];
+  const cards = Array.from({length: 12}, (_, index) => ({front: `Card ${index}`}));
+  for (const sessionAlgo of presets) for (const cardState of [{}, {fc_2: {seen: 1, correct: 1, next_review_date:'2099-01-01'}}]) {
+    const queue = studySessionUtils.orderCardsByAlgo(cards, {sessionAlgo, cardState, isDueDate: value => !value || value <= '2026-10-03', randomFn: () => .5});
+    assert.equal(queue.length, cards.length);
+    assert.equal(new Set(queue.map(item => item.idx)).size, cards.length);
+    assert.deepEqual(queue.map(item => item.idx).sort((a,b)=>a-b), cards.map((_,index)=>index));
+  }
+});

@@ -189,9 +189,10 @@ def test_running_session_is_kept_and_run_started_after_preview_invalidates_it(cl
     second = preview(client, study_plan_runtime['pack_id'], goal=accepted['goal'])
     assert second['retained_sessions'][0]['id'] == session_id
     assert len(second['sessions']) == 27
-    assert apply(client, second, 'idempotency_running').status_code == 200
+    second_accepted = apply(client, second, 'idempotency_running')
+    assert second_accepted.status_code == 200
     assert core.planner_repo.get_planner_session(None, uid, session_id).to_dict()['status'] == 'planned'
-    third = preview(client, study_plan_runtime['pack_id'], goal=second['goal'])
+    third = preview(client, study_plan_runtime['pack_id'], goal=second_accepted.get_json()['goal'])
     running['active_run_id'] = 'run_changed'
     core.planner_repo.set_planner_session(None, uid, session_id, running, merge=False)
     rejected = apply(client, third, 'idempotency_conflicting_run')

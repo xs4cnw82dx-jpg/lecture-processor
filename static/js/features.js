@@ -30,6 +30,8 @@
     var calcLectures=document.getElementById('calc-lectures');
     var calcWeeks=document.getElementById('calc-weeks');
     var calcMinutes=document.getElementById('calc-minutes');
+    var calcReview=document.getElementById('calc-review');
+    var calcReviewVal=document.getElementById('calc-review-val');
     var calcLecturesVal=document.getElementById('calc-lectures-val');
     var calcWeeksVal=document.getElementById('calc-weeks-val');
     var calcMinutesVal=document.getElementById('calc-minutes-val');
@@ -47,10 +49,10 @@
 
       var totalLectures=lectures*weeks;
       var manualHours=Math.round((totalLectures*minutes)/60);
-      // LectureProcessor estimate: ~3 min upload + ~2 min review per lecture
-      var lpMinutesPerLecture=5;
+      var lpMinutesPerLecture=parseInt(calcReview.value,10);
+      calcReviewVal.textContent=String(lpMinutesPerLecture);
       var lpHours=Math.round((totalLectures*lpMinutesPerLecture)/60);
-      var saved=Math.max(0,manualHours-lpHours);
+      var saved=manualHours-lpHours;
 
       calcManual.textContent=manualHours+'h';
       calcLp.textContent=lpHours+'h';
@@ -60,6 +62,7 @@
     calcLectures.addEventListener('input',updateCalc);
     calcWeeks.addEventListener('input',updateCalc);
     calcMinutes.addEventListener('input',updateCalc);
+    calcReview.addEventListener('input',updateCalc);
     updateCalc();
 
     /* -- Scroll reveal animations -- */

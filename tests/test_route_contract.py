@@ -186,6 +186,7 @@ EXPECTED_ROUTES = [
     ('GET', '/api/study-progress', 'study_api.get_study_progress'),
     ('GET', '/api/study-progress/packs/<pack_id>', 'study_api.get_study_progress_pack'),
     ('PUT', '/api/study-progress', 'study_api.update_study_progress'),
+    ('GET', '/api/study-progress/due', 'study_api.get_due_study_cards'),
     ('GET', '/api/study-progress/summary', 'study_api.get_study_progress_summary'),
     ('GET', '/api/shared/<share_token>', 'study_api.get_public_study_share'),
     ('GET', '/api/shared/<share_token>/packs/<pack_id>', 'study_api.get_public_shared_folder_pack'),
@@ -362,7 +363,8 @@ def test_pricing_pages_render_runtime_bundle_catalog(client, runtime, monkeypatc
         assert 'data-bundle-id="slides_10"' in html
         assert 'data-bundle-id="interview_8"' in html
         assert '5 audit lecture credits' in html
-        assert '10 audit slides credits' in html
+        assert 'Slides extraction / add-ons' in html
+        assert 'data-bundle-name="Slides - 10 Pack"' in html
         assert '3 audit interview credits' in html
         assert 'data-price-cents="1234"' in html
         assert 'data-currency="EUR"' in html
@@ -377,14 +379,16 @@ def test_processing_pages_render_updated_shell_labels(client):
     assert '>New Lecture<' not in lecture_html
     assert 'href="/interview-transcription" class="app-shell-link"' in lecture_html
     assert 'href="/batch_status" class="app-shell-link"' in lecture_html
-    assert lecture_html.index('href="/voice-notes"') < lecture_html.index('href="/interview-transcription"') < lecture_html.index('href="/batch_mode"') < lecture_html.index('href="/batch_status"') < lecture_html.index('href="/instant_batch_mode"')
+    assert lecture_html.index('href="/voice-notes"') < lecture_html.index('href="/interview-transcription"') < lecture_html.index('href="/batch_mode"') < lecture_html.index('href="/batch_status"')
+    assert 'href="/instant_batch_mode" class="app-shell-link"' not in lecture_html
 
     batch_response = client.get('/batch_mode')
     assert batch_response.status_code == 200
     batch_html = batch_response.get_data(as_text=True)
     assert 'Batch Processing · Lecture Notes' in batch_html
     assert 'Batch Mode Lectures' not in batch_html
-    assert 'd="m3 7 9 6 9-6"' in batch_html
+    assert 'id="batch-speed-switch" role="switch"' in batch_html
+    assert 'aria-checked="false"' in batch_html
 
     audio_batch_response = client.get('/batch_mode_audio_transcription')
     assert audio_batch_response.status_code == 200
@@ -403,7 +407,8 @@ def test_processing_pages_render_updated_shell_labels(client):
     instant_batch_html = instant_batch_response.get_data(as_text=True)
     assert 'Instant Batch · Lecture Notes' in instant_batch_html
     assert 'data-instant-batch="1"' in instant_batch_html
-    assert 'start processing immediately' in instant_batch_html.lower()
+    assert 'Starts now. Standard credit cost.' in instant_batch_html
+    assert 'aria-checked="true"' in instant_batch_html
     assert 'd="m3 7 9 6 9-6"' not in instant_batch_html
 
 
@@ -424,7 +429,8 @@ def test_more_tools_pages_and_links_render(client):
     assert 'id="shell-more-tools-link"' in downloader_html
     assert 'id="shell-tool-favorites" hidden' in downloader_html
     assert 'id="shell-more-tools-panel"' not in downloader_html
-    assert 'href="/instant_batch_mode"' in downloader_html
+    assert 'href="/batch_mode"' in downloader_html
+    assert 'href="/instant_batch_mode" class="app-shell-link"' not in downloader_html
     assert 'href="/batch_mode_audio_transcription"' not in downloader_html
     assert 'href="/batch_mode_text_combine"' not in downloader_html
     assert 'href="/instant_batch_mode_audio_transcription"' not in downloader_html

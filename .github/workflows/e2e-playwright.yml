@@ -40,6 +40,12 @@ jobs:
       - name: Run Playwright tests
         run: npm run e2e
 
+      - name: Verify real planner API lifecycle with isolated synthetic data
+        env:
+          PLANNER_STATEFUL_FIXTURE: "1"
+          USE_MINIFIED_JS_ASSETS: "1"
+        run: npx playwright test e2e/planner-stateful.spec.js --workers=1
+
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v7

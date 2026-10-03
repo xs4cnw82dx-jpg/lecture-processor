@@ -37,13 +37,16 @@ def fingerprint(pack):
 
 def build_queue(pack, state, session, today, all_items=False):
     """Allocate one shared focus budget, with current due/retry work first."""
-    outcomes = session.get('planned_outcomes') or {}
+    study_mode = session.get('study_mode', 'review')
+    outcomes = (session.get('planned_outcomes') or {}) if study_mode == 'review' else {}
     duration = int(session.get('duration', 45))
     seconds = duration * 60
     if session.get('timer_mode') == 'pomodoro':
         seconds = (seconds // 1800) * 1500 + min(seconds % 1800, 1500)
     candidates = []
     for prefix, field in [('fc', 'flashcards'), ('q', 'test_questions')]:
+        if study_mode == 'notes' or (study_mode == 'flashcards' and prefix != 'fc') or (study_mode == 'test' and prefix != 'q'):
+            continue
         occurrences = {}
         for index, item in enumerate(pack.get(field) or []):
             item_id = f'{prefix}_{index}'
@@ -77,7 +80,7 @@ def build_queue(pack, state, session, today, all_items=False):
             seconds -= item['estimated_seconds']
             remaining_targets[item['type']] -= 1
     notes = int(outcomes.get('notes_minutes', 0) or 0)
-    if pack.get('notes_markdown') and (notes or not ordered):
+    if pack.get('notes_markdown') and study_mode in {'review', 'notes'} and (notes or not ordered):
         notes_seconds = min(seconds, notes * 60 if notes else seconds)
         if notes_seconds > 0:
             queue.append({'id': 'notes', 'type': 'notes', 'index': 0, 'reason': 'Read and recall', 'seconds': notes_seconds})
@@ -92,7 +95,7 @@ def build_queue(pack, state, session, today, all_items=False):
 
 def rebuild_unfinished(run, pack, state, session, today):
     """Remap unchanged answered content, preserve removed answers as historical work."""
-    candidates = build_queue(pack, state, session, today, all_items=True)
+    candidates = build_queue(pack, state, dict(session, study_mode=run.get('study_mode', 'review')), today, all_items=True)
     by_content = {item.get('content_key'): item for item in candidates}
     kept, answers, retries = [], {}, []
     retired = list(run.get('retired_answers') or [])
@@ -213,9 +216,12 @@ def start_run(app, request, session_id):
         run_id = session.get('active_run_id') or 'run_' + hashlib.sha256(f'{session_id}:{generation}'.encode()).hexdigest()[:32]
         today = plans._today_for_timezone(plans._preferences(app, uid)['timezone'])
         selected_mode = 'pomodoro' if body.get('timer_mode') == 'pomodoro' else 'countdown'
-        queue = build_queue(pack, state, dict(session, timer_mode=selected_mode), today)
+        study_mode = body.get('study_mode', 'review')
+        if study_mode not in {'review', 'flashcards', 'test', 'notes'}:
+            raise RunError('Choose Review, Flashcards, Practice test, or Notes for this planned session.')
+        queue = build_queue(pack, state, dict(session, timer_mode=selected_mode, study_mode=study_mode), today)
         if not queue:
-            raise RunError('This pack has no study material yet. Add cards, questions, or notes first.')
+            raise RunError('No material is available for this study mode. Choose another mode, or add cards, questions, or notes to this pack.')
 
         def change(current, run):
             current = _session(current)
@@ -223,18 +229,23 @@ def start_run(app, request, session_id):
                 raise RunError('This session changed. Return to Study Plan to review it.', 409)
             if current.get('pack_id') != pack_id or current.get('revision') != session.get('revision'):
                 raise RunError('This session changed. Reload and try again.', 409)
+            effective_timer = selected_mode if 'timer_mode' in body or not run else run.get('timer_mode', 'countdown')
+            if run and 'study_mode' in body and study_mode != run.get('study_mode', 'review') and (run.get('slot_seconds') or run.get('answers')):
+                raise RunError('This session already has saved progress. Choose Resume saved session to continue it.', 409)
             if run and run.get('content_fingerprint') != digest:
                 run = rebuild_unfinished(run, pack, state, current, today)
                 run['metrics'] = _metrics(run)
-            if run and 'timer_mode' in body and not run.get('slot_seconds') and not run.get('answers'):
-                run.update({'timer_mode': selected_mode, 'queue': queue, 'checkpoint_revision': run.get('checkpoint_revision', 0) + 1})
+            if run and ('timer_mode' in body or 'study_mode' in body) and not run.get('slot_seconds') and not run.get('answers'):
+                effective_mode = study_mode if 'study_mode' in body else run.get('study_mode', 'review')
+                updated_queue = build_queue(pack, state, dict(current, timer_mode=effective_timer, study_mode=effective_mode), today)
+                run.update({'timer_mode': effective_timer, 'study_mode': effective_mode, 'queue': updated_queue, 'checkpoint_revision': run.get('checkpoint_revision', 0) + 1})
             if not run:
                 now = app.time.time()
                 run = {'activity_id': run_id, 'uid': uid, 'pack_id': pack_id, 'plan_item_id': session_id,
                        'generation': generation, 'content_fingerprint': digest, 'queue': queue,
                        'answers': {}, 'retry_done': [], 'active_seconds': 0, 'slot_seconds': 0, 'notes_seconds': 0,
                        'duration_seconds': int(current.get('duration', 45)) * 60,
-                       'timer_mode': selected_mode, 'run_status': 'paused', 'checkpoint_revision': 0,
+                       'timer_mode': selected_mode, 'study_mode': study_mode, 'run_status': 'paused', 'checkpoint_revision': 0,
                        'started_at': now, 'ended_at': 0, 'updated_at': now, 'source': 'tracked',
                        'metrics': {'minutes': 0, 'cards_reviewed': 0, 'questions_answered': 0, 'correct': 0, 'incorrect': 0}}
             if current.get('active_run_id') != run_id:

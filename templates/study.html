@@ -596,7 +596,7 @@
           aria-hidden="true">
           <p class="u-text-center u-color-muted u-font-sm u-mb-16">Adjust how cards are
             selected for review:</p>
-          <div class="algo-lane" id="algo-lane"></div>
+          <p class="algo-availability">Priorities change the order, not which cards are available. Empty categories are skipped; new cards and other available cards fill the session.</p><div class="algo-lane" id="algo-lane"></div>
           <div class="algo-presets" id="algo-presets"><button class="algo-preset active"
               data-preset="balanced">Balanced</button><button class="algo-preset" data-preset="random">All
               Random</button><button class="algo-preset" data-preset="lastminute">Last Minute Overview</button><button
@@ -616,7 +616,9 @@
       <!-- Mode picker (shown when multiple lessons enabled) -->
       <div class="mode-picker" id="mode-picker">
         <div class="mode-picker-title">Choose your study mode</div>
+        <p class="mode-picker-context" id="mode-picker-context" aria-live="polite"></p>
         <div class="mode-picker-grid" id="mode-picker-grid"></div>
+        <button type="button" class="btn mode-picker-free" id="mode-picker-free" hidden>Free practice · including Write and Match</button>
         <div class="actions u-justify-center u-mt-16">
           <button class="btn" id="mode-picker-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

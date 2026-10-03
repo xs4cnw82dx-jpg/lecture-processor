@@ -2,7 +2,7 @@
 
 Read `VISUAL_REDESIGN_MASTER_PLAN.md` and this file after compaction and before every phase. Full implementation is authorized; the user expects genuinely polished, attractive layouts and flows, not superficial recoloring. Follow the full PR → checks → merge → local sync → deployment verification workflow.
 
-**Latest delivery:** [PR #184](https://github.com/xs4cnw82dx-jpg/lecture-processor/pull/184) contains the completed redesign. The sections below are a chronological work log; the final checkpoint supersedes earlier in-progress notes. Check GitHub and Render for the current merge/deployment state.
+**Latest delivery:** [PR #184](https://github.com/xs4cnw82dx-jpg/lecture-processor/pull/184) was merged as538ceb4, local main synced, and Render live commit/assets verified on3October. **Active follow-up:** read `PRODUCT_FEEDBACK_REPAIR_PLAN.md` for the subsequent screenshot-driven corrections and functional repairs. The sections below are a chronological work log; later checkpoints supersede earlier in-progress notes.
 
 ## Current baseline
 
@@ -30,7 +30,7 @@ Read `VISUAL_REDESIGN_MASTER_PLAN.md` and this file after compaction and before 
 - [x] Tools and creative editors.
 - [x] Public/account/admin/workout/physio/error states.
 - [x] Full tests and rendered desktop/mobile QA (verification limits below).
-- [ ] PR, checks, merge, local sync and deployed verification.
+- [x] PR, checks, merge, local sync and deployed verification for the original redesign (#184).
 
 ## Verification and resumption
 
@@ -121,3 +121,12 @@ This is the pre-PR checkpoint. Delivery must continue through GitHub checks, mer
 PR #184's backend, frontend, Functions and HTTP smoke checks passed. The initial GitHub browser run passed 192 tests, skipped the separate legacy-flag test and exposed one test setup race: the mobile Builder smoke test opened an authenticated editor directly while signed out, before authentication initialization finished. The signed-out callback correctly closed that editor. The test now uses the existing synthetic account fixture and the real Builder route, waiting for authenticated library hydration. All original mobile layout, visible-action and typing-focus assertions remain; no product behavior or authentication requirement was weakened. Delivery remains gated on the updated GitHub checks, merge, local sync and live Render verification.
 
 The corrected Builder check passed eight consecutive runs with retries disabled; scoped lint and whitespace checks passed. The fixture omits the external SDK tags it replaces, preserving strict console-error detection without changing production script-integrity protection.
+
+
+### Product feedback C — Library, due review and direct learning entry (4 October)
+
+Implemented tangible folder rows/pin icons, functional animated child collapse, quiet Saved, plain card numbering, actionable Dashboard due-card disclosure and due-only study queues, direct free/planned mode picker, supported tracked mode filtering with preserved resume/checkpoints, and rounded tinted Dashboard rows. See `PRODUCT_FEEDBACK_LEARNING.md` for scope, semantics and QA. Verified 36 targeted backend/route/accessibility checks, 24 Dashboard/Study UX contracts, 10 session utility tests, a 17-test browser regression run plus six focused feedback tests and a local unsynced-progress regression. Desktop/mobile evidence inspected in `/tmp/product-feedback-learning-evidence`. No real user data changes; sources frozen for parent integration.
+
+## Product feedback follow-up — release candidate, 4 October
+
+Read `PRODUCT_FEEDBACK_REPAIR_PLAN.md` and the three `PRODUCT_FEEDBACK_*` owner reports. Screenshot corrections and functional planner/learning/batch repairs are implemented. Final local verification: 986 backend, 193 client and 218 distinct browser scenarios passed across integrated and scoped runs; generated assets and lint/hygiene checks passed. Required production planner index is prepared and dry-run verified. PR/merge/index deployment/Render verification remain. Deferred half-credit customer pricing remains explicitly pending the user’s exact-half versus odd-count rounding choice; current UI claims remain accurate.

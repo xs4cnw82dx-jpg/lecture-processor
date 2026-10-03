@@ -60,6 +60,28 @@ test('calendar has boundaries, keyboard week movement, native events and focus r
   await expect(page.getByRole('dialog', { name: 'Choose a date' })).toBeHidden();
 });
 
+test('calendar month buttons stay open after replacing the clicked button', async ({ page }) => {
+  await controls(page);
+  await page.getByRole('button', { name: 'Lesson date: 10 Oct 2026', exact: true }).click();
+  const panel = page.getByRole('dialog', { name: 'Choose a date' });
+  await panel.getByRole('button', { name: 'Next month', exact: true }).click();
+  await expect(panel).toBeVisible();
+  await expect(panel.locator('strong')).toHaveText('November 2026');
+  await panel.getByRole('button', { name: 'Previous month', exact: true }).click();
+  await expect(panel).toBeVisible();
+  await expect(panel.locator('strong')).toHaveText('October 2026');
+  await panel.getByRole('button', { name: 'Previous month', exact: true }).click();
+  await expect(panel.locator('strong')).toHaveText('September 2026');
+  await expect(panel.locator('[data-date]:not(:disabled)')).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Previous month', exact: true })).toBeFocused();
+  await panel.getByRole('button', { name: 'Next month', exact: true }).press('Enter');
+  await expect(panel.locator('strong')).toHaveText('October 2026');
+  await expect(panel.getByRole('button', { name: 'Next month', exact: true })).toBeFocused();
+  await panel.getByRole('button', { name: 'Sunday, 18 October 2026', exact: true }).click();
+  await expect(page.locator('#lesson-date')).toHaveValue('2026-10-18');
+  await expect(panel).toBeHidden();
+});
+
 test('shared prompt traps focus, restores it and resolves cancel or trimmed value', async ({ page }) => {
   await controls(page);
   await page.locator('#launch').click();
@@ -87,6 +109,7 @@ test('FAQ opens and closes and feature sample and calculator work', async ({ pag
   await page.goto('/features');
   await page.locator('#feature-sample-card').click();
   await expect(page.locator('#feature-card-text')).toContainText('Retrieving information');
+  await page.locator('#calculator > summary').click();
   await page.locator('#calc-lectures').fill('10');
   await expect(page.locator('#calc-manual')).toHaveText('100h');
 });

@@ -25,7 +25,7 @@
       allowsAudioUrlImport: true,
       supportsStudyTools: true,
       heroDescription: 'Create one batch request with multiple lectures. Each row produces its own outputs, and the batch can be downloaded as one ZIP.',
-      instantHeroDescription: 'Start multiple lectures immediately. Up to 2 rows run at once, and each row shows live progress while it produces outputs.',
+      instantHeroDescription: 'Start multiple lectures immediately. Up to 2 rows run at once, and each row shows its current processing stage.',
       minimumNote: 'Minimum 2 lectures required for batch mode.',
     },
     'slides-only': {
@@ -36,8 +36,8 @@
       allowsAudioUrlImport: false,
       supportsStudyTools: true,
       heroDescription: 'Create one batch request with multiple slide sets. Each row produces its own outputs, and the batch can be downloaded as one ZIP.',
-      instantHeroDescription: 'Start multiple slide extractions immediately. Up to 2 rows run at once, and each row shows live progress.',
-      minimumNote: 'Minimum 2 slides sets required for batch mode.',
+      instantHeroDescription: 'Start multiple slide extractions immediately. Up to 2 rows run at once, and each row shows its current processing stage.',
+      minimumNote: 'Minimum 2 slide sets required for batch mode.',
     },
     interview: {
       plural: 'Interviews',
@@ -71,7 +71,7 @@
       allowsAudioUrlImport: false,
       supportsStudyTools: false,
       heroDescription: 'Create one batch request from existing slide extraction and transcript text files. Each row produces complete lecture notes, and the batch can be downloaded as one ZIP.',
-      instantHeroDescription: 'Combine multiple text sets immediately. Up to 2 rows run at once, with live progress while notes are merged.',
+      instantHeroDescription: 'Combine multiple text sets immediately. Up to 2 rows run at once, with automatic status updates while notes are merged.',
       minimumNote: 'Minimum 2 text sets required for batch mode.',
     },
   };
@@ -161,6 +161,38 @@
 
   function modeMeta() {
     return MODE_META[mode] || MODE_META['lecture-notes'];
+  }
+
+  function setProcessingStrategy(instant, updateUrl) {
+    if (updateUrl && (pendingStartRequest || startLockedByBatchState)) return;
+    var changed = isInstantBatch !== instant;
+    if (changed) {
+      statusView.clear();
+      currentBatchId = ''; queryBatchId = ''; activeSubmissionId = '';
+      if (statusPanel) statusPanel.hidden = true;
+      if (submitFeedback) submitFeedback.hidden = true;
+    }
+    isInstantBatch = instant;
+    batchApiBase = instant ? '/api/instant-batch/jobs' : '/api/batch/jobs';
+    batchKindLabel = instant ? 'Instant batch' : 'Batch';
+    BATCH_CACHE_KEY_PREFIX = instant ? 'instant_batch_mode_last_batch_' : 'batch_mode_last_batch_';
+    body.dataset.instantBatch = instant ? '1' : '0';
+    var prefix = instant ? '/instant_batch_mode' : '/batch_mode';
+    modeLinks.forEach(function (link) { link.href = link.getAttribute('href').replace(/^\/(?:instant_)?batch_mode/, prefix); });
+    var active = modeLinks.find(function (link) { return link.classList.contains('active'); });
+    if (updateUrl && active) window.history.pushState({}, '', active.getAttribute('href'));
+    var toggle = document.getElementById('batch-speed-switch');
+    if (toggle) toggle.setAttribute('aria-checked', String(instant));
+    document.getElementById('batch-speed-title').textContent = instant ? 'Instant processing' : 'Deferred processing';
+    document.getElementById('batch-speed-description').textContent = instant ? 'Starts now. Standard credit cost.' : 'Allow up to 24 hours for results.';
+    document.getElementById('batch-speed-deferred').classList.toggle('is-selected', !instant);
+    document.getElementById('batch-speed-instant').classList.toggle('is-selected', instant);
+    var pageTitle = 'Batch Processing · ' + (active ? active.textContent : modeMeta().plural);
+    document.title = pageTitle + ' · Lecture Processor';
+    var shellTitle = document.querySelector('.app-shell-title');
+    if (shellTitle) shellTitle.textContent = pageTitle;
+    updateRowLabels();
+    setStartButtonState(pendingStartRequest || startLockedByBatchState);
   }
 
   function modeSupportsStudyTools() {
@@ -305,6 +337,10 @@
     if (!submitBtn) return;
     submitBtn.disabled = !!locked;
     submitBtn.textContent = String(label || (locked ? 'Queued…' : (isInstantBatch ? 'Start instant batch' : 'Start batch')));
+    var toggle = document.getElementById('batch-speed-switch');
+    if (toggle) toggle.disabled = !!locked;
+    var feedback = document.getElementById('batch-speed-feedback');
+    if (feedback) feedback.textContent = locked ? 'Processing speed is fixed for this submitted batch. Follow it in Batch Status.' : 'Switching keeps your files and settings.';
   }
 
   function showSubmitFeedback(summary) {
@@ -1253,16 +1289,16 @@
           ? (
             '  <details class="row-url-import" data-audio-url-wrap><summary>Or import a lecture link</summary>' +
             '    <div class="row-url-head">' +
-            '      <strong id="' + urlTitleId + '">Import from audio or video URL</strong>' +
-            '      <span id="' + urlHintId + '">Use the lecture page URL or a direct playlist link.</span>' +
+            '      <strong id="' + urlTitleId + '">Import from lecture video URL</strong>' +
+            '      <span id="' + urlHintId + '">Paste the normal lecture recording page from your LMS, such as Brightspace. Direct media playlist links also work.</span>' +
             '    </div>' +
             '    <div class="row-url-row">' +
-            '      <input type="url" class="row-url-input" data-field="m3u8" placeholder="https://.../audio-video-or-index.m3u8" autocomplete="off" aria-labelledby="' + urlTitleId + '" aria-describedby="' + urlHintId + ' ' + urlHelpId + ' ' + urlStatusId + '">' +
+            '      <input type="url" class="row-url-input" data-field="m3u8" placeholder="https://.../lecture-video-or-index.m3u8" autocomplete="off" aria-labelledby="' + urlTitleId + '" aria-describedby="' + urlHintId + ' ' + urlHelpId + ' ' + urlStatusId + '">' +
             '      <button type="button" class="btn small" data-action="import-audio-url">Import audio</button>' +
             '    </div>' +
             '    <div class="row-url-help" id="' + urlHelpId + '">' +
             '      <span class="info-dot" aria-hidden="true">i</span>' +
-            '      <span>If the page URL fails, try its direct media playlist.</span>' +
+            '      <div><strong>Try this order</strong><ol><li>Paste the normal lecture recording page URL.</li><li>If it fails, open the recording page and press play once.</li><li>For a direct playlist: open DevTools → Network, filter on <code>index.m3u8</code>, and copy the playlist request URL.</li></ol><a href="https://youtu.be/Sz3W9l8J1q0" target="_blank" rel="noopener noreferrer">Watch the Brightspace walkthrough ↗</a><p>Access depends on your institution’s video player and whether its media link is accessible. This imports lecture audio; it does not connect to your LMS account.</p></div>' +
             '    </div>' +
             '    <div class="row-url-status" id="' + urlStatusId + '" data-field="m3u8-status" aria-live="polite"></div>' +
             '  </details>'
@@ -1825,6 +1861,20 @@
     updateTopControls();
     ensureMinimumRows();
     wireEvents();
+    setProcessingStrategy(isInstantBatch, false);
+    document.getElementById('batch-speed-switch').addEventListener('click', function () { setProcessingStrategy(!isInstantBatch, true); });
+    window.addEventListener('popstate', function () {
+      var instant = window.location.pathname.indexOf('/instant_batch_mode') === 0;
+      if (instant !== isInstantBatch && (pendingStartRequest || startLockedByBatchState)) {
+        var active = modeLinks.find(function (link) { return link.classList.contains('active'); });
+        if (active) {
+          window.history.replaceState({}, '', active.getAttribute('href'));
+          setBatchIdInUrl(currentBatchId);
+        }
+        return;
+      }
+      setProcessingStrategy(instant, false);
+    });
     restoreBatchIdFromQuery();
     if (batchPage) {
       window.requestAnimationFrame(function () {
