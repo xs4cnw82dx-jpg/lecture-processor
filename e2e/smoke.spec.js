@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { installAccountFixture } = require('./helpers/batch-fixture');
 
 async function assertAppHealth(request) {
   const healthResponse = await request.get('/healthz');
@@ -83,8 +84,25 @@ test('batch output language listbox supports keyboard selection', async ({ page 
 
 test('mobile pack builder keeps actions visible and option typing focused', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
+  await installAccountFixture(page);
+  // This test supplies Firebase through the fixture; don't load SRI-pinned CDN scripts with stub bodies.
+  await page.route('**/study-pack-builder', async route => {
+    const response = await route.fetch();
+    const html = await response.text();
+    await route.fulfill({ response, body: html.replace(/<script\b[^>]*src="https:\/\/www\.gstatic\.com\/firebasejs\/[^"\s]+"[^>]*><\/script>/g, '') });
+  });
+  await page.route('**/api/study**', route => {
+    const pathname = new URL(route.request().url()).pathname;
+    const payload = pathname === '/api/study-folders' ? { folders: [] }
+      : pathname === '/api/study-packs' ? { study_packs: [], has_more: false }
+      : pathname === '/api/study-plan/membership' ? { pack_ids: [] }
+      : { card_states: {}, daily_progress: {} };
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(payload) });
+  });
+  // The authenticated route opens Builder after library hydration completes.
   await page.goto('/study-pack-builder');
-  await page.evaluate(() => window.openBuilderOverlay('create', null));
+  await expect(page.locator('#builder-overlay')).toBeVisible();
+  await expect(page.locator('#builder-tab-test')).toBeVisible();
 
   await expect(page.locator('#builder-stat-dirty')).toHaveText('Not saved yet');
   await expect(page.locator('#builder-save-btn')).toBeInViewport();

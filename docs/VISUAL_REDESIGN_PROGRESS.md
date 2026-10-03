@@ -2,6 +2,8 @@
 
 Read `VISUAL_REDESIGN_MASTER_PLAN.md` and this file after compaction and before every phase. Full implementation is authorized; the user expects genuinely polished, attractive layouts and flows, not superficial recoloring. Follow the full PR → checks → merge → local sync → deployment verification workflow.
 
+**Latest delivery:** [PR #184](https://github.com/xs4cnw82dx-jpg/lecture-processor/pull/184) contains the completed redesign. The sections below are a chronological work log; the final checkpoint supersedes earlier in-progress notes. Check GitHub and Render for the current merge/deployment state.
+
 ## Current baseline
 
 - Branch: `codex/unified-product-redesign`.
@@ -113,3 +115,9 @@ All source owners are frozen. Final production-setting browser run: **193 passed
 The complete45-part plan and page reports are retained. Representative Batch, Library, custom menu and actual Voice-detail captures are under docs/redesign-evidence. Verification uses synthetic service/account fixtures and isolated storage. Physical mobile keyboards, Safari, actual200% browser zoom, hardware permission flows, real AI/payment/Calendar operations and PDF document painting in headless Chrome were not independently verified. System file choosers and browser security prompts remain system-owned; visible website controls, disclosures, playback bars and validation messages use the product design.
 
 This is the pre-PR checkpoint. Delivery must continue through GitHub checks, merge, local main sync and Render verification; current GitHub/Render status is authoritative. No deferred Calendar activation or billing/OAuth configuration changed.
+
+## GitHub verification follow-up
+
+PR #184's backend, frontend, Functions and HTTP smoke checks passed. The initial GitHub browser run passed 192 tests, skipped the separate legacy-flag test and exposed one test setup race: the mobile Builder smoke test opened an authenticated editor directly while signed out, before authentication initialization finished. The signed-out callback correctly closed that editor. The test now uses the existing synthetic account fixture and the real Builder route, waiting for authenticated library hydration. All original mobile layout, visible-action and typing-focus assertions remain; no product behavior or authentication requirement was weakened. Delivery remains gated on the updated GitHub checks, merge, local sync and live Render verification.
+
+The corrected Builder check passed eight consecutive runs with retries disabled; scoped lint and whitespace checks passed. The fixture omits the external SDK tags it replaces, preserving strict console-error detection without changing production script-integrity protection.
