@@ -884,6 +884,20 @@ def list_instant_batch_jobs(app_ctx, request):
     return list_batch_jobs(app_ctx, request, strategy_override='instant')
 
 
+def set_batch_visibility(app_ctx, request, batch_id):
+    uid, _decoded, error_response, status = upload_batch_support.batch_user_guard(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
+    write_error = upload_batch_support.account_write_guard_response(app_ctx, uid)
+    if write_error is not None:
+        return write_error
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or set(payload) != {'archived'} or not isinstance(payload['archived'], bool):
+        return app_ctx.jsonify({'error': 'Provide archived as a boolean'}), 400
+    result, status = batch_orchestrator.set_batch_visibility(batch_id, uid, payload['archived'], runtime=app_ctx)
+    return app_ctx.jsonify(result), status
+
+
 def get_batch_job_status(app_ctx, request, batch_id):
     batch, _decoded, error_response, status = upload_batch_support.get_batch_with_permission(
         app_ctx,

@@ -97,6 +97,7 @@
   function isActiveNavPath(href, currentPath) {
     if (href === currentPath) return true;
     if (href === '/plan' && currentPath === '/stats') return true;
+    if (href === '/batch_status' && currentPath.indexOf('/batch_status/') === 0) return true;
     if (href === '/batch_mode') {
       return currentPath === '/batch_mode_slides_extraction'
         || currentPath === '/batch_mode_interview_transcription'

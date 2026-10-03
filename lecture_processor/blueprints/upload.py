@@ -48,6 +48,12 @@ def list_batch_jobs():
     return upload_api_service.list_batch_jobs(runtime, request)
 
 
+@upload_bp.route('/api/batch/jobs/<batch_id>/visibility', methods=['PATCH'])
+def set_batch_visibility(batch_id):
+    runtime = get_runtime()
+    return upload_api_service.set_batch_visibility(runtime, request, batch_id)
+
+
 @upload_bp.route('/api/batch/jobs/<batch_id>', methods=['GET'])
 def get_batch_job_status(batch_id):
     runtime = get_runtime()

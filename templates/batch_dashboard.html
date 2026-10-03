@@ -10,108 +10,42 @@
 <body>
   {% set shell_title = 'Batch Status' %}
   {% include '_app_shell.html' %}
-  <main class="app-shell-page batch-dashboard-page">
-    <section class="shell-panel">
-      <div class="batch-dashboard-head">
-        <div>
-          <h1>Batch status</h1>
-          <p>Track active and recent batches in one place. You can safely leave and return later.</p>
-        </div>
-        <div class="batch-dashboard-head-actions">
-          <a href="/batch_mode" class="btn-link">New batch</a>
-          <button type="button" class="btn-link" id="batch-dashboard-refresh-btn">Refresh</button>
-        </div>
-      </div>
-      <div class="batch-dashboard-filters">
-        <label>
-          <span>Mode</span>
-          <select id="batch-dashboard-mode-filter">
-            <option value="">All modes</option>
-            <option value="lecture-notes">Lectures</option>
-            <option value="slides-only">Slides</option>
-            <option value="interview">Interviews</option>
-            <option value="audio-transcription">Audio Transcriptions</option>
-            <option value="text-combine">Combine Text</option>
-          </select>
-        </label>
-        <label>
-          <span>Processing</span>
-          <select id="batch-dashboard-strategy-filter">
-            <option value="">All processing</option>
-            <option value="batch">Standard batch</option>
-            <option value="instant">Instant batch</option>
-          </select>
-        </label>
-        <label>
-          <span>Status</span>
-          <select id="batch-dashboard-status-filter">
-            <option value="">All statuses</option>
-            <option value="queued">Queued</option>
-            <option value="processing">Processing</option>
-            <option value="complete">Complete</option>
-            <option value="partial">Partial</option>
-            <option value="error">Error</option>
-          </select>
-        </label>
-      </div>
-      <div class="batch-dashboard-retention-note" role="note">Batch ZIP downloads include generated results, not raw audio backups. Download important audio from the batch row or Study Library before temporary audio is deleted.</div>
+  <main class="app-shell-page batch-dashboard-page" data-batch-id="{{ batch_id or '' }}">
+    <section class="shell-panel" id="batch-dashboard-auth-gate" hidden>
+      <h1>Sign in to view your batches</h1>
+      <p>Your batch results and progress are linked to your account.</p>
+      <button class="bs-button bs-primary" id="batch-dashboard-signin-btn" type="button">Sign in</button>
     </section>
-    <section class="shell-panel batch-dashboard-auth-gate" id="batch-dashboard-auth-gate" hidden>
-      <div class="batch-dashboard-auth-card">
-        <p class="batch-dashboard-auth-eyebrow">Protected view</p>
-        <h2>Sign in to view your batches</h2>
-        <p>This dashboard tracks the work attached to your account, including live progress, completion emails, and ZIP exports.</p>
-        <div class="batch-dashboard-auth-actions">
-          <button type="button" class="btn-link primary" id="batch-dashboard-signin-btn">Sign in</button>
-          <a href="/batch_mode" class="btn-link">Open batch mode</a>
+    <div id="batch-dashboard-content" hidden>
+      {% if batch_id %}
+      <a class="bs-back" href="/batch_status" id="batch-back-link">← Back to batches</a>
+      <section class="shell-panel bs-detail" id="batch-detail" tabindex="-1" aria-label="Batch details"><p role="status">Loading batch…</p></section>
+      {% else %}
+      <header class="bs-dashboard-head">
+        <div><h1>Batch status</h1><p>Track progress, get your results, and manage past batches.</p></div>
+        <div class="bs-actions"><a class="bs-button bs-primary" href="/batch_mode">New batch</a><button type="button" class="bs-button" id="batch-dashboard-refresh-btn">Refresh</button></div>
+      </header>
+      <section class="shell-panel bs-workspace">
+        <nav class="bs-tabs" aria-label="Batch views">
+          {% for value, label in [('all','All'), ('active','Active'), ('completed','Completed'), ('attention','Needs attention'), ('archived','Archived')] %}
+          <button type="button" class="bs-tab" data-view="{{ value }}">{{ label }} <span data-count="{{ value }}">0</span></button>
+          {% endfor %}
+        </nav>
+        <div class="bs-list-tools">
+          <details id="batch-filters"><summary>Filters</summary><div class="bs-filters">
+            <label>Mode<select id="batch-dashboard-mode-filter"><option value="">All modes</option><option value="lecture-notes">Lectures</option><option value="slides-only">Slides</option><option value="interview">Interviews</option><option value="audio-transcription">Audio transcriptions</option><option value="text-combine">Combine text</option></select></label>
+            <label>Processing<select id="batch-dashboard-strategy-filter"><option value="">All processing</option><option value="batch">Standard batch</option><option value="instant">Instant batch</option></select></label>
+            <button class="bs-button" type="button" data-dashboard-action="clear">Clear filters</button>
+          </div></details>
+          <span id="batch-list-limit" class="bs-muted">Counts refer to loaded batches</span>
         </div>
-      </div>
-    </section>
-
-    <div id="batch-dashboard-content">
-      <section class="shell-panel">
-        <h2>Active batches</h2>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Title</th>
-                <th>Mode</th>
-                <th>Submitted</th>
-                <th>Stage</th>
-                <th>Rows</th>
-                <th>Updated</th>
-                <th>Email</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="batch-dashboard-active-body"></tbody>
-          </table>
+        <p id="batch-dashboard-error" class="bs-refresh-error" role="status" hidden></p>
+        <div class="bs-list" role="table" aria-label="Batches">
+          <div class="bs-list-header" role="row"><span role="columnheader">Batch</span><span role="columnheader">Status</span><span role="columnheader">Progress</span><span role="columnheader">Submitted</span><span role="columnheader">Actions</span></div>
+          <div id="batch-dashboard-rows" role="rowgroup"><p role="status">Loading batches…</p></div>
         </div>
-        <div class="batch-cards" id="batch-dashboard-active-cards"></div>
       </section>
-
-      <section class="shell-panel">
-        <h2>Recent batches</h2>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Title</th>
-                <th>Mode</th>
-                <th>Status</th>
-                <th>Submitted</th>
-                <th>Rows</th>
-                <th>Updated</th>
-                <th>Email</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="batch-dashboard-recent-body"></tbody>
-          </table>
-        </div>
-        <div class="batch-cards" id="batch-dashboard-recent-cards"></div>
-      </section>
+      {% endif %}
     </div>
   </main>
   {% include '_shell_footer.html' %}
@@ -127,6 +61,7 @@
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+  <script src="{{ url_for('static', filename=batch_status_js_asset or 'js/batch-status.js') }}"></script>
   <script src="{{ url_for('static', filename=batch_dashboard_js_asset or 'js/batch-dashboard.js') }}"></script>
 </body>
 </html>

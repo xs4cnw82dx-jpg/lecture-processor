@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from flask import Blueprint, abort, redirect, render_template, request, send_from_directory
+from flask import Blueprint, abort, redirect, render_template, request, send_from_directory, url_for
 
 from lecture_processor.domains.auth import session as auth_session
 from lecture_processor.runtime.container import get_runtime
@@ -141,6 +141,9 @@ def _render_processing_page(forced_mode: str):
 
 
 def _render_batch_page(forced_mode: str, *, instant_mode: bool = False):
+    batch_id = str(request.args.get('batch_id', '') or '').strip()
+    if batch_id:
+        return redirect(url_for('pages.batch_detail_page', batch_id=batch_id), code=302)
     runtime = get_runtime()
     page_keys = {
         'lecture-notes': 'batch-mode',
@@ -157,6 +160,7 @@ def _render_batch_page(forced_mode: str, *, instant_mode: bool = False):
         forced_mode=forced_mode,
         instant_mode=instant_mode,
         batch_mode_js_asset=runtime.resolve_js_asset('js/batch-mode.js'),
+        batch_status_js_asset=runtime.resolve_js_asset('js/batch-status.js'),
         **_shell_context(runtime=runtime, page_key=page_key),
     )
 
@@ -324,11 +328,22 @@ def instant_batch_mode_text_combine_page():
     return _render_batch_page('text-combine', instant_mode=True)
 
 
+@pages_bp.route('/batch_status/<batch_id>')
+def batch_detail_page(batch_id):
+    return _render_batch_dashboard(batch_id)
+
+
 @pages_bp.route('/batch_status')
 def batch_status_page():
+    return _render_batch_dashboard()
+
+
+def _render_batch_dashboard(batch_id=''):
     runtime = get_runtime()
     return render_template(
         'batch_dashboard.html',
+        batch_id=batch_id,
+        batch_status_js_asset=runtime.resolve_js_asset('js/batch-status.js'),
         batch_dashboard_js_asset=runtime.resolve_js_asset('js/batch-dashboard.js'),
         **_shell_context(runtime=runtime, page_key='batch-status', show_credits_pill=True),
     )

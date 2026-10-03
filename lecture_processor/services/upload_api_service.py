@@ -260,6 +260,10 @@ def list_instant_batch_jobs(app_ctx, request):
     return upload_batch_service.list_instant_batch_jobs(app_ctx, request)
 
 
+def set_batch_visibility(app_ctx, request, batch_id):
+    return upload_batch_service.set_batch_visibility(app_ctx, request, batch_id)
+
+
 def get_batch_job_status(app_ctx, request, batch_id):
     return upload_batch_service.get_batch_job_status(app_ctx, request, batch_id)
 

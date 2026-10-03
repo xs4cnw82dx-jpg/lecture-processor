@@ -186,9 +186,10 @@ def test_custom_select_upgrades_remove_native_controls_from_tab_order():
     admin_js = Path('static/js/admin.js').read_text(encoding='utf-8')
     ux_js = Path('static/js/ux-utils.js').read_text(encoding='utf-8')
 
-    assert "selectEl.hidden = true;" in batch_dashboard_js
-    assert "selectEl.tabIndex = -1;" in batch_dashboard_js
-    assert "selectEl.setAttribute('aria-hidden', 'true');" in batch_dashboard_js
+    # Batch filters now use labeled native selects, with built-in keyboard support.
+    dashboard = Path('templates/batch_dashboard.html').read_text(encoding='utf-8')
+    assert '<label>Mode<select id="batch-dashboard-mode-filter"' in dashboard
+    assert 'selectEl.hidden = true' not in batch_dashboard_js
     assert "selectEl.hidden = true;" in admin_js
     assert "selectEl.tabIndex = -1;" in admin_js
     assert "selectEl.setAttribute('aria-hidden', 'true');" in admin_js
@@ -220,8 +221,10 @@ def test_audio_retention_warnings_and_download_controls_are_present():
     assert 'batch-audio-retention-note' in batch_template
     assert 'generated playback audio are temporary and can be deleted' in batch_template
     assert 'Render' not in batch_template
-    assert 'batch-dashboard-retention-note' in batch_dashboard_template
-    assert 'temporary audio is deleted' in batch_dashboard_template
+    status_js = Path('static/js/batch-status.js').read_text(encoding='utf-8')
+    assert 'bs-retention' in status_js
+    assert 'temporary audio is deleted' in status_js
+    assert 'href="/study"' in status_js
     assert 'free-plan' not in batch_dashboard_template
     assert 'data-download-file="audio"' in batch_js
     assert '/api/import-audio-url/download' in batch_js

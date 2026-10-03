@@ -256,7 +256,7 @@ def _completion_email_body(batch, status, runtime=None):
         finished_at_label = ''
 
     path = _batch_page_path(mode_name, batch.get('processing_strategy', 'batch'))
-    deep_link = f'{path}?batch_id={batch_id}' if batch_id else path
+    deep_link = f'/batch_status/{batch_id}' if batch_id else path
     public_base = str(getattr(resolved_runtime, 'PUBLIC_BASE_URL', '') or '').rstrip('/')
     if public_base:
         full_link = f'{public_base}{deep_link}'
@@ -2491,6 +2491,8 @@ def get_batch_status(batch_id, runtime=None, *, rows_limit=None):
         'credits_charged': int(batch.get('credits_charged', 0) or 0),
         'credits_refunded': int(batch.get('credits_refunded', 0) or 0),
         'credits_refund_pending': int(batch.get('credits_refund_pending', 0) or 0),
+        'archived': bool(batch.get('archived', False)),
+        'archived_at': float(batch.get('archived_at', 0) or 0),
         'can_download_zip': bool(can_download_zip),
         'last_heartbeat_at': batch.get('last_heartbeat_at', 0),
         'export_options': batch.get('export_options', {}),
@@ -2505,6 +2507,52 @@ def get_batch_status(batch_id, runtime=None, *, rows_limit=None):
     }
     response.update(_build_batch_view(batch_id, batch, response_rows, can_download_zip=can_download_zip, runtime=resolved_runtime))
     return response
+
+
+def set_batch_visibility(batch_id, uid, archived, runtime=None):
+    """Change only owner-controlled visibility, checking eligibility atomically."""
+    resolved_runtime = _resolve_runtime(runtime)
+
+    def visibility(batch):
+        if not batch:
+            return {'error': 'Batch not found'}, 404
+        if batch.get('uid') != uid:
+            return {'error': 'You cannot change this batch'}, 403
+        if batch.get('status') not in {'complete', 'partial', 'error'}:
+            return {'error': 'Only finished batches can be archived or restored'}, 409
+        archived_at = (float(batch.get('archived_at', 0) or 0) or resolved_runtime.time.time()) if archived else 0
+        return {'archived': archived, 'archived_at': archived_at}, 200
+
+    db = getattr(resolved_runtime, 'db', None)
+    if db is not None:
+        ref = resolved_runtime.batch_repo.batch_job_doc_ref(db, batch_id)
+
+        @resolved_runtime.firestore.transactional
+        def update(transaction):
+            snapshot = ref.get(transaction=transaction)
+            payload, status = visibility(snapshot.to_dict() if snapshot.exists else None)
+            if status == 200:
+                transaction.update(ref, payload)
+            return payload, status
+
+        payload, status = update(db.transaction())
+    else:
+        def update_memory():
+            jobs, _rows = _memory_store(resolved_runtime)
+            payload, status = visibility(jobs.get(batch_id))
+            if status == 200:
+                jobs[batch_id].update(payload)
+            return payload, status
+
+        lock = getattr(resolved_runtime, 'JOBS_LOCK', None)
+        if lock is not None:
+            with lock:
+                payload, status = update_memory()
+        else:
+            payload, status = update_memory()
+    if status == 200:
+        payload = dict(payload, batch_id=batch_id)
+    return payload, status
 
 
 def get_batch_row(batch_id, row_id, runtime=None):
@@ -2731,6 +2779,8 @@ def list_batches_for_uid(uid, statuses=None, limit=100, runtime=None):
             'credits_charged': int(batch.get('credits_charged', 0) or 0),
             'credits_refunded': int(batch.get('credits_refunded', 0) or 0),
             'credits_refund_pending': int(batch.get('credits_refund_pending', 0) or 0),
+            'archived': bool(batch.get('archived', False)),
+            'archived_at': float(batch.get('archived_at', 0) or 0),
             'submission_locked': bool(batch.get('submission_locked', False)),
             'folder_id': str(batch.get('folder_id', '') or ''),
             'folder_name': str(batch.get('folder_name', '') or ''),
@@ -2800,6 +2850,8 @@ def list_batches_for_admin(statuses=None, limit=200, runtime=None):
             'credits_charged': int(batch.get('credits_charged', 0) or 0),
             'credits_refunded': int(batch.get('credits_refunded', 0) or 0),
             'credits_refund_pending': int(batch.get('credits_refund_pending', 0) or 0),
+            'archived': bool(batch.get('archived', False)),
+            'archived_at': float(batch.get('archived_at', 0) or 0),
             'submission_locked': bool(batch.get('submission_locked', False)),
             'folder_id': str(batch.get('folder_id', '') or ''),
             'folder_name': str(batch.get('folder_name', '') or ''),

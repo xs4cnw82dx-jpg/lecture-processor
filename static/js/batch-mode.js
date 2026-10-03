@@ -118,16 +118,10 @@
   var combinedDocxCheckbox = document.getElementById('include-combined-docx');
 
   var statusPanel = document.getElementById('batch-status-panel');
-  var refreshStatusBtn = document.getElementById('refresh-status-btn');
-  var downloadZipBtn = document.getElementById('download-zip-btn');
-  var statusBanner = document.getElementById('batch-status-banner');
-  var summaryEl = document.getElementById('batch-summary');
-  var rowsBody = document.getElementById('batch-rows-body');
   var submitFeedback = document.getElementById('batch-submit-feedback');
 
   var rowStates = new Map();
   var currentBatchId = '';
-  var pollTimer = null;
   var queryBatchId = '';
   var activeSubmissionId = '';
   var pendingStartRequest = false;
@@ -146,7 +140,8 @@
 
   function resetAccountState() {
     accountRevision += 1;
-    stopPolling();
+    statusView.clear();
+    var toast = document.getElementById('batch-notice'); if (toast) toast.hidden = true;
     currentBatchId = '';
     queryBatchId = '';
     activeSubmissionId = '';
@@ -155,9 +150,6 @@
     outputLanguageUserTouched = false;
     if (statusPanel) statusPanel.hidden = true;
     if (submitFeedback) { submitFeedback.hidden = true; submitFeedback.innerHTML = ''; }
-    if (summaryEl) summaryEl.innerHTML = '';
-    if (rowsBody) rowsBody.innerHTML = '';
-    if (statusBanner) statusBanner.textContent = '';
     if (batchTitleInput) batchTitleInput.value = '';
     if (rowsWrap) rowsWrap.innerHTML = '';
     rowStates.clear();
@@ -200,20 +192,6 @@
     });
   }
 
-  function saveBlobFallback(response, fallbackName) {
-    return response.blob().then(function (blob) {
-      var url = URL.createObjectURL(blob);
-      var anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = fallbackName || 'download';
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(url);
-      return fallbackName;
-    });
-  }
-
   function saveBlobAsFile(blob, fallbackName) {
     if (downloadUtils && typeof downloadUtils.saveBlobAsFile === 'function') {
       downloadUtils.saveBlobAsFile(blob, fallbackName);
@@ -236,48 +214,6 @@
     });
   }
 
-  function downloadAuthenticatedFile(path, fallbackName, button) {
-    var originalText = button ? button.textContent : '';
-    if (button) {
-      button.disabled = true;
-      button.textContent = 'Downloading...';
-    }
-    return authFetch(path).then(function (response) {
-      if (!response.ok) return parseDownloadError(response);
-      if (downloadUtils && typeof downloadUtils.downloadResponseBlob === 'function') {
-        return downloadUtils.downloadResponseBlob(response, fallbackName);
-      }
-      return saveBlobFallback(response, fallbackName);
-    }).then(function () {
-      showShellToast('Download started.');
-    }).catch(function (error) {
-      showShellToast(error && error.message ? error.message : 'Could not download this file.', 'error');
-    }).finally(function () {
-      if (button) {
-        button.disabled = false;
-        button.textContent = originalText;
-      }
-    });
-  }
-
-  function isProtectedBatchDownload(href) {
-    var value = String(href || '').trim();
-    return (
-      /^\/api\/(?:instant-)?batch\/jobs\/[^?#]+\/download\.zip(?:[?#].*)?$/.test(value) ||
-      /^\/api\/(?:instant-)?batch\/jobs\/[^?#]+\/rows\/[^?#]+\/download-docx(?:[?#].*)?$/.test(value) ||
-      /^\/api\/(?:instant-)?batch\/jobs\/[^?#]+\/rows\/[^?#]+\/download-flashcards-csv(?:[?#].*)?$/.test(value)
-    );
-  }
-
-  function openBatchActionHref(href, button) {
-    if (!href) return;
-    if (isProtectedBatchDownload(href)) {
-      downloadAuthenticatedFile(href, 'batch-download', button);
-      return;
-    }
-    window.open(href, '_blank');
-  }
-
   function rowCount() {
     return rowsWrap ? rowsWrap.querySelectorAll('.batch-row').length : 0;
   }
@@ -298,67 +234,6 @@
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-    });
-  }
-
-  function formatTokens(value) {
-    var safe = Number(value || 0);
-    if (!Number.isFinite(safe)) return '0';
-    return Math.round(safe).toLocaleString();
-  }
-
-  function truncateText(value, maxLength) {
-    var text = String(value || '').trim();
-    var limit = Math.max(20, Number(maxLength || 0) || 140);
-    if (text.length <= limit) return text;
-    return text.slice(0, limit - 1).trim() + '…';
-  }
-
-  function statusTone(status) {
-    var safe = String(status || '').trim().toLowerCase();
-    if (safe === 'complete') return 'success';
-    if (safe === 'partial') return 'warning';
-    if (safe === 'error') return 'error';
-    return 'info';
-  }
-
-  function batchActionHtml(summary) {
-    var label = String(summary.next_action_label || '').trim();
-    var href = String(summary.next_action_href || '').trim();
-    if (!label || !href) return '';
-    var apiAction = href.indexOf('/api/batch/jobs/') === 0 || href.indexOf('/api/instant-batch/jobs/') === 0;
-    var className = apiAction ? 'btn small' : 'btn small secondary';
-    if (apiAction) {
-      return '<button type="button" class="' + className + '" data-batch-action-href="' + escapeHtml(href) + '">' + escapeHtml(label) + '</button>';
-    }
-    return '<a class="' + className + '" href="' + escapeHtml(href) + '">' + escapeHtml(label) + '</a>';
-  }
-
-  function renderStatusBanner(summary) {
-    if (!statusBanner) return;
-    var message = String(summary.status_message || '').trim();
-    var errorMessage = String(summary.error_message || '').trim();
-    var details = errorMessage && errorMessage !== message ? errorMessage : '';
-    var actionHtml = batchActionHtml(summary);
-    if (!message && !details && !actionHtml) {
-      statusBanner.hidden = true;
-      statusBanner.innerHTML = '';
-      statusBanner.className = 'batch-status-banner';
-      return;
-    }
-    statusBanner.className = 'batch-status-banner tone-' + statusTone(summary.status);
-    statusBanner.innerHTML =
-      '<div class="batch-status-banner-head">' +
-      '  <strong>' + escapeHtml(message || 'Batch update') + '</strong>' +
-      (details ? '<span>' + escapeHtml(details) + '</span>' : '') +
-      '</div>' +
-      (actionHtml ? '<div class="batch-status-banner-actions">' + actionHtml + '</div>' : '');
-    statusBanner.hidden = false;
-    Array.prototype.slice.call(statusBanner.querySelectorAll('[data-batch-action-href]')).forEach(function (button) {
-      button.addEventListener('click', function () {
-        var href = String(button.getAttribute('data-batch-action-href') || '').trim();
-        openBatchActionHref(href, button);
-      });
     });
   }
 
@@ -1618,213 +1493,37 @@
     return value === 'complete' || value === 'partial' || value === 'error';
   }
 
-  function renderStatus(statusPayload) {
-    if (!summaryEl || !rowsBody) return;
-
-    var meta = modeMeta();
-    var summary = statusPayload || {};
-    var status = String(summary.status || 'queued');
-    var totalRows = Number(summary.total_rows || 0);
-    var completedRows = Number(summary.completed_rows || 0);
-    var failedRows = Number(summary.failed_rows || 0);
-    var currentStage = String(summary.stage_label || summary.current_stage || '-').trim() || '-';
-    var providerState = String(summary.provider_label || summary.provider_state || '-').trim() || '-';
-    var errorMessage = String(summary.error_message || '').trim();
-    var batchAction = batchActionHtml(summary);
-
-    renderStatusBanner(summary);
-
-    summaryEl.innerHTML =
-      '<div class="batch-summary-card">' +
-      '  <span class="batch-summary-label">Batch</span>' +
-      '  <strong>' + escapeHtml(String(summary.batch_title || summary.batch_id || '-')) + '</strong>' +
-      '  <span class="batch-summary-sub">' + escapeHtml(String(summary.status_message || '')) + '</span>' +
-      '</div>' +
-      '<div class="batch-summary-card">' +
-      '  <span class="batch-summary-label">Status</span>' +
-      '  <strong>' + escapeHtml(status) + '</strong>' +
-      '  <span class="batch-summary-sub">' + escapeHtml(String(summary.current_stage_state || '-')) + '</span>' +
-      '</div>' +
-      '<div class="batch-summary-card">' +
-      '  <span class="batch-summary-label">Current stage</span>' +
-      '  <strong>' + escapeHtml(currentStage) + '</strong>' +
-      '  <span class="batch-summary-sub">' + escapeHtml(providerState) + '</span>' +
-      '</div>' +
-      '<div class="batch-summary-card">' +
-      '  <span class="batch-summary-label">' + escapeHtml(meta.plural) + '</span>' +
-      '  <strong>' + completedRows + '/' + totalRows + ' complete</strong>' +
-      '  <span class="batch-summary-sub">' + failedRows + ' failed</span>' +
-      '</div>' +
-      '<div class="batch-summary-card">' +
-      '  <span class="batch-summary-label">Submitted</span>' +
-      '  <strong>' + formatDate(summary.created_at) + '</strong>' +
-      '  <span class="batch-summary-sub">Last update ' + formatDate(summary.updated_at || summary.last_heartbeat_at || 0) + '</span>' +
-      '</div>' +
-      '<div class="batch-summary-card">' +
-      '  <span class="batch-summary-label">Credits</span>' +
-      '  <strong>' + formatTokens(summary.credits_charged) + ' charged</strong>' +
-      '  <span class="batch-summary-sub">' + formatTokens(summary.credits_refunded) + ' refunded · ' + formatTokens(summary.credits_refund_pending) + ' pending</span>' +
-      '</div>' +
-      '<div class="batch-summary-card">' +
-      '  <span class="batch-summary-label">Tokens</span>' +
-      '  <strong>' + formatTokens(summary.token_total) + ' total</strong>' +
-      '  <span class="batch-summary-sub">in ' + formatTokens(summary.token_input_total) + ' · out ' + formatTokens(summary.token_output_total) + '</span>' +
-      '</div>' +
-      '<div class="batch-summary-card">' +
-      '  <span class="batch-summary-label">Email</span>' +
-      '  <strong>' + escapeHtml(String(summary.email_status_label || summary.completion_email_status || 'pending')) + '</strong>' +
-      '  <span class="batch-summary-sub">' + escapeHtml(truncateText(String(summary.completion_email_error || ''), 120) || 'Notification state saved for this batch.') + '</span>' +
-      '</div>' +
-      '<div class="batch-summary-card">' +
-      '  <span class="batch-summary-label">ZIP extras</span>' +
-      '  <strong>' + escapeHtml(summary.export_options && summary.export_options.include_combined_docx ? 'Combined DOCX on' : 'Combined DOCX off') + '</strong>' +
-      '  <span class="batch-summary-sub">' + escapeHtml(summary.export_options && summary.export_options.include_combined_docx ? 'Includes one combined Word document in addition to row files.' : 'Downloads contain the individual row files only.') + '</span>' +
-      '</div>';
-
-    if (downloadZipBtn) {
-      downloadZipBtn.hidden = !summary.can_download_zip;
+  var statusView = window.LectureProcessorBatchStatus.renderer({
+    element: statusPanel,
+    compact: true,
+    fetch: authFetch,
+    uid: function () { return auth && auth.currentUser ? auth.currentUser.uid : ''; },
+    onData: function (summary) {
+      var locked = summary.status === 'queued' || summary.status === 'processing' || Boolean(summary.submission_locked);
+      startLockedByBatchState = locked;
+      setStartButtonState(locked, locked ? 'Queued…' : (isInstantBatch ? 'Start instant batch' : 'Start batch'));
+      if (isTerminalStatus(summary.status)) { pendingStartRequest = false; activeSubmissionId = ''; }
+    },
+    onArchive: function (result) {
+      if (!result.archived) return;
+      statusView.clear();
+      currentBatchId = '';
+      queryBatchId = '';
+      cacheCurrentBatchId('');
+      setBatchIdInUrl('');
+      statusPanel.hidden = true;
+      if (batchTitleInput) batchTitleInput.focus({ preventScroll: true });
+    },
+    onUndo: function (summary) {
+      currentBatchId = summary.batch_id;
+      cacheCurrentBatchId(currentBatchId);
+      setBatchIdInUrl(currentBatchId);
+      statusPanel.hidden = false;
+      statusView.start(summary);
     }
+  });
 
-    rowsBody.innerHTML = '';
-    var rows = Array.isArray(summary.rows) ? summary.rows : [];
-    rows.forEach(function (row) {
-      var rowId = String(row.row_id || '');
-      var rowStatus = String(row.status || 'queued');
-      var rowStage = String(row.current_stage_label || row.current_stage || '').trim();
-      var rowError = String(row.error || '').trim();
-      var tr = document.createElement('tr');
-      var canDownload = rowStatus === 'complete';
-      var rowDetail = String(row.current_stage_detail || '').trim();
-      var statusText = rowStatus + (rowStage ? ' · ' + rowStage : '') + (row.failed_stage ? ' (' + String(row.failed_stage) + ')' : '');
-      var detailText = rowError || rowDetail;
-      var detailClass = rowError ? 'batch-row-error-text' : 'batch-row-progress-text';
-      var statusDetail = detailText ? '<div class="' + detailClass + '">' + escapeHtml(truncateText(detailText, 180)) + '</div>' : '';
-      tr.innerHTML =
-        '<td>' + meta.singular + ' ' + Number(row.ordinal || 0) + '</td>' +
-        '<td><div class="batch-row-status-line">' + escapeHtml(statusText) + '</div>' + statusDetail + '</td>' +
-        '<td>' + formatTokens(row.token_input_total) + '</td>' +
-        '<td>' + formatTokens(row.token_output_total) + '</td>' +
-        '<td>' + formatTokens(row.token_total) + '</td>' +
-        '<td></td>';
-
-      var actionsCell = tr.lastElementChild;
-      if (canDownload && currentBatchId) {
-        var docxBtn = document.createElement('button');
-        docxBtn.type = 'button';
-        docxBtn.className = 'btn tiny';
-        docxBtn.textContent = 'DOCX';
-        docxBtn.addEventListener('click', function () {
-          downloadAuthenticatedFile(
-            batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-docx',
-            'batch-' + currentBatchId + '-' + rowId + '.docx',
-            docxBtn
-          );
-        });
-
-        actionsCell.appendChild(docxBtn);
-        if (meta.supportsStudyTools) {
-          var cardsBtn = document.createElement('button');
-          cardsBtn.type = 'button';
-          cardsBtn.className = 'btn tiny';
-          cardsBtn.textContent = 'Flashcards CSV';
-          cardsBtn.addEventListener('click', function () {
-            downloadAuthenticatedFile(
-              batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-flashcards-csv?type=flashcards',
-              'batch-' + currentBatchId + '-' + rowId + '-flashcards.csv',
-              cardsBtn
-            );
-          });
-
-          var testBtn = document.createElement('button');
-          testBtn.type = 'button';
-          testBtn.className = 'btn tiny';
-          testBtn.textContent = 'Test CSV';
-          testBtn.addEventListener('click', function () {
-            downloadAuthenticatedFile(
-              batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/rows/' + encodeURIComponent(rowId) + '/download-flashcards-csv?type=test',
-              'batch-' + currentBatchId + '-' + rowId + '-test.csv',
-              testBtn
-            );
-          });
-
-          actionsCell.appendChild(cardsBtn);
-          actionsCell.appendChild(testBtn);
-        }
-      } else {
-        actionsCell.textContent = '-';
-      }
-      rowsBody.appendChild(tr);
-    });
-
-    var locked = status === 'queued' || status === 'processing' || Boolean(summary.submission_locked);
-    startLockedByBatchState = locked;
-    setStartButtonState(locked, locked ? 'Queued…' : (isInstantBatch ? 'Start instant batch' : 'Start batch'));
-
-    if (locked) {
-      showSubmitFeedback(summary);
-    }
-    if (isTerminalStatus(status)) {
-      pendingStartRequest = false;
-      activeSubmissionId = '';
-    }
-  }
-
-  function pollDelayMs() {
-    return document.visibilityState === 'hidden' ? 60000 : 20000;
-  }
-
-  function stopPolling() {
-    if (pollTimer) {
-      window.clearTimeout(pollTimer);
-      pollTimer = null;
-    }
-  }
-
-  function scheduleNextPoll() {
-    stopPolling();
-    if (!currentBatchId) return;
-    if (!auth || !auth.currentUser) return;
-    pollTimer = window.setTimeout(function () {
-      refreshBatchStatus({ silent: true }).finally(function () {
-        scheduleNextPoll();
-      });
-    }, pollDelayMs());
-  }
-
-  function refreshBatchStatus(options) {
-    var opts = options || {};
-    if (!currentBatchId) return Promise.resolve();
-    var isCurrent = captureAccount();
-    var requestedBatchId = currentBatchId;
-    return authFetch(batchApiBase + '/' + encodeURIComponent(currentBatchId))
-      .then(function (response) {
-        return response.json().then(function (payload) {
-          return { response: response, payload: payload };
-        });
-      })
-      .then(function (result) {
-        if (!isCurrent() || currentBatchId !== requestedBatchId) return;
-        if (!result.response.ok) {
-          throw new Error(String(result.payload.error || 'Could not read batch status.'));
-        }
-        renderStatus(result.payload);
-        if (!opts.silent) {
-          showShellToast('Batch status refreshed.', 'success');
-        }
-        if (isTerminalStatus(String(result.payload.status || ''))) {
-          stopPolling();
-        } else {
-          scheduleNextPoll();
-        }
-      })
-      .catch(function (error) {
-        if (!isCurrent() || currentBatchId !== requestedBatchId) return;
-        console.error('Batch status polling failed:', error);
-        if (!opts.silent) {
-          showShellToast(String((error && error.message) || 'Could not read batch status.'), 'error');
-        }
-      });
-  }
+  function stopPolling() { statusView.stop(); }
 
   function runAutoImportSweepBeforeStart() {
     var meta = modeMeta();
@@ -1910,9 +1609,12 @@
         showShellToast('This submission was already accepted. Showing the existing batch.', 'success');
       }
       if (statusPanel) statusPanel.hidden = false;
-      await refreshBatchStatus({ silent: true });
+      if (submitFeedback) submitFeedback.hidden = true;
+      var statusLoad = statusView.start(Object.assign({}, payload, { batch_id: currentBatchId, mode: mode, processing_strategy: isInstantBatch ? 'instant' : 'batch', batch_title: batchTitleInput.value }));
+      statusPanel.focus({ preventScroll: true });
+      statusPanel.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+      await statusLoad;
       if (!isCurrent()) return;
-      scheduleNextPoll();
       activeSubmissionId = '';
     } catch (error) {
       if (!isCurrent()) return;
@@ -1933,8 +1635,7 @@
     if (!currentBatchId) return;
     if (statusPanel) statusPanel.hidden = false;
     if (!auth || !auth.currentUser) return;
-    refreshBatchStatus({ silent: true });
-    scheduleNextPoll();
+    statusView.start({ batch_id: currentBatchId, mode: mode, processing_strategy: isInstantBatch ? 'instant' : 'batch', status: 'queued' });
   }
 
   function restoreBatchIdFromQuery() {
@@ -2074,23 +1775,6 @@
       }
     });
 
-    if (refreshStatusBtn) {
-      refreshStatusBtn.addEventListener('click', function () {
-        refreshBatchStatus({ silent: false });
-      });
-    }
-
-    if (downloadZipBtn) {
-      downloadZipBtn.addEventListener('click', function () {
-        if (!currentBatchId) return;
-        downloadAuthenticatedFile(
-          batchApiBase + '/' + encodeURIComponent(currentBatchId) + '/download.zip',
-          'batch-' + currentBatchId + '.zip',
-          downloadZipBtn
-        );
-      });
-    }
-
     modeLinks.forEach(function (link) {
       var prefetchedHref = '';
       function prefetchHref() {
@@ -2128,10 +1812,6 @@
       });
     });
 
-    document.addEventListener('visibilitychange', function () {
-      if (!currentBatchId) return;
-      scheduleNextPoll();
-    });
   }
 
   function boot() {
