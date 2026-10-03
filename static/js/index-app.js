@@ -1053,6 +1053,8 @@ function showEmailVerificationPrompt(user, options = {}) {
                 status.textContent = 'Email is not verified yet. Open the link from your inbox, then try again.';
                 return;
             }
+            // Email verification changed the token claims; refresh only here.
+            await refreshedUser.getIdToken(true);
             const redirected = await activateVerifiedUser(refreshedUser);
             hideAuthModal();
             if (redirected) return;
@@ -1269,8 +1271,10 @@ async function signOut() {
 }
 async function fetchUserData() {
     if (!currentUser) return;
+    const session = authClient.captureSession();
     try {
         const r = await authenticatedFetch('/api/auth/user');
+        if (!session.isCurrent()) return;
         if (!r.ok) {
             if (r.status === 401 || r.status === 403) {
                 currentUserIsAdmin = false;
@@ -1282,6 +1286,7 @@ async function fetchUserData() {
             return;
         }
         const d = await r.json();
+        if (!session.isCurrent()) return;
         userCredits = d.credits || {};
         userCredits.unlimited = d.unlimited_credits || userCredits.unlimited || {};
         userTotalProcessed = Number(d.total_processed || 0);
@@ -1294,10 +1299,12 @@ async function fetchUserData() {
             applyPreferencesToOutputLanguage(userPreferences, { forceOnboardingOpen: true });
         }
         updateCreditsDisplay();
-        await fetchStudyProgressSummary();
+        // Study statistics are independent of the profile and admin access.
+        void fetchStudyProgressSummary();
         refreshStudyHeaderMetrics();
         updateQuickstartVisibility();
     } catch (e) {
+        if (!session.isCurrent()) return;
         console.error(e);
         userProfileLoaded = false;
     }
@@ -1904,17 +1911,32 @@ function activateVerifiedUser(user) {
         return verifiedUserActivationPromise;
     }
     const operation = (async () => {
+        const session = authClient.captureSession();
+        session.assertCurrent();
+        if (session.user !== user) throw new Error('Your account changed. Please try again.');
         unverifiedEmailUser = null;
         currentUser = user;
-        idToken = await user.getIdToken(true);
+        // Firebase reuses a valid token and refreshes it automatically when due.
+        const token = await user.getIdToken();
+        session.assertCurrent();
+        idToken = token;
         if (authClient && typeof authClient.setToken === 'function') authClient.setToken(idToken);
         updateUIForAuthState(user);
+        if (resumePendingNonAdminAuthReturnIfNeeded()) return true;
+        const profileReady = fetchUserData();
+        if (isAdminAuthReturnUrl(getPendingAuthReturnUrl())) {
+            // Only profile authorization and the secure cookie gate admin entry.
+            await profileReady;
+            session.assertCurrent();
+            return resumePendingAuthReturnIfNeeded();
+        }
         setActiveRuntimeJobs(readActiveRuntimeJobsCache(user));
         resumeLatestRuntimeJob(activeRuntimeJobs, { startPolling: true });
-        await fetchUserData();
-        await checkPaymentResult();
-        await refreshActiveRuntimeJobs(true);
-        return resumePendingAuthReturnIfNeeded();
+        // Account details, payment reconciliation and job recovery must not
+        // hold the sign-in button or toast while their requests finish.
+        void checkPaymentResult().catch((error) => captureClientError(error, 'login_payment_result'));
+        void refreshActiveRuntimeJobs(true);
+        return false;
     })();
     verifiedUserActivationUid = uid;
     verifiedUserActivationPromise = operation;
@@ -1931,7 +1953,12 @@ bootstrap.onAuthStateReady(auth, async (user) => {
     authStateResolved = true;
     currentUser = user;
     if (user) {
+        // Explicit sign-in/sign-up handlers own eligibility and verification
+        // during submission. Running both paths duplicates checks and loading.
+        if (['signin', 'signup', 'google'].includes(authSubmitBusyKind)) return;
+        const session = authClient.captureSession();
         const check = await checkEmailAllowed(user.email || '');
+        if (!session.isCurrent()) return;
         if (!check.allowed) {
             handlingDisallowedAuthState = true;
             try {
