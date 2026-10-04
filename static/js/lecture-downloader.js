@@ -123,7 +123,7 @@
     }
     var urlValue = String(urlInput ? (urlInput.value || '') : '').trim();
     if (!urlValue) {
-      setStatus('Paste a lecture URL first.', 'error');
+      setStatus('Paste the index.m3u8 playlist URL copied from DevTools → Network.', 'error');
       return;
     }
 

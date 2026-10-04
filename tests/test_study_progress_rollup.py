@@ -352,3 +352,29 @@ def test_due_cards_are_complete_owned_actionable_and_exclude_new_future_or_remov
     assert {pack['study_pack_id'] for pack in result['packs']} == {'a', 'b'}
     assert all({card['id'] for card in pack['cards']} == {'fc_0', 'fc_2'} for pack in result['packs'])
     assert all(card['front'] != 'Future card' for pack in result['packs'] for card in pack['cards'])
+
+
+def test_active_plan_due_scope_filters_recommendations_without_mutating_global_history(setup):
+    runtime, db, _ = setup
+    from lecture_processor.repositories import planner_repo
+    runtime.repositories.planner = planner_repo
+    for pack_id in ['active', 'outside', 'archived', 'foreign']:
+        seed_pack(db, pack_id, ['2000-01-01'], owner='other' if pack_id == 'foreign' else 'owner')
+        db.data['study_packs/' + pack_id]['flashcards'] = [{'front': pack_id, 'back': 'answer'}]
+    db.data['study_goals/one'] = {'uid': 'owner', 'status': 'active', 'pack_ids': ['active', 'foreign']}
+    db.data['study_goals/two'] = {'uid': 'owner', 'status': 'archived', 'pack_ids': ['archived']}
+    db.data['study_goals/foreign'] = {'uid': 'other', 'status': 'active', 'pack_ids': ['outside']}
+    original = deepcopy(db.data)
+    scoped = service.load_due_study_cards(runtime, 'owner', active_plan=True)
+    assert scoped['due_count'] == 1
+    assert [item['study_pack_id'] for item in scoped['packs']] == ['active']
+    assert service.load_due_study_cards(runtime, 'owner')['due_count'] == 3
+    assert db.data == original
+    scoped_summary = assert_ok(service.get_study_progress_summary(runtime, SimpleNamespace(args={'scope': 'active_plan'})))
+    assert scoped_summary['due_today'] == scoped['due_count']
+    assert db.data == original
+    db.data['study_goals/one']['status'] = 'archived'
+    reads_before = list(db.get_all_calls)
+    assert service.load_due_study_cards(runtime, 'owner', active_plan=True)['due_count'] == 0
+    assert db.get_all_calls == reads_before
+    assert service.load_due_study_cards(runtime, 'owner')['due_count'] == 3

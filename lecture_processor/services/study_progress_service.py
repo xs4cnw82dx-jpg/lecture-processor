@@ -515,6 +515,14 @@ def get_study_progress_summary(app_ctx, request):
         return error_response, status
     uid = decoded_token['uid']
     try:
+        if request is not None and request.args.get('scope') == 'active_plan':
+            account_lifecycle.require_account_access(uid, runtime=app_ctx)
+            doc = app_ctx.get_study_progress_doc(uid).get()
+            progress = doc.to_dict() or {} if doc.exists else {}
+            due = load_due_study_cards(app_ctx, uid, active_plan=True)
+            summary = _summary_with_due_count(progress, due['due_count'], app_ctx)
+            summary['active_plan_pack_ids'] = sorted(active_plan_pack_ids(app_ctx, uid))
+            return app_ctx.jsonify(summary)
         return app_ctx.jsonify(load_study_progress_summary(app_ctx, uid))
     except account_lifecycle.AccountUnavailableError:
         return study_api_support.account_unavailable_response(app_ctx)
@@ -522,6 +530,59 @@ def get_study_progress_summary(app_ctx, request):
         app_ctx.logger.error(f"Error fetching study progress summary for user {uid}: {error}")
         return app_ctx.jsonify({'error': 'Could not load study progress summary'}), 500
 
+
+def active_plan_pack_ids(app_ctx, uid):
+    goals = app_ctx.repositories.planner.list_active_study_goals_by_uid(app_ctx.db, uid)
+    return {str(pack_id) for goal in goals if goal.get('uid') == uid and goal.get('status', 'active') == 'active'
+            for pack_id in goal.get('pack_ids', []) if isinstance(pack_id, str)}
+
+
+def load_due_study_cards(app_ctx, uid, *, active_plan=False):
+    progress_doc = app_ctx.get_study_progress_doc(uid).get()
+    today = _local_today(progress_doc.to_dict() or {} if progress_doc.exists else {}, app_ctx)
+    active_ids = active_plan_pack_ids(app_ctx, uid) if active_plan else None
+    if active_ids == set():
+        return {'date': today, 'due_count': 0, 'packs': []}
+    packs = []
+    candidates = {}
+    if active_ids is not None:
+        docs = (app_ctx.repositories.study.get_study_card_state_docs(app_ctx.db, uid, active_ids) if app_ctx.db is not None
+                else [app_ctx.get_study_card_state_doc(uid, pack_id).get() for pack_id in active_ids]) if active_ids else []
+    else:
+        docs = app_ctx.repositories.study.list_all_study_card_states_by_uid(app_ctx.db, uid)
+    for doc in docs:
+        data = doc.to_dict() or {}
+        pack_id = _pack_id_from_summary_doc(uid, doc, data)
+        if data.get('uid') != uid or not pack_id or (active_ids is not None and pack_id not in active_ids):
+            continue
+        state = study_progress.sanitize_card_state_map(data.get('state', {}), runtime=app_ctx)
+        if any(card_id.startswith('fc_') and study_progress.card_entry_has_interaction(entry, runtime=app_ctx)
+               and str(entry.get('next_review_date') or UNSCHEDULED_DUE_DATE) <= today
+               for card_id, entry in state.items()):
+            candidates[pack_id] = state
+    for pack_doc in app_ctx.repositories.study.get_study_pack_docs(app_ctx.db, candidates):
+        pack_id = pack_doc.id
+        pack = (pack_doc.to_dict() or {}) if pack_doc.exists else {}
+        if pack.get('uid') != uid or pack.get('archived'):
+            continue
+        state = candidates[pack_id]
+        cards = []
+        for index, card in enumerate(pack.get('flashcards') or []):
+            entry = state.get(f'fc_{index}') or {}
+            if not study_progress.card_entry_has_interaction(entry, runtime=app_ctx):
+                continue
+            due = str(entry.get('next_review_date') or UNSCHEDULED_DUE_DATE)
+            if due > today:
+                continue
+            cards.append({'id': f'fc_{index}', 'index': index,
+                          'front': str(card.get('front') or f'Card {index + 1}')[:300],
+                          'due_date': due})
+        if cards:
+            cards.sort(key=lambda card: (card['due_date'], card['index']))
+            packs.append({'study_pack_id': pack_id, 'title': pack.get('title') or 'Untitled pack',
+                          'due_count': len(cards), 'cards': cards})
+    packs.sort(key=lambda pack: (pack['cards'][0]['due_date'], pack['title'].casefold()))
+    return {'date': today, 'due_count': sum(pack['due_count'] for pack in packs), 'packs': packs}
 
 def get_due_study_cards(app_ctx, request):
     """Resolve the complete owned due queue to real, currently available cards."""
@@ -531,43 +592,7 @@ def get_due_study_cards(app_ctx, request):
     uid = decoded_token['uid']
     try:
         account_lifecycle.require_account_access(uid, runtime=app_ctx)
-        progress_doc = app_ctx.get_study_progress_doc(uid).get()
-        today = _local_today(progress_doc.to_dict() or {} if progress_doc.exists else {}, app_ctx)
-        packs = []
-        candidates = {}
-        for doc in app_ctx.repositories.study.list_all_study_card_states_by_uid(app_ctx.db, uid):
-            data = doc.to_dict() or {}
-            pack_id = _pack_id_from_summary_doc(uid, doc, data)
-            if data.get('uid') != uid or not pack_id:
-                continue
-            state = study_progress.sanitize_card_state_map(data.get('state', {}), runtime=app_ctx)
-            if any(card_id.startswith('fc_') and study_progress.card_entry_has_interaction(entry, runtime=app_ctx)
-                   and str(entry.get('next_review_date') or UNSCHEDULED_DUE_DATE) <= today
-                   for card_id, entry in state.items()):
-                candidates[pack_id] = state
-        for pack_doc in app_ctx.repositories.study.get_study_pack_docs(app_ctx.db, candidates):
-            pack_id = pack_doc.id
-            pack = (pack_doc.to_dict() or {}) if pack_doc.exists else {}
-            if pack.get('uid') != uid or pack.get('archived'):
-                continue
-            state = candidates[pack_id]
-            cards = []
-            for index, card in enumerate(pack.get('flashcards') or []):
-                entry = state.get(f'fc_{index}') or {}
-                if not study_progress.card_entry_has_interaction(entry, runtime=app_ctx):
-                    continue
-                due = str(entry.get('next_review_date') or UNSCHEDULED_DUE_DATE)
-                if due > today:
-                    continue
-                cards.append({'id': f'fc_{index}', 'index': index,
-                              'front': str(card.get('front') or f'Card {index + 1}')[:300],
-                              'due_date': due})
-            if cards:
-                cards.sort(key=lambda card: (card['due_date'], card['index']))
-                packs.append({'study_pack_id': pack_id, 'title': pack.get('title') or 'Untitled pack',
-                              'due_count': len(cards), 'cards': cards})
-        packs.sort(key=lambda pack: (pack['cards'][0]['due_date'], pack['title'].casefold()))
-        return app_ctx.jsonify({'date': today, 'due_count': sum(pack['due_count'] for pack in packs), 'packs': packs})
+        return app_ctx.jsonify(load_due_study_cards(app_ctx, uid, active_plan=request is not None and request.args.get('scope') == 'active_plan'))
     except account_lifecycle.AccountUnavailableError:
         return study_api_support.account_unavailable_response(app_ctx)
     except Exception as error:

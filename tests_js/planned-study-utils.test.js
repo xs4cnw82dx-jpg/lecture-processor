@@ -38,3 +38,8 @@ test('local checkpoint resumes only its matching current content and completion 
   assert.equal(merged.run_status, 'paused');
   assert.deepEqual(merged.queue, ['server']);
 });
+
+test('a stale mode cannot override a new server mode even with a higher local revision', () => {
+  const remote = {activity_id:'r',content_fingerprint:'v',generation:0,mode_generation:1,study_mode:'test',checkpoint_revision:5};
+  assert.equal(utils.mergeCheckpoint(remote,{...remote,mode_generation:0,study_mode:'write',checkpoint_revision:50,pending_reviews:[{key:'fc_0:first'}]}),remote);
+});

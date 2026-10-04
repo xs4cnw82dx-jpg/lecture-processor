@@ -31,7 +31,7 @@
     return meaningful && (pendingItems(run).length === 0 || timeMet);
   }
   function mergeCheckpoint(remote, local) {
-    if (!local || local.activity_id !== remote.activity_id || local.content_fingerprint !== remote.content_fingerprint || local.generation !== remote.generation) return remote;
+    if (!local || local.activity_id !== remote.activity_id || local.content_fingerprint !== remote.content_fingerprint || local.generation !== remote.generation || (local.mode_generation || 0) !== (remote.mode_generation || 0) || local.study_mode !== remote.study_mode) return remote;
     if ((local.checkpoint_revision || 0) < (remote.checkpoint_revision || 0) || ((local.checkpoint_revision || 0) === (remote.checkpoint_revision || 0) && !(local.pending_reviews || []).length)) return remote;
     return Object.assign({}, remote, local, { queue: remote.queue, duration_seconds: remote.duration_seconds, run_status: 'paused' });
   }

@@ -46,11 +46,21 @@ def study_plan_runtime(monkeypatch, runtime):
     monkeypatch.setattr(core.study_repo, 'get_study_pack_summary_doc', lambda _db, requested: _Snapshot(pack, requested) if requested == pack_id else _Snapshot())
     monkeypatch.setattr(core.study_repo, 'get_study_pack_doc', lambda _db, requested: _Snapshot(pack, requested) if requested == pack_id else _Snapshot())
     monkeypatch.setattr(core.study_repo, 'list_study_folders_by_uid', lambda _db, _uid: [])
-    monkeypatch.setattr(core, 'get_study_card_state_doc', lambda _uid, _pack_id: type('Ref', (), {'get': lambda self: _Snapshot({'state': {}})})())
-    monkeypatch.setitem(runtime.__dict__, 'get_study_card_state_doc', lambda _uid, _pack_id: type('Ref', (), {'get': lambda self: _Snapshot({'state': {}})})())
-    monkeypatch.setitem(runtime.__dict__, 'get_study_progress_doc', lambda _uid: type('Ref', (), {'get': lambda self: _Snapshot({
-        'card_state_due_by_date_version': 1, 'card_state_due_by_date': {},
-    })})())
+    progress_docs = {}
+    class ProgressRef:
+        def __init__(self, key, default):
+            self.key, self.default = key, default
+        def get(self, **_kwargs):
+            from copy import deepcopy
+            return _Snapshot(deepcopy(progress_docs.get(self.key, self.default)))
+        def set(self, payload, merge=False):
+            from copy import deepcopy
+            progress_docs[self.key] = {**progress_docs.get(self.key, self.default), **deepcopy(payload)} if merge else deepcopy(payload)
+    state_ref = lambda owner, pack: ProgressRef(('state', owner, pack), {'state': {}})
+    progress_ref = lambda owner: ProgressRef(('progress', owner), {'card_state_due_by_date_version': 1, 'card_state_due_by_date': {}})
+    monkeypatch.setattr(core, 'get_study_card_state_doc', state_ref)
+    monkeypatch.setitem(runtime.__dict__, 'get_study_card_state_doc', state_ref)
+    monkeypatch.setitem(runtime.__dict__, 'get_study_progress_doc', progress_ref)
     monkeypatch.setattr(core.study_repo, 'list_study_card_states_by_uid', lambda _db, _uid, _limit: [])
     core.planner_repo.clear_memory_state()
     yield {'uid': uid, 'pack_id': pack_id, 'pack': pack}
@@ -79,6 +89,7 @@ def test_study_plan_endpoints_require_auth(client):
     assert client.get('/api/study-plan/library').status_code == 401
     assert client.put('/api/study-plan/preferences', json={}).status_code == 401
     assert client.post('/api/study-plan/goals', json={}).status_code == 401
+    assert client.post('/api/study-plan/reset', json={}).status_code == 401
     assert client.post('/api/study-plan/preview', json={}).status_code == 401
     assert client.post('/api/study-plan/apply', json={}).status_code == 401
     assert client.put('/api/study-plan/items/session_test', json={}).status_code == 401
@@ -564,3 +575,26 @@ def test_plan_and_dashboard_use_the_same_complete_due_total(client, study_plan_r
     assert plan.status_code == 200
     assert dashboard.get_json()['due_today'] == 402
     assert plan.get_json()['progress']['due_cards'] == 402
+
+
+def test_reset_entire_plan_preserves_history_invalidates_preview_and_replays_safely(client, study_plan_runtime, monkeypatch):
+    monkeypatch.setattr(account_lifecycle, 'require_account_access', lambda *args, **kwargs: None)
+    uid = study_plan_runtime['uid']
+    proposal = client.post('/api/study-plan/preview', json=_preview_body(study_plan_runtime['pack_id']), headers=_headers()).get_json()['proposal']
+    for ident, status in [('orphan', 'planned'), ('completed', 'completed'), ('skipped', 'skipped')]:
+        core.planner_repo.set_planner_session(None, uid, ident, {'id': ident, 'uid': uid, 'goal_id': 'gone', 'date': '2000-01-01', 'status': status})
+    core.planner_repo.set_planner_session(None, 'foreign', 'other', {'id': 'other', 'uid': 'foreign', 'status': 'planned'})
+    body = {'confirm': 'clear_study_plan', 'idempotency_key': 'reset_request'}
+    assert client.post('/api/study-plan/reset', json=[], headers=_headers()).status_code == 400
+    assert client.post('/api/study-plan/reset', json={}, headers=_headers()).status_code == 400
+    response = client.post('/api/study-plan/reset', json=body, headers=_headers())
+    assert response.status_code == 200, response.get_json()
+    assert response.get_json()['sessions_cancelled'] == 1
+    assert core.planner_repo.get_planner_session(None, uid, 'completed').to_dict()['status'] == 'completed'
+    assert core.planner_repo.get_planner_session(None, 'foreign', 'other').to_dict()['status'] == 'planned'
+    apply = client.post('/api/study-plan/apply', json={'proposal_id': proposal['proposal_id'], 'idempotency_key': 'accept_old'}, headers=_headers())
+    assert apply.status_code == 409
+    core.planner_repo.set_planner_session(None, uid, 'new', {'id': 'new', 'uid': uid, 'status': 'planned'})
+    assert client.post('/api/study-plan/reset', json=body, headers=_headers()).get_json()['replayed'] is True
+    assert core.planner_repo.get_planner_session(None, uid, 'new').to_dict()['status'] == 'planned'
+    assert client.get('/api/study-plan', headers=_headers()).get_json()['study_packs'][0]['study_pack_id'] == study_plan_runtime['pack_id']

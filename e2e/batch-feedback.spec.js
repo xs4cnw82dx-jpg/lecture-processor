@@ -50,9 +50,9 @@ test('batch import instructions, tinted disclosures and mobile switch remain rea
     const disclosure = page.locator('.row-url-import').first();
     await expect(disclosure.locator('summary')).toHaveCSS('background-color', 'rgb(238, 241, 255)');
     await disclosure.locator('summary').click();
-    await expect(disclosure.getByText(/normal lecture recording page/).first()).toBeVisible();
+    await expect(disclosure.getByText(/Play your LMS recording/).first()).toBeVisible();
     await expect(disclosure.getByRole('link', { name: /Brightspace walkthrough/ })).toBeVisible();
-    await expect(disclosure.getByText(/DevTools/)).toBeVisible();
+    await expect(disclosure.getByText(/Open DevTools:/)).toBeVisible();
     await expect(page.locator('.batch-audio-retention-note')).toContainText('Clearing browser site data');
     await expect(page.locator('.batch-progress-note')).toContainText('20 seconds');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

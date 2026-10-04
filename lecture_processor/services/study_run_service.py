@@ -45,7 +45,7 @@ def build_queue(pack, state, session, today, all_items=False):
         seconds = (seconds // 1800) * 1500 + min(seconds % 1800, 1500)
     candidates = []
     for prefix, field in [('fc', 'flashcards'), ('q', 'test_questions')]:
-        if study_mode == 'notes' or (study_mode == 'flashcards' and prefix != 'fc') or (study_mode == 'test' and prefix != 'q'):
+        if study_mode == 'notes' or (study_mode in {'flashcards', 'write', 'match'} and prefix != 'fc') or (study_mode == 'test' and prefix != 'q'):
             continue
         occurrences = {}
         for index, item in enumerate(pack.get(field) or []):
@@ -95,7 +95,7 @@ def build_queue(pack, state, session, today, all_items=False):
 
 def rebuild_unfinished(run, pack, state, session, today):
     """Remap unchanged answered content, preserve removed answers as historical work."""
-    candidates = build_queue(pack, state, dict(session, study_mode=run.get('study_mode', 'review')), today, all_items=True)
+    candidates = build_queue(pack, state, dict(session, study_mode='review'), today, all_items=True)
     by_content = {item.get('content_key'): item for item in candidates}
     kept, answers, retries = [], {}, []
     retired = list(run.get('retired_answers') or [])
@@ -125,7 +125,7 @@ def rebuild_unfinished(run, pack, state, session, today):
     return run
 
 
-def _atomic(app, uid, session_id, run_id, change, pack_digest=None, pack_id=None):
+def _atomic(app, uid, session_id, run_id, change, pack_digest=None, pack_id=None, review_body=None):
     repo = app.repositories.planner
     def verify_pack(transaction=None):
         if pack_digest is None:
@@ -135,6 +135,18 @@ def _atomic(app, uid, session_id, run_id, change, pack_digest=None, pack_id=None
         pack = document.to_dict() if document.exists else {}
         if pack.get('uid') != uid or pack.get('archived') or fingerprint(pack) != pack_digest:
             raise RunError('This pack changed. Reload the session to update unfinished work.', 409)
+    def review_mutations(run, result, transaction=None):
+        if review_body is None:
+            return run, []
+        from lecture_processor.services import planned_review_service
+        committed = run if run is not None else result['run']
+        try:
+            writes, payload = planned_review_service.prepare(app, uid, committed, review_body, transaction)
+        except ValueError as error:
+            raise RunError(str(error)) from error
+        result.update(payload)
+        return committed if writes else run, writes
+
     if app.db is None:
         with _memory_lock:
             if not lifecycle.ensure_account_allows_writes(uid, runtime=app)[0]:
@@ -144,6 +156,9 @@ def _atomic(app, uid, session_id, run_id, change, pack_digest=None, pack_id=None
             run_doc = repo.get_study_activity(None, uid, run_id)
             session, run, result = change(session_doc.to_dict() if session_doc.exists else None,
                                           run_doc.to_dict() if run_doc.exists else None)
+            run, progress_writes = review_mutations(run, result)
+            for ref, payload in progress_writes:
+                ref.set(payload, merge=list(payload))
             if session is not None:
                 repo.set_planner_session(None, uid, session_id, session, merge=False)
             if run is not None:
@@ -163,6 +178,9 @@ def _atomic(app, uid, session_id, run_id, change, pack_digest=None, pack_id=None
         rd = run_ref.get(transaction=transaction)
         verify_pack(transaction)
         session, run, result = change(sd.to_dict() if sd.exists else None, rd.to_dict() if rd.exists else None)
+        run, progress_writes = review_mutations(run, result, transaction)
+        for ref, payload in progress_writes:
+            transaction.set(ref, payload, merge=list(payload))
         if session is not None:
             transaction.set(session_ref, session)
         if run is not None:
@@ -217,8 +235,8 @@ def start_run(app, request, session_id):
         today = plans._today_for_timezone(plans._preferences(app, uid)['timezone'])
         selected_mode = 'pomodoro' if body.get('timer_mode') == 'pomodoro' else 'countdown'
         study_mode = body.get('study_mode', 'review')
-        if study_mode not in {'review', 'flashcards', 'test', 'notes'}:
-            raise RunError('Choose Review, Flashcards, Practice test, or Notes for this planned session.')
+        if study_mode not in {'review', 'flashcards', 'test', 'write', 'match', 'notes'}:
+            raise RunError('Choose an available study mode for this session.')
         queue = build_queue(pack, state, dict(session, timer_mode=selected_mode, study_mode=study_mode), today)
         if not queue:
             raise RunError('No material is available for this study mode. Choose another mode, or add cards, questions, or notes to this pack.')
@@ -230,22 +248,31 @@ def start_run(app, request, session_id):
             if current.get('pack_id') != pack_id or current.get('revision') != session.get('revision'):
                 raise RunError('This session changed. Reload and try again.', 409)
             effective_timer = selected_mode if 'timer_mode' in body or not run else run.get('timer_mode', 'countdown')
-            if run and 'study_mode' in body and study_mode != run.get('study_mode', 'review') and (run.get('slot_seconds') or run.get('answers')):
-                raise RunError('This session already has saved progress. Choose Resume saved session to continue it.', 409)
             if run and run.get('content_fingerprint') != digest:
                 run = rebuild_unfinished(run, pack, state, current, today)
                 run['metrics'] = _metrics(run)
-            if run and ('timer_mode' in body or 'study_mode' in body) and not run.get('slot_seconds') and not run.get('answers'):
+            if run and ('timer_mode' in body or 'study_mode' in body):
                 effective_mode = study_mode if 'study_mode' in body else run.get('study_mode', 'review')
-                updated_queue = build_queue(pack, state, dict(current, timer_mode=effective_timer, study_mode=effective_mode), today)
-                run.update({'timer_mode': effective_timer, 'study_mode': effective_mode, 'queue': updated_queue, 'checkpoint_revision': run.get('checkpoint_revision', 0) + 1})
+                if run.get('slot_seconds'):
+                    effective_timer = run.get('timer_mode', 'countdown')
+                additional = build_queue(pack, state, dict(current, timer_mode=effective_timer, study_mode=effective_mode), today)
+                # Changing the activity cannot discard original plan targets or earned work.
+                combined = list(run['queue'])
+                known = {item['id'] for item in combined}
+                combined.extend(item for item in additional if item['id'] not in known)
+                run.update({'mode_generation': run.get('mode_generation', 0) + (effective_mode != run.get('study_mode', 'review')),
+                            'timer_mode': effective_timer, 'study_mode': effective_mode, 'queue': combined,
+                            'checkpoint_revision': run.get('checkpoint_revision', 0) + 1})
             if not run:
                 now = app.time.time()
+                original_targets = build_queue(pack, state, dict(current, timer_mode=selected_mode, study_mode='review'), today)
+                known = {item['id'] for item in queue}
+                queue.extend(item for item in original_targets if item['id'] not in known)
                 run = {'activity_id': run_id, 'uid': uid, 'pack_id': pack_id, 'plan_item_id': session_id,
                        'generation': generation, 'content_fingerprint': digest, 'queue': queue,
                        'answers': {}, 'retry_done': [], 'active_seconds': 0, 'slot_seconds': 0, 'notes_seconds': 0,
                        'duration_seconds': int(current.get('duration', 45)) * 60,
-                       'timer_mode': selected_mode, 'study_mode': study_mode, 'run_status': 'paused', 'checkpoint_revision': 0,
+                       'timer_mode': selected_mode, 'study_mode': study_mode, 'mode_generation': 0, 'run_status': 'paused', 'checkpoint_revision': 0,
                        'started_at': now, 'ended_at': 0, 'updated_at': now, 'source': 'tracked',
                        'metrics': {'minutes': 0, 'cards_reviewed': 0, 'questions_answered': 0, 'correct': 0, 'incorrect': 0}}
             if current.get('active_run_id') != run_id:
@@ -277,6 +304,8 @@ def checkpoint_run(app, request, run_id):
                 raise RunError('This session is no longer active.', 409)
             if body.get('generation') != run.get('generation') or body.get('content_fingerprint') != run.get('content_fingerprint'):
                 raise RunError('This study run changed. Reload to resume the current version.', 409)
+            if body.get('mode_generation', 0) != run.get('mode_generation', 0) or body.get('study_mode', run.get('study_mode', 'review')) != run.get('study_mode', 'review'):
+                raise RunError('The study mode changed in another tab. Reopen the session to continue with its saved progress.', 409)
             retries = body.get('retry_done') or []
             if not isinstance(retries, list) or any(not isinstance(item, str) for item in retries):
                 raise RunError('Retry answers must be a list of item ids.')
@@ -319,7 +348,7 @@ def checkpoint_run(app, request, run_id):
                         'checkpoint_revision': revision, 'updated_at': app.time.time()})
             run['metrics'] = _metrics(run)
             return None, run, {'run': run}
-        return _atomic(app, uid, session_id, run_id, change, pack_digest=original.to_dict().get('content_fingerprint'), pack_id=original.to_dict().get('pack_id'))
+        return _atomic(app, uid, session_id, run_id, change, pack_digest=original.to_dict().get('content_fingerprint'), pack_id=original.to_dict().get('pack_id'), review_body=body)
     return _request(app, request, handle)
 
 

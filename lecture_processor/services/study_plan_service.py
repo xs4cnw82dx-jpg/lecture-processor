@@ -401,7 +401,10 @@ def get_bootstrap(app_ctx, request):
     try:
         preferences = _migrate_legacy_folder_goals(app_ctx, uid, _preferences(app_ctx, uid))
         start_date, end_date = _date_bounds(request, preferences['timezone'])
-        goals = [_serialize_goal(item) for item in app_ctx.repositories.planner.list_study_goals_by_uid(app_ctx.db, uid, 200)]
+        goal_records = app_ctx.repositories.planner.list_study_goals_by_uid(app_ctx.db, uid, 200)
+        goals_by_id = {item['goal_id']: item for item in goal_records}
+        goals_by_id.update({item['goal_id']: item for item in app_ctx.repositories.planner.list_active_study_goals_by_uid(app_ctx.db, uid)})
+        goals = [_serialize_goal(item) for item in goals_by_id.values()]
         active_goals = [item for item in goals if item['status'] == 'active']
         try:
             pack_limit = max(1, min(100, int(request.args.get('pack_limit', 100) or 100)))
@@ -487,7 +490,7 @@ def get_membership(app_ctx, request):
     decoded, error_response, status = _require_user(app_ctx, request)
     if error_response is not None:
         return error_response, status
-    goals = app_ctx.repositories.planner.list_study_goals_by_uid(app_ctx.db, decoded['uid'], 200)
+    goals = app_ctx.repositories.planner.list_active_study_goals_by_uid(app_ctx.db, decoded['uid'])
     pack_ids = sorted({pack_id for goal in goals if goal.get('status', 'active') == 'active' for pack_id in study_plan.sanitize_pack_ids(goal.get('pack_ids', []))})
     return app_ctx.jsonify({'pack_ids': pack_ids})
 
@@ -511,7 +514,7 @@ def get_library_page(app_ctx, request):
         if not getattr(after_doc, 'exists', False) or str(raw.get('uid', '') or '') != uid:
             return app_ctx.jsonify({'error': 'Library cursor is invalid.'}), 400
     packs, next_cursor = _pack_summary_page(app_ctx, uid, limit, after_doc=after_doc)
-    active_goals = [item for item in app_ctx.repositories.planner.list_study_goals_by_uid(app_ctx.db, uid, 200) if item.get('status', 'active') == 'active']
+    active_goals = app_ctx.repositories.planner.list_active_study_goals_by_uid(app_ctx.db, uid)
     membership = {pack_id for goal in active_goals for pack_id in study_plan.sanitize_pack_ids(goal.get('pack_ids', []))}
     for pack in packs:
         pack['in_plan'] = pack['study_pack_id'] in membership
@@ -619,6 +622,37 @@ def archive_goal(app_ctx, request, goal_id):
     except (ServiceUnavailable, DeadlineExceeded):
         return app_ctx.jsonify({'error': 'We could not confirm deletion. Retry to safely check this request.', 'code': 'save_unconfirmed'}), 503
     return app_ctx.jsonify({'ok': True, 'goal': _serialize_goal(current)})
+
+
+def reset_plan(app_ctx, request):
+    decoded, error_response, status = _require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
+    uid = decoded['uid']
+    guard = _write_guard(app_ctx, uid)
+    if guard is not None:
+        return guard
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or body.get('confirm') != 'clear_study_plan':
+        return app_ctx.jsonify({'error': 'Confirm that you want to clear the entire Study Plan.'}), 400
+    key = study_plan.sanitize_id(body.get('idempotency_key'))
+    if not key:
+        return app_ctx.jsonify({'error': 'A reset request key is required.'}), 400
+    from lecture_processor.services import calendar_sync_service
+    try:
+        result = app_ctx.repositories.planner.reset_study_plan(
+            app_ctx.db, uid, now_ts=app_ctx.time.time(), idempotency_key=key,
+            require_account=lambda **kwargs: account_lifecycle.require_account_access(uid, runtime=app_ctx, **kwargs),
+            mark_dirty=lambda **kwargs: calendar_sync_service.mark_dirty(app_ctx, uid, **kwargs))
+    except account_lifecycle.AccountUnavailableError:
+        return study_api_support.account_unavailable_response(app_ctx)
+    except ValueError as error:
+        return app_ctx.jsonify({'error': str(error)}), 409
+    except FailedPrecondition:
+        return app_ctx.jsonify({'error': 'Clearing your plan is temporarily unavailable. Nothing changed. Try again shortly.'}), 503
+    except (ServiceUnavailable, DeadlineExceeded):
+        return app_ctx.jsonify({'error': 'We could not confirm the reset. Reload your plan to check before trying again.'}), 503
+    return app_ctx.jsonify({'ok': True, **result})
 
 
 def preview_plan(app_ctx, request):

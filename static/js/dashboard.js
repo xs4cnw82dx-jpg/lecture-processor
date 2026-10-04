@@ -17,10 +17,15 @@
   var packsList = document.getElementById('dash-packs-list');
   var dashboardPage = document.getElementById('dashboard-page');
   var authBanner = document.getElementById('dashboard-auth-banner');
-  var DASHBOARD_CACHE_KEY = 'dashboard_summary';
+  var DASHBOARD_CACHE_KEY = 'dashboard_summary_active_plan_v1';
   var currentUser = null;
   var dueRequest = 0;
   var nextPlannedPack = false;
+  var activePlanPackIds = new Set();
+  var recentPanel = document.getElementById('dash-recent-packs');
+  recentPanel.addEventListener('toggle', function () {
+    if (currentUser && recentPanel.dataset.owner === currentUser.uid) writeUserCacheJson(currentUser, 'dashboard_recent_open', recentPanel.open);
+  });
 
   function setDashboardLoading(isLoading) {
     if (!dashboardPage) return;
@@ -151,7 +156,7 @@
 
   async function fetchUpcomingSessions(token) {
     if (!token) return [];
-    var response = await fetch('/api/planner/sessions?future_only=1&limit=4', {
+    var response = await fetch('/api/planner/sessions?future_only=1&limit=4&scope=active_plan', {
       headers: { Authorization: 'Bearer ' + token }
     });
     if (!response.ok) throw new Error('Could not load planner sessions');
@@ -160,7 +165,7 @@
   }
 
   function fetchProgressSummary(headers) {
-    return fetch('/api/study-progress/summary', { headers: headers });
+    return fetch('/api/study-progress/summary?scope=active_plan', { headers: headers });
   }
 
   function fetchRecentStudyPacks(headers) {
@@ -219,11 +224,12 @@
       packsList.innerHTML = '<div class="empty-state-card"><h3>Upload your first lecture</h3><p>Create a study pack first, then your latest packs will appear here for quick access.</p><div class="empty-state-actions"><a class="empty-state-link primary" href="/lecture-notes">Upload first lecture</a><a class="empty-state-link" href="/study">Open Study Library</a></div></div>';
       return;
     }
-    if (!nextPlannedPack && packs[0]) {
-      document.getElementById('dash-continue-title').textContent = packs[0].title || 'Your latest study pack';
+    var recommendedPack = packs.find(function (pack) { return activePlanPackIds.has(pack.study_pack_id); });
+    if (!nextPlannedPack && recommendedPack) {
+      document.getElementById('dash-continue-title').textContent = recommendedPack.title || 'Your latest study pack';
       document.getElementById('dash-continue-copy').textContent = 'Pick a study mode and continue with your latest pack.';
       document.getElementById('dash-continue-link').textContent = 'Continue studying →';
-      document.getElementById('dash-continue-link').href = studyEntry(packs[0].study_pack_id);
+      document.getElementById('dash-continue-link').href = studyEntry(recommendedPack.study_pack_id);
     }
     packs.slice(0, 5).forEach(function (pack) {
       var row = document.createElement('a');
@@ -264,6 +270,9 @@
 
   async function loadDashboard(user) {
     nextPlannedPack = false;
+    activePlanPackIds = new Set();
+    recentPanel.dataset.owner = user ? user.uid : '';
+    recentPanel.open = user ? readUserCacheJson(user, 'dashboard_recent_open', true) !== false : true;
     dueRequest += 1;
     document.getElementById('dash-due-panel').hidden = true;
     document.getElementById('dash-due-list').replaceChildren();
@@ -301,13 +310,14 @@
         if (currentUser !== user) return;
         var summary = progressPayload && progressPayload.summary ? progressPayload.summary : progressPayload;
         if (!summary || typeof summary !== 'object') summary = {};
+        activePlanPackIds = new Set(summary.active_plan_pack_ids || []);
         snapshot = toSnapshot(summary);
         persistSnapshot(user, snapshot);
       }
       if (snapshot) applySnapshot(snapshot);
       else hydrateCachedSnapshot(user);
       if (sessionsFailed) renderUpcomingSessionsError();
-      else renderUpcomingSessions(user, sessions);
+      else renderUpcomingSessions(user, sessions.filter(function (session) { return activePlanPackIds.has(session.pack_id); }));
       if (packsFailed) {
         renderRecentPacksError();
       } else {
@@ -339,14 +349,14 @@
     if (!user) return;
     try {
       var token = await user.getIdToken();
-      var response = await fetch('/api/study-progress/due', { headers: { Authorization: 'Bearer ' + token } });
+      var response = await fetch('/api/study-progress/due?scope=active_plan', { headers: { Authorization: 'Bearer ' + token } });
       if (!response.ok) throw new Error('Could not load due cards.');
       var data = await response.json();
       if (currentUser !== user || requestId !== dueRequest) return;
       list.replaceChildren();
       dueEl.textContent = data.due_count + ' card' + (data.due_count === 1 ? '' : 's');
       if (!data.packs || !data.packs.length) {
-        message.textContent = 'You’re all caught up. Your previously studied cards will appear here when they’re ready for review.';
+        message.textContent = 'No cards are due in your active Study Plan. Add packs to your plan to include their scheduled reviews here.';
         list.appendChild(message); return;
       }
       data.packs.forEach(function (pack) {
@@ -378,12 +388,8 @@
   });
   document.getElementById('dash-due-panel').addEventListener('toggle', function () { document.getElementById('dash-due-open').setAttribute('aria-expanded', String(this.open)); });
 
-  function handleExternalProgressEvent(user, payload) {
-    if (!user || !payload || (payload.user_id && payload.user_id !== user.uid)) return;
-    if (!payload.summary || typeof payload.summary !== 'object') return;
-    var snapshot = toSnapshot(payload.summary);
-    persistSnapshot(user, snapshot);
-    applySnapshot(snapshot);
+  function handleExternalProgressEvent(user) {
+    if (user) loadDashboard(user);
   }
 
   if (progressUtils && typeof progressUtils.subscribeProgressEvent === 'function') {

@@ -629,9 +629,9 @@
         .upload-subtitle { font-size: 0.8125rem; color: var(--gray-500); }
         .upload-formats { margin-top: 12px; font-size: 0.75rem; color: var(--gray-600); }
         .audio-recorder-panel { margin-top: 14px; padding: 14px; border: 1px solid rgba(37,88,217,0.16); border-radius: var(--radius); background: linear-gradient(135deg, rgba(37,88,217,0.06) 0%, rgba(14,165,233,0.06) 100%); text-align: left; }
-        .audio-recorder-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+        .audio-recorder-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
         .audio-recorder-title { font-size: 0.82rem; font-weight: 700; color: var(--gray-800); text-transform: uppercase; letter-spacing: 0.04em; }
-        .audio-recorder-timer { display: inline-flex; align-items: center; justify-content: center; min-width: 68px; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,0.92); border: 1px solid rgba(37,88,217,0.18); color: var(--gray-800); font-size: 0.8rem; font-weight: 700; }
+        .audio-recorder-timer { display: inline-flex; align-items: center; justify-content: center; min-width: 68px; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,0.92); border: 1px solid rgba(37,88,217,0.18); color: var(--gray-800); font-size: 0.8rem; font-weight: 600; font-variant-numeric: tabular-nums; }
         .audio-recorder-actions { display: flex; flex-wrap: wrap; gap: 8px; }
         .audio-recorder-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--gray-300); background: rgba(255,255,255,0.95); color: var(--gray-700); font-size: 0.84rem; font-weight: 700; cursor: pointer; transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease; }
         .audio-recorder-btn:hover:not(:disabled) { transform: translateY(-1px); border-color: rgba(37,88,217,0.35); box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08); }
@@ -663,7 +663,8 @@
         .processing-disclosure-body { display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden; pointer-events: none; transition: grid-template-rows 0.28s ease, opacity 0.2s ease, visibility 0s linear 0.28s; }
         .processing-disclosure-body.visible { grid-template-rows: 1fr; opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s; }
 
-.processing-disclosure-inner { min-height: 0; overflow: hidden; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 24px; padding: 0 18px 18px; }
+.processing-disclosure-inner { min-height: 0; overflow: hidden; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 24px; padding: 0 18px; transition: padding-block .28s ease; }
+.processing-disclosure-body.visible > .processing-disclosure-inner { padding-block: 18px; }
         .processing-disclosure .audio-recorder-panel { margin-top: 0; }
         .upload-section > .upload-estimate,
         .upload-section > .advanced-settings { align-self: stretch; }
@@ -688,6 +689,8 @@
         .upload-url-button:disabled { opacity: 0.65; cursor: not-allowed; }
         .upload-url-help { margin-top: 8px; color: var(--gray-500); font-size: 0.76rem; line-height: 1.45; display: flex; align-items: flex-start; gap: 8px; }
         .upload-url-help-icon { width: 16px; height: 16px; min-width: 16px; border-radius: 50%; border: 1px solid rgba(37,88,217,0.3); color: var(--primary); display: inline-flex; align-items: center; justify-content: center; font-size: 0.64rem; font-weight: 700; margin-top: 1px; background: rgba(37,88,217,0.06); }
+        .upload-url-help-text ol { margin: 8px 0 14px; padding-left: 20px; }
+        .upload-url-help-text li + li { margin-top: 8px; }
         .upload-url-help-text code { font-size: 0.72rem; }
         .upload-url-help-link { display: inline-flex; align-items: center; gap: 4px; margin-top: 5px; color: var(--primary-dark); font-size: 0.76rem; font-weight: 600; text-decoration: none; }
         .upload-url-help-link:hover { text-decoration: underline; color: var(--primary); }

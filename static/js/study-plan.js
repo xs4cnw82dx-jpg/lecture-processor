@@ -155,6 +155,7 @@
   }
   async function loadData(options) {
     var settings = options || {};
+    var loadingUser = state.user;
     if (settings.useCache !== false) {
       var cached = readCache();
       if (cached) {
@@ -166,6 +167,7 @@
     }
     try {
       var payload = await api('/api/study-plan' + bootstrapRange());
+      if (state.user !== loadingUser) return;
       state.data = payload;
       cacheData();
       setSaving('');
@@ -175,6 +177,7 @@
       await loadRemainingPacks(payload.next_pack_cursor);
       openRequestedPacks();
     } catch (error) {
+      if (state.user !== loadingUser) return;
       els.loading.hidden = true;
       if (!state.data) {
         els.workspace.hidden = false;
@@ -286,6 +289,34 @@
     queryAll('[data-edit-goal]', els.goalHealth).forEach(function (button) { button.addEventListener('click', function () { openWizard({ goalId: button.dataset.editGoal }); }); });
     queryAll('[data-delete-goal]', els.goalHealth).forEach(function (button) { button.addEventListener('click', function () { deleteGoal(button.dataset.deleteGoal); }); });
   }
+  async function clearEntirePlan() {
+    if (!state.user || !state.online) { toast('Connect to the internet to clear your plan.', 'error'); return; }
+    var initiatingUser = state.user;
+    var confirmed = await window.LectureProcessorUx.requestDialog({
+      title: 'Clear your entire Study Plan?',
+      message: 'This removes every goal and unfinished session from your plan, including manual, overdue and unlinked sessions. Your study packs, completed sessions, study logs and learning progress stay safe. Saved learning runs, availability and calendar settings are kept. This cannot be undone.',
+      confirmLabel: 'Clear entire plan', cancelLabel: 'Keep my plan', destructive: true
+    });
+    if (!confirmed || state.user !== initiatingUser) return;
+    state.resetIdempotencyKey = state.resetIdempotencyKey || ('reset_' + Date.now() + '_' + Math.random().toString(36).slice(2));
+    var button = byId('clear-study-plan-btn'), errorBox = byId('plan-reset-error');
+    button.disabled = true; errorBox.hidden = true;
+    try {
+      var resetResult = await api('/api/study-plan/reset', { method: 'POST', body: JSON.stringify({ confirm: 'clear_study_plan', idempotency_key: state.resetIdempotencyKey }) });
+      if (state.user !== initiatingUser) return;
+      state.resetIdempotencyKey = '';
+      state.proposal = null; state.applyIdempotencyKey = '';
+      if (state.data && !resetResult.replayed) {
+        (state.data.goals || []).forEach(function (goal) { goal.status = 'archived'; });
+        (state.data.sessions || []).forEach(function (session) { if (!session.status || session.status === 'planned') session.status = 'cancelled'; });
+        cacheData(); renderAll();
+      }
+      await loadData({ useCache: false });
+      if (state.user === initiatingUser) toast(resetResult.replayed ? 'Your earlier reset was already saved. Any newer plan is kept.' : 'Your plan is clear. Your packs and learning history are safe.');
+    } catch (error) { if (state.user === initiatingUser) { errorBox.textContent = error.message; errorBox.hidden = false; } }
+    finally { button.disabled = false; }
+  }
+
   async function deleteGoal(goalId) {
     var goal = activeGoals().find(function (item) { return item.goal_id === goalId; });
     if (!goal || !isEditable()) return;
@@ -1301,6 +1332,7 @@
     queryAll('.study-plan-tab').forEach(function (button) { button.addEventListener('click', function () { setView(button.dataset.planView); }); });
     byId('wizard-refresh-preview-btn').addEventListener('click', refreshWizardPreview);
     byId('wizard-adjust-times-btn').addEventListener('click', function () { state.wizardStep = 3; renderWizardStep(); });
+    byId('clear-study-plan-btn').addEventListener('click', clearEntirePlan);
     byId('schedule-goals-btn').addEventListener('click', function () { setView('today'); byId('goal-health-card').scrollIntoView({ block: 'center' }); var edit = els.goalHealth.querySelector('button'); if (edit) edit.focus({ preventScroll: true }); });
     byId('new-study-goal-btn').addEventListener('click', function () { openWizard(); });
     byId('today-add-session-btn').addEventListener('click', function () { openSessionEditor(null); });
@@ -1345,6 +1377,10 @@
     setOfflineState();
     if (!bootstrap.onAuthStateReady) return;
     bootstrap.onAuthStateReady(auth, async function (user) {
+      if (state.user !== user) {
+        state.resetIdempotencyKey = ''; state.data = null;
+        els.workspace.hidden = true; els.loading.hidden = !user;
+      }
       state.user = user;
       if (!user) {
         if (authClient) authClient.clearToken();

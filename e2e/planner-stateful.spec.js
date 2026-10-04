@@ -8,7 +8,8 @@ async function bootstrap(page,request){
  await request.post('/__planner-fixture/reset');
  await page.addInitScript(()=>{
   const user={uid:'planner-fixture-user',email:'planner@example.test',getIdToken:()=>Promise.resolve('planner-fixture-token')};
-  const auth={currentUser:user,setPersistence:()=>Promise.resolve(),authStateReady:()=>Promise.resolve(),onAuthStateChanged:cb=>{queueMicrotask(()=>cb(user));return()=>{};}};
+  const listeners=[];const auth={currentUser:user,setPersistence:()=>Promise.resolve(),authStateReady:()=>Promise.resolve(),onAuthStateChanged:cb=>{listeners.push(cb);queueMicrotask(()=>cb(user));return()=>{};}};
+  window.__plannerSignOut=()=>{auth.currentUser=null;listeners.forEach(cb=>cb(null));};
   const factory=()=>auth;factory.Auth={Persistence:{LOCAL:'local'}};window.firebase={app:()=>({}),initializeApp:()=>({}),auth:factory};
  });
  await page.route('https://www.gstatic.com/firebasejs/**',r=>r.fulfill({body:'',contentType:'text/javascript'}));
@@ -70,4 +71,31 @@ test('planner month navigation keeps its date picker open and keyboard focus ins
  await page.locator('#wizard-exam-date').click();const picker=page.locator('.date-picker-popover:not(.is-closing)');
  const original=await picker.locator('.date-picker-title').textContent();await picker.getByRole('button',{name:'Next month',exact:true}).click();await expect(picker).toBeVisible();await expect(picker.getByRole('button',{name:'Next month',exact:true})).toBeFocused();
  await picker.getByRole('button',{name:'Previous month',exact:true}).click();await expect(picker.locator('.date-picker-title')).toHaveText(original);await picker.locator('[data-picker-date]:not([disabled])').first().click();await expect(picker).toHaveCount(0);await expect(page.locator('#wizard-exam-date')).not.toHaveValue('');
+});
+
+
+test('clear entire plan confirms scope and retains completed history and packs after reload',async({page,request},testInfo)=>{
+ await bootstrap(page,request);await configure(page);await accept(page);
+ await page.locator('[data-next-complete]').click();await page.locator('#study-log-minutes').fill('25');await page.locator('#study-log-submit').click();await expect(page.locator('#study-log-overlay')).toBeHidden();
+ const before=await snapshot(request);const completed=before.sessions.find(s=>s.status==='completed');
+ await page.locator('#clear-study-plan-btn').click();
+ const dialog=page.getByRole('dialog');await expect(dialog).toContainText('manual, overdue and unlinked');await expect(dialog).toContainText('learning progress stay safe');
+ await page.screenshot({path:testInfo.outputPath('clear-plan-desktop.png'),animations:'disabled'});
+ await page.getByRole('button',{name:'Keep my plan',exact:true}).click();expect((await snapshot(request)).goals.some(g=>g.status==='active')).toBe(true);
+ await page.setViewportSize({width:390,height:844});await page.locator('#clear-study-plan-btn').click();
+ await page.screenshot({path:testInfo.outputPath('clear-plan-mobile.png'),animations:'disabled'});
+ await page.getByRole('button',{name:'Clear entire plan',exact:true}).last().click();
+ await expect(page.locator('#goal-health-content')).toContainText('Start with a study goal');await page.reload();
+ const after=await snapshot(request);expect(after.goals.filter(g=>g.status==='active')).toHaveLength(0);expect(after.sessions.filter(s=>s.status==='planned')).toHaveLength(0);
+ expect(after.sessions.find(s=>s.id===completed.id).status).toBe('completed');expect(after.study_packs.length).toBe(before.study_packs.length);
+});
+
+
+test('reset confirmation cannot authorize a different account after sign out',async({page,request})=>{
+ await bootstrap(page,request);await configure(page);await accept(page);
+ let resets=0;page.on('request',req=>{if(req.url().includes('/api/study-plan/reset'))resets++;});
+ await page.locator('#clear-study-plan-btn').click();await page.evaluate(()=>window.__plannerSignOut());
+ await page.getByRole('button',{name:'Clear entire plan',exact:true}).last().click();
+ await expect(page.locator('#study-plan-auth')).toBeVisible();expect(resets).toBe(0);
+ expect((await snapshot(request)).goals.some(g=>g.status==='active')).toBe(true);
 });
