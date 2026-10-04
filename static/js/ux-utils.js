@@ -813,6 +813,7 @@
     var start = details.getBoundingClientRect().height;
     var opening = details._detailsClosing || !details.open;
     details._detailsClosing = !opening;
+    details.dispatchEvent(new CustomEvent('app:disclosurechange', { detail: { open: opening } }));
     if (!details.animate || prefersReducedMotion()) { details.open = opening; details._detailsClosing = false; return; }
     details.open = true;
     details.classList.add('app-details-animating');

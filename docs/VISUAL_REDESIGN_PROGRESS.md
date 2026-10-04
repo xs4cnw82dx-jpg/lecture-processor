@@ -137,3 +137,5 @@ Read `PRODUCT_FEEDBACK_REPAIR_PLAN.md` and the three `PRODUCT_FEEDBACK_*` owner 
 The new 16-screenshot follow-up is implemented on codex/study-flow-polish. See STUDY_FLOW_POLISH_PLAN.md and its three owner reports. Unified learning setup/viewer and exact device-position restore, atomic server review receipts, full-plan reset, scoped Dashboard recommendations, folder controls, persisted Dashboard disclosure, annotations, checkout Back recovery and creation guidance are complete. Backend1,007/client196 and real-API browser7 plus legacy1 pass; full browser production-asset run and GitHub/Render delivery remain.
 
 Release candidate verified: 228 standard browser scenarios plus seven real-API and one legacy scenario pass. No pending product fixes in this round. PR/checks/merge/live verification remain.
+
+PR186 delivered and exact Render commit0e1861f/public assets verified. Final CI retry audit found a narrow immediate-navigation disclosure persistence race; see active plan for the synchronous intent-save follow-up.

@@ -44,8 +44,8 @@ All requested implementation scopes are complete and frozen. See the creation, p
 Full isolated backend: **1,007 passed**. Client suite: **196 passed**. Generated assets rebuilt and checked; JavaScript/Python lint, repository hygiene, tracked-secret and whitespace checks passed. Real API browser suite: **7 passed**, covering planner lifecycle/reset and shared-viewer saved progress including lost-response replay. Retained legacy planner browser check passed with STUDY_PLAN_V2=0. Full production-asset browser coverage: **228 standard scenarios passed** across the integrated run and the six-test planned lifecycle rerun. The initial run exposed a test assumption about the one-second tick offset; the corrected test still rejects completion before 60 seconds and verifies completion after the full reading interval. Eight environment-specific scenarios were skipped there and passed separately (seven real-API, one legacy).
 
 - [x] Complete full browser suite and final visual inspection.
-- [ ] Commit/push, create and attach PR, monitor required checks and merge without bypass.
-- [ ] Sync main and verify Render exact commit plus public pages/assets.
+- [x] Commit/push, create and attach PR, monitor required checks and merge without bypass.
+- [x] Sync main and verify Render exact commit plus public pages/assets.
 
 Exact viewer position is stored on the current device; planned answers and learning progress are server-backed. No real study data, payments or external AI/calendar services were used for QA.
 
@@ -54,3 +54,9 @@ Exact viewer position is stored on the current device; planned answers and learn
 PR [#186](https://github.com/xs4cnw82dx-jpg/lecture-processor/pull/186) is open and attached to the task. GitHub backend/frontend/Functions/smoke checks passed on the first commit; browser check remains in progress. Final screenshot comparison added the requested information icon and explicit upload-template steps directly to the Builder import panel, in addition to its introductory shortcut. Focused Notes/Builder regression passed and parent inspected the final mobile callout. No runtime logic changed in that last refinement.
 
 GitHub browser follow-up: 227 scenarios passed and one reload test raced pack hydration while enumerating a changing filtered locator. Its helper now waits for the visible setup and enumerates stable mode nodes, skipping unavailable ones. The saved checkpoint/answer/time assertions remain unchanged. Five consecutive runs with retries disabled and lint passed. GitHub is rerunning the final head; no runtime changes were needed for this test correction.
+
+### PR186 delivered; immediate-navigation follow-up
+
+PR186 merged as 0e1861fc91c69a05e1f8106652142eeabcc4e905; Render dep-db10mgff3r2c73bgf2m0 is Live at that commit. All26 changed JS/CSS contents and five public page markers verified. Local main synchronized cleanly. Final CI passed, but its retry report identified a real immediate-navigation edge: native details toggle is asynchronous, so a fast reload could precede persistence. A small follow-up now persists the user’s intended disclosure state synchronously before animation begins. Its regression reloads immediately in both directions and retains account isolation checks. Follow-up validation/release pending.
+
+Immediate-navigation follow-up verified: ten consecutive rapid reload/account-isolation cases passed with retries disabled; all22 shared-control/Dashboard scenarios passed. Lint, generated assets and whitespace checks passed. Runtime change is one synchronous disclosure-intent event and a Dashboard listener; PR/checks/deployment follow.
