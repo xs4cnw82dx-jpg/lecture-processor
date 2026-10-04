@@ -58,7 +58,9 @@ async function plannedLibrary(page, { notes = false, chooseMode = 'flashcards', 
 }
 
 async function choose(page, mode) {
-  for (const card of await page.locator('.lesson-card[data-lesson]:not(.unavailable)').all()) {
+  await expect(page.locator('#setup-overlay')).toBeVisible();
+  for (const card of await page.locator('.lesson-card[data-lesson]').all()) {
+    if ((await card.getAttribute('class')).includes('unavailable')) continue;
     const selected = await card.getAttribute('aria-pressed') === 'true';
     if (selected !== (await card.getAttribute('data-lesson') === mode)) await card.click();
   }

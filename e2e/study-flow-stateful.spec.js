@@ -24,6 +24,7 @@ async function setup(page, request) {
 }
 
 async function choose(page, mode) {
+  await expect(page.locator('#setup-overlay')).toBeVisible();
   const cards = page.locator('.lesson-card[data-lesson]');
   for (const card of await cards.all()) {
     if (await card.getAttribute('aria-disabled') === 'true' || (await card.getAttribute('class')).includes('unavailable')) continue;

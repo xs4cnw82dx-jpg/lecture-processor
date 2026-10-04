@@ -52,3 +52,5 @@ Exact viewer position is stored on the current device; planned answers and learn
 ### Review checkpoint
 
 PR [#186](https://github.com/xs4cnw82dx-jpg/lecture-processor/pull/186) is open and attached to the task. GitHub backend/frontend/Functions/smoke checks passed on the first commit; browser check remains in progress. Final screenshot comparison added the requested information icon and explicit upload-template steps directly to the Builder import panel, in addition to its introductory shortcut. Focused Notes/Builder regression passed and parent inspected the final mobile callout. No runtime logic changed in that last refinement.
+
+GitHub browser follow-up: 227 scenarios passed and one reload test raced pack hydration while enumerating a changing filtered locator. Its helper now waits for the visible setup and enumerates stable mode nodes, skipping unavailable ones. The saved checkpoint/answer/time assertions remain unchanged. Five consecutive runs with retries disabled and lint passed. GitHub is rerunning the final head; no runtime changes were needed for this test correction.
