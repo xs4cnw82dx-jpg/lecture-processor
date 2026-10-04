@@ -23,8 +23,8 @@
   var nextPlannedPack = false;
   var activePlanPackIds = new Set();
   var recentPanel = document.getElementById('dash-recent-packs');
-  recentPanel.addEventListener('toggle', function () {
-    if (currentUser && recentPanel.dataset.owner === currentUser.uid) writeUserCacheJson(currentUser, 'dashboard_recent_open', recentPanel.open);
+  recentPanel.addEventListener('app:disclosurechange', function (event) {
+    if (currentUser && recentPanel.dataset.owner === currentUser.uid) writeUserCacheJson(currentUser, 'dashboard_recent_open', event.detail.open);
   });
 
   function setDashboardLoading(isLoading) {

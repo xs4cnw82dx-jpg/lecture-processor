@@ -59,7 +59,8 @@ test('dashboard recent disclosure persists per account and rows are distinct wit
   await expect(panel).toHaveAttribute('open','');
   const colors = await page.locator('#dash-packs-list .list-item').first().evaluate(row => ({background:getComputedStyle(row).backgroundColor,border:getComputedStyle(row).borderTopColor}));
   expect(colors.background).not.toBe('rgba(0, 0, 0, 0)'); expect(colors.border).not.toBe('rgba(0, 0, 0, 0)');
-  await panel.locator('summary').click(); await expect(panel).not.toHaveAttribute('open','');
+  // Navigation must retain the chosen state even before its animation/toggle event finishes.
+  await panel.locator('summary').click();
   await page.reload(); await expect(page.locator('#dashboard-page')).toHaveAttribute('data-load-state','ready');
   await expect(panel).not.toHaveAttribute('open','');
   await page.screenshot({path:testInfo.outputPath('dashboard-recent-collapsed.png'),fullPage:true});
@@ -69,8 +70,9 @@ test('dashboard recent disclosure persists per account and rows are distinct wit
   await page.evaluate(()=>localStorage.removeItem('dashboard-test-uid'));
   await page.reload(); await expect(page.locator('#dashboard-page')).toHaveAttribute('data-load-state','ready');
   await expect(panel).not.toHaveAttribute('open','');
-  await panel.locator('summary').click(); await expect(panel).toHaveAttribute('open','');
-  await page.reload(); await expect(panel).toHaveAttribute('open','');
+  await panel.locator('summary').click();
+  await page.reload(); await expect(page.locator('#dashboard-page')).toHaveAttribute('data-load-state','ready');
+  await expect(panel).toHaveAttribute('open','');
   await expect(page.locator('.dashboard-scope')).toHaveText('in your Study Plan');
 });
 
