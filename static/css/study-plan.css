@@ -447,3 +447,6 @@ body.plan-modal-open { overflow: hidden; }
 .pack-color-9 { --pack-color:#a6538f; --pack-tint:#fbf0f8; --pack-line:#e5c9df; --pack-ink:#834474; }
 .pack-color-10 { --pack-color:#687425; --pack-tint:#f6f7e9; --pack-line:#d9dfbb; --pack-ink:#535d20; }
 .pack-color-11 { --pack-color:#756159; --pack-tint:#f7f1ee; --pack-line:#ddcec8; --pack-ink:#5e4b44; }
+
+.study-plan-workspace-tools { display:flex; justify-content:flex-end; margin-bottom:10px; }
+.study-plan-workspace-tools .btn { min-height:36px; font-size:.8rem; color:#6d5260; }

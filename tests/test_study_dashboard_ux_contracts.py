@@ -109,7 +109,9 @@ def test_study_pack_modes_and_question_only_packs_have_user_friendly_defaults():
     assert 'function getContentPreferredEditorPane(pack, currentPane)' in study_js
     assert "setEditorPane(getContentPreferredEditorPane(selectedPack, activeEditorPane));" in study_js
     assert 'openDirectModePicker();' in study_js
-    assert "hasTest ? ['test'] : []" in study_js
+    # Direct links enter the same setup; question-only packs still select Test.
+    assert "function openDirectModePicker() { openSessionSetup(); }" in study_js
+    assert "if (ht && !hf && !sessionLessons.test) { sessionLessons.test = true; }" in study_js
     assert 'showModePicker(modes);' in study_js
 
 
@@ -204,7 +206,8 @@ def test_dashboard_uses_progress_summary_endpoint():
     dashboard_js = _read('static/js/dashboard.js')
 
     assert 'function fetchProgressSummary(headers)' in dashboard_js
-    assert "fetch('/api/study-progress/summary', { headers: headers })" in dashboard_js
+    assert "fetch('/api/study-progress/summary?scope=active_plan', { headers: headers })" in dashboard_js
+    assert "fetch('/api/study-progress/due?scope=active_plan'" in dashboard_js
     assert "fetch('/api/study-progress', { headers: headers })" not in dashboard_js
     assert 'progressPayload && progressPayload.summary ? progressPayload.summary : progressPayload' in dashboard_js
 

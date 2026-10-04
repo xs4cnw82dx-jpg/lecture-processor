@@ -44,7 +44,7 @@ jobs:
         env:
           PLANNER_STATEFUL_FIXTURE: "1"
           USE_MINIFIED_JS_ASSETS: "1"
-        run: npx playwright test e2e/planner-stateful.spec.js --workers=1
+        run: npx playwright test e2e/planner-stateful.spec.js e2e/study-flow-stateful.spec.js --workers=1
 
       - name: Upload Playwright report
         if: always()

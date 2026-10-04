@@ -13,6 +13,7 @@
   var historyList = document.getElementById('purchase-history-list');
   var refreshHistoryBtn = document.getElementById('refresh-purchase-history-btn');
   var checkoutBusy = false;
+  var checkoutAttempt = 0;
   var paymentResultChecked = false;
   var paymentSessionId = '';
   var paymentStatus = '';
@@ -125,6 +126,7 @@
     if (checkoutBusy) return;
     var isCurrent = captureAccount();
     checkoutBusy = true;
+    var attempt = ++checkoutAttempt;
     setBundleButtons(true, bundleId);
     try {
       var response = await authFetch('/api/create-checkout-session', {
@@ -133,14 +135,14 @@
         body: JSON.stringify({ bundle_id: bundleId })
       });
       var payload = await response.json().catch(function () { return {}; });
-      if (!isCurrent()) return;
+      if (!isCurrent() || attempt !== checkoutAttempt) return;
       if (!response.ok || !payload.checkout_url) {
         throw new Error(payload.error || 'Could not start checkout');
       }
       window.location.href = payload.checkout_url;
       return;
     } catch (error) {
-      if (!isCurrent()) return;
+      if (!isCurrent() || attempt !== checkoutAttempt) return;
       showToast(error && error.message ? error.message : 'Could not start checkout.', 'error');
       checkoutBusy = false;
       setBundleButtons(false);
@@ -329,6 +331,18 @@
     button.addEventListener('click', function () {
       purchaseBundle(button.dataset.bundleId || '');
     });
+  });
+
+  function resetCheckoutNavigation() {
+    checkoutAttempt += 1;
+    checkoutBusy = false;
+    setBundleButtons(false);
+  }
+  // Browsers may restore the original DOM and JavaScript heap from checkout.
+  // Reset before caching and again on restoration; never create another session.
+  window.addEventListener('pagehide', resetCheckoutNavigation);
+  window.addEventListener('pageshow', function (event) {
+    if (event.persisted) resetCheckoutNavigation();
   });
 
   if (displayFormatUtils && typeof displayFormatUtils.applyPricingCatalog === 'function') {

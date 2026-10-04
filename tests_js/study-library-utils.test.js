@@ -264,3 +264,15 @@ test('buildStudyPackTitleFromCsvFilename derives clean study pack titles', () =>
     'Fallback Title'
   );
 });
+
+
+test('collapsing the empty All Study Packs id hides roots but retains builtin filters', () => {
+  const items=studyLibraryUtils.buildFolderItemsForSidebar({folders:[{folder_id:'one',name:'One'}],collapsedFolderIds:[''],unorganizedFolderId:'loose'});
+  assert.equal(items.some(item=>item.folder_id==='one'),false);
+  assert.equal(items.some(item=>item.folder_id==='loose'),true);
+  assert.equal(items.find(item=>item.folder_id==='').is_collapsed,true);
+});
+test('Unorganized filters loose study packs without swallowing voice notes or assigned packs', () => {
+  const packs=[{study_pack_id:'loose',folder_id:'',mode:'manual'},{study_pack_id:'assigned',folder_id:'one'},{study_pack_id:'voice',mode:'voice-note'}];
+  assert.deepEqual(studyLibraryUtils.filterStudyPacks(packs,{selectedFolderId:'loose',unorganizedFolderId:'loose'}).map(pack=>pack.study_pack_id),['loose']);
+});

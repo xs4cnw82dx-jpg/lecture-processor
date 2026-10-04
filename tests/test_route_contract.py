@@ -143,6 +143,7 @@ EXPECTED_ROUTES = [
     ('GET', '/api/study-plan/membership', 'study_api.get_study_plan_membership'),
     ('PUT', '/api/study-plan/preferences', 'study_api.update_study_plan_preferences'),
     ('POST', '/api/study-plan/preview', 'study_api.preview_study_plan'),
+    ('POST', '/api/study-plan/reset', 'study_api.reset_study_plan'),
     ('PUT', '/api/study-activity/sessions/<activity_id>', 'study_api.update_study_activity'),
     ('POST', '/api/session/login', 'auth_api.create_admin_session'),
     ('POST', '/api/session/logout', 'auth_api.clear_admin_session'),

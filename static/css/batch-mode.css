@@ -556,6 +556,7 @@
 }
 
 .row-url-help {
+  margin-top: 16px;
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -1115,3 +1116,5 @@ th {
 .batch-page .rows-head { margin-top: 0; }
 @media (max-width: 760px) { .batch-grid { grid-template-columns: 1fr; } .batch-page > .shell-panel { padding: 18px; } .batch-row { padding: 16px; } .batch-defaults > summary { flex-wrap: wrap; } .tool-chip-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } .amount-chips { grid-template-columns: repeat(4,minmax(0,1fr)); } }
 @media (prefers-reduced-motion: reduce) { .batch-page * { transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+
+.row-url-import > .row-url-head { margin-top: 16px; }

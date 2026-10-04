@@ -160,6 +160,85 @@ def archive_study_goal(db, uid, goal_id, *, expected_revision, today, now_ts, ma
     return write(db.transaction())
 
 
+def reset_study_plan(db, uid, *, now_ts, idempotency_key, mark_dirty=None, require_account=None):
+    """Clear all unfinished commitments without removing packs or history.
+
+    Increment preferences to invalidate every preview opened before the reset.
+    Read every owned session: orphaned, manual and overdue items count too.
+    """
+    receipt_id = 'reset_' + idempotency_key
+
+    def prepare(goals, sessions, preferences):
+        if len(goals) > 5000 or len(sessions) > 5000:
+            raise ValueError('This plan has too much history to clear safely at once. Contact support; nothing changed.')
+        goals = [{**item, 'status': 'archived', 'revision': int(item.get('revision', 0)) + 1,
+                  'updated_at': now_ts} for item in goals
+                 if item.get('uid') == uid and item.get('status', 'active') != 'archived']
+        sessions = [{**item, 'status': 'cancelled', 'cancellation_reason': 'plan_reset',
+                     'revision': int(item.get('revision', 0)) + 1, 'updated_at': now_ts}
+                    for item in sessions if item.get('uid') == uid and item.get('status', 'planned') == 'planned']
+        if len(goals) + len(sessions) + 3 > 500:
+            raise ValueError('This plan is too large to clear safely in one operation. Contact support; nothing changed.')
+        preferences = {**preferences, 'uid': uid, 'revision': int(preferences.get('revision', 0)) + 1,
+                       'migration_v1_complete': True, 'updated_at': now_ts}
+        return goals, sessions, preferences
+
+    if db is None:
+        with _PLAN_WRITE_LOCK:
+            if require_account:
+                require_account()
+            receipt = get_study_plan_proposal(db, uid, receipt_id)
+            if receipt.exists:
+                return {**receipt.to_dict()['result'], 'replayed': True}
+            goals, sessions, preferences = prepare(
+                [dict(value) for value in _GOALS_STORE.values() if value.get('uid') == uid],
+                list(_SESSIONS_STORE.get(uid, {}).values()), get_study_plan_preferences(db, uid).to_dict())
+            for goal in goals:
+                set_study_goal(db, uid, goal['goal_id'], goal, merge=False)
+            for session in sessions:
+                set_planner_session(db, uid, session['id'], session, merge=False)
+            set_study_plan_preferences(db, uid, preferences, merge=False)
+            result = {'goals_archived': len(goals), 'sessions_cancelled': len(sessions)}
+            _set_memory_doc(_PROPOSALS_STORE, f'{uid}__{receipt_id}', {'uid': uid, 'result': result, 'created_at': now_ts}, merge=False)
+        if mark_dirty:
+            mark_dirty()
+        return result
+    from google.cloud import firestore
+
+    @firestore.transactional
+    def write(transaction):
+        if require_account:
+            require_account(transaction=transaction)
+        receipt_ref = study_plan_proposal_doc_ref(db, uid, receipt_id)
+        receipt = receipt_ref.get(transaction=transaction)
+        if receipt.exists:
+            return {**receipt.to_dict()['result'], 'replayed': True}
+        preferences_ref = study_plan_preferences_doc_ref(db, uid)
+        preferences = preferences_ref.get(transaction=transaction).to_dict() or {}
+        records = []
+        for collection, id_key in [('study_goals', 'goal_id'), ('planner_sessions', 'id')]:
+            query = apply_where(db.collection(collection), 'uid', '==', uid).limit(5001)
+            items = []
+            for doc in transaction.get(query):
+                item = doc.to_dict() or {}
+                item.setdefault(id_key, doc.id.split('__', 1)[-1] if collection == 'planner_sessions' else doc.id)
+                items.append(item)
+            records.append(items)
+        goals, sessions, preferences = prepare(*records, preferences)
+        for goal in goals:
+            transaction.set(study_goal_doc_ref(db, goal['goal_id']), goal)
+        for session in sessions:
+            transaction.set(planner_session_doc_ref(db, uid, session['id']), session)
+        transaction.set(preferences_ref, preferences)
+        result = {'goals_archived': len(goals), 'sessions_cancelled': len(sessions)}
+        transaction.set(receipt_ref, {'uid': uid, 'result': result, 'created_at': now_ts})
+        if mark_dirty:
+            mark_dirty(batch=transaction)
+        return result
+
+    return write(db.transaction())
+
+
 @dataclass
 class PlannerSnapshot:
     exists: bool
@@ -257,13 +336,14 @@ def _matches_session_filter(item, start_date='', start_time='', planned_only=Fal
     return True
 
 
-def list_planner_sessions_by_uid(db, uid, limit, *, start_date=None, start_time=None, planned_only=False):
+def list_planner_sessions_by_uid(db, uid, limit, *, start_date=None, start_time=None, planned_only=False, pack_ids=None):
     safe_limit = max(1, int(limit or 1))
     safe_start_date = str(start_date or '').strip()
     safe_start_time = str(start_time or '').strip()
     if db is None:
         sessions = [item for item in _SESSIONS_STORE.get(uid, {}).values()
-                    if _matches_session_filter(item, safe_start_date, safe_start_time, planned_only)]
+                    if _matches_session_filter(item, safe_start_date, safe_start_time, planned_only)
+                    and (pack_ids is None or item.get('pack_id') in pack_ids)]
         if safe_start_date:
             sessions.sort(
                 key=lambda item: (
@@ -277,7 +357,7 @@ def list_planner_sessions_by_uid(db, uid, limit, *, start_date=None, start_time=
     if safe_start_date:
         query = apply_where(query, 'date', '>=', safe_start_date)
         query = query.order_by('date', direction='ASCENDING').order_by('time', direction='ASCENDING')
-    if planned_only or safe_start_time:
+    if planned_only or safe_start_time or pack_ids is not None:
         # Legacy sessions may have no status field. Scan the existing indexed
         # date/time query in bounded pages, then limit matching results. A
         # status equality query would silently hide those planned sessions.
@@ -289,7 +369,8 @@ def list_planner_sessions_by_uid(db, uid, limit, *, start_date=None, start_time=
             docs = list(page_query.limit(page_size).stream())
             for doc in docs:
                 payload = doc.to_dict() or {}
-                if not payload or not _matches_session_filter(payload, safe_start_date, safe_start_time, planned_only):
+                if (not payload or not _matches_session_filter(payload, safe_start_date, safe_start_time, planned_only)
+                        or (pack_ids is not None and payload.get('pack_id') not in pack_ids)):
                     continue
                 payload.setdefault('id', str(doc.id).split('__', 1)[-1])
                 records.append(payload)
@@ -393,6 +474,21 @@ def list_study_goals_by_uid(db, uid, limit=100):
         records.append(payload)
     records.sort(key=lambda item: (str(item.get('status', 'active')), str(item.get('exam_date', '9999-12-31')), str(item.get('title', '')).lower()))
     return records
+
+
+def list_active_study_goals_by_uid(db, uid):
+    """Do not let archived goals crowd active membership out of a first page."""
+    if db is None:
+        records = [dict(value) for value in _GOALS_STORE.values() if value.get('uid') == uid]
+    else:
+        records = []
+        for doc in apply_where(db.collection('study_goals'), 'uid', '==', uid).limit(5001).stream():
+            record = doc.to_dict() or {}
+            record.setdefault('goal_id', doc.id)
+            records.append(record)
+    if len(records) > 5000:
+        raise ValueError('Too many study goals to resolve safely. Contact support.')
+    return [item for item in records if item.get('uid') == uid and item.get('status', 'active') == 'active']
 
 
 def study_plan_proposal_doc_ref(db, uid, proposal_id=''):

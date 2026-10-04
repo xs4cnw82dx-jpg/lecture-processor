@@ -831,7 +831,7 @@
     }
     var url = getRowM3u8Url(rowNode);
     if (!url) {
-      setRowAudioImportStatus(rowNode, 'Paste the audio/video page URL or direct playlist URL first.', 'error');
+      setRowAudioImportStatus(rowNode, 'Paste the index.m3u8 playlist URL copied from DevTools → Network.', 'error');
       return Promise.resolve({ ok: false, reason: 'empty-url' });
     }
 
@@ -1290,15 +1290,15 @@
             '  <details class="row-url-import" data-audio-url-wrap><summary>Or import a lecture link</summary>' +
             '    <div class="row-url-head">' +
             '      <strong id="' + urlTitleId + '">Import from lecture video URL</strong>' +
-            '      <span id="' + urlHintId + '">Paste the normal lecture recording page from your LMS, such as Brightspace. Direct media playlist links also work.</span>' +
+            '      <span id="' + urlHintId + '">Play your LMS recording, then copy its index.m3u8 request from DevTools → Network.</span>' +
             '    </div>' +
             '    <div class="row-url-row">' +
-            '      <input type="url" class="row-url-input" data-field="m3u8" placeholder="https://.../lecture-video-or-index.m3u8" autocomplete="off" aria-labelledby="' + urlTitleId + '" aria-describedby="' + urlHintId + ' ' + urlHelpId + ' ' + urlStatusId + '">' +
+            '      <input type="url" class="row-url-input" data-field="m3u8" placeholder="https://.../index.m3u8" autocomplete="off" aria-labelledby="' + urlTitleId + '" aria-describedby="' + urlHintId + ' ' + urlHelpId + ' ' + urlStatusId + '">' +
             '      <button type="button" class="btn small" data-action="import-audio-url">Import audio</button>' +
             '    </div>' +
             '    <div class="row-url-help" id="' + urlHelpId + '">' +
             '      <span class="info-dot" aria-hidden="true">i</span>' +
-            '      <div><strong>Try this order</strong><ol><li>Paste the normal lecture recording page URL.</li><li>If it fails, open the recording page and press play once.</li><li>For a direct playlist: open DevTools → Network, filter on <code>index.m3u8</code>, and copy the playlist request URL.</li></ol><a href="https://youtu.be/Sz3W9l8J1q0" target="_blank" rel="noopener noreferrer">Watch the Brightspace walkthrough ↗</a><p>Access depends on your institution’s video player and whether its media link is accessible. This imports lecture audio; it does not connect to your LMS account.</p></div>' +
+            '      <div><strong>Copy the playlist URL</strong><ol><li>Open your lecture recording and press play.</li><li>Open DevTools: <strong>Cmd + Option + I</strong> on Mac, <strong>Ctrl + Shift + I</strong> on Windows, or right-click the page and choose <strong>Inspect</strong>.</li><li>Open <strong>Network</strong>, filter on <code>index.m3u8</code>, and copy the playlist request URL. If no request appears, reload the recording with Network open and press play again.</li><li>Paste the copied URL into the audio import field and choose <strong>Import audio</strong>.</li></ol><a href="https://youtu.be/Sz3W9l8J1q0" target="_blank" rel="noopener noreferrer">Watch the Brightspace walkthrough ↗</a><p>Access depends on your institution’s video player and whether its media link is accessible. This imports lecture audio; it does not connect to your LMS account.</p></div>' +
             '    </div>' +
             '    <div class="row-url-status" id="' + urlStatusId + '" data-field="m3u8-status" aria-live="polite"></div>' +
             '  </details>'

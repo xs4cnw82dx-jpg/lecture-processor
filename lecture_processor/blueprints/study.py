@@ -76,6 +76,11 @@ def create_study_plan_goal():
     return study_plan_service.create_goal(runtime, request)
 
 
+@study_bp.route('/api/study-plan/reset', methods=['POST'])
+def reset_study_plan():
+    return study_plan_service.reset_plan(get_runtime(), request)
+
+
 @study_bp.route('/api/study-plan/goals/<goal_id>', methods=['PATCH'])
 def update_study_plan_goal(goal_id):
     runtime = get_runtime()

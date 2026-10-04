@@ -291,6 +291,7 @@
     if (lessons.test) modes.push('test');
     if (lessons.write) modes.push('write');
     if (lessons.match) modes.push('match');
+    if (lessons.notes) modes.push('notes');
     return modes;
   }
 

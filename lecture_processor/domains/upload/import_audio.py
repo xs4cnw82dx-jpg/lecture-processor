@@ -23,7 +23,7 @@ def validate_video_import_fetch_target(raw_url, runtime=None):
     url_security = resolved_runtime.url_security
     url = str(raw_url or '').strip()
     if not url:
-        return ('', 'Please paste a video URL.')
+        return ('', 'Please paste the index.m3u8 playlist URL copied from DevTools → Network.')
     if len(url) > resolved_runtime.VIDEO_IMPORT_MAX_URL_LENGTH:
         return ('', 'Video URL is too long.')
 

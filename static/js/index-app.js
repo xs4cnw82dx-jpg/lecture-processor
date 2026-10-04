@@ -2470,7 +2470,7 @@ async function importAudioFromUrl(options = {}) {
         return false;
     }
     if (!url) {
-        setAudioImportStatus('Paste the lecture video page URL or direct playlist URL first.', true);
+        setAudioImportStatus('Paste the index.m3u8 playlist URL copied from DevTools → Network.', true);
         updateProcessButton();
         return false;
     }

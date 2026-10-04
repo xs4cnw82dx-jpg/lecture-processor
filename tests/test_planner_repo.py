@@ -101,9 +101,9 @@ def test_upcoming_query_continues_past_full_excluded_pages_and_includes_legacy()
     from types import SimpleNamespace
 
     rows = [dict(id=f'session-{index:03}', uid='user-1', date='2099-01-01', time='09:00',
-                 status='cancelled' if index % 2 else 'completed') for index in range(100)]
-    rows += [dict(id='legacy', uid='user-1', date='2099-01-02', time='09:00'),
-             dict(id='planned', uid='user-1', date='2099-01-03', time='09:00', status='planned')]
+                 status='planned', pack_id='outside') for index in range(100)]
+    rows += [dict(id='legacy', uid='user-1', date='2099-01-02', time='09:00', pack_id='inside'),
+             dict(id='planned', uid='user-1', date='2099-01-03', time='09:00', status='planned', pack_id='inside')]
     docs = [SimpleNamespace(id='user-1__' + row['id'], to_dict=lambda row=row: dict(row)) for row in rows]
     pages = []
     query_calls = []
@@ -132,7 +132,7 @@ def test_upcoming_query_continues_past_full_excluded_pages_and_includes_legacy()
             return docs[start:start + self.page_limit]
 
     db = SimpleNamespace(collection=lambda name: Query())
-    result = planner_repo.list_planner_sessions_by_uid(db, 'user-1', 2, start_date='2026-09-30', planned_only=True)
+    result = planner_repo.list_planner_sessions_by_uid(db, 'user-1', 2, start_date='2026-09-30', planned_only=True, pack_ids={'inside'})
     assert [row['id'] for row in result] == ['legacy', 'planned']
     assert pages == [(0, 50), (50, 50), (100, 50)]
     assert [item for item in query_calls if item[0] == 'order'] == [
@@ -154,5 +154,30 @@ def test_upcoming_memory_query_filters_finished_and_elapsed_before_limit():
             None, 'user-1', 2, start_date='2026-09-30', start_time='18:30:00', planned_only=True,
         )
         assert [row['id'] for row in result] == ['upcoming', 'legacy']
+    finally:
+        planner_repo.clear_memory_state()
+
+
+def test_active_membership_survives_more_than_two_hundred_archived_goals():
+    planner_repo.clear_memory_state()
+    try:
+        for index in range(250):
+            planner_repo.set_study_goal(None, 'owner', f'old{index}', {'goal_id': f'old{index}', 'status': 'archived'})
+        planner_repo.set_study_goal(None, 'owner', 'current', {'goal_id': 'current', 'status': 'active', 'pack_ids': ['inside']})
+        planner_repo.set_study_goal(None, 'other', 'foreign', {'goal_id': 'foreign', 'status': 'active'})
+        assert [goal['goal_id'] for goal in planner_repo.list_active_study_goals_by_uid(None, 'owner')] == ['current']
+    finally:
+        planner_repo.clear_memory_state()
+
+
+def test_active_pack_session_filter_precedes_limit():
+    planner_repo.clear_memory_state()
+    try:
+        for index in range(8):
+            planner_repo.set_planner_session(None, 'owner', f's{index}', {
+                'uid': 'owner', 'id': f's{index}', 'date': f'2099-01-{index + 1:02}', 'time': '10:00',
+                'pack_id': 'outside' if index < 7 else 'inside', 'status': 'planned'})
+        result = planner_repo.list_planner_sessions_by_uid(None, 'owner', 4, start_date='2000-01-01', planned_only=True, pack_ids={'inside'})
+        assert [item['id'] for item in result] == ['s7']
     finally:
         planner_repo.clear_memory_state()

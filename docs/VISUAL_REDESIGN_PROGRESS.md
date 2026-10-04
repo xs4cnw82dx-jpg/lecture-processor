@@ -2,7 +2,7 @@
 
 Read `VISUAL_REDESIGN_MASTER_PLAN.md` and this file after compaction and before every phase. Full implementation is authorized; the user expects genuinely polished, attractive layouts and flows, not superficial recoloring. Follow the full PR → checks → merge → local sync → deployment verification workflow.
 
-**Latest delivery:** [PR #184](https://github.com/xs4cnw82dx-jpg/lecture-processor/pull/184) was merged as538ceb4, local main synced, and Render live commit/assets verified on3October. **Active follow-up:** read `PRODUCT_FEEDBACK_REPAIR_PLAN.md` for the subsequent screenshot-driven corrections and functional repairs. The sections below are a chronological work log; later checkpoints supersede earlier in-progress notes.
+**Latest delivery:** [PR #185](https://github.com/xs4cnw82dx-jpg/lecture-processor/pull/185) was merged as bee9b699, local main synced, and Render exact commit/assets and the required Firestore index verified. **Active follow-up:** read `STUDY_FLOW_POLISH_PLAN.md` for the 4 October screenshot feedback. The sections below are a chronological work log; later checkpoints supersede earlier in-progress notes.
 
 ## Current baseline
 
@@ -130,3 +130,10 @@ Implemented tangible folder rows/pin icons, functional animated child collapse, 
 ## Product feedback follow-up — release candidate, 4 October
 
 Read `PRODUCT_FEEDBACK_REPAIR_PLAN.md` and the three `PRODUCT_FEEDBACK_*` owner reports. Screenshot corrections and functional planner/learning/batch repairs are implemented. Final local verification: 986 backend, 193 client and 218 distinct browser scenarios passed across integrated and scoped runs; generated assets and lint/hygiene checks passed. Required production planner index is prepared and dry-run verified. PR/merge/index deployment/Render verification remain. Deferred half-credit customer pricing remains explicitly pending the user’s exact-half versus odd-count rounding choice; current UI claims remain accurate.
+
+
+## Study flow polish — integration, 4 October
+
+The new 16-screenshot follow-up is implemented on codex/study-flow-polish. See STUDY_FLOW_POLISH_PLAN.md and its three owner reports. Unified learning setup/viewer and exact device-position restore, atomic server review receipts, full-plan reset, scoped Dashboard recommendations, folder controls, persisted Dashboard disclosure, annotations, checkout Back recovery and creation guidance are complete. Backend1,007/client196 and real-API browser7 plus legacy1 pass; full browser production-asset run and GitHub/Render delivery remain.
+
+Release candidate verified: 228 standard browser scenarios plus seven real-API and one legacy scenario pass. No pending product fixes in this round. PR/checks/merge/live verification remain.

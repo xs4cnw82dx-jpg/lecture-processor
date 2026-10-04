@@ -43,7 +43,7 @@
           <div class="stat-sub">Keep momentum by reviewing every day.</div>
         </article>
         <article class="shell-panel stat-card">
-          <div class="stat-label">Due today</div>
+          <div class="stat-label">Due today <span class="dashboard-scope">in your Study Plan</span></div>
           <div class="stat-value" id="dash-due"><span class="dashboard-skeleton" aria-label="Loading"></span></div>
           <div class="stat-sub"><button type="button" class="dashboard-text-action" id="dash-due-open" aria-controls="dash-due-panel" aria-expanded="false">See due cards →</button></div>
         </article>
@@ -55,7 +55,7 @@
       </section>
 
       <details class="shell-panel dashboard-due-panel" id="dash-due-panel" hidden>
-        <summary><span>Cards ready to review</span></summary>
+        <summary><span>Cards ready to review · Study Plan</span></summary>
         <div id="dash-due-list" aria-live="polite"></div>
       </details>
       <section class="dashboard-grid two-col">
@@ -68,15 +68,15 @@
             <div class="dashboard-list-skeleton" aria-label="Loading sessions"></div>
           </div>
         </article>
-        <article class="shell-panel">
-          <div class="section-head">
-            <h2>Recent study packs</h2>
-            <a href="/study">Study Library</a>
-          </div>
+        <details class="shell-panel dashboard-recent" id="dash-recent-packs" open>
+          <summary><span>Recent study packs</span></summary>
+          <div class="dashboard-recent-body">
+          <a class="dashboard-library-link" href="/study">Open Study Library →</a>
           <div class="list-block" id="dash-packs-list">
             <div class="dashboard-list-skeleton" aria-label="Loading study packs"></div>
           </div>
-        </article>
+          </div>
+        </details>
       </section>
     </main>
     {% include '_shell_footer.html' %}

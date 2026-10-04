@@ -13,7 +13,7 @@
     var voiceNotesFolderId = String(settings.voiceNotesFolderId == null ? '__voice_notes__' : settings.voiceNotesFolderId);
     var videoOverlayFolderId = String(settings.videoOverlayFolderId == null ? '__video_overlays__' : settings.videoOverlayFolderId);
     var pinnedSet = new Set(pinnedFolderIds.map(function (folderId) { return String(folderId || ''); }).filter(Boolean));
-    var collapsedSet = new Set(collapsedFolderIds.filter(Boolean));
+    var collapsedSet = new Set(collapsedFolderIds);
     var displayed = new Set();
     var childrenByParent = {};
     var foldersById = {};
@@ -109,6 +109,9 @@
     output.push(interviews);
     if (!interviews.is_collapsed) appendChildren(interviewFolderId, 1, output);
 
+    if (settings.unorganizedFolderId) output.push(builtin(String(settings.unorganizedFolderId), 'Unorganized', 'Packs without a folder'));
+    if (collapsedSet.has(allFolderId)) return output;
+
     var pinnedFolders = pinnedFolderIds.map(function (folderId) {
       return folders.find(function (folder) {
         return String(folder && folder.folder_id || '') === String(folderId || '');
@@ -180,7 +183,9 @@
     }));
 
     return collection.filter(function (pack) {
-      if (selectedFolderId === interviewFolderId) {
+      if (settings.unorganizedFolderId && selectedFolderId === settings.unorganizedFolderId) {
+        if (String(pack && pack.folder_id || '') || String(pack && pack.mode || '') === 'voice-note') return false;
+      } else if (selectedFolderId === interviewFolderId) {
         if (String(pack && pack.mode || '') !== 'interview') return false;
       } else if (selectedFolderId === voiceNotesFolderId) {
         if (String(pack && pack.mode || '') !== 'voice-note') return false;

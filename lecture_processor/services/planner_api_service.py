@@ -5,7 +5,7 @@ from __future__ import annotations
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.study import progress as study_progress
 from lecture_processor.domains import planner as planner_models
-from lecture_processor.services import access_service
+from lecture_processor.services import access_service, study_progress_service
 
 
 def _require_user(app_ctx, request):
@@ -68,6 +68,11 @@ def list_planner_sessions(app_ctx, request):
     now = study_progress.to_timezone_now(None, tzinfo, runtime=app_ctx)
     today = now.strftime('%Y-%m-%d')
     earliest_time = now.strftime('%H:%M:%S')
+    scope_options = {}
+    if request.args.get('scope') == 'active_plan':
+        scope_options['pack_ids'] = study_progress_service.active_plan_pack_ids(app_ctx, uid)
+        if not scope_options['pack_ids']:
+            return app_ctx.jsonify({'sessions': []})
     records = app_ctx.repositories.planner.list_planner_sessions_by_uid(
         app_ctx.db,
         uid,
@@ -75,6 +80,7 @@ def list_planner_sessions(app_ctx, request):
         start_date=today if future_only else None,
         start_time=earliest_time if future_only else None,
         planned_only=future_only,
+        **scope_options,
     )
     sessions = []
     for record in records:
