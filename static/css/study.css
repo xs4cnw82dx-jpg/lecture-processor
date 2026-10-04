@@ -6170,12 +6170,16 @@
 .library-pack-browser #pack-list .item { background:#f3f6fd; border:1px solid #d9e3f5; border-radius:12px; box-shadow:0 2px 5px #24365404; }
 .library-pack-browser #pack-list .item:hover { background:#eaf0fd; border-color:#b6caf0; }
 .library-pack-browser #pack-list .item.active { background:#e8eeff; border-color:#9bb6f3; box-shadow:inset 3px 0 #2558d9; }
-.builder-ai-guide { padding:18px 20px; background:#eef2ff; border:1px solid #d5dff9; border-radius:14px; margin-bottom:20px; }
-.builder-ai-guide strong { color:#244b9d; font-size:.94rem; }
-.builder-ai-guide p { color:#586982; font-size:.84rem; line-height:1.7; margin:8px 0 12px; max-width:80ch; }
+.builder-ai-guide, .builder-ai-import-instructions { padding:18px 20px; background:#eef2ff; border:1px solid #d5dff9; border-radius:14px; margin-bottom:20px; }
+.builder-ai-guide strong, .builder-ai-import-instructions strong { color:#244b9d; font-size:.94rem; }
+.builder-ai-guide p, .builder-ai-import-instructions p, .builder-ai-import-instructions ol { color:#586982; font-size:.84rem; line-height:1.7; margin:8px 0 12px; max-width:80ch; }
 
 /* Keep the progress element aligned inside its four-pixel track. */
 .learn-progress-fill { display: block; }
 /* Let long study content scroll without shrinking its controls into each other. */
 .learn-card > * { flex-shrink: 0; }
 .learn-card .learn-pane { min-height: auto; }
+
+.builder-info-icon { width:20px; height:20px; flex:none; vertical-align:middle; margin-right:8px; }
+.builder-ai-import-instructions ol { padding-left:22px; }
+.builder-ai-import-instructions li + li { margin-top:5px; }

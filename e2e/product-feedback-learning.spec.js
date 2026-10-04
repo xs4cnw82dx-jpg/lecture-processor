@@ -239,6 +239,12 @@ test('Notes restore reading position and Builder guidance opens the CSV import w
   await page.locator('#builder-ai-import-guide').click();
   await expect(page.locator('#builder-pane-import')).toBeVisible();
   await expect(page.locator('#builder-template-btn')).toBeVisible();
+  await expect(page.locator('.builder-ai-import-instructions .builder-info-icon')).toBeVisible();
+  await expect(page.locator('.builder-ai-import-instructions li')).toHaveCount(4);
+  await expect(page.locator('.builder-ai-import-instructions')).toContainText('Upload both your study materials and the template');
+  await page.screenshot({path:'/tmp/study-flow-learning-evidence/builder-ai-import-desktop.png',animations:'disabled'});
+  await page.setViewportSize({width:390,height:844});
+  await page.screenshot({path:'/tmp/study-flow-learning-evidence/builder-ai-import-mobile.png',animations:'disabled'});
 });
 
 

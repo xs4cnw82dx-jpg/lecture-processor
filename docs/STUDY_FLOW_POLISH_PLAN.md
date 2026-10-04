@@ -48,3 +48,7 @@ Full isolated backend: **1,007 passed**. Client suite: **196 passed**. Generated
 - [ ] Sync main and verify Render exact commit plus public pages/assets.
 
 Exact viewer position is stored on the current device; planned answers and learning progress are server-backed. No real study data, payments or external AI/calendar services were used for QA.
+
+### Review checkpoint
+
+PR [#186](https://github.com/xs4cnw82dx-jpg/lecture-processor/pull/186) is open and attached to the task. GitHub backend/frontend/Functions/smoke checks passed on the first commit; browser check remains in progress. Final screenshot comparison added the requested information icon and explicit upload-template steps directly to the Builder import panel, in addition to its introductory shortcut. Focused Notes/Builder regression passed and parent inspected the final mobile callout. No runtime logic changed in that last refinement.
