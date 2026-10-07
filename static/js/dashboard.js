@@ -189,6 +189,7 @@
     }
     var nextSession = future.find(function (session) { return session.status !== 'completed' && session.status !== 'cancelled' && session.status !== 'skipped'; });
     if (nextSession) {
+      document.getElementById('dash-continue-title').setAttribute('data-user-content', '');
       document.getElementById('dash-continue-title').textContent = nextSession.title || 'Your next study session';
       document.getElementById('dash-continue-copy').textContent = 'Choose your study mode and begin your planned session.';
       nextPlannedPack = !!nextSession.pack_id;
@@ -204,7 +205,7 @@
       var meta = document.createElement('p');
       var pack = session.pack_title && !String(session.title || '').includes(session.pack_title) ? (' · ' + session.pack_title) : '';
       var date = new Date(String(session.date || '') + 'T12:00:00');
-      var dateText = Number.isNaN(date.getTime()) ? String(session.date || '') : new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).format(date);
+      var dateText = Number.isNaN(date.getTime()) ? String(session.date || '') : new Intl.DateTimeFormat((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'), { weekday: 'short', day: 'numeric', month: 'short' }).format(date);
       meta.textContent = dateText + ' · ' + String(session.time || '00:00') + pack;
       row.appendChild(title);
       row.appendChild(meta);
@@ -226,6 +227,7 @@
     }
     var recommendedPack = packs.find(function (pack) { return activePlanPackIds.has(pack.study_pack_id); });
     if (!nextPlannedPack && recommendedPack) {
+      document.getElementById('dash-continue-title').setAttribute('data-user-content', '');
       document.getElementById('dash-continue-title').textContent = recommendedPack.title || 'Your latest study pack';
       document.getElementById('dash-continue-copy').textContent = 'Pick a study mode and continue with your latest pack.';
       document.getElementById('dash-continue-link').textContent = 'Continue studying →';
@@ -278,6 +280,7 @@
     document.getElementById('dash-due-list').replaceChildren();
     document.getElementById('dash-due-open').setAttribute('aria-expanded', 'false');
     document.getElementById('dash-continue-link').href = '/plan';
+    document.getElementById('dash-continue-title').removeAttribute('data-user-content');
     document.getElementById('dash-continue-title').textContent = 'Ready for your next session?';
     document.getElementById('dash-continue-copy').textContent = 'Review your study plan or choose a pack from your library.';
     document.getElementById('dash-continue-link').textContent = 'Open Study Plan →';

@@ -41,10 +41,10 @@
   function formatDate(value, options) {
     if (!value) return '';
     var dateValue = new Date(String(value).slice(0, 10) + 'T12:00:00');
-    return dateValue.toLocaleDateString(undefined, options || { weekday: 'short', month: 'short', day: 'numeric' });
+    return dateValue.toLocaleDateString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'), options || { weekday: 'short', month: 'short', day: 'numeric' });
   }
   function formatNumber(value, digits) {
-    return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: digits == null ? 1 : digits });
+    return Number(value || 0).toLocaleString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'), { maximumFractionDigits: digits == null ? 1 : digits });
   }
   function getExercise(exerciseId) {
     return (state.data && state.data.exercises || []).find(function (item) { return item.id === exerciseId; }) || {};

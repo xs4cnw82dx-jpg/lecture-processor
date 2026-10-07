@@ -321,6 +321,9 @@
     }
 
     function sync() {
+      var selectedOption = selectEl.options[selectEl.selectedIndex];
+      var content = selectedOption && global.LectureI18n && global.LectureI18n.isContent(selectedOption);
+      label.toggleAttribute('data-user-content', !!content);
       var activeText = '';
       Array.prototype.slice.call(menu.querySelectorAll('.app-select-item[data-value]')).forEach(function (item) {
         var isActive = item.getAttribute('data-value') === String(selectEl.value || '');
@@ -382,6 +385,7 @@
         item.type = 'button';
         item.className = itemClass;
         item.dataset.value = String(option.value || '');
+        if (global.LectureI18n && global.LectureI18n.isContent(option)) item.setAttribute('data-user-content', '');
         item.textContent = String(option.textContent || option.value || placeholder);
         item.setAttribute('role', 'option');
         item.disabled = !!option.disabled;
@@ -517,7 +521,7 @@
     }
     function sync() {
       var value = parse(input.value);
-      trigger.textContent = value ? value.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Choose a date';
+      trigger.textContent = value ? value.toLocaleDateString(getLocale(), { day: 'numeric', month: 'short', year: 'numeric' }) : 'Choose a date';
       var labels = input.labels ? Array.from(input.labels).map(function (label) {
         return Array.from(label.childNodes).filter(function (node) { return node !== host && node !== input; }).map(function (node) { return node.textContent; }).join(' ').trim();
       }).join(' ') : '';
@@ -559,7 +563,7 @@
       var head = document.createElement('div');
       head.className = 'app-date-heading';
       var title = document.createElement('strong');
-      title.textContent = cursor.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+      title.textContent = cursor.toLocaleDateString(getLocale(), { month: 'long', year: 'numeric' });
       title.setAttribute('aria-live', 'polite');
       function moveMonth(amount) {
         cursor = new Date(cursor.getFullYear(), cursor.getMonth() + amount, 1, 12);
@@ -582,7 +586,7 @@
       for (var number = 1; number <= count; number += 1) {
         (function (day) {
           var date = new Date(cursor.getFullYear(), cursor.getMonth(), day, 12);
-          var cell = button(String(day), date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }), function () { choose(date); });
+          var cell = button(String(day), date.toLocaleDateString(getLocale(), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }), function () { choose(date); });
           cell.dataset.date = iso(date);
           cell.disabled = !allowed(date);
           cell.tabIndex = day === cursor.getDate() ? 0 : -1;
@@ -1177,6 +1181,7 @@
   function getLocale(options) {
     var opts = options || {};
     if (opts.locale) return String(opts.locale);
+    if (global.LectureI18n) return global.LectureI18n.locale();
     if (global.navigator && Array.isArray(global.navigator.languages) && global.navigator.languages.length) {
       var locales = global.navigator.languages.filter(Boolean);
       if (locales.length) return locales;

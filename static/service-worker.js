@@ -1,8 +1,17 @@
-const VOICE_CACHE = 'lecture-processor-voice-v9';
+const VOICE_CACHE = 'lecture-processor-voice-v10';
 const VOICE_CACHE_PREFIX = 'lecture-processor-voice-';
 const APP_SHELL = [
   '/voice-notes',
   '/static/manifest.webmanifest',
+  '/static/css/theme.css',
+  '/static/js/theme.js',
+  '/static/js/i18n-catalog.js',
+  '/static/js/i18n-supplement.js',
+  '/static/js/i18n-dynamic.js',
+  '/static/js/i18n-dynamic-learning.js',
+  '/static/js/i18n-dynamic-tools.js',
+  '/static/js/i18n.js',
+  '/static/js/preferences.js',
   '/static/css/shared-ui.css',
   '/static/css/app-shell.css',
   '/static/css/motion.css',

@@ -108,7 +108,7 @@ function formatDate(timestampSeconds) {
         return uxUtils.formatDateTime(timestampSeconds, { unit: 'seconds' });
     }
     const dt = new Date(timestampSeconds * 1000);
-    return dt.toLocaleString(navigator.language || 'en-US', {
+    return dt.toLocaleString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'), {
         day: '2-digit', month: 'short', year: 'numeric',
         hour: '2-digit', minute: '2-digit',
     });
@@ -1822,7 +1822,7 @@ function analyzerFiltersPayload() {
 function formatInteger(value) {
     const num = Number(value || 0);
     if (!Number.isFinite(num)) return '0';
-    return Math.round(num).toLocaleString();
+    return Math.round(num).toLocaleString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'));
 }
 
 function recomputeAnalyzerSummary() {

@@ -9,7 +9,7 @@
   function status(s) { return labels[s] || 'Status unavailable'; }
   function pill(s) { return '<span class="bs-pill bs-' + (labels[s] ? escape(s) : 'queued') + '">' + status(s) + '</span>'; }
   function mode(b) { return (modes[b.mode] || 'Batch') + ' · ' + (b.processing_strategy === 'instant' ? 'Instant' : 'Deferred'); }
-  function date(value) { return value ? new Date(Number(value) * 1000).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Not available'; }
+  function date(value) { return value ? new Date(Number(value) * 1000).toLocaleString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'), { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Not available'; }
   function progress(b) { return count(b.completed_rows) + ' of ' + count(b.total_rows) + ' completed' + (count(b.failed_rows) ? ' · ' + count(b.failed_rows) + ' failed' : ''); }
   function credits(b) {
     var charged = count(b.credits_charged), refunded = count(b.credits_refunded), pending = count(b.credits_refund_pending);

@@ -22,6 +22,16 @@ export const minifiedTargets = [
 ];
 
 export const intentionallyUnminifiedScripts = [
+  'static/js/theme.js',
+  'static/js/preferences.js',
+  'static/js/settings.js',
+  'static/js/i18n.js',
+  'static/js/i18n-catalog.js',
+  'static/js/i18n-supplement.js',
+  'static/js/i18n-dynamic.js',
+  'static/js/i18n-dynamic-learning.js',
+  'static/js/i18n-dynamic-tools.js',
+
   'static/js/book-zip.min.js',
   'static/js/book-model.js',
   'static/js/book-path-editor.js',

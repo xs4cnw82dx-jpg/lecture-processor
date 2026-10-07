@@ -6,7 +6,18 @@ const ownerToken = process.env.PHYSIO_COMPANION_OWNER_TOKEN || '';
 const companionBaseUrl = new URL(companionUrl).origin;
 
 function authorizedCompanionUrl() {
-  return companionUrl + (ownerToken ? `#owner_token=${encodeURIComponent(ownerToken)}` : '');
+  // This workflow fixture uses Dutch labels and Dutch clinical source material.
+  // Choose that supported interface language explicitly instead of relying on
+  // the historical Dutch-only default.
+  const url = new URL(companionUrl);
+  url.searchParams.set('lp_language', 'nl');
+  if (ownerToken) url.hash = `owner_token=${encodeURIComponent(ownerToken)}`;
+  return url.href;
+}
+
+async function openCompanion(page) {
+  await page.goto(authorizedCompanionUrl());
+  await expect(page.locator('html')).toHaveAttribute('lang', 'nl');
 }
 
 async function authorizeRequest(request) {
@@ -35,7 +46,7 @@ test('local Physio workspace supports shoulder lookup, graph, case workflow and 
   const xref = pdf.length;
   pdf += `xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map(offset => String(offset).padStart(10,'0') + ' 00000 n ').join('\n')}\ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
   await page.route('**/api/local/physio/media/atlas-of-anatomy', route => route.fulfill({contentType:'application/pdf',body:pdf}));
-  await page.goto(authorizedCompanionUrl());
+  await openCompanion(page);
 
   await expect(page.locator('#portal-hero h1')).toHaveText('Schouder');
   await expect(page.locator('#clinical-connection')).toHaveClass(/is-online/);
@@ -129,7 +140,7 @@ test('portal shortcuts, search results and styled controls stay usable in a comp
   const browserErrors = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));
   await page.setViewportSize({ width: 885, height: 850 });
-  await page.goto(authorizedCompanionUrl());
+  await openCompanion(page);
 
   await page.locator('#clinical-search-input').fill('scapula');
   const result = page.locator('#search-results [data-note-id="structure-scapula"]').first();
@@ -193,27 +204,27 @@ test('local source audio preview uses website playback controls', async ({ page 
     id:'audio-preview', title:'Anatomie toelichting', original_filename:'anatomie.wav', suffix:'.wav', review_status:'active', source_type:'audio', category:'college', regions:['schouder'],
   }], total:1, categories:['college']}}));
   await page.route('**/api/local/physio/sources-manager/audio-preview/preview', route => route.fulfill({contentType:'audio/wav', body:wav}));
-  await page.goto(authorizedCompanionUrl());
+  await openCompanion(page);
   await page.getByRole('tab', {name:'Bronnen beheren'}).click();
   await page.locator('[data-source-id="audio-preview"]').click();
   const preview = page.locator('#source-preview-body');
   await expect(preview.locator('audio')).toHaveJSProperty('controls', false);
   await expect(preview.locator('audio')).toHaveJSProperty('duration', 4);
-  await expect(preview.getByRole('button', {name:'Play', exact:true})).toBeVisible();
+  await expect(preview.getByRole('button', {name:'Afspelen', exact:true})).toBeVisible();
   await expectProductControls(page);
   for (const width of [1440,390]) {
     await page.setViewportSize({width,height:900});
     await preview.scrollIntoViewIfNeeded();
     await page.screenshot({path:`/tmp/redesign-secondary-evidence/physio-audio-${width}.png`,animations:'disabled'});
   }
-  await preview.getByRole('button', {name:'Play', exact:true}).click();
+  await preview.getByRole('button', {name:'Afspelen', exact:true}).click();
   await expect(preview.locator('audio')).toHaveJSProperty('paused', false);
-  await preview.getByRole('button', {name:'Pause', exact:true}).click();
+  await preview.getByRole('button', {name:'Pauzeren', exact:true}).click();
   await expect(preview.locator('audio')).toHaveJSProperty('paused', true);
 });
 
 test('source manager imports, edits, activates and removes a managed source copy', async ({ page }) => {
-  await page.goto(authorizedCompanionUrl());
+  await openCompanion(page);
   await page.getByRole('tab', { name: 'Bronnen beheren' }).click();
   await expect(page.locator('#source-dropzone')).toBeVisible();
 
@@ -244,7 +255,7 @@ test('source manager imports, edits, activates and removes a managed source copy
 });
 
 test('Physio layouts reflow and cases use a cancellable website dialog', async ({page}) => {
-  await page.goto(authorizedCompanionUrl());
+  await openCompanion(page);
   for (const width of [1440, 1024, 768, 390]) {
     await page.setViewportSize({width, height:900});
     await expectProductControls(page);

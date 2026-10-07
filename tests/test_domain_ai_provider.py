@@ -121,7 +121,7 @@ def test_generate_with_policy_and_optional_thinking_builds_expected_payloads():
     runtime = SimpleNamespace(
         client=SimpleNamespace(models=_Models()),
         types=_Types,
-        MODEL_THINKING_POLICY={'model-a': {'thinking_budget': 123}},
+        MODEL_THINKING_POLICY={'model-a': {'thinking_level': 'high'}},
         PROVIDER_RETRY_MAX_ATTEMPTS=1,
         PROVIDER_RETRY_BASE_SECONDS=0.0,
         PROVIDER_RETRY_MAX_SECONDS=0.0,
@@ -153,5 +153,6 @@ def test_interview_transcription_uses_required_prompt_and_model():
 •⁠  ⁠Use ‘Onderzoeker’ and ‘Geïnterviewde’ to identify speakers
 •⁠  ⁠Put a '-' between the time, the speaker name and the transcript"""
 
-    assert core.MODEL_INTERVIEW == 'gemini-3.1-pro-preview'
+    assert core.MODEL_INTERVIEW == core.MODEL_AUDIO == 'gemini-3.8-flash'
+    assert core.MODEL_THINKING_POLICY[core.MODEL_INTERVIEW] == {'thinking_level': 'high'}
     assert core.PROMPT_INTERVIEW_TRANSCRIPTION == expected_prompt

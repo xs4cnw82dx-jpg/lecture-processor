@@ -1,13 +1,13 @@
 :root {
   --primary: #4f46e5;
   --secondary: #0ea5e9;
-  --bg: #f8fafc;
-  --card: #ffffff;
-  --text: #0f172a;
-  --muted: #64748b;
-  --border: #dbe3ee;
-  --success: #d1fae5;
-  --success-ink: #166534;
+  --bg: var(--theme-surface-soft, #f8fafc);
+  --card: var(--theme-surface, #ffffff);
+  --text: var(--theme-ink, #0f172a);
+  --muted: var(--theme-muted, #64748b);
+  --border: var(--theme-accent-line, #dbe3ee);
+  --success: var(--theme-success-soft, #d1fae5);
+  --success-ink: var(--theme-success-ink, #166534);
   --danger: #ef4444;
 }
 
@@ -18,8 +18,8 @@
 body {
   margin: 0;
   font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: linear-gradient(180deg, #eef2ff 0%, var(--bg) 26%, #f8fafc 100%);
-  color: var(--text);
+  background: linear-gradient(180deg, var(--theme-accent-soft, #eef2ff) 0%, var(--theme-surface-soft, var(--bg)) 26%, var(--theme-surface-soft, #f8fafc) 100%);
+  color: var(--theme-ink, var(--text));
 }
 
 button,
@@ -37,8 +37,8 @@ textarea {
   justify-content: space-between;
   gap: 12px;
   padding: 14px 20px;
-  border-bottom: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.9);
+  border-bottom: 1px solid var(--theme-line, var(--border));
+  background: var(--theme-surface, rgba(255, 255, 255, 0.9));
   backdrop-filter: blur(8px);
 }
 
@@ -47,7 +47,7 @@ textarea {
   align-items: center;
   gap: 10px;
   text-decoration: none;
-  color: var(--text);
+  color: var(--theme-ink, var(--text));
 }
 
 .brand-icon {
@@ -82,16 +82,16 @@ textarea {
 .primary-btn {
   border-radius: 10px;
   padding: 10px 14px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--theme-line, var(--border));
   cursor: pointer;
-  background: #fff;
-  color: var(--text);
+  background: var(--theme-surface, #fff);
+  color: var(--theme-ink, var(--text));
   font-weight: 600;
 }
 
 .topbar-btn:hover,
 .ghost-btn:hover {
-  background: #f8fafc;
+  background: var(--theme-surface-soft, #f8fafc);
 }
 
 .primary-btn {
@@ -116,8 +116,8 @@ textarea {
 .hero-card,
 .panel,
 .tool-card {
-  background: var(--card);
-  border: 1px solid var(--border);
+  background: var(--theme-surface, var(--card));
+  border: 1px solid var(--theme-line, var(--border));
   border-radius: 16px;
 }
 
@@ -130,7 +130,7 @@ textarea {
   padding: 4px 10px;
   border-radius: 999px;
   background: rgba(79, 70, 229, 0.1);
-  color: var(--primary);
+  color: var(--theme-accent-ink, var(--primary));
   font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -145,7 +145,7 @@ textarea {
 
 .hero-card p {
   margin: 8px 0 0;
-  color: var(--muted);
+  color: var(--theme-muted, var(--muted));
 }
 
 .hero-tip {
@@ -154,7 +154,7 @@ textarea {
   border-radius: 10px;
   border: 1px solid rgba(79, 70, 229, 0.22);
   background: rgba(79, 70, 229, 0.08);
-  color: #3730a3;
+  color: var(--theme-accent-ink, #3730a3);
   font-size: 0.85rem;
   font-weight: 600;
 }
@@ -173,7 +173,7 @@ textarea {
 
 .auth-required p {
   margin: 0 0 14px;
-  color: var(--muted);
+  color: var(--theme-muted, var(--muted));
 }
 
 .tools-grid {
@@ -192,7 +192,7 @@ textarea {
 }
 
 .muted {
-  color: var(--muted);
+  color: var(--theme-muted, var(--muted));
   font-size: 0.9rem;
   margin: 8px 0 14px;
 }
@@ -204,12 +204,12 @@ textarea {
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
-  color: #475569;
+  color: var(--theme-muted, #475569);
 }
 
 .prompt-input {
   width: 100%;
-  border: 1px solid var(--border);
+  border: 1px solid var(--theme-line, var(--border));
   border-radius: 10px;
   padding: 10px 11px;
   font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -223,7 +223,7 @@ textarea {
 
 .prompt-input:focus {
   outline: none;
-  border-color: rgba(79, 70, 229, 0.55);
+  border-color: var(--theme-accent-line, rgba(79, 70, 229, 0.55));
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
 }
 
@@ -241,13 +241,13 @@ textarea {
 
 .prompt-help {
   margin: 0 0 12px;
-  color: #475569;
+  color: var(--theme-muted, #475569);
   font-size: 0.82rem;
 }
 
 .url-input {
   width: 100%;
-  border: 1px solid var(--border);
+  border: 1px solid var(--theme-line, var(--border));
   border-radius: 10px;
   padding: 10px 11px;
   font-size: 0.92rem;
@@ -256,7 +256,7 @@ textarea {
 
 .url-input:focus {
   outline: none;
-  border-color: rgba(79, 70, 229, 0.55);
+  border-color: var(--theme-accent-line, rgba(79, 70, 229, 0.55));
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
 }
 
@@ -268,9 +268,9 @@ textarea {
 }
 
 .source-btn {
-  border: 1px solid var(--border);
-  background: #fff;
-  color: var(--text);
+  border: 1px solid var(--theme-line, var(--border));
+  background: var(--theme-surface, #fff);
+  color: var(--theme-ink, var(--text));
   border-radius: 10px;
   padding: 10px 8px;
   font-weight: 600;
@@ -286,8 +286,8 @@ textarea {
 .dropzone {
   display: grid;
   gap: 6px;
-  border: 1px dashed #a5b4fc;
-  background: #f8faff;
+  border: 1px dashed var(--theme-accent-line, #a5b4fc);
+  background: var(--theme-surface, #f8faff);
   border-radius: 12px;
   padding: 22px 16px;
   text-align: center;
@@ -297,7 +297,7 @@ textarea {
 .dropzone.drag {
   border-style: solid;
   border-color: var(--primary);
-  background: #eef2ff;
+  background: var(--theme-accent-soft, #eef2ff);
 }
 
 .dropzone input {
@@ -310,7 +310,7 @@ textarea {
 
 .dropzone-sub {
   font-size: 0.85rem;
-  color: var(--muted);
+  color: var(--theme-muted, var(--muted));
 }
 
 .file-selected {
@@ -320,7 +320,7 @@ textarea {
   justify-content: space-between;
   gap: 10px;
   padding: 10px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--theme-line, var(--border));
   border-radius: 10px;
 }
 
@@ -331,7 +331,7 @@ textarea {
 
 .file-meta {
   font-size: 0.8rem;
-  color: var(--muted);
+  color: var(--theme-muted, var(--muted));
 }
 
 .run-row {
@@ -343,32 +343,32 @@ textarea {
 
 .credit-note {
   font-size: 0.85rem;
-  color: var(--muted);
+  color: var(--theme-muted, var(--muted));
 }
 
 .status {
   min-height: 24px;
   margin-top: 10px;
   font-size: 0.85rem;
-  color: var(--muted);
+  color: var(--theme-muted, var(--muted));
 }
 
 .status.error {
-  color: var(--danger);
+  color: var(--theme-danger-ink, var(--danger));
 }
 
 .status.success {
-  color: var(--success-ink);
+  color: var(--theme-success-ink, var(--success-ink));
 }
 
 .billing {
   margin-top: 10px;
-  border: 1px solid var(--border);
-  background: #f8fafc;
+  border: 1px solid var(--theme-line, var(--border));
+  background: var(--theme-surface-soft, #f8fafc);
   border-radius: 10px;
   padding: 10px 12px;
   font-size: 0.82rem;
-  color: var(--muted);
+  color: var(--theme-muted, var(--muted));
 }
 
 .result-card {
@@ -393,16 +393,16 @@ textarea {
 }
 
 .ghost-btn.active {
-  border-color: rgba(79, 70, 229, 0.3);
-  background: #eef2ff;
-  color: #1f2a5f;
+  border-color: var(--theme-accent-line, rgba(79, 70, 229, 0.3));
+  background: var(--theme-accent-soft, #eef2ff);
+  color: var(--theme-accent-ink, #1f2a5f);
 }
 
 .result-body,
 .result-raw {
-  border: 1px solid var(--border);
+  border: 1px solid var(--theme-line, var(--border));
   border-radius: 10px;
-  background: #fbfdff;
+  background: var(--theme-surface, #fbfdff);
   padding: 14px;
   min-height: 420px;
   overflow: auto;
@@ -419,7 +419,7 @@ textarea {
 }
 
 .result-body h1 {
-  border-bottom: 1px solid #e6ebf2;
+  border-bottom: 1px solid var(--theme-line, #e6ebf2);
   padding-bottom: 6px;
 }
 

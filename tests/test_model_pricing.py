@@ -122,8 +122,14 @@ def test_admin_pricing_endpoint_serves_current_catalog(client, core, runtime, mo
     response = client.get('/api/admin/model-pricing')
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload['version'] == '2026-09-29'
-    assert payload['models']['gemini-3.5-flash-lite']['input_audio_per_M'] == 0.30
+    assert payload['version'] == '2026-10-07'
+    assert payload['models']['gemini-3.8-flash']['input_audio_per_M'] == 0.75
+    assert payload['models']['gemini-3.8-flash-batch']['input_audio_per_M'] == 0.375
+    for scenario in payload['scenarios'].values():
+        for stage in scenario['stages']:
+            if stage.get('audio'):
+                assert stage['model'] == core.MODEL_AUDIO == 'gemini-3.8-flash'
+    assert payload['scenarios']['interview_1h']['stages'][1]['model'] == core.MODEL_STUDY
     active_models = {core.MODEL_SLIDES, core.MODEL_AUDIO, core.MODEL_INTEGRATION, core.MODEL_INTERVIEW,
                      core.MODEL_STUDY, core.MODEL_TOOLS, core.MODEL_INTERVIEW_CODING}
     assert active_models == {'gemini-3.5-flash-lite', 'gemini-3.1-pro-preview', 'gemini-3.8-flash'}

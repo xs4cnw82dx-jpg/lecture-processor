@@ -1,4 +1,4 @@
-const WORKOUT_CACHE = 'lecture-processor-workout-static-v3';
+const WORKOUT_CACHE = 'lecture-processor-workout-static-v4';
 const WORKOUT_CACHE_PREFIX = 'lecture-processor-workout-';
 const WORKOUT_SHELL = '/admin/workout';
 const OFFLINE_PAGE = '/static/workout-offline.html';
@@ -9,6 +9,16 @@ const FIREBASE_ASSETS = [
 const STATIC_ASSETS = [
   OFFLINE_PAGE,
   '/static/css/workout-offline.css',
+  '/static/css/theme.css',
+  '/static/js/theme.js',
+  '/static/js/i18n-catalog.js',
+  '/static/js/i18n-supplement.js',
+  '/static/js/i18n-dynamic.js',
+  '/static/js/i18n-dynamic-learning.js',
+  '/static/js/i18n-dynamic-tools.js',
+
+  '/static/js/i18n.js',
+  '/static/js/preferences.js',
   '/static/css/shared-ui.css',
   '/static/css/app-shell.css',
   '/static/css/motion.css',

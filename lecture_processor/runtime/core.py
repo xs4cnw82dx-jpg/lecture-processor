@@ -586,11 +586,11 @@ def is_email_allowed(email):
 
 MODEL_SLIDES = 'gemini-3.5-flash-lite'
 
-MODEL_AUDIO = 'gemini-3.5-flash-lite'
+MODEL_AUDIO = 'gemini-3.8-flash'
 
 MODEL_INTEGRATION = 'gemini-3.1-pro-preview'
 
-MODEL_INTERVIEW = 'gemini-3.1-pro-preview'
+MODEL_INTERVIEW = MODEL_AUDIO
 
 MODEL_INTERVIEW_CODING = 'gemini-3.8-flash'
 
@@ -1346,7 +1346,7 @@ def job_has_refunds(job_data):
 MODEL_THINKING_POLICY = {
     MODEL_SLIDES: {'thinking_level': 'minimal'},
     MODEL_INTEGRATION: {'thinking_level': 'high'},
-    MODEL_INTERVIEW_CODING: {'thinking_level': 'high'},
+    MODEL_AUDIO: {'thinking_level': 'high'},
 }
 
 PROVIDER_RETRY_MAX_ATTEMPTS = safe_int_env('PROVIDER_RETRY_MAX_ATTEMPTS', 3, minimum=1, maximum=6)
@@ -1394,12 +1394,11 @@ def generate_with_policy(model, contents, max_output_tokens=65536, retry_tracker
         runtime=_self_runtime(),
     )
 
-def generate_with_optional_thinking(model, prompt_text, max_output_tokens=65536, thinking_budget=None, retry_tracker=None, operation_name=None):
+def generate_with_optional_thinking(model, prompt_text, max_output_tokens=65536, retry_tracker=None, operation_name=None):
     return ai_provider.generate_with_optional_thinking(
         model,
         prompt_text,
         max_output_tokens=max_output_tokens,
-        thinking_budget=thinking_budget,
         retry_tracker=retry_tracker,
         operation_name=operation_name,
         runtime=_self_runtime(),
@@ -1679,6 +1678,7 @@ def transcribe_audio_plain(audio_file, audio_mime_type, output_language='English
 def transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_language='English', retry_tracker=None, include_usage=False):
     output_language = OUTPUT_LANGUAGE_MAP.get(str(output_language).lower(), str(output_language))
     prompt = PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED.format(output_language=output_language)
+    usage = {'input_tokens': 0, 'output_tokens': 0, 'total_tokens': 0}
     try:
         response = generate_with_policy(MODEL_AUDIO, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=prompt)])], retry_tracker=retry_tracker, operation_name='audio_transcription_timestamped')
         usage = extract_token_usage(response)
@@ -1713,9 +1713,11 @@ def transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_languag
         fallback_prompt = PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
         fallback_response = generate_with_policy(MODEL_AUDIO, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=fallback_prompt)])], retry_tracker=retry_tracker, operation_name='audio_transcription_fallback')
         fallback_usage = extract_token_usage(fallback_response)
+        combined_usage = {key: usage.get(key, 0) + fallback_usage.get(key, 0)
+                          for key in ('input_tokens', 'output_tokens', 'total_tokens')}
         fallback_text = (getattr(fallback_response, 'text', '') or '').strip()
         if include_usage:
-            return (fallback_text, [], fallback_usage)
+            return (fallback_text, [], combined_usage)
         return (fallback_text, [])
 
 def ensure_study_audio_root():
