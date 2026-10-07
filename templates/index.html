@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+  {% include '_preferences_head.html' %}
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% if forced_mode == 'lecture-notes' %}Lecture Notes{% elif forced_mode == 'slides-only' %}Slides Extraction{% elif forced_mode == 'interview' %}Interview Transcription{% else %}Lecture Processor — Processing{% endif %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">

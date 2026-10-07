@@ -13,10 +13,10 @@ test('Physio launcher explains offline state and preserves signed-in shell', asy
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({path:`/tmp/redesign-secondary-evidence/physio-launcher-${width}.png`,fullPage:true,animations:'disabled'});
   }
-  await page.getByText('Hulp bij het starten', {exact:true}).click();
+  await page.getByText('Help getting started', {exact:true}).click();
   await expect(page.locator('.physio-launcher-help')).toBeVisible();
   await page.screenshot({path:'/tmp/redesign-secondary-evidence/physio-launcher-help-open.png',fullPage:true,animations:'disabled'});
-  await page.getByText('Hulp bij het starten', {exact:true}).click();
+  await page.getByText('Help getting started', {exact:true}).click();
   await expect(page.locator('.physio-launcher-help')).toBeHidden();
   await page.locator('#physio-retry-companion').click();
   await expect(page.locator('#physio-launcher-status')).toHaveClass(/is-offline/);

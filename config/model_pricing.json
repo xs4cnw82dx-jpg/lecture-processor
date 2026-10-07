@@ -1,5 +1,5 @@
 {
-  "version": "2026-09-29",
+  "version": "2026-10-07",
   "models": {
     "gemini-3.5-flash-lite": {
       "label": "Gemini 3.5 Flash-Lite (Standard)",
@@ -264,7 +264,7 @@
         },
         {
           "stage": "Audio transcription",
-          "model": "gemini-3.5-flash-lite",
+          "model": "gemini-3.8-flash",
           "input_tokens": 500000,
           "output_tokens": 30000,
           "audio": true
@@ -305,14 +305,14 @@
       "stages": [
         {
           "stage": "Interview transcription",
-          "model": "gemini-3.1-pro-preview",
+          "model": "gemini-3.8-flash",
           "input_tokens": 500000,
           "output_tokens": 40000,
           "audio": true
         },
         {
           "stage": "Summary + sections",
-          "model": "gemini-3.1-pro-preview",
+          "model": "gemini-3.5-flash-lite",
           "input_tokens": 50000,
           "output_tokens": 15000
         }
@@ -328,6 +328,18 @@
           "output_tokens": 10000
         }
       ]
+    },
+    "audio_1h": {
+      "label": "1h Audio / voice transcription",
+      "stages": [
+        {
+          "stage": "Audio transcription",
+          "model": "gemini-3.8-flash",
+          "input_tokens": 500000,
+          "output_tokens": 30000,
+          "audio": true
+        }
+      ]
     }
   },
   "sources": {
@@ -338,6 +350,7 @@
   "notes": [
     "USD per million tokens; output rates include thinking tokens.",
     "Gemini 3.8 Flash introductory rates end on 2026-12-31; rate_schedule applies the announced 2027-01-01 rates automatically using UTC dates.",
-    "Legacy model rates are retained for historical job reports; new scenarios use current runtime models."
+    "Legacy model rates are retained for historical job reports; new scenarios use current runtime models.",
+    "All audio transcription uses Gemini 3.8 Flash with high thinking. Interview summaries and sections use the study model (Gemini 3.5 Flash-Lite)."
   ]
 }

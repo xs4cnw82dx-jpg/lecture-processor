@@ -58,7 +58,7 @@
     return date;
   }
   function formatDate(value, options) {
-    try { return new Intl.DateTimeFormat('en-GB', options || { day: 'numeric', month: 'short' }).format(parseDate(value)); }
+    try { return new Intl.DateTimeFormat((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'), options || { day: 'numeric', month: 'short' }).format(parseDate(value)); }
     catch (_) { return String(value || ''); }
   }
   function todayInTimezone() {
@@ -269,7 +269,7 @@
       return;
     }
     els.nextTime.textContent = next.date === today ? next.time : formatDate(next.date, { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ' + next.time;
-    els.nextContent.innerHTML = '<h2>' + escapeHtml(next.title) + '</h2><p>' + escapeHtml(sessionOutcomeText(next)) + (next.pack_title ? ' from ' + escapeHtml(next.pack_title) : '') + '</p><div class="next-session-actions"><a class="btn" href="' + escapeHtml(studyLink(next)) + '">Start studying</a><button type="button" class="btn secondary" data-next-complete>Log study done</button><button type="button" class="btn secondary" data-next-edit>Reschedule</button></div>';
+    els.nextContent.innerHTML = '<h2 data-user-content>' + escapeHtml(next.title) + '</h2><p>' + escapeHtml(sessionOutcomeText(next)) + (next.pack_title ? ' from ' + escapeHtml(next.pack_title) : '') + '</p><div class="next-session-actions"><a class="btn" href="' + escapeHtml(studyLink(next)) + '">Start studying</a><button type="button" class="btn secondary" data-next-complete>Log study done</button><button type="button" class="btn secondary" data-next-edit>Reschedule</button></div>';
     els.nextContent.querySelector('[data-next-complete]').addEventListener('click', function () { openStudyLog(next); });
     els.nextContent.querySelector('[data-next-edit]').addEventListener('click', function () { openSessionEditor(next); });
   }
@@ -507,7 +507,9 @@
     select._prettyButton.disabled = select.disabled;
     var option = select.options[select.selectedIndex] || select.options[0];
     var text = option ? option.textContent : 'Choose an option';
-    select._prettyButton.querySelector('[data-pretty-select-label]').textContent = text;
+    var optionLabel = select._prettyButton.querySelector('[data-pretty-select-label]');
+    optionLabel.toggleAttribute('data-user-content', !!(option && window.LectureI18n && window.LectureI18n.isContent(option)));
+    optionLabel.textContent = text;
     select._prettyButton.setAttribute('aria-label', controlLabel(select) + ': ' + text);
   }
   function openPrettySelect(select) {
@@ -529,6 +531,7 @@
       var optionButton = document.createElement('button');
       optionButton.type = 'button';
       optionButton.className = 'pretty-option' + (option.selected ? ' is-selected' : '');
+      optionButton.toggleAttribute('data-user-content', !!(window.LectureI18n && window.LectureI18n.isContent(option)));
       optionButton.textContent = option.textContent;
       optionButton.setAttribute('role', 'option');
       optionButton.setAttribute('aria-selected', option.selected ? 'true' : 'false');
@@ -625,7 +628,7 @@
         cells += '<button type="button" class="date-picker-day' + (value === today ? ' is-today' : '') + (value === selected ? ' is-selected' : '') + '" data-picker-date="' + value + '"' + (allowed(value) ? '' : ' disabled') + ' aria-label="' + escapeHtml(formatDate(value, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })) + '">' + day + '</button>';
       }
       var todayDisabled = allowed(today) ? '' : ' disabled';
-      panel.innerHTML = '<div class="date-picker-header"><button type="button" class="date-picker-nav" data-month-step="-1" aria-label="Previous month">‹</button><div class="date-picker-title">' + escapeHtml(new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' }).format(monthCursor)) + '</div><button type="button" class="date-picker-nav" data-month-step="1" aria-label="Next month">›</button></div><div class="date-picker-weekdays"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div><div class="date-picker-grid">' + cells + '</div><div class="date-picker-footer"><button type="button" class="picker-text-button" data-picker-clear>Clear</button><button type="button" class="picker-text-button" data-picker-today' + todayDisabled + '>Today</button></div>';
+      panel.innerHTML = '<div class="date-picker-header"><button type="button" class="date-picker-nav" data-month-step="-1" aria-label="Previous month">‹</button><div class="date-picker-title">' + escapeHtml(new Intl.DateTimeFormat((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'), { month: 'long', year: 'numeric' }).format(monthCursor)) + '</div><button type="button" class="date-picker-nav" data-month-step="1" aria-label="Next month">›</button></div><div class="date-picker-weekdays"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div><div class="date-picker-grid">' + cells + '</div><div class="date-picker-footer"><button type="button" class="picker-text-button" data-picker-clear>Clear</button><button type="button" class="picker-text-button" data-picker-today' + todayDisabled + '>Today</button></div>';
       queryAll('[data-month-step]', panel).forEach(function (button) { button.addEventListener('click', function () { monthCursor = new Date(year, month + Number(button.dataset.monthStep), 1); renderMonth(); positionControlPopover(panel, anchor); panel.querySelector('[data-month-step="' + button.dataset.monthStep + '"]').focus(); }); });
       queryAll('[data-picker-date]', panel).forEach(function (button) { button.addEventListener('click', function () { setPickerValue(input, button.dataset.pickerDate); closeControlPopover(false); input.focus(); }); });
       panel.querySelector('[data-picker-clear]').addEventListener('click', function () { setPickerValue(input, ''); closeControlPopover(false); input.focus(); });
@@ -1202,7 +1205,7 @@
     var labels = { disconnected: 'Not connected', pending: 'Waiting to sync', syncing: 'Syncing', connected: 'Connected', retrying: 'Retrying', needs_attention: 'Needs attention', reconnect_required: 'Reconnect needed', disconnecting: 'Disconnecting' };
     byId('google-calendar-status').textContent = labels[data.status] || 'Not connected';
     byId('google-calendar-description').textContent = !data.available && !connected ? 'Direct Google connection is not configured yet. You can add your plan now using a private link below.' : (data.message || 'We create a separate Lecture Processor calendar. Your other calendars stay private. Changes you make here are sent to Google automatically.');
-    byId('google-calendar-account').textContent = data.email ? data.email + (data.last_synced_at ? ' · Last synced ' + new Date(data.last_synced_at * 1000).toLocaleString('en-GB') : '') : '';
+    byId('google-calendar-account').textContent = data.email ? data.email + (data.last_synced_at ? ' · Last synced ' + new Date(data.last_synced_at * 1000).toLocaleString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB')) : '') : '';
     byId('google-calendar-connect').hidden = !needsConnect;
     byId('google-calendar-connect').disabled = !data.available || calendarBusy;
     byId('google-calendar-connect').textContent = connected ? 'Reconnect Google account' : 'Connect Google account';
@@ -1249,7 +1252,7 @@
     var feeds = state.data.calendar_feeds || [];
     els.feedList.innerHTML = feeds.length ? feeds.map(function (feed) {
       var revoked = Number(feed.revoked_at || 0) > 0;
-      var status = revoked ? 'Revoked' : (feed.last_accessed_at ? 'Last fetched ' + new Date(feed.last_accessed_at * 1000).toLocaleString('en-GB') : 'Link ready · add it to your calendar');
+      var status = revoked ? 'Revoked' : (feed.last_accessed_at ? 'Last fetched ' + new Date(feed.last_accessed_at * 1000).toLocaleString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB')) : 'Link ready · add it to your calendar');
       return '<div class="calendar-feed-item' + (revoked ? ' is-revoked' : '') + '" data-feed-id="' + escapeHtml(feed.feed_id) + '"><div><strong>' + escapeHtml(feed.name) + '</strong><span>' + escapeHtml(status) + '</span></div>' + (!revoked ? '<div class="calendar-feed-actions"><button type="button" class="btn" data-feed-rotate>Replace link</button><button type="button" class="btn danger" data-feed-revoke>Disconnect</button></div>' : '') + '</div>';
     }).join('') : '<p class="calendar-refresh-note">No subscription links yet. Choose your calendar above to get started.</p>';
     queryAll('[data-feed-id]', els.feedList).forEach(function (row) {

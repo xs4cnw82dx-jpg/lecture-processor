@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  {% include '_preferences_head.html' %}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings · Lecture Processor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}">
+</head>
+<body>
+  {% set shell_title = 'Settings' %}
+  {% include '_app_shell.html' %}
+  <main class="app-shell-page settings-page">
+    <div class="settings-container">
+      <header class="settings-header">
+        <p class="settings-eyebrow">MAKE IT YOURS</p>
+        <h1>Settings</h1>
+        <p>A comfortable space to focus, in the language you prefer.</p>
+      </header>
+      <div class="settings-auth" id="settings-auth" hidden>
+        <span>Sign in to save your preferences across devices.</span>
+        <a href="/lecture-notes?auth=signin&amp;next=/settings">Sign in</a>
+      </div>
+      <fieldset class="settings-controls" id="settings-controls" disabled>
+        <legend class="sr-only">Your preferences</legend>
+        <section class="settings-section" aria-labelledby="appearance-title">
+          <div class="settings-section-heading"><span class="settings-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20.7 13A9 9 0 0 1 11 3.3 9 9 0 1 0 20.7 13Z"/></svg></span><div><h2 id="appearance-title">Appearance</h2><p>Set the mood for your study space.</p></div></div>
+          <div class="settings-row">
+            <div><label for="settings-dark-mode">Dark mode</label><p id="dark-mode-description">Softer light, with the same clear view of your work.</p></div>
+            <label class="settings-switch"><input id="settings-dark-mode" type="checkbox" role="switch" aria-label="Dark mode" aria-describedby="dark-mode-description"><span class="settings-switch-track" aria-hidden="true"><span></span></span></label>
+          </div>
+          <div class="settings-preview" aria-hidden="true"><div class="settings-preview-rail"><i></i><i></i><i></i></div><div class="settings-preview-content"><span class="settings-preview-title"></span><div class="settings-preview-cards"><span></span><span></span><span></span></div><span class="settings-preview-line"></span><span class="settings-preview-line short"></span></div></div>
+        </section>
+        <section class="settings-section" aria-labelledby="language-title">
+          <div class="settings-section-heading"><span class="settings-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a18 18 0 0 1 0 18 18 18 0 0 1 0-18Z"/></svg></span><div><h2 id="language-title">Language</h2><p>Feel at home throughout the website.</p></div></div>
+          <div class="settings-row settings-language-row"><div><label for="settings-language">Website language</label><p id="language-description">Choose the language for menus, buttons and guidance.</p></div><select id="settings-language" data-app-select aria-describedby="language-description" translate="no"><option value="en">English</option><option value="nl">Nederlands</option></select></div>
+          <p class="settings-note">Your study materials keep their original language. You can choose an output language when creating new materials.</p>
+        </section>
+      </fieldset>
+      <div class="settings-save"><span class="settings-save-dot" aria-hidden="true"></span><p id="settings-status" role="status" aria-live="polite">Loading your preferences…</p><button id="settings-retry" type="button" hidden>Try again</button></div>
+    </div>
+  </main>
+  {% include '_shell_footer.html' %}
+  </div></div>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/user-cache-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/study-progress-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/display-format-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/settings.js') }}"></script>
+</body>
+</html>

@@ -48,6 +48,7 @@
         <div class="app-shell-group-panel-wrap" aria-hidden="{{ 'false' if shell_physio_open else 'true' }}" {% if not shell_physio_open %}inert{% endif %}>
           <div class="app-shell-group-panel" id="shell-physio-panel">
             <a href="/physio" class="app-shell-link sub">Clinical workspace</a>
+            <a href="/admin/workout" class="app-shell-link sub" id="shell-workout-link" hidden>Workout</a>
           </div>
         </div>
       </div>
@@ -94,6 +95,8 @@
           <div class="app-shell-account-panel-wrap" id="shell-account-menu-wrap" aria-hidden="true" inert>
             <div class="app-shell-account-menu" id="shell-account-menu" role="menu">
               <div class="app-shell-email" id="user-email">Checking sign-in...</div>
+              <a href="/settings" class="app-shell-account-item" role="menuitem">Settings</a>
+              <div role="separator" class="app-shell-menu-divider"></div>
               <a href="/buy_credits" class="app-shell-account-item" role="menuitem">Buy credits</a>
               <button type="button" class="app-shell-account-item" id="shell-purchase-history-btn" role="menuitem">Purchase history</button>
               <button type="button" class="app-shell-account-item" id="shell-admin-btn" role="menuitem" hidden>Admin</button>

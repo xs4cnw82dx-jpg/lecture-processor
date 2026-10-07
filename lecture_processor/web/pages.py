@@ -112,6 +112,15 @@ def index():
     return render_template('landing.html', **_public_context(runtime=runtime))
 
 
+@pages_bp.route('/settings')
+def user_settings():
+    runtime = get_runtime()
+    return render_template(
+        'settings.html',
+        **_shell_context(runtime=runtime, page_key='settings', show_credits_pill=True),
+    )
+
+
 @pages_bp.route('/dashboard')
 def dashboard():
     runtime = get_runtime()

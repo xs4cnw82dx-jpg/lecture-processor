@@ -260,7 +260,7 @@
     if (!safe) return '-';
     var date = new Date(safe * 1000);
     if (Number.isNaN(date.getTime())) return '-';
-    return date.toLocaleString(navigator.language || 'en-US', {
+    return date.toLocaleString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'), {
       day: '2-digit',
       month: 'short',
       year: 'numeric',

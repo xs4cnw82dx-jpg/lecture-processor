@@ -1,0 +1,81 @@
+/* Shared appearance contract. Component declarations retain their original light
+   colors as fallbacks; only these semantic tokens change in dark mode. Artwork,
+   uploaded documents, category swatches and export canvases retain their colors. */
+:root { color-scheme: light; }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --theme-canvas: #101723;
+  --theme-surface: #192333;
+  --theme-surface-soft: #202c3e;
+  --theme-ink: #ecf2fc;
+  --theme-muted: #acbad0;
+  --theme-line: #36465d;
+  --theme-accent-ink: #9bbcff;
+  --theme-accent-soft: #21375a;
+  --theme-accent-line: #3d5f90;
+  --theme-success-ink: #85dfba;
+  --theme-success-soft: #18392f;
+  --theme-success-line: #366955;
+  --theme-warning-ink: #f3ce8a;
+  --theme-warning-soft: #3a3022;
+  --theme-warning-line: #77603b;
+  --theme-danger-ink: #ffa5b0;
+  --theme-danger-soft: #402833;
+  --theme-danger-line: #794654;
+  --theme-violet-ink: #c6b5ff;
+  --theme-violet-soft: #342c4d;
+  --theme-violet-line: #635284;
+  --surface-shadow: 0 8px 28px rgb(0 0 0 / 16%);
+  --control-shadow: 0 2px 5px rgb(0 0 0 / 12%);
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 16%);
+  --shadow: 0 3px 10px rgb(0 0 0 / 18%);
+  --shadow-md: 0 8px 24px rgb(0 0 0 / 22%);
+  --shadow-lg: 0 18px 42px rgb(0 0 0 / 30%);
+  --shadow-xl: 0 24px 64px rgb(0 0 0 / 38%);
+}
+
+/* The page canvas sits one level below cards and quiet inset controls. */
+html[data-theme="dark"],
+html[data-theme="dark"] body,
+html[data-theme="dark"] .app-shell-page,
+html[data-theme="dark"] .study-plan-page {
+  background-color: var(--theme-canvas);
+  color: var(--theme-ink);
+}
+html[data-theme="dark"] {
+  scrollbar-color: #536580 var(--theme-canvas);
+}
+html[data-theme="dark"] ::selection { background: #406ab0; color: #fff; }
+html[data-theme="dark"] :focus-visible { outline-color: #9bbcff; }
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder { color: #9aaac1; opacity: 1; }
+html[data-theme="dark"] .app-shell-sidebar { border-right: 1px solid #303d51; }
+
+/* Dark canvases do not affect the actual print/export document. */
+@media print {
+  :root[data-theme="dark"] {
+    color-scheme: light;
+    --theme-canvas: initial;
+    --theme-surface: initial;
+    --theme-surface-soft: initial;
+    --theme-ink: initial;
+    --theme-muted: initial;
+    --theme-line: initial;
+    --theme-accent-ink: initial;
+    --theme-accent-soft: initial;
+    --theme-accent-line: initial;
+    --theme-success-ink: initial;
+    --theme-success-soft: initial;
+    --theme-success-line: initial;
+    --theme-warning-ink: initial;
+    --theme-warning-soft: initial;
+    --theme-warning-line: initial;
+    --theme-danger-ink: initial;
+    --theme-danger-soft: initial;
+    --theme-danger-line: initial;
+    --theme-violet-ink: initial;
+    --theme-violet-soft: initial;
+    --theme-violet-line: initial;
+  }
+  html[data-theme="dark"], html[data-theme="dark"] body { background: white; color: #17233c; }
+}

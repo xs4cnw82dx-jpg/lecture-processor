@@ -18,7 +18,7 @@ def test_admin_auth_observer_survives_cached_bootstrap_helper():
 def test_service_worker_fetches_fresh_static_assets_before_cache_fallback():
     service_worker = _read('static/service-worker.js')
 
-    assert "const VOICE_CACHE = 'lecture-processor-voice-v9';" in service_worker
+    assert "const VOICE_CACHE = 'lecture-processor-voice-v10';" in service_worker
     assert "fetch(new Request(request, { cache: 'no-cache' }))" in service_worker
     assert "caches.open(VOICE_CACHE).then((cache) => cache.put(request, copy));" in service_worker
     assert ".catch(() => caches.match(request))" in service_worker

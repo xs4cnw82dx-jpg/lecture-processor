@@ -813,37 +813,38 @@ def _wait_for_batch(batch_name, runtime=None, on_poll=None):
 
 
 def _batch_stage_generation_config(stage_name, runtime):
-    if stage_name != 'notes_merge':
-        return {}
+    """Apply the same model thinking policy to every deferred batch stage."""
     model = _batch_model(stage_name, runtime)
     policy = getattr(runtime, 'MODEL_THINKING_POLICY', {}).get(model, {}) or {}
     generation_config = {'maxOutputTokens': 65536}
-    if 'thinking_budget' in policy:
-        try:
-            generation_config['thinkingConfig'] = {'thinkingBudget': int(policy.get('thinking_budget'))}
-        except Exception:
-            generation_config['thinkingConfig'] = {'thinkingBudget': 32768}
-    elif 'thinking_level' in policy:
-        generation_config['thinkingConfig'] = {'thinkingLevel': str(policy.get('thinking_level') or '')}
+    if policy.get('thinking_level'):
+        generation_config['thinkingConfig'] = {'thinkingLevel': str(policy['thinking_level'])}
     return generation_config
 
 
 def _request_with_stage_config(request, stage_name, runtime):
     if not isinstance(request, dict):
         return request
-    stage_config = _batch_stage_generation_config(stage_name, runtime)
-    if not stage_config:
-        return request
     payload = dict(request)
     existing_config = payload.get('generationConfig')
     if not isinstance(existing_config, dict):
         existing_config = {}
     generation_config = dict(existing_config)
+    # Older persisted requests must not leak deprecated generation parameters.
+    for key in ('temperature', 'topP', 'topK', 'top_p', 'top_k', 'thinking_config'):
+        generation_config.pop(key, None)
+    existing_thinking = generation_config.pop('thinkingConfig', None)
+    if isinstance(existing_thinking, dict):
+        thinking_config = {key: value for key, value in existing_thinking.items()
+                           if key not in {'thinkingBudget', 'thinking_budget'}}
+        if thinking_config:
+            generation_config['thinkingConfig'] = thinking_config
+    stage_config = _batch_stage_generation_config(stage_name, runtime)
+    if 'thinkingConfig' in stage_config:
+        stage_config['thinkingConfig'] = {
+            **generation_config.get('thinkingConfig', {}), **stage_config['thinkingConfig'],
+        }
     generation_config.update(stage_config)
-    if isinstance(existing_config.get('thinkingConfig'), dict) and isinstance(stage_config.get('thinkingConfig'), dict):
-        merged_thinking = dict(existing_config.get('thinkingConfig') or {})
-        merged_thinking.update(stage_config.get('thinkingConfig') or {})
-        generation_config['thinkingConfig'] = merged_thinking
     payload['generationConfig'] = generation_config
     return payload
 

@@ -13,7 +13,7 @@ test.afterEach(async ({}, testInfo) => {
 
 async function openCalculator(page, futureRates = false) {
   const pricing = JSON.parse(fs.readFileSync('config/model_pricing.json', 'utf8'));
-  pricing.pricing_as_of = futureRates ? '2027-01-01' : '2026-09-29';
+  pricing.pricing_as_of = futureRates ? '2027-01-01' : '2026-10-07';
   if (futureRates) {
     for (const rates of Object.values(pricing.models)) {
       for (const change of rates.rate_schedule || []) Object.assign(rates, change);
@@ -37,7 +37,7 @@ async function openCalculator(page, futureRates = false) {
     .replace(/\{\{ url_for\('static', filename='([^']+)'\) \}\}/g, (_match, filename) => `/static/${filename}`)
     .replace("{{ url_for('static', filename=admin_js_asset or 'js/admin.js') }}", '/static/js/admin.min.js');
   await page.route('**/admin', route => route.fulfill({ contentType: 'text/html', body: html }));
-  // Use the shipped minified asset to verify the production calculator too.
+  // Route the production asset URL to current source so the pricing fixture stays independent of a build.
   await page.route(/\/static\/js\/admin(?:\.min)?\.js(?:\?.*)?$/, route => route.fulfill({
     contentType: 'text/javascript', body: fs.readFileSync('static/js/admin.js', 'utf8'),
   }));
@@ -50,20 +50,31 @@ async function selectScenario(page, key) {
   await page.locator(`#calc-scenario-menu [data-value="${key}"]`).click();
 }
 
-test('calculator uses current audio prices and switches Pro tiers above 200k tokens', async ({ page }) => {
+test('calculator uses Flash audio prices and switches only Pro stages above 200k tokens', async ({ page }) => {
   await openCalculator(page);
-  await expect(page.locator('#calc-total')).toHaveText('$0.7655');
+  await expect(page.locator('#calc-total')).toHaveText('$1.0280');
   await expect(page.locator('.calc-stage-model').first()).toContainText('Gemini 3.5 Flash-Lite');
+  const lectureAudio = page.locator('.calc-stage-card').nth(1);
+  await expect(lectureAudio.locator('.calc-stage-model')).toContainText('Gemini 3.8 Flash');
+  await expect(lectureAudio.locator('.cost-stage')).toHaveText('$0.4875');
+
+  // Long-context tiers still apply to the Pro merge stage, not Flash transcription.
+  const merge = page.locator('.calc-stage-card').nth(2);
+  await merge.locator('.calc-in').fill('200000');
+  await expect(merge.locator('.calc-stage-model')).toContainText('Standard <=200k');
+  await expect(merge.locator('.cost-stage')).toHaveText('$0.7000');
+  await merge.locator('.calc-in').fill('200001');
+  await expect(merge.locator('.calc-stage-model')).toContainText('Standard >200k');
+  await expect(merge.locator('.cost-stage')).toHaveText('$1.2500');
+
   await selectScenario(page, 'interview_1h');
-  await expect(page.locator('#calc-total')).toHaveText('$3.0000');
+  await expect(page.locator('#calc-total')).toHaveText('$0.5775');
   const transcription = page.locator('.calc-stage-card').first();
-  await expect(transcription.locator('.calc-stage-model')).toContainText('Standard >200k');
-  await transcription.locator('.calc-in').fill('200000');
-  await expect(transcription.locator('.calc-stage-model')).toContainText('Standard <=200k');
-  await expect(transcription.locator('.cost-stage')).toHaveText('$0.8800');
-  await transcription.locator('.calc-in').fill('200001');
-  await expect(transcription.locator('.calc-stage-model')).toContainText('Standard >200k');
-  await expect(transcription.locator('.cost-stage')).toHaveText('$1.5200');
+  await expect(transcription.locator('.calc-stage-model')).toContainText('Gemini 3.8 Flash');
+  await expect(transcription.locator('.cost-stage')).toHaveText('$0.5250');
+  await expect(transcription.locator('.calc-stage-model')).not.toContainText('>200k');
+  await selectScenario(page, 'audio_1h');
+  await expect(page.locator('#calc-total')).toHaveText('$0.4875');
 });
 
 test('interview coding calculator uses the scheduled Flash price change', async ({ page }) => {

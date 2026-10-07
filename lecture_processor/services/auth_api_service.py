@@ -244,7 +244,9 @@ def update_user_preferences(app_ctx, request):
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
 
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return app_ctx.jsonify({'error': 'Preferences must be an object.'}), 400
     user = app_ctx.get_or_create_user(uid, email)
     if str(user.get('account_status', '') or '').strip().lower() == 'deleting':
         return app_ctx.jsonify({
@@ -257,16 +259,22 @@ def update_user_preferences(app_ctx, request):
     pref_key = shared_parsing.sanitize_output_language_pref_key(raw_key, runtime=app_ctx)
     pref_custom = shared_parsing.sanitize_output_language_pref_custom(raw_custom, runtime=app_ctx)
 
-    if pref_key == 'other' and not pref_custom:
+    if ('output_language' in payload or 'output_language_custom' in payload) and pref_key == 'other' and not pref_custom:
         return app_ctx.jsonify({'error': 'Custom language is required when output language is Other.'}), 400
     if pref_key != 'other':
         pref_custom = ''
 
-    updates = {
-        'preferred_output_language': pref_key,
-        'preferred_output_language_custom': pref_custom,
-        'updated_at': time.time(),
-    }
+    updates = {'updated_at': time.time()}
+    if 'output_language' in payload or 'output_language_custom' in payload:
+        updates.update({
+            'preferred_output_language': pref_key,
+            'preferred_output_language_custom': pref_custom,
+        })
+    for field, allowed in (('interface_language', ('en', 'nl')), ('theme', ('light', 'dark'))):
+        if field in payload:
+            if payload[field] not in allowed:
+                return app_ctx.jsonify({'error': 'Choose a supported language or appearance.'}), 400
+            updates[field] = payload[field]
     if 'onboarding_completed' in payload:
         updates['onboarding_completed'] = bool(payload.get('onboarding_completed'))
     if 'favorite_tools' in payload:

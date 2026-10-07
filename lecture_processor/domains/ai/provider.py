@@ -245,14 +245,12 @@ def generate_with_optional_thinking(
     model,
     prompt_text,
     max_output_tokens=65536,
-    thinking_budget=None,
     retry_tracker=None,
     operation_name=None,
     runtime=None,
 ):
     """Convenience wrapper for text-only prompts. Uses model policy for thinking config."""
     resolved_runtime = _resolve_runtime(runtime)
-    _ = thinking_budget
     types_module = _get_types_module(resolved_runtime)
     if types_module and hasattr(types_module, 'Content') and hasattr(types_module, 'Part'):
         contents = [

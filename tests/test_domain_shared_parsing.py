@@ -22,6 +22,8 @@ def test_shared_parsing_uses_runtime_constants():
         "output_language_label": "English",
         "onboarding_completed": False,
         "favorite_tools": [],
+        "interface_language": "en",
+        "theme": "light",
     }
     assert parsing.parse_interview_features("summary", runtime=runtime) == ["summary"]
 

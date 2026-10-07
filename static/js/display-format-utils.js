@@ -9,6 +9,7 @@
 
   function buildLocaleList() {
     var locales = [];
+    if (root.LectureI18n) return [root.LectureI18n.locale()];
     try {
       if (Array.isArray(root.navigator && root.navigator.languages)) {
         root.navigator.languages.forEach(function (locale) {

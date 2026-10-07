@@ -246,6 +246,7 @@ EXPECTED_ROUTES = [
     ('GET', '/study', 'pages.study_dashboard'),
     ('GET', '/study-pack-builder', 'pages.study_pack_builder_page'),
     ('GET', '/shared/<share_token>', 'pages.shared_study_page'),
+    ('GET', '/settings', 'pages.user_settings'),
     ('GET', '/service-worker.js', 'pages.service_worker'),
     ('GET', '/terms', 'pages.terms_of_service'),
     ('GET', '/tools', 'pages.tools_page'),

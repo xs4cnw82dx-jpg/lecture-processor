@@ -11,8 +11,10 @@ async function toolsFixture(page) {
   });
   await page.route('**/api/user-preferences', (route) => {
     const uid = route.request().headers().authorization === 'Bearer token-b' ? 'b' : 'a';
-    if (failSave) return route.fulfill({ status: 500, json: { error: 'Could not save favorites. Please try again.' } });
-    saved[uid] = route.request().postDataJSON().favorite_tools;
+    if (route.request().method() === 'PUT') {
+      if (failSave) return route.fulfill({ status: 500, json: { error: 'Could not save favorites. Please try again.' } });
+      saved[uid] = route.request().postDataJSON().favorite_tools;
+    }
     return route.fulfill({ json: { preferences: { favorite_tools: saved[uid] } } });
   });
   return { ...fixture, fail: () => { failSave = true; } };

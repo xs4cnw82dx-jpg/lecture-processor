@@ -434,7 +434,7 @@
     var value = Number(timestamp || 0);
     if (!value) return 'Not saved yet';
     try {
-      return new Date(value).toLocaleString('en-GB', {
+      return new Date(value).toLocaleString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'), {
         day: '2-digit',
         month: 'short',
         hour: '2-digit',

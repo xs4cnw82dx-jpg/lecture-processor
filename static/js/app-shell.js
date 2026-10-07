@@ -29,6 +29,7 @@
   var userInitial = document.getElementById('shell-account-initial');
   var purchaseHistoryBtn = document.getElementById('shell-purchase-history-btn');
   var adminBtn = document.getElementById('shell-admin-btn');
+  var workoutLink = document.getElementById('shell-workout-link');
   var exportDataBtn = document.getElementById('shell-export-data-btn');
   var deleteAccountBtn = document.getElementById('shell-delete-account-btn');
   var signOutBtn = document.getElementById('signout-btn');
@@ -75,6 +76,7 @@
   ];
 
   var currentUserIsAdmin = false;
+  var authRevision = 0;
   var lastSignedInUid = auth && auth.currentUser && auth.currentUser.uid ? String(auth.currentUser.uid) : '';
   var authStateResolved = !!(auth && auth.currentUser);
   var authObserverStartedAt = Date.now();
@@ -690,10 +692,19 @@
   async function authFetch(path, options) {
     var user = auth.currentUser;
     if (!user) throw new Error('Please sign in');
+    var revision = authRevision;
     var token = await user.getIdToken();
+    if (auth.currentUser !== user || authRevision !== revision) throw new Error('Your account changed. Please try again.');
     var opts = options || {};
     var headers = Object.assign({}, opts.headers || {}, { Authorization: 'Bearer ' + token });
-    return fetch(path, Object.assign({}, opts, { headers: headers }));
+    var response = await fetch(path, Object.assign({}, opts, { headers: headers }));
+    if (auth.currentUser !== user || authRevision !== revision) {
+      if (path === '/api/session/login') {
+        await fetch('/api/session/logout', { method: 'POST', credentials: 'include' });
+      }
+      throw new Error('Your account changed. Please try again.');
+    }
+    return response;
   }
 
   function getDispositionFilename(disposition, fallback) {
@@ -747,6 +758,7 @@
       writeUserCacheJson(user, CACHE_KEYS.profile, profile);
       writeCacheJson(CACHE_KEYS.lastProfile, profile);
       if (adminBtn) adminBtn.hidden = !currentUserIsAdmin;
+      if (workoutLink) workoutLink.hidden = !currentUserIsAdmin;
       setPhysioGroupVisible(true);
       markActiveNav();
     } catch (error) {
@@ -761,6 +773,7 @@
     currentUserIsAdmin = false;
     setAuthState('signed-out');
     if (adminBtn) adminBtn.hidden = true;
+    if (workoutLink) workoutLink.hidden = true;
     setCreditsVisible(false);
     applyCreditBreakdown(null);
     if (userEmail) userEmail.textContent = 'Not signed in';
@@ -841,6 +854,9 @@
   }
 
   function applyAuth(user) {
+    authRevision += 1;
+    if (workoutLink) workoutLink.hidden = true;
+    currentUserIsAdmin = false;
     resetFavoriteTools(user);
     var signedIn = !!user;
     setAuthState(signedIn ? 'signed-in' : 'signed-out');
@@ -1256,6 +1272,26 @@
         window.location.href = '/admin';
       } catch (_) {
         showToast('Could not open admin dashboard right now.', 'error');
+      }
+    });
+  }
+
+  if (workoutLink) {
+    workoutLink.addEventListener('click', async function (event) {
+      event.preventDefault();
+      if (!auth.currentUser || !currentUserIsAdmin) return;
+      var uid = auth.currentUser.uid;
+      workoutLink.setAttribute('aria-busy', 'true');
+      try {
+        var response = await authFetch('/api/session/login', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+        });
+        if (!response.ok) throw new Error('Could not start admin session');
+        if (auth.currentUser && auth.currentUser.uid === uid) window.location.href = '/admin/workout';
+      } catch (_) {
+        showToast('Could not open Workout right now. Please try again.', 'error');
+      } finally {
+        workoutLink.removeAttribute('aria-busy');
       }
     });
   }

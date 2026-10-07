@@ -301,7 +301,7 @@
 
   function formatDate(ts) {
     var date = new Date(Number(ts || nowSeconds()) * 1000);
-    return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return date.toLocaleString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
 
   function syncPill(message, type) {

@@ -775,16 +775,16 @@
             const cached = localBooks.find((l) => l.id === x.id),
               cover =
                 coverCache[x.id] || (cached && cached.pages && cached.pages[0]);
-            return `<article class="book-card"><button class="book-cover-button" data-open="${esc(x.id)}" aria-label="Open ${esc(x.title)}"><span class="book-mini-cover">${cover ? M.svg(cover, renderedAssets) : M.svg({ ...M.page("front"), items: [M.object("text", { text: x.title, y: 38, w: 108, h: 90, style: { ...M.baseStyle, font: "Fraunces", size: 28 } })] })}</span></button><div class="book-card-title"><h3>${x.favorite ? "★ " : ""}${esc(x.title)}</h3><button class="icon-btn" data-book-options="${esc(x.id)}" aria-label="Options for ${esc(x.title)}">•••</button></div><p>${esc(x.local && user?.uid && x.cloudAccountUid === user.uid ? "Waiting to save to your account" : x.folder || (x.local ? "On this device" : "Saved to cloud"))} · ${new Date(x.updated_at * 1000).toLocaleDateString("en-GB", { month: "short", day: "numeric" })}</p></article>`;
+            return `<article class="book-card"><button class="book-cover-button" data-open="${esc(x.id)}" aria-label="Open ${esc(x.title)}"><span class="book-mini-cover">${cover ? M.svg(cover, renderedAssets) : M.svg({ ...M.page("front"), items: [M.object("text", { text: x.title, y: 38, w: 108, h: 90, style: { ...M.baseStyle, font: "Fraunces", size: 28 } })] })}</span></button><div class="book-card-title"><h3>${x.favorite ? "★ " : ""}${esc(x.title)}</h3><button class="icon-btn" data-book-options="${esc(x.id)}" aria-label="Options for ${esc(x.title)}">•••</button></div><p>${esc(x.local && user?.uid && x.cloudAccountUid === user.uid ? "Waiting to save to your account" : x.folder || (x.local ? "On this device" : "Saved to cloud"))} · ${new Date(x.updated_at * 1000).toLocaleDateString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'), { month: "short", day: "numeric" })}</p></article>`;
           })
           .join("")
       : `<div class="book-empty"><h2>${query ? "No books found" : collection === "trash" ? "Nothing in the trash" : collection === "shared" ? "A place for shared stories" : "Your next idea starts here"}</h2><p>${query ? "Try another title, folder or tag." : collection === "shared" ? "Books shared with your email address will appear here." : collection === "trash" ? "Deleted books can be restored here." : "Start with a blank page or choose a little inspiration."}</p>${!query && ["mine", "local"].includes(collection) ? '<button class="primary-btn" data-new>＋ Create a book</button>' : ""}</div>`;
   }
-  function dialog(title, html) {
+  function dialog(title, html, userTitle = false) {
     finishText();
     window.BookColorPicker?.close();
     $("dialog-content").innerHTML =
-      `<h2 id="book-dialog-title">${esc(title)}</h2>${html}`;
+      `<h2 id="book-dialog-title"${userTitle ? ' data-user-content' : ''}>${esc(title)}</h2>${html}`;
     $("book-dialog").setAttribute("aria-labelledby", "book-dialog-title");
     if (!$("book-dialog").open) $("book-dialog").showModal();
   }
@@ -1082,7 +1082,7 @@
     if (lastRefresh && !can)
       $("editor-status").textContent +=
         " · Updated " +
-        new Date(lastRefresh).toLocaleTimeString([], {
+        new Date(lastRefresh).toLocaleTimeString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'), {
           hour: "2-digit",
           minute: "2-digit",
           second: "2-digit",
@@ -1225,7 +1225,7 @@
       const assets = p.items.filter((o) => o.assetId).map((o) => renderedAssets[o.assetId]?.src || "");
       const key = JSON.stringify([p, options, assets]);
       if (node.bookPreviewKey !== key) {
-        node.innerHTML = `<span class="book-thumb-preview">${M.svg(p, renderedAssets, options)}</span><span>${esc(p.role === "page" ? "Page " + i : p.title)}</span>${p.role === "page" && p.title !== "Untitled page" ? `<span class="book-thumb-title">${esc(p.title)}</span>` : ""}`;
+        node.innerHTML = `<span class="book-thumb-preview">${M.svg(p, renderedAssets, options)}</span><span${p.role !== "page" ? ' data-user-content' : ''}>${esc(p.role === "page" ? "Page " + i : p.title)}</span>${p.role === "page" && p.title !== "Untitled page" ? `<span class="book-thumb-title">${esc(p.title)}</span>` : ""}`;
         node.bookPreviewKey = key;
       }
       if (list.children[i] !== node) list.insertBefore(node, list.children[i] || null);
@@ -1605,7 +1605,7 @@
       if (d.open) panelDetails.add(key);
       else panelDetails.delete(key);
     });
-    let html = `<div class="book-panel-heading"><h2>${selected.length > 1 ? selected.length + " objects" : o ? esc(o.name || o.type) : furnitureSelection === "logo" ? "xPED logo" : furnitureSelection === "number" ? "Page number" : "Page settings"}</h2><button class="icon-btn" id="close-inspector" aria-label="Close settings" title="Close settings">${icon("close")}</button></div>`;
+    let html = `<div class="book-panel-heading"><h2${selected.length === 1 && o ? ' data-user-content' : ''}>${selected.length > 1 ? selected.length + " objects" : o ? esc(o.name || o.type) : furnitureSelection === "logo" ? "xPED logo" : furnitureSelection === "number" ? "Page number" : "Page settings"}</h2><button class="icon-btn" id="close-inspector" aria-label="Close settings" title="Close settings">${icon("close")}</button></div>`;
     html += `<div class="book-inspector-tabs" role="tablist" aria-label="Settings sections"><button role="tab" data-panel="settings" tabindex="${inspectorTab === "settings" ? "0" : "-1"}" aria-selected="${inspectorTab === "settings"}" aria-controls="book-properties">Settings</button><button role="tab" data-panel="layers" tabindex="${inspectorTab === "layers" ? "0" : "-1"}" aria-selected="${inspectorTab === "layers"}" aria-controls="book-layers">Layers · ${p.items.length}</button></div><div id="book-properties" role="tabpanel" aria-label="Settings" ${inspectorTab !== "settings" ? "hidden" : ""}>`;
     if (disabled)
       html +=
@@ -3835,7 +3835,7 @@
       .sort((a, z) => (z.created_at || 0) - (a.created_at || 0));
     dialog(
       "Version history",
-      `<p class="book-muted">Save a milestone before trying a new idea. Preview a version before restoring it. Restoring can be undone.</p><div class="book-version-save">${field("Version name", "versionName", "", "text", 'placeholder="For example: First illustrated draft" maxlength="100"')}<button class="primary-btn" id="save-version" ${!editable() ? "disabled" : ""}>Save version</button></div><h3>Saved versions</h3><div class="book-version-list">${cachedVersions.map((v) => `<article class="book-version"><div>${icon("history")}<div><strong>${esc(v.name)}</strong><p>${v.created_at ? new Date(v.created_at * 1000).toLocaleString() : "Earlier version"} · ${(v.pages || v.page_ids || []).length} pages</p></div></div><button class="secondary-btn" data-preview-version="${v.id}">Preview</button></article>`).join("") || '<p class="book-muted">Your saved milestones will appear here. Your current work also saves automatically.</p>'}</div><details><summary>Deleted pages · ${(b.deletedPages || []).length}</summary>${(b.deletedPages || []).map((p) => `<div class="book-version"><strong>${esc(p.title)}</strong><button class="secondary-btn" data-restore-page="${p.id}" ${!editable() ? "disabled" : ""}>Restore page</button></div>`).join("") || '<p class="book-muted">No deleted pages.</p>'}</details><button class="secondary-btn" id="recover-copy">Save recovery copy on this device</button>`,
+      `<p class="book-muted">Save a milestone before trying a new idea. Preview a version before restoring it. Restoring can be undone.</p><div class="book-version-save">${field("Version name", "versionName", "", "text", 'placeholder="For example: First illustrated draft" maxlength="100"')}<button class="primary-btn" id="save-version" ${!editable() ? "disabled" : ""}>Save version</button></div><h3>Saved versions</h3><div class="book-version-list">${cachedVersions.map((v) => `<article class="book-version"><div>${icon("history")}<div><strong>${esc(v.name)}</strong><p>${v.created_at ? new Date(v.created_at * 1000).toLocaleString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB')) : "Earlier version"} · ${(v.pages || v.page_ids || []).length} pages</p></div></div><button class="secondary-btn" data-preview-version="${v.id}">Preview</button></article>`).join("") || '<p class="book-muted">Your saved milestones will appear here. Your current work also saves automatically.</p>'}</div><details><summary>Deleted pages · ${(b.deletedPages || []).length}</summary>${(b.deletedPages || []).map((p) => `<div class="book-version"><strong>${esc(p.title)}</strong><button class="secondary-btn" data-restore-page="${p.id}" ${!editable() ? "disabled" : ""}>Restore page</button></div>`).join("") || '<p class="book-muted">No deleted pages.</p>'}</details><button class="secondary-btn" id="recover-copy">Save recovery copy on this device</button>`,
     );
   }
   async function previewVersion(id) {
@@ -3852,7 +3852,7 @@
       );
     dialog(
       version.name,
-      `<p class="book-muted">${version.created_at ? new Date(version.created_at * 1000).toLocaleString() : "Saved version"} · ${version.pages.length} pages</p><div class="book-version-preview">${version.pages.map((p, i) => `<figure>${M.svg(p, renderedAssets, M.pageRenderOptions(p, version.pages, version.metadata?.pageNumbers))}<figcaption>${esc(p.role === "page" ? "Page " + i : p.title)}</figcaption></figure>`).join("")}</div><p>Restore these pages and book styles? You can undo this after restoring.</p><div class="book-row"><button class="secondary-btn" id="history">Back to versions</button><button class="primary-btn" data-confirm-version="${id}" ${!editable() ? "disabled" : ""}>Restore this version</button></div>`,
+      `<p class="book-muted">${version.created_at ? new Date(version.created_at * 1000).toLocaleString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB')) : "Saved version"} · ${version.pages.length} pages</p><div class="book-version-preview">${version.pages.map((p, i) => `<figure>${M.svg(p, renderedAssets, M.pageRenderOptions(p, version.pages, version.metadata?.pageNumbers))}<figcaption>${esc(p.role === "page" ? "Page " + i : p.title)}</figcaption></figure>`).join("")}</div><p>Restore these pages and book styles? You can undo this after restoring.</p><div class="book-row"><button class="secondary-btn" id="history">Back to versions</button><button class="primary-btn" data-confirm-version="${id}" ${!editable() ? "disabled" : ""}>Restore this version</button></div>`,
     );
   }
   async function saveVersion() {
@@ -3954,6 +3954,7 @@
     dialog(
       source.title,
       `<div class="book-button-stack"><button class="primary-btn" data-open="${id}">Open book</button>${source.role === "owner" || source.local ? `<button class="secondary-btn" data-library-favorite="${id}">${source.favorite ? "Remove favorite" : "Add to favorites"}</button><button class="secondary-btn" data-library-delete="${id}">${source.deleted ? "Restore book" : "Move to trash"}</button>` : ""}</div>`,
+      true,
     );
   }
   async function libraryChange(id, key) {

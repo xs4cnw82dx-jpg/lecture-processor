@@ -28,10 +28,10 @@
   function renderWorkout(share) {
     document.getElementById('share-workout-kind').textContent = 'Completed workout';
     document.getElementById('share-workout-title').textContent = share.name || 'Workout';
-    document.getElementById('share-workout-copy').textContent = share.date ? new Date(share.date + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '';
+    document.getElementById('share-workout-copy').textContent = share.date ? new Date(share.date + 'T12:00:00').toLocaleDateString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'), { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '';
     var metrics = document.getElementById('share-workout-metrics');
     metrics.hidden = false;
-    metrics.innerHTML = '<div class="share-workout-metric"><span>Duration</span><strong>' + escapeHtml(formatDuration(share.duration_seconds)) + '</strong></div><div class="share-workout-metric"><span>Volume</span><strong>' + Number(share.volume_kg || 0).toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' kg</strong></div><div class="share-workout-metric"><span>Sets</span><strong>' + Number(share.completed_sets || 0) + '</strong></div>';
+    metrics.innerHTML = '<div class="share-workout-metric"><span>Duration</span><strong>' + escapeHtml(formatDuration(share.duration_seconds)) + '</strong></div><div class="share-workout-metric"><span>Volume</span><strong>' + Number(share.volume_kg || 0).toLocaleString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'), { maximumFractionDigits: 0 }) + ' kg</strong></div><div class="share-workout-metric"><span>Sets</span><strong>' + Number(share.completed_sets || 0) + '</strong></div>';
     return (share.exercises || []).map(function (exercise) {
       var rows = (exercise.sets || []).map(function (setItem, index) { return '<tr><td>' + (index + 1) + '</td><td>' + escapeHtml(setItem.type || 'normal') + '</td><td>' + Number(setItem.kg || 0) + '</td><td>' + Number(setItem.reps || 0) + '</td><td>' + Number(setItem.rpe || 0) + '</td></tr>'; }).join('');
       return '<section class="share-workout-exercise"><h2>' + escapeHtml(exercise.name) + '</h2><p>' + escapeHtml(exercise.muscle_group || '') + '</p><table class="share-workout-sets"><thead><tr><th>Set</th><th>Type</th><th>kg</th><th>Reps</th><th>RPE</th></tr></thead><tbody>' + rows + '</tbody></table></section>';

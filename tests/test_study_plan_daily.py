@@ -79,6 +79,10 @@ def test_workload_spacing_uses_full_year_instead_of_first_200_slots():
 @pytest.fixture
 def october_clock(monkeypatch):
     monkeypatch.setattr(core.time, 'time', lambda: datetime(2026, 10, 3, 10, tzinfo=timezone.utc).timestamp())
+    from lecture_processor.services import study_plan_service
+    today = study_plan_service._today_for_timezone
+    monkeypatch.setattr(study_plan_service, '_today_for_timezone',
+                        lambda zone, now=None: today(zone, now or datetime.fromtimestamp(core.time.time(), timezone.utc)))
 
 
 def preview(client, pack_id, **overrides):

@@ -139,3 +139,24 @@ The new 16-screenshot follow-up is implemented on codex/study-flow-polish. See S
 Release candidate verified: 228 standard browser scenarios plus seven real-API and one legacy scenario pass. No pending product fixes in this round. PR/checks/merge/live verification remain.
 
 PR186 delivered and exact Render commit0e1861f/public assets verified. Final CI retry audit found a narrow immediate-navigation disclosure persistence race; see active plan for the synchronous intent-save follow-up.
+
+
+## Account preferences and Gemini migration — 7 October
+
+Active branch `codex/account-preferences-gemini38`, clean baseline PR187/b731cb5d. Parent owns settings page/account persistence and protected Workout navigation; translation agent owns English/Dutch catalog/runtime and protected content boundaries; theme agent owns complete-site CSS token migration/early theme and head asset includes; Gemini agent owns provider/transcription/pricing. No ownership overlap without coordination. User explicitly authorizes both subagents and full PR/check/merge/local-sync/deployment workflow.
+
+Gemini sources complete with 201 isolated backend checks; see GEMINI_AUDIO_MIGRATION.md. Settings/persistence and translation/theme implementation and rendered QA ongoing. Only isolated preview/test runners and synthetic users; no real uploaded materials, AI requests, payments or study-data mutations. Completion awaits integrated testing, PR and deployment.
+
+### Implementation and integration checkpoint
+
+All scopes are implemented and frozen. See `ACCOUNT_SETTINGS_VERIFICATION.md`, `ACCOUNT_PREFERENCES_TRANSLATION.md`, `PREFERENCES_DARK_MODE.md`, and `GEMINI_AUDIO_MIGRATION.md`. Parent inspected desktop/mobile Settings in both themes and Dutch, plus representative translated creation, Dashboard, Planner and tools pages. The custom selector, animated toggle, admin-only sidebar entry and content-preserving language changes are covered by executable browser checks.
+
+Full isolated backend: **1,029 passed**; client suite: **207 passed**. Seven real planner/study API lifecycle checks and one retained legacy planner check passed. JavaScript/Python lint, generated assets, repository hygiene, tracked-secret and whitespace checks passed. First broad browser pass exposed old test assumptions about model prices, Dutch-only Physio and GET preferences. Those fixtures were corrected with their behavior assertions preserved; all affected scoped checks pass. Final frozen-source full browser rerun is in progress. No user data or external AI services used for QA.
+
+Independent review also fixed stale-account preference writes/admin-session responses, invalid preference payload validation, timestamp fallback cost undercounting and exact-string collisions in actual study answers, notes and custom folder selectors. Seven content-safety browser checks pass.
+
+### Release candidate verified — 7 October
+
+Final frozen-source production-asset browser suite: **266 passed**, no failures or retries. Eight environment-specific cases were skipped in that run and passed separately (**7 real API + 1 legacy**), for **274 distinct browser scenarios**. Backend **1,029** and client **207** pass; final lint/build/hygiene/security checks pass. Representative Settings captures are committed under `docs/redesign-evidence/settings-*.png`. All requested implementation and local verification are complete. Next: PR, protected-branch checks/merge, safe main sync, and exact deployed commit/assets verification.
+
+PR [#188](https://github.com/xs4cnw82dx-jpg/lecture-processor/pull/188) is open and attached. GitHub backend/frontend/smoke checks passed. Functions audit discovered newly published GHSA-jqcg-44mw-7w3h in the existing transitive proxy-addr dependency; the lockfile is patched from 2.0.7 to 2.0.8 with no application-code or direct-dependency changes. Fresh install, Functions module load and production audit pass (zero vulnerabilities). Required checks are rerunning on the patched release candidate before protected merge and Render verification.

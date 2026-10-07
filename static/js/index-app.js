@@ -89,7 +89,7 @@ function formatDateLabel(value) {
     if (typeof uxUtils.formatDate === 'function') return uxUtils.formatDate(value);
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) return '-';
-    const locale = navigator.language || 'en-US';
+    const locale = (window.LectureI18n ? window.LectureI18n.locale() : 'en-GB');
     return date.toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
@@ -97,7 +97,7 @@ function formatTimeLabel(value) {
     if (typeof uxUtils.formatTime === 'function') return uxUtils.formatTime(value);
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) return '-';
-    const locale = navigator.language || 'en-US';
+    const locale = (window.LectureI18n ? window.LectureI18n.locale() : 'en-GB');
     return date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
 }
 

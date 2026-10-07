@@ -66,6 +66,8 @@ def build_user_preferences_payload(user_data, runtime=None):
         'output_language_label': resolved,
         'onboarding_completed': bool(user_data.get('onboarding_completed', False)),
         'favorite_tools': sanitize_favorite_tools(user_data.get('favorite_tools', [])),
+        'interface_language': 'nl' if user_data.get('interface_language') == 'nl' else 'en',
+        'theme': 'dark' if user_data.get('theme') == 'dark' else 'light',
     }
 
 
