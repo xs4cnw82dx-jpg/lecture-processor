@@ -7,7 +7,6 @@ import uuid
 from flask import g, jsonify, request, render_template
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 
-from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.calendar_observability import redact_calendar_url
 
 
@@ -35,11 +34,6 @@ def register_runtime_hooks(app, runtime) -> None:
     state = app.extensions.setdefault('lecture_processor', {})
     if state.get('hooks_registered'):
         return
-
-    @app.before_request
-    def _run_startup_recovery_on_first_request():
-        runtime.run_startup_recovery_once()
-        batch_orchestrator.run_startup_batch_recovery_once(runtime=runtime)
 
     @app.before_request
     def _attach_csp_nonce():

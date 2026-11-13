@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import threading
 from typing import TYPE_CHECKING
 
 from flask import current_app
@@ -11,6 +12,8 @@ from .settings import AppSettings
 
 if TYPE_CHECKING:
     from lecture_processor.domains.runtime_jobs.schema import RuntimeJobsCapability
+
+_RECOVERY_THREAD_LOCK = threading.Lock()
 
 
 @dataclass
@@ -63,6 +66,39 @@ def _start_cleanup_thread_once(core_module) -> None:
         return
 
 
+def _start_recovery_thread_once(runtime) -> None:
+    core_module = getattr(runtime, 'core', runtime)
+    runtime_enabled = bool(getattr(runtime, 'RUNTIME_JOB_RECOVERY_ENABLED', False))
+    batch_enabled = bool(getattr(runtime, 'BATCH_JOB_RECOVERY_ENABLED', False))
+    if not (runtime_enabled or batch_enabled):
+        return
+
+    def recover():
+        from lecture_processor.domains.ai import batch_orchestrator
+
+        operations = []
+        if runtime_enabled:
+            operations.append(runtime.run_startup_recovery_once)
+        if batch_enabled:
+            operations.append(lambda: batch_orchestrator.run_startup_batch_recovery_once(runtime=runtime))
+        for operation in operations:
+            try:
+                operation()
+            except Exception:
+                runtime.logger.warning('Startup recovery failed', exc_info=True)
+
+    with _RECOVERY_THREAD_LOCK:
+        if getattr(core_module, '_startup_recovery_thread', None) is not None:
+            return
+        thread = threading.Thread(target=recover, name='lp-startup-recovery', daemon=True)
+        core_module._startup_recovery_thread = thread
+        try:
+            thread.start()
+        except Exception:
+            core_module._startup_recovery_thread = None
+            raise
+
+
 def build_runtime(app, settings: AppSettings) -> AppRuntime:
     from lecture_processor.runtime import core
 
@@ -81,6 +117,7 @@ def build_runtime(app, settings: AppSettings) -> AppRuntime:
     app.extensions['lecture_processor']['runtime'] = runtime
 
     _start_cleanup_thread_once(core)
+    _start_recovery_thread_once(runtime)
     return runtime
 
 

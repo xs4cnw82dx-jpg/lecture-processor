@@ -1783,8 +1783,6 @@ def test_account_delete_failure_after_purge_requires_retry_without_restoring_acc
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u-restore", "email": "user@gmail.com", "auth_time": core.time.time()})
     monkeypatch.setattr(core, "db", object())
     monkeypatch.setattr("lecture_processor.services.calendar_sync_service.delete_account_connection", lambda _ctx, _uid: None)
-    monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
-    monkeypatch.setattr("lecture_processor.runtime.hooks.batch_orchestrator.run_startup_batch_recovery_once", lambda runtime=None: None)
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
     monkeypatch.setattr(
         account_lifecycle,
@@ -2370,8 +2368,6 @@ def test_get_study_progress_summary_rebuilds_unversioned_compact_summaries_from_
     runtime = get_runtime(client.application)
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "compact-u", "email": "user@gmail.com"})
-    monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
-    monkeypatch.setattr("lecture_processor.runtime.hooks.batch_orchestrator.run_startup_batch_recovery_once", lambda runtime=None: None)
     monkeypatch.setattr(runtime, "db", object(), raising=False)
     monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: _FakeProgressDoc(), raising=False)
     monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _FakePackDoc())
@@ -2421,8 +2417,6 @@ def test_get_study_progress_summary_uses_rollup_without_scanning_pack_docs(clien
 
     runtime = get_runtime(client.application)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "rollup-u", "email": "user@gmail.com"})
-    monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
-    monkeypatch.setattr("lecture_processor.runtime.hooks.batch_orchestrator.run_startup_batch_recovery_once", lambda runtime=None: None)
     monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: _FakeProgressDoc(), raising=False)
     monkeypatch.setattr(
         core.study_repo,
@@ -2476,8 +2470,6 @@ def test_get_study_progress_summary_falls_back_for_legacy_card_state_docs(allow_
     progress_doc = _FakeProgressDoc()
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "legacy-u", "email": "user@gmail.com"})
-    monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
-    monkeypatch.setattr("lecture_processor.runtime.hooks.batch_orchestrator.run_startup_batch_recovery_once", lambda runtime=None: None)
     monkeypatch.setattr(runtime, "db", object(), raising=False)
     monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: progress_doc, raising=False)
     monkeypatch.setattr(
@@ -2569,8 +2561,6 @@ def test_update_study_progress_merges_cross_browser_card_states(allow_progress_a
             return {"uid": "u12", "study_pack_id": "pack-sync-1"}
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u12", "email": "user@gmail.com"})
-    monkeypatch.setattr(core, "run_startup_recovery_once", lambda: None)
-    monkeypatch.setattr("lecture_processor.runtime.hooks.batch_orchestrator.run_startup_batch_recovery_once", lambda runtime=None: None)
     monkeypatch.setattr(runtime, "db", fake_db, raising=False)
     monkeypatch.setattr(core.firestore, "transactional", lambda fn: fn, raising=False)
     monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _FakePackDoc())

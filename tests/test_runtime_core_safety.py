@@ -119,3 +119,29 @@ def test_runtime_core_does_not_expose_legacy_account_export_helpers():
         "anonymize_purchase_docs_by_uid",
     ):
         assert not hasattr(core, name)
+
+
+def test_periodic_cleanup_runs_recovery_without_blocking_other_cleanup_on_failure(monkeypatch):
+    import pytest
+    from lecture_processor.domains.runtime_jobs import recovery
+
+    calls = []
+
+    def sleep(_seconds):
+        if calls:
+            raise StopIteration
+
+    def recover(runtime=None):
+        assert runtime is core
+        calls.append('recovery')
+        raise RuntimeError('Synthetic recovery failure')
+
+    monkeypatch.setattr(core.time, 'sleep', sleep)
+    monkeypatch.setattr(recovery, 'run_periodic_recovery', recover, raising=False)
+    monkeypatch.setattr(core, 'cleanup_old_jobs', lambda: calls.append('jobs'))
+    monkeypatch.setattr(core, 'cleanup_expired_audio_stream_tokens', lambda: calls.append('streams'))
+    monkeypatch.setattr(core.upload_import_audio, 'cleanup_expired_audio_import_tokens', lambda runtime=None: calls.append('imports'))
+    monkeypatch.setattr(core, 'cleanup_stale_upload_artifacts', lambda: calls.append('uploads'))
+    with pytest.raises(StopIteration):
+        core._run_periodic_cleanup()
+    assert calls == ['recovery', 'jobs', 'streams', 'imports', 'uploads']
