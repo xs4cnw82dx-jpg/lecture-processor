@@ -127,6 +127,16 @@
     return localDateString(timestampValue, '');
   }
 
+  function addDaysToLocalDate(dateString, days) {
+    var parts = String(dateString || '').split('-');
+    if (parts.length !== 3) return '';
+    var year = parseInt(parts[0], 10), month = parseInt(parts[1], 10), day = parseInt(parts[2], 10);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return '';
+    var base = new Date(Date.UTC(year, month - 1, day));
+    base.setUTCDate(base.getUTCDate() + (parseInt(days, 10) || 0));
+    return base.toISOString().slice(0, 10);
+  }
+
   function isDueDate(dateString, todayString) {
     var target = String(dateString || '').trim();
     if (!target) return true;
@@ -728,6 +738,7 @@
     writeDailyGoalCache: writeDailyGoalCache,
     normalizeTimezoneName: normalizeTimezoneName,
     localDateString: localDateString,
+    addDaysToLocalDate: addDaysToLocalDate,
     isDueDate: isDueDate,
     countDueCardsInState: countDueCardsInState,
     countUnmasteredCardsInState: countUnmasteredCardsInState,
