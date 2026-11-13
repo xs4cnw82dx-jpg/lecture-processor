@@ -214,7 +214,7 @@ test('a failed pack load restores the previous selection and leaves its editor u
 });
 
 for (const workspace of ['builder', 'learn']) {
-  test(`background completion leaves an open ${workspace} workspace alone`, async ({ page }) => {
+  test(`background completion refreshes once after leaving the ${workspace} workspace`, async ({ page }) => {
     const activeJobs = deferred();
     const cachedJob = { job_id: 'synthetic-job', status: 'processing', study_pack_title: 'New synthetic pack', started_at: 1 };
     const state = await installLibrary(page, { cachedJob, route: async (route, _state, entry) => {
@@ -225,6 +225,7 @@ for (const workspace of ['builder', 'learn']) {
     } });
     await page.route('**/status/synthetic-job', route => route.fulfill({ json: { status: 'complete' } }));
     await openInitialPack(page);
+    await page.locator('#pack-title').fill('A edit kept while studying');
     if (workspace === 'builder') {
       await page.locator('#open-builder-btn').click();
       await expect(page.locator('#builder-overlay')).toBeVisible();
@@ -235,15 +236,59 @@ for (const workspace of ['builder', 'learn']) {
       await page.locator('[data-study-mode="flashcards"]').click();
       await expect(page.locator('#learn-stage')).toHaveClass(/visible/);
     }
+    state.packs.c = makePack('c', 'New synthetic pack');
     activeJobs.resolve();
     await expect(page.locator('#toast')).toContainText('ready in your library');
     await page.waitForLoadState('networkidle');
     expect(getCount(state, '/api/study-packs')).toBe(1);
     expect(getCount(state, '/api/study-packs/a')).toBe(1);
     await expect(page.locator(workspace === 'builder' ? '#builder-overlay' : '#learn-stage')).toBeVisible();
+    await page.locator(workspace === 'builder' ? '#builder-exit-btn' : '#learn-back-library-btn').click();
+    await expect(openButton(page, 'c')).toContainText('New synthetic pack');
+    expect(getCount(state, '/api/study-packs')).toBe(2);
+    expect(getCount(state, '/api/study-packs/a')).toBe(1);
+    await expect(page.locator('#pack-title')).toHaveValue('A edit kept while studying');
+    expect(state.packs.a.title).toBe('A edit kept while studying');
     expect(state.errors).toEqual([]);
   });
 }
+
+test('a list refresh interrupted by opening Builder retries after Builder closes', async ({ page }) => {
+  const activeJobs = deferred();
+  const listResponse = deferred();
+  const cachedJob = { job_id: 'synthetic-job', status: 'processing', study_pack_title: 'New synthetic pack', started_at: 1 };
+  const state = await installLibrary(page, { cachedJob, route: async (route, current, entry) => {
+    if (entry.path === '/api/runtime-jobs/active') {
+      await activeJobs.promise;
+      await route.fulfill({ json: { jobs: [] } });
+      return true;
+    }
+    if (entry.path === '/api/study-packs' && getCount(current, '/api/study-packs') === 2) {
+      const result = structuredClone(Object.values(current.packs));
+      await listResponse.promise;
+      await route.fulfill({ json: { study_packs: result, has_more: false } });
+      return true;
+    }
+    return false;
+  } });
+  await page.route('**/status/synthetic-job', route => route.fulfill({ json: { status: 'complete' } }));
+  await openInitialPack(page);
+  await page.locator('#pack-title').fill('A edit during refresh');
+  state.packs.c = makePack('c', 'New synthetic pack');
+  activeJobs.resolve();
+  await expect.poll(() => getCount(state, '/api/study-packs')).toBe(2);
+  await page.locator('#open-builder-btn').click();
+  await expect(page.locator('#builder-overlay')).toBeVisible();
+  listResponse.resolve();
+  await page.waitForLoadState('networkidle');
+  expect(getCount(state, '/api/study-packs')).toBe(2);
+  await page.locator('#builder-exit-btn').click();
+  await expect(openButton(page, 'c')).toContainText('New synthetic pack');
+  expect(getCount(state, '/api/study-packs')).toBe(3);
+  expect(getCount(state, '/api/study-packs/a')).toBe(1);
+  await expect(page.locator('#pack-title')).toHaveValue('A edit during refresh');
+  expect(state.errors).toEqual([]);
+});
 
 test('switching during a save also retains the edit made while that save was in flight', async ({ page }) => {
   const firstSave = deferred();
@@ -266,26 +311,66 @@ test('switching during a save also retains the edit made while that save was in 
   expect(state.errors).toEqual([]);
 });
 
-test('a failed save keeps the typed content open until a successful retry', async ({ page }) => {
-  let failSave = true;
-  const state = await installLibrary(page, { route: async (route, _state, entry) => {
-    if (entry.path !== '/api/study-packs/a' || entry.method !== 'PATCH' || !failSave) return false;
-    await route.fulfill({ status: 503, json: { error: 'Save temporarily unavailable.' } });
-    return true;
-  } });
-  await openInitialPack(page);
-  await page.locator('#pack-title').fill('Keep this unsaved edit');
-  await openButton(page, 'b').click();
-  await expect(page.locator('#toast')).toContainText('Save temporarily unavailable.');
-  await expect(page.locator('#pack-title')).toHaveValue('Keep this unsaved edit');
-  await expect(page.locator('#pack-list [data-pack-id="a"]')).toHaveAttribute('aria-current', 'true');
-  expect(getCount(state, '/api/study-packs/b')).toBe(0);
-  failSave = false;
-  await openButton(page, 'b').click();
-  await expect(page.locator('#pack-title')).toHaveValue('Pack B');
-  expect(state.packs.a.title).toBe('Keep this unsaved edit');
-  expect(state.errors).toEqual([]);
-});
+for (const failure of [401, 408, 429, 503, 'network']) {
+  test(`a ${failure} save failure keeps typed content without offering discard`, async ({ page }) => {
+    let failSave = true;
+    const state = await installLibrary(page, { route: async (route, _state, entry) => {
+      if (entry.path !== '/api/study-packs/a' || entry.method !== 'PATCH' || !failSave) return false;
+      if (failure === 'network') await route.abort('failed');
+      else await route.fulfill({ status: failure, json: { error: 'Save temporarily unavailable.' } });
+      return true;
+    } });
+    await openInitialPack(page);
+    await page.locator('#pack-title').fill('Keep this unsaved edit');
+    await openButton(page, 'b').click();
+    await expect(page.locator('#pack-save-status')).toHaveText('Save failed');
+    await expect(page.locator('#confirm-modal-overlay')).toBeHidden();
+    await expect(page.locator('#pack-title')).toHaveValue('Keep this unsaved edit');
+    await expect(page.locator('#pack-list [data-pack-id="a"]')).toHaveAttribute('aria-current', 'true');
+    expect(getCount(state, '/api/study-packs/b')).toBe(0);
+    failSave = false;
+    await openButton(page, 'b').click();
+    await expect(page.locator('#pack-title')).toHaveValue('Pack B');
+    expect(state.packs.a.title).toBe('Keep this unsaved edit');
+    expect(state.errors).toEqual([]);
+  });
+}
+
+for (const theme of ['light', 'dark']) {
+  test(`an unsavable edit can be cancelled or discarded on a phone in ${theme} mode`, async ({ page }, testInfo) => {
+    const state = await installLibrary(page, { theme, route: async (route, _state, entry) => {
+      if (entry.path !== '/api/study-packs/a' || entry.method !== 'PATCH') return false;
+      await route.fulfill({ status: 404, json: { error: 'This pack is no longer available.' } });
+      return true;
+    } });
+    await page.setViewportSize({ width: 375, height: 844 });
+    await openInitialPack(page);
+    await page.locator('#pack-title').fill('Keep until I choose to discard');
+    await page.locator('#library-back-btn').click();
+    await openButton(page, 'b').click();
+    const dialog = page.getByRole('dialog', { name: 'Unable to save changes' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Discard and continue' })).toBeVisible();
+    expect(await dialog.evaluate(node => {
+      const bounds = node.getBoundingClientRect();
+      return bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= 0 && bounds.bottom <= innerHeight;
+    })).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`discard-edit-${theme}-375.png`), animations: 'disabled' });
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.locator('#pack-title')).toHaveValue('Keep until I choose to discard');
+    expect(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true })))).toBe(true);
+    await page.locator('#library-back-btn').click();
+    await openButton(page, 'b').click();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Discard and continue' }).click();
+    await expect(page.locator('#pack-title')).toHaveValue('Pack B');
+    expect(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true })))).toBe(false);
+    expect(state.packs.a.title).toBe('Pack A');
+    expect(state.packs.b.title).toBe('Pack B');
+    expect(state.errors).toEqual([]);
+  });
+}
 
 test('multiple pack choices during a save finish on the most recent choice', async ({ page }) => {
   const firstSave = deferred();
@@ -371,6 +456,30 @@ for (const eventName of ['pagehide', 'visibilitychange']) {
     expect(state.errors).toEqual([]);
   });
 }
+
+test('hidden-page saves send large UTF-8 edits without the keepalive size limit', async ({ page }) => {
+  await page.clock.install();
+  const state = await installLibrary(page);
+  await openInitialPack(page);
+  await page.locator('#editor-tab-flashcards').click();
+  await expect(page.locator('#editor-card-back-0')).toBeVisible();
+  await page.clock.pauseAt(await page.evaluate(() => new Date(Date.now() + 50).toISOString()));
+  const largeText = '🧠'.repeat(17000);
+  await page.locator('#editor-card-back-0').fill(largeText);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect.poll(() => state.packs.a.flashcards[0].back === largeText).toBe(true);
+  const saved = await page.evaluate(() => window.editFixtureFetches
+    .filter(entry => entry.method === 'PATCH' && entry.path === '/api/study-packs/a')
+    .map(entry => ({ keepalive: entry.keepalive, bytes: new TextEncoder().encode(entry.body).byteLength })));
+  expect(saved).toHaveLength(1);
+  expect(saved[0].bytes).toBeGreaterThan(65536);
+  expect(saved[0].keepalive).toBe(false);
+  await expect(page.locator('#pack-save-status')).toHaveText('Saved');
+  expect(state.errors).toEqual([]);
+});
 
 test('beforeunload warns for a pending inline save and clears after acknowledgement', async ({ page }) => {
   const pendingSave = deferred();
@@ -459,6 +568,26 @@ test('an older failed highlight save cannot replace newer highlights in either p
   await expect.poll(() => state.packs.b.notes_highlights?.ranges[0]?.color).toBe('blue');
   expect(state.errors).toEqual([]);
 });
+
+for (const status of [403, 404]) {
+  test(`a permanent ${status} highlight rejection stops retries and the unload warning`, async ({ page }) => {
+    await page.clock.install();
+    let attempts = 0;
+    const state = await installLibrary(page, { route: async (route, _state, entry) => {
+      if (entry.path !== '/api/study-packs/a' || entry.method !== 'PATCH' || !entry.payload.notes_highlights) return false;
+      attempts += 1;
+      await route.fulfill({ status, json: { error: 'This pack is no longer available.' } });
+      return true;
+    } });
+    await openInitialPack(page);
+    await highlightParagraph(page);
+    await expect.poll(() => attempts).toBe(1);
+    await expect.poll(() => page.evaluate(() => window.dispatchEvent(new Event('beforeunload', { cancelable: true })))).toBe(true);
+    await page.clock.fastForward(5000);
+    expect(attempts).toBe(1);
+    expect(state.errors).toEqual([]);
+  });
+}
 
 for (const theme of ['light', 'dark']) {
   for (const width of [1440, 375]) {

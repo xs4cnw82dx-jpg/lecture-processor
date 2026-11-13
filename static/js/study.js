@@ -41,6 +41,7 @@ let builderAutoSaveTimer = null, builderAutoSaving = false, builderAutoSaveQueue
 let inlineAutoSaveTimer = null, inlineAutoSaving = false, inlineAutoSaveQueued = false;
 let inlineAutosaveBaseline = null;
 let inlineAutosavePromise = null;
+let inlineAutosaveError = null, inlineDiscardPromise = null;
 let learnFlashcardIndex = 0, learnFlashcardFlipped = false, learnQuestionIndex = 0, learnScore = 0, learnAnswered = false;
 let activeLearnMode = ''; // 'flashcards','test','write','match','notes'
 let orderedFlashcards = [];
@@ -67,6 +68,7 @@ let goalPanelStatusText = 'Synced', goalPanelStatusTone = 'success';
 let activeRuntimeJobs = [];
 let runtimeJobsRefreshTimer = null;
 let runtimeJobsRefreshInFlight = false;
+let libraryRefreshPending = false, libraryRefreshInFlight = null;
 let videoOverlayProjects = [];
 let shareModalEntityType = '', shareModalEntityId = '', shareModalScope = 'private', shareModalLoadedLink = '', shareModalSaving = false;
 let collapsedFolderIds = new Set();
@@ -495,6 +497,8 @@ function removePackLocalCaches(packId) {
   var id = String(packId || '').trim();
   if (!id) { return; }
   var uid = auth.currentUser.uid;
+  pendingHighlightSaves.delete(id);
+  highlightSavesInFlight.delete(id);
   try { localStorage.removeItem(getCardStateKeyForPack(id)); } catch (e) { }
   try { localStorage.removeItem('match_scores_' + uid + '_' + id); } catch (e) { }
   try { localStorage.removeItem('study_session_' + uid + '_' + id); } catch (e) { }
@@ -1682,6 +1686,9 @@ function openStudySignIn() {
 function applyStudySignedOutState() {
   openPackSeq += 1;
   libraryLoadSeq += 1;
+  libraryRefreshPending = false;
+  libraryRefreshInFlight = null;
+  inlineAutosaveError = null;
   if (inlineAutoSaveTimer) { clearTimeout(inlineAutoSaveTimer); inlineAutoSaveTimer = null; }
   packEditorWrap.inert = false;
   if (window.StudyPictures) window.StudyPictures.clear();
@@ -2535,8 +2542,9 @@ function refreshActiveRuntimeJobs(force) {
     var nextJobs = result && result.jobs ? result.jobs : [];
     setActiveRuntimeJobs(nextJobs);
     shouldContinuePolling = nextJobs.length > 0;
-    if (result && result.shouldReload && !learnStage.classList.contains('visible') && !builderOverlay.classList.contains('visible')) {
-      return loadData('', { listOnly: true }).catch(function () { });
+    if (result && result.shouldReload) {
+      libraryRefreshPending = true;
+      return refreshLibraryAfterWorkspace();
     }
   }).catch(function (error) {
     shouldContinuePolling = activeRuntimeJobs.length > 0;
@@ -2551,6 +2559,22 @@ function refreshActiveRuntimeJobs(force) {
       clearRuntimeJobsRefreshTimer();
     }
   });
+}
+function isStudyWorkspaceOpen() {
+  return learnStage.classList.contains('visible') ||
+    (builderOverlay.classList.contains('visible') && builderOverlay.getAttribute('aria-hidden') !== 'true');
+}
+function refreshLibraryAfterWorkspace() {
+  if (!libraryRefreshPending || !token || isStudyWorkspaceOpen()) return Promise.resolve();
+  if (libraryRefreshInFlight) return libraryRefreshInFlight;
+  libraryRefreshPending = false;
+  var request = loadData('', { listOnly: true }).catch(function () {
+    libraryRefreshPending = true;
+  }).finally(function () {
+    if (libraryRefreshInFlight === request) libraryRefreshInFlight = null;
+  });
+  libraryRefreshInFlight = request;
+  return request;
 }
 function downloadStudyPackCsv(packId, type) {
   var fallback = type === 'test' ? 'study-pack-' + packId + '-practice-test.csv' : 'study-pack-' + packId + '-flashcards.csv';
@@ -3179,6 +3203,7 @@ function closeBuilderOverlay() {
   updateAudioBarVisibility();
   updateShareActionAvailability();
   resetStudyBuilderEntryState();
+  refreshLibraryAfterWorkspace();
 }
 function openBuilderExitModal() {
   openModal(builderExitOverlay);
@@ -3296,7 +3321,7 @@ function saveBuilderPack(closeAfter, options) {
   }
   clearBuilderAutoSaveTimer();
   builderAutoSaveQueued = false;
-  var request = flushInlineAutosave().then(function (saved) {
+  var request = flushInlineAutosave({ allowDiscard: true }).then(function (saved) {
     if (!saved) throw new Error('Save the open pack before saving builder changes.');
     return builderMode === 'create'
       ? apiCall('/api/study-packs', { method: 'POST', body: JSON.stringify(payload) })
@@ -4035,7 +4060,7 @@ async function startSelectedStudyMode(mode) {
   var status = document.getElementById('setup-session-context');
   saveLearningCheckpoint();
   try {
-    if (!await flushInlineAutosave()) throw new Error('Save your changes before starting a session.');
+    if (!await flushInlineAutosave({ allowDiscard: true })) throw new Error('Save your changes before starting a session.');
     flushHighlightSync();
     if (plannedPickerActive) { status.textContent = 'Opening your planned session…'; await openPlannedStudy(mode); }
     closeSessionSetup();
@@ -4712,7 +4737,7 @@ function renderFolders() {
     );
     var activateFolder = async function () {
       var seq = ++openPackSeq;
-      if (!await flushInlineAutosave() || seq !== openPackSeq) return;
+      if (!await flushInlineAutosave({ allowDiscard: true }) || seq !== openPackSeq) return;
       flushHighlightSync();
       // Cancel a pending pack load while retaining the last displayed editor.
       selectedPackId = selectedPack ? selectedPack.study_pack_id : '';
@@ -5654,6 +5679,7 @@ async function closeLearnStage() {
   updateLearnCardStatus();
   setBodyScrollLocked(false);
   if (document.fullscreenElement) { try { document.exitFullscreen(); } catch (e) { } }
+  refreshLibraryAfterWorkspace();
 }
 
 /* ── Folder modal (careful with ternaries) ── */
@@ -5704,7 +5730,7 @@ function saveFolderFromModal() {
 function openPack(packId) {
   var seq = ++openPackSeq;
   var previousPack = selectedPack;
-  return flushInlineAutosave().then(function (saved) {
+  return flushInlineAutosave({ allowDiscard: true }).then(function (saved) {
     if (!saved || seq !== openPackSeq) return null;
     flushHighlightSync();
     selectedPackId = packId;
@@ -6739,12 +6765,15 @@ function loadData(preferredPackId, options) {
   var selectionSeq = openPackSeq;
   var loadSeq = ++libraryLoadSeq;
   packsLoadingMore = false;
-  return flushInlineAutosave().then(function (saved) {
-    if (!saved) return null;
+  return flushInlineAutosave({ allowDiscard: !opts.listOnly }).then(function (saved) {
+    if (!saved && !opts.listOnly) return null;
     return Promise.all([apiCall('/api/study-folders?include_pending=0'), fetchStudyPackPage(''), fetchStudyPlanMembership()]);
   }).then(function (results) {
     if (!results || loadSeq !== libraryLoadSeq) return;
-    if (opts.listOnly && (learnStage.classList.contains('visible') || builderOverlay.classList.contains('visible'))) return;
+    if (opts.listOnly && isStudyWorkspaceOpen()) {
+      libraryRefreshPending = true;
+      return;
+    }
     var packPage = results[1] || {};
     folders = results[0].folders || [];
     packs = mergeStudyPackPage([], packPage.study_packs || []);
@@ -6839,6 +6868,7 @@ function buildCurrentInlineAutosaveSnapshot() {
 
 function setInlineAutosaveBaseline(pack) {
   inlineAutosaveBaseline = pack ? normalizeInlineAutosaveSnapshot(pack) : null;
+  inlineAutosaveError = null;
   setInlineAutosaveStatus('saved', 'Saved');
 }
 
@@ -6907,12 +6937,9 @@ function runInlineAutosaveNow(options) {
     return Promise.resolve(true);
   }
   inlineAutoSaving = true;
+  inlineAutosaveError = null;
   setInlineAutosaveStatus('saving', 'Saving...');
-  inlineAutosavePromise = apiCall('/api/study-packs/' + encodeURIComponent(packId), {
-    method: 'PATCH',
-    body: JSON.stringify(payload),
-    keepalive: !!opts.keepalive
-  }).then(function () {
+  inlineAutosavePromise = apiCall('/api/study-packs/' + encodeURIComponent(packId), buildStudyPatchOptions(payload, opts)).then(function () {
     var hasPendingInlineChanges = inlineAutoSaveQueued || !!inlineAutoSaveTimer;
     if (selectedPack === savedPack && selectedPackId === packId) {
       if (!hasPendingInlineChanges) {
@@ -6964,6 +6991,7 @@ function runInlineAutosaveNow(options) {
     return true;
   }).catch(function (e) {
     if (selectedPack === savedPack && selectedPackId === packId) {
+      inlineAutosaveError = { pack: savedPack, error: e };
       setInlineAutosaveStatus('error', 'Save failed');
       showToast(e.message || 'Could not save study pack.', 'error');
     }
@@ -6977,14 +7005,42 @@ function runInlineAutosaveNow(options) {
 }
 
 function flushInlineAutosave(options) {
+  var opts = options || {};
   if (inlineAutoSaveTimer) { clearTimeout(inlineAutoSaveTimer); inlineAutoSaveTimer = null; }
   return runInlineAutosaveNow(options).then(function (saved) {
-    if (!saved) return false;
+    if (!saved) return opts.allowDiscard ? offerDiscardUnsavedChanges() : false;
     if (selectedPack && selectedPack.study_pack_id === selectedPackId && token && buildInlineAutosavePayload()) {
       return flushInlineAutosave(options);
     }
     return true;
   });
+}
+
+function buildStudyPatchOptions(payload, options) {
+  var body = JSON.stringify(payload);
+  return { method: 'PATCH', body: body, keepalive: !!(options && options.keepalive) && new Blob([body]).size <= 60000 };
+}
+
+function offerDiscardUnsavedChanges() {
+  var failure = inlineAutosaveError;
+  var status = Number(failure && failure.error && failure.error.status);
+  if (!failure || failure.pack !== selectedPack || !Number.isFinite(status) || status < 400 || status >= 500 || [401, 408, 429].indexOf(status) >= 0) return Promise.resolve(false);
+  if (inlineDiscardPromise) return inlineDiscardPromise;
+  var pack = failure.pack;
+  inlineDiscardPromise = openConfirmModal('Unable to save changes',
+    'This change could not be saved: ' + (failure.error.message || 'The request was rejected.') + ' Discard it and continue?',
+    'Discard and continue').then(function (discard) {
+    if (!discard || selectedPack !== pack) return false;
+    if (inlineAutoSaveTimer) { clearTimeout(inlineAutoSaveTimer); inlineAutoSaveTimer = null; }
+    inlineAutoSaveQueued = false;
+    inlineAutosaveBaseline = buildCurrentInlineAutosaveSnapshot();
+    inlineAutosaveError = null;
+    pendingHighlightSaves.delete(pack.study_pack_id);
+    highlightSavesInFlight.delete(pack.study_pack_id);
+    setInlineAutosaveStatus('saved', 'Changes discarded');
+    return true;
+  }).finally(function () { inlineDiscardPromise = null; });
+  return inlineDiscardPromise;
 }
 
 function queueInlineAutosave() {
@@ -7563,7 +7619,7 @@ deletePackBtn.addEventListener('click', function () {
       return chain.then(function () {
         return apiCall('/api/study-packs/' + encodeURIComponent(packId), { method: 'DELETE' });
       });
-    }, flushInlineAutosave().then(function (saved) {
+    }, flushInlineAutosave({ allowDiscard: true }).then(function (saved) {
       if (!saved) throw new Error('Save your changes before deleting study packs.');
       return flushHighlightSync();
     }));
@@ -8316,11 +8372,7 @@ function flushHighlightSync(options) {
     }
     var payload = pendingHighlightSaves.get(packId);
     pendingHighlightSaves.delete(packId);
-    var request = apiCall('/api/study-packs/' + encodeURIComponent(packId), {
-      method: 'PATCH',
-      body: JSON.stringify({ notes_highlights: payload.ranges.length ? payload : null }),
-      keepalive: !!opts.keepalive
-    }).then(function () {
+    var request = apiCall('/api/study-packs/' + encodeURIComponent(packId), buildStudyPatchOptions({ notes_highlights: payload.ranges.length ? payload : null }, opts)).then(function () {
       if (auth.currentUser && auth.currentUser.uid === uid && selectedPack && selectedPack.study_pack_id === packId && !pendingHighlightSaves.has(packId)) {
         selectedPack.notes_highlights = payload;
         setHighlightStatus(payload.ranges.length
@@ -8329,6 +8381,12 @@ function flushHighlightSync(options) {
       }
     }).catch(function (e) {
       if (!auth.currentUser || auth.currentUser.uid !== uid) return;
+      if (highlightSavesInFlight.get(packId) !== request) return;
+      if (e.status === 403 || e.status === 404) {
+        pendingHighlightSaves.delete(packId);
+        if (selectedPackId === packId) setHighlightStatus('Highlights remain on this device; this pack cannot be updated.');
+        return;
+      }
       console.warn('Could not sync note highlights:', e && e.message ? e.message : e);
       // A failed older request must never replace a newer local edit.
       if (!pendingHighlightSaves.has(packId)) pendingHighlightSaves.set(packId, payload);
