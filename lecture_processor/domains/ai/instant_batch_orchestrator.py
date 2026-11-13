@@ -79,6 +79,7 @@ def _stage_detail(row, detail):
 
 def _upsert_row_progress(batch_id, row, stage, detail, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
+    batch_orchestrator._require_active_batch(batch_id, runtime=resolved_runtime)
     now_ts = resolved_runtime.time.time()
     row['status'] = 'processing'
     row['current_stage'] = str(stage or '')
@@ -101,7 +102,6 @@ def _upsert_row_progress(batch_id, row, stage, detail, runtime=None):
     batch_orchestrator._upsert_batch(
         batch_id,
         {
-            'status': 'processing',
             'current_stage': str(stage or ''),
             'current_stage_state': 'running',
             'provider_state': 'INSTANT_RUNNING',
@@ -115,6 +115,7 @@ def _upsert_row_progress(batch_id, row, stage, detail, runtime=None):
 
 def _refresh_batch_progress(batch_id, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
+    batch_orchestrator._require_active_batch(batch_id, runtime=resolved_runtime)
     rows = batch_orchestrator._list_rows(batch_id, runtime=resolved_runtime)
     completed = sum(1 for row in rows if str(row.get('status', '') or '') == 'complete')
     failed = sum(1 for row in rows if str(row.get('status', '') or '') == 'error')
@@ -125,7 +126,6 @@ def _refresh_batch_progress(batch_id, runtime=None):
     batch_orchestrator._upsert_batch(
         batch_id,
         {
-            'status': 'processing',
             'completed_rows': completed,
             'failed_rows': failed,
             'token_input_total': token_input,
@@ -202,7 +202,9 @@ def _finalize_row(batch_id, batch, row, tokens, retry_tracker, runtime=None):
         row['current_stage'] = 'complete'
         row['current_stage_detail'] = _stage_detail(row, 'complete')
         row['error'] = ''
-    batch_orchestrator._finalize_row_job_log(batch, row, runtime=resolved_runtime)
+    batch_orchestrator._require_active_batch(batch_id, runtime=resolved_runtime)
+    batch_orchestrator._finalize_row_job_log(batch, row, runtime=resolved_runtime, require_active=True)
+    batch_orchestrator._require_active_batch(batch_id, runtime=resolved_runtime)
     batch_orchestrator._upsert_row(
         batch_id,
         row.get('row_id', ''),
@@ -215,6 +217,7 @@ def _finalize_row(batch_id, batch, row, tokens, retry_tracker, runtime=None):
 def _run_slide_extraction(batch_id, row, throttler, tokens, retry_tracker, runtime):
     _upsert_row_progress(batch_id, row, 'slide_extraction', 'extracting slide text', runtime=runtime)
     throttler.wait()
+    batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     response = ai_provider.generate_with_policy(
         runtime.MODEL_SLIDES,
         _content_from_file_and_text(
@@ -227,6 +230,7 @@ def _run_slide_extraction(batch_id, row, throttler, tokens, retry_tracker, runti
         operation_name='instant_slide_extraction',
         runtime=runtime,
     )
+    batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     tokens.record(
         'slide_extraction',
         response,
@@ -247,6 +251,7 @@ def _run_slide_extraction(batch_id, row, throttler, tokens, retry_tracker, runti
 def _run_audio_transcription(batch_id, row, throttler, tokens, retry_tracker, runtime, *, timestamped=False):
     _upsert_row_progress(batch_id, row, 'audio_transcription', 'transcribing audio', runtime=runtime)
     throttler.wait()
+    batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     audio_file = SimpleNamespace(uri=row.get('audio_file_uri', ''))
     audio_mime = row.get('audio_mime_type', 'audio/mpeg')
     output_language = row.get('output_language', 'English')
@@ -267,6 +272,7 @@ def _run_audio_transcription(batch_id, row, throttler, tokens, retry_tracker, ru
             include_usage=True,
         )
         segments = []
+    batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     tokens.record_usage(
         'audio_transcription',
         usage,
@@ -300,6 +306,7 @@ def _run_notes_merge(batch_id, row, throttler, tokens, retry_tracker, runtime, *
         else batch_orchestrator._merge_prompt_for_row(row, runtime)
     )
     throttler.wait()
+    batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     response = ai_provider.generate_with_policy(
         runtime.MODEL_INTEGRATION,
         _content_from_text(runtime, prompt),
@@ -307,6 +314,7 @@ def _run_notes_merge(batch_id, row, throttler, tokens, retry_tracker, runtime, *
         operation_name='instant_notes_merge',
         runtime=runtime,
     )
+    batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     tokens.record(
         'notes_merge',
         response,
@@ -349,6 +357,7 @@ def _run_study_tools(batch_id, row, throttler, tokens, retry_tracker, runtime):
         raise ValueError('Missing source text for study tools.')
     _upsert_row_progress(batch_id, row, 'study_materials_generation', 'generating study tools', runtime=runtime)
     throttler.wait()
+    batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     flashcards, test_questions, study_error, usage = study_generation.generate_study_materials(
         source_text,
         row.get('flashcard_selection', '20'),
@@ -359,6 +368,7 @@ def _run_study_tools(batch_id, row, throttler, tokens, retry_tracker, runtime):
         runtime=runtime,
         include_usage=True,
     )
+    batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     _record_usage_dict(tokens, usage, runtime.MODEL_STUDY)
     row['flashcards'] = flashcards
     row['test_questions'] = test_questions
@@ -382,6 +392,7 @@ def _run_interview_transcription(batch_id, row, throttler, tokens, retry_tracker
     _upsert_row_progress(batch_id, row, 'interview_transcription', 'transcribing interview', runtime=runtime)
     prompt = runtime.PROMPT_INTERVIEW_TRANSCRIPTION.format(output_language=row.get('output_language', 'English'))
     throttler.wait()
+    batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     response = ai_provider.generate_with_policy(
         runtime.MODEL_INTERVIEW,
         _content_from_file_and_text(
@@ -394,6 +405,7 @@ def _run_interview_transcription(batch_id, row, throttler, tokens, retry_tracker
         operation_name='instant_interview_transcription',
         runtime=runtime,
     )
+    batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     tokens.record(
         'interview_transcription',
         response,
@@ -419,6 +431,7 @@ def _run_interview_extras(batch_id, batch, row, throttler, tokens, retry_tracker
         return
     _upsert_row_progress(batch_id, row, 'interview_summary_generation', 'creating interview extras', runtime=runtime)
     throttler.wait()
+    batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     enhancement = study_generation.generate_interview_enhancements(
         str(row.get('transcript', '') or ''),
         selected,
@@ -427,6 +440,7 @@ def _run_interview_extras(batch_id, batch, row, throttler, tokens, retry_tracker
         runtime=runtime,
         include_usage=True,
     )
+    batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     _record_usage_dict(tokens, enhancement, runtime.MODEL_STUDY)
     row['interview_summary'] = enhancement.get('summary')
     row['interview_sections'] = enhancement.get('sections')
@@ -477,7 +491,11 @@ def _process_row(batch_id, batch, row, throttler, runtime=None):
         if mode in {'lecture-notes', 'slides-only', 'interview', 'audio-transcription'}:
             _upsert_row_progress(batch_id, row, 'file_upload', 'preparing files', runtime=resolved_runtime)
             throttler.wait()
+            batch_orchestrator._require_active_batch(batch_id, runtime=resolved_runtime)
+            batch_orchestrator._heartbeat_batch(batch_id, runtime=resolved_runtime)
             batch_orchestrator._upload_row_files(row, runtime=resolved_runtime)
+            batch_orchestrator._require_active_batch(batch_id, runtime=resolved_runtime)
+            batch_orchestrator._heartbeat_batch(batch_id, runtime=resolved_runtime)
             batch_orchestrator._upsert_row(
                 batch_id,
                 row.get('row_id', ''),
@@ -528,7 +546,10 @@ def _process_row(batch_id, batch, row, throttler, runtime=None):
         else:
             raise ValueError('Unsupported instant batch mode.')
 
+    except batch_orchestrator._BatchStopped:
+        pass
     except Exception as error:
+        batch_orchestrator._require_active_batch(batch_id, runtime=resolved_runtime)
         resolved_runtime.logger.exception('Instant batch row failed for batch_id=%s row_id=%s', batch_id, row.get('row_id', ''))
         row['status'] = 'error'
         row['error'] = _public_row_error(error, resolved_runtime)
@@ -538,11 +559,15 @@ def _process_row(batch_id, batch, row, throttler, runtime=None):
         row.update(tokens.as_dict())
         batch_orchestrator._refund_failed_row(batch, row, runtime=resolved_runtime)
     finally:
-        _finalize_row(batch_id, batch, row, tokens, retry_tracker, runtime=resolved_runtime)
-        _cleanup_row_files(row, runtime=resolved_runtime)
-        _refresh_batch_progress(batch_id, runtime=resolved_runtime)
+        try:
+            if batch_orchestrator._batch_worker_may_continue(batch_id, runtime=resolved_runtime):
+                _finalize_row(batch_id, batch, row, tokens, retry_tracker, runtime=resolved_runtime)
+                _refresh_batch_progress(batch_id, runtime=resolved_runtime)
+        finally:
+            _cleanup_row_files(row, runtime=resolved_runtime)
 
 
+@batch_orchestrator._protect_batch_worker
 def process_instant_batch_job(batch_id, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     batch = batch_orchestrator._get_batch(batch_id, runtime=resolved_runtime)
@@ -561,9 +586,11 @@ def process_instant_batch_job(batch_id, runtime=None):
             current_stage_state_override='failed',
             current_stage_override='validation',
             runtime=resolved_runtime,
+            require_active=True,
         )
         return
 
+    batch_orchestrator._require_active_batch(batch_id, runtime=resolved_runtime)
     now_ts = resolved_runtime.time.time()
     batch_orchestrator._upsert_batch(
         batch_id,
@@ -596,17 +623,21 @@ def process_instant_batch_job(batch_id, runtime=None):
             for future in as_completed(futures):
                 try:
                     future.result()
+                except batch_orchestrator._BatchStopped:
+                    pass
                 except Exception as error:
                     stage_error = str(error)
                     resolved_runtime.logger.exception('Instant batch worker failed for batch_id=%s', batch_id)
     finally:
-        latest = batch_orchestrator._get_batch(batch_id, runtime=resolved_runtime) or batch
-        batch_orchestrator._finalize_batch_record(
-            batch_id,
-            latest,
-            stage_error=stage_error,
-            provider_state_override='',
-            current_stage_state_override='finished',
-            current_stage_override='batch_pipeline',
-            runtime=resolved_runtime,
-        )
+        if batch_orchestrator._batch_worker_may_continue(batch_id, runtime=resolved_runtime):
+            latest = batch_orchestrator._get_batch(batch_id, runtime=resolved_runtime)
+            batch_orchestrator._finalize_batch_record(
+                batch_id,
+                latest,
+                stage_error=stage_error,
+                provider_state_override='',
+                current_stage_state_override='finished',
+                current_stage_override='batch_pipeline',
+                runtime=resolved_runtime,
+                require_active=True,
+            )
