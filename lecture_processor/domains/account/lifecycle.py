@@ -385,7 +385,7 @@ def count_active_jobs_for_user(uid, runtime=None):
             if str(job.get('user_id', '') or '').strip() != uid:
                 continue
             if str(job.get('status', '') or '').strip().lower() in ACTIVE_ACCOUNT_JOB_STATES:
-                active_ids.add(f'in-memory:{job_id}')
+                active_ids.add(str(job_id))
             if len(active_ids) >= query_limit:
                 return len(active_ids)
 
@@ -399,10 +399,10 @@ def count_active_jobs_for_user(uid, runtime=None):
             resolved_runtime.RUNTIME_JOBS_COLLECTION,
             uid,
             ACTIVE_ACCOUNT_JOB_STATES,
-            limit=max(1, query_limit - len(active_ids)),
+            limit=query_limit,
         )
         for doc in runtime_docs:
-            active_ids.add(f'runtime:{doc.id}')
+            active_ids.add(str(doc.id))
             if len(active_ids) >= query_limit:
                 return len(active_ids)
     except Exception as error:

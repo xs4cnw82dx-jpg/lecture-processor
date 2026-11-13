@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 from lecture_processor.calendar_observability import install_calendar_log_filters, scrub_calendar_event
+from lecture_processor.runtime.environment import get_gemini_http_timeout_ms
 
 
 warnings.filterwarnings('ignore', message='urllib3 v2 only supports OpenSSL 1\\.1\\.1\\+.*')
@@ -40,7 +41,10 @@ def initialize_gemini_client(api_key: str, *, genai_module, logger):
         logger.warning('⚠️ GEMINI_API_KEY not set; AI processing features are disabled.')
         return None
     try:
-        return genai_module.Client(api_key=safe_api_key)
+        return genai_module.Client(
+            api_key=safe_api_key,
+            http_options=genai_module.types.HttpOptions(timeout=get_gemini_http_timeout_ms()),
+        )
     except Exception as error:
         logger.warning('⚠️ Gemini client disabled: %s', error)
         return None

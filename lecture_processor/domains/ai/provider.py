@@ -2,7 +2,10 @@ import os
 import random
 import time
 
+from flask import has_request_context
+
 from lecture_processor.runtime.container import get_runtime
+from lecture_processor.runtime.environment import get_gemini_http_timeout_ms
 
 try:
     from google.genai import types as genai_types
@@ -220,6 +223,8 @@ def generate_with_policy(model, contents, max_output_tokens=65536, retry_tracker
         raise RuntimeError('Gemini client is not configured.')
 
     base_config = {'max_output_tokens': max_output_tokens}
+    if has_request_context():
+        base_config['http_options'] = {'timeout': get_gemini_http_timeout_ms(request_thread=True)}
     thinking = _build_thinking_config(model, runtime=resolved_runtime)
     if thinking is not None:
         base_config['thinking_config'] = thinking
@@ -229,7 +234,8 @@ def generate_with_policy(model, contents, max_output_tokens=65536, retry_tracker
         try:
             config = types_module.GenerateContentConfig(**base_config)
         except Exception:
-            config = types_module.GenerateContentConfig(max_output_tokens=max_output_tokens)
+            base_config.pop('thinking_config', None)
+            config = types_module.GenerateContentConfig(**base_config)
     else:
         config = base_config
 
