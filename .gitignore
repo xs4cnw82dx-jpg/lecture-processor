@@ -38,6 +38,7 @@ test-*.m4a
 
 # Local debug/backups
 context_dump.txt
+codex-team/
 *.pre-*backup*
 *.backup
 *.dump

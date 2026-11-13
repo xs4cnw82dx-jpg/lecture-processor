@@ -1,13 +1,22 @@
 # Working instructions
 
+## Current priority
+
+Audit remediation takes priority. Consult the untracked local workplan at
+`codex-team/CODEX_WORKPLAN.md`
+(`/Users/jaccovandermeulen/Desktop/lecture-processor/codex-team/CODEX_WORKPLAN.md`),
+maintain `codex-team/STATUS.md`, and use the workplan's review and live-check gates.
+
 ## Active website redesign
 
-Before any redesign work, at the start of each new phase, and immediately after context compaction or a resumed session, read:
+The four documents below are background for Phase D UI work. Read them when
+starting that work and when resuming it after a context reset; other work packages
+do not require rereading them.
 
 1. `docs/VISUAL_REDESIGN_MASTER_PLAN.md` — the complete approved 45-part visual and interaction audit.
 2. `docs/VISUAL_REDESIGN_PROGRESS.md` — current ownership, completed work, verification, and outstanding work.
 3. `docs/PRODUCT_FEEDBACK_REPAIR_PLAN.md` — previous screenshot-driven repairs, delivered in PR #185.
-4. `docs/STUDY_FLOW_POLISH_PLAN.md` — active 4 October screenshot feedback, ownership and delivery checklist.
+4. `docs/STUDY_FLOW_POLISH_PLAN.md` — 4 October screenshot feedback and delivery checklist, delivered in PR #186.
 
 Use Study Plan as the visual foundation. The user explicitly requires a genuinely polished redesign: improve composition, typography, spacing, hierarchy, controls, interaction states, and responsive behavior. A palette change or additional CSS overrides alone does not satisfy the task. Inspect rendered results and iterate.
 
