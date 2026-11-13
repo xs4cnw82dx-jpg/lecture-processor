@@ -3,6 +3,20 @@ const assert = require('node:assert/strict');
 
 const progressUtils = require('../static/js/study-progress-utils.js');
 
+for (const [date, offset, expected] of [
+  ['2026-03-01', -1, '2026-02-28'],
+  ['2024-03-01', -1, '2024-02-29'],
+  ['2026-01-01', -1, '2025-12-31'],
+  ['2026-03-30', '-1', '2026-03-29'],
+  ['2026-11-13', 0, '2026-11-13'],
+  ['2026-01-30', 5, '2026-02-04'],
+  ['2026-12-31', 1, '2027-01-01'],
+]) {
+  test(`local date arithmetic moves ${date} by ${offset} days`, () => {
+    assert.equal(progressUtils.addDaysToLocalDate(date, offset), expected);
+  });
+}
+
 test('parseOptionalGoalValue accepts blank values and valid goals', () => {
   assert.equal(progressUtils.parseOptionalGoalValue(''), null);
   assert.equal(progressUtils.parseOptionalGoalValue('   '), null);

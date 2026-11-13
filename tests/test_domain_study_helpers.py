@@ -153,6 +153,18 @@ def test_daily_progress_device_counters_sum_devices_and_dedupe_retries():
     assert retried['daily_progress_count'] == 6
 
 
+def test_same_day_streak_sync_cannot_lower_the_server_streak():
+    server = {'last_study_date': '2026-11-13', 'current_streak': 7}
+    incoming = {'last_study_date': '2026-11-13', 'current_streak': 1}
+
+    merged = progress.merge_streak_data(server, incoming, runtime=SimpleNamespace())
+    retried = progress.merge_streak_data(merged, incoming, runtime=SimpleNamespace())
+
+    assert merged['last_study_date'] == '2026-11-13'
+    assert merged['current_streak'] == 7
+    assert retried['current_streak'] == 7
+
+
 def test_audio_storage_round_trip_and_persist(tmp_path):
     root = tmp_path / 'uploads' / 'study_audio'
     runtime = SimpleNamespace(

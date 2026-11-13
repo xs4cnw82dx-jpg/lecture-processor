@@ -375,13 +375,7 @@ function localDateStringFromTimestamp(ts) {
 }
 function todayLocalDateString() { return getDateStringInTimezone(Date.now(), progressTimezone); }
 function addDaysToLocalDate(dateString, days) {
-  var parts = String(dateString || todayLocalDateString()).split('-');
-  if (parts.length !== 3) return todayLocalDateString();
-  var year = parseInt(parts[0], 10), month = parseInt(parts[1], 10), day = parseInt(parts[2], 10);
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) { return todayLocalDateString(); }
-  var base = new Date(Date.UTC(year, month - 1, day));
-  base.setUTCDate(base.getUTCDate() + Math.max(0, parseInt(days, 10) || 0));
-  return base.toISOString().slice(0, 10);
+  return progressUtils.addDaysToLocalDate(dateString || todayLocalDateString(), days) || todayLocalDateString();
 }
 function isDueDate(dateString) {
   var target = String(dateString || '').trim();
@@ -1016,7 +1010,7 @@ function applyReviewAction(cardId, action, acknowledged) {
   entry.last_review_date = todayLocalDateString();
   entry.next_review_date = reviewAction === 'retry'
     ? entry.last_review_date
-    : addDaysToLocalDate(entry.last_review_date, entry.interval_days);
+    : addDaysToLocalDate(entry.last_review_date, Math.max(0, parseInt(entry.interval_days, 10) || 0));
   if (reviewAction === 'hard') entry.difficulty = 'hard';
   else if (reviewAction === 'easy') entry.difficulty = 'easy';
   else entry.difficulty = 'medium';
@@ -2190,8 +2184,7 @@ function mdToHtml(md) {
   return escapeHtml(String(md || '')).replace(/\n/g, '<br>');
 }
 function getSelectedNotesRenderKey() {
-  if (!selectedPack) return '';
-  return String(selectedPackId || '') + ':' + String(selectedPack.updated_at || '') + ':' + String((selectedPack.notes_markdown || '').length);
+  return getHighlightBaseKey();
 }
 function fmtAudioTime(seconds) {
   if (!isFinite(seconds) || seconds < 0) return '0:00';
@@ -8135,13 +8128,24 @@ function getLegacyHighlightStorageKey() {
 
 function getHighlightBaseKey() {
   if (!selectedPack || !selectedPackId) return '';
-  return selectedPackId + ':' + String(selectedPack.updated_at || 0) + ':' + String((selectedPack.notes_markdown || '').length);
+  var notes = String(selectedPack.notes_markdown || '');
+  return selectedPackId + ':notes:' + hashStudyContent(notes) + ':' + String(notes.length);
+}
+
+function isCompatibleHighlightBaseKey(baseKey) {
+  if (!selectedPack || !selectedPackId || !baseKey) return false;
+  if (baseKey === getHighlightBaseKey()) return true;
+  var prefix = selectedPackId + ':';
+  if (baseKey.indexOf(prefix) !== 0) return false;
+  var legacy = baseKey.slice(prefix.length).split(':');
+  return legacy.length === 2 && /^\d+(?:\.\d+)?$/.test(legacy[0]) && /^\d+$/.test(legacy[1]) &&
+    Number(legacy[1]) === String(selectedPack.notes_markdown || '').length;
 }
 
 function normalizeClientHighlightPayload(payload) {
   if (!payload || typeof payload !== 'object') return null;
   var baseKey = String(payload.base_key || '').trim();
-  if (!baseKey || baseKey !== getHighlightBaseKey()) return null;
+  if (!isCompatibleHighlightBaseKey(baseKey)) return null;
   if (!Array.isArray(payload.ranges)) return null;
   var ranges = [];
   payload.ranges.forEach(function (rawRange) {
@@ -8155,7 +8159,7 @@ function normalizeClientHighlightPayload(payload) {
   });
   if (!ranges.length && payload.ranges.length) return null;
   return {
-    base_key: baseKey,
+    base_key: getHighlightBaseKey(),
     ranges: ranges,
     updated_at: Math.max(0, Number(payload.updated_at || 0))
   };
@@ -8196,9 +8200,9 @@ function readLegacyHighlightPayload() {
   try {
     var parsed = JSON.parse(localStorage.getItem(key) || 'null');
     if (!parsed || typeof parsed !== 'object') return null;
-    if (parsed.base_key !== getHighlightBaseKey()) return null;
+    if (!isCompatibleHighlightBaseKey(String(parsed.base_key || ''))) return null;
     if (typeof parsed.annotated_html !== 'string' || !parsed.annotated_html) return null;
-    return parsed;
+    return Object.assign({}, parsed, { base_key: getHighlightBaseKey() });
   } catch (e) {
     return null;
   }
@@ -8963,11 +8967,13 @@ document.getElementById('builder-ai-import-guide').addEventListener('click', fun
 function learningCheckpointKey() {
   return 'learning_session_' + (auth.currentUser ? auth.currentUser.uid : 'anon') + '_' + selectedPackId + '_' + (plannedPickerActive ? plannerSessionFromUrl : 'practice');
 }
-function learningContentVersion() {
-  var value = JSON.stringify([selectedPack && selectedPack.flashcards, selectedPack && selectedPack.test_questions, selectedPack && selectedPack.notes_markdown]);
+function hashStudyContent(value) {
   var hash = 2166136261;
   for (var index = 0; index < value.length; index++) { hash ^= value.charCodeAt(index); hash = Math.imul(hash, 16777619); }
   return String(hash >>> 0);
+}
+function learningContentVersion() {
+  return hashStudyContent(JSON.stringify([selectedPack && selectedPack.flashcards, selectedPack && selectedPack.test_questions, selectedPack && selectedPack.notes_markdown]));
 }
 function loadLearningCheckpoint() {
   if (!selectedPack) return null;
