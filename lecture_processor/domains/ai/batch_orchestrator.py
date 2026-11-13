@@ -4,7 +4,10 @@ import json
 import time
 import base64
 import hashlib
+import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
+from functools import wraps
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -70,12 +73,88 @@ BATCH_INTERRUPTED_PUBLIC_MESSAGE = (
 TRANSIENT_ROW_KEYS = {'_gemini_files', '_local_paths'}
 _DROP_PERSISTED_VALUE = object()
 BATCH_AUDIO_FETCH_TARGET_FIELD = 'audio_fetch_target_encrypted'
+_BATCH_ACTIVITY_LOCK = threading.Condition()
+_BATCH_ACTIVITY = {}
 
 
 def _resolve_runtime(runtime=None):
     if runtime is not None:
         return runtime
     return get_runtime()
+
+
+class _BatchStopped(Exception):
+    """The stored batch no longer permits worker writes."""
+
+
+@contextmanager
+def _claim_batch_activity(batch_id, *, worker=False):
+    """Serialize workers and recovery for a batch in this process."""
+    with _BATCH_ACTIVITY_LOCK:
+        if worker:
+            _BATCH_ACTIVITY_LOCK.wait_for(lambda: _BATCH_ACTIVITY.get(batch_id) != 'recovery')
+        claimed = batch_id not in _BATCH_ACTIVITY
+        if claimed:
+            _BATCH_ACTIVITY[batch_id] = 'worker' if worker else 'recovery'
+    try:
+        yield claimed
+    finally:
+        if claimed:
+            with _BATCH_ACTIVITY_LOCK:
+                _BATCH_ACTIVITY.pop(batch_id, None)
+                _BATCH_ACTIVITY_LOCK.notify_all()
+
+
+def _batch_worker_may_continue(batch_id, runtime=None):
+    batch = _get_batch(batch_id, runtime=runtime)
+    return bool(batch) and not _is_terminal_status(batch.get('status', ''))
+
+
+def _require_active_batch(batch_id, runtime=None):
+    if not _batch_worker_may_continue(batch_id, runtime=runtime):
+        raise _BatchStopped()
+
+
+def _batch_heartbeat_interval_seconds(runtime=None):
+    return min(30.0, _batch_recovery_stale_seconds(runtime=runtime) / 3.0)
+
+
+def _heartbeat_batch(batch_id, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    if not _batch_worker_may_continue(batch_id, runtime=resolved_runtime):
+        return False
+    _upsert_batch(batch_id, {'last_heartbeat_at': resolved_runtime.time.time()}, runtime=resolved_runtime)
+    return True
+
+
+def _protect_batch_worker(worker):
+    @wraps(worker)
+    def protected(batch_id, runtime=None):
+        resolved_runtime = _resolve_runtime(runtime)
+        with _claim_batch_activity(batch_id, worker=True) as claimed:
+            if not claimed:
+                return
+            stop = threading.Event()
+
+            def heartbeat():
+                while not stop.wait(_batch_heartbeat_interval_seconds(runtime=resolved_runtime)):
+                    try:
+                        if not _heartbeat_batch(batch_id, runtime=resolved_runtime):
+                            return
+                    except Exception:
+                        resolved_runtime.logger.warning('Batch heartbeat failed for %s', batch_id, exc_info=True)
+
+            thread = threading.Thread(target=heartbeat, name='lp-batch-heartbeat', daemon=True)
+            thread.start()
+            try:
+                return worker(batch_id, runtime=resolved_runtime)
+            except _BatchStopped:
+                return None
+            finally:
+                stop.set()
+                thread.join(timeout=1)
+
+    return protected
 
 
 def _batch_audio_fetch_cipher(runtime=None):
@@ -776,13 +855,15 @@ def _response_text(response, runtime=None):
     return ''
 
 
-def _wait_for_batch(batch_name, runtime=None, on_poll=None):
+def _wait_for_batch(batch_name, runtime=None, on_poll=None, before_poll=None):
     resolved_runtime = _resolve_runtime(runtime)
     poll_seconds = max(5, int(getattr(resolved_runtime, 'BATCH_POLL_SECONDS', 20) or 20))
     pending_poll_seconds = max(5, int(getattr(resolved_runtime, 'BATCH_PENDING_POLL_SECONDS', poll_seconds) or poll_seconds))
     running_poll_seconds = max(5, int(getattr(resolved_runtime, 'BATCH_RUNNING_POLL_SECONDS', poll_seconds) or poll_seconds))
     max_wait_seconds = max(300, int(getattr(resolved_runtime, 'BATCH_MAX_WAIT_SECONDS', 24 * 60 * 60) or (24 * 60 * 60)))
     started_at = resolved_runtime.time.time()
+    if callable(before_poll):
+        before_poll()
     batch_job = ai_provider.run_with_provider_retry(
         f'batch_poll:{batch_name}:initial',
         lambda: resolved_runtime.client.batches.get(name=batch_name),
@@ -791,6 +872,8 @@ def _wait_for_batch(batch_name, runtime=None, on_poll=None):
     if callable(on_poll):
         try:
             on_poll(_batch_state_name(batch_job))
+        except _BatchStopped:
+            raise
         except Exception:
             pass
     while _batch_state_name(batch_job) not in TERMINAL_BATCH_STATES:
@@ -799,6 +882,8 @@ def _wait_for_batch(batch_name, runtime=None, on_poll=None):
         current_state = _batch_state_name(batch_job)
         sleep_seconds = running_poll_seconds if current_state == 'JOB_STATE_RUNNING' else pending_poll_seconds
         resolved_runtime.time.sleep(max(5, sleep_seconds if sleep_seconds > 0 else poll_seconds))
+        if callable(before_poll):
+            before_poll()
         batch_job = ai_provider.run_with_provider_retry(
             f'batch_poll:{batch_name}',
             lambda: resolved_runtime.client.batches.get(name=batch_name),
@@ -807,6 +892,8 @@ def _wait_for_batch(batch_name, runtime=None, on_poll=None):
         if callable(on_poll):
             try:
                 on_poll(_batch_state_name(batch_job))
+            except _BatchStopped:
+                raise
             except Exception:
                 pass
     return batch_job
@@ -853,6 +940,7 @@ def _run_batch_stage(batch_id, stage_name, requests, request_keys=None, runtime=
     resolved_runtime = _resolve_runtime(runtime)
     if not requests:
         return []
+    _require_active_batch(batch_id, runtime=resolved_runtime)
     model = _batch_model(stage_name, resolved_runtime)
     now_ts = resolved_runtime.time.time()
     _upsert_batch(
@@ -893,6 +981,7 @@ def _run_batch_stage(batch_id, stage_name, requests, request_keys=None, runtime=
             runtime=resolved_runtime,
         )
         uploaded_input_file = input_file_handle
+        _require_active_batch(batch_id, runtime=resolved_runtime)
         batch_job = ai_provider.run_with_provider_retry(
             f'{stage_name}:batch_create',
             lambda: resolved_runtime.client.batches.create(
@@ -902,6 +991,7 @@ def _run_batch_stage(batch_id, stage_name, requests, request_keys=None, runtime=
             ),
             runtime=resolved_runtime,
         )
+        _require_active_batch(batch_id, runtime=resolved_runtime)
         _upsert_batch(
             batch_id,
             {
@@ -914,6 +1004,10 @@ def _run_batch_stage(batch_id, stage_name, requests, request_keys=None, runtime=
             runtime=resolved_runtime,
             merge=True,
         )
+    except Exception:
+        if uploaded_input_file is not None:
+            resolved_runtime.cleanup_files([], [uploaded_input_file])
+        raise
     finally:
         try:
             resolved_runtime.os.remove(local_input_path)
@@ -936,6 +1030,7 @@ def _run_batch_stage(batch_id, stage_name, requests, request_keys=None, runtime=
         )
     try:
         def _on_poll(state_name):
+            _require_active_batch(batch_id, runtime=resolved_runtime)
             now = resolved_runtime.time.time()
             _upsert_batch(
                 batch_id,
@@ -950,7 +1045,11 @@ def _run_batch_stage(batch_id, stage_name, requests, request_keys=None, runtime=
                 merge=True,
             )
 
-        final_job = _wait_for_batch(getattr(batch_job, 'name', ''), runtime=resolved_runtime, on_poll=_on_poll)
+        final_job = _wait_for_batch(
+            getattr(batch_job, 'name', ''), runtime=resolved_runtime, on_poll=_on_poll,
+            before_poll=lambda: _require_active_batch(batch_id, runtime=resolved_runtime),
+        )
+        _require_active_batch(batch_id, runtime=resolved_runtime)
         final_state = _batch_state_name(final_job)
         _upsert_batch(
             batch_id,
@@ -976,6 +1075,7 @@ def _run_batch_stage(batch_id, stage_name, requests, request_keys=None, runtime=
                 lambda: resolved_runtime.client.files.download(file=result_file_name),
                 runtime=resolved_runtime,
             )
+            _require_active_batch(batch_id, runtime=resolved_runtime)
             key_map = {}
             for idx, key in enumerate(request_keys):
                 key_map[str(key)] = idx
@@ -1091,6 +1191,7 @@ def _build_stage_requests(rows, builder):
 
 def _run_stage_with_builder(batch_id, rows, stage_name, builder, handler, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
+    _require_active_batch(batch_id, runtime=resolved_runtime)
     now_ts = resolved_runtime.time.time()
     _upsert_batch(
         batch_id,
@@ -1169,6 +1270,7 @@ def _run_stage_with_builder(batch_id, rows, stage_name, builder, handler, runtim
         display_name=f'{batch_id}-{stage_name}-{datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")}',
     )
     for idx, row in enumerate(request_rows):
+        _require_active_batch(batch_id, runtime=resolved_runtime)
         response_entry = responses[idx] if idx < len(responses) else {'error': 'Missing response'}
         error = response_entry.get('error')
         if error:
@@ -1361,7 +1463,7 @@ def _upload_row_files(row, runtime=None):
         row['audio_storage_key'] = study_audio.persist_audio_for_study_pack(row.get('row_job_id', ''), upload_path, runtime=resolved_runtime)
 
 
-def _finalize_row_job_log(batch, row, runtime=None):
+def _finalize_row_job_log(batch, row, runtime=None, *, require_active=False):
     resolved_runtime = _resolve_runtime(runtime)
     row_job_id = str(row.get('row_job_id', '') or resolved_runtime.uuid.uuid4())
     row['row_job_id'] = row_job_id
@@ -1412,6 +1514,8 @@ def _finalize_row_job_log(batch, row, runtime=None):
     }
     if row.get('status') == 'complete':
         saved = ai_pipelines.save_study_pack(row_job_id, job_data, runtime=resolved_runtime)
+        if require_active:
+            _require_active_batch(batch.get('batch_id', ''), runtime=resolved_runtime)
         if not saved:
             row['status'] = 'error'
             row['failed_stage'] = 'study_pack_persistence'
@@ -1442,6 +1546,8 @@ def _finalize_row_job_log(batch, row, runtime=None):
                     )
                 except Exception:
                     resolved_runtime.logger.warning('Could not assign batch folder to study pack %s', job_data['study_pack_id'], exc_info=True)
+    if require_active:
+        _require_active_batch(batch.get('batch_id', ''), runtime=resolved_runtime)
     resolved_runtime.save_job_log(row_job_id, job_data, finished_at)
     row['job_log_id'] = row_job_id
     row['updated_at'] = resolved_runtime.time.time()
@@ -1547,6 +1653,7 @@ def _finalize_batch_record(
     current_stage_state_override='',
     current_stage_override=None,
     runtime=None,
+    require_active=False,
 ):
     resolved_runtime = _resolve_runtime(runtime)
     completed_rows = 0
@@ -1595,6 +1702,8 @@ def _finalize_batch_record(
     credits_refund_pending = max(0, expected_refund_total - credits_refunded_total)
     finished_at = resolved_runtime.time.time()
     latest_batch_snapshot = _get_batch(batch_id, runtime=resolved_runtime) or {}
+    if require_active and (not latest_batch_snapshot or _is_terminal_status(latest_batch_snapshot.get('status', ''))):
+        raise _BatchStopped()
 
     next_current_stage = latest_batch_snapshot.get('current_stage', '') or ''
     if current_stage_override is not None:
@@ -1708,6 +1817,14 @@ def mark_batch_submission_error(batch_id, error_message, runtime=None, *, mark_a
 
 
 def _repair_batch_state_if_needed(batch_id, batch=None, rows=None, runtime=None):
+    with _claim_batch_activity(batch_id) as claimed:
+        if not claimed:
+            return batch or _get_batch(batch_id, runtime=runtime), rows
+        # Re-read after the claim: a worker may have finished since the caller's read.
+        return _repair_inactive_batch_state(batch_id, runtime=runtime)
+
+
+def _repair_inactive_batch_state(batch_id, batch=None, rows=None, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     safe_batch_id = str(batch_id or '').strip()
     if not safe_batch_id:
@@ -1887,6 +2004,7 @@ def run_startup_batch_recovery_once(runtime=None):
     recover_stale_batches(runtime=resolved_runtime)
 
 
+@_protect_batch_worker
 def process_batch_job(batch_id, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     batch = _get_batch(batch_id, runtime=resolved_runtime)
@@ -1909,9 +2027,11 @@ def process_batch_job(batch_id, runtime=None):
             current_stage_state_override='failed',
             current_stage_override='validation',
             runtime=resolved_runtime,
+            require_active=True,
         )
         return
 
+    _require_active_batch(batch_id, runtime=resolved_runtime)
     _upsert_batch(
         batch_id,
         {
@@ -1930,6 +2050,8 @@ def process_batch_job(batch_id, runtime=None):
     stage_error = ''
     try:
         for row in rows:
+            _require_active_batch(batch_id, runtime=resolved_runtime)
+            _heartbeat_batch(batch_id, runtime=resolved_runtime)
             row.setdefault('status', 'processing')
             row.setdefault('started_at', batch.get('created_at', resolved_runtime.time.time()))
             row.setdefault('token_usage_by_stage', {})
@@ -1955,6 +2077,8 @@ def process_batch_job(batch_id, runtime=None):
                 merge=True,
             )
             _upload_row_files(row, runtime=resolved_runtime)
+            _require_active_batch(batch_id, runtime=resolved_runtime)
+            _heartbeat_batch(batch_id, runtime=resolved_runtime)
             row['last_stage_update_at'] = resolved_runtime.time.time()
             _upsert_row(
                 batch_id,
@@ -2377,9 +2501,11 @@ def process_batch_job(batch_id, runtime=None):
                     row['result'] = sections
 
         for row in rows:
+            _require_active_batch(batch_id, runtime=resolved_runtime)
             if row.get('status') == 'error':
                 _refund_failed_row(batch, row, runtime=resolved_runtime)
-            _finalize_row_job_log(batch, row, runtime=resolved_runtime)
+            _finalize_row_job_log(batch, row, runtime=resolved_runtime, require_active=True)
+            _require_active_batch(batch_id, runtime=resolved_runtime)
             _drop_persisted_audio_fetch_target(row)
             _upsert_row(
                 batch_id,
@@ -2391,10 +2517,14 @@ def process_batch_job(batch_id, runtime=None):
                 runtime=resolved_runtime,
                 merge=False,
             )
+    except _BatchStopped:
+        pass
     except Exception as error:
+        _require_active_batch(batch_id, runtime=resolved_runtime)
         stage_error = str(error)
         resolved_runtime.logger.exception('Batch processing failed for batch_id=%s', batch_id)
         for row in rows:
+            _require_active_batch(batch_id, runtime=resolved_runtime)
             if row.get('status') == 'complete':
                 continue
             row['status'] = 'error'
@@ -2403,17 +2533,28 @@ def process_batch_job(batch_id, runtime=None):
                 row['failed_stage'] = 'batch_pipeline'
             _release_row_audio_quota(row, row.get('audio_quota_actual_bytes', 0), runtime=resolved_runtime)
             _refund_failed_row(batch, row, runtime=resolved_runtime)
-            _finalize_row_job_log(batch, row, runtime=resolved_runtime)
+            _finalize_row_job_log(batch, row, runtime=resolved_runtime, require_active=True)
+            _require_active_batch(batch_id, runtime=resolved_runtime)
             _drop_persisted_audio_fetch_target(row)
             _upsert_row(batch_id, row.get('row_id', ''), row, runtime=resolved_runtime, merge=False)
     finally:
-        _finalize_batch_record(
-            batch_id,
-            batch,
-            stage_error=stage_error,
-            runtime=resolved_runtime,
-        )
-        clear_batch_audio_fetch_targets(batch_id, runtime=resolved_runtime)
+        try:
+            if _batch_worker_may_continue(batch_id, runtime=resolved_runtime):
+                _finalize_batch_record(
+                    batch_id,
+                    batch,
+                    stage_error=stage_error,
+                    runtime=resolved_runtime,
+                    require_active=True,
+                )
+        finally:
+            for row in rows:
+                local_paths = list(row.get('_local_paths', []) or [])
+                for field in ('slides_local_path', 'audio_local_path'):
+                    if row.get(field) and row[field] not in local_paths:
+                        local_paths.append(row[field])
+                resolved_runtime.cleanup_files(local_paths, row.get('_gemini_files', []) or [])
+            clear_batch_audio_fetch_targets(batch_id, runtime=resolved_runtime)
 
 
 def get_batch_status(batch_id, runtime=None, *, rows_limit=None):

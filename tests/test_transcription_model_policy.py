@@ -91,6 +91,7 @@ def test_single_transcription_pipelines_use_flash_high(core, monkeypatch, tmp_pa
 @pytest.mark.parametrize('mode', ['interview', 'audio'])
 def test_instant_batch_transcription_payload_and_billing(core, monkeypatch, fake_provider, mode):
     calls, _, _ = fake_provider
+    batch_orchestrator._upsert_batch('test-batch', {'status': 'processing'}, runtime=core, merge=False)
     monkeypatch.setattr(instant_batch_orchestrator, '_upsert_row_progress', lambda *args, **kwargs: None)
     monkeypatch.setattr(batch_orchestrator, '_upsert_row', lambda *args, **kwargs: None)
     row = {'row_id': 'synthetic', 'audio_file_uri': 'https://example.test/audio', 'audio_mime_type': 'audio/mpeg'}
