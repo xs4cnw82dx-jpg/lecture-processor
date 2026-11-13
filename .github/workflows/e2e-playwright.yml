@@ -7,7 +7,7 @@ on:
 jobs:
   playwright-e2e:
     name: Playwright E2E Smoke
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       SENTRY_DSN_BACKEND: ""
       SENTRY_DSN_FRONTEND: ""
