@@ -1041,19 +1041,47 @@ def regenerate_study_tools_for_pack(job_id, pack_id, runtime=None):
                 input_modality=stage_usage.get('input_modality') or 'text',
             )
 
-        pack_doc.reference.update(
-            {
-                'flashcards': flashcards,
-                'test_questions': test_questions,
-                'flashcards_count': len(flashcards),
-                'test_questions_count': len(test_questions),
-                'study_features': job_data.get('study_features', 'both'),
-                'flashcard_selection': job_data.get('flashcard_selection', '20'),
-                'question_selection': job_data.get('question_selection', '10'),
-                'study_generation_error': study_error,
-                'updated_at': resolved_runtime.time.time(),
-            }
-        )
+        study_features = job_data.get('study_features', 'both')
+        replace_flashcards = study_features in ('flashcards', 'both') and bool(flashcards)
+        replace_questions = study_features in ('test', 'both') and bool(test_questions)
+        if not (replace_flashcards or replace_questions):
+            raise RuntimeError(study_error or 'No requested study materials were generated.')
+
+        updates = {
+            'study_generation_error': study_error,
+            'updated_at': resolved_runtime.time.time(),
+        }
+        if replace_flashcards:
+            images_by_front = {}
+            for previous_card in (pack.get('flashcards') or []):
+                if not isinstance(previous_card, dict) or not isinstance(previous_card.get('front'), str):
+                    continue
+                if not isinstance(previous_card.get('image_ids'), list):
+                    continue
+                image_ids = images_by_front.setdefault(previous_card['front'], [])
+                for image_id in previous_card['image_ids']:
+                    if isinstance(image_id, str) and image_id and image_id not in image_ids:
+                        image_ids.append(image_id)
+            for card in flashcards:
+                if card.get('front') in images_by_front:
+                    card['image_ids'] = list(images_by_front[card['front']])
+            updates.update(
+                flashcards=flashcards,
+                flashcards_count=len(flashcards),
+                flashcard_selection=job_data.get('flashcard_selection', '20'),
+            )
+        else:
+            flashcards = pack.get('flashcards') or []
+        if replace_questions:
+            updates.update(
+                test_questions=test_questions,
+                test_questions_count=len(test_questions),
+                question_selection=job_data.get('question_selection', '10'),
+            )
+        else:
+            test_questions = pack.get('test_questions') or []
+        updates['study_features'] = 'both' if flashcards and test_questions else ('flashcards' if flashcards else 'test')
+        pack_doc.reference.update(updates)
         set_fields(
             status='complete',
             step=1,

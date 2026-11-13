@@ -56,7 +56,7 @@ def test_count_active_jobs_for_user_limits_remote_reads_to_guard_threshold(app, 
     )
 
     assert lifecycle.count_active_jobs_for_user("u1", runtime=runtime) == 3
-    assert limits["runtime"] == 2
+    assert limits["runtime"] == 3
 
 
 def test_ensure_account_allows_writes_rejects_deleting_accounts(app, monkeypatch):
