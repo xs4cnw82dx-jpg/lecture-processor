@@ -143,6 +143,32 @@ def test_unrequested_material_cannot_make_an_empty_regeneration_succeed(regenera
     assert state['refunds'] == [('synthetic-owner', 1, 'runtime-job:synthetic-job:extras', 1)]
 
 
+@pytest.mark.parametrize('missing_section', ['flashcards', 'test_questions'])
+@pytest.mark.parametrize('missing_kind', ['empty', 'omitted', 'invalid'])
+def test_partial_regeneration_preserves_the_section_without_valid_output(regeneration, missing_section, missing_kind):
+    state, run = regeneration
+    original = deepcopy(state['pack'])
+    generated = generated_materials()
+    if missing_kind == 'omitted':
+        generated.pop(missing_section)
+    else:
+        generated[missing_section] = [] if missing_kind == 'empty' else [{'unrelated': 'Invalid item'}]
+
+    run(json.dumps(generated), features='both')
+
+    selection_field = 'flashcard_selection' if missing_section == 'flashcards' else 'question_selection'
+    for field in (missing_section, f'{missing_section}_count', selection_field):
+        assert state['pack'][field] == original[field]
+        assert field not in state['updates'][0]
+    updated_section = 'test_questions' if missing_section == 'flashcards' else 'flashcards'
+    assert state['pack'][updated_section] != original[updated_section]
+    assert state['job']['status'] == 'complete'
+    assert state['job']['flashcards'] == state['pack']['flashcards']
+    assert state['job']['test_questions'] == state['pack']['test_questions']
+    assert state['pack']['study_features'] == 'both'
+    assert state['refunds'] == []
+
+
 @pytest.mark.parametrize('features', ['flashcards', 'test', 'both'])
 def test_regeneration_only_replaces_selected_materials(regeneration, features):
     state, run = regeneration
@@ -174,6 +200,22 @@ def test_regeneration_only_replaces_selected_materials(regeneration, features):
             assert field not in state['updates'][0]
     assert state['job']['flashcards'] == state['pack']['flashcards']
     assert state['job']['test_questions'] == state['pack']['test_questions']
+    assert state['pack']['study_features'] == 'both'
+
+
+@pytest.mark.parametrize('features', ['flashcards', 'test'])
+def test_regeneration_metadata_describes_the_saved_sections(regeneration, features):
+    state, run = regeneration
+    empty_section = 'test_questions' if features == 'flashcards' else 'flashcards'
+    state['pack'][empty_section] = []
+    state['pack'][f'{empty_section}_count'] = 0
+
+    run(json.dumps(generated_materials()), features=features)
+
+    assert state['pack']['study_features'] == features
+    assert state['pack'][empty_section] == []
+    assert state['job']['status'] == 'complete'
+    assert state['refunds'] == []
 
 
 def test_regeneration_retains_images_by_front_when_cards_move(regeneration):

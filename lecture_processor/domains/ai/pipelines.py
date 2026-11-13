@@ -1042,13 +1042,12 @@ def regenerate_study_tools_for_pack(job_id, pack_id, runtime=None):
             )
 
         study_features = job_data.get('study_features', 'both')
-        replace_flashcards = study_features in ('flashcards', 'both')
-        replace_questions = study_features in ('test', 'both')
-        if not ((replace_flashcards and flashcards) or (replace_questions and test_questions)):
+        replace_flashcards = study_features in ('flashcards', 'both') and bool(flashcards)
+        replace_questions = study_features in ('test', 'both') and bool(test_questions)
+        if not (replace_flashcards or replace_questions):
             raise RuntimeError(study_error or 'No requested study materials were generated.')
 
         updates = {
-            'study_features': study_features,
             'study_generation_error': study_error,
             'updated_at': resolved_runtime.time.time(),
         }
@@ -1081,6 +1080,7 @@ def regenerate_study_tools_for_pack(job_id, pack_id, runtime=None):
             )
         else:
             test_questions = pack.get('test_questions') or []
+        updates['study_features'] = 'both' if flashcards and test_questions else ('flashcards' if flashcards else 'test')
         pack_doc.reference.update(updates)
         set_fields(
             status='complete',
