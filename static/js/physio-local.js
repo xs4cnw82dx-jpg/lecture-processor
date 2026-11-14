@@ -358,7 +358,7 @@
       marks[activeIndex].classList.remove('is-current');
       activeIndex = (index + marks.length) % marks.length;
       marks[activeIndex].classList.add('is-current');
-      marks[activeIndex].scrollIntoView({ block: 'center', behavior: 'smooth' });
+      marks[activeIndex].scrollIntoView({ block: 'center', behavior: window.LectureProcessorUx && window.LectureProcessorUx.prefersReducedMotion && window.LectureProcessorUx.prefersReducedMotion() ? 'auto' : 'smooth' });
     }
     marks[0].classList.add('is-current');
     $('[data-match-prev]', nav).addEventListener('click', function () { show(activeIndex - 1); });

@@ -11,6 +11,7 @@
   var authPanel = document.getElementById('buy-credits-auth-panel');
   var signInLink = document.getElementById('buy-credits-signin-link');
   var historyList = document.getElementById('purchase-history-list');
+  var renderedPurchases = null;
   var refreshHistoryBtn = document.getElementById('refresh-purchase-history-btn');
   var checkoutBusy = false;
   var checkoutAttempt = 0;
@@ -164,6 +165,7 @@
   }
 
   function setHistoryEmpty(message) {
+    renderedPurchases = null;
     if (!historyList) return;
     historyList.innerHTML = '';
     var el = document.createElement('div');
@@ -179,6 +181,7 @@
       setHistoryEmpty('No purchases yet.');
       return;
     }
+    renderedPurchases = items;
 
     items.forEach(function (purchase) {
       var row = document.createElement('div');
@@ -345,9 +348,14 @@
     if (event.persisted) resetCheckoutNavigation();
   });
 
-  if (displayFormatUtils && typeof displayFormatUtils.applyPricingCatalog === 'function') {
-    displayFormatUtils.applyPricingCatalog(document);
+  function refreshPriceLocale() {
+    if (displayFormatUtils && typeof displayFormatUtils.applyPricingCatalog === 'function') {
+      displayFormatUtils.applyPricingCatalog(document);
+    }
+    if (renderedPurchases) renderPurchaseHistory(renderedPurchases);
   }
+  refreshPriceLocale();
+  window.addEventListener('lp:language-changed', refreshPriceLocale);
 
   if (refreshHistoryBtn) {
     refreshHistoryBtn.addEventListener('click', function () {

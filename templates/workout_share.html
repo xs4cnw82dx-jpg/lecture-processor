@@ -7,13 +7,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#2558d9">
   <title>Shared Workout</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/workout-share.css') }}">
 </head>
 <body data-workout-share-token="{{ share_token|e }}">
-  <main class="share-workout-shell">
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <main class="share-workout-shell" id="main-content" tabindex="-1">
     <header class="share-workout-brand"><span aria-hidden="true">W</span><div><strong><a href="/">Lecture Processor · Workout</a></strong><small>Shared read-only snapshot</small></div></header>
     <section class="share-workout-loading" id="share-workout-loading"><div></div><p>Loading workout…</p></section>
     <article class="share-workout-card" id="share-workout-card" hidden>

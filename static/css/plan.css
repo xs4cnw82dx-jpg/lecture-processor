@@ -41,8 +41,8 @@
     }
     input,textarea,select,button{font-family:inherit}
     a:focus-visible, button:focus-visible, [role="button"]:focus-visible, [role="menuitem"]:focus-visible, [role="option"]:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible{
-      outline:2px solid var(--primary);
-      outline-offset:2px;
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 2px;
       box-shadow:0 0 0 3px rgba(37,88,217,.16);
     }
     button:focus:not(:focus-visible), a:focus:not(:focus-visible){outline:none;box-shadow:none}
@@ -94,7 +94,7 @@
     .field{display:flex;flex-direction:column;gap:6px}
     .field label{font-size:.76rem;font-weight:700;color:var(--theme-ink, var(--gray-700));text-transform:uppercase;letter-spacing:.06em}
     .input{height:46px;border:1px solid var(--theme-line, var(--gray-300));border-radius:var(--radius-md);padding:0 12px;font-size:1rem;min-width:170px;background:var(--theme-surface, var(--white));color:var(--theme-ink, var(--gray-900))}
-    .input:focus{outline:none;border-color:rgba(37,88,217,.6);box-shadow:0 0 0 3px rgba(37,88,217,.12)}
+    .input:focus{outline: 2px solid var(--focus-ring);border-color:rgba(37,88,217,.6);box-shadow:0 0 0 3px rgba(37,88,217,.12); outline-offset: 2px; }
 
     .folders-wrap{overflow:auto}
     .folders{width:100%;border-collapse:separate;border-spacing:0;overflow:hidden;border:1px solid var(--theme-line, var(--gray-200));border-radius:var(--radius-md);min-width:860px;background:var(--theme-surface, var(--white))}
@@ -334,7 +334,7 @@
       box-shadow:none!important;
       z-index:2;
     }
-    .flatpickr-day.today{border-color:transparent!important;background:rgba(37,88,217,.06)!important;box-shadow:inset 0 0 0 2px var(--primary-light)!important;z-index:1}
+    .flatpickr-day.today{border-color:transparent!important;background:rgba(37,88,217,.06)!important;box-shadow:inset 0 0 0 2px var(--focus-ring)!important;z-index:1}
     .flatpickr-day.today.selected,.flatpickr-day.today.startRange,.flatpickr-day.today.endRange,.flatpickr-day.today.selected:hover,.flatpickr-day.today.startRange:hover,.flatpickr-day.today.endRange:hover{box-shadow:none!important}
     .flatpickr-day:hover{background:rgba(37,88,217,.11)!important;box-shadow:none!important}
     .flatpickr-input,.flatpickr-input[readonly]{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif!important;letter-spacing:0}

@@ -12,7 +12,7 @@
 <body>
   {% set public_page = '' %}
   {% include '_public_header.html' %}
-  <main class="error-page">
+  <main class="error-page" id="main-content" tabindex="-1">
     <div class="error-illustration" aria-hidden="true"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2"><rect x="13" y="9" width="38" height="46" rx="9"/><path d="M23 23h18M23 31h10M24 43l6-6m-6 0 6 6"/></svg></div>
     <span class="error-code">{{ error_code }}</span>
     <h1>{{ error_title }}</h1>

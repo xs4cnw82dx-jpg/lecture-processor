@@ -6,9 +6,6 @@
   {% include '_preferences_head.html' %}
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Help Center | Lecture Processor</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/public-header.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/support-pages.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
@@ -17,7 +14,7 @@
   {% set public_page = 'helpcenter' %}
   {% include '_public_header.html' %}
 
-  <main class="support-shell">
+  <main class="support-shell" id="main-content" tabindex="-1">
     <section class="support-hero">
       <span class="support-badge">Here to help</span>
       <h1>Help Center</h1>

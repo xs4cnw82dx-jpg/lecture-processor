@@ -12,9 +12,6 @@
   <title>Voice Notes</title>
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.svg') }}">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
@@ -25,7 +22,7 @@
 <body class="voice-notes-body">
   {% set shell_title = 'Voice Notes' %}
   {% include '_app_shell.html' %}
-  <main class="app-shell-page voice-page" id="voice-page">
+  <main class="app-shell-page voice-page" id="main-content" tabindex="-1">
     <section class="voice-auth" id="voice-auth" hidden>
       <div class="voice-auth-card">
         <p class="voice-eyebrow">Private sync</p>

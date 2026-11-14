@@ -706,7 +706,7 @@
   });
 
   function prefersReducedMotion() {
-    return global.matchMedia && global.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    return !!(global.matchMedia && global.matchMedia('(prefers-reduced-motion: reduce)').matches);
   }
 
   function enhanceDisclosures(scope) {
@@ -1233,6 +1233,7 @@
   }
 
   global.LectureProcessorUx = {
+    prefersReducedMotion: prefersReducedMotion,
     setHidden: setHidden,
     setBodyScrollLocked: setBodyScrollLocked,
     closeEnhancedSelectMenus: closeEnhancedSelectMenus,

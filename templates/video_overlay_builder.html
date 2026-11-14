@@ -5,16 +5,14 @@
   {% include '_preferences_head.html' %}
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Video Overlay Builder · Lecture Processor</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/video-overlay-builder.css') }}">
 </head>
 <body class="overlay-builder-fullscreen">
-  <main class="overlay-builder-page">
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <main class="overlay-builder-page" id="main-content" tabindex="-1">
     <header class="overlay-builder-topbar" aria-label="Video overlay builder header">
       <div class="overlay-builder-title">
         <a class="overlay-back-link" href="/tools">Back to tools</a>

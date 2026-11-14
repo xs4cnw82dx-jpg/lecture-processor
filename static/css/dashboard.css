@@ -7,7 +7,7 @@
 .hero-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 18px; }
 .hero-btn, .empty-state-link { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 42px; padding: 10px 15px; border: 1px solid var(--theme-accent-line, #d1dbea); border-radius: 11px; background: var(--theme-surface, white); color: var(--theme-ink, #263650); text-decoration: none; font: inherit; font-size: .84rem; font-weight: 700; cursor: pointer; transition: background .16s, border-color .16s, box-shadow .16s; }
 .hero-btn:hover, .empty-state-link:hover { background: var(--theme-accent-soft, #eef3fe); border-color: var(--theme-accent-line, #a7bdea); }
-.hero-btn:focus-visible, .empty-state-link:focus-visible, .list-item:focus-visible { outline: 3px solid var(--theme-accent-line, #a7bdea); outline-offset: 3px; }
+.hero-btn:focus-visible, .empty-state-link:focus-visible, .list-item:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .dashboard-continue { display: flex; align-items: center; justify-content: space-between; gap: 24px; background: linear-gradient(120deg, #172e66, #2859cf); border-radius: 18px; color: #fff; padding: 28px; }
 .dashboard-continue .dashboard-eyebrow { color: #bfd1ff; }
 .dashboard-continue h2 { font-size: clamp(1.2rem, 2vw, 1.65rem); letter-spacing: -.025em; margin: 0 0 9px; overflow-wrap: anywhere; }
@@ -32,7 +32,7 @@
 @media (max-width: 600px) { .dashboard-page { gap: 16px; }.dashboard-grid { gap: 10px; grid-template-columns: 1fr; }.dashboard-page .stat-card { min-height: 0; padding: 18px; grid-template-columns: 1fr auto; align-items: center; }.stat-sub,.goal-track { grid-column: 1/-1; }.dashboard-continue,.dashboard-page .shell-panel { padding: 22px; }.dashboard-auth-banner { flex-direction: column; align-items: flex-start; }.section-head { flex-wrap: wrap; } }
 
 .dashboard-text-action { color: var(--theme-accent-ink, #2558d9); border: 0; padding: 0; background: transparent; font: inherit; font-weight: 600; cursor: pointer; }
-.dashboard-text-action:focus-visible { outline: 3px solid var(--theme-accent-line, #a7bdea); outline-offset: 4px; border-radius: 4px; }
+.dashboard-text-action:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 4px; }
 .dashboard-due-panel { margin-bottom: 24px; }
 .dashboard-due-panel > summary { margin: -8px; }
 .dashboard-due-pack { padding: 22px 0; border-bottom: 1px solid var(--theme-accent-line, #e4eaf4); }

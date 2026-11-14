@@ -22,7 +22,7 @@ input[type="checkbox"] { appearance: none; background: var(--theme-surface, #fff
 input[type="checkbox"]::before { color: #fff; content: "✓"; font-size: 12px; font-weight: 900; line-height: 1; opacity: 0; transform: scale(.7); transition: .15s ease; }
 input[type="checkbox"]:checked { background: var(--green); border-color: var(--green); box-shadow: 0 0 0 3px rgba(23, 107, 89, .1); }
 input[type="checkbox"]:checked::before { opacity: 1; transform: scale(1); }
-input[type="checkbox"]:focus-visible { border-color: var(--green); outline: 3px solid rgba(23, 107, 89, .16); outline-offset: 2px; }
+input[type="checkbox"]:focus-visible { border-color: var(--green); outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .sr-only { height: 1px; margin: -1px; overflow: hidden; position: absolute; width: 1px; clip: rect(0,0,0,0); }
 .clinical-app { display: grid; grid-template: 74px minmax(0, 1fr) / 210px minmax(480px, 1fr) minmax(310px, 370px); height: 100vh; overflow: hidden; }
 
@@ -212,7 +212,7 @@ input[type="checkbox"]:focus-visible { border-color: var(--green); outline: 3px 
 .physio-document-toolbar a { display:inline-flex; align-items:center; min-height:40px; padding:9px 12px; border:1px solid var(--theme-line, var(--line)); border-radius:10px; background:var(--theme-surface, #fff); color:var(--theme-accent-ink, var(--green)); font-size:12px; font-weight:650; text-decoration:none; transition:background .16s ease,border-color .16s ease; }
 .physio-document-toolbar a:hover { background:var(--theme-accent-soft, var(--mint)); border-color:var(--green); }
 .region-map-disclosure > summary { cursor:pointer; font-size:12px; color:var(--theme-muted, var(--muted)); font-weight:650; padding:8px 0; }
-.clinical-app :focus-visible, .clinical-dialog :focus-visible { outline:3px solid #2558d950; outline-offset:3px; }
+.clinical-app :focus-visible, .clinical-dialog :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .clinical-app .app-select-upgraded { min-width:0; width:100%; }
 .clinical-app .app-select-button { font-size:12px; }
 .clinical-app .app-select-label { white-space:normal; }

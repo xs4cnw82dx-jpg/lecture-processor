@@ -6,9 +6,6 @@
   {% include '_preferences_head.html' %}
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ study_document_title or 'Study Library' }}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
@@ -18,7 +15,7 @@
 <body data-study-entry-mode="{{ study_entry_mode or '' }}">
   {% set shell_title = study_shell_title or 'Study Library' %}
   {% include '_app_shell.html' %}
-  <main class="app-shell-page study-page">
+  <main class="app-shell-page study-page" id="main-content" tabindex="-1">
   <div class="container">
     <header class="library-page-header">
       <div><p class="library-eyebrow">Your study workspace</p><h1 id="study-page-heading">{{ study_shell_title or 'Study Library' }}</h1></div>
@@ -285,15 +282,15 @@
                         <div class="highlight-toolbar" id="highlight-toolbar">
                           <div class="hl-color-group">
                             <button type="button" class="hl-btn hl-yellow active" data-hl-color="yellow"
-                              title="Yellow highlight"></button>
+                              title="Yellow highlight" aria-label="Yellow highlight" aria-pressed="true"></button>
                             <button type="button" class="hl-btn hl-green" data-hl-color="green"
-                              title="Green highlight"></button>
-                            <button type="button" class="hl-btn hl-blue" data-hl-color="blue" title="Blue highlight"></button>
-                            <button type="button" class="hl-btn hl-pink" data-hl-color="pink" title="Pink highlight"></button>
+                              title="Green highlight" aria-label="Green highlight" aria-pressed="false"></button>
+                            <button type="button" class="hl-btn hl-blue" data-hl-color="blue" title="Blue highlight" aria-label="Blue highlight" aria-pressed="false"></button>
+                            <button type="button" class="hl-btn hl-pink" data-hl-color="pink" title="Pink highlight" aria-label="Pink highlight" aria-pressed="false"></button>
                           </div>
                           <div class="hl-action-group">
                             <button type="button" class="hl-btn hl-action hl-eraser" data-hl-color="eraser"
-                              title="Eraser mode">Eraser</button>
+                              title="Eraser mode" aria-label="Eraser mode" aria-pressed="false">Eraser</button>
                             <button type="button" class="hl-btn hl-action" id="hl-undo" title="Undo annotation (Ctrl/Cmd+Z)" aria-keyshortcuts="Control+Z Meta+Z">Undo</button>
                             <button type="button" class="hl-btn hl-action" id="hl-redo" title="Redo annotation (Ctrl/Cmd+Shift+Z or Ctrl+Y)" aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y">Redo</button>
                             <button type="button" class="hl-btn hl-action hl-clear-all" id="hl-clear-all"
@@ -554,7 +551,7 @@
               <div class="lesson-card-desc">Pair terms with definitions</div>
               <div class="lesson-card-badge" id="match-min-badge" hidden>Needs 6+ cards</div>
             </button>
-            <button type="button" class="lesson-card" data-lesson="notes" id="lesson-card-notes" aria-pressed="false"><div class="lesson-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5C8 3 5 3 3 4v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-2-1-6-1-9 1Zm0 0v15"/></svg></div><div class="lesson-card-title">Read notes</div><div class="lesson-card-desc">Read, recall and reflect</div></button>
+            <button type="button" class="lesson-card" data-lesson="notes" id="lesson-card-notes" aria-pressed="false"><div class="lesson-card-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div><div class="lesson-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5C8 3 5 3 3 4v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-2-1-6-1-9 1Zm0 0v15"/></svg></div><div class="lesson-card-title">Read notes</div><div class="lesson-card-desc">Read, recall and reflect</div></button>
           </div>
         </div>
         <div class="setup-pane" id="setup-pane-settings" role="tabpanel" aria-labelledby="setup-tab-settings"
@@ -814,7 +811,7 @@
           <div class="builder-stat">Status: <strong id="builder-stat-dirty" class="builder-status pending" role="status" aria-live="polite">Not saved yet</strong></div>
         </div>
       </aside>
-      <main class="builder-main">
+      <section class="builder-main">
         <div class="builder-main-inner">
           <div class="builder-headline">
             <div>
@@ -901,7 +898,7 @@
             </div>
           </section>
         </div>
-      </main>
+      </section>
     </div>
   </div>
 

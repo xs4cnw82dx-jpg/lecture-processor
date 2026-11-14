@@ -70,7 +70,7 @@
     input:focus-visible,
     select:focus-visible,
     textarea:focus-visible {
-      outline: 2px solid var(--primary);
+      outline: 2px solid var(--focus-ring);
       outline-offset: 2px;
       box-shadow: 0 0 0 3px rgba(37, 88, 217, .16);
     }
@@ -586,9 +586,10 @@
     .field input:focus,
     .field textarea:focus,
     .field select:focus {
-      outline: none;
+      outline: 2px solid var(--focus-ring);
       border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(37, 88, 217, .1)
+      box-shadow: 0 0 0 3px rgba(37, 88, 217, .1);
+      outline-offset: 2px;
     }
 
     .field textarea {
@@ -787,9 +788,10 @@
     .item:hover { border-color: var(--theme-line, var(--gray-200)); background: var(--theme-surface-soft, #f5f7fb); }
 
     .item:focus-visible {
-      outline: none;
+      outline: 2px solid var(--focus-ring);
       border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(37, 88, 217, .12)
+      box-shadow: 0 0 0 3px rgba(37, 88, 217, .12);
+      outline-offset: 2px;
     }
 
     .item.active { border-color: var(--theme-accent-line, #bed0f8); background: var(--theme-accent-soft, #eaf0ff); box-shadow: none; }
@@ -828,12 +830,13 @@
     }
 
     .pack-row-open:focus-visible {
-      outline: 2px solid var(--primary);
-      outline-offset: 3px;
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 2px;
       border-radius: 8px
     }
 
     .pack-select-control {
+      position: relative;
       flex: 0 0 auto;
       display: inline-flex;
       align-items: center;
@@ -865,6 +868,11 @@
     .pack-select-control input:focus-visible + .pack-select-box {
       border-color: var(--primary);
       box-shadow: 0 0 0 3px rgba(37, 88, 217, .12), inset 0 0 0 2px var(--white)
+    }
+
+    .pack-select-control input:focus-visible + .pack-select-box {
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 2px;
     }
 
     .pack-select-control input:checked + .pack-select-box { border-color: var(--primary); background: var(--primary); box-shadow: inset 0 0 0 3px var(--white); }
@@ -936,14 +944,15 @@
     .folder-collapse-btn svg { width:17px; height:17px; transition:transform .2s ease; }
     .folder-collapse-btn[aria-expanded="true"] svg { transform:rotate(90deg); }
     .folder-collapse-btn:hover { background:var(--theme-accent-soft, #e2eafa); color:var(--theme-accent-ink, var(--primary)); }
-    .folder-collapse-btn:focus-visible { outline:3px solid #2558d933; outline-offset:2px; }
+    .folder-collapse-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
     .library-folders .folder-action-menu > summary { width:30px; min-width:30px; height:34px; min-height:34px; padding:6px; border-color:transparent; background:transparent; box-shadow:none; }
     .library-folders .folder-depth-1 { margin-left:14px; }
     .library-folders .folder-depth-2,.library-folders .folder-depth-3,.library-folders .folder-depth-4,.library-folders .folder-depth-5,.library-folders .folder-depth-6,.library-folders .folder-depth-7,.library-folders .folder-depth-8 { margin-left:24px; }
     .pack-save-status.builder-status.saved { font-size:11px; font-weight:500; border:0; background:transparent; color:var(--theme-muted, #738078); padding:2px 0; letter-spacing:0; }
     .folder-row-main:focus-visible {
-      outline: none;
-      box-shadow: 0 0 0 3px rgba(37, 88, 217, .12)
+      outline: 2px solid var(--focus-ring);
+      box-shadow: 0 0 0 3px rgba(37, 88, 217, .12);
+      outline-offset: 2px;
     }
 
     .folder-row-main .item-sub {
@@ -1000,7 +1009,7 @@
     .folder-action-menu summary { display: flex; align-items: center; justify-content: center; border: 0; border-radius: 7px; color: var(--theme-muted, var(--gray-500)); cursor: pointer; font-size: .8rem; font-weight: 750; width: 26px; height: 32px; list-style: none; }
 
     .folder-action-menu summary:focus-visible {
-      outline: 2px solid var(--primary);
+      outline: 2px solid var(--focus-ring);
       outline-offset: 2px
     }
 
@@ -1728,8 +1737,8 @@
     }
 
     .hl-btn {
-      width: 22px;
-      height: 22px;
+      width: 32px;
+      height: 32px;
       border-radius: 50%;
       border: 1.5px solid transparent;
       cursor: pointer;
@@ -1907,6 +1916,7 @@
     }
 
     mark[data-hl] {
+      color: inherit;
       cursor: pointer;
       border-radius: 2px;
       padding: 1px 0;
@@ -2237,9 +2247,10 @@
     }
 
     .mode-picker-card:focus-visible {
-      outline: none;
+      outline: 2px solid var(--focus-ring);
       border-color: var(--primary);
-      box-shadow: 0 0 0 4px rgba(37, 88, 217, .12)
+      box-shadow: 0 0 0 4px rgba(37, 88, 217, .12);
+      outline-offset: 2px;
     }
 
     .mode-picker-card svg {
@@ -2868,7 +2879,7 @@
     .flatpickr-day.today {
       border-color: transparent !important;
       background: rgba(37, 88, 217, .06) !important;
-      box-shadow: inset 0 0 0 2px var(--primary-light) !important;
+      box-shadow: inset 0 0 0 2px var(--focus-ring) !important;
       z-index: 1;
     }
 
@@ -3294,7 +3305,7 @@
     }
 
     .peek-row:focus-visible {
-      outline: 2px solid rgba(37, 88, 217, .5);
+      outline: 2px solid var(--focus-ring);
       outline-offset: 2px;
     }
 
@@ -3786,9 +3797,10 @@
     }
 
     .write-input:focus {
-      outline: none;
+      outline: 2px solid var(--focus-ring);
       border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(37, 88, 217, .1)
+      box-shadow: 0 0 0 3px rgba(37, 88, 217, .1);
+      outline-offset: 2px;
     }
 
     .write-input.correct-input {
@@ -3880,7 +3892,7 @@
     .lesson-card:focus-visible,
     .setting-row:focus-visible,
     .match-cell:focus-visible {
-      outline: 3px solid rgba(37, 88, 217, .35);
+      outline: 2px solid var(--focus-ring);
       outline-offset: 2px
     }
 
@@ -5240,9 +5252,10 @@
     }
 
     .builder-select:focus {
-      outline: none;
+      outline: 2px solid var(--focus-ring);
       border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(37, 88, 217, .1)
+      box-shadow: 0 0 0 3px rgba(37, 88, 217, .1);
+      outline-offset: 2px;
     }
 
     .builder-exit-modal .modal {

@@ -5,9 +5,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Settings · Lecture Processor</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
@@ -16,7 +13,7 @@
 <body>
   {% set shell_title = 'Settings' %}
   {% include '_app_shell.html' %}
-  <main class="app-shell-page settings-page">
+  <main class="app-shell-page settings-page" id="main-content" tabindex="-1">
     <div class="settings-container">
       <header class="settings-header">
         <p class="settings-eyebrow">MAKE IT YOURS</p>

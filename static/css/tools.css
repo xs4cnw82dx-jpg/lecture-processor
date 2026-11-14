@@ -222,9 +222,10 @@ textarea {
 }
 
 .prompt-input:focus {
-  outline: none;
+  outline: 2px solid var(--focus-ring);
   border-color: var(--theme-accent-line, rgba(79, 70, 229, 0.55));
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+  outline-offset: 2px;
 }
 
 .prompt-templates {
@@ -255,9 +256,10 @@ textarea {
 }
 
 .url-input:focus {
-  outline: none;
+  outline: 2px solid var(--focus-ring);
   border-color: var(--theme-accent-line, rgba(79, 70, 229, 0.55));
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+  outline-offset: 2px;
 }
 
 .source-toggle {

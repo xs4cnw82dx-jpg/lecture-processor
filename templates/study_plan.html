@@ -5,9 +5,6 @@
   {% include '_preferences_head.html' %}
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Study Plan - Lecture Processor</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
@@ -16,7 +13,7 @@
 <body>
   {% set shell_title = 'Study Plan' %}
   {% include '_app_shell.html' %}
-  <main class="app-shell-page study-plan-page">
+  <main class="app-shell-page study-plan-page" id="main-content" tabindex="-1">
     <div class="study-plan-container">
       <header class="study-plan-header">
         <div>
@@ -184,7 +181,6 @@
           Timing will use your recent study pace instead of a generic estimate.
         </div>
         <div class="wizard-pack-list" id="wizard-pack-list"></div>
-        <div class="field-error" id="wizard-pack-error" role="alert" hidden></div>
       </section>
       <section class="wizard-step" data-wizard-step="2" hidden>
         <p class="study-plan-kicker">Step 2 of 4</p>
@@ -222,6 +218,7 @@
       </div>
       <div class="wizard-footer"><div id="wizard-action-feedback" class="wizard-action-feedback" role="alert" hidden><p id="wizard-action-message"></p><div><button type="button" class="btn" id="wizard-refresh-preview-btn" hidden>Refresh preview</button><button type="button" class="btn" id="wizard-adjust-times-btn" hidden>Change study times</button></div></div><div class="wizard-actions">
         <button type="button" class="btn" id="wizard-back-btn" hidden>Back</button>
+        <div class="field-error wizard-footer-error" id="wizard-pack-error" role="alert" tabindex="-1" hidden></div>
         <button type="button" class="btn primary" id="wizard-next-btn">Continue</button>
       </div></div>
     </div>

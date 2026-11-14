@@ -4,7 +4,7 @@
 .study-picture-item { display: flex; flex-direction: column; align-items: center; gap: 6px; max-width: 100%; }
 .study-picture-open { cursor: zoom-in; border: 1px solid var(--theme-line, #dfe5ef); border-radius: 11px; background: var(--theme-surface, #fff); padding: 4px; transition: border-color .16s, box-shadow .16s; }
 .study-picture-open:hover { border-color: var(--theme-accent-line, #8daeee); box-shadow: 0 4px 14px #2558d919; }
-.study-picture-open:focus-visible { outline: 3px solid var(--theme-accent-line, #aac1ef); outline-offset: 3px; }
+.study-picture-open:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .study-picture-open img { display: block; object-fit: contain; width: 130px; height: 150px; }
 .study-picture-editor .study-picture-gallery { justify-content: flex-start; margin: 0; gap: 8px; }
 .study-picture-editor .study-picture-open img { width: 76px; height: 68px; }

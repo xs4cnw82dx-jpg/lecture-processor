@@ -31,7 +31,7 @@
 .physio-launcher-context li { display:grid; gap:5px; padding-left:16px; border-left:2px solid var(--theme-accent-line, #d8e3f9); }
 .physio-launcher-context strong { font-size:14px; }
 .physio-launcher-context span:not(.physio-launcher-kicker), .physio-launcher-context p { font-size:12px; color:var(--theme-muted, #65718a); line-height:1.6; }
-.physio-launcher :focus-visible { outline:3px solid #2558d94a; outline-offset:3px; }
+.physio-launcher :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 @media (max-width:850px) { .physio-launcher-layout { grid-template-columns:1fr; } .physio-launcher-context { padding:4px; } }
 @media (max-width:620px) { .physio-launcher { padding:24px 16px 40px; } .physio-launcher-heading h1 { font-size:29px; } .physio-launcher-card { padding:23px; } }
 @media (prefers-reduced-motion:reduce) { .physio-launcher * { transition:none !important; } }

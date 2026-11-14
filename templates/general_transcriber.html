@@ -5,9 +5,6 @@
   {% include '_preferences_head.html' %}
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>General Transcriber · Lecture Processor</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
@@ -17,7 +14,7 @@
 <body>
   {% set shell_title = 'General Transcriber' %}
   {% include '_app_shell.html' %}
-    <main class="app-shell-page reader-page">
+    <main class="app-shell-page reader-page" id="main-content" tabindex="-1">
       <section class="reader-hero">
         <p class="workspace-eyebrow">Capture & transcribe</p><h1>General Transcriber</h1>
         <p>Turn a recording into a clear transcript you can read, copy, and keep.</p>

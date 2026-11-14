@@ -1556,7 +1556,9 @@ function setOnboardingError(message) {
 function setOnboardingLanguageSelection(value) {
     const target = String(value || 'english').trim().toLowerCase();
     languageOnboardingButtons.forEach((btn) => {
-        btn.classList.toggle('active', btn.dataset.value === target);
+        const selected = btn.dataset.value === target;
+        btn.classList.toggle('active', selected);
+        btn.setAttribute('aria-pressed', selected ? 'true' : 'false');
     });
     const showCustom = target === 'other';
     setHidden(languageOnboardingCustom, !showCustom);
@@ -1715,7 +1717,7 @@ function applyRecommendedSetup() {
     setAdvancedSettingsVisible(false);
     showToast('Recommended setup applied: Lecture Notes + Flashcards + Test.', 'success');
     try {
-        uploadSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        uploadSection.scrollIntoView({ behavior: uxUtils.prefersReducedMotion && uxUtils.prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
     } catch (_) { }
 }
 function updateQuickstartVisibility() {
@@ -3615,7 +3617,7 @@ async function processFiles() {
     setHidden(progressSpinner, false);
     showProgressSafeBanner(false);
     try {
-        progressSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        progressSection.scrollIntoView({ behavior: uxUtils.prefersReducedMotion && uxUtils.prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
     } catch (_) { }
     focusProgressSection();
     updateProgressUI(0, 'Uploading files...', steps.length);
@@ -4831,7 +4833,7 @@ newLectureButton.addEventListener('click', () => {
     resetResultsState();
     switchMode(currentMode);
     updateProcessButton();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: uxUtils.prefersReducedMotion && uxUtils.prefersReducedMotion() ? 'auto' : 'smooth' });
 });
 if (quickstartApplyBtn) {
     quickstartApplyBtn.addEventListener('click', () => {

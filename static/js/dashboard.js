@@ -15,7 +15,7 @@
   var goalFillEl = document.getElementById('dash-goal-fill');
   var sessionsList = document.getElementById('dash-sessions-list');
   var packsList = document.getElementById('dash-packs-list');
-  var dashboardPage = document.getElementById('dashboard-page');
+  var dashboardPage = document.getElementById('main-content');
   var authBanner = document.getElementById('dashboard-auth-banner');
   var DASHBOARD_CACHE_KEY = 'dashboard_summary_active_plan_v1';
   var currentUser = null;

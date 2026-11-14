@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="/static/css/physio-local.css">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
   <div class="clinical-app" data-api-base="/api/local/physio">
     <header class="clinical-header">
       <div class="clinical-brand">
@@ -79,7 +80,7 @@
       <div class="privacy-note"><span aria-hidden="true">⌂</span><p><strong>Privé op deze Mac</strong>Vault, index, bronnen en casussen verlaten deze computer niet bij normaal gebruik.</p></div>
     </aside>
 
-    <main class="clinical-main">
+    <main class="clinical-main" id="main-content" tabindex="-1">
       <div class="workspace-tabs" role="tablist" aria-label="Werkruimte">
         <button class="is-active" data-view="knowledge" role="tab">Kennisbank</button>
         <button data-view="sources" role="tab">Bronnen beheren</button>

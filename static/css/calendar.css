@@ -92,7 +92,7 @@
     .input{height:46px;border:1px solid var(--theme-line, var(--gray-300));border-radius:var(--radius-md);padding:0 14px;font-size:1rem;line-height:1.25;background:var(--theme-surface, var(--white));color:var(--theme-ink, var(--gray-900));font-family:inherit;-webkit-appearance:none;appearance:none}
     .textarea{min-height:96px;border:1px solid var(--theme-line, var(--gray-300));border-radius:var(--radius-md);padding:12px 14px;font-size:1rem;line-height:1.55;resize:vertical;background:var(--theme-surface, var(--white));color:var(--theme-ink, var(--gray-900));font-family:inherit}
     .input::placeholder,.textarea::placeholder{font-family:inherit;color:var(--theme-muted, var(--gray-400))}
-    .input:focus,.textarea:focus{outline:none;border-color:rgba(37,88,217,.6);box-shadow:0 0 0 3px rgba(37,88,217,.12)}
+    .input:focus,.textarea:focus{outline: 2px solid var(--focus-ring);border-color:rgba(37,88,217,.6);box-shadow:0 0 0 3px rgba(37,88,217,.12); outline-offset: 2px; }
     .input[aria-invalid="true"],.textarea[aria-invalid="true"]{border-color:var(--theme-danger-line, var(--danger));box-shadow:0 0 0 3px rgba(239,68,68,.12)}
     .field-error{font-size:.82rem;font-weight:700;color:var(--theme-danger-ink, #B91C1C);line-height:1.35}
     .muted{font-size:.84rem;color:var(--theme-muted, var(--gray-500));line-height:1.5}
@@ -204,7 +204,7 @@
       box-shadow:none!important;
       z-index:2;
     }
-    .flatpickr-day.today{border-color:transparent!important;background:rgba(37,88,217,.06)!important;box-shadow:inset 0 0 0 2px var(--primary-light)!important;z-index:1}
+    .flatpickr-day.today{border-color:transparent!important;background:rgba(37,88,217,.06)!important;box-shadow:inset 0 0 0 2px var(--focus-ring)!important;z-index:1}
     .flatpickr-day.today.selected,.flatpickr-day.today.startRange,.flatpickr-day.today.endRange,.flatpickr-day.today.selected:hover,.flatpickr-day.today.startRange:hover,.flatpickr-day.today.endRange:hover{box-shadow:none!important}
     .flatpickr-day:hover{background:rgba(37,88,217,.11)!important;box-shadow:none!important}
     .flatpickr-time{border-top:1px solid var(--theme-line, var(--gray-200))!important}

@@ -13,7 +13,7 @@
   var batchApiBase = isInstantBatch ? '/api/instant-batch/jobs' : '/api/batch/jobs';
   var batchKindLabel = isInstantBatch ? 'Instant batch' : 'Batch';
   var mode = ['lecture-notes', 'slides-only', 'interview', 'audio-transcription', 'text-combine'].indexOf(forcedMode) >= 0 ? forcedMode : 'lecture-notes';
-  var batchPage = document.getElementById('batch-page');
+  var batchPage = document.getElementById('main-content');
   var modeLinks = Array.prototype.slice.call(document.querySelectorAll('.mode-link[href]'));
 
   var MODE_META = {

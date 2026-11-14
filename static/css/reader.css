@@ -70,7 +70,7 @@
 .output-placeholder-icon svg { width: 26px; height: 26px; }
 .output-placeholder h3 { font-size: 1.05rem; letter-spacing: -.02em; margin: 0 0 8px; }
 .output-placeholder p { max-width: 330px; font-size: .86rem; line-height: 1.65; color: var(--theme-muted, #65718a); margin: 0; }
-.reader-page :is(button,input,textarea,[role="button"]):focus-visible { outline: 3px solid #2558d92b; outline-offset: 3px; }
+.reader-page :is(button,input,textarea,[role="button"]):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .reader-page [hidden] { display: none !important; }
 @media (max-width: 980px) { .reader-grid { grid-template-columns: 1fr; } .reader-output-card { min-height: 0; } .output-placeholder { min-height: 230px; } }
 @media (max-width: 540px) { .reader-page { gap: 20px; } .reader-input-card,.reader-output-card { padding: 20px; } .reader-auth-panel { align-items: flex-start; flex-direction: column; } .result-head { align-items: flex-start; } .output-placeholder { padding: 24px 18px; } }
