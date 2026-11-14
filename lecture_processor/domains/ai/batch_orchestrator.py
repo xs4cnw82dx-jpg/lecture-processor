@@ -4,6 +4,7 @@ import json
 import time
 import base64
 import hashlib
+import math
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -36,6 +37,8 @@ SAFE_BATCH_ROW_ID_CHARS = frozenset('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ
 BATCH_SLIDE_MEDIA_WAIT_SECONDS = 300
 BATCH_SLIDE_MEDIA_RETRY_SECONDS = 5
 BATCH_HEARTBEAT_FALLBACK_SECONDS = 30.0
+BATCH_EXECUTION_WARNING_MARGIN_SECONDS = 600
+BATCH_EXECUTION_DEFAULT_MAX_WAIT_SECONDS = 24 * 60 * 60
 BATCH_SLIDE_LOW_STORAGE_MESSAGE = 'PowerPoint conversion stopped because server storage is low.'
 
 STAGE_LABELS = {
@@ -128,6 +131,16 @@ def _batch_heartbeat_interval_seconds(runtime=None):
     return min(30.0, _batch_recovery_stale_seconds(runtime=runtime) / 3.0)
 
 
+def _batch_execution_warning_seconds(runtime):
+    try:
+        maximum = float(getattr(runtime, 'BATCH_MAX_WAIT_SECONDS', BATCH_EXECUTION_DEFAULT_MAX_WAIT_SECONDS))
+        if not math.isfinite(maximum) or maximum <= 0:
+            raise ValueError('Invalid batch maximum wait')
+    except (TypeError, ValueError, OverflowError):
+        maximum = BATCH_EXECUTION_DEFAULT_MAX_WAIT_SECONDS
+    return max(300, maximum) + BATCH_EXECUTION_WARNING_MARGIN_SECONDS
+
+
 def _heartbeat_batch(batch_id, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     if not _batch_worker_may_continue(batch_id, runtime=resolved_runtime):
@@ -144,6 +157,8 @@ def _protect_batch_worker(worker):
             if not claimed:
                 return
             stop = threading.Event()
+            started_at = time.monotonic()
+            warning_after = _batch_execution_warning_seconds(resolved_runtime)
             try:
                 interval = float(_batch_heartbeat_interval_seconds(runtime=resolved_runtime))
                 if not 0 < interval <= 30:
@@ -153,12 +168,20 @@ def _protect_batch_worker(worker):
                 interval = BATCH_HEARTBEAT_FALLBACK_SECONDS
 
             def heartbeat():
+                age_warning_logged = False
                 while not stop.wait(interval):
                     try:
                         if not _heartbeat_batch(batch_id, runtime=resolved_runtime):
                             return
                     except Exception:
                         resolved_runtime.logger.warning('Batch heartbeat failed for %s', batch_id, exc_info=True)
+                    elapsed = time.monotonic() - started_at
+                    if not age_warning_logged and elapsed > warning_after:
+                        age_warning_logged = True
+                        resolved_runtime.logger.warning(
+                            'Batch worker %s exceeded expected execution age (%.0fs; warning threshold %.0fs); work remains running',
+                            batch_id, elapsed, warning_after,
+                        )
 
             thread = threading.Thread(target=heartbeat, name='lp-batch-heartbeat', daemon=True)
             thread.start()
