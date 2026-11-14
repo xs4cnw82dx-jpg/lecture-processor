@@ -151,7 +151,7 @@ def _render_processing_page(forced_mode: str):
         sentry_capture_local=runtime.SENTRY_CAPTURE_LOCAL,
         index_results_js_asset=runtime.resolve_js_asset('js/index-results-utils.js'),
         index_js_asset=runtime.resolve_js_asset('js/index-app.js'),
-        **_shell_context(runtime=runtime, page_key=page_key),
+        **_shell_context(runtime=runtime, page_key=page_key, show_credits_pill=True),
     )
 
 
@@ -176,7 +176,7 @@ def _render_batch_page(forced_mode: str, *, instant_mode: bool = False):
         instant_mode=instant_mode,
         batch_mode_js_asset=runtime.resolve_js_asset('js/batch-mode.js'),
         batch_status_js_asset=runtime.resolve_js_asset('js/batch-status.js'),
-        **_shell_context(runtime=runtime, page_key=page_key),
+        **_shell_context(runtime=runtime, page_key=page_key, show_credits_pill=True),
     )
 
 
@@ -378,7 +378,7 @@ def document_reader_page():
         reader_subtitle='Extract notes and answers from documents with optional question prompts.',
         reader_source='document',
         reader_js_asset=runtime.resolve_js_asset('js/reader.js'),
-        **_shell_context(runtime=runtime, page_key='document-reader'),
+        **_shell_context(runtime=runtime, page_key='document-reader', show_credits_pill=True),
     )
 
 
@@ -391,7 +391,7 @@ def image_reader_page():
         reader_subtitle='Extract text and structured notes from up to five images per run.',
         reader_source='image',
         reader_js_asset=runtime.resolve_js_asset('js/reader.js'),
-        **_shell_context(runtime=runtime, page_key='image-reader'),
+        **_shell_context(runtime=runtime, page_key='image-reader', show_credits_pill=True),
     )
 
 
@@ -404,7 +404,7 @@ def url_reader_page():
         reader_subtitle='Analyze public webpage content with a focused question prompt.',
         reader_source='url',
         reader_js_asset=runtime.resolve_js_asset('js/reader.js'),
-        **_shell_context(runtime=runtime, page_key='url-reader'),
+        **_shell_context(runtime=runtime, page_key='url-reader', show_credits_pill=True),
     )
 
 
@@ -434,7 +434,7 @@ def general_transcriber_page():
     return render_template(
         'general_transcriber.html',
         general_transcriber_js_asset=runtime.resolve_js_asset('js/general-transcriber.js'),
-        **_shell_context(runtime=runtime, page_key='general-transcriber'),
+        **_shell_context(runtime=runtime, page_key='general-transcriber', show_credits_pill=True),
     )
 
 
@@ -446,7 +446,7 @@ def voice_notes_page():
         study_api_js_asset=runtime.resolve_js_asset('js/study-api-utils.js'),
         voice_notes_utils_js_asset=runtime.resolve_js_asset('js/voice-notes-utils.js'),
         voice_notes_js_asset=runtime.resolve_js_asset('js/voice-notes.js'),
-        **_shell_context(runtime=runtime, page_key='voice-notes'),
+        **_shell_context(runtime=runtime, page_key='voice-notes', show_credits_pill=True),
     )
 
 

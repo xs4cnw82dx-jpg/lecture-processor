@@ -36,7 +36,7 @@
     var current = new Date();
     var offset = (current.getDay() + 6) % 7;
     current.setDate(current.getDate() - offset);
-    return current.toISOString().slice(0, 10);
+    return Utils.localDateString(current);
   }
   function formatDate(value, options) {
     if (!value) return '';
@@ -266,7 +266,7 @@
       setHtml(elements.schedule, '<div class="workout-schedule-empty"><strong>No workouts scheduled this week</strong><p>Review your plan or choose a saved routine to keep training.</p><button class="workout-text-btn" type="button" data-open-cycle>Review your plan</button></div>');
       return;
     }
-    var today = new Date().toISOString().slice(0, 10);
+    var today = Utils.localDateString();
     var next = occurrences.filter(function (item) { return item.status === 'planned' && item.date >= today; })[0] || occurrences.find(function (item) { return item.status === 'planned'; });
     setHtml(elements.schedule, occurrences.map(function (item) {
       var status = item.status === 'completed' ? '<span class="workout-status-chip">Done</span>' : '<button class="workout-start-btn" type="button" data-start-occurrence="' + escapeHtml(item.id) + '">Start</button>';
@@ -816,7 +816,7 @@
   }
 
   function logBodyweight() {
-    openSheet('Log bodyweight', 'Progress', '<form class="workout-sheet-form" id="workout-weight-form"><label class="workout-sheet-field">Date<input id="workout-weight-date" type="date" data-app-date value="' + new Date().toISOString().slice(0, 10) + '"></label><label class="workout-sheet-field">Weight (kg)<input id="workout-weight-value" type="number" min="20" max="400" step="0.1" inputmode="decimal" value="' + Number(state.data.profile.bodyweight_kg || 0) + '"></label><button class="workout-primary-btn" type="submit">Save entry</button></form>', function () { byId('workout-weight-form').addEventListener('submit', function (event) { event.preventDefault(); if (!requireOnline('Saving bodyweight')) return; var button = event.submitter || event.currentTarget.querySelector('[type="submit"]'); withBusy(button, function () { return api('/api/admin/workout/bodyweight', { method: 'PUT', body: { date: byId('workout-weight-date').value, weight_kg: Number(byId('workout-weight-value').value) } }).then(function (payload) { var existing = (state.data.bodyweight || []).findIndex(function (item) { return item.date === payload.entry.date; }); if (existing >= 0) state.data.bodyweight[existing] = payload.entry; else state.data.bodyweight.push(payload.entry); state.data.profile = payload.profile; return refreshStatistics(); }); }, 'Saving…').then(function () { closeSheet(true); renderProgress(); toast('Bodyweight saved.'); }).catch(function (error) { toast(error.message); }); }); }, { confirmDirty: true });
+    openSheet('Log bodyweight', 'Progress', '<form class="workout-sheet-form" id="workout-weight-form"><label class="workout-sheet-field">Date<input id="workout-weight-date" type="date" data-app-date value="' + Utils.localDateString() + '"></label><label class="workout-sheet-field">Weight (kg)<input id="workout-weight-value" type="number" min="20" max="400" step="0.1" inputmode="decimal" value="' + Number(state.data.profile.bodyweight_kg || 0) + '"></label><button class="workout-primary-btn" type="submit">Save entry</button></form>', function () { byId('workout-weight-form').addEventListener('submit', function (event) { event.preventDefault(); if (!requireOnline('Saving bodyweight')) return; var button = event.submitter || event.currentTarget.querySelector('[type="submit"]'); withBusy(button, function () { return api('/api/admin/workout/bodyweight', { method: 'PUT', body: { date: byId('workout-weight-date').value, weight_kg: Number(byId('workout-weight-value').value) } }).then(function (payload) { var existing = (state.data.bodyweight || []).findIndex(function (item) { return item.date === payload.entry.date; }); if (existing >= 0) state.data.bodyweight[existing] = payload.entry; else state.data.bodyweight.push(payload.entry); state.data.profile = payload.profile; return refreshStatistics(); }); }, 'Saving…').then(function () { closeSheet(true); renderProgress(); toast('Bodyweight saved.'); }).catch(function (error) { toast(error.message); }); }); }, { confirmDirty: true });
   }
   function refreshStatistics() { return api('/api/admin/workout/statistics').then(function (payload) { state.data.statistics = payload; }); }
 

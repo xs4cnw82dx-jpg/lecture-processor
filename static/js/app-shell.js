@@ -5,6 +5,7 @@
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
   var uiCache = window.LectureProcessorUiCache || null;
   var userCache = window.LectureProcessorUserCache || {};
+  var studyCache = window.LectureProcessorStudyCache || {};
   var uxUtils = window.LectureProcessorUx || {};
 
   var shell = document.getElementById('app-shell');
@@ -77,11 +78,14 @@
 
   var currentUserIsAdmin = false;
   var authRevision = 0;
+  var profileRequestRevision = 0;
   var lastSignedInUid = auth && auth.currentUser && auth.currentUser.uid ? String(auth.currentUser.uid) : '';
   var authStateResolved = !!(auth && auth.currentUser);
   var authObserverStartedAt = Date.now();
   var toastTimer = null;
   var deleteAccountInFlight = false;
+  var signOutInFlight = false;
+  var LOCAL_CLEANUP_WARNING = 'Some study data could not be cleared from this browser. Clear site data before sharing this device.';
   var SIDEBAR_FOCUSABLE_SELECTOR = [
     'a[href]',
     'button:not([disabled])',
@@ -153,9 +157,32 @@
       : false;
   }
 
-  function clearUserScopedCaches(userOrUid) {
-    if (typeof userCache.clearUserScope !== 'function') return;
-    userCache.clearUserScope(userOrUid, ACCOUNT_SCOPED_CACHE_KEYS, uiCache);
+  function clearUserScopedCaches(userOrUid, options) {
+    var uid = String((userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid) || '').trim();
+    if (!uid) return true;
+    authRevision += 1;
+    var preservePending = !!(options && options.preservePending);
+    var studyCleared = typeof studyCache.clearUser === 'function' && studyCache.clearUser(uid, { preservePending: preservePending });
+    var detail = { uid: uid, legacyCleared: true, preservePending: preservePending };
+    document.dispatchEvent(new CustomEvent('lectureprocessor:study-cache-cleared', { detail: detail }));
+    var accountCleared = typeof userCache.clearUserScope === 'function'
+      && userCache.clearUserScope(uid, ACCOUNT_SCOPED_CACHE_KEYS, uiCache, { preserveStudyCache: true });
+    var cleared = studyCleared && accountCleared && detail.legacyCleared;
+    if (!cleared) showToast(LOCAL_CLEANUP_WARNING, 'error');
+    return !!cleared;
+  }
+
+  function flushStudyBeforeSignOut(uid) {
+    var persistence = window.LectureProcessorStudyPersistence || {};
+    var timeout;
+    var flush = Promise.resolve().then(function () {
+      return typeof persistence.flushPending === 'function' ? persistence.flushPending() : true;
+    }).then(function (saved) {
+      return saved !== false && typeof studyCache.hasPending === 'function' && !studyCache.hasPending(uid);
+    }).catch(function () { return false; });
+    return Promise.race([flush, new Promise(function (resolve) {
+      timeout = window.setTimeout(function () { resolve(false); }, 3000);
+    })]).finally(function () { window.clearTimeout(timeout); });
   }
 
   function clearLegacyAccountCaches() {
@@ -501,8 +528,10 @@
 
   function maybeShowNavigationNotice() {
     var params = new URLSearchParams(window.location.search || '');
-    if (params.get('notice') !== 'admin-session-required') return;
-    showToast('Your admin session expired. Open Admin again to reconnect.', 'error');
+    var notice = params.get('notice');
+    if (notice === 'local-data-not-cleared') showToast(LOCAL_CLEANUP_WARNING, 'error');
+    else if (notice === 'admin-session-required') showToast('Your admin session expired. Open Admin again to reconnect.', 'error');
+    else return;
     params.delete('notice');
     var query = params.toString();
     var nextUrl = window.location.pathname + (query ? ('?' + query) : '') + (window.location.hash || '');
@@ -539,6 +568,14 @@
           !!activeByGroup[group.key] || !!(group.node && group.node.classList.contains('is-open'))
         );
       }
+    });
+  }
+
+  function hasValidCreditBalance(payload) {
+    var credits = payload && payload.credits;
+    if (!credits || typeof credits !== 'object' || Array.isArray(credits)) return false;
+    return ['lecture_standard', 'lecture_extended', 'slides', 'interview_short', 'interview_medium', 'interview_long'].every(function (key) {
+      return Number.isSafeInteger(credits[key]) && credits[key] >= 0;
     });
   }
 
@@ -730,20 +767,30 @@
   }
 
   async function refreshUserProfile(user) {
-    if (!user) return;
+    if (!user) return false;
+    var revision = authRevision;
+    var requestRevision = ++profileRequestRevision;
+    function isCurrent() {
+      return auth.currentUser === user && authRevision === revision && profileRequestRevision === requestRevision;
+    }
     try {
       var response = await authFetch('/api/auth/user');
       if (!response.ok) throw new Error('Could not load favorites. Reload to try again.');
       var payload = await response.json();
-      if (!auth.currentUser || auth.currentUser.uid !== user.uid) return;
+      if (!isCurrent()) return false;
       if (!favoriteToolsSaving) {
         favoriteTools = normalizedFavorites((payload.preferences || {}).favorite_tools);
         favoriteToolsReady = true;
         favoriteToolsError = '';
         publishFavoriteTools();
       }
-      var breakdown = parseCreditBreakdown(payload);
       currentUserIsAdmin = !!payload.is_admin;
+      if (adminBtn) adminBtn.hidden = !currentUserIsAdmin;
+      if (workoutLink) workoutLink.hidden = !currentUserIsAdmin;
+      setPhysioGroupVisible(true);
+      markActiveNav();
+      if (!hasValidCreditBalance(payload)) return false;
+      var breakdown = parseCreditBreakdown(payload);
       applyCreditBreakdown(breakdown);
       writeUserCacheJson(user, CACHE_KEYS.credits, breakdown);
       var profile = {
@@ -758,18 +805,21 @@
       };
       writeUserCacheJson(user, CACHE_KEYS.profile, profile);
       writeCacheJson(CACHE_KEYS.lastProfile, profile);
-      if (adminBtn) adminBtn.hidden = !currentUserIsAdmin;
-      if (workoutLink) workoutLink.hidden = !currentUserIsAdmin;
-      setPhysioGroupVisible(true);
-      markActiveNav();
+      return true;
     } catch (error) {
-      if (favoriteToolsUid === user.uid) { favoriteToolsError = error.message; publishFavoriteTools(); }
+      if (isCurrent() && favoriteToolsUid === user.uid) { favoriteToolsError = error.message; publishFavoriteTools(); }
+      return false;
     }
+  }
+
+  function refreshCredits() {
+    return refreshUserProfile(auth && auth.currentUser);
   }
 
   function applySignedOutState(userOrUid) {
     resetFavoriteTools(null);
-    clearUserScopedCaches(userOrUid);
+    clearUserScopedCaches(userOrUid, { preservePending: true });
+    if (typeof studyCache.activate === 'function') studyCache.activate('');
     clearLegacyAccountCaches();
     currentUserIsAdmin = false;
     setAuthState('signed-out');
@@ -870,7 +920,10 @@
       return;
     }
 
-    lastSignedInUid = String(user.uid || lastSignedInUid || '');
+    var nextUid = String(user.uid || '');
+    if (lastSignedInUid && lastSignedInUid !== nextUid) clearUserScopedCaches(lastSignedInUid, { preservePending: true });
+    lastSignedInUid = nextUid;
+    if (typeof studyCache.activate === 'function') studyCache.activate(nextUid);
     setCreditsVisible(true);
     applyCachedProfile(user);
     applyUserIdentity(user);
@@ -1136,13 +1189,13 @@
       try {
         await fetch('/api/session/logout', { method: 'POST', credentials: 'include' });
       } catch (_) {}
-      clearUserScopedCaches(deletedUser || lastSignedInUid);
+      var localDataCleared = clearUserScopedCaches(deletedUser || lastSignedInUid);
       clearLegacyAccountCaches();
       try {
         await auth.signOut();
       } catch (_) {}
       await clearVoiceNotesLocalData();
-      window.location.href = '/';
+      window.location.href = localDataCleared ? '/' : '/dashboard?notice=local-data-not-cleared';
     } catch (error) {
       setDeleteAccountError(error.message || 'Could not delete account data.');
     } finally {
@@ -1181,6 +1234,7 @@
     setupRoutePrefetch();
     window.LectureProcessorShell = Object.assign({}, window.LectureProcessorShell || {}, {
       showToast: showToast,
+      refreshCredits: refreshCredits,
     });
     return;
   }
@@ -1371,17 +1425,36 @@
 
   if (signOutBtn) {
     signOutBtn.addEventListener('click', async function () {
+      if (signOutInFlight) return;
+      signOutInFlight = true;
+      signOutBtn.disabled = true;
+      signOutBtn.setAttribute('aria-busy', 'true');
       var signedOutUser = auth.currentUser || lastSignedInUid;
-      clearUserScopedCaches(signedOutUser);
-      clearLegacyAccountCaches();
+      var uid = String((signedOutUser && typeof signedOutUser === 'object' ? signedOutUser.uid : signedOutUser) || '');
+      var revision = authRevision;
       try {
-        await fetch('/api/session/logout', { method: 'POST', credentials: 'include' });
-      } catch (_) {}
-      try {
-        await auth.signOut();
-      } catch (_) {}
-      await clearVoiceNotesLocalData();
-      window.location.href = '/dashboard';
+        var saved = await flushStudyBeforeSignOut(uid);
+        if (authRevision !== revision) return;
+        if (!saved) {
+          var warning = 'Some study progress has not synced. Signing out now will remove it from this device. Sign out anyway?';
+          if (window.LectureI18n && typeof window.LectureI18n.t === 'function') warning = window.LectureI18n.t(warning);
+          if (!window.confirm(warning)) return;
+        }
+        var localDataCleared = clearUserScopedCaches(signedOutUser);
+        clearLegacyAccountCaches();
+        try {
+          await fetch('/api/session/logout', { method: 'POST', credentials: 'include' });
+        } catch (_) {}
+        try {
+          await auth.signOut();
+        } catch (_) {}
+        await clearVoiceNotesLocalData();
+        window.location.href = '/dashboard' + (localDataCleared ? '' : '?notice=local-data-not-cleared');
+      } finally {
+        signOutInFlight = false;
+        signOutBtn.disabled = false;
+        signOutBtn.removeAttribute('aria-busy');
+      }
     });
   }
 
@@ -1419,6 +1492,7 @@
   applyCreditBreakdown(null);
   if (auth.currentUser) {
     lastSignedInUid = String(auth.currentUser.uid || lastSignedInUid || '');
+    if (typeof studyCache.activate === 'function') studyCache.activate(lastSignedInUid);
     applyCachedProfile(auth.currentUser);
     applyUserIdentity(auth.currentUser);
     hydrateCachedCredits(auth.currentUser);
@@ -1435,5 +1509,6 @@
   setupRoutePrefetch();
   window.LectureProcessorShell = Object.assign({}, window.LectureProcessorShell || {}, {
     showToast: showToast,
+    refreshCredits: refreshCredits,
   });
 })();

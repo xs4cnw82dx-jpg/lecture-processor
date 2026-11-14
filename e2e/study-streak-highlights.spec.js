@@ -139,6 +139,7 @@ for (const source of ['server', 'local']) {
     state.pack.notes_highlights = source === 'server' ? legacy : null;
     await page.evaluate(payload => {
       localStorage.removeItem('hl_ranges_synthetic');
+      localStorage.removeItem('lp_ui_v2:user:streak-highlight-fixture:study_cache:highlights:synthetic');
       if (payload) localStorage.setItem('hl_ranges_synthetic', JSON.stringify(payload));
     }, source === 'local' ? legacy : null);
     await page.reload();
@@ -159,7 +160,10 @@ for (const invalid of ['another pack', 'different notes length', 'malformed time
       'malformed timestamp': `synthetic:invalid:${NOTES.length}`,
     };
     state.pack.notes_highlights.base_key = keys[invalid];
-    await page.evaluate(() => localStorage.removeItem('hl_ranges_synthetic'));
+    await page.evaluate(() => {
+      localStorage.removeItem('hl_ranges_synthetic');
+      localStorage.removeItem('lp_ui_v2:user:streak-highlight-fixture:study_cache:highlights:synthetic');
+    });
     await page.reload();
     await expect(page.locator('#notes-view p')).toHaveText(HIGHLIGHT_TEXT);
     await expect(page.locator('#notes-view mark[data-hl]')).toHaveCount(0);
@@ -178,6 +182,7 @@ test('a matching legacy annotated HTML highlight migrates and syncs', async ({ p
   state.pack.notes_highlights = null;
   await page.evaluate(payload => {
     localStorage.removeItem('hl_ranges_synthetic');
+    localStorage.removeItem('lp_ui_v2:user:streak-highlight-fixture:study_cache:highlights:synthetic');
     localStorage.setItem('hl_html_synthetic', JSON.stringify(payload));
   }, legacy);
   await page.reload();

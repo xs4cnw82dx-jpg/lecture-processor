@@ -7,6 +7,7 @@ const uxUtils = window.LectureProcessorUx || {};
 const downloadUtils = window.LectureProcessorDownload || {};
 const topbarUtils = window.LectureProcessorTopbar || {};
 const uiCache = window.LectureProcessorUiCache || null;
+const studyCache = window.LectureProcessorStudyCache || null;
 const progressUtils = window.LectureProcessorStudyProgressUtils || {};
 const studyLibraryUtils = window.LectureProcessorStudyLibraryUtils || {};
 const studyAudioUtils = window.LectureProcessorStudyAudio || {};
@@ -31,7 +32,7 @@ let token = null, folders = [], packs = [], selectedFolderId = '', selectedPackI
 let openPackSeq = 0, libraryLoadSeq = 0;
 let selectedPackIds = new Set(), packSelectionAnchorId = '';
 let plannedPackIds = new Set();
-let plannerActivity = null, plannerActivitySyncTimer = null;
+let plannerActivity = null, plannerActivitySyncTimer = null, plannerActivitySyncPromise = null;
 let packsHasMore = false, packsNextCursor = '', packsLoadingMore = false;
 let activeEditorPane = 'notes', exportType = 'flashcards', draggedPackId = '', draggedPackIds = [], draggingFolderId = '';
 let renderedEditorPanes = { flashcards: false, test: false };
@@ -76,6 +77,8 @@ let codingState = null, codingLoading = false, codingWorkspaceOpen = false, sele
 let codingAutosaveTimer = null, codingAutosaveInFlight = false, codingAutosaveQueued = false, codingEditorLastSavedFingerprint = '';
 let codingSelectionAutoApplyTimer = null, codingAutoApplyInFlight = false, codingAiProgressTimer = null, codingAiProgressStage = -1;
 let codingAcceptAttempt = null, codingLoadSeq = 0;
+let codingRunAttempt = null, codingRunConfirmation = null;
+const CODING_RUN_POLL_MS = 1500;
 const HINT_FADE_DELAY_MS = 10000;
 const NOTES_ICON_IDLE_MS = 5000;
 const HIGHLIGHT_SYNC_DELAY_MS = 450;
@@ -94,6 +97,10 @@ let dueReviewOnly = urlParams.get('review') === 'due';
 let plannedPickerActive = false;
 let plannedSessionController = null;
 let learningRestoring = false;
+let learningCacheSession = null;
+let studyCacheEpoch = 0;
+const highlightCacheSessions = new Map(), highlightDeviceSaved = new Map();
+const knownLegacyStudyKeys = new Map();
 let learnQuestionOrder = [];
 let learnQuestionAnswers = {};
 let learnModeStarting = false;
@@ -494,10 +501,21 @@ function removePackLocalCaches(packId) {
   var uid = auth.currentUser.uid;
   pendingHighlightSaves.delete(id);
   highlightSavesInFlight.delete(id);
-  try { localStorage.removeItem(getCardStateKeyForPack(id)); } catch (e) { }
-  try { localStorage.removeItem('match_scores_' + uid + '_' + id); } catch (e) { }
-  try { localStorage.removeItem('study_session_' + uid + '_' + id); } catch (e) { }
+  highlightCacheSessions.delete(id);
+  highlightDeviceSaved.delete(id);
+  var cleared = !!(studyCache && studyCache.removePack(uid, id));
+  cleared = clearKnownLegacyStudyKeys(uid, id) && cleared;
+  if (selectedPackId === id) {
+    clearTimeout(learningCheckpointTimer);
+    learningCacheSession = null;
+    if (plannedSessionController) { cleared = plannedSessionController.discard() && cleared; plannedSessionController = null; }
+  }
+  try { localStorage.removeItem(getCardStateKeyForPack(id)); } catch (e) { cleared = false; }
+  try { localStorage.removeItem('match_scores_' + uid + '_' + id); } catch (e) { cleared = false; }
+  try { localStorage.removeItem('study_session_' + uid + '_' + id); } catch (e) { cleared = false; }
   removePackFromCardStateIndex(id);
+  if (!cleared) showToast('Some study data could not be cleared from this device.', 'error');
+  return cleared;
 }
 function cleanupCardStateCacheForKnownPacks() {
   if (!auth.currentUser) { return; }
@@ -751,13 +769,16 @@ function createProgressSyncRequestSnapshot(forceAllPacks, dirtyMarkers) {
 function getProgressSyncController() {
   if (progressSyncController) return progressSyncController;
   if (!progressUtils || typeof progressUtils.createRevisionedSyncController !== 'function') return null;
+  var uid = auth.currentUser && auth.currentUser.uid, cacheEpoch = studyCacheEpoch;
+  function isCurrent() { return cacheEpoch === studyCacheEpoch && auth.currentUser && auth.currentUser.uid === uid; }
   progressSyncController = progressUtils.createRevisionedSyncController({
     createSnapshot: createProgressSyncRequestSnapshot,
     transport: function (payload) {
+      if (!isCurrent()) return Promise.reject(new Error('Your account changed. Open the session again.'));
       return apiCall('/api/study-progress', { method: 'PUT', body: JSON.stringify(payload) });
     },
     onAcknowledge: function (markers) {
-      clearProgressDirty(markers);
+      if (isCurrent()) clearProgressDirty(markers);
     },
     onError: function (error) {
       console.warn('Could not sync queued study progress:', error && error.message ? error.message : error);
@@ -937,22 +958,35 @@ function plannerActivityPayload(finalize) {
 }
 
 function syncPlannerActivity(finalize) {
-  if (!plannerActivity || !token) return Promise.resolve();
+  if (!plannerActivity) return plannerActivitySyncPromise || Promise.resolve(true);
+  if (!token || !auth.currentUser) return Promise.resolve(false);
   var activity = plannerActivity;
+  var uid = auth.currentUser.uid, cacheEpoch = studyCacheEpoch;
+  function isCurrent() { return cacheEpoch === studyCacheEpoch && auth.currentUser && auth.currentUser.uid === uid; }
   var payload = plannerActivityPayload(!!finalize);
-  if (!payload) return Promise.resolve();
+  if (!payload) return Promise.resolve(true);
   if (finalize && !payload.ended_at && !payload.metrics.cards_reviewed && !payload.metrics.questions_answered) {
     plannerActivity = null;
-    return Promise.resolve();
+    return plannerActivitySyncPromise || Promise.resolve(true);
   }
-  return apiCall('/api/study-activity/sessions/' + encodeURIComponent(activity.activity_id), {
-    method: 'PUT',
-    body: JSON.stringify(payload)
+  var request = Promise.resolve(plannerActivitySyncPromise).catch(function () {}).then(function () {
+    if (!isCurrent()) return false;
+    return apiCall('/api/study-activity/sessions/' + encodeURIComponent(activity.activity_id), {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    }).then(function () {
+      if (!isCurrent()) return false;
+      if (finalize && plannerActivity === activity) plannerActivity = null;
+      return true;
+    });
   }).catch(function () {
-    if (finalize) showToast('Your study progress could not be linked to the plan. You can mark the session complete from Study Plan.', 'error');
+    if (isCurrent() && finalize) showToast('Your study progress could not be linked to the plan. You can mark the session complete from Study Plan.', 'error');
+    return false;
   }).finally(function () {
-    if (finalize && plannerActivity === activity) plannerActivity = null;
+    if (plannerActivitySyncPromise === request) plannerActivitySyncPromise = null;
   });
+  plannerActivitySyncPromise = request;
+  return request;
 }
 
 function queuePlannerActivitySync() {
@@ -1581,6 +1615,7 @@ var addPackToPlanBtn = document.getElementById('add-pack-to-plan-btn'), packPlan
 var packGoalsPanel = document.getElementById('pack-goals-panel'), packGoalCard = document.getElementById('pack-goal-card'), packGoalsStatus = document.getElementById('pack-goals-status'), overallDailyGoalInput = document.getElementById('overall-daily-goal-input'), overallDailyGoalDecrease = document.getElementById('overall-daily-goal-decrease'), overallDailyGoalIncrease = document.getElementById('overall-daily-goal-increase'), packDailyGoalInput = document.getElementById('pack-daily-goal-input'), packDailyGoalClear = document.getElementById('pack-daily-goal-clear'), packDailyGoalDecrease = document.getElementById('pack-daily-goal-decrease'), packDailyGoalIncrease = document.getElementById('pack-daily-goal-increase'), packGoalDue = document.getElementById('pack-goal-due'), packGoalUnmastered = document.getElementById('pack-goal-unmastered'), packGoalRecommendation = document.getElementById('pack-goal-recommendation'), packGoalHelper = document.getElementById('pack-goal-helper');
 var createPackBtn = document.getElementById('create-pack-btn'), importPackCsvBtn = document.getElementById('import-pack-csv-btn'), openBuilderBtn = document.getElementById('open-builder-btn'), savePackBtn = document.getElementById('save-pack-btn'), deletePackBtn = document.getElementById('delete-pack-btn'), exportPackNotesBtn = document.getElementById('export-pack-notes-btn'), packShareBtn = document.getElementById('pack-share-btn'), openLearnBtn = document.getElementById('open-learn-btn'), openLearnBtnLabel = document.getElementById('open-learn-btn-label'), packSaveStatus = document.getElementById('pack-save-status');
 var exportMenu = document.getElementById('export-menu'), exportMenuBtn = document.getElementById('export-menu-btn'), exportMenuList = document.getElementById('export-menu-list'), exportPdfSubmenu = document.getElementById('export-pdf-submenu');
+var deleteSelectedPacksBtn = document.getElementById('delete-selected-packs-btn');
 var editorTabs = document.querySelectorAll('.editor-tab:not(#editor-tab-coding)'), codingTab = document.getElementById('editor-tab-coding'), codingPane = document.getElementById('editor-pane-coding'), flashcardCount = document.getElementById('flashcard-count'), questionCount = document.getElementById('question-count'), addFlashcardBtn = document.getElementById('add-flashcard-btn'), addQuestionBtn = document.getElementById('add-question-btn'), flashcardEditorList = document.getElementById('flashcard-editor-list'), questionEditorList = document.getElementById('question-editor-list');
 var codingPreviewCard = document.getElementById('coding-preview-card'), codingPreviewTitle = document.getElementById('coding-preview-title'), codingPreviewStatus = document.getElementById('coding-preview-status'), codingPreviewCodes = document.getElementById('coding-preview-codes'), codingPreviewCodeCount = document.getElementById('coding-preview-code-count'), codingPreviewQuoteCount = document.getElementById('coding-preview-quote-count');
 var codingStatus = document.getElementById('coding-status'), codingShell = document.getElementById('coding-shell'), codingAiPanel = document.getElementById('coding-ai-panel'), codingAiRunBtn = document.getElementById('coding-ai-run-btn'), codingAiAcceptBtn = document.getElementById('coding-ai-accept-btn'), codingAiRejectBtn = document.getElementById('coding-ai-reject-btn'), codingExportPdfBtn = document.getElementById('coding-export-pdf-btn'), codingResetBtn = document.getElementById('coding-reset-btn'), codingCloseBtn = document.getElementById('coding-close-btn'), codingCodePicker = document.getElementById('coding-code-picker'), codingCodePickerButton = document.getElementById('coding-code-picker-button'), codingCodePickerLabel = document.getElementById('coding-code-picker-label'), codingCodePickerSwatch = document.getElementById('coding-code-picker-swatch'), codingCodePickerMenu = document.getElementById('coding-code-picker-menu'), codingCodePickerSearch = document.getElementById('coding-code-picker-search'), codingCodePickerList = document.getElementById('coding-code-picker-list'), codingCommentInput = document.getElementById('coding-comment-input'), codingSelectionSummary = document.getElementById('coding-selection-summary'), codingApplyBtn = document.getElementById('coding-apply-btn'), codingInvivoBtn = document.getElementById('coding-invivo-btn'), codingUndoBtn = document.getElementById('coding-undo-btn'), codingTranscript = document.getElementById('coding-transcript'), codingSearchInput = document.getElementById('coding-search-input'), codingNewCodeBtn = document.getElementById('coding-new-code-btn'), codingCodeList = document.getElementById('coding-code-list'), codingEditName = document.getElementById('coding-edit-name'), codingEditDescription = document.getElementById('coding-edit-description'), codingPalette = document.getElementById('coding-palette'), codingSaveCodeBtn = document.getElementById('coding-save-code-btn'), codingMergeCodeBtn = document.getElementById('coding-merge-code-btn'), codingDeleteCodeBtn = document.getElementById('coding-delete-code-btn'), codingQuoteList = document.getElementById('coding-quote-list');
@@ -1704,6 +1739,9 @@ function applyStudySignedOutState() {
   draggedPackIds = [];
   draggingFolderId = '';
   collapsedFolderIds = new Set();
+  stopCodingRunPolling();
+  codingLoadSeq += 1;
+  codingLoading = false;
   codingState = null;
   codingWorkspaceOpen = false;
   selectedCodingCodeId = '';
@@ -4038,18 +4076,31 @@ function showModePicker(modes) {
 async function openPlannedStudy(mode) {
   var timerMode = document.getElementById('setup-timer').value;
   if (plannedSessionController) return plannedSessionController.changeMode(mode, timerMode);
+  var session = authClient && authClient.captureSession ? authClient.captureSession() : null;
+  var cacheEpoch = studyCacheEpoch;
+  var uid = auth.currentUser.uid;
+  var packId = selectedPackId;
+  var learningId = JSON.stringify([packId, plannerSessionFromUrl]);
   plannedSessionController = await window.LectureProcessorPlannedStudy.open({
     studyMode: mode, timerMode: timerMode, host: document.getElementById('learn-session-tools'),
     api: apiCall, uid: auth.currentUser.uid, sessionId: plannerSessionFromUrl, pack: selectedPack,
-    isCurrentUser: (function (uid) { return function () { return auth.currentUser && auth.currentUser.uid === uid; }; })(auth.currentUser.uid),
+    isCurrentUser: function () { return cacheEpoch === studyCacheEpoch && auth.currentUser && auth.currentUser.uid === uid && (!session || session.isCurrent()); },
     onPack: function (pack) {
       openPackSeq += 1;
       selectedPack = pack; selectedPackId = pack.study_pack_id;
+      captureStudyPackCacheSession();
       syncInlineMetadataInputs();
       setInlineAutosaveBaseline(pack);
     },
     onConflict: function (message) { showToast(message, 'error'); },
+    onLegacyKey: function (key, value) { registerLegacyStudyKey(key, uid, packId, value); },
     onProgress: function (response) { mergeProgressFromServer(response); hydratePackStatesForKnownPacks(); },
+    onFinish: function () {
+      clearTimeout(learningCheckpointTimer);
+      var removed = studyCache ? studyCache.remove(uid, 'learning', learningId) : false;
+      removed = removeKnownLegacyStudyKey('learning_session_' + uid + '_' + packId + '_' + plannerSessionFromUrl, uid, packId) && removed;
+      return removed;
+    },
     getMode: function () { return activeLearnMode; },
     onAvailability: function (available) { document.getElementById('learn-mode-content').inert = !available; if (activeLearnMode === 'match') { if (!available) stopMatchTimer(); else if (!matchRunning && matchMatched < matchTotal) startMatchTimer(matchElapsed); } },
     flush: async function () { var controller = getProgressSyncController(); if (controller) await controller.whenIdle(); return flushProgressSync(false); }
@@ -4059,12 +4110,15 @@ function openDirectModePicker() { openSessionSetup(); }
 async function startSelectedStudyMode(mode) {
   if (learnModeStarting) return;
   learnModeStarting = true;
+  var cacheEpoch = studyCacheEpoch;
   var status = document.getElementById('setup-session-context');
   saveLearningCheckpoint();
   try {
     if (!await flushInlineAutosave({ allowDiscard: true })) throw new Error('Save your changes before starting a session.');
+    if (cacheEpoch !== studyCacheEpoch) return;
     flushHighlightSync();
     if (plannedPickerActive) { status.textContent = 'Opening your planned session…'; await openPlannedStudy(mode); }
+    if (cacheEpoch !== studyCacheEpoch) return;
     closeSessionSetup();
     openLearnStageWithMode(mode, false);
   } catch (error) { status.textContent = error.message || 'Could not open your session. Please try again.'; showToast(status.textContent, 'error'); }
@@ -4572,9 +4626,11 @@ function syncPackSelectionControls() {
     addSelectedToPlanBtn.hidden = selectedPlanIds.length === 0;
     addSelectedToPlanBtn.textContent = allInPlan ? 'Open Study Plan' : 'Add to Study Plan';
   }
-  if (deletePackBtn) {
-    deletePackBtn.textContent = count > 0 ? 'Delete selected (' + count + ')' : 'Delete Pack';
-    deletePackBtn.setAttribute('aria-label', count > 0 ? 'Delete selected study packs' : 'Delete current study pack');
+  if (deleteSelectedPacksBtn) {
+    deleteSelectedPacksBtn.textContent = window.LectureI18n && typeof window.LectureI18n.t === 'function'
+      ? window.LectureI18n.t('Delete selected ({count})', { count: count })
+      : 'Delete selected (' + count + ')';
+    deleteSelectedPacksBtn.disabled = count === 0;
   }
 }
 
@@ -4636,17 +4692,14 @@ function applyPackSelection(packId, checked, useRange) {
   renderPacks();
 }
 
-function getPackIdsForDelete() {
-  var selectedIds = getSelectedPackIds();
-  if (selectedIds.length) {
-    return selectedIds;
-  }
-  return selectedPackId ? [selectedPackId] : [];
-}
-
 function formatPackDeleteMessage(packIds) {
   if (packIds.length === 1) {
-    return 'Delete this study pack permanently? This cannot be undone.';
+    var pack = (packs || []).find(function (item) { return item.study_pack_id === packIds[0]; });
+    var title = packIds[0] === selectedPackId && packTitle ? packTitle.value.trim() : '';
+    title = title || (pack && pack.title) || 'Untitled pack';
+    return window.LectureI18n && typeof window.LectureI18n.t === 'function'
+      ? window.LectureI18n.t('Delete "{title}" permanently? This cannot be undone.', { title: title })
+      : 'Delete "' + title + '" permanently? This cannot be undone.';
   }
   return 'Delete ' + packIds.length + ' study packs permanently? This cannot be undone.';
 }
@@ -5113,6 +5166,7 @@ function renderPacks() {
 }
 
 function showPackEditor(v) {
+  setExportMenuOpen(false);
   setHidden(packEmpty, !!v);
   packEditorWrap.classList.toggle('visible', v);
   document.getElementById('library-grid').classList.toggle('has-open-pack', !!v);
@@ -5132,6 +5186,16 @@ function updatePrimaryStudyAction() {
 }
 function updatePackSummary() {
   updatePrimaryStudyAction();
+  if (exportMenuBtn) {
+    var packActionsTitle = selectedPack ? (selectedPack.title || 'Untitled pack') : '';
+    var packActionsLabel = 'Pack actions';
+    if (selectedPack) {
+      packActionsLabel = window.LectureI18n && typeof window.LectureI18n.t === 'function'
+        ? window.LectureI18n.t('Pack actions for {title}', { title: packActionsTitle })
+        : 'Pack actions for ' + packActionsTitle;
+    }
+    exportMenuBtn.setAttribute('aria-label', packActionsLabel);
+  }
   if (!selectedPack) {
     packSummary.classList.remove('visible');
     if (packPlanStatus) { packPlanStatus.textContent = 'Not in a study plan'; packPlanStatus.classList.remove('is-in-plan'); }
@@ -5590,6 +5654,7 @@ function renderLearnQuestion() {
 /* ── Open learn stage in a specific focused mode ── */
 function openLearnStageWithMode(mode, requestFullscreen) {
   if (!selectedPack) { showToast('Select a study pack first.', 'error'); return; }
+  learningCacheSession = studyCache && auth.currentUser ? studyCache.capture(auth.currentUser.uid) : null;
   learnSessionRecorded = false;
   activeLearnMode = mode;
   startPlannerActivity(mode);
@@ -5732,9 +5797,13 @@ function saveFolderFromModal() {
 /* ── Open pack ── */
 function openPack(packId) {
   var seq = ++openPackSeq;
+  stopCodingRunPolling();
   var previousPack = selectedPack;
   return flushInlineAutosave({ allowDiscard: true }).then(function (saved) {
-    if (!saved || seq !== openPackSeq) return null;
+    if (!saved || seq !== openPackSeq) {
+      if (seq === openPackSeq) resumeCodingRunPolling();
+      return null;
+    }
     flushHighlightSync();
     selectedPackId = packId;
     packEditorWrap.inert = true;
@@ -5745,6 +5814,7 @@ function openPack(packId) {
     return loadRemoteProgressForPack(packId).then(function () {
       if (seq !== openPackSeq || selectedPackId !== packId) return false;
       selectedPack = data;
+      captureStudyPackCacheSession();
       setGoalPanelStatus('Synced', 'success');
       selectedPack.flashcards = Array.isArray(selectedPack.flashcards) ? selectedPack.flashcards : [];
       selectedPack.test_questions = Array.isArray(selectedPack.test_questions) ? selectedPack.test_questions.map(normalizeQuestion) : [];
@@ -5791,6 +5861,7 @@ function openPack(packId) {
     selectedPackId = previousPack ? previousPack.study_pack_id : '';
     renderPacks();
     showPackEditor(!!previousPack);
+    resumeCodingRunPolling();
     updatePackSummary();
     showToast(error.message || 'Could not open study pack.', 'error');
     return false;
@@ -5832,6 +5903,113 @@ function codingRequestContext() {
     }
   };
 }
+function codingRunIsPending(run) {
+  return !!(run && ['queued', 'processing', 'refund_pending'].indexOf(run.status) >= 0);
+}
+function codingGenerationPending() {
+  return !!(codingRunAttempt && codingRunAttempt.context.isCurrent()) || !!(codingState && codingState.pack_id === selectedPackId && codingRunIsPending(codingState.latest_run));
+}
+function codingRunAttemptIsCurrent(attempt) {
+  return codingRunAttempt === attempt && attempt.context.isCurrent() && codingState && codingState.pack_id === attempt.context.packId &&
+    (!attempt.runId || (codingState.latest_run && codingState.latest_run.run_id === attempt.runId));
+}
+function stopCodingRunPolling() {
+  if (codingRunAttempt && codingRunAttempt.timer) window.clearTimeout(codingRunAttempt.timer);
+  codingRunAttempt = null;
+  stopCodingAiProgress(false);
+}
+function codingRunStatusText(run) {
+  if (run && run.status === 'refund_pending') return 'AI coding could not finish. Your credit refund is still being processed.';
+  if (run && run.status === 'failed') {
+    return run.credit_refunded ? 'AI coding failed. Your credit has been refunded.' : String(run.error || 'AI coding failed. Please try again.');
+  }
+  return 'AI coding is running. Draft will appear here when ready.';
+}
+function scheduleCodingRunPoll(attempt) {
+  if (!codingRunAttemptIsCurrent(attempt) || attempt.timer || attempt.inFlight) return;
+  attempt.timer = window.setTimeout(function () {
+    attempt.timer = null;
+    pollCodingRun(attempt);
+  }, CODING_RUN_POLL_MS);
+}
+function applyCodingRunPayload(attempt, payload) {
+  if (!codingRunAttemptIsCurrent(attempt)) return;
+  var run = payload && payload.run;
+  if (!run || !run.run_id || run.pack_id !== attempt.context.packId || (attempt.runId && run.run_id !== attempt.runId) ||
+      ['queued', 'processing', 'refund_pending', 'draft', 'accepting', 'accepted', 'rejected', 'failed'].indexOf(run.status) < 0) {
+    throw new Error('Could not check AI coding status.');
+  }
+  codingLoadSeq += 1;
+  codingLoading = false;
+  attempt.runId = run.run_id;
+  attempt.error = '';
+  attempt.retry = false;
+  codingState.latest_run = run;
+  if (codingRunIsPending(run)) {
+    if (run.status === 'refund_pending') stopCodingAiProgress(false);
+    else if (codingAiProgressStage < 0) startCodingAiProgress();
+    renderCodingRunStatus();
+    scheduleCodingRunPoll(attempt);
+    return;
+  }
+  stopCodingRunPolling();
+  renderCodingRunStatus();
+  if (run.status === 'draft') showToast('AI coding draft ready.');
+  else if (run.status === 'failed') showToast(codingRunStatusText(run), 'error');
+  else if (['accepting', 'accepted', 'rejected'].indexOf(run.status) >= 0) ensureCodingLoaded(true).catch(function () {});
+}
+function codingRunRequestFailed(attempt, error) {
+  if (!codingRunAttemptIsCurrent(attempt)) return;
+  attempt.error = error.message || 'Could not check AI coding status.';
+  attempt.retry = [401, 403, 404].indexOf(error.status) < 0;
+  stopCodingAiProgress(false);
+  renderCodingRunStatus();
+  if (attempt.retry) scheduleCodingRunPoll(attempt);
+}
+function pollCodingRun(attempt) {
+  if (!codingRunAttemptIsCurrent(attempt) || attempt.inFlight) return;
+  attempt.inFlight = true;
+  var path = '/api/interview-coding/packs/' + encodeURIComponent(attempt.context.packId);
+  if (attempt.runId) path += '/ai-runs/' + encodeURIComponent(attempt.runId);
+  apiCall(path).then(function (payload) {
+    if (!codingRunAttemptIsCurrent(attempt)) return;
+    if (!attempt.runId) {
+      // A failed POST response may still have queued the run. Reconcile its
+      // canonical state before allowing another chargeable start request.
+      var state = normalizeCodingState(payload);
+      if (state.pack_id !== attempt.context.packId) throw new Error('Could not check AI coding status.');
+      if (!state.latest_run) {
+        stopCodingRunPolling();
+        codingState = state;
+        renderCodingRunStatus();
+        showToast('Could not start AI coding. Please try again.', 'error');
+        return;
+      }
+      codingState = state;
+      payload = { run: state.latest_run };
+    }
+    applyCodingRunPayload(attempt, payload);
+  }).catch(function (error) {
+    codingRunRequestFailed(attempt, error);
+  }).finally(function () {
+    attempt.inFlight = false;
+    if (codingRunAttemptIsCurrent(attempt) && !attempt.error) scheduleCodingRunPoll(attempt);
+    else if (codingRunAttemptIsCurrent(attempt) && attempt.retry) {
+      attempt.retry = false;
+      scheduleCodingRunPoll(attempt);
+    }
+  });
+}
+function resumeCodingRunPolling() {
+  var run = codingState && codingState.pack_id === selectedPackId && codingState.latest_run;
+  if (!codingRunIsPending(run)) return;
+  if (codingRunAttempt && codingRunAttempt.context.isCurrent() && codingRunAttempt.runId === run.run_id) return;
+  stopCodingRunPolling();
+  codingRunAttempt = { context: codingRequestContext(), runId: run.run_id, timer: null, inFlight: false, error: '' };
+  if (run.status !== 'refund_pending') startCodingAiProgress();
+  renderCodingRunStatus();
+  scheduleCodingRunPoll(codingRunAttempt);
+}
 function codingAcceptanceInFlight() {
   return !!(codingAcceptAttempt && codingAcceptAttempt.isCurrent());
 }
@@ -5841,6 +6019,7 @@ function codingAcceptancePending() {
 function ensureCodingLoaded(force) {
   if (!selectedPack || String(selectedPack.mode || '') !== 'interview' || !codingTranscript) return Promise.resolve(null);
   if (codingState && !force) {
+    resumeCodingRunPolling();
     renderCodingWorkspace();
     return Promise.resolve(codingState);
   }
@@ -5848,14 +6027,17 @@ function ensureCodingLoaded(force) {
   codingLoading = true;
   setCodingStatus('Loading coding workspace...');
   return codingApi('').then(function (state) {
+    if (loadSeq === codingLoadSeq) codingLoading = false;
     if (!context.isCurrent() || loadSeq !== codingLoadSeq) return null;
     codingState = normalizeCodingState(state);
-    codingLoading = false;
+    if (codingRunAttempt && codingRunAttempt.context.isCurrent() && codingRunAttempt.runId &&
+        (!codingState.latest_run || codingState.latest_run.run_id !== codingRunAttempt.runId || !codingRunIsPending(codingState.latest_run))) stopCodingRunPolling();
+    resumeCodingRunPolling();
     renderCodingWorkspace();
     return codingState;
   }).catch(function (e) {
+    if (loadSeq === codingLoadSeq) codingLoading = false;
     if (!context.isCurrent() || loadSeq !== codingLoadSeq) return null;
-    codingLoading = false;
     setCodingStatus(e.message || 'Could not load coding workspace.', 'error');
     throw e;
   });
@@ -5932,7 +6114,7 @@ function selectCodingCode(codeId, options) {
 function renderCodingAiPanel() {
   if (!codingAiPanel) return;
   var latest = codingState && codingState.latest_run ? codingState.latest_run : null;
-  var isProgressing = codingAiProgressStage >= 0;
+  var isProgressing = codingGenerationPending();
   var isAccepting = codingAcceptancePending();
   if (!isProgressing && !isAccepting && !(latest && latest.status === 'draft')) {
     codingAiPanel.hidden = true;
@@ -5957,10 +6139,20 @@ function renderCodingAiPanel() {
       var state = index < safeStage ? 'done' : (index === safeStage ? 'active' : '');
       return '<div class="coding-ai-stage ' + state + '"><span class="coding-ai-stage-dot"></span><span>' + escapeHtml(stage) + '</span></div>';
     }).join('');
+    var refundPending = latest && latest.status === 'refund_pending';
+    var statusError = codingRunAttempt && codingRunAttempt.context.isCurrent() ? codingRunAttempt.error : '';
     setSafeInnerHtml(codingAiPanel,
-      '<div class="coding-ai-panel-head"><div><div class="coding-ai-panel-title">AI coding is running</div><div class="coding-ai-panel-sub">You can keep this viewer open while the draft is created.</div></div><div class="coding-ai-progress-pill">' + escapeHtml(stages[safeStage]) + '</div></div>' +
-      '<div class="coding-ai-progress"><div class="coding-ai-progress-bar"><div class="coding-ai-progress-fill coding-ai-progress-step-' + safeStage + '"></div></div><div class="coding-ai-progress-list">' + stageHtml + '</div></div>'
+      '<div class="coding-ai-panel-head"><div><div class="coding-ai-panel-title">' + (refundPending ? 'Finishing credit refund' : 'AI coding is running') + '</div><div class="coding-ai-panel-sub">' + escapeHtml(statusError || (refundPending ? codingRunStatusText(latest) : 'You can keep this viewer open while the draft is created.')) + '</div></div><div class="coding-ai-progress-pill">' + escapeHtml(refundPending ? 'Refund pending' : stages[safeStage]) + '</div></div>' +
+      (refundPending ? '' : '<div class="coding-ai-progress"><div class="coding-ai-progress-bar"><div class="coding-ai-progress-fill coding-ai-progress-step-' + safeStage + '"></div></div><div class="coding-ai-progress-list">' + stageHtml + '</div></div>') +
+      (statusError ? '<div class="coding-ai-panel-actions"><button type="button" class="btn" data-ai-run-retry>Check status</button></div>' : '')
     );
+    var retryButton = codingAiPanel.querySelector('[data-ai-run-retry]');
+    if (retryButton) retryButton.addEventListener('click', function () {
+      if (!codingRunAttempt) return;
+      if (codingRunAttempt.timer) window.clearTimeout(codingRunAttempt.timer);
+      codingRunAttempt.timer = null;
+      pollCodingRun(codingRunAttempt);
+    });
     return;
   }
   var proposedCodes = Array.isArray(latest.proposed_codes) ? latest.proposed_codes : [];
@@ -6027,6 +6219,8 @@ function updateCodingPreview() {
       codingPreviewStatus.textContent = 'Loading coding summary...';
     } else if (codingAcceptancePending()) {
       codingPreviewStatus.textContent = 'Finish applying AI coding in the coding workspace.';
+    } else if (codingGenerationPending() || (latest && latest.status === 'failed')) {
+      codingPreviewStatus.textContent = codingRunStatusText(latest);
     } else if (hasDraft) {
       codingPreviewStatus.textContent = 'AI draft ready for review in the coding workspace.';
     } else if (codes.length) {
@@ -6072,28 +6266,34 @@ function closeCodingWorkspace() {
   }
   updateCodingPreview();
 }
-function renderCodingWorkspace() {
-  if (!codingState || !codingTranscript) {
-    setCodingStatus('No coding loaded.');
-    return;
-  }
+function renderCodingRunStatus() {
+  if (!codingState) return;
   var codeCount = codingState.codes.length;
   var quoteCount = codingState.quotations.length;
   var latest = codingState.latest_run || null;
-  var accepting = codingAcceptancePending(), applying = codingAcceptanceInFlight();
+  var accepting = codingAcceptancePending(), applying = codingAcceptanceInFlight(), generating = codingGenerationPending();
   var draftCount = latest && latest.status === 'draft'
     ? ((latest.proposed_codes || []).length + (latest.proposed_quotations || []).length)
     : 0;
-  setCodingStatus(accepting ? (applying ? 'Applying AI draft...' : 'Finish applying AI coding') : codeCount + ' codes · ' + quoteCount + ' quotations' + (draftCount ? ' · AI draft ready' : ''), accepting || draftCount ? 'draft' : 'ok');
+  var failed = latest && latest.status === 'failed';
+  setCodingStatus(accepting ? (applying ? 'Applying AI draft...' : 'Finish applying AI coding') : (generating || failed ? codingRunStatusText(latest) : codeCount + ' codes · ' + quoteCount + ' quotations' + (draftCount ? ' · AI draft ready' : '')), failed ? 'error' : (accepting || generating || draftCount ? 'draft' : 'ok'));
   if (codingAiAcceptBtn) {
     codingAiAcceptBtn.hidden = !accepting && !(latest && latest.status === 'draft');
     codingAiAcceptBtn.disabled = applying;
     codingAiAcceptBtn.textContent = accepting ? (applying ? 'Applying AI draft...' : 'Finish applying') : 'Accept Draft';
   }
   if (codingAiRejectBtn) codingAiRejectBtn.hidden = accepting || !(latest && latest.status === 'draft');
-  if (codingAiRunBtn) codingAiRunBtn.disabled = codingLoading || accepting;
-  if (codingResetBtn) codingResetBtn.disabled = codingLoading || accepting;
+  if (codingAiRunBtn) codingAiRunBtn.disabled = codingLoading || accepting || generating;
+  if (codingResetBtn) codingResetBtn.disabled = codingLoading || accepting || generating;
   renderCodingAiPanel();
+  updateCodingPreview();
+}
+function renderCodingWorkspace() {
+  if (!codingState || !codingTranscript) {
+    setCodingStatus('No coding loaded.');
+    return;
+  }
+  renderCodingRunStatus();
   renderCodingCodeOptions();
   renderCodingTranscript();
   renderCodingCodeList();
@@ -6574,36 +6774,44 @@ function undoCodingAction() {
   }
 }
 function runAiCoding() {
-  if (!codingState || codingLoading || codingAcceptancePending()) return;
+  if (!codingState || codingState.pack_id !== selectedPackId || codingLoading || codingAcceptancePending() || codingGenerationPending() || codingRunConfirmation) return;
   var estimate = codingState.ai_estimate || {};
   var cost = parseInt(estimate.credit_cost, 10) || 0;
   if (cost <= 0) {
     showToast('No transcript available for AI coding.', 'error');
     return;
   }
+  var context = codingRequestContext();
+  codingRunConfirmation = context;
   openConfirmModal(
     'Run AI Coding',
     'This will use ' + cost + ' text extraction credit' + (cost === 1 ? '' : 's') + ' and create a draft you can review before applying.',
     'Run AI Coding',
     'primary'
   ).then(function (confirmed) {
-    if (!confirmed || codingAcceptancePending()) return;
-    codingLoading = true;
+    if (codingRunConfirmation === context) codingRunConfirmation = null;
+    if (!confirmed || !context.isCurrent() || codingAcceptancePending() || codingGenerationPending()) return;
+    codingLoadSeq += 1;
+    codingLoading = false;
+    var attempt = { context: context, runId: '', timer: null, inFlight: true, error: '' };
+    codingRunAttempt = attempt;
     startCodingAiProgress();
-    if (codingAiRunBtn) codingAiRunBtn.disabled = true;
-    setCodingStatus('AI coding is running. Draft will appear here when ready.', 'draft');
-    codingApi('/ai-runs', { method: 'POST', body: JSON.stringify({}) }).then(function (payload) {
-      codingState.latest_run = payload.run || null;
-      return ensureCodingLoaded(true);
-    }).then(function () {
-      showToast('AI coding draft ready.');
-    }).catch(function (e) {
-      showToast(e.message || 'AI coding failed.', 'error');
-      ensureCodingLoaded(true).catch(function () {});
+    renderCodingRunStatus();
+    apiCall('/api/interview-coding/packs/' + encodeURIComponent(context.packId) + '/ai-runs', { method: 'POST', body: JSON.stringify({}) }).then(function (payload) {
+      applyCodingRunPayload(attempt, payload);
+    }).catch(function (error) {
+      if (codingRunAttemptIsCurrent(attempt) && error.status >= 400 && error.status < 500) {
+        stopCodingRunPolling();
+        renderCodingRunStatus();
+        var message = error.message || 'Could not start AI coding. Please try again.';
+        setCodingStatus(message, 'error');
+        showToast(message, 'error');
+        return;
+      }
+      codingRunRequestFailed(attempt, error);
     }).finally(function () {
-      codingLoading = false;
-      stopCodingAiProgress();
-      if (codingAiRunBtn) codingAiRunBtn.disabled = codingAcceptancePending();
+      attempt.inFlight = false;
+      if (codingRunAttemptIsCurrent(attempt) && (!attempt.error || attempt.retry)) scheduleCodingRunPoll(attempt);
     });
   });
 }
@@ -6658,7 +6866,7 @@ function deleteSelectedCodingCode() {
   });
 }
 function resetCodingForCurrentInterview() {
-  if (!codingState || codingLoading || codingAcceptancePending()) return;
+  if (!codingState || codingLoading || codingAcceptancePending() || codingGenerationPending()) return;
   var quotations = Array.isArray(codingState.quotations) ? codingState.quotations.slice() : [];
   var run = codingState.latest_run || null;
   var hasDraft = !!(run && run.status === 'draft');
@@ -7112,13 +7320,49 @@ function queueInlineAutosave() {
 /* ── Auth ── */
 hydrateTopbarDueFromCache(auth.currentUser || null);
 var plannedStudyAuthUid = auth.currentUser ? auth.currentUser.uid : '';
+document.addEventListener('lectureprocessor:study-cache-cleared', function (event) {
+  var uid = event.detail && event.detail.uid;
+  if (!uid) return;
+  if (uid === plannedStudyAuthUid) {
+    studyCacheEpoch += 1;
+    if (window.LectureProcessorPlannedStudy) window.LectureProcessorPlannedStudy.invalidate();
+    plannedSessionController = null;
+    clearTimeout(learningCheckpointTimer);
+    learningCacheSession = null;
+    highlightCacheSessions.clear(); highlightDeviceSaved.clear();
+    pendingHighlightSaves.clear(); highlightSavesInFlight.clear();
+    if (progressSyncTimer) { clearTimeout(progressSyncTimer); progressSyncTimer = null; }
+    if (progressSyncController) { progressSyncController.reset(); progressSyncController = null; }
+    if (plannerActivitySyncTimer) { clearTimeout(plannerActivitySyncTimer); plannerActivitySyncTimer = null; }
+    plannerActivity = null; plannerActivitySyncPromise = null;
+    if (highlightSyncTimer) { clearTimeout(highlightSyncTimer); highlightSyncTimer = null; }
+    if (hlSelectionTimer) { clearTimeout(hlSelectionTimer); hlSelectionTimer = null; }
+    applyStudySignedOutState();
+  }
+  if (!event.detail.preservePending) event.detail.legacyCleared = clearKnownLegacyStudyKeys(uid) && event.detail.legacyCleared !== false;
+});
 bootstrap.onAuthStateReady(auth, function (user) {
-  if (plannedStudyAuthUid !== (user ? user.uid : '') && window.LectureProcessorPlannedStudy) {
-    window.LectureProcessorPlannedStudy.invalidate(); plannedSessionController = null;
+  if (plannedStudyAuthUid !== (user ? user.uid : '')) {
+    studyCacheEpoch += 1;
+    if (window.LectureProcessorPlannedStudy) window.LectureProcessorPlannedStudy.invalidate();
+    plannedSessionController = null;
+    clearTimeout(learningCheckpointTimer);
+    learningCacheSession = null;
+    highlightCacheSessions.clear(); highlightDeviceSaved.clear();
+    pendingHighlightSaves.clear(); highlightSavesInFlight.clear();
+    if (progressSyncTimer) { clearTimeout(progressSyncTimer); progressSyncTimer = null; }
+    if (progressSyncController) { progressSyncController.reset(); progressSyncController = null; }
+    if (plannerActivitySyncTimer) { clearTimeout(plannerActivitySyncTimer); plannerActivitySyncTimer = null; }
+    plannerActivity = null; plannerActivitySyncPromise = null;
+    if (highlightSyncTimer) { clearTimeout(highlightSyncTimer); highlightSyncTimer = null; }
     learnStage.classList.remove('visible'); activeLearnMode = ''; stopMatchTimer();
     document.getElementById('learn-mode-content').inert = false;
+    if (plannedStudyAuthUid) {
+      applyStudySignedOutState();
+    }
   }
   plannedStudyAuthUid = user ? user.uid : '';
+  if (studyCache) studyCache.activate(plannedStudyAuthUid);
   if (!user) {
     token = null;
     if (authClient && typeof authClient.clearToken === 'function') { authClient.clearToken(); }
@@ -7158,7 +7402,10 @@ bootstrap.onAuthStateReady(auth, function (user) {
     return;
   }
   setStudyLibraryVisibility(true);
+  var authCacheEpoch = studyCacheEpoch;
+  function currentStudyIdentity() { return authCacheEpoch === studyCacheEpoch && auth.currentUser === user; }
   user.getIdToken().then(function (t) {
+    if (!currentStudyIdentity()) return;
     token = t;
     if (authClient && typeof authClient.setToken === 'function') { authClient.setToken(t); }
     setActiveRuntimeJobs(readActiveRuntimeJobsCache(user));
@@ -7173,8 +7420,10 @@ bootstrap.onAuthStateReady(auth, function (user) {
     }
     hydrateTopbarDueFromCache(user);
     return loadRemoteProgressSummary().then(function () {
+      if (!currentStudyIdentity()) return;
       return loadData();
     }).then(function () {
+      if (!currentStudyIdentity()) return;
       renderGoalPanel();
       if (initialStudyEntryMode === 'create-pack' && !autoCreateConsumed) {
         autoCreateConsumed = true;
@@ -7187,6 +7436,7 @@ bootstrap.onAuthStateReady(auth, function (user) {
       return refreshActiveRuntimeJobs(true);
     });
   }).catch(function (e) {
+    if (!currentStudyIdentity()) return;
     revealDeferredStudyLibraryShell();
     showToast(e.message || 'Could not load study library.', 'error');
   });
@@ -7660,33 +7910,51 @@ if (packDailyGoalInput) {
   });
 }
 
-deletePackBtn.addEventListener('click', function () {
-  var packIdsToDelete = getPackIdsForDelete();
+function deleteStudyPacks(packIdsToDelete) {
   if (!packIdsToDelete.length) { showToast('Select a study pack first.', 'error'); return; }
+  var session = authClient && authClient.captureSession ? authClient.captureSession() : null;
   var deletingMultiple = packIdsToDelete.length > 1;
+  var deviceCleanupFailed = false;
   openConfirmModal(deletingMultiple ? 'Delete Study Packs' : 'Delete Study Pack', formatPackDeleteMessage(packIdsToDelete), deletingMultiple ? 'Delete Packs' : 'Delete Pack').then(function (confirmed) {
-    if (!confirmed) return;
+    if (!confirmed || (session && !session.isCurrent())) return;
     var removedPackIds = packIdsToDelete.slice();
-    var activePackDeleted = removedPackIds.indexOf(selectedPackId) >= 0;
     var deleteChain = removedPackIds.reduce(function (chain, packId) {
       return chain.then(function () {
-        return apiCall('/api/study-packs/' + encodeURIComponent(packId), { method: 'DELETE' });
+        if (session) session.assertCurrent();
+        return apiCall('/api/study-packs/' + encodeURIComponent(packId), { method: 'DELETE' }).then(function () {
+          if (session && !session.isCurrent()) return;
+          if (!removePackLocalCaches(packId)) deviceCleanupFailed = true;
+          packs = packs.filter(function (pack) { return pack.study_pack_id !== packId; });
+          selectedPackIds.delete(packId);
+          if (selectedPackId === packId) {
+            openPackSeq += 1;
+            selectedPackId = ''; selectedPack = null; setInlineAutosaveBaseline(null); showPackEditor(false); updatePackSummary();
+          }
+          renderPacks();
+        });
       });
     }, flushInlineAutosave({ allowDiscard: true }).then(function (saved) {
       if (!saved) throw new Error('Save your changes before deleting study packs.');
       return flushHighlightSync();
     }));
     deleteChain.then(function () {
-      // Pack deletion also removes its progress and due-count contribution.
-      removedPackIds.forEach(removePackLocalCaches);
+      if (session && !session.isCurrent()) return;
       clearPackSelection(false);
-      if (activePackDeleted) {
-        openPackSeq += 1;
-        selectedPackId = ''; selectedPack = null; setInlineAutosaveBaseline(null); showPackEditor(false); updatePackSummary();
-      }
-      return loadData(activePackDeleted ? '' : selectedPackId);
-    }).then(function () { showToast(deletingMultiple ? 'Study packs deleted.' : 'Study pack deleted.'); }).catch(function (e) { showToast(e.message || 'Could not delete study pack.', 'error'); });
+      return loadData(selectedPackId);
+    }).then(function () {
+      if (!session || session.isCurrent()) showToast(deviceCleanupFailed ? 'Some study data could not be cleared from this device.' : deletingMultiple ? 'Study packs deleted.' : 'Study pack deleted.', deviceCleanupFailed ? 'error' : 'success');
+    }).catch(function (e) {
+      if (!session || session.isCurrent()) showToast(e.message || 'Could not delete study pack.', 'error');
+    });
   });
+}
+deletePackBtn.addEventListener('click', function () {
+  setExportMenuOpen(false);
+  exportMenuBtn.focus();
+  deleteStudyPacks(selectedPackId ? [selectedPackId] : []);
+});
+if (deleteSelectedPacksBtn) deleteSelectedPacksBtn.addEventListener('click', function () {
+  deleteStudyPacks(getSelectedPackIds());
 });
 
 var exportAnnotatedNotesBtn = document.getElementById('export-annotated-notes-btn');
@@ -8227,51 +8495,59 @@ function normalizeClientHighlightPayload(payload) {
 
 function readStructuredHighlightCache() {
   var key = getHighlightCacheKey();
-  if (!key) return null;
+  if (!key || !auth.currentUser) return null;
+  var scoped = studyCache ? normalizeClientHighlightPayload(studyCache.get(auth.currentUser.uid, 'highlights', selectedPackId)) : null;
   try {
-    return normalizeClientHighlightPayload(JSON.parse(localStorage.getItem(key) || 'null'));
+    var raw = localStorage.getItem(key);
+    var legacy = normalizeClientHighlightPayload(JSON.parse(raw || 'null'));
+    if (legacy) registerLegacyStudyKey(key, auth.currentUser.uid, selectedPackId, raw);
+    if (legacy && (!scoped || legacy.updated_at > scoped.updated_at)) {
+      writeStructuredHighlightCache(legacy, true);
+      return legacy;
+    }
+    return scoped;
   } catch (e) {
-    return null;
+    return scoped;
   }
 }
 
-function writeStructuredHighlightCache(payload) {
-  var key = getHighlightCacheKey();
-  if (!key) return;
-  if (!payload || !payload.ranges) {
-    try { localStorage.removeItem(key); } catch (e) { }
-    return;
+function storeHighlightForPack(packId, payload, pending, session) {
+  var saved = !!(studyCache && studyCache.set(session, 'highlights', packId, payload, { packId: packId, pending: !!pending }));
+  highlightDeviceSaved.set(packId, saved);
+  if (saved && auth.currentUser) {
+    removeKnownLegacyStudyKey(NOTES_HIGHLIGHT_CACHE_PREFIX + packId, auth.currentUser.uid, packId);
+    removeKnownLegacyStudyKey(LEGACY_NOTES_HIGHLIGHT_CACHE_PREFIX + packId, auth.currentUser.uid, packId);
   }
-  try {
-    localStorage.setItem(key, JSON.stringify(payload));
-  } catch (e) { }
+  return saved;
+}
+
+function writeStructuredHighlightCache(payload, pending) {
+  if (!selectedPackId || !auth.currentUser || !payload || !payload.ranges) return false;
+  return storeHighlightForPack(selectedPackId, payload, pending, highlightCacheSessions.get(selectedPackId));
 }
 
 function clearStructuredHighlightCache() {
-  var key = getHighlightCacheKey();
-  if (key) {
-    try { localStorage.removeItem(key); } catch (e) { }
-  }
+  if (!studyCache || !auth.currentUser || !selectedPackId) return false;
+  var removed = studyCache.remove(auth.currentUser.uid, 'highlights', selectedPackId);
+  // This deliberate reset belongs to the currently opened, owned pack.
+  highlightCacheSessions.set(selectedPackId, studyCache.capture(auth.currentUser.uid));
+  highlightDeviceSaved.delete(selectedPackId);
+  return removed;
 }
 
 function readLegacyHighlightPayload() {
   var key = getLegacyHighlightStorageKey();
   if (!key) return null;
   try {
-    var parsed = JSON.parse(localStorage.getItem(key) || 'null');
+    var raw = localStorage.getItem(key);
+    var parsed = JSON.parse(raw || 'null');
     if (!parsed || typeof parsed !== 'object') return null;
     if (!isCompatibleHighlightBaseKey(String(parsed.base_key || ''))) return null;
     if (typeof parsed.annotated_html !== 'string' || !parsed.annotated_html) return null;
+    if (auth.currentUser) registerLegacyStudyKey(key, auth.currentUser.uid, selectedPackId, raw);
     return Object.assign({}, parsed, { base_key: getHighlightBaseKey() });
   } catch (e) {
     return null;
-  }
-}
-
-function clearLegacyHighlightCache() {
-  var key = getLegacyHighlightStorageKey();
-  if (key) {
-    try { localStorage.removeItem(key); } catch (e) { }
   }
 }
 
@@ -8305,9 +8581,10 @@ function resetHighlightHistory(initialSnapshot) {
   updateHighlightHistoryButtons();
 }
 
-function setHighlightStatus(message) {
+function setHighlightStatus(message, warning) {
   if (!notesHighlightStatus) return;
   notesHighlightStatus.textContent = String(message || 'Highlights save to this study pack automatically.');
+  notesHighlightStatus.hidden = !warning;
 }
 
 function buildTextNodeIndex(root) {
@@ -8399,11 +8676,11 @@ function collectCurrentHighlightPayload() {
   };
 }
 
-function persistHighlightPayloadLocally(payload) {
+function persistHighlightPayloadLocally(payload, pending) {
   if (payload && payload.ranges) {
-    writeStructuredHighlightCache(payload);
+    return writeStructuredHighlightCache(payload, pending);
   } else {
-    clearStructuredHighlightCache();
+    return clearStructuredHighlightCache();
   }
 }
 
@@ -8415,7 +8692,7 @@ function queueHighlightSync(payload) {
   if (selectedPack && selectedPack.study_pack_id === safePackId) {
     selectedPack.notes_highlights = cloned;
   }
-  persistHighlightPayloadLocally(cloned);
+  if (!persistHighlightPayloadLocally(cloned, true)) setHighlightStatus('Highlights could not be saved on this device. Keep this tab open until syncing succeeds.', true);
   if (highlightSyncTimer) { clearTimeout(highlightSyncTimer); }
   highlightSyncTimer = setTimeout(function () {
     highlightSyncTimer = null;
@@ -8426,35 +8703,48 @@ function queueHighlightSync(payload) {
 function flushHighlightSync(options) {
   var opts = options || {};
   if (highlightSyncTimer) { clearTimeout(highlightSyncTimer); highlightSyncTimer = null; }
-  if (!token || !auth.currentUser) return Promise.resolve();
-  var uid = auth.currentUser.uid;
+  if (!token || !auth.currentUser) return Promise.resolve(false);
+  var uid = auth.currentUser.uid, cacheEpoch = studyCacheEpoch;
+  function isCurrent() { return cacheEpoch === studyCacheEpoch && auth.currentUser && auth.currentUser.uid === uid; }
   return Promise.all(Array.from(pendingHighlightSaves.keys()).map(function (packId) {
     if (highlightSavesInFlight.has(packId)) {
-      return highlightSavesInFlight.get(packId).then(function () {
+      return highlightSavesInFlight.get(packId).then(function (saved) {
+        if (!isCurrent()) return false;
         if (opts.keepalive && pendingHighlightSaves.has(packId)) return flushHighlightSync(opts);
+        return saved;
       });
     }
     var payload = pendingHighlightSaves.get(packId);
+    var cacheSession = highlightCacheSessions.get(packId);
     pendingHighlightSaves.delete(packId);
     var request = apiCall('/api/study-packs/' + encodeURIComponent(packId), buildStudyPatchOptions({ notes_highlights: payload.ranges.length ? payload : null }, opts)).then(function () {
-      if (auth.currentUser && auth.currentUser.uid === uid && selectedPack && selectedPack.study_pack_id === packId && !pendingHighlightSaves.has(packId)) {
+      if (!isCurrent() || highlightSavesInFlight.get(packId) !== request) return false;
+      if (!pendingHighlightSaves.has(packId)) {
+        storeHighlightForPack(packId, payload, false, cacheSession);
+      }
+      if (selectedPack && selectedPack.study_pack_id === packId && !pendingHighlightSaves.has(packId)) {
         selectedPack.notes_highlights = payload;
         setHighlightStatus(payload.ranges.length
           ? 'Highlights save to this study pack automatically.'
           : 'Highlights cleared for this study pack.');
       }
+      return true;
     }).catch(function (e) {
-      if (!auth.currentUser || auth.currentUser.uid !== uid) return;
-      if (highlightSavesInFlight.get(packId) !== request) return;
+      if (!isCurrent() || highlightSavesInFlight.get(packId) !== request) return false;
       if (e.status === 403 || e.status === 404) {
         pendingHighlightSaves.delete(packId);
-        if (selectedPackId === packId) setHighlightStatus('Highlights remain on this device; this pack cannot be updated.');
-        return;
+        if (selectedPackId === packId) setHighlightStatus(highlightDeviceSaved.get(packId)
+          ? 'Highlights remain on this device; this pack cannot be updated.'
+          : 'Highlights could not be saved on this device. Keep this tab open until syncing succeeds.', true);
+        return false;
       }
       console.warn('Could not sync note highlights:', e && e.message ? e.message : e);
       // A failed older request must never replace a newer local edit.
       if (!pendingHighlightSaves.has(packId)) pendingHighlightSaves.set(packId, payload);
-      if (selectedPackId === packId) setHighlightStatus('Highlights are saved locally and will retry syncing.');
+      if (selectedPackId === packId) setHighlightStatus(highlightDeviceSaved.get(packId)
+        ? 'Highlights are saved locally and will retry syncing.'
+        : 'Highlights could not be saved on this device. Keep this tab open until syncing succeeds.', true);
+      return false;
     }).finally(function () {
       if (highlightSavesInFlight.get(packId) !== request) return;
       highlightSavesInFlight.delete(packId);
@@ -8467,7 +8757,7 @@ function flushHighlightSync(options) {
     });
     highlightSavesInFlight.set(packId, request);
     return request;
-  }));
+  })).then(function (results) { return isCurrent() && results.every(function (saved) { return saved !== false; }); });
 }
 
 function applyHighlightPayloadToNotes(payload) {
@@ -8610,7 +8900,6 @@ function migrateLegacyHighlightsForPack() {
   if (!legacyPayload || !legacyPayload.annotated_html) return null;
   setNotesHtml(legacyPayload.annotated_html);
   var migratedPayload = collectCurrentHighlightPayload();
-  clearLegacyHighlightCache();
   renderNotesForSelectedPackBase();
   if (migratedPayload) {
     queueHighlightSync(migratedPayload);
@@ -8624,8 +8913,10 @@ function reapplyHighlightsForPack() {
   var localPayload = readStructuredHighlightCache();
   var localWins = !!(localPayload && (!serverPayload || localPayload.updated_at > serverPayload.updated_at));
   var payload = localWins ? localPayload : serverPayload;
+  var migrated = false;
   if (!payload) {
     payload = migrateLegacyHighlightsForPack();
+    migrated = !!payload;
   }
   var appliedPayload = applyHighlightPayloadToNotes(payload);
   if (payload) {
@@ -8637,8 +8928,9 @@ function reapplyHighlightsForPack() {
     clearStructuredHighlightCache();
     setHighlightStatus('Highlights save to this study pack automatically.');
   } else {
-    persistHighlightPayloadLocally(appliedPayload);
-    setHighlightStatus('Highlights save to this study pack automatically.');
+    var stored = persistHighlightPayloadLocally(appliedPayload, localWins || migrated);
+    var warning = !stored && (localWins || migrated);
+    setHighlightStatus(warning ? 'Highlights could not be saved on this device. Keep this tab open until syncing succeeds.' : 'Highlights save to this study pack automatically.', warning);
   }
   resetHighlightHistory(appliedPayload);
   if (localWins) queueHighlightSync(appliedPayload);
@@ -9031,6 +9323,34 @@ document.getElementById('builder-ai-import-guide').addEventListener('click', fun
 function learningCheckpointKey() {
   return 'learning_session_' + (auth.currentUser ? auth.currentUser.uid : 'anon') + '_' + selectedPackId + '_' + (plannedPickerActive ? plannerSessionFromUrl : 'practice');
 }
+function learningCheckpointId() {
+  return JSON.stringify([selectedPackId, plannedPickerActive ? plannerSessionFromUrl : 'practice']);
+}
+function registerLegacyStudyKey(key, uid, packId, value) {
+  if (typeof value === 'string') knownLegacyStudyKeys.set(key, { uid: uid, packId: packId, value: value });
+}
+function removeKnownLegacyStudyKey(key, uid, packId) {
+  var owner = knownLegacyStudyKeys.get(key);
+  if (!owner || owner.uid !== uid || (packId && owner.packId !== packId)) return true;
+  try {
+    // Another tab may have replaced a previously validated record.
+    if (localStorage.getItem(key) === owner.value) localStorage.removeItem(key);
+    knownLegacyStudyKeys.delete(key);
+    return true;
+  } catch (_) { return false; }
+}
+function clearKnownLegacyStudyKeys(uid, packId) {
+  var cleared = true;
+  knownLegacyStudyKeys.forEach(function (owner, key) {
+    if (owner.uid !== uid || (packId && owner.packId !== packId)) return;
+    cleared = removeKnownLegacyStudyKey(key, uid, packId) && cleared;
+  });
+  return cleared;
+}
+function captureStudyPackCacheSession() {
+  learningCacheSession = studyCache && auth.currentUser ? studyCache.capture(auth.currentUser.uid) : null;
+  if (selectedPackId) highlightCacheSessions.set(selectedPackId, learningCacheSession);
+}
 function hashStudyContent(value) {
   var hash = 2166136261;
   for (var index = 0; index < value.length; index++) { hash ^= value.charCodeAt(index); hash = Math.imul(hash, 16777619); }
@@ -9040,11 +9360,25 @@ function learningContentVersion() {
   return hashStudyContent(JSON.stringify([selectedPack && selectedPack.flashcards, selectedPack && selectedPack.test_questions, selectedPack && selectedPack.notes_markdown]));
 }
 function loadLearningCheckpoint() {
-  if (!selectedPack) return null;
-  try { var saved = JSON.parse(localStorage.getItem(learningCheckpointKey()) || 'null'); return saved && saved.version === learningContentVersion() ? saved : null; } catch (_) { return null; }
+  if (!selectedPack || !auth.currentUser) return null;
+  var uid = auth.currentUser.uid;
+  var saved = studyCache ? studyCache.get(uid, 'learning', learningCheckpointId()) : null;
+  if (saved && saved.version === learningContentVersion()) return saved;
+  try {
+    var raw = localStorage.getItem(learningCheckpointKey());
+    saved = JSON.parse(raw || 'null');
+    if (!saved || saved.version !== learningContentVersion() || (saved.uid && saved.uid !== uid) ||
+        (saved.pack_id && saved.pack_id !== selectedPackId)) return null;
+    registerLegacyStudyKey(learningCheckpointKey(), uid, selectedPackId, raw);
+    if (studyCache && studyCache.set(learningCacheSession, 'learning', learningCheckpointId(), saved, { packId: selectedPackId, pending: false })) {
+      removeKnownLegacyStudyKey(learningCheckpointKey(), uid, selectedPackId);
+    }
+    return saved;
+  } catch (_) { return null; }
 }
 function saveLearningCheckpoint() {
-  if (learningRestoring || !selectedPack || !activeLearnMode || !learnStage || !learnStage.classList.contains('visible')) return;
+  if (learningRestoring || !auth.currentUser || !selectedPack || !activeLearnMode || !learnStage || !learnStage.classList.contains('visible')) return;
+  if (plannedSessionController && plannedSessionController.isFinished()) return;
   var saved = loadLearningCheckpoint() || {version:learningContentVersion(),modes:{}};
   saved.lastMode = activeLearnMode;
   saved.modes = saved.modes || {};
@@ -9057,7 +9391,11 @@ function saveLearningCheckpoint() {
     matchCards:matchCards,matchMatched:matchMatched,matchTotal:matchTotal,matchElapsed:matchElapsed,matchSelected:matchSelected,
     notesContentScroll:learnNotesContent.scrollTop,notesScroll:learnStage.querySelector('.learn-card').scrollTop,notesBodyScroll:document.getElementById('learn-mode-content').scrollTop
   };
-  try { localStorage.setItem(learningCheckpointKey(),JSON.stringify(saved)); document.getElementById('learn-session-state').textContent = 'Your place is saved on this device'; } catch (_) { document.getElementById('learn-session-state').textContent = 'Device storage is unavailable. Keep this tab open to keep your place.'; }
+  var stored = studyCache && studyCache.set(learningCacheSession, 'learning', learningCheckpointId(), saved, { packId: selectedPackId, pending: false });
+  if (stored) {
+    removeKnownLegacyStudyKey(learningCheckpointKey(), auth.currentUser.uid, selectedPackId);
+  }
+  document.getElementById('learn-session-state').textContent = stored ? 'Your place is saved on this device' : 'Device storage is unavailable. Keep this tab open to keep your place.';
 }
 function getLearnQuestions() {
   return learnQuestionOrder.map(function (index) { return (selectedPack.test_questions || [])[index]; }).filter(Boolean);
@@ -9139,5 +9477,49 @@ function flushPendingStudyEdits() {
   flushHighlightSync({ keepalive: true });
   saveLearningCheckpoint();
 }
+function hasPendingStudyPersistence() {
+  if (!auth.currentUser) return false;
+  return !!(learnModeStarting || inlineAutoSaving || buildInlineAutosavePayload() ||
+    pendingHighlightSaves.size || highlightSavesInFlight.size || hasProgressDirty() ||
+    plannerActivitySyncPromise ||
+    (progressSyncController && progressSyncController.isInFlight()) ||
+    (plannedSessionController && plannedSessionController.hasPending()) ||
+    !studyCache || typeof studyCache.hasPending !== 'function' || studyCache.hasPending(auth.currentUser.uid));
+}
+async function flushStudyPersistence() {
+  if (!auth.currentUser) return !hasPendingStudyPersistence();
+  var uid = auth.currentUser.uid, cacheEpoch = studyCacheEpoch;
+  function isCurrent() { return cacheEpoch === studyCacheEpoch && auth.currentUser && auth.currentUser.uid === uid; }
+  var planned = plannedSessionController;
+  saveLearningCheckpoint();
+  recordLearnSessionCompletion();
+  if (progressSyncTimer) { clearTimeout(progressSyncTimer); progressSyncTimer = null; }
+  if (plannerActivitySyncTimer) { clearTimeout(plannerActivitySyncTimer); plannerActivitySyncTimer = null; }
+  try {
+    var results = await Promise.all([
+      planned ? planned.flushPending() : Promise.resolve(true),
+      flushInlineAutosave(),
+      syncPlannerActivity(false),
+      (async function () {
+        var inFlight = Array.from(highlightSavesInFlight.values());
+        var initial = await Promise.all(inFlight.concat([flushHighlightSync()]));
+        if (!isCurrent() || initial.some(function (saved) { return saved === false; })) return false;
+        if (pendingHighlightSaves.size && !await flushHighlightSync()) return false;
+        return isCurrent() && !pendingHighlightSaves.size && !highlightSavesInFlight.size;
+      })(),
+      (async function () {
+        var controller = getProgressSyncController();
+        if (!controller) return false;
+        await controller.whenIdle();
+        if (!isCurrent()) return false;
+        var saved = await flushProgressSync(false);
+        await controller.whenIdle();
+        return isCurrent() && saved && !hasProgressDirty();
+      })()
+    ]);
+    return isCurrent() && results.every(function (saved) { return saved === true; }) && !hasPendingStudyPersistence();
+  } catch (_) { return false; }
+}
+window.LectureProcessorStudyPersistence = { flushPending: flushStudyPersistence, hasPending: hasPendingStudyPersistence };
 window.addEventListener('pagehide', flushPendingStudyEdits);
 document.addEventListener('visibilitychange',function () { if (document.hidden) { flushPendingStudyEdits(); stopMatchTimer(); } else if (activeLearnMode === 'match' && learnStage.classList.contains('visible') && matchMatched < matchTotal && !matchRunning && (!plannedSessionController || plannedSessionController.getRun().run_status === 'active')) startMatchTimer(matchElapsed); });
