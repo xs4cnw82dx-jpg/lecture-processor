@@ -16,6 +16,8 @@
   var state = {
     user: null,
     data: null,
+    loadSeq: 0,
+    library: null,
     view: 'today',
     weekStart: startOfWeek(new Date()),
     wizardStep: 1,
@@ -156,6 +158,8 @@
   async function loadData(options) {
     var settings = options || {};
     var loadingUser = state.user;
+    var loadSeq = ++state.loadSeq;
+    function isCurrent() { return state.user === loadingUser && state.loadSeq === loadSeq; }
     if (settings.useCache !== false) {
       var cached = readCache();
       if (cached) {
@@ -167,17 +171,29 @@
     }
     try {
       var payload = await api('/api/study-plan' + bootstrapRange());
-      if (state.user !== loadingUser) return;
+      if (!isCurrent()) return;
+      var library = settings.reuseLibrary ? state.library : null;
+      if (!library || library.user !== loadingUser) {
+        library = { user: loadingUser, packs: new Map(), cursor: String(payload.next_pack_cursor || ''), promise: null };
+        state.library = library;
+      }
+      library.firstPageIds = new Set();
+      (payload.study_packs || []).forEach(function (pack) {
+        library.firstPageIds.add(pack.study_pack_id);
+        library.packs.set(pack.study_pack_id, pack);
+      });
+      payload.study_packs = Array.from(library.packs.values());
+      payload.next_pack_cursor = library.cursor;
       state.data = payload;
       cacheData();
       setSaving('');
       els.loading.hidden = true;
       els.workspace.hidden = false;
       renderAll();
-      await loadRemainingPacks(payload.next_pack_cursor);
-      openRequestedPacks();
+      await loadRemainingPacks(library);
+      if (isCurrent()) openRequestedPacks();
     } catch (error) {
-      if (state.user !== loadingUser) return;
+      if (!isCurrent()) return;
       els.loading.hidden = true;
       if (!state.data) {
         els.workspace.hidden = false;
@@ -190,25 +206,32 @@
     }
   }
 
-  async function loadRemainingPacks(initialCursor) {
-    var cursor = String(initialCursor || '');
-    var pageCount = 0;
-    while (cursor && pageCount < 10) {
-      try {
-        var result = await api('/api/study-plan/library?limit=100&cursor=' + encodeURIComponent(cursor));
-        var byId = new Map(((state.data && state.data.study_packs) || []).map(function (pack) { return [pack.study_pack_id, pack]; }));
-        (result.study_packs || []).forEach(function (pack) { byId.set(pack.study_pack_id, pack); });
-        state.data.study_packs = Array.from(byId.values());
-        cursor = String(result.next_cursor || '');
-        pageCount += 1;
-      } catch (error) {
-        toast('Some older study packs could not be loaded. ' + error.message, 'error');
-        break;
+  function loadRemainingPacks(library) {
+    if (library.promise) return library.promise;
+    function isCurrent() { return state.user === library.user && state.library === library; }
+    library.promise = (async function () {
+      var pageCount = 0;
+      while (library.cursor && pageCount < 10) {
+        try {
+          var result = await api('/api/study-plan/library?limit=100&cursor=' + encodeURIComponent(library.cursor));
+          if (!isCurrent()) return;
+          (result.study_packs || []).forEach(function (pack) {
+            if (!library.firstPageIds.has(pack.study_pack_id)) library.packs.set(pack.study_pack_id, pack);
+          });
+          library.cursor = String(result.next_cursor || '');
+          pageCount += 1;
+        } catch (error) {
+          if (isCurrent()) toast('Some older study packs could not be loaded. ' + error.message, 'error');
+          break;
+        }
       }
-    }
-    state.data.next_pack_cursor = cursor;
-    cacheData();
-    if (els.wizardOverlay && !els.wizardOverlay.hidden) renderWizardPacks();
+      if (!isCurrent() || !state.data) return;
+      state.data.study_packs = Array.from(library.packs.values());
+      state.data.next_pack_cursor = library.cursor;
+      cacheData();
+      if (els.wizardOverlay && !els.wizardOverlay.hidden) renderWizardPacks();
+    })().finally(function () { library.promise = null; });
+    return library.promise;
   }
 
   function setView(view, updateUrl) {
@@ -253,6 +276,9 @@
   function renderHeaderAction() {
     var label = byId('new-study-goal-label');
     if (label) label.textContent = activeGoals().length ? 'New study goal' : 'Set up my plan';
+    byId('clear-study-plan-btn').hidden = !((state.data.goals || []).length || plannedSessions().some(function (session) { return session.status !== 'completed'; }));
+    byId('schedule-goals-btn').hidden = !activeGoals().length;
+    byId('calendar-connections-btn').hidden = !activeGoals().length && !plannedSessions().length;
   }
   function renderNextSession() {
     var today = todayInTimezone();
@@ -277,7 +303,7 @@
   function renderGoalHealth() {
     var goals = activeGoals().slice().sort(function (a, b) { return a.exam_date.localeCompare(b.exam_date); });
     if (!goals.length) {
-      els.goalHealth.innerHTML = '<h2>Start with a study goal</h2><p>Choose your packs and a deadline, then review a schedule that fits your time.</p><button type="button" class="btn primary" data-setup-plan>Set up a goal</button>';
+      els.goalHealth.innerHTML = '<h2>Start with a study goal</h2><p>Choose your packs and a deadline, then review a schedule that fits your time.</p><button type="button" class="btn primary" data-setup-plan>Set up my plan</button>';
       bindSetupButtons(els.goalHealth); return;
     }
     els.goalHealth.innerHTML = goals.map(function (goal) {
@@ -354,7 +380,7 @@
   function renderToday() {
     var today = todayInTimezone();
     var sessions = plannedSessions().filter(function (item) { return item.date === today && item.status !== 'cancelled'; }).sort(sortSessions);
-    els.todayList.innerHTML = sessions.length ? sessions.map(sessionRow).join('') : '<div class="empty-plan-state"><strong>No sessions today</strong>Your accepted plan is staying quiet today. Add a manual session only if you want one.</div>';
+    els.todayList.innerHTML = sessions.length ? sessions.map(sessionRow).join('') : '<div class="empty-plan-state"><strong>No sessions today</strong>' + (activeGoals().length ? 'Your accepted plan is staying quiet today. Add a manual session only if you want one.' : 'Set up your study plan to schedule your first session, or add a session yourself.') + '</div>';
     queryAll('.session-row', els.todayList).forEach(function (row) {
       var session = plannedSessions().find(function (item) { return item.id === row.dataset.sessionId; });
       var complete = row.querySelector('[data-complete]');
@@ -385,7 +411,7 @@
     els.scheduleHelp.hidden = noPlanYet;
     els.weekCalendar.classList.toggle('is-empty-workspace', noPlanYet);
     if (noPlanYet) {
-      els.weekCalendar.innerHTML = '<div class="empty-workspace-panel"><div class="empty-workspace-icon" aria-hidden="true">◇</div><h3>Your schedule begins with a goal</h3><p>Tell us what you are studying, your deadline, and when you are free. You will review the proposed schedule before anything is added.</p><button type="button" class="btn primary" data-setup-plan>Set up my study plan</button></div>';
+      els.weekCalendar.innerHTML = '<div class="empty-workspace-panel"><div class="empty-workspace-icon" aria-hidden="true"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4M8 3v4M3 11h18m-13 5 2 2 4-4"/></svg></div><h3>Your schedule begins with a goal</h3><p>Tell us what you are studying, your deadline, and when you are free. You will review the proposed schedule before anything is added.</p><button type="button" class="btn primary" data-setup-plan>Set up my plan</button></div>';
       els.mobileAgenda.innerHTML = '';
       bindSetupButtons(els.weekCalendar);
       return;
@@ -420,12 +446,15 @@
 
   function renderProgress() {
     var progress = (state.data && state.data.progress) || {};
+    var dueCount = Number(progress.due_cards || 0);
+    var dueNow = window.LectureI18n ? window.LectureI18n.t('{count} due now · all packs', { count: dueCount }) : dueCount + ' due now · all packs';
+    var cardsDue = window.LectureI18n ? window.LectureI18n.t('{count} cards due · all packs', { count: dueCount }) : dueCount + ' cards due · all packs';
     var metrics = [
       ['Study time', minutesLabel(progress.completed_minutes || progress.minutes || 0), minutesLabel(progress.tracked_minutes || 0) + ' tracked · ' + minutesLabel(progress.offline_minutes || 0) + ' logged'],
-      ['Cards reviewed', Number(progress.cards_reviewed || 0), Number(progress.due_cards || 0) + ' due now'],
+      ['Cards reviewed', Number(progress.cards_reviewed || 0), dueNow],
       ['Questions answered', Number(progress.questions_answered || 0), Number(progress.correct || 0) + ' correct'],
       ['Accuracy', Number(progress.questions_answered || 0) || Number(progress.cards_reviewed || 0) ? Number(progress.accuracy_percent || 0) + '%' : '—', Number(progress.questions_answered || 0) || Number(progress.cards_reviewed || 0) ? Number(progress.correct || 0) + ' correct' : 'Answer a question or review a card to begin'],
-      ['Mastery', Number(progress.mastery_percent || 0) + '%', Number(progress.due_cards || 0) + ' cards due'],
+      ['Mastery', Number(progress.mastery_percent || 0) + '%', cardsDue],
       ['Study streak', Number(progress.current_streak || 0) + ' days', 'Keep the rhythm going']
     ];
     els.progressSummary.innerHTML = metrics.map(function (item) { return '<article class="metric-card"><div class="metric-card-label">' + escapeHtml(item[0]) + '</div><div class="metric-card-value">' + escapeHtml(item[1]) + '</div><div class="metric-card-note">' + escapeHtml(item[2]) + '</div></article>'; }).join('');
@@ -437,7 +466,7 @@
     els.goalProgress.innerHTML = goals.length ? goals.map(function (goal) {
       var detail = (hasPersonalPace() ? minutesLabel(goal.remaining_minutes) + ' remaining at your pace · ' : '') + minutesLabel(goal.scheduled_minutes) + ' scheduled · ' + String(goal.mastery_percent || 0) + '% mastered';
       return '<div class="goal-progress-item"><div class="goal-progress-item-head"><h3>' + escapeHtml(goal.title) + '</h3><span class="health-badge ' + (goal.on_track ? 'good' : 'warning') + '">' + escapeHtml(String(goal.readiness_percent || 0)) + '% ready</span></div><p>' + escapeHtml(detail) + '</p></div>';
-    }).join('') : '<div class="empty-plan-state"><strong>No goal yet</strong>Set up a goal to connect your packs, deadline, schedule, and readiness.<button type="button" class="btn primary" data-setup-plan>Create my first goal</button></div>';
+    }).join('') : '<div class="empty-plan-state"><strong>No goal yet</strong>Set up a goal to connect your packs, deadline, schedule, and readiness.<button type="button" class="btn primary" data-setup-plan>Set up my plan</button></div>';
     bindSetupButtons(els.goalProgress);
   }
 
@@ -1341,9 +1370,9 @@
     byId('today-add-session-btn').addEventListener('click', function () { openSessionEditor(null); });
     byId('schedule-add-session-btn').addEventListener('click', function () { openSessionEditor(null); });
     byId('review-rebalance-btn').addEventListener('click', function () { var goal = activeGoals()[0]; if (goal) openWizard({ goalId: goal.goal_id }); });
-    byId('schedule-prev-week').addEventListener('click', function () { state.weekStart = addDays(state.weekStart, -7); loadData({ useCache: false }); });
-    byId('schedule-next-week').addEventListener('click', function () { state.weekStart = addDays(state.weekStart, 7); loadData({ useCache: false }); });
-    byId('schedule-this-week').addEventListener('click', function () { state.weekStart = startOfWeek(new Date()); loadData({ useCache: false }); });
+    byId('schedule-prev-week').addEventListener('click', function () { state.weekStart = addDays(state.weekStart, -7); loadData({ useCache: false, reuseLibrary: true }); });
+    byId('schedule-next-week').addEventListener('click', function () { state.weekStart = addDays(state.weekStart, 7); loadData({ useCache: false, reuseLibrary: true }); });
+    byId('schedule-this-week').addEventListener('click', function () { state.weekStart = startOfWeek(new Date()); loadData({ useCache: false, reuseLibrary: true }); });
     [byId('calendar-connections-btn'), byId('progress-calendar-connections-btn')].forEach(function (button) { button.addEventListener('click', openFeeds); });
     byId('plan-wizard-close').addEventListener('click', function () { closeOverlay(els.wizardOverlay); });
     els.wizardBack.addEventListener('click', function () { if (state.wizardStep > 1) { state.wizardStep -= 1; renderWizardStep(); } });
@@ -1367,6 +1396,7 @@
     window.addEventListener('scroll', function (event) { if (activeControlPopover && !activeControlPopover.panel.contains(event.target)) positionControlPopover(activeControlPopover.panel, activeControlPopover.anchor); }, true);
     window.addEventListener('online', function () { setOfflineState(); loadData({ useCache: false }); });
     window.addEventListener('offline', setOfflineState);
+    window.addEventListener('lp:language-changed', function () { if (state.data) renderProgress(); });
     document.addEventListener('keydown', function (event) {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
       if (closeControlPopover(true)) { event.preventDefault(); return; }
@@ -1382,6 +1412,7 @@
     bootstrap.onAuthStateReady(auth, async function (user) {
       if (state.user !== user) {
         state.resetIdempotencyKey = ''; state.data = null;
+        state.library = null; state.loadSeq += 1;
         els.workspace.hidden = true; els.loading.hidden = !user;
       }
       state.user = user;
@@ -1391,7 +1422,12 @@
         return;
       }
       els.authGate.hidden = true;
-      try { authClient.setToken(await user.getIdToken()); } catch (_) {}
+      try {
+        var token = await user.getIdToken();
+        if (state.user !== user) return;
+        authClient.setToken(token);
+      } catch (_) {}
+      if (state.user !== user) return;
       await loadData({ useCache: true });
       var calendarQuery = new URLSearchParams(window.location.search);
       if (calendarQuery.get('calendar') === 'google') {

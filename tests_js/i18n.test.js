@@ -28,6 +28,14 @@ test('invalid or unavailable preferences default to English', () => {
   assert.equal(load('{"language":"xx"}').getLanguage(), 'en');
 });
 
+test('progress due counts name the all-pack scope in both interface languages', () => {
+  const i18n = load('{"language":"nl"}');
+  assert.equal(i18n.t('{count} due now · all packs', { count: 6 }), '6 nu te herhalen · alle pakketten');
+  assert.equal(i18n.t('{count} cards due · all packs', { count: 6 }), '6 kaarten te herhalen · alle pakketten');
+  i18n.setLanguage('en');
+  assert.equal(i18n.t('{count} due now · all packs', { count: 6 }), '6 due now · all packs');
+});
+
 test('bounded UI counts and whole phrases translate without replacing arbitrary substrings', () => {
   const i18n = load('{"language":"nl"}');
   assert.equal(i18n.t('1 card'), '1 kaart');
