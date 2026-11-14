@@ -398,7 +398,7 @@ def get_study_image_docs(db, image_ids):
         refs = [db.collection('study_images').document(image_id) for image_id in ids[offset:offset + 100]]
         get_all = getattr(db, 'get_all', None)
         if callable(get_all):
-            docs.extend(get_all(refs, field_paths=['uid', 'pack_id', 'ready']))
+            docs.extend(get_all(refs, field_paths=['uid', 'pack_id', 'ready', 'deleting']))
         else:
-            docs.extend(_get_doc_with_fields(ref, ['uid', 'pack_id', 'ready']) for ref in refs)
+            docs.extend(_get_doc_with_fields(ref, ['uid', 'pack_id', 'ready', 'deleting']) for ref in refs)
     return docs
