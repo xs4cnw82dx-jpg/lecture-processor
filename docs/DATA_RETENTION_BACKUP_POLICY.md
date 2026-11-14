@@ -48,6 +48,12 @@ This policy covers:
 - Legacy snapshots without `expires_at_ts` are unaffected by TTL until a normal application write adds the field or ordinary in-memory cleanup removes them. Reads do not backfill the field. Historical cleanup remains an explicit operator follow-up; this change performs no production scan, backfill, or bulk deletion.
 - Account-export ZIP files use a separate one-hour file cleanup window. Access also requires the job snapshot, which follows the runtime retention window above. Saved study packs are separate records and are not expired by this policy.
 
+7. Private study pictures (`study_images` and private object storage)
+- Removing a picture's last card reference or deleting its pack schedules deletion of both the original and preview. Pack changes commit before byte cleanup starts; a failed pack change leaves its media intact.
+- The image record and shared storage reservation remain until both objects are removed. Failed cleanup can be retried through the same pack update/delete operation without releasing the budget twice. Pictures still referenced by another card in the pack are retained.
+- In-flight uploads retain per-attempt leases, renewed every 30 seconds with a three-minute expiry, plus a local writer guard. Cleanup waits for these uploads to stop. Once byte deletion starts, the generation cannot be attached or renewed; replacement uploads use new object paths.
+- Account deletion uses the same byte-first cleanup and reservation release. This behavior applies to normal application operations; no historical scan or bulk cleanup is performed by deployment.
+
 References: [Firestore TTL behavior](https://firebase.google.com/docs/firestore/ttl) and [Firebase CLI TTL configuration](https://github.com/firebase/firebase-tools/blob/main/src/firestore/README.md).
 
 ## 3) Backup Policy
