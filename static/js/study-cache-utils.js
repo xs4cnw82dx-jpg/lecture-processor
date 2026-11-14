@@ -316,6 +316,7 @@
     try {
       var storage = global.localStorage;
       if (!storage) return false;
+      if (options && options.preservePending) maintainFences(storage, uid);
       var entries = readEntries(storage, uid), retained = [], known = true, quarantinePending = false;
       if (options && options.preservePending) {
         // Keep generations, not revision IDs: another tab can finish a pending
