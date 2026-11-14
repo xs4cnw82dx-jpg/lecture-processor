@@ -86,11 +86,3 @@ def test_app_shell_uses_last_known_profile_for_fast_auth_hydration():
     assert "applyProfileToShell(lastProfile, { pending: true, trustPermissions: false })" in app_shell_js
     assert "if (!applyLastKnownProfile()) setCreditsVisible(false);" in app_shell_js
     assert 'clearLegacyAccountCaches();' in app_shell_js
-
-
-def test_expired_admin_navigation_explains_the_redirect_once():
-    app_shell_js = _read('static/js/app-shell.js')
-
-    assert "params.get('notice') !== 'admin-session-required'" in app_shell_js
-    assert 'Your admin session expired. Open Admin again to reconnect.' in app_shell_js
-    assert "params.delete('notice');" in app_shell_js

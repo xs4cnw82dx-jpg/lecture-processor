@@ -185,12 +185,7 @@ def _cleanup_row_files(row, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     if not row.get('study_pack_id'):
         study_audio.cleanup_failed_job_audio(row.get('row_job_id'), row, runtime=resolved_runtime)
-    local_paths = []
-    for key in ('slides_local_path', 'audio_local_path'):
-        value = str(row.get(key, '') or '').strip()
-        if value:
-            local_paths.append(value)
-    local_paths.extend(row.get('_local_paths', []) or [])
+    local_paths = batch_orchestrator._row_local_paths(row)
     gemini_files = row.get('_gemini_files', []) or []
     resolved_runtime.cleanup_files(local_paths, gemini_files)
 

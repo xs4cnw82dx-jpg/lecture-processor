@@ -176,10 +176,12 @@ test('planned setup starts the chosen Practice test viewer on mobile', async ({ 
 test('mode changes flush local pending progress before selecting the next viewer', async ({ page }) => {
   const fixture = await plannedLibrary(page);
   await page.addInitScript(() => {
-    const key = 'planned_run_owner_run_focus';
-    const saved = JSON.parse(localStorage.getItem(key) || '{}');
+    const key = 'lp_ui_v2:user:owner:study_cache:planned:run_focus';
+    const record = JSON.parse(localStorage.getItem(key));
+    const saved = record.payload;
     Object.assign(saved, {slot_seconds:60,active_seconds:60,checkpoint_revision:100,answers:{fc_0:{type:'fc',correct:true}},pending_reviews:[{id:'fc_0',action:'good',key:'fc_0:first'}]});
-    localStorage.setItem(key, JSON.stringify(saved));
+    record.pending = true; record.updated_at = Date.now();
+    localStorage.setItem(key, JSON.stringify(record));
   });
   await page.reload();
   await choose(page, 'test');

@@ -12,6 +12,11 @@
     return Math.max(0, Math.round(number(value, fallback)));
   }
 
+  function localDateString(date) {
+    var current = date || new Date();
+    return current.getFullYear() + '-' + String(current.getMonth() + 1).padStart(2, '0') + '-' + String(current.getDate()).padStart(2, '0');
+  }
+
   function formatDuration(seconds) {
     var safe = integer(seconds, 0);
     var hours = Math.floor(safe / 3600);
@@ -114,6 +119,7 @@
     epley: epley,
     formatDuration: formatDuration,
     formatWeight: formatWeight,
+    localDateString: localDateString,
     nextAvailableLoad: nextAvailableLoad,
     number: number,
     progression: progression,

@@ -683,7 +683,9 @@ PROCESSING_PUBLIC_ERROR_MESSAGE = 'Processing failed. Your credit has been refun
 def cleanup_old_jobs():
     """Evict completed/errored jobs older than JOB_TTL_SECONDS to prevent OOM."""
     from lecture_processor.domains.runtime_jobs.schema import TERMINAL_RUNTIME_JOB_STATUSES
+    from lecture_processor.services import tools_download_service
 
+    tools_download_service.cleanup_expired_downloads(_self_runtime())
     now_ts = time.time()
     expired_ids = []
     with JOBS_LOCK:

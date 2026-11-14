@@ -486,8 +486,8 @@ def test_instant_batch_create_accepts_all_modes_with_instant_metadata(allow_acco
                 {'row_id': 'row-2', 'slides_file_field': 'row_2_slides', 'audio_file_field': 'row_2_audio'},
             ],
             'files': {
-                'row_1_slides': (io.BytesIO(b'%PDF row 1'), 'row-1.pdf'),
-                'row_2_slides': (io.BytesIO(b'%PDF row 2'), 'row-2.pdf'),
+                'row_1_slides': (io.BytesIO(b'%PDF-1.7 row 1'), 'row-1.pdf'),
+                'row_2_slides': (io.BytesIO(b'%PDF-1.7 row 2'), 'row-2.pdf'),
                 'row_1_audio': (io.BytesIO(b'audio row 1'), 'row-1.mp3'),
                 'row_2_audio': (io.BytesIO(b'audio row 2'), 'row-2.mp3'),
             },
@@ -498,8 +498,8 @@ def test_instant_batch_create_accepts_all_modes_with_instant_metadata(allow_acco
                 {'row_id': 'row-2', 'slides_file_field': 'row_2_slides'},
             ],
             'files': {
-                'row_1_slides': (io.BytesIO(b'%PDF row 1'), 'row-1.pdf'),
-                'row_2_slides': (io.BytesIO(b'%PDF row 2'), 'row-2.pdf'),
+                'row_1_slides': (io.BytesIO(b'%PDF-1.7 row 1'), 'row-1.pdf'),
+                'row_2_slides': (io.BytesIO(b'%PDF-1.7 row 2'), 'row-2.pdf'),
             },
         },
         'interview': {

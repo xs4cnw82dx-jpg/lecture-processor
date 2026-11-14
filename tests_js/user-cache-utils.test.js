@@ -46,3 +46,35 @@ test('user-cache-utils clears only the requested user scope keys', () => {
   assert.equal(userCache.getUserJson('user-1', 'credits_breakdown', null), null);
   assert.deepEqual(userCache.getUserJson('user-2', 'dashboard_summary', null), { streak: 8 });
 });
+
+test('clearUserScope reports a delegated clear failure', () => {
+  assert.equal(userCache.clearUserScope('user-1', [], { clearUserScope: () => false }), false);
+});
+
+test('clearUserScope attempts every key and reports a partial failure', () => {
+  const removed = [];
+  const cache = { remove: key => { removed.push(key); return key !== 'user:user-1:first'; } };
+  assert.equal(userCache.clearUserScope('user-1', ['first', 'second'], cache), false);
+  assert.deepEqual(removed, ['user:user-1:first', 'user:user-1:second']);
+});
+
+test('clearUserScope contains delegated access errors', () => {
+  assert.equal(userCache.clearUserScope('user-1', [], {
+    clearUserScope: () => { throw new Error('Storage unavailable'); },
+  }), false);
+});
+
+test('clearUserScope passes study-cache ownership to the UI cache', () => {
+  let received;
+  const uiCache = { clearUserScope: (uid, options) => { received = { uid, options }; return true; } };
+  assert.equal(userCache.clearUserScope('user-1', [], uiCache, { preserveStudyCache: true }), true);
+  assert.deepEqual(received, { uid: 'user-1', options: { preserveStudyCache: true } });
+});
+
+test('fallback scope clearing preserves study records only when requested', () => {
+  const removed = [];
+  const uiCache = { remove: key => { removed.push(key); return true; } };
+  const keys = ['dashboard', 'study_cache:planned:run', 'study_cache:learning:pack', 'study_cache_other'];
+  assert.equal(userCache.clearUserScope('user-1', keys, uiCache, { preserveStudyCache: true }), true);
+  assert.deepEqual(removed, ['user:user-1:dashboard', 'user:user-1:study_cache_other']);
+});

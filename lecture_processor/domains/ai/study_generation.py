@@ -286,14 +286,12 @@ def generate_study_materials(
         if include_usage:
             return (flashcards, test_questions, error_msg, usage_payload)
         return (flashcards, test_questions, error_msg)
-    except (KeyError, ValueError) as error:
+    except Exception:
+        resolved_runtime.logger.exception('Study materials generation failed')
+        error_message = 'Could not generate study materials. Please try again.'
         if include_usage:
-            return ([], [], f'Study prompt template formatting failed: {error}', empty_usage)
-        return ([], [], f'Study prompt template formatting failed: {error}')
-    except Exception as error:
-        if include_usage:
-            return ([], [], f'Study materials generation failed: {error}', empty_usage)
-        return ([], [], f'Study materials generation failed: {error}')
+            return ([], [], error_message, empty_usage)
+        return ([], [], error_message)
 
 
 def generate_interview_enhancements(
@@ -367,8 +365,12 @@ def generate_interview_enhancements(
                 sectioned_text = (getattr(response, 'text', '') or '').strip()
                 if not sectioned_text:
                     errors.append('Sectioned transcript generation returned empty output.')
-        except Exception as error:
-            errors.append(f'{feature} generation failed: {error}')
+        except Exception:
+            resolved_runtime.logger.exception('Interview enhancement generation failed for feature %s', feature)
+            if feature == 'summary':
+                errors.append('Could not generate the interview summary. Please try again.')
+            else:
+                errors.append('Could not generate the structured transcript. Please try again.')
 
     successful = []
     if summary_text:
@@ -388,6 +390,7 @@ def generate_interview_enhancements(
         'successful_features': successful,
         'failed_count': failed_count,
         'error': '; '.join(errors) if errors else None,
+        'error_code': 'interview_enhancement_failed' if errors else None,
         'token_usage_by_stage': usage_by_stage,
         'token_input_total': input_total,
         'token_output_total': output_total,
