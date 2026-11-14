@@ -1,10 +1,11 @@
 """Interview qualitative coding API handlers."""
 
 import math
+from urllib.parse import quote
 
 from lecture_processor.domains.ai import provider as ai_provider
-from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.study import interview_coding
+from lecture_processor.domains.study import interview_coding_runs as coding_runs
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.services import study_api_support
 
@@ -64,7 +65,9 @@ def _serialize_run_doc(doc):
         'prompt_version': str(payload.get('prompt_version', '') or ''),
         'proposed_codes': payload.get('proposed_codes', []) if isinstance(payload.get('proposed_codes', []), list) else [],
         'proposed_quotations': payload.get('proposed_quotations', []) if isinstance(payload.get('proposed_quotations', []), list) else [],
-        'error': str(payload.get('error', '') or ''),
+        'error': coding_runs.ERROR_MESSAGE if payload.get('error') else '',
+        'error_code': coding_runs.ERROR_CODE if payload.get('error') else '',
+        'credit_refunded': bool(payload.get('credit_refunded', False)),
         'warning': str(payload.get('warning', '') or ''),
         'credit_cost': int(payload.get('credit_cost', 0) or 0),
         'token_usage_by_stage': payload.get('token_usage_by_stage', {}) if isinstance(payload.get('token_usage_by_stage', {}), dict) else {},
@@ -87,8 +90,8 @@ def _load_quotations(app_ctx, uid, pack_id):
     return quotations
 
 
-def _load_latest_runs(app_ctx, uid, pack_id):
-    docs = app_ctx.repositories.study.list_interview_ai_coding_runs_by_uid_and_pack(app_ctx.db, uid, pack_id)
+def _load_latest_runs(app_ctx, uid, pack_id, *, limit=20):
+    docs = app_ctx.repositories.study.list_interview_ai_coding_runs_by_uid_and_pack(app_ctx.db, uid, pack_id, limit=limit)
     runs = [_serialize_run_doc(doc) for doc in docs if getattr(doc, 'exists', False)]
     runs.sort(key=lambda item: float(item.get('created_at', 0) or 0), reverse=True)
     return runs
@@ -144,7 +147,13 @@ def _coding_state_payload(app_ctx, pack_id, pack, transcript, uid):
     segments = interview_coding.parse_transcript_segments(transcript)
     codes = _load_codes(app_ctx, uid)
     quotations = _load_quotations(app_ctx, uid, pack_id)
-    runs = _load_latest_runs(app_ctx, uid, pack_id)
+    current_id = str(pack.get('interview_coding_run_id', '') or '')
+    runs = _load_latest_runs(app_ctx, uid, pack_id, limit=20 if current_id else None)
+    if current_id:
+        current_doc = app_ctx.repositories.study.get_interview_ai_coding_run_doc(app_ctx.db, current_id)
+        current = current_doc.to_dict() or {}
+        if current_doc.exists and current.get('uid') == uid and current.get('pack_id') == pack_id:
+            runs = [_serialize_run_doc(current_doc)] + [run for run in runs if run['run_id'] != current_id]
     credit_cost = max(1, int(math.ceil(max(1, len(transcript)) / 120000.0))) if transcript.strip() else 0
     return {
         'pack_id': pack_id,
@@ -418,40 +427,76 @@ def start_ai_coding_run(app_ctx, request, pack_id):
     deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
     if deletion_guard is not None:
         return deletion_guard
-    if getattr(app_ctx, 'client', None) is None:
-        return app_ctx.jsonify({'error': 'AI coding is currently unavailable'}), 503
     pack, transcript, error_response, status = _require_interview_pack(app_ctx, uid, pack_id)
     if error_response is not None:
         return error_response, status
     if not transcript.strip():
         return app_ctx.jsonify({'error': 'No transcript is available for coding'}), 400
     credit_cost = _credit_cost_for_transcript(transcript)
-    user = app_ctx.get_or_create_user(uid, email)
-    if not billing_credits.has_category_credit(user, 'slides', credit_cost, decoded_token=decoded_token, runtime=app_ctx):
-        return app_ctx.jsonify({'error': f'Not enough text extraction credits for AI coding. This transcript needs {credit_cost} credit(s).'}), 402
-    if not billing_credits.deduct_slides_credits(uid, credit_cost, runtime=app_ctx):
-        return app_ctx.jsonify({'error': 'Could not reserve text extraction credits for AI coding. Please try again.'}), 402
+    try:
+        app_ctx.get_or_create_user(uid, email)
+        run_id, created = coding_runs.claim_run(app_ctx, uid, pack_id, credit_cost, email=email)
+    except coding_runs.RunError as error:
+        return app_ctx.jsonify({'error': str(error), 'error_code': error.code}), error.status
+    except Exception:
+        app_ctx.logger.exception('Could not start interview coding for pack %s', pack_id)
+        return app_ctx.jsonify({'error': 'AI coding is currently unavailable. Please try again.', 'error_code': 'interview_coding_unavailable'}), 503
+    if created:
+        try:
+            coding_runs.cache_job(app_ctx, run_id)
+            app_ctx.submit_background_job(_run_ai_coding_job, job_id=run_id, transcript=transcript, runtime=app_ctx)
+        except Exception:
+            app_ctx.logger.exception('Could not dispatch interview coding run %s', run_id)
+            try:
+                coding_runs.fail_run(app_ctx, run_id)
+            except Exception:
+                app_ctx.logger.exception('Could not finalize interview coding run %s', run_id)
+    response = _run_response(app_ctx, pack_id, run_id, reused=not created)
+    return app_ctx.jsonify(response), 202 if response['run']['status'] in coding_runs.ACTIVE_STATUSES else 200
 
-    now_ts = app_ctx.time.time()
-    run_ref = app_ctx.repositories.study.create_interview_ai_coding_run_doc_ref(app_ctx.db)
-    run_payload = {
-        'run_id': run_ref.id,
-        'uid': uid,
-        'pack_id': pack_id,
-        'status': 'processing',
-        'model': getattr(app_ctx, 'MODEL_INTERVIEW_CODING', 'gemini-3.8-flash'),
-        'thinking_level': 'high',
-        'prompt_version': getattr(app_ctx, 'PROMPT_REGISTRY_VERSION', 'v1'),
-        'proposed_codes': [],
-        'proposed_quotations': [],
-        'credit_cost': credit_cost,
-        'token_usage_by_stage': {},
-        'created_at': now_ts,
-        'updated_at': now_ts,
+
+def _run_response(app_ctx, pack_id, run_id, *, reused=False):
+    return {
+        'ok': True,
+        'run': _serialize_run_doc(coding_runs.run_ref(app_ctx, run_id).get()),
+        'status_url': f'/api/interview-coding/packs/{quote(pack_id, safe="")}/ai-runs/{quote(run_id, safe="")}',
+        'reused': reused,
     }
-    run_ref.set(run_payload)
+
+
+def get_ai_coding_run(app_ctx, request, pack_id, run_id):
+    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
+    if error_response is not None:
+        return error_response, status
+    uid = decoded_token['uid']
+    _pack, error_response, status = study_api_support.get_owned_study_pack(app_ctx, uid, pack_id)
+    if error_response is not None:
+        return error_response, status
+    doc, error_response, status = _owned_run_doc(app_ctx, uid, pack_id, run_id)
+    if error_response is not None:
+        return error_response, status
+    if (doc.to_dict() or {}).get('status') in coding_runs.ACTIVE_STATUSES:
+        from lecture_processor.domains.runtime_jobs import recovery
+        if getattr(app_ctx, 'RUNTIME_JOB_RECOVERY_ENABLED', False) and not (doc.to_dict() or {}).get('runtime_job_id'):
+            try:
+                coding_runs.adopt_legacy_active_run(app_ctx, uid, pack_id, run_id)
+            except coding_runs.RunError as error:
+                return app_ctx.jsonify({'error': str(error), 'error_code': error.code}), error.status
+            except Exception:
+                app_ctx.logger.exception('Could not recover legacy interview coding run %s', run_id)
+                return app_ctx.jsonify({'error': 'Could not check AI coding status. Please try again.', 'error_code': 'interview_coding_unavailable'}), 503
+        recovery.recover_runtime_job_if_stale(run_id, runtime=app_ctx)
+    return app_ctx.jsonify(_run_response(app_ctx, pack_id, run_id))
+
+
+def _run_ai_coding_job(job_id, transcript, runtime):
+    app_ctx = runtime
+    run = coding_runs.run_ref(app_ctx, job_id).get().to_dict() or {}
+    uid, pack_id = run.get('uid', ''), run.get('pack_id', '')
     retry_tracker = {}
     try:
+        if not coding_runs.start_processing(app_ctx, job_id):
+            return
         all_segments = interview_coding.parse_transcript_segments(transcript)
         chunks = interview_coding.split_segments_for_ai(all_segments)
         existing_codes = _load_codes(app_ctx, uid)
@@ -460,6 +505,8 @@ def start_ai_coding_run(app_ctx, request, pack_id):
         proposed_quotations = []
         usage_by_stage = {}
         for index, chunk in enumerate(chunks):
+            if index and not coding_runs.can_continue(app_ctx, job_id):
+                return
             prompt = interview_coding.build_ai_prompt(
                 getattr(app_ctx, 'PROMPT_INTERVIEW_CODING'),
                 chunk,
@@ -506,29 +553,17 @@ def start_ai_coding_run(app_ctx, request, pack_id):
             deduped_quotes.append(quote)
         if not proposed_codes and not deduped_quotes:
             raise RuntimeError('AI coding returned no usable codes or quotations.')
-        run_ref.update({
-            'status': 'draft',
+        coding_runs.complete_run(app_ctx, job_id, {
             'proposed_codes': proposed_codes,
             'proposed_quotations': deduped_quotes,
             'token_usage_by_stage': usage_by_stage,
-            'updated_at': app_ctx.time.time(),
-        })
-        return app_ctx.jsonify({'ok': True, 'run': _serialize_run_doc(run_ref.get())})
-    except Exception as error:
-        billing_credits.refund_slides_credits(
-            uid,
-            credit_cost,
-            runtime=app_ctx,
-            idempotency_key=f'interview-coding-run:{run_ref.id}:credits',
-            idempotency_total=credit_cost,
-        )
+        }, transcript=transcript, existing_codes=existing_codes)
+    except Exception:
         app_ctx.logger.exception('AI interview coding failed for pack %s', pack_id)
-        run_ref.update({
-            'status': 'failed',
-            'error': str(error)[:500],
-            'updated_at': app_ctx.time.time(),
-        })
-        return app_ctx.jsonify({'error': 'AI coding failed. Credits were refunded.', 'run': _serialize_run_doc(run_ref.get())}), 500
+        try:
+            coding_runs.fail_run(app_ctx, job_id)
+        except Exception:
+            app_ctx.logger.exception('Could not finalize interview coding run %s', job_id)
 
 
 def _owned_run_doc(app_ctx, uid, pack_id, run_id):

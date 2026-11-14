@@ -34,6 +34,40 @@ def account_write_guard_response(app_ctx, uid):
     return app_ctx.jsonify({'error': message, 'status': 'account_deletion_in_progress'}), 409
 
 
+def stage_uploaded_slides_file(app_ctx, uploaded_file, job_id):
+    """Validate and save the original upload without running a converter."""
+    if not uploaded_file or not uploaded_file.filename:
+        return '', 'Slide file is required'
+    if not app_ctx.allowed_file(uploaded_file.filename, app_ctx.ALLOWED_SLIDE_EXTENSIONS):
+        return '', 'Invalid slide file. Please upload PDF or PPTX.'
+    mime_type = str(uploaded_file.mimetype or '').strip().lower()
+    if mime_type not in app_ctx.ALLOWED_SLIDE_MIME_TYPES and mime_type not in {'', 'application/octet-stream'}:
+        return '', 'Invalid slide content type'
+
+    safe_name = app_ctx.secure_filename(uploaded_file.filename)
+    source_path = app_ctx.os.path.join(app_ctx.UPLOAD_FOLDER, f'{job_id}_{safe_name}')
+    try:
+        uploaded_file.save(source_path)
+    except Exception:
+        app_ctx.cleanup_files([source_path], [])
+        raise
+    source_size = app_ctx.get_saved_file_size(source_path)
+    if source_size <= 0 or source_size > app_ctx.MAX_PDF_UPLOAD_BYTES:
+        app_ctx.cleanup_files([source_path], [])
+        return '', 'Slide file exceeds server limit (max 50MB) or is empty.'
+
+    extension = safe_name.rsplit('.', 1)[1].lower() if '.' in safe_name else ''
+    if extension == 'pdf':
+        if not app_ctx.file_has_pdf_signature(source_path):
+            app_ctx.cleanup_files([source_path], [])
+            return '', 'Uploaded PDF file is invalid.'
+        return source_path, ''
+    if extension == 'pptx' and app_ctx.file_has_pptx_signature(source_path):
+        return source_path, ''
+    app_ctx.cleanup_files([source_path], [])
+    return '', 'Uploaded PPTX file is invalid.'
+
+
 def attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None, *, idempotency_key=''):
     if not uid or not credit_type:
         return False, ''
