@@ -3,6 +3,11 @@
   'use strict';
   root.LectureI18nCatalog = root.LectureI18nCatalog || { nl: {}, en: {} };
   Object.assign(root.LectureI18nCatalog.nl, {
+  "Pack actions for {title}": "Pakketacties voor {title}",
+  "Delete \"{title}\" permanently? This cannot be undone.": "\"{title}\" definitief verwijderen? Dit kan niet ongedaan worden gemaakt.",
+  "Delete selected": "Selectie verwijderen",
+  "Delete selected ({count})": "Selectie verwijderen ({count})",
+  "Delete pack": "Pakket verwijderen",
   "Play": "Afspelen",
   "Mute": "Geluid dempen",
   "Unmute": "Geluid aanzetten",
