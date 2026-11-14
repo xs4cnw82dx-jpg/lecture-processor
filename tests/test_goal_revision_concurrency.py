@@ -125,6 +125,20 @@ def test_revision_remains_optional_for_an_uncontested_edit(goal_runtime):
     assert stored_goal()['exam_date'] == '2030-11-20'
 
 
+@pytest.mark.parametrize('include_revision', [True, False])
+def test_legacy_null_revision_is_treated_as_zero(goal_runtime, include_revision):
+    planner_repo.set_study_goal(None, 'owner', 'goal', {**stored_goal(), 'revision': None}, merge=False)
+    payload = {'title': 'Updated legacy goal'}
+    if include_revision:
+        payload['revision'] = 0
+
+    status, response = update_goal(goal_runtime, payload)
+
+    assert status == 200
+    assert response['goal']['revision'] == 1
+    assert stored_goal()['title'] == 'Updated legacy goal'
+
+
 def test_another_account_cannot_read_or_edit_the_goal(goal_runtime, monkeypatch):
     monkeypatch.setattr(service, '_require_user', lambda *_: ({'uid': 'other'}, None, 0))
 

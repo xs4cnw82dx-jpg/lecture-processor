@@ -28,7 +28,7 @@ def set_study_goal_if_revision(db, uid, goal_id, payload, expected_revision):
     def check(snapshot):
         current = snapshot.to_dict() or {} if snapshot.exists else {}
         if (not snapshot.exists or current.get('uid') != uid
-                or int(current.get('revision', 0)) != expected_revision):
+                or int(current.get('revision', 0) or 0) != expected_revision):
             raise PlannerRevisionConflict()
 
     safe_payload = {**payload, 'uid': uid}
