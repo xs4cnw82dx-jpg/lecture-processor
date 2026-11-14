@@ -632,6 +632,9 @@ def test_tools_lecture_download_returns_zip_for_both_formats(client, monkeypatch
     assert response.mimetype == "application/zip"
     archive = zipfile.ZipFile(io.BytesIO(response.data))
     assert sorted(archive.namelist()) == ["lecture-audio.mp3", "lecture-video.mp4"]
+    assert all(entry.compress_type == zipfile.ZIP_STORED for entry in archive.infolist())
+    assert archive.read("lecture-video.mp4") == b"video-bytes"
+    assert archive.read("lecture-audio.mp3") == b"ID3\x03\x00\x00\x00"
     assert reserved == [("tool-dl-u1", core.MAX_AUDIO_UPLOAD_BYTES * 2, "Lecture media download", "lecture_download")]
     assert adjusted == [(quota_reservation, expected_download_bytes, "Lecture media download", "lecture_download")]
     assert committed == [quota_reservation]
