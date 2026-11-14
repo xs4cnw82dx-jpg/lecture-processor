@@ -3,6 +3,7 @@ from lecture_processor.domains.billing import job_charges
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.runtime_jobs import execution
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
+from lecture_processor.domains.study import audio as study_audio
 
 ACTIVE_RUNTIME_JOB_STATUSES = {'queued', 'starting', 'processing'}
 
@@ -262,6 +263,7 @@ def _recover_runtime_job_doc(doc, *, now_ts, runtime=None):
     job_data['finished_at'] = now_ts
     job_data['job_id'] = job_id
     runtime_jobs_store.set_job(job_id, job_data, runtime=resolved_runtime)
+    study_audio.cleanup_failed_job_audio(job_id, job_data, runtime=resolved_runtime)
     resolved_runtime.save_job_log(job_id, job_data, now_ts)
     return True
 
