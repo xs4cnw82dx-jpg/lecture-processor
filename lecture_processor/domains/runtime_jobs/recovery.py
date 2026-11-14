@@ -360,7 +360,7 @@ def acquire_runtime_job_recovery_lease(now_ts=None, runtime=None):
         snapshot = lease_ref.get(transaction=txn)
         existing = snapshot.to_dict() or {}
         existing_expires_at = resolved_runtime.get_timestamp(existing.get('expires_at'))
-        if snapshot.exists and existing_expires_at > now_ts:
+        if snapshot.exists and existing_expires_at > now_ts and existing.get('holder_id') != holder_id:
             return False
         txn.set(
             lease_ref,

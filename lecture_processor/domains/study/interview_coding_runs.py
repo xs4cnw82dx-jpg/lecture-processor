@@ -182,6 +182,9 @@ def claim_run(runtime, uid, pack_id, cost, *, email=''):
         return claim(runtime.db.transaction())
     except RunError:
         raise
+    except account_lifecycle.AccountUnavailableError as error:
+        payload, status = job_charges.public_charge_error(error)
+        raise RunError(payload['error'], status, payload['error_code']) from error
     except Exception:
         # A successful commit may lose its acknowledgement. Its durable run
         # proves the debit committed too; dispatch that same run instead.
@@ -262,6 +265,7 @@ def complete_run(runtime, run_id, proposals, *, transcript, existing_codes):
 
 def fail_run(runtime, run_id, *, orphan=False, now_ts=None):
     now = runtime.time.time() if now_ts is None else now_ts
+    missing_run_recovered = object()
 
     @runtime.firestore.transactional
     def claim_failure(transaction):
@@ -271,14 +275,14 @@ def fail_run(runtime, run_id, *, orphan=False, now_ts=None):
         job_ref = _job_ref(runtime, run_id)
         job_doc = job_ref.get(transaction=transaction)
         job = job_doc.to_dict() or {}
-        if not doc.exists:
+        if not doc.exists and job.get('status') not in {'queued', 'starting', 'processing'}:
             return None
         if run.get('status') in SUCCESS_STATUSES:
             if job_doc.exists and job.get('status') in {'queued', 'starting', 'processing'}:
                 _write_job(runtime, transaction, job_ref, {**job, 'status': 'complete', 'finished_at': now,
                                                           'step_description': 'Coding draft ready'})
             return None
-        if run.get('status') not in ACTIVE_STATUSES:
+        if doc.exists and run.get('status') not in ACTIVE_STATUSES:
             return None
         if orphan:
             from lecture_processor.domains.runtime_jobs import recovery
@@ -287,6 +291,14 @@ def fail_run(runtime, run_id, *, orphan=False, now_ts=None):
             claimed_at = float(job.get('recovery_claimed_at', 0) or 0)
             if claimed_at and now - claimed_at < recovery._runtime_job_recovery_stale_seconds(runtime=runtime):
                 return None
+        if not doc.exists:
+            # Account deletion may remove the canonical run before this mirror.
+            # Close it without recreating the account or inventing a refund.
+            _write_job(runtime, transaction, job_ref, {
+                **job, 'status': 'error', 'finished_at': now,
+                'error': ERROR_MESSAGE, 'step_description': ERROR_MESSAGE,
+            })
+            return missing_run_recovered
         transaction.update(ref, {'status': 'refund_pending', 'error': ERROR_MESSAGE, 'error_code': ERROR_CODE, 'updated_at': now})
         _write_job(runtime, transaction, job_ref, {
             **job, 'status': 'processing', 'error': ERROR_MESSAGE,
@@ -295,6 +307,9 @@ def fail_run(runtime, run_id, *, orphan=False, now_ts=None):
         return run
 
     run = claim_failure(runtime.db.transaction())
+    if run is missing_run_recovered:
+        cache_job(runtime, run_id)
+        return True
     if run is None:
         cache_job(runtime, run_id)
         return False
