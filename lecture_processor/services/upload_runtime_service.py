@@ -32,6 +32,10 @@ def get_status(app_ctx, request, job_id):
                 'job_lost': True,
                 'retryable': True,
             }), 404
+    if job.get('job_scope') == 'lecture_download':
+        from lecture_processor.services import tools_download_service
+
+        return tools_download_service.get_lecture_download_status(app_ctx, request, job_id)
     if job.get('user_id', '') != uid:
         _admin_token, error_response, status = _require_admin_bypass(app_ctx, request)
         if error_response is not None:

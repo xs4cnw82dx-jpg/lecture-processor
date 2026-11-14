@@ -1,4 +1,4 @@
-"""Admission behavior across synchronous media downloads and batch conversion."""
+"""Admission behavior across queued media downloads and batch conversion."""
 
 from concurrent.futures import ThreadPoolExecutor
 import io
@@ -38,6 +38,8 @@ def media_requests(app, core, monkeypatch, tmp_path):
     monkeypatch.setattr(limiter, 'check_rate_limit', lambda **_kwargs: (True, 0))
     monkeypatch.setattr(core, 'client', object())
     monkeypatch.setattr(core, 'db', None)
+    monkeypatch.setattr(core, 'UPLOAD_FOLDER', str(tmp_path))
+    monkeypatch.setattr(core, 'submit_background_job', lambda target, *args, **kwargs: target(*args, **kwargs))
     monkeypatch.setattr(core, 'get_or_create_user', lambda *_args: {'slides_credits': 100})
     monkeypatch.setattr(core, 'get_batch_background_queue_stats', lambda: {'active': 0, 'capacity': 4})
     monkeypatch.setattr(core, 'get_saved_file_size', lambda path: Path(path).stat().st_size)
@@ -100,7 +102,7 @@ def media_requests(app, core, monkeypatch, tmp_path):
     def post(kind, uid='first', extension='.PPTX'):
         with app.test_client() as client:
             if kind == 'download':
-                response = client.post('/api/tools/lecture-download', headers={'X-Test-Uid': uid},
+                response = client.post('/api/tools/lecture-download', headers={'X-Test-Uid': uid, 'Accept': 'application/json'},
                                        json={'url': 'https://example.test/media', 'format': 'audio'})
             else:
                 endpoint = '/api/instant-batch/jobs' if kind == 'instant' else '/api/batch/jobs'
@@ -113,7 +115,10 @@ def media_requests(app, core, monkeypatch, tmp_path):
                     'unused_slides': (io.BytesIO(b'unselected slides'), 'unused.pptx'),
                 }
                 response = client.post(endpoint, headers={'X-Test-Uid': uid}, data=data)
-            result = (response.status_code, dict(response.headers), response.get_json(silent=True))
+            payload = response.get_json(silent=True)
+            if kind == 'download' and response.status_code == 202:
+                payload['worker_status'] = client.get(f"/api/tools/lecture-download/{payload['job_id']}", headers={'X-Test-Uid': uid}).get_json()['status']
+            result = (response.status_code, dict(response.headers), payload)
             response.close()
             return result
 
@@ -140,8 +145,8 @@ def test_held_media_rejects_second_request_before_quota_or_charge(media_requests
             assert (state.quota, state.charges, state.media) == before
         finally:
             state.release.set()
-        assert first.result(timeout=5)[0] == 200
-    assert state.post(second_kind, second_uid)[0] == 200
+        assert first.result(timeout=5)[0] == (202 if first_kind == 'download' else 200)
+    assert state.post(second_kind, second_uid)[0] == (202 if second_kind == 'download' else 200)
 
 
 @pytest.mark.parametrize('kind', ['download', 'batch', 'instant'])
@@ -149,10 +154,15 @@ def test_held_media_rejects_second_request_before_quota_or_charge(media_requests
 def test_failed_media_request_releases_process_and_account_admission(media_requests, kind, failure, expected):
     state = media_requests
     state.failure = failure
-    assert state.post(kind)[0] == expected
+    response = state.post(kind)
+    if kind == 'download' and failure != 'quota':
+        assert response[0] == 202
+        assert response[2]['worker_status'] == 'error'
+    else:
+        assert response[0] == expected
     state.failure = ''
-    assert state.post(kind)[0] == 200
-    assert state.post(kind, 'other')[0] == 200
+    assert state.post(kind)[0] == (202 if kind == 'download' else 200)
+    assert state.post(kind, 'other')[0] == (202 if kind == 'download' else 200)
 
 
 def test_batch_credit_preflight_return_releases_admission(media_requests):
@@ -161,7 +171,7 @@ def test_batch_credit_preflight_return_releases_admission(media_requests):
     assert state.post('batch')[0] == 402
     assert state.quota == []
     state.enough_credit = True
-    assert state.post('download')[0] == 200
+    assert state.post('download')[0] == 202
     assert state.post('batch', 'other')[0] == 200
 
 
@@ -178,7 +188,7 @@ def test_pdf_only_batch_does_not_need_media_admission(media_requests, kind):
             assert len(state.charges) == 2
         finally:
             state.release.set()
-        assert first.result(timeout=5)[0] == 200
+        assert first.result(timeout=5)[0] == 202
 
 
 @pytest.mark.parametrize('uid,expected', [('', 401), ('denied', 403), ('deleting', 409)])
@@ -195,4 +205,4 @@ def test_existing_access_checks_run_before_media_admission(media_requests, kind,
             assert state.charges == []
         finally:
             state.release.set()
-        assert first.result(timeout=5)[0] == 200
+        assert first.result(timeout=5)[0] == 202
