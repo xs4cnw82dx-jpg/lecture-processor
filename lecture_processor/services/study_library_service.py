@@ -7,6 +7,7 @@ from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.study import progress as study_progress
+from lecture_processor.domains.study import interview_coding_runs
 
 from lecture_processor.services import admin_support
 from lecture_processor.services import study_api_support
@@ -572,8 +573,12 @@ def delete_study_pack(app_ctx, request, pack_id):
     try:
         pack_result, error_response, status = study_api_support.get_owned_study_pack(app_ctx, uid, pack_id)
         if error_response is not None:
-            if status == 404 and study_picture_service.delete_for_pack(app_ctx, uid, pack_id):
-                return app_ctx.jsonify({'ok': True})
+            if status == 404:
+                removed, pending = _cleanup_deleted_pack(app_ctx, uid, pack_id)
+                if pending is not None:
+                    return pending
+                if removed:
+                    return app_ctx.jsonify({'ok': True})
             return error_response, status
         doc, pack = pack_result
         pack_ref = doc.reference
@@ -598,25 +603,43 @@ def delete_study_pack(app_ctx, request, pack_id):
         # Delete the local audio only after Firestore commits. If Firestore fails,
         # the user's pack and its media remain intact for a safe retry.
         study_audio.remove_pack_audio_file(pack, runtime=app_ctx)
-        try:
-            study_picture_service.delete_for_pack(app_ctx, uid, pack_id)
-        except Exception:
-            app_ctx.logger.warning('Picture cleanup remains pending after deleting study pack %s', pack_id, exc_info=True)
-            return app_ctx.jsonify({
-                'error': 'The study pack was deleted, but picture cleanup is still pending. Please try deleting it again.',
-                'error_code': 'study_pack_cleanup_pending',
-                'deleted': True,
-            }), 503
+        _removed, pending = _cleanup_deleted_pack(app_ctx, uid, pack_id)
+        if pending is not None:
+            return pending
         return app_ctx.jsonify({'ok': True})
     except BookError as error:
         return app_ctx.jsonify({'error': str(error)}), error.status
     except study_progress_service.ProgressPackUnavailable as error:
+        if error.status == 404:
+            removed, pending = _cleanup_deleted_pack(app_ctx, uid, pack_id)
+            if pending is not None:
+                return pending
+            if removed:
+                return app_ctx.jsonify({'ok': True})
         return app_ctx.jsonify({'error': str(error)}), error.status
     except account_lifecycle.AccountUnavailableError:
         return study_api_support.account_unavailable_response(app_ctx)
     except Exception as error:
         app_ctx.logger.error(f"Error deleting study pack {pack_id}: {error}")
         return app_ctx.jsonify({'error': 'Could not delete study pack'}), 500
+
+
+def _cleanup_deleted_pack(app_ctx, uid, pack_id):
+    removed = 0
+    for label, cleanup in (
+        ('interview', interview_coding_runs.cleanup_deleted_pack),
+        ('picture', study_picture_service.delete_for_pack),
+    ):
+        try:
+            removed += cleanup(app_ctx, uid, pack_id)
+        except Exception:
+            app_ctx.logger.warning('%s cleanup remains pending after deleting study pack %s', label, pack_id, exc_info=True)
+            return removed, (app_ctx.jsonify({
+                'error': f'The study pack was deleted, but {label} cleanup is still pending. Please try deleting it again.',
+                'error_code': 'study_pack_cleanup_pending',
+                'deleted': True,
+            }), 503)
+    return removed, None
 
 
 def get_study_folders(app_ctx, request):

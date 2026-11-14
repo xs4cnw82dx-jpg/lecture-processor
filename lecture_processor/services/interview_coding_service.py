@@ -338,6 +338,25 @@ def merge_code(app_ctx, request, pack_id, source_code_id):
     return app_ctx.jsonify({'ok': True})
 
 
+def _commit_quotation(app_ctx, uid, pack_id, reference, payload, *, create=False):
+    @app_ctx.firestore.transactional
+    def commit(transaction):
+        coding_runs._validate_target(app_ctx, transaction, uid, pack_id)
+        snapshot = reference.get(transaction=transaction)
+        current = snapshot.to_dict() or {}
+        if create:
+            if snapshot.exists:
+                raise coding_runs.RunError('Quotation already exists', 409)
+            transaction.set(reference, payload)
+        else:
+            if not snapshot.exists:
+                raise coding_runs.RunError('Quotation not found', 404)
+            if current.get('uid') != uid or current.get('pack_id') != pack_id:
+                raise coding_runs.RunError('Forbidden', 403)
+            transaction.update(reference, payload)
+    commit(app_ctx.db.transaction())
+
+
 def create_quotation(app_ctx, request, pack_id):
     decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
     if error_response is not None:
@@ -361,13 +380,13 @@ def create_quotation(app_ctx, request, pack_id):
         return app_ctx.jsonify({'error': 'Quotation must include a valid text range and at least one code'}), 400
     now_ts = app_ctx.time.time()
     doc_ref = app_ctx.repositories.study.create_interview_quotation_doc_ref(app_ctx.db)
-    doc_ref.set({
-        'quotation_id': doc_ref.id,
-        'uid': uid,
-        **quote_payload,
-        'created_at': now_ts,
-        'updated_at': now_ts,
-    })
+    try:
+        _commit_quotation(app_ctx, uid, pack_id, doc_ref, {
+            'quotation_id': doc_ref.id, 'uid': uid, **quote_payload,
+            'created_at': now_ts, 'updated_at': now_ts,
+        }, create=True)
+    except coding_runs.RunError as error:
+        return app_ctx.jsonify({'error': str(error)}), error.status
     return app_ctx.jsonify({'ok': True, 'quotation': _serialize_quotation_doc(doc_ref.get())})
 
 
@@ -401,7 +420,10 @@ def update_quotation(app_ctx, request, pack_id, quotation_id):
     )
     if quote_payload is None:
         return app_ctx.jsonify({'error': 'Quotation must include a valid text range and at least one code'}), 400
-    doc.reference.update({**quote_payload, 'updated_at': app_ctx.time.time()})
+    try:
+        _commit_quotation(app_ctx, uid, pack_id, doc.reference, {**quote_payload, 'updated_at': app_ctx.time.time()})
+    except coding_runs.RunError as error:
+        return app_ctx.jsonify({'error': str(error)}), error.status
     return app_ctx.jsonify({'ok': True, 'quotation': _serialize_quotation_doc(doc.reference.get())})
 
 
