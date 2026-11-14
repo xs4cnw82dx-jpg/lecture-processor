@@ -1,6 +1,7 @@
 from lecture_processor.runtime.container import get_runtime
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import policy as billing_policy
 from lecture_processor.domains.admin import rollups as admin_rollups
 from lecture_processor.domains.analytics import events as analytics_events
 
@@ -9,6 +10,11 @@ def _resolve_runtime(runtime=None):
     if runtime is not None:
         return runtime
     return get_runtime()
+
+
+def _fulfillment_bundle(bundle_id, runtime):
+    # Current and historical sessions retain their original checkout terms.
+    return runtime.CREDIT_BUNDLES.get(bundle_id) or billing_policy.bundle_for_fulfillment(bundle_id)
 
 
 def _session_created_at(stripe_session, runtime=None):
@@ -78,7 +84,7 @@ def _validate_checkout_session(stripe_session, runtime=None):
         return (False, 'missing_checkout_metadata')
     if not stripe_session_id:
         return (False, 'missing_session_id')
-    bundle = resolved_runtime.CREDIT_BUNDLES.get(bundle_id)
+    bundle = _fulfillment_bundle(bundle_id, resolved_runtime)
     if not bundle:
         return (False, 'unknown_credit_bundle')
     if str(stripe_session.get('mode', '') or '').strip().lower() != 'payment':
@@ -115,7 +121,7 @@ def _validate_checkout_session(stripe_session, runtime=None):
 
 def _build_purchase_record(uid, bundle_id, stripe_session_id, *, payment_status, fulfilled_at, created_at, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
-    bundle = resolved_runtime.CREDIT_BUNDLES.get(bundle_id)
+    bundle = _fulfillment_bundle(bundle_id, resolved_runtime)
     if not bundle:
         return None
     return {
@@ -173,52 +179,6 @@ def purchase_record_exists_for_session(stripe_session_id, runtime=None):
         return False
 
 
-def _grant_credits_and_record_purchase_fallback(stripe_session, runtime=None):
-    resolved_runtime = _resolve_runtime(runtime)
-    metadata = stripe_session.get('metadata', {}) or {}
-    uid = metadata.get('uid', '')
-    bundle_id = metadata.get('bundle_id', '')
-    stripe_session_id = stripe_session.get('id', '')
-    firebase_email = _firebase_email_from_session(stripe_session)
-
-    deletion_state = account_lifecycle.get_account_deletion_state(uid, runtime=resolved_runtime)
-    if account_lifecycle.account_deletion_blocks_fulfillment(deletion_state):
-        return (False, 'account_deleted')
-
-    try:
-        user_doc = resolved_runtime.users_repo.get_doc(resolved_runtime.db, uid)
-    except Exception:
-        user_doc = None
-    if getattr(user_doc, 'exists', False):
-        user_data = user_doc.to_dict() or {}
-        if str(user_data.get('account_status', '') or '').strip().lower() == 'deleting':
-            return (False, 'account_deletion_in_progress')
-    elif resolved_runtime.db is not None:
-        resolved_runtime.users_repo.set_doc(
-            resolved_runtime.db,
-            uid,
-            billing_credits.build_default_user_data(uid, firebase_email, runtime=resolved_runtime),
-            merge=True,
-        )
-
-    if purchase_record_exists_for_session(stripe_session_id, runtime=resolved_runtime):
-        return (True, 'already_processed')
-
-    success = billing_credits.grant_credits_to_user(uid, bundle_id, runtime=resolved_runtime)
-    if not success:
-        return (False, 'could_not_grant_credits')
-    save_purchase_record(
-        uid,
-        bundle_id,
-        stripe_session_id,
-        runtime=resolved_runtime,
-        payment_status='paid',
-        fulfilled_at=resolved_runtime.time.time(),
-        created_at=_session_created_at(stripe_session, runtime=resolved_runtime),
-    )
-    return (True, 'granted')
-
-
 def _grant_credits_and_record_purchase_atomic(stripe_session, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     db = getattr(resolved_runtime, 'db', None)
@@ -242,7 +202,7 @@ def _grant_credits_and_record_purchase_atomic(stripe_session, runtime=None):
     firebase_email = _firebase_email_from_session(stripe_session)
     created_at = _session_created_at(stripe_session, runtime=resolved_runtime)
     fulfilled_at = float(resolved_runtime.time.time())
-    bundle = resolved_runtime.CREDIT_BUNDLES.get(bundle_id)
+    bundle = _fulfillment_bundle(bundle_id, resolved_runtime)
     if not bundle:
         return (False, 'unknown_credit_bundle')
     purchase_record = _build_purchase_record(
@@ -263,40 +223,70 @@ def _grant_credits_and_record_purchase_atomic(stripe_session, runtime=None):
     def _run_transaction(transaction, purchase_ref_arg, user_ref_arg, deletion_ref_arg):
         purchase_snapshot = purchase_ref_arg.get(transaction=transaction)
         if getattr(purchase_snapshot, 'exists', False):
-            return 'already_processed'
+            return 'already_processed', None
+
+        if bundle_id in billing_policy.CREDIT_BUNDLES and not billing_policy.is_unified_enabled(resolved_runtime):
+            return 'credits_activation_pending', None
 
         if deletion_ref_arg is None:
-            return 'account_state_unavailable'
+            return 'account_state_unavailable', None
         deletion_snapshot = deletion_ref_arg.get(transaction=transaction)
         deletion_state = deletion_snapshot.to_dict() or {} if getattr(deletion_snapshot, 'exists', False) else {}
         if account_lifecycle.account_deletion_blocks_fulfillment(deletion_state):
-            return 'account_deleted'
+            return 'account_deleted', None
+        if getattr(deletion_snapshot, 'exists', False):
+            if not isinstance(deletion_state, dict):
+                return 'account_state_unavailable', None
+            deletion_status = str(deletion_state.get('status', '') or deletion_state.get('phase', '') or '').strip().lower()
+            if deletion_status != 'cancelled':
+                return 'account_state_unavailable', None
 
         user_snapshot = user_ref_arg.get(transaction=transaction)
         if getattr(user_snapshot, 'exists', False):
             user_data = user_snapshot.to_dict() or {}
-            if str(user_data.get('account_status', '') or '').strip().lower() == 'deleting':
-                return 'account_deletion_in_progress'
+            if str(user_data.get('account_status', '') or '').strip().lower() in {'deleting', 'deleted'}:
+                return 'account_deletion_in_progress', None
             user_payload = {}
         else:
             user_data = billing_credits.build_default_user_data(uid, firebase_email, runtime=resolved_runtime)
             user_payload = dict(user_data)
 
-        for credit_key, credit_amount in bundle.get('credits', {}).items():
-            current_value = int(user_data.get(credit_key, 0) or 0)
-            user_payload[credit_key] = current_value + int(credit_amount or 0)
+        committed_record = dict(purchase_record)
+        if billing_policy.uses_unified_credits(user_data, resolved_runtime):
+            user_payload.update(billing_policy.conversion_updates(user_data))
+            normalized = dict(user_data, **user_payload)
+            balance = normalized.get('credits')
+            if type(balance) is not int or balance < 0:
+                raise ValueError('Invalid credit balance.')
+            bundle_credits = bundle['credits']
+            if isinstance(bundle_credits, dict):
+                grant = sum(billing_policy.legacy_amount_credits(field, amount)
+                            for field, amount in bundle_credits.items())
+                committed_record['legacy_credits'] = dict(bundle_credits)
+            else:
+                grant = bundle_credits
+                if 'legacy_credits' in bundle:
+                    committed_record['legacy_credits'] = dict(bundle['legacy_credits'])
+            if type(grant) is not int or grant <= 0:
+                raise ValueError('Invalid credit grant.')
+            user_payload['credits'] = balance + grant
+            committed_record.update(credit_scheme=2, credits=grant)
+        else:
+            for credit_key, credit_amount in bundle.get('credits', {}).items():
+                current_value = int(user_data.get(credit_key, 0) or 0)
+                user_payload[credit_key] = current_value + int(credit_amount or 0)
 
         user_payload['updated_at'] = fulfilled_at
         transaction.set(user_ref_arg, user_payload, merge=True)
-        transaction.set(purchase_ref_arg, purchase_record, merge=True)
-        return 'granted'
+        transaction.set(purchase_ref_arg, committed_record, merge=True)
+        return 'granted', committed_record
 
     try:
         transaction = db.transaction()
-        status = _run_transaction(transaction, purchase_ref, user_ref, deletion_ref)
+        status, committed_record = _run_transaction(transaction, purchase_ref, user_ref, deletion_ref)
         if status == 'granted':
             try:
-                admin_rollups.increment_purchase_rollups(purchase_record, runtime=resolved_runtime)
+                admin_rollups.increment_purchase_rollups(committed_record, runtime=resolved_runtime)
             except Exception as error:
                 resolved_runtime.logger.error("❌ Failed to update purchase rollups for session %s: %s", stripe_session_id, error)
         return (status in {'granted', 'already_processed'}, status)
@@ -320,7 +310,7 @@ def process_checkout_session_credits(stripe_session, runtime=None):
     if not ok:
         return (False, status)
 
-    bundle = resolved_runtime.CREDIT_BUNDLES.get(bundle_id, {})
+    bundle = _fulfillment_bundle(bundle_id, resolved_runtime) or {}
     if status == 'granted':
         analytics_events.log_analytics_event(
             'payment_confirmed_backend',

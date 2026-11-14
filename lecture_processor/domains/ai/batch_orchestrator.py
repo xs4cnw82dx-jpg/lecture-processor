@@ -14,7 +14,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai import study_generation
 from lecture_processor.domains.ai import pipelines as ai_pipelines
-from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import job_charges, ledger
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.notifications import send_batch_completion_email
 from lecture_processor.domains.rate_limit import quotas as rate_limit_quotas
@@ -756,6 +756,14 @@ def create_batch_job(batch_payload, row_payloads, runtime=None):
 
     db = getattr(resolved_runtime, 'db', None)
     set_with_rows = getattr(getattr(resolved_runtime, 'batch_repo', None), 'set_batch_job_with_rows', None)
+    if payload.get('credit_admission_state') == 'pending':
+        if db is None:
+            raise ledger.LedgerUnavailable('Durable batch admission is unavailable.')
+        job_charges.persist_batch_admission(
+            batch_id, _sanitize_batch_payload(payload),
+            [(row_id, _sanitize_row_payload(row_payload)) for row_id, row_payload in stored_rows], runtime=resolved_runtime,
+        )
+        return batch_id
     if db is not None and callable(set_with_rows):
         if len(stored_rows) > 499:
             raise ValueError('Batch mode supports up to 499 rows.')
@@ -1559,11 +1567,11 @@ def _upload_row_files(row, runtime=None):
         row['audio_storage_key'] = study_audio.persist_audio_for_study_pack(row.get('row_job_id', ''), upload_path, runtime=resolved_runtime)
 
 
-def _finalize_row_job_log(batch, row, runtime=None, *, require_active=False):
+def _finalize_row_job_log(batch, row, runtime=None, *, require_active=False, settlement_only=False):
     resolved_runtime = _resolve_runtime(runtime)
     row_job_id = str(row.get('row_job_id', '') or resolved_runtime.uuid.uuid4())
     row['row_job_id'] = row_job_id
-    finished_at = resolved_runtime.time.time()
+    finished_at = (row.get('finished_at') or resolved_runtime.time.time()) if settlement_only else resolved_runtime.time.time()
     status = str(row.get('status', '') or '')
     if status != 'error':
         row['status'] = 'complete'
@@ -1591,6 +1599,7 @@ def _finalize_row_job_log(batch, row, runtime=None, *, require_active=False):
         'credit_deducted': row.get('credit_deducted', ''),
         'credit_refunded': row.get('credit_refunded', False),
         'billing_receipt': row.get('billing_receipt', {}),
+        **{key: row[key] for key in ('credit_scheme', 'charge_ref', 'charged_credits', 'refunded_credits', 'credit_admission_state') if key in row},
         'failed_stage': row.get('failed_stage', ''),
         'provider_error_code': row.get('provider_error_code', ''),
         'retry_attempts': int(row.get('retry_attempts', 0) or 0),
@@ -1609,7 +1618,7 @@ def _finalize_row_job_log(batch, row, runtime=None, *, require_active=False):
         'source_name': row.get('source_name', ''),
         'text_input_mode': row.get('text_input_mode', ''),
     }
-    if row.get('status') == 'complete':
+    if row.get('status') == 'complete' and not settlement_only:
         saved = ai_pipelines.save_study_pack(row_job_id, job_data, runtime=resolved_runtime)
         if require_active:
             _require_active_batch(batch.get('batch_id', ''), runtime=resolved_runtime)
@@ -1625,6 +1634,8 @@ def _finalize_row_job_log(batch, row, runtime=None, *, require_active=False):
             job_data['study_pack_id'] = ''
             job_data['credit_refunded'] = row.get('credit_refunded', False)
             job_data['billing_receipt'] = row.get('billing_receipt', {})
+            if row.get('charge_ref'):
+                job_data.update(job_charges.receipt_fields(row['billing_receipt']))
         elif job_data.get('study_pack_id'):
             row['study_pack_id'] = job_data.get('study_pack_id')
             folder_id = str(batch.get('folder_id', '') or '')
@@ -1645,33 +1656,62 @@ def _finalize_row_job_log(batch, row, runtime=None, *, require_active=False):
                     resolved_runtime.logger.warning('Could not assign batch folder to study pack %s', job_data['study_pack_id'], exc_info=True)
     if require_active:
         _require_active_batch(batch.get('batch_id', ''), runtime=resolved_runtime)
-    resolved_runtime.save_job_log(row_job_id, job_data, finished_at)
+    if settlement_only:
+        resolved_runtime.save_job_log(row_job_id, job_data, finished_at, record_metrics=False)
+    else:
+        resolved_runtime.save_job_log(row_job_id, job_data, finished_at)
     row['job_log_id'] = row_job_id
     row['updated_at'] = resolved_runtime.time.time()
     row['finished_at'] = finished_at
 
 
-def _refund_failed_row(batch, row, runtime=None):
+def _refund_failed_row(batch, row, runtime=None, *, pending_only=False):
     resolved_runtime = _resolve_runtime(runtime)
-    study_audio.cleanup_failed_job_audio(row.get('row_job_id'), row, runtime=resolved_runtime)
+    if not pending_only:
+        study_audio.cleanup_failed_job_audio(row.get('row_job_id'), row, runtime=resolved_runtime)
+    selected = _pending_row_refund_components(row) if pending_only else {'primary', 'extras'}
     uid = batch.get('uid', '')
     if not uid:
+        return
+    if row.get('credit_admission_state') == 'pending' and not row.get('charge_ref'):
         return
     batch_id = str(batch.get('batch_id', '') or row.get('batch_id', '') or '').strip()
     row_id = str(row.get('row_id', '') or '').strip()
     refund_scope = f'batch-row:{batch_id}:{row_id}'
+    if row.get('charge_ref') or row.get('credit_scheme') == 2:
+        row.setdefault('uid', uid)
+        components = (row.get('billing_receipt') or {}).get('components') or {}
+        for name, component in components.items():
+            if name not in selected:
+                continue
+            units = int(component.get('units', 0))
+            if pending_only and name == 'extras':
+                units = min(units, int(row.get('interview_features_refunded_count', 0) or 0)
+                            + int(row.get('extra_slides_refund_pending', 0) or 0))
+            suffix = 'interview-extras' if name == 'extras' else name
+            success = job_charges.refund_component(
+                row, name, units, f'{refund_scope}:{suffix}',
+                processed_count=1 if name == 'primary' else 0, runtime=resolved_runtime,
+            )
+            if name == 'extras':
+                row['extra_slides_refund_pending'] = 0 if success else max(0, units - int(row.get('interview_features_refunded_count', 0) or 0))
+                if success:
+                    row['interview_features_refunded_count'] = units
+            else:
+                row['credit_refund_pending'] = not success
+        return
 
     credit_type = str(row.get('credit_deducted', '') or '').strip()
     billing_receipt = dict(row.get('billing_receipt', {}) or {})
     receipt_holder = {'billing_receipt': billing_receipt}
-    if credit_type and not bool(row.get('credit_refunded', False)):
-        refunded_primary = bool(billing_credits.refund_credit(
-            uid,
-            credit_type,
-            runtime=resolved_runtime,
-            idempotency_key=f'{refund_scope}:primary',
+    if 'primary' in selected and credit_type and not bool(row.get('credit_refunded', False)):
+        row.setdefault('uid', uid)
+        refunded_primary = bool(job_charges.refund_component(
+            row, 'primary', 1, f'{refund_scope}:primary', legacy_credit_type=credit_type,
+            legacy_charged_units=1, processed_count=1, runtime=resolved_runtime,
         ))
         if refunded_primary:
+            row['credit_refund_pending'] = False
             row['credit_refunded'] = True
             billing_receipts.add_job_credit_refund(
                 receipt_holder,
@@ -1679,19 +1719,22 @@ def _refund_failed_row(batch, row, runtime=None):
                 1,
                 runtime=resolved_runtime,
             )
+        else:
+            row['credit_refund_pending'] = True
 
     interview_feature_cost = int(row.get('interview_features_cost', 0) or 0)
     already_refunded = int(row.get('interview_features_refunded_count', 0) or 0)
     pending_refund = max(0, interview_feature_cost - already_refunded)
-    if pending_refund > 0:
-        refunded_extras = bool(billing_credits.refund_slides_credits(
-            uid,
-            pending_refund,
-            runtime=resolved_runtime,
-            idempotency_key=f'{refund_scope}:interview-extras',
-            idempotency_total=already_refunded + pending_refund,
+    if pending_only:
+        pending_refund = min(pending_refund, int(row.get('extra_slides_refund_pending', 0) or 0))
+    if 'extras' in selected and pending_refund > 0:
+        row.setdefault('uid', uid)
+        refunded_extras = bool(job_charges.refund_component(
+            row, 'extras', already_refunded + pending_refund, f'{refund_scope}:interview-extras',
+            legacy_credit_type='slides_credits', legacy_charged_units=interview_feature_cost, runtime=resolved_runtime,
         ))
         if refunded_extras:
+            row['extra_slides_refund_pending'] = 0
             row['interview_features_refunded_count'] = already_refunded + pending_refund
             billing_receipts.add_job_credit_refund(
                 receipt_holder,
@@ -1699,8 +1742,45 @@ def _refund_failed_row(batch, row, runtime=None):
                 pending_refund,
                 runtime=resolved_runtime,
             )
+        else:
+            row['extra_slides_refund_pending'] = pending_refund
 
     row['billing_receipt'] = receipt_holder.get('billing_receipt', billing_receipt)
+
+
+def _row_refunded_total(row):
+    receipt = row.get('billing_receipt') or {}
+    if receipt.get('charge_ref'):
+        return int(receipt.get('refunded_credits', 0) or 0)
+    return (1 if bool(row.get('credit_refunded', False)) else 0) + int(row.get('interview_features_refunded_count', 0) or 0)
+
+
+def _pending_row_refund_components(row):
+    if row.get('status') not in {'error', 'complete'}:
+        return set()
+    receipt = row.get('billing_receipt') or {}
+    components = receipt.get('components') or {}
+    charged = receipt.get('charged') or {}
+    journaled = bool(row.get('charge_ref') or receipt.get('charge_ref'))
+    pending = set()
+    if row.get('status') == 'error' and row.get('credit_refund_pending'):
+        if ('primary' in components if journaled else charged.get(row.get('credit_deducted'), 0)):
+            pending.add('primary')
+    if int(row.get('extra_slides_refund_pending', 0) or 0) > 0:
+        if ('extras' in components if journaled else charged.get('slides_credits', 0)):
+            pending.add('extras')
+    return pending
+
+
+def _row_pending_refund_total(row):
+    components = (row.get('billing_receipt') or {}).get('components') or {}
+    total = 0
+    for name in _pending_row_refund_components(row):
+        component = components.get(name)
+        units = 1 if name == 'primary' else int(row.get('extra_slides_refund_pending', 0) or 0)
+        total += min(units * int(component['unit_cost']),
+                     int(component['charged_credits']) - int(component['refunded_credits'])) if component else units
+    return total
 
 
 def _cleanup_empty_batch_folder(batch, runtime=None):
@@ -1762,6 +1842,8 @@ def _finalize_batch_record(
     credits_charged_total = 0
     credits_refunded_total = 0
     expected_refund_total = 0
+    marked_refund_pending = 0
+    refund_retry_pending = False
 
     current_rows = _list_rows(batch_id, runtime=resolved_runtime)
     for row in current_rows:
@@ -1780,10 +1862,12 @@ def _finalize_batch_record(
             ) or 0
         )
         credits_charged_total += max(0, row_credits_charged)
-        row_refunded = (1 if bool(row.get('credit_refunded', False)) else 0) + int(row.get('interview_features_refunded_count', 0) or 0)
+        row_refunded = _row_refunded_total(row)
         credits_refunded_total += max(0, row_refunded)
         if status == 'error':
             expected_refund_total += max(0, row_credits_charged)
+        marked_refund_pending += _row_pending_refund_total(row)
+        refund_retry_pending = refund_retry_pending or bool(_pending_row_refund_components(row))
         local_paths = _row_local_paths(row) if status in {'complete', 'error'} else []
         gemini_files = row.get('_gemini_files', []) or []
         if local_paths or gemini_files:
@@ -1797,7 +1881,7 @@ def _finalize_batch_record(
         computed_status = 'partial'
 
     final_status = str(status_override or computed_status).strip().lower() or computed_status
-    credits_refund_pending = max(0, expected_refund_total - credits_refunded_total)
+    credits_refund_pending = max(marked_refund_pending, expected_refund_total - credits_refunded_total, 0)
     finished_at = resolved_runtime.time.time()
     latest_batch_snapshot = _get_batch(batch_id, runtime=resolved_runtime) or {}
     if require_active and (not latest_batch_snapshot or _is_terminal_status(latest_batch_snapshot.get('status', ''))):
@@ -1829,6 +1913,7 @@ def _finalize_batch_record(
             'credits_charged': credits_charged_total,
             'credits_refunded': credits_refunded_total,
             'credits_refund_pending': credits_refund_pending,
+            'credit_refund_retry_pending': refund_retry_pending,
             'updated_at': finished_at,
             'finished_at': finished_at,
             'error_summary': error_summary,
@@ -1893,6 +1978,8 @@ def mark_batch_submission_error(batch_id, error_message, runtime=None, *, mark_a
     batch = _get_batch(safe_batch_id, runtime=resolved_runtime)
     if not batch:
         return None
+    if batch.get('credit_admission_state') == 'pending':
+        batch = job_charges.close_batch_admission(safe_batch_id, runtime=resolved_runtime) or batch
     rows = _list_rows(safe_batch_id, runtime=resolved_runtime)
     message = str(error_message or '').strip() or 'The server is busy right now. Please try again shortly.'
     _mark_incomplete_rows_failed(
@@ -1935,6 +2022,14 @@ def _repair_inactive_batch_state(batch_id, batch=None, rows=None, runtime=None):
     current_status = str(current_batch.get('status', '') or '').strip().lower()
 
     if _batch_is_stale(current_batch, runtime=resolved_runtime, now_ts=now_ts):
+        if current_batch.get('credit_admission_state') == 'pending':
+            closed = job_charges.close_batch_admission(
+                safe_batch_id, stale_before=now_ts - _batch_recovery_stale_seconds(runtime=resolved_runtime), runtime=resolved_runtime,
+            )
+            if closed is None:
+                return _get_batch(safe_batch_id, runtime=resolved_runtime), rows
+            current_batch = closed
+            rows = None  # Enumerate only after admission has been transactionally fenced.
         current_rows = rows if isinstance(rows, list) else _list_rows(safe_batch_id, runtime=resolved_runtime)
         _mark_incomplete_rows_failed(
             safe_batch_id,
@@ -1957,6 +2052,8 @@ def _repair_inactive_batch_state(batch_id, batch=None, rows=None, runtime=None):
         return current_batch, current_rows
 
     if _is_terminal_status(current_status):
+        if current_batch.get('credit_refund_retry_pending'):
+            current_batch, rows = _retry_batch_refunds(current_batch, runtime=resolved_runtime)
         total_rows = int(current_batch.get('total_rows', 0) or 0)
         completed_rows = int(current_batch.get('completed_rows', 0) or 0)
         failed_rows = int(current_batch.get('failed_rows', 0) or 0)
@@ -1994,6 +2091,75 @@ def _repair_inactive_batch_state(batch_id, batch=None, rows=None, runtime=None):
     return current_batch, rows if isinstance(rows, list) else None
 
 
+def _claim_pending_row_refund(batch_id, row_id, *, runtime):
+    if getattr(runtime, 'db', None) is None or not hasattr(runtime.db, 'transaction'):
+        return None
+    parent_ref = runtime.batch_repo.batch_job_doc_ref(runtime.db, batch_id)
+    row_ref = runtime.batch_repo.batch_row_doc_ref(runtime.db, batch_id, row_id)
+
+    @runtime.firestore.transactional
+    def claim(transaction):
+        parent_doc = parent_ref.get(transaction=transaction)
+        row_doc = row_ref.get(transaction=transaction)
+        if not parent_doc.exists or not row_doc.exists:
+            return None
+        parent, row = parent_doc.to_dict() or {}, row_doc.to_dict() or {}
+        if (not _is_terminal_status(parent.get('status')) or not _pending_row_refund_components(row)
+                or row.get('uid', parent.get('uid')) != parent.get('uid')):
+            return None
+        now = runtime.time.time()
+        last_attempt = float(row.get('credit_refund_retry_at', 0) or 0)
+        if last_attempt and now - last_attempt < 180:
+            return None
+        transaction.update(row_ref, {'credit_refund_retry_at': now})
+        row['credit_refund_retry_at'] = now
+        return row
+
+    return claim(runtime.db.transaction())
+
+
+def _retry_batch_refunds(batch, *, runtime):
+    batch_id = batch['batch_id']
+    rows = _list_rows(batch_id, runtime=runtime)
+    for row in rows:
+        if not _pending_row_refund_components(row):
+            continue
+        current = _claim_pending_row_refund(batch_id, row['row_id'], runtime=runtime)
+        if current is None:
+            continue
+        _refund_failed_row(batch, current, runtime=runtime, pending_only=True)
+        _finalize_row_job_log(batch, current, runtime=runtime, settlement_only=True)
+        _upsert_row(batch_id, current['row_id'], current, runtime=runtime, merge=False)
+    return _refresh_batch_refund_totals(batch, runtime=runtime), _list_rows(batch_id, runtime=runtime)
+
+
+def _refresh_batch_refund_totals(batch, *, runtime):
+    """Keep totals consistent with the same transactional row snapshot."""
+    if getattr(runtime, 'db', None) is None or not hasattr(runtime.db, 'transaction'):
+        return batch
+    batch_id = batch['batch_id']
+    parent_ref = runtime.batch_repo.batch_job_doc_ref(runtime.db, batch_id)
+
+    @runtime.firestore.transactional
+    def refresh(transaction):
+        parent_doc = parent_ref.get(transaction=transaction)
+        current = parent_doc.to_dict() or {} if parent_doc.exists else {}
+        if not _is_terminal_status(current.get('status')):
+            return batch
+        rows = [doc.to_dict() or {} for doc in runtime.batch_repo.list_batch_refund_rows(
+            runtime.db, batch_id, transaction=transaction,
+        )]
+        updates = {
+            'credits_refunded': sum(_row_refunded_total(row) for row in rows),
+            'credits_refund_pending': sum(_row_pending_refund_total(row) for row in rows),
+            'credit_refund_retry_pending': any(_pending_row_refund_components(row) for row in rows),
+        }
+        transaction.update(parent_ref, updates)
+        return {**current, 'batch_id': batch_id, **updates}
+
+    return refresh(runtime.db.transaction())
+
+
 def recover_stale_batches(runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     db = getattr(resolved_runtime, 'db', None)
@@ -2012,6 +2178,10 @@ def recover_stale_batches(runtime=None):
             ACTIVE_BATCH_STATUSES,
             limit=limit,
         )
+        pending_query = getattr(resolved_runtime.batch_repo, 'list_batches_with_pending_refunds', None)
+        if callable(pending_query):
+            pending_docs = pending_query(db, limit=limit)
+            docs = list({doc.id: doc for doc in [*docs, *pending_docs]}.values())
     except Exception:
         resolved_runtime.logger.warning('Batch recovery query failed', exc_info=True)
         return 0
@@ -2020,7 +2190,7 @@ def recover_stale_batches(runtime=None):
     for doc in docs:
         payload = doc.to_dict() or {}
         payload.setdefault('batch_id', doc.id)
-        if not _batch_is_stale(payload, runtime=resolved_runtime, now_ts=now_ts):
+        if not payload.get('credit_refund_retry_pending') and not _batch_is_stale(payload, runtime=resolved_runtime, now_ts=now_ts):
             continue
         repaired_batch, _repaired_rows = _repair_batch_state_if_needed(
             doc.id,
@@ -2699,8 +2869,8 @@ def get_batch_status(batch_id, runtime=None, *, rows_limit=None):
                     ) or 0
                 ),
                 'interview_features_refunded_count': int(row.get('interview_features_refunded_count', 0) or 0),
-                'credits_refunded_total': (1 if bool(row.get('credit_refunded', False)) else 0) + int(row.get('interview_features_refunded_count', 0) or 0),
-                'billing_receipt': row.get('billing_receipt', {}),
+                'credits_refunded_total': _row_refunded_total(row),
+                'billing_receipt': billing_receipts.get_billing_receipt_snapshot(row, runtime=resolved_runtime) if row.get('billing_receipt') else {},
                 'status_message': row_error or _stage_label(row_stage),
             }
         )

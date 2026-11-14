@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import base64
+import os
 import secrets
 import uuid
 
-from flask import g, jsonify, request, render_template
+from flask import g, jsonify, redirect, request, render_template
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 
 from lecture_processor.calendar_observability import redact_calendar_url
+from lecture_processor.runtime.environment import extract_hostname, normalize_public_base_url
 
 
 def _set_sentry_tags(runtime, tags):
@@ -34,6 +36,21 @@ def register_runtime_hooks(app, runtime) -> None:
     state = app.extensions.setdefault('lecture_processor', {})
     if state.get('hooks_registered'):
         return
+
+    @app.before_request
+    def _redirect_render_pages_to_public_origin():
+        if request.method not in {'GET', 'HEAD'} or request.blueprint != 'pages':
+            return None
+        if request.endpoint in {'pages.service_worker', 'pages.workout_service_worker'}:
+            return None
+        render_host = extract_hostname(os.environ.get('RENDER_EXTERNAL_HOSTNAME', ''))
+        public_origin = normalize_public_base_url(getattr(runtime, 'PUBLIC_BASE_URL', ''))
+        public_host = extract_hostname(public_origin)
+        if (render_host and public_host and public_host != render_host
+                and extract_hostname(request.host) == render_host):
+            target_path = request.full_path if request.query_string else request.path
+            return redirect(public_origin + target_path, code=301)
+        return None
 
     @app.before_request
     def _attach_csp_nonce():

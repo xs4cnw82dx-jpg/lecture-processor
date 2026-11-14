@@ -46,7 +46,7 @@ class BatchHarness:
         monkeypatch.setattr(batch, '_upload_row_files', self.upload)
         monkeypatch.setattr(batch, '_run_batch_stage', self.run_provider_batch)
         monkeypatch.setattr(batch.ai_pipelines, 'save_study_pack', self.save_pack)
-        monkeypatch.setattr(batch.billing_credits, 'refund_credit', self.refund)
+        monkeypatch.setattr(batch.job_charges, 'refund_component', self.refund)
         monkeypatch.setattr(batch.billing_receipts, 'add_job_credit_refund', lambda *_args, **_kwargs: None)
         monkeypatch.setattr(batch, 'send_batch_completion_email', lambda *_args, **_kwargs: ('skipped', 'synthetic test'))
         original_upsert_row = batch._upsert_row
@@ -97,8 +97,12 @@ class BatchHarness:
         self.persistence_hook()
         return self.persistence_result
 
-    def refund(self, *args, **kwargs):
-        self.refunds.append((args, kwargs.get('idempotency_key')))
+    def refund(self, row, component, target, refund_ref, **kwargs):
+        assert row['uid'] == 'synthetic-user'
+        assert component == 'primary' and target == 1
+        assert kwargs['legacy_credit_type'] == 'interview_credits_short'
+        assert kwargs['legacy_charged_units'] == 1 and kwargs['processed_count'] == 1
+        self.refunds.append(((row['uid'], kwargs['legacy_credit_type']), refund_ref))
         return True
 
     @contextmanager

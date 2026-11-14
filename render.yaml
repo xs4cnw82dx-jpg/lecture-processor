@@ -8,7 +8,7 @@ services:
       - key: FLASK_SECRET_KEY
         sync: false
       - key: PUBLIC_BASE_URL
-        value: "https://lecture-processor-1.onrender.com"
+        value: "https://lectureprocessor.com"
       - key: GEMINI_API_KEY
         sync: false
       - key: FIREBASE_CREDENTIALS

@@ -41,6 +41,7 @@
 
   var els = {};
   var activeControlPopover = null;
+  var toastMessage = null;
 
   function byId(id) { return document.getElementById(id); }
   function queryAll(selector, root) { return Array.prototype.slice.call((root || document).querySelectorAll(selector)); }
@@ -103,9 +104,18 @@
   function packById(packId) { return ((state.data && state.data.study_packs) || []).find(function (pack) { return pack.study_pack_id === packId; }); }
   function isEditable() { return !!state.user && state.online; }
 
-  function toast(message, type) {
+  function renderToastMessage() {
+    if (!toastMessage || toastMessage.node.parentNode !== els.toast) return;
+    var message = toastMessage.source, params = toastMessage.params;
+    toastMessage.node.nodeValue = window.LectureI18n ? window.LectureI18n.t(message, params)
+      : message.replace(/\{(\w+)\}/g, function (match, name) { return params && name in params ? String(params[name]) : match; });
+  }
+  function toast(message, type, params) {
     if (!els.toast) return;
-    els.toast.textContent = message;
+    els.toast.textContent = '';
+    toastMessage = { source: message, params: params, node: document.createTextNode('') };
+    els.toast.appendChild(toastMessage.node);
+    renderToastMessage();
     els.toast.className = 'toast visible' + (type ? ' ' + type : '');
     els.toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
     window.setTimeout(function () { els.toast.className = 'toast'; }, 3200);
@@ -1171,7 +1181,7 @@
       var result = await api('/api/study-plan/items/' + encodeURIComponent(studyLogSession.id) + '/completion', { method: 'POST', body: JSON.stringify({ action: 'complete', source: 'offline', minutes: minutes, revision: studyLogSession.revision, idempotency_key: studyLogKey }) });
       closeOverlay(byId('study-log-overlay'));
       acceptSessionChange(result.session);
-      toast(minutesLabel(minutes) + ' logged. Session completed.');
+      toast('{time} logged. Session completed.', '', { time: minutesLabel(minutes) });
       var undo = document.createElement('button'); undo.type = 'button'; undo.className = 'btn'; undo.textContent = 'Undo';
       undo.addEventListener('click', function () { reopenSession(result.session); });
       els.toast.appendChild(undo);
@@ -1400,7 +1410,7 @@
     window.addEventListener('scroll', function (event) { if (activeControlPopover && !activeControlPopover.panel.contains(event.target)) positionControlPopover(activeControlPopover.panel, activeControlPopover.anchor); }, true);
     window.addEventListener('online', function () { setOfflineState(); loadData({ useCache: false }); });
     window.addEventListener('offline', setOfflineState);
-    window.addEventListener('lp:language-changed', function () { if (state.data) renderProgress(); });
+    window.addEventListener('lp:language-changed', function () { if (state.data) renderProgress(); renderToastMessage(); });
     document.addEventListener('keydown', function (event) {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
       if (closeControlPopover(true)) { event.preventDefault(); return; }

@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from lecture_processor.runtime.container import get_runtime
 
 
@@ -36,6 +38,10 @@ def initialize_billing_receipt(charged_map=None, runtime=None):
 def ensure_job_billing_receipt(job_data, charged_map=None, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     receipt = job_data.get('billing_receipt')
+    if isinstance(receipt, dict) and receipt.get('charge_ref'):
+        # Journal receipts contain the committed price and cumulative refund.
+        # Legacy call-site labels must not add another charge or refund to them.
+        return receipt
     if not isinstance(receipt, dict):
         receipt = initialize_billing_receipt(charged_map or {}, runtime=resolved_runtime)
         job_data['billing_receipt'] = receipt
@@ -65,6 +71,8 @@ def add_job_credit_refund(job_data, credit_type, amount=1, runtime=None):
         return
     resolved_runtime = _resolve_runtime(runtime)
     receipt = ensure_job_billing_receipt(job_data, runtime=resolved_runtime)
+    if receipt.get('charge_ref'):
+        return
     refunded = receipt.setdefault('refunded', {})
     refunded[credit_type] = int(refunded.get(credit_type, 0) or 0) + amount_int
     receipt['updated_at'] = resolved_runtime.time.time()
@@ -73,6 +81,12 @@ def add_job_credit_refund(job_data, credit_type, amount=1, runtime=None):
 def job_has_refunds(job_data, runtime=None):
     if isinstance(job_data, dict) and bool(job_data.get('credit_refunded', False)):
         return True
+    if isinstance(job_data, dict) and job_data.get('credit_scheme') == 2:
+        try:
+            if int(job_data.get('refunded_credits', 0) or 0) > 0:
+                return True
+        except (TypeError, ValueError, OverflowError):
+            pass
     snapshot = get_billing_receipt_snapshot(job_data if isinstance(job_data, dict) else {}, runtime=runtime)
     return any(int(amount or 0) > 0 for amount in snapshot.get('refunded', {}).values())
 
@@ -81,6 +95,8 @@ def get_billing_receipt_snapshot(job_data, runtime=None):
     receipt = job_data.get('billing_receipt')
     if not isinstance(receipt, dict):
         return {'charged': {}, 'refunded': {}}
+    if receipt.get('credit_scheme') == 2:
+        return deepcopy(receipt)
     snapshot = {
         'charged': normalize_credit_ledger(receipt.get('charged', {}), runtime=runtime),
         'refunded': normalize_credit_ledger(receipt.get('refunded', {}), runtime=runtime),

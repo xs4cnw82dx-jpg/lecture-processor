@@ -39,3 +39,16 @@ def query_by_user_and_statuses(db, collection_name, user_id, statuses, *, limit=
     if isinstance(limit, int) and limit > 0:
         query = query.limit(limit)
     return list(query.stream())
+
+
+def query_pending_refunds(db, collection_name, *, limit=200):
+    """Bounded single-field lookups avoid scanning all terminal job snapshots."""
+    maximum = max(1, min(500, int(limit)))
+    documents = {}
+    for field, operator, value in (
+        ('credit_refund_pending', '==', True), ('extra_slides_refund_pending', '>', 0),
+    ):
+        query = apply_where(db.collection(collection_name), field, operator, value).limit(maximum)
+        for document in query.stream():
+            documents[document.id] = document
+    return list(documents.values())

@@ -54,6 +54,8 @@ cd /Users/jaccovandermeulen/Desktop/lecture-processor
 
 ## Render Rollback (UI Steps)
 
+Check credit schema compatibility before choosing a target build. Unified credits are initially disabled by the server setting `UNIFIED_CREDITS_ENABLED`. Once enabled, converted accounts store `credits_version: 2` and their old category balances are zeroed. Disabling the setting in a ledger-aware build preserves converted balances and recorded refunds, while preventing new conversions and new-bundle checkout. Rolling back to an older build that only reads category balances can display zero credits for converted accounts. Do not reconstruct balances from the historical snapshot: subsequent charges, refunds and grants have already changed the current balance.
+
 1. Open Render dashboard.
 2. Click service: `lecture-processor-1`.
 3. Go to `Deploys` tab.

@@ -11,21 +11,30 @@ import zipfile
 import pytest
 
 from lecture_processor.domains.account import lifecycle
-from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.auth import policy as auth_policy
-from lecture_processor.domains.billing import credits
 from lecture_processor.domains.rate_limit import limiter
 from lecture_processor.domains.upload import import_audio
 from lecture_processor.services import media_admission, upload_quota_service
+from tests.credit_test_support import make_credit_runtime
+
+
+class _MediaState(SimpleNamespace):
+    @property
+    def charges(self):
+        return list(self.store.docs('credit_charges').values())
 
 
 @pytest.fixture
 def media_requests(app, core, monkeypatch, tmp_path):
     app.config['TESTING'] = True
-    state = SimpleNamespace(
+    state = _MediaState(
         entered=Event(), release=Event(), lock=Lock(), hold='', held=False,
-        failure='', enough_credit=True, quota=[], charges=[], media=[], submitted=[],
+        failure='', quota=[], media=[], submitted=[],
     )
+    credit_runtime, state.store = make_credit_runtime(users={
+        uid: {'uid': uid, 'account_status': 'active', 'slides_credits': 100, 'total_processed': 0}
+        for uid in ('first', 'other')
+    }, unified_enabled=False)
 
     def token(request):
         uid = request.headers.get('X-Test-Uid', '')
@@ -38,22 +47,18 @@ def media_requests(app, core, monkeypatch, tmp_path):
     monkeypatch.setattr(lifecycle, 'count_active_jobs_for_user', lambda *_args, **_kwargs: 0)
     monkeypatch.setattr(limiter, 'check_rate_limit', lambda **_kwargs: (True, 0))
     monkeypatch.setattr(core, 'client', object())
-    monkeypatch.setattr(core, 'db', None)
+    monkeypatch.setattr(core, 'db', credit_runtime.db)
+    monkeypatch.setattr(core, 'UNIFIED_CREDITS_ENABLED', False)
+    monkeypatch.setattr(core.firestore, 'transactional', credit_runtime.firestore.transactional)
+    monkeypatch.setattr(core.firestore, 'Increment', credit_runtime.firestore.Increment)
     monkeypatch.setattr(core, 'UPLOAD_FOLDER', str(tmp_path))
     monkeypatch.setattr(core, 'submit_background_job', lambda target, *args, **kwargs: target(*args, **kwargs))
-    monkeypatch.setattr(core, 'get_or_create_user', lambda *_args: {'slides_credits': 100})
+    monkeypatch.setattr(core, 'get_or_create_user', lambda uid, _email: state.store.docs('users')[uid])
     monkeypatch.setattr(core, 'get_batch_background_queue_stats', lambda: {'active': 0, 'capacity': 4})
     monkeypatch.setattr(core, 'get_saved_file_size', lambda path: Path(path).stat().st_size)
     monkeypatch.setattr(core, 'cleanup_files', lambda paths, _remote: [Path(path).unlink(missing_ok=True) for path in paths])
     monkeypatch.setattr(import_audio, 'cleanup_expired_audio_import_tokens', lambda **_kwargs: None)
     monkeypatch.setattr(import_audio, 'validate_video_import_fetch_target', lambda *_args, **_kwargs: ('https://example.test/media', ''))
-    monkeypatch.setattr(credits, 'has_category_credit', lambda *_args, **_kwargs: state.enough_credit)
-    monkeypatch.setattr(credits, 'deduct_credit', lambda uid, credit, **_kwargs: state.charges.append((uid, credit)) or credit)
-    monkeypatch.setattr(credits, 'refund_credit', lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(credits, 'refund_slides_credits', lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(batch_orchestrator, 'create_batch_job', lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(batch_orchestrator, 'get_batch', lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(batch_orchestrator, 'clear_batch_audio_fetch_targets', lambda *_args, **_kwargs: None)
     monkeypatch.setattr(core, 'submit_batch_background_job', lambda *_args, **_kwargs: state.submitted.append(True))
 
     def reserve(runtime, uid, _bytes, **kwargs):
@@ -208,10 +213,9 @@ def test_batch_staging_failure_leaves_media_admission_available(media_requests, 
 
 def test_batch_credit_preflight_leaves_media_admission_available(media_requests):
     state = media_requests
-    state.enough_credit = False
+    state.store.documents[('users', 'first')]['slides_credits'] = 0
     assert state.post('batch')[0] == 402
     assert state.quota == []
-    state.enough_credit = True
     assert state.post('download')[0] == 202
     assert state.post('batch', 'other')[0] == 200
 
@@ -229,6 +233,8 @@ def test_batch_staging_does_not_need_media_admission(media_requests, kind, uid, 
             assert state.post(kind, uid, extension=extension)[0] == 200
             assert state.media == ['download']
             assert len(state.charges) == 2
+            assert state.store.docs('users')[uid]['slides_credits'] == 98
+            assert all(item['charged'] == {'slides_credits': 1} for item in state.charges)
         finally:
             state.release.set()
         assert first.result(timeout=5)[0] == 202
