@@ -1,9 +1,11 @@
 """Resumable application of an interview coding draft."""
 
 import hashlib
+import json
 
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.study import interview_coding
+from lecture_processor.domains.study.interview_coding_runs import MAX_RUN_PAYLOAD_BYTES
 
 WRITE_CHUNK_SIZE = 400
 
@@ -17,6 +19,10 @@ class AcceptanceError(Exception):
 def _document_id(run_id, kind, index):
     digest = hashlib.sha256(f'{run_id}:{kind}:{index}'.encode()).hexdigest()
     return f'ai-{digest}'
+
+
+def _reference_key(value):
+    return 'ref-' + hashlib.sha256(str(value).encode('utf-8')).hexdigest()
 
 
 def _read_owned_run(transaction, run_ref, uid, pack_id):
@@ -83,7 +89,9 @@ def _prepare_plan(run_id, run, pack_id, transcript, existing_codes, now):
         'status': 'accepting', 'updated_at': now,
         'proposed_quotations': quotations,
         'acceptance_plan': {
-            'version': 1, 'code_id_by_ref': mapping, 'new_code_indexes': new_indexes,
+            'version': 2,
+            'code_id_by_ref': {_reference_key(key): value for key, value in mapping.items()},
+            'new_code_indexes': new_indexes,
             'created_at': now, 'next_write': 0,
             'code_count': len(new_indexes), 'quotation_count': len(quotations),
         },
@@ -97,7 +105,8 @@ def _operations(run_id, run, uid):
     for index in plan['new_code_indexes']:
         proposed = run['proposed_codes'][index]
         code_id = _document_id(run_id, 'code', index)
-        parent_id = mapping.get(str(proposed.get('parent_temp_id', '') or '').strip(), '')
+        parent_key = str(proposed.get('parent_temp_id', '') or '').strip()
+        parent_id = mapping.get(_reference_key(parent_key) if plan.get('version') == 2 else parent_key, '')
         operations.append(('interview_codes', code_id, {
             'code_id': code_id, 'uid': uid,
             'name': str(proposed.get('name', '') or 'Untitled code').strip()[:80],
@@ -123,10 +132,13 @@ def accept_run(runtime, run_ref, uid, pack_id, transcript, existing_codes):
         if run.get('status') == 'accepted':
             return True
         if run.get('status') == 'draft':
-            transaction.update(run_ref, _prepare_plan(
+            updates = _prepare_plan(
                 run_ref.id, run, pack_id, transcript, existing_codes, runtime.time.time(),
-            ))
-        elif run.get('status') != 'accepting' or run.get('acceptance_plan', {}).get('version') != 1:
+            )
+            if len(json.dumps({**run, **updates}, ensure_ascii=False).encode('utf-8')) > MAX_RUN_PAYLOAD_BYTES:
+                raise AcceptanceError('This coding draft is too large to apply. Please use a shorter interview.')
+            transaction.update(run_ref, updates)
+        elif run.get('status') != 'accepting' or run.get('acceptance_plan', {}).get('version') not in {1, 2}:
             raise AcceptanceError('Only draft AI coding runs can be accepted', 400)
         return False
 
@@ -143,7 +155,9 @@ def accept_run(runtime, run_ref, uid, pack_id, transcript, existing_codes):
             raise AcceptanceError('The AI coding run is no longer being accepted')
         plan = run['acceptance_plan']
         operations = _operations(run_ref.id, run, uid)
-        cursor = int(plan['next_write'])
+        cursor = plan.get('next_write')
+        if type(cursor) is not int or not 0 <= cursor <= len(operations):
+            raise AcceptanceError('This coding draft cannot be resumed. Please contact support.')
         chunk = operations[cursor:cursor + WRITE_CHUNK_SIZE]
         for collection, document_id, payload in chunk:
             transaction.set(runtime.db.collection(collection).document(document_id), payload)

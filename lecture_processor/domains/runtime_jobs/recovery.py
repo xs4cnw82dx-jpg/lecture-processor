@@ -148,6 +148,15 @@ def recover_stale_runtime_jobs(runtime=None):
 def _recover_runtime_job_doc(doc, *, now_ts, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     job_id = doc.id
+    if (doc.to_dict() or {}).get('job_scope') == 'interview-coding':
+        # Coding completion and refund arbitrate on their canonical run record.
+        # Its debit must never use the generic runtime-job refund keys.
+        from lecture_processor.domains.study import interview_coding_runs
+        try:
+            return interview_coding_runs.fail_run(resolved_runtime, job_id, orphan=True, now_ts=now_ts)
+        except Exception:
+            resolved_runtime.logger.warning('Interview coding recovery failed for %s', job_id, exc_info=True)
+            return False
     job_data = _claim_stale_runtime_job(doc, now_ts=now_ts, runtime=resolved_runtime)
     if not isinstance(job_data, dict):
         return False

@@ -19,6 +19,7 @@ from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.notifications import send_batch_completion_email
 from lecture_processor.domains.rate_limit import quotas as rate_limit_quotas
 from lecture_processor.domains.study import audio as study_audio
+from lecture_processor.domains.upload import media_admission
 from lecture_processor.runtime.container import get_runtime
 
 
@@ -32,6 +33,8 @@ TERMINAL_BATCH_STATES = {
 ACTIVE_BATCH_STATUSES = {'preparing', 'queued', 'processing'}
 ACTIVE_ROW_STATUSES = {'queued', 'processing'}
 SAFE_BATCH_ROW_ID_CHARS = frozenset('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-')
+BATCH_SLIDE_MEDIA_WAIT_SECONDS = 300
+BATCH_SLIDE_MEDIA_RETRY_SECONDS = 5
 
 STAGE_LABELS = {
     'queued': 'Queued',
@@ -1418,15 +1421,108 @@ def _prepare_row_audio_source(row, local_paths, runtime=None):
     _release_row_audio_quota(row, row.get('audio_quota_actual_bytes', 0), runtime=resolved_runtime)
 
 
+def _row_local_paths(row):
+    paths = [row.get(field, '') for field in ('slides_source_path', 'slides_local_path', 'audio_local_path')]
+    paths.extend(row.get('slides_conversion_candidates', []) or [])
+    paths.extend(row.get('_local_paths', []) or [])
+    return list(dict.fromkeys(str(path).strip() for path in paths if str(path or '').strip()))
+
+
+def _acquire_slide_conversion_lease(row, runtime):
+    batch_id = str(row.get('batch_id', '') or '')
+    waited = 0
+    while True:
+        _require_active_batch(batch_id, runtime=runtime)
+        lease, _busy_status = media_admission.try_acquire_conversion(row.get('uid', ''))
+        if lease is not None:
+            return lease
+        if waited >= BATCH_SLIDE_MEDIA_WAIT_SECONDS:
+            raise ValueError(media_admission.BUSY_MESSAGE)
+        _heartbeat_batch(batch_id, runtime=runtime)
+        delay = min(BATCH_SLIDE_MEDIA_RETRY_SECONDS, BATCH_SLIDE_MEDIA_WAIT_SECONDS - waited)
+        runtime.time.sleep(delay)
+        waited += delay
+
+
+def _prepare_row_slides_source(row, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    source = str(row.get('slides_source_path', '') or row.get('slides_local_path', '') or '').strip()
+    if not source.lower().endswith('.pptx'):
+        return
+    batch_id, row_id = str(row.get('batch_id', '') or ''), str(row.get('row_id', '') or '')
+    _require_active_batch(batch_id, runtime=resolved_runtime)
+    row['slides_source_path'] = source
+    if row.get('slides_conversion_complete'):
+        converted = str(row.get('slides_local_path', '') or '')
+        size = resolved_runtime.get_saved_file_size(converted)
+        if 0 < size <= resolved_runtime.MAX_PDF_UPLOAD_BYTES and resolved_runtime.file_has_pdf_signature(converted):
+            return
+    target = resolved_runtime.os.path.join(resolved_runtime.os.path.dirname(source), f'{batch_id}_{row_id}_slides_converted.pdf')
+    fallback = resolved_runtime.os.path.splitext(source)[0] + '.pdf'
+    candidates = list(dict.fromkeys([target, fallback]))
+    row['slides_conversion_candidates'] = candidates
+    row['slides_conversion_complete'] = False
+    _upsert_row(batch_id, row_id, {
+        'slides_source_path': source, 'slides_conversion_candidates': candidates,
+        'slides_conversion_complete': False,
+    }, runtime=resolved_runtime, merge=True)
+    lease = _acquire_slide_conversion_lease(row, resolved_runtime)
+    try:
+        _require_active_batch(batch_id, runtime=resolved_runtime)
+        _heartbeat_batch(batch_id, runtime=resolved_runtime)
+        disk_ok, _free_bytes, _needed_bytes = rate_limit_quotas.has_sufficient_upload_disk_space(
+            resolved_runtime.MAX_PDF_UPLOAD_BYTES, runtime=resolved_runtime,
+        )
+        if not disk_ok:
+            raise ValueError('Upload temporarily unavailable due to low server storage. Please try again later.')
+        if not resolved_runtime.file_has_pptx_signature(source):
+            raise ValueError('Uploaded PPTX file is invalid.')
+        # A previous interrupted conversion may have left a partial output.
+        # Keep the staged original until the existing terminal cleanup runs.
+        resolved_runtime.cleanup_files(candidates, [])
+        try:
+            converted, error = resolved_runtime.convert_pptx_to_pdf(source, target)
+        except Exception:
+            resolved_runtime.logger.exception('Batch slide conversion failed for %s/%s', batch_id, row_id)
+            raise ValueError('PowerPoint conversion failed. Please try again with a PDF.') from None
+        if error:
+            resolved_runtime.logger.warning('Batch slide conversion failed for %s/%s: %s', batch_id, row_id, error)
+            raise ValueError('PowerPoint conversion failed. Please try again with a PDF.')
+        converted = str(converted or '').strip()
+        if converted and converted not in candidates:
+            candidates.append(converted)
+            row['slides_conversion_candidates'] = candidates
+        _require_active_batch(batch_id, runtime=resolved_runtime)
+        size = resolved_runtime.get_saved_file_size(converted)
+        if not 0 < size <= resolved_runtime.MAX_PDF_UPLOAD_BYTES:
+            raise ValueError('Converted PDF exceeds server limit (max 50MB) or is empty.')
+        if not resolved_runtime.file_has_pdf_signature(converted):
+            raise ValueError('Converted PDF file is invalid.')
+        _heartbeat_batch(batch_id, runtime=resolved_runtime)
+        _require_active_batch(batch_id, runtime=resolved_runtime)
+        _upsert_row(batch_id, row_id, {
+            'slides_source_path': source, 'slides_local_path': converted,
+            'slides_conversion_candidates': candidates, 'slides_conversion_complete': True,
+        }, runtime=resolved_runtime, merge=True)
+        row['slides_local_path'] = converted
+        row['slides_conversion_complete'] = True
+        _require_active_batch(batch_id, runtime=resolved_runtime)
+    finally:
+        lease.release()
+
+
 def _upload_row_files(row, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     local_paths = row.setdefault('_local_paths', [])
     gemini_files = row.setdefault('_gemini_files', [])
 
+    _prepare_row_slides_source(row, runtime=resolved_runtime)
     _prepare_row_audio_source(row, local_paths, runtime=resolved_runtime)
 
     slides_path = str(row.get('slides_local_path', '') or '').strip()
     if slides_path and not row.get('slides_file_uri'):
+        if str(row.get('slides_source_path', '') or '').lower().endswith('.pptx'):
+            _require_active_batch(row.get('batch_id', ''), runtime=resolved_runtime)
         pdf_file = ai_provider.run_with_provider_retry(
             'batch_slide_upload',
             lambda: resolved_runtime.client.files.upload(file=slides_path, config={'mime_type': 'application/pdf'}),
@@ -1688,7 +1784,7 @@ def _finalize_batch_record(
         credits_refunded_total += max(0, row_refunded)
         if status == 'error':
             expected_refund_total += max(0, row_credits_charged)
-        local_paths = row.get('_local_paths', []) or []
+        local_paths = _row_local_paths(row) if status in {'complete', 'error'} else []
         gemini_files = row.get('_gemini_files', []) or []
         if local_paths or gemini_files:
             resolved_runtime.cleanup_files(local_paths, gemini_files)
@@ -2554,11 +2650,7 @@ def process_batch_job(batch_id, runtime=None):
             for row in rows:
                 if not row.get('study_pack_id'):
                     study_audio.cleanup_failed_job_audio(row.get('row_job_id'), row, runtime=resolved_runtime)
-                local_paths = list(row.get('_local_paths', []) or [])
-                for field in ('slides_local_path', 'audio_local_path'):
-                    if row.get(field) and row[field] not in local_paths:
-                        local_paths.append(row[field])
-                resolved_runtime.cleanup_files(local_paths, row.get('_gemini_files', []) or [])
+                resolved_runtime.cleanup_files(_row_local_paths(row), row.get('_gemini_files', []) or [])
             clear_batch_audio_fetch_targets(batch_id, runtime=resolved_runtime)
 
 
