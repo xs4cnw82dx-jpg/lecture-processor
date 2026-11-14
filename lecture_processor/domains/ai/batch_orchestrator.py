@@ -35,6 +35,8 @@ ACTIVE_ROW_STATUSES = {'queued', 'processing'}
 SAFE_BATCH_ROW_ID_CHARS = frozenset('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-')
 BATCH_SLIDE_MEDIA_WAIT_SECONDS = 300
 BATCH_SLIDE_MEDIA_RETRY_SECONDS = 5
+BATCH_HEARTBEAT_FALLBACK_SECONDS = 30.0
+BATCH_SLIDE_LOW_STORAGE_MESSAGE = 'PowerPoint conversion stopped because server storage is low.'
 
 STAGE_LABELS = {
     'queued': 'Queued',
@@ -90,6 +92,10 @@ class _BatchStopped(Exception):
     """The stored batch no longer permits worker writes."""
 
 
+class _BatchSlideConversionError(ValueError):
+    """A source row could not be converted, without invalidating other rows."""
+
+
 @contextmanager
 def _claim_batch_activity(batch_id, *, worker=False):
     """Serialize workers and recovery for a batch in this process."""
@@ -138,9 +144,16 @@ def _protect_batch_worker(worker):
             if not claimed:
                 return
             stop = threading.Event()
+            try:
+                interval = float(_batch_heartbeat_interval_seconds(runtime=resolved_runtime))
+                if not 0 < interval <= 30:
+                    raise ValueError('Invalid batch heartbeat interval')
+            except Exception:
+                resolved_runtime.logger.warning('Could not set batch heartbeat interval for %s; using fallback', batch_id, exc_info=True)
+                interval = BATCH_HEARTBEAT_FALLBACK_SECONDS
 
             def heartbeat():
-                while not stop.wait(_batch_heartbeat_interval_seconds(runtime=resolved_runtime)):
+                while not stop.wait(interval):
                     try:
                         if not _heartbeat_batch(batch_id, runtime=resolved_runtime):
                             return
@@ -947,6 +960,24 @@ def _request_with_stage_config(request, stage_name, runtime):
     return payload
 
 
+def _cancel_stopped_provider_batch(batch_job, runtime):
+    name = str(getattr(batch_job, 'name', '') or '').strip()
+    if not name:
+        return
+
+    def cancel():
+        try:
+            runtime.client.batches.cancel(name=name)
+        except Exception:
+            runtime.logger.warning('Could not cancel stopped provider batch %s', name, exc_info=True)
+
+    # Cancellation is optional cleanup; a slow provider must not delay settlement.
+    try:
+        threading.Thread(target=cancel, name='lp-batch-cancel', daemon=True).start()
+    except Exception:
+        runtime.logger.warning('Could not start cancellation for provider batch %s', name, exc_info=True)
+
+
 def _run_batch_stage(batch_id, stage_name, requests, request_keys=None, runtime=None, display_name=''):
     resolved_runtime = _resolve_runtime(runtime)
     if not requests:
@@ -1015,7 +1046,9 @@ def _run_batch_stage(batch_id, stage_name, requests, request_keys=None, runtime=
             runtime=resolved_runtime,
             merge=True,
         )
-    except Exception:
+    except Exception as error:
+        if isinstance(error, _BatchStopped):
+            _cancel_stopped_provider_batch(batch_job, resolved_runtime)
         if uploaded_input_file is not None:
             resolved_runtime.cleanup_files([], [uploaded_input_file])
         raise
@@ -1119,6 +1152,9 @@ def _run_batch_stage(batch_id, stage_name, requests, request_keys=None, runtime=
             error = getattr(inline, 'error', None)
             responses.append({'response': response, 'error': error})
         return responses
+    except _BatchStopped:
+        _cancel_stopped_provider_batch(batch_job, resolved_runtime)
+        raise
     finally:
         cleanup_files = []
         cleanup_gemini_files = []
@@ -1445,7 +1481,7 @@ def _acquire_slide_conversion_lease(row, runtime):
         if lease is not None:
             return lease
         if waited >= BATCH_SLIDE_MEDIA_WAIT_SECONDS:
-            raise ValueError(media_admission.BUSY_MESSAGE)
+            raise _BatchSlideConversionError(media_admission.BUSY_MESSAGE)
         _heartbeat_batch(batch_id, runtime=runtime)
         delay = min(BATCH_SLIDE_MEDIA_RETRY_SECONDS, BATCH_SLIDE_MEDIA_WAIT_SECONDS - waited)
         runtime.time.sleep(delay)
@@ -1482,9 +1518,10 @@ def _prepare_row_slides_source(row, runtime=None):
             resolved_runtime.MAX_PDF_UPLOAD_BYTES, runtime=resolved_runtime,
         )
         if not disk_ok:
-            raise ValueError('Upload temporarily unavailable due to low server storage. Please try again later.')
+            row['slides_conversion_error'] = 'low_storage'
+            raise _BatchSlideConversionError(BATCH_SLIDE_LOW_STORAGE_MESSAGE)
         if not resolved_runtime.file_has_pptx_signature(source):
-            raise ValueError('Uploaded PPTX file is invalid.')
+            raise _BatchSlideConversionError('Uploaded PPTX file is invalid.')
         # A previous interrupted conversion may have left a partial output.
         # Keep the staged original until the existing terminal cleanup runs.
         resolved_runtime.cleanup_files(candidates, [])
@@ -1492,10 +1529,10 @@ def _prepare_row_slides_source(row, runtime=None):
             converted, error = resolved_runtime.convert_pptx_to_pdf(source, target)
         except Exception:
             resolved_runtime.logger.exception('Batch slide conversion failed for %s/%s', batch_id, row_id)
-            raise ValueError('PowerPoint conversion failed. Please try again with a PDF.') from None
+            raise _BatchSlideConversionError('PowerPoint conversion failed. Please try again with a PDF.') from None
         if error:
             resolved_runtime.logger.warning('Batch slide conversion failed for %s/%s: %s', batch_id, row_id, error)
-            raise ValueError('PowerPoint conversion failed. Please try again with a PDF.')
+            raise _BatchSlideConversionError('PowerPoint conversion failed. Please try again with a PDF.')
         converted = str(converted or '').strip()
         if converted and converted not in candidates:
             candidates.append(converted)
@@ -1503,9 +1540,9 @@ def _prepare_row_slides_source(row, runtime=None):
         _require_active_batch(batch_id, runtime=resolved_runtime)
         size = resolved_runtime.get_saved_file_size(converted)
         if not 0 < size <= resolved_runtime.MAX_PDF_UPLOAD_BYTES:
-            raise ValueError('Converted PDF exceeds server limit (max 50MB) or is empty.')
+            raise _BatchSlideConversionError('Converted PDF exceeds server limit (max 50MB) or is empty.')
         if not resolved_runtime.file_has_pdf_signature(converted):
-            raise ValueError('Converted PDF file is invalid.')
+            raise _BatchSlideConversionError('Converted PDF file is invalid.')
         _heartbeat_batch(batch_id, runtime=resolved_runtime)
         _require_active_batch(batch_id, runtime=resolved_runtime)
         _upsert_row(batch_id, row_id, {
@@ -1576,6 +1613,18 @@ def _finalize_row_job_log(batch, row, runtime=None, *, require_active=False, set
     if status != 'error':
         row['status'] = 'complete'
         row['error'] = ''
+    elif row.get('slides_conversion_error') == 'low_storage':
+        if row.get('credit_refund_pending') or int(row.get('extra_slides_refund_pending', 0) or 0) > 0:
+            settlement = 'The refund for this row is still pending.'
+        elif _row_refunded_total(row) > 0:
+            settlement = 'The credits for this row were refunded.'
+        elif ((row.get('billing_receipt') or {}).get('charge_ref')
+              and (row.get('billing_receipt') or {}).get('charged_credits') == 0) or (
+                  not int(row.get('credits_charged', 0) or 0) and not row.get('credit_deducted')):
+            settlement = 'No credits were charged for this row.'
+        else:
+            settlement = 'The refund for this row is still pending.'
+        row['error'] = f'{BATCH_SLIDE_LOW_STORAGE_MESSAGE} {settlement} Please try again later.'
     result_text = str(row.get('result', '') or row.get('merged_notes', '') or row.get('transcript', '') or row.get('slide_text', ''))
     job_data = {
         'user_id': batch.get('uid', ''),
@@ -2316,6 +2365,7 @@ def process_batch_job(batch_id, runtime=None):
         merge=True,
     )
     stage_error = ''
+    settled_conversion_rows = set()
     try:
         for row in rows:
             _require_active_batch(batch_id, runtime=resolved_runtime)
@@ -2344,7 +2394,21 @@ def process_batch_job(batch_id, runtime=None):
                 runtime=resolved_runtime,
                 merge=True,
             )
-            _upload_row_files(row, runtime=resolved_runtime)
+            try:
+                _upload_row_files(row, runtime=resolved_runtime)
+            except _BatchSlideConversionError as error:
+                _require_active_batch(batch_id, runtime=resolved_runtime)
+                row.update(status='error', error=str(error), failed_stage='slide_conversion',
+                           current_stage='slide_conversion', last_stage_update_at=resolved_runtime.time.time())
+                _release_row_audio_quota(row, 0, runtime=resolved_runtime)
+                _refund_failed_row(batch, row, runtime=resolved_runtime)
+                _finalize_row_job_log(batch, row, runtime=resolved_runtime, require_active=True)
+                _require_active_batch(batch_id, runtime=resolved_runtime)
+                _drop_persisted_audio_fetch_target(row)
+                _upsert_row(batch_id, row.get('row_id', ''), row, runtime=resolved_runtime, merge=False)
+                settled_conversion_rows.add(row.get('row_id', ''))
+                resolved_runtime.cleanup_files(_row_local_paths(row), row.get('_gemini_files', []) or [])
+                continue
             _require_active_batch(batch_id, runtime=resolved_runtime)
             _heartbeat_batch(batch_id, runtime=resolved_runtime)
             row['last_stage_update_at'] = resolved_runtime.time.time()
@@ -2771,6 +2835,8 @@ def process_batch_job(batch_id, runtime=None):
 
         for row in rows:
             _require_active_batch(batch_id, runtime=resolved_runtime)
+            if row.get('row_id', '') in settled_conversion_rows:
+                continue
             if row.get('status') == 'error':
                 _refund_failed_row(batch, row, runtime=resolved_runtime)
             _finalize_row_job_log(batch, row, runtime=resolved_runtime, require_active=True)
@@ -2794,7 +2860,7 @@ def process_batch_job(batch_id, runtime=None):
         resolved_runtime.logger.exception('Batch processing failed for batch_id=%s', batch_id)
         for row in rows:
             _require_active_batch(batch_id, runtime=resolved_runtime)
-            if row.get('status') == 'complete':
+            if row.get('status') == 'complete' or row.get('row_id', '') in settled_conversion_rows:
                 continue
             row['status'] = 'error'
             row['error'] = row.get('error', '') or stage_error

@@ -658,7 +658,7 @@ def test_tools_lecture_download_returns_zip_for_both_formats(client, monkeypatch
     ready = client.get(f'/api/tools/lecture-download/{job_id}', headers={"Authorization": "Bearer dev"}).get_json()
     assert ready['status'] == 'complete'
     response = client.get(f'/api/tools/lecture-download/{job_id}/file',
-                          query_string={'token': ready['download_token']}, headers={"Authorization": "Bearer dev"})
+                          headers={"Authorization": "Bearer dev", "X-Lecture-Download-Token": ready['download_token']})
     assert response.status_code == 200
     assert response.mimetype == "application/zip"
     archive = zipfile.ZipFile(io.BytesIO(response.data))

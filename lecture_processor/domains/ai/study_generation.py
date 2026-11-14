@@ -383,13 +383,16 @@ def generate_interview_enhancements(
         combined_text = f'# Interview Summary\n\n{summary_text}\n\n# Structured Interview Transcript\n\n{sectioned_text}'
 
     failed_count = max(0, len(selected_features) - len(successful))
+    error_message = errors[0] if errors else None
+    if len(errors) > 1 and not successful:
+        error_message = 'Could not generate the interview summary or structured transcript. Please try again.'
     response_payload = {
         'summary': summary_text,
         'sections': sectioned_text,
         'combined': combined_text,
         'successful_features': successful,
         'failed_count': failed_count,
-        'error': '; '.join(errors) if errors else None,
+        'error': error_message,
         'error_code': 'interview_enhancement_failed' if errors else None,
         'token_usage_by_stage': usage_by_stage,
         'token_input_total': input_total,

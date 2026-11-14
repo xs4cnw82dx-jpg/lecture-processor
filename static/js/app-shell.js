@@ -83,6 +83,7 @@
   var authRevision = 0;
   var profileRequestRevision = 0;
   var profileInFlight = null;
+  var creditRecoveryAttempted = false;
   var creditAuthUser = auth && auth.currentUser || null;
   var creditSessionBlocked = false;
   var creditState = { uid: '', status: 'signed-out', source: null, snapshot: null, receivedAt: null };
@@ -605,6 +606,7 @@
   function resetCreditState(uid) {
     profileRequestRevision += 1;
     profileInFlight = null;
+    creditRecoveryAttempted = false;
     creditState = { uid: uid, status: uid ? 'loading' : 'signed-out', source: null, snapshot: null, receivedAt: null };
     publishCreditState();
   }
@@ -830,6 +832,7 @@
         if (legacyBreakdown) profile.credits = legacyBreakdown;
         writeUserCacheJson(user, CACHE_KEYS.profile, profile);
         writeCacheJson(CACHE_KEYS.lastProfile, profile);
+        creditRecoveryAttempted = false;
         creditState = { uid: uid, status: 'ready', source: 'server', snapshot: snapshot, receivedAt: receivedAt };
         publishCreditState();
         return cloneCreditValue({ uid: uid, snapshot: snapshot, profile: payload });
@@ -850,6 +853,17 @@
 
   function refreshCredits() {
     return refreshCreditSnapshot({ force: true }).then(function () { return true; }, function () { return false; });
+  }
+
+  function recoverFailedCreditProfile() {
+    var user = auth && auth.currentUser;
+    if (!user || creditSessionBlocked || creditRecoveryAttempted || profileInFlight
+        || creditState.status !== 'error' || creditState.uid !== String(user.uid || '')
+        || navigator.onLine === false) return;
+    // One automatic retry per outage; only a verified response or a new auth
+    // session rearms it. Repeated focus events cannot loop on a failing API.
+    creditRecoveryAttempted = true;
+    refreshCreditSnapshot().catch(function () {});
   }
 
   function applySignedOutState(userOrUid) {
@@ -1528,6 +1542,9 @@
       creditsLink.classList.remove('is-open');
     }
   });
+
+  window.addEventListener('focus', recoverFailedCreditProfile);
+  window.addEventListener('online', recoverFailedCreditProfile);
 
   bootstrap.onAuthStateReady(auth, function (user) {
     authStateResolved = true;

@@ -4,8 +4,7 @@
   var MAX_AGE = 30 * 24 * 60 * 60 * 1000;
   var MAX_RECORDS = 50;
   var MAX_BYTES = 2 * 1024 * 1024;
-  // Keep small scope markers outside removable caches: a suspended tab may still
-  // hold an old token. Markers contain version IDs only and are not age-evicted.
+  // Deletion fences remain durable, including old and undated legacy markers.
   var FENCE_PREFIX = 'lp_study_cache_fence_v1:';
   var activeUid = '', session = 0, epoch = 0;
   var sequence = 0;
@@ -33,16 +32,22 @@
       key: start + 'key:' + encodeURIComponent(kind) + ':' + encodeURIComponent(id) };
   }
 
-  function readFence(storage, key) {
-    var raw = key ? storage.getItem(key) : null;
+  function parseFence(raw) {
     if (raw === null) return { version: '', retained: [] };
-    var marker = JSON.parse(raw);
-    if (!marker || marker.schema !== 1 || typeof marker.version !== 'string' || !marker.version
-      || !Array.isArray(marker.retained) || !marker.retained.every(function (id) { return typeof id === 'string'; })) {
-      throw new Error('Invalid cache fence');
+    var marker;
+    try { marker = JSON.parse(raw); } catch (_) { marker = null; }
+    if (!marker || !(marker.schema === 1 || (marker.schema === 2 && marker.quarantine_pending === true))
+      || typeof marker.version !== 'string' || !marker.version
+      || !Array.isArray(marker.retained) || !marker.retained.every(function (id) { return typeof id === 'string'; })
+      || (marker.quarantine_pending !== undefined && typeof marker.quarantine_pending !== 'boolean')) {
+      var error = new Error('Invalid cache fence');
+      error.invalidFence = true;
+      throw error;
     }
     return marker;
   }
+
+  function readFence(storage, key) { return parseFence(key ? storage.getItem(key) : null); }
 
   function snapshotFences(storage, uid) {
     var result = new Map(), start = fencePrefix(uid);
@@ -66,17 +71,28 @@
     });
   }
 
-  function recordIsCurrent(storage, record) {
+  function recordState(storage, record) {
     var current = currentFences(storage, record.uid, record.kind, record.id, record.pack_id);
     var saved = record.fences || { user: '', pack: '', key: '' };
-    return saved.pack === current.pack.version && saved.key === current.key.version
-      && (saved.user === current.user.version
-        || (record.pending && current.user.retained.indexOf(saved.user) !== -1));
+    var quarantined = false;
+    for (var scope of ['user', 'pack', 'key']) {
+      var marker = current[scope];
+      if (saved[scope] === marker.version || (scope === 'user' && record.pending && marker.retained.indexOf(saved.user) !== -1)) continue;
+      if (record.pending && marker.quarantine_pending) quarantined = true;
+      else return 'stale';
+    }
+    return quarantined ? 'quarantined' : 'current';
   }
 
-  function publishFence(storage, key, retained) {
+  function recordIsCurrent(storage, record) { return recordState(storage, record) === 'current'; }
+
+  function publishFence(storage, key, retained, quarantinePending) {
     try {
-      return storage.setItem(key, JSON.stringify({ schema: 1, version: uniqueId(), retained: retained || [] })) !== false;
+      // Older readers reject schema2 and retain bytes instead of treating these
+      // uncertain generations as stale records to delete.
+      var marker = { schema: quarantinePending ? 2 : 1, version: uniqueId(), retained: retained || [], created_at: Date.now() };
+      if (quarantinePending) marker.quarantine_pending = true;
+      return storage.setItem(key, JSON.stringify(marker)) !== false;
     } catch (_) { return false; }
   }
 
@@ -124,6 +140,38 @@
     return entries;
   }
 
+  function entriesUnchanged(storage, uid, entries) {
+    var current = readEntries(storage, uid);
+    if (current.length !== entries.length) return false;
+    var originals = new Map(entries.map(function (entry) { return [entry.key, entry.raw]; }));
+    return current.every(function (entry) { return originals.get(entry.key) === entry.raw; });
+  }
+
+  function maintainFences(storage, uid) {
+    var start = fencePrefix(uid), keys = [], entries = readEntries(storage, uid);
+    for (var i = 0; i < storage.length; i += 1) {
+      var key = storage.key(i);
+      if (key && key.indexOf(start) === 0) keys.push(key);
+    }
+    keys.forEach(function (key) {
+      var raw = storage.getItem(key);
+      if (raw === null) return;
+      try { parseFence(raw); } catch (error) {
+        if (!error.invalidFence) throw error;
+        var pending = entries.filter(function (entry) { return !entry.record || entry.record.pending; });
+        if (pending.length > MAX_RECORDS || pending.reduce(function (size, entry) { return size + entry.bytes; }, 0) > MAX_BYTES) throw error;
+        if (storage.getItem(key) !== raw || !entriesUnchanged(storage, uid, entries)) throw new Error('Cache changed during fence repair');
+        // Corruption erased the authoritative generation. Keep uncertain pending
+        // bytes quarantined; never infer that an older generation is current.
+        if (!publishFence(storage, key, [], true)) throw new Error('Could not repair cache fence');
+        if (!entriesUnchanged(storage, uid, entries)) throw new Error('Cache changed during fence repair');
+      }
+    });
+    var quarantined = entries.filter(function (entry) { return entry.record && recordState(storage, entry.record) === 'quarantined'; });
+    if (quarantined.length > MAX_RECORDS || quarantined.reduce(function (size, entry) { return size + entry.bytes; }, 0) > MAX_BYTES) throw new Error('Pending quarantine is full');
+    if (!entriesUnchanged(storage, uid, entries)) throw new Error('Cache changed during capture');
+  }
+
   function activate(uid) {
     uid = text(uid).trim();
     if (activeUid !== uid) { activeUid = uid; session += 1; }
@@ -135,6 +183,7 @@
     if (!uid || uid !== activeUid) return null;
     try {
       if (!global.localStorage) return null;
+      maintainFences(global.localStorage, uid);
       var token = Object.freeze({});
       tokens.set(token, { uid: uid, session: session, epoch: epoch, fences: snapshotFences(global.localStorage, uid) });
       return token;
@@ -163,6 +212,8 @@
         || owner.epoch < (packEpochs.get(packKey(owner.uid, packId)) || 0)) return false;
       var storage = global.localStorage;
       if (!storage || payload === undefined || !writerIsCurrent(storage, owner, kind, id, packId)) return false;
+      var existing = parseRecord(storage.getItem(key), owner.uid, kind, id);
+      if (existing && recordState(storage, existing) === 'quarantined') return false;
       var keys = fenceKeys(owner.uid, kind, id, packId);
       var now = Date.now();
       var raw = JSON.stringify({ schema: 1, uid: owner.uid, kind: kind, id: id, pack_id: packId,
@@ -192,14 +243,15 @@
         if (storage.removeItem(removals[i].key) === false) return false;
       }
       var previous = storage.getItem(key);
+      var previousRecord = parseRecord(previous, owner.uid, kind, id);
+      if (previousRecord && recordState(storage, previousRecord) === 'quarantined') return false;
       if (storage.setItem(key, raw) === false) return false;
       if (writerIsCurrent(storage, owner, kind, id, packId)) return true;
       // The other tab may clear between our precheck and write. Touch only our
       // own revision, and restore a retained pending predecessor if applicable.
       if (storage.getItem(key) === raw) {
-        var previousRecord = parseRecord(previous, owner.uid, kind, id);
-        if (previousRecord && recordIsCurrent(storage, previousRecord)) storage.setItem(key, previous);
-        else storage.removeItem(key);
+        if (previousRecord && recordState(storage, previousRecord) !== 'stale') storage.setItem(key, previous);
+        else if (recordState(storage, parseRecord(raw, owner.uid, kind, id)) !== 'quarantined') storage.removeItem(key);
       }
       return false;
     } catch (_) { return false; }
@@ -223,7 +275,7 @@
     var raw = storage.getItem(key);
     if (raw === null) return true;
     var current = parseRecord(raw, uid, kind, id);
-    if (current && recordIsCurrent(storage, current)) return true;
+    if (current && recordState(storage, current) !== 'stale') return true;
     // A delayed storage event can refer to a record that has since been replaced.
     if (storage.getItem(key) !== raw) return true;
     return storage.removeItem(key) !== false;
@@ -264,20 +316,25 @@
     try {
       var storage = global.localStorage;
       if (!storage) return false;
-      var entries = readEntries(storage, uid), retained = [], known = true;
+      var entries = readEntries(storage, uid), retained = [], known = true, quarantinePending = false;
       if (options && options.preservePending) {
         // Keep generations, not revision IDs: another tab can finish a pending
         // edit between this enumeration and publication of the new user fence.
-        retained.push(readFence(storage, fenceKeys(uid, '', '', '').user).version);
+        var userFence = readFence(storage, fenceKeys(uid, '', '', '').user);
+        retained.push(userFence.version);
+        quarantinePending = !!userFence.quarantine_pending;
         entries.forEach(function (entry) {
           var record = entry.record;
           if (!record) { known = false; return; }
-          if (!record.pending || !recordIsCurrent(storage, record)) return;
+          if (!record.pending || recordState(storage, record) === 'stale') return;
           var version = record.fences ? record.fences.user : '';
+          // A repaired user fence must not promote its unknown generations into
+          // readable state during an external identity change.
+          if (quarantinePending && version !== userFence.version && userFence.retained.indexOf(version) < 0) return;
           if (retained.indexOf(version) === -1) retained.push(version);
         });
       }
-      var published = publishFence(storage, fenceKeys(uid, '', '', '').user, retained);
+      var published = publishFence(storage, fenceKeys(uid, '', '', '').user, retained, quarantinePending);
       var removals = options && options.preservePending
         ? entries.filter(function (entry) { return entry.record && (published || !entry.record.pending); }) : entries;
       var removed = removeEntries(storage, removals, published);
@@ -292,7 +349,7 @@
       if (!global.localStorage) return true;
       readFence(global.localStorage, fenceKeys(uid, '', '', '').user);
       return readEntries(global.localStorage, uid).some(function (entry) {
-        return !entry.record || (entry.record.pending && recordIsCurrent(global.localStorage, entry.record));
+        return !entry.record || (entry.record.pending && recordState(global.localStorage, entry.record) !== 'stale');
       });
     } catch (_) { return true; }
   }

@@ -14,7 +14,7 @@ from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study import export as study_export
-from lecture_processor.services import access_service
+from lecture_processor.services import access_service, study_picture_service
 from lecture_processor.runtime.job_dispatcher import JobQueueFullError
 
 
@@ -662,7 +662,6 @@ def delete_account_data(app_ctx, request):
 
         from lecture_processor.services import book_account_service
         deleted['books'] = book_account_service.delete_owned(app_ctx, uid, email)
-        from lecture_processor.services import study_picture_service
         deleted['study_images'] = study_picture_service.delete_owned(app_ctx, uid)
         _delete_uid_collection('job_logs')
         _anonymize_purchases()
@@ -814,7 +813,7 @@ def delete_account_data(app_ctx, request):
             'deleted': deleted,
             'warnings': warnings_list,
         })
-    except Exception:
+    except Exception as error:
         app_ctx.logger.exception('Error deleting account data for %s', uid)
         if deletion_started and not destructive_deletion_started and not auth_user_deleted:
             try:
@@ -834,6 +833,12 @@ def delete_account_data(app_ctx, request):
                 reason='Could not completely delete account data',
                 runtime=app_ctx,
             )
+        if isinstance(error, study_picture_service.PictureUploadBusy):
+            return app_ctx.jsonify({
+                'error': 'A picture upload is still finishing. Please try deleting your account again in a few minutes.',
+                'error_code': 'account_deletion_picture_upload_pending',
+                'status': 'deletion_retry_required',
+            }), 503
         return app_ctx.jsonify({
             'error': 'Could not completely delete account data',
             'error_code': 'account_deletion_failed',

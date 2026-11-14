@@ -102,6 +102,27 @@ def _attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None, *, id
     )
 
 
+def _finish_failed_import_admission(app_ctx, job_id, message, *, extra_credits=0):
+    # Persist the failed settlement before attempting it, so a restart or a
+    # failed refund write remains eligible for the normal retry sweep.
+    runtime_jobs_store.update_job_fields(
+        job_id, runtime=app_ctx, status='error', finished_at=app_ctx.time.time(),
+        error=message, step_description='Imported audio is unavailable',
+        failed_stage='audio_import', credit_refund_pending=True,
+        extra_slides_refund_pending=extra_credits,
+    )
+    primary_refunded = job_charges.refund_runtime_component(job_id, 'primary', 1, runtime=app_ctx)
+    extras_refunded = not extra_credits or job_charges.refund_runtime_component(
+        job_id, 'extras', extra_credits, runtime=app_ctx,
+    )
+    runtime_jobs_store.update_job_fields(
+        job_id, runtime=app_ctx, credit_refund_pending=not primary_refunded,
+        extra_slides_refund_pending=0 if extras_refunded else extra_credits,
+        extra_slides_refunded=extra_credits if extras_refunded else 0,
+        credit_refund_error='' if primary_refunded and extras_refunded else 'audio_import_refund_failed',
+    )
+
+
 def _queue_full_message():
     return upload_batch_support.queue_full_message()
 
@@ -455,7 +476,7 @@ def upload_files(app_ctx, request):
                 )
                 if token_error:
                     app_ctx.cleanup_files([pdf_path, audio_path], [])
-                    job_charges.refund_runtime_component(job_id, 'primary', 1, runtime=app_ctx)
+                    _finish_failed_import_admission(app_ctx, job_id, token_error)
                     return app_ctx.jsonify({'error': token_error}), 400
             total_steps = 4 if study_features != 'none' else 3
             try:
@@ -646,9 +667,7 @@ def upload_files(app_ctx, request):
                 )
                 if token_error:
                     app_ctx.cleanup_files([audio_path], [])
-                    job_charges.refund_runtime_component(job_id, 'primary', 1, runtime=app_ctx)
-                    if interview_features_cost > 0:
-                        job_charges.refund_runtime_component(job_id, 'extras', interview_features_cost, runtime=app_ctx)
+                    _finish_failed_import_admission(app_ctx, job_id, token_error, extra_credits=interview_features_cost)
                     return app_ctx.jsonify({'error': token_error}), 400
             total_steps = 2 if interview_features_cost > 0 else 1
             try:

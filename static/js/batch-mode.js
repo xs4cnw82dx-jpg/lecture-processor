@@ -200,8 +200,9 @@
           var extras = creditUtils.quote(value.snapshot, [{ action: 'interview_extra', units: count || 1 }], { overnight: !isInstantBatch });
           extraNote.textContent = extras ? batchCreditText(count ? 'Selected extras: {credits}.' : 'Optional extras: {credits} each.', { credits: creditUtils.formatCredits(extras.needed) }) : batchCreditText('Credit cost unavailable.');
         } else if (value && value.snapshot && value.snapshot.scheme === 1) {
-          extraNote.textContent = count ? count + ' extra' + (count === 1 ? '' : 's') + ' selected (' + count + ' text extraction credit' + (count === 1 ? '' : 's') + ').'
-            : 'No extras selected. Select one or both options (1 text extraction credit per option).';
+          extraNote.textContent = batchCreditText(count === 1 ? '1 extra selected (1 text extraction credit).'
+            : count ? '{count} extras selected ({count} text extraction credits).'
+              : 'No extras selected. Select one or both options (1 text extraction credit per option).', { count: count });
         } else {
           extraNote.textContent = batchCreditText('Credit cost unavailable.');
         }
