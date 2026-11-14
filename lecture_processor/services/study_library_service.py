@@ -481,7 +481,10 @@ def update_study_pack(app_ctx, request, pack_id):
             pack_ref.update(updates)
             pending_pictures = pack.get(study_picture_service.PENDING_PICTURES, [])
         if pending_pictures:
-            study_picture_service.delete_for_pack(app_ctx, uid, pack_id, image_ids=pending_pictures)
+            try:
+                study_picture_service.delete_for_pack(app_ctx, uid, pack_id, image_ids=pending_pictures)
+            except Exception:
+                app_ctx.logger.warning('Picture cleanup remains pending after saving study pack %s', pack_id, exc_info=True)
         return app_ctx.jsonify({'ok': True})
     except BookError as error:
         return app_ctx.jsonify({'error': str(error)}), error.status
@@ -595,7 +598,15 @@ def delete_study_pack(app_ctx, request, pack_id):
         # Delete the local audio only after Firestore commits. If Firestore fails,
         # the user's pack and its media remain intact for a safe retry.
         study_audio.remove_pack_audio_file(pack, runtime=app_ctx)
-        study_picture_service.delete_for_pack(app_ctx, uid, pack_id)
+        try:
+            study_picture_service.delete_for_pack(app_ctx, uid, pack_id)
+        except Exception:
+            app_ctx.logger.warning('Picture cleanup remains pending after deleting study pack %s', pack_id, exc_info=True)
+            return app_ctx.jsonify({
+                'error': 'The study pack was deleted, but picture cleanup is still pending. Please try deleting it again.',
+                'error_code': 'study_pack_cleanup_pending',
+                'deleted': True,
+            }), 503
         return app_ctx.jsonify({'ok': True})
     except BookError as error:
         return app_ctx.jsonify({'error': str(error)}), error.status

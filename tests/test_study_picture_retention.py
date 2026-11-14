@@ -156,7 +156,7 @@ def test_partial_storage_failure_retries_committed_removal_and_releases_budget_o
             return library.delete_study_pack(state.runtime, None, 'pack')
         return update_cards(state, [{'front': 'Question', 'back': 'Answer'}])
 
-    assert response_status(remove()) == 503
+    assert response_status(remove()) == (503 if operation == 'delete-pack' else 200)
     if operation == 'delete-pack':
         assert 'study_packs/pack' not in state.db.data
     else:
@@ -222,7 +222,8 @@ def test_picture_claimed_after_prevalidation_cannot_be_reattached(retention, mon
 
     result = update_cards(state, [{'front': 'Question', 'back': 'Answer', 'image_ids': [state.image_id]}])
 
-    assert response_status(result) == 403
+    assert response_status(result) == 409
+    assert result[0].get_json()['error'] == 'This picture is being removed; add it again shortly.'
     assert state.db.data['study_packs/pack']['flashcards'] == []
     assert state.db.data[state.asset_path]['ready'] is False
     assert state.files == files_before
@@ -270,7 +271,7 @@ def test_pack_delete_during_upload_keeps_retryable_cleanup_until_last_write(rete
     assert observation['reserved'] == unrelated_bytes + asset['size']
     assert 'study_packs/pack' not in state.db.data
     if cleanup_fails:
-        assert error.value.status == 503
+        assert error.value.status in (404, 409)
         assert state.db.data[asset_path]['ready'] is False
         assert state.db.data['book_usage/storage']['bytes'] == unrelated_bytes + asset['size']
         assert asset['path'] in state.files

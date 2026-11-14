@@ -22,7 +22,7 @@ class Store:
         return SimpleNamespace(document=lambda aid: SimpleNamespace(id=aid, path='study_images/' + aid))
 
     def get_all(self, refs, field_paths):
-        assert field_paths == ['uid', 'pack_id', 'ready']
+        assert field_paths == ['uid', 'pack_id', 'ready', 'deleting']
         self.metadata_batches.append([ref.id for ref in refs])
         return [SimpleNamespace(
             id=ref.id, exists=ref.path in self.data,

@@ -641,6 +641,8 @@
     "Summary (max 1 page)": "Samenvatting (max. 1 pagina)",
     "Structured transcript with headings": "Transcript met tussenkopjes",
     "No extras selected. Select one or both options (1 text extraction credit per option).": "Geen extra’s geselecteerd. Kies één of beide opties (1 tekstextractiecredit per optie).",
+    "1 extra selected (1 text extraction credit).": "1 extra geselecteerd (1 tekstextractiecredit).",
+    "{count} extras selected ({count} text extraction credits).": "{count} extra’s geselecteerd ({count} tekstextractiecredits).",
     "Processing Mode": "Verwerkingsmodus",
     "Processing mode": "Verwerkingsmodus",
     "Upload lecture slides (PDF or PPTX) and audio recording to generate complete, integrated study notes.": "Upload collegedia’s (PDF of PPTX) en een audio-opname om er samen complete studieaantekeningen van te maken.",
