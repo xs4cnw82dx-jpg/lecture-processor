@@ -1519,9 +1519,17 @@
 
     .notes-view-surface {
       position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      align-content: start;
       width: 100%;
       min-width: 0;
       margin: 0 auto;
+    }
+
+    .notes-view-surface > .notes-view {
+      grid-row: 2;
+      grid-column: 1;
     }
 
     .notes-view {
@@ -1539,6 +1547,7 @@
     }
 
     .notes-audio-unavailable {
+      grid-row: 1;
       margin: 0 0 10px;
       border: 1px solid var(--theme-warning-line, #FBBF24);
       border-radius: var(--radius-sm);
@@ -1628,10 +1637,14 @@
       margin: 0 auto;
     }
 
+    /* Shares the notes grid cell, so an audio notice above never covers it. */
     .notes-fullscreen-btn {
-      position: absolute;
-      top: 18px;
-      right: 18px;
+      position: relative;
+      grid-row: 2;
+      grid-column: 1;
+      align-self: start;
+      justify-self: end;
+      margin: 18px 18px 0 0;
       z-index: 14;
       width: 44px;
       height: 44px;
@@ -5790,8 +5803,7 @@
       }
 
       .notes-fullscreen-btn {
-        top: 14px;
-        right: 14px;
+        margin: 14px 14px 0 0;
       }
 
       .split {
