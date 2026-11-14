@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai import study_generation
-from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import job_charges
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.study import audio as study_audio
@@ -33,19 +33,18 @@ def _require_study_pack_saved(job_id, job_data, runtime=None):
 
 def _refund_primary_job_credit(job_id, job_data, uid, credit_type, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
-    if not credit_type or bool(job_data.get('credit_refunded', False)):
+    job_data.setdefault('user_id', uid)
+    if not credit_type or (bool(job_data.get('credit_refunded', False)) and not job_data.get('charge_ref')):
         return False
-    refunded = bool(billing_credits.refund_credit(
-        uid,
-        credit_type,
-        runtime=resolved_runtime,
-        idempotency_key=f'runtime-job:{job_id}:primary',
+    refunded = bool(job_charges.refund_component(
+        job_data, 'primary', 1, f'runtime-job:{job_id}:primary',
+        legacy_credit_type=credit_type, legacy_charged_units=1, processed_count=1, runtime=resolved_runtime,
     ))
     if refunded:
         billing_receipts.add_job_credit_refund(job_data, credit_type, 1, runtime=resolved_runtime)
-        job_data['credit_refunded'] = True
-        job_data.pop('credit_refund_pending', None)
-        job_data.pop('credit_refund_error', None)
+        job_data['credit_refunded'] = job_data.get('refunded_credits', 0) > 0 if job_data.get('charge_ref') else True
+        job_data['credit_refund_pending'] = False
+        job_data['credit_refund_error'] = ''
     else:
         job_data['credit_refunded'] = False
         job_data['credit_refund_pending'] = True
@@ -57,6 +56,7 @@ def _refund_primary_job_credit(job_id, job_data, uid, credit_type, runtime=None)
 
 def _refund_extra_slides(job_id, job_data, uid, amount, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
+    job_data.setdefault('user_id', uid)
     try:
         amount_int = int(amount or 0)
     except Exception:
@@ -64,18 +64,17 @@ def _refund_extra_slides(job_id, job_data, uid, amount, runtime=None):
     if amount_int <= 0:
         return False
     already_refunded = int(job_data.get('extra_slides_refunded', 0) or 0)
-    refunded = bool(billing_credits.refund_slides_credits(
-        uid,
-        amount_int,
+    total_units = int(job_data.get('interview_features_cost', 0) or 0) + int(job_data.get('study_tools_credit_cost', 0) or 0)
+    refunded = bool(job_charges.refund_component(
+        job_data, 'extras', already_refunded + amount_int, f'runtime-job:{job_id}:extras',
+        legacy_credit_type='slides_credits', legacy_charged_units=max(total_units, already_refunded + amount_int),
         runtime=resolved_runtime,
-        idempotency_key=f'runtime-job:{job_id}:extras',
-        idempotency_total=already_refunded + amount_int,
     ))
     if refunded:
         job_data['extra_slides_refunded'] = already_refunded + amount_int
         billing_receipts.add_job_credit_refund(job_data, 'slides_credits', amount_int, runtime=resolved_runtime)
-        job_data['credit_refunded'] = True
-        job_data.pop('extra_slides_refund_pending', None)
+        job_data['credit_refunded'] = job_data.get('refunded_credits', 0) > 0 if job_data.get('charge_ref') else True
+        job_data['extra_slides_refund_pending'] = 0
     else:
         job_data['extra_slides_refunded'] = already_refunded
         job_data['extra_slides_refund_pending'] = int(job_data.get('extra_slides_refund_pending', 0) or 0) + amount_int
@@ -266,6 +265,8 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
     failed_stage = 'initialization'
 
     try:
+        if not job_charges.begin_runtime_job(job_id, runtime=resolved_runtime):
+            return
         set_fields(status='processing', step=1, step_description='Extracting text from slides...')
         pdf_input_path = _prepare_slides_pdf_for_provider(job_id, pdf_path, local_paths, set_fields, runtime=resolved_runtime)
         failed_stage = 'slide_upload'
@@ -478,6 +479,8 @@ def process_slides_only(job_id, pdf_path, runtime=None):
     failed_stage = 'initialization'
 
     try:
+        if not job_charges.begin_runtime_job(job_id, runtime=resolved_runtime):
+            return
         set_fields(status='processing', step=1, step_description='Extracting text from slides...')
         pdf_input_path = _prepare_slides_pdf_for_provider(job_id, pdf_path, local_paths, set_fields, runtime=resolved_runtime)
 
@@ -590,6 +593,8 @@ def process_interview_transcription(job_id, audio_path, runtime=None):
     failed_stage = 'initialization'
 
     try:
+        if not job_charges.begin_runtime_job(job_id, runtime=resolved_runtime):
+            return
         set_fields(status='processing', step=1, step_description='Optimizing audio for faster processing...')
 
         output_language = get_fields().get('output_language', 'English')
@@ -895,6 +900,8 @@ def process_voice_note(job_id, audio_path, runtime=None):
     failed_stage = 'initialization'
 
     try:
+        if not job_charges.begin_runtime_job(job_id, runtime=resolved_runtime):
+            return
         set_fields(status='processing', step=1, step_description='Preparing audio...')
 
         output_language = get_fields().get('output_language', 'English')
@@ -1012,6 +1019,8 @@ def regenerate_study_tools_for_pack(job_id, pack_id, runtime=None):
     failed_stage = 'initialization'
 
     try:
+        if not job_charges.begin_runtime_job(job_id, runtime=resolved_runtime):
+            return
         set_fields(status='processing', step=1, step_description='Refreshing study tools...')
         job_data = get_fields()
         uid = str(job_data.get('user_id', '') or '').strip()

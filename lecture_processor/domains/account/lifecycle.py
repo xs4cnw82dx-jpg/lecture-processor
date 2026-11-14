@@ -506,6 +506,8 @@ def collect_user_export_payload(uid, email, runtime=None):
     study_progress = study_progress_doc.to_dict() if study_progress_doc.exists else {}
 
     purchases, purchases_truncated = list_docs_by_uid('purchases', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
+    credit_charges, charges_truncated = list_docs_by_uid('credit_charges', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
+    credit_refunds, refunds_truncated = list_docs_by_uid('credit_refunds', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     job_logs, job_logs_truncated = list_docs_by_uid('job_logs', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     analytics_events, analytics_truncated = list_docs_by_uid('analytics_events', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
     study_folders, folders_truncated = list_docs_by_uid('study_folders', uid, resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION, runtime=resolved_runtime)
@@ -575,6 +577,8 @@ def collect_user_export_payload(uid, email, runtime=None):
             'limits': {'max_docs_per_collection': resolved_runtime.ACCOUNT_EXPORT_MAX_DOCS_PER_COLLECTION},
             'truncated': {
                 'purchases': purchases_truncated,
+                'credit_charges': charges_truncated,
+                'credit_refunds': refunds_truncated,
                 'job_logs': job_logs_truncated,
                 'analytics_events': analytics_truncated,
                 'study_folders': folders_truncated,
@@ -605,6 +609,8 @@ def collect_user_export_payload(uid, email, runtime=None):
         },
         'collections': {
             'purchases': purchases,
+            'credit_charges': credit_charges,
+            'credit_refunds': credit_refunds,
             'job_logs': job_logs,
             'analytics_events': analytics_events,
             'study_folders': study_folders,

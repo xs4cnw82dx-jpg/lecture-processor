@@ -51,6 +51,18 @@ def _admin_custom_prompt_length(job):
     return len(str((job or {}).get('custom_prompt', '') or ''))
 
 
+def _unified_history_fields(record, *, purchase=False):
+    if record.get('credit_scheme') != 2:
+        return {}
+    if purchase:
+        fields = {'credit_scheme': 2, 'credits': record.get('credits', 0)}
+        if 'legacy_credits' in record:
+            fields['legacy_credits'] = record['legacy_credits']
+        return fields
+    return {key: record.get(key, '' if key == 'charge_ref' else 0)
+            for key in ('credit_scheme', 'charge_ref', 'charged_credits', 'refunded_credits')}
+
+
 def admin_overview(app_ctx, request):
     _decoded, error_response, status = _require_admin(app_ctx, request)
     if error_response is not None:
@@ -192,6 +204,7 @@ def admin_overview(app_ctx, request):
                 'prompt_template_key': job.get('prompt_template_key', ''),
                 'prompt_source': job.get('prompt_source', ''),
                 'credit_refund_method': job.get('credit_refund_method', ''),
+                **_unified_history_fields(job),
             })
 
         recent_purchase_docs = admin_metrics.safe_query_docs_in_window(
@@ -213,6 +226,7 @@ def admin_overview(app_ctx, request):
                 'price_cents': purchase.get('price_cents', 0),
                 'currency': purchase.get('currency', 'eur'),
                 'created_at': purchase.get('created_at', 0),
+                **_unified_history_fields(purchase, purchase=True),
             })
 
         recent_rate_limit_docs = admin_metrics.safe_query_docs_in_window(
@@ -331,7 +345,7 @@ def admin_export(app_ctx, request):
 
     def iter_rows():
         if export_type == 'jobs':
-            yield [
+            headers = [
                 'job_id', 'uid', 'email', 'mode', 'source_type', 'source_url',
                 'custom_prompt', 'custom_prompt_length', 'prompt_template_key', 'prompt_source', 'status', 'credit_deducted',
                 'credit_refund_method',
@@ -347,6 +361,10 @@ def admin_export(app_ctx, request):
                 filters=admin_metrics.admin_job_filters(runtime=app_ctx),
                 runtime=app_ctx,
             )
+            unified = any((doc.to_dict() or {}).get('credit_scheme') == 2 for doc in docs)
+            if unified:
+                headers += ['credit_scheme', 'charge_ref', 'charged_credits', 'refunded_credits']
+            yield headers
             for doc in docs:
                 job = doc.to_dict() or {}
                 if not admin_metrics.is_admin_visible_job(job, runtime=app_ctx):
@@ -356,7 +374,7 @@ def admin_export(app_ctx, request):
                 token_output_total = _to_non_negative_int(cost_info.get('output_tokens', job.get('token_output_total', 0)))
                 token_total = _to_non_negative_int(cost_info.get('total_tokens', job.get('token_total', 0)))
                 cost_usd = float(cost_info.get('cost_usd', 0.0) or 0.0)
-                yield [
+                row = [
                     job.get('job_id', doc.id),
                     job.get('uid', ''),
                     job.get('email', ''),
@@ -381,10 +399,14 @@ def admin_export(app_ctx, request):
                     round(cost_usd, 8),
                     round(cost_usd * usd_to_eur, 8),
                 ]
+                if unified:
+                    values = _unified_history_fields(job)
+                    row += [values.get(key, '') for key in ('credit_scheme', 'charge_ref', 'charged_credits', 'refunded_credits')]
+                yield row
             return
 
         if export_type == 'purchases':
-            yield [
+            headers = [
                 'uid', 'bundle_id', 'bundle_name', 'price_cents', 'currency',
                 'credits', 'stripe_session_id', 'created_at'
             ]
@@ -396,9 +418,13 @@ def admin_export(app_ctx, request):
                 order_desc=True,
                 runtime=app_ctx,
             )
+            unified = any((doc.to_dict() or {}).get('credit_scheme') == 2 for doc in docs)
+            if unified:
+                headers += ['credit_scheme', 'legacy_credits']
+            yield headers
             for doc in docs:
                 purchase = doc.to_dict() or {}
-                yield [
+                row = [
                     purchase.get('uid', ''),
                     purchase.get('bundle_id', ''),
                     purchase.get('bundle_name', ''),
@@ -408,6 +434,9 @@ def admin_export(app_ctx, request):
                     purchase.get('stripe_session_id', ''),
                     purchase.get('created_at', 0),
                 ]
+                if unified:
+                    row += [purchase.get('credit_scheme', ''), app_ctx.json.dumps(purchase.get('legacy_credits', {}), ensure_ascii=True)]
+                yield row
             return
 
         analytics_docs = admin_metrics.safe_query_docs_in_window(

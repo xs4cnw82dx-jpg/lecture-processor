@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai import study_generation
-from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import job_charges
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.runtime.container import get_runtime
@@ -163,13 +163,21 @@ def _refund_interview_feature_failures(batch, row, failed_count, runtime=None):
     uid = str((batch or {}).get('uid', '') or row.get('uid', '') or '')
     batch_id = str((batch or {}).get('batch_id', '') or row.get('batch_id', '') or '').strip()
     row_id = str(row.get('row_id', '') or '').strip()
+    if row.get('charge_ref') or row.get('credit_scheme') == 2:
+        row.setdefault('uid', uid)
+        if job_charges.refund_component(
+            row, 'extras', already + pending, f'batch-row:{batch_id}:{row_id}:interview-extras', runtime=resolved_runtime,
+        ):
+            row['interview_features_refunded_count'] = already + pending
+            row['extra_slides_refund_pending'] = 0
+        else:
+            row['extra_slides_refund_pending'] = pending
+        return
     receipt_holder = {'billing_receipt': dict(row.get('billing_receipt', {}) or {})}
-    if billing_credits.refund_slides_credits(
-        uid,
-        pending,
-        runtime=resolved_runtime,
-        idempotency_key=f'batch-row:{batch_id}:{row_id}:interview-extras',
-        idempotency_total=already + pending,
+    row.setdefault('uid', uid)
+    if job_charges.refund_component(
+        row, 'extras', already + pending, f'batch-row:{batch_id}:{row_id}:interview-extras',
+        legacy_credit_type='slides_credits', legacy_charged_units=max_extra, runtime=resolved_runtime,
     ):
         row['interview_features_refunded_count'] = already + pending
         billing_receipts.add_job_credit_refund(
@@ -179,6 +187,9 @@ def _refund_interview_feature_failures(batch, row, failed_count, runtime=None):
             runtime=resolved_runtime,
         )
         row['billing_receipt'] = receipt_holder.get('billing_receipt', row.get('billing_receipt', {}))
+        row['extra_slides_refund_pending'] = 0
+    else:
+        row['extra_slides_refund_pending'] = pending
 
 
 def _cleanup_row_files(row, runtime=None):

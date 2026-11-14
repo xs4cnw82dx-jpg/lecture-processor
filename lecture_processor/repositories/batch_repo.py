@@ -113,6 +113,11 @@ def list_active_batch_jobs(db, statuses, limit=50):
     return list(query.stream())
 
 
+def list_batches_with_pending_refunds(db, *, limit=100):
+    query = apply_where(batch_jobs_collection(db), 'credit_refund_retry_pending', '==', True)
+    return list(query.limit(max(1, min(500, int(limit)))).stream())
+
+
 def list_batch_jobs(db, limit=200):
     query = batch_jobs_collection(db).order_by('created_at', direction='DESCENDING')
     if isinstance(limit, int) and limit > 0:
@@ -145,6 +150,15 @@ def list_batch_rows(db, batch_id, limit=None):
     if isinstance(limit, int) and limit > 0:
         query = query.limit(limit)
     return list(query.stream())
+
+
+def list_batch_refund_rows(db, batch_id, *, transaction):
+    fields = (
+        'status', 'billing_receipt', 'credit_deducted', 'credit_refunded',
+        'interview_features_refunded_count', 'credit_refund_pending', 'extra_slides_refund_pending',
+    )
+    query = batch_rows_collection(db, batch_id).select(fields)
+    return list(query.stream(transaction=transaction))
 
 
 def list_batch_row_statuses(db, batch_id, limit=None):

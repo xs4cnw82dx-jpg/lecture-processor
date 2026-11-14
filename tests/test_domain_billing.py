@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from lecture_processor.domains.billing import credits
 from lecture_processor.domains.billing import purchases
 from lecture_processor.runtime.container import get_runtime
+from tests.credit_test_support import make_credit_runtime
 
 
 def _paid_checkout_session(
@@ -41,30 +42,11 @@ def _paid_checkout_session(
     return session
 
 
-def test_grant_credits_to_user_updates_expected_credit_fields(app, monkeypatch):
-    runtime = get_runtime(app)
-    monkeypatch.setattr(runtime, "CREDIT_BUNDLES", {"bundle_x": {"credits": {"slides_credits": 2}}})
-
-    updates = []
-
-    class _Doc:
-        exists = True
-
-    class _Ref:
-        def get(self):
-            return _Doc()
-
-        def update(self, payload):
-            updates.append(payload)
-
-        def set(self, _payload):
-            updates.append({"set": True})
-
-    monkeypatch.setattr(runtime.users_repo, "doc_ref", lambda _db, _uid: _Ref())
-    monkeypatch.setattr(runtime.firestore, "Increment", lambda value: ("inc", value))
-
+def test_grant_credits_to_user_updates_expected_credit_fields():
+    runtime, store = make_credit_runtime(users={'u1': {'slides_credits': 3}}, unified_enabled=False)
+    runtime.CREDIT_BUNDLES = {"bundle_x": {"credits": {"slides_credits": 2}}}
     assert credits.grant_credits_to_user("u1", "bundle_x", runtime=runtime) is True
-    assert updates == [{"slides_credits": ("inc", 2)}]
+    assert store.docs('users')['u1']['slides_credits'] == 5
 
 
 def test_refund_credit_handles_missing_document_update(app, monkeypatch):

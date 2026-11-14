@@ -10,6 +10,7 @@ from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.ai import instant_batch_orchestrator
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import job_charges, ledger, policy
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.shared import sanitize_csv_row
@@ -103,21 +104,17 @@ def _refund_batch_charges(app_ctx, uid, batch_id, charged_rows):
         credit_type = str(charged.get('credit_type', '') or '').strip()
         row_id = str(charged.get('row_id', '') or '').strip()
         scope = f'batch-row:{batch_id}:{row_id}'
+        legacy_row = {'uid': uid}
         if credit_type:
-            billing_credits.refund_credit(
-                uid,
-                credit_type,
-                runtime=app_ctx,
-                idempotency_key=f'{scope}:primary',
+            job_charges.refund_component(
+                legacy_row, 'primary', 1, f'{scope}:primary', legacy_credit_type=credit_type,
+                legacy_charged_units=1, processed_count=1, runtime=app_ctx,
             )
         extras = int(charged.get('interview_features_cost', 0) or 0)
         if extras > 0:
-            billing_credits.refund_slides_credits(
-                uid,
-                extras,
-                runtime=app_ctx,
-                idempotency_key=f'{scope}:interview-extras',
-                idempotency_total=extras,
+            job_charges.refund_component(
+                legacy_row, 'extras', extras, f'{scope}:interview-extras',
+                legacy_credit_type='slides_credits', legacy_charged_units=extras, runtime=app_ctx,
             )
 
 
@@ -185,8 +182,21 @@ def _read_batch_text_upload(app_ctx, uploaded_file, row_index, label):
     return decoded, len(data)
 
 
-def _batch_credit_preflight_error(user, mode, row_plans, runtime=None):
+def _batch_charge_components(mode, extras=0, *, rows=1):
+    action = {'lecture-notes': 'lecture_notes', 'slides-only': 'slides_extraction',
+              'interview': 'interview_transcription', 'audio-transcription': 'audio_transcription',
+              TEXT_COMBINE_BATCH_MODE: 'text_combine'}[mode]
+    components = {'primary': {'action': action, 'units': rows}}
+    if extras:
+        components['extras'] = {'action': 'interview_extra', 'units': extras}
+    return components
+
+
+def _batch_credit_preflight_error(user, mode, row_plans, runtime=None, *, instant=False):
     row_count = len(row_plans)
+    if policy.uses_unified_credits(user, runtime=runtime):
+        components = _batch_charge_components(mode, sum(_safe_int(row.get('interview_features_cost', 0)) for row in row_plans), rows=row_count)
+        return job_charges.credit_preflight_error(user, components, overnight=not instant, runtime=runtime)
     if mode == 'lecture-notes':
         if not billing_credits.has_category_credit(user, 'lecture', row_count, runtime=runtime):
             return 'Not enough lecture credits to start this batch.', 402
@@ -489,9 +499,9 @@ def create_batch_job(app_ctx, request, *, instant=False):
                 }
             )
 
-        credit_error, credit_status = _batch_credit_preflight_error(user, mode, row_plans, runtime=app_ctx)
+        credit_error, credit_status = _batch_credit_preflight_error(user, mode, row_plans, runtime=app_ctx, instant=instant)
         if credit_error:
-            return app_ctx.jsonify({'error': credit_error}), credit_status
+            return app_ctx.jsonify(credit_error if isinstance(credit_error, dict) else {'error': credit_error}), credit_status
 
         quota_response, quota_status, quota_reservation = _reserve_batch_upload_quota(
             app_ctx,
@@ -567,58 +577,6 @@ def create_batch_job(app_ctx, request, *, instant=False):
                 actual_upload_bytes += plan['text_upload_bytes']
 
         for plan in row_plans:
-            interview_features_cost = int(plan.get('interview_features_cost', 0) or 0)
-            charged_credit = ''
-            if mode == 'lecture-notes':
-                charged_credit = billing_credits.deduct_credit(
-                    uid,
-                    'lecture_credits_standard',
-                    'lecture_credits_extended',
-                    runtime=app_ctx,
-                )
-                if not charged_credit:
-                    raise ValueError('Not enough lecture credits to start this batch.')
-            elif mode == 'slides-only':
-                charged_credit = billing_credits.deduct_credit(uid, 'slides_credits', runtime=app_ctx)
-                if not charged_credit:
-                    raise ValueError('Not enough text extraction credits to start this batch.')
-            elif mode == 'interview':
-                charged_credit = billing_credits.deduct_interview_credit(uid, runtime=app_ctx)
-                if not charged_credit:
-                    raise ValueError('Not enough interview credits to start this batch.')
-                if interview_features_cost > 0:
-                    if not billing_credits.deduct_slides_credits(uid, interview_features_cost, runtime=app_ctx):
-                        billing_credits.refund_credit(
-                            uid,
-                            charged_credit,
-                            runtime=app_ctx,
-                            idempotency_key=f'batch-row:{batch_id}:{plan["row_id"]}:primary',
-                        )
-                        raise ValueError('Not enough text extraction credits for interview extras in this batch row.')
-            elif mode == 'audio-transcription':
-                charged_credit = billing_credits.deduct_interview_credit(uid, runtime=app_ctx)
-                if not charged_credit:
-                    raise ValueError('Not enough interview credits to start this batch.')
-            elif mode == TEXT_COMBINE_BATCH_MODE:
-                charged_credit = billing_credits.deduct_credit(
-                    uid,
-                    'lecture_credits_standard',
-                    'lecture_credits_extended',
-                    runtime=app_ctx,
-                )
-                if not charged_credit:
-                    raise ValueError('Not enough lecture credits to start this batch.')
-            plan['charged_credit'] = charged_credit
-
-            charged_rows.append(
-                {
-                    'row_id': plan['row_id'],
-                    'credit_type': charged_credit,
-                    'interview_features_cost': interview_features_cost,
-                }
-            )
-
-        for plan in row_plans:
             idx = plan['ordinal']
             row_id = plan['row_id']
             slides_local_path = ''
@@ -686,10 +644,6 @@ def create_batch_job(app_ctx, request, *, instant=False):
 
             charged_credit = str(plan.get('charged_credit', '') or '').strip()
             interview_features_cost = int(plan.get('interview_features_cost', 0) or 0)
-            billing_receipt = billing_receipts.initialize_billing_receipt(
-                {charged_credit: 1, 'slides_credits': interview_features_cost},
-                runtime=app_ctx,
-            )
             source_type = audio_source_type if audio_source_type else ('text-upload' if mode == TEXT_COMBINE_BATCH_MODE else ('upload' if slides_required else 'audio'))
             prepared_rows.append(
                 {
@@ -720,7 +674,9 @@ def create_batch_job(app_ctx, request, *, instant=False):
                     'interview_features_cost': interview_features_cost,
                     'credit_deducted': charged_credit,
                     'credit_refunded': False,
-                    'billing_receipt': billing_receipt,
+                    'billing_receipt': {},
+                    'credit_admission_state': 'pending',
+                    'credits_charged': 0,
                     'processing_strategy': 'instant' if instant else 'batch',
                     'billing_mode': 'instant_batch' if instant else 'batch',
                     'billing_multiplier': 1.0 if instant else 0.5,
@@ -765,7 +721,9 @@ def create_batch_job(app_ctx, request, *, instant=False):
             'uid': uid,
             'email': decoded_email or str(user.get('email', '') or '').strip(),
             'mode': mode,
-            'status': 'queued',
+            'status': 'preparing',
+            'credit_admission_state': 'pending',
+            'admitted_rows': 0,
             'processing_strategy': 'instant' if instant else 'batch',
             'batch_title': batch_title,
             'output_language': output_language,
@@ -803,8 +761,8 @@ def create_batch_job(app_ctx, request, *, instant=False):
             'provider_state': 'JOB_STATE_PENDING',
             'submission_locked': True,
             'client_submission_id': client_submission_id,
-            'last_heartbeat_at': now_ts,
-            'credits_charged': sum(1 + int(item.get('interview_features_cost', 0) or 0) for item in charged_rows),
+            'last_heartbeat_at': app_ctx.time.time(),
+            'credits_charged': 0,
             'credits_refunded': 0,
             'credits_refund_pending': 0,
         }
@@ -812,6 +770,12 @@ def create_batch_job(app_ctx, request, *, instant=False):
         batch_created = True
         resources.commit('submission_claim')
         resources.commit('credits')
+        for row in prepared_rows:
+            components = _batch_charge_components(mode, int(row.get('interview_features_cost', 0) or 0))
+            job_charges.admit_batch_row(
+                uid, batch_id, row['row_id'], mode, components, overnight=not instant, runtime=app_ctx,
+            )
+        job_charges.finish_batch_admission(uid, batch_id, runtime=app_ctx)
 
         try:
             submit_batch = getattr(app_ctx, 'submit_batch_background_job', None)
@@ -850,6 +814,9 @@ def create_batch_job(app_ctx, request, *, instant=False):
                 mark_audio_quota_released=True,
             )
         batch_orchestrator.clear_batch_audio_fetch_targets(batch_id, runtime=app_ctx)
+        if isinstance(error, (ledger.InsufficientCredits, ledger.LedgerConflict, ledger.LedgerUnavailable)):
+            payload, status = job_charges.public_charge_error(error)
+            return app_ctx.jsonify(payload), status
         return app_ctx.jsonify({'error': upload_redaction_service.redact_exception(error, max_chars=500)}), 400
     finally:
         resources.rollback()

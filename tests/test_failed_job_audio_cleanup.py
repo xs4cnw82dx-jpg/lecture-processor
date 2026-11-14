@@ -142,7 +142,7 @@ class AudioPipeline:
         monkeypatch.setattr(pipelines.runtime_jobs_store, 'set_job', self.set_job)
         monkeypatch.setattr(pipelines.ai_provider, 'run_with_provider_retry', lambda _stage, callback, **_kwargs: callback())
         monkeypatch.setattr(pipelines.ai_provider, 'generate_with_policy', self.generate)
-        monkeypatch.setattr(pipelines.billing_credits, 'refund_credit', self.refund)
+        monkeypatch.setattr(pipelines.job_charges.ledger, 'refund_legacy_credits', self.refund)
         monkeypatch.setattr(pipelines.account_lifecycle, 'ensure_account_allows_writes', lambda *_args, **_kwargs: (True, ''))
         monkeypatch.setattr(pipelines.study_progress, 'resolve_user_timezone', lambda *_args, **_kwargs: (timezone.utc, 'UTC'))
 
@@ -152,8 +152,8 @@ class AudioPipeline:
     def set_job(self, _job_id, payload, runtime=None):
         self.job = deepcopy(payload)
 
-    def refund(self, *_args, **kwargs):
-        self.refunds.append(kwargs.get('idempotency_key'))
+    def refund(self, _uid, _credit_type, _target, refund_ref, **_kwargs):
+        self.refunds.append(refund_ref)
         return True
 
     def upload(self, **_kwargs):
