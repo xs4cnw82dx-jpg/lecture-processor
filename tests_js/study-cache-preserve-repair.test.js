@@ -110,3 +110,43 @@ test('explicit full discard still replaces a damaged marker without requiring a 
   assert.equal(state.cache.hasPending('alice'), false);
   assert.deepEqual(plain(state.other.get('bob', 'planned', 'other')), { revision: 7 });
 });
+
+for (const limit of ['count', 'bytes']) {
+  for (const fence of ['malformed', 'repaired']) {
+    test(`preserve-pending clear refuses ${limit} overflow with a ${fence} user fence`, () => {
+      const state = fixture();
+      const originalKey = key('alice', 'planned', 'run');
+      const record = JSON.parse(state.values.get(originalKey));
+      state.values.set(userFence('alice'), '{damaged user marker');
+      if (fence === 'repaired') {
+        assert.ok(state.cache.capture('alice'));
+        assert.equal(JSON.parse(state.values.get(userFence('alice'))).schema, 2);
+      }
+
+      // Model persisted data introduced outside the bounded cache writer.
+      if (limit === 'count') {
+        for (let index = 0; index < 50; index += 1) {
+          const id = `extra-${index}`;
+          state.values.set(key('alice', 'planned', id), JSON.stringify({ ...record, id }));
+        }
+      } else {
+        state.values.set(originalKey, JSON.stringify({ ...record, payload: { text: 'x'.repeat(2 * 1024 * 1024) } }));
+      }
+      const before = [...state.values];
+      const ownedKeys = [...state.values.keys()].filter(name => name.startsWith('lp_ui_v2:user:alice:study_cache:'));
+
+      assert.equal(state.cache.clearUser('alice', { preservePending: true }), false);
+
+      assert.equal(state.cache.hasPending('alice'), true);
+      assert.equal(state.cache.get('alice', 'planned', 'run'), null);
+      assert.equal(state.remote.set(state.old, 'planned', 'run', { revision: 5 }, { packId: 'pack', pending: true }), false);
+      assert.deepEqual([...state.values], before, 'Every entry and the existing fence must retain their exact bytes');
+      assert.equal(state.other.set(state.otherToken, 'planned', 'other', { revision: 8 }, { packId: 'other-pack', pending: true }), true);
+
+      assert.equal(state.cache.clearUser('alice'), true);
+      for (const name of ownedKeys) assert.equal(state.values.has(name), false);
+      assert.equal(state.cache.hasPending('alice'), false);
+      assert.deepEqual(plain(state.other.get('bob', 'planned', 'other')), { revision: 8 });
+    });
+  }
+}

@@ -166,7 +166,8 @@
   }
 
   function clearLegacyLearningSessions(uid) {
-    // Only an unambiguous owner prefix is safe to remove without parsing.
+    // Legacy keys assume delimiter-free UIDs from normal signup. Revisit prefix
+    // cleanup before introducing custom/imported identities containing "_".
     if (!/^[A-Za-z0-9]+$/.test(uid)) return true;
     try {
       var storage = window.localStorage;
