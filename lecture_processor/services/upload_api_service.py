@@ -11,7 +11,7 @@ from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai import pipelines as ai_pipelines
-from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import job_charges
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
@@ -363,8 +363,12 @@ def upload_files(app_ctx, request):
             return app_ctx.jsonify({'error': 'Upload too large. Maximum total upload size is 560MB (up to 50MB slides file (PDF/PPTX) and 500MB audio).'}), 413
 
         if mode == 'lecture-notes':
-            if not billing_credits.has_category_credit(user, 'lecture', runtime=app_ctx):
-                return app_ctx.jsonify({'error': 'No lecture credits remaining. Please purchase more credits.'}), 402
+            credit_error, credit_status = job_charges.credit_preflight_error(
+                user, {'primary': {'action': 'lecture_notes', 'units': 1}},
+                legacy_checks=[('lecture', 1, 'No lecture credits remaining. Please purchase more credits.')], runtime=app_ctx,
+            )
+            if credit_error:
+                return app_ctx.jsonify(credit_error), credit_status
             if 'pdf' not in request.files:
                 return app_ctx.jsonify({'error': 'Both slides (PDF/PPTX) and audio files are required'}), 400
             slides_file = request.files['pdf']
@@ -435,15 +439,13 @@ def upload_files(app_ctx, request):
             if ai_unavailable is not None:
                 _cleanup_upload_files(app_ctx, [pdf_path, audio_path], imported_audio_used=imported_audio_used, imported_audio_path=audio_path)
                 return ai_unavailable
-            deducted = billing_credits.deduct_credit(
-                uid,
-                'lecture_credits_standard',
-                'lecture_credits_extended',
-                runtime=app_ctx,
+            receipt, credit_error, credit_status = job_charges.reserve_runtime_job(
+                uid, job_id, 'lecture-notes', {'primary': {'action': 'lecture_notes', 'units': 1}}, runtime=app_ctx,
             )
-            if not deducted:
+            if credit_error:
                 _cleanup_upload_files(app_ctx, [pdf_path, audio_path], imported_audio_used=imported_audio_used, imported_audio_path=audio_path)
-                return app_ctx.jsonify({'error': 'No lecture credits remaining.'}), 402
+                return app_ctx.jsonify(credit_error), credit_status
+            deducted = job_charges.primary_credit_type(receipt)
             if imported_audio_used:
                 _consumed_path, token_error = upload_import_audio.get_audio_import_token_path(
                     uid,
@@ -453,16 +455,11 @@ def upload_files(app_ctx, request):
                 )
                 if token_error:
                     app_ctx.cleanup_files([pdf_path, audio_path], [])
-                    billing_credits.refund_credit(
-                        uid,
-                        deducted,
-                        runtime=app_ctx,
-                        idempotency_key=f'runtime-job:{job_id}:primary',
-                    )
+                    job_charges.refund_runtime_component(job_id, 'primary', 1, runtime=app_ctx)
                     return app_ctx.jsonify({'error': token_error}), 400
             total_steps = 4 if study_features != 'none' else 3
             try:
-                runtime_jobs_store.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'study_pack_title': study_pack_title, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round(((pdf_size if pdf_size > 0 else 0) + audio_size) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
+                job_charges.set_admitted_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'lecture-notes', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'slide_text': None, 'transcript': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'study_pack_title': study_pack_title, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round(((pdf_size if pdf_size > 0 else 0) + audio_size) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
                 app_ctx.submit_background_job(
                     ai_pipelines.process_lecture_notes,
                     job_id,
@@ -489,8 +486,12 @@ def upload_files(app_ctx, request):
                 )
 
         elif mode == 'slides-only':
-            if not billing_credits.has_category_credit(user, 'slides', runtime=app_ctx):
-                return app_ctx.jsonify({'error': 'No text extraction credits remaining. Please purchase more credits.'}), 402
+            credit_error, credit_status = job_charges.credit_preflight_error(
+                user, {'primary': {'action': 'slides_extraction', 'units': 1}},
+                legacy_checks=[('slides', 1, 'No text extraction credits remaining. Please purchase more credits.')], runtime=app_ctx,
+            )
+            if credit_error:
+                return app_ctx.jsonify(credit_error), credit_status
             if 'pdf' not in request.files:
                 return app_ctx.jsonify({'error': 'Slide file (PDF or PPTX) is required'}), 400
             slides_file = request.files['pdf']
@@ -515,13 +516,16 @@ def upload_files(app_ctx, request):
             if ai_unavailable is not None:
                 app_ctx.cleanup_files([pdf_path], [])
                 return ai_unavailable
-            deducted = billing_credits.deduct_credit(uid, 'slides_credits', runtime=app_ctx)
-            if not deducted:
+            receipt, credit_error, credit_status = job_charges.reserve_runtime_job(
+                uid, job_id, 'slides-only', {'primary': {'action': 'slides_extraction', 'units': 1}}, runtime=app_ctx,
+            )
+            if credit_error:
                 app_ctx.cleanup_files([pdf_path], [])
-                return app_ctx.jsonify({'error': 'No text extraction credits remaining.'}), 402
+                return app_ctx.jsonify(credit_error), credit_status
+            deducted = job_charges.primary_credit_type(receipt)
             total_steps = 2 if study_features != 'none' else 1
             try:
-                runtime_jobs_store.set_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'study_pack_title': study_pack_title, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round((pdf_size if pdf_size > 0 else 0) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
+                job_charges.set_admitted_job(job_id, {'status': 'starting', 'step': 0, 'step_description': 'Starting...', 'total_steps': total_steps, 'mode': 'slides-only', 'user_id': uid, 'user_email': email, 'credit_deducted': deducted, 'credit_refunded': False, 'started_at': app_ctx.time.time(), 'result': None, 'flashcard_selection': flashcard_selection, 'question_selection': question_selection, 'study_features': study_features, 'output_language': output_language, 'flashcards': [], 'test_questions': [], 'study_generation_error': None, 'study_pack_id': None, 'study_pack_title': study_pack_title, 'error': None, 'failed_stage': '', 'provider_error_code': '', 'retry_attempts': 0, 'file_size_mb': round((pdf_size if pdf_size > 0 else 0) / (1024 * 1024), 2), 'billing_receipt': billing_receipts.initialize_billing_receipt({deducted: 1}, runtime=app_ctx)}, runtime=app_ctx)
                 app_ctx.submit_background_job(
                     ai_pipelines.process_slides_only,
                     job_id,
@@ -549,8 +553,13 @@ def upload_files(app_ctx, request):
                 )
 
         elif mode == 'interview':
-            if not billing_credits.has_category_credit(user, 'interview', runtime=app_ctx):
-                return app_ctx.jsonify({'error': 'No interview credits remaining. Please purchase more credits.'}), 402
+            credit_error, credit_status = job_charges.credit_preflight_error(
+                user, {'primary': {'action': 'interview_transcription', 'units': 1},
+                       'extras': {'action': 'interview_extra', 'units': len(interview_features)}},
+                legacy_checks=[('interview', 1, 'No interview credits remaining. Please purchase more credits.')], runtime=app_ctx,
+            )
+            if credit_error:
+                return app_ctx.jsonify(credit_error), credit_status
             uploaded_audio_file = request.files.get('audio')
             has_uploaded_audio = bool(uploaded_audio_file and uploaded_audio_file.filename)
             has_imported_audio = bool(audio_import_token)
@@ -606,30 +615,28 @@ def upload_files(app_ctx, request):
             if ai_unavailable is not None:
                 _cleanup_upload_files(app_ctx, [audio_path], imported_audio_used=imported_audio_used, imported_audio_path=audio_path)
                 return ai_unavailable
-            deducted = billing_credits.deduct_interview_credit(uid, runtime=app_ctx)
-            if not deducted:
-                _cleanup_upload_files(app_ctx, [audio_path], imported_audio_used=imported_audio_used, imported_audio_path=audio_path)
-                return app_ctx.jsonify({'error': 'No interview credits remaining.'}), 402
             interview_features_cost = len(interview_features)
+            components = {'primary': {'action': 'interview_transcription', 'units': 1}}
             if interview_features_cost > 0:
-                if not billing_credits.has_category_credit(user, 'slides', interview_features_cost, runtime=app_ctx):
-                    billing_credits.refund_credit(
-                        uid,
-                        deducted,
-                        runtime=app_ctx,
-                        idempotency_key=f'runtime-job:{job_id}:primary',
-                    )
+                components['extras'] = {'action': 'interview_extra', 'units': interview_features_cost}
+                credit_error, credit_status = job_charges.credit_preflight_error(
+                    user, components,
+                    legacy_checks=[(
+                        'slides', interview_features_cost,
+                        'Not enough text extraction credits for interview extras. '
+                        f'You selected {interview_features_cost} option(s) and need {interview_features_cost} text extraction credits.',
+                    )], runtime=app_ctx,
+                )
+                if credit_error:
                     _cleanup_upload_files(app_ctx, [audio_path], imported_audio_used=imported_audio_used, imported_audio_path=audio_path)
-                    return app_ctx.jsonify({'error': f'Not enough text extraction credits for interview extras. You selected {interview_features_cost} option(s) and need {interview_features_cost} text extraction credits.'}), 402
-                if not billing_credits.deduct_slides_credits(uid, interview_features_cost, runtime=app_ctx):
-                    billing_credits.refund_credit(
-                        uid,
-                        deducted,
-                        runtime=app_ctx,
-                        idempotency_key=f'runtime-job:{job_id}:primary',
-                    )
-                    _cleanup_upload_files(app_ctx, [audio_path], imported_audio_used=imported_audio_used, imported_audio_path=audio_path)
-                    return app_ctx.jsonify({'error': 'Could not reserve text extraction credits for interview extras. Please try again.'}), 402
+                    return app_ctx.jsonify(credit_error), credit_status
+            receipt, credit_error, credit_status = job_charges.reserve_runtime_job(
+                uid, job_id, 'interview', components, runtime=app_ctx,
+            )
+            if credit_error:
+                _cleanup_upload_files(app_ctx, [audio_path], imported_audio_used=imported_audio_used, imported_audio_path=audio_path)
+                return app_ctx.jsonify(credit_error), credit_status
+            deducted = job_charges.primary_credit_type(receipt)
             if imported_audio_used:
                 _consumed_path, token_error = upload_import_audio.get_audio_import_token_path(
                     uid,
@@ -639,24 +646,13 @@ def upload_files(app_ctx, request):
                 )
                 if token_error:
                     app_ctx.cleanup_files([audio_path], [])
-                    billing_credits.refund_credit(
-                        uid,
-                        deducted,
-                        runtime=app_ctx,
-                        idempotency_key=f'runtime-job:{job_id}:primary',
-                    )
+                    job_charges.refund_runtime_component(job_id, 'primary', 1, runtime=app_ctx)
                     if interview_features_cost > 0:
-                        billing_credits.refund_slides_credits(
-                            uid,
-                            interview_features_cost,
-                            runtime=app_ctx,
-                            idempotency_key=f'runtime-job:{job_id}:extras',
-                            idempotency_total=interview_features_cost,
-                        )
+                        job_charges.refund_runtime_component(job_id, 'extras', interview_features_cost, runtime=app_ctx)
                     return app_ctx.jsonify({'error': token_error}), 400
             total_steps = 2 if interview_features_cost > 0 else 1
             try:
-                runtime_jobs_store.set_job(job_id, {
+                job_charges.set_admitted_job(job_id, {
                     'status': 'starting',
                     'step': 0,
                     'step_description': 'Starting...',

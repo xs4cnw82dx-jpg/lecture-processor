@@ -3,7 +3,7 @@
 import json
 
 from lecture_processor.domains.account import lifecycle as account_lifecycle
-from lecture_processor.domains.billing import credits, receipts
+from lecture_processor.domains.billing import job_charges, ledger, policy, receipts
 from lecture_processor.domains.runtime_jobs import execution, store
 
 SCOPE = 'interview-coding'
@@ -146,18 +146,23 @@ def claim_run(runtime, uid, pack_id, cost, *, email=''):
         count = account_lifecycle.count_active_jobs_for_user(uid, runtime=runtime)
         if count >= runtime.MAX_ACTIVE_JOBS_PER_USER:
             raise RunError('Please wait for an active processing job to finish before starting another.', 429, 'active_job_limit')
-        debit = credits.prepare_slides_debit(user, cost, runtime=runtime)
-        if debit is None:
-            raise RunError(f'Not enough text extraction credits for AI coding. This transcript needs {cost} credit(s).', 402, 'insufficient_credits')
-        updates, charged = debit
+        charge_ref = f'interview-coding-run:{new_ref.id}:credits'
+        context = ledger.read_charge_context(transaction, uid, charge_ref, runtime=runtime)
+        prepared = ledger.prepare_charge(
+            context, policy.action_cost('interview_coding', units=cost), 'interview_coding',
+            components={'primary': {'action': 'interview_coding', 'units': cost}},
+            admission={'kind': 'interview_coding', 'run_id': new_ref.id, 'state': 'admitted'}, runtime=runtime,
+        )
+        receipt = ledger.apply_charge(transaction, prepared)
+        charged = receipt['charged_credits']
         now = runtime.time.time()
-        receipt = receipts.initialize_billing_receipt({'slides_credits': charged}, runtime=runtime)
         run = {
             'run_id': new_ref.id, 'runtime_job_id': new_ref.id, 'uid': uid, 'pack_id': pack_id, 'status': 'queued',
             'model': getattr(runtime, 'MODEL_INTERVIEW_CODING', 'gemini-3.8-flash'),
             'thinking_level': 'high', 'prompt_version': getattr(runtime, 'PROMPT_REGISTRY_VERSION', 'v1'),
             'proposed_codes': [], 'proposed_quotations': [], 'token_usage_by_stage': {},
-            'credit_cost': cost, 'credit_charged': charged, 'billing_receipt': receipt,
+            'credit_cost': receipt['components']['primary']['quoted_credits'], 'credit_charged': charged,
+            **job_charges.receipt_fields(receipt),
             'created_at': now, 'updated_at': now,
         }
         job = {
@@ -166,9 +171,8 @@ def claim_run(runtime, uid, pack_id, cost, *, email=''):
             'user_id': uid, 'user_email': email, 'study_pack_id': pack_id,
             'study_pack_title': str(pack.get('title', '') or ''), 'started_at': now,
             'last_heartbeat_at': now, 'step_description': 'Waiting to code interview',
-            'billing_receipt': receipt, 'study_tools_credit_cost': charged,
+            **job_charges.receipt_fields(receipt), 'study_tools_credit_cost': cost,
         }
-        transaction.update(user_ref, updates)
         transaction.set(new_ref, run)
         transaction.update(pack_ref, {'interview_coding_run_id': new_ref.id})
         _write_job(runtime, transaction, _job_ref(runtime, new_ref.id), job)
@@ -295,10 +299,14 @@ def fail_run(runtime, run_id, *, orphan=False, now_ts=None):
         cache_job(runtime, run_id)
         return False
     charged = max(0, int(run.get('credit_charged', run.get('credit_cost', 0)) or 0))
-    refunded = charged == 0 or credits.refund_slides_credits(
-        run['uid'], charged, runtime=runtime,
-        idempotency_key=f'interview-coding-run:{run_id}:credits', idempotency_total=charged,
-    )
+    if run.get('charge_ref') or run.get('credit_scheme') == 2:
+        units = int(((run.get('billing_receipt') or {}).get('components') or {}).get('primary', {}).get('units', 0))
+        refunded = job_charges.refund_component(run, 'primary', units, f'interview-coding-run:{run_id}:credits', runtime=runtime)
+    else:
+        refunded = charged == 0 or job_charges.refund_component(
+            run, 'primary', charged, f'interview-coding-run:{run_id}:credits',
+            legacy_credit_type='slides_credits', legacy_charged_units=charged, runtime=runtime,
+        )
     if not refunded:
         cache_job(runtime, run_id)
         return False
@@ -311,13 +319,17 @@ def fail_run(runtime, run_id, *, orphan=False, now_ts=None):
         job = job_ref.get(transaction=transaction).to_dict() or {}
         if not doc.exists or (doc.to_dict() or {}).get('status') != 'refund_pending':
             return False
-        receipt = receipts.initialize_billing_receipt({'slides_credits': charged}, runtime=runtime)
-        receipt['refunded'] = {'slides_credits': charged} if charged else {}
+        if run.get('charge_ref'):
+            receipt = run['billing_receipt']
+        else:
+            receipt = receipts.initialize_billing_receipt({'slides_credits': charged}, runtime=runtime)
+            receipt['refunded'] = {'slides_credits': charged} if charged else {}
         finished = runtime.time.time()
+        credit_fields = job_charges.receipt_fields(receipt) if run.get('charge_ref') else {'billing_receipt': receipt}
         transaction.update(ref, {'status': 'failed', 'credit_refunded': charged > 0,
-                                 'billing_receipt': receipt, 'updated_at': finished})
+                                 **credit_fields, 'updated_at': finished})
         _write_job(runtime, transaction, job_ref, {**job, 'status': 'error', 'finished_at': finished,
-                                                  'credit_refunded': charged > 0, 'billing_receipt': receipt,
+                                                  'credit_refunded': charged > 0, **credit_fields,
                                                   'step_description': ERROR_MESSAGE})
         return True
     result = settle(runtime.db.transaction())

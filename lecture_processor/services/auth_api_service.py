@@ -7,6 +7,7 @@ from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.auth import session as auth_session
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import policy as billing_policy
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.shared import parsing as shared_parsing
 from lecture_processor.domains.shared.tool_catalog import TOOL_IDS, sanitize_favorite_tools
@@ -215,16 +216,20 @@ def get_user(app_ctx, request):
     preferences = shared_parsing.build_user_preferences_payload(user, runtime=app_ctx)
     credit_payload = billing_credits.build_credit_payload(user, decoded_token=decoded_token, runtime=app_ctx)
     credit_summary = billing_credits.build_category_summary(user, decoded_token=decoded_token, runtime=app_ctx)
-    return app_ctx.jsonify({
+    payload = {
         'uid': user['uid'], 'email': user['email'],
         'credits': credit_payload,
-        'unlimited_credits': credit_payload.get('unlimited', {}),
+        'unlimited_credits': billing_credits.effective_unlimited_credits(user, decoded_token=decoded_token, runtime=app_ctx),
         'credits_breakdown': credit_summary,
         'total_processed': user.get('total_processed', 0),
         'has_created_study_pack': bool(user.get('has_created_study_pack', bool(user.get('total_processed', 0)))),
         'is_admin': app_ctx.is_admin_user(decoded_token),
         'preferences': preferences,
-    })
+    }
+    if user.get('credits_version') == billing_policy.CREDIT_SCHEME_VERSION:
+        payload['credits_version'] = billing_policy.CREDIT_SCHEME_VERSION
+        payload['credit_costs'] = billing_policy.ACTION_COSTS
+    return app_ctx.jsonify(payload)
 
 
 def get_user_preferences(app_ctx, request):

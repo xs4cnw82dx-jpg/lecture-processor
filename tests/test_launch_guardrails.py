@@ -9,6 +9,7 @@ import pytest
 from werkzeug.datastructures import MultiDict
 
 from tests.runtime_test_support import get_test_core
+from tests.credit_test_support import make_credit_runtime
 
 core = get_test_core()
 from lecture_processor.runtime.container import get_runtime
@@ -47,6 +48,20 @@ def allow_progress_account_access(monkeypatch):
     # These progress-shape tests use minimal database fakes. Transactional
     # account-deletion behavior is exercised in test_study_progress_rollup.py.
     monkeypatch.setattr(account_lifecycle, 'require_account_access', lambda *_args, **_kwargs: None)
+
+
+def _install_dispatch_credit_store(monkeypatch, uid, user):
+    runtime, store = make_credit_runtime(users={uid: {
+        'uid': uid, 'account_status': 'active', 'total_processed': 0, **user,
+    }}, unified_enabled=False)
+    monkeypatch.setattr(core, 'db', runtime.db)
+    monkeypatch.setattr(core, 'UNIFIED_CREDITS_ENABLED', False)
+    monkeypatch.setattr(core.firestore, 'transactional', runtime.firestore.transactional)
+    monkeypatch.setattr(core.firestore, 'Increment', runtime.firestore.Increment)
+    monkeypatch.setattr(core, 'get_or_create_user', lambda requested_uid, _email: store.docs('users')[requested_uid])
+    store.queued = []
+    monkeypatch.setattr(core, 'submit_background_job', lambda target, *args, **kwargs: store.queued.append((target, args, kwargs)))
+    return store
 
 
 def test_discontinued_gemini_flash_lite_preview_model_is_not_reintroduced():
@@ -724,21 +739,16 @@ def test_upload_accepts_audio_import_token_for_lecture_mode(allow_account_writes
     monkeypatch.setattr(rate_limit_quotas, "has_sufficient_upload_disk_space", lambda _bytes=0, runtime=None: (True, 10_000_000, 0))
     monkeypatch.setattr(rate_limit_quotas, "reserve_daily_upload_bytes", lambda _uid, _bytes, runtime=None: (True, 0))
     monkeypatch.setattr(rate_limit_quotas, "release_daily_upload_bytes", lambda uid, requested, runtime=None: released.append((uid, requested)) or True)
-    monkeypatch.setattr(
-        core,
-        "get_or_create_user",
-        lambda _uid, _email: {
-            "lecture_credits_standard": 1,
-            "lecture_credits_extended": 0,
-            "preferred_output_language": "dutch",
-            "preferred_output_language_custom": "",
-        },
-    )
+    credit_store = _install_dispatch_credit_store(monkeypatch, 'imp-u3', {
+        "lecture_credits_standard": 1,
+        "lecture_credits_extended": 0,
+        "preferred_output_language": "dutch",
+        "preferred_output_language_custom": "",
+    })
     monkeypatch.setattr(core, "allowed_file", lambda _filename, _allowed: True)
     monkeypatch.setattr(core, "file_has_pdf_signature", lambda _path: True)
     monkeypatch.setattr(core, "file_looks_like_audio", lambda _path: True)
     monkeypatch.setattr(core, "get_saved_file_size", lambda _path: 2048)
-    monkeypatch.setattr(billing_credits, "deduct_credit", lambda *_args, **_kwargs: "lecture_credits_standard")
     monkeypatch.setattr(upload_import_audio, "cleanup_expired_audio_import_tokens", lambda runtime=None: None)
     monkeypatch.setattr(ai_pipelines, "process_lecture_notes", lambda _job_id, _pdf_path, _audio_path, runtime=None: None)
     monkeypatch.setattr(
@@ -766,6 +776,11 @@ def test_upload_accepts_audio_import_token_for_lecture_mode(allow_account_writes
     assert core.jobs[body["job_id"]]["output_language"] == "Dutch"
     assert core.jobs[body["job_id"]]["mode"] == "lecture-notes"
     assert released == []
+    assert credit_store.docs('users')['imp-u3']['lecture_credits_standard'] == 0
+    assert credit_store.docs('users')['imp-u3']['total_processed'] == 1
+    assert len(credit_store.docs('credit_charges')) == 1
+    assert len(credit_store.queued) == 1
+    assert credit_store.docs(core.RUNTIME_JOBS_COLLECTION)[body['job_id']]['billing_receipt']['charged'] == {'lecture_credits_standard': 1}
 
 
 def test_upload_slides_only_accepts_pptx_after_conversion(allow_account_writes, client, monkeypatch):
@@ -774,17 +789,12 @@ def test_upload_slides_only_accepts_pptx_after_conversion(allow_account_writes, 
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
-    monkeypatch.setattr(
-        core,
-        "get_or_create_user",
-        lambda _uid, _email: {
-            "slides_credits": 1,
-            "preferred_output_language": "english",
-            "preferred_output_language_custom": "",
-        },
-    )
+    credit_store = _install_dispatch_credit_store(monkeypatch, 'pptx-u1', {
+        "slides_credits": 1,
+        "preferred_output_language": "english",
+        "preferred_output_language_custom": "",
+    })
     monkeypatch.setattr(core, "file_has_pptx_signature", lambda _path: True)
-    monkeypatch.setattr(billing_credits, "deduct_credit", lambda *_args, **_kwargs: "slides_credits")
     monkeypatch.setattr(ai_pipelines, "process_slides_only", lambda _job_id, _pdf_path, runtime=None: None)
 
     response = client.post(
@@ -806,6 +816,10 @@ def test_upload_slides_only_accepts_pptx_after_conversion(allow_account_writes, 
     body = response.get_json()
     assert body.get("job_id")
     assert core.jobs[body["job_id"]]["mode"] == "slides-only"
+    assert credit_store.docs('users')['pptx-u1']['slides_credits'] == 0
+    assert len(credit_store.docs('credit_charges')) == 1
+    assert len(credit_store.queued) == 1
+    assert credit_store.docs(core.RUNTIME_JOBS_COLLECTION)[body['job_id']]['billing_receipt']['charged'] == {'slides_credits': 1}
 
 
 @pytest.mark.parametrize("mode", ["lecture-notes", "slides-only", "interview"])
@@ -895,26 +909,19 @@ def test_tools_extract_image_rejects_more_than_five_files(allow_account_writes, 
 
 
 def test_tools_extract_image_accepts_five_files_bills_once_and_returns_output_text(allow_account_writes, client, monkeypatch):
-    deduct_calls = []
     log_calls = []
     cleanup_calls = []
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "tools-u2", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
-    monkeypatch.setattr(core, "get_or_create_user", lambda _uid, _email: {"slides_credits": 9})
+    credit_store = _install_dispatch_credit_store(monkeypatch, 'tools-u2', {"slides_credits": 9})
     monkeypatch.setattr(core, "allowed_file", lambda _filename, _allowed: True)
     monkeypatch.setattr(core, "get_saved_file_size", lambda _path: 4096)
     monkeypatch.setattr(core, "get_mime_type", lambda _path: "image/png")
     monkeypatch.setattr(core, "cleanup_files", lambda local_paths, remote_files: cleanup_calls.append((list(local_paths), list(remote_files))))
     monkeypatch.setattr(core, "save_job_log", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(analytics_events, "log_analytics_event", lambda *_args, **_kwargs: log_calls.append(True) or True)
-
-    monkeypatch.setattr(
-        billing_credits,
-        "deduct_credit",
-        lambda _uid, _credit_type, runtime=None: deduct_calls.append((_uid, _credit_type)) or "slides_credits",
-    )
 
     monkeypatch.setattr(
         ai_provider,
@@ -985,8 +992,10 @@ def test_tools_extract_image_accepts_five_files_bills_once_and_returns_output_te
     assert status_payload["content_markdown"] == "Combined image extraction output"
     assert status_payload["result"] == "Combined image extraction output"
     assert payload["ok"] is True
-    assert len(deduct_calls) == 1
-    assert deduct_calls[0][1] == "slides_credits"
+    assert credit_store.docs('users')['tools-u2']['slides_credits'] == 8
+    assert credit_store.docs('users')['tools-u2']['total_processed'] == 1
+    assert len(credit_store.docs('credit_charges')) == 1
+    assert status_payload['billing_receipt']['charged'] == {'slides_credits': 1}
     assert log_calls
     assert cleanup_calls
 
@@ -999,25 +1008,19 @@ def test_tools_transcribe_audio_uses_interview_credit_and_returns_transcript(cli
     monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
-    monkeypatch.setattr(
-        core,
-        "get_or_create_user",
-        lambda _uid, _email: {
-            "uid": "tools-tr-u1",
-            "email": "user@gmail.com",
-            "interview_credits_short": 1,
-            "interview_credits_medium": 0,
-            "interview_credits_long": 0,
-            "preferred_output_language": "dutch",
-            "preferred_output_language_custom": "",
-        },
-    )
+    credit_store = _install_dispatch_credit_store(monkeypatch, 'tools-tr-u1', {
+        "email": "user@gmail.com",
+        "interview_credits_short": 1,
+        "interview_credits_medium": 0,
+        "interview_credits_long": 0,
+        "preferred_output_language": "dutch",
+        "preferred_output_language_custom": "",
+    })
     monkeypatch.setattr(core, "allowed_file", lambda _filename, _allowed: True)
     monkeypatch.setattr(core, "get_saved_file_size", lambda _path: 4096)
     monkeypatch.setattr(core, "file_looks_like_audio", lambda _path: True)
     monkeypatch.setattr(core, "cleanup_files", lambda local_paths, remote_files: cleanup_calls.append((list(local_paths), list(remote_files))))
     monkeypatch.setattr(core, "save_job_log", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(billing_credits, "deduct_interview_credit", lambda _uid, runtime=None: "interview_credits_short")
 
     class _UploadApi:
         def upload(self, file=None, config=None):
@@ -1060,6 +1063,9 @@ def test_tools_transcribe_audio_uses_interview_credit_and_returns_transcript(cli
     assert status_payload["output_text"] == "Transcript in Dutch"
     assert status_payload["billing_receipt"]["charged"]["interview_credits_short"] == 1
     assert cleanup_calls
+    assert credit_store.docs('users')['tools-tr-u1']['interview_credits_short'] == 0
+    assert credit_store.docs('users')['tools-tr-u1']['total_processed'] == 1
+    assert len(credit_store.docs('credit_charges')) == 1
 
 
 def test_tools_transcribe_rejects_low_disk_before_saving_audio(client, monkeypatch):
@@ -1181,25 +1187,19 @@ def test_tools_transcribe_audio_allows_per_run_output_language_override(client, 
     monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
     monkeypatch.setattr(account_lifecycle, "count_active_jobs_for_user", lambda _uid, runtime=None: 0)
     monkeypatch.setattr(rate_limiter, "check_rate_limit", lambda **_kwargs: (True, 0))
-    monkeypatch.setattr(
-        core,
-        "get_or_create_user",
-        lambda _uid, _email: {
-            "uid": "tools-tr-u2",
-            "email": "user@gmail.com",
-            "interview_credits_short": 1,
-            "interview_credits_medium": 0,
-            "interview_credits_long": 0,
-            "preferred_output_language": "english",
-            "preferred_output_language_custom": "",
-        },
-    )
+    credit_store = _install_dispatch_credit_store(monkeypatch, 'tools-tr-u2', {
+        "email": "user@gmail.com",
+        "interview_credits_short": 1,
+        "interview_credits_medium": 0,
+        "interview_credits_long": 0,
+        "preferred_output_language": "english",
+        "preferred_output_language_custom": "",
+    })
     monkeypatch.setattr(core, "allowed_file", lambda _filename, _allowed: True)
     monkeypatch.setattr(core, "get_saved_file_size", lambda _path: 4096)
     monkeypatch.setattr(core, "file_looks_like_audio", lambda _path: True)
     monkeypatch.setattr(core, "cleanup_files", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(core, "save_job_log", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(billing_credits, "deduct_interview_credit", lambda _uid, runtime=None: "interview_credits_short")
 
     class _UploadApi:
         def upload(self, file=None, config=None):
@@ -1243,6 +1243,9 @@ def test_tools_transcribe_audio_allows_per_run_output_language_override(client, 
     status_payload = status_response.get_json()
     assert status_payload["status"] == "complete"
     assert status_payload["output_text"] == "Transcript in Italian"
+    assert credit_store.docs('users')['tools-tr-u2']['interview_credits_short'] == 0
+    assert len(credit_store.docs('credit_charges')) == 1
+    assert status_payload['billing_receipt']['charged'] == {'interview_credits_short': 1}
 
 
 def test_file_has_pptx_signature_detects_valid_archive(tmp_path):
@@ -1626,6 +1629,15 @@ def test_account_delete_success_path_returns_ok(client, monkeypatch, tmp_path):
 
 def test_account_delete_exhaustively_deletes_paginated_docs(client, monkeypatch):
     store = {
+        "credit_charges": {
+            **{f"charge-{idx}": {"uid": "u-delete", "charged_credits": 8} for idx in range(101)},
+            "foreign-charge": {"uid": "another-user", "charged_credits": 2},
+        },
+        "credit_refunds": {
+            **{f"refund-{idx}": {"uid": "u-delete", "amount": 1} for idx in range(101)},
+            "foreign-refund": {"uid": "another-user", "amount": 1},
+            "legacy-refund": {"uid_hash": "historical-hash", "amount": 1},
+        },
         "job_logs": {
             f"log-{idx}": {"uid": "u-delete", "job_id": f"job-{idx}"}
             for idx in range(101)
@@ -1747,6 +1759,13 @@ def test_account_delete_exhaustively_deletes_paginated_docs(client, monkeypatch)
     assert response.status_code == 200
     body = response.get_json()
     assert body["deleted"]["job_logs"] == 101
+    assert body["deleted"]["credit_charges"] == 101
+    assert body["deleted"]["credit_refunds"] == 101
+    assert store["credit_charges"] == {"foreign-charge": {"uid": "another-user", "charged_credits": 2}}
+    assert store["credit_refunds"] == {
+        "foreign-refund": {"uid": "another-user", "amount": 1},
+        "legacy-refund": {"uid_hash": "historical-hash", "amount": 1},
+    }
     assert body["deleted"]["planner_sessions"] == 1
     assert body["deleted"]["planner_settings"] == 1
     assert body["deleted"]["study_plan_preferences"] == 1
@@ -3087,7 +3106,7 @@ def test_voice_note_study_tools_dispatch_failure_refunds_study_credit(
     expected_status,
     expected_payload_status,
 ):
-    refunds = []
+    credit_store = _install_dispatch_credit_store(monkeypatch, 'voice-u1', {"slides_credits": 1})
 
     class _FakePackDoc:
         exists = True
@@ -3102,15 +3121,7 @@ def test_voice_note_study_tools_dispatch_failure_refunds_study_credit(
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "voice-u1", "email": "user@gmail.com"})
     monkeypatch.setattr(core, "is_email_allowed", lambda _email: True)
     monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
-    monkeypatch.setattr(core, "get_or_create_user", lambda _uid, _email: {"slides_credits": 1})
     monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _FakePackDoc())
-    monkeypatch.setattr(billing_credits, "has_category_credit", lambda _user, _category, runtime=None: True)
-    monkeypatch.setattr(billing_credits, "deduct_slides_credits", lambda _uid, _amount, runtime=None: True)
-    monkeypatch.setattr(
-        billing_credits,
-        "refund_slides_credits",
-        lambda uid, amount, runtime=None, **_kwargs: refunds.append((uid, amount)) or True,
-    )
 
     def _raise_on_submit(*_args, **_kwargs):
         raise raised_error
@@ -3132,4 +3143,11 @@ def test_voice_note_study_tools_dispatch_failure_refunds_study_credit(
     assert job["extra_slides_refunded"] == 1
     assert job["billing_receipt"]["charged"] == {"slides_credits": 1}
     assert job["billing_receipt"]["refunded"] == {"slides_credits": 1}
-    assert refunds == [("voice-u1", 1)]
+    assert credit_store.docs('users')['voice-u1']['slides_credits'] == 1
+    assert credit_store.docs('users')['voice-u1']['total_processed'] == 0
+    assert len(credit_store.docs('credit_charges')) == 1
+    assert len(credit_store.docs('credit_refunds')) == 1
+    journal = next(iter(credit_store.docs('credit_charges').values()))
+    assert journal['charged_credits'] == 1
+    assert journal['refunded_credits'] == 1
+    assert journal['components']['extras']['refunded_credits'] == 1

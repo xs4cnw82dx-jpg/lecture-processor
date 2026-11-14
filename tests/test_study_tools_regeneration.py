@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from lecture_processor.domains.ai import pipelines
+from tests.credit_test_support import make_credit_runtime
 
 
 @pytest.fixture
@@ -54,8 +55,11 @@ def regeneration(monkeypatch):
         to_dict=lambda: deepcopy(pack),
         reference=SimpleNamespace(update=update_pack),
     )
-    runtime = SimpleNamespace(
-        db=object(),
+    runtime, credit_store = make_credit_runtime(
+        users={'synthetic-owner': {'uid': 'synthetic-owner', 'account_status': 'active', 'slides_credits': 0}},
+        unified_enabled=False,
+    )
+    runtime.__dict__.update(
         study_repo=SimpleNamespace(get_study_pack_doc=lambda *_: pack_doc),
         time=SimpleNamespace(time=lambda: 100.0),
         logger=SimpleNamespace(exception=lambda *_, **__: None, warning=lambda *_, **__: None),
@@ -71,14 +75,18 @@ def regeneration(monkeypatch):
     def set_job(_job_id, payload, runtime=None):
         state['job'] = deepcopy(payload)
 
-    def refund(uid, amount, **kwargs):
-        state['refunds'].append((uid, amount, kwargs['idempotency_key'], kwargs['idempotency_total']))
-        return True
+    refund_component = pipelines.job_charges.refund_component
+
+    def refund(job, component_id, target_units, refund_ref, **kwargs):
+        result = refund_component(job, component_id, target_units, refund_ref, **kwargs)
+        if result:
+            state['refunds'].append((job['user_id'], target_units, refund_ref, target_units))
+        return result
 
     monkeypatch.setattr(pipelines.runtime_jobs_store, 'get_job_snapshot', lambda *_args, **_kwargs: deepcopy(state['job']))
     monkeypatch.setattr(pipelines.runtime_jobs_store, 'update_job_fields', update_job)
     monkeypatch.setattr(pipelines.runtime_jobs_store, 'set_job', set_job)
-    monkeypatch.setattr(pipelines.billing_credits, 'refund_slides_credits', refund)
+    monkeypatch.setattr(pipelines.job_charges, 'refund_component', refund)
 
     def run(response, *, features='both'):
         state['job']['study_features'] = features
@@ -93,6 +101,7 @@ def regeneration(monkeypatch):
 
         monkeypatch.setattr(pipelines.ai_provider, 'generate_with_policy', generate)
         pipelines.regenerate_study_tools_for_pack('synthetic-job', 'synthetic-pack', runtime=runtime)
+        assert credit_store.docs('users')['synthetic-owner']['slides_credits'] == sum(item[1] for item in state['refunds'])
 
     return state, run
 

@@ -139,6 +139,10 @@ def test_collect_user_export_payload_returns_expected_shape(app, monkeypatch):
     )
     def _list_docs(collection_name, _uid, _max_docs, runtime=None):
         _ = runtime
+        if collection_name == "credit_charges":
+            return ([{"uid": "u1", "credit_scheme": 2, "charged_credits": 8, "_id": "charge-1"}], False)
+        if collection_name == "credit_refunds":
+            return ([{"uid": "u1", "amount": 1, "_id": "refund-1"}], True)
         if collection_name == "planner_settings":
             return ([{"uid": "u1", "enabled": "on", "_id": "planner-settings"}], False)
         if collection_name == "planner_sessions":
@@ -183,6 +187,10 @@ def test_collect_user_export_payload_returns_expected_shape(app, monkeypatch):
     payload = lifecycle.collect_user_export_payload("u1", "u@example.com", runtime=runtime)
     assert payload["meta"]["uid"] == "u1"
     assert payload["account"]["profile"] == {"uid": "u1"}
+    assert payload["collections"]["credit_charges"][0]["charged_credits"] == 8
+    assert payload["collections"]["credit_refunds"][0]["amount"] == 1
+    assert payload["meta"]["truncated"]["credit_charges"] is False
+    assert payload["meta"]["truncated"]["credit_refunds"] is True
     assert payload["account"]["planner_settings"]["enabled"] == "on"
     assert payload["meta"]["truncated"]["study_pack_sources"] is False
     assert payload["meta"]["truncated"]["study_shares"] is False

@@ -5,13 +5,18 @@ from urllib.parse import urlparse
 
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.billing import purchases as billing_purchases
+from lecture_processor.domains.billing import policy as billing_policy
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 
 
+def _checkout_bundles(app_ctx):
+    return billing_policy.CREDIT_BUNDLES if billing_policy.is_unified_enabled(app_ctx) else app_ctx.CREDIT_BUNDLES
+
+
 def get_config(app_ctx):
-    return app_ctx.jsonify({
+    payload = {
         'stripe_publishable_key': app_ctx.STRIPE_PUBLISHABLE_KEY,
         'bundles': {
             bundle_id: {
@@ -21,9 +26,13 @@ def get_config(app_ctx):
                 'currency': bundle['currency'],
                 'credits': bundle['credits'],
             }
-            for bundle_id, bundle in app_ctx.CREDIT_BUNDLES.items()
+            for bundle_id, bundle in _checkout_bundles(app_ctx).items()
         }
-    })
+    }
+    if billing_policy.is_unified_enabled(app_ctx):
+        payload.update(credit_scheme=2, action_costs=billing_policy.ACTION_COSTS,
+                       free_signup_credits=billing_policy.FREE_SIGNUP_CREDITS)
+    return app_ctx.jsonify(payload)
 
 
 def _require_allowed_email(app_ctx, email):
@@ -48,6 +57,8 @@ def _checkout_failure_response(app_ctx, status):
         return app_ctx.jsonify({'error': 'This account has been deleted. The payment will be refunded.', 'status': status}), 409
     if status in {'account_state_unavailable', 'transaction_unavailable'}:
         return app_ctx.jsonify({'error': 'Account status could not be verified. Credits were not granted.', 'status': status}), 503
+    if status == 'credits_activation_pending':
+        return app_ctx.jsonify({'error': 'Credit fulfillment is temporarily paused. Please try again later.', 'status': status}), 503
     if status == 'missing_checkout_metadata':
         return app_ctx.jsonify({'error': 'Missing checkout metadata.'}), 400
     if status == 'missing_session_id':
@@ -136,10 +147,11 @@ def create_checkout_session(app_ctx, request):
     data = request.get_json(silent=True) or {}
     bundle_id = data.get('bundle_id', '')
 
-    if bundle_id not in app_ctx.CREDIT_BUNDLES:
+    bundles = _checkout_bundles(app_ctx)
+    if bundle_id not in bundles:
         return app_ctx.jsonify({'error': 'Invalid bundle selected'}), 400
 
-    bundle = app_ctx.CREDIT_BUNDLES[bundle_id]
+    bundle = bundles[bundle_id]
     public_base_url = str(getattr(app_ctx, 'PUBLIC_BASE_URL', '') or '').strip().rstrip('/')
     if not public_base_url:
         app_ctx.logger.error("Stripe checkout blocked: PUBLIC_BASE_URL is not configured.")
