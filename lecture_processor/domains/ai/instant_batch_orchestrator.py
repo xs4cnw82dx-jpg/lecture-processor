@@ -183,6 +183,8 @@ def _refund_interview_feature_failures(batch, row, failed_count, runtime=None):
 
 def _cleanup_row_files(row, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
+    if not row.get('study_pack_id'):
+        study_audio.cleanup_failed_job_audio(row.get('row_job_id'), row, runtime=resolved_runtime)
     local_paths = []
     for key in ('slides_local_path', 'audio_local_path'):
         value = str(row.get(key, '') or '').strip()

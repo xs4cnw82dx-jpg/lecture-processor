@@ -682,15 +682,22 @@ PROCESSING_PUBLIC_ERROR_MESSAGE = 'Processing failed. Your credit has been refun
 
 def cleanup_old_jobs():
     """Evict completed/errored jobs older than JOB_TTL_SECONDS to prevent OOM."""
+    from lecture_processor.domains.runtime_jobs.schema import TERMINAL_RUNTIME_JOB_STATUSES
+
     now_ts = time.time()
     expired_ids = []
     with JOBS_LOCK:
         for job_id, job in list(jobs.items()):
-            status = job.get('status', '')
-            if status not in ('complete', 'error'):
+            status = str(job.get('status', '') or '').strip().lower()
+            if status not in TERMINAL_RUNTIME_JOB_STATUSES:
                 continue
-            finished_at = job.get('finished_at', job.get('started_at', now_ts))
-            if now_ts - finished_at > JOB_TTL_SECONDS:
+            expires_at = job.get('expires_at_ts')
+            if isinstance(expires_at, datetime):
+                deadline = expires_at.timestamp()
+            else:
+                finished_at = job.get('finished_at') or job.get('started_at', now_ts)
+                deadline = finished_at + JOB_TTL_SECONDS
+            if now_ts > deadline:
                 expired_ids.append(job_id)
         for job_id in expired_ids:
             jobs.pop(job_id, None)

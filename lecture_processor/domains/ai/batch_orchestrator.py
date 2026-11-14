@@ -1482,6 +1482,7 @@ def _finalize_row_job_log(batch, row, runtime=None, *, require_active=False):
         'result': result_text,
         'slide_text': row.get('slide_text', ''),
         'transcript': row.get('transcript', ''),
+        'audio_storage_key': row.get('audio_storage_key', ''),
         'flashcards': row.get('flashcards', []),
         'test_questions': row.get('test_questions', []),
         'study_features': row.get('study_features', 'none'),
@@ -1556,6 +1557,7 @@ def _finalize_row_job_log(batch, row, runtime=None, *, require_active=False):
 
 def _refund_failed_row(batch, row, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
+    study_audio.cleanup_failed_job_audio(row.get('row_job_id'), row, runtime=resolved_runtime)
     uid = batch.get('uid', '')
     if not uid:
         return
@@ -2085,6 +2087,7 @@ def process_batch_job(batch_id, runtime=None):
                 row.get('row_id', ''),
                 {
                     'status': row.get('status', 'processing'),
+                    'audio_storage_key': row.get('audio_storage_key', ''),
                     'current_stage': row.get('current_stage', 'file_upload'),
                     'last_stage_update_at': row.get('last_stage_update_at', 0),
                     'updated_at': resolved_runtime.time.time(),
@@ -2549,6 +2552,8 @@ def process_batch_job(batch_id, runtime=None):
                 )
         finally:
             for row in rows:
+                if not row.get('study_pack_id'):
+                    study_audio.cleanup_failed_job_audio(row.get('row_job_id'), row, runtime=resolved_runtime)
                 local_paths = list(row.get('_local_paths', []) or [])
                 for field in ('slides_local_path', 'audio_local_path'):
                     if row.get(field) and row[field] not in local_paths:

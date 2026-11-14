@@ -1,5 +1,7 @@
 """Firestore accessors for study-related collections."""
 
+import os
+
 from .query_utils import apply_where
 
 
@@ -81,6 +83,38 @@ def create_study_pack_doc_ref(db):
 
 def get_study_pack_doc(db, pack_id):
     return study_pack_doc_ref(db, pack_id).get()
+
+
+def has_saved_audio_for_job(db, job_id, audio_storage_key, pack_ids=()):
+    """Retain audio after a pack or append committed, even if a later write failed.
+
+    Read failures intentionally propagate: cleanup must not interpret an
+    unavailable database as proof that the file is unreferenced.
+    """
+    for field, value in (('source_job_id', job_id), ('audio_storage_key', audio_storage_key)):
+        query = apply_where(db.collection('study_packs'), field, '==', value).limit(1)
+        if next(iter(_apply_select(query, []).stream()), None) is not None:
+            return True
+
+    fields = ('source_job_id', 'audio_storage_key', 'audio_storage_path', 'audio_sessions')
+    for pack_id in sorted({str(value).strip() for value in pack_ids if value}):
+        doc = _get_doc_with_fields(study_pack_doc_ref(db, pack_id), fields)
+        if not doc.exists:
+            continue
+        pack = doc.to_dict() or {}
+        sessions = pack.get('audio_sessions', [])
+        references = [pack, *(sessions if isinstance(sessions, list) else [])]
+        for reference in references:
+            if not isinstance(reference, dict):
+                continue
+            if reference.get('source_job_id') == job_id or reference.get('session_id') == job_id:
+                return True
+            if reference.get('audio_storage_key') == audio_storage_key:
+                return True
+            legacy_path = str(reference.get('audio_storage_path', '') or '').replace('\\', '/')
+            if legacy_path and os.path.basename(legacy_path) == os.path.basename(audio_storage_key):
+                return True
+    return False
 
 
 def get_study_pack_summary_doc(db, pack_id):

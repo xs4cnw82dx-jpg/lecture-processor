@@ -1,3 +1,6 @@
+from datetime import datetime, timezone
+
+from lecture_processor.domains.runtime_jobs.schema import TERMINAL_RUNTIME_JOB_STATUSES
 from lecture_processor.runtime.container import get_runtime
 
 
@@ -10,6 +13,24 @@ def _resolve_runtime(runtime=None):
 def _runtime_job_storage_enabled(runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     return resolved_runtime.db is not None
+
+
+def _runtime_job_expiration(job_data, runtime):
+    if str(job_data.get('status', '') or '').strip().lower() not in TERMINAL_RUNTIME_JOB_STATUSES:
+        return None
+    ttl = int(getattr(runtime, 'JOB_TTL_SECONDS', 30 * 60) or (30 * 60))
+    try:
+        finished_at = float(job_data.get('finished_at', 0) or 0)
+        if finished_at > 0:
+            return datetime.fromtimestamp(finished_at + ttl, tz=timezone.utc)
+    except (TypeError, ValueError, OverflowError, OSError):
+        pass
+    existing = job_data.get('expires_at_ts')
+    if isinstance(existing, datetime):
+        return existing
+    # Pipelines can mark a job terminal before recording its final timestamp.
+    # Keep this provisional deadline on later updates instead of using its start.
+    return datetime.fromtimestamp(runtime.time.time() + ttl, tz=timezone.utc)
 
 
 def _runtime_job_sanitize_value(value, runtime=None):
@@ -38,6 +59,10 @@ def _build_runtime_job_payload(job_id, job_data, runtime=None, changed_fields=No
     for field in persisted_fields:
         if field in job_data:
             payload[field] = _runtime_job_sanitize_value(job_data.get(field), runtime=resolved_runtime)
+    # Only lifecycle changes carry a deadline. A delayed heartbeat must not
+    # clear an expiry written by a newer terminal update.
+    if changed_fields is None or {'status', 'finished_at', 'expires_at_ts'} & set(changed_fields):
+        payload['expires_at_ts'] = _runtime_job_expiration(job_data, resolved_runtime)
     return payload
 
 
@@ -132,9 +157,14 @@ def mutate_job(job_id, mutator_fn, runtime=None, changed_fields=None):
         jobs_store=resolved_runtime.jobs,
         lock=resolved_runtime.JOBS_LOCK,
     )
+
+    def _mutator(job):
+        mutator_fn(job)
+        job['expires_at_ts'] = _runtime_job_expiration(job, resolved_runtime)
+
     snapshot = resolved_runtime.job_state_service.mutate_job(
         job_id,
-        mutator_fn,
+        _mutator,
         jobs_store=resolved_runtime.jobs,
         lock=resolved_runtime.JOBS_LOCK,
     )
@@ -142,12 +172,17 @@ def mutate_job(job_id, mutator_fn, runtime=None, changed_fields=None):
         if changed_fields is None and isinstance(before, dict):
             persisted = set(resolved_runtime.RUNTIME_JOB_PERSISTED_FIELDS)
             changed_fields = {field for field in persisted if before.get(field) != snapshot.get(field)}
+        elif isinstance(before, dict) and before.get('expires_at_ts') != snapshot.get('expires_at_ts'):
+            changed_fields = set(changed_fields or ()) | {'expires_at_ts'}
         persist_runtime_job_snapshot(job_id, snapshot, runtime=resolved_runtime, changed_fields=changed_fields)
     return snapshot
 
 
 def set_job(job_id, value, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
+    if isinstance(value, dict):
+        value = dict(value)
+        value['expires_at_ts'] = _runtime_job_expiration(value, resolved_runtime)
     snapshot = resolved_runtime.job_state_service.set_job(
         job_id,
         value,

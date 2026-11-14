@@ -4,7 +4,11 @@ Keep this module dependency-free so both the legacy runtime adapter and the
 domain store can share one authoritative allowlist.
 """
 
+from datetime import datetime
 from typing import Any, Protocol, TypedDict
+
+
+TERMINAL_RUNTIME_JOB_STATUSES = frozenset({'complete', 'completed', 'error'})
 
 
 class RuntimeJobRecord(TypedDict, total=False):
@@ -19,6 +23,7 @@ class RuntimeJobRecord(TypedDict, total=False):
     user_email: str
     started_at: float
     finished_at: float
+    expires_at_ts: datetime | None
     result: Any
     error: str
     failed_stage: str
@@ -51,7 +56,7 @@ PERSISTED_RUNTIME_JOB_FIELDS = frozenset({
     'status', 'step', 'step_description', 'total_steps', 'mode', 'job_scope',
     'tool_source_type', 'tool_input_name', 'user_id', 'user_email',
     'credit_deducted', 'credit_refunded', 'credit_refund_method',
-    'started_at', 'finished_at', 'result', 'slide_text', 'transcript',
+    'started_at', 'finished_at', 'expires_at_ts', 'result', 'slide_text', 'transcript',
     'flashcards', 'test_questions', 'flashcard_selection', 'question_selection',
     'study_features', 'output_language', 'study_generation_error',
     'study_pack_id', 'study_pack_title', 'folder_id', 'folder_name', 'error',

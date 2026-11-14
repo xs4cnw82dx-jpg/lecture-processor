@@ -453,6 +453,9 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
         credit_type = failed_job.get('credit_deducted')
         _refund_primary_job_credit(job_id, failed_job, uid, credit_type, runtime=resolved_runtime)
     finally:
+        failed_job = get_fields()
+        if failed_job.get('status') == 'error':
+            study_audio.cleanup_failed_job_audio(job_id, failed_job, runtime=resolved_runtime)
         resolved_runtime.cleanup_files(local_paths, gemini_files)
         finished_at = resolved_runtime.time.time()
         set_fields(
@@ -707,6 +710,9 @@ def process_interview_transcription(job_id, audio_path, runtime=None):
         if to_refund > 0:
             _refund_extra_slides(job_id, failed_job, uid, to_refund, runtime=resolved_runtime)
     finally:
+        failed_job = get_fields()
+        if failed_job.get('status') == 'error':
+            study_audio.cleanup_failed_job_audio(job_id, failed_job, runtime=resolved_runtime)
         resolved_runtime.cleanup_files(local_paths, gemini_files)
         finished_at = resolved_runtime.time.time()
         set_fields(
@@ -983,6 +989,9 @@ def process_voice_note(job_id, audio_path, runtime=None):
         uid = failed_job.get('user_id')
         _refund_primary_job_credit(job_id, failed_job, uid, failed_job.get('credit_deducted'), runtime=resolved_runtime)
     finally:
+        failed_job = get_fields()
+        if failed_job.get('status') == 'error':
+            study_audio.cleanup_failed_job_audio(job_id, failed_job, runtime=resolved_runtime)
         resolved_runtime.cleanup_files(local_paths, gemini_files)
         finished_at = resolved_runtime.time.time()
         set_fields(

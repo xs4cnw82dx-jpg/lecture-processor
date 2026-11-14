@@ -1,6 +1,6 @@
 # Data Retention and Backup Policy (Operational Baseline)
 
-Last updated: 2026-03-15
+Last updated: 2026-11-14
 
 This document defines the current operational policy for data retention, deletion, backup, and restore in Lecture Processor.  
 It is a technical baseline for private beta operations and must be reviewed by qualified legal counsel before public/commercial launch.
@@ -38,6 +38,17 @@ This policy covers:
 - Retention target: deleted after job completes or fails.
 - Failure fallback: periodic manual/automated cleanup required to remove orphaned artifacts.
 - Physio audio rule: raw Physio Assistant audio uploads are treated as temporary processing artifacts and should be deleted after transcription succeeds or fails.
+- Failed study pipelines and batch rows remove their persisted audio only when saved-pack lookups confirm no reference. Audio remains when a pack committed before a later write failed, or when the reference lookup is unavailable.
+
+6. Runtime job snapshots (`runtime_jobs`)
+- Completed and failed snapshots, including account-export jobs, have a logical retention window of `JOB_TTL_SECONDS` after completion (default 30 minutes; configurable from 5 minutes to 24 hours).
+- New terminal writes store `expires_at_ts` as a UTC Firestore timestamp. If completion is recorded before `finished_at`, the first terminal update establishes a provisional deadline; later partial updates preserve it, and recording `finished_at` sets the completion-based deadline. Active jobs have no expiry.
+- The application removes expired terminal jobs from memory and Firestore during its five-minute cleanup loop. Firestore TTL provides eventual cleanup for snapshots that are no longer in a running process's memory. TTL deletion is asynchronous, typically within 24 hours of expiry, so the logical deadline is not an immediate deletion guarantee.
+- The TTL policy and single-field index exemption are declared in `firestore.indexes.json`. An authorized operator must deploy the reviewed configuration with `firebase deploy --only firestore:indexes --project <PROJECT_ID>` and verify that the `runtime_jobs` / `expires_at_ts` policy is enabled in the Firestore Time-to-live console. Application deployment alone does not enable the policy.
+- Legacy snapshots without `expires_at_ts` are unaffected by TTL until a normal application write adds the field or ordinary in-memory cleanup removes them. Reads do not backfill the field. Historical cleanup remains an explicit operator follow-up; this change performs no production scan, backfill, or bulk deletion.
+- Account-export ZIP files use a separate one-hour file cleanup window. Access also requires the job snapshot, which follows the runtime retention window above. Saved study packs are separate records and are not expired by this policy.
+
+References: [Firestore TTL behavior](https://firebase.google.com/docs/firestore/ttl) and [Firebase CLI TTL configuration](https://github.com/firebase/firebase-tools/blob/main/src/firestore/README.md).
 
 ## 3) Backup Policy
 
