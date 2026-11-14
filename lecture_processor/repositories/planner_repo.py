@@ -23,6 +23,31 @@ class PlannerRevisionConflict(Exception):
     """A preview or edit no longer matches the committed planner state."""
 
 
+def set_study_goal_if_revision(db, uid, goal_id, payload, expected_revision):
+    """Replace an owned goal only while its validated revision still exists."""
+    def check(snapshot):
+        current = snapshot.to_dict() or {} if snapshot.exists else {}
+        if (not snapshot.exists or current.get('uid') != uid
+                or int(current.get('revision', 0)) != expected_revision):
+            raise PlannerRevisionConflict()
+
+    safe_payload = {**payload, 'uid': uid}
+    if db is None:
+        with _PLAN_WRITE_LOCK:
+            check(get_study_goal(db, uid, goal_id))
+            set_study_goal(db, uid, goal_id, safe_payload, merge=False)
+        return
+    from google.cloud import firestore
+    ref = study_goal_doc_ref(db, goal_id)
+
+    @firestore.transactional
+    def write(transaction):
+        check(ref.get(transaction=transaction))
+        transaction.set(ref, safe_payload)
+
+    write(db.transaction())
+
+
 def set_planner_session_if_revision(db, uid, session_id, payload, expected_revision):
     if db is None:
         with _PLAN_WRITE_LOCK:
