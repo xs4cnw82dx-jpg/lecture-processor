@@ -3,6 +3,10 @@
   'use strict';
   root.LectureI18nCatalog = root.LectureI18nCatalog || { nl: {}, en: {} };
   Object.assign(root.LectureI18nCatalog.nl, {
+  "Reject the current draft to run again.": "Wijs het huidige concept af om opnieuw te starten.",
+  "Could not display this study pack. Please reopen it.": "Dit studiepakket kon niet worden weergegeven. Open het opnieuw.",
+  "Could not reload this study pack. Your changes are still here.": "Dit studiepakket kon niet opnieuw worden geladen. Je wijzigingen staan er nog.",
+  "Some tools were not refreshed. Existing material was kept.": "Niet alles is vernieuwd. Bestaand materiaal is behouden.",
   "Text Combine": "Teksten combineren",
   "General Transcription": "Algemene transcriptie",
   "Overnight": "Nachtelijk",
