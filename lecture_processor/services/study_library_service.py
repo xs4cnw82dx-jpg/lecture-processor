@@ -475,7 +475,13 @@ def update_study_pack(app_ctx, request, pack_id):
             updates['notes_highlights'] = notes_highlights if notes_highlights_action == 'set' else None
         updates['has_audio_playback'] = has_audio_file
 
-        pack_ref.update(updates)
+        if 'flashcards' in updates:
+            pending_pictures = study_picture_service.update_pack_and_collect_removed(app_ctx, uid, pack_id, updates)
+        else:
+            pack_ref.update(updates)
+            pending_pictures = pack.get(study_picture_service.PENDING_PICTURES, [])
+        if pending_pictures:
+            study_picture_service.delete_for_pack(app_ctx, uid, pack_id, image_ids=pending_pictures)
         return app_ctx.jsonify({'ok': True})
     except BookError as error:
         return app_ctx.jsonify({'error': str(error)}), error.status
@@ -563,6 +569,8 @@ def delete_study_pack(app_ctx, request, pack_id):
     try:
         pack_result, error_response, status = study_api_support.get_owned_study_pack(app_ctx, uid, pack_id)
         if error_response is not None:
+            if status == 404 and study_picture_service.delete_for_pack(app_ctx, uid, pack_id):
+                return app_ctx.jsonify({'ok': True})
             return error_response, status
         doc, pack = pack_result
         pack_ref = doc.reference
@@ -587,7 +595,10 @@ def delete_study_pack(app_ctx, request, pack_id):
         # Delete the local audio only after Firestore commits. If Firestore fails,
         # the user's pack and its media remain intact for a safe retry.
         study_audio.remove_pack_audio_file(pack, runtime=app_ctx)
+        study_picture_service.delete_for_pack(app_ctx, uid, pack_id)
         return app_ctx.jsonify({'ok': True})
+    except BookError as error:
+        return app_ctx.jsonify({'error': str(error)}), error.status
     except study_progress_service.ProgressPackUnavailable as error:
         return app_ctx.jsonify({'error': str(error)}), error.status
     except account_lifecycle.AccountUnavailableError:
