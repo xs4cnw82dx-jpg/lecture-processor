@@ -6,8 +6,9 @@ const path = require('node:path');
 
 function load(saved) {
   const context = { localStorage: { getItem: () => saved } };
+  context.window = context;
   vm.createContext(context);
-  ['i18n-catalog.js', 'i18n-supplement.js', 'i18n.js'].forEach((name) => {
+  ['i18n-catalog.js', 'i18n-supplement.js', 'i18n-dynamic.js', 'i18n-dynamic-learning.js', 'i18n-dynamic-tools.js', 'i18n.js'].forEach((name) => {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../static/js', name), 'utf8'), context);
   });
   return context.LectureI18n;
@@ -57,6 +58,25 @@ test('the original Dutch Physio interface has English equivalents', () => {
   assert.equal(i18n.t('Nieuwe casus'), 'New case');
   i18n.setLanguage('nl');
   assert.equal(i18n.t('Kennisbank'), 'Kennisbank');
+});
+
+test('study feedback preserves runtime values in Dutch and English', () => {
+  const i18n = load('{"language":"nl"}');
+  const summary = '{answered} / {total} target answers saved · {minutes} active min · {remaining} in planned slot';
+  for (const [answered, minutes, remaining] of [[0, 0, '45:00'], [1, 1, '43:59'], [3, 45, '0:00']]) {
+    const params = { answered, total: 3, minutes, remaining };
+    assert.equal(i18n.t(summary, params), `${answered} / 3 antwoorden opgeslagen · ${minutes} actieve min · ${remaining} in geplande tijd`);
+  }
+  assert.equal(i18n.t('{time} logged. Session completed.', { time: '12 min' }), '12 min geregistreerd. Sessie afgerond.');
+  assert.equal(i18n.t('Pauses when you leave this tab. Timer type stays fixed once started.'), 'Pauzeert als je dit tabblad verlaat. Het timertype blijft na de start hetzelfde.');
+  assert.equal(i18n.t('Take a short break. Study controls will return when the next focus period starts.'), 'Neem een korte pauze. Je kunt verder studeren zodra de volgende focusperiode begint.');
+  assert.equal(i18n.t('Flashcards · Focused session'), 'Leerkaarten · Gerichte studiesessie');
+  for (const [source, translated] of [['Paused', 'Gepauzeerd'], ['Finish session', 'Sessie afronden'], ['Correct!', 'Goed!'], ['Saved.', 'Opgeslagen.'], ['— days', '— dagen'], ['— cards', '— kaarten']]) {
+    assert.equal(i18n.t(source), translated);
+  }
+  i18n.setLanguage('en');
+  assert.equal(i18n.t(summary, { answered: 1, total: 3, minutes: 1, remaining: '43:59' }), '1 / 3 target answers saved · 1 active min · 43:59 in planned slot');
+  assert.equal(i18n.t('{time} logged. Session completed.', { time: '12 min' }), '12 min logged. Session completed.');
 });
 
 test('static template interface copy is catalogued (brand names, formats and shortcuts stay literal)', () => {

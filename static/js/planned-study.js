@@ -3,6 +3,10 @@
   var utils = root.LectureProcessorPlannedStudyUtils;
   var active = null;
   function clock(seconds) { return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0'); }
+  function translate(message, params) {
+    if (root.LectureI18n) return root.LectureI18n.t(message, params);
+    return message.replace(/\{(\w+)\}/g, function (match, name) { return params && name in params ? String(params[name]) : match; });
+  }
 
   async function open(options) {
     if (active) await active.close();
@@ -101,14 +105,18 @@
       if (disposed) return;
       var phase = utils.timerState(run);
       $('[data-clock]').textContent = clock(phase.phaseRemaining);
-      $('[data-phase]').textContent = finished ? 'Session complete' : run.run_status !== 'active' ? 'Paused' : phase.onBreak ? 'Break' : 'Focus';
-      $('[data-timer-label]').textContent = run.timer_mode === 'pomodoro' ? 'Pomodoro · 25 / 5' : 'Countdown';
-      $('[data-pause]').textContent = run.run_status === 'active' ? 'Pause' : 'Continue';
+      $('[data-phase]').textContent = translate(finished ? 'Session complete' : run.run_status !== 'active' ? 'Paused' : phase.onBreak ? 'Break' : 'Focus');
+      $('[data-timer-label]').textContent = translate(run.timer_mode === 'pomodoro' ? 'Pomodoro · 25 / 5' : 'Countdown');
+      $('[data-pause]').textContent = translate(run.run_status === 'active' ? 'Pause' : 'Continue');
+      $('[data-finish]').textContent = translate('Finish session');
       $('[data-pause]').disabled = finished;
       $('[data-finish]').disabled = finishing || finished;
       var count = Object.keys(run.answers || {}).length;
-      $('[data-targets]').textContent = count + ' / ' + run.queue.filter(function (item) { return item.type !== 'notes'; }).length + ' target answers saved · ' + Math.floor(run.active_seconds / 60) + ' active min · ' + clock(phase.remaining) + ' in planned slot';
-      $('[data-save]').textContent = message;
+      $('[data-targets]').textContent = translate('{answered} / {total} target answers saved · {minutes} active min · {remaining} in planned slot', {
+        answered: count, total: run.queue.filter(function (item) { return item.type !== 'notes'; }).length,
+        minutes: Math.floor(run.active_seconds / 60), remaining: clock(phase.remaining)
+      });
+      $('[data-save]').textContent = translate(message);
       $('[data-break]').hidden = !phase.onBreak;
       if (options.onAvailability) options.onAvailability(!finished && run.run_status === 'active' && !phase.onBreak);
     }
@@ -216,6 +224,7 @@
       if (disposed) return;
       run.run_status = 'paused'; disposed = true;
       clearInterval(interval); document.removeEventListener('visibilitychange',visibility); window.removeEventListener('online',online); window.removeEventListener('pagehide',pagehide);
+      window.removeEventListener('lp:language-changed', render);
       if (active === api) { host.replaceChildren(); host.hidden = true; active = null; }
     }
     function discard() {
@@ -236,6 +245,7 @@
     $('[data-finish]').addEventListener('click',finish);
     var interval = setInterval(tick,1000);
     document.addEventListener('visibilitychange',visibility); window.addEventListener('online',online); window.addEventListener('pagehide',pagehide);
+    window.addEventListener('lp:language-changed', render);
     var api = {invalidate:invalidate,discard:discard,hasPending:hasPending,flushPending:flushPending,isFinished:function () { return finished; },pause:function () { if (!isCurrent() || finished) return; tick(); run.run_status = 'paused'; checkpoint(); render(); },changeMode:changeMode,record:record,close:close,checkpoint:checkpoint,getRun:function () { return run; }};
     active = api;
     try { await changeMode(options.studyMode,options.timerMode); } catch (error) { await close(); throw error; }
