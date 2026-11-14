@@ -1,5 +1,5 @@
 from lecture_processor.runtime.container import get_runtime
-from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import job_charges
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.runtime_jobs import execution
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
@@ -42,12 +42,30 @@ def _runtime_job_is_stale(job_data, *, now_ts, runtime=None):
     if not isinstance(job_data, dict):
         return False
     status = str(job_data.get('status', '') or '').lower()
-    if status not in ACTIVE_RUNTIME_JOB_STATUSES:
+    if status not in ACTIVE_RUNTIME_JOB_STATUSES and not _pending_refund_components(job_data):
         return False
     timestamp = _active_job_timestamp(job_data)
     if timestamp <= 0:
         return False
     return (float(now_ts) - timestamp) >= float(_runtime_job_recovery_stale_seconds(runtime=runtime))
+
+
+def _pending_refund_components(job):
+    """Only explicit failed settlements on terminal jobs are retryable."""
+    if job.get('status') not in {'error', 'complete', 'completed'}:
+        return set()
+    receipt = job.get('billing_receipt') or {}
+    components = receipt.get('components') or {}
+    charged = receipt.get('charged') or {}
+    journaled = bool(job.get('charge_ref') or receipt.get('charge_ref'))
+    pending = set()
+    if job.get('status') == 'error' and job.get('credit_refund_pending'):
+        if ('primary' in components if journaled else charged.get(job.get('credit_deducted'), 0)):
+            pending.add('primary')
+    if int(job.get('extra_slides_refund_pending', 0) or 0) > 0:
+        if ('extras' in components if journaled else charged.get('slides_credits', 0)):
+            pending.add('extras')
+    return pending
 
 
 def _runtime_job_recovery_holder_id(runtime=None):
@@ -132,6 +150,13 @@ def recover_stale_runtime_jobs(runtime=None):
             ACTIVE_RUNTIME_JOB_STATUSES,
             limit=resolved_runtime.RUNTIME_JOB_RECOVERY_BATCH_LIMIT,
         )
+        pending_query = getattr(resolved_runtime.runtime_jobs_repo, 'query_pending_refunds', None)
+        if callable(pending_query):
+            pending_docs = pending_query(
+                resolved_runtime.db, resolved_runtime.RUNTIME_JOBS_COLLECTION,
+                limit=resolved_runtime.RUNTIME_JOB_RECOVERY_BATCH_LIMIT,
+            )
+            stale_docs = list({doc.id: doc for doc in [*stale_docs, *pending_docs]}.values())
     except Exception:
         resolved_runtime.logger.warning('Runtime-job recovery query failed', exc_info=True)
         return 0
@@ -148,6 +173,8 @@ def recover_stale_runtime_jobs(runtime=None):
 def _recover_runtime_job_doc(doc, *, now_ts, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     job_id = doc.id
+    if _pending_refund_components(doc.to_dict() or {}):
+        return _retry_pending_refunds(doc, now_ts=now_ts, runtime=resolved_runtime)
     if (doc.to_dict() or {}).get('job_scope') == 'interview-coding':
         # Coding completion and refund arbitrate on their canonical run record.
         # Its debit must never use the generic runtime-job refund keys.
@@ -166,13 +193,33 @@ def _recover_runtime_job_doc(doc, *, now_ts, runtime=None):
     uid = str(job_data.get('user_id', '') or '').strip()
     credit_type = str(job_data.get('credit_deducted', '') or '').strip()
     already_refunded = bool(job_data.get('credit_refunded', False))
+    journal_refund = bool(job_data.get('charge_ref') or job_data.get('credit_scheme') == 2)
+    if journal_refund:
+        receipt = job_data.get('billing_receipt') or {}
+        components = receipt.get('components') or {}
+        job_data['credit_refund_pending'] = not bool(components)
+        job_data['extra_slides_refund_pending'] = 0
+        for name, component in components.items():
+            settled = job_charges.refund_component(
+                job_data, name, int(component.get('units', 0)), f'runtime-job:{job_id}:{name}',
+                processed_count=1 if name == 'primary' else 0, runtime=resolved_runtime,
+            )
+            if name == 'extras':
+                job_data['extra_slides_refund_pending'] = 0 if settled else int(component.get('units', 0))
+                if settled:
+                    job_data['extra_slides_refunded'] = int(component.get('units', 0))
+            elif not settled:
+                job_data['credit_refund_pending'] = True
+        if job_data['credit_refund_pending'] or job_data['extra_slides_refund_pending']:
+            job_data['credit_refund_error'] = 'runtime_recovery_refund_failed'
+        else:
+            job_data['credit_refund_error'] = ''
+        credit_type = ''
     if uid and credit_type and (not already_refunded):
         try:
-            primary_refunded = bool(billing_credits.refund_credit(
-                uid,
-                credit_type,
-                runtime=resolved_runtime,
-                idempotency_key=f'runtime-job:{job_id}:primary',
+            primary_refunded = bool(job_charges.refund_component(
+                job_data, 'primary', 1, f'runtime-job:{job_id}:primary',
+                legacy_credit_type=credit_type, legacy_charged_units=1, processed_count=1, runtime=resolved_runtime,
             ))
         except Exception:
             primary_refunded = False
@@ -183,17 +230,14 @@ def _recover_runtime_job_doc(doc, *, now_ts, runtime=None):
             job_data['credit_refund_pending'] = True
             job_data['credit_refund_error'] = 'runtime_recovery_refund_failed'
 
-    extra_spent = int(job_data.get('interview_features_cost', 0) or 0) + int(job_data.get('study_tools_credit_cost', 0) or 0)
+    extra_spent = 0 if journal_refund else int(job_data.get('interview_features_cost', 0) or 0) + int(job_data.get('study_tools_credit_cost', 0) or 0)
     extra_refunded = int(job_data.get('extra_slides_refunded', 0) or 0)
     extra_to_refund = max(0, extra_spent - extra_refunded)
     if uid and extra_to_refund > 0:
         try:
-            extras_refunded = bool(billing_credits.refund_slides_credits(
-                uid,
-                extra_to_refund,
-                runtime=resolved_runtime,
-                idempotency_key=f'runtime-job:{job_id}:extras',
-                idempotency_total=extra_refunded + extra_to_refund,
+            extras_refunded = bool(job_charges.refund_component(
+                job_data, 'extras', extra_refunded + extra_to_refund, f'runtime-job:{job_id}:extras',
+                legacy_credit_type='slides_credits', legacy_charged_units=extra_spent, runtime=resolved_runtime,
             ))
         except Exception:
             extras_refunded = False
@@ -219,6 +263,46 @@ def _recover_runtime_job_doc(doc, *, now_ts, runtime=None):
     job_data['job_id'] = job_id
     runtime_jobs_store.set_job(job_id, job_data, runtime=resolved_runtime)
     resolved_runtime.save_job_log(job_id, job_data, now_ts)
+    return True
+
+
+def _retry_pending_refunds(doc, *, now_ts, runtime):
+    job = _claim_stale_runtime_job(doc, now_ts=now_ts, runtime=runtime)
+    if not isinstance(job, dict):
+        return False
+    pending = _pending_refund_components(job)
+    if not pending:
+        return False
+    receipt = job.get('billing_receipt') or {}
+    components = receipt.get('components') or {}
+    for name in sorted(pending):
+        component = components.get(name) or {}
+        if name == 'primary':
+            units, credit_type, processed = int(component.get('units', 1)), job.get('credit_deducted', ''), 1
+            prior = 0
+            charged = int((receipt.get('charged') or {}).get(credit_type, 1))
+        else:
+            prior = int(job.get('extra_slides_refunded', 0) or 0)
+            charged = int(component.get('units') or (receipt.get('charged') or {}).get('slides_credits', 0))
+            units = min(charged, prior + int(job.get('extra_slides_refund_pending', 0) or 0))
+            credit_type, processed = 'slides_credits', 0
+        settled = job_charges.refund_component(
+            job, name, units, f'runtime-job:{doc.id}:{name}', legacy_credit_type=credit_type,
+            legacy_charged_units=charged, processed_count=processed, runtime=runtime,
+        )
+        if not settled:
+            continue
+        billing_receipts.add_job_credit_refund(job, credit_type, units - prior, runtime=runtime)
+        if name == 'primary':
+            job['credit_refund_pending'] = False
+        else:
+            job['extra_slides_refund_pending'] = 0
+            job['extra_slides_refunded'] = units
+        job['credit_refunded'] = billing_receipts.job_has_refunds(job, runtime=runtime)
+    if not job.get('credit_refund_pending') and not job.get('extra_slides_refund_pending'):
+        job['credit_refund_error'] = ''
+    runtime_jobs_store.set_job(doc.id, job, runtime=runtime)
+    runtime.save_job_log(doc.id, job, job.get('finished_at') or now_ts, record_metrics=False)
     return True
 
 

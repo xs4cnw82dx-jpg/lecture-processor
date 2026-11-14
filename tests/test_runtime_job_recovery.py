@@ -8,6 +8,7 @@ import pytest
 
 from lecture_processor.domains.runtime_jobs import execution, recovery
 from lecture_processor.services import upload_runtime_service
+from tests.credit_test_support import make_credit_runtime
 
 
 class JobSnapshot:
@@ -54,6 +55,13 @@ def recovery_state(monkeypatch):
         'events': [],
     }
     transaction_lock = RLock()
+    credit_runtime, credit_store = make_credit_runtime(
+        users={'owner': {'uid': 'owner', 'lecture_credits_standard': 0, 'slides_credits': 0,
+                         'total_processed': 1}}, unified_enabled=False,
+    )
+    compatibility_refund = recovery.job_charges.ledger.refund_legacy_credits
+    state['credit_runtime'], state['credit_store'] = credit_runtime, credit_store
+    state['compatibility_refund'] = compatibility_refund
 
     class Transaction:
         def set(self, ref, payload, merge=False):
@@ -88,9 +96,11 @@ def recovery_state(monkeypatch):
         state['lease_calls'] += 1
         return state['lease_available']
 
-    def refund(uid, *args, **kwargs):
-        state['refunds'].append((uid, args, kwargs['idempotency_key']))
-        return True
+    def refund(uid, credit_type, target_units, refund_ref, **kwargs):
+        kwargs['runtime'] = credit_runtime
+        result = compatibility_refund(uid, credit_type, target_units, refund_ref, **kwargs)
+        state['refunds'].append((uid, (credit_type, target_units), refund_ref))
+        return result
 
     def verify(_request, **kwargs):
         if kwargs.get('check_revoked'):
@@ -122,8 +132,7 @@ def recovery_state(monkeypatch):
     monkeypatch.setattr(recovery, 'acquire_runtime_job_recovery_lease', acquire_lease)
     monkeypatch.setattr(recovery.runtime_jobs_store, 'set_job', set_job)
     monkeypatch.setattr(recovery.runtime_jobs_store, 'get_job_snapshot', get_snapshot)
-    monkeypatch.setattr(recovery.billing_credits, 'refund_credit', refund)
-    monkeypatch.setattr(recovery.billing_credits, 'refund_slides_credits', refund)
+    monkeypatch.setattr(recovery.job_charges.ledger, 'refund_legacy_credits', refund)
     return state
 
 
@@ -237,13 +246,15 @@ def test_claim_blocks_second_recovery_while_first_refund_is_in_flight(recovery_s
     refund_started = Event()
     finish_refund = Event()
 
-    def refund(uid, credit_type, **kwargs):
+    def refund(uid, credit_type, target_units, refund_ref, **kwargs):
         refund_started.set()
         assert finish_refund.wait(timeout=2)
-        state['refunds'].append((uid, (credit_type,), kwargs['idempotency_key']))
-        return True
+        kwargs['runtime'] = state['credit_runtime']
+        result = state['compatibility_refund'](uid, credit_type, target_units, refund_ref, **kwargs)
+        state['refunds'].append((uid, (credit_type, target_units), refund_ref))
+        return result
 
-    monkeypatch.setattr(recovery.billing_credits, 'refund_credit', refund)
+    monkeypatch.setattr(recovery.job_charges.ledger, 'refund_legacy_credits', refund)
 
     with ThreadPoolExecutor(max_workers=1) as executor:
         first = executor.submit(recovery.recover_runtime_job_if_stale, 'job', runtime=state['runtime'])
@@ -257,6 +268,9 @@ def test_claim_blocks_second_recovery_while_first_refund_is_in_flight(recovery_s
         assert first.result(timeout=2) is True
     assert len(state['refunds']) == 2
     assert len(state['logs']) == 1
+    assert state['credit_store'].docs('users')['owner']['lecture_credits_standard'] == 1
+    assert state['credit_store'].docs('users')['owner']['slides_credits'] == 1
+    assert len(state['credit_store'].docs('credit_refunds')) == 2
 
 
 @pytest.mark.parametrize('protected_by', ['local-registry', 'fresh-heartbeat'])

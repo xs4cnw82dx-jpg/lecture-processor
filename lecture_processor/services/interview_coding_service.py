@@ -4,6 +4,7 @@ import math
 from urllib.parse import quote
 
 from lecture_processor.domains.ai import provider as ai_provider
+from lecture_processor.domains.billing import job_charges, ledger, policy
 from lecture_processor.domains.study import interview_coding
 from lecture_processor.domains.study import interview_coding_runs as coding_runs
 from lecture_processor.domains.study import export as study_export
@@ -155,6 +156,10 @@ def _coding_state_payload(app_ctx, pack_id, pack, transcript, uid):
         if current_doc.exists and current.get('uid') == uid and current.get('pack_id') == pack_id:
             runs = [_serialize_run_doc(current_doc)] + [run for run in runs if run['run_id'] != current_id]
     credit_cost = max(1, int(math.ceil(max(1, len(transcript)) / 120000.0))) if transcript.strip() else 0
+    user_doc = app_ctx.repositories.users.get_doc(app_ctx.db, uid)
+    user = user_doc.to_dict() or {} if user_doc.exists else {}
+    if policy.uses_unified_credits(user, runtime=app_ctx):
+        credit_cost = policy.action_cost('interview_coding', units=credit_cost)
     return {
         'pack_id': pack_id,
         'pack_title': str(pack.get('title', '') or ''),
@@ -438,6 +443,9 @@ def start_ai_coding_run(app_ctx, request, pack_id):
         run_id, created = coding_runs.claim_run(app_ctx, uid, pack_id, credit_cost, email=email)
     except coding_runs.RunError as error:
         return app_ctx.jsonify({'error': str(error), 'error_code': error.code}), error.status
+    except (ledger.InsufficientCredits, ledger.LedgerConflict, ledger.LedgerUnavailable) as error:
+        payload, status = job_charges.public_charge_error(error)
+        return app_ctx.jsonify(payload), status
     except Exception:
         app_ctx.logger.exception('Could not start interview coding for pack %s', pack_id)
         return app_ctx.jsonify({'error': 'AI coding is currently unavailable. Please try again.', 'error_code': 'interview_coding_unavailable'}), 503

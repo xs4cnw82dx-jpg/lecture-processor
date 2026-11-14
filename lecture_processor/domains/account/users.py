@@ -1,5 +1,6 @@
 from lecture_processor.runtime.container import get_runtime
 from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import policy as billing_policy
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 
 
@@ -28,6 +29,8 @@ def get_or_create_user(uid, email, runtime=None):
             if str(user_data.get('account_status', '') or '').strip().lower() in {'deleting', 'deleted'}:
                 raise account_lifecycle.AccountUnavailableError('Account is unavailable.')
             updates = {}
+            if billing_policy.uses_unified_credits(user_data, runtime=resolved_runtime):
+                updates.update(billing_policy.conversion_updates(user_data))
             if user_data.get('email') != email and email:
                 updates['email'] = email
             normalized_email = billing_credits.normalize_email(email or user_data.get('email', ''))

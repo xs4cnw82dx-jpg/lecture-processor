@@ -1269,6 +1269,13 @@ def test_study_folder_nesting_and_bulk_pack_move(allow_account_writes, client, m
 
 
 def test_interview_coding_state_quote_and_pdf(allow_account_writes, client, monkeypatch):
+    from tests.credit_test_support import make_credit_runtime
+
+    billing_runtime, _billing_store = make_credit_runtime(
+        users={'coding-u1': {'uid': 'coding-u1', 'slides_credits': 10}}, unified_enabled=False,
+    )
+    monkeypatch.setattr(core, 'db', billing_runtime.db)
+    monkeypatch.setattr(core, 'UNIFIED_CREDITS_ENABLED', False)
     transcript = "00:01 - Speaker A - Patients want clear guidance.\n00:08 - Speaker B - Follow-up feels rushed."
     pack_store = {
         "pack-1": {"uid": "coding-u1", "title": "Interview One", "mode": "interview"},

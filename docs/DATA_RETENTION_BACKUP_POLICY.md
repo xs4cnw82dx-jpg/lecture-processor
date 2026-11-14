@@ -9,6 +9,7 @@ It is a technical baseline for private beta operations and must be reviewed by q
 
 This policy covers:
 - User account records and credit balances
+- Credit charge and refund journals
 - Study packs, folders, planner entries, and study progress data
 - Physio Assistant cases, session notes, and generated clinical outputs
 - Upload/job metadata and analytics/security logs
@@ -43,6 +44,7 @@ This policy covers:
 6. Runtime job snapshots (`runtime_jobs`)
 - Completed and failed snapshots, including account-export jobs, have a logical retention window of `JOB_TTL_SECONDS` after completion (default 30 minutes; configurable from 5 minutes to 24 hours).
 - New terminal writes store `expires_at_ts` as a UTC Firestore timestamp. If completion is recorded before `finished_at`, the first terminal update establishes a provisional deadline; later partial updates preserve it, and recording `finished_at` sets the completion-based deadline. Active jobs have no expiry.
+- A snapshot with a pending primary or extra-feature credit refund has no expiry, even if processing is terminal. Normal cleanup also retains it. Clearing the pending markers after settlement restores the normal completion-based deadline.
 - The application removes expired terminal jobs from memory and Firestore during its five-minute cleanup loop. Firestore TTL provides eventual cleanup for snapshots that are no longer in a running process's memory. TTL deletion is asynchronous, typically within 24 hours of expiry, so the logical deadline is not an immediate deletion guarantee.
 - The TTL policy and single-field index exemption are declared in `firestore.indexes.json`. An authorized operator must deploy the reviewed configuration with `firebase deploy --only firestore:indexes --project <PROJECT_ID>` and verify that the `runtime_jobs` / `expires_at_ts` policy is enabled in the Firestore Time-to-live console. Application deployment alone does not enable the policy.
 - Legacy snapshots without `expires_at_ts` are unaffected by TTL until a normal application write adds the field or ordinary in-memory cleanup removes them. Reads do not backfill the field. Historical cleanup remains an explicit operator follow-up; this change performs no production scan, backfill, or bulk deletion.
@@ -53,6 +55,11 @@ This policy covers:
 - The image record and shared storage reservation remain until both objects are removed. Failed cleanup can be retried through the same pack update/delete operation without releasing the budget twice. Pictures still referenced by another card in the pack are retained.
 - In-flight uploads retain per-attempt leases, renewed every 30 seconds with a three-minute expiry, plus a local writer guard. Cleanup waits for these uploads to stop. Once byte deletion starts, the generation cannot be attached or renewed; replacement uploads use new object paths.
 - Account deletion uses the same byte-first cleanup and reservation release. This behavior applies to normal application operations; no historical scan or bulk cleanup is performed by deployment.
+
+8. Credit journals (`credit_charges`, `credit_refunds`)
+- Charge journals retain the original action amounts and refund totals while the account exists. They are separate from runtime snapshots so a job snapshot expiring does not remove refund or retry accounting.
+- Records with a user ID are included in account export and removed by the account deletion flow. That flow first stops admission and checks for active work, then verifies that no user-linked journal records remain before completing deletion.
+- Older refund records containing only hashed references retain their existing storage behavior. Purchase records continue to follow the separate accounting retention policy above.
 
 References: [Firestore TTL behavior](https://firebase.google.com/docs/firestore/ttl) and [Firebase CLI TTL configuration](https://github.com/firebase/firebase-tools/blob/main/src/firestore/README.md).
 

@@ -213,3 +213,47 @@ def test_runtime_snapshot_ttl_is_enabled_without_a_single_field_index():
     assert len(overrides) == 1
     assert overrides[0]['ttl'] is True
     assert overrides[0]['indexes'] == []
+
+
+@pytest.mark.parametrize('pending', [
+    {'credit_refund_pending': True, 'credit_refund_error': 'credit_refund_failed'},
+    {'extra_slides_refund_pending': 2},
+])
+@pytest.mark.parametrize('status', ['error', 'complete'])
+def test_pending_refund_survives_restart_and_cleanup_until_settled(retention_state, monkeypatch, pending, status):
+    state = retention_state
+    bind_cleanup(monkeypatch, state)
+    store.set_job('pending-refund', {'status': status, 'finished_at': 1.0, **pending}, runtime=state.runtime)
+    assert state.documents['pending-refund']['expires_at_ts'] is None
+    assert all(state.documents['pending-refund'][key] == value for key, value in pending.items())
+    state.runtime.jobs.clear()
+    restored = store.get_job_snapshot('pending-refund', runtime=state.runtime)
+    assert all(restored[key] == value for key, value in pending.items())
+    core.cleanup_old_jobs()
+    assert 'pending-refund' in state.documents
+    assert 'pending-refund' in state.runtime.jobs
+
+    store.update_job_fields('pending-refund', runtime=state.runtime,
+                            credit_refund_pending=False, credit_refund_error='', extra_slides_refund_pending=0)
+    assert state.documents['pending-refund']['expires_at_ts'].timestamp() == 1801.0
+    core.cleanup_old_jobs()
+    assert 'pending-refund' not in state.documents
+    assert state.deleted == ['pending-refund']
+
+
+@pytest.mark.parametrize('field,value', [('credit_refund_pending', True), ('extra_slides_refund_pending', 1)])
+def test_late_pending_refund_marker_clears_previously_written_expiry(retention_state, field, value):
+    state = retention_state
+    snapshot = store.set_job('terminal', {'status': 'error', 'finished_at': state.now}, runtime=state.runtime)
+    assert snapshot['expires_at_ts'] is not None
+    store.update_job_fields('terminal', runtime=state.runtime, **{field: value})
+    assert state.documents['terminal']['expires_at_ts'] is None
+
+
+def test_direct_pending_refund_update_clears_expiry_without_rewriting_result(retention_state):
+    state = retention_state
+    job = store.set_job('terminal', {'status': 'error', 'finished_at': state.now, 'result': 'saved'}, runtime=state.runtime)
+    store.persist_runtime_job_snapshot('terminal', dict(job, credit_refund_pending=True),
+                                       changed_fields={'credit_refund_pending'}, runtime=state.runtime)
+    assert state.documents['terminal']['expires_at_ts'] is None
+    assert 'result' not in state.writes[-1]

@@ -15,10 +15,17 @@ from lecture_processor.domains.account import lifecycle
 from lecture_processor.domains.ai import batch_orchestrator as batch
 from lecture_processor.domains.ai import instant_batch_orchestrator as instant
 from lecture_processor.domains.auth import policy as auth_policy
-from lecture_processor.domains.billing import credits
+from lecture_processor.domains.billing import job_charges
 from lecture_processor.domains.rate_limit import limiter, quotas
 from lecture_processor.domains.upload import import_audio
 from lecture_processor.services import media_admission
+from tests.credit_test_support import make_credit_runtime
+
+
+class _SlidesState(SimpleNamespace):
+    @property
+    def charges(self):
+        return list(self.store.docs('credit_charges').values())
 
 
 def pptx_bytes():
@@ -31,14 +38,20 @@ def pptx_bytes():
 
 @pytest.fixture
 def slides(core, runtime, client, monkeypatch, tmp_path):
-    state = SimpleNamespace(
+    state = _SlidesState(
         runtime=core, root=tmp_path, conversions=[], uploads=[], submitted=[],
-        charges=[], refunds=[], reserved=[], released=[], cleaned=[], checkpoints=[],
+        refunds=[], reserved=[], released=[], cleaned=[], checkpoints=[],
         conversion_hook=None, upload_hook=None, checkpoint_hook=None,
         saved_packs=[], job_logs=[], disk_checks=[],
     )
+    credit_runtime, state.store = make_credit_runtime(users={'slide-owner': {
+        'uid': 'slide-owner', 'account_status': 'active', 'slides_credits': 100, 'total_processed': 0,
+    }}, unified_enabled=False)
     monkeypatch.setattr(core, 'UPLOAD_FOLDER', str(tmp_path))
-    monkeypatch.setattr(core, 'db', None)
+    monkeypatch.setattr(core, 'db', credit_runtime.db)
+    monkeypatch.setattr(core, 'UNIFIED_CREDITS_ENABLED', False)
+    monkeypatch.setattr(core.firestore, 'transactional', credit_runtime.firestore.transactional)
+    monkeypatch.setattr(core.firestore, 'Increment', credit_runtime.firestore.Increment)
     for name in ('_BATCH_JOBS_MEMORY', '_BATCH_ROWS_MEMORY'):
         store = {}
         monkeypatch.setattr(core, name, store, raising=False)
@@ -51,11 +64,15 @@ def slides(core, runtime, client, monkeypatch, tmp_path):
     monkeypatch.setattr(quotas, 'has_sufficient_upload_disk_space', lambda amount=0, **_kwargs: state.disk_checks.append(amount) or (True, 10**12, 0))
     monkeypatch.setattr(quotas, 'reserve_daily_upload_bytes', lambda uid, amount, **_kwargs: state.reserved.append((uid, amount)) or (True, 0))
     monkeypatch.setattr(quotas, 'release_daily_upload_bytes', lambda uid, amount, **_kwargs: state.released.append((uid, amount)) or True)
-    monkeypatch.setattr(core, 'get_or_create_user', lambda uid, email: {'uid': uid, 'email': email, 'slides_credits': 100})
+    monkeypatch.setattr(core, 'get_or_create_user', lambda uid, _email: state.store.docs('users')[uid])
     monkeypatch.setattr(core, 'get_batch_background_queue_stats', lambda: {'active': 0, 'capacity': 4})
-    monkeypatch.setattr(credits, 'has_category_credit', lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(credits, 'deduct_credit', lambda uid, credit, **_kwargs: state.charges.append((uid, credit)) or credit)
-    monkeypatch.setattr(credits, 'refund_credit', lambda *_args, **kwargs: state.refunds.append(kwargs.get('idempotency_key')) or True)
+    original_refund = job_charges.refund_component
+
+    def observe_refund(row, component, target, refund_ref, **kwargs):
+        state.refunds.append(refund_ref)
+        return original_refund(row, component, target, refund_ref, **kwargs)
+
+    monkeypatch.setattr(job_charges, 'refund_component', observe_refund)
     monkeypatch.setattr(import_audio, 'cleanup_expired_audio_import_tokens', lambda **_kwargs: None)
     monkeypatch.setattr(core, 'submit_batch_background_job', lambda target, *args, **kwargs: state.submitted.append((target, args, kwargs)))
     monkeypatch.setattr(core, 'wait_for_file_processing', lambda _file: None)
@@ -120,6 +137,8 @@ def slides(core, runtime, client, monkeypatch, tmp_path):
 def seed_batch(slides, *, strategy='deferred', count=1, extension='.pptx'):
     batch_id = f'synthetic-{strategy}-slides'
     rows = []
+    # These worker-only cases resume an already charged legacy batch.
+    slides.store.documents[('users', 'slide-owner')].update(slides_credits=100 - count, total_processed=count)
     for index in range(1, count + 1):
         source = slides.root / f'{batch_id}_row-{index}_slides{extension}'
         source.write_bytes(pptx_bytes() if extension.lower() == '.pptx' else b'%PDF-1.7 original PDF')
@@ -150,6 +169,9 @@ def test_post_stages_original_pptx_without_running_conversion(slides, strategy):
     assert Path(rows[0]['slides_local_path']).read_bytes() == pptx_bytes()
     assert len(slides.submitted) == 1
     assert slides.submitted[0][0] is (instant.process_instant_batch_job if strategy == 'instant' else batch.process_batch_job)
+    assert slides.store.docs('users')['slide-owner']['slides_credits'] == 98
+    assert len(slides.charges) == 2
+    assert all(item['charged'] == {'slides_credits': 1} for item in slides.charges)
 
 
 @pytest.mark.parametrize('strategy', ['deferred', 'instant'])
@@ -228,6 +250,9 @@ def test_conversion_failure_refunds_once_and_releases_files_and_admission(slides
     assert slides.uploads == []
     assert slides.saved_packs == []
     assert slides.refunds == [f'batch-row:{batch_id}:row-1:primary']
+    assert slides.store.docs('users')['slide-owner']['slides_credits'] == 100
+    assert slides.store.docs('users')['slide-owner']['total_processed'] == 0
+    assert len(slides.store.docs('credit_refunds')) == 1
     assert list(slides.root.iterdir()) == []
     worker(strategy)(batch_id, runtime=slides.runtime)
     batch.get_batch_status(batch_id, runtime=slides.runtime)

@@ -5,6 +5,7 @@ import json
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import job_charges
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
@@ -71,6 +72,18 @@ def stage_uploaded_slides_file(app_ctx, uploaded_file, job_id):
 def attempt_credit_refund(app_ctx, uid, credit_type, expected_floor=None, *, idempotency_key=''):
     if not uid or not credit_type:
         return False, ''
+    if idempotency_key.startswith('runtime-job:') and idempotency_key.endswith(':primary'):
+        job_id = idempotency_key[len('runtime-job:'):-len(':primary')]
+        job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx) or {}
+        if job.get('charge_ref') or job.get('credit_scheme') == 2:
+            success = job_charges.refund_runtime_component(job_id, 'primary', 1, runtime=app_ctx)
+            return success, 'credit_ledger' if success else ''
+        job.setdefault('user_id', uid)
+        success = job_charges.refund_component(
+            job, 'primary', 1, idempotency_key, legacy_credit_type=credit_type,
+            legacy_charged_units=1, processed_count=1, runtime=app_ctx,
+        )
+        return success, 'refund_credit' if success else ''
 
     expected_floor_value = None
     if expected_floor is not None:
@@ -143,6 +156,14 @@ def _record_runtime_job_refund(app_ctx, job_id, credit_type, amount, *, extra_sl
     try:
         if job_snapshot is None:
             job_snapshot = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx) or {}
+        latest = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx) or {}
+        if latest.get('charge_ref'):
+            job_snapshot = latest
+            updates.update(job_charges.receipt_fields(latest['billing_receipt']))
+            extras = (latest['billing_receipt'].get('components') or {}).get('extras') or {}
+            if extras and extra_slides_increment:
+                updates['extra_slides_refunded'] = int(extras.get('refunded_credits', 0)) // max(1, int(extras.get('unit_cost', 1)))
+            return updates
         if not isinstance(job_snapshot, dict):
             job_snapshot = {}
         if int(extra_slides_increment or 0) > 0:
@@ -158,6 +179,17 @@ def _record_runtime_job_refund(app_ctx, job_id, credit_type, amount, *, extra_sl
         if int(extra_slides_increment or 0) > 0:
             updates['extra_slides_refunded'] = int(extra_slides_increment or 0)
     return updates
+
+
+def _refund_runtime_extras(app_ctx, uid, job_id, amount):
+    job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx) or {}
+    if job.get('charge_ref') or job.get('credit_scheme') == 2:
+        return job_charges.refund_runtime_component(job_id, 'extras', amount, runtime=app_ctx)
+    job.setdefault('user_id', uid)
+    return job_charges.refund_component(
+        job, 'extras', amount, f'runtime-job:{job_id}:extras', legacy_credit_type='slides_credits',
+        legacy_charged_units=amount, runtime=app_ctx,
+    )
 
 
 def queue_full_message():
@@ -206,6 +238,8 @@ def handle_runtime_job_queue_full(
     refund_updates = {}
     refund_job_snapshot = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx) or {}
     credit_refunded = False
+    primary_pending = False
+    extras_pending = 0
     if credit_type:
         refunded, method = attempt_credit_refund(
             app_ctx,
@@ -219,16 +253,12 @@ def handle_runtime_job_queue_full(
             refund_updates.update(_record_runtime_job_refund(app_ctx, job_id, credit_type, 1, job_snapshot=refund_job_snapshot))
             if method:
                 refund_methods.append(method)
+        else:
+            primary_pending = True
     if int(extra_slides_credits or 0) > 0:
         try:
             extras_refunded = bool(
-                billing_credits.refund_slides_credits(
-                    uid,
-                    int(extra_slides_credits or 0),
-                    runtime=app_ctx,
-                    idempotency_key=f'runtime-job:{job_id}:extras',
-                    idempotency_total=int(extra_slides_credits or 0),
-                )
+                _refund_runtime_extras(app_ctx, uid, job_id, int(extra_slides_credits or 0))
             )
         except Exception:
             extras_refunded = False
@@ -245,6 +275,10 @@ def handle_runtime_job_queue_full(
                 )
             )
             refund_methods.append('refund_slides_credits')
+        else:
+            extras_pending = int(extra_slides_credits or 0)
+    if refund_updates.get('charge_ref'):
+        credit_refunded = int(refund_updates.get('refunded_credits', 0)) > 0
     runtime_jobs_store.update_job_fields(
         job_id,
         runtime=app_ctx,
@@ -254,6 +288,9 @@ def handle_runtime_job_queue_full(
         provider_error_code='queue_full',
         step_description='Queue full',
         credit_refunded=credit_refunded,
+        credit_refund_pending=primary_pending,
+        extra_slides_refund_pending=extras_pending,
+        credit_refund_error='credit_refund_failed' if primary_pending or extras_pending else '',
         credit_refund_method=', '.join(refund_methods),
         **refund_updates,
     )
@@ -276,6 +313,8 @@ def handle_runtime_job_setup_failure(
     refund_updates = {}
     refund_job_snapshot = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx) or {}
     credit_refunded = False
+    primary_pending = False
+    extras_pending = 0
     if credit_type:
         refunded, method = attempt_credit_refund(
             app_ctx,
@@ -289,16 +328,12 @@ def handle_runtime_job_setup_failure(
             refund_updates.update(_record_runtime_job_refund(app_ctx, job_id, credit_type, 1, job_snapshot=refund_job_snapshot))
             if method:
                 refund_methods.append(method)
+        else:
+            primary_pending = True
     if int(extra_slides_credits or 0) > 0:
         try:
             extras_refunded = bool(
-                billing_credits.refund_slides_credits(
-                    uid,
-                    int(extra_slides_credits or 0),
-                    runtime=app_ctx,
-                    idempotency_key=f'runtime-job:{job_id}:extras',
-                    idempotency_total=int(extra_slides_credits or 0),
-                )
+                _refund_runtime_extras(app_ctx, uid, job_id, int(extra_slides_credits or 0))
             )
         except Exception:
             extras_refunded = False
@@ -315,6 +350,10 @@ def handle_runtime_job_setup_failure(
                 )
             )
             refund_methods.append('refund_slides_credits')
+        else:
+            extras_pending = int(extra_slides_credits or 0)
+    if refund_updates.get('charge_ref'):
+        credit_refunded = int(refund_updates.get('refunded_credits', 0)) > 0
     if credit_refunded:
         message = 'Could not start processing. Your credit was refunded. Please try again.'
     else:
@@ -329,14 +368,18 @@ def handle_runtime_job_setup_failure(
             provider_error_code='setup_failed',
             step_description='Could not start',
             credit_refunded=credit_refunded,
+            credit_refund_pending=primary_pending,
+            extra_slides_refund_pending=extras_pending,
+            credit_refund_error='credit_refund_failed' if primary_pending or extras_pending else '',
             credit_refund_method=', '.join(refund_methods),
             **refund_updates,
         )
-        if updated is None:
+        if updated is None and not refund_job_snapshot.get('charge_ref'):
             runtime_jobs_store.delete_job(job_id, runtime=app_ctx)
     except Exception:
         try:
-            runtime_jobs_store.delete_job(job_id, runtime=app_ctx)
+            if not refund_job_snapshot.get('charge_ref'):
+                runtime_jobs_store.delete_job(job_id, runtime=app_ctx)
         except Exception:
             pass
     try:

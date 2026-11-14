@@ -666,6 +666,8 @@ def delete_account_data(app_ctx, request):
         deleted['study_images'] = study_picture_service.delete_owned(app_ctx, uid)
         _delete_uid_collection('job_logs')
         _anonymize_purchases()
+        _delete_uid_collection('credit_charges')
+        _delete_uid_collection('credit_refunds')
         _delete_uid_collection('analytics_events')
         _delete_uid_collection('study_folders')
         _delete_uid_collection('study_card_states')
@@ -720,6 +722,8 @@ def delete_account_data(app_ctx, request):
             ('books', 'owner_uid', uid, 'books'),
             ('book_shares', 'owner_uid', uid, 'book_shares'),
             ('job_logs', 'uid', uid, 'job_logs'),
+            ('credit_charges', 'uid', uid, 'credit_charges'),
+            ('credit_refunds', 'uid', uid, 'credit_refunds'),
             ('analytics_events', 'uid', uid, 'analytics_events'),
             ('study_folders', 'uid', uid, 'study_folders'),
             ('study_card_states', 'uid', uid, 'study_card_states'),

@@ -69,7 +69,7 @@ def test_primary_credit_refund_marks_pending_when_refund_call_fails(monkeypatch)
     runtime = SimpleNamespace(logger=SimpleNamespace(warning=lambda *args, **kwargs: None))
     job_data = {"billing_receipt": {"charged": {"lecture_credits_standard": 1}}}
 
-    monkeypatch.setattr(pipelines.billing_credits, "refund_credit", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(pipelines.job_charges.ledger, "refund_legacy_credits", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(
         pipelines.billing_receipts,
         "add_job_credit_refund",
@@ -94,7 +94,7 @@ def test_primary_credit_refund_records_receipt_only_after_success(monkeypatch):
     )
     job_data = {"billing_receipt": {"charged": {"slides_credits": 1}}}
 
-    monkeypatch.setattr(pipelines.billing_credits, "refund_credit", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(pipelines.job_charges.ledger, "refund_legacy_credits", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(pipelines.runtime_jobs_store, "set_job", lambda job_id, payload, runtime=None: persisted.append((job_id, dict(payload))))
 
     refunded = pipelines._refund_primary_job_credit("job-refund-ok", job_data, "u1", "slides_credits", runtime=runtime)
@@ -110,7 +110,7 @@ def test_extra_slides_refund_does_not_increment_when_refund_fails(monkeypatch):
     runtime = SimpleNamespace(logger=SimpleNamespace(warning=lambda *args, **kwargs: None))
     job_data = {"extra_slides_refunded": 1, "billing_receipt": {"charged": {"slides_credits": 3}}}
 
-    monkeypatch.setattr(pipelines.billing_credits, "refund_slides_credits", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(pipelines.job_charges.ledger, "refund_legacy_credits", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(
         pipelines.billing_receipts,
         "add_job_credit_refund",
@@ -138,7 +138,7 @@ def test_extra_slides_refund_marks_job_refunded_after_success(monkeypatch):
         "billing_receipt": {"charged": {"slides_credits": 3}},
     }
 
-    monkeypatch.setattr(pipelines.billing_credits, "refund_slides_credits", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(pipelines.job_charges.ledger, "refund_legacy_credits", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(pipelines.runtime_jobs_store, "set_job", lambda job_id, payload, runtime=None: persisted.append((job_id, dict(payload))))
 
     refunded = pipelines._refund_extra_slides("job-extra-ok", job_data, "u1", 2, runtime=runtime)
