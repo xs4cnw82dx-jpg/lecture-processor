@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from threading import Event, Lock
 from types import SimpleNamespace
+import zipfile
 
 import pytest
 
@@ -89,15 +90,17 @@ def media_requests(app, core, monkeypatch, tmp_path):
         path.write_bytes(b'ID3 synthetic recording')
         return str(path), path.name, path.stat().st_size
 
-    def slides(upload, prefix):
-        if upload.filename.lower().endswith('.pptx'):
-            media_work('conversion')
-        path = tmp_path / f'{prefix}.pdf'
-        path.write_bytes(b'%PDF-1.7 synthetic slides')
-        return str(path), ''
-
     monkeypatch.setattr(core, 'download_audio_from_video_url', download)
-    monkeypatch.setattr(core, 'resolve_uploaded_slides_to_pdf', slides)
+    monkeypatch.setattr(core, 'convert_pptx_to_pdf', lambda *_args: pytest.fail('Queued batch must not convert on POST.'))
+
+    def slide_bytes(extension):
+        if extension.lower() == '.pdf':
+            return b'%PDF-1.7 synthetic slides'
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, 'w') as archive:
+            archive.writestr('[Content_Types].xml', '<Types/>')
+            archive.writestr('ppt/presentation.xml', '<presentation/>')
+        return output.getvalue()
 
     def post(kind, uid='first', extension='.PPTX'):
         with app.test_client() as client:
@@ -109,8 +112,8 @@ def media_requests(app, core, monkeypatch, tmp_path):
                 data = {
                     'mode': 'slides-only', 'batch_title': 'Synthetic batch',
                     'rows': json.dumps([{'row_id': 'row-1'}, {'row_id': 'row-2'}]),
-                    'row_1_slides': (io.BytesIO(b'synthetic slides'), f'first{extension}'),
-                    'row_2_slides': (io.BytesIO(b'synthetic slides'), 'second.pdf'),
+                    'row_1_slides': (io.BytesIO(slide_bytes(extension)), f'first{extension}'),
+                    'row_2_slides': (io.BytesIO(slide_bytes('.pdf')), 'second.pdf'),
                     # Unselected files must not make a PDF-only batch require conversion.
                     'unused_slides': (io.BytesIO(b'unselected slides'), 'unused.pptx'),
                 }
@@ -127,45 +130,54 @@ def media_requests(app, core, monkeypatch, tmp_path):
     state.release.set()
 
 
-@pytest.mark.parametrize('first_kind', ['download', 'batch'])
-@pytest.mark.parametrize('second_kind', ['download', 'batch'])
 @pytest.mark.parametrize('second_uid,expected', [('first', 429), ('other', 503)])
-def test_held_media_rejects_second_request_before_quota_or_charge(media_requests, first_kind, second_kind, second_uid, expected):
+def test_held_download_rejects_second_download_before_quota_or_charge(media_requests, second_uid, expected):
     state = media_requests
-    state.hold = 'download' if first_kind == 'download' else 'conversion'
+    state.hold = 'download'
     with ThreadPoolExecutor(max_workers=1) as worker:
-        first = worker.submit(state.post, first_kind)
+        first = worker.submit(state.post, 'download')
         try:
             assert state.entered.wait(5)
             before = (list(state.quota), list(state.charges), list(state.media))
-            status, headers, payload = state.post(second_kind, second_uid)
+            status, headers, payload = state.post('download', second_uid)
             assert status == expected
             assert headers['Retry-After'] == '5'
             assert payload == {'error': 'Media processing is busy. Please try again shortly.', 'retry_after_seconds': 5}
             assert (state.quota, state.charges, state.media) == before
         finally:
             state.release.set()
-        assert first.result(timeout=5)[0] == (202 if first_kind == 'download' else 200)
-    assert state.post(second_kind, second_uid)[0] == (202 if second_kind == 'download' else 200)
+        assert first.result(timeout=5)[0] == 202
+    assert state.post('download', second_uid)[0] == 202
 
 
-@pytest.mark.parametrize('kind', ['download', 'batch', 'instant'])
 @pytest.mark.parametrize('failure,expected', [('quota', 429), ('media', 400), ('adjust', 503)])
-def test_failed_media_request_releases_process_and_account_admission(media_requests, kind, failure, expected):
+def test_failed_download_releases_process_and_account_admission(media_requests, failure, expected):
     state = media_requests
     state.failure = failure
-    response = state.post(kind)
-    if kind == 'download' and failure != 'quota':
+    response = state.post('download')
+    if failure != 'quota':
         assert response[0] == 202
         assert response[2]['worker_status'] == 'error'
     else:
         assert response[0] == expected
     state.failure = ''
-    assert state.post(kind)[0] == (202 if kind == 'download' else 200)
-    assert state.post(kind, 'other')[0] == (202 if kind == 'download' else 200)
+    assert state.post('download')[0] == 202
+    assert state.post('download', 'other')[0] == 202
 
 
-def test_batch_credit_preflight_return_releases_admission(media_requests):
+@pytest.mark.parametrize('kind', ['batch', 'instant'])
+@pytest.mark.parametrize('failure,expected', [('quota', 429), ('adjust', 503)])
+def test_batch_staging_failure_leaves_media_admission_available(media_requests, kind, failure, expected):
+    state = media_requests
+    state.failure = failure
+    assert state.post(kind)[0] == expected
+    assert state.media == []
+    state.failure = ''
+    assert state.post('download')[0] == 202
+    assert state.post(kind)[0] == 200
+
+
+def test_batch_credit_preflight_leaves_media_admission_available(media_requests):
     state = media_requests
     state.enough_credit = False
     assert state.post('batch')[0] == 402
@@ -176,14 +188,16 @@ def test_batch_credit_preflight_return_releases_admission(media_requests):
 
 
 @pytest.mark.parametrize('kind', ['batch', 'instant'])
-def test_pdf_only_batch_does_not_need_media_admission(media_requests, kind):
+@pytest.mark.parametrize('uid', ['first', 'other'])
+@pytest.mark.parametrize('extension', ['.pdf', '.PPTX'])
+def test_batch_staging_does_not_need_media_admission(media_requests, kind, uid, extension):
     state = media_requests
     state.hold = 'download'
     with ThreadPoolExecutor(max_workers=1) as worker:
         first = worker.submit(state.post, 'download')
         try:
             assert state.entered.wait(5)
-            assert state.post(kind, extension='.pdf')[0] == 200
+            assert state.post(kind, uid, extension=extension)[0] == 200
             assert state.media == ['download']
             assert len(state.charges) == 2
         finally:
