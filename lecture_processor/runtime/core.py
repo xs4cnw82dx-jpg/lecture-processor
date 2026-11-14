@@ -687,7 +687,8 @@ JOB_CLEANUP_INTERVAL_SECONDS = 5 * 60
 PROCESSING_PUBLIC_ERROR_MESSAGE = 'Processing failed. Your credit has been refunded.'
 
 def cleanup_old_jobs():
-    """Evict completed/errored jobs older than JOB_TTL_SECONDS to prevent OOM."""
+    """Evict terminal jobs after their result's retention deadline."""
+    from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
     from lecture_processor.domains.runtime_jobs.schema import TERMINAL_RUNTIME_JOB_STATUSES, has_pending_credit_refund
     from lecture_processor.services import tools_download_service
 
@@ -706,7 +707,7 @@ def cleanup_old_jobs():
                 deadline = expires_at.timestamp()
             else:
                 finished_at = job.get('finished_at') or job.get('started_at', now_ts)
-                deadline = finished_at + JOB_TTL_SECONDS
+                deadline = finished_at + runtime_jobs_store.runtime_job_retention_seconds(job, _self_runtime())
             if now_ts > deadline:
                 expired_ids.append(job_id)
         for job_id in expired_ids:

@@ -4,6 +4,11 @@ from lecture_processor.domains.runtime_jobs.schema import TERMINAL_RUNTIME_JOB_S
 from lecture_processor.runtime.container import get_runtime
 
 
+# Match the ZIP lifetime in account_data_service without importing a service
+# into the domain layer. Other terminal jobs retain the configured default.
+ACCOUNT_EXPORT_JOB_TTL_SECONDS = 60 * 60
+
+
 def _resolve_runtime(runtime=None):
     if runtime is not None:
         return runtime
@@ -15,12 +20,19 @@ def _runtime_job_storage_enabled(runtime=None):
     return resolved_runtime.db is not None
 
 
+def runtime_job_retention_seconds(job_data, runtime):
+    status = str(job_data.get('status', '') or '').strip().lower()
+    if job_data.get('job_scope') == 'account-export' and status in {'complete', 'completed'}:
+        return ACCOUNT_EXPORT_JOB_TTL_SECONDS
+    return int(getattr(runtime, 'JOB_TTL_SECONDS', 30 * 60) or (30 * 60))
+
+
 def _runtime_job_expiration(job_data, runtime):
     if has_pending_credit_refund(job_data):
         return None
     if str(job_data.get('status', '') or '').strip().lower() not in TERMINAL_RUNTIME_JOB_STATUSES:
         return None
-    ttl = int(getattr(runtime, 'JOB_TTL_SECONDS', 30 * 60) or (30 * 60))
+    ttl = runtime_job_retention_seconds(job_data, runtime)
     try:
         finished_at = float(job_data.get('finished_at', 0) or 0)
         if finished_at > 0:
