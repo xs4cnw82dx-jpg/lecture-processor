@@ -147,7 +147,10 @@
       if (payload.status === 'complete') {
         if (!payload.download_token) throw new Error('Could not download lecture media.');
         setStatus('Preparing download…', '');
-        var fileResponse = await authFetch(path + '/file?token=' + encodeURIComponent(payload.download_token), { cache: 'no-store' });
+        var fileResponse = await authFetch(path + '/file', {
+          headers: { 'X-Lecture-Download-Token': payload.download_token },
+          cache: 'no-store'
+        });
         if (!attemptIsCurrent(attempt)) return null;
         if (!fileResponse.ok) throw await responseError(fileResponse, attempt);
         return { response: fileResponse, filename: payload.file_name };
