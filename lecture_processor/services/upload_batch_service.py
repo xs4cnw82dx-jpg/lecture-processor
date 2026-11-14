@@ -2,6 +2,7 @@
 
 import json
 import re
+import tempfile
 import zipfile
 
 from lecture_processor.domains.account import lifecycle as account_lifecycle
@@ -27,6 +28,7 @@ TEXT_COMBINE_BATCH_MODE = 'text-combine'
 MAX_BATCH_TEXT_UPLOAD_BYTES_DEFAULT = 2 * 1024 * 1024
 INSTANT_BATCH_MAX_ROWS_DEFAULT = 20
 BATCH_MAX_ROWS_DEFAULT = 100
+BATCH_EXPORT_ZIP_SPOOL_BYTES = 5 * 1024 * 1024
 SAFE_BATCH_ROW_ID_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
 
 
@@ -1147,63 +1149,74 @@ def download_batch_zip(app_ctx, request, batch_id):
     rows = batch_orchestrator.list_batch_rows(batch_id, runtime=app_ctx)
     export_options = batch.get('export_options', {}) if isinstance(batch.get('export_options', {}), dict) else {}
     include_combined_docx = bool(export_options.get('include_combined_docx', False))
-    archive_bytes = app_ctx.io.BytesIO()
-    with zipfile.ZipFile(archive_bytes, mode='w', compression=zipfile.ZIP_DEFLATED) as archive:
-        summary = {
-            'batch_id': batch.get('batch_id', batch_id),
-            'mode': batch.get('mode', ''),
-            'processing_strategy': batch.get('processing_strategy', 'batch'),
-            'status': batch.get('status', ''),
-            'total_rows': batch.get('total_rows', len(rows)),
-            'completed_rows': batch.get('completed_rows', 0),
-            'failed_rows': batch.get('failed_rows', 0),
-            'token_input_total': batch.get('token_input_total', 0),
-            'token_output_total': batch.get('token_output_total', 0),
-            'token_total': batch.get('token_total', 0),
-            'export_options': export_options,
-        }
-        archive.writestr('summary.json', json.dumps(summary, ensure_ascii=False, indent=2))
-        if include_combined_docx:
-            combined_name = study_export.sanitize_export_filename(
-                batch.get('batch_title', '') or f'batch-{batch_id}',
-                fallback=f'batch-{batch_id}',
-            ) + '_Combined.docx'
-            archive.writestr(combined_name, batch_combined_docx_bytes(app_ctx, batch, rows))
-        for row in rows:
-            row_id = str(row.get('row_id', '') or '')
-            folder = f'rows/{row_id}'
-            archive.writestr(
-                f'{folder}/meta.json',
-                json.dumps(
-                    batch_orchestrator.build_batch_row_export_metadata(row, batch, runtime=app_ctx),
-                    ensure_ascii=False,
-                    indent=2,
-                    default=str,
-                ),
-            )
-            if row.get('status') != 'complete':
-                continue
-            try:
-                archive.writestr(f'{folder}/result.docx', batch_row_docx_bytes(app_ctx, row, content_type='result'))
-                if row.get('slide_text'):
-                    archive.writestr(f'{folder}/slides.docx', batch_row_docx_bytes(app_ctx, row, content_type='slides'))
-                if row.get('transcript'):
-                    archive.writestr(f'{folder}/transcript.docx', batch_row_docx_bytes(app_ctx, row, content_type='transcript'))
-                if row.get('interview_summary'):
-                    archive.writestr(f'{folder}/summary.docx', batch_row_docx_bytes(app_ctx, row, content_type='summary'))
-                if row.get('interview_sections'):
-                    archive.writestr(f'{folder}/sections.docx', batch_row_docx_bytes(app_ctx, row, content_type='sections'))
-                if row.get('flashcards'):
-                    archive.writestr(f'{folder}/flashcards.csv', batch_row_csv_bytes(app_ctx, row, export_type='flashcards'))
-                if row.get('test_questions'):
-                    archive.writestr(f'{folder}/test_questions.csv', batch_row_csv_bytes(app_ctx, row, export_type='test'))
-            except Exception as error:
-                archive.writestr(f'{folder}/error.txt', str(error))
-    archive_bytes.seek(0)
-    filename = f'batch-{batch_id}.zip'
-    return app_ctx.send_file(
-        archive_bytes,
-        mimetype='application/zip',
-        as_attachment=True,
-        download_name=filename,
-    )
+    archive_file = tempfile.SpooledTemporaryFile(max_size=BATCH_EXPORT_ZIP_SPOOL_BYTES, mode='w+b')
+    try:
+        with zipfile.ZipFile(archive_file, mode='w', compression=zipfile.ZIP_DEFLATED) as archive:
+            summary = {
+                'batch_id': batch.get('batch_id', batch_id),
+                'mode': batch.get('mode', ''),
+                'processing_strategy': batch.get('processing_strategy', 'batch'),
+                'status': batch.get('status', ''),
+                'total_rows': batch.get('total_rows', len(rows)),
+                'completed_rows': batch.get('completed_rows', 0),
+                'failed_rows': batch.get('failed_rows', 0),
+                'token_input_total': batch.get('token_input_total', 0),
+                'token_output_total': batch.get('token_output_total', 0),
+                'token_total': batch.get('token_total', 0),
+                'export_options': export_options,
+            }
+            archive.writestr('summary.json', json.dumps(summary, ensure_ascii=False, indent=2))
+            if include_combined_docx:
+                combined_name = study_export.sanitize_export_filename(
+                    batch.get('batch_title', '') or f'batch-{batch_id}',
+                    fallback=f'batch-{batch_id}',
+                ) + '_Combined.docx'
+                archive.writestr(combined_name, batch_combined_docx_bytes(app_ctx, batch, rows))
+            for row in rows:
+                row_id = str(row.get('row_id', '') or '')
+                folder = f'rows/{row_id}'
+                archive.writestr(
+                    f'{folder}/meta.json',
+                    json.dumps(
+                        batch_orchestrator.build_batch_row_export_metadata(row, batch, runtime=app_ctx),
+                        ensure_ascii=False,
+                        indent=2,
+                        default=str,
+                    ),
+                )
+                if row.get('status') != 'complete':
+                    continue
+                try:
+                    archive.writestr(f'{folder}/result.docx', batch_row_docx_bytes(app_ctx, row, content_type='result'))
+                    if row.get('slide_text'):
+                        archive.writestr(f'{folder}/slides.docx', batch_row_docx_bytes(app_ctx, row, content_type='slides'))
+                    if row.get('transcript'):
+                        archive.writestr(f'{folder}/transcript.docx', batch_row_docx_bytes(app_ctx, row, content_type='transcript'))
+                    if row.get('interview_summary'):
+                        archive.writestr(f'{folder}/summary.docx', batch_row_docx_bytes(app_ctx, row, content_type='summary'))
+                    if row.get('interview_sections'):
+                        archive.writestr(f'{folder}/sections.docx', batch_row_docx_bytes(app_ctx, row, content_type='sections'))
+                    if row.get('flashcards'):
+                        archive.writestr(f'{folder}/flashcards.csv', batch_row_csv_bytes(app_ctx, row, export_type='flashcards'))
+                    if row.get('test_questions'):
+                        archive.writestr(f'{folder}/test_questions.csv', batch_row_csv_bytes(app_ctx, row, export_type='test'))
+                except Exception as error:
+                    archive.writestr(f'{folder}/error.txt', str(error))
+        archive_size = archive_file.tell()
+        archive_file.seek(0)
+        response = app_ctx.send_file(
+            archive_file,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=f'batch-{batch_id}.zip',
+            conditional=False,
+        )
+        # File-like spools do not supply their size to send_file. Preserve the
+        # length and byte-range behavior of the previous in-memory response.
+        response.content_length = archive_size
+        response.make_conditional(request.environ, accept_ranges=True, complete_length=archive_size)
+        response.call_on_close(archive_file.close)
+        return response
+    except Exception:
+        archive_file.close()
+        raise
