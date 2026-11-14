@@ -40,6 +40,14 @@ async function installAccountFixture(page) {
   await page.route('**/api/**', (route) => {
     const request = route.request();
     requests.push({ path: new URL(request.url()).pathname, method: request.method(), authorization: request.headers().authorization });
+    if (new URL(request.url()).pathname === '/api/auth/user') {
+      const uid = request.headers().authorization === 'Bearer token-b' ? 'b' : 'a';
+      return route.fulfill({ json: {
+        uid, email: uid + '@example.test',
+        credits: { lecture_standard: 10, lecture_extended: 0, slides: 10, interview_short: 10, interview_medium: 0, interview_long: 0 },
+        unlimited_credits: { lecture: false, slides: false, interview: false }, preferences: {},
+      } });
+    }
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify({
       user: { uid: 'a', display_name: 'Student', credits: { lecture: 10, slides: 10 } },
       preferences: {}, purchases: [], batches: [], voice_notes: [],

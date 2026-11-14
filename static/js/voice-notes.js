@@ -8,6 +8,9 @@
   var utils = window.LectureProcessorVoiceNotes || {};
   var downloadUtils = window.LectureProcessorDownload || {};
   var uxUtils = window.LectureProcessorUx || {};
+  var creditUtils = window.LectureProcessorCreditUtils || {};
+  var publicCreditConfig = null;
+  var syncAllPromise = null;
 
   if (!auth) return;
 
@@ -64,6 +67,7 @@
       'voice-back-btn', 'voice-share-btn', 'voice-archive-btn', 'voice-download-audio-btn', 'voice-delete-btn', 'voice-audio', 'voice-audio-retention-note', 'voice-audio-status', 'voice-transcript', 'voice-notes-surface', 'voice-highlight-toolbar',
       'voice-hl-undo', 'voice-hl-redo', 'voice-hl-clear', 'voice-download-notes', 'voice-language-select',
       'voice-custom-input', 'voice-storage-count', 'voice-storage-size', 'voice-sync-all-btn', 'voice-toast',
+      'voice-credit-cost', 'voice-pending-credit-cost',
       'voice-confirm-modal', 'voice-confirm-title', 'voice-confirm-message', 'voice-confirm-close',
       'voice-confirm-cancel', 'voice-confirm-confirm', 'voice-save-recovery', 'voice-save-message',
       'voice-retry-save-btn', 'voice-download-unsaved-btn', 'voice-discard-unsaved-btn'
@@ -741,21 +745,95 @@
     return retryPendingAudio(key);
   }
 
+  function voiceCreditText(message, params) {
+    if (window.LectureI18n) return window.LectureI18n.t(message, params || {});
+    return message.replace(/\{(\w+)\}/g, function (_match, key) { return String((params || {})[key] ?? ''); });
+  }
+
+  function voiceCreditState() {
+    var shell = window.LectureProcessorShell;
+    var value = shell && shell.getCreditState ? shell.getCreditState() : null;
+    return value && state.user && value.uid === state.user.uid ? value : null;
+  }
+
+  function voiceCreditSnapshot() {
+    var value = voiceCreditState();
+    if (value && value.snapshot) return value.snapshot;
+    return publicCreditConfig && publicCreditConfig.scheme === 2
+      ? { scheme: 2, balance: 0, categories: null, unlimited: {}, costs: publicCreditConfig.costs } : null;
+  }
+
+  function pendingVoiceNotes() {
+    return state.notes.filter(function (note) {
+      var status = utils.normalizeStatus ? utils.normalizeStatus(note.status) : note.status;
+      return noteBelongsToCurrentOwner(note) && !state.syncing[note.id] && (status === 'pending' || status === 'error');
+    });
+  }
+
+  function renderVoiceCreditUi() {
+    var snapshot = voiceCreditSnapshot();
+    var count = pendingVoiceNotes().length;
+    var quote = snapshot && snapshot.scheme === 2 ? creditUtils.quote(snapshot, [{ action: 'voice_note', units: 1 }]) : null;
+    if (els.creditCost) {
+      els.creditCost.textContent = quote
+        ? voiceCreditText('Transcription: {credits} per note. Recording and saving on this device are free.', { credits: creditUtils.formatCredits(quote.needed) })
+        : snapshot && snapshot.scheme === 1
+          ? voiceCreditText('Transcription uses 1 interview credit per note. Recording and saving on this device are free.')
+          : voiceCreditText('Recording and saving on this device are free. Checking transcription cost…');
+    }
+    if (els.pendingCreditCost) {
+      var total = snapshot && snapshot.scheme === 2 ? creditUtils.quote(snapshot, [{ action: 'voice_note', units: count }]) : null;
+      els.pendingCreditCost.textContent = total
+        ? voiceCreditText(count === 1 ? '{count} pending transcription · {credits}' : '{count} pending transcriptions · {credits}', { count: count, credits: creditUtils.formatCredits(total.needed) }) : '';
+      els.pendingCreditCost.hidden = !total;
+    }
+    if (els.syncAllBtn) els.syncAllBtn.disabled = !!syncAllPromise || !navigator.onLine || !hasSignedInSession();
+  }
+
+  function refreshVoiceCredits(force) {
+    var current = captureAccount();
+    var shell = window.LectureProcessorShell;
+    if (!shell || !shell.refreshCreditSnapshot) return Promise.reject(new Error(voiceCreditText('Credits are unavailable. Please try again.')));
+    return shell.refreshCreditSnapshot({ force: !!force }).then(function (result) {
+      if (!current() || result.uid !== state.user.uid) throw new Error('Your account changed. Sign in again to retry.');
+      renderVoiceCreditUi();
+      return result.snapshot;
+    });
+  }
+
+  function creditPause(message) {
+    var error = new Error(message);
+    error.creditPause = true;
+    return error;
+  }
+
   function syncNote(note) {
-    if (!note || state.syncing[note.id]) return Promise.resolve();
+    if (!note || state.syncing[note.id]) return Promise.resolve(false);
     if (!hasSignedInSession() || !noteBelongsToCurrentOwner(note)) {
       showToast('Sign in to transcribe.', 'error');
       renderSyncPill();
-      return Promise.resolve();
+      return Promise.resolve(false);
     }
     var isCurrent = captureAccount();
     state.syncing[note.id] = true;
-    note.status = 'syncing';
-    note.error = '';
-    note.step_description = 'Uploading audio...';
-    note.updated_at = nowSeconds();
-    renderAll();
-    return putNote(note).then(function () {
+    var ready = navigator.onLine ? refreshVoiceCredits(false).catch(function (error) {
+      throw creditPause(error.message || voiceCreditText('Credits are unavailable. Please try again.'));
+    }) : Promise.reject(creditPause(voiceCreditText('Connect to check credits before transcription.')));
+    return ready.then(function (snapshot) {
+      if (!isCurrent()) throw new Error('Your account changed. Sign in again to retry.');
+      if (snapshot.scheme === 2) {
+        var quote = creditUtils.quote(snapshot, [{ action: 'voice_note', units: 1 }]);
+        if (!quote) throw creditPause(voiceCreditText('Credit cost unavailable.'));
+        if (!quote.sufficient) throw creditPause(creditUtils.formatInsufficient({ needed: quote.needed, available: quote.available }));
+      }
+      if (!navigator.onLine) throw creditPause(voiceCreditText('Connect to check credits before transcription.'));
+      note.status = 'syncing';
+      note.error = '';
+      note.step_description = 'Uploading audio...';
+      note.updated_at = nowSeconds();
+      renderAll();
+      return putNote(note);
+    }).then(function () {
       if (!isCurrent()) throw new Error('Your account changed. Sign in again to retry.');
       return getAudioBlob(note.local_audio_id || note.id);
     }).then(function (blob) {
@@ -769,22 +847,31 @@
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (payload) {
         if (!isCurrent()) throw new Error('Your account changed. Sign in again to retry.');
-        if (!response.ok) throw new Error(payload.error || 'Could not transcribe voice note');
+        if (!response.ok) {
+          var message = creditUtils.formatInsufficient(payload) || payload.error || 'Could not transcribe voice note';
+          if (response.status === 402 && voiceCreditSnapshot()?.scheme === 2) {
+            void refreshVoiceCredits(true).catch(function () {});
+            throw creditPause(message);
+          }
+          throw new Error(message);
+        }
         note.job_id = payload.job_id;
         note.status = 'syncing';
         note.step_description = 'Transcribing...';
         note.updated_at = nowSeconds();
-        return putNote(note).then(function () { return pollJob(note, payload.job_id, isCurrent); });
+        return putNote(note).then(function () { return pollJob(note, payload.job_id, isCurrent); }).then(function () {
+          return isCurrent() ? refreshVoiceCredits(false).catch(function () {}) : null;
+        }).then(function () { return true; });
       });
     }).catch(function (error) {
-      note.status = 'error';
+      note.status = error.creditPause ? 'pending' : 'error';
       note.error = error && error.message ? error.message : 'Sync failed';
       note.updated_at = nowSeconds();
       if (isCurrent()) {
-        setRecordStatus('Saved offline. Sync needs retry.');
+        setRecordStatus(error.creditPause ? voiceCreditText('Saved offline. {message}', { message: note.error }) : 'Saved offline. Sync needs retry.');
         showToast(note.error, 'error');
       }
-      return putNote(note).catch(function () {});
+      return putNote(note).catch(function () {}).then(function () { return false; });
     }).finally(function () {
       delete state.syncing[note.id];
       renderAll();
@@ -865,14 +952,21 @@
   }
 
   function syncAllPending() {
-    var pending = state.notes.filter(function (note) {
-      var status = utils.normalizeStatus ? utils.normalizeStatus(note.status) : note.status;
-      return status === 'pending' || status === 'error';
-    });
+    if (syncAllPromise) return syncAllPromise;
+    var isCurrent = captureAccount();
+    var pending = pendingVoiceNotes();
     renderSyncPill();
-    return pending.reduce(function (chain, note) {
-      return chain.then(function () { return syncNote(note); });
-    }, Promise.resolve());
+    var request = pending.reduce(function (chain, note) {
+      return chain.then(function (continueSync) {
+        return continueSync && isCurrent() ? syncNote(note) : false;
+      });
+    }, Promise.resolve(true)).finally(function () {
+      if (syncAllPromise === request) syncAllPromise = null;
+      renderVoiceCreditUi();
+    });
+    syncAllPromise = request;
+    renderVoiceCreditUi();
+    return syncAllPromise;
   }
 
   function renderList() {
@@ -1130,6 +1224,7 @@
     renderSettings();
     renderSyncPill();
     renderSaveRecovery();
+    renderVoiceCreditUi();
   }
 
   function setAuthUi() {
@@ -1536,6 +1631,8 @@
       syncAllPending();
     });
     window.addEventListener('offline', renderAll);
+    window.addEventListener('lp:credits-changed', renderVoiceCreditUi);
+    window.addEventListener('lp:language-changed', renderVoiceCreditUi);
     window.addEventListener('beforeunload', function (event) {
       if (!Object.keys(state.pendingAudioByOwner).length && !state.recorder && !state.startingRecording) return;
       event.preventDefault();
@@ -1593,10 +1690,15 @@
     }
     attachEvents();
     registerServiceWorker();
+    fetch('/api/config').then(function (response) { return response.ok ? response.json() : null; }).then(function (payload) {
+      publicCreditConfig = creditUtils.parsePublicConfig(payload);
+      renderVoiceCreditUi();
+    }).catch(function () {});
 
     bootstrap.onAuthStateReady(auth, function (user) {
       if (state.user !== (user || null)) {
         state.accountRevision += 1;
+        syncAllPromise = null;
         if (state.recorder) stopRecording();
         closeConfirmModal(false);
       }
@@ -1604,6 +1706,7 @@
       state.user = user || null;
       if (!state.user && authClient && typeof authClient.clearToken === 'function') authClient.clearToken();
       setAuthUi();
+      if (state.user) void refreshVoiceCredits(false).catch(renderVoiceCreditUi);
       loadLocalVoiceNotesForCurrentUser();
     });
     setAuthUi();

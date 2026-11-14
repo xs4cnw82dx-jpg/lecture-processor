@@ -1171,8 +1171,9 @@ def download_batch_zip(app_ctx, request, batch_id):
                         archive.writestr(f'{folder}/flashcards.csv', batch_row_csv_bytes(app_ctx, row, export_type='flashcards'))
                     if row.get('test_questions'):
                         archive.writestr(f'{folder}/test_questions.csv', batch_row_csv_bytes(app_ctx, row, export_type='test'))
-                except Exception as error:
-                    archive.writestr(f'{folder}/error.txt', str(error))
+                except Exception:
+                    app_ctx.logger.exception('Could not export batch %s row %s', batch_id, row_id)
+                    archive.writestr(f'{folder}/error.txt', 'Could not export this row. Please try again.')
         archive_size = archive_file.tell()
         archive_file.seek(0)
         response = app_ctx.send_file(

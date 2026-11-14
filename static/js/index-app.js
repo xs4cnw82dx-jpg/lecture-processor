@@ -30,6 +30,7 @@ const authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth,
 const analyticsUtils = window.LectureProcessorIndexAnalytics || {};
 const markdownUtils = window.LectureProcessorMarkdown || {};
 const uxUtils = window.LectureProcessorUx || {};
+const creditUtils = window.LectureProcessorCreditUtils || {};
 const downloadUtils = window.LectureProcessorDownload || {};
 const topbarUtils = window.LectureProcessorTopbar || {};
 const progressUtils = window.LectureProcessorStudyProgressUtils || {};
@@ -105,6 +106,8 @@ let currentUser = null;
 let unverifiedEmailUser = null;
 const AUTH_RETURN_STORAGE_KEY = 'lectureProcessorAuthReturnUrl';
 let userCredits = null;
+let publicCreditConfig = null;
+let creationProfileRevision = 0;
 let idToken = null;
 let currentUserIsAdmin = false;
 let authStateResolved = Boolean(auth && auth.currentUser);
@@ -1269,48 +1272,116 @@ async function signOut() {
         captureClientError(e, 'fetch_user_data');
     }
 }
-async function fetchUserData() {
+async function fetchUserData(options = {}) {
     if (!currentUser) return;
     const session = authClient.captureSession();
+    const revision = ++creationProfileRevision;
     try {
-        const r = await authenticatedFetch('/api/auth/user');
-        if (!session.isCurrent()) return;
-        if (!r.ok) {
-            if (r.status === 401 || r.status === 403) {
-                currentUserIsAdmin = false;
-                userPreferences = null;
-                closeLanguageOnboarding();
-                if (adminDashboardBtn) setHidden(adminDashboardBtn, true);
-                userProfileLoaded = false;
-            }
-            return;
-        }
-        const d = await r.json();
-        if (!session.isCurrent()) return;
-        userCredits = d.credits || {};
-        userCredits.unlimited = d.unlimited_credits || userCredits.unlimited || {};
+        const shell = window.LectureProcessorShell;
+        if (!shell || !shell.refreshCreditSnapshot) throw new Error('Credits are unavailable. Please try again.');
+        const result = await shell.refreshCreditSnapshot(options);
+        if (!session.isCurrent() || revision !== creationProfileRevision || result.uid !== currentUser.uid) return;
+        const d = result.profile;
+        userCredits = result.snapshot.scheme === 1 ? { ...d.credits, unlimited: result.snapshot.unlimited } : null;
         userTotalProcessed = Number(d.total_processed || 0);
         userHasCreatedStudyPack = Boolean(d.has_created_study_pack || userTotalProcessed > 0);
         userProfileLoaded = true;
         currentUserIsAdmin = Boolean(d.is_admin);
         userPreferences = (d.preferences && typeof d.preferences === 'object') ? d.preferences : null;
         if (adminDashboardBtn) setHidden(adminDashboardBtn, !currentUserIsAdmin);
-        if (userPreferences) {
-            applyPreferencesToOutputLanguage(userPreferences, { forceOnboardingOpen: true });
-        }
+        if (userPreferences) applyPreferencesToOutputLanguage(userPreferences, { forceOnboardingOpen: true });
         updateCreditsDisplay();
-        // Study statistics are independent of the profile and admin access.
         void fetchStudyProgressSummary();
         refreshStudyHeaderMetrics();
         updateQuickstartVisibility();
-    } catch (e) {
-        if (!session.isCurrent()) return;
-        console.error(e);
+    } catch (error) {
+        if (!session.isCurrent() || revision !== creationProfileRevision) return;
         userProfileLoaded = false;
+        if (error.status === 401 || error.status === 403) {
+            currentUserIsAdmin = false;
+            userPreferences = null;
+            closeLanguageOnboarding();
+            if (adminDashboardBtn) setHidden(adminDashboardBtn, true);
+        }
+        updateModeCreditDisplay();
+        updateProcessButton();
     }
 }
+function creationCreditText(message, params = {}) {
+    if (window.LectureI18n) return window.LectureI18n.t(message, params);
+    return message.replace(/\{(\w+)\}/g, (_match, key) => String(params[key] ?? ''));
+}
+function creationCreditState() {
+    const shell = window.LectureProcessorShell;
+    const value = shell && shell.getCreditState ? shell.getCreditState() : null;
+    return value && currentUser && value.uid === currentUser.uid ? value : null;
+}
+function creationCreditSnapshot() {
+    const state = creationCreditState();
+    if (state && state.snapshot) return state.snapshot;
+    return publicCreditConfig && publicCreditConfig.scheme === 2
+        ? { scheme: 2, balance: 0, categories: null, unlimited: {}, costs: publicCreditConfig.costs } : null;
+}
+function usesUnifiedCreationCredits() {
+    return creationCreditSnapshot()?.scheme === 2;
+}
+function usesLegacyCreationCredits() {
+    const snapshot = creationCreditSnapshot();
+    return snapshot ? snapshot.scheme === 1 : publicCreditConfig?.scheme === 1;
+}
+function creationCreditQuote() {
+    const snapshot = creationCreditSnapshot();
+    if (!snapshot || snapshot.scheme !== 2 || !creditUtils.quote) return null;
+    const components = [{ action: modeConfig[currentMode].creditAction, units: 1 }];
+    if (currentMode === 'interview' && selectedInterviewFeatures.length) {
+        components.push({ action: 'interview_extra', units: selectedInterviewFeatures.length });
+    }
+    return creditUtils.quote(snapshot, components);
+}
+function creationCreditStatus() {
+    const state = creationCreditState();
+    const quote = creationCreditQuote();
+    if (!state || state.status === 'loading') return creationCreditText('Checking credits…');
+    if (state.status !== 'ready' || state.source !== 'server' || !quote) {
+        return creationCreditText('Credits are unavailable. Please try again.');
+    }
+    return quote.sufficient
+        ? creationCreditText('{credits} available', { credits: creditUtils.formatCredits(quote.available) })
+        : creditUtils.formatInsufficient({ needed: quote.needed, available: quote.available });
+}
+function updateSignupCreditGrant() {
+    const signup = document.getElementById('signup-credit-grant');
+    if (!signup) return;
+    signup.textContent = publicCreditConfig?.scheme === 2 && publicCreditConfig.freeSignupCredits !== null
+        ? creationCreditText('Get started with {credits}', { credits: creditUtils.formatCredits(publicCreditConfig.freeSignupCredits) })
+        : publicCreditConfig?.scheme === 1
+            ? creationCreditText('Get started with 1 free lecture credit')
+            : creationCreditText('Create your study account');
+}
+async function loadCreationPublicCredits() {
+    try {
+        const response = await fetch('/api/config');
+        if (!response.ok) return;
+        publicCreditConfig = creditUtils.parsePublicConfig(await response.json());
+        updateSignupCreditGrant();
+        updateInterviewOptionsUI();
+    } catch (_) { /* Keep account quotes independent of public pricing availability. */ }
+}
 function updateCreditsDisplay() {
-    if (!userCredits) return;
+    const snapshot = creationCreditState()?.snapshot;
+    if (snapshot && snapshot.scheme === 1) {
+        userCredits = { lecture_standard: snapshot.categories.lecture, lecture_extended: 0,
+            slides: snapshot.categories.slides, interview_short: snapshot.categories.interview,
+            interview_medium: 0, interview_long: 0, unlimited: snapshot.unlimited };
+    }
+    if (usesUnifiedCreationCredits()) {
+        const snapshot = creationCreditSnapshot();
+        if (creditsCount) creditsCount.textContent = creditUtils.formatCredits(snapshot.balance);
+        updateInterviewOptionsUI();
+        refreshStudyHeaderMetrics();
+        return;
+    }
+    if (!userCredits) { updateInterviewOptionsUI(); return; }
     const lecture = userCredits.lecture_standard + userCredits.lecture_extended;
     const interview = userCredits.interview_short + userCredits.interview_medium + userCredits.interview_long;
     const total = lecture + userCredits.slides + interview;
@@ -1334,12 +1405,12 @@ function updateCreditsDisplay() {
     if (dropdownLectureCredits) dropdownLectureCredits.textContent = lectureLabel;
     if (dropdownSlidesCredits) dropdownSlidesCredits.textContent = slidesLabel;
     if (dropdownInterviewCredits) dropdownInterviewCredits.textContent = interviewLabel;
-    updateInterviewOptionAvailability();
-    updateModeCostSummary();
-    updateProcessButton();
+    updateInterviewOptionsUI();
     refreshStudyHeaderMetrics();
 }
 function getUnlimitedCredits() {
+    const snapshot = creationCreditSnapshot();
+    if (snapshot && snapshot.scheme === 2) return snapshot.unlimited;
     return (userCredits && userCredits.unlimited && typeof userCredits.unlimited === 'object') ? userCredits.unlimited : {};
 }
 function hasUnlimitedCredit(category) {
@@ -1381,11 +1452,16 @@ function setStudyPackTitleInvalid(invalid) {
 }
 function updateModeCostSummary() {
     if (!modeCostSummary) return;
-    modeCostSummary.textContent = '';
-    setHidden(modeCostSummary, true);
+    modeCostSummary.textContent = usesUnifiedCreationCredits() && currentUser ? creationCreditStatus() : '';
+    setHidden(modeCostSummary, !modeCostSummary.textContent);
 }
 function updateInterviewOptionAvailability() {
-    const slidesCredits = userCredits ? (hasUnlimitedCredit('slides') ? Number.POSITIVE_INFINITY : Number(userCredits.slides || 0)) : Number.POSITIVE_INFINITY;
+    if (usesUnifiedCreationCredits()) {
+        interviewOptionButtons.forEach(btn => { btn.disabled = false; btn.classList.remove('disabled'); btn.title = ''; btn.setAttribute('aria-disabled', 'false'); });
+        return;
+    }
+    const slidesCredits = creationCreditState()?.snapshot?.scheme === 1 && userCredits
+        ? (hasUnlimitedCredit('slides') ? Number.POSITIVE_INFINITY : Number(userCredits.slides || 0)) : Number.POSITIVE_INFINITY;
     const selectedCount = selectedInterviewFeatures.length;
     interviewOptionButtons.forEach(btn => {
         const feature = btn.dataset.feature;
@@ -1399,6 +1475,17 @@ function updateInterviewOptionAvailability() {
     });
 }
 function updateModeCreditDisplay() {
+    if (!creationCreditSnapshot() && publicCreditConfig?.scheme !== 1) {
+        modeCreditCost.textContent = creationCreditText('Credit cost unavailable.');
+        updateModeCostSummary();
+        return;
+    }
+    if (usesUnifiedCreationCredits()) {
+        const quote = creationCreditQuote();
+        modeCreditCost.textContent = quote ? creationCreditText('Uses {credits}.', { credits: creditUtils.formatCredits(quote.needed) }) : creationCreditText('Credit cost unavailable.');
+        updateModeCostSummary();
+        return;
+    }
     if (currentMode !== 'interview') {
         setSanitizedHtml(modeCreditCost, modeConfig[currentMode].creditCost);
         updateModeCostSummary();
@@ -1468,7 +1555,8 @@ function setAmountSelection(kind, value) {
     }
 }
 function updateInterviewOptionsUI() {
-    if (userCredits) {
+    const legacyCredits = creationCreditState()?.snapshot?.scheme === 1 ? userCredits : null;
+    if (legacyCredits) {
         const maxAffordable = hasUnlimitedCredit('slides') ? 2 : Math.max(0, Number(userCredits.slides || 0));
         if (selectedInterviewFeatures.length > maxAffordable) {
             selectedInterviewFeatures = selectedInterviewFeatures.slice(0, maxAffordable);
@@ -1480,10 +1568,17 @@ function updateInterviewOptionsUI() {
         btn.classList.toggle('active', active);
         btn.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
-    const slidesCredits = userCredits ? (hasUnlimitedCredit('slides') ? Number.POSITIVE_INFINITY : Number(userCredits.slides || 0)) : 0;
-    if (!selectedInterviewFeatures.length && userCredits && hasUnlimitedCredit('slides')) {
+    const slidesCredits = legacyCredits ? (hasUnlimitedCredit('slides') ? Number.POSITIVE_INFINITY : Number(legacyCredits.slides || 0)) : 0;
+    if (usesUnifiedCreationCredits()) {
+        const extra = creditUtils.quote(creationCreditSnapshot(), [{ action: 'interview_extra', units: selectedInterviewFeatures.length || 1 }]);
+        interviewExtraNote.textContent = extra
+            ? creationCreditText(selectedInterviewFeatures.length ? 'Selected extras: {credits}.' : 'Optional extras: {credits} each.', { credits: creditUtils.formatCredits(extra.needed) })
+            : creationCreditText('Credit cost unavailable.');
+    } else if (!usesLegacyCreationCredits()) {
+        interviewExtraNote.textContent = creationCreditText('Credit cost unavailable.');
+    } else if (!selectedInterviewFeatures.length && legacyCredits && hasUnlimitedCredit('slides')) {
         interviewExtraNote.textContent = 'No extras selected. Text extraction extras are available with unlimited credits.';
-    } else if (!selectedInterviewFeatures.length && userCredits && slidesCredits <= 0) {
+    } else if (!selectedInterviewFeatures.length && legacyCredits && slidesCredits <= 0) {
         interviewExtraNote.textContent = 'No extras selected. You currently have 0 text extraction credits, so extras are disabled.';
     } else if (!selectedInterviewFeatures.length) {
         interviewExtraNote.textContent = 'No extras selected. Select one or both options (1 text extraction credit per option).';
@@ -2673,6 +2768,13 @@ function startUploadCooldown(seconds) {
     }, 1000);
 }
 function hasEnoughCredits() {
+    const current = creationCreditState();
+    if (!current || current.status !== 'ready' || current.source !== 'server') return false;
+    if (usesUnifiedCreationCredits()) {
+        const state = creationCreditState();
+        const quote = creationCreditQuote();
+        return Boolean(state && state.status === 'ready' && state.source === 'server' && quote && quote.sufficient);
+    }
     if (!userCredits) return false;
     const config = modeConfig[currentMode];
     if (config.creditType === 'lecture') return hasUnlimitedCredit('lecture') || (userCredits.lecture_standard + userCredits.lecture_extended) > 0;
@@ -2793,7 +2895,9 @@ function updateUploadEstimatePanel() {
         uploadEstimateMeta.textContent = `Requires PDF or PPTX (max 50 MB). Current upload: ${totalMb.toFixed(1)} MB.`;
     } else {
         const extras = getInterviewExtraCost();
-        uploadEstimateMeta.textContent = `Requires audio only (max 500 MB). Selected extras: ${extras} (${extras} text extraction credits). Current upload: ${totalMb.toFixed(1)} MB.`;
+        uploadEstimateMeta.textContent = !usesLegacyCreationCredits()
+            ? creationCreditText('Requires audio only (max 500 MB). Selected extras: {count}. Current upload: {size} MB.', { count: extras, size: totalMb.toFixed(1) })
+            : `Requires audio only (max 500 MB). Selected extras: ${extras} (${extras} text extraction credits). Current upload: ${totalMb.toFixed(1)} MB.`;
     }
 }
 function setProcessButtonAvailability(disabled, reason) {
@@ -2812,6 +2916,10 @@ function updateMobileProcessSummary(options = {}) {
     const hasCredits = options.hasCredits !== false;
     const pdfReady = !config.needsPdf || Boolean(pdfFile);
     const audioReady = !config.needsAudio || Boolean(audioFile) || hasReadyImportedAudioToken();
+    if (usesUnifiedCreationCredits() && currentUser && !hasCredits && pdfReady && audioReady) {
+        mobileProcessSummary.textContent = creationCreditStatus();
+        return;
+    }
     if (processingUi && typeof processingUi.getProcessReadinessSummary === 'function') {
         mobileProcessSummary.textContent = processingUi.getProcessReadinessSummary({
             signedIn: Boolean(currentUser),
@@ -2872,14 +2980,16 @@ function updateProcessButton() {
     } else if (!titleReady) {
         disabledReason = config.missingTitleMessage || 'Add a title or name before processing.';
     } else if (!hasCredits) {
-        disabledReason = currentMode === 'interview' && userCredits && getTotalInterviewCredits() > 0 && !hasUnlimitedCredit('slides') && userCredits.slides < getInterviewExtraCost()
+        disabledReason = usesUnifiedCreationCredits() || creationCreditState()?.status !== 'ready' ? creationCreditStatus() : currentMode === 'interview' && userCredits && getTotalInterviewCredits() > 0 && !hasUnlimitedCredit('slides') && userCredits.slides < getInterviewExtraCost()
             ? 'Not enough text extraction credits for the selected interview extras.'
             : 'Not enough credits for this processing mode.';
     }
     setProcessButtonAvailability(!(pdfReady && audioReady && titleReady && hasCredits) || resultsLocked, disabledReason);
     processButton.querySelector('span').textContent = config.buttonText;
     if (currentUser && !hasCredits && !resultsLocked) {
-        if (currentMode === 'interview' && getTotalInterviewCredits() > 0 && !hasUnlimitedCredit('slides') && userCredits.slides < getInterviewExtraCost()) {
+        if (usesUnifiedCreationCredits() || creationCreditState()?.status !== 'ready') {
+            noCreditsWarning.textContent = creationCreditStatus();
+        } else if (currentMode === 'interview' && getTotalInterviewCredits() > 0 && !hasUnlimitedCredit('slides') && userCredits.slides < getInterviewExtraCost()) {
             setSanitizedHtml(noCreditsWarning, "You don't have enough text extraction credits for the selected interview extras. <a href=\"#\" id=\"buy-credits-link-inline\">Buy more credits</a>");
         } else {
             setSanitizedHtml(noCreditsWarning, "You don't have enough credits. <a href=\"#\" id=\"buy-credits-link-inline\">Buy more credits</a>");
@@ -3556,6 +3666,7 @@ async function pollStatus() {
     }
 }
 async function processFiles() {
+    const submissionSession = authClient.captureSession();
     if (!currentUser) { showAuthModal('signin'); return; }
     if (resultsLocked) {
         showToast('Click "Process Another File" to start a new generation.', 'info');
@@ -3579,6 +3690,11 @@ async function processFiles() {
         if (studyPackTitleInput && typeof studyPackTitleInput.focus === 'function') {
             studyPackTitleInput.focus();
         }
+        return;
+    }
+    if (usesUnifiedCreationCredits() && !hasEnoughCredits()) {
+        showToast(creationCreditStatus(), 'error');
+        updateProcessButton();
         return;
     }
     const fd = new FormData();
@@ -3629,7 +3745,9 @@ async function processFiles() {
     });
     try {
         const r = await authenticatedFetch('/upload', { method: 'POST', body: fd });
+        if (!submissionSession.isCurrent()) return;
         const d = await r.json();
+        if (!submissionSession.isCurrent()) return;
         if (d.error) {
             trackEvent('processing_failed', { reason: d.error || 'upload_failed' });
             if (typeof d.error === 'string' && d.error.toLowerCase().includes('imported audio token')) {
@@ -3637,7 +3755,11 @@ async function processFiles() {
                 syncAudioInfoUI();
             }
             if (r.status === 401) showAuthModal();
-            else if (r.status === 402) { showError('No credits remaining. Please purchase more credits.'); noCreditsWarning.classList.add('visible'); }
+            else if (r.status === 402) {
+                showError(creditUtils.formatInsufficient(d) || d.error || 'No credits remaining. Please purchase more credits.');
+                noCreditsWarning.classList.add('visible');
+                void fetchUserData({ force: true });
+            }
             else if (r.status === 429) {
                 const retryAfter = getRetryAfterSeconds(r, d);
                 const retryMsg = retryAfter ? `${d.error} Try again in ${formatRetryDelay(retryAfter)}.` : d.error;
@@ -3670,6 +3792,7 @@ async function processFiles() {
         });
         startPolling();
     } catch (e) {
+        if (!submissionSession.isCurrent()) return;
         captureClientError(e, 'process_files');
         showError('Failed to upload files. Please try again.');
         resetProcessingSession({ keepProgressVisible: true, keepStatusMessage: true });
@@ -4894,7 +5017,8 @@ interviewOptionButtons.forEach(btn => {
         if (selectedInterviewFeatures.includes(feature)) {
             selectedInterviewFeatures = selectedInterviewFeatures.filter(item => item !== feature);
         } else {
-            const maxAffordable = userCredits ? (hasUnlimitedCredit('slides') ? 2 : Math.max(0, Number(userCredits.slides || 0))) : 2;
+            const maxAffordable = creationCreditState()?.snapshot?.scheme === 1 && userCredits
+                ? (hasUnlimitedCredit('slides') ? 2 : Math.max(0, Number(userCredits.slides || 0))) : 2;
             if (selectedInterviewFeatures.length >= maxAffordable) {
                 showToast('Not enough text extraction credits for more interview extras.', 'info', 2600);
                 updateInterviewOptionsUI();
@@ -5071,3 +5195,13 @@ switchMode(forcedMode || 'lecture-notes');
 maybeOpenAuthModalFromQuery();
 resetResultsState();
 updateHeaderNavActiveState();
+
+window.addEventListener('lp:credits-changed', () => {
+    if (!currentUser) return;
+    updateCreditsDisplay();
+});
+window.addEventListener('lp:language-changed', () => {
+    updateInterviewOptionsUI();
+    updateSignupCreditGrant();
+});
+void loadCreationPublicCredits();

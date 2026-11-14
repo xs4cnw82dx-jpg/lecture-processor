@@ -64,7 +64,7 @@
                     <div class="label">Purchases in window</div>
                     <div class="value" id="m-purchases">0</div>
                 </article><article class="metric">
-                    <div class="label">Credits processed</div>
+                    <div class="label">Processing jobs</div>
                     <div class="value" id="m-processed">0</div>
                     <div class="sub">All-time</div>
                 </article><article class="metric">
@@ -422,7 +422,7 @@
                     <div class="analyzer-head">
                         <div>
                             <h2>User Credits</h2>
-                            <p class="analyzer-intro">Find an existing account, grant category credits, or turn on unlimited access.</p>
+                            <p class="analyzer-intro">Find an existing account, grant credits, or change category-specific unlimited access.</p>
                         </div>
                         <div class="actions">
                             <button class="btn" id="admin-credit-refresh-btn" type="button">Refresh grants</button>
@@ -453,7 +453,11 @@
                             Configured admin account: unlimited access is automatic from server settings.
                         </div>
 
-                        <div class="admin-credit-summary-grid">
+                        <div class="admin-credit-summary-grid" id="admin-credit-unified-summary" hidden>
+                            <article class="admin-credit-summary-card"><span>Credit balance</span><strong id="admin-credit-summary-total">—</strong></article>
+                        </div>
+                        <p id="admin-credit-legacy-summary" class="admin-credit-hint" hidden></p>
+                        <div class="admin-credit-summary-grid" id="admin-credit-legacy-balances">
                             <article class="admin-credit-summary-card">
                                 <span>Lecture Notes</span>
                                 <strong id="admin-credit-summary-lecture">0</strong>
@@ -471,7 +475,11 @@
                         <div class="admin-credit-forms-grid">
                             <form class="admin-credit-form" id="admin-credit-grant-form">
                                 <h3>Grant Credits</h3>
-                                <div class="admin-credit-form-grid">
+                                <label class="calculator-control" id="admin-credit-unified-grant" hidden>
+                                    <span>Credits to grant</span>
+                                    <input id="admin-credit-grant-amount" class="calculator-input" type="number" min="0" max="10000" step="1" value="0">
+                                </label>
+                                <div class="admin-credit-form-grid" id="admin-credit-legacy-grant">
                                     <label class="calculator-control">
                                         <span>Lecture Notes</span>
                                         <input id="admin-credit-grant-lecture" class="calculator-input" type="number" min="0" max="10000" step="1" value="0">
@@ -553,6 +561,7 @@
     <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/display-format-utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
     <script src="{{ url_for('static', filename=admin_js_asset or 'js/admin.js') }}"></script>
 </body>

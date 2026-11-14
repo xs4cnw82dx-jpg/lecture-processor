@@ -5,6 +5,17 @@
 .settings-header h1 { font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -.045em; margin: 0 0 10px; line-height: 1.15; }
 .settings-header > p:last-child { color: var(--theme-muted, #65718a); line-height: 1.65; margin: 0; }
 .settings-controls { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 22px; }
+.settings-credits { margin-bottom: 22px; }
+.settings-credit-summary { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.settings-credit-balance { margin: 10px 0 0; font-size: clamp(1.7rem, 4vw, 2.2rem); font-weight: 750; letter-spacing: -.04em; line-height: 1.2; }
+.settings-buy-credits { flex-shrink: 0; padding: 11px 17px; background: var(--theme-accent-ink, #2558d9); color: var(--theme-surface, #fff); border-radius: 10px; font-weight: 700; text-decoration: none; }
+.settings-credit-detail, .settings-credit-access, .settings-credit-refresh { color: var(--theme-muted, #65718a); font-size: .87rem; line-height: 1.6; }
+.settings-credit-detail { margin: 18px 0 0; }
+.settings-credit-access { padding-left: 20px; margin-bottom: 0; }
+.settings-credit-refresh { display: flex; align-items: center; gap: 12px; }
+.settings-credit-refresh p { margin: 10px 0 0; }
+.settings-credit-refresh button { font: inherit; color: var(--theme-accent-ink, #2558d9); border: 0; background: transparent; padding: 8px 0; cursor: pointer; text-decoration: underline; }
+.settings-buy-credits:focus-visible, .settings-credit-refresh button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .settings-controls > legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .settings-section { border: 1px solid var(--theme-line, #dfe5ef); background: var(--theme-surface, #fff); border-radius: 18px; padding: 26px 28px; box-shadow: 0 8px 24px rgb(20 35 60 / 4%); }
 .settings-section-heading { display: flex; gap: 14px; align-items: center; margin-bottom: 26px; }
@@ -52,5 +63,6 @@
   .settings-language-row { align-items: stretch; flex-direction: column; }
   .settings-language-row > .app-select { width: 100%; }
   .settings-auth { align-items: flex-start; }
+  .settings-credit-summary { align-items: flex-start; flex-wrap: wrap; }
 }
 @media (prefers-reduced-motion: reduce) { .settings-switch-track, .settings-switch-track > span { transition: none; } }

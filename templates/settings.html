@@ -24,6 +24,15 @@
         <span>Sign in to save your preferences across devices.</span>
         <a href="/lecture-notes?auth=signin&amp;next=/settings">Sign in</a>
       </div>
+      <section class="settings-section settings-credits" aria-labelledby="settings-credits-title">
+        <div class="settings-credit-summary">
+          <div><h2 id="settings-credits-title">Your credits</h2><p id="settings-credit-balance" class="settings-credit-balance" aria-live="polite">Loading credits</p></div>
+          <a class="settings-buy-credits" id="settings-buy-credits" href="/buy_credits">Buy credits</a>
+        </div>
+        <p id="settings-credit-detail" class="settings-credit-detail"></p>
+        <ul id="settings-credit-access" class="settings-credit-access" hidden></ul>
+        <div class="settings-credit-refresh"><p id="settings-credit-status" role="status"></p><button type="button" id="settings-credit-retry" hidden>Refresh balance</button></div>
+      </section>
       <fieldset class="settings-controls" id="settings-controls" disabled>
         <legend class="sr-only">Your preferences</legend>
         <section class="settings-section" aria-labelledby="appearance-title">

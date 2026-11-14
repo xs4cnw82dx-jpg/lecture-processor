@@ -75,6 +75,7 @@
             <div>
               <p class="voice-recorder-title">Record in browser</p>
               <p class="voice-recorder-copy">Keep this page open while recording. When you stop, we’ll turn your words into a transcript.</p>
+              <p class="voice-recorder-copy" id="voice-credit-cost" role="status" aria-live="polite">Recording and saving on this device are free. Checking transcription cost…</p>
             </div>
             <div class="voice-time" id="voice-time">00:00</div>
           </div>
@@ -182,8 +183,9 @@
             <div>
               <strong id="voice-storage-count">0 notes cached</strong>
               <span id="voice-storage-size">0 MB offline</span>
+              <span id="voice-pending-credit-cost" role="status" aria-live="polite" hidden></span>
             </div>
-            <button type="button" class="voice-btn voice-btn-secondary" id="voice-sync-all-btn">Sync All</button>
+            <button type="button" class="voice-btn voice-btn-secondary" id="voice-sync-all-btn" aria-describedby="voice-pending-credit-cost">Sync All</button>
           </div>
         </div>
       </section>

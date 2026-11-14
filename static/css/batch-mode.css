@@ -1118,3 +1118,6 @@ th {
 @media (prefers-reduced-motion: reduce) { .batch-page * { transition-duration: .01ms !important; animation-duration: .01ms !important; } }
 
 .row-url-import > .row-url-head { margin-top: 16px; }
+
+.row-credit-cost { margin: 8px 0 16px; font-weight: 600; }
+.batch-credit-summary { flex: 1 1 16rem; margin: 0; color: var(--theme-ink, #17233c); font-weight: 600; }

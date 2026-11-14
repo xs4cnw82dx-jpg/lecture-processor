@@ -25,6 +25,7 @@ def get_config(app_ctx):
                 'price_cents': bundle['price_cents'],
                 'currency': bundle['currency'],
                 'credits': bundle['credits'],
+                **({'badge': bundle.get('badge', '')} if billing_policy.is_unified_enabled(app_ctx) else {}),
             }
             for bundle_id, bundle in _checkout_bundles(app_ctx).items()
         }
@@ -320,6 +321,9 @@ def get_purchase_history(app_ctx, request):
                 'payment_status': p.get('payment_status', ''),
                 'fulfilled_at': p.get('fulfilled_at', 0),
                 'created_at': p.get('created_at', 0),
+                **({'credit_scheme': 2} if p.get('credit_scheme') == 2 else {}),
+                **({'legacy_credits': p['legacy_credits']}
+                   if p.get('credit_scheme') == 2 and isinstance(p.get('legacy_credits'), dict) else {}),
             })
         return app_ctx.jsonify({'purchases': purchases})
     except Exception as e:

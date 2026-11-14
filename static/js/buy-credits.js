@@ -6,6 +6,9 @@
   var authUtils = window.LectureProcessorAuth || {};
   var authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
   var displayFormatUtils = window.LectureProcessorDisplayFormatUtils || {};
+  var creditUtils = window.LectureProcessorCreditUtils || {};
+  var pricingGrid = document.getElementById('credit-bundles');
+  var unifiedCatalog = null;
 
   var toast = document.getElementById('buy-credits-toast');
   var authPanel = document.getElementById('buy-credits-auth-panel');
@@ -24,6 +27,68 @@
   var authStateResolved = !auth || !!auth.currentUser;
   var accountRevision = 0;
   var accountUid = getCurrentUser() ? getCurrentUser().uid : null;
+
+  function t(message, params) {
+    if (window.LectureI18n && window.LectureI18n.t) return window.LectureI18n.t(message, params);
+    return message.replace(/\{(\w+)\}/g, function (match, key) { return params && params[key] !== undefined ? String(params[key]) : match; });
+  }
+
+  function formatCredits(value) {
+    return creditUtils.formatCredits ? creditUtils.formatCredits(value) : value + ' credit' + (value === 1 ? '' : 's');
+  }
+
+  function renderUnifiedCatalog() {
+    if (!pricingGrid || !unifiedCatalog) return;
+    pricingGrid.replaceChildren();
+    pricingGrid.dataset.creditScheme = '2';
+    unifiedCatalog.forEach(function (bundle) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'bundle-buy-btn unified-bundle' + (bundle.badge === 'best_value' ? ' featured' : '');
+      Object.assign(button.dataset, { bundleId: bundle.id, bundleName: formatCredits(bundle.credits), credits: String(bundle.credits), priceCents: String(bundle.price_cents), currency: bundle.currency });
+      [['badge', t(bundle.badge === 'best_value' ? 'Best value' : bundle.badge === 'semester' ? 'Semester' : 'Flexible study')],
+        ['credits', formatCredits(bundle.credits)], ['price', formatPrice(bundle.price_cents, bundle.currency)],
+        ['meta', t('One balance for all your study tools.')], ['cta', t('Choose bundle') + ' →']].forEach(function (part) {
+        var span = document.createElement('span');
+        span.className = part[0];
+        span.textContent = part[1];
+        button.appendChild(span);
+      });
+      button.setAttribute('aria-label', t('Buy {bundle} for {price}', { bundle: formatCredits(bundle.credits), price: formatPrice(bundle.price_cents, bundle.currency) }));
+      pricingGrid.appendChild(button);
+    });
+    document.getElementById('buy-credits-intro').textContent = t('Choose a bundle for all your study tools. Your credit balance is available in the header.');
+    document.getElementById('legacy-credit-guide').hidden = true;
+    setBundleButtons(checkoutBusy);
+  }
+
+  async function loadPublicPricing() {
+    try {
+      var response = await fetch('/api/config');
+      if (!response.ok) return;
+      var payload = await response.json();
+      var config = creditUtils.parsePublicConfig ? creditUtils.parsePublicConfig(payload) : null;
+      if (!config || config.scheme !== 2) return;
+      var bundles = Object.entries(payload.bundles || {}).filter(function (entry) {
+        var bundle = entry[1];
+        return bundle && Number.isSafeInteger(bundle.credits) && bundle.credits > 0 && Number.isSafeInteger(bundle.price_cents) && bundle.price_cents >= 0 && typeof bundle.currency === 'string';
+      }).map(function (entry) { return Object.assign({}, entry[1], { id: entry[0] }); });
+      if (bundles.length) {
+        unifiedCatalog = bundles;
+        renderUnifiedCatalog();
+      }
+      var guide = document.getElementById('credit-cost-guide');
+      if (!guide) return;
+      guide.hidden = !config.costs;
+      if (config.costs) guide.querySelectorAll('[data-credit-action]').forEach(function (row) {
+        var rates = config.costs[row.dataset.creditAction];
+        row.hidden = !rates;
+        if (!rates) return;
+        row.querySelector('[data-credit-rate="instant"]').textContent = String(rates.instant);
+        row.querySelector('[data-credit-rate="overnight"]').textContent = rates.overnight === null ? '—' : String(rates.overnight);
+      });
+    } catch (_) { /* The server-rendered catalog remains available if config cannot load. */ }
+  }
 
   function getCurrentUser() {
     return auth && auth.currentUser ? auth.currentUser : null;
@@ -190,6 +255,13 @@
       var title = document.createElement('div');
       title.className = 'title';
       title.textContent = String(purchase.bundle_name || 'Credit bundle');
+      var detail = purchaseCreditDetail(purchase);
+      if (detail) {
+        var amount = document.createElement('div');
+        amount.className = 'purchase-credit-detail';
+        amount.textContent = detail;
+        title.appendChild(amount);
+      }
 
       var meta = document.createElement('div');
       meta.className = 'meta';
@@ -199,6 +271,17 @@
       row.appendChild(meta);
       historyList.appendChild(row);
     });
+  }
+
+  function purchaseCreditDetail(purchase) {
+    var parts = [];
+    if (Number.isSafeInteger(purchase.credits) && purchase.credits >= 0) parts.push(formatCredits(purchase.credits));
+    var historical = purchase.legacy_credits || (typeof purchase.credits === 'object' ? purchase.credits : null);
+    var labels = { lecture_credits_standard: 'Lecture Notes (standard)', lecture_credits_extended: 'Lecture Notes (extended)', slides_credits: 'Text Extraction', interview_credits_short: 'Interview (short)', interview_credits_medium: 'Interview (medium)', interview_credits_long: 'Interview (long)' };
+    if (historical) Object.keys(labels).forEach(function (field) {
+      if (Number(historical[field]) > 0) parts.push(t(labels[field]) + ': ' + Number(historical[field]));
+    });
+    return parts.join(' · ');
   }
 
   async function loadPurchaseHistory() {
@@ -330,10 +413,9 @@
     purchaseBundle(bundleId);
   }
 
-  document.querySelectorAll('.bundle-buy-btn').forEach(function (button) {
-    button.addEventListener('click', function () {
-      purchaseBundle(button.dataset.bundleId || '');
-    });
+  if (pricingGrid) pricingGrid.addEventListener('click', function (event) {
+    var button = event.target.closest('.bundle-buy-btn');
+    if (button && pricingGrid.contains(button) && !button.disabled) purchaseBundle(button.dataset.bundleId || '');
   });
 
   function resetCheckoutNavigation() {
@@ -352,9 +434,11 @@
     if (displayFormatUtils && typeof displayFormatUtils.applyPricingCatalog === 'function') {
       displayFormatUtils.applyPricingCatalog(document);
     }
+    if (unifiedCatalog) renderUnifiedCatalog();
     if (renderedPurchases) renderPurchaseHistory(renderedPurchases);
   }
   refreshPriceLocale();
+  loadPublicPricing();
   window.addEventListener('lp:language-changed', refreshPriceLocale);
 
   if (refreshHistoryBtn) {

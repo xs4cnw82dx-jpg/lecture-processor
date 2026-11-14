@@ -22,7 +22,19 @@
 
 {% macro render_pricing_catalog(pricing_catalog, variant='modal') -%}
   {% for category in pricing_catalog %}
-    {% if variant == 'page' %}
+    {% if variant == 'page' and category.key == 'unified' %}
+      {% for bundle in category.bundles %}
+        <button type="button" class="bundle-buy-btn unified-bundle{% if bundle.featured %} featured{% endif %}"
+          data-bundle-id="{{ bundle.id }}" data-bundle-name="{{ bundle.name }}" data-credits="{{ bundle.credits_total }}"
+          data-price-cents="{{ bundle.price_cents }}" data-currency="{{ bundle.currency }}" aria-label="Buy {{ bundle.name }}">
+          <span class="badge">{% if bundle.featured %}Best value{% elif bundle.badge == 'semester' %}Semester{% else %}Flexible study{% endif %}</span>
+          <span class="credits">{{ bundle.credits_label }}</span>
+          <span class="price" data-price-cents="{{ bundle.price_cents }}" data-currency="{{ bundle.currency }}"></span>
+          <span class="meta">One balance for all your study tools.</span>
+          <span class="cta">Choose bundle <span aria-hidden="true">→</span></span>
+        </button>
+      {% endfor %}
+    {% elif variant == 'page' %}
       <div class="category">
         <div class="credit-category-heading"><span class="credit-category-icon">{{ render_pricing_icon(category.icon) }}</span><h2>{% if category.key == 'slides' %}Slides extraction / add-ons{% else %}{{ category.title }}{% endif %}</h2></div>
         <p class="credit-category-description">{% if category.icon == 'notes' %}One lecture credit combines your slides and recording, with optional flashcards and practice questions.{% elif category.icon == 'slides' %}For slides-only extraction, reader tools, Voice Notes study tools, or interview extras.{% else %}One interview credit transcribes a recording. Optional summaries and sections use add-on credits.{% endif %}</p>

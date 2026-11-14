@@ -4,6 +4,8 @@
   var bootstrap = window.LectureProcessorBootstrap || {};
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
   var authUtils = window.LectureProcessorAuth || {};
+  var creditUtils = window.LectureProcessorCreditUtils || {};
+  var creditShell = window.LectureProcessorShell || {};
   var authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
   var downloadUtils = window.LectureProcessorDownload || {};
 
@@ -44,6 +46,9 @@
   var downloadBtn = document.getElementById('transcriber-download-docx-btn');
   var toastEl = document.getElementById('transcriber-toast');
 
+  window.addEventListener('lp:credits-changed', updateCreditNote);
+  window.addEventListener('lp:language-changed', updateCreditNote);
+
   var currentUser = auth.currentUser || null;
   var authStateResolved = !!currentUser;
   var selectedFile = null;
@@ -51,13 +56,11 @@
   var lastOutput = '';
   var currentJobId = '';
   var pollTimer = null;
-  var interviewCredits = null;
-  var interviewUnlimited = false;
   var toastTimer = null;
   var languageUserTouched = false;
 
   function getSignedInUser() {
-    return currentUser || auth.currentUser || null;
+    return auth ? auth.currentUser : currentUser;
   }
 
   function hasSignedInSession() {
@@ -85,13 +88,50 @@
     statusEl.className = type ? ('status ' + type) : 'status';
   }
 
+  function creditText(message, params) {
+    if (window.LectureI18n && typeof window.LectureI18n.t === 'function') return window.LectureI18n.t(message, params);
+    return message.replace(/\{(\w+)\}/g, function (match, key) { return params && params[key] !== undefined ? String(params[key]) : match; });
+  }
+
+  function currentCreditState() {
+    var user = getSignedInUser();
+    var state = creditShell.getCreditState ? creditShell.getCreditState() : null;
+    return user && state && state.uid === user.uid ? state : null;
+  }
+
   function updateCreditNote() {
     if (!creditNote) return;
-    if (interviewCredits === null || interviewCredits === undefined) {
-      creditNote.textContent = 'Interview credits: \u2014';
+    var state = currentCreditState();
+    var snapshot = state && state.snapshot;
+    if (!snapshot) {
+      creditNote.textContent = creditText(!getSignedInUser() ? 'Sign in to see your balance.' : (state && state.status === 'error' ? 'Credits unavailable' : 'Loading credits'));
       return;
     }
-    creditNote.textContent = 'Interview credits: ' + (interviewUnlimited ? 'Unlimited' : String(interviewCredits));
+    if (snapshot.scheme === 1) {
+      creditNote.textContent = creditText('Interview credits: {balance}', { balance: snapshot.unlimited.interview ? creditText('Unlimited') : String(snapshot.categories.interview) });
+      return;
+    }
+    var quote = creditUtils.quote(snapshot, [{ action: 'tools_transcription' }]);
+    var balance = creditUtils.formatCredits(snapshot.balance);
+    creditNote.textContent = !quote ? creditText('Cost unavailable. Your balance is {balance}.', { balance: balance })
+      : (quote.components[0].exempt ? creditText('No credits charged for this tool. Balance: {balance}', { balance: balance })
+        : creditText('Cost: {cost} · Balance: {balance}', { cost: creditUtils.formatCredits(quote.needed), balance: balance }));
+  }
+
+  async function checkCreditQuote() {
+    if (!creditShell.refreshCreditSnapshot) throw new Error(creditText('Could not check the cost. Please try again.'));
+    var state = currentCreditState();
+    if (!state || state.status !== 'ready' || state.source !== 'server') await creditShell.refreshCreditSnapshot();
+    state = currentCreditState();
+    if (!state || state.status !== 'ready' || state.source !== 'server') throw new Error(creditText('Could not check the cost. Please try again.'));
+    if (state.snapshot.scheme !== 2) return;
+    var quote = creditUtils.quote(state.snapshot, [{ action: 'tools_transcription' }]);
+    if (!quote) throw new Error(creditText('Could not check the cost. Please try again.'));
+    if (!quote.sufficient) throw new Error(creditUtils.formatInsufficient({ needed: quote.needed, available: quote.available }));
+  }
+
+  function creditError(payload, fallback) {
+    return (creditUtils.formatInsufficient && creditUtils.formatInsufficient(payload)) || String(payload.error || fallback);
   }
 
   function updateLanguageNote(label) {
@@ -277,11 +317,9 @@
     return fetch(path, Object.assign({}, opts, { headers: headers }));
   }
 
-  async function refreshUserState() {
+  async function refreshUserState(force) {
     var signedInUser = getSignedInUser();
     if (!signedInUser) {
-      interviewCredits = null;
-      interviewUnlimited = false;
       updateCreditNote();
       if (!languageUserTouched) {
         setOutputLanguage('english', '');
@@ -290,14 +328,12 @@
       }
       return;
     }
+    var session = authClient.captureSession();
     try {
-      var response = await authFetch('/api/auth/user');
-      if (!response.ok) return;
-      var payload = await response.json();
+      var result = await creditShell.refreshCreditSnapshot({ force: force === true });
+      if (!session.isCurrent()) return;
+      var payload = result.profile;
       var preferences = payload && payload.preferences ? payload.preferences : {};
-      var credits = payload && payload.credits ? payload.credits : {};
-      interviewCredits = Number(credits.interview_short || 0) + Number(credits.interview_medium || 0) + Number(credits.interview_long || 0);
-      interviewUnlimited = !!(payload && payload.unlimited_credits && payload.unlimited_credits.interview);
       updateCreditNote();
       if (!languageUserTouched) {
         setOutputLanguage(preferences.output_language || 'english', preferences.output_language_custom || '');
@@ -305,9 +341,7 @@
         updateLanguageNote(getLanguageLabel(outputLanguageInput ? outputLanguageInput.value : 'english', outputLanguageCustom ? outputLanguageCustom.value : ''));
       }
     } catch (_) {
-      interviewCredits = null;
-      interviewUnlimited = false;
-      updateCreditNote();
+      if (session.isCurrent()) updateCreditNote();
     }
   }
 
@@ -387,9 +421,9 @@
           schedulePoll(jobId, 1500);
           return;
         }
-        setStatus(String(payload.error || 'Transcription failed.'), 'error');
+        setStatus(creditError(payload, 'Transcription failed.'), 'error');
         finishRun();
-        await refreshUserState();
+        await refreshUserState(true);
         return;
       }
 
@@ -397,13 +431,13 @@
       if (status === 'complete') {
         applyCompleted(payload);
         finishRun();
-        await refreshUserState();
+        await refreshUserState(true);
         return;
       }
       if (status === 'error') {
         setStatus(String(payload.error || payload.step_description || 'Transcription failed.'), 'error');
         finishRun();
-        await refreshUserState();
+        await refreshUserState(true);
         return;
       }
 
@@ -436,7 +470,9 @@
       return;
     }
 
-    startRun();
+    var session = authClient.captureSession();
+    running = true;
+    updateRunState();
     setStatus('', '');
 
     var formData = new FormData();
@@ -445,18 +481,23 @@
     formData.append('output_language_custom', selectedLanguage.custom);
 
     try {
+      await checkCreditQuote();
+      session.assertCurrent();
+      startRun();
       var response = await authFetch('/api/tools/transcribe', { method: 'POST', body: formData });
       var payload = await response.json().catch(function () { return {}; });
+      session.assertCurrent();
       if (!response.ok) {
-        setStatus(String(payload.error || 'Transcription failed.'), 'error');
+        setStatus(creditError(payload, 'Transcription failed.'), 'error');
         finishRun();
-        await refreshUserState();
+        await refreshUserState(true);
         return;
       }
       currentJobId = String(payload.job_id || '').trim();
       setStatus('Queued\u2026', '');
       schedulePoll(currentJobId, 500);
     } catch (error) {
+      if (!session.isCurrent()) return;
       setStatus(error && error.message ? error.message : 'Transcription failed.', 'error');
       finishRun();
     }

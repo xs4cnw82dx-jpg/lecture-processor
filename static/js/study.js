@@ -5932,6 +5932,13 @@ function scheduleCodingRunPoll(attempt) {
     pollCodingRun(attempt);
   }, CODING_RUN_POLL_MS);
 }
+function refreshCodingCreditBalance(context) {
+  var shell = window.LectureProcessorShell;
+  if (!shell || typeof shell.refreshCredits !== 'function') return;
+  Promise.resolve().then(function () {
+    if (context.isCurrent()) return shell.refreshCredits();
+  }).catch(function () {});
+}
 function applyCodingRunPayload(attempt, payload) {
   if (!codingRunAttemptIsCurrent(attempt)) return;
   var run = payload && payload.run;
@@ -5939,12 +5946,14 @@ function applyCodingRunPayload(attempt, payload) {
       ['queued', 'processing', 'refund_pending', 'draft', 'accepting', 'accepted', 'rejected', 'failed'].indexOf(run.status) < 0) {
     throw new Error('Could not check AI coding status.');
   }
+  var firstReceipt = !attempt.runId;
   codingLoadSeq += 1;
   codingLoading = false;
   attempt.runId = run.run_id;
   attempt.error = '';
   attempt.retry = false;
   codingState.latest_run = run;
+  if (firstReceipt || !codingRunIsPending(run)) refreshCodingCreditBalance(attempt.context);
   if (codingRunIsPending(run)) {
     if (run.status === 'refund_pending') stopCodingAiProgress(false);
     else if (codingAiProgressStage < 0) startCodingAiProgress();
@@ -6773,6 +6782,22 @@ function undoCodingAction() {
     deleteCodingQuotation(action.quotation_id);
   }
 }
+function codingCreditConfirmation(estimate) {
+  var cost = parseInt(estimate.credit_cost, 10) || 0;
+  if (estimate.credit_scheme !== 2) {
+    return 'This will use ' + cost + ' text extraction credit' + (cost === 1 ? '' : 's') + ' and create a draft you can review before applying.';
+  }
+  var amount = Number.isSafeInteger(estimate.charged_credits) && estimate.charged_credits >= 0 ? estimate.charged_credits : cost;
+  var helper = window.LectureProcessorCreditUtils;
+  var label = helper ? helper.formatCredits(amount) : amount + ' credit' + (amount === 1 ? '' : 's');
+  var template = 'This will use {credits} and create a draft you can review before applying.';
+  return window.LectureI18n ? window.LectureI18n.t(template, { credits: label }) : template.replace('{credits}', label);
+}
+window.addEventListener('lp:language-changed', function () {
+  if (codingRunConfirmation && codingRunConfirmation.isCurrent() && codingRunConfirmation.creditEstimate && confirmModalOverlay.classList.contains('visible')) {
+    confirmModalMessage.textContent = codingCreditConfirmation(codingRunConfirmation.creditEstimate);
+  }
+});
 function runAiCoding() {
   if (!codingState || codingState.pack_id !== selectedPackId || codingLoading || codingAcceptancePending() || codingGenerationPending() || codingRunConfirmation) return;
   var estimate = codingState.ai_estimate || {};
@@ -6782,10 +6807,11 @@ function runAiCoding() {
     return;
   }
   var context = codingRequestContext();
+  context.creditEstimate = Object.assign({}, estimate);
   codingRunConfirmation = context;
   openConfirmModal(
     'Run AI Coding',
-    'This will use ' + cost + ' text extraction credit' + (cost === 1 ? '' : 's') + ' and create a draft you can review before applying.',
+    codingCreditConfirmation(context.creditEstimate),
     'Run AI Coding',
     'primary'
   ).then(function (confirmed) {
@@ -6803,7 +6829,9 @@ function runAiCoding() {
       if (codingRunAttemptIsCurrent(attempt) && error.status >= 400 && error.status < 500) {
         stopCodingRunPolling();
         renderCodingRunStatus();
-        var message = error.message || 'Could not start AI coding. Please try again.';
+        var creditHelper = window.LectureProcessorCreditUtils;
+        var message = (creditHelper && creditHelper.formatInsufficient(error.payload)) || error.message || 'Could not start AI coding. Please try again.';
+        if (error.status === 402) refreshCodingCreditBalance(context);
         setCodingStatus(message, 'error');
         showToast(message, 'error');
         return;
