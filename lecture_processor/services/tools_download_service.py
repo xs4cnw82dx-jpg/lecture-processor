@@ -359,7 +359,11 @@ def download_lecture_file(app_ctx, request, job_id):
     if error is not None:
         return error
     metadata = _download_metadata(job)
-    provided = str(request.args.get('token', '') or '')
+    provided = request.headers.get('X-Lecture-Download-Token')
+    if provided is None:
+        # Keep already-open clients working until the header client is deployed.
+        provided = request.args.get('token', '')
+    provided = str(provided or '')
     expected = str(metadata.get('token', '') or '')
     if job.get('status') != 'complete' or not expected or not secrets.compare_digest(provided, expected):
         return app_ctx.jsonify({'error': 'Lecture download not found.'}), 404

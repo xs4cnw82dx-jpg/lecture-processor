@@ -66,7 +66,9 @@ def status(state, job_id, uid='owner'):
 
 
 def file_response(state, job_id, token, uid='owner', **headers):
-    return state.client.get(f'/api/tools/lecture-download/{job_id}/file', query_string={'token': token}, headers={'X-Test-Uid': uid, **headers})
+    return state.client.get(f'/api/tools/lecture-download/{job_id}/file', headers={
+        'X-Test-Uid': uid, 'X-Lecture-Download-Token': token, **headers,
+    })
 
 
 def test_legacy_client_refreshes_before_any_work(downloads):
@@ -118,6 +120,56 @@ def test_missing_or_wrong_token_is_rejected_without_deleting_file(downloads):
     for token in ('', 'wrong'):
         assert file_response(downloads, job_id, token).status_code == 404
     assert downloads.paths[0].exists()
+
+
+def test_file_accepts_legacy_query_while_header_clients_roll_out(downloads):
+    job_id = downloads.post().get_json()['job_id']
+    run_worker(downloads)
+    token = status(downloads, job_id).get_json()['download_token']
+    response = downloads.client.get(
+        f'/api/tools/lecture-download/{job_id}/file',
+        query_string={'token': token}, headers={'X-Test-Uid': 'owner'},
+    )
+    assert response.status_code == 200
+    assert response.data == b'ID3 synthetic lecture'
+    response.close()
+
+
+@pytest.mark.parametrize('header_token', ['', 'wrong'])
+def test_present_header_never_falls_back_to_a_valid_query_token(downloads, header_token):
+    job_id = downloads.post().get_json()['job_id']
+    run_worker(downloads)
+    token = status(downloads, job_id).get_json()['download_token']
+    response = downloads.client.get(
+        f'/api/tools/lecture-download/{job_id}/file', query_string={'token': token},
+        headers={'X-Test-Uid': 'owner', 'X-Lecture-Download-Token': header_token},
+    )
+    assert response.status_code == 404
+    assert response.get_json() == {'error': 'Lecture download not found.'}
+    assert downloads.paths[0].exists()
+
+
+def test_valid_header_is_authoritative_over_an_unrelated_query_token(downloads):
+    job_id = downloads.post().get_json()['job_id']
+    run_worker(downloads)
+    token = status(downloads, job_id).get_json()['download_token']
+    response = downloads.client.get(
+        f'/api/tools/lecture-download/{job_id}/file', query_string={'token': 'wrong'},
+        headers={'X-Test-Uid': 'owner', 'X-Lecture-Download-Token': token},
+    )
+    assert response.status_code == 200
+    assert response.data == b'ID3 synthetic lecture'
+    response.close()
+
+
+def test_account_deletion_blocks_a_completed_file_even_with_valid_header(downloads):
+    job_id = downloads.post().get_json()['job_id']
+    run_worker(downloads)
+    token = status(downloads, job_id).get_json()['download_token']
+    downloads.deleting = True
+    response = file_response(downloads, job_id, token)
+    assert response.status_code == 409
+    assert response.get_json() == {'error': 'Lecture download is no longer available.'}
 
 
 @pytest.mark.parametrize('reader', ['status', 'file', 'cleanup'])
